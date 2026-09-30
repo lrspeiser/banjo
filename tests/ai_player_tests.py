@@ -244,6 +244,16 @@ class AutonomousGuests(unittest.TestCase):
         self.assertEqual(before["record"], after["record"])
         self.assertTrue(page.evaluate('document.querySelector("#watch-tech").textContent.startsWith("Its tech tree: 0 /")'))
         self.assertEqual("4 / 4 goals", page.evaluate('document.querySelector("#watch-progress").textContent').split(' · ')[0])
+        # Inspection may read native geometry while watching, but does not
+        # permit controls or change either character's physical state.
+        session_id = view["state"]["session"]
+        native_before = self.post("/api/live/act", {"session":session_id, "op":"poses"}, world)
+        page.evaluate('(()=>{const r=banjoRoom,n=[...r.world.bodies].find(([n,e])=>e.mechanicalModel!=="precise-rigid-v1")?.[0];r.pick(n)})()')
+        wait_for('banjoRoom.reveal()?.kind === "cells"')
+        native_after = self.post("/api/live/act", {"session":session_id, "op":"poses"}, world)
+        for key in ("t", "bodies", "machines"):
+            self.assertEqual(native_before[key], native_after[key], "watch inspection changed " + key)
+        page.evaluate('banjoRoom.pick(null)')
         # Clear navigation/agent startup events. Watching renders and polls;
         # it never sends live controls, human pose updates or inventory writes.
         self.assertFalse([e for e in page.events if e.get("method") == "Runtime.exceptionThrown"])

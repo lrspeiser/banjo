@@ -6733,6 +6733,27 @@ std::vector<LiveBodyPose> LiveWorld::poses(bool with_geometry) const {
     return out;
 }
 
+std::string LiveWorld::structureJson(const std::string &name) const {
+    const auto found = impl_->index_of.find(name);
+    if (found == impl_->index_of.end() || !impl_->inWorld(found->second))
+        throw std::invalid_argument("No visible body by that name");
+    const std::size_t i = found->second;
+    const auto &body = impl_->described[i];
+    const auto &nodes = impl_->nodes_of[i];
+    const bool bounded = nodes.size() <= 16000;
+    nlohmann::json cells = nlohmann::json::array();
+    // Intact boxes carry their authored turn in their collision shape. Report
+    // cells in the facing frame poses() gives the renderer, like its cuts.
+    const Quat back = conjugateOf(impl_->shapeTurn(i));
+    if (bounded) for (const std::uint32_t node : nodes) {
+        const Vec3 at = back.rotate(impl_->cell_offset_m[node]);
+        cells.push_back({at.x, at.y, at.z});
+    }
+    return nlohmann::json{{"name", name}, {"revision", body.revision},
+        {"cell_size_m", impl_->request.cell_size_m}, {"cell_count", nodes.size()},
+        {"complete", bounded}, {"cells_local_m", std::move(cells)}}.dump();
+}
+
 unsigned LiveWorld::hinge(const std::string &a, const std::string &b,
                           const Vec3 &point_world_m, const Vec3 &axis_world,
                           double lower_deg, double upper_deg,

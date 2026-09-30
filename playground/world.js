@@ -84,7 +84,8 @@ function linkFailure(error) {
 
 async function api(path, body, renewed = false) {
   if (watchedId && body !== undefined && path !== "/api/world/player/join"
-      && !(path === "/api/world/ai" && body.action === "watch"))
+      && !(path === "/api/world/ai" && body.action === "watch")
+      && !(path === "/api/live/act" && body.op === "structure"))
     throw new Error("Watching is read-only. Return to your character to interact.");
   const headers = { "Content-Type": "application/json" };
   if (worldId) headers["X-Banjo-World"] = worldId;
@@ -2147,6 +2148,9 @@ function draw(state) {
     const waiting = held.fromCells && (body.revision || 0) !== (held.revision || 0)
       && !(body.cells_local_m && body.cells_local_m.length);
     if (!waiting) held.revision = body.revision || 0;
+    held.geometryPending = !!waiting;
+    // Retain only reported geometry, including across pose-only updates.
+    if (body.cells_local_m) held.cells = body.cells_local_m;
     held.material = body.material || "";
     held.dentMm = body.dent_mm || 0;
     held.dims = body.dimensions_m;
@@ -4326,16 +4330,180 @@ function pinWhatWasClicked() {
   } else {
     return;                     // a click on the sky pins nothing and clears nothing
   }
+  revealPicked();
   showPicked();
 }
 
 function unpick() {
+  clearReveal();
   picked.name = null;
   picked.at = null;
   showPicked();
 }
 
 function somethingIsPinned() { return !!(picked.name || picked.at); }
+
+// A short inspection pulse, entirely in the renderer. Cell centres come from
+// the native snapshot; rigid bodies show parts, never invented voxels. The
+// terrain is a layered height field, so its reveal is one real column.
+const REVEAL_MS = 3200, REVEAL_MAX_CELLS = 16000;
+let revealing = null, revealTicket = 0, structureLoading = false;
+function cellInspection(entry) {
+  if (entry.geometryPending) return null;
+  if (entry.cells?.length) return { cells_local_m: entry.cells, cell_count: entry.cells.length, complete: true };
+  return entry.inspection?.revision === entry.revision ? entry.inspection : null;
+}
+function clearReveal() {
+  revealTicket++;
+  if (!revealing) return;
+  scene.remove(revealing.group);
+  revealing.group.traverse(mesh => {
+    if (mesh.geometry) mesh.geometry.dispose();
+    if (mesh.material) mesh.material.dispose();
+    if (mesh.isInstancedMesh) mesh.dispose();
+  });
+  if (revealing.skin) revealing.skin.dispose();
+  revealing = null;
+}
+function revealPicked() {
+  clearReveal();
+  const group = new THREE.Group();
+  group.name = "selection-structure-reveal";
+  const material = color => new THREE.LineBasicMaterial({ color,
+    transparent: true, opacity: 0, depthTest: false, depthWrite: false });
+  const edgesOf = shape => {
+    const edges = new THREE.EdgesGeometry(shape); shape.dispose(); return edges;
+  };
+  const entry = picked.name && world.bodies.get(picked.name);
+  let kind, count = 0, skin = null, beds = null, cells = null;
+  if (entry) {
+    if (entry.geometryPending) return;
+    const inspection = cellInspection(entry);
+    if (entry.mechanicalModel === "precise-rigid-v1" && entry.parts?.length) {
+      kind = "parts"; count = entry.parts.length;
+      // Keep each part's edges, including a boundary shared by joined parts.
+      const positions = [];
+      for (const part of entry.parts) {
+        const edges = edgesOf(preciseGeometry([part], entry.material, false));
+        for (const v of edges.attributes.position.array) positions.push(v);
+        edges.dispose();
+      }
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+      group.add(new THREE.LineSegments(geometry, material(0x70eddb)));
+    } else if (inspection?.cells_local_m?.length && inspection.complete && inspection.cell_count <= REVEAL_MAX_CELLS) {
+      cells = inspection.cells_local_m;
+      kind = "cells"; count = cells.length;
+      const edges = edgesOf(new THREE.BoxGeometry(world.cellSize, world.cellSize, world.cellSize));
+      const edge = edges.attributes.position.array;
+      // One bounded line buffer and draw call. No face diagonals: exactly the
+      // twelve cube edges around each reported centre, including internal cells.
+      const positions = new Float32Array(edge.length * count);
+      cells.forEach((at, i) => {
+        for (let k = 0; k < edge.length; k++) positions[i * edge.length + k] = edge[k] + at[k % 3];
+      });
+      edges.dispose();
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      group.add(new THREE.LineSegments(geometry, material(0x70eddb)));
+    } else {
+      // Intact native boxes omit cells from ordinary pose packets. Ask once
+      // per selection/revision, with one request in flight and stale replies
+      // discarded. A server without this query reports unavailable.
+      if (!inspection && !entry.inspectionError && !structureLoading) {
+        const ticket = revealTicket, name = picked.name, revision = entry.revision;
+        structureLoading = true;
+        act("structure", { name }).then(answer => {
+          if (ticket !== revealTicket || world.bodies.get(name) !== entry || entry.revision !== revision) return;
+          const value = answer.structure;
+          if (!value || value.name !== name || value.revision !== revision) {
+            entry.inspectionError = "Geometry changed; select the item again"; return;
+          }
+          entry.inspection = value;
+        }).catch(error => {
+          if (world.bodies.get(name) === entry) entry.inspectionError = error.message || "Inspection unavailable";
+        }).finally(() => {
+          structureLoading = false;
+          const selected = picked.name && world.bodies.get(picked.name);
+          if (ticket === revealTicket || (selected && !cellInspection(selected) && !selected.inspectionError
+              && selected.mechanicalModel !== "precise-rigid-v1")) {
+            revealPicked(); showPicked();
+          }
+        });
+      }
+      return; // Missing/over-budget geometry is not a substitute box.
+    }
+    skin = dressedClone(entry.mesh.material);
+    skin.transparent = true; skin.depthWrite = false;
+    group.matrixAutoUpdate = false;
+  } else if (picked.at) {
+    beds = bedsUnder(picked.at);
+    if (!beds.length) return;
+    kind = "layers";
+    const g = ground.grid;
+    const x = g.x0 + Math.round((picked.at[0] - g.x0) / g.dx) * g.dx;
+    const z = g.z0 + Math.round((picked.at[2] - g.z0) / g.dx) * g.dx;
+    for (const bed of beds) {
+      if (bed.hole) continue;
+      const mesh = new THREE.LineSegments(edgesOf(new THREE.BoxGeometry(g.dx, bed.thick_m, g.dx)),
+        material(GROUND_COLOURS[bed.kind] || 0x70eddb));
+      mesh.position.set(x, bed.top_m - bed.thick_m / 2, z);
+      group.add(mesh); count++;
+    }
+  } else return;
+  if (!count) { group.traverse(m => { m.geometry?.dispose(); m.material?.dispose(); }); return; }
+  group.traverse(m => { m.renderOrder = 997; m.frustumCulled = false; });
+  scene.add(group);
+  revealing = { group, entry, mesh: entry?.mesh, skin, kind, count, beds, cells,
+    revision: entry?.revision,
+    name: picked.name, at: picked.at?.slice(), start: performance.now(), amount: 0,
+    reduced: matchMedia("(prefers-reduced-motion: reduce)").matches };
+}
+function animateReveal(now) {
+  const r = revealing;
+  if (!r) return;
+  const age = now - r.start;
+  const current = r.name && world.bodies.get(r.name);
+  // Never keep drawing cells from a body replaced, removed or awaiting a new
+  // geometry revision. Digging also invalidates a revealed ground column.
+  if (age >= REVEAL_MS || (r.name && (current !== r.entry || current?.mesh !== r.mesh || current.geometryPending || current.revision !== r.revision))
+      || (!r.name && JSON.stringify(bedsUnder(r.at)) !== JSON.stringify(r.beds))) {
+    clearReveal(); return;
+  }
+  r.amount = r.reduced ? 1 : Math.min(1, age / 450, (REVEAL_MS - age) / 650);
+  r.group.traverse(m => { if (m.material) m.material.opacity = r.amount * 0.8; });
+  if (r.entry) {
+    r.mesh.updateMatrixWorld(); r.group.matrix.copy(r.mesh.matrixWorld);
+  }
+}
+function inspectionValues(values) {
+  const list = document.createElement("dl"); list.className = "pk-analysis";
+  for (const [name, value] of values) {
+    const term = document.createElement("dt"), description = document.createElement("dd");
+    term.textContent = name; description.textContent = value;
+    list.append(term, description);
+  }
+  return list;
+}
+function revealButton() {
+  const button = document.createElement("button");
+  button.type = "button"; button.className = "pk-reveal";
+  button.textContent = "Reveal structure";
+  const entry = picked.name && world.bodies.get(picked.name);
+  const inspection = entry && cellInspection(entry);
+  const available = entry ? !entry.geometryPending && (entry.mechanicalModel === "precise-rigid-v1"
+    ? !!entry.parts?.length : inspection ? !!inspection.cells_local_m?.length && inspection.complete && inspection.cell_count <= REVEAL_MAX_CELLS : true)
+    : !!bedsUnder(picked.at).some(b => !b.hole);
+  button.disabled = !available || (!!entry && structureLoading && !inspection && entry.mechanicalModel !== "precise-rigid-v1");
+  if (structureLoading && !inspection && entry) button.textContent = "Loading structure…";
+  else if (entry?.inspectionError) { button.textContent = "Retry reveal"; button.title = entry.inspectionError; }
+  if (!available) button.title = entry?.inspectionError || (entry?.geometryPending ? "Updating geometry" : "No reveal geometry within the display budget");
+  button.addEventListener("click", () => {
+    if (entry) entry.inspectionError = null;
+    revealPicked(); showPicked();
+  });
+  return button;
+}
 
 // ---------------------------------------------------------------------------
 // The battery, drawn as a battery
@@ -4430,7 +4598,7 @@ function batteryRow(power) {
 // whatever the side view really offers, and a key with nothing behind it is
 // not shown at all.
 function keysForPicked(name) {
-  const out = [];
+  const out = [{ key: "Alt+Click", what: "inspect without using or dropping" }];
   const mine = whatIsRidden();
   if (mine && mine.name === name) {
     out.push({ key: "W / S", what: "drive it forward and back" },
@@ -4616,14 +4784,22 @@ function showPicked() {
       rows.push(doing);
     }
 
-    const facts = document.createElement("p");
-    facts.className = "pk-facts";
-    // Whatever the battery row already showed as a picture is dropped from the
-    // words: saying "100%" twice is the clutter the owner asked to be rid of.
-    const drawn = rows.some((r) => r.className === "pk-battery");
-    facts.textContent = factsOf(picked.name, entry, undefined)
-      .split(" · ").filter((bit) => !(drawn && /^a battery, /.test(bit))).join(" · ");
-    if (facts.textContent) rows.push(facts);
+    if (entry) {
+      const rigid = entry.mechanicalModel === "precise-rigid-v1";
+      const inspection = cellInspection(entry);
+      const materials = rigid ? [...new Set((entry.parts || []).map(p => p.material || entry.material))] : [entry.material];
+      rows.push(inspectionValues([
+        ["Material", materials.filter(Boolean).join(" / ") || "Not reported"],
+        ["Mass", entry.anchored ? "Fixed · not reported" : `${entry.mass.toLocaleString(undefined, { maximumFractionDigits: 3 })} kg`],
+        ["Structure", rigid ? "Rigid parts" : "Cells"],
+        [rigid ? "Parts" : "Cells", entry.geometryPending ? "Updating" :
+          (rigid ? entry.parts?.length : inspection?.cell_count)?.toLocaleString() || "Not reported"],
+        ...(!rigid && inspection?.cell_count ? [["Cell width", `${Math.round(world.cellSize * 1000)} mm`]] : []),
+        ["Connections", world.joints.filter(j => j.attached && (j.a === picked.name || j.b === picked.name)).length.toLocaleString()],
+        ["Breaking", rigid ? "No cell fracture" : "Tool dependent"],
+      ]));
+      rows.push(revealButton());
+    }
 
     const keys = keysForPicked(picked.name);
     if (keys.length) rows.push(keyRows(keys));
@@ -4638,17 +4814,16 @@ function showPicked() {
       rows.push(coreColumn(beds));
       // The one thing worth calling out of a column of dirt.
       const ore = beds.filter((b) => ORE_NAMES.includes(b.name));
-      const said = document.createElement("p");
-      said.className = ore.length ? "pk-ore" : "pk-facts";
+      const values = [["Column width", deepSaid(ground.grid.dx)], ["Layers", String(beds.length)]];
       if (ore.length) {
         const thick = ore.reduce((sum, b) => sum + b.thick_m, 0);
         const under = Math.max(0, (beds[0].top_m || 0) - ore[0].top_m);
-        said.textContent = `${deepSaid(thick)} of ${ore[0].name}`
-          + (under > 0.05 ? `, ${deepSaid(under)} down` : ", at the surface");
+        values.push(["Resource", [...new Set(ore.map(b => b.name))].join(" / ")],
+          ["Ore depth", under > 0.05 ? deepSaid(under) : "At surface"], ["Ore thickness", deepSaid(thick)]);
       } else {
-        said.textContent = "no ore in this column";
+        values.push(["Resource", "No ore in this column"]);
       }
-      rows.push(said);
+      rows.push(inspectionValues(values), revealButton());
     }
     const water = waterAt(picked.at[0], picked.at[2]);
     if (water && water.depth > 0.05) {
@@ -5688,6 +5863,7 @@ canvas.addEventListener("pointerdown", (e) => {
   // that and then pick the thing up as well, because a pointerup is a
   // pointerup whichever button made it.
   if (e.button !== 0) return;
+  if (e.altKey) return;          // inspect while carrying, without primary Use
   // Primary held with something throwable in the hand winds it up. Looking
   // still works while it does -- that is how a throw is aimed.
   if (looking || world.held) primaryUsed = pressPrimary();
@@ -5728,6 +5904,7 @@ function markAt(at) {
 }
 canvas.addEventListener("pointerup", (e) => {
   if (e.button !== 0) return;
+  if (e.altKey && !primaryUsed) return;
   // Letting go of primary after a wind-up throws, however much the view was
   // turned while it was held.
   if (primaryUsed) {
@@ -5758,7 +5935,7 @@ canvas.addEventListener("pointerup", (e) => {
 // the ground is.
 canvas.addEventListener("click", (e) => {
   if (e.button !== 0) return;
-  if (world.held && world.held.pick) return;   // a swing, not a choice
+  if (world.held && world.held.pick && !e.altKey) return;   // a swing, not a choice
   pinWhatWasClicked();
 });
 
@@ -9046,6 +9223,7 @@ function frame() {
   skyEnvironment();
   if (ground.facesStale) buildFaces();
   drawPickedOutline();
+  animateReveal(now);
   render();
   world.framesSinceOpen++;
   requestAnimationFrame(frame);
@@ -9103,10 +9281,24 @@ function ghostOf(material) {
 function render() {
   const inTheWay = heldInTheWay();
   world.seeThrough = !!inTheWay;
-  if (!inTheWay) { renderer.render(scene, camera); return; }
-  const own = inTheWay.mesh.material;
-  inTheWay.mesh.material = ghostOf(own);
-  try { renderer.render(scene, camera); } finally { inTheWay.mesh.material = own; }
+  const swapped = [];
+  if (inTheWay) {
+    swapped.push([inTheWay.mesh, inTheWay.mesh.material]);
+    inTheWay.mesh.material = ghostOf(inTheWay.mesh.material);
+  }
+  const r = revealing;
+  // Swap only during rendering, restoring even if rendering fails. The skin
+  // and the held-item ghost keep their own materials and lifetimes.
+  if (r?.skin && r.amount > 0) {
+    const own = r.mesh.material;
+    swapped.push([r.mesh, own]);
+    r.skin.color.copy(own.color);
+    if (own.emissive) { r.skin.emissive.copy(own.emissive); r.skin.emissiveIntensity = own.emissiveIntensity; }
+    r.skin.opacity = own.opacity * (1 - 0.78 * r.amount);
+    r.mesh.material = r.skin;
+  }
+  try { renderer.render(scene, camera); }
+  finally { for (const [mesh, material] of swapped.reverse()) mesh.material = material; }
 }
 
 // ---------------------------------------------------------------------------
@@ -10145,13 +10337,18 @@ window.banjoRoom = {
   pick(name) {
     picked.name = name || null;
     picked.at = null;
-    showPicked();
+    revealPicked(); showPicked();
   },
   pickGround(x, y, z) {
     picked.name = null;
     picked.at = [x, y, z];
-    showPicked();
+    revealPicked(); showPicked();
   },
+  reveal: () => revealing && ({ kind: revealing.kind, count: revealing.count,
+    amount: revealing.amount, name: revealing.name, at: revealing.at,
+    objects: revealing.group.children.length, matrix: revealing.group.matrix.toArray(),
+    cellCentres: revealing.cells,
+    layers: revealing.beds, skinOpacity: revealing.skin?.opacity }),
   picked: () => ({ name: picked.name, at: picked.at, outlined: !!(pickedBox && pickedBox.visible),
                    said: (document.getElementById("picked") || {}).innerText || "" }),
   aim, pickUp, dropIt, putDown, letFly, intend,

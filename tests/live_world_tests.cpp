@@ -2457,8 +2457,76 @@ void aBreakIsTakenAtItsOwnStepWhateverElseIsInTheRoom() {
             "the pane's run was taken at the room's step, not its own lattice's");
 }
 
+void selectedStructureInspectionIsReadOnlyAndInTheFacingFrame() {
+    for (const MaterialPreset material : {MaterialPreset::Glass, MaterialPreset::Oak, MaterialPreset::Iron}) {
+        auto request = turnedPlank({0.0, 30.0, 0.0}, false);
+        request.bodies[0].material = material;
+        const auto live = LiveWorld::open(request);
+        std::string why;
+        const std::string before = live->snapshot(why);
+        const auto pose = live->poses()[0];
+        const auto report = nlohmann::json::parse(live->structureJson(pose.name));
+        require(report.at("complete") == true, "bounded inspection was truncated");
+        require(report.at("cell_count").get<std::size_t>() == report.at("cells_local_m").size(), "inspection count differs from cells");
+        require(report.at("cell_count").get<std::size_t>() > 0, "intact body has no inspection cells");
+        require(report.at("revision") == pose.revision, "inspection revision differs");
+        const Quat facing = quatOf(pose.orientation_wxyz);
+        for (const auto &p : report.at("cells_local_m")) {
+            const Vec3 local{p[0].get<double>(), p[1].get<double>(), p[2].get<double>()};
+            const Vec3 at = facing.rotate(local) + pose.position_m;
+            require(std::isfinite(length(at)), "inspection position is not finite");
+            // Back in the authored facing frame, even for a turned box.
+            require(std::abs(local.x) <= pose.dimensions_m.x / 2 + request.cell_size_m &&
+                    std::abs(local.y) <= pose.dimensions_m.y / 2 + request.cell_size_m &&
+                    std::abs(local.z) <= pose.dimensions_m.z / 2 + request.cell_size_m,
+                    "cells not in the reported facing frame");
+        }
+        require(before == live->snapshot(why), "inspection changed the physical snapshot");
+        std::cout << "  material " << pose.material << ": " << report.at("cell_count")
+                  << " cells, h=" << request.cell_size_m << " m, unchanged snapshot\n";
+        require(live->park(pose.name, why), "inspection fixture could not be parked");
+        bool refused = false;
+        try { (void)live->structureJson(pose.name); } catch (const std::invalid_argument &) { refused = true; }
+        require(refused, "inspection exposed a parked body");
+    }
+    // Count a refinement under identical declared volume/material conditions.
+    // This is geometry scaling, not a fracture, frame-rate or billing benchmark.
+    for (const MaterialPreset material : {MaterialPreset::Glass, MaterialPreset::Oak, MaterialPreset::Iron}) {
+        std::size_t coarse = 0;
+        double mass = 0;
+        for (const double h : {0.04, 0.02}) {
+            auto request = turnedPlank({}, false);
+            request.cell_size_m = h;
+            request.bodies[0].dimensions_m = {0.32, 0.16, 0.08};
+            request.bodies[0].material = material;
+            const auto live = LiveWorld::open(request);
+            const auto pose = live->poses()[0];
+            const auto report = nlohmann::json::parse(live->structureJson(pose.name));
+            const std::size_t count = report.at("cell_count").get<std::size_t>();
+            if (h == 0.04) { coarse = count; mass = pose.mass_kg; }
+            else {
+                require(count == coarse * 8, "half width did not give eight times the cell count");
+                require(std::abs(pose.mass_kg - mass) < 1e-10, "grid-aligned refinement changed material mass");
+            }
+            std::cout << "  refinement " << pose.material << ": h=" << h << " m, " << count
+                      << " cells, " << pose.mass_kg << " kg, no simulation steps\n";
+        }
+    }
+    auto large = turnedPlank({}, false);
+    large.bodies[0].dimensions_m = {1.0, 0.4, 0.4};
+    const auto large_world = LiveWorld::open(large);
+    const auto over = nlohmann::json::parse(large_world->structureJson("plank"));
+    require(over.at("cell_count").get<std::size_t>() > 16000 && over.at("complete") == false &&
+            over.at("cells_local_m").empty(), "over-budget inspection returned an incomplete cell picture");
+}
+
 int main(int argc, char **argv) {
     try {
+        if (argc > 1 && std::string(argv[1]) == "--structure") {
+            selectedStructureInspectionIsReadOnlyAndInTheFacingFrame();
+            std::cout << "[PASS] selected structure inspection is bounded, read-only and in the facing frame\n";
+            return 0;
+        }
         if (argc > 1 && std::string(argv[1]) == "--landing") {
             aHardLandingBreaksItWhateverThePhaseOfTheStep();
             std::cout << "[PASS] a hard landing breaks the thing whatever the phase of the step it lands in\n";
@@ -2470,6 +2538,7 @@ int main(int argc, char **argv) {
             return 0;
         }
         aWorldOpensIntactAndNamed();
+        selectedStructureInspectionIsReadOnlyAndInTheFacingFrame();
         std::cout << "[PASS] a world opens intact, named, and in the shapes that were asked for\n";
         steppingIsGravity();
         std::cout << "[PASS] stepping is gravity: the ball falls and lands on the floor\n";

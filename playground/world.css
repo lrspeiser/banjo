@@ -711,3 +711,13 @@ body.moving-a-thing #panel .workshop-entry { border-style: dashed; }
 .watching-character #tab-bench, .watching-character #tab-keys,
 .watching-character #tab-settings, .watching-character #pane-settings { display: none; }
 .watching-character #inventory button { display: none; }
+
+/* Selected composition: short names and values, with an explicit replay. */
+.pk-analysis { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 6px 12px; margin: 0; font-size: 12px; line-height: 1.35; }
+.pk-analysis dt { color: var(--muted); }
+.pk-analysis dd { margin: 0; text-align: right; overflow-wrap: anywhere; font-weight: 600; }
+.pk-reveal { width: 100%; border: 1px solid #487b79; border-radius: 6px;
+  padding: 8px; background: #163731; color: #a5f6e7; cursor: pointer; }
+.pk-reveal:disabled { opacity: .5; cursor: default; }
+.pk-reveal:focus-visible { outline: 2px solid #a5f6e7; outline-offset: 2px; }

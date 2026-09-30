@@ -61,6 +61,76 @@ class GameScreens(unittest.TestCase):
         out = ROOT / "build/workshop-navigation"; out.mkdir(parents=True, exist_ok=True)
         (out / name).write_bytes(base64.b64decode(self.page.send("Page.captureScreenshot")["data"]))
 
+    def test_world_selection_reveals_reported_structure_then_restores_skin_without_stepping(self):
+        world, owner, app = self.setup_world(); self.browser(world, owner)
+        self.page.send("Page.navigate", {"url":self.base + f"/world?world={world}&hold=1"})
+        self.wait('window.banjoRoom?.ready()', seconds=60)
+        session = app.live.session.id
+        before = self.post("/api/live/act", {"session":session, "op":"poses"}, world)
+        self.page.evaluate('window.revealTarget=[...banjoRoom.world.bodies].find(([n,e])=>e.mechanicalModel!=="precise-rigid-v1")?.[0]')
+        self.assertTrue(self.page.evaluate('!!window.revealTarget'), "fixture needs reported cell geometry")
+        self.page.evaluate('(()=>{const r=banjoRoom,p=r.world.bodies.get(revealTarget).mesh.position;r.standAt(p.x+.3,p.y+.25,p.z+.35);r.lookAt(p.x,p.y,p.z)})()')
+        self.page.evaluate('window.originalSkin=banjoRoom.world.bodies.get(revealTarget).mesh.material; banjoRoom.pick(revealTarget)')
+        self.wait('banjoRoom.reveal()?.kind === "cells" && banjoRoom.reveal().amount > .95')
+        # Read the actual GPU vertex buffer. Each native cell gets twelve
+        # orthogonal edges centred on that cell, with no triangle diagonals.
+        self.assertTrue(self.page.evaluate('(()=>{const r=banjoRoom,mesh=r.scene.getObjectByName("selection-structure-reveal").children[0],cells=r.reveal().cellCentres,a=mesh.geometry.attributes.position.array,h=r.world.cellSize/2;return a.length===cells.length*72 && cells.every((p,i)=>{const mean=[0,0,0];for(let k=0;k<72;k++) {const v=a[i*72+k];if(Math.abs(Math.abs(v-p[k%3])-h)>1e-6)return false;mean[k%3]+=v/24;}for(let k=0;k<72;k+=6)if([0,1,2].filter(j=>Math.abs(a[i*72+k+j]-a[i*72+k+3+j])>1e-6).length!==1)return false;return p.every((v,k)=>Math.abs(v-mean[k])<1e-6)})})()'))
+        self.assertLess(self.page.evaluate('banjoRoom.reveal().skinOpacity'), .3)
+        self.assertTrue(self.page.evaluate('banjoRoom.world.bodies.get(revealTarget).mesh.material === originalSkin'))
+        self.assertIn("Tool dependent", self.page.evaluate('document.querySelector("#picked").textContent'))
+        # Frame interpolation and movement carry the reveal with the same body.
+        self.assertTrue(self.page.evaluate('(()=>{const r=banjoRoom,g=r.scene.getObjectByName("selection-structure-reveal"),m=r.world.bodies.get(revealTarget).mesh;return g.matrix.equals(m.matrixWorld)})()'))
+        self.screenshot("world-cell-reveal.png")
+        self.wait('banjoRoom.reveal() === null', seconds=6)
+        self.assertTrue(self.page.evaluate('banjoRoom.world.bodies.get(revealTarget).mesh.material === originalSkin && !banjoRoom.scene.getObjectByName("selection-structure-reveal")'))
+        self.click('.pk-reveal'); self.wait('!!banjoRoom.reveal()')
+        self.click('#pk-close'); self.wait('banjoRoom.reveal() === null && document.querySelector("#picked").hidden')
+        # Switching selection disposes the old overlay rather than stacking it.
+        self.page.evaluate('banjoRoom.pick(revealTarget); banjoRoom.pick("solar farm")')
+        self.page.evaluate('(()=>{const r=banjoRoom,p=r.world.bodies.get("solar farm").mesh.position;r.standAt(p.x+2,p.y+2,p.z+3);r.lookAt(p.x,p.y,p.z)})()')
+        self.assertEqual("solar farm", self.page.evaluate('banjoRoom.picked().name'))
+        self.assertEqual(1, self.page.evaluate('banjoRoom.scene.children.filter(c=>c.name === "selection-structure-reveal").length'))
+        # The solar farm in the native starter room is a precise assembly.
+        self.assertEqual("parts", self.page.evaluate('banjoRoom.reveal()?.kind'))
+        self.assertIn("No cell fracture", self.page.evaluate('document.querySelector("#picked").textContent'))
+        self.screenshot("world-part-reveal.png")
+        self.page.evaluate('banjoRoom.pick(null)')
+        after = self.post("/api/live/act", {"session":session, "op":"poses"}, world)
+        for key in ("t", "machines", "bodies"):
+            self.assertEqual(before[key], after[key], key + " changed during inspection")
+        self.assertFalse([e for e in self.page.events if e.get("method") == "Runtime.exceptionThrown"])
+
+    def test_ground_reveal_uses_native_layers_and_reduced_motion_and_escape_clear_it(self):
+        world, owner, app = self.setup_world(); self.browser(world, owner)
+        self.page.send("Emulation.setEmulatedMedia", {"features":[{"name":"prefers-reduced-motion", "value":"reduce"}]})
+        self.page.send("Page.navigate", {"url":self.base + f"/world?world={world}&hold=1"})
+        self.wait('window.banjoRoom?.ready()', seconds=60)
+        session = app.live.session.id
+        before = self.post("/api/live/act", {"session":session, "op":"poses"}, world)
+        # Normal cursor/pointer events: Alt+click inspects the native terrain
+        # under the centre without executing an interaction action.
+        self.page.evaluate('const r=banjoRoom,y=r.groundAt(0,0);r.standAt(0,y+2,2);r.lookAt(0,y,0)')
+        point = self.page.evaluate('(()=>{const r=document.querySelector("#stage").getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()')
+        self.page.send("Input.dispatchMouseEvent", {"type":"mouseMoved", **point, "modifiers":1})
+        self.wait('!!banjoRoom.world.groundAim')
+        for event in ("mousePressed", "mouseReleased"):
+            self.page.send("Input.dispatchMouseEvent", {"type":event, **point, "button":"left", "clickCount":1, "modifiers":1})
+        self.wait('banjoRoom.reveal()?.kind === "layers" && banjoRoom.reveal().amount === 1')
+        layers = self.page.evaluate('banjoRoom.reveal().layers')
+        self.assertTrue(layers)
+        self.assertTrue(self.page.evaluate('(()=>{const r=banjoRoom,b=r.reveal().layers.filter(b=>!b.hole),m=r.scene.getObjectByName("selection-structure-reveal").children,g=r.groundDrawn();return m.length===b.length && b.every((bed,i)=>{m[i].geometry.computeBoundingBox();const s=m[i].geometry.boundingBox.getSize(new r.THREE.Vector3());return Math.abs(s.y-bed.thick_m)<1e-5 && Math.abs(m[i].position.y-(bed.top_m-bed.thick_m/2))<1e-6 && Math.abs(s.x-g.dx)<1e-6})})()'))
+        self.assertEqual(len(layers), self.page.evaluate('document.querySelectorAll("#picked .pk-bed").length'))
+        self.assertIn("Column width", self.page.evaluate('document.querySelector("#picked").textContent'))
+        self.assertNotIn("kg", self.page.evaluate('document.querySelector("#picked").textContent'))
+        self.screenshot("world-ground-reveal.png")
+        self.page.send("Input.dispatchKeyEvent", {"type":"keyDown", "code":"Escape", "key":"Escape"})
+        self.page.send("Input.dispatchKeyEvent", {"type":"keyUp", "code":"Escape", "key":"Escape"})
+        self.wait('banjoRoom.reveal() === null && document.querySelector("#picked").hidden')
+        after = self.post("/api/live/act", {"session":session, "op":"poses"}, world)
+        for key in ("t", "machines", "ground"):
+            self.assertEqual(before.get(key), after.get(key), key + " changed during inspection")
+        self.assertFalse([e for e in self.page.events if e.get("method") == "Runtime.exceptionThrown"])
+
     def test_material_cards_open_filtered_recipes_and_all_materials_restores_catalog(self):
         world, owner, app = self.setup_world()
         table = self.post("/api/workshop/candidates", {"kind":"table", "generation":0}, world)["candidates"][0]
@@ -150,6 +220,9 @@ class GameScreens(unittest.TestCase):
         self.assertTrue(self.page.evaluate('document.querySelector(".ws-left").getBoundingClientRect().left >= document.querySelector("#workshop-stage").getBoundingClientRect().right - 1'))
         self.screenshot("empty.png")
         self.navigate(world, "workshop=1&tab=lab&carry=missing-item")
+        # Empty geometry is shown before the asynchronous source lookup has
+        # removed an invalid carried-item route. Wait for that completed state.
+        self.wait('!location.search.includes("carry=")')
         self.assert_empty()
         self.assertFalse(self.page.evaluate('location.search.includes("carry=")'))
         self.page.send("Page.reload"); self.assert_empty()

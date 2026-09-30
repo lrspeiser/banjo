@@ -1831,6 +1831,11 @@ class Live:
             return session.send(op="foresee", horizon_s=horizon)
         if op in ("release", "poses", "joints", "overloaded", "blades", "cuts"):
             return session.send(op=op)
+        if op == "structure":
+            name = body.get("name")
+            if not isinstance(name, str) or not name or len(name) > 256:
+                raise LiveError("structure needs a body name of at most 256 characters")
+            return session.send(op=op, name=name)
         if op == "drive":
             # A motor told what to do (docs/machine-world.md): a command from -1
             # to 1, the share of its voltage, and whether its brake is on. The

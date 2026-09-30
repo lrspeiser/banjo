@@ -1487,7 +1487,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("The fabrication room accepts funded outputs; edit designs in Workshop")
                 if not isinstance(body, dict): raise ValueError("Expected a JSON object")
                 if path == "/api/live/act" and body.get("op") not in {"step","poses","wield","hand","move","release","joints","mechanics","thermo","pick","place_check",
-                    "survey","environment","environment_state","terrain","materials","rolling","dig","deposit"}:
+                    "survey","structure","environment","environment_state","terrain","materials","rolling","dig","deposit"}:
                     raise ValueError("This authoring operation is not allowed in the funded room")
             if path.startswith("/api/world/fabrication/"):
                 operation = path.rsplit("/",1)[-1]
@@ -1504,7 +1504,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("Expected a JSON object")
                 if path.startswith("/api/world/") and path not in ("/api/world/open", "/api/world/gameplay"):
                     raise ValueError("Expedition resources use the gameplay panel; sandbox authoring belongs in other scenes")
-                if path == "/api/live/act" and body.get("op") not in ("step", "poses", "environment", "terrain", "survey"):
+                if path == "/api/live/act" and body.get("op") not in ("step", "poses", "structure", "environment", "terrain", "survey"):
                     raise ValueError("This operation is not part of the bounded expedition")
             if path == "/api/world/gameplay":
                 try:

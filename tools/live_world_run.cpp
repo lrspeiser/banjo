@@ -2762,6 +2762,11 @@ int main(int argc, char **argv) {
                     if (!world->setDischarge(command.at("river").get<std::string>(),
                                              command.value("discharge_m3_s", 0.0)))
                         throw std::invalid_argument("there is no river by that name");
+                } else if (op == "structure") {
+                    std::cout << nlohmann::json{{"ok", true},
+                        {"structure", nlohmann::json::parse(world->structureJson(command.at("name").get<std::string>()))}}
+                        .dump() << std::endl;
+                    continue;
                 } else if (op == "survey") {
                     // Answers on its own, like `pick`: it changes nothing.
                     const auto at = readXZ(command, "at");

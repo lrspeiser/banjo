@@ -1398,6 +1398,9 @@ public:
     // static between steps, so a host asks for it when the set of bodies
     // changes and not on every frame.
     [[nodiscard]] std::vector<LiveBodyPose> poses(bool with_geometry = false) const;
+    // Read-only selected-body cell inspection. At most 16,000 cell centres;
+    // larger structures report their count without a misleading subset.
+    [[nodiscard]] std::string structureJson(const std::string &name) const;
     [[nodiscard]] double cellSize() const;
 
     // What happened in the step just taken. Cleared by the next step, so a host
