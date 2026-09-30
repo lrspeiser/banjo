@@ -61,6 +61,43 @@ class GameScreens(unittest.TestCase):
         out = ROOT / "build/workshop-navigation"; out.mkdir(parents=True, exist_ok=True)
         (out / name).write_bytes(base64.b64decode(self.page.send("Page.captureScreenshot")["data"]))
 
+    def test_inventory_shows_private_wallet_and_native_meters_without_spending_or_stepping(self):
+        world, owner, app = self.setup_world()
+        self.post("/api/workshop/market", {"action":"bank", "joules":200,
+            "request_id":"inventory-meter-fixture"}, world)
+        session = app.live.session.id
+        self.post("/api/live/act", {"session":session, "op":"step", "dt":1/240, "n":1}, world)
+        before = self.post("/api/live/act", {"session":session, "op":"poses"}, world)
+        self.assertGreater(sum(p["power_w"] for p in before["machines"]["panels"]), 0)
+        self.browser(world, owner); self.navigate(world, "workshop=1&tab=inventory")
+        self.wait('!!document.querySelector("#ws-inv-energy").dataset.updated')
+        def displayed():
+            return self.page.evaluate('[...document.querySelectorAll(".ws-energy-card")].map(c => ({title:c.querySelector("h4").textContent,values:Object.fromEntries([...c.querySelectorAll(".ws-recipe-value")].map(v=>[v.querySelector("span").textContent,v.querySelector("b").textContent]))}))')
+        cards = displayed()
+        self.assertEqual("200 J", cards[0]["values"]["Spendable"])
+        self.assertEqual("0 J/s", cards[0]["values"]["Auto income"])
+        solar = next(s for s in before["machines"]["stores"] if s["body"] == "solar farm")
+        num = lambda text: float(text.split(" J")[0].replace(",", ""))
+        self.assertAlmostEqual(solar["charge_j"], num(cards[1]["values"]["Stored"]), delta=.051)
+        self.assertAlmostEqual(sum(p["power_w"] for p in before["machines"]["panels"]), num(cards[1]["values"]["Generating now"]), delta=.051)
+        self.assertEqual("Not metered", cards[2]["values"]["Goods rate"])
+        self.assertEqual("0 J/s", cards[2]["values"]["Currency income"])
+        self.assertFalse(self.page.evaluate('!!document.querySelector("#ws-pane-inventory [data-building-block], #ws-pane-inventory [data-lab-source], #ws-pane-inventory input")'))
+        self.assertNotRegex(self.page.evaluate('document.querySelector("#ws-pane-inventory").textContent'), r'width_m|Saved designs|Building blocks')
+        self.screenshot("inventory-energy.png")
+        stamp = self.page.evaluate('document.querySelector("#ws-inv-energy").dataset.updated')
+        self.wait('document.querySelector("#ws-inv-energy").dataset.updated !== ' + json.dumps(stamp), seconds=12)
+        after = self.post("/api/live/act", {"session":session, "op":"poses"}, world)
+        self.assertEqual(before["t"], after["t"])
+        self.assertEqual(before["machines"], after["machines"])
+        self.assertEqual(200, self.post("/api/workshop/market", {}, world)["balance_j"])
+        other = self.join(world, "Other wallet")
+        self.page.evaluate(f'localStorage.setItem("banjo.player.{world}", {json.dumps(other["token"])})')
+        self.navigate(world, "workshop=1&tab=inventory")
+        self.wait('!!document.querySelector("#ws-inv-energy").dataset.updated')
+        self.assertEqual("0 J", displayed()[0]["values"]["Spendable"])
+        self.assertFalse([e for e in self.page.events if e.get("method") == "Runtime.exceptionThrown"])
+
     def test_empty_lab_ignores_templates_memory_and_missing_inventory(self):
         world, owner, app = self.setup_world(); self.browser(world, owner)
         self.page.evaluate('localStorage.setItem("banjo.workshop.opened", JSON.stringify({kind:"cart"}))')
@@ -84,8 +121,10 @@ class GameScreens(unittest.TestCase):
             "design_id":candidate["design_id"], "parameters":candidate["parameters"],
             "component_overrides":candidate.get("component_overrides", {}), "save_design":True,
             "label":"My selected table"}, world)["design"]["design_id"]
-        self.browser(world, owner); self.navigate(world, "workshop=1&tab=inventory")
+        self.browser(world, owner); self.navigate(world, "workshop=1&tab=recipes")
         self.wait(f'!!document.querySelector("[data-lab-source=saved][data-item=\\"{saved}\\"]")')
+        self.assertEqual(1, self.page.evaluate(f'document.querySelectorAll("[data-recipe=\\"{saved}\\"]").length'))
+        self.assertTrue(self.page.evaluate(f'!!document.querySelector("[data-lab-source=saved][data-item=\\"{saved}\\"]").closest("#ws-rec-saved")'))
         self.click(f'[data-lab-source="saved"][data-item="{saved}"]')
         self.wait('document.querySelector("#workshop-stage").visibleGeometry()?.meshes > 0')
         self.assertEqual(saved, self.page.evaluate('new URLSearchParams(location.search).get("design")'))
@@ -103,17 +142,17 @@ class GameScreens(unittest.TestCase):
         self.page.send("Page.reload"); self.assert_empty()
         self.assertFalse([e for e in self.page.events if e.get("method") == "Runtime.exceptionThrown"])
 
-    def test_inventory_building_blocks_create_saved_designs_without_spending_stock(self):
+    def test_recipes_building_blocks_create_saved_designs_without_spending_stock(self):
         world, owner, app = self.setup_world(); self.browser(world, owner)
         before = self.post("/api/workshop/inventory", {}, world)
-        self.navigate(world, "workshop=1&tab=inventory")
+        self.navigate(world, "workshop=1&tab=recipes")
         self.wait('document.querySelectorAll("[data-building-block]").length === 16')
-        self.assertNotRegex(self.page.evaluate('document.querySelector("#ws-pane-inventory").textContent'),
+        self.assertNotRegex(self.page.evaluate('document.querySelector("#ws-pane-recipes").textContent'),
                             r'width_m|height_m|depth_m|splay_deg|lean_x|component_overrides')
         self.assertEqual(["Frames & supports", "Surfaces & panels", "Wheels & axles", "Machine housings"],
-            self.page.evaluate('[...document.querySelectorAll("#ws-inv-blocks h4")].map(e=>e.textContent)'))
-        self.assertEqual(16, self.page.evaluate('document.querySelectorAll("#ws-inv-blocks canvas[data-preview=ready]").length'))
-        self.assertIn("AI design is not connected", self.page.evaluate('document.querySelector("#ws-inv-ai-help").textContent'))
+            self.page.evaluate('[...document.querySelectorAll("#ws-rec-blocks h4")].map(e=>e.textContent)'))
+        self.assertEqual(16, self.page.evaluate('document.querySelectorAll("#ws-rec-blocks canvas[data-preview=ready]").length'))
+        self.assertIn("AI design is not connected", self.page.evaluate('document.querySelector("#ws-rec-ai-help").textContent'))
         self.assertIsNone(self.page.evaluate('document.querySelector("#workshop-stage").visibleGeometry()'))
         # Every offered block really starts a source design; none relies on an
         # invented machine behavior or physical inventory to appear on screen.
@@ -126,15 +165,15 @@ class GameScreens(unittest.TestCase):
             ids.add(self.page.evaluate('new URLSearchParams(location.search).get("library")'))
             self.assertEqual("1", self.page.evaluate('document.querySelector("#ws-part-count").textContent'))
             self.assertFalse(self.page.evaluate('document.querySelector("#ws-component-chat-text").disabled'))
-            self.click('.game-tabs [data-screen="inventory"]')
+            self.click('.game-tabs [data-screen="recipes"]')
             self.wait('document.querySelectorAll("[data-building-block]").length === 16')
         self.assertEqual(16, len(ids))
         after = self.post("/api/workshop/inventory", {}, world)
         for key in ("carried", "materials", "goods", "in_world"): self.assertEqual(before[key], after[key])
         self.assertEqual(16, len(after["designs"]))
-        self.wait('document.querySelectorAll("#ws-inv-saved canvas[data-preview=ready]").length === 16')
+        self.wait('document.querySelectorAll("#ws-rec-saved canvas[data-preview=ready]").length === 16')
         self.screenshot("inventory-categories.png")
-        self.page.evaluate('document.querySelector("#ws-pane-inventory").scrollTop = 0')
+        self.page.evaluate('document.querySelector("#ws-pane-recipes").scrollTop = 0')
         self.screenshot("inventory-overview.png")
         # Saved component cards create a new editable design, leaving the
         # reusable original intact and keeping the selected item on reload.
@@ -142,7 +181,7 @@ class GameScreens(unittest.TestCase):
         component = self.post("/api/workshop/library", {"action":"save_component", "kind":"table",
             "parameters":table["parameters"], "component_overrides":table.get("component_overrides", {}),
             "part_name":"top", "name":"Reusable tabletop"}, world)["library_item"]
-        self.navigate(world, "workshop=1&tab=inventory")
+        self.navigate(world, "workshop=1&tab=recipes")
         self.wait(f'!!document.querySelector("[data-lab-component=\\"{component["item_id"]}\\"]")')
         self.click(f'[data-lab-component="{component["item_id"]}"]')
         self.wait('document.querySelector("#workshop-stage").visibleGeometry()?.meshes > 0')
@@ -192,7 +231,7 @@ class GameScreens(unittest.TestCase):
         saved = self.post("/api/workshop/feedback", {"kind":"table", "design_id":table["design_id"],
             "parameters":table["parameters"], "component_overrides":table.get("component_overrides", {}),
             "save_design":True, "label":"Keep my Lab item"}, world)["design"]["design_id"]
-        self.navigate(world, "workshop=1&tab=inventory")
+        self.navigate(world, "workshop=1&tab=recipes")
         selected = f'[data-lab-source="saved"][data-item="{saved}"]'
         self.wait(f'!!document.querySelector({json.dumps(selected)})'); self.click(selected)
         self.wait('document.querySelector("#workshop-stage").visibleGeometry()?.meshes > 0')

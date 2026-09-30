@@ -78,11 +78,11 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.page = self.chrome.page
         self.page.send("Runtime.enable")
         self.page.send("Page.enable")
-        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&tab=inventory"})
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&tab=recipes"})
         try:
             self.wait("document.querySelector('#ws-product-catalog button') && document.querySelector('#ws-name').textContent.trim()")
             # Bench regressions start with an explicit selection of a saved
-            # design, through the same Inventory button a person uses.
+            # design, through the same Recipes button a person uses.
             source = self.install_api('/api/workshop/candidates', {'kind':'table', 'generation':0})['body']['candidates'][0]
             saved = self.install_api('/api/workshop/feedback', {
                 'kind':'table', 'generation':0, 'design_id':source['design_id'],
@@ -90,7 +90,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
                 'save_design':True, 'label':'Browser fixture table'})
             self.assertEqual(200, saved['status'], saved)
             self.fixture_id = saved['body']['design']['design_id']
-            self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&tab=inventory"})
+            self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&tab=recipes"})
             selector = f'[data-lab-source="saved"][data-item="{self.fixture_id}"]'
             self.wait(f'document.querySelector({json.dumps(selector)})')
             self.pointer_click(selector)

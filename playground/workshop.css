@@ -604,3 +604,12 @@ body.workshop-mode .ws-chat-suggestions { flex:none;max-height:24vh;overflow:aut
   .game-tabs { padding:.4rem;gap:.25rem; }
   .game-tabs a,.game-tabs button { padding:.3rem;font-size:.7rem; }
 }
+.ws-energy-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:.8rem; }
+.ws-energy-card { border:1px solid var(--edge);border-radius:.6rem;padding:1rem;background:var(--panel);display:grid;gap:.65rem; }
+.ws-energy-card h4 { margin:0;font-size:.95rem; }
+.ws-energy-icon { font-size:2rem;color:#ffdc81; }
+#ws-rec-saved .ws-design-grid { grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); }
+#ws-rec-saved li { list-style:none;display:flex;flex-direction:column;gap:.45rem;padding:1rem;border:1px solid var(--edge);border-radius:.6rem;background:var(--panel); }
+#ws-rec-saved li > canvas { align-self:center; }
+#ws-rec-saved li .ws-recipe-acts { flex-wrap:wrap;margin-top:auto; }
+.ws-inventory-section[hidden] { display:none; }

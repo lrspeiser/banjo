@@ -1564,15 +1564,17 @@ function installBench() {
   centre.append(takes, viewport, machineBench);
   const empty = make("section", {id:"ws-empty", "aria-label":"Empty lab"});
   empty.append(make("h2", {}, "Your lab is empty"),
-    make("p", {}, "Select a carried item or saved design from Inventory to examine it here."));
+    make("p", {}, "Choose a product in Inventory or a design in Recipes."));
   const pick = make("button", {type:"button", class:"ws-action"}, "Choose from Inventory");
-  pick.onclick = () => showTab("inventory"); empty.append(pick); viewport.append(empty);
+  pick.onclick = () => showTab("inventory"); empty.append(pick);
+  const designs = make("button", {type:"button", class:"ws-action"}, "Choose from Recipes");
+  designs.onclick = () => showTab("recipes"); empty.append(designs); viewport.append(empty);
   const clear = make("button", {id:"ws-clear-lab", type:"button", class:"ws-action"}, "Clear Lab");
   clear.onclick = () => { clearLab(); showTab("lab"); }; $(".ws-viewbar").append(clear);
   chatForm?.addEventListener("submit", (event) => {
     if (bench.inventorySelection) return;
     event.preventDefault(); event.stopImmediatePropagation();
-    say("Select an item from Inventory before asking about it.", true);
+    say("Choose a product in Inventory or a design in Recipes first.", true);
   }, true);
   new MutationObserver(updateLabSelection).observe(chatHome, {childList:true, subtree:true});
   for (const name of ["inventory", "skills", "recipes", "market", "goals"]) { const pane = $(`#ws-pane-${name}`); if (pane) centre.append(pane); }
@@ -1914,47 +1916,64 @@ function invTile(thing, { quantity = null, where = "", onOpen = null } = {}) {
 
 async function showInventory() {
   const inv = await api("/api/workshop/inventory");
-  $("#ws-inv-ai-help").textContent = designAssistantConnected
-    ? "Building blocks are ready-made shapes. The AI creates new designs when you ask in Lab chat—for example, ‘Turn this into a small stool.’ Save keeps a design; Make builds it using your supplies."
-    : "Building blocks are ready-made shapes. AI design is not connected right now; Lab chat can make basic edits, while Recipes offers existing designs to build. With AI connected, describe a new item in Lab chat.";
-  const grid = $("#ws-inv-grid");
-  if (!grid) return;
-  const tiles = [];
-
-  // What is on you: hands first, then the bag, in the order the room has them.
-  for (const thing of inv.carried || []) {
-    tiles.push(invTile(thing, {
-      quantity: thing.kg != null ? kgSaid(thing.kg) : null,
-      where: thing.where,
-      onOpen: async () => {
-        await openTheCarriedThing(thing.id);
-      },
-    }));
-  }
-
-  // Raw stock, drawn the same way. A material is a heap, so it is a box in
-  // the material's own colour with its weight on the corner.
-  for (const r of inv.materials || []) {
-    if (!(r.mass_kg > 0)) continue;
-    tiles.push(invTile({ name: r.material, material: r.material, shape: "box",
-                         color_rgba: MATERIAL_LOOK[r.material] || "9aa7b4" },
-                       { quantity: kgSaid(r.mass_kg), where: "on the rack" }));
-  }
-  for (const r of inv.goods || []) {
-    if (!(r.mass_kg > 0)) continue;
-    tiles.push(invTile({ name: r.substance, material: r.substance, shape: "sphere",
-                         color_rgba: MATERIAL_LOOK[r.substance] || "8b9bab" },
-                       { quantity: kgSaid(r.mass_kg), where: "goods" }));
-  }
-
-  const stock = tiles.splice((inv.carried || []).length);
-  grid.replaceChildren(...tiles);
+  const carried = (inv.carried || []).map(thing => invTile(thing, {
+    quantity:thing.kg != null ? kgSaid(thing.kg) : null, where:thing.where,
+    onOpen:() => openTheCarriedThing(thing.id),
+  }));
+  $("#ws-inv-grid").replaceChildren(...carried);
+  $("#ws-inv-note").textContent = carried.length ? "Select → Lab" : "Empty · Pick up items in World";
+  const stock = (inv.materials || []).filter(r => r.mass_kg > 0).map(r => invTile({
+    name:r.material, material:r.material, shape:"box", color_rgba:MATERIAL_LOOK[r.material] || "9aa7b4",
+  }, {quantity:kgSaid(r.mass_kg)}));
   $("#ws-inv-stock").replaceChildren(...stock);
-  $("#ws-inv-note").textContent = tiles.length
-    ? "Click an item to open a design copy in the Lab. Your carried item stays where it is."
-    : "Your hands and bag are empty. Pick up an item in the World to bring it here.";
   $("#ws-inv-stock-empty").hidden = stock.length > 0;
-  const designs = $("#ws-inv-saved"); designs.replaceChildren();
+  const goods = (inv.goods || []).filter(r => r.mass_kg > 0).map(r => invTile({
+    name:r.substance, material:r.substance, shape:"sphere", color_rgba:MATERIAL_LOOK[r.substance] || "8b9bab",
+  }, {quantity:kgSaid(r.mass_kg)}));
+  $("#ws-inv-goods").replaceChildren(...goods);
+  $("#ws-inv-goods-empty").hidden = goods.length > 0;
+  await showInventoryEnergy();
+}
+const energySaid = j => `${Number(j).toLocaleString(undefined, {maximumFractionDigits:1})} J`;
+const rateSaid = w => `${Number(w).toLocaleString(undefined, {maximumFractionDigits:1})} J/s`;
+function energyCard(icon, title, values) {
+  const card = make("article", {class:"ws-energy-card"});
+  card.append(make("span", {class:"ws-energy-icon", "aria-hidden":"true"}, icon), make("h4", {}, title));
+  for (const [name, value] of values) card.append(recipeValue(name, value));
+  return card;
+}
+let inventoryMeterReading = false;
+async function showInventoryEnergy() {
+  if (inventoryMeterReading) return;
+  inventoryMeterReading = true;
+  try {
+    // Read native meters without stepping, opening a room or drawing charge.
+    const [wallet, meters] = await Promise.allSettled([
+      api("/api/workshop/market", {action:"view"}),
+      api("/api/world/workshop/context").then(c => api("/api/live/act", {session:c.session, op:"poses"})),
+    ]);
+    if ($("#ws-pane-inventory").hidden) return;
+    const m = meters.status === "fulfilled" ? meters.value.machines : null;
+    const solar = m?.stores?.find(s => s.body === "solar farm");
+    const generation = (m?.panels || []).reduce((n,p) => n + (Number(p.power_w) || 0), 0);
+    const motorDraw = (m?.motors || []).reduce((n,p) => n + Math.max(0, Number(p.power_w) || 0), 0);
+    $("#ws-inv-energy").replaceChildren(
+      energyCard("⚡", "Your energy", [["Spendable", wallet.status === "fulfilled" ? energySaid(wallet.value.balance_j) : "Unavailable"],
+        ["Auto income", "0 J/s"], ["Collection", "Market → Bank"]]),
+      energyCard("☀", "World solar · shared", [["Stored", solar ? energySaid(solar.charge_j) : m ? "No solar battery" : "Unavailable"],
+        ["Generating now", m ? rateSaid(generation) : "Unavailable"], ["Banking", "Manual"]]),
+      energyCard("⚙", "World machines · shared", [["Programs", m ? String((m.programs || []).length) : "Unavailable"],
+        ["Motor draw now", m ? rateSaid(motorDraw) : "Unavailable"], ["Currency income", "0 J/s"], ["Goods rate", "Not metered"]]),
+    );
+    $("#ws-inv-energy").dataset.updated = String(Date.now());
+  } finally { inventoryMeterReading = false; }
+}
+setInterval(() => {
+  if (!document.hidden && $("#ws-pane-inventory")?.hidden === false) showInventoryEnergy().catch(() => {});
+}, 5000);
+
+function showDesignSources(inv, templates) {
+  const designs = $("#ws-rec-saved"); designs.replaceChildren();
   const saved = inv.saved || [];
   const records = [...saved.map(d => ({id:d.design_id, source:"saved", name:d.label || titleCase(d.kind), kind:d.kind, version:d.revision})),
     ...(inv.designs || []).filter(d => !saved.some(s => s.design_id === d.payload?.design_id && s.label === d.name))
@@ -1964,21 +1983,25 @@ async function showInventory() {
     if (!matching.length) continue;
     const group = inventoryGroup(category);
     for (const record of matching) {
-      const card = designCard(record.name, "Saved design", inventoryDesignButton(record.id, record.source));
-      group.querySelector(".ws-design-grid").append(card);
-      loadInventoryPicture(card, record);
+      const recipe = templates.find(t => t.saved_design_id === record.id);
+      const existing = recipe && [...$("#ws-recipes-templates").children].find(c => c.dataset.recipe === recipeKey(recipe));
+      if (existing) group.querySelector(".ws-design-grid").append(existing);
+      else {
+        const card = designCard(record.name, "Design", inventoryDesignButton(record.id, record.source));
+        group.querySelector(".ws-design-grid").append(card); loadInventoryPicture(card, record);
+      }
     }
     designs.append(group);
   }
   if (!records.length) designs.append(make("p", {class:"ws-note"}, "No saved designs yet. Choose a building block to start one."));
-  const components = $("#ws-inv-components"); components.replaceChildren();
+  const components = $("#ws-rec-components"); components.replaceChildren();
   for (const component of inv.components || []) {
     const open = make("button", {type:"button", class:"ws-action", "data-lab-component":component.item_id}, "Use in new design");
     open.onclick = () => guard(open, () => designFromPart({library_item_id:component.item_id}, `${component.name} design`));
     const card = designCard(component.name, "Reusable part", open);
     components.append(card); paintInventoryPicture(card.querySelector("canvas"), [component.payload]);
   }
-  $("#ws-inv-components-section").hidden = !(inv.components || []).length;
+  $("#ws-rec-components-section").hidden = !(inv.components || []).length;
   renderBuildingBlocks(inv.families || []);
 }
 
@@ -1987,28 +2010,25 @@ const designCategory = kind => ["table", "stool", "bench", "chair", "shelf-unit"
   : ["frame", "shelter", "bridge"].includes(kind) ? "Structures"
   : ["cart", "rover", "drone", "kettle", "processor", "breaker"].includes(kind) ? "Machines" : "Other designs";
 
+function screenSection(pane, title, id, cls = "ws-inv-grid") {
+  const section = make("section", {class:"ws-inventory-section"});
+  section.append(make("h3", {}, title), make("div", {id, class:cls})); pane.append(section); return section;
+}
 function installInventory() {
   const pane = $("#ws-pane-inventory"); pane.replaceChildren(make("h2", {}, "Inventory"));
-  pane.append(make("p", {class:"ws-inventory-intro"}, "Open an item to change or test it in the Lab. To invent something new, choose a building block, then tell the Lab assistant what you want to make."));
   const actions = make("div", {class:"ws-inventory-actions"});
-  const create = make("button", {type:"button", class:"ws-action primary", id:"ws-inv-create"}, "Start a new design");
-  create.onclick = () => $("#ws-inv-blocks").scrollIntoView({block:"start", behavior:"smooth"});
-  const recipes = make("button", {type:"button", class:"ws-action"}, "See what you can make"); recipes.onclick = () => showTab("recipes");
-  actions.append(create, recipes); pane.append(actions);
-  pane.append(make("p", {id:"ws-inv-ai-help", class:"ws-note"}));
-  const section = (title, note, id, cls = "ws-design-grid") => {
-    const box = make("section", {class:"ws-inventory-section"}); box.append(make("h3", {}, title));
-    if (note) box.append(make("p", {class:"ws-note"}, note));
-    const content = make("div", {id, class:cls}); box.append(content); pane.append(box); return box;
-  };
-  const carried = section("Hands & bag", "", "ws-inv-grid", "ws-inv-grid");
-  carried.querySelector("h3").after(make("p", {id:"ws-inv-note", class:"ws-note"}));
-  const stock = section("Materials & supplies", "These are used when you Make an item. Recipes shows what you can build; Market sells more supplies.", "ws-inv-stock", "ws-inv-grid");
-  stock.append(make("p", {id:"ws-inv-stock-empty", class:"ws-note"}, "No supplies yet. Visit Market to buy some with energy."));
-  section("Saved designs", "Open a design, ask for changes, then Save it or Make a physical item.", "ws-inv-saved", "ws-design-groups");
-  section("Saved parts", "Use a reusable part as the start of a new design.", "ws-inv-components").id = "ws-inv-components-section";
-  const blocks = section("Building blocks", "Choose a starting shape. This saves a new design and opens it in the Lab. Designing is free; Make uses materials. The assistant can add and arrange supported parts when you ask. These previews show shapes, not working machines.", "ws-inv-blocks", "ws-design-groups");
-  blocks.id = "ws-inv-blocks-section";
+  for (const [title, screen] of [["Build → Recipes", "recipes"], ["Energy & supplies → Market", "market"]]) {
+    const button = make("button", {type:"button", class:"ws-action"}, title);
+    button.onclick = () => showTab(screen); actions.append(button);
+  }
+  pane.append(actions);
+  screenSection(pane, "Energy & rates", "ws-inv-energy", "ws-energy-grid");
+  const carried = screenSection(pane, "Products · hands & bag", "ws-inv-grid");
+  carried.append(make("p", {id:"ws-inv-note", class:"ws-note"}));
+  const stock = screenSection(pane, "Raw materials", "ws-inv-stock");
+  stock.append(make("p", {id:"ws-inv-stock-empty", class:"ws-note"}, "Empty · Market → Supplies"));
+  const goods = screenSection(pane, "Processed goods", "ws-inv-goods");
+  goods.append(make("p", {id:"ws-inv-goods-empty", class:"ws-note"}, "Empty"));
 }
 
 function inventoryGroup(name) {
@@ -2094,7 +2114,7 @@ const BLOCK_PURPOSES = {leg:"Support a table or seat", surface:"Start a tabletop
   mount:"Support an axle", "solar-panel":"Collector shape; add solar behavior in Lab", battery:"Housing shape; add power in Lab",
   bin:"Solid block; ask for container walls", hopper:"Solid block; ask for container walls"};
 function renderBuildingBlocks(families) {
-  const root = $("#ws-inv-blocks"); root.replaceChildren();
+  const root = $("#ws-rec-blocks"); root.replaceChildren();
   for (const [category, names] of Object.entries(BLOCK_GROUPS)) {
     const group = inventoryGroup(category); root.append(group);
     for (const name of names) {
@@ -2378,7 +2398,19 @@ function installRecipes() {
   const pane = $("#ws-pane-recipes");
   pane.replaceChildren(make("h2", {}, "Recipes"));
   pane.append(make("p", {class:"ws-recipes-intro"}, "Make places an item in the World. Pick it up there to add it to your bag."),
-    make("ul", {id:"ws-recipes-templates", class:"ws-list ws-recipe-grid"}));
+    make("h3", {}, "Build recipes"), make("ul", {id:"ws-recipes-templates", class:"ws-list ws-recipe-grid"}));
+  screenSection(pane, "Saved designs", "ws-rec-saved", "ws-design-groups");
+  screenSection(pane, "Saved parts", "ws-rec-components", "ws-design-grid").id = "ws-rec-components-section";
+  const blocks = screenSection(pane, "Building blocks", "ws-rec-blocks", "ws-design-groups");
+  blocks.id = "ws-rec-blocks-section";
+  const start = make("button", {type:"button", class:"ws-action"}, "New design → Choose a block");
+  start.onclick = () => blocks.scrollIntoView({block:"start", behavior:"smooth"});
+  const jumps = make("div", {class:"ws-inventory-actions"});
+  const saved = make("button", {type:"button", class:"ws-action"}, "Saved designs");
+  saved.onclick = () => $("#ws-rec-saved").scrollIntoView({block:"start", behavior:"smooth"});
+  jumps.append(saved, start); pane.querySelector("h2").after(jumps);
+  blocks.querySelector("h3").after(make("p", {class:"ws-note"}, "Choose shape → Lab → Describe changes → Save / Make"),
+    make("div", {id:"ws-rec-ai-help", class:"ws-recipe-value"}));
   const processes = make("details", {id:"ws-recipes-processes", class:"ws-processes"});
   processes.append(make("summary", {}, "World processes"), make("ul", {id:"ws-recipes-room", class:"ws-list"}),
     make("ul", {id:"ws-recipes-deposits", class:"ws-list"}));
@@ -2420,7 +2452,8 @@ function recipeResult(card, result) {
   }
 }
 async function showRecipes() {
-  const r = await api("/api/workshop/recipes");
+  const [r, inv] = await Promise.all([api("/api/workshop/recipes"), api("/api/workshop/inventory")]);
+  $("#ws-rec-ai-help").replaceChildren(make("span", {}, "Design assistant"), make("b", {}, designAssistantConnected ? "AI connected" : "AI design is not connected · Basic edits only"));
   fill("#ws-recipes-templates", r.templates.map(t => {
     const ready = Boolean(t.readiness?.ready_as_drawn);
     const short = t.enough ? 0 : Math.max(1, Math.round((t.short_share || 0) * 100));
@@ -2472,7 +2505,7 @@ async function showRecipes() {
     made.onclick = async () => {
       if (recipeMaking) return;
       recipeMaking = true;
-      $("#ws-recipes-templates").querySelectorAll(".ws-recipe-acts button:first-child").forEach(b=>b.disabled=true);
+      $("#ws-pane-recipes").querySelectorAll(".ws-recipe-acts button:first-child").forEach(b=>b.disabled=true);
       const status = (message, bad=false, done=null) => {
         const key = recipeKey(t), entry = {message, bad, done};
         if (recipeResults.size >= 200 && !recipeResults.has(key)) recipeResults.delete(recipeResults.keys().next().value);
@@ -2489,11 +2522,13 @@ async function showRecipes() {
       finally { recipeMaking=false; await showRecipes().catch(error=>say(error.message, true)); }
     };
     row.append(made);
+    if (t.saved_design_id) row.append(inventoryDesignButton(t.saved_design_id, "saved"));
     if (!t.enough) {
       const shop = make("button", {type:"button", class:"ws-action"}, "Get supplies"); shop.onclick = () => showTab("market"); row.append(shop);
     }
     li.append(row); return li;
   }), "No recipes.");
+  showDesignSources(inv, r.templates);
   fill("#ws-recipes-room", r.room_recipes.map(x => {
     const li = item(x.name);
     li.append(recipeValue("Input", Object.entries(x.in).map(([k,v])=>`${v} kg ${k}`).join(" + ")),
@@ -2691,7 +2726,7 @@ async function showGoals() {
   root.replaceChildren();
   $("#ws-goals-progress").textContent = goals.complete ? "First camp complete. Your progress is saved."
     : `${goals.goals.filter(g=>g.complete).length} / ${goals.goals.length} complete`;
-  $("#ws-goals-next").textContent = goals.complete ? "Ready for your next project. Open Inventory to explore your designs."
+  $("#ws-goals-next").textContent = goals.complete ? "Ready for your next project. Open Recipes to explore your designs."
     : "Earn energy → buy wood → make a stool → carry it. Do each step in the game; this checklist updates automatically.";
   const limits = $("#ws-goals-limits"); limits.replaceChildren();
   const details=make("details", {}); details.append(make("summary", {}, "About this goal"), make("p", {}, goals.limits)); limits.append(details);
@@ -2759,13 +2794,13 @@ function updateLabSelection() {
   $("#design-workshop").classList.toggle("lab-empty", !selected);
   const empty = $("#ws-empty"); if (empty) empty.hidden = selected;
   const input = $("#ws-component-chat-text"), send = $("#ws-component-chat button[type=submit]");
-  if (input && !selected) { input.disabled = true; input.placeholder = "Select an item from Inventory first"; }
+  if (input && !selected) { input.disabled = true; input.placeholder = "Choose from Inventory or Recipes first"; }
   else if (input && !labWasSelected) { input.disabled = false; input.placeholder = "Ask about this item or describe a change"; }
   if (send && !selected) send.disabled = true;
   else if (send && !labWasSelected) send.disabled = false;
   const intro = $(".ws-chat-intro");
   const text = selected ? "Discuss, modify or test your selected item. Lab changes leave your carried item or saved version unchanged until you explicitly make or save them."
-    : "Select a carried item or saved design from Inventory to discuss, modify or test it in the Lab.";
+    : "Choose a product in Inventory or a design in Recipes to open the Lab.";
   if (intro && intro.textContent !== text) intro.textContent = text;
   labWasSelected = selected;
 }
