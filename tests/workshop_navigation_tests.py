@@ -153,6 +153,65 @@ class GameScreens(unittest.TestCase):
         self.assertEqual(component["payload"], unchanged["payload"])
         self.assertFalse([e for e in self.page.events if e.get("method") == "Runtime.exceptionThrown"])
 
+    def test_recipe_make_reports_world_output_and_adds_independent_copies(self):
+        world, owner, app = self.setup_world(); self.browser(world, owner)
+        before = self.post("/api/workshop/inventory", {}, world)
+        self.navigate(world, "workshop=1&tab=recipes")
+        card = '[data-recipe="stool:Camp stool"]'
+        self.wait(f'!!document.querySelector({json.dumps(card)})')
+        self.wait('document.querySelectorAll("#ws-recipes-templates canvas[data-preview=ready]").length >= 10')
+        self.assertIsNone(self.page.evaluate('document.querySelector("#workshop-stage").visibleGeometry()'))
+        self.assertIn("SkillNone required", self.page.evaluate(f'document.querySelector({json.dumps(card)}).textContent'))
+        bodies = set()
+        for _ in range(2):
+            self.click(card + ' .ws-recipe-acts button')
+            self.wait(f'document.querySelector({json.dumps(card + " .ws-recipe-result a")})?.dataset.madeBody && document.querySelector({json.dumps(card + " .ws-recipe-acts button")})?.disabled === false')
+            bodies.add(self.page.evaluate(f'document.querySelector({json.dumps(card + " .ws-recipe-result a")}).dataset.madeBody'))
+            self.assertIn("tab=recipes", self.page.evaluate('location.search'))
+            self.assertIsNone(self.page.evaluate('document.querySelector("#workshop-stage").visibleGeometry()'))
+        self.assertEqual(2, len(bodies), "Make replaced the previous copy")
+        after = self.post("/api/workshop/inventory", {}, world)
+        self.assertEqual(before["carried"], after["carried"])
+        oak = lambda rows: next(r["mass_kg"] for r in rows if r["material"] == "oak")
+        self.assertAlmostEqual(2 * 2.5088, oak(before["materials"]) - oak(after["materials"]), places=4)
+        self.assertEqual(bodies, {r["root_body"] for r in app.room.workshop_installs})
+        self.assertTrue(all(r.get("owner_id") == owner["id"] for r in app.room.workshop_installs))
+        self.screenshot("recipes-made.png")
+        self.click(card + ' .ws-recipe-result a')
+        self.wait('location.pathname === "/world" && !new URLSearchParams(location.search).has("workshop")')
+        self.assertEqual(world, self.page.evaluate('new URLSearchParams(location.search).get("world")'))
+        self.wait('window.banjoRoom?.status().ready && window.banjoRoom.world.bodies.has(new URLSearchParams(location.search).get("focus"))')
+        self.assertEqual(owner["id"], self.page.evaluate('window.banjoRoom.status().player_id'))
+        self.assertTrue(self.page.evaluate('(()=>{const r=window.banjoRoom,c=r.camera,m=r.world.bodies.get(new URLSearchParams(location.search).get("focus")).mesh,p=m.getWorldPosition(c.position.clone()).sub(c.position).normalize();return c.getWorldDirection(c.position.clone()).dot(p) > .99})()'))
+        self.screenshot("recipe-world.png")
+        self.assertFalse([e for e in self.page.events if e.get("method") == "Runtime.exceptionThrown"])
+
+    def test_recipe_make_shows_a_stock_race_refusal_on_the_card(self):
+        world, owner, app = self.setup_world(); self.browser(world, owner)
+        table = self.post("/api/workshop/candidates", {"kind":"table", "generation":0}, world)["candidates"][0]
+        saved = self.post("/api/workshop/feedback", {"kind":"table", "design_id":table["design_id"],
+            "parameters":table["parameters"], "component_overrides":table.get("component_overrides", {}),
+            "save_design":True, "label":"Keep my Lab item"}, world)["design"]["design_id"]
+        self.navigate(world, "workshop=1&tab=inventory")
+        selected = f'[data-lab-source="saved"][data-item="{saved}"]'
+        self.wait(f'!!document.querySelector({json.dumps(selected)})'); self.click(selected)
+        self.wait('document.querySelector("#workshop-stage").visibleGeometry()?.meshes > 0')
+        meshes = self.page.evaluate('document.querySelector("#workshop-stage").visibleGeometry().meshes')
+        self.click('.game-tabs [data-screen="recipes"]')
+        card = '[data-recipe="stool:Camp stool"]'
+        self.wait(f'document.querySelector({json.dumps(card + " .ws-recipe-acts button")})?.disabled === false')
+        # Another actor can spend shared stock after this page displayed it.
+        with guests.server.workshop_library._connect(app) as db:
+            db.execute("UPDATE workshop_material_rack SET mass_kg=0 WHERE material='oak'")
+        self.click(card + ' .ws-recipe-acts button')
+        self.wait(f'document.querySelector({json.dumps(card + " .ws-recipe-result")})?.dataset.bad === "yes" && document.querySelector({json.dumps(card + " .ws-recipe-acts button")})?.disabled === true')
+        self.assertIn("Nothing has been spent", self.page.evaluate(f'document.querySelector({json.dumps(card + " .ws-recipe-result")}).textContent'))
+        self.assertIn("tab=recipes", self.page.evaluate('location.search'))
+        self.assertFalse(app.room.workshop_installs)
+        self.assertEqual(saved, self.page.evaluate('new URLSearchParams(location.search).get("design")'))
+        self.assertEqual(meshes, self.page.evaluate('document.querySelector("#workshop-stage").visibleGeometry().meshes'))
+        self.screenshot("recipes-short.png")
+
     def test_carried_item_requires_own_inventory_and_lab_leaves_it_unchanged(self):
         world, owner, app = self.setup_world()
         recipe = self.post("/api/workshop/goals", {}, world)["recipe"]

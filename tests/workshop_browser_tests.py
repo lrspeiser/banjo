@@ -1535,8 +1535,8 @@ class WorkshopBrowserRegression(unittest.TestCase):
             fit:li.querySelector('.ws-recipe-readiness')?.textContent || '',
             disabled:li.querySelector('.ws-recipe-acts button')?.disabled})))"""))
         by_name = {row["name"]: row for row in rows}
-        self.assertIn("Fits the Workshop and this world's", by_name["stool"]["fit"])
-        blocked = [row for row in rows if row["fit"] and not row["fit"].startswith("Fits the Workshop")]
+        self.assertIn("Ready", by_name["Stool"]["fit"])
+        blocked = [row for row in rows if row["fit"] and row["fit"] != "BuildReady"]
         self.assertTrue(blocked, "the catalog hid its unready recipes")
         self.assertTrue(all(row["disabled"] for row in blocked), blocked)
 
@@ -1554,8 +1554,9 @@ class WorkshopBrowserRegression(unittest.TestCase):
             share = int(line.split("%")[0])
             self.assertGreater(share, 0, f"a short recipe missing 0%: {line!r}")
             self.assertLessEqual(share, 100, f"a recipe missing more than all of it: {line!r}")
-            # It names what is holding it up, not just a number.
-            self.assertIn("short of", line, f"it does not say what is missing: {line!r}")
+        self.assertTrue(self.js("[...document.querySelectorAll('#ws-recipes-templates > li.short')]"
+                                ".every(li => !!li.querySelector('.ws-needs .ws-need.short .ws-need-what')?.textContent)"),
+                        "missing materials are not named beside their progress bars")
 
     # -----------------------------------------------------------------
     # The tech tree

@@ -1081,32 +1081,32 @@ async function checkValidity(button) {
 // collision the person did not ask about.
 const MAKE_SPOTS = [[3, 0], [3, 1.6], [3, -1.6], [4.6, 0], [4.6, 1.6], [4.6, -1.6], [1.4, 1.6], [1.4, -1.6]];
 
-async function makeIt(button) {
+async function makeIt(button, {candidate: suppliedCandidate = null, status = setMakeStatus, replace = true} = {}) {
   button.disabled = true;
   try {
-    setMakeStatus("Looking at the world…", false);
+    status("Checking placement…", false);
     const source = await api("/api/world/workshop/context", {});
-    const candidate = candidateBody();
+    const candidate = suppliedCandidate || candidateBody();
     let preview = null, refused = null;
     for (const position_m of MAKE_SPOTS) {
       try {
         preview = await api("/api/world/workshop/preview", {
           session: source.session, scene: source.scene, mode: "authoring", candidate, position_m,
-          replace: true });
+          replace });
         break;
       } catch (error) {
         refused = error;
         // Ground that is taken is worth stepping over; anything else is the
         // real answer and must not be hidden behind seven more attempts.
-        if (!/claim .* of the same cells|placement error/i.test(String(error.message))) throw error;
+        if (!/claim .* of the same cells|placement error|placement overlaps(?: or touches)?/i.test(String(error.message))) throw error;
       }
     }
     if (!preview) throw refused || new Error("There is nowhere clear to set it down.");
     if (preview.needs && !preview.needs.enough) {
-      setMakeStatus(preview.needs.says + " Nothing has been spent.", true);
-      return;
+      status(preview.needs.says + " Nothing has been spent.", true);
+      return null;
     }
-    setMakeStatus("Making it…", false);
+    status("Making…", false);
     const done = await api("/api/world/workshop/commit", {
       session: preview.session, scene: preview.scene,
       preview_id: preview.preview_id, request_id: crypto.randomUUID(),
@@ -1114,10 +1114,12 @@ async function makeIt(button) {
     if (done.rack) { bench.rack = done.rack; renderRack(); }
     const spent = (done.materials_taken || [])
       .map((row) => `${row.took_kg} kg of ${row.material} gone, ${row.left_kg} kg left`).join("; ");
-    setMakeStatus(`Made. It is standing in ${done.scene}. ${spent}`, false);
+    status(`Made. It is standing in ${done.scene}. ${spent}`, false);
     reprobe();
+    return done;
   } catch (error) {
-    setMakeStatus(String(error.message || error).split(String.fromCharCode(10))[0], true);
+    status(String(error.message || error).split(String.fromCharCode(10))[0], true);
+    return null;
   } finally {
     button.disabled = false;
   }
@@ -1575,6 +1577,7 @@ function installBench() {
   new MutationObserver(updateLabSelection).observe(chatHome, {childList:true, subtree:true});
   for (const name of ["inventory", "skills", "recipes", "market", "goals"]) { const pane = $(`#ws-pane-${name}`); if (pane) centre.append(pane); }
   installInventory();
+  installRecipes();
   renderTakes();
 }
 
@@ -2058,7 +2061,7 @@ function inventoryPictureRequest(record) {
 function pumpInventoryPictures() {
   while (inventoryPictureJobs < 3 && inventoryPictureQueue.length) {
     const {record, resolve, reject} = inventoryPictureQueue.shift(); inventoryPictureJobs++;
-    api("/api/workshop/open", record.source === "saved" ? {saved_design_id:record.id} : {library_item_id:record.id}, {preview:true})
+    (record.recipe ? recipeSource(record.recipe) : api("/api/workshop/open", record.source === "saved" ? {saved_design_id:record.id} : {library_item_id:record.id}, {preview:true}))
       .then(answer => resolve(answer.candidates[0].parts), reject)
       .finally(() => { inventoryPictureJobs--; pumpInventoryPictures(); });
   }
@@ -2071,7 +2074,11 @@ async function loadInventoryPicture(card, record) {
       inventoryPictures.set(key, inventoryPictureRequest(record));
     }
     paintInventoryPicture(card.querySelector("canvas"), await inventoryPictures.get(key));
-  } catch { inventoryPictures.delete(key); card.querySelector("p").textContent = "Preview unavailable. Open in Lab to inspect."; }
+  } catch {
+    inventoryPictures.delete(key);
+    card.querySelector("canvas").dataset.preview = "unavailable";
+    card.append(make("p", {class:"ws-preview-error"}, card.dataset.recipe ? "Preview unavailable" : "Preview unavailable. Open in Lab to inspect."));
+  }
 }
 
 const BLOCK_GROUPS = {
@@ -2359,71 +2366,141 @@ function recipeLine(line) {
   return row;
 }
 
+const recipeResults = new Map();
+let recipeMaking = false;
+const recipeKey = t => t.saved_design_id || `${t.kind}:${t.name}`;
+function recipeSource(t) {
+  return api(t.saved_design_id ? "/api/workshop/open" : "/api/workshop/candidates",
+    t.saved_design_id ? {saved_design_id:t.saved_design_id} : {kind:t.kind, parameters:t.parameters,
+      component_overrides:t.component_overrides, sweeps:{}, generation:0}, {preview:true});
+}
+function installRecipes() {
+  const pane = $("#ws-pane-recipes");
+  pane.replaceChildren(make("h2", {}, "Recipes"));
+  pane.append(make("p", {class:"ws-recipes-intro"}, "Make places an item in the World. Pick it up there to add it to your bag."),
+    make("ul", {id:"ws-recipes-templates", class:"ws-list ws-recipe-grid"}));
+  const processes = make("details", {id:"ws-recipes-processes", class:"ws-processes"});
+  processes.append(make("summary", {}, "World processes"), make("ul", {id:"ws-recipes-room", class:"ws-list"}),
+    make("ul", {id:"ws-recipes-deposits", class:"ws-list"}));
+  pane.append(processes);
+}
+function recipeValue(name, value, cls = "") {
+  const row = make("div", {class:`ws-recipe-value ${cls}`.trim()});
+  row.append(make("span", {}, name), make("b", {}, value)); return row;
+}
+function recipeUses(t) {
+  const uses = new Set(["Carry", "Place"]);
+  // These badges summarize source declarations, not successful use trials.
+  for (const use of t.can_do || []) {
+    if (use.includes("drives itself")) uses.add("Drive");
+    if (use.includes("flies")) uses.add("Fly");
+    if (use.includes("digs at")) uses.add("Dig");
+    if (use.includes("hauls goods")) uses.add("Haul");
+    if (use.includes("works the recipe")) uses.add("Process");
+    if (use.includes("charges its battery")) uses.add("Solar charging");
+    if (/heat|warm/i.test(use)) uses.add("Heat");
+    if (use.includes("sees water")) uses.add("Sense water");
+    if (use.includes("steps of its own")) uses.add("Program");
+  }
+  return [...uses];
+}
+function recipeResult(card, result) {
+  const line = card.querySelector(".ws-recipe-result");
+  line.replaceChildren(); line.hidden = !result;
+  if (!result) return;
+  line.dataset.bad = result.bad ? "yes" : "no";
+  line.append(make("b", {}, result.done ? "Made ✓" : result.bad ? "Could not make" : result.message));
+  if (result.done) {
+    const url = new URL(backToWorld(result.done.scene), location.origin);
+    url.searchParams.set("focus", result.done.root_body);
+    const view = make("a", {href:url.pathname + url.search, class:"ws-action", "data-made-body":result.done.root_body}, "View in World");
+    line.append(view);
+  } else if (result.bad) {
+    const details = make("details", {}); details.append(make("summary", {}, "Reason"), make("p", {}, result.message)); line.append(details);
+  }
+}
 async function showRecipes() {
   const r = await api("/api/workshop/recipes");
-  fill("#ws-recipes-templates", r.templates.map((t) => {
-    if (t.problem) return item(t.name, `Draft · recipe check failed: ${t.problem}`);
-    const short = Math.round((t.short_share || 0) * 100);
-    const readiness = t.readiness || {}, world = readiness.world;
-    const label = readiness.ready_as_drawn ? "Grid ready" : "Draft";
-    const li = item(t.name, `${label} · ${t.purpose}. ${t.parts} parts: ${t.families.join(", ")}.`,
-                    !t.enough ? "short" : readiness.ready_as_drawn ? "enough" : "blocked");
-    // HOW MUCH IS MISSING, as the owner asked: one number at the top, and
-    // the lines that are holding it up named after it.
-    if (!t.enough) {
-      const worst = (t.missing || []).slice(0, 3).map((m) => m.what).join(", ");
-      li.append(make("p", { class: "ws-missing" },
-                     `${short}% missing${worst ? ` \u2014 short of ${worst}` : ""}`));
+  fill("#ws-recipes-templates", r.templates.map(t => {
+    const ready = Boolean(t.readiness?.ready_as_drawn);
+    const short = t.enough ? 0 : Math.max(1, Math.round((t.short_share || 0) * 100));
+    const li = item(t.source === "saved" || t.name === "Camp stool" ? t.name : titleCase(t.name), "",
+      !t.enough ? "short" : ready ? "enough" : "blocked");
+    li.dataset.recipe = recipeKey(t);
+    const canvas = make("canvas", {width:"160", height:"112", role:"img", "aria-label":`${t.name} shape preview`});
+    li.querySelector("strong").before(canvas);
+    if (t.problem) {
+      li.append(recipeValue("Build", "Needs repair", "ws-recipe-readiness"));
+      const details = make("details", {}); details.append(make("summary", {}, "Reason"), make("p", {}, t.problem)); li.append(details); return li;
     }
-    const needs = make("div", { class: "ws-needs" });
-    for (const line of [...(t.materials || []), ...(t.goods || [])]) needs.append(recipeLine(line));
+    loadInventoryPicture(li, {id:recipeKey(t), source:"recipe", recipe:t,
+      version:JSON.stringify([t.parameters, t.component_overrides])});
+    const progress = recipeValue("Materials", `${100-short}%`);
+    progress.append(make("progress", {max:"100", value:String(100-short), "aria-label":`${t.name}: ${100-short}% of materials available`}));
+    li.append(progress);
+    if (!t.enough) li.append(make("p", {class:"ws-missing"}, `${short}% missing`));
+    const needs = make("div", {class:"ws-needs"});
+    for (const line of [...(t.materials || []), ...(t.goods || [])]) if (!line.enough) needs.append(recipeLine(line));
     if (needs.childElementCount) li.append(needs);
-    if (t.can_do) li.append(make("small", {}, "Declared use: " + t.can_do.join("; ") + "."));
-    const fit = !readiness.workshop?.as_drawn
-      ? `Workshop ${Math.round((readiness.workshop?.cell_size_m || .04)*1000)} mm grid: ${readiness.workshop?.reason || "not checked"}`
-      : !world ? "Open a world to check its native grid before making."
-      : !world.as_drawn ? `World ${Math.round(world.cell_size_m*1000)} mm grid: ${world.reason}`
-      : `Fits the Workshop and this world's ${Math.round(world.cell_size_m*1000)} mm grid as drawn. Native placement and a functional test are still required.`;
-    li.append(make("p", { class:"ws-recipe-readiness" }, fit));
-
-    const openRecipe = async () => {
-      clearLab(); bench.openedLibraryItem = null;
-      if (t.saved_design_id) {
-        took(await api("/api/workshop/open", { saved_design_id:t.saved_design_id }));
-      } else {
-        took(await api("/api/workshop/candidates", { kind:t.kind, parameters:t.parameters,
-          component_overrides:t.component_overrides, sweeps:{}, generation:bench.generation + 1 }));
-      }
-      $("#ws-archetype").value = t.kind;
+    const all = make("details", {class:"ws-recipe-details"}); all.append(make("summary", {}, "Materials & build details"));
+    const materials = make("div", {class:"ws-needs"});
+    for (const line of [...(t.materials || []), ...(t.goods || [])]) materials.append(recipeLine(line));
+    all.append(materials);
+    const readiness = t.readiness || {};
+    const fit = !readiness.workshop?.as_drawn ? readiness.workshop?.reason || "Workshop check unavailable"
+      : !readiness.world ? "Open a world to check placement."
+      : !readiness.world.as_drawn ? readiness.world.reason : "Fits both grids. Placement is checked when you Make.";
+    all.append(make("p", {}, fit));
+    li.append(recipeValue("Build", ready ? "Ready" : !readiness.world ? "World required" : "Needs changes", "ws-recipe-readiness"));
+    // Current Workshop authoring has no technique gate. Do not infer a
+    // requirement from an item's name or a progression hint.
+    li.append(recipeValue("Skill", "None required", "ws-recipe-skill"));
+    const uses = make("div", {class:"ws-recipe-uses", "aria-label":"Declared uses"});
+    uses.append(make("span", {}, "Uses"));
+    for (const use of recipeUses(t)) uses.append(tag(use));
+    uses.title = "Source declarations; a functional trial is still required.";
+    li.append(uses);
+    if (t.can_do?.length) all.append(make("p", {}, "Declared: " + t.can_do.join("; ")));
+    li.append(all);
+    const result = make("div", {class:"ws-recipe-result", role:"status", "aria-live":"polite"}); li.append(result);
+    recipeResult(li, recipeResults.get(recipeKey(t)));
+    const row = make("div", {class:"ws-recipe-acts"});
+    const made = make("button", {type:"button", class:"ws-action primary"}, "Make");
+    made.disabled = recipeMaking || !t.enough || !ready;
+    made.title = !t.enough ? `${short}% materials missing` : !ready ? fit : `Make ${t.name}`;
+    made.onclick = async () => {
+      if (recipeMaking) return;
+      recipeMaking = true;
+      $("#ws-recipes-templates").querySelectorAll(".ws-recipe-acts button:first-child").forEach(b=>b.disabled=true);
+      const status = (message, bad=false, done=null) => {
+        const key = recipeKey(t), entry = {message, bad, done};
+        if (recipeResults.size >= 200 && !recipeResults.has(key)) recipeResults.delete(recipeResults.keys().next().value);
+        recipeResults.set(key, entry); recipeResult(li, entry);
+      };
+      try {
+        status("Preparing…");
+        const source = await recipeSource(t), candidate = source.candidates[0];
+        const done = await makeIt(made, {candidate:{kind:source.kind, generation:source.generation,
+          design_id:candidate.design_id, purpose:candidate.purpose, parameters:candidate.parameters,
+          component_overrides:candidate.component_overrides || {}}, status, replace:false});
+        if (done) status("Made", false, done);
+      } catch (error) { status(String(error.message || error), true); }
+      finally { recipeMaking=false; await showRecipes().catch(error=>say(error.message, true)); }
     };
-
-    const row = make("div", { class: "ws-recipe-acts" });
-    // Only source geometry admitted by BOTH grids reaches the native preview.
-    // That preview still checks ground, stock and live engine state before commit.
-    const made = make("button", { type: "button", class: "ws-action primary" }, "Make");
-    made.disabled = !t.enough || !readiness.ready_as_drawn;
-    made.title = !t.enough ? `${short}% of what this needs is missing`
-      : !readiness.ready_as_drawn ? fit : `Make a ${t.name} in the open world`;
-    made.onclick = () => guard(made, async () => {
-      await openRecipe();
-      await makeIt($("#ws-make"));
-      // And back to what you have, with it in it -- ONLY if it was made.
-      // A refusal ("Open a world first", a short rack) leaves its reason in
-      // the Lab's status line, and walking away from that shows a person an
-      // unchanged inventory and no explanation anywhere.
-      if ($("#ws-make-status")?.dataset.bad === "yes") {
-        say(`${t.name} was not made: ${$("#ws-make-status").textContent}`, true);
-        return;
-      }
-      showTab("inventory");
-    });
     row.append(made);
-    li.append(row);
-    return li;
-  }), "No templates.");
-  fill("#ws-recipes-room", r.room_recipes.map((x) => item(x.name, `${Object.entries(x.in).map(([k, v]) => `${v} kg ${k}`).join(" + ")} \u2192 ${Object.entries(x.out).map(([k, v]) => `${v} kg ${k}`).join(" + ")} \u00b7 ${x.work_j_per_kg} J and ${x.s_per_kg} s a kilogram` + (x.worked_by && x.worked_by.length ? ` \u00b7 worked by ${x.worked_by.join(", ")}` : " \u00b7 no machine works it yet"))), "The open room knows no recipes. The mine (tests-mine) knows two.");
-  fill("#ws-recipes-deposits", r.deposits.map((d) => item(d.name, `${d.substance}: ${d.left_kg} kg left`)), "No deposits in this room.");
-  const per = r.goods_per || {}; $("#ws-recipes-goods-per").textContent = "A machine's parts take goods when it is made: " + Object.entries(per).map(([k, v]) => `${k} ${v.per ? `${v.rate} kg ${v.substance} per ${v.per}` : ""} (at least ${v.least_kg} kg ${v.substance})`).join("; ") + ".";
+    if (!t.enough) {
+      const shop = make("button", {type:"button", class:"ws-action"}, "Get supplies"); shop.onclick = () => showTab("market"); row.append(shop);
+    }
+    li.append(row); return li;
+  }), "No recipes.");
+  fill("#ws-recipes-room", r.room_recipes.map(x => {
+    const li = item(x.name);
+    li.append(recipeValue("Input", Object.entries(x.in).map(([k,v])=>`${v} kg ${k}`).join(" + ")),
+      recipeValue("Output", Object.entries(x.out).map(([k,v])=>`${v} kg ${k}`).join(" + ")),
+      recipeValue("Machine", x.worked_by?.join(", ") || "None")); return li;
+  }), "");
+  fill("#ws-recipes-deposits", r.deposits.map(d=>item(d.name, `${d.left_kg} kg ${d.substance}`)), "");
+  $("#ws-recipes-processes").hidden = !r.room_recipes.length && !r.deposits.length;
 }
 
 async function showMarket() {

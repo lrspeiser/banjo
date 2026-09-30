@@ -10050,6 +10050,13 @@ async function open({ again = false } = {}) {
                                                 && (j.a === holding || j.b === holding));
       if (pinned) adoptHold(holding); else adoptGrip(holding, null);
     }
+    const focus = new URLSearchParams(location.search).get("focus");
+    const focusBody = !watchedId && focus && world.bodies.get(focus);
+    if (focusBody) {
+      const at = focusBody.mesh.getWorldPosition(new THREE.Vector3());
+      window.banjoRoom.lookAt(at.x, at.y, at.z);
+      picked.name = focus; picked.at = null; showPicked();
+    }
     world.framesSinceOpen = 0;
     // Drawn and ready to step: the frame report starts here, with this world's
     // clock and the wall from now -- not from the page load, nor the last room.

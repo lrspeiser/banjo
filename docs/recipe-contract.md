@@ -1,5 +1,17 @@
 # Workshop recipe contract
 
+## Visual cards and Make feedback — September 30, 2026
+
+Recipes now show source thumbnails, mass-weighted material completion, named missing-supply bars, Build and Skill values, and compact declared-use badges. Full material quantities and compiler reasons are expandable. World process inputs/outputs/machines are under a separate fold; internal family names and default dimensions are not primary card content. Thumbnail reads do not select or replace the player's Lab item.
+
+Make stays on Recipes and reports progress, a refusal or `Made` on that card. A made object stands in the World, not automatically in the bag. View in World preserves the world/guest, turns the camera toward the installed body's current native position and selects its inspector without moving the player's position. Pick it up in the World to carry it. Successful Make refreshes all material percentages; a stock race shows the refusal and refreshed shortfall on the same screen.
+
+Recipe Make now uses a separately reconstructed source and `replace:false`, so another click creates another paid native copy rather than replacing an earlier prototype. The Lab's existing prototype-replacement behavior is retained. Placement retries recognize the exact adapter's overlap refusal as well as the previous cell-claim errors. Other refusals remain failures, and all preview/stock/admission/commit gates stay authoritative. Eight fixed placement positions are still the search boundary; arbitrary terrain-aware placement is not added.
+
+**Skills:** this Workshop authoring/Make path currently enforces no progression technique gate, so cards say `None required`. Do not infer a skill requirement from an item name, declared use or a tech-tree hint. Adding enforceable source skill requirements needs a separate authoring/persistence/server contract; this UI does not claim such locks exist. Uses summarize source intent and Carry/Place handling, not functional certification; a trial remains necessary for powered behavior or performance claims.
+
+Windows verification on source based on main `086c54b`, using Chrome and the existing Visual Studio Release native engine: 55 Workshop browser and 6 navigation/Inventory/Recipes checks pass (61 total). The new browser journey makes two distinct Camp stools, verifies guest-owned native receipts and a total 5.0176 kg oak debit, keeps the Lab empty, and follows the world link to an actually rendered body with the same guest and camera facing it. A second test drains shared stock after listing and confirms a visible refusal, no installation and no spending by Make. Screenshots were inspected; JavaScript syntax, Python compilation and all 286 source registrations pass. No native solver, material law, timestep or resolution changed; the broader physics suite was not rerun. The published revision is recorded by this section's Git commit.
+
 September 29, 2026. A recipe is a reproducible **source design**: assembly kind,
 parameters, component overrides, dimensions and materials, joints, purpose and
 any interaction/use declaration. Saving one does not prove that it can be made.

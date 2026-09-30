@@ -1,5 +1,7 @@
 # Workshop Mode: fast isolated design, variants, tests and component learning
 
+**Recipes update, September 30:** [Visual cards and Make results](recipe-contract.md#visual-cards-and-make-feedback--september-30-2026) replace prose-first listings with source pictures, material progress/missing supplies and compact Build/Skill/Uses values. Make preserves Lab selection, reports on Recipes and adds separate native copies; View in World faces the new item. Current Workshop Make requires no technique unlock. The 55 browser and 6 screen-navigation regressions pass; this is UI/action integration, not a new physical law.
+
 ## Visual Inventory and starting a design — September 30, 2026
 
 Inventory shows Hands & bag, Materials & supplies, categorized Saved designs, Saved parts when present, and Building blocks. Cards show names, shape thumbnails and a relevant action rather than family parameter dumps. Supplies retain useful mass quantities; they are stock for Make, not editable physical items. Saved designs open in Lab; a saved part starts a separate design copy. The redundant list of objects standing in the World is removed from Inventory.

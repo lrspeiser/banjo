@@ -25,8 +25,11 @@ Both modes also run `tests/workshop_navigation_tests.py`: an empty Lab,
 explicit Inventory selection, shared right navigation and unchanged native
 bag/hand records. Its fourth journey verifies categorized thumbnail cards,
 all 16 offered design-starting blocks, preserved stock and saved-part copying.
-These four browser/native checks are additional to the earlier full run
-counts below; see the [Visual Inventory evidence](workshop-mode.md#visual-inventory-and-starting-a-design--september-30-2026).
+Two further Recipes journeys verify distinct native copies, material debit,
+world-output navigation and a stock-race refusal. These six browser/native
+checks are additional to the earlier full run counts below; see
+[Visual Inventory evidence](workshop-mode.md#visual-inventory-and-starting-a-design--september-30-2026)
+and [Recipes action evidence](recipe-contract.md#visual-cards-and-make-feedback--september-30-2026).
 `smoke` executes the real Workshop card contract, representative Workshop and
 world browser journeys, a matched glass/oak/iron material triplet, and native
 Mechanics and Tool QA. `full` executes the complete Workshop native suite, the
