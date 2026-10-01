@@ -50,7 +50,7 @@ Or in any client's config file:
 If the library is somewhere unusual, set `BANJO_LIBRARY` to its path in the
 server's environment. Otherwise it is found next to the repository.
 
-Current world server version: **1.14.0**; platform server: **1.17.0**, requiring native ABI **25**.
+Current world server version: **1.15.0**; platform server: **1.18.0**, requiring native ABI **25**.
 For the complete Workshop/Product surface use `mcp/banjo_platform_mcp.py` with
 the same environment; it includes every world tool below. See
 [Workshop setup](workshop.md#mcp-server) and the
@@ -80,6 +80,8 @@ broke.
 | `fabrication_store_ground` | Save carried sand/soil as unprocessed raw lots. Requires sand_m3, soil_m3, revision and request_id; returns the replacement session. Both inventories and retry receipt commit together. |
 | `fabrication_connect_energy` | Connect one in-world native battery with current store_hash, declared power_w, revision and request_id. Starts a new accepted-time charger window without spending energy. Source and station power limits apply. |
 | `fabrication_fund_energy` | Transfer joules from the connected battery using current store_hash, revision and request_id. Native debit and process credit save together; elapsed-time/source power include other consumers. Returns replacement session; identical retries are safe. No wallet or circuit claim. |
+| `fabrication_fund_stock` | Reserve matching personal or explicitly shared catalog rack material using mass_kg, pool, rack_hash, revision and request_id. Credits shared fabrication stock once; failed saves retain recoverable escrow. No peer inventory, raw-ore conversion or body reclamation. |
+| `fabrication_release_stock` | Return the caller's uncredited reservation_id using request_id. Refuses live/durably credited stock; exact SQL refund retries once. Inventory exposes Finish transfer and Return to stock. |
 | `fabrication_wait` | advance native physics and fabrication 1–10 seconds, then save both; inspect state after an uncertain wait. |
 | `fabrication_preview` | native clearance and state-carry preview for a finished funded part. |
 | `fabrication_commit` | atomic material transfer and native publication; retries cannot install twice. |

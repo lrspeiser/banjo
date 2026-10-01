@@ -166,7 +166,10 @@ def inventory(app: Any, player_id: str = "") -> dict[str, Any]:
         saved = workshop_store.list_saved(_store(app))
     except Exception:
         saved = []
+    import fabrication_stock
+    reservations = fabrication_stock.pending(app, room.scene) if room is not None else []
     return {"materials": rack.get("materials", []), "goods": goods.get("goods", []),
+            "fabrication_reservations": reservations,
             "components": [i for i in items if i.get("item_type") == "component"],
             "designs": [i for i in items if i.get("item_type") == "assembly"],
             "families": families, "in_world": in_world, "saved": saved,

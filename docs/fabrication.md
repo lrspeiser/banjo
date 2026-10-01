@@ -5,14 +5,13 @@ native world. It advances gameplay items 2, 3, 16 and 27. It does not complete
 those broad capabilities or claim physical drilling, general assembly, casting,
 repair, machining calibration or automated production.
 
-In the main world, open **ROOM > Manufacture parts**. `/fabrication?scene=world`
-connects to the same persistent world; the return links preserve that room.
-Explicitly declare initial resources once, quote a Workshop candidate, start it,
-advance world time, and preview and place the finished workpiece. Main-world
-placement defaults to the east terrace at x=13, z=-7 m and uses the native terrain
-envelope. `/fabrication` still opens the separate fabrication room. Retry receipts
-in browser session storage are scoped by room. This page advances time only on
-request; another open live world view can also advance the shared clock.
+Use the HTTP/MCP operations below against the existing main world or the separate
+`fabrication` room. Explicitly declare the process once, quote a Workshop candidate,
+start it, advance native time, then preview and place the finished workpiece.
+Native terrain bounds placement. The old `/fabrication` page is removed (404);
+there is no ordinary Workshop manufacture/repair interface yet. Inventory exposes
+pending stock recovery controls. Another live world view can advance the shared
+clock while a process runs.
 Configuring a funded station retains surveying, excavation, tool use and machine
 controls; free authoring operations remain restricted. The [30-item priority list](physics-gameplay-backlog.md) and
 `GET /api/gameplay/capabilities` retain incomplete acceptance gates.
@@ -101,13 +100,15 @@ that current `scene` and `session`. Unknown fields refuse.
 | `store_ground` | `fabrication_store_ground` | `sand_m3`, `soil_m3` (each 0..10000, sum positive and no greater than carried), `revision`, `request_id`. Atomically saves raw lots and native debit; returns new `session`, process `state`, and `replayed`. |
 | `connect_energy` | `fabrication_connect_energy` | Native `store` ID, current `store_hash`, `power_w`, `revision`, `request_id`. Starts one bounded charger interval; saves identity without spending energy. |
 | `fund_energy` | `fabrication_fund_energy` | Current `store_hash`, positive `joules` (0.000001..1e9), `revision`, `request_id`. Debits the connected native battery and credits the process atomically; returns replacement `session`, `state`, `replayed`. |
+| `fund_stock` | `fabrication_fund_stock` | Canonical `material`, `mass_kg` (0.000001..10000), `pool` (`personal` or explicit `shared`), current `rack_hash`, `revision`, `request_id`. Reserves real rack stock, then credits shared station stock once. Failed receiving saves retain visible escrow. |
+| `release_stock` | `fabrication_release_stock` | `reservation_id`, `request_id`. Returns only an uncredited reservation to its original owner; refuses credited stock. Returns `released`, `replayed`, `session`, `stock_sources`, `stock_reservations`. |
 | `wait` | `fabrication_wait` | Integer `seconds` in 1..10. Advances native physics and process, saves both; returns `cell_m` and native poses with geometry too. |
 | `preview` | `fabrication_preview` | `job_id`, `position_m:[x,z]`. Returns native-checked placement and `preview_id`. |
 | `commit` | `fabrication_commit` | `job_id`, `preview_id`, `request_id`. Returns installed root, new session and charged-resource receipt. |
 
 Both MCP servers proxy the same HTTP world through `BANJO_PLAYGROUND_URL`
 (loopback HTTP only, default port 8765). They do not create a second material
-inventory. World MCP is 1.13.1, platform MCP 1.16.1; native ABI remains 25.
+inventory. World MCP is 1.15.0, platform MCP 1.18.0; native ABI remains 25.
 Python callers use `playground/fabrication_room.py` for the same validated room
 operations. `mcp/fabrication.py` owns the pure operating model. No new native C
 API is advertised for this host-side process.
@@ -117,7 +118,7 @@ API is advertised for this host-side process.
 | Field | Units / bounds / default |
 |---|---|
 | `mode` | Required `"authoring"`; labels the initial resource boundary. |
-| `stock_kg` | Required map of catalog material to .001..10000 kg; duplicate aliases refuse. |
+| `stock_kg` | Required map of catalog material to 0..10000 kg; empty map allowed, duplicate aliases refuse. |
 | `energy_j` | Required 0..1e9 J initial isolated supply. |
 | `power_w` | Required .001..1e6 W maximum input. |
 | `work_j_kg` | Required .001..1e9 J/kg useful shaping work. |
@@ -145,7 +146,7 @@ limit explain stalled progress rather than manufacturing an output.
 
 The audit reports per-material `material_residual_kg`, `energy_residual_j`
 and `work_residual_j`. The closed quantities are:
-initial material = available + unfinished/finished workpieces + offcuts +
+initial material + rack imports = available + unfinished/finished workpieces + offcuts +
 transferred outputs; initial supply + metered native imports = remaining supply + station heat +
 ambient heat; spent supply = sum of job supplied energy.
 
@@ -199,6 +200,45 @@ invented limits or certify ordinary Workshop repair. Stations still require
 explicit authoring stock and process coefficients. See [measured checks and next
 repair steps](fabrication-energy-checkpoint.md).
 
+### Player rack funding — October 1
+
+Configure with `stock_kg:{}` and `energy_j:0` to start with no authored supplies.
+`fabrication_state` returns exact `stock_sources` with `material`, `mass_kg`,
+`pool`, `source_owner` and `rack_hash`. The authenticated player is the personal
+source; a client cannot name another owner. Selecting shared stock is explicit.
+Transferred stock belongs to the shared station, so other players may use it.
+
+`fund_stock` first checks current revision, exact source hash and available mass.
+SQL atomically debits the rack and records a reservation. A complete current
+native snapshot and receiving receipt are then saved to the room file. This is
+a recoverable two-store transfer, not a cross-database atomic commit. Failure
+after the source debit leaves material **reserved**, rather than restoring a
+balance that may already have been credited. Read/retry/reopen merges that
+authorized credit into current-time station stock once. Work before credit is
+not funded retroactively. Previously applied imports missing from an older
+receiving save refuse; no spent material is recreated.
+
+`stock_reservations` exposes only the caller's pending transfers. Inventory
+shows material thumbnails and mass under **Reserved for fabrication**, with
+**Finish transfer** and **Return to stock**. `release_stock` checks both live
+and durable receiving receipts before refunding the original rack once. A lost
+save acknowledgement cannot refund already credited material. No return is
+available after manufacture. `stock_recovery_status` reports `ready` or a
+save-failure `pending` reason; outstanding reservations remain visible when a
+native snapshot is unavailable. Receipt budgets are bounded and never evicted.
+
+Each `stock_imports` entry retains `banjo.fabrication-stock-transfer.v1`, scene,
+source/requesting identity, canonical material, mass and
+`reference_state:"cold-inventory-reservoir-v1"`. The audit adds
+`rack_material_received_kg` to material input closure. This is an explicit cold
+reservoir approximation: the rack holds mass/provenance, not measured motion,
+temperature or location. Stock transport, placement work, avatar reactions and
+whole-world energy conservation remain unqualified. Raw sand/soil/ore is not
+silently converted to catalog solid stock. Existing raw-ground APIs remain.
+
+No old damaged native body is reclaimed, reset or healed by these transfers.
+See [real stock, retained-cut and browser evidence](fabrication-stock-checkpoint.md).
+
 ## Regression lane
 
 Run `python scripts/fabrication_qa.py --engine <banjo_live_world_run> --out <folder>`.
@@ -208,8 +248,8 @@ native executable/library hashes, plus each check and comparative measurements.
 The native engine and shared library are required in CI. This suite runs whenever
 physics CI runs, alongside the 23 mechanics and 96 material-impact fixtures.
 
-The `/fabrication` page also offers a fixed-suite QA runner, recorded reports
-and cancellation. It launches isolated native processes and temporary rooms;
+The server offers a fixed-suite QA runner, recorded reports and cancellation
+through the endpoints below. It launches isolated native processes and temporary rooms;
 the player's live world and resources are not used by the tests. One run per
 server, 120-second deadline, owned child processes reaped on cancellation.
 

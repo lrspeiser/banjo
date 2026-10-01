@@ -1700,6 +1700,9 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
     import fabrication_room
     from mcp import fabrication
     with _world(app) as (room, live, old), fabrication_room.LOCK:
+        if funding_job is not None:
+            import fabrication_stock
+            fabrication_stock.validate(app, room.scene, fabrication_room._state(room))
         if fabrication_room.active(app) and funding_job is None:
             raise ValueError("This room only accepts finished, material-funded workpieces")
         if body.get("scene") != room.scene:
@@ -1795,7 +1798,7 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
             # Installation replaces the live session and saves the whole room.
             # Keep every guest, their bag and pending paired energy draws too.
             for field in ("player_records", "player_inventories", "player_lock", "hand_owner",
-                          "market_pending", "ground_transfers", "machine_evidence_pending", "player_evidence_pending"):
+                          "market_pending", "ground_transfers", "machine_evidence_pending", "player_evidence_pending", "goods_claims"):
                 if hasattr(room, field):
                     setattr(record, field, getattr(room, field))
             brains=getattr(app,"brains",None)
@@ -1816,6 +1819,8 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
         room.fabrication_record = fabrication_state
         room.machine_runtime=record.machine_runtime
         room.persistence=getattr(record,"persistence",None)
+        for field in ("market_durable_pending", "goods_durable_claims", "player_learning_durable_ids"):
+            if hasattr(record, field): setattr(room, field, deepcopy(getattr(record, field)))
         room.world_saved_t=saved["t_s"]
         if brains is not None: brains.rebind(room.spec)
         live.session = staged.session

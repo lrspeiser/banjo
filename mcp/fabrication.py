@@ -51,15 +51,15 @@ def config(value):
     if value["mode"] != "authoring":
         raise ValueError("Initial stock and energy must be explicitly supplied in authoring mode")
     stocks = value["stock_kg"]
-    if not isinstance(stocks, dict) or not 1 <= len(stocks) <= len(engine_materials.MATERIALS):
-        raise ValueError("stock_kg needs one or more catalog materials")
+    if not isinstance(stocks, dict) or len(stocks) > len(engine_materials.MATERIALS):
+        raise ValueError("stock_kg must map catalog materials to supplied mass")
     normalized = {}
     for material, mass in stocks.items():
         if not isinstance(material, str) or not engine_materials.known(material):
             raise ValueError("Unknown stock material")
         key = engine_materials.canonical(material)
         if key in normalized: raise ValueError("Duplicate material alias")
-        normalized[key] = number(mass, "stock_kg", .001, 10000)
+        normalized[key] = number(mass, "stock_kg", 0, 10000)
     result = {"mode": "authoring", "stock_kg": normalized}
     for name, default, low, high in [
         ("energy_j", None, 0, 1e9), ("power_w", None, .001, 1e6),
@@ -80,6 +80,11 @@ def temperature(state):
     return AMBIENT_K + state["station_heat_j"] / state["config"]["heat_capacity_j_k"]
 
 def audit(state):
+    inputs = deepcopy(state["config"]["stock_kg"])
+    imports = {}
+    for packet in state.get("stock_imports", {}).values():
+        m = packet["material"]; imports[m] = imports.get(m, 0.)+packet["mass_kg"]
+        inputs[m] = inputs.get(m, 0.)+packet["mass_kg"]
     totals = deepcopy(state["stock_kg"])
     for key in ("waste_kg", "transferred_kg"):
         for material, mass in state[key].items():
@@ -88,10 +93,10 @@ def audit(state):
         if job["status"] != "installed":
             mass = job["product_kg"] if job["status"] == "ready" else job["stock_kg"]
             totals[job["material"]] = totals.get(job["material"], 0.) + mass
-    residuals = {m: state["config"]["stock_kg"].get(m, 0.)-totals.get(m, 0.)
-                 for m in set(totals)|set(state["config"]["stock_kg"])}
+    residuals = {m: inputs.get(m, 0.)-totals.get(m, 0.) for m in set(totals)|set(inputs)}
     imported = sum(p["joules"] for p in state.get("energy_imports", {}).values())
     return {"material_residual_kg": residuals,
+            "rack_material_received_kg": imports,
             "native_energy_received_j": imported,
             "native_transfer_residual_j": sum(p["before"]["charge_j"]-p["after"]["charge_j"]-p["joules"]
                 for p in state.get("energy_imports", {}).values()),
@@ -120,6 +125,12 @@ def validate_state(state):
         raise ValueError("Invalid fabrication jobs")
     if not isinstance(state["receipts"], dict) or len(state["receipts"]) > 4096:
         raise ValueError("Invalid fabrication receipts")
+    stocks = state.get("stock_imports", {})
+    if not isinstance(stocks, dict) or len(stocks) > 4096: raise ValueError("Invalid fabrication stock imports")
+    for ident, packet in stocks.items():
+        token(ident); stock_packet(packet)
+        if ident not in state["receipts"]: raise ValueError("Material import has no receipt")
+    funded_materials = set(state["config"]["stock_kg"]) | {p["material"] for p in stocks.values()}
     imports = state.get("energy_imports", {})
     if not isinstance(imports, dict) or len(imports) > 4096:
         raise ValueError("Invalid native energy imports")
@@ -146,7 +157,7 @@ def validate_state(state):
         number(connection["given_j"], "charger given_j")
     for key in ("stock_kg", "waste_kg", "transferred_kg"):
         for material, mass in state[key].items():
-            if material not in state["config"]["stock_kg"]: raise ValueError("Unfunded saved material")
+            if material not in funded_materials: raise ValueError("Unfunded saved material")
             number(mass, key, 0, 10000)
     running = 0
     for ident, job in state["jobs"].items():
@@ -167,6 +178,46 @@ def validate_state(state):
     if any(abs(v) > 1e-7 for v in a["material_residual_kg"].values()) or abs(a["energy_residual_j"]) > 1e-6*max(1,state["config"]["energy_j"]+a["native_energy_received_j"]) or abs(a["work_residual_j"]) > 1e-6*max(1,state["spent_j"]):
         raise ValueError("Fabrication save fails its material or energy ledger")
     return state
+
+
+def stock_packet(packet):
+    fields = {"schema", "scene", "source_owner", "requested_by", "material", "mass_kg", "reference_state"}
+    obj(packet, fields, fields)
+    if packet["schema"] != "banjo.fabrication-stock-transfer.v1": raise ValueError("Unsupported stock transfer")
+    for key in ("scene", "source_owner", "requested_by"):
+        if not isinstance(packet[key], str) or not 1 <= len(packet[key]) <= 160:
+            raise ValueError("Stock transfer needs source and requester identity")
+    if not isinstance(packet["material"], str) or not engine_materials.known(packet["material"]) or engine_materials.canonical(packet["material"]) != packet["material"]:
+        raise ValueError("Stock transfer needs a canonical catalog material")
+    number(packet["mass_kg"], "mass_kg", .000001, 10000)
+    if packet["reference_state"] != "cold-inventory-reservoir-v1":
+        raise ValueError("Stock transfer needs an explicit reference-state approximation")
+    return packet
+
+
+def receive_stock(state, action, packet):
+    """Trusted durable SQL reservation only; recovery may outlive its revision.
+
+    The room adapter checks revision BEFORE reserving source stock. Recovery
+    cannot spend again or run old work retroactively; it credits that existing
+    escrow in the current receiving state, retaining the original request hash.
+    """
+    ident = token(action.get("request_id")); fingerprint = digest(action)
+    existing = state["receipts"].get(ident)
+    if existing:
+        if existing != fingerprint or state.get("stock_imports", {}).get(ident) != packet:
+            raise ValueError("Stock reservation does not match its accepted receipt")
+        return deepcopy(state), True
+    if len(state["receipts"]) >= 4096: raise ValueError("Receipt budget exhausted")
+    stock_packet(packet)
+    if action.get("op") != "fund_stock" or action.get("material") != packet["material"] or action.get("mass_kg") != packet["mass_kg"] or action.get("requested_by") != packet["requested_by"]:
+        raise ValueError("Stock transfer does not match its authorized reservation")
+    out = deepcopy(state); material = packet["material"]
+    out.setdefault("stock_imports", {})[ident] = deepcopy(packet)
+    out["stock_kg"][material] = out["stock_kg"].get(material, 0.)+packet["mass_kg"]
+    out["receipts"][ident] = fingerprint; out["revision"] += 1
+    validate_state(out)
+    return out, False
 
 
 def _energy_identity(scene, store, name, body):

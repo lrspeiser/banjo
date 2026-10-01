@@ -3,6 +3,11 @@
 The owner's fourteen-point goal supersedes the earlier progression-only task.
 This is the current acceptance list, not a claim that all features are done.
 
+The [real material funding checkpoint](fabrication-stock-checkpoint.md) connects
+collected player stock and native energy to new part admission, visible transfer
+recovery and retained old damage. Selected Lab remake/repair-to-use is still open;
+counts remain **four verified, ten partial**, with all fourteen gates retained.
+
 The [native energy checkpoint](fabrication-energy-checkpoint.md) supplies a
 tested battery-to-process transfer prerequisite for item 11. It does not yet
 repair a carried item from player stock. Counts remain **four verified, ten

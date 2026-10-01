@@ -1,5 +1,12 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Player material funding, October 1:** [Durable rack transfer evidence](fabrication-stock-checkpoint.md)
+connects actual personal or explicitly shared catalog stock to shared fabrication.
+Zero initial stock/energy manufacturing, visible escrow recovery, private ownership,
+native glass/oak/iron outputs and retained real cut history pass. Cold inventory is
+an explicit reservoir approximation. Selected Lab repair, finite starter sources,
+mixed interfaces and physical transport remain open; four verified, ten partial.
+
 **Native fabrication energy, October 1:** [Metered charger evidence](fabrication-energy-checkpoint.md)
 connects actual battery debits to the finite process supply, bounded by accepted
 native time and declared source/station power, with paired save/retry receipts.

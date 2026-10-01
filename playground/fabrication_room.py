@@ -8,6 +8,8 @@ from mcp import fabrication as model, engine_materials, workshop_components, wor
 import workshop_install as install
 import workshop_sparse_trial as sparse
 import workshop_articulation as articulation
+import fabrication_stock as stock
+import workshop_library
 
 LOCK = threading.RLock()
 COMMON = {"session", "scene"}
@@ -31,6 +33,8 @@ COMMAND_FIELDS = {
     "store_ground": {"sand_m3", "soil_m3", "request_id", "revision"},
     "connect_energy": {"store", "store_hash", "power_w", "request_id", "revision"},
     "fund_energy": {"store_hash", "joules", "request_id", "revision"},
+    "fund_stock": {"material", "mass_kg", "pool", "rack_hash", "request_id", "revision"},
+    "release_stock": {"reservation_id", "request_id"},
 }
 
 def active(app):
@@ -107,13 +111,14 @@ def compile_quote(candidate, stock_kg, cell_m, state):
 
 def _persist(app, room, saved, state):
     model.validate_energy_sources(state, saved, room.scene)
+    stock.validate(app, room.scene, state)
     record = SimpleNamespace(scene=room.scene, spec=room.spec, chat=deepcopy(room.chat),
         inventory_record=install._inventory(room), world_record=saved,
         workshop_installs=deepcopy(getattr(room,"workshop_installs",[])),
         gameplay_record=deepcopy(getattr(room,"gameplay_record",None)),
         fabrication_record=state,
         world_upgrades=deepcopy(getattr(room, "world_upgrades", {})))
-    for field in ("player_records","player_inventories","player_lock","hand_owner","market_pending","ground_transfers","machine_evidence_pending","player_evidence_pending"):
+    for field in ("player_records","player_inventories","player_lock","hand_owner","market_pending","ground_transfers","machine_evidence_pending","player_evidence_pending","goods_claims"):
         if hasattr(room,field): setattr(record,field,getattr(room,field))
     brains=getattr(app,"brains",None)
     record.machine_runtime=brains.runtime() if brains is not None else getattr(room,"machine_runtime",None)
@@ -124,6 +129,8 @@ def _persist(app, room, saved, state):
     room.world_saved_t = saved["t_s"]
     room.machine_runtime=record.machine_runtime
     room.persistence=getattr(record,"persistence",None)
+    for field in ("market_durable_pending", "goods_durable_claims", "player_learning_durable_ids"):
+        if hasattr(record, field): setattr(room, field, deepcopy(getattr(record, field)))
     if brains is not None: brains.rebind(room.spec)
 
 def request(app, operation, body):
@@ -132,23 +139,36 @@ def request(app, operation, body):
     model.obj(body, COMMON|fields, COMMON|fields)
     if operation in ("store_ground","retrieve_ground"): return transfer_ground(app,body,operation)
     if operation in ("connect_energy", "fund_energy"): return transfer_energy(app, body, operation)
+    if operation in ("fund_stock", "release_stock"): return transfer_stock(app, body, operation)
     with install._world(app) as (room, live, old), LOCK:
         install._source(room, old, body)
         if room.scene not in install.world_room.SCENES:
             raise ValueError("Fabrication requires a persistently saved room")
         state = deepcopy(getattr(room, "fabrication_record", None))
+        stock_recovery = {"state": "ready"}
         if state is not None:
             model.validate_state(state)
             model.advance(state, old.state["t"])
+            stock.validate(app, room.scene, state)
+            if operation == "state":
+                try: state = stock.settle(app, room, live, state, _persist)
+                except OSError as exc:
+                    stock_recovery = {"state": "pending", "reason": str(exc)[:240]}
+                    state = deepcopy(_state(room)); model.advance(state, old.state["t"])
         if operation == "state":
             ground=(old.send(op="environment").get("environment",{}).get("ground",{})
                     if old.spec.get("terrain") else {})
             carried=ground.get("carried",{})
             source_snapshot, source_reason = live.snapshot()
+            reservations = stock.pending(app, room.scene)
+            if reservations and stock_recovery["state"] == "ready":
+                stock_recovery = {"state": "pending", "reason": source_reason or "Awaiting a complete durable world save"}
             return {"scene": room.scene, "session": old.id, "cell_m": old.spec["cell_m"], "configured": state is not None,
                     "energy_sources": energy_sources(state, source_snapshot, room.scene) if source_snapshot is not None else [],
                     "energy_source_status": {"state": "ready" if source_snapshot is not None else "unavailable",
                                              "reason": source_reason},
+                    "stock_sources": stock.sources(app), "stock_reservations": reservations,
+                    "stock_recovery_status": stock_recovery,
                     "carried_ground":carried, "ground_audit":model.ground_audit(state,ground,getattr(room,"ground_transfers",None)),
                     "state": model.report(state) if state is not None else None}
         if operation == "configure":
@@ -181,6 +201,39 @@ def request(app, operation, body):
         return {"state": model.report(state), "replayed": replayed}
 
 
+def transfer_stock(app, body, operation):
+    with install._world(app) as (room, live, old), LOCK:
+        if body["scene"] != room.scene: raise ValueError("The source room changed")
+        state = deepcopy(_state(room)); model.advance(state, old.state["t"])
+        stock.validate(app, room.scene, state)
+        if operation == "release_stock":
+            install._source(room, old, body)
+            replayed = stock.release(app, room, state, body["reservation_id"], body["request_id"])
+            return {"released": True, "replayed": replayed, "session": old.id,
+                    "stock_sources": stock.sources(app), "stock_reservations": stock.pending(app, room.scene)}
+        action = {k: v for k, v in body.items() if k not in COMMON}
+        action.update(op=operation, requested_by=workshop_library.rack_owner_id(app))
+        previous = stock.get(app, room.scene, body["request_id"])
+        if previous is not None:
+            if previous["action"] != action: raise ValueError("Stock request_id belongs to a different transfer or player")
+            if previous["status"] == "released": raise ValueError("This stock reservation was released; use a new request_id")
+            if previous["status"] == "applied":
+                model.receive_stock(state, action, previous["packet"])
+                return {"state": model.report(state), "session": old.id, "replayed": True}
+            # A previously authorized source reservation may recover after
+            # session/revision changes. Unpublished native spec edits still refuse.
+            install._source(room, old, {"session": old.id, "scene": room.scene})
+        else:
+            install._source(room, old, body)
+            model.check_request(state, action)
+            stock.reserve(app, room.scene, state, action)
+        state = stock.settle(app, room, live, state, _persist)
+        if body["request_id"] not in state.get("stock_imports", {}):
+            raise ValueError("Stock remains reserved until the native world is completely saveable")
+        return {"state": model.report(state), "session": old.id, "replayed": previous is not None,
+                "stock_sources": stock.sources(app), "stock_reservations": stock.pending(app, room.scene)}
+
+
 def energy_sources(state, snapshot, scene):
     """Meter hashes bind writes to an actual native store, never a wallet claim."""
     connection = (state or {}).get("energy_connection")
@@ -202,6 +255,7 @@ def transfer_energy(app, body, operation):
     with install._world(app) as (room, live, old), LOCK:
         if body["scene"] != room.scene: raise ValueError("The source room changed")
         state = deepcopy(_state(room)); model.advance(state, old.state["t"])
+        stock.validate(app, room.scene, state)
         action = {k: v for k, v in body.items() if k not in COMMON}; action["op"] = operation
         if model.check_request(state, action):
             return {"state": model.report(state), "session": old.id, "replayed": True}
@@ -280,6 +334,7 @@ def transfer_ground(app,body,operation):
     with install._world(app) as (room,live,old),LOCK:
         if body["scene"]!=room.scene: raise ValueError("The source room changed")
         state=deepcopy(_state(room));model.advance(state,old.state["t"])
+        stock.validate(app, room.scene, state)
         action={k:v for k,v in body.items() if k not in COMMON};action["op"]=operation
         if model.check_request(state,action):
             return {"state":model.report(state),"session":old.id,"replayed":True}
@@ -329,6 +384,7 @@ def preview(app, body):
     with install._world(app) as (room, live, old), LOCK:
         install._source(room,old,body)
         state = deepcopy(_state(room)); model.advance(state,old.state["t"])
+        stock.validate(app, room.scene, state)
         job = state["jobs"].get(model.token(body["job_id"],"job_id"))
         if job is None or job["status"] != "ready": raise ValueError("Finish the workpiece before placing it")
         candidate = deepcopy(job["candidate"])
@@ -352,6 +408,7 @@ def wait(app, body):
         install._source(room, old, body)
         if room.scene not in install.world_room.SCENES: raise ValueError("Open a persistently saved room")
         _state(room)
+        stock.validate(app, room.scene, _state(room))
         for _ in range(body["seconds"]*2):
             before_t = old.state["t"]
             answer = live.act({"session":old.id,"op":"step","dt":1/240,"n":120})

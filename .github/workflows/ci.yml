@@ -239,8 +239,12 @@ jobs:
 
       - name: Qualify finite-stock fabrication against the native engine
         run: |
-          BANJO_LIBRARY=$PWD/build/ci/libbanjo.so python3 scripts/fabrication_qa.py --engine build/ci/banjo_live_world_run --out build/ci/fabrication-qa
-          BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run BANJO_LIBRARY=$PWD/build/ci/libbanjo.so python3 tests/fabrication_qa_tests.py -v
+          BANJO_LIBRARY=$PWD/build/ci/libbanjo.so BANJO_CHROME=/usr/bin/google-chrome \
+            BANJO_CHROME_ARGS="--no-sandbox --disable-dev-shm-usage --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader" \
+            python3 scripts/fabrication_qa.py --engine build/ci/banjo_live_world_run --out build/ci/fabrication-qa
+          BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run BANJO_LIBRARY=$PWD/build/ci/libbanjo.so BANJO_CHROME=/usr/bin/google-chrome \
+            BANJO_CHROME_ARGS="--no-sandbox --disable-dev-shm-usage --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader" \
+            python3 tests/fabrication_qa_tests.py -v
 
       - name: Keep fabrication transaction and conservation evidence
         if: always()

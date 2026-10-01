@@ -1,5 +1,8 @@
 # The Banjo API
 
+Actual player material reservations, shared station credits and recovery:
+[rack funding contract](../fabrication.md#player-rack-funding--october-1).
+
 Actual battery-to-fabrication imports, power/time bounds and retry receipts:
 [native charger contract](../fabrication.md#native-battery-funding--october-1).
 
@@ -19,7 +22,7 @@ they do different things, because they are made of different stuff.
 
 This is the documentation for using that from your own program.
 
-Current native ABI: **25**. World MCP is **1.14.0**; platform MCP is **1.17.0**.
+Current native ABI: **25**. World MCP is **1.15.0**; platform MCP is **1.18.0**.
 
 Native runner/Python/HTTP item-condition read: [bounded contract and measured
 scope](../body-condition.md#bounded-native-and-http-read). This adds no C ABI

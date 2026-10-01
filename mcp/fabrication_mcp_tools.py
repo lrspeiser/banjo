@@ -9,7 +9,7 @@ REVISION = {"type":"integer","minimum":0}
 JSON_OBJECT = {"type":"object"}
 SETTINGS = obj({
     "mode":{"type":"string","enum":["authoring"]},
-    "stock_kg":{"type":"object","description":"Catalog material -> .001..10000 kg; duplicate aliases refuse."},
+    "stock_kg":{"type":"object","description":"Catalog material -> 0..10000 kg; an empty map supplies nothing. Duplicate aliases refuse."},
     "energy_j":{"type":"number","minimum":0,"maximum":1e9},
     "power_w":{"type":"number","minimum":.001,"maximum":1e6},
     "work_j_kg":{"type":"number","minimum":.001,"maximum":1e9},
@@ -29,6 +29,8 @@ FIELDS = {
     "store_ground": {"sand_m3":{"type":"number","minimum":0,"maximum":10000},"soil_m3":{"type":"number","minimum":0,"maximum":10000},"request_id":TOKEN,"revision":REVISION},
     "connect_energy": {"store":{"type":"integer","minimum":1,"maximum":4294967295},"store_hash":{"type":"string","minLength":64,"maxLength":64},"power_w":{"type":"number","minimum":.001,"maximum":1e6},"request_id":TOKEN,"revision":REVISION},
     "fund_energy": {"store_hash":{"type":"string","minLength":64,"maxLength":64},"joules":{"type":"number","minimum":.000001,"maximum":1e9},"request_id":TOKEN,"revision":REVISION},
+    "fund_stock": {"material":{"type":"string"},"mass_kg":{"type":"number","minimum":.000001,"maximum":10000},"pool":{"type":"string","enum":["personal","shared"]},"rack_hash":{"type":"string","minLength":64,"maxLength":64},"request_id":TOKEN,"revision":REVISION},
+    "release_stock": {"reservation_id":TOKEN,"request_id":TOKEN},
     "preview": {"job_id":TOKEN,"position_m":{"type":"array","items":{"type":"number"},"minItems":2,"maxItems":2}},
     "commit": {"job_id":TOKEN,"preview_id":TOKEN,"request_id":TOKEN},
     "wait": {"seconds":{"type":"integer","minimum":1,"maximum":10}},
@@ -45,6 +47,8 @@ DESCRIPTIONS = {
     "store_ground": "Atomically move measured carried sand and soil into saved raw lots. Read carried_ground with fabrication_state. Native debit, lots and retry receipt save together. Returns the replacement session; use it for later calls. Raw substances remain unprocessed with unmodeled thermal state, not glass or solid stock. No object is consumed.",
     "connect_energy": "Connect one in-world native battery to the declared lumped charger. Read its ID and store_hash from fabrication_state energy_sources. power_w cannot exceed source or station limits. Begins a new time window with zero credit; reconnecting discards unused time. Saves identity and request receipt without spending energy. Not an electrical circuit model.",
     "fund_energy": "Transfer positive joules from the connected native battery into finite fabrication energy, bounded by accepted native time since connection/last transfer and declared power. Read current store_hash, transfer_available_j and revision from fabrication_state. Battery debit and process credit save atomically; identical request retries do not debit twice. Returns replacement session. No wallet debit, current waveform or calibrated repair claim.",
+    "fund_stock": "Transfer actual catalog material from your personal rack or explicitly selected shared pool into SHARED fabrication stock. Read exact mass, pool and rack_hash from fabrication_state stock_sources. Source debit and durable reservation commit together; receiving save failure leaves recoverable escrow, visible in stock_reservations. State/retry finishes that credit once. Initial authorization checks revision/hash; recovery retains the original request. Cold inventory reference is an approximation, not native-body reclamation or measured thermal transport.",
+    "release_stock": "Return your uncredited stock reservation to its exact source rack. Requires reservation_id from stock_reservations and a new request_id. Refuses if the receiving room already credited it, including a save whose acknowledgement failed. Release receipt is retry-safe. No refund of work, native products or credited material.",
     "preview": "Check native placement and state carry for a finished funded workpiece on native ground. Terrain and material accounts must carry unchanged; unsettled-ground edits can refuse. position_m is [x,z]. Preview never installs.",
     "commit": "Atomically transfer the finished workpiece into the native world, persist both ledgers and world, then acknowledge. Supports single-material fixed/bearing assemblies with primary_use_component and interaction_point_components bindings. Assemblies return root_bodies, component_to_body, source_joints and per-body thermal_transfers. Retry the same request_id after an uncertain result.",
     "wait": "Advance native physics and fabrication together for 1..10 seconds and save both. This is an elapsed-time action: after connection loss read state before repeating.",

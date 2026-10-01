@@ -1976,6 +1976,34 @@ async function showInventory() {
   const goods = (inv.goods || []).filter(r => r.mass_kg > 0).map(r => resourceTile(r,"sphere"));
   $("#ws-inv-goods").replaceChildren(...goods);
   $("#ws-inv-goods-empty").hidden = goods.length > 0;
+  const reserved = (inv.fabrication_reservations || []).map(row => {
+    const card = make("article", {class:"ws-product-card", "data-stock-reservation":row.reservation_id});
+    const material = row.material;
+    card.append(invTile({name:material,label:titleCase(material),material,shape:"box",color_rgba:MATERIAL_LOOK[material]},
+      {quantity:kgSaid(row.mass_kg),where:"Reserved",onOpen:()=>openMaterialRecipes(material)}));
+    const actions=make("div",{class:"ws-inventory-actions"});
+    const finish=make("button",{type:"button",class:"ws-action"},"Finish transfer");
+    finish.onclick=()=>guard(finish,async()=>{
+      const context=await api("/api/world/workshop/context",{});
+      const result=await api("/api/world/fabrication/state",{scene:context.scene,session:context.session});
+      if(result.stock_reservations?.some(r=>r.reservation_id===row.reservation_id))
+        throw new Error(result.stock_recovery_status?.reason || "Transfer is waiting for a world save");
+      await showInventory();
+    });
+    const restore=make("button",{type:"button",class:"ws-action"},"Return to stock");
+    restore.onclick=()=>guard(restore,async()=>{
+      const context=await api("/api/world/workshop/context",{});
+      const key=`banjo.stock-release.${worldId || context.scene}.${row.reservation_id}`;
+      let request=sessionStorage.getItem(key);
+      if(!request){request=crypto.randomUUID();sessionStorage.setItem(key,request);}
+      await api("/api/world/fabrication/release_stock",{scene:context.scene,session:context.session,
+        reservation_id:row.reservation_id,request_id:request});
+      await showInventory();
+    });
+    actions.append(finish,restore);card.append(actions);return card;
+  });
+  $("#ws-inv-reserved").replaceChildren(...reserved);
+  $("#ws-inv-reserved").parentElement.hidden=reserved.length===0;
   await showInventoryEnergy();
 }
 function resourceTile(row, shape) {
@@ -2089,6 +2117,8 @@ function installInventory() {
   stock.append(make("p", {id:"ws-inv-stock-empty", class:"ws-note"}, "Empty · Market → Supplies"));
   const goods = screenSection(pane, "Processed goods", "ws-inv-goods");
   goods.append(make("p", {id:"ws-inv-goods-empty", class:"ws-note"}, "Empty"));
+  const reserved=screenSection(pane,"Reserved for fabrication","ws-inv-reserved");
+  reserved.hidden=true;
 }
 
 function inventoryGroup(name) {

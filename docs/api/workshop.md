@@ -497,7 +497,7 @@ These operations are pure product engineering and do not alter the live world.
 
 ## MCP server
 
-Platform MCP **1.17.0** also exposes the world circuit tools and full-state
+Platform MCP **1.18.0** also exposes the world circuit tools and full-state
 checkpoint tools documented in [machine-networks.md](machine-networks.md).
 `install_circuit` compiles a supplied ProductGraph and binds one operating
 network to already-created world stores/motors. This is separate from Workshop

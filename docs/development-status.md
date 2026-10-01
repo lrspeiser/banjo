@@ -1,5 +1,15 @@
 # Development status and handoff
 
+**Player material funding, October 1:** [SQL/room/native/browser checkpoint](fabrication-stock-checkpoint.md)
+adds exact rack debits, durable reservations, one-time shared station credits,
+Finish transfer/Return to stock controls and authenticated source isolation.
+Actual collected oak and battery energy manufacture a native part with paired
+collection receipts surviving restart. Matched glass/oak/iron outputs begin with
+zero authored process supplies. Actual old oak cuts remain unchanged during new
+part admission. The full suite caught and resolved an installation lock deadlock;
+no solver law or native tolerance changes. Lab source binding, ordinary finite
+batteries and repair-to-use remain next. Four verified, ten partial.
+
 **Native fabrication energy, October 1:** [Paired native/process checkpoint](fabrication-energy-checkpoint.md)
 adds power/time-bounded charging from actual native batteries, complete-world
 preservation, stale/retry/failed-save/reopen checks and HTTP/MCP operations.

@@ -1,5 +1,14 @@
 # Banjo mechanics scorecard
 
+**Rack-to-process boundary, October 1:** [Matched native stock evidence](fabrication-stock-checkpoint.md)
+retains glass/oak/iron, 40 mm cells and `dt=1/240 s`. Actual 10 kg rack debits
+and 1000 J native imports produce 2.56/0.7168/8.05888 kg outputs with
+7.44/9.2832/1.94112 kg offcuts; local mass residuals zero, energy below 9.1e-13 J.
+At 10 mm, an actual 104/12,876-bond oak cut retains connectivity 0.99192295744
+while 1 kg stock/100 J funds a separate 0.7 kg native part. Cold inventory lacks
+measured motion/thermal/location state. No transport work, full conservation,
+calibrated forming or native bond healing claim; M05/M16/M17/P05–P07 remain open.
+
 **Native process energy boundary, October 1:** [Metered charger comparison](fabrication-energy-checkpoint.md)
 retains glass/oak/iron, 40 mm cells, `dt=1/240 s`, authored 100 J/kg work and
 matched 10 kg stock. A 300 W/4000 J native battery funds three 1000 J jobs through

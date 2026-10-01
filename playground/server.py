@@ -1515,7 +1515,8 @@ class Handler(BaseHTTPRequestHandler):
                  or fabrication_room.active(self.app)
                  or path in ("/api/world/open", "/api/live/open")) else nullcontext()):
             if fabrication_room.active(self.app):
-                allowed_world = {"/api/world/open", "/api/world/action", "/api/world/placement", "/api/world/putdown", "/api/world/inventory", "/api/world/inventory/shown", "/api/world/machine", "/api/world/watch-machine", "/api/world/tool", "/api/world/tool/use"}
+                allowed_world = {"/api/world/open", "/api/world/action", "/api/world/placement", "/api/world/putdown", "/api/world/inventory", "/api/world/inventory/shown", "/api/world/machine", "/api/world/watch-machine", "/api/world/tool", "/api/world/tool/use",
+                                 "/api/world/workshop/context", "/api/world/workshop/what_made"}
                 if path.startswith("/api/world/") and path not in allowed_world and not path.startswith("/api/world/fabrication/"):
                     raise ValueError("The fabrication room accepts funded outputs; edit designs in Workshop")
                 if not isinstance(body, dict): raise ValueError("Expected a JSON object")

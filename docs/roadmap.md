@@ -1,5 +1,13 @@
 # Banjo roadmap and acceptance gates
 
+**Repair material prerequisite, October 1:** [Real stock funding](fabrication-stock-checkpoint.md)
+passes exact personal/shared source selection, recoverable SQL escrow, browser
+return/finish, collection/native admission/reopen and retained original damage.
+Next bind selected carried Lab source and exact recipe revision, supply an explicit
+finite starter battery/station capability, show material/energy/time costs, and
+verify supported remake-to-equip-to-use. Preserve the old body's damage/history;
+no generic healing law. All fourteen gates remain: four verified, ten partial.
+
 **Native repair energy prerequisite, October 1:** [Battery funding](fabrication-energy-checkpoint.md)
 passes actual source debit, receiving supply, accepted-time/source/station power,
 other loads, paired persistence and retry/reopen checks. Next connect matching
