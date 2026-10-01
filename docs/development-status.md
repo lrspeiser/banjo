@@ -7,6 +7,8 @@ Matched glass/oak/iron, actual cut-source admission and reload/resume pass.
 This is a separate replacement product, with no bond healing. Ordinary starter
 capabilities, Lab supply funding and collect/equip/use remain next; the complete
 fourteen-item goal stays active with four verified, ten partial.
+Implementation `217814f` is published on GitHub main. Refreshed own 8770
+Chrome acceptance passes; the preview and measured boundary are in the checkpoint.
 
 **Player material funding, October 1:** [SQL/room/native/browser checkpoint](fabrication-stock-checkpoint.md)
 adds exact rack debits, durable reservations, one-time shared station credits,

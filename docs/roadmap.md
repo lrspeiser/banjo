@@ -7,6 +7,8 @@ pause/reload/resume/placement. Next add explicit finite starter capabilities,
 reviewed Lab stock/charger controls and ordinary collect/equip/use acceptance.
 Native bond repair, fatigue and mixed interfaces remain open. Preserve all
 fourteen gates; counts remain four verified, ten partial.
+Implementation `217814f` is published on main; the next ordinary funding/use
+gates above remain open.
 
 **Repair material prerequisite, October 1:** [Real stock funding](fabrication-stock-checkpoint.md)
 passes exact personal/shared source selection, recoverable SQL escrow, browser

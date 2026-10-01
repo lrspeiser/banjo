@@ -105,3 +105,19 @@ item → paid remake → collect → equip → use in ordinary generated worlds.
 Fatigue, joint repair, mixed-material lattice interfaces, calibrated process
 coefficients, physical stock transport and full conservation remain open.
 Cold rack inventory is an explicitly declared reservoir approximation.
+
+## Published checkpoint
+
+Implementation **`217814f`** is on GitHub main. The ordinary fast-forward push
+is verified against the remote main ref. Preview 8770 runs these sources with
+the unchanged native runner/library. Its generated-world condition/Inventory/
+carried-Lab/empty-Lab acceptance passes with zero JavaScript exceptions.
+
+Preview: `http://127.0.0.1:8770/world?world=b94ebf64f8f94a92ad89a00879e81ed4`.
+The field pick is in this player's bag; Inventory → Lab → Review remake reports
+the world has no declared workbench. No fixture resources were granted there.
+The configured/funded replacement journey is qualified by the isolated tests.
+
+This publication note records the checkpoint; it adds no physical validation.
+Next work remains ordinary finite capabilities and reviewed funding followed
+by actual collection, equipment and use. Four verified, ten partial.
