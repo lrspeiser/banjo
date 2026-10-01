@@ -1,7 +1,7 @@
 """Finite material/work bookkeeping for a declared, lumped fabrication cell.
 
 This is a process operating model, not a cutting/contact solver. The station
-spends its own explicitly seeded energy; it cannot also claim a native battery.
+spends explicitly seeded energy or metered imports from a native battery.
 All supplied work ends in the station heat capacity or its ambient boundary.
 Native installation is a separate, atomic transfer, verified by the room adapter.
 """
@@ -20,7 +20,8 @@ TOKEN = re.compile(r"^[A-Za-z0-9_-]{8,80}$")
 LIMITATIONS = [
     "Declared lumped shaping process; work coefficients are authored, not calibrated cutting laws.",
     "Initial cold stock and the isolated supply are explicitly supplied in authoring mode. They are not mined terrain or a second claim on a native battery.",
-    "Only single-material monolithic lattice products are transferable. No articulated assembly, drilling contact, casting, repair or tool-wear claim.",
+    "Native charging is a batched, power-bounded transfer into the finite supply, not an electrical circuit or continuous current simulation. Imported joules are debited from the source once; economic wallet claims are not a source.",
+    "Only supported single-material fixed/bearing lattice products are transferable. No drilling contact, casting, repair or tool-wear claim.",
     "All process work heats the station; output stock stays at 293.15 K. Station cooling exchanges heat with a prescribed ambient reservoir.",
     "The ledger boundary is stock, workpieces, station and supply. Installed material is a measured transfer out, not a whole-world energy audit.",
 ]
@@ -89,8 +90,14 @@ def audit(state):
             totals[job["material"]] = totals.get(job["material"], 0.) + mass
     residuals = {m: state["config"]["stock_kg"].get(m, 0.)-totals.get(m, 0.)
                  for m in set(totals)|set(state["config"]["stock_kg"])}
+    imported = sum(p["joules"] for p in state.get("energy_imports", {}).values())
     return {"material_residual_kg": residuals,
-            "energy_residual_j": state["config"]["energy_j"]-state["energy_j"]
+            "native_energy_received_j": imported,
+            "native_transfer_residual_j": sum(p["before"]["charge_j"]-p["after"]["charge_j"]-p["joules"]
+                for p in state.get("energy_imports", {}).values()),
+            "native_meter_residual_j": sum(p["after"]["given_j"]-p["before"]["given_j"]-p["joules"]
+                for p in state.get("energy_imports", {}).values()),
+            "energy_residual_j": state["config"]["energy_j"]+imported-state["energy_j"]
                 -state["station_heat_j"]-state["ambient_j"],
             "work_residual_j": state["spent_j"]-sum(j["supplied_j"] for j in state["jobs"].values()),
             "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"}
@@ -113,6 +120,30 @@ def validate_state(state):
         raise ValueError("Invalid fabrication jobs")
     if not isinstance(state["receipts"], dict) or len(state["receipts"]) > 4096:
         raise ValueError("Invalid fabrication receipts")
+    imports = state.get("energy_imports", {})
+    if not isinstance(imports, dict) or len(imports) > 4096:
+        raise ValueError("Invalid native energy imports")
+    for packet in imports.values(): energy_packet(packet)
+    last = {}
+    # JSON saves sort object keys; chronology follows native meter counters,
+    # never dictionary insertion order or client request IDs.
+    for ident, packet in sorted(imports.items(), key=lambda pair: pair[1].get("before", {}).get("given_j", -1)):
+        token(ident)
+        if ident not in state["receipts"]: raise ValueError("Energy import has no receipt")
+        key = (packet["scene"], packet["before"]["id"])
+        previous = last.get(key)
+        if previous is not None and (packet["before"]["given_j"] < previous["after"]["given_j"]
+                or packet["started_s"] < previous["time_s"]-1e-8):
+            raise ValueError("Overlapping native energy transfers")
+        last[key] = packet
+    connection = state.get("energy_connection")
+    if connection is not None:
+        obj(connection, {"scene", "store", "name", "body", "power_w", "since_s", "given_j"},
+            {"scene", "store", "name", "body", "power_w", "since_s", "given_j"})
+        _energy_identity(connection["scene"], connection["store"], connection["name"], connection["body"])
+        number(connection["power_w"], "charger power_w", .001, state["config"]["power_w"])
+        number(connection["since_s"], "charger since_s", 0, state["time_s"]+1e-8)
+        number(connection["given_j"], "charger given_j")
     for key in ("stock_kg", "waste_kg", "transferred_kg"):
         for material, mass in state[key].items():
             if material not in state["config"]["stock_kg"]: raise ValueError("Unfunded saved material")
@@ -133,9 +164,86 @@ def validate_state(state):
             raise ValueError("Incomplete saved output")
     if running > 1: raise ValueError("The station has one physical work position")
     a = audit(state)
-    if any(abs(v) > 1e-7 for v in a["material_residual_kg"].values()) or abs(a["energy_residual_j"]) > 1e-6*max(1,state["config"]["energy_j"]) or abs(a["work_residual_j"]) > 1e-6*max(1,state["spent_j"]):
+    if any(abs(v) > 1e-7 for v in a["material_residual_kg"].values()) or abs(a["energy_residual_j"]) > 1e-6*max(1,state["config"]["energy_j"]+a["native_energy_received_j"]) or abs(a["work_residual_j"]) > 1e-6*max(1,state["spent_j"]):
         raise ValueError("Fabrication save fails its material or energy ledger")
     return state
+
+
+def _energy_identity(scene, store, name, body):
+    if type(store) is not int or not 1 <= store <= 4294967295:
+        raise ValueError("Native energy store must be a positive integer ID")
+    for value in (scene, name, body):
+        if not isinstance(value, str) or not 1 <= len(value) <= 160:
+            raise ValueError("Native energy source needs scene, name and body identity")
+
+
+def energy_packet(packet):
+    """A trusted adapter's measured transfer, with explicit timing and meters."""
+    fields = {"schema", "scene", "started_s", "time_s", "given_started_j", "power_w", "joules", "before", "after"}
+    obj(packet, fields, fields)
+    if packet["schema"] != "banjo.fabrication-energy-transfer.v1":
+        raise ValueError("Unsupported native energy transfer")
+    started = number(packet["started_s"], "started_s")
+    ended = number(packet["time_s"], "time_s", started)
+    power = number(packet["power_w"], "power_w", .001, 1e6)
+    joules = number(packet["joules"], "joules", .000001, 1e9)
+    meters = {"id", "name", "body", "capacity_j", "charge_j", "voltage_v", "max_power_w", "given_j", "taken_j", "short_j"}
+    before, after = packet["before"], packet["after"]
+    for meter in (before, after):
+        obj(meter, meters, meters)
+        _energy_identity(packet["scene"], meter["id"], meter["name"], meter["body"])
+        for field in meters-{"id", "name", "body"}: number(meter[field], field)
+        if meter["charge_j"] > meter["capacity_j"]: raise ValueError("Native charge exceeds capacity")
+    if any(before[k] != after[k] for k in meters-{"charge_j", "given_j"}):
+        raise ValueError("Energy transfer changed unrelated source state")
+    tolerance = 1e-8 + 1e-12*max(1, before["capacity_j"], after["given_j"])
+    if before["charge_j"] <= after["charge_j"] or after["given_j"] <= before["given_j"]:
+        raise ValueError("Native meters cannot resolve a positive transfer of this size")
+    if (abs(before["charge_j"]-after["charge_j"]-joules) > tolerance
+            or abs(after["given_j"]-before["given_j"]-joules) > tolerance):
+        raise ValueError("Native energy debit does not match receiving joules")
+    if before["max_power_w"] <= 0 or power > before["max_power_w"]:
+        raise ValueError("Charging requires a declared positive source power limit")
+    baseline = number(packet["given_started_j"], "given_started_j", 0, before["given_j"])
+    if after["given_j"]-baseline > (ended-started)*before["max_power_w"]+1e-8:
+        raise ValueError("Energy transfer and other loads exceed source power envelope")
+    if joules > (ended-started)*power + 1e-8:
+        raise ValueError("Energy transfer exceeds its elapsed-time power envelope")
+    return packet
+
+
+def receive_energy(state, body, packet):
+    """Trusted adapter only; receiving credit and native debit save together."""
+    if check_request(state, body): return deepcopy(state), True
+    energy_packet(packet)
+    connection = state.get("energy_connection")
+    expected = {"scene": packet["scene"], "store": packet["before"]["id"],
+        "name": packet["before"]["name"], "body": packet["before"]["body"],
+        "power_w": packet["power_w"], "since_s": packet["started_s"], "given_j": packet["given_started_j"]}
+    if connection != expected or abs(packet["time_s"]-state["time_s"]) > 1e-8:
+        raise ValueError("Energy transfer does not match the current charger interval")
+    if body.get("op") != "fund_energy" or body.get("joules") != packet["joules"] or body.get("store_hash") != digest(packet["before"]):
+        raise ValueError("Energy transfer does not match its requested debit")
+    out = deepcopy(state)
+    out.setdefault("energy_imports", {})[body["request_id"]] = deepcopy(packet)
+    out["energy_j"] += packet["joules"]
+    out["energy_connection"]["since_s"] = packet["time_s"]
+    out["energy_connection"]["given_j"] = packet["after"]["given_j"]
+    out["receipts"][body["request_id"]] = digest(body)
+    out["revision"] += 1
+    validate_state(out)
+    return out, False
+
+
+def validate_energy_sources(state, snapshot, scene):
+    """Reject a save whose native source no longer covers its imported receipts."""
+    for packet in state.get("energy_imports", {}).values():
+        if packet["scene"] != scene: raise ValueError("Energy receipt belongs to another room")
+        meter = next((m for m in snapshot.get("energy_stores", []) if m["id"] == packet["after"]["id"]), None)
+        if meter is None or any(meter[k] != packet["after"][k] for k in ("name", "body", "capacity_j", "voltage_v", "max_power_w")):
+            raise ValueError("Imported energy source is missing or changed")
+        if meter["given_j"] + 1e-8 < packet["after"]["given_j"]:
+            raise ValueError("Native source meter is behind its receiving energy receipt")
 
 
 def bulk_packet(packet):

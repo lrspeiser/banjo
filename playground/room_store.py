@@ -147,10 +147,11 @@ class RoomStore:
         if funded and not isinstance(fabrication, dict):
             raise ValueError("Funded room requires its fabrication ledger; refusing a reset")
         if isinstance(fabrication, dict):
-            from mcp.fabrication import validate_state
+            from mcp.fabrication import validate_state, validate_energy_sources
             validate_state(fabrication)
             if not isinstance(world, dict) or abs(world["t_s"]-fabrication["time_s"]) > 1e-7:
                 raise ValueError("Fabrication and native state must be saved at the same time")
+            validate_energy_sources(fabrication, world, room.scene)
             record["fabrication"] = fabrication
             record["fabrication_required"] = True
         if isinstance(world,dict):
@@ -226,10 +227,11 @@ class RoomStore:
         if room.fabrication_required and not isinstance(room.fabrication_record, dict):
             raise ValueError("Funded save requires its fabrication ledger; refusing a reset")
         if room.fabrication_record is not None:
-            from mcp.fabrication import validate_state
+            from mcp.fabrication import validate_state, validate_energy_sources
             validate_state(room.fabrication_record)
             if not isinstance(record.get("world"),dict) or abs(record["world"]["t_s"]-room.fabrication_record["time_s"]) > 1e-7:
                 raise ValueError("Fabrication save requires its matching native world")
+            validate_energy_sources(room.fabrication_record, record["world"], scene)
         room.gameplay_record = record.get("gameplay")
         room.ground_transfers = record.get("ground_transfers")
         from mcp.ground_transfers import totals

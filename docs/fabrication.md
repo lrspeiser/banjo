@@ -20,8 +20,9 @@ controls; free authoring operations remain restricted. The [30-item priority lis
 ## Operating law and boundary
 
 The process owns finite, initially cold material stocks, one work position, a
-finite isolated energy supply, a heat capacity and a prescribed ambient boundary.
-It is not attached to a native circuit and cannot claim the same battery twice.
+finite buffered energy supply, a heat capacity and a prescribed ambient boundary.
+The buffer may be seeded explicitly or charged by the metered native transfer
+below. It is not attached to a native circuit and cannot claim the same battery twice.
 The process parameters are declared engineering inputs, not calibrated machining
 properties. Nothing chooses a law from a product name.
 
@@ -98,6 +99,8 @@ that current `scene` and `session`. Unknown fields refuse.
 | `recover` | `fabrication_recover` | `material`, `mass_kg` (0.000001..10000), `revision`, `request_id`. Moves available cold offcuts into same-material stock, with no work/energy refund. |
 | `retrieve_ground` | `fabrication_retrieve_ground` | `lot_id`, `sand_m3`, `soil_m3`, `revision`, `request_id`. Positive total bounded by `raw_inventory` and native carrying capacity. Saves the return receipt and native credit together; returns replacement `session`, `state`, `replayed`. |
 | `store_ground` | `fabrication_store_ground` | `sand_m3`, `soil_m3` (each 0..10000, sum positive and no greater than carried), `revision`, `request_id`. Atomically saves raw lots and native debit; returns new `session`, process `state`, and `replayed`. |
+| `connect_energy` | `fabrication_connect_energy` | Native `store` ID, current `store_hash`, `power_w`, `revision`, `request_id`. Starts one bounded charger interval; saves identity without spending energy. |
+| `fund_energy` | `fabrication_fund_energy` | Current `store_hash`, positive `joules` (0.000001..1e9), `revision`, `request_id`. Debits the connected native battery and credits the process atomically; returns replacement `session`, `state`, `replayed`. |
 | `wait` | `fabrication_wait` | Integer `seconds` in 1..10. Advances native physics and process, saves both; returns `cell_m` and native poses with geometry too. |
 | `preview` | `fabrication_preview` | `job_id`, `position_m:[x,z]`. Returns native-checked placement and `preview_id`. |
 | `commit` | `fabrication_commit` | `job_id`, `preview_id`, `request_id`. Returns installed root, new session and charged-resource receipt. |
@@ -143,8 +146,58 @@ limit explain stalled progress rather than manufacturing an output.
 The audit reports per-material `material_residual_kg`, `energy_residual_j`
 and `work_residual_j`. The closed quantities are:
 initial material = available + unfinished/finished workpieces + offcuts +
-transferred outputs; initial supply = remaining supply + station heat +
+transferred outputs; initial supply + metered native imports = remaining supply + station heat +
 ambient heat; spent supply = sum of job supplied energy.
+
+### Native battery funding — October 1
+
+`fabrication_state` additionally returns `energy_sources`: native store meters,
+`store_hash`, `connected`, `elapsed_s` and `transfer_available_j`. The hash is
+computed from the complete native saved meter, not rounded UI values. Configure
+with `energy_j:0` to demonstrate that all subsequent process energy comes from
+the selected native store. No market wallet claim can fund this transfer.
+
+`energy_source_status` reports `ready` or `unavailable` with the native reason.
+During a stroke or unresolved break the process state remains readable, while
+source meters/transfer readiness are unavailable until a complete snapshot exists.
+
+Connect with a rate no greater than the source's positive `max_power_w` and the
+station's `power_w`. Connection starts at actual accepted native time with zero
+credit. Advance time, read current source meters, then request a transfer:
+
+```
+available J = min(current charge,
+                  charger W * elapsed s,
+                  source max W * elapsed s - other source deliveries J)
+```
+
+Other source deliveries come from native `given_j` counters since connection or
+last successful transfer. Reconnecting starts a new interval; every transfer
+discards unused time. Retry receipts are checked before session, meter or
+revision freshness, so the original request survives source-session replacement
+and a full reopen. Changing any request field under an existing ID refuses.
+
+The adapter restores a complete native snapshot in a temporary process, draws
+the requested energy, and compares the entire result with the original plus
+only the permitted source `charge_j`/`given_j` changes. It saves that source and
+the receiving ledger in one atomic room file before swapping the live process.
+Failed saves leave both original states untouched. Save/load refuse missing or
+rewound native source meters; old fabrication saves with no imports still load.
+
+Process state retains `energy_connection` and `energy_imports`. Each import uses
+`banjo.fabrication-energy-transfer.v1` with scene/source identity, start/end
+native time, declared rate, initial source delivery counter and before/after
+meters. The audit adds `native_energy_received_j`, `native_transfer_residual_j`
+and `native_meter_residual_j`, preserving the original process heat/work audit.
+
+This is an explicit batched charger approximation. Energy becomes available to
+the process at transfer acceptance, never retroactively. No continuous current,
+cable loss or voltage conversion is modeled. Held/parked source batteries and
+native stores with `max_power_w:0` (unbounded native authoring output) refuse.
+Legacy world scenes contain such stores; this checkpoint does not assign them
+invented limits or certify ordinary Workshop repair. Stations still require
+explicit authoring stock and process coefficients. See [measured checks and next
+repair steps](fabrication-energy-checkpoint.md).
 
 ## Regression lane
 

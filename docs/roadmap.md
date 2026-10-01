@@ -1,5 +1,13 @@
 # Banjo roadmap and acceptance gates
 
+**Native repair energy prerequisite, October 1:** [Battery funding](fabrication-energy-checkpoint.md)
+passes actual source debit, receiving supply, accepted-time/source/station power,
+other loads, paired persistence and retry/reopen checks. Next connect matching
+player stock and selected Lab source to a supported remake process that keeps
+the damaged body/history; verify damage-to-repair-to-use in ordinary screens.
+The current charger is a batched approximation with explicit authoring stock,
+not finished repair. Four verified, ten partial; all fourteen gates remain.
+
 **Item condition acceptance, October 1:** [Native/private/browser checks](body-condition.md)
 pass real cut continuity, supported thermal factors, unresolved/broken and exact
 rigid states, no query mutation, bag/restart and ordinary screens. Next implement

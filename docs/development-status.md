@@ -1,5 +1,14 @@
 # Development status and handoff
 
+**Native fabrication energy, October 1:** [Paired native/process checkpoint](fabrication-energy-checkpoint.md)
+adds power/time-bounded charging from actual native batteries, complete-world
+preservation, stale/retry/failed-save/reopen checks and HTTP/MCP operations.
+The isolated Fabrication QA suite expands to 44 passing checks with matched
+glass/oak/iron output and energy/heat evidence. No native law or existing
+tolerance changes; authored supplies and work coefficients remain approximate.
+Ordinary Lab repair, matching player-stock reservation and retained damage
+history integration remain open. Four player items verified, ten partial.
+
 **Item condition, October 1:** [Native/API/browser evidence](body-condition.md)
 adds actual bond/thermal condition readings in World, carried Inventory and
 carried Lab. Real oak cuts persist through reopen/parking; matched glass/oak/iron

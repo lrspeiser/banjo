@@ -779,6 +779,8 @@ class NativeHTTP(WorkbenchTestCase):
                         client.send("initialize",{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"fabrication-qa","version":"1"}})
                         names=[t["name"] for t in client.send("tools/list")["result"]["tools"]]
                         self.assertEqual(len(names),len(set(names)));self.assertIn("fabrication_start",names)
+                        self.assertIn("fabrication_connect_energy",names)
+                        self.assertIn("fabrication_fund_energy",names)
                         self.assertIn("fabrication_qa_run",names)
                         self.assertEqual(client.call("fabrication_qa_status"),{"runs":[]})
                         context=client.call("fabrication_open")

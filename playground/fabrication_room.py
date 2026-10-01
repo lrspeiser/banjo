@@ -29,6 +29,8 @@ COMMAND_FIELDS = {
     "recover": {"material", "mass_kg", "request_id", "revision"},
     "retrieve_ground": {"lot_id", "sand_m3", "soil_m3", "request_id", "revision"},
     "store_ground": {"sand_m3", "soil_m3", "request_id", "revision"},
+    "connect_energy": {"store", "store_hash", "power_w", "request_id", "revision"},
+    "fund_energy": {"store_hash", "joules", "request_id", "revision"},
 }
 
 def active(app):
@@ -104,6 +106,7 @@ def compile_quote(candidate, stock_kg, cell_m, state):
             "cell_m": cell_m, "cells": len(cells), "matter_physics_hash": physics_hash}
 
 def _persist(app, room, saved, state):
+    model.validate_energy_sources(state, saved, room.scene)
     record = SimpleNamespace(scene=room.scene, spec=room.spec, chat=deepcopy(room.chat),
         inventory_record=install._inventory(room), world_record=saved,
         workshop_installs=deepcopy(getattr(room,"workshop_installs",[])),
@@ -128,6 +131,7 @@ def request(app, operation, body):
     fields = COMMAND_FIELDS[operation]
     model.obj(body, COMMON|fields, COMMON|fields)
     if operation in ("store_ground","retrieve_ground"): return transfer_ground(app,body,operation)
+    if operation in ("connect_energy", "fund_energy"): return transfer_energy(app, body, operation)
     with install._world(app) as (room, live, old), LOCK:
         install._source(room, old, body)
         if room.scene not in install.world_room.SCENES:
@@ -140,7 +144,11 @@ def request(app, operation, body):
             ground=(old.send(op="environment").get("environment",{}).get("ground",{})
                     if old.spec.get("terrain") else {})
             carried=ground.get("carried",{})
+            source_snapshot, source_reason = live.snapshot()
             return {"scene": room.scene, "session": old.id, "cell_m": old.spec["cell_m"], "configured": state is not None,
+                    "energy_sources": energy_sources(state, source_snapshot, room.scene) if source_snapshot is not None else [],
+                    "energy_source_status": {"state": "ready" if source_snapshot is not None else "unavailable",
+                                             "reason": source_reason},
                     "carried_ground":carried, "ground_audit":model.ground_audit(state,ground,getattr(room,"ground_transfers",None)),
                     "state": model.report(state) if state is not None else None}
         if operation == "configure":
@@ -171,6 +179,100 @@ def request(app, operation, body):
         saved = install._snapshot(live)
         _persist(app, room, saved, state)
         return {"state": model.report(state), "replayed": replayed}
+
+
+def energy_sources(state, snapshot, scene):
+    """Meter hashes bind writes to an actual native store, never a wallet claim."""
+    connection = (state or {}).get("energy_connection")
+    rows = []
+    for meter in snapshot.get("energy_stores", []):
+        connected = bool(connection and connection["scene"] == scene
+            and connection["store"] == meter["id"] and connection["name"] == meter["name"]
+            and connection["body"] == meter["body"])
+        window = max(0., snapshot["t_s"]-connection["since_s"]) if connected else 0.
+        limit = min(window*connection["power_w"], max(0., window*meter["max_power_w"]
+            -(meter["given_j"]-connection["given_j"]))) if connected else 0.
+        rows.append({**deepcopy(meter), "store_hash": model.digest(meter), "connected": connected,
+            "elapsed_s": window, "transfer_available_j": min(meter["charge_j"], limit)})
+    return rows
+
+
+def transfer_energy(app, body, operation):
+    """A coarse charger: bound accepted time, stage debit, save both ledgers."""
+    with install._world(app) as (room, live, old), LOCK:
+        if body["scene"] != room.scene: raise ValueError("The source room changed")
+        state = deepcopy(_state(room)); model.advance(state, old.state["t"])
+        action = {k: v for k, v in body.items() if k not in COMMON}; action["op"] = operation
+        if model.check_request(state, action):
+            return {"state": model.report(state), "session": old.id, "replayed": True}
+        install._source(room, old, body)
+        before = install._snapshot(live)
+        model.validate_energy_sources(state, before, room.scene)
+        connection = state.get("energy_connection")
+        ident = body.get("store") if operation == "connect_energy" else (connection or {}).get("store")
+        if type(ident) is not int or not 1 <= ident <= 4294967295:
+            raise ValueError("Connect a positive native energy store ID first")
+        source = next((m for m in before.get("energy_stores", []) if m["id"] == ident), None)
+        if source is None: raise ValueError("Native energy source is missing")
+        if body["store_hash"] != model.digest(source):
+            raise ValueError("Native source changed; read energy_sources before spending")
+        owned = {b["name"] for b in before.get("bodies", []) if b.get("parked")}
+        for hand in (before.get("player_hands") or {}).values():
+            owned.add(hand.get("holding", ""))
+        owned.add((before.get("hand") or {}).get("holding", ""))
+        if source["body"] in owned:
+            raise ValueError("Put the battery in the world before connecting the station")
+        if source["max_power_w"] <= 0:
+            raise ValueError("Charging requires a declared positive source power limit")
+        if operation == "connect_energy":
+            power = model.number(body["power_w"], "power_w", .001,
+                                 min(state["config"]["power_w"], source["max_power_w"]))
+            state["energy_connection"] = {"scene": room.scene, "store": ident,
+                "name": source["name"], "body": source["body"], "power_w": power,
+                "since_s": before["t_s"], "given_j": source["given_j"]}
+            state["receipts"][body["request_id"]] = model.digest(action)
+            state["revision"] += 1
+            model.validate_state(state)
+            _persist(app, room, before, state)
+            return {"state": model.report(state), "session": old.id, "replayed": False}
+        if connection["scene"] != room.scene or any(connection[k] != source[k] for k in ("name", "body")):
+            raise ValueError("Connected source identity changed; reconnect with current meters")
+        joules = model.number(body["joules"], "joules", .000001, 1e9)
+        if joules > source["charge_j"]: raise ValueError("Insufficient native source energy")
+        if joules > (before["t_s"]-connection["since_s"])*connection["power_w"]+1e-8:
+            raise ValueError("Charging power limit: wait for accepted native time")
+        if (source["given_j"] < connection["given_j"] or
+                source["given_j"]-connection["given_j"]+joules >
+                (before["t_s"]-connection["since_s"])*source["max_power_w"]+1e-8):
+            raise ValueError("Source power limit: other loads used this charging interval")
+        staged = install.live_session.Live()
+        try:
+            opened = staged.open(SimpleNamespace(engine_path=app.engine_path, runs_path=app.runs_path),
+                                 {"spec": deepcopy(room.spec), "snapshot": before})
+            if opened.get("restored", {}).get("tier") != "whole":
+                raise ValueError("Native world did not restore whole")
+            install._preserved(before, install._snapshot(staged), set())
+            staged.session.send(op="draw", store=ident, joules=joules)
+            saved = install._snapshot(staged)
+            after = next(m for m in saved["energy_stores"] if m["id"] == ident)
+            expected = deepcopy(before)
+            meter = next(m for m in expected["energy_stores"] if m["id"] == ident)
+            meter["charge_j"] -= joules; meter["given_j"] += joules
+            install._preserved(expected, saved, set())
+            packet = {"schema": "banjo.fabrication-energy-transfer.v1", "scene": room.scene,
+                "started_s": connection["since_s"], "time_s": saved["t_s"],
+                "given_started_j": connection["given_j"],
+                "power_w": connection["power_w"], "joules": joules,
+                "before": deepcopy(source), "after": deepcopy(after)}
+            state, _ = model.receive_energy(state, action, packet)
+            _persist(app, room, saved, state)
+            live.session = staged.session; staged.session = None
+            live.session.on_reply = getattr(app, "on_live_reply", None)
+            install._preview_cache(app).clear()
+            try: old.close()
+            except Exception: logging.getLogger("banjo").exception("Retired energy source did not close")
+            return {"state": model.report(state), "session": live.session.id, "replayed": False}
+        finally: staged.shutdown()
 
 
 def transfer_ground(app,body,operation):

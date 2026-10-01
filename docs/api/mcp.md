@@ -78,6 +78,8 @@ broke.
 | `fabrication_recover` | Return measured same-material cold offcuts to stock without restoring spent energy. Requires material, mass_kg, revision and request_id. |
 | `fabrication_retrieve_ground` | Retrieve sand/soil from a named raw lot into native carrying. Requires lot_id, sand_m3, soil_m3, revision and request_id; checks remaining lot and carrying capacity, saves both accounts, returns replacement session. |
 | `fabrication_store_ground` | Save carried sand/soil as unprocessed raw lots. Requires sand_m3, soil_m3, revision and request_id; returns the replacement session. Both inventories and retry receipt commit together. |
+| `fabrication_connect_energy` | Connect one in-world native battery with current store_hash, declared power_w, revision and request_id. Starts a new accepted-time charger window without spending energy. Source and station power limits apply. |
+| `fabrication_fund_energy` | Transfer joules from the connected battery using current store_hash, revision and request_id. Native debit and process credit save together; elapsed-time/source power include other consumers. Returns replacement session; identical retries are safe. No wallet or circuit claim. |
 | `fabrication_wait` | advance native physics and fabrication 1–10 seconds, then save both; inspect state after an uncertain wait. |
 | `fabrication_preview` | native clearance and state-carry preview for a finished funded part. |
 | `fabrication_commit` | atomic material transfer and native publication; retries cannot install twice. |

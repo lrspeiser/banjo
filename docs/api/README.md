@@ -1,5 +1,8 @@
 # The Banjo API
 
+Actual battery-to-fabrication imports, power/time bounds and retry receipts:
+[native charger contract](../fabrication.md#native-battery-funding--october-1).
+
 Recorded pick use, outcome boundaries and HTTP endpoints: [QA demonstrations](../qa-demonstrations.md).
 
 Editable native experiments and six platform MCP tools: [Mechanics lab](../physics-trials.md).

@@ -1,5 +1,16 @@
 # Banjo mechanics scorecard
 
+**Native process energy boundary, October 1:** [Metered charger comparison](fabrication-energy-checkpoint.md)
+retains glass/oak/iron, 40 mm cells, `dt=1/240 s`, authored 100 J/kg work and
+matched 10 kg stock. A 300 W/4000 J native battery funds three 1000 J jobs through
+a 250 W time-bounded charger; actual masses are 2.56/0.7168/8.05888 kg at
+293.15 K. Local process energy/work residuals stay below 9.1e-13 J; exact source
+meter/debit residuals are zero. Other loads share the output envelope and
+failed-save/retry/reopen tests pass. This is batched transfer/accounting, not
+continuous circuit simulation, calibrated manufacture, native bond repair,
+stock transport/placement work or full conservation. M05/M16/M17/P05–P07 still
+require the ordinary damage/material/energy remake journey and physical laws.
+
 **Condition diagnostic, October 1:** [Measured native damage index](body-condition.md)
 retains glass/oak/iron, 10/20 mm cells and `dt=1/240 s`. Actual oak cutting
 severs 104/12,876 bonds for 5.07526 J; same edge makes no unsupported glass/iron

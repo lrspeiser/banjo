@@ -3,6 +3,11 @@
 The owner's fourteen-point goal supersedes the earlier progression-only task.
 This is the current acceptance list, not a claim that all features are done.
 
+The [native energy checkpoint](fabrication-energy-checkpoint.md) supplies a
+tested battery-to-process transfer prerequisite for item 11. It does not yet
+repair a carried item from player stock. Counts remain **four verified, ten
+partial**, with all fourteen original requirements retained.
+
 | Item | Acceptance | Status |
 |---|---|---|
 | 1. Action clarity | Recorded dig/delivery/process packets, filling rover inventory, visible output, nearby personal pickup; failure/restart/race checks | Native/browser checkpoint verified; general generated routing remains a separate gate. See [resource flow](resource-flow.md). |

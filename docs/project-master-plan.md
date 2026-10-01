@@ -1,5 +1,14 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Native fabrication energy, October 1:** [Metered charger evidence](fabrication-energy-checkpoint.md)
+connects actual battery debits to the finite process supply, bounded by accepted
+native time and declared source/station power, with paired save/retry receipts.
+Glass/oak/iron native products and existing assembly/API checks pass. Authored
+stock/work coefficients and batched charging remain explicit approximations;
+matching player stock, retained damaged-body remake and ordinary Workshop repair
+remain next. All fourteen player requirements remain active, four verified and
+ten partial.
+
 **Item condition checkpoint, October 1:** [Measured body damage](body-condition.md)
 connects retained native bonds and supported current thermal section factors to
 World/Inventory/carried Lab meters. This index is not strength or fatigue
