@@ -2,7 +2,7 @@
 
 Contextual placement and saved interaction points: [contract](../placement-and-interaction-points.md).
 
-September 19, 2026. Native ABI **25**, world MCP **1.16.0**, platform MCP **1.19.0**.
+September 19, 2026. Native ABI **25**, world MCP **1.17.0**, platform MCP **1.20.0**.
 This reference covers the executable functions and the boundaries of the fifteen
 requested machine capabilities. It does not turn planned solvers into callable
 appliances. Model laws and measured numerical errors are in

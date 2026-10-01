@@ -1791,6 +1791,8 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
                                limits="Finite stock and work charged; exact native geometry and prior state verified. " + fabrication.LIMITATIONS[0])
                 if job.get('remake_source') is not None:
                     receipt['remake_source']=deepcopy(job['remake_source'])
+                if job.get('make_source') is not None:
+                    receipt['make_source']=deepcopy(job['make_source'])
             if needs is not None:
                 drawn = workshop_library.take_from_rack(app, needs)
                 receipt.update(resources_charged=True, materials_taken=drawn["took"], rack=drawn["rack"])

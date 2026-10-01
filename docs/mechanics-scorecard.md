@@ -1,5 +1,13 @@
 # Banjo mechanics scorecard
 
+**Paid design boundary, October 1:** [Reviewed new/saved Make](fabrication-paid-design-checkpoint.md)
+retains glass/oak/iron native admission and restart at 40 mm / `dt=1/240 s`:
+2.56 / 0.7168 / 8.05888 kg consume 256 / 71.68 / 805.888 J under the existing
+authored shaping estimate. The saved 50 mm oak pick consumes 1.925 kg / 192.5 J
+through actual browser funding and native installation. No physical law or
+tolerance changes; exact rigid forming, mixed interfaces, fatigue/joints,
+starter capability, transport and full conservation remain open.
+
 **Lab-funded tool use boundary, October 1:** [Reviewed supply/native stroke](fabrication-lab-funding-checkpoint.md)
 keeps glass/oak/iron paid comparisons and real old cut retention. The 50 mm /
 `dt=1/240 s` browser oak output costs 1.925 kg / 192.5 J under the existing authored

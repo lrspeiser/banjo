@@ -1,4 +1,4 @@
-"""Bind a carried Lab source and a frozen design to finite fabrication work.
+"""Bind reviewed Lab designs and optional carried sources to finite work.
 
 Remake manufactures a separate product from new stock. It never heals, removes,
 refunds or reconstructs the original. Initial planning is read-only; accepted
@@ -67,20 +67,22 @@ def source(app, live, item_id):
 
 
 def require_owner(app,job):
-    binding=job.get('remake_source')
+    binding=job.get('remake_source') or job.get('make_source')
     if binding is not None and binding['owner']!=_owner(app):
-        raise ValueError('Only the player who started this remake may control or place it')
+        raise ValueError('Only the player who started this '+('remake' if job.get('remake_source') else 'make')+' may control or place it')
 
 
-def plan(app,body):
+def plan(app,body,*,making=False):
     import fabrication_room as api
     with install._world(app) as (room,live,old),api.LOCK:
         install._source(room,old,body)
-        binding=source(app,live,body['source_item'])
+        binding=({'schema':'banjo.make-source.v1','owner':_owner(app)} if making
+                 else source(app,live,body['source_item']))
         binding['draft_hash']=model.digest(body['candidate'])
+        kind='make' if making else 'remake'
         state=deepcopy(getattr(room,'fabrication_record',None))
         if state is None:
-            return {'schema':'banjo.remake-plan.v1','session':old.id,'scene':room.scene,
+            return {'schema':'banjo.'+kind+'-plan.v1','session':old.id,'scene':room.scene,
                 'available':False,'reason':'No workbench process is declared in this world',
                 'source':binding,'changes_world':False}
         model.validate_state(state);model.advance(state,old.state['t'])
@@ -90,25 +92,25 @@ def plan(app,body):
         # recipe BOM or charge for whatever rounded number the page displays.
         preliminary=api.compile_quote(body['candidate'],10000.,old.spec['cell_m'],state)
         quote=api.compile_quote(body['candidate'],preliminary['product_kg'],old.spec['cell_m'],state)
-        model.remake_source(binding)
+        (model.make_source if making else model.remake_source)(binding)
         ident=uuid.uuid4().hex;cache=_cache(app)
-        if len(cache)>=MAX_PLANS:raise ValueError('Too many remake plans; wait for old plans to expire')
-        cache[ident]={'expires':time.monotonic()+LIFETIME_S,'scene':room.scene,
+        if len(cache)>=MAX_PLANS:raise ValueError('Too many fabrication plans; wait for old plans to expire')
+        cache[ident]={'expires':time.monotonic()+LIFETIME_S,'scene':room.scene,'kind':kind,
             'source':binding,'quote':quote,'config_hash':model.digest(state['config'])}
         material=quote['material']
         sources=fabrication_stock.sources(app)
         available=state['stock_kg'].get(material,0.)
-        return {'schema':'banjo.remake-plan.v1','plan_id':ident,'session':old.id,'scene':room.scene,
+        return {'schema':'banjo.'+kind+'-plan.v1','plan_id':ident,'session':old.id,'scene':room.scene,
             'available':True,'source':deepcopy(binding),'quote':quote,'revision':state['revision'],
             'station_stock_kg':available,'station_energy_j':state['energy_j'],
             'missing_stock_kg':max(0.,quote['stock_kg']-available),
             'missing_energy_j':max(0.,quote['supply_required_j']-state['energy_j']),
             'stock_sources':[r for r in sources if r['material']==material],
             'occupied':any(j['status']=='running' for j in state['jobs'].values()),
-            'changes_world':False,'original_retained':True}
+            'changes_world':False,'original_retained':not making}
 
 
-def start(app,body):
+def start(app,body,*,making=False):
     import fabrication_room as api
     import fabrication_stock
     model.token(body['plan_id'],'plan_id')
@@ -116,28 +118,33 @@ def start(app,body):
         if body['scene']!=room.scene:raise ValueError('The source room changed')
         state=deepcopy(api._state(room));model.advance(state,old.state['t'])
         fabrication_stock.validate(app,room.scene,state)
-        action={'op':'start','remake_plan_id':body['plan_id'],'revision':body['revision'],
+        kind='make' if making else 'remake'
+        action={'op':'start',kind+'_plan_id':body['plan_id'],'revision':body['revision'],
             'request_id':body['request_id'],'requested_by':_owner(app)}
         if model.check_request(state,action):
             require_owner(app,state['jobs'][body['request_id']])
             return {'session':old.id,'scene':room.scene,'state':model.report(state),
-                'job_id':body['request_id'],'replayed':True,'original_retained':True}
+                'job_id':body['request_id'],'replayed':True,'original_retained':not making}
         install._source(room,old,body)
         entry=_cache(app).get(body['plan_id'])
-        if entry is None:raise ValueError('Remake plan expired; review the current item again')
+        if entry is None:raise ValueError(kind.title()+' plan expired; review the current design again')
         if entry['scene']!=room.scene or entry['source']['owner']!=_owner(app):
-            raise ValueError('This remake plan belongs to another world or player')
-        current=source(app,live,entry['source']['source_item'])
-        if current['source_hash']!=entry['source']['source_hash']:
-            raise ValueError('Selected item changed; review a new remake plan')
+            raise ValueError('This '+kind+' plan belongs to another world or player')
+        if entry.get('kind','remake')!=kind:raise ValueError('Review the requested make or remake operation again')
+        current=None
+        if not making:
+            current=source(app,live,entry['source']['source_item'])
+            if current['source_hash']!=entry['source']['source_hash']:
+                raise ValueError('Selected item changed; review a new remake plan')
         if model.digest(state['config'])!=entry['config_hash']:
-            raise ValueError('Workbench process changed; review a new remake plan')
+            raise ValueError('Workbench process changed; review a new '+kind+' plan')
         quote=deepcopy(entry['quote'])
         if state['energy_j']+1e-10<quote['supply_required_j']:
-            raise ValueError('Charge the workbench before starting this remake')
-        binding=deepcopy(entry['source']);binding['native_hash']=current['native_hash']
-        quote['remake_source']=binding
+            raise ValueError('Charge the workbench before starting this '+kind)
+        binding=deepcopy(entry['source'])
+        if current is not None:binding['native_hash']=current['native_hash']
+        quote[kind+'_source']=binding
         state,replayed=model.mutate(state,action,quote=quote)
         api._persist(app,room,install._snapshot(live),state)
         return {'session':old.id,'scene':room.scene,'state':model.report(state),
-            'job_id':body['request_id'],'replayed':replayed,'original_retained':True}
+            'job_id':body['request_id'],'replayed':replayed,'original_retained':not making}

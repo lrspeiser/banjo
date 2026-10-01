@@ -1,5 +1,12 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Paid new/saved design flow, October 1:** [Reviewed Make checkpoint](fabrication-paid-design-checkpoint.md)
+extends the configured workbench to new recipes and saved designs, retaining
+explicit funding and authenticated frozen jobs. Chrome saved-pick construction,
+glass/oak/iron native mass and restart pass. The ordinary fresh-world finite
+capability, AI/machine integration, supported interfaces and damage-to-use remain
+acceptance work; all fourteen requirements stay active, four verified, ten partial.
+
 **Lab funding/use, October 1:** [Reviewed supplies and native output use](fabrication-lab-funding-checkpoint.md)
 connect personal/shared stock selection and actual finite battery charging to
 the Remake UI. Lost-response/reload retries debit once; actual output pickup,

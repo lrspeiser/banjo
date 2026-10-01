@@ -3,6 +3,12 @@
 The owner's fourteen-point goal supersedes the earlier progression-only task.
 This is the current acceptance list, not a claim that all features are done.
 
+[Reviewed paid designs](fabrication-paid-design-checkpoint.md) extend configured
+Recipes/Lab Make to new and saved items without a carried source. Explicit
+funding, frozen owner binding, native installation and restart pass with
+glass/oak/iron and a Chrome saved pick. Ordinary finite starter capability and
+AI/machine migration remain open. Counts stay **four verified, ten partial**.
+
 The [Lab funding/use checkpoint](fabrication-lab-funding-checkpoint.md) adds
 reviewed personal/shared stock and native battery controls with lost-response
 recovery. The paid replacement can be picked up, bagged, equipped and used for

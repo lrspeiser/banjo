@@ -60,6 +60,69 @@ class NativeRemake(unittest.TestCase):
         self.call('fund_energy',store_hash=source['store_hash'],joules=plan['quote']['supply_required_j'],
             revision=reading['state']['revision'],request_id='remake-energy-'+ident)
 
+    def test_new_design_glass_oak_iron_paid_make_has_no_carried_source_and_survives_restart(self):
+        measurements=[]
+        for index,material in enumerate(('glass','oak','iron')):
+            if index:
+                self.live.shutdown();funded.NativeStock.setUp(self)
+            design=funded.candidate(material)
+            before=install._snapshot(self.live);rack=library.rack(self.app)
+            plan=self.call('plan_make',candidate=design)
+            self.assertEqual('banjo.make-plan.v1',plan['schema']);self.assertFalse(plan['original_retained'])
+            self.assertNotIn('source_item',plan['source'])
+            self.assertEqual(before,install._snapshot(self.live));self.assertEqual(rack,library.rack(self.app))
+            self.fund(plan,material,'new-'+material)
+            # A caller changing its mutable copy cannot alter the frozen plan.
+            design['component_overrides']['@construction']['added'][0]['material']='concrete'
+            reading=self.call('state');ident='new-design-'+material
+            request={**self.context(),'plan_id':plan['plan_id'],'revision':reading['state']['revision'],'request_id':ident}
+            accepted=api.request(self.app,'start_make',request)
+            job=accepted['state']['jobs'][ident]
+            self.assertEqual(material,job['material']);self.assertEqual(plan['source'],job['make_source'])
+            self.assertNotIn('remake_source',job)
+            api.wait(self.app,{**self.context(),'seconds':max(1,math.ceil(job['minimum_duration_s']))})
+            preview=api.preview(self.app,{**self.context(),'job_id':ident,'position_m':[index*.5,0]})
+            result=api.commit(self.app,{**self.context(),'job_id':ident,'preview_id':preview['preview_id'],'request_id':'new-install-'+material})
+            self.assertEqual(plan['source'],result['make_source'])
+            saved=self.app.store.load('fabrication');self.live.open(self.app,{'spec':saved.spec,'snapshot':saved.world_record})
+            self.room=self.app.room=saved
+            self.assertTrue(api.request(self.app,'start_make',request)['replayed'])
+            self.assertEqual('installed',self.room.fabrication_record['jobs'][ident]['status'])
+            self.assertLess(abs(model.audit(self.room.fabrication_record)['energy_residual_j']),1e-7)
+            measurements.append({'material':material,'native_mass_kg':result['mass_kg'],
+                'paid_stock_kg':plan['quote']['stock_kg'],'paid_j':plan['quote']['supply_required_j'],
+                'carried_source_required':False,'restart_replay':True,'cell_m':.04,'dt_s':1/240})
+        self.native_evidence=measurements
+
+    def test_new_design_plan_peer_wrong_operation_expiry_and_saved_binding_refuse_without_spend(self):
+        plan=self.call('plan_make',candidate=funded.candidate());self.fund(plan,'oak','new-boundary')
+        self.app.world_id='a'*32
+        before=deepcopy(self.room.fabrication_record)
+        request={**self.context(),'plan_id':plan['plan_id'],
+                 'revision':before['revision'],'request_id':'new-boundary-job'}
+        with self.assertRaisesRegex(ValueError,'operation'):
+            api.request(self.app,'start_remake',request)
+        scope=library.REQUEST_OWNER.set('other-player')
+        try:
+            with self.assertRaisesRegex(ValueError,'another world or player'):
+                api.request(self.app,'start_make',request)
+        finally:library.REQUEST_OWNER.reset(scope)
+        self.assertEqual(before,self.room.fabrication_record)
+        remake._cache(self.app)[plan['plan_id']]['expires']=0
+        with self.assertRaisesRegex(ValueError,'expired'):api.request(self.app,'start_make',request)
+        plan=self.call('plan_make',candidate=funded.candidate());request['plan_id']=plan['plan_id']
+        accepted=api.request(self.app,'start_make',request)
+        scope=library.REQUEST_OWNER.set('other-player')
+        try:
+            with self.assertRaisesRegex(ValueError,'Only the player'):
+                self.call('pause',job_id=request['request_id'],revision=accepted['state']['revision'],request_id='new-peer-pause')
+        finally:library.REQUEST_OWNER.reset(scope)
+        bad=deepcopy(self.room.fabrication_record)
+        bad['jobs'][request['request_id']]['make_source']['draft_hash']='0'*64
+        with self.assertRaisesRegex(ValueError,'draft'):model.validate_state(bad)
+        for changes in ({'owner':''},{'draft_hash':'z'*64},{'unknown':1}):
+            with self.assertRaises(ValueError):model.make_source({**plan['source'],**changes})
+
     def test_glass_oak_iron_frozen_source_funded_remake_admission_and_restart(self):
         measurements=[]
         for index,material in enumerate(('glass','oak','iron')):
@@ -355,6 +418,46 @@ class LabRemake(unittest.TestCase):
         self.assertEqual({'oak':25.},more['collected'])
         mass=app.room.fabrication_record['jobs'][ident]['stock_kg']
         self.assertAlmostEqual(50.-mass,flow.GoodsJourney.personal(self,app,owner)['oak'],places=6)
+
+        # Save the actual recovered recipe, then use Recipes Make. This must
+        # open the reviewed paid flow without a physical carried source.
+        p.evaluate('banjoRoom.hold()');wait('!banjoRoom.world.busy')
+        saved=self.post('/api/workshop/feedback',{**recipe,'save_design':True,'label':'Saved funded pick'},world)
+        saved_id=saved['design']['design_id']
+        p.send('Page.navigate',{'url':self.base+f'/world?world={world}&workshop=1&tab=recipes'})
+        selector='#ws-pane-recipes [data-recipe="'+saved_id+'"] .ws-recipe-acts button:first-child'
+        wait('document.querySelector(%s) && !document.querySelector(%s).disabled'%(json.dumps(selector),json.dumps(selector)))
+        jobs_before=len(app.room.fabrication_record['jobs']);rack_before=flow.GoodsJourney.personal(self,app,owner)['oak']
+        p.evaluate('document.querySelector(%s).click()'%json.dumps(selector))
+        wait('document.querySelector("#ws-remake-start")?.textContent==="Start make"')
+        self.assertEqual(jobs_before,len(app.room.fabrication_record['jobs']))
+        self.assertEqual(rack_before,flow.GoodsJourney.personal(self,app,owner)['oak'])
+        self.assertNotIn('Damage retained',p.evaluate('document.querySelector("#ws-remake").textContent'))
+        p.evaluate('document.querySelector("#ws-remake-stock-personal").click()')
+        wait('!document.querySelector("#ws-remake-stock-personal")')
+        if p.evaluate('Boolean(document.querySelector("#ws-remake-energy")?.disabled)'):
+            p.evaluate('document.querySelector("#ws-remake-charge-wait").click()')
+        wait('document.querySelector("#ws-remake-energy") && !document.querySelector("#ws-remake-energy").disabled')
+        p.evaluate('document.querySelector("#ws-remake-energy").click()')
+        wait('document.querySelector("#ws-remake-start") && !document.querySelector("#ws-remake-start").disabled')
+        p.evaluate('document.querySelector("#ws-remake-start").click()')
+        wait('document.querySelector("#ws-remake-step")')
+        new_ident=next(k for k,j in app.room.fabrication_record['jobs'].items() if j.get('make_source'))
+        with self.assertRaises(urllib.error.HTTPError) as private_make:
+            self.post('/api/world/fabrication/pause',{'scene':app.room.scene,'session':app.live.session.id,
+                'job_id':new_ident,'revision':app.room.fabrication_record['revision'],'request_id':'peer-new-make-pause'},world,peer['token'])
+        self.assertIn('Only the player',private_make.exception.read().decode())
+        p.evaluate('document.querySelector("#ws-remake-step").click()')
+        wait('document.querySelector("#ws-remake-place")');p.evaluate('document.querySelector("#ws-remake-place").click()')
+        wait('document.querySelector("#ws-remake a")?.textContent==="Collect in World"')
+        made=next(j for j in app.room.fabrication_record['jobs'].values() if j.get('make_source'))
+        self.assertEqual(owner['id'],made['make_source']['owner']);self.assertNotIn('remake_source',made)
+        self.assertEqual('installed',made['status']);self.assertAlmostEqual(mass,made['stock_kg'],places=10)
+        self.assertAlmostEqual(rack_before-mass,flow.GoodsJourney.personal(self,app,owner)['oak'],places=6)
+        self.assertEqual(original,next(b for b in install._snapshot(app.live)['bodies'] if b['name']=='field pick'))
+        self.native_evidence['saved_design_paid_make']=True
+        (out/'lab-paid-saved-design.png').write_bytes(base64.b64decode(p.send('Page.captureScreenshot',{'format':'png'})['data']))
+        self.assertEqual([], [e for e in p.events if e.get('method')=='Runtime.exceptionThrown'])
 
 
 if __name__=='__main__':unittest.main()

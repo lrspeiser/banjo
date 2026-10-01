@@ -165,6 +165,10 @@ def validate_state(state):
         if job.get("remake_source") is not None:
             remake_source(job["remake_source"])
             if job["remake_source"]["draft_hash"]!=digest(job["candidate"]):raise ValueError("Remake draft does not match its source binding")
+        if job.get("make_source") is not None:
+            make_source(job["make_source"])
+            if job["make_source"]["draft_hash"]!=digest(job["candidate"]):raise ValueError("Make draft does not match its reviewed binding")
+            if job.get("remake_source") is not None:raise ValueError("A job cannot have two source bindings")
         if job["material"] not in state["stock_kg"] or job["status"] not in ("running", "paused", "ready", "installed"):
             raise ValueError("Invalid workpiece")
         running += job["status"] == "running"
@@ -198,6 +202,19 @@ def remake_source(packet):
     rows=packet["condition"]
     if not isinstance(rows,list) or not 1<=len(rows)<=64 or any(not isinstance(r,dict) or r.get("name") not in names for r in rows):
         raise ValueError("Invalid remake source diagnostics")
+    return packet
+
+
+def make_source(packet):
+    """An owned frozen design; it makes no claim about a carried physical item."""
+    fields={"schema","owner","draft_hash"}
+    obj(packet,fields,fields)
+    if packet["schema"]!="banjo.make-source.v1":raise ValueError("Unsupported make binding")
+    if not isinstance(packet["owner"],str) or not 1<=len(packet["owner"])<=160:
+        raise ValueError("Invalid make owner")
+    value=packet["draft_hash"]
+    if not isinstance(value,str) or len(value)!=64 or any(c not in "0123456789abcdef" for c in value):
+        raise ValueError("Invalid make draft hash")
     return packet
 
 

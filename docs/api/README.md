@@ -25,7 +25,7 @@ they do different things, because they are made of different stuff.
 
 This is the documentation for using that from your own program.
 
-Current native ABI: **25**. World MCP is **1.16.0**; platform MCP is **1.19.0**.
+Current native ABI: **25**. World MCP is **1.17.0**; platform MCP is **1.20.0**.
 
 Native runner/Python/HTTP item-condition read: [bounded contract and measured
 scope](../body-condition.md#bounded-native-and-http-read). This adds no C ABI

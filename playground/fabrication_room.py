@@ -37,6 +37,8 @@ COMMAND_FIELDS = {
     "release_stock": {"reservation_id", "request_id"},
     "plan_remake": {"source_item", "candidate"},
     "start_remake": {"plan_id", "revision", "request_id"},
+    "plan_make": {"candidate"},
+    "start_make": {"plan_id", "revision", "request_id"},
 }
 
 def active(app):
@@ -142,9 +144,10 @@ def request(app, operation, body):
     if operation in ("store_ground","retrieve_ground"): return transfer_ground(app,body,operation)
     if operation in ("connect_energy", "fund_energy"): return transfer_energy(app, body, operation)
     if operation in ("fund_stock", "release_stock"): return transfer_stock(app, body, operation)
-    if operation in ("plan_remake", "start_remake"):
+    if operation in ("plan_remake", "start_remake", "plan_make", "start_make"):
         import fabrication_remake
-        return (fabrication_remake.plan if operation=="plan_remake" else fabrication_remake.start)(app,body)
+        function=fabrication_remake.plan if operation.startswith("plan_") else fabrication_remake.start
+        return function(app,body,making=operation.endswith("_make"))
     with install._world(app) as (room, live, old), LOCK:
         install._source(room, old, body)
         if room.scene not in install.world_room.SCENES:

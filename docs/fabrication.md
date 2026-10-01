@@ -106,6 +106,8 @@ that current `scene` and `session`. Unknown fields refuse.
 | `release_stock` | `fabrication_release_stock` | `reservation_id`, `request_id`. Returns only an uncredited reservation to its original owner; refuses credited stock. Returns `released`, `replayed`, `session`, `stock_sources`, `stock_reservations`. |
 | `plan_remake` | `fabrication_plan_remake` | `source_item` (current hands/bag ID), `candidate` (frozen Lab draft). Read-only source binding, exact native quote, stock/energy shortages, occupancy and `plan_id`; reports unavailable if no process is declared. |
 | `start_remake` | `fabrication_start_remake` | `plan_id`, `revision`, `request_id`. Validates current owned source, reserves stock and requires enough finite energy. Returns `job_id`, `state`, `replayed`, `original_retained`. Retry the original request after uncertainty. |
+| `plan_make` | `fabrication_plan_make` | `candidate`. Read-only frozen design, exact native cost, shortages and private `plan_id`; no carried item is required. |
+| `start_make` | `fabrication_start_make` | `plan_id`, `revision`, `request_id`. Starts the reviewed new design with real stock and sufficient finite energy; owner-only pause/resume/placement, durable `make_source` binding and unchanged retries. |
 | `wait` | `fabrication_wait` | Integer `seconds` in 1..10. Advances native physics and process, saves both; returns `cell_m` and native poses with geometry too. |
 | `preview` | `fabrication_preview` | `job_id`, `position_m:[x,z]`. Returns native-checked placement and `preview_id`. |
 | `commit` | `fabrication_commit` | `job_id`, `preview_id`, `request_id`. Returns installed root, new session and charged-resource receipt. |
@@ -283,6 +285,30 @@ is added. Real cut-source and matched glass/oak/iron evidence is recorded in
 player requirements remain active; full ordinary repair-to-use is unfinished.
 
 ## Regression lane
+
+### Reviewed new items and saved designs
+
+In a configured world, Recipes **Make** and Lab **Make it** open a reviewed
+Lab funding flow. Review spends nothing. New/saved designs use `plan_make` and
+`start_make`; carried items use the source-bound remake operations above.
+Unconfigured authoring worlds retain their explicitly unpaid-energy Make path.
+Ordinary fresh worlds still require a finite starter process/source declaration
+before the paid flow can qualify there.
+
+`plan_make` returns `banjo.make-plan.v1` with the same exact native quote,
+station balances, shortages and occupancy as a remake, but
+`original_retained:false` and no physical source assertion. Its durable job and
+installation receipt retain `make_source` (`banjo.make-source.v1`), containing
+`owner` and exact `draft_hash`. The server creates the binding; a caller cannot
+substitute its own owner or costs. Frozen plans share the 32-entry / 300-second
+budget. A make plan cannot be started as a remake or by a different player.
+Peer pause/resume/preview/commit are refused. Accepted requests replay after
+whole-world reopen even if the temporary plan has expired.
+
+This retains supported single-material lattice limitations. It does not add
+forming laws for exact rigid products or material interfaces. Read
+[paid design acceptance](fabrication-paid-design-checkpoint.md) for measured
+scope and the remaining ordinary-world gates.
 
 Run `python scripts/fabrication_qa.py --engine <banjo_live_world_run> --out <folder>`.
 Set `BANJO_LIBRARY` to the matching native shared library. The output folder must

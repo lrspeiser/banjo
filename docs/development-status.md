@@ -1,5 +1,14 @@
 # Development status and handoff
 
+**Paid new/saved designs, October 1:** [Reviewed Make acceptance](fabrication-paid-design-checkpoint.md)
+extends finite funding to new recipes and saved designs without a carried source.
+Configured Recipes Make and Lab Make it review before any debit. Player/draft
+binding, glass/oak/iron native products, restart/replay and Chrome saved-pick
+fund/start/run/place pass; the fixed suite is 59/59. Native laws/ABI remain
+unchanged. Fresh starter capability, AI and supported machine manufacture need
+to migrate together before enabling the funded guard by default. Four verified,
+ten partial; all fourteen requirements remain active.
+
 **Lab funding-to-use, October 1:** [Browser/native checkpoint](fabrication-lab-funding-checkpoint.md)
 adds explicit stock-pool and battery controls, accepted charging time, pending
 transfer confirmation and reload retries. Actual E/Q/bag-slot/J replacement use

@@ -1,5 +1,13 @@
 # Banjo roadmap and acceptance gates
 
+**Reviewed paid Make, October 1:** [New/saved design checkpoint](fabrication-paid-design-checkpoint.md)
+passes configured Recipes/Lab review, real funding, owned frozen new-item jobs,
+native installation and restart/replay with glass/oak/iron. Next connect finite
+starter capabilities and migrate ordinary Make, AI progression and supported
+machine products together; exact rigid forming and mixed interfaces are still
+unsupported. Damaged carried tool-to-use remains a separate ordinary journey.
+Preserve all fourteen gates: four verified, ten partial.
+
 **Lab funding/use acceptance, October 1:** [Reviewed stock/battery and native use](fabrication-lab-funding-checkpoint.md)
 passes explicit personal/shared selection, finite charging, lost-response/reload
 retry, owner-only paid work and E/Q/equip/J use of its separate native output.

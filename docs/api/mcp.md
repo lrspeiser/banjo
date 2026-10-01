@@ -50,7 +50,7 @@ Or in any client's config file:
 If the library is somewhere unusual, set `BANJO_LIBRARY` to its path in the
 server's environment. Otherwise it is found next to the repository.
 
-Current world server version: **1.16.0**; platform server: **1.19.0**, requiring native ABI **25**.
+Current world server version: **1.17.0**; platform server: **1.20.0**, requiring native ABI **25**.
 For the complete Workshop/Product surface use `mcp/banjo_platform_mcp.py` with
 the same environment; it includes every world tool below. See
 [Workshop setup](workshop.md#mcp-server) and the
@@ -84,6 +84,8 @@ broke.
 | `fabrication_release_stock` | Return the caller's uncredited reservation_id using request_id. Refuses live/durably credited stock; exact SQL refund retries once. Inventory exposes Finish transfer and Return to stock. |
 | `fabrication_plan_remake` | Read-only plan for source_item currently in the caller's hands/bag and a frozen candidate. Exact material/energy/time and shortages for an already declared process; source/topology/draft binding and bounded plan_id. No healing or implicit supplies. |
 | `fabrication_start_remake` | Start plan_id with revision and stable request_id. Rechecks source, requires finite energy and reserves stock; durable source history and original retained. Only initiating player controls/places output. Retry unchanged; existing wait/preview/commit finish the product. |
+| `fabrication_plan_make` | Read-only frozen new/saved design with exact native costs and station shortages. No carried source or supply grant; private plan_id uses the already declared process. |
+| `fabrication_start_make` | Start plan_id with revision and stable request_id, real stock and sufficient finite energy. Durable make_source binds owner and draft; owner-only controls and placement. Retry unchanged; wait/preview/commit complete the product. |
 | `fabrication_wait` | advance native physics and fabrication 1–10 seconds, then save both; inspect state after an uncertain wait. |
 | `fabrication_preview` | native clearance and state-carry preview for a finished funded part. |
 | `fabrication_commit` | atomic material transfer and native publication; retries cannot install twice. |

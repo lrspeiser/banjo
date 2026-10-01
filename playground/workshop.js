@@ -1092,12 +1092,22 @@ async function checkValidity(button) {
 // collision the person did not ask about.
 const MAKE_SPOTS = [[3, 0], [3, 1.6], [3, -1.6], [4.6, 0], [4.6, 1.6], [4.6, -1.6], [1.4, 1.6], [1.4, -1.6]];
 
-async function makeIt(button, {candidate: suppliedCandidate = null, status = setMakeStatus, replace = true} = {}) {
+async function makeIt(button, {candidate: suppliedCandidate = null, sourceAnswer = null, selection = null, status = setMakeStatus, replace = true} = {}) {
   button.disabled = true;
   try {
     status("Checking placement…", false);
     const source = await api("/api/world/workshop/context", {});
     const candidate = suppliedCandidate || candidateBody();
+    const process = await api("/api/world/fabrication/state", {session:source.session,scene:source.scene});
+    if(process.configured) {
+      if(sourceAnswer) {
+        clearLab();bench.inventorySelection=selection;
+        if(!took(sourceAnswer))throw Error("Design changed; open it in the Lab again");
+      }
+      showTab("lab");updateLabSelection();await reviewRemake(true);
+      status("Review supplies and work in the Lab",false);
+      return null;
+    }
     let preview = null, refused = null;
     for (const position_m of MAKE_SPOTS) {
       try {
@@ -2666,6 +2676,9 @@ function recipeResult(card, result) {
 }
 async function showRecipes() {
   const [r, inv] = await Promise.all([api("/api/workshop/recipes"), api("/api/workshop/inventory")]);
+  let paidProcess=false;
+  try {const ctx=await api("/api/world/workshop/context",{});
+    paidProcess=(await api("/api/world/fabrication/state",{session:ctx.session,scene:ctx.scene})).configured;}catch{}
   $("#ws-rec-ai-help").replaceChildren(make("span", {}, "Design assistant"), make("b", {}, designAssistantConnected ? "AI connected" : "AI design is not connected · Basic edits only"));
   fill("#ws-recipes-templates", r.templates.map(t => {
     const ready = Boolean(t.readiness?.ready_as_drawn);
@@ -2717,7 +2730,7 @@ async function showRecipes() {
     // Current Workshop authoring has no technique gate. Do not infer a
     // requirement from an item's name or a progression hint.
     li.append(recipeValue("Skill", "None required", "ws-recipe-skill"));
-    li.append(recipeValue("Make uses", "Personal → Shared"));
+    li.append(recipeValue("Make uses", paidProcess ? "Reviewed workbench supplies" : "Personal → Shared"));
     const uses = make("div", {class:"ws-recipe-uses", "aria-label":"Declared uses"});
     uses.append(make("span", {}, "Uses"));
     for (const use of recipeUses(t)) uses.append(tag(use));
@@ -2729,8 +2742,8 @@ async function showRecipes() {
     recipeResult(li, recipeResults.get(recipeKey(t)));
     const row = make("div", {class:"ws-recipe-acts"});
     const made = make("button", {type:"button", class:"ws-action primary"}, "Make");
-    made.disabled = recipeMaking || !t.enough || !ready;
-    made.title = !t.enough ? `${short}% materials missing` : !ready ? fit : `Make ${t.name}`;
+    made.disabled = recipeMaking || (!paidProcess && !t.enough) || !ready;
+    made.title = !ready ? fit : paidProcess ? "Review material, energy and work" : !t.enough ? `${short}% materials missing` : `Make ${t.name}`;
     made.onclick = async () => {
       if (recipeMaking) return;
       recipeMaking = true;
@@ -2745,7 +2758,8 @@ async function showRecipes() {
         const source = await recipeSource(t), candidate = source.candidates[0];
         const done = await makeIt(made, {candidate:{kind:source.kind, generation:source.generation,
           design_id:candidate.design_id, purpose:candidate.purpose, parameters:candidate.parameters,
-          component_overrides:candidate.component_overrides || {}}, status, replace:false});
+          component_overrides:candidate.component_overrides || {}}, sourceAnswer:source,
+          selection:{id:recipeKey(t),name:t.name,source:"recipe"},status, replace:false});
         if (done) status("Made", false, done);
       } catch (error) { status(String(error.message || error), true); }
       finally { recipeMaking=false; await showRecipes().catch(error=>say(error.message, true)); }
@@ -3134,7 +3148,8 @@ function showTab(name) {
 
 let labWasSelected = false;
 const remake = {plan:null,job:null,selection:null,busy:false,supply:null,store:null};
-function remakeKey() {return `banjo.remake.${worldId || "local"}.${playerId}.${bench.inventorySelection?.id}`;}
+function remakeKind() {return bench.inventorySelection?.source==="carried" ? "remake" : "make";}
+function remakeKey() {return `banjo.${remakeKind()}.${worldId || "local"}.${playerId}.${bench.inventorySelection?.id}`;}
 function remakePending() {try{return JSON.parse(sessionStorage.getItem(remakeKey()) || "null");}catch{return null;}}
 const REMAKE_FUNDING=["fund_stock","connect_energy","fund_energy"];
 function fundingPending(op) {try{return JSON.parse(sessionStorage.getItem(remakeKey()+"."+op) || "null");}catch{return null;}}
@@ -3226,10 +3241,10 @@ function remakeRow(root,name,value) {
 }
 function renderRemake() {
   const root=$("#ws-remake");if(!root)return;
-  root.replaceChildren(make("h3",{},"Remake"));
+  const kind=remakeKind();root.replaceChildren(make("h3",{},titleCase(kind)));
   const button=(id,label,fn)=>{const b=make("button",{id,type:"button",class:"ws-action"},label);
     b.onclick=()=>guard(b,async()=>{remake.busy=true;try{await fn();}finally{remake.busy=false;}});root.append(b);return b;};
-  if(!remake.plan && !remake.job) {button("ws-remake-review","Review remake",reviewRemake);return;}
+  if(!remake.plan && !remake.job) {button("ws-remake-review","Review "+kind,()=>reviewRemake());return;}
   if(remake.plan?.available===false) {
     remakeRow(root,"Workbench",remake.plan.reason);button("ws-remake-review","Review again",()=>reviewRemake(true));return;
   }
@@ -3238,12 +3253,12 @@ function renderRemake() {
   remakeRow(root,"Material",`${titleCase(quote.material)} · ${kgSaid(quote.stock_kg)}`);
   remakeRow(root,"Energy",energySaid(quote.supply_required_j));
   remakeRow(root,"Minimum time",`${quote.minimum_duration_s.toFixed(1)} s`);
-  remakeRow(root,"Original","Kept · Damage retained");
+  if(kind==="remake")remakeRow(root,"Original","Kept · Damage retained");
   if(job) {
     remakeRow(root,"Work",`${Math.round(100*job.work_j/job.required_j)}% · ${titleCase(job.status)}`);
     const progress=make("progress",{max:"1",value:String(Math.min(1,job.work_j/job.required_j)),"aria-label":"Remake progress"});root.append(progress);
     if(job.status==="paused") {
-      button("ws-remake-resume","Resume remake",async()=>{const ctx=await api("/api/world/workshop/context",{});
+      button("ws-remake-resume","Resume "+kind,async()=>{const ctx=await api("/api/world/workshop/context",{});
         const reading=await api("/api/world/fabrication/state",{session:ctx.session,scene:ctx.scene});
         await api("/api/world/fabrication/resume",{session:ctx.session,scene:ctx.scene,
           job_id:remakePending()?.request_id,revision:reading.state.revision,request_id:crypto.randomUUID()});await reviewRemake();});
@@ -3253,7 +3268,7 @@ function renderRemake() {
     else if(job.status==="installed") {
       const url=new URL(homeWorld(),location.href);url.searchParams.set("focus",job.root_body);
       root.append(make("a",{class:"ws-action",href:url.pathname+url.search},"Collect in World"));
-      button("ws-remake-another","Review another remake",async()=>{sessionStorage.removeItem(remakeKey());sessionStorage.removeItem(remakeKey()+".install");await reviewRemake();});
+      button("ws-remake-another","Review another "+kind,async()=>{sessionStorage.removeItem(remakeKey());sessionStorage.removeItem(remakeKey()+".install");await reviewRemake();});
     }
     button("ws-remake-review","Refresh",reviewRemake);return;
   }
@@ -3265,7 +3280,7 @@ function renderRemake() {
   funding.append(make("summary",{},"Fund workbench"));root.append(funding);
   const supplyButton=(id,label,fn)=>{const b=button(id,label,fn);funding.append(b);return b;};
   renderRemakeFunding(funding,supplyButton,plan);
-  const begin=button("ws-remake-start","Start remake",async()=>{
+  const begin=button("ws-remake-start","Start "+kind,async()=>{
     if(remake.selection!==`${bench.inventorySelection?.id}:${bench.revision}`)throw Error("Design changed; review it again");
     let pending=remakePending();
     if(!pending)pending={session:plan.session,scene:plan.scene,
@@ -3273,7 +3288,7 @@ function renderRemake() {
     sessionStorage.setItem(remakeKey(),JSON.stringify(pending));
     const {reviewed_quote,...request}=pending;
     let result;
-    try {result=await api("/api/world/fabrication/start_remake",request);}
+    try {result=await api("/api/world/fabrication/start_"+kind,request);}
     catch(err) {if(/plan expired|Selected item changed|revision changed|process changed/i.test(String(err.message)))sessionStorage.removeItem(remakeKey());throw err;}
     remake.job=result.state.jobs[result.job_id];remake.plan=null;renderRemake();
   });
@@ -3282,7 +3297,8 @@ function renderRemake() {
 }
 async function reviewRemake(force=false) {
   const selected=bench.inventorySelection,revision=bench.revision;
-  if(selected?.source!=="carried")throw Error("Select a carried item in Inventory first");
+  if(!selected || !chosen())throw Error("Select an item or design first");
+  const kind=remakeKind();
   const ctx=await api("/api/world/workshop/context",{});
   const reading=await api("/api/world/fabrication/state",{session:ctx.session,scene:ctx.scene});
   if(selected!==bench.inventorySelection || revision!==bench.revision)return;
@@ -3303,8 +3319,8 @@ async function reviewRemake(force=false) {
     plan.missing_stock_kg=Math.max(0,plan.quote.stock_kg-plan.station_stock_kg);
     plan.missing_energy_j=Math.max(0,plan.quote.supply_required_j-plan.station_energy_j);
   } else {
-    plan=await api("/api/world/fabrication/plan_remake",{session:ctx.session,scene:ctx.scene,
-      source_item:String(selected.id),candidate:candidateBody()});
+    plan=await api("/api/world/fabrication/plan_"+kind,{session:ctx.session,scene:ctx.scene,
+      ...(kind==="remake" ? {source_item:String(selected.id)} : {}),candidate:candidateBody()});
     plan.reviewed_ms=performance.now();
   }
   if(selected!==bench.inventorySelection || revision!==bench.revision)return;
@@ -3315,7 +3331,7 @@ async function reviewRemake(force=false) {
   }
   remake.plan=plan;remake.job=null;renderRemake();
   if(pending && plan.available) {
-    $("#ws-remake-start").textContent="Retry reviewed remake";
+    $("#ws-remake-start").textContent="Retry reviewed "+kind;
     remakeRow($("#ws-remake"),"Request","Awaiting confirmation · Original reviewed design");
   }
 }
@@ -3356,7 +3372,7 @@ function updateLabSelection() {
   if(condition.hidden) delete condition.dataset.item;
   let remakePanel=$("#ws-remake");
   if(!remakePanel) {remakePanel=make("section",{id:"ws-remake"});condition.after(remakePanel);renderRemake();}
-  remakePanel.hidden=!(selected && source?.source==="carried");
+  remakePanel.hidden=!selected;
   const selection=`${source?.id}:${bench.revision}`;
   if(remake.selection!==selection) {remake.plan=null;remake.job=null;remake.selection=selection;renderRemake();}
   $("#design-workshop").classList.toggle("lab-empty", !selected);
