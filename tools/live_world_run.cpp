@@ -490,6 +490,8 @@ nlohmann::json programOf(const LiveProgram &p, const nlohmann::json &controls) {
                                       : nlohmann::json{{"doing", p.asked}, {"why", p.asked_why}, {"by", p.asked_by},
                                                        {"by_person", p.asked_by_person},
                                                        {"for_s", tidy(p.asked_for_s)}, {"s", tidy(p.asked_s)},
+                                                       {"near_m", tidy(p.asked_near_m)},
+                                                       {"arrived", p.asked_arrived},
                                                        {"toward_m", {tidy(p.asked_toward_m.x), tidy(p.asked_toward_m.y),
                                                                      tidy(p.asked_toward_m.z)}}}}};
 }
@@ -2578,6 +2580,7 @@ int main(int argc, char **argv) {
                     ask.doing = command.value("doing", std::string{});
                     ask.why = command.value("why", std::string{});
                     ask.for_s = command.value("for_s", 0.0);
+                    ask.near_m = command.value("near_m", 1.0);
                     ask.by_person = command.value("by_person", false);
                     if (command.contains("toward") && command.at("toward").is_array() &&
                         command.at("toward").size() == 3) {

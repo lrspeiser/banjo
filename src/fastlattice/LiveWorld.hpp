@@ -904,6 +904,8 @@ struct LiveProgram {
     double asked_for_s{};
     double asked_s{};             // how long it has been doing what it was asked
     Vec3 asked_toward_m{};        // where it faces or approaches, for those two
+    double asked_near_m{1.0};    // bounded approach stop radius; old asks retain 1 m
+    bool asked_arrived{};       // precise waypoint brakes until the next ask
 };
 
 // What heat, composition and burning have done to what one body can carry.
@@ -1907,6 +1909,7 @@ public:
         double for_s{};
         bool has_toward{};
         Vec3 toward_m{};
+        double near_m{1.0};      // roam approach radius, 0.1..1 m; no pose constraint
         // A person's order rather than the machine's own doing: it overrules
         // the water reflex (LiveProgram::asked_by_person). False for a
         // routine's ask and for whatever decides for the machine.

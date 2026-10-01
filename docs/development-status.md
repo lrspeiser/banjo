@@ -1,5 +1,12 @@
 # Development status and handoff
 
+**Native waypoint API, October 1:** [Measured scope](rover-waypoints.md) adds
+optional bounded approach radii and matching terrain-gradient observations.
+Twenty native cases and the machine/API documentation gates pass on Windows
+MSVC Release. Default requests and old saves retain 1 m. Local Python navigation
+and generated-layout changes are experimental and unpublished: both 300 s maps
+still fail delivery. Generated hauling, cargo, avatars and repair remain open.
+
 **Native hill checkpoint, October 1:** [Measurements and limitations](rover-grades.md)
 cover glass/oak/iron rear wheels at six grades, autonomous ramp and native
 terrain climbs, pitch-independent ground reference and retained sharp warnings.

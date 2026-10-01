@@ -1779,6 +1779,15 @@ sender and its count, stale as `run` is. It says why it was asked as its
 run low, it drops the ask: those come first. A saved world gives it back
 doing what it was asked, as far in.
 
+Roam `approaching` asks may also declare `near_m` from 0.1 to 1 m; omitted
+means 1 m. Smaller radii latch waiting after first arrival and use a slower
+braking threshold before turning. The actual stop can overshoot; callers must
+check actual position. The runner reports `asked.near_m` and `asked.arrived`,
+and snapshots retain them. Terrain `survey` reports `ground_gradient_xz`
+(metres/metre), the same half-cell height derivative the ground probes use.
+[Native measurements and limits](rover-waypoints.md) cover drive, reopen and
+probe prediction; successful generated-world hauling remains an open gate.
+
 The ask also carries `by_person`: true when a PERSON is ordering it -- the
 chat, the panel, the keys at the bench -- and false for the machine's own
 routine and for whatever decides for it. A person's order outranks the water

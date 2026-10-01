@@ -1,5 +1,11 @@
 # Banjo roadmap and acceptance gates
 
+**Native waypoints, October 1:** [Engine/API gate](rover-waypoints.md) passes
+bounded-radius native drive/braking/reopen and actual probe prediction. Next
+qualify generated layout and heading/turn clearance with real delivery receipts
+on both maps, then processing and nearby output pickup. The local planner is
+unpublished experimental work; passing native/API tests does not close hauling.
+
 **Stock-rover grade acceptance, October 1:** [Measured native hill work](rover-grades.md)
 extends generated oak-rover autonomy to 12°, retains ground/sharp-curvature
 refusals and keeps saved and distinct editable assemblies' settings. Native

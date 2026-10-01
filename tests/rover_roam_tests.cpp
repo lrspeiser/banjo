@@ -1467,6 +1467,14 @@ void groundProbeDoesNotTreatBodyPitchAsTerrain() {
     for(int i=0;i<24;i++)tick(*world);
     const auto after=programOf(*world,id).sensors[0];
     require(after.sees && after.reading_m>.35,"same tilted probe detects the actual cut");
+    const auto now=programOf(*world,id);
+    const auto root=nlohmann::json::parse(world->survey(now.at_m.x,now.at_m.z));
+    const auto tip=nlohmann::json::parse(world->survey(after.at_m.x,after.at_m.z));
+    const auto gradient=root.at("ground_gradient_xz");
+    const double predicted=root.at("ground_m").get<double>()+
+        gradient[0].get<double>()*(after.at_m.x-now.at_m.x)+
+        gradient[1].get<double>()*(after.at_m.z-now.at_m.z)-tip.at("ground_m").get<double>();
+    require(std::abs(predicted-after.reading_m)<1e-9,"survey gradient predicts the actual native ground probe");
     std::cout<<"    tilted flat probe "<<before.reading_m<<" m; actual cut "<<after.reading_m<<" m\n";
 }
 
@@ -1592,8 +1600,38 @@ void groundSensorsReadActualHolesAndSurviveSaving() {
     require(closest<.8,"native torque/brakes keep the chassis before its dry hole");
 }
 
+void nativeApproachRadiusMovesAndStopsWithoutAPoseConstraint() {
+    for(double near:{1.,.2}) {
+        auto world=LiveWorld::open(flatRoom());const auto m=fit(*world,pinUp(*world));
+        const auto id=world->program("rover","roam",m.left,m.right,"rover",1.,8.);
+        for(int i=0;i<2*240;i++)tick(*world);
+        const auto from=posed(world->poses(),"rover").position_m;
+        runIt(*world,id,true,1);
+        LiveWorld::ProgramAsk ask;ask.sender="waypoint-test";ask.seq=1;ask.doing="approaching";
+        ask.has_toward=true;ask.toward_m=from+Vec3{0,0,.7};ask.for_s=20.;ask.near_m=near;
+        require(world->behave(id,ask)=="applied","native bounded approach accepted");
+        std::string why;const auto before=world->snapshot(why);
+        ask.near_m=.01;ask.seq=2;
+        require(world->behave(id,ask)!="applied" && world->snapshot(why)==before,
+                "invalid approach radius preserves complete native state and sender sequence");
+        for(int i=0;i<240;i++)tick(*world);
+        const auto saved=world->snapshot(why);auto again=LiveWorld::open(flatRoom(),saved);
+        require(programOf(*again,id).asked_near_m==near,"saved native approach radius is restored");
+        for(int i=0;i<4*240;i++)tick(*again);
+        const auto to=posed(again->poses(),"rover").position_m;
+        const double travelled=to.z-from.z;
+        const double off=std::hypot(to.x-ask.toward_m.x,to.z-ask.toward_m.z);
+        std::cout<<"    approach radius "<<near<<" m; target .7 m; travelled "<<travelled<<" m; off "<<off<<" m\n";
+        if(near==1.)require(std::abs(travelled)<.05,"legacy default still waits within one metre");
+        else require(travelled>.45 && off<.35,"smaller waypoint radius drives and brakes through native motors");
+        require(programOf(*again,id).doing=="waiting","native approach ends in actual waiting");
+        for(const auto &j:again->joints())require(j.attached,"waypoint drive preserves actual assembly joints");
+    }
+}
+
 int main(int argc, char **argv) {
     const std::pair<const char *, void (*)()> tests[] = {
+        {"bounded native approach radius moves and stops through actual motors",nativeApproachRadiusMovesAndStopsWithoutAPoseConstraint},
         {"ground probes distinguish actual terrain from body pitch",groundProbeDoesNotTreatBodyPitchAsTerrain},
         {"autonomous rover climbs native terrain to its declared pitch limit",autonomousGradesOnNativeTerrain},
         {"autonomous rover uses declared grade limit with actual native motors",autonomousGradeUsesMeasuredLimit},

@@ -1,5 +1,13 @@
 # Banjo mechanics scorecard
 
+**Waypoint controller boundary, October 1:** [Native evidence](rover-waypoints.md)
+uses 50 mm / `dt=1/240 s`. A 0.7 m target with 0.2 m approach radius produces
+0.743121 m travel and 0.0431262 m stopping error through real motors/brakes;
+the legacy 1 m radius remains waiting. Actual cut/probe prediction agrees
+within `1e-9 m`. Glass/oak/iron grades, mass and unclosed work remain unchanged.
+No material or contact law changed; finite-radius arrival is not a pose lock,
+full conservation proof or generated-route qualification. Cargo/repair remain.
+
 **Stock-rover grade boundary, October 1:** [Material/energy measurements](rover-grades.md)
 retain 50 mm / `dt=1/240 s` and existing native laws. At 12° glass/oak/iron
 assemblies weigh 60.8935 / 43.5471 / 112.644 kg and advance 2.863 / 3.645 /

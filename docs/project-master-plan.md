@@ -1,5 +1,11 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Native waypoint checkpoint, October 1:** [Bounded approach and terrain readings](rover-waypoints.md)
+add explicit 0.1–1 m roam approach radii, saved arrival braking and read-only
+terrain gradients. Twenty native cases pass; contact/material laws are retained.
+Generated routing/layout work remains local and experimental, with zero
+deliveries in both 300 s trials. All fourteen player-experience gates remain.
+
 **Measured stock-rover grades, October 1:** [Native experiments](rover-grades.md)
 qualify the generated unloaded oak-wheel rover's 12° declaration with actual
 motors, material-derived mass and point slip. Ground readings use the terrain

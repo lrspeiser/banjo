@@ -1696,6 +1696,12 @@ std::string Environment::surveyJson(double x, double z) const {
                 // is below the sum.
                 {"rolling_resistance", groundMaterialOf(terrain_->surface(c)).rolling_resistance},
                 {"slope_deg", terrain_->slopeDeg(c)}};
+    // The same half-cell terrain reference used by native rover ground probes.
+    // A planner can predict the declared probe's reading without moving matter.
+    const double d=.5*terrain_->grid().dx;
+    out["ground_gradient_xz"] = {
+        (terrain_->heightAt(x+d,z)-terrain_->heightAt(x-d,z))/(2*d),
+        (terrain_->heightAt(x,z+d)-terrain_->heightAt(x,z-d))/(2*d)};
     // What the column is made of, bottom to top: the runs themselves, so
     // whoever is standing here can be told what is under their feet and how far
     // down it starts, rather than being handed four thicknesses to add up.

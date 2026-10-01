@@ -1951,9 +1951,10 @@ class Live:
                 program = int(body.get("program"))
                 seq = int(body.get("seq", 0))
                 for_s = float(body.get("for_s", 0.0))
+                near_m = float(body.get("near_m", 1.0))
             except (TypeError, ValueError):
                 raise LiveError("behave needs a program's number, a count that is a whole number, and for_s "
-                                "in seconds") from None
+                                "in seconds, and near_m in metres") from None
             if seq < 0:
                 raise LiveError("a command's count is a whole number from 0")
             doing = str(body.get("doing") or "")
@@ -1962,9 +1963,13 @@ class Live:
                                 ", or asked nothing (\"\")")
             if not (math.isfinite(for_s) and 0.0 <= for_s <= 60.0):
                 raise LiveError("a program is asked for from 0 s (until asked otherwise) to 60 s")
+            if not math.isfinite(near_m) or not 0.1 <= near_m <= 1.0:
+                raise LiveError("approach radius is from 0.1 to 1 m")
             command = {"op": "behave", "program": program, "sender": str(body.get("sender") or "")[:64],
                        "seq": seq, "doing": doing, "why": str(body.get("why") or "")[:200], "for_s": for_s,
                        "by_person": bool(body.get("by_person"))}
+            if "near_m" in body:
+                command["near_m"] = near_m
             toward = body.get("toward")
             if toward is not None:
                 if not isinstance(toward, list) or len(toward) != 3:

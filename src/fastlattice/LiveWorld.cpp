@@ -2610,12 +2610,12 @@ struct LiveWorld::Impl {
             askDone("it has done what it was asked, and goes on");
         } else if (!s.asked.empty() && !p.interrupted) {
             constexpr double kFacedDeg = 6.0;
-            constexpr double kNearM = 1.0;
             // What counts as stopped before it turns, and how long it waits for
             // that before turning anyway: on a slope it may never come to a
             // complete stand.
-            constexpr double kStoppedM_S = 0.15;
-            constexpr double kStopMostS = 1.5;
+            const bool precise_approach = s.asked == "approaching" && s.asked_near_m < 1.;
+            const double kStoppedM_S = precise_approach ? .01 : .15;
+            const double kStopMostS = precise_approach ? 3. : 1.5;
             // The same ask again is the same doing: doing_s and turned_deg run on.
             const auto stay = [&](const char *doing) {
                 if (s.doing != doing) into(doing, s.asked_why);
@@ -2654,11 +2654,13 @@ struct LiveWorld::Impl {
                     p.turn_sign = off_deg > 0.0 ? 1 : -1;
                     p.turn_least_deg = std::abs(off_deg);
                 };
-                if (s.asked == "approaching" && away <= kNearM) stay("waiting");
+                if (precise_approach && away <= s.asked_near_m) s.asked_arrived=true;
+                if (s.asked == "approaching" && (away <= s.asked_near_m || s.asked_arrived)) stay("waiting");
                 else if (s.doing == "stopping") {
                     // Stopped, or as stopped as it is going to get: from rest it
                     // turns towards the mark, or goes at it.
-                    if (s.speed_m_s > kStoppedM_S && s.doing_s < kStopMostS) s.why = s.asked_why;
+                    if ((s.speed_m_s > kStoppedM_S || (precise_approach && std::abs(p.yaw_deg_s)>2.)) &&
+                        s.doing_s < kStopMostS) s.why = s.asked_why;
                     else if (needs_turn) turnToward();
                     else if (s.asked == "approaching") into("going forward", s.asked_why);
                     else into("waiting", s.asked_why);
@@ -5783,6 +5785,10 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         p.said.asked_by_person = o.value("asked_by_person", false);
         p.said.asked_for_s = o.contains("asked_for_s") ? numberFrom(o.at("asked_for_s")) : 0.0;
         p.said.asked_s = o.contains("asked_s") ? numberFrom(o.at("asked_s")) : 0.0;
+        p.said.asked_near_m = o.contains("asked_near_m") ? numberFrom(o.at("asked_near_m")) : 1.0;
+        p.said.asked_arrived = o.value("asked_arrived",false);
+        if (p.said.asked_near_m<.1 || p.said.asked_near_m>1.)
+            throw std::runtime_error("saved approach radius is outside 0.1..1 m");
         if (o.contains("asked_toward_m")) p.said.asked_toward_m = vecFrom(o.at("asked_toward_m"));
         p.said.store = o.value("store", 0U);
         p.turn_sign = std::clamp(o.at("turn_sign").get<int>(), -1, 1);
@@ -7735,6 +7741,10 @@ std::string LiveWorld::behave(unsigned program, const ProgramAsk &ask) {
         return "only a machine that flies can be asked to be rising or descending";
     if (!std::isfinite(ask.for_s) || ask.for_s < 0.0 || ask.for_s > 60.0)
         return "a program is asked for from 0 s (until asked otherwise) to 60 s";
+    if (!std::isfinite(ask.near_m) || ask.near_m<.1 || ask.near_m>1.)
+        return "approach radius is from 0.1 to 1 m";
+    if (p->said.kind!="roam" && ask.near_m!=1.)
+        return "a custom approach radius is supported by a roam program";
     if (ask.why.size() > 200) return "why it was asked is 200 characters at most";
     if (p->said.kind == "still" && !ask.doing.empty() && ask.doing != "waiting")
         return "a machine that goes nowhere can only be asked to be waiting, or asked nothing (\"\")";
@@ -7762,6 +7772,8 @@ std::string LiveWorld::behave(unsigned program, const ProgramAsk &ask) {
     s.asked_for_s = ask.doing.empty() ? 0.0 : ask.for_s;
     s.asked_s = 0.0;
     s.asked_toward_m = needs_toward ? ask.toward_m : Vec3{};
+    s.asked_near_m=ask.near_m;
+    s.asked_arrived=false;
     if (ask.doing.empty() && s.power && s.doing != "resting") {
         // Asked nothing more: it decides again from going forward, as it does
         // from stopped, rather than from whatever it was asked last.
@@ -16064,6 +16076,8 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                                 {"asked_by", p.said.asked_by},
                                 {"asked_by_person", p.said.asked_by_person},
                                 {"asked_for_s", savedNumber(p.said.asked_for_s)},
+                                {"asked_near_m", savedNumber(p.said.asked_near_m)},
+                                {"asked_arrived", p.said.asked_arrived},
                                 {"asked_s", savedNumber(p.said.asked_s)},
                                 {"asked_toward_m", savedVec(p.said.asked_toward_m)},
                                 {"store", p.said.store},
