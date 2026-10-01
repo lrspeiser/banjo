@@ -1,5 +1,12 @@
 # Development status and handoff
 
+**AI playtest follow-up, September 30:** [Current review](ai-player-current-review.md)
+records 8/8 opening goals, 2/10 techniques and an ordinary post-checklist mill
+observation blocked by missing copper input. Other missing equipment is audited,
+not declared impossible to author. A native test qualifies the corrected AI
+power command's current program id/count, durable power, missing-target refusal
+and no learning award. Live-provider play and supported intake replenishment remain open.
+
 **Product guidance checkpoint, September 30:** [Source contract and evidence](product-labels.md)
 adds readable product names to Inventory/World, full source pictures, actual
 next uses and folded native ids/mass provenance. Resource cards separate

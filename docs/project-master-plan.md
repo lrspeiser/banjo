@@ -1,5 +1,12 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**AI player review, September 30:** [Current journey and blockers](ai-player-current-review.md)
+separates reference autonomy, assistant-guided continuation and unverified live
+LLM planning. Actual post-checklist mill observation is blocked by missing copper
+input; normal stock-to-intake delivery and equipment build/use routes must connect
+the broader tree. The small power-command correction changes program addressing,
+not physics or learning rules.
+
 **Compact possession guidance, September 30:** [Product labels](product-labels.md)
 give Inventory/World readable recorded names, source pictures and actual next
 uses. Resources separate Personal/Shared quantities; Recipes predict debit

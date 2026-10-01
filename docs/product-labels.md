@@ -46,8 +46,8 @@ name cannot claim that an unsupported machine works.
 
 ## Verification
 
-Source: outgoing working tree based on main `3567c57`; publication is recorded
-in the follow-up below. Windows 11, Python 3.13.5, MSVC Release CPU native runner
+Implementation published to GitHub **main** as
+`ef89a074b0709edc325c7f89762ed69eed2a1f3e`. Windows 11, Python 3.13.5, MSVC Release CPU native runner
 `f819e81`, unchanged `1/240 s` step and 50 mm scene cells. No C++ changes.
 
 - Five `banjo_product_labels_tests` cases cover normalized source matching,

@@ -1,0 +1,220 @@
+{
+  "schema": "banjo.ai-player-continuation-review.v1",
+  "source_commit": "ef89a074b0709edc325c7f89762ed69eed2a1f3e",
+  "native_runner_commit": "f819e81",
+  "native_dt_s": 0.004166666666666667,
+  "scene_cell_m": 0.05,
+  "world": "a49789cfd53d4f998ea38dea43ef6c6f",
+  "character": "569e64a5cb8e46a281c4b946bfc7bd5a",
+  "planning": "assistant guided continuation after reference controller stopped",
+  "provider_calls": 0,
+  "unattended_clock_enabled": true,
+  "route_points": 1,
+  "machine": "processor",
+  "intake": "mill intake",
+  "reported_missing_inputs_before": [
+    "copper"
+  ],
+  "power_command": {
+    "operated": "applied",
+    "program": {
+      "asked": null,
+      "at_m": [
+        7.12401,
+        1.18199,
+        2.24748
+      ],
+      "bearing_deg": 0.0,
+      "body": "mill",
+      "charge_share": 0.14275,
+      "climb_deg": 90.0,
+      "climb_m_s": 0.0,
+      "close_m": 0.0,
+      "doing": "standing by",
+      "doing_s": 2254.975,
+      "heading_deg": 0.07958,
+      "height_m": 0.48148,
+      "hover_m": 0.0,
+      "id": 3,
+      "kind": "still",
+      "landed_height_m": 0.0,
+      "left": 0,
+      "name": "processor",
+      "parts": [],
+      "pitch_deg": 0.73404,
+      "pose": 0,
+      "pose_at_deg": 0.0,
+      "pose_deg": 0.0,
+      "power": true,
+      "rest_below": 0.0,
+      "rest_until": 0.0,
+      "rests": 0,
+      "right": 0,
+      "roll_deg": 0.65728,
+      "rotors": [],
+      "sender": "assistant-review-1790828253640593400",
+      "sensors": [],
+      "seq": 1,
+      "setting": 1.0,
+      "speed_m_s": 0.0,
+      "store": 2,
+      "stuck_s": 0.0,
+      "stucks": 0,
+      "toward": "",
+      "toward_m": 0.0,
+      "turned_deg": 0.0,
+      "turning_deg_s": 0.0,
+      "turns": 0,
+      "why": "it has done what it was asked"
+    },
+    "persistence": {
+      "state": "saved",
+      "reason": "",
+      "saved_t_s": 2265.445833321404,
+      "attempted_t_s": 2265.445833321404
+    }
+  },
+  "watch_registration": {
+    "watching": "processor",
+    "recipe": "draw wire",
+    "until_t": 2385.445833321404,
+    "said": "Stay nearby and face it. The next saved batch goes in your journal.",
+    "persistence": {
+      "state": "saved",
+      "reason": "",
+      "saved_t_s": 2265.445833321404,
+      "attempted_t_s": 2265.445833321404
+    }
+  },
+  "wall_s": 11.56,
+  "native_t_before": 2265.445833321404,
+  "native_t_after": 2270.445833321331,
+  "known_before": [
+    "using-ground-tools",
+    "smelting-copper"
+  ],
+  "known_after": [
+    "using-ground-tools",
+    "smelting-copper"
+  ],
+  "techniques_total": 10,
+  "unknown_techniques": [
+    {
+      "id": "burning-lime",
+      "name": "Burning lime",
+      "unmet": [],
+      "world_missing": [
+        "Missing equipment: Lime kiln"
+      ],
+      "within_reach": false
+    },
+    {
+      "id": "firing-ceramic",
+      "name": "Firing ceramic",
+      "unmet": [],
+      "world_missing": [
+        "Missing equipment: Clay kiln"
+      ],
+      "within_reach": false
+    },
+    {
+      "id": "rough-shaping-wood",
+      "name": "Rough-shaping wood",
+      "unmet": [],
+      "world_missing": [
+        "Missing example: One-piece wooden pick"
+      ],
+      "within_reach": false
+    },
+    {
+      "id": "drawing-wire",
+      "name": "Drawing wire",
+      "unmet": [],
+      "world_missing": [
+        "processor intake needs: copper"
+      ],
+      "within_reach": false
+    },
+    {
+      "id": "melting-glass",
+      "name": "Melting glass",
+      "unmet": [],
+      "world_missing": [
+        "Missing equipment: Glass furnace"
+      ],
+      "within_reach": false
+    },
+    {
+      "id": "mixing-concrete",
+      "name": "Mixing concrete",
+      "unmet": [
+        "burning-lime"
+      ],
+      "world_missing": [
+        "Missing equipment: Concrete mixer"
+      ],
+      "within_reach": false
+    },
+    {
+      "id": "smelting-iron",
+      "name": "Smelting iron",
+      "unmet": [],
+      "world_missing": [
+        "Missing equipment: Iron smelter"
+      ],
+      "within_reach": false
+    },
+    {
+      "id": "smelting-aluminium",
+      "name": "Smelting aluminium",
+      "unmet": [
+        "drawing-wire"
+      ],
+      "world_missing": [
+        "Missing equipment: Aluminium cell"
+      ],
+      "within_reach": false
+    }
+  ],
+  "carried": [
+    {
+      "label": "Field pick",
+      "where": "right hand",
+      "mass_kg": 1.925,
+      "mass_source": "Live native reading"
+    },
+    {
+      "label": "Camp stool",
+      "where": "bag 1",
+      "mass_kg": 2.5087999770312504,
+      "mass_source": "Saved native checkpoint"
+    }
+  ],
+  "wallet_j": 256,
+  "available_recipe_names": [
+    "Camp stool",
+    "Work table",
+    "field-pick",
+    "table",
+    "stool",
+    "bench",
+    "chair",
+    "shelf-unit",
+    "cart",
+    "kettle",
+    "rover",
+    "drone",
+    "processor",
+    "mine-lamp",
+    "breaker",
+    "solar-array",
+    "electric-furnace"
+  ],
+  "limitations": [
+    "No free stock, equipment or outcome grants",
+    "No implemented ordinary inventory-to-machine-intake action was found in the current app",
+    "Missing equipment routes were audited, not manufactured or mechanically tested",
+    "Reported avatar movement is not physical avatar collision",
+    "No whole-tech-tree reachability or live-model quality claim"
+  ]
+}

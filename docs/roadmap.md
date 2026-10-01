@@ -1,5 +1,12 @@
 # Banjo roadmap and acceptance gates
 
+**Post-checklist playtest, September 30:** [Wire-route review](ai-player-current-review.md)
+finds a real empty mill intake after both opening chains. Next implement ordinary
+quantity-bearing input delivery with receipts, then choose reachable techniques
+beyond declared goals. AI power-on now resolves the actual numeric native
+program id and uses bounded sequence counts; native saved-power/no-award tests
+pass. Missing equipment authoring, live provider and world-clock timing remain gates.
+
 **Product guidance acceptance, September 30:** [Names and quantities](product-labels.md)
 now keep native ids/exact masses folded, show personal/shared ownership and
 debits, and name implemented next uses. Packed checkpoint mass requires all

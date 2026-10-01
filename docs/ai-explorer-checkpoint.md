@@ -1,5 +1,10 @@
 # AI explorer checkpoint — September 30, 2026
 
+**Latest review:** [Opening chains and actual post-checklist attempt](ai-player-current-review.md)
+retains 8/8 goals and 2/10 techniques, then checks the wire mill through the same
+character's normal controls. Its missing copper intake blocks the next observed
+batch; other missing-equipment routes are audited separately. Zero provider calls.
+
 Implementation published to GitHub **main** as
 `c4f48e21e39d1e296d7568fe7eb8fa0169cb6756`. The persistent run below used
 the outgoing working tree before its final reader-lock fix; the restart check

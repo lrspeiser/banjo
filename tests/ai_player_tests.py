@@ -202,6 +202,35 @@ class AutonomousGuests(unittest.TestCase):
         self.assertFalse(worker.is_alive())
         self.assertEqual(["Observe briefly"], result[0]["did"])
 
+    def test_ai_turns_on_named_native_program_using_its_current_numeric_id(self):
+        world,owner,app=self.setup_world()
+        target=server.machine_witness.machines(app)[0]
+        program=next(p for p in app.live.session.state['machines']['programs'] if p['name']==target['machine'])
+        sid=app.live.session.id
+        off=self.post('/api/world/machine',{'session':sid,'program':program['id'],
+            'sender':'power-fixture','seq':1,'power':False},world)
+        self.assertEqual('applied',off['operated'])
+        guest=self.join(world,'Power test character')
+        profile=app.room.player_records[guest['id']]
+        profile['ai']={'controller':owner['id'],'mode':'reference','status':'paused',
+                       'decisions':0,'history':[],'memory':{}}
+        action={'verb':'power-on','target':{'machine':program['name']}}
+        reply=app.ai_players._execute(profile,threading.Event(),'',action,
+            {'native':{'session':sid}},'bounded-native-power-request')
+        self.assertEqual('applied',reply['operated'])
+        native=self.post('/api/live/act',{'session':sid,'op':'poses'},world)
+        current=next(p for p in native['machines']['programs'] if p['id']==program['id'])
+        self.assertTrue(current['power'])
+        self.assertEqual(set(),server.journal_of(app,guest['id']).knows(),
+                         'Powering on cannot award a technique')
+        saved=app.store.read_record(app.room.scene)
+        self.assertTrue(next(p for p in saved['world']['programs']
+                             if p['id']==program['id'])['power'])
+        action['target']['machine']='missing renamed machine'
+        with self.assertRaisesRegex(ValueError,'no longer present'):
+            app.ai_players._execute(profile,threading.Event(),'',action,
+                {'native':{'session':sid}},'missing-power-request')
+
     def test_generated_starter_tool_can_be_taken_re_equipped_and_used_through_player_routes(self):
         reports=[]
         for terrain_choice, goods_seed in ((1,851269742),(0,1)):

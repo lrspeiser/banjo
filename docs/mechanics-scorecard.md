@@ -1,5 +1,12 @@
 # Banjo mechanics scorecard
 
+**Continued player boundary, September 30:** [Wire mill attempt](ai-player-current-review.md)
+uses ordinary power/nearby observation, with no new skill from an empty intake.
+Corrected AI numeric program addressing/counts pass native on/save/no-award and
+missing-target tests; no material or solver change. Wall/native clock divergence,
+stock-to-intake receiving and generated rover delivery remain unqualified.
+Retain earlier glass/oak/iron and full transfer/conservation gates.
+
 **Product presentation boundary, September 30:** [Mass provenance and scope](product-labels.md)
 use native quantities without changing body ids, mass, stock tolerance or laws.
 The packed oak stool reads 2.5088 kg from its complete native saved record;

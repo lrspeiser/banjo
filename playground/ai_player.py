@@ -328,8 +328,15 @@ class Manager:
             if reply.get('refused'):raise ValueError(reply['refused'])
             return {'result':reply.get('result'),'said':reply.get('said'),'learning_pending':reply.get('learning_pending',False)}
         if verb=='power-on':
-            reply=self._post(profile,'/api/world/machine',{'session':sid,'program':target['machine'],'power':True,
-                'sender':profile['id'],'seq':time.time_ns()//1_000_000},cookie)
+            # Learning targets use names; the native command takes the current
+            # numeric program id. Resolve it just before acting, as the page
+            # does. A fresh request sender keeps the native count small.
+            native=self._post(profile,'/api/live/act',{'session':sid,'op':'poses'},cookie)
+            program=next((p for p in (native.get('machines') or {}).get('programs',[])
+                          if p.get('name')==target['machine']),None)
+            if program is None:raise ValueError('The selected machine is no longer present')
+            reply=self._post(profile,'/api/world/machine',{'session':sid,'program':program['id'],'power':True,
+                'sender':ident,'seq':1},cookie)
             if reply.get('operated')!='applied':raise ValueError('Machine did not accept the power command')
             return reply
         if verb in ('watch-batch','observe'):
