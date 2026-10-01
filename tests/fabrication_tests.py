@@ -253,6 +253,14 @@ class ProcessModel(unittest.TestCase):
 
 @unittest.skipUnless(ENGINE and ENGINE.is_file(),"BANJO_LIVE_ENGINE is required; CI supplies it")
 class NativeFabrication(unittest.TestCase):
+    def fund_assembly_goods(self,quote,ident):
+        import workshop_library as library
+        for name,kg in quote.get('assembly_goods_kg',{}).items():
+            library.set_goods(self.app,name,kg)
+            source=next(s for s in self.call('state')['goods_sources'] if s['material']==name and s['pool']=='personal')
+            self.call('fund_goods',material=name,mass_kg=kg,pool='personal',rack_hash=source['rack_hash'],
+                revision=self.room.fabrication_record['revision'],request_id=ident+'-'+name.replace(' ','-'))
+
     def test_paid_fixed_exact_part_preserves_original_and_has_no_thermal_or_energy_gift(self):
         measurements=[]
         for index,material in enumerate(('glass','oak','iron')):
@@ -276,7 +284,7 @@ class NativeFabrication(unittest.TestCase):
     def test_paid_mixed_machine_counts_native_overlap_once_and_reserves_each_material(self):
         product=mixed_machine()
         quoted=self.call('quote',candidate=product,stock_kg=10)
-        quote=quoted['quote'];self.assertTrue(quoted['affordable'])
+        quote=quoted['quote'];self.assertFalse(quoted['affordable'])
         vector=quote['product_materials_kg']
         self.assertAlmostEqual(.08**3*engine_materials.density('iron'),vector['iron'],places=7)
         self.assertAlmostEqual(.04*.08**2*engine_materials.density('oak'),vector['oak'],places=7)
@@ -287,6 +295,9 @@ class NativeFabrication(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'Insufficient stock'):
             self.call('start',candidate=product,stock_kg=10,revision=poor['revision'],request_id='mixed-machine-0001')
         self.assertEqual(poor,self.room.fabrication_record);self.room.fabrication_record=before
+        self.fund_assembly_goods(quote,'mixed-goods')
+        self.assertTrue(self.call('quote',candidate=product,stock_kg=10)['affordable'])
+        before=deepcopy(self.room.fabrication_record)
         self.call('start',candidate=product,stock_kg=10,revision=before['revision'],request_id='mixed-machine-0001')
         self.assertEqual(before['energy_j']-200.,self.room.fabrication_record['energy_j'])
         for m,kg in quote['stock_materials_kg'].items():self.assertAlmostEqual(before['stock_kg'][m]-kg,self.room.fabrication_record['stock_kg'][m],places=7)
@@ -314,6 +325,11 @@ class NativeFabrication(unittest.TestCase):
             self.assertEqual(0,quote['cells']);self.assertEqual(100.,quote['output_energy_j'])
             self.assertEqual(2600.,quote['supply_required_j'])
             self.assertAlmostEqual(.003072*engine_materials.density(material),quote['product_kg'],places=7)
+            before=deepcopy(self.room.fabrication_record)
+            with self.assertRaisesRegex(ValueError,'processed assembly goods'):
+                self.call('start',candidate=product,stock_kg=25,revision=before['revision'],request_id=ident)
+            self.assertEqual(before,self.room.fabrication_record)
+            self.fund_assembly_goods(quote,'rigid-goods-'+material)
             self.call('start',candidate=product,stock_kg=25,revision=self.room.fabrication_record['revision'],request_id=ident)
             self.step(6)
             before=workshop_install._snapshot(self.live);state=deepcopy(self.room.fabrication_record)
@@ -936,6 +952,7 @@ class NativeHTTP(WorkbenchTestCase):
                         self.assertIn("fabrication_connect_energy",names)
                         self.assertIn("fabrication_fund_energy",names)
                         self.assertIn("fabrication_fund_stock",names)
+                        self.assertIn("fabrication_fund_goods",names)
                         self.assertIn("fabrication_release_stock",names)
                         self.assertIn("fabrication_plan_remake",names)
                         self.assertIn("fabrication_start_remake",names)

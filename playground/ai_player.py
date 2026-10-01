@@ -346,6 +346,14 @@ class Manager:
             if source is None:raise ValueError('This character needs '+material+' in its own material inventory')
             return write('fund_stock',{'material':material,'mass_kg':min(shortage,source['mass_kg']),
                 'pool':'personal','rack_hash':source['rack_hash'],'revision':state['revision']})
+        for name,kg in quote.get('assembly_goods_kg',{}).items():
+            shortage=max(0.,kg-state.get('goods_stock_kg',{}).get(name,0.))
+            if shortage<=1e-10:continue
+            source=next((s for s in funding['goods_sources'] if s['pool']=='personal'
+                         and s['material']==name and s['mass_kg']>0),None)
+            if source is None:raise ValueError('This character needs processed '+name+' in its own inventory')
+            return write('fund_goods',{'material':name,'mass_kg':min(shortage,source['mass_kg']),
+                'pool':'personal','rack_hash':source['rack_hash'],'revision':state['revision']})
         needed=max(0.,quote['supply_required_j']-state['energy_j'])
         if needed>1e-10:
             sources=[s for s in funding['energy_sources'] if s['max_power_w']>0 and s['charge_j']>0]

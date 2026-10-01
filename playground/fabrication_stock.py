@@ -47,20 +47,28 @@ def _owner(app, pool):
     return library.rack_owner_id(app) if pool == "personal" else "owner"
 
 
-def _meter(db, owner, material):
-    row = db.execute("SELECT mass_kg FROM workshop_material_rack WHERE owner_id=? AND material=?",
+def _rack(kind):
+    if kind == "goods": return "workshop_goods_rack", "substance"
+    if kind == "material": return "workshop_material_rack", "material"
+    raise ValueError("Unknown stock kind")
+
+
+def _meter(db, owner, material, kind="material"):
+    table, key = _rack(kind)
+    row = db.execute(f"SELECT mass_kg FROM {table} WHERE owner_id=? AND {key}=?",
                      (owner, material)).fetchone()
-    return {"source_owner": owner, "material": material, "mass_kg": float(row["mass_kg"]) if row else 0.}
+    return {"source_owner": owner, "material": material, "mass_kg": float(row["mass_kg"]) if row else 0.,
+            **({"kind": "goods"} if kind == "goods" else {})}
 
 
-def sources(app):
+def sources(app, kind="material"):
     """Exact individual balances; shared stock is an explicit choice."""
     result = []
     with _database(app) as db:
         for pool in ("personal", "shared"):
             owner = _owner(app, pool)
-            for material in library.DEFAULT_RACK:
-                meter = _meter(db, owner, material)
+            for material in sorted(model.ASSEMBLY_GOODS) if kind == "goods" else library.DEFAULT_RACK:
+                meter = _meter(db, owner, material, kind)
                 result.append({**meter, "pool": pool, "rack_hash": model.digest(meter)})
     return result
 
@@ -83,7 +91,8 @@ def records(app, scene, *, reserved_only=False):
 def pending(app, scene):
     who = library.rack_owner_id(app)
     return [{"reservation_id": r["request_id"], "material": r["packet"]["material"],
-        "mass_kg": r["packet"]["mass_kg"], "pool": r["action"]["pool"], "status": r["status"]}
+        "mass_kg": r["packet"]["mass_kg"], "pool": r["action"]["pool"], "status": r["status"],
+        "kind": r["packet"].get("kind", "material")}
         for r in records(app, scene, reserved_only=True) if r["requested_by"] == who]
 
 
@@ -93,13 +102,18 @@ def reserve(app, scene, state, action):
     if action.get("requested_by") != who: raise ValueError("Stock requester is not the authenticated owner")
     ident = model.token(action["request_id"])
     material = action["material"]
-    if not isinstance(material, str) or not engine_materials.known(material) or engine_materials.canonical(material) != material:
+    if not isinstance(material, str): raise ValueError("Stock needs a material or processed supply name")
+    kind = "goods" if action.get("op") == "fund_goods" else "material"
+    if kind == "goods":
+        model.goods_quantities({material: action["mass_kg"]})
+    elif not isinstance(material, str) or not engine_materials.known(material) or engine_materials.canonical(material) != material:
         raise ValueError("Transfer a canonical catalog material, not unprocessed ground or ore")
     mass = model.number(action["mass_kg"], "mass_kg", .000001, 10000)
     owner = _owner(app, action["pool"])
-    packet = {"schema": "banjo.fabrication-stock-transfer.v1", "scene": scene,
+    packet = {"schema": "banjo.fabrication-stock-transfer.v2" if kind == "goods" else "banjo.fabrication-stock-transfer.v1", "scene": scene,
         "source_owner": owner, "requested_by": who, "material": material, "mass_kg": mass,
         "reference_state": "cold-inventory-reservoir-v1"}
+    if kind == "goods": packet["kind"] = "goods"
     model.receive_stock(state, action, packet)  # Dry run; cannot strand an invalid credit.
     with _database(app) as db:
         _schema(db); db.execute("BEGIN IMMEDIATE")
@@ -112,10 +126,11 @@ def reserve(app, scene, state, action):
             return old
         if db.execute("SELECT COUNT(*) FROM fabrication_stock_reservations WHERE scene=?", (scene,)).fetchone()[0] >= 4096:
             raise ValueError("Stock reservation receipt budget exhausted")
-        meter = _meter(db, owner, material)
+        meter = _meter(db, owner, material, kind)
         if action["rack_hash"] != model.digest(meter): raise ValueError("Source rack changed; read stock_sources before spending")
         if mass > meter["mass_kg"]: raise ValueError("Insufficient selected rack stock")
-        db.execute("UPDATE workshop_material_rack SET mass_kg=?,updated_at=? WHERE owner_id=? AND material=?",
+        table, key = _rack(kind)
+        db.execute(f"UPDATE {table} SET mass_kg=?,updated_at=? WHERE owner_id=? AND {key}=?",
                    (meter["mass_kg"]-mass, library._now(), owner, material))
         db.execute("INSERT INTO fabrication_stock_reservations VALUES (?,?,?,?,?,?, 'reserved',NULL,NULL)",
             (scene, ident, who, model.digest(state["config"]), json.dumps(action, sort_keys=True), json.dumps(packet, sort_keys=True)))
@@ -190,8 +205,9 @@ def release(app, room, state, reservation_id, request_id):
                                   (room.scene, ident)).fetchone())
         if current != record: raise ValueError("Stock reservation changed before release")
         packet = record["packet"]
-        db.execute("INSERT INTO workshop_material_rack(owner_id,material,mass_kg,updated_at) VALUES (?,?,?,?) "
-            "ON CONFLICT(owner_id,material) DO UPDATE SET mass_kg=mass_kg+excluded.mass_kg,updated_at=excluded.updated_at",
+        table, key = _rack(packet.get("kind", "material"))
+        db.execute(f"INSERT INTO {table}(owner_id,{key},mass_kg,updated_at) VALUES (?,?,?,?) "
+            f"ON CONFLICT(owner_id,{key}) DO UPDATE SET mass_kg=mass_kg+excluded.mass_kg,updated_at=excluded.updated_at",
             (packet["source_owner"], packet["material"], packet["mass_kg"], library._now()))
         db.execute("UPDATE fabrication_stock_reservations SET status='released',release_id=?,release_hash=? "
             "WHERE scene=? AND request_id=?", (release_id, action_hash, room.scene, ident))

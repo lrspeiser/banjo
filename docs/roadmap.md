@@ -1,5 +1,14 @@
 # Banjo roadmap and acceptance gates
 
+**Processed machine supply gate, October 1:** [Measured checkpoint](fabrication-assembly-goods-checkpoint.md)
+passes copper/wire reservation with exact frame materials and battery charge,
+Lab lost-transfer reload/retry, native use/restart and private AI funding. QA
+66/66, paid AI 4/4. Next declare the zero-supply ordinary workbench, migrate
+canonical machine use programs and normal player/AI guards, and run complete
+fresh-world paid progression plus damaged-tool replacement/equip/use. Additional
+goods constituent mass/laws and incorporation work retain explicit modeling gates.
+The original fourteen requirements remain active: four verified, ten partial.
+
 **Item appearance/navigation acceptance, October 1:** [Verified checkpoint](inventory-rendering-checkpoint.md)
 passes fresh geometry before pickup, unchanged mesh/mass through hands/bag/reload,
 compact/full Inventory navigation and relocated Menu controls. Duplicate fly UI

@@ -1811,6 +1811,10 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
             if funding_job is not None:
                 receipt.update(mode="fabrication", fabrication_job_id=funding_job, resources_charged=True,
                                limits="Finite stock and work charged; exact native geometry and prior state verified. " + fabrication.LIMITATIONS[0])
+                if job.get('assembly_goods_kg'):
+                    receipt.update(assembly_goods_kg=deepcopy(job['assembly_goods_kg']),
+                        assembly_goods_state='declared-inputs-unmodeled-constituents',
+                        limits=receipt['limits']+' '+fabrication.LIMITATIONS[-1])
                 if plan['answer'].get('mechanical_model')==precise_rigid.MODEL:
                     receipt.update(thermal_state='unmodeled',initial_energy_transfer_j=actual_energy,
                         limits=receipt['limits']+' '+plan['answer']['limits'])

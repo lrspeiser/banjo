@@ -34,6 +34,7 @@ COMMAND_FIELDS = {
     "connect_energy": {"store", "store_hash", "power_w", "request_id", "revision"},
     "fund_energy": {"store_hash", "joules", "request_id", "revision"},
     "fund_stock": {"material", "mass_kg", "pool", "rack_hash", "request_id", "revision"},
+    "fund_goods": {"material", "mass_kg", "pool", "rack_hash", "request_id", "revision"},
     "release_stock": {"reservation_id", "request_id"},
     "plan_remake": {"source_item", "candidate"},
     "start_remake": {"plan_id", "revision", "request_id"},
@@ -101,6 +102,8 @@ def compile_quote(candidate, stock_kg, cell_m, state, *, app=None):
             'stock_materials_kg':{m:kg*stock/mass for m,kg in vector.items()},
             'offcut_kg':stock-mass,'cell_m':cell_m,'cells':0,'matter_physics_hash':physics_hash,
             'mechanical_model':'precise-rigid-v1','thermal_state':'unmodeled', 'output_energy_j':output_energy}
+        goods = workshop_library.goods_needed(design)
+        if goods: quote['assembly_goods_kg'] = model.goods_quantities(goods)
         return cost_quote(quote,state)
     workshop_rigid.require_lattice(design,"Fabrication")
     if machines:
@@ -176,7 +179,7 @@ def request(app, operation, body):
     model.obj(body, COMMON|fields, COMMON|fields)
     if operation in ("store_ground","retrieve_ground"): return transfer_ground(app,body,operation)
     if operation in ("connect_energy", "fund_energy"): return transfer_energy(app, body, operation)
-    if operation in ("fund_stock", "release_stock"): return transfer_stock(app, body, operation)
+    if operation in ("fund_stock", "fund_goods", "release_stock"): return transfer_stock(app, body, operation)
     if operation in ("plan_remake", "start_remake", "plan_make", "start_make"):
         import fabrication_remake
         function=fabrication_remake.plan if operation.startswith("plan_") else fabrication_remake.start
@@ -208,7 +211,7 @@ def request(app, operation, body):
                     "energy_sources": energy_sources(state, source_snapshot, room.scene) if source_snapshot is not None else [],
                     "energy_source_status": {"state": "ready" if source_snapshot is not None else "unavailable",
                                              "reason": source_reason},
-                    "stock_sources": stock.sources(app), "stock_reservations": reservations,
+                    "stock_sources": stock.sources(app), "goods_sources": stock.sources(app, "goods"), "stock_reservations": reservations,
                     "stock_recovery_status": stock_recovery,
                     "carried_ground":carried, "ground_audit":model.ground_audit(state,ground,getattr(room,"ground_transfers",None)),
                     "state": model.report(state) if state is not None else None}
@@ -228,10 +231,13 @@ def request(app, operation, body):
                 quote = compile_quote(body["candidate"],body["stock_kg"],old.spec["cell_m"],state,app=app)
                 required=model.materials(quote,'stock')
                 available={m:state['stock_kg'].get(m,0.) for m in required}
+                goods=quote.get('assembly_goods_kg',{})
+                available_goods={n:state.get('goods_stock_kg',{}).get(n,0.) for n in goods}
                 return {"quote": quote, "revision": state["revision"],
                         "available_kg": state["stock_kg"].get(quote["material"],0.),
                         "available_materials_kg":available,
-                        "affordable": all(available[m]>=kg for m,kg in required.items()),
+                        "available_goods_kg":available_goods,
+                        "affordable": all(available[m]>=kg for m,kg in required.items()) and all(available_goods[n]>=kg for n,kg in goods.items()),
                         "changes_world": False}
             action = {k:v for k,v in body.items() if k not in COMMON}
             action["op"] = operation
@@ -257,7 +263,7 @@ def transfer_stock(app, body, operation):
             install._source(room, old, body)
             replayed = stock.release(app, room, state, body["reservation_id"], body["request_id"])
             return {"released": True, "replayed": replayed, "session": old.id,
-                    "stock_sources": stock.sources(app), "stock_reservations": stock.pending(app, room.scene)}
+                    "stock_sources": stock.sources(app), "goods_sources": stock.sources(app, "goods"), "stock_reservations": stock.pending(app, room.scene)}
         action = {k: v for k, v in body.items() if k not in COMMON}
         action.update(op=operation, requested_by=workshop_library.rack_owner_id(app))
         previous = stock.get(app, room.scene, body["request_id"])
@@ -278,7 +284,7 @@ def transfer_stock(app, body, operation):
         if body["request_id"] not in state.get("stock_imports", {}):
             raise ValueError("Stock remains reserved until the native world is completely saveable")
         return {"state": model.report(state), "session": old.id, "replayed": previous is not None,
-                "stock_sources": stock.sources(app), "stock_reservations": stock.pending(app, room.scene)}
+                "stock_sources": stock.sources(app), "goods_sources": stock.sources(app, "goods"), "stock_reservations": stock.pending(app, room.scene)}
 
 
 def energy_sources(state, snapshot, scene):

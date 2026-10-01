@@ -247,7 +247,7 @@ class LabRemake(unittest.TestCase):
         from fabrication_tests import mixed_machine
         self.assertTrue(flow.qa_browser.CHROME.is_file(),'Chrome required for Lab machine acceptance')
         world,owner,app,_,_,_=self.batch(process=False)
-        pile=app.brains.goods.put(0,0,{'oak':10.,'iron':10.},named='machine browser test supplies')['onto']
+        pile=app.brains.goods.put(0,0,{'oak':10.,'iron':10.,'copper':.5},named='machine browser test supplies')['onto']
         sid=app.live.session.id;floor=app.live.act({'session':sid,'op':'survey','at':[0,0]})['survey']['ground_m']
         self.post('/api/world/goods/collect',{'session':sid,'pile':pile,'request_id':'machine-lab-collect',
             'person':{'eyes_m':[0,floor+1.62,0],'facing':[0,0,-1]}},world)
@@ -285,6 +285,21 @@ class LabRemake(unittest.TestCase):
         self.assertTrue(p.evaluate('Boolean(document.querySelector("#ws-remake-stock-personal-iron"))'))
         click('#ws-remake-stock-personal-iron')
         wait('!document.querySelector("#ws-remake-stock-personal-iron")')
+        self.assertTrue(p.evaluate('document.querySelector("#ws-remake-start").disabled'))
+        self.assertIn('Copper needed',p.evaluate('document.querySelector("#ws-remake").textContent'))
+        # Real processed inventory, explicit funding button and one debit. A
+        # lost acknowledgement must retain the same transfer across reload.
+        p.evaluate('''(()=>{const original=window.fetch;let lose=true;window.fetch=async(...args)=>{
+            const result=await original(...args);if(lose && args[0].endsWith('/fabrication/fund_goods')){
+                lose=false;throw Error('Injected lost processed goods acknowledgement');}return result;};})()''')
+        click('#ws-remake-goods-personal-copper')
+        wait('document.querySelector("#ws-remake-retry-fund_goods")')
+        p.send('Page.reload',{'ignoreCache':True})
+        wait('document.querySelector("#ws-remake-review") && !document.querySelector("#ws-remake").hidden')
+        click('#ws-remake-review');wait('document.querySelector("#ws-remake-retry-fund_goods")')
+        click('#ws-remake-retry-fund_goods')
+        wait('!document.querySelector("#ws-remake-retry-fund_goods") && document.querySelector("#ws-remake-connect")')
+        self.assertEqual({'copper':.5},app.room.fabrication_record['goods_stock_kg'])
         click('#ws-remake-connect')
         wait('document.querySelector("#ws-remake-charge-wait")')
         for _ in range(3):
@@ -304,7 +319,9 @@ class LabRemake(unittest.TestCase):
         native=install._snapshot(app.live)
         battery=next(s for s in native['energy_stores'] if s['body'] in job['root_bodies'])
         self.assertEqual(200.,battery['charge_j']);self.assertEqual('unmodeled',receipt['thermal_state'])
-        self.assertEqual(2,len(app.room.fabrication_record['stock_imports']))
+        self.assertEqual(3,len(app.room.fabrication_record['stock_imports']))
+        self.assertEqual({'copper':.5},job['assembly_goods_kg'])
+        self.assertEqual({'copper':0.},app.room.fabrication_record['goods_stock_kg'])
         self.assertEqual('installed',job['status'])
         self.assertLess(abs(model.audit(app.room.fabrication_record)['energy_residual_j']),1e-7)
         self.native_evidence={'materials_kg':job['stock_materials_kg'],'work_j':job['required_j'],

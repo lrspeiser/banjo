@@ -25,6 +25,7 @@ LIMITATIONS = [
     "Supported single-material fixed/bearing lattice products and native-measured exact rigid assemblies/machines are transferable. Mixed lattice interfaces, calibrated forming, casting, bond repair and tool wear remain unsupported.",
     "Process work heats the station; lattice outputs enter at 293.15 K. Exact rigid thermal mechanics remain unmodeled. Initial product battery charge is funded separately, not counted as process heat. Station cooling exchanges heat with a prescribed ambient reservoir.",
     "The ledger boundary is stock, workpieces, station and supply. Installed material is a measured transfer out, not a whole-world energy audit.",
+    "Processed copper/wire assembly inputs are reserved separately by the declared machine goods schedule. Their incorporation, additional constituent mass, thermal state and mechanics are unmodeled; they are not included in the measured native frame mass or shaping-work coefficient.",
 ]
 
 def obj(value, allowed, required=()):
@@ -89,6 +90,7 @@ def audit(state):
     inputs = deepcopy(state["config"]["stock_kg"])
     imports = {}
     for packet in state.get("stock_imports", {}).values():
+        if packet.get("kind") == "goods": continue
         m = packet["material"]; imports[m] = imports.get(m, 0.)+packet["mass_kg"]
         inputs[m] = inputs.get(m, 0.)+packet["mass_kg"]
     totals = deepcopy(state["stock_kg"])
@@ -103,7 +105,19 @@ def audit(state):
     imported = sum(p["joules"] for p in state.get("energy_imports", {}).values())
     reserved_energy = sum(j.get("output_energy_j",0.) for j in state["jobs"].values() if j["status"]!="installed")
     transferred_energy = sum(j.get("output_energy_j",0.) for j in state["jobs"].values() if j["status"]=="installed")
+    goods_in, goods_used = {}, {}
+    for packet in state.get("stock_imports", {}).values():
+        if packet.get("kind") == "goods":
+            name = packet["material"]; goods_in[name] = goods_in.get(name, 0.) + packet["mass_kg"]
+    for job in state["jobs"].values():
+        for name, kg in job.get("assembly_goods_kg", {}).items():
+            goods_used[name] = goods_used.get(name, 0.) + kg
+    goods_stock = state.get("goods_stock_kg", {})
     return {"material_residual_kg": residuals,
+            "assembly_goods_received_kg": goods_in,
+            "assembly_goods_reserved_or_transferred_kg": goods_used,
+            "assembly_goods_residual_kg": {n: goods_in.get(n, 0.) - goods_stock.get(n, 0.) - goods_used.get(n, 0.)
+                for n in set(goods_in) | set(goods_stock) | set(goods_used)},
             "rack_material_received_kg": imports,
             "native_energy_received_j": imported,
             "reserved_output_energy_j":reserved_energy,
@@ -140,7 +154,8 @@ def validate_state(state):
     for ident, packet in stocks.items():
         token(ident); stock_packet(packet)
         if ident not in state["receipts"]: raise ValueError("Material import has no receipt")
-    funded_materials = set(state["config"]["stock_kg"]) | {p["material"] for p in stocks.values()}
+    funded_materials = set(state["config"]["stock_kg"]) | {p["material"] for p in stocks.values() if p.get("kind") != "goods"}
+    goods_quantities(state.get("goods_stock_kg", {}))
     imports = state.get("energy_imports", {})
     if not isinstance(imports, dict) or len(imports) > 4096:
         raise ValueError("Invalid native energy imports")
@@ -172,6 +187,7 @@ def validate_state(state):
     running = 0
     for ident, job in state["jobs"].items():
         token(ident, "job_id")
+        goods_quantities(job.get("assembly_goods_kg", {}))
         if job.get("remake_source") is not None:
             remake_source(job["remake_source"])
             if job["remake_source"]["draft_hash"]!=digest(job["candidate"]):raise ValueError("Remake draft does not match its source binding")
@@ -206,6 +222,8 @@ def validate_state(state):
             raise ValueError("Incomplete saved output")
     if running > 1: raise ValueError("The station has one physical work position")
     a = audit(state)
+    if any(abs(v) > 1e-7 for v in a["assembly_goods_residual_kg"].values()):
+        raise ValueError("Fabrication save fails its assembly goods ledger")
     if any(abs(v) > 1e-7 for v in a["material_residual_kg"].values()) or abs(a["energy_residual_j"]) > 1e-6*max(1,state["config"]["energy_j"]+a["native_energy_received_j"]) or abs(a["work_residual_j"]) > 1e-6*max(1,state["spent_j"]):
         raise ValueError("Fabrication save fails its material or energy ledger")
     return state
@@ -242,14 +260,30 @@ def make_source(packet):
     return packet
 
 
+ASSEMBLY_GOODS = frozenset({"copper", "copper wire"})
+
+
+def goods_quantities(value):
+    if not isinstance(value, dict) or set(value) - ASSEMBLY_GOODS:
+        raise ValueError("Assembly goods must name supported processed supplies")
+    for kg in value.values(): number(kg, "assembly goods kg", 0, 10000)
+    return value
+
+
 def stock_packet(packet):
     fields = {"schema", "scene", "source_owner", "requested_by", "material", "mass_kg", "reference_state"}
+    goods = isinstance(packet, dict) and packet.get("schema") == "banjo.fabrication-stock-transfer.v2"
+    if goods: fields.add("kind")
     obj(packet, fields, fields)
-    if packet["schema"] != "banjo.fabrication-stock-transfer.v1": raise ValueError("Unsupported stock transfer")
+    if not goods and packet["schema"] != "banjo.fabrication-stock-transfer.v1": raise ValueError("Unsupported stock transfer")
     for key in ("scene", "source_owner", "requested_by"):
         if not isinstance(packet[key], str) or not 1 <= len(packet[key]) <= 160:
             raise ValueError("Stock transfer needs source and requester identity")
-    if not isinstance(packet["material"], str) or not engine_materials.known(packet["material"]) or engine_materials.canonical(packet["material"]) != packet["material"]:
+    if goods:
+        if packet["kind"] != "goods": raise ValueError("Invalid processed stock kind")
+        if not isinstance(packet["material"], str): raise ValueError("Invalid processed supply name")
+        goods_quantities({packet["material"]: packet["mass_kg"]})
+    elif not isinstance(packet["material"], str) or not engine_materials.known(packet["material"]) or engine_materials.canonical(packet["material"]) != packet["material"]:
         raise ValueError("Stock transfer needs a canonical catalog material")
     number(packet["mass_kg"], "mass_kg", .000001, 10000)
     if packet["reference_state"] != "cold-inventory-reservoir-v1":
@@ -272,11 +306,13 @@ def receive_stock(state, action, packet):
         return deepcopy(state), True
     if len(state["receipts"]) >= 4096: raise ValueError("Receipt budget exhausted")
     stock_packet(packet)
-    if action.get("op") != "fund_stock" or action.get("material") != packet["material"] or action.get("mass_kg") != packet["mass_kg"] or action.get("requested_by") != packet["requested_by"]:
+    op = "fund_goods" if packet.get("kind") == "goods" else "fund_stock"
+    if action.get("op") != op or action.get("material") != packet["material"] or action.get("mass_kg") != packet["mass_kg"] or action.get("requested_by") != packet["requested_by"]:
         raise ValueError("Stock transfer does not match its authorized reservation")
     out = deepcopy(state); material = packet["material"]
     out.setdefault("stock_imports", {})[ident] = deepcopy(packet)
-    out["stock_kg"][material] = out["stock_kg"].get(material, 0.)+packet["mass_kg"]
+    stocks = out.setdefault("goods_stock_kg", {}) if op == "fund_goods" else out["stock_kg"]
+    stocks[material] = stocks.get(material, 0.)+packet["mass_kg"]
     out["receipts"][ident] = fingerprint; out["revision"] += 1
     validate_state(out)
     return out, False
@@ -614,10 +650,15 @@ def mutate(state, body, *, quote=None):
         stocks=materials(quote,"stock")
         if any(out["stock_kg"].get(material,0.)+1e-10 < stock for material,stock in stocks.items()):
             raise ValueError("Insufficient stock; no material was reserved")
+        goods = goods_quantities(quote.get("assembly_goods_kg", {}))
+        if any(out.get("goods_stock_kg", {}).get(n, 0.) + 1e-10 < kg for n, kg in goods.items()):
+            raise ValueError("Insufficient processed assembly goods; no supplies were reserved")
         energy=number(quote.get("output_energy_j",0.),"output_energy_j",0,1e12)
         if out["energy_j"]+1e-10<energy:raise ValueError("Insufficient energy for the product's declared initial battery charge")
         for material,stock in stocks.items():
             out["stock_kg"][material] = max(0.,out["stock_kg"][material]-stock)
+        for name, kg in goods.items():
+            out["goods_stock_kg"][name] = max(0., out["goods_stock_kg"][name] - kg)
         out["energy_j"] = max(0.,out["energy_j"]-energy)
         out["jobs"][body["request_id"]] = {**deepcopy(quote), "status": "running", "work_j": 0., "supplied_j": 0.}
     elif op == "recover":

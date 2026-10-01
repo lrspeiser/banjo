@@ -24,6 +24,44 @@ ENGINE=Path(os.environ['BANJO_LIVE_ENGINE']).resolve() if os.environ.get('BANJO_
 
 
 class StockModel(unittest.TestCase):
+    def test_processed_goods_are_separate_and_start_reserves_all_supplies_once(self):
+        state=model.new(settings(stock_kg={'oak':10.}),0)
+        quote=api.compile_quote(candidate(),1.,.04,state)
+        quote['assembly_goods_kg']={'copper':.5,'copper wire':.6}
+        start={'op':'start','revision':0,'request_id':'goods-work-0001'}
+        original=deepcopy(state)
+        with self.assertRaisesRegex(ValueError,'processed assembly goods'):model.mutate(state,start,quote=quote)
+        self.assertEqual(original,state)
+        for name,kg in quote['assembly_goods_kg'].items():
+            ident='goods-credit-'+name.replace(' ','-')
+            packet={'schema':'banjo.fabrication-stock-transfer.v2','kind':'goods','scene':'fabrication',
+                'source_owner':'alice','requested_by':'alice','material':name,'mass_kg':kg,
+                'reference_state':'cold-inventory-reservoir-v1'}
+            action={'op':'fund_goods','material':name,'mass_kg':kg,'requested_by':'alice',
+                'request_id':ident,'revision':state['revision']}
+            state,repeated=model.receive_stock(state,action,packet);self.assertFalse(repeated)
+            self.assertEqual(state,model.receive_stock(state,action,packet)[0])
+            if name=='copper':
+                before=deepcopy(state)
+                with self.assertRaisesRegex(ValueError,'processed assembly goods'):
+                    model.mutate(state,{**start,'revision':state['revision']},quote=quote)
+                self.assertEqual(before,state)
+        self.assertEqual({'oak':10.},state['stock_kg'])
+        start['revision']=state['revision'];state,_=model.mutate(state,start,quote=quote)
+        self.assertEqual({'copper':0.,'copper wire':0.},state['goods_stock_kg'])
+        self.assertEqual(state,model.mutate(state,start,quote=quote)[0])
+        state=json.loads(json.dumps(state));model.advance(state,1.)
+        self.assertEqual('ready',state['jobs'][start['request_id']]['status'])
+        self.assertEqual({'copper':0.,'copper wire':0.},model.audit(state)['assembly_goods_residual_kg'])
+        for key in ('goods_stock_kg','stock_imports'):
+            bad=deepcopy(state);bad[key]={}
+            if key=='goods_stock_kg':bad[key]={'copper wire':.1}
+            with self.assertRaises(ValueError):model.validate_state(bad)
+        bad=deepcopy(state);bad['jobs'][start['request_id']]['assembly_goods_kg']['copper wire']=0.
+        with self.assertRaises(ValueError):model.validate_state(bad)
+        for name in ('iron','copper ore'):
+            with self.assertRaises(ValueError):model.goods_quantities({name:1.})
+
     def fixture(self):
         state=model.new(settings(stock_kg={},energy_j=0),0)
         packet={'schema':'banjo.fabrication-stock-transfer.v1','scene':'fabrication',
@@ -50,10 +88,62 @@ class StockModel(unittest.TestCase):
         for changes in ({'material':'sand'},{'mass_kg':True},{'reference_state':'measured-temperature'},
                         {'requested_by':''},{'unknown':1}):
             with self.assertRaises(ValueError):model.stock_packet({**packet,**changes})
+        for malformed in (None,[],True):
+            with self.assertRaises(ValueError):model.stock_packet(malformed)
 
 
 @unittest.skipUnless(ENGINE and ENGINE.is_file(),'BANJO_LIVE_ENGINE is required')
 class NativeStock(unittest.TestCase):
+    def test_processed_escrow_release_uncertain_save_restart_and_private_rack(self):
+        self.app.world_id='processed-stock-fixture'
+        self.room.player_records={who:{'id':who,'token':who,'name':who,'inventory':{},'pose':None} for who in ('alice','bob')}
+        with library._connect(self.app) as db:
+            for who,mass in (('alice',3.),('bob',4.)):
+                db.execute('INSERT INTO workshop_goods_rack VALUES (?,?,?,?)',(who,'copper wire',mass,library._now()))
+        actor=library.REQUEST_OWNER.set('alice')
+        try:
+            def source():return next(s for s in self.call('state')['goods_sources']
+                if s['material']=='copper wire' and s['pool']=='personal')
+            request={**self.context(),'material':'copper wire','mass_kg':.6,'pool':'personal',
+                'rack_hash':source()['rack_hash'],'request_id':'goods-import-0001','revision':0}
+            before=workshop_install._snapshot(self.live)
+            with mock.patch.object(self.app.store,'save',side_effect=OSError('disk full')):
+                with self.assertRaises(OSError):api.request(self.app,'fund_goods',request)
+                reading=self.call('state')
+            self.assertEqual('goods',reading['stock_reservations'][0]['kind'])
+            self.assertEqual(before,workshop_install._snapshot(self.live))
+            self.assertEqual({},self.room.fabrication_record.get('goods_stock_kg',{}))
+            self.call('release_stock',reservation_id=request['request_id'],request_id='goods-release-0001')
+            self.call('release_stock',reservation_id=request['request_id'],request_id='goods-release-0001')
+            self.assertEqual(3.,source()['mass_kg'])
+            request.update(request_id='goods-import-0002',rack_hash=source()['rack_hash'])
+            save=self.app.store.save
+            def lost_ack(room):save(room);raise OSError('lost save acknowledgement')
+            with mock.patch.object(self.app.store,'save',side_effect=lost_ack):
+                with self.assertRaises(OSError):api.request(self.app,'fund_goods',request)
+            with self.assertRaisesRegex(ValueError,'credited durably'):
+                self.call('release_stock',reservation_id=request['request_id'],request_id='goods-denied-release')
+            saved=self.app.store.load(self.room.scene)
+            self.live.open(self.app,{'spec':saved.spec,'snapshot':saved.world_record})
+            self.room=self.app.room=saved
+            self.assertEqual({'copper wire':.6},self.call('state')['state']['goods_stock_kg'])
+            self.assertTrue(api.request(self.app,'fund_goods',request)['replayed'])
+            self.assertAlmostEqual(2.4,source()['mass_kg'])
+            self.assertEqual({},self.room.fabrication_record['stock_kg'])
+            with self.assertRaisesRegex(ValueError,'rack changed'):
+                api.request(self.app,'fund_goods',{**request,**self.context(),
+                    'revision':self.room.fabrication_record['revision'],'request_id':'goods-stale-0001'})
+        finally:library.REQUEST_OWNER.reset(actor)
+        self.native_evidence={'supply':'copper wire','private_source_kg':3.,'peer_source_kg':4.,
+            'credited_kg':.6,'save_failure_escrow_release_once':True,
+            'lost_save_ack_restart_retry_once':True,'raw_stock_unchanged':True,
+            'audit':model.audit(self.room.fabrication_record)}
+        actor=library.REQUEST_OWNER.set('bob')
+        try:
+            self.assertEqual(4.,source()['mass_kg'])
+            with self.assertRaisesRegex(ValueError,'different transfer or player'):api.request(self.app,'fund_goods',request)
+        finally:library.REQUEST_OWNER.reset(actor)
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         root=Path(self.tmp.name);self.live=live_session.Live();self.addCleanup(self.live.shutdown)
@@ -284,6 +374,16 @@ class StockMCP(WorkbenchTestCase):
             source=next(r for r in funded['stock_sources'] if r['material']=='oak' and r['pool']=='personal')
             self.assertEqual(3.,source['mass_kg'])
             self.assertEqual([],funded['stock_reservations'])
+            self.assertEqual(app.room.fabrication_record,app.store.load('fabrication').fabrication_record)
+            library.set_goods(app,'copper wire',2.)
+            reading=call('state');source=next(s for s in reading['goods_sources']
+                if s['material']=='copper wire' and s['pool']=='personal')
+            request={'material':'copper wire','mass_kg':.6,'pool':'personal','rack_hash':source['rack_hash'],
+                'revision':reading['state']['revision'],'request_id':'mcp-goods-fund-0001'}
+            funded=call('fund_goods',**request)
+            self.assertEqual({'copper wire':.6},funded['state']['goods_stock_kg'])
+            self.assertTrue(call('fund_goods',**request)['replayed'])
+            self.assertEqual({'oak':2.},funded['state']['stock_kg'])
             self.assertEqual(app.room.fabrication_record,app.store.load('fabrication').fabrication_record)
 
 

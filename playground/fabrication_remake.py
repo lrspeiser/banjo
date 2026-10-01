@@ -101,12 +101,16 @@ def plan(app,body,*,making=False):
         required=model.materials(quote,'stock')
         missing={m:max(0.,kg-state['stock_kg'].get(m,0.)) for m,kg in required.items()}
         available=sum(min(kg,state['stock_kg'].get(m,0.)) for m,kg in required.items())
+        goods = quote.get('assembly_goods_kg', {})
+        missing_goods = {n:max(0., kg-state.get('goods_stock_kg', {}).get(n,0.)) for n,kg in goods.items()}
         return {'schema':'banjo.'+kind+'-plan.v1','plan_id':ident,'session':old.id,'scene':room.scene,
             'available':True,'source':deepcopy(binding),'quote':quote,'revision':state['revision'],
             'station_stock_kg':available,'station_energy_j':state['energy_j'],
             'missing_stock_kg':sum(missing.values()),'missing_materials_kg':missing,
             'missing_energy_j':max(0.,quote['supply_required_j']-state['energy_j']),
             'stock_sources':[r for r in sources if r['material'] in required],
+            'missing_goods_kg':missing_goods,
+            'goods_sources':[r for r in fabrication_stock.sources(app,'goods') if r['material'] in goods],
             'occupied':any(j['status']=='running' for j in state['jobs'].values()),
             'changes_world':False,'original_retained':not making}
 

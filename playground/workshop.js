@@ -3103,7 +3103,7 @@ const remake = {plan:null,job:null,selection:null,busy:false,supply:null,store:n
 function remakeKind() {return bench.inventorySelection?.source==="carried" ? "remake" : "make";}
 function remakeKey() {return `banjo.${remakeKind()}.${worldId || "local"}.${playerId}.${bench.inventorySelection?.id}`;}
 function remakePending() {try{return JSON.parse(sessionStorage.getItem(remakeKey()) || "null");}catch{return null;}}
-const REMAKE_FUNDING=["fund_stock","connect_energy","fund_energy"];
+const REMAKE_FUNDING=["fund_stock","fund_goods","connect_energy","fund_energy"];
 function fundingPending(op) {try{return JSON.parse(sessionStorage.getItem(remakeKey()+"."+op) || "null");}catch{return null;}}
 async function fundRemake(op,choice={}) {
   const key=remakeKey()+"."+op;
@@ -3113,8 +3113,8 @@ async function fundRemake(op,choice={}) {
     const reading=await api("/api/world/fabrication/state",{session:ctx.session,scene:ctx.scene});
     if(!reading.configured)throw Error("Review an available workbench first");
     const fields={};
-    if(op==="fund_stock") {
-      const source=reading.stock_sources.find(s=>s.material===choice.material && s.pool===choice.pool);
+    if(op==="fund_stock" || op==="fund_goods") {
+      const source=(op==="fund_goods" ? reading.goods_sources : reading.stock_sources).find(s=>s.material===choice.material && s.pool===choice.pool);
       if(!source || source.mass_kg<choice.mass_kg)throw Error("Material balance changed; review current supplies");
       Object.assign(fields,choice,{rack_hash:source.rack_hash});
     } else {
@@ -3155,12 +3155,16 @@ function refreshRemakeSupplies(plan,reading) {
   plan.station_energy_j=reading.state.energy_j;
   plan.missing_energy_j=Math.max(0,plan.quote.supply_required_j-plan.station_energy_j);
   plan.stock_sources=reading.stock_sources.filter(s=>s.material in required);
+  const goods=plan.quote.assembly_goods_kg || {},heldGoods=reading.state.goods_stock_kg || {};
+  plan.missing_goods_kg=Object.fromEntries(Object.entries(goods).map(([n,kg])=>[n,Math.max(0,kg-(heldGoods[n] || 0))]));
+  plan.goods_sources=(reading.goods_sources || []).filter(s=>s.material in goods);
 }
+function missingRemakeGoods(plan) {return Object.values(plan.missing_goods_kg || {}).some(kg=>kg>1e-10);}
 function renderRemakeFunding(root,button,plan) {
   const supply=remake.supply;
   const pending=REMAKE_FUNDING.filter(op=>fundingPending(op));
   for(const op of pending)button("ws-remake-retry-"+op,
-    op==="fund_stock" ? "Retry material transfer" : op==="fund_energy" ? "Retry energy transfer" : "Retry battery connection",
+    op==="fund_stock" ? "Retry material transfer" : op==="fund_goods" ? "Retry processed supply transfer" : op==="fund_energy" ? "Retry energy transfer" : "Retry battery connection",
     ()=>fundRemake(op));
   if(pending.length) {remakeRow(root,"Transfer","Awaiting confirmation");return;}
   if(plan.missing_stock_kg>1e-10) {
@@ -3177,6 +3181,18 @@ function renderRemakeFunding(root,button,plan) {
     const url=new URL(homeWorld(),location.href);url.searchParams.set("workshop","1");url.searchParams.set("tab","recipes");
     url.searchParams.set("material",Object.entries(plan.missing_materials_kg || {}).find(([,kg])=>kg>1e-10)?.[0] || plan.quote.material);
     root.append(make("a",{class:"ws-action",href:url.pathname+url.search},"Find material supplies"));
+  }
+  for(const [name,gap] of Object.entries(plan.missing_goods_kg || {})) {
+    if(gap<=1e-10)continue;
+    remakeRow(root,titleCase(name)+" needed",kgSaid(gap));
+    for(const source of plan.goods_sources.filter(s=>s.material===name && s.mass_kg>1e-10)) {
+      const amount=Math.min(gap,source.mass_kg),personal=source.pool==="personal";
+      button("ws-remake-goods-"+source.pool+"-"+name.replace(/\W/g,"-"),
+        `Add ${kgSaid(amount)} · ${titleCase(name)} · ${personal ? "Your goods" : "Shared goods"}`,
+        ()=>fundRemake("fund_goods",{material:name,pool:source.pool,mass_kg:amount}));
+    }
+    const url=new URL(homeWorld(),location.href);url.searchParams.set("workshop","1");url.searchParams.set("tab","recipes");url.searchParams.set("material",name);
+    root.append(make("a",{class:"ws-action",href:url.pathname+url.search},"Find "+titleCase(name)));
   }
   if(plan.missing_energy_j<=1e-10)return;
   const sources=(supply?.energy_sources || []).filter(s=>s.max_power_w>0);
@@ -3224,6 +3240,7 @@ function renderRemake() {
   const job=remake.job,plan=remake.plan,quote=job || plan.quote;
   root.querySelector("h3").append(make("span",{class:"ws-remake-estimate"},"Workbench estimate"));
   for(const [material,kg] of Object.entries(remakeMaterials(quote)))remakeRow(root,titleCase(material),kgSaid(kg));
+  for(const [name,kg] of Object.entries(quote.assembly_goods_kg || {}))remakeRow(root,titleCase(name),kgSaid(kg));
   remakeRow(root,"Energy",energySaid(quote.supply_required_j));
   if(quote.output_energy_j>0)remakeRow(root,"Battery charge",energySaid(quote.output_energy_j));
   remakeRow(root,"Minimum time",`${quote.minimum_duration_s.toFixed(1)} s`);
@@ -3251,6 +3268,7 @@ function renderRemake() {
   if(plan.occupied)remakeRow(root,"Workbench","In use");
   const fundingPendingNow=REMAKE_FUNDING.some(op=>fundingPending(op));
   const funding=make("details",{id:"ws-remake-supplies"});funding.open=fundingPendingNow || plan.missing_stock_kg>1e-10 || plan.missing_energy_j>1e-10;
+  funding.open ||= missingRemakeGoods(plan);
   funding.append(make("summary",{},"Fund workbench"));root.append(funding);
   const supplyButton=(id,label,fn)=>{const b=button(id,label,fn);funding.append(b);return b;};
   renderRemakeFunding(funding,supplyButton,plan);
@@ -3266,7 +3284,7 @@ function renderRemake() {
     catch(err) {if(/plan expired|Selected item changed|revision changed|process changed/i.test(String(err.message)))sessionStorage.removeItem(remakeKey());throw err;}
     remake.job=result.state.jobs[result.job_id];remake.plan=null;renderRemake();
   });
-  begin.disabled=remake.busy || fundingPendingNow || plan.missing_stock_kg>1e-10 || plan.missing_energy_j>1e-10 || plan.occupied;
+  begin.disabled=remake.busy || fundingPendingNow || plan.missing_stock_kg>1e-10 || missingRemakeGoods(plan) || plan.missing_energy_j>1e-10 || plan.occupied;
   button("ws-remake-review","Review again",()=>reviewRemake(true));
 }
 async function reviewRemake(force=false) {

@@ -359,9 +359,9 @@ class AutonomousGuests(unittest.TestCase):
                        'decisions':0,'history':[],'memory':{}}
         # Authored test supplies enter through actual nearby collection and SQL
         # receipts; the generated solar battery is the energy source.
-        pile=app.brains.goods.put(0,0,{'oak':25.,'iron':25.},named='paid machine test supplies')['onto']
+        pile=app.brains.goods.put(0,0,{'oak':25.,'iron':25.,'copper':.5,'copper wire':.6},named='paid machine test supplies')['onto']
         floor=self.post('/api/live/act',{'session':app.live.session.id,'op':'survey','at':[0,0]},world)['survey']['ground_m']
-        for index in range(2):
+        for index in range(3):
             self.post('/api/world/goods/collect',{'session':app.live.session.id,'pile':pile,
                 'request_id':'ai-machine-collect-'+str(index),'person':{'eyes_m':[0,floor+1.62,0],'facing':[0,0,-1]}},world,guest['token'])
         common={'session':app.live.session.id,'scene':app.room.scene}
@@ -380,7 +380,10 @@ class AutonomousGuests(unittest.TestCase):
         job=app.room.fabrication_record['jobs'][ident]
         self.assertEqual('installed',job['status']);self.assertEqual(guest['id'],job['make_source']['owner'])
         self.assertEqual({'oak','iron'},set(job['stock_materials_kg']))
-        self.assertEqual({'oak','iron'},set(p['material'] for p in app.room.fabrication_record['stock_imports'].values()))
+        self.assertEqual({'oak','iron','copper','copper wire'},set(p['material'] for p in app.room.fabrication_record['stock_imports'].values()))
+        self.assertEqual({'copper':.5,'copper wire':.6},job['assembly_goods_kg'])
+        self.assertEqual({'copper':0.,'copper wire':0.},app.room.fabrication_record['goods_stock_kg'])
+        self.assertEqual(2,phases.count('fund_goods'))
         snapshot=workshop_install._snapshot(app.live)
         store=next(s for s in snapshot['energy_stores'] if s['body'] in job['root_bodies'])
         self.assertEqual(100.,store['charge_j']);self.assertEqual(100.,job['output_energy_j'])

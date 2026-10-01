@@ -1,5 +1,15 @@
 # Banjo mechanics scorecard
 
+**Processed supply boundary, October 1:** [Measured acceptance](fabrication-assembly-goods-checkpoint.md)
+reserves 0.5 kg copper / 0.6 kg wire alongside matched 0.003072 m³ glass/oak/iron
+frames at 40 mm / dt=1/240 s: native allocation 7.68/2.1504/24.17664 kg, 25 kg
+feed / 2500 J authored shaping plus 100 J initial charge. Local raw/processed
+mass residuals zero; energy residual at most 3.638e-12 J. No native law or tolerance
+changes. Extra constituent mass/thermal/mechanics and incorporation work are
+unmodeled; these declared input ledgers are not full-world conservation. QA 66/66,
+paid AI 4/4 and Lab actual funding/reload/place pass. Ordinary workbench, canonical
+programs/guards, full progression and damaged-tool use remain next.
+
 **Geometry transport boundary, October 1:** [Identity/UI checkpoint](inventory-rendering-checkpoint.md)
 retains native geometry before the first frame and startup/restore receipts.
 Matched glass/oak/iron joined T fixtures at 20 mm have 56 cells and

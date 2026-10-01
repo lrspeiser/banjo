@@ -1,5 +1,14 @@
 # Development status and handoff
 
+**Processed paid machine supplies, October 1:** [Verified checkpoint](fabrication-assembly-goods-checkpoint.md)
+closes the paid path's copper/wire bypass. Native-derived frame costs and declared
+processed requirements are reserved together; Lab/AI share durable personal/shared
+funding, lost-acknowledgement recovery and separate supply audits. Fixed QA 66/66,
+paid AI 4/4 and actual Chrome funding/reload/place pass. Constituent mass/thermal/
+mechanics and incorporation work remain unmodeled. Ordinary fresh-world workbench,
+canonical use programs/guards and full paid progression remain next. All fourteen
+player requirements stay active: four verified, ten partial.
+
 **World geometry and compact Inventory, October 1:** [Measured checkpoint](inventory-rendering-checkpoint.md)
 fixes the wooden-slab/pick mismatch by including native hull geometry before
 the first frame and preserving restore receipts. Legacy sidebar tabs are removed;

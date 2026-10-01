@@ -298,6 +298,24 @@ player requirements remain active; full ordinary repair-to-use is unfinished.
 
 ## Regression lane
 
+### Processed assembly supplies
+
+Configured paid machine quotes retain `assembly_goods_kg` from the same declared
+machine goods schedule as ordinary Recipes. `fund_goods` accepts processed
+`copper` or `copper wire`, exact mass, explicit personal/shared pool, `rack_hash`,
+revision and stable request ID. Read `goods_sources` from fabrication state and
+`missing_goods_kg` from reviewed plans. Raw stock cannot substitute for these
+goods. Start reserves them with frame stock and initial battery charge, or spends
+nothing. Lab and AI use this same operation.
+
+Processed transfers share durable SQL escrow/recovery/release with raw stock,
+using v2 packets with `kind:goods`. Their `goods_stock_kg` balance and
+`assembly_goods_residual_kg` audit stay separate from native material mass.
+Jobs and installation receipts retain the consumed assembly quantities. This
+tracks declared inputs: additional constituent mass, thermal/mechanical behavior
+and incorporation work remain unmodeled. Existing jobs are not retroactively
+billed. See [measured acceptance and limitations](fabrication-assembly-goods-checkpoint.md).
+
 ### Reviewed new items and saved designs
 
 In a configured world, Recipes **Make** and Lab **Make it** open a reviewed

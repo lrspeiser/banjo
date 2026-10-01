@@ -1,5 +1,13 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Paid processed inputs, October 1:** [Lab/AI/native checkpoint](fabrication-assembly-goods-checkpoint.md)
+requires the declared copper/wire assembly supplies in paid machine construction,
+with durable escrow, owned inventory, retry/restart and separate local audits.
+These inputs do not yet contribute modeled constituent mass/thermal/mechanics
+or incorporation work. The ordinary finite workbench and full player/AI paid
+progression remain next; all fourteen requirements stay active, four verified
+and ten partial.
+
 **Stable item identity and compact Inventory, October 1:** [UI/native checkpoint](inventory-rendering-checkpoint.md)
 fixes the fresh pick's bounding-box rendering, removes the legacy right-side
 tab strip and shares hands/bag/stock/energy with compact Inventory. Extra controls
