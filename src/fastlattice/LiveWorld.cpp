@@ -4353,11 +4353,14 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         // save like any others -- and so are the motors on them and the
         // controllers that work those, which name a pin, a store and a motor and
         // never a cell (a cart driving itself, tests/cart_drive_tests.cpp).
-        // What works on cells is not.
+        // Blades still require a lattice-only room. Ground tool points need
+        // cells on THEIR body, not on every other body in the room.
         if (saved) {
-            for (const char *key : {"blades", "tool_points"})
-                if (saved->doc.contains(key) && !saved->doc[key].empty())
-                    throw std::invalid_argument("precise-rigid carry cannot preserve an unsupported attached mechanism");
+            if (saved->doc.contains("blades") && !saved->doc["blades"].empty())
+                throw std::invalid_argument("precise-rigid carry cannot preserve blades");
+            for (const auto &point : saved->doc.value("tool_points", nlohmann::json::array()))
+                if (impl.precise_bodies.count(point.at("body").get<std::string>()))
+                    throw std::invalid_argument("precise-rigid carry cannot preserve a tool point on an exact body");
         }
     }
     auto lattice_request = impl.request;
@@ -15291,8 +15294,9 @@ ToolTerrainHost LiveWorld::toolHost() const {
 unsigned LiveWorld::toolPoint(const std::string &body, const Vec3 &tip_world_m, const Vec3 &pointing_world,
                               double width_m, double thickness_m, double angle_deg, double length_m,
                               const Vec3 &grip_world_m) {
-    impl_->requireLatticeRoom("toolPoint");
     Impl &I = *impl_;
+    if (I.precise_bodies.count(body))
+        throw std::invalid_argument("toolPoint: " + body + " is an exact body; only a body made of cells can carry a ground tool point");
     const terrain::ToolPointShape shape{width_m, thickness_m, angle_deg, length_m};
     return I.tools.declare(toolHost(), body, tip_world_m, pointing_world, shape, grip_world_m,
                            I.tool_point_refusal);

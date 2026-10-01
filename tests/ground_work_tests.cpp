@@ -575,6 +575,107 @@ void aBroadEndMeetsTheGroundFromWhereverItIsSwung() {
     require(missed == 0, std::to_string(missed) + " of 16 swings did not go into the ground");
 }
 
+// The same declared drop, with and without an unrelated exact rigid body.
+// This is scene admission, not a new tool or fracture law. Compare the full
+// trajectory and the work ledger, including gravity/integration/damping.
+void latticeGroundToolsCanShareExactEquipment() {
+    const Json exact = {{"name", "equipment"}, {"material", "iron"},
+                        {"position_m", {3.0, 0.01, 3.0}},
+                        {"parts", {{{"dimensions_m", {0.02, 0.02, 0.02}},
+                                    {"center_local_m", {0.0, 0.0, 0.0}}}}}};
+    for (const std::string material : {"glass", "oak", "iron"}) {
+        Json scene{{"terrain", ground(0.4, 0.0)},
+                   {"bodies", {box("stake", material, {0.04, 0.4, 0.04}, {0.02, 0.85, 0.02})}}};
+        auto reference = open(scene);
+        scene["precise_rigid_bodies"] = Json::array({exact});
+        auto mixed = open(scene);
+        for (LiveWorld *world : {reference.get(), mixed.get()})
+            require(world->toolPoint("stake", {0.02, 0.65, 0.02}, {0.0, -1.0, 0.0},
+                                    0.04, 0.04, 30.0, 0.2, {0.02, 1.03, 0.02}) != 0,
+                    material + ": lattice point refused: " + world->toolPointRefusal());
+        bool refused = false;
+        try { (void)mixed->toolPoint("equipment", {3.0, 0.0, 3.0}, {0.0, -1.0, 0.0},
+                                   0.04, 0.04, 30.0, 0.2, {3.0, 0.02, 3.0}); }
+        catch (const std::invalid_argument &) { refused = true; }
+        require(refused, "a tool point on an exact body was admitted");
+
+        // Preserve the actual point, cells and exact compound through both
+        // whole restore and changed-scene carry, before a bite is in flight.
+        std::string why;
+        const std::string saved = mixed->snapshot(why);
+        require(!saved.empty(), "mixed scene could not be saved: " + why);
+        TileImpactRequest request;
+        request.cell_size_m = kCell;
+        request.backend = BackendKind::CpuParallel;
+        request.bodies = readSceneJson(scene.dump());
+        readSceneSettings(scene.dump(), request);
+        const auto restored = LiveWorld::open(request, saved);
+        require(restored->restored().tier == "whole", "mixed tool did not restore whole");
+        const Json before = Json::parse(saved), after = Json::parse(restored->snapshot(why));
+        for (const char *key : {"bodies", "tool_points"})
+            require(before.contains(key) && before.at(key) == after.at(key),
+                    std::string("mixed restore changed ") + key);
+        request.bodies.push_back(readSceneJson(Json{{"bodies", {box("new marker", "concrete",
+                                        {0.04, 0.04, 0.04}, {4.0, 0.02, 4.0})}}}.dump()).front());
+        const auto carried = LiveWorld::open(request, saved, LiveWorld::carryAll(saved));
+        require(carried->restored().tier == "carried" && carried->restored().carried.tool_points == 1,
+                "unchanged lattice point was not carried into a mixed edited room");
+        const Json carry_saved = Json::parse(carried->snapshot(why));
+        require(before.at("tool_points") == carry_saved.at("tool_points"), "carry changed a point");
+        for (const auto &body : before.at("bodies"))
+            if (body.at("name") == "equipment") {
+                const auto found = std::find_if(carry_saved.at("bodies").begin(), carry_saved.at("bodies").end(),
+                                               [](const auto &b) { return b.at("name") == "equipment"; });
+                require(found != carry_saved.at("bodies").end() && *found == body,
+                        "carry changed an exact body");
+            }
+        Json corrupt = before;
+        corrupt["tool_points"][0]["body"] = "equipment";
+        refused = false;
+        try { (void)LiveWorld::open(request, corrupt.dump(), LiveWorld::carryAll(corrupt.dump())); }
+        catch (const std::exception &) { refused = true; }
+        require(refused, "a saved exact tool point was silently restored or downgraded");
+
+        const double mass = poseOf(*mixed, "stake").mass_kg;
+        const auto energy = [&](const LiveBodyPose &pose) {
+            return 0.5 * mass * lengthSquared(pose.velocity_m_s) + mass * kG * pose.position_m.y;
+        };
+        double at_entry = 0.0, kinetic_at_entry = 0.0, max_difference = 0.0;
+        int entered = -1, rested = -1;
+        for (int i = 0; i < 480; ++i) {
+            const LiveBodyPose was = poseOf(*mixed, "stake");
+            stepOnce(*reference); stepOnce(*mixed);
+            const LiveBodyPose a = poseOf(*reference, "stake"), b = poseOf(*mixed, "stake");
+            max_difference = std::max({max_difference, length(a.position_m - b.position_m),
+                                      length(a.velocity_m_s - b.velocity_m_s)});
+            require(a.mass_kg == b.mass_kg, "mixed scene changed material-derived mass");
+            const auto work = mixed->groundWork();
+            if (entered < 0 && !work.empty() && work.front().kind == "in the ground") {
+                entered = i; at_entry = energy(was);
+                kinetic_at_entry = 0.5 * mass * lengthSquared(was.velocity_m_s);
+            }
+            if (entered >= 0 && rested < 0 && length(b.velocity_m_s) < 0.01) rested = i;
+        }
+        require(entered >= 0 && rested >= 0, material + ": dropped point did not enter and rest");
+        const auto a = reference->groundWork(), b = mixed->groundWork();
+        require(a.size() == b.size() && !b.empty(), "mixed scene changed ground events");
+        near(max_difference, 0.0, 1e-10, "mixed vs lattice trajectory");
+        near(a.front().work_j, b.front().work_j, 1e-10, "mixed vs lattice bite work");
+        const auto &work = b.front();
+        require(work.depth_m < 0.2, "drop bottomed out beyond the point's modeled length");
+        const double lost = at_entry - energy(poseOf(*mixed, "stake"));
+        const double correction = mass * kG * kDt * work.closing_speed_m_s / 2.0;
+        const double damping_bound = 2.0 * 0.02 * kinetic_at_entry * (rested - entered + 1) * kDt;
+        const double residual = work.work_j - lost - correction;
+        near(residual, 0.0, damping_bound + 1e-6, "drop energy after integration correction and damping");
+        near(mixed->environment()->terrain().residual().total(), 0.0, 1e-10, "ground mass ledger");
+        std::printf("  mixed %s, dt %.9f, h %.3f: mass %.6f kg; depth %.6f m; work %.6f J; "
+                    "energy residual %.9f J, damping bound %.9f J; trajectory difference %.9g\n",
+                    material.c_str(), kDt, kCell, mass, work.depth_m, work.work_j,
+                    residual, damping_bound, max_difference);
+    }
+}
+
 } // namespace
 
 int main() {
@@ -587,6 +688,7 @@ int main() {
         {"a held tool shares the excavation budget", [] { aPryBreaksGroundOutAndItIsCarried(true); }},
         {"a grip off the body is refused", aGripOffTheBodyIsRefused},
         {"a broad end meets the ground from wherever it is swung", aBroadEndMeetsTheGroundFromWhereverItIsSwung},
+        {"lattice ground tools share exact equipment", latticeGroundToolsCanShareExactEquipment},
     };
     int failed = 0;
     for (const auto &[name, check] : checks) {

@@ -20,7 +20,8 @@ from mcp import core_use, engine_materials
 MODEL = "precise-rigid-v1"
 MAX_BODIES = 32
 MAX_SHAPES = 256
-LIMITS = ("Precise rigid bodies: no internal deformation, fracture, heat, blades, tool points or inventory-funded fabrication. "
+LIMITS = ("Precise rigid bodies: no internal deformation, fracture, heat, blades or ground tool points. "
+          "Lattice ground tools can share their room; blades still require a lattice-only room. "
           "A breakable body they strike is judged against their material, and a break that would need them inside "
           "the lattice run is declined and reported rather than run.")
 SHAPES = ("box", "cylinder")
@@ -46,9 +47,21 @@ def normalise(value: Any, spec: dict[str, Any]) -> list[dict[str, Any]]:
         return []
     if not spec.get("bodies"):
         raise ValueError("Precise rigid bodies need a room with at least one lattice body in it; use a yard")
-    for key in ("blades", "tool_points", "interactions"):
-        if spec.get(key):
-            raise ValueError(f"Precise rigid rooms do not yet support {key}; nothing was installed")
+    if spec.get("blades"):
+        raise ValueError("Precise rigid rooms do not yet support blades; nothing was installed")
+    # A lattice gathering tool can stand beside exact equipment. The point
+    # still needs its own lattice matter: never attach one to an exact shape.
+    lattice_names = {str(b.get("name")) for b in spec["bodies"]}
+    for point in spec.get("tool_points") or []:
+        if (not isinstance(point, dict) or not isinstance(point.get("body"), str) or
+                point["body"] not in lattice_names):
+            raise ValueError("A ground tool point needs a lattice body; exact tool points are not supported")
+    for profile in spec.get("interactions") or []:
+        if (not isinstance(profile, dict) or profile.get("template") != "swing-and-lever" or
+                not isinstance(profile.get("tool"), str) or profile["tool"] not in lattice_names or
+                not isinstance(profile.get("parts"), list) or
+                any(not isinstance(name, str) or name not in lattice_names for name in profile["parts"])):
+            raise ValueError("Mixed precise rigid rooms support only lattice swing-and-lever profiles")
     # HOT GAS IS ALLOWED HERE; a hot exact body is not. An exact body has no
     # thermal model -- thermoShapes leaves it out -- so heat on one means
     # nothing, and the engine refuses it by name. A gas region is not a body:

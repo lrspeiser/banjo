@@ -73,6 +73,23 @@ class PreciseAdmission(unittest.TestCase):
         spec=world_room.yard();spec['machines']={'stores':[{'name':'battery','capacity_j':1000}]}
         self.assertEqual(1,len(precise_rigid.normalise([box()],spec)))
 
+    def test_ground_points_and_profiles_are_admitted_only_on_lattice_bodies(self):
+        from knowledge_tests import PICK_ROOM
+        spec=world_room.yard()
+        spec.update(deepcopy(PICK_ROOM));spec['precise_rigid_bodies']=[box()]
+        out=fracture_lab.validate(spec)
+        self.assertEqual('pick haft',out['tool_points'][0]['body'])
+        self.assertEqual('swing-and-lever',out['interactions'][0]['template'])
+        for change in ('exact-point','exact-tool','exact-part','bow','bad-point-name','bad-tool-name'):
+            bad=deepcopy(spec)
+            if change=='exact-point':bad['tool_points'][0]['body']='box'
+            if change=='exact-tool':bad['interactions'][0]['tool']='box'
+            if change=='exact-part':bad['interactions'][0]['parts'].append('box')
+            if change=='bow':bad['interactions'][0]['template']='draw-and-release'
+            if change=='bad-point-name':bad['tool_points'][0]['body']=[]
+            if change=='bad-tool-name':bad['interactions'][0]['tool']=[]
+            with self.subTest(change=change),self.assertRaises(ValueError):fracture_lab.validate(bad)
+
     def test_gas_is_admitted_beside_exact_bodies_but_heating_one_is_not(self):
         # HOT GAS IS ALLOWED, a hot exact body is not. An exact body has no
         # thermal model, so heat on one means nothing and the engine refuses
