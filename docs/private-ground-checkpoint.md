@@ -1,6 +1,8 @@
 # Private carrying accounts — October 1, 2026
 
-Implementation publication is recorded after the checks below. This extends
+Published implementation: `7c6c4ae` on GitHub main. Native runner, C library,
+platform CLI and ground-work test were rebuilt from these implementation sources
+in `build/agent-progression` (MSVC Release). This extends
 [gathering and supply](gathering-supply-checkpoint.md), within the complete
 [fourteen-item goal](player-experience-checklist.md). Four items remain verified,
 nine partial and durability/repair pending.
@@ -93,6 +95,13 @@ Native installation passes 39 cases in 18.314 s; fabrication passes 28 in
 anonymous ABI. Inventory (17), tool-use (20) and Workshop tabs (9) pass.
 Native runner, C library, platform CLI and native test target are rebuilt.
 The source registration guard reports 286/286 registered native sources.
+
+The restarted port 8770 preview passes a fresh-world Chrome entry and actual
+recipe supply route with zero JavaScript exceptions. Preview world:
+`http://127.0.0.1:8770/world?world=d8e145c1ec9644e3b2f53ad00e0b0e0a`.
+Changed-document local links validate (973 checked); syntax and changed-file
+checks pass. These results are Windows/Chrome measurements, without cross-GPU
+or other-platform claims.
 
 ## Remaining acceptance
 
