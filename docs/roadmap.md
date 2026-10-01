@@ -1,11 +1,19 @@
 # Banjo roadmap and acceptance gates
 
+**Water and hill acceptance, October 1:** [Controller checkpoint](player-experience-checklist.md#water-and-hill-controller-checkpoint--october-1)
+passes actual two-map river entry/exit and walking uphill, plus separately
+declared deep-pool swimming/flotation/dive/recovery. Next qualify native rover
+grades and support hazards without forced motion. [Output pickup/input bins](resource-flow.md)
+now pass ordinary automatic collection, protected input and receipt tests;
+general generated delivery and native cargo/tipping remain. The full fourteen
+items remain active; native avatars and repair laws retain their own gates.
+
 **Inspection acceptance, October 1:** [Component checkpoint](player-experience-checklist.md#component-inspection-checkpoint--october-1)
 qualifies connected rover membership, actual pick cell partition, material/name
 labels, persistent expansion/collapse and native no-mutation. Next expose real
 ground/support readings and close rover dig/drive/recovery gates on both
 generated terrains. Keep physical joining, damage and funded repair distinct
-from inspection; the full twelve-item goal remains active.
+from inspection; the full fourteen-item goal remains active.
 
 **Player journey progress, September 30:** [Acceptance table](player-experience-checklist.md)
 now distinguishes verified fresh entry/Workshop flows from partial terrain

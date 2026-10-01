@@ -1,6 +1,6 @@
 # Player experience work — September 30, 2026
 
-The owner's twelve-point goal supersedes the earlier progression-only task.
+The owner's fourteen-point goal supersedes the earlier progression-only task.
 This is the current acceptance list, not a claim that all features are done.
 
 | Item | Acceptance | Status |
@@ -17,6 +17,8 @@ This is the current acceptance list, not a claim that all features are done.
 | 10. Pick authoring | Whole pick appears in Lab; metal head modification has actual component geometry/material; Save and Make give actionable outcomes | Verified exact bootstrap source recovery includes head/handle. Explicit Recipe→Lab survives reload; head-only iron edit and Save pass. Supported oak Make debits stock and preserves existing machines. Mixed-material lattice joining remains unsupported: metal-head Make and visual shape improvement remain open. |
 | 11. Durability/repair | Integrity derives from actual recorded damage; supported repair requires matching material/energy and native restored/admitted geometry | Pending. No invented physical health, strength or free restoration. |
 | 12. Rover safety/recovery | Actual sensor readings visible; route/dig clearance avoids own support; ordinary recovery available with bounded forces/work | Pending native reproduction on multiple terrains. |
+| 13. Water and hills | Gravity walking can leave water and climb ordinary hills; rover climbs measured grades without forced motion | Player controller verified on two generated river crossings and hills; declared deep-pool ascent, buoyancy, dive and recovery pass. Native avatar and rover hill capability remain open. |
+| 14. Output pickup and contained inputs | Output voxels fly into personal inventory on nearby walking; processor inputs stay in visible hoppers; rover delivery visibly fills them | Native/browser automatic output-only pickup and input bins implemented and verified. Fly leaves outputs untouched; server refuses auto-input pickup. Existing recorded dump/dock transfers retained; broad generated rover delivery and physical cargo/tipping remain open. |
 
 Priorities: preserve the verified transfer checkpoint, repair fresh entry and
 Workshop/tool/capacity blockers, then connect the remaining ordinary-player
@@ -37,7 +39,33 @@ protocol rounding. It does not qualify full-world conservation or new materials.
 Focused checks: resource suite (including two-guest failure/restart/races),
 Workshop fitting 47, chat 38, tools 7, solar 9, live session 12, and both CSP
 world-address/current-file hash checks. Remaining acceptance is listed above;
-the twelve-item goal remains active.
+the full goal remains active.
+
+## Water and hill controller checkpoint — October 1
+
+Walking on open ground now reads the same interpolated triangles as the terrain
+collider; underground floors retain solid/void-run support. The controller
+permits half-metre steps and limits grounded hill ascent to 45 degrees. Gravity
+and grounded jump remain 9.81 m/s² and 4.5 m/s. The camera uses an explicit
+70 kg / 75 litre approximation over 1.6 m below the eye for water buoyancy,
+2.5/s submerged vertical drag, and Space/Shift+Space swim strokes of ±6 m/s².
+Acceleration is integrated in at most 1/120 s slices; no constant swimming
+velocity is assigned. The menu and world inventory overlay show swim controls.
+
+`world_goods_tests.GoodsJourney.test_gravity_player_exits_real_river_walks_hills_and_can_swim_up`
+passes actual backward entry/shore return and uphill movement on terrain seeds
+4/7 (resource seeds 851269741/851269742). A separate declared 2.3 m pool checks upward swimming,
+surface flotation after releasing Space, diving and upward recovery. This pool
+does not claim a native water volume or reaction test. Evidence is written to
+ignored `build/resource-flow/movement-acceptance.json`. The existing native/browser
+fresh-entry falling, single jump per press and fly-altitude case also passes.
+The legacy sample water/current case passes after changing its fixture URL to
+explicit `?scene=world`; a plain URL now intentionally creates a new game.
+
+Windows Chrome, Python 3.13.5 and unchanged MSVC Release `f819e81` engines at
+50 mm / native `dt=1/240 s`. This is a kinematic camera controller, not a native
+colliding avatar: no reaction on water, carried objects or terrain is applied.
+Rover torque/traction and grade qualification remain separate item 13 work.
 
 ## Component inspection checkpoint — October 1
 

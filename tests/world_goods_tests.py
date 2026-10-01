@@ -129,25 +129,52 @@ class GoodsJourney(unittest.TestCase):
         wait('window.banjoRoom?.ready()')
         self.assertGreater(page.evaluate('banjoRoom.scene.getObjectByName("resource-packets").children.length'),0)
         # Every ordinary opened page starts from its baseline, not past events.
-        page.evaluate(f'banjoRoom.standAt({person["eyes_m"][0]}, {person["eyes_m"][1]}, {person["eyes_m"][2]+1.4})')
+        page.evaluate(f'banjoRoom.standAt({person["eyes_m"][0]}, {person["eyes_m"][1]}, {person["eyes_m"][2]+3.3})')
         page.evaluate(f'banjoRoom.lookAt({person["eyes_m"][0]}, {person["eyes_m"][1]-1.4}, {person["eyes_m"][2]})')
         self.process_batch(app,pile)
         wait('banjoRoom.scene.getObjectByName("resource-packets").children.some(c=>c.userData.transferKind === "input" || c.userData.transferKind === "output")')
-        wait(f'document.querySelector("#collect-output")?.dataset.pile === {json.dumps(pile["name"])}')
+        wait('banjoRoom.scene.getObjectByName("resource-packets").children.some(c=>c.userData.resourceStorage === "input" && c.children.some(v=>v.geometry?.type==="BoxGeometry"))')
         viewer=page.evaluate(f'localStorage.getItem("banjo.player.{world}")')
         player=next(p for p in app.room.player_records.values() if p['token']==viewer)
         before=deepcopy(pile['holds'])
+        page.evaluate('window.dispatchEvent(new CustomEvent("banjo-movement-mode",{detail:"fly"}))')
+        page.evaluate(f'banjoRoom.standAt({person["eyes_m"][0]}, {person["eyes_m"][1]}, {person["eyes_m"][2]+1.2})')
+        time.sleep(.7)
+        self.assertEqual(before,pile['holds'],'Inspection flight must not auto-collect output')
+        intake=app.brains.goods.by_name(app.brains.of(source['machine']).routine.intake)
+        page.evaluate(f'(()=>{{const p=banjoRoom.scene.getObjectByName("resource-packets").children.find(c=>c.userData.resourcePile==={json.dumps(intake["name"])}).position;banjoRoom.standAt(p.x+1.8,p.y+1.6,p.z+1.6);banjoRoom.lookAt(p.x,p.y+.15,p.z)}})()')
+        time.sleep(.25)
         import base64
         out=ROOT/'build/resource-flow';out.mkdir(parents=True,exist_ok=True)
         shot=page.send('Page.captureScreenshot',{'format':'png'})['data']
+        (out/'input-hopper.png').write_bytes(base64.b64decode(shot))
+        page.evaluate(f'banjoRoom.standAt({person["eyes_m"][0]}, {person["eyes_m"][1]}, {person["eyes_m"][2]+3.3});banjoRoom.lookAt({person["eyes_m"][0]}, {person["eyes_m"][1]-1.4}, {person["eyes_m"][2]});window.dispatchEvent(new CustomEvent("banjo-movement-mode",{{detail:"gravity"}}))')
+        shot=page.send('Page.captureScreenshot',{'format':'png'})['data']
         (out/'output-ready.png').write_bytes(base64.b64decode(shot))
-        page.evaluate('document.querySelector("#collect-output").click()')
-        wait('document.querySelector("#collect-output").hidden')
+        page.send('Input.dispatchKeyEvent',{'type':'keyDown','key':'w','code':'KeyW','windowsVirtualKeyCode':87})
+        try:wait(f'!banjoRoom.world.goods.stockpiles.find(p=>p.name==={json.dumps(pile["name"])}).holds_kg.copper')
+        finally:page.send('Input.dispatchKeyEvent',{'type':'keyUp','key':'w','code':'KeyW','windowsVirtualKeyCode':87})
+        wait('banjoRoom.scene.getObjectByName("resource-packets").children.some(c=>c.userData.transferKind === "collect")')
         self.assertEqual({},pile['holds']);self.assertEqual(before,self.personal(app,player))
         out=ROOT/'build/resource-flow';out.mkdir(parents=True,exist_ok=True)
         shot=page.send('Page.captureScreenshot',{'format':'png'})['data']
         (out/'collected.png').write_bytes(base64.b64decode(shot))
         self.assertEqual([],[e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
+
+    def test_automatic_collection_refuses_processor_input_and_preserves_output_receipts(self):
+        world,owner,app,source,pile,person=self.batch()
+        intake=app.brains.goods.by_name(app.brains.of(source['machine']).routine.intake)
+        before=deepcopy(intake['holds'])
+        request={'session':app.live.session.id,'pile':intake['name'],'automatic':True,
+                 'request_id':'auto-input-refusal','person':person}
+        with self.assertRaises(urllib.error.HTTPError) as error:self.post('/api/world/goods/collect',request,world)
+        self.assertIn('inputs stay in their hopper',error.exception.read().decode())
+        self.assertEqual(before,intake['holds']);self.assertEqual({},self.personal(app,owner))
+        expected=deepcopy(pile['holds']);request.update(pile=pile['name'],request_id='auto-output')
+        for _ in range(2):self.post('/api/world/goods/collect',request,world)
+        self.assertEqual(expected,self.personal(app,owner));self.assertEqual({},pile['holds'])
+        event=next(e for e in app.brains.goods.activities if e['kind']=='collect')
+        self.assertEqual(owner['id'],event['to']['player']);self.assertEqual(3,len(event['to']['point_m']))
 
     def test_bootstrap_recipe_and_browser_typing_head_edit_save_and_paid_make(self):
         if not qa_browser.CHROME.is_file():self.skipTest('Chrome not installed')
@@ -312,6 +339,92 @@ class GoodsJourney(unittest.TestCase):
         page.send('Page.navigate',{'url':self.base+'/world'})
         wait(f'window.banjoRoom?.ready() && new URL(location.href).searchParams.get("world")!=={json.dumps(first)}')
         self.assertEqual([],[e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
+
+    def test_gravity_player_exits_real_river_walks_hills_and_can_swim_up(self):
+        if not qa_browser.CHROME.is_file():self.skipTest('Chrome not installed')
+        chrome=qa_browser.Chrome(1280,800);self.addCleanup(chrome.close)
+        page=chrome.page;page.send('Page.enable');page.send('Runtime.enable')
+        def wait(expression,seconds=20):
+            deadline=time.monotonic()+seconds
+            while time.monotonic()<deadline:
+                if page.evaluate('Boolean('+expression+')'):return
+                time.sleep(.08)
+            self.fail(expression+'; pose='+str(page.evaluate('banjoRoom.camera.position.toArray()')))
+        def key(code,down):
+            page.send('Input.dispatchKeyEvent',{'type':'keyDown' if down else 'keyUp',
+                'key':{'KeyW':'w','KeyS':'s','Space':' '}.get(code,code),'code':code,
+                'windowsVirtualKeyCode':{'KeyW':87,'KeyS':83,'Space':32}.get(code,16)})
+        reports=[]
+        for terrain_choice,seed in enumerate((851269741,851269742)):
+            with self.subTest(seed=seed),mock.patch.object(server.secrets,'randbelow',side_effect=[terrain_choice,seed]):
+                world,owner,app=self.setup_world()
+                page.send('Page.navigate',{'url':self.base+f'/world?world={world}&hold=1'})
+                wait('window.banjoRoom?.ready()')
+                page.evaluate('window.dispatchEvent(new CustomEvent("banjo-movement-mode",{detail:"gravity"}))')
+                # Discover a real wet-to-dry crossing and an ordinary uphill
+                # segment from the native report, rather than a mocked floor.
+                spots=page.evaluate('''(()=>{
+                  const R=banjoRoom, g=R.groundDrawn(); let shore=null,hill=null;
+                  for(let z=g.z0+2;z<g.z0+(g.nz-1)*g.dx-2;z+=.5)
+                  for(let x=g.x0+2;x<g.x0+(g.nx-1)*g.dx-2;x+=.5){
+                    const h=R.groundAt(x,z), w=R.waterAt(x,z), d=w?w.level-h:0;
+                    if(!shore && d>.35 && d<1.1) for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+                      const sx=x+3*dx,sz=z+3*dz,sw=R.waterAt(sx,sz),sh=R.groundAt(sx,sz);
+                      if(sw&&sw.level-sh>.02)continue;
+                      let good=true,prev=h;
+                      for(let t=.1;t<=3.001;t+=.1){const now=R.groundAt(x+dx*t,z+dz*t);
+                        if(Math.abs(now-prev)>.085)good=false;prev=now;}
+                      if(good){shore={wet:[x,z],dry:[sx,sz]};break;}
+                    }
+                    if(!hill && d<.02){const end=R.groundAt(x+2,z);let good=end-h>.4&&end-h<1.1,prev=h;
+                      for(let t=.1;t<=2.001;t+=.1){const now=R.groundAt(x+t,z),ww=R.waterAt(x+t,z);
+                        if(Math.abs(now-prev)>.085 || ww&&ww.level-now>.02)good=false;prev=now;}
+                      if(good)hill={start:[x,h,z],end:[x+2,end,z]};}
+                  }return {shore,hill};})()''')
+                self.assertIsNotNone(spots['shore']);self.assertIsNotNone(spots['hill'])
+                wet,dry=spots['shore']['wet'],spots['shore']['dry']
+                x,z=dry
+                page.evaluate(f'banjoRoom.standAt({x},banjoRoom.groundAt({x},{z})+1.6,{z});banjoRoom.lookAt({2*x-wet[0]},banjoRoom.camera.position.y,{2*z-wet[1]})')
+                key('KeyS',True)
+                try:wait('banjoRoom.world.inWater?.under>.3')
+                finally:key('KeyS',False)
+                key('KeyW',True);key('Space',True)
+                try:wait('!banjoRoom.world.inWater')
+                finally:key('KeyW',False);key('Space',False)
+                hill=spots['hill'];x,y,z=hill['start'];end=hill['end']
+                page.evaluate(f'banjoRoom.standAt({x},{y+1.6},{z});banjoRoom.lookAt({end[0]},{y+1.6},{z})')
+                key('KeyW',True)
+                try:wait(f'banjoRoom.camera.position.x>{end[0]-.05}')
+                finally:key('KeyW',False)
+                pose=page.evaluate('banjoRoom.camera.position.toArray()')
+                floor=page.evaluate('banjoRoom.groundAt(banjoRoom.camera.position.x,banjoRoom.camera.position.z)')
+                self.assertAlmostEqual(floor+1.6,pose[1],delta=.04)
+                self.assertGreater(pose[1]-(y+1.6),.35)
+                reports.append({'goods_seed':seed,'terrain_seed':app.room.spec['terrain']['generate']['seed'],
+                    'shore':spots['shore'],'hill_rise_m':pose[1]-(y+1.6)})
+        # A declared deep pool checks the camera approximation separately from
+        # the native shallow river. No native water volume/force claim is made.
+        page.evaluate('banjoRoom.standAt(0,banjoRoom.groundAt(0,0)+1.6,0);window.poolLevel=banjoRoom.groundAt(0,0)+2.3;banjoRoom.waterForThePerson((x,z)=>({level:poolLevel,depth:poolLevel-banjoRoom.groundAt(x,z),u:0,w:0}))')
+        wait('banjoRoom.world.inWater?.head_under')
+        key('Space',True)
+        try:wait('banjoRoom.camera.position.y>poolLevel+.05')
+        finally:key('Space',False)
+        wait('document.querySelector("[data-movement]").textContent.includes("Swim")')
+        time.sleep(4)
+        self.assertGreater(page.evaluate('banjoRoom.camera.position.y'),page.evaluate('poolLevel')-.1,
+                           'Buoyancy must keep the controller near the surface without held jump')
+        key('ShiftLeft',True);key('Space',True)
+        try:wait('banjoRoom.world.inWater?.head_under')
+        finally:key('Space',False);key('ShiftLeft',False)
+        key('Space',True)
+        try:wait('banjoRoom.camera.position.y>poolLevel')
+        finally:key('Space',False)
+        page.evaluate('banjoRoom.waterForThePerson(null)')
+        self.assertEqual([],[e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
+        out=ROOT/'build/resource-flow';out.mkdir(parents=True,exist_ok=True)
+        (out/'movement-acceptance.json').write_text(json.dumps({'generated_crossings':reports,
+            'declared_deep_pool_m':2.3,'swim_rise_dive_recovery':True,
+            'scope':'kinematic player controller; native avatar and rover unchanged'},indent=2),encoding='utf-8')
 
     def test_two_collectors_race_for_one_actual_output_without_duplicate_credit(self):
         from concurrent.futures import ThreadPoolExecutor

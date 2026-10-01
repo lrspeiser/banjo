@@ -1,5 +1,14 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Shore escape and hills, October 1:** [Camera controller checkpoint](player-experience-checklist.md#water-and-hill-controller-checkpoint--october-1)
+uses the terrain collider's interpolated surface, explicit buoyancy/drag and
+swim controls. Two generated river crossings/hills and a separate declared deep
+pool pass. Native physical avatars and rover climbing remain open. The current
+goal also includes automatic personal output pickup and contained machine inputs:
+[implemented ledger presentation](resource-flow.md) now collects outputs on
+nearby walking and renders protected input bins; native cargo geometry and
+general generated rover delivery remain separate gates.
+
 **Inspectable assemblies, October 1:** [Supported player flow](player-experience-checklist.md#component-inspection-checkpoint--october-1)
 expands current connected native components with actual material/name labels,
 complete panel values and an explicit return to the assembled view. Cells remain

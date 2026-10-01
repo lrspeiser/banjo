@@ -347,7 +347,7 @@ class PageJourney(unittest.TestCase):
         return page + "\n  server: " + "\n  server: ".join(tail)
 
     def open_the_world(self):
-        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world"})
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?scene=world"})
         self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.status().scene === 'world' && "
                                       "banjoRoom.ready()", 300), "the world room did not open")
         # How fast this machine draws the room, for reading a failure by: CI

@@ -70,7 +70,7 @@ def _settle(app):
         eyes=pose.get('eyes_m')
         if goods is not None and isinstance(eyes,list) and len(eyes)==3:
             goods.activity('collect',r['goods'],{'pile':r['pile']},
-                           {'at_m':[eyes[0],eyes[2]]},'player')
+                           {'player':r['owner'],'point_m':[eyes[0],eyes[1]-.3,eyes[2]]},'player')
 
 
 def collect(app,owner,body,keep):
@@ -79,7 +79,8 @@ def collect(app,owner,body,keep):
     request=body.get('request_id'); name=body.get('pile')
     if not isinstance(request,str) or not REQUEST.fullmatch(request):
         raise ValueError('Collect needs a request id')
-    if set(body)-{'session','pile','request_id','person'}: raise ValueError('Collect the selected pile with your current position')
+    if set(body)-{'session','pile','request_id','person','automatic'}: raise ValueError('Collect the selected pile with your current position')
+    if not isinstance(body.get('automatic',False),bool): raise ValueError('Automatic collection must be true or false')
     if not isinstance(name,str): raise ValueError('Select an output pile')
     room=app.room
     claims=getattr(room,'goods_claims',None)
@@ -97,6 +98,10 @@ def collect(app,owner,body,keep):
     goods=app.brains.goods; pile=goods.by_name(name) if goods else None
     if pile is None: raise ValueError('This pile no longer exists')
     if pile.get('rack'): raise ValueError('This legacy rack already credits shared stock; collect from an output pile')
+    if body.get('automatic'):
+        routines=[b.routine for b in app.brains.brains.values()]
+        if (not any(r.output==name for r in routines) or any(r.intake==name for r in routines)):
+            raise ValueError('Only finished machine outputs collect automatically; inputs stay in their hopper')
     pose=(player_world.records(app).get(owner) or {}).get('pose') or {}
     eyes=pose.get('eyes_m')
     if not isinstance(eyes,list) or len(eyes)!=3 or math.hypot(eyes[0]-pile['at_m'][0],eyes[2]-pile['at_m'][1])>REACH_M:

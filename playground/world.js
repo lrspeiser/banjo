@@ -1036,6 +1036,24 @@ function standingOn(x, z, y) {
   return groundAt(x, z);
 }
 
+// Open terrain follows the collider's triangles, not the nearest column's
+// stair steps. Underground support still comes from the solid/void runs.
+function walkingSupport(x, z, feet) {
+  const surface = groundAt(x, z), g = ground.grid, runs = ground.runs;
+  if (!g || !runs) return surface;
+  const i = Math.round((x-g.x0)/g.dx), j = Math.round((z-g.z0)/g.dx);
+  if (i<0 || j<0 || i>=g.nx || j>=g.nz) return surface;
+  const c = j*g.nx+i;
+  let outer = -Infinity;
+  for (let k=runs.count[c]-1;k>=0;k--) {
+    const at=c*runs.stride+k;
+    if (runs.kind[at]!==RUN_VOID) { outer=runs.top[at]; break; }
+  }
+  if (Math.abs(outer-ground.heights[c])<.002 && feet>=Math.max(surface,outer)-.5)
+    return surface;
+  return standingOn(x,z,feet+.2);
+}
+
 // How much rock is over a point: 0 in the open, and the thickness of every
 // solid run above it where it is inside a working. This is what makes a mine
 // dark -- see daylightUnderCover -- and it is read from the same runs the walls
@@ -3264,20 +3282,21 @@ function goodsVisuals({scene,camera,groundAt,body,ports,colour,collect,readonly}
   const cube=new THREE.BoxGeometry(.13,.13,.13);
   const materials=new Map(), piles=new Map(), hoppers=new Map(), seams=new Map();
   const matrix=new THREE.Object3D(), flights=[];
-  let epoch=null, seen=new Set(), goods=null, brains=[], nearest=null, busy=false, retry=null, failureUntil=0;
+  let epoch=null, seen=new Set(), goods=null, brains=[], nearest=null, busy=false, retry=null, failureUntil=0, nextPickup=0;
   const reduced=matchMedia("(prefers-reduced-motion: reduce)").matches;
   const pickup=document.createElement("button");
   pickup.id="collect-output"; pickup.type="button"; pickup.hidden=true;
-  pickup.addEventListener("click",async()=>{
+  async function takeNearby(automatic=false) {
     if (!nearest || busy || readonly()) return;
     busy=true; pickup.disabled=true;
     const pile=retry?.pile || nearest.name;
     const request=retry?.request || crypto.randomUUID(); retry={pile,request};
     try {
-      await collect(pile,request); retry=null;
+      await collect(pile,request,automatic); retry=null;
     } catch(error) { pickup.textContent=error.message; failureUntil=performance.now()+6000; }
-    finally { busy=false; pickup.disabled=false; }
-  });
+    finally { busy=false; pickup.disabled=false; nextPickup=performance.now()+1000; }
+  }
+  pickup.addEventListener("click",()=>takeNearby(false));
   document.body.append(pickup);
   function material(what) {
     if (!materials.has(what)) {
@@ -3305,11 +3324,27 @@ function goodsVisuals({scene,camera,groundAt,body,ports,colour,collect,readonly}
     root.remove(group);
   }
   function endpoint(e) {
+    if(e.player===playerId) return camera.position.clone().add(new THREE.Vector3(0,-.3,0));
+    if(e.point_m) return new THREE.Vector3(...e.point_m);
     if(e.body) { const mesh=body(e.body)?.mesh; if(mesh) return mesh.position.clone().add(new THREE.Vector3(0,.45,0)); }
     if(e.port) { const port=ports().find(p=>p.name===e.port); if(port) return new THREE.Vector3(...port.at_m); }
+    if(e.pile) {
+      const pile=(goods?.stockpiles||[]).find(p=>p.name===e.pile);
+      if(pile)return pilePosition(pile).add(new THREE.Vector3(0,.2,0));
+    }
     const at=e.at_m || (goods?.stockpiles||[]).find(p=>p.name===e.pile)?.at_m;
     if(at) return new THREE.Vector3(at[0],groundAt(at[0],at[1])+.2,at[1]);
     return null;
+  }
+  function storage(name) {
+    const making=brains.map(b=>b.routine?.making).filter(Boolean);
+    if(making.some(m=>m.intake===name))return "input";
+    if(making.some(m=>m.output===name))return "output";
+    return "stock";
+  }
+  function pilePosition(p) {
+    const port=storage(p.name)==="input" ? ports().find(v=>v.holds===p.name&&v.flow==="in") : null;
+    return port ? new THREE.Vector3(...port.at_m) : new THREE.Vector3(p.at_m[0],groundAt(...p.at_m)+.03,p.at_m[1]);
   }
   function follow(next,reset=false) {
     if(next===undefined)return;
@@ -3339,10 +3374,21 @@ function goodsVisuals({scene,camera,groundAt,body,ports,colour,collect,readonly}
     const keep=new Set();
     for(const p of next?.stockpiles||[]) {
       keep.add(p.name);
-      const signature=JSON.stringify(p.holds_kg);
+      const role=storage(p.name),signature=JSON.stringify([role,p.holds_kg]);
       if(piles.get(p.name)?.signature===signature)continue;
       if(piles.has(p.name))remove(piles.get(p.name).group);
       const group=new THREE.Group(), slots=Object.entries(p.holds_kg).filter(([,kg])=>kg>0);
+      group.userData.resourcePile=p.name; group.userData.resourceStorage=role;
+      if(role==="input") {
+        // Open-topped storage picture at the declared input mouth. Its
+        // contents are ledger goods; this adds no native collision or mass.
+        const steel=new THREE.MeshStandardMaterial({color:0x607580,roughness:.75,transparent:true,opacity:.55});
+        for(const [size,at] of [ [[.88,.04,.72],[0,-.04,0]], [[.04,.48,.72],[-.44,.18,0]],
+            [[.04,.48,.72],[.44,.18,0]], [[.88,.48,.04],[0,.18,-.36]], [[.88,.48,.04],[0,.18,.36]] ]) {
+          const wall=new THREE.Mesh(new THREE.BoxGeometry(...size),steel.clone());wall.position.set(...at);group.add(wall);
+        }
+        steel.dispose();
+      }
       let n=0;
       for(const [what,kg] of slots) {
         const count=Math.min(16,Math.max(1,Math.ceil(Math.sqrt(kg)*3)));
@@ -3354,11 +3400,11 @@ function goodsVisuals({scene,camera,groundAt,body,ports,colour,collect,readonly}
         group.add(mesh);
       }
       const kg=slots.reduce((a,[,v])=>a+v,0);
-      if(kg>0) {
-        const title=label(`${p.name} · ${kg<1?Math.round(kg*1000)+" g":kg.toFixed(1)+" kg"}`);
+      if(kg>0 || role==="input") {
+        const title=label(`${role==="input"?"Input hopper":p.name} · ${heldSaid(kg)}`);
         title.position.y=.7; group.add(title);
       }
-      group.position.set(p.at_m[0],groundAt(...p.at_m)+.03,p.at_m[1]);
+      group.position.copy(pilePosition(p));
       root.add(group);piles.set(p.name,{group,signature});
     }
     for(const [name,p] of piles)if(!keep.has(name)){remove(p.group);piles.delete(name);}
@@ -3380,15 +3426,15 @@ function goodsVisuals({scene,camera,groundAt,body,ports,colour,collect,readonly}
     }
     for (const [name,s] of seams) if (!deposits.has(name)) {remove(s.group);seams.delete(name);}
   }
-  function loads(next) { if(next!==undefined)brains=next; }
+  function loads(next) { if(next!==undefined){brains=next;follow(goods);} }
   function advance(now) {
     for (const s of seams.values()) {
       s.group.position.y = groundAt(s.group.position.x,s.group.position.z)+.02;
       for (const child of s.group.children) if(child.isSprite) child.visible = s.group.position.distanceTo(camera.position)<12;
     }
     for(const [name,p] of piles) {
-      const at=(goods?.stockpiles||[]).find(s=>s.name===name)?.at_m;
-      if(at)p.group.position.set(at[0],groundAt(...at)+.03,at[1]);
+      const pile=(goods?.stockpiles||[]).find(s=>s.name===name);
+      if(pile)p.group.position.copy(pilePosition(pile));
       for(const child of p.group.children)if(child.isSprite)
         child.visible=p.group.position.distanceTo(camera.position)<5;
     }
@@ -3401,6 +3447,7 @@ function goodsVisuals({scene,camera,groundAt,body,ports,colour,collect,readonly}
       f.mesh.position.copy(f.from).lerp(to,t);
       f.mesh.position.y+=Math.sin(t*Math.PI)*(.6+f.index*.02);
       f.mesh.rotation.set(t*2,t*3,0);
+      if(f.mesh.userData.transferKind==="collect")f.mesh.scale.setScalar(1-.8*t);
     }
     const keep=new Set();
     for(const b of brains) {
@@ -3428,7 +3475,7 @@ function goodsVisuals({scene,camera,groundAt,body,ports,colour,collect,readonly}
       h.group.position.copy(position).add(new THREE.Vector3(0,.7,0));
     }
     for(const [name,h] of hoppers)if(!keep.has(name)){remove(h.group);hoppers.delete(name);}
-    nearest=(goods?.stockpiles||[]).filter(p=>!p.rack&&(p.name===retry?.pile||Object.values(p.holds_kg).some(v=>v>0)))
+    nearest=(goods?.stockpiles||[]).filter(p=>!p.rack&&storage(p.name)!=="input"&&(p.name===retry?.pile||Object.values(p.holds_kg).some(v=>v>0)))
       .map(p=>({...p,d:Math.hypot(camera.position.x-p.at_m[0],camera.position.z-p.at_m[1])}))
       .filter(p=>p.d<=2).sort((a,b)=>a.d-b.d)[0];
     pickup.hidden=!nearest || readonly();
@@ -3437,6 +3484,10 @@ function goodsVisuals({scene,camera,groundAt,body,ports,colour,collect,readonly}
       pickup.textContent=retry ? `Retry collection · ${retry.pile}` : `Collect ${heldSaid(kg)} · ${nearest.name} → Your inventory`;
     }
     pickup.dataset.pile=nearest?.name||"";
+    if(nearest && storage(nearest.name)==="output" && nearest.d<=1.6 && !readonly() && !busy &&
+        !retry && now>nextPickup && now>failureUntil && movementMode==="gravity" && !whatIsRidden() &&
+        camera.position.y-groundAt(...nearest.at_m)>=0 && camera.position.y-groundAt(...nearest.at_m)<=3)
+      void takeNearby(true);
   }
   return {follow,loads,advance};
 }
@@ -3444,10 +3495,10 @@ function goodsVisuals({scene,camera,groundAt,body,ports,colour,collect,readonly}
 const resourceVisuals = goodsVisuals({scene,camera,groundAt,
   body:name=>world.bodies.get(name), ports:()=>world.ports,
   colour:substanceColour, readonly:()=>!!watchedId || !worldId,
-  collect:async(pile,request_id)=>{
-    const answer=await api('/api/world/goods/collect',{session:world.session,pile,request_id,person:whereIAm()});
+  collect:async(pile,request_id,automatic=false)=>{
+    const answer=await api('/api/world/goods/collect',{session:world.session,pile,request_id,automatic,person:whereIAm()});
     followGoods(answer.goods);
-    say('world',`Collected ${Object.entries(answer.collected).map(([what,kg])=>`${heldSaid(kg)} ${what}`).join(' · ')}`);
+    lastAction(`+ ${Object.entries(answer.collected).map(([what,kg])=>`${heldSaid(kg)} ${what}`).join(' · ')} → Inventory`);
     return answer;
   }});
 
@@ -4216,7 +4267,7 @@ function showInventory() {
   ];
   const storedHeat = new Map((heat.last?.stored || []).map(b => [b.name, b]));
   const temperatures = slots.map(thing => thing ? storedHeat.get(thing.name) : null);
-  const said = JSON.stringify([held, heldName(), mass, recordHolds(held), hand, left, slots, carrying, uses, temperatures]);
+  const said = JSON.stringify([held, heldName(), mass, recordHolds(held), hand, left, slots, carrying, uses, temperatures, movementMode]);
   if (said === inventorySaid) return;
   inventorySaid = said;
   showHotbar(slots, hand);
@@ -4322,11 +4373,13 @@ function showInventory() {
     meter.querySelector("b").textContent = full ? "Full · digging stopped" : "Ground materials";
     meter.querySelector("small").textContent = full ? "Point at clear ground → H to empty your load" :
       [...world.stock].filter(([,v])=>v.kg>0).map(([what,v])=>`${what} ${v.kg.toFixed(1)} kg`).join(" · ") || "Empty";
+    meter.querySelector("[data-movement]").textContent = movementMode === "fly" ? "Fly · Space ↑ · Shift + Space ↓" :
+      wet && wet.under>.5 ? "Swim · Space ↑ · Shift + Space ↓" : "Walk · Space jump · Shift run";
   }
 }
 setInterval(showInventory, 250);
 const loadMeter = document.createElement("aside"); loadMeter.id = "world-load-meter"; loadMeter.hidden = true;
-loadMeter.innerHTML = `<a href="${worldId ? `/world?world=${worldId}&workshop=1&tab=inventory` : "/world?scene=world&workshop=1&tab=inventory"}">Inventory</a><b>Ground materials</b><output></output><progress max="1" value="0"></progress><small></small>`;
+loadMeter.innerHTML = `<a href="${worldId ? `/world?world=${worldId}&workshop=1&tab=inventory` : "/world?scene=world&workshop=1&tab=inventory"}">Inventory</a><b>Ground materials</b><output></output><progress max="1" value="0"></progress><small></small><small data-movement></small>`;
 document.body.append(loadMeter);
 
 // The bag's first nine slots along the bottom of the view: each with its number,
@@ -6996,6 +7049,10 @@ function showRidingSettings() {
 
 let movementMode = localStorage.getItem("banjo.movement") || "gravity";
 let verticalSpeed = 0, jumpHeld = false;
+// Camera-controller approximation: 70 kg, 75 litres over the 1.6 m below
+// the eye. Buoyancy and drag accelerate the controller; this is not a native
+// avatar and applies no reaction to the river or carried objects.
+const PLAYER_MASS_KG = 70, PLAYER_VOLUME_M3 = .075;
 addEventListener("banjo-movement-mode", event => {
   movementMode = event.detail === "fly" ? "fly" : "gravity";
   verticalSpeed = 0; jumpHeld = false;
@@ -7050,21 +7107,29 @@ function walk(dt) {
   if (movementMode === "gravity") {
     // Terrain controller: integrate gravity, rather than assigning a hover
     // height. This is a player's controller, not a native colliding rigid body.
-    const supportAt = (x,z,y) => ground.heights ? standingOn(x,z,y) : 0;
+    const supportAt = (x,z,feet) => ground.heights ? walkingSupport(x,z,feet) : 0;
     const before = camera.position.clone();
     const feet = before.y - BODY_BELOW_EYE_M;
-    const floor = supportAt(before.x,before.z,feet+.2);
+    const floor = supportAt(before.x,before.z,feet);
     const grounded = feet <= floor+.025 && verticalSpeed <= 0;
     if (jump && !jumpHeld && grounded && !shifted) verticalSpeed = 4.5;
     jumpHeld = jump;
-    const newFloor = supportAt(before.x+move.x,before.z+move.z,feet+.2);
-    if (newFloor > feet+.35) { move.x = 0; move.z = 0; }
+    const newFloor = supportAt(before.x+move.x,before.z+move.z,feet);
+    const distance = Math.hypot(move.x,move.z);
+    // Gentle hills use the continuous surface; half-metre steps and slopes
+    // above 45 degrees require a jump or another route.
+    if (newFloor > feet+.5 || (grounded && distance>1e-6 && newFloor-floor>distance+.02)) {
+      move.x = 0; move.z = 0;
+    }
     camera.position.add(move);
     const slices = Math.max(1,Math.ceil(Math.min(dt,.1)*120)), h = Math.min(dt,.1)/slices;
     for (let i=0;i<slices;i++) {
-      verticalSpeed -= 9.81*h;
+      const wet = inTheWater(), fraction = wet ? wet.under/BODY_BELOW_EYE_M : 0;
+      const buoyancy = 9.81*1000*PLAYER_VOLUME_M3/PLAYER_MASS_KG*fraction;
+      const stroke = wet && wet.under>.5 && jump ? (shifted ? -6 : 6) : 0;
+      verticalSpeed += (-9.81+buoyancy+stroke-2.5*fraction*verticalSpeed)*h;
       camera.position.y += verticalSpeed*h;
-      const under = supportAt(camera.position.x,camera.position.z,camera.position.y-BODY_BELOW_EYE_M+.2);
+      const under = supportAt(camera.position.x,camera.position.z,camera.position.y-BODY_BELOW_EYE_M);
       if (camera.position.y <= under+BODY_BELOW_EYE_M) {
         camera.position.y = under+BODY_BELOW_EYE_M; verticalSpeed = 0;
       }

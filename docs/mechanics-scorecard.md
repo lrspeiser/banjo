@@ -1,5 +1,22 @@
 # Banjo mechanics scorecard
 
+**Automatic pickup/container boundary, October 1:** [Resource evidence](resource-flow.md)
+retains 5 kg ore → 1.5 kg copper and durable save/credit accounting. Ordinary
+approach auto-collects output; server refuses auto-intake requests, Fly/watch
+does not collect, input pictures sit at declared mouths. Eleven resource tests
+pass. Container walls and flights add no native mass/collision, reaction or
+dump-truck mechanism. Keep receipt-compaction, cargo laws and generated-route
+gates open; native glass/oak/iron laws and conservation boundaries are unchanged.
+
+**Water/hill controller boundary, October 1:** [Measured player behavior](player-experience-checklist.md#water-and-hill-controller-checkpoint--october-1)
+passes two native-terrain river crossings/hills and a separately declared deep
+pool swim/dive/recovery test. Camera approximation: 70 kg, 75 litres over 1.6 m,
+9.81 m/s² gravity, 2.5/s submerged drag, ±6 m/s² commanded swim acceleration;
+open ground follows actual collider triangles. No native avatar mass, water
+reaction, carried-load buoyancy or conservation is implemented. Native glass/oak/
+iron laws, 50 mm and `dt=1/240 s` are unchanged. Next qualify native rover grades,
+ground hazards/recovery and physical damage/repair; camera tests cannot close them.
+
 **Expanded inspection boundary, October 1:** [Evidence](player-experience-checklist.md#component-inspection-checkpoint--october-1)
 is presentation-only: native attached joints select the assembly, native rigid
 parts and complete reported cells supply its geometry. Exact time/bodies/machines

@@ -1,5 +1,22 @@
 # Development status and handoff
 
+**Automatic output pickup, October 1:** [Resource-flow extension](resource-flow.md)
+collects finished outputs on ordinary nearby walking, animates toward the acting
+player and preserves durable private receipts. Server rejects automatic input
+withdrawal; inputs render in open-topped bins at actual declared ports. Fly/watch
+never auto-collect. Eleven resource/native/browser cases pass; the expanded
+Fly/walking case passes separately. These are ledger/container pictures, not
+new native cargo collisions or tipping mechanisms. Generated rover routes remain open.
+
+**Water and hill controls, October 1:** [Controller evidence](player-experience-checklist.md#water-and-hill-controller-checkpoint--october-1)
+passes backward river entry/shore exit and uphill walking on two generated maps,
+plus separately declared deep-pool swimming, flotation, dive and recovery.
+Open-ground support follows collider triangles; underground runs remain.
+World/menu controls identify swimming. This is a camera controller with stated
+buoyancy/drag parameters, not native avatar reactions or rover hill validation.
+Items 13/14 are added to the current fourteen-item acceptance list; broad rover
+delivery, rover safety, native avatars and physical repair remain open.
+
 **Component inspection, October 1:** [Verified presentation](player-experience-checklist.md#component-inspection-checkpoint--october-1)
 expands actual attached rover assemblies and current pick cells with component
 names/materials, a complete panel list, readable world labels and Return to
