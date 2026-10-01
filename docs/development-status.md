@@ -1,5 +1,12 @@
 # Development status and handoff
 
+**Gathering/supply, October 1:** [Native/browser checkpoint](gathering-supply-checkpoint.md)
+fixes Study intercepting the held pick's primary action and ordinary F bypassing
+native tool work. Find/equip/dig/full/heap/resume passes; inventory totals retain
+dug ground. Recipe hopper targets trace to real raw supplies and reject cycles.
+New/affected suites pass; items 7/8 retain process-to-build/saved-design and
+private native ground gates. Four verified, nine partial, repair pending.
+
 **Recipe supply, October 1:** [Native/API/browser checkpoint](recipe-supply-checkpoint.md)
 verifies personal/shared shortage→world oak collection→paid table placement and
 fresh debit display. Current processor inputs, missing equipment and Market

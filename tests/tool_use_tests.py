@@ -168,6 +168,19 @@ class WhatAToolDoesWhereYouLook(unittest.TestCase):
         self.assertFalse(said["enabled"])
         self.assertIn("Take up a tool first", said["reason"])
 
+    def test_full_load_refuses_without_starting_a_stroke(self):
+        app=app_with()
+        app.live.session.state['carried']={'limit_kg':80,'total_kg':80,'available_kg':0,
+                                          'sand_kg':78,'objects_kg':2}
+        said=tool_use.run(app,{'person':PERSON,'at_m':IN_REACH})
+        self.assertIn('Load full',said['refused'])
+        self.assertIn('H to heap',said['refused'])
+        self.assertEqual([],said['done'])
+        self.assertEqual(80,said['carried']['total_kg'])
+        self.assertEqual([],app.live.asked)
+        app.live.session.state['carried']['available_kg']=1
+        self.assertTrue(tool_use.resolve(app,{'person':PERSON,'at_m':IN_REACH})['enabled'])
+
     def test_with_the_crosshair_off_the_ground_it_says_where_to_point(self):
         said = self.resolve(None)
         self.assertFalse(said["enabled"])

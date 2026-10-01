@@ -742,3 +742,5 @@ body.moving-a-thing #panel .workshop-entry { border-style: dashed; }
 #world-load-meter progress { width:100%;accent-color:#83bfa5; }
 #world-load-meter[data-full="true"] { border-color:#f2b24d; }
 #world-load-meter[data-full="true"] progress { accent-color:#f2b24d; }
+#world-load-meter nav { grid-column:1/-1;display:flex;align-items:center;gap:.7rem; }
+#world-load-meter nav[hidden] { display:none; }

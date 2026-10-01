@@ -1,5 +1,11 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Gathering/supply checkpoint, October 1:** [Native input and recursive guidance](gathering-supply-checkpoint.md)
+verify tool discovery, actual primary/F digging, full refusal, H heaping and
+resumed digging. Processor inputs expand to raw sources with bounded cycle
+handling. Process/output-to-build, saved-design coverage and private native
+ground carrying remain open; all fourteen player requirements stay active.
+
 **Recipe supply checkpoint, October 1:** [Current stock and actionable routes](recipe-supply-checkpoint.md)
 connect ordinary shortages to actual world piles, private collection and paid
 Make; processor inputs/equipment and targeted Market routes are visible.

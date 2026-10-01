@@ -2539,7 +2539,8 @@ function recipeWorldRoute(route, label) {
 }
 function recipeAcquisition(line) {
   const box = make("section", {class:"ws-acquisition", "data-supply":line.material || line.substance});
-  box.append(recipeValue(titleCase(line.material || line.substance), `Missing ${kgSaid(line.short_kg)}`));
+  box.append(recipeValue(titleCase(line.material || line.substance), line.supply
+    ? `Hopper ${kgSaid(line.held_kg)} / target ${kgSaid(line.kg)}` : `Missing ${kgSaid(line.short_kg)}`));
   for (const route of line.acquisition || []) {
     const row = make("div", {class:"ws-supply-route", "data-supply-kind":route.kind});
     if (route.kind === "pile") {
@@ -2553,14 +2554,25 @@ function recipeAcquisition(line) {
         recipeValue("Route", "Rover → dig → intake"), recipeWorldRoute(route, "Locate deposit in World"));
     } else if (route.kind === "process") {
       row.append(recipeValue("Process", route.name));
+      const supplies = inputs => {
+        const details = make("details", {class:"ws-input-supplies"});
+        details.append(make("summary", {}, "Find input supplies"), recipeValue("Target", "Recipe yield estimate"));
+        for (const input of inputs) details.append(recipeAcquisition(input));
+        row.append(details);
+      };
       if (!route.machines.length) row.append(recipeValue("Blocked", "Processing machine required"));
+      if (route.input_supplies?.length) supplies(route.input_supplies);
       for (const machine of route.machines) {
         row.append(recipeValue("Machine", machine.name));
         for (const input of machine.inputs) row.append(recipeValue(titleCase(input.substance),
           input.held_kg > 0 ? `${kgSaid(input.held_kg)} in hopper` : "Hopper empty"));
         row.append(recipeValue("Output", machine.output || "No output configured"),
+          recipeValue("Use", "Turn on in World · supply its hopper"),
           recipeValue("Collect", "Walk to output · nearby pickup"), recipeWorldRoute(machine, "Locate machine in World"));
+        supplies(machine.inputs);
       }
+    } else if (route.kind === "blocked") {
+      row.append(recipeValue("Blocked",route.reason));
     } else if (route.kind === "market") {
       const shop = make("button", {type:"button",class:"ws-action","data-supply-offer":route.offer_id}, "Check Market");
       shop.onclick = () => {

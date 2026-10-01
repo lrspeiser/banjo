@@ -4488,8 +4488,9 @@ function showInventory() {
     const full = limit>0 && mass>=limit-.05;
     meter.dataset.full = String(full);
     meter.querySelector("b").textContent = full ? "Full · digging stopped" : "Ground materials";
-    meter.querySelector("small").textContent = full ? "Point at clear ground → H to empty your load" :
+    meter.querySelector("small").textContent = full ? "Sand / soil → point at clear ground → H to heap" :
       [...world.stock].filter(([,v])=>v.kg>0).map(([what,v])=>`${what} ${v.kg.toFixed(1)} kg`).join(" · ") || "Empty";
+    meter.querySelector("[data-tool-guide]").hidden = !!world.held?.pick;
     meter.querySelector("[data-movement]").textContent = movementMode === "fly" ? "Fly · Space ↑ · Shift + Space ↓" :
       wet && wet.under>.5 ? "Swim · Space ↑ · Shift + Space ↓" : "Walk · Space jump · Shift run";
   }
@@ -4497,6 +4498,18 @@ function showInventory() {
 setInterval(showInventory, 250);
 const loadMeter = document.createElement("aside"); loadMeter.id = "world-load-meter"; loadMeter.hidden = true;
 loadMeter.innerHTML = `<a href="${worldId ? `/world?world=${worldId}&workshop=1&tab=inventory` : "/world?scene=world&workshop=1&tab=inventory"}">Inventory</a><b>Ground materials</b><output></output><progress max="1" value="0"></progress><small></small><small data-movement></small>`;
+const toolGuide = document.createElement("nav"); toolGuide.dataset.toolGuide = "";
+toolGuide.innerHTML = `<button type="button" data-find-tool>Find tool</button><a href="${worldId ? `/world?world=${worldId}&workshop=1&tab=recipes&material=oak` : "/world?scene=world&workshop=1&tab=recipes"}">Make tool · Recipes</a>`;
+toolGuide.querySelector("button").addEventListener("click", (e) => {
+  e.stopPropagation(); e.currentTarget.blur();
+  const profile = (world.tools || []).find(p => world.bodies.has(p.tool));
+  if (!profile) { lastAction("No gathering tool on the ground · equip one in Inventory or make one in Recipes.", "refused"); return; }
+  const entry = world.bodies.get(profile.tool), at = entry.mesh.position;
+  camera.lookAt(at);
+  picked.name = profile.tool; picked.at = null; picked.resource = null; showPicked();
+  lastAction(`${titled(profile.object)} · ${camera.position.distanceTo(at).toFixed(1)} m away · walk close and press E to take up.`);
+});
+loadMeter.append(toolGuide);
 document.body.append(loadMeter);
 
 // The bag's first nine slots along the bottom of the view: each with its number,
@@ -5681,14 +5694,14 @@ function detailsModel() {
                      water && water.depth > 0.005
                        ? `under ${(water.depth * 100).toFixed(0)} cm of water flowing ${Math.hypot(water.u, water.w).toFixed(2)} m/s`
                        : ""].filter(Boolean).join(" · ");
-      if (underfoot !== "rock") rows.push([[k("dig")], `dig here, in the ${underfoot}`]);
+      if (underfoot !== "rock") rows.push([[k("dig")], worldId ? "dig with an equipped tool" : `dig here, in the ${underfoot}`]);
       const carried = world.carriedGround
         ? (Number(world.carriedGround.soil_kg) || 0) + (Number(world.carriedGround.sand_kg) || 0) : 0;
       if (carried > 0.0005) rows.push([[k("heap")], "heap what you carry here"]);
       const tool = (world.tools || [])[0] || null;
       model.note = underfoot === "rock"
         ? (tool ? "Bare rock: a point no harder than the rock stops on it." : "")
-        : !tool ? `Nothing here to dig with — ${k("talk")} and ask the room for a pick.`
+        : !tool ? "Tool needed · Make tool in Recipes, or equip a bagged tool in Inventory."
           : list.length ? ""
             // WHICH tool, and nothing about how to hold it. How to hold it is
             // already written twice over: on the tool itself in the Bag tab,
@@ -5767,7 +5780,7 @@ function showDetails(now = false) {
   if (somethingIsPinned()) showPicked();
   const model = detailsModel();
   const useName = world.held?.name || world.aim?.name;
-  if (useName && (actionsFor(useName).length || !world.held)) {
+  if (!world.held?.pick && useName && (actionsFor(useName).length || !world.held)) {
     model.rows = model.rows.filter(([keys]) => !keys.includes(keyOf("primary")));
     model.rows.unshift([[keyOf("primary")], primaryAction(useName).label, "primary"]);
   }
@@ -6375,6 +6388,9 @@ function pressPrimary() {
   if (world.placing?.carrying || world.placing?.confirming) return true;
   if (world.asking || world.acting) return true;
   if (world.paused) { lastAction("Resume the world before using a product.", "refused"); return true; }
+  // Inspection is available in the side panel. A held gathering tool uses its
+  // native stroke even when the design also declares a Study action.
+  if (world.held?.pick) { tools.press(); return true; }
   const name = world.held?.name || world.aim?.name;
   // A throw takes the button ahead of the held thing's OWN action, but only
   // when that action does nothing but set it down (the owner, 2026-09-26).
@@ -10662,6 +10678,17 @@ async function workTheCable() {
 
 $("dig-it").addEventListener("click", async () => {
   if (!world.session) return;
+  if (worldId) {
+    if (!world.held?.pick) {
+      lastAction("Tool needed · take up the field pick with E, or make one in Recipes. Equip a bagged tool in Inventory.", "refused");
+      return;
+    }
+    if (world.paused) { lastAction("Resume the world before digging.", "refused"); return; }
+    if (world.use.mode !== "tool-ready") { lastAction("Wait for the tool to finish its stroke.", "refused"); return; }
+    tools.press();
+    tools.release();
+    return;
+  }
   if (!ground.grid) {
     lastAction("This room's floor is flat concrete: there is nothing to dig. The valley has ground.", "refused");
     return;

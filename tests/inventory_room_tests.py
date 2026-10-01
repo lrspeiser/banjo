@@ -102,6 +102,23 @@ class WhatTakingAndHoldingDoToTheThing(unittest.TestCase):
         self.assertTrue(dropped["ok"],dropped)
         self.assertEqual(dropped["shown"]["carried"]["objects_kg"],0)
 
+    def test_player_report_keeps_ground_and_recalculates_available_capacity(self):
+        self.app.room.spec['terrain']={'generate':{'kind':'flat','nx':32,'nz':32,
+            'cell_m':.25,'soil_m':.2,'sand_m':.02}}
+        self.session=self.live.open(self.app,{'spec':self.app.room.spec})['session']
+        dig=self.live.act({'session':self.session,'op':'dig','from':[0,0],
+                          'to':[0,0],'width_m':.5,'depth_m':.1})
+        self.assertGreater(dig['carried']['sand_kg']+dig['carried']['soil_kg'],0)
+        with self.live.as_actor('ground-reader'):
+            took=self.ask('player-ground-take',0,'take_up')
+        self.assertTrue(took['ok'],took)
+        shown=took['shown']['carried']
+        ground=sum(shown.get(k,0) for k in ('sand_kg','soil_kg','rock_kg'))
+        self.assertGreater(ground,0)
+        self.assertAlmostEqual(ground+shown['objects_kg'],shown['total_kg'])
+        self.assertAlmostEqual(max(0,shown['limit_kg']-shown['total_kg']),shown['available_kg'])
+        self.assertAlmostEqual(max(0,shown['total_kg']-shown['limit_kg']),shown['over_limit_kg'])
+
     def test_taken_held_stowed_and_put_down_the_ball_is_one_ball_where_it_is_said_to_be(self):
         took = self.ask("t1", 0, "take")
         self.assertTrue(took["ok"], took)

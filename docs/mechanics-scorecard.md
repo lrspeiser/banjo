@@ -1,5 +1,13 @@
 # Banjo mechanics scorecard
 
+**Gathering/supply boundary, October 1:** [Measured native stroke/carry/deposit](gathering-supply-checkpoint.md)
+keeps ground-work-v1 and native mass/capacity laws. Browser J/F strokes fill
+the actual 80 kg allowance, a full load starts no stroke, and H returns carried
+sand/soil before another measured stroke. Display fixes retain native ground
+mass; recursive recipe targets are declared yield estimates. Private native
+ground ownership, physical bag/cargo inertia and full conservation remain open.
+No material-law or physics tolerance changes; glass/oak/iron coverage is retained.
+
 **Recipe supply boundary, October 1:** [Measured ledger/native install](recipe-supply-checkpoint.md)
 collects 25 kg personal oak and spends it plus 5.7776 kg shared for a 30.7776 kg
 table; shared remainder is 6.6224 kg. Other-player credit remains separate,

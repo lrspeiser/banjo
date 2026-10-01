@@ -128,12 +128,62 @@ class RecipeGuidance(unittest.TestCase):
         click(rover+' canvas');wait(f'document.querySelector({json.dumps(rover+" details")}).open')
         text=p.evaluate(f'document.querySelector({json.dumps(rover)}).textContent')
         self.assertIn('Processing machine required',text);self.assertIn('hopper',text)
+        supplies=rover+' [data-supply="copper"] .ws-input-supplies summary'
+        click(supplies)
+        nested=rover+' [data-supply="copper"] [data-supply="copper ore"]'
+        wait(f'document.querySelector({json.dumps(nested)})')
+        ore_text=p.evaluate(f'document.querySelector({json.dumps(nested)}).textContent')
+        self.assertIn('Hopper',ore_text);self.assertIn('Recipe yield estimate',text)
+        self.assertIn('Rover → dig → intake',ore_text)
+        self.assertTrue(p.evaluate(f'!!document.querySelector({json.dumps(nested+" [data-supply-route]")})'))
+        click(nested+' [data-supply-kind="deposit"] [data-supply-route]')
+        wait('window.banjoRoom?.ready() && location.search.includes("resource=")')
+        wait('document.querySelector("#picked").textContent.includes("Extraction area")')
+        shot('ore-source')
+        p.send('Page.navigate',{'url':recipes_url})
+        wait(f'document.querySelector({json.dumps(rover)})')
+        click(rover+' canvas');wait(f'document.querySelector({json.dumps(rover+" details")}).open')
         click(rover+' [data-supply-offer="wire-coil"]')
         wait('document.querySelector("[data-market-item=wire-coil].ws-goal-target") && !document.querySelector("#ws-pane-market").hidden')
         shot('market')
         self.assertEqual([],[e for e in p.events if e.get('method')=='Runtime.exceptionThrown'])
         (out/'recipe-guidance.json').write_text(json.dumps({'owner':browser_owner,'before':before,'after':after,
             'shortage_text':text,'receipt_count':len(app.room.workshop_installs)},indent=2))
+
+    def test_empty_hopper_targets_actual_yield_and_cycles_are_bounded(self):
+        world,owner,app=self.setup_world()
+        source=next(m for m in flow.machine_witness.machines(app) if m['recipe']=='smelt copper')
+        program=app.brains.of(source['machine'])
+        output=app.brains.goods.by_name(program.routine.output)
+        flow.GoodsJourney.process_batch(self,app,output)
+        intake=app.brains.goods.by_name(program.routine.intake)
+        # Empty the remaining hopper through its ordinary manual collection
+        # action. Automatic nearby pickup still excludes machine inputs.
+        at=intake['at_m'];sid=app.live.session.id
+        floor=app.live.act({'session':sid,'op':'survey','at':at})['survey']['ground_m']
+        self.post('/api/world/goods/collect',{'session':sid,'pile':intake['name'],
+            'request_id':'empty-guidance-hopper','person':{'eyes_m':[at[0],floor+1.62,at[1]],
+                                                        'facing':[0,0,-1]}},world)
+        self.assertEqual(0,intake['holds'].get('copper ore',0))
+        def line():
+            recipes=self.post('/api/workshop/recipes',{},world)
+            rover=next(t for t in recipes['templates'] if t.get('kind')=='rover')
+            return next(l for l in rover['goods'] if l['substance']=='copper')
+        copper=line();self.assertGreater(copper['short_kg'],0)
+        route=next(r for r in copper['acquisition'] if r['kind']=='process' and r['name']=='smelt copper')
+        ore=route['machines'][0]['inputs'][0]
+        self.assertEqual(0,ore['held_kg'])
+        self.assertAlmostEqual(copper['short_kg']/0.3,ore['kg'])
+        self.assertEqual(ore['kg'],ore['short_kg'])
+        deposit=next(r for r in ore['acquisition'] if r['kind']=='deposit')
+        actual=next(d for d in app.brains.goods.holders()['deposits'] if d['name']==deposit['name'])
+        self.assertEqual(actual['left_kg'],deposit['left_kg']);self.assertTrue(deposit['equipment'])
+        # Declarative authoring guidance must terminate for a circular process.
+        # This changes recipe descriptions only, not the running native world.
+        app.room.spec['goods']['recipes'].append({'name':'circular-copper','in':{'copper':1},'out':{'copper':1}})
+        circular=next(r for r in line()['acquisition'] if r.get('name')=='circular-copper')
+        blocked=circular['input_supplies'][0]['acquisition']
+        self.assertEqual('blocked',blocked[0]['kind']);self.assertIn('Supply cycle',blocked[0]['reason'])
 
 
 if __name__=='__main__':unittest.main()

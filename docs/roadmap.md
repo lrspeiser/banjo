@@ -1,5 +1,12 @@
 # Banjo roadmap and acceptance gates
 
+**Gathering/supply acceptance, October 1:** [Ordinary native loop](gathering-supply-checkpoint.md)
+passes actual tool discovery, primary/F digging, full refusal, H heaping and
+resumed digging; recursive process input guidance reaches actual raw deposits.
+Next verify process/output-to-build and saved designs, and implement native
+actor-specific excavated-ground accounts with two-player/restart transfers.
+Items 7/8 remain partial within the complete fourteen-item goal.
+
 **Recipe supply acceptance, October 1:** [Shortage→collect→Make](recipe-supply-checkpoint.md)
 passes ordinary World/Recipes/Market navigation and actual personal/shared
 debits. Next trace empty processor inputs to raw sources and verify output-to-build,

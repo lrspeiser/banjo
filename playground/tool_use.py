@@ -116,6 +116,12 @@ def resolve(app: Any, body: dict[str, Any]) -> dict[str, Any]:
                            "label": use["label"], "input": "primary", "hands": 1,
                            "repeat": use["repeat"], "enabled": False, "reason": None,
                            "ring": None, "target": None}
+    carried = _carried(app)
+    if (float(carried.get("limit_kg") or 0.0) > 0
+            and float(carried.get("available_kg", 1.0)) <= 0.0005):
+        out["reason"] = "Load full · digging stopped. Point at clear ground and press H to heap carried sand or soil."
+        out["carried"] = carried
+        return out
     at = _point(body.get("at_m"))
     if at is None:
         out["reason"] = "Point the crosshair at the ground: the point comes down where it meets it."
@@ -193,7 +199,7 @@ def run(app: Any, body: dict[str, Any],
     label = said.get("label") or "Use it"
     if not said.get("enabled"):
         return {"action": label, "refused": said.get("reason") or "It cannot be used there.",
-                "done": []}
+                "done": [], "carried": said.get("carried") or _carried(app)}
     session = app.live.session
     actor = getattr(getattr(session, "_actor_local", None), "actor", "")
     busy_players = session.__dict__.setdefault("tool_busy_players", set()) if actor else set()

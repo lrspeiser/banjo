@@ -184,8 +184,11 @@ def _carried(app: Any, player_id: str = "") -> Any:
         thing = item_holding(app, held) if held else None
         own_kg = whole_kg(app, thing) if thing else 0.0
         own_kg = float(own_kg or 0.0)
-        return dict(carried, objects_kg=own_kg,
-                    total_kg=float(carried.get("ground_kg") or 0.0) + own_kg)
+        ground_kg = sum(float(carried.get(k) or 0.0) for k in ("sand_kg", "soil_kg", "rock_kg"))
+        total = ground_kg + own_kg
+        limit = float(carried.get("limit_kg") or 0.0)
+        return dict(carried, objects_kg=own_kg, total_kg=total,
+                    available_kg=max(0.0, limit-total), over_limit_kg=max(0.0, total-limit))
     thing = item_holding(app, held) if held else None
     if not isinstance(carried, dict) or thing is None or len(thing["bodies"]) < 2:
         return carried
