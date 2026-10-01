@@ -28,6 +28,11 @@ verified coherent checkpoints regularly.
 
 ## Rover recovery checkpoint — October 1
 
+Published implementation: `a040683` on GitHub main. The native solver/runner
+sources remain the preceding `29a3c71` build; the added native regression target
+was rebuilt through CMake for this checkpoint. Preview:
+`http://127.0.0.1:8770/world`.
+
 Select a wheeled rover in the World right panel or open its machine panel and
 press **Take hold to recover**. Approach the chassis within 2 m with a native
 clear view. The program stops; looking up lifts the grip target, walking pulls,
