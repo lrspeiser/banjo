@@ -1,0 +1,22 @@
+{
+  "schema": "banjo.product-presentation-acceptance.v1",
+  "players": 2,
+  "native_dt_s": 0.004166666666666667,
+  "scene_cell_m": 0.05,
+  "existing_bodies_sha256_before": "2f3bf668ebf64bc01a5f5ac27ce2f2708eeaf58e3ddc8be577fa011bc3d52ae1",
+  "existing_bodies_sha256_after": "2f3bf668ebf64bc01a5f5ac27ce2f2708eeaf58e3ddc8be577fa011bc3d52ae1",
+  "player_records_unchanged": true,
+  "products": [
+    {
+      "label": "Camp stool",
+      "native_body": "workshop-932e2971792e41a5",
+      "parked_mass_kg": 2.5087999770312504
+    },
+    {
+      "label": "Camp stool",
+      "native_body": "workshop-b31e266134da4183",
+      "parked_mass_kg": 2.5087999770312504
+    }
+  ],
+  "both_names_and_bags_retained_after_restart": true
+}

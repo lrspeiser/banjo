@@ -1,5 +1,13 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Compact possession guidance, September 30:** [Product labels](product-labels.md)
+give Inventory/World readable recorded names, source pictures and actual next
+uses. Resources separate Personal/Shared quantities; Recipes predict debit
+sources. Packed mass comes from the complete saved native record with provenance
+in folded Details. Two guests' exact body/bag records survive staging/restart;
+reference play still completes both opening chains. Live-provider and further
+tech-tree play remain separate gates.
+
 **Market progression guidance, September 30:** [Complete purchase plans](market-guidance.md)
 match actual goal capabilities to ready built-in and saved recipes, estimate
 all missing lots at current scarcity prices and name the real personal skill

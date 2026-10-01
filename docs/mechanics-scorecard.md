@@ -1,5 +1,14 @@
 # Banjo mechanics scorecard
 
+**Product presentation boundary, September 30:** [Mass provenance and scope](product-labels.md)
+use native quantities without changing body ids, mass, stock tolerance or laws.
+The packed oak stool reads 2.5088 kg from its complete native saved record;
+two guests' original body records remain identical through another build and
+their bags/names survive restart. No new conservation or material claim;
+glass/oak/iron comparative gates remain unchanged. Source thumbnails do not
+certify present damage or function. Next retain these identity/mass checks while
+adding supported intake replenishment and further AI progression.
+
 **Market guidance boundary, September 30:** [Complete estimates and scope](market-guidance.md)
 use existing BOM/rack quantities and per-lot scarcity prices. Full estimates
 match sequential purchases; unavailable stock has no complete quote. Native

@@ -67,6 +67,8 @@ def carried(app: Any, player_id: str = "") -> list[dict[str, Any]]:
             first = bodies.get(name) or {}
             size = [float(v) for v in (first.get("size_mm") or [])] or None
             out = {"where": where, "id": entry.get("id"), "name": name,
+                   "label": entry.get("label") or name, "next_use":entry.get("next_use",[]),
+                   "recipe":entry.get("recipe"),
                    "material": str(first.get("material") or entry.get("material") or ""),
                    "shape": str(first.get("shape") or entry.get("shape") or "box"),
                    "parts": list(entry.get("parts") or [name]),
@@ -78,8 +80,23 @@ def carried(app: Any, player_id: str = "") -> list[dict[str, Any]]:
                 out["size_mm"] = size
             thing = next((i for i in items_of(spec) if i["id"] == entry.get("id")), None)
             kg = inventory_room.whole_kg(app, thing) if thing else None
+            out['mass_source']='Live native reading' if kg is not None else 'Unreported'
+            # Pose replies omit parked bodies. Their saved native checkpoint
+            # retains the mass; label that source instead of treating a missing
+            # pose as zero mass or substituting a recipe estimate.
+            if kg is None and thing and where.startswith('bag '):
+                snapshot=getattr(room,'world_record',None) or {}
+                parked={}
+                for body in snapshot.get('bodies',[]):
+                    if body.get('name') not in thing['bodies'] or not body.get('parked'):continue
+                    stored=body['parked'] if isinstance(body['parked'],dict) else body
+                    if stored.get('mass_kg') is not None:parked[body['name']]=float(stored['mass_kg'])
+                if set(parked)==set(thing['bodies']):
+                    kg=sum(parked.values())
+                    out['mass_source']='Saved native checkpoint'
+                    out['mass_saved_t_s']=snapshot.get('t_s')
             if kg is not None:
-                out["kg"] = round(float(kg), 3)
+                out["kg"] = float(kg)
             return out
 
         out = []
@@ -109,12 +126,15 @@ def inventory(app: Any, player_id: str = "") -> dict[str, Any]:
     # The products built: standing in the world (the room's install receipts),
     # and saved on the bench (workshop_store).
     room = getattr(app, "room", None)
+    import product_labels
+    labels=product_labels.body_labels(app) if room is not None else {}
     in_world = []
     for receipt in getattr(room, "workshop_installs", None) or []:
         if not isinstance(receipt, dict) or receipt.get("status") != "installed":
             continue
         kind = receipt.get("kind") or (receipt.get("candidate") or {}).get("kind") or receipt.get("design_id") or "?"
         in_world.append({"name": receipt.get("root_body") or kind, "kind": str(kind).split("-")[0],
+                         "label":labels.get(receipt.get('root_body'),'Built item'),
                          "design_id": receipt.get("design_id"), "scene": receipt.get("scene"),
                          "at": receipt.get("request_id")})
     saved = []
@@ -177,6 +197,9 @@ def recipes(app: Any) -> dict[str, Any]:
                   "shared_kg": goods_stock.get(s,{}).get("shared_kg",0),
                   "enough": held_goods.get(s, 0.0) + 5e-5 >= kg}
                  for s, kg in sorted(workshop_library.goods_needed(design).items())]
+        for line in [*materials,*goods]:
+            line['debit_personal_kg']=min(line['kg'],line['personal_kg'])
+            line['debit_shared_kg']=min(max(0.,line['kg']-line['debit_personal_kg']),line['shared_kg'])
         record = workshop_machines.of(design)
         templates.append({"name": name, "purpose": design.purpose, "about": made.about,
                           "source": source, "saved_design_id": saved_design_id,
@@ -192,12 +215,10 @@ def recipes(app: Any) -> dict[str, Any]:
 
     # The tutorial uses the same recipe/readiness pipeline as other builds.
     from mcp import workshop_components
-    import starter_goals
-    starter, _ = workshop_components.design_from_spec(starter_goals.recipe())
-    add(starter, w.assembly("stool"), name="Camp stool", source="built-in")
-    import goal_chains
-    table, _ = workshop_components.design_from_spec(goal_chains.work_table_recipe())
-    add(table, w.assembly("bench"), name="Work table", source="built-in")
+    import product_labels
+    for label,recipe in product_labels.named_sources():
+        design,_=workshop_components.design_from_spec(recipe)
+        add(design,w.assembly(design.kind),name=label,source="built-in")
     for made in w.ASSEMBLIES:
         try:
             design = w.assemble(made.name, design_id=made.name)

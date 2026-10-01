@@ -3757,7 +3757,8 @@ function sentence(text) {
 // What the hand holds, by what a person calls it: the bow, not its string.
 function heldName() {
   const held = world.held;
-  return !held ? "" : held.bow ? held.bow.object : held.pick ? held.pick.object : held.name;
+  const item = Object.values(world.inventory?.hands || {}).find(x => x && (x.name === held?.name || x.parts?.includes(held?.name)));
+  return !held ? "" : item?.label || (held.bow ? held.bow.object : held.pick ? held.pick.object : held.name);
 }
 
 // Whether the record says the hand the engine has holds this thing: taken up
@@ -3974,6 +3975,7 @@ async function fromSlot(i) {
 // What a thing in the bag is called: a tool by what it is ("the pick"), not by
 // the name of its first part ("pick haft"), which is the record's name for it.
 function bagName(thing) {
+  if (thing.label) return thing.label;
   const tool = tools.profileOf(thing.name);
   return titled(tool ? tool.object : thing.name);
 }
@@ -4037,7 +4039,7 @@ function showInventory() {
   };
   $("inv-right").replaceChildren(document.createTextNode(held ? `${titled(heldName())}${mass}` : "free"));
   if (recordHolds(held)) $("inv-right").append(button("Stow", "stow", held), button("Put down", "drop", held));
-  $("inv-left").textContent = left ? titled(left) : "free";
+  $("inv-left").textContent = left ? bagName(inv.hands.left) : "free";
   const bag = slots.map((thing, i) => [thing, i]).filter(([thing]) => thing);
   // The Workshop link takes a drop too, whether or not the bag has
   // anything in it this moment. Made once; the guard sees to that.
@@ -4067,12 +4069,16 @@ function showInventory() {
       condition.className = "much";
       condition.textContent = `Surface ~${Math.round(measured.t_k - 273.15)} °C · core ~${Math.round(measured.core_k - 273.15)} °C · insulated storage`;
       li.append(condition);
-    } else {
-      const condition = document.createElement("small");
-      condition.className = "much";
-      condition.textContent = "Temperature not tracked";
-      li.append(condition);
     }
+    const details = document.createElement("details"), summary = document.createElement("summary");
+    summary.textContent = "Details"; details.append(summary);
+    const identity = document.createElement("small"); identity.className = "much";
+    identity.textContent = `Item: ${thing.id} · Body: ${thing.name}`; details.append(identity);
+    if (!measured) {
+      const condition = document.createElement("small"); condition.className = "much";
+      condition.textContent = "Temperature not tracked"; details.append(condition);
+    }
+    li.append(details);
     return li;
   }) : [Object.assign(document.createElement("li"), { className: "none",
          textContent: `nothing yet: ${keyOf("stow")} puts what you hold, or look at, in it` })]));
@@ -5067,7 +5073,7 @@ function detailsModel() {
     const name = world.aim.name;
     const entry = world.bodies.get(name);
     const part = tools.profileOf(name) || profileOf(name);
-    model.name = titled(part ? part.object : name);
+    model.name = world.inventory?.labels?.[name] || titled(part ? part.object : name);
     model.facts = factsOf(name, entry, world.aim.distance_m);
     // And what it holds, if it is a container: walking up to a pail should
     // tell you about the pail without opening a panel.

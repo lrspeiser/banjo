@@ -103,6 +103,11 @@ class StarterGoals(unittest.TestCase):
         second = play_first_camp(self, world, bob["token"])
         self.assertTrue(second["complete"])
         self.assertNotEqual(result["goals"]["camp_body"], second["goals"]["camp_body"])
+        for player,completed in ((alice,result),(bob,second)):
+            product=self.post('/api/workshop/inventory',{},world,player['token'])['carried'][0]
+            self.assertEqual('Camp stool',product['label'])
+            self.assertEqual(completed['goals']['camp_body'],product['name'])
+            self.assertAlmostEqual(2.5088,product['kg'],places=4)
         # Both guests' packed precise assemblies must remain byte-for-byte
         # intact while another recipe is admitted into the shared scene.
         room_path=Path(self.temp.name)/"rooms"/"worlds"/world/"rooms"/"new-game.json"
@@ -121,6 +126,16 @@ class StarterGoals(unittest.TestCase):
             self.assertEqual(b,by_name[b["name"]],"staging changed existing body state")
         for body in (result["goals"]["camp_body"],second["goals"]["camp_body"]):
             self.assertTrue(by_name[body]["parked"])
+        import hashlib
+        digest=lambda value:hashlib.sha256(json.dumps(value,sort_keys=True).encode()).hexdigest()
+        report={'schema':'banjo.product-presentation-acceptance.v1','players':2,
+            'native_dt_s':1/240,'scene_cell_m':.05,
+            'existing_bodies_sha256_before':digest(before['world']['bodies']),
+            'existing_bodies_sha256_after':digest([by_name[b['name']] for b in before['world']['bodies']]),
+            'player_records_unchanged':before['players']==after['players'],
+            'products':[{'label':'Camp stool','native_body':body,
+                         'parked_mass_kg':by_name[body]['parked']['mass_kg']}
+                        for body in (result['goals']['camp_body'],second['goals']['camp_body'])]}
         self.assertGreater(built["mass_kg"],result["goals"]["recipe_mass_kg"])
         native = self.post("/api/world/open", {}, world)
         charge = next(s["charge_j"] for s in native["machines"]["stores"] if s["id"] == source["id"])
@@ -136,6 +151,11 @@ class StarterGoals(unittest.TestCase):
             self.assertTrue(restored["complete"])
             bag = self.post("/api/world/inventory/shown", {"session": restored["session"]}, world, player["token"])
             self.assertIn(restored["camp_body"], bag["record"]["stowed"])
+            self.assertEqual('Camp stool',next(x for x in bag['stowed'] if x and x['name']==restored['camp_body'])['label'])
+            self.assertEqual('Camp stool',bag['labels'][restored['camp_body']])
+        report['both_names_and_bags_retained_after_restart']=True
+        output=ROOT/'build/product-labels';output.mkdir(parents=True,exist_ok=True)
+        (output/'acceptance.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
 
     def test_wrong_geometry_or_another_builders_receipt_does_not_earn_goal(self):
         world = self.post("/api/worlds", {"name": "Evidence"})["id"]
@@ -224,6 +244,9 @@ class StarterGoals(unittest.TestCase):
         for event in ("keyDown", "keyUp"):
             page.send("Input.dispatchKeyEvent", {"type":event, "key":"q", "code":"KeyQ", "windowsVirtualKeyCode":81})
         wait_for('window.banjoRoom.world.inventory?.record?.stowed?.includes(new URLSearchParams(location.search).get("focus"))')
+        wait_for('window.banjoRoom.world.inventory?.labels?.[new URLSearchParams(location.search).get("focus")] === "Camp stool"')
+        self.assertIn('Camp stool',page.evaluate('document.querySelector("#inv-bag li .slot-key").nextSibling.textContent'))
+        self.assertFalse(page.evaluate('document.querySelector("#inv-bag li details").open'))
         screenshot("packed-in-world.png")
         click('.game-tabs [data-screen="goals"]')
         wait_for('document.querySelector("#ws-goals-progress")?.textContent.includes("First camp complete")')

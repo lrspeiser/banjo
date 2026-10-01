@@ -1,5 +1,14 @@
 # Development status and handoff
 
+**Product guidance checkpoint, September 30:** [Source contract and evidence](product-labels.md)
+adds readable product names to Inventory/World, full source pictures, actual
+next uses and folded native ids/mass provenance. Resource cards separate
+personal/shared amounts; recipe details predict both debits. Source names are
+frozen in new receipts and cannot be borrowed through a mismatched design id.
+Five focused cases, native two-guest staging/restart and Chrome journeys pass.
+Both generated-map reference runs retain 8/8 goals and 2/10 techniques; this
+does not extend autonomous play beyond checklists or qualify a live provider.
+
 **Complete Market guidance, September 30:** [Implementation and acceptance](market-guidance.md)
 adds all resource gaps, whole-lot scarcity estimates, typed goal matching and
 affordable compatible alternatives including saved designs. Actual skill

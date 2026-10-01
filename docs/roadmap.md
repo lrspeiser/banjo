@@ -1,5 +1,13 @@
 # Banjo roadmap and acceptance gates
 
+**Product guidance acceptance, September 30:** [Names and quantities](product-labels.md)
+now keep native ids/exact masses folded, show personal/shared ownership and
+debits, and name implemented next uses. Packed checkpoint mass requires all
+parts; missing mass is explicit. Native staging/restart preserves both guests'
+existing bodies/bags. Next: continue AI play after checklists; qualify live
+provider seed/scarcity behavior; close generated rover delivery and intake
+replenishment; measure AI/page/background clock ownership. Preserve strict saves.
+
 **Market guidance acceptance, September 30:** [Complete plans](market-guidance.md)
 cover every line and whole-lot scarcity cost, typed goal relevance, affordable
 saved alternatives, explicit suppliers/stock blockers and private/shared debit

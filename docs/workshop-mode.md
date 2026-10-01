@@ -1,5 +1,12 @@
 # Workshop Mode: fast isolated design, variants, tests and component learning
 
+**Product/resource guidance, September 30:** [Recorded names and next use](product-labels.md)
+give carried products whole-source pictures, readable names/mass, personal
+ownership and actual next actions. Inventory resources separate Personal and
+Shared quantities; Recipes predict those debit sources. Native ids and precise
+saved/live mass provenance stay in Details. Lab source previews leave carried
+ownership unchanged and do not certify current damage or function.
+
 **Recipes update, September 30:** [Visual cards and Make results](recipe-contract.md#visual-cards-and-make-feedback--september-30-2026) replace prose-first listings with source pictures, material progress/missing supplies and compact Build/Skill/Uses values. Make preserves Lab selection, reports on Recipes and adds separate native copies; View in World faces the new item. Current Workshop Make requires no technique unlock. The 55 browser and 6 screen-navigation regressions pass; this is UI/action integration, not a new physical law.
 
 ## Visual Inventory and starting a design — September 30, 2026

@@ -231,6 +231,9 @@ def shown(app: Any, player_id: str = "") -> dict[str, Any]:
         thing = items.get(item)
         first = bodies.get(thing["name"]) if thing else None
         out: dict[str, Any] = {"id": item, "name": thing["name"] if thing else item}
+        if thing:
+            import product_labels
+            out.update(product_labels.for_item(app,thing))
         if first:
             out["material"] = str(first.get("material") or "")
             out["shape"] = str(first.get("shape") or "box")
@@ -243,7 +246,9 @@ def shown(app: Any, player_id: str = "") -> dict[str, Any]:
             out["parts"] = list(thing["bodies"])
         return out
 
+    import product_labels
     return {"record": record, "carried": _carried(app,player_id),
+            "labels":product_labels.body_labels(app),
             "hands": {hand: named(item, record["home"].get(item)) for hand, item in record["hands"].items()},
             "stowed": [named(item) for item in record["stowed"]],
             # The hand the engine has: the only one that holds anything yet.

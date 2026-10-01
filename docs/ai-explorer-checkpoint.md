@@ -184,9 +184,13 @@ and verified in `d7571fb` on main. It supplies all gaps, stock budgets, goal
 matching and folded personal/shared debit details. The playthrough measurements
 above remain results from the earlier explorer checkpoint.
 
+Follow-up: [product/resource labels](product-labels.md) now provide recorded
+names, pictures, quantities, debit sources and implemented next uses across
+Inventory/Recipes/World. Native multi-guest staging/restart and Chrome pass;
+the original persistent-run measurements above remain unchanged.
+
 Remaining work: live-provider comparisons; continued play beyond the declared
 chains; replenishing exhausted machine intakes through supported player actions;
-obstacle-aware physical navigation; compact product/ownership/next-use labels
-outside Market; generated rover delivery
+obstacle-aware physical navigation; generated rover delivery
 failures. No full-world conservation, material strength or physical chemistry
 claim is added. Prior glass/oak/iron comparative gates remain unchanged.

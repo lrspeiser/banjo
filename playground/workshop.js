@@ -1900,16 +1900,20 @@ const MATERIAL_LOOK = {
   "copper ore": "7f8b74", "iron ore": "8a6a58", "cement": "b9b4a8",
   "wire": "c98b5a", "steel": "9aa3ab",
 };
-const kgSaid = (kg) => (kg >= 1000 ? `${(kg / 1000).toFixed(1)} t`
-  : kg >= 10 ? `${Math.round(kg)} kg` : kg >= 0.1 ? `${kg.toFixed(1)} kg`
-  : `${Math.round(kg * 1000)} g`);
+const kgSaid = (kg) => {
+  const value = Number(kg) || 0, magnitude = Math.abs(value);
+  const unit = magnitude >= 1000 ? "t" : magnitude >= 1 || !magnitude ? "kg" : "g";
+  const amount = unit === "t" ? value / 1000 : unit === "g" ? value * 1000 : value;
+  return `${amount.toLocaleString(undefined, {maximumFractionDigits:2})} ${unit}`;
+};
 
 // One tile: a picture, a name, and how much of it there is.
 function invTile(thing, { quantity = null, where = "", onOpen = null } = {}) {
-  const tile = make("button", { type: "button", class: "ws-tile", title: thing.name });
+  const label = thing.label || thing.name;
+  const tile = make("button", { type: "button", class: "ws-tile", title: label });
   const art = make("span", { class: "ws-tile-art" });
   art.append(thumbnail(thing));
-  tile.append(art, make("span", { class: "ws-tile-name" }, titleCase(thing.name)));
+  tile.append(art, make("span", { class: "ws-tile-name" }, label));
   if (quantity) tile.append(make("b", { class: "ws-tile-count" }, quantity));
   if (where) tile.append(make("span", { class: "ws-tile-where" }, where));
   if (onOpen) tile.onclick = () => guard(tile, onOpen);
@@ -1919,25 +1923,50 @@ function invTile(thing, { quantity = null, where = "", onOpen = null } = {}) {
 
 async function showInventory() {
   const inv = await api("/api/workshop/inventory");
-  const carried = (inv.carried || []).map(thing => invTile(thing, {
-    quantity:thing.kg != null ? kgSaid(thing.kg) : null, where:thing.where,
-    onOpen:() => openTheCarriedThing(thing.id),
-  }));
+  const carried = (inv.carried || []).map(thing => {
+    const card = make("article", {class:"ws-product-card", "data-product":thing.id});
+    const tile = invTile(thing, {quantity:thing.kg != null ? kgSaid(thing.kg) : "Mass unavailable", where:thing.where,
+      onOpen:() => openTheCarriedThing(thing.id)});
+    card.append(tile, recipeValue("Owner", "You"), recipeValue("Next use", thing.next_use?.[0] || "Hold / place in World"));
+    const lab = make("button", {type:"button",class:"ws-action"}, "Open in Lab");
+    lab.onclick = () => guard(lab, () => openTheCarriedThing(thing.id)); card.append(lab);
+    const debug = make("details", {class:"ws-product-debug"}); debug.append(make("summary", {}, "Details"),
+      recipeValue("Item id", String(thing.id)), recipeValue("Native body", thing.name));
+    if (thing.design_id) debug.append(recipeValue("Design id", thing.design_id));
+    if (thing.kg != null) debug.append(recipeValue("Native mass", `${thing.kg} kg`));
+    if (thing.mass_source) debug.append(recipeValue("Mass source", thing.mass_source));
+    if (thing.mass_saved_t_s != null) debug.append(recipeValue("Saved at", `${thing.mass_saved_t_s} s`));
+    card.append(debug);
+    if (thing.recipe) {
+      const canvas = tile.querySelector("canvas"); canvas.width=160; canvas.height=112;
+      loadInventoryPicture(tile,{id:thing.id,source:"recipe",recipe:{...thing.recipe,name:thing.label},
+        version:JSON.stringify([thing.recipe.parameters,thing.recipe.component_overrides])});
+      tile.title = `${thing.label} · source preview · Open in Lab`;
+    }
+    return card;
+  });
   $("#ws-inv-grid").replaceChildren(...carried);
   $("#ws-inv-note").textContent = carried.length ? "Select → Lab" : "Empty · Pick up items in World";
-  const stock = (inv.materials || []).filter(r => r.mass_kg > 0).map(r => invTile({
-    name:r.material, material:r.material, shape:"box", color_rgba:MATERIAL_LOOK[r.material] || "9aa7b4",
-  }, {quantity:`${Number(r.mass_kg).toLocaleString(undefined, {maximumFractionDigits:r.mass_kg >= .001 ? 3 : 6})} kg`,
-      onOpen:() => openMaterialRecipes(r.material || r.substance)}));
+  const stock = (inv.materials || []).filter(r => r.mass_kg > 0).map(r => resourceTile(r,"box"));
   $("#ws-inv-stock").replaceChildren(...stock);
   $("#ws-inv-stock-empty").hidden = stock.length > 0;
-  const goods = (inv.goods || []).filter(r => r.mass_kg > 0).map(r => invTile({
-    name:r.substance, material:r.substance, shape:"sphere", color_rgba:MATERIAL_LOOK[r.substance] || "8b9bab",
-  }, {quantity:`${Number(r.mass_kg).toLocaleString(undefined, {maximumFractionDigits:r.mass_kg >= .001 ? 3 : 6})} kg`,
-      onOpen:() => openMaterialRecipes(r.material || r.substance)}));
+  const goods = (inv.goods || []).filter(r => r.mass_kg > 0).map(r => resourceTile(r,"sphere"));
   $("#ws-inv-goods").replaceChildren(...goods);
   $("#ws-inv-goods-empty").hidden = goods.length > 0;
   await showInventoryEnergy();
+}
+function resourceTile(row, shape) {
+  const material = row.material || row.substance;
+  const tile = invTile({name:material,label:titleCase(material),material,shape,color_rgba:MATERIAL_LOOK[material] || "9aa7b4"},
+    {quantity:kgSaid(row.mass_kg),onOpen:() => openMaterialRecipes(material)});
+  tile.dataset.resource = material;
+  for (const [label,value] of [["Personal",row.personal_kg],["Shared",row.shared_kg]]) {
+    const line = make("span", {class:"ws-stock-owner"});
+    line.append(make("span", {}, label),make("b", {}, kgSaid(value))); tile.append(line);
+  }
+  tile.append(make("span", {class:"ws-tile-next"}, "Recipes → Uses"));
+  tile.title = `${titleCase(material)} · ${row.mass_kg} kg total · Find recipes`;
+  return tile;
 }
 const energySaid = j => `${Number(j).toLocaleString(undefined, {maximumFractionDigits:1})} J`;
 const rateSaid = w => `${Number(w).toLocaleString(undefined, {maximumFractionDigits:1})} J/s`;
@@ -2554,7 +2583,10 @@ async function showRecipes() {
     if (needs.childElementCount) li.append(needs);
     const all = make("details", {class:"ws-recipe-details"}); all.append(make("summary", {}, "Materials & build details"));
     const materials = make("div", {class:"ws-needs"});
-    for (const line of [...(t.materials || []), ...(t.goods || [])]) materials.append(recipeLine(line));
+    for (const line of [...(t.materials || []), ...(t.goods || [])]) {
+      materials.append(recipeLine(line), recipeValue("Predicted debit",
+        `Personal ${kgSaid(line.debit_personal_kg)} · Shared ${kgSaid(line.debit_shared_kg)}`));
+    }
     all.append(materials);
     const readiness = t.readiness || {};
     const fit = !readiness.workshop?.as_drawn ? readiness.workshop?.reason || "Workshop check unavailable"
@@ -2565,6 +2597,7 @@ async function showRecipes() {
     // Current Workshop authoring has no technique gate. Do not infer a
     // requirement from an item's name or a progression hint.
     li.append(recipeValue("Skill", "None required", "ws-recipe-skill"));
+    li.append(recipeValue("Make uses", "Personal → Shared"));
     const uses = make("div", {class:"ws-recipe-uses", "aria-label":"Declared uses"});
     uses.append(make("span", {}, "Uses"));
     for (const use of recipeUses(t)) uses.append(tag(use));
@@ -2774,7 +2807,7 @@ async function openTheCarriedThing(id) {
     say("That is not being carried any more.", true);
     return;
   }
-  bench.inventorySelection = {id:thing.id, name:thing.name, source:"carried"};
+  bench.inventorySelection = {id:thing.id, name:thing.label || thing.name, source:"carried"};
   showTab("lab");
   bench.openedLibraryItem = null;
   try {
@@ -2789,12 +2822,12 @@ async function openTheCarriedThing(id) {
     if (revision !== bench.revision) return;
     if (took(answer)) {
       $("#ws-archetype").value = "custom";
-      say(`${thing.name} is on the bench: one part, ${thing.material}.`);
+      say(`${thing.label || thing.name} is on the bench: one part, ${thing.material}.`);
     }
   } catch (error) {
     if (revision !== bench.revision) return;
     clearLab(); showTab("lab");
-    say(`${thing.name} could not be opened: ${error.message || error}`, true);
+    say(`${thing.label || thing.name} could not be opened: ${error.message || error}`, true);
   }
 }
 

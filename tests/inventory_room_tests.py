@@ -34,7 +34,9 @@ ENGINE = BUILD / ("banjo_platform_cli.exe" if os.name == "nt" else "banjo_platfo
 
 # Standing 0.8 m back from the middle of the floor, looking along -z, eyes at 1.66 m.
 PERSON = {"standing_m": [0.0, 0.04, 0.8], "facing": [0.0, 0.0, -1.0], "eyes_m": [0.0, 1.66, 0.8]}
-BALL = {"id": "b-ball000001", "name": "ball", "material": "iron", "shape": "sphere"}
+BALL = {"id": "b-ball000001", "name": "ball", "material": "iron", "shape": "sphere",
+        "label":"ball", "label_source":"world-name",
+        "next_use":["Hold / place in World","Open in Lab"]}
 
 
 def spec():

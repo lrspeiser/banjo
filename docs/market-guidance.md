@@ -78,6 +78,9 @@ reference acceptance checks, not live-provider or realtime-throughput results.
 
 These tests qualify economy guidance and player isolation, not physical
 manufacturing, strength, full-world conservation or distributed storage.
-Remaining work includes compact product labels and next-use guidance outside
-Market; continued AI play after declared checklists; live-provider seed and
+Follow-up: [compact product labels](product-labels.md) now cover Inventory/World
+names, full source pictures, personal/shared quantities, predicted debits and
+implemented next uses. The Market measurements above retain their original source.
+
+Remaining work includes continued AI play after declared checklists; live-provider seed and
 shortage comparisons; generated rover delivery and world-clock timing.

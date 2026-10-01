@@ -362,6 +362,8 @@ def _kept(app: Any, answer: dict[str, Any], design: Any, overrides: Any) -> dict
     held = _preview_cache(app).get(answer.get("preview_id"))
     if held is not None:
         held["recipe"] = recipe_of(design, overrides)
+        import product_labels
+        held["presentation"] = product_labels.from_recipe(app,held["recipe"])
     return answer
 
 
@@ -1734,6 +1736,8 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
                        "fingerprint": (plan.get("matter") or {}).get("physics_hash")}
             if plan.get("recipe") is not None:
                 receipt["recipe"] = deepcopy(plan["recipe"])
+            if plan.get("presentation") is not None:
+                receipt["presentation"] = deepcopy(plan["presentation"])
             if thermal_transfer is not None:
                 receipt["thermal_transfers" if isinstance(thermal_transfer,list) else "thermal_transfer"] = thermal_transfer
             receipt.pop("expires_in_s", None)

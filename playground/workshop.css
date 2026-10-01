@@ -506,6 +506,17 @@ body.workshop-mode > :not(#design-workshop):not(#game-menu) { display:none!impor
                 overflow:hidden;text-overflow:ellipsis;display:-webkit-box;
                 -webkit-line-clamp:2;-webkit-box-orient:vertical; }
 .ws-tile-where { font-size:.66rem;color:#7f8d9e; }
+.ws-product-card { border:1px solid #34404e;background:#151e28;border-radius:.5rem;padding:.5rem;min-width:0; }
+.ws-product-card > .ws-tile { width:100%;border:0; }
+.ws-product-card .ws-tile-art canvas { width:100%;max-width:160px;height:auto; }
+.ws-product-card .ws-recipe-value { font-size:.72rem; }
+.ws-product-debug { font-size:.72rem;margin-top:.5rem;overflow-wrap:anywhere; }
+.ws-product-debug .ws-recipe-value { display:block; }
+.ws-product-debug .ws-recipe-value b { display:block; }
+#ws-inv-grid { grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); }
+#ws-inv-stock,#ws-inv-goods { grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); }
+.ws-stock-owner { display:flex;justify-content:space-between;gap:.5rem;width:100%;font-size:.7rem; }
+.ws-tile-next { color:#97b9dc;font-size:.68rem; }
 #ws-inv-more { margin-top:1rem;border-top:1px solid #2a3340;padding-top:.6rem; }
 #ws-inv-more > summary { cursor:pointer;font-size:.8rem;color:#9ba9ba;
                          padding:.2rem 0;list-style-position:inside; }
