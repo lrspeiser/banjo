@@ -1,6 +1,6 @@
 # Native item condition — October 1, 2026
 
-Publication revision is recorded after the verified checkpoint is pushed.
+Published implementation: `a9c42ab` on GitHub main.
 This is a partial implementation of item 11 in the
 [fourteen-item acceptance list](player-experience-checklist.md).
 Four items are verified and ten are partial. Repair and fatigue remain open.
