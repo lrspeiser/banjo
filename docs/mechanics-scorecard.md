@@ -1,5 +1,14 @@
 # Banjo mechanics scorecard
 
+**Recovery actuator boundary, October 1:** [Native grip checkpoint](player-experience-checklist.md#rover-recovery-checkpoint--october-1)
+reuses 800 N / 60 N m wielding at 50 mm / `dt=1/240 s`. A real 0.601035 m pit
+drop is recovered with 1.23972 m lift and 541.516 J measured hand work; native
+assembly stays 43.5471 kg with all joint attachments. Work minus mechanical
+energy change is an unallocated 6.71289 J, not full closure. API/browser and
+two-map durable collected-load checks pass. No material/contact law changed;
+retain glass/oak/iron and full reaction/conservation gates. Avatar reaction,
+ledger-cargo inertia and general rover grade/traversal remain unsupported.
+
 **Excavation policy boundary, October 1:** [Shape-based guard](player-experience-checklist.md#rover-excavation-support-checkpoint--october-1)
 reads native turned collision bounds over attached hinges, plus half scoop width
 and one terrain-grid diagonal. Fixture stand-off 1.23872 m; refused dig snapshot

@@ -629,6 +629,12 @@ it stands (`room_world.LIVE`): the running room's machine is told, and the room
 is not opened again. The page's panel goes to the same controller by a route
 of its own, `POST /api/world/machine`, with the page's own sender and count.
 
+That HTTP panel also accepts authenticated nearby wheeled-rover recovery:
+`{session, program, recovery: "start" | "release", person}`. It stops the
+program and uses the existing native bounded grip, preserving personal hands
+and collected load. [Payload, save failures and limits](../machine-world.md)
+are documented separately; this is not an additional MCP tool.
+
 ## Structures
 
 The owner's review of 2026-09-15: asked for "a long ski ramp", the

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import ast
 import json
 import math
 import os
@@ -23,14 +24,20 @@ from mcp.product_circuit import bind_circuit
 from circuit_api import CIRCUIT_SCHEMA, validate
 import banjo_mcp
 
-# Who each server says it is in its handshake: what its script declares, read
-# here rather than written out, because every release bumps it (the literal
-# "1.2.0" this test once held went stale at the next release). The world
-# server's own declaration is taken before the platform wrapper is imported,
-# since the wrapper renames the core's server in place.
-DECLARED = {"banjo_mcp.py": dict(banjo_mcp.SERVER)}
+# Read source declarations: importing the platform wrapper mutates core.SERVER,
+# and another suite may already have imported it before this module loads.
+def server_declaration(script):
+    tree=ast.parse((ROOT/'mcp'/script).read_text(encoding='utf-8'))
+    for statement in tree.body:
+        if isinstance(statement,ast.Assign) and any(
+                (isinstance(t,ast.Name) and t.id=='SERVER') or
+                (isinstance(t,ast.Attribute) and t.attr=='SERVER') for t in statement.targets):
+            return ast.literal_eval(statement.value)
+    raise AssertionError('Missing server declaration in '+script)
+
+DECLARED = {"banjo_mcp.py": server_declaration("banjo_mcp.py")}
 import banjo_platform_mcp
-DECLARED["banjo_platform_mcp.py"] = dict(banjo_platform_mcp.core.SERVER)
+DECLARED["banjo_platform_mcp.py"] = server_declaration("banjo_platform_mcp.py")
 
 SCENE = {"bodies": [
     {"name": "post", "shape": "box", "material": "iron", "dimensions_m": [.1, .8, .1],

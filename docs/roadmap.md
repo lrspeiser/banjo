@@ -1,5 +1,12 @@
 # Banjo roadmap and acceptance gates
 
+**Recovery acceptance, October 1:** [Nearby bounded recovery](player-experience-checklist.md#rover-recovery-checkpoint--october-1)
+passes an actual native pit lift, personal/shared hand refusals, real scoop-load
+preservation, failure/retry/reopen and ordinary Chrome controls. Next qualify
+existing-pit traversal, measured native grades and extended generated delivery.
+Keep ledger cargo separate from native mass, and external hand work separate
+from a future reacting avatar and personal energy budget. All fourteen gates remain.
+
 **Excavation clearance acceptance, October 1:** [Current native support guard](player-experience-checklist.md#rover-excavation-support-checkpoint--october-1)
 passes full-snapshot refusal and ordinary loaded scoops on both generated maps.
 Next provide nearby physical recovery through bounded work, qualify traversal

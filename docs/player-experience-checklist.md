@@ -16,7 +16,7 @@ This is the current acceptance list, not a claim that all features are done.
 | 9. Workshop chat | Typing, sending and draft selection work; chat focus cannot be stolen by world key bindings | Native Chrome ordinary typing, submission, head edit and subsequent whole-item edit pass. Local failure cleanup and replacement textarea retain selection/disabled state. |
 | 10. Pick authoring | Whole pick appears in Lab; metal head modification has actual component geometry/material; Save and Make give actionable outcomes | Verified exact bootstrap source recovery includes head/handle. Explicit Recipe→Lab survives reload; head-only iron edit and Save pass. Supported oak Make debits stock and preserves existing machines. Mixed-material lattice joining remains unsupported: metal-head Make and visual shape improvement remain open. |
 | 11. Durability/repair | Integrity derives from actual recorded damage; supported repair requires matching material/energy and native restored/admitted geometry | Pending. No invented physical health, strength or free restoration. |
-| 12. Rover safety/recovery | Actual sensor readings visible; route/dig clearance avoids own support; ordinary recovery available with bounded forces/work | Ground/water probes and live right-panel readings verified; native dry-hole avoidance/restart passes. Collision-shape dig clearance refuses own support and permits default collection on both generated maps. Physical recovery and extended drive/route qualification remain open. |
+| 12. Rover safety/recovery | Actual sensor readings visible; route/dig clearance avoids own support; ordinary recovery available with bounded forces/work | Ground/water probes, support-aware digging and nearby bounded recovery verified. Ordinary recovery stops the rover, preserves collected load and restores the personal grip on reload. Native actual-pit lift passes; extended drive/route/grade qualification remains open. |
 | 13. Water and hills | Gravity walking can leave water and climb ordinary hills; rover climbs measured grades without forced motion | Player controller verified on two generated river crossings and hills; declared deep-pool ascent, buoyancy, dive and recovery pass. Native avatar and rover hill capability remain open. |
 | 14. Output pickup and contained inputs | Output voxels fly into personal inventory on nearby walking; processor inputs stay in visible hoppers; rover delivery visibly fills them | Native/browser automatic output-only pickup and input bins implemented and verified. Fly leaves outputs untouched; server refuses auto-input pickup. Existing recorded dump/dock transfers retained; broad generated rover delivery and physical cargo/tipping remain open. |
 
@@ -25,6 +25,67 @@ Workshop/tool/capacity blockers, then connect the remaining ordinary-player
 journeys with measured acceptance. Keep CPU/native simulation separate from
 presentation, retain glass/oak/iron comparisons for physical changes, and publish
 verified coherent checkpoints regularly.
+
+## Rover recovery checkpoint — October 1
+
+Select a wheeled rover in the World right panel or open its machine panel and
+press **Take hold to recover**. Approach the chassis within 2 m with a native
+clear view. The program stops; looking up lifts the grip target, walking pulls,
+the wheel adjusts reach, and **E / Release rover** lets go. The panel reports
+actual hand pull in N and work in J; target/grip separation reports following
+versus pulling. The rover stays off until explicitly turned on. Recovery uses
+existing native `wield`, force-at-grip and wrist torque; it does not set a body
+pose, assign a velocity, reset parts or replenish goods.
+
+The existing authenticated `/api/world/machine` route accepts
+`{session, program, recovery: "start" | "release", person}`. Start validates
+the current attached part set, personal free hand, other players' grips,
+native ray hit and existing carry allowance under the world state lock.
+Power-on is refused while a rover has a recovery grip. A failed first save
+releases that grip and leaves the rover stopped; failed release warns that
+the change was not saved and can be retried. Repeated start retains the native
+grip/work. Reload adopts its actual grip target without a hinge guide or a
+second grasp. Packing during recovery is refused with Release guidance.
+
+Windows / MSVC Release / Python 3.13.5 / Chrome; 50 mm and native
+`dt=1/240 s`, unchanged solver/material laws:
+
+- CMake-registered `banjo_rover_roam_tests` now passes 15 cases. The added case
+  cuts an actual 0.6 m basin, lets the entire attached rover fall 0.601035 m,
+  lifts it 1.23972 m, pulls it beyond the rim and releases it onto uncut ground.
+  Peak pull is 800 N, measured hand work 541.516 J, unchanged native body mass
+  43.5471 kg; every original joint attachment remains. Grip/work survive reopen.
+  Work minus change in native mechanical energy is 6.71289 J. This residual is
+  unclosed: brake/contact/drag losses and numerical correction are not fully
+  allocated by this test, so it is not a full conservation certificate.
+  The pit experiment declares 10,000 kg excavation storage to cut its basin;
+  normal player allowance remains 80 kg, hand 800 N / 60 N m.
+- The two-map API case collects a real routine scoop before recovery, retains
+  hopper load and processor stock, refuses distant/occupied/other-player hands
+  (including another wheel), preserves the native bodies after failed acquisition,
+  and tests repeated start, failed release, retry and saved-world reopen. Native
+  work/time/load persist; restored pose protocol checks use five decimal places.
+  Hinge angles are recomputed from float poses, so full snapshot byte equality
+  is not claimed across reopen.
+- Chrome clicks the visible button, raises the native rover through view controls,
+  reads Pull/Work, refuses Q packing, reloads without resetting the grip and clicks
+  Release. No browser exceptions. Screenshot: ignored
+  `build/resource-flow/rover-recovery.png`.
+
+Final affected gates: 44 resource/browser/live/API/MCP transport checks pass in
+111.287 s; source registration remains 286/286. Syntax and changed-file checks
+pass. The combined transport suite also exposed an existing module-order issue:
+its handshake expectations now read the source declarations, rather than the
+platform wrapper's mutated imported core metadata. The running port 8770 preview
+passes a fresh-world Chrome acquisition/lift/release with 793.37 N pull,
+307.30 J work and zero browser exceptions.
+
+The grip is an external actuator: a reacting native player body and muscular
+energy budget are not implemented. Collected goods remain a durable ledger;
+they do not yet add hopper inertia. One basin lift does not qualify all pit
+shapes, slopes or extended routes. Retain native avatar, physical cargo/tipping,
+grade and conservation gates, plus prior glass/oak/iron law boundaries.
+The fourteen-item goal remains active.
 
 ## Rover excavation support checkpoint — October 1
 

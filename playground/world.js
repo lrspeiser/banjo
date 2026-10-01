@@ -2731,6 +2731,7 @@ function programOwning(controlId) {
 // their display, which the panel's own rules set and `hidden` does not beat.
 function panelRows(program) {
   const panel = $("machine-panel");
+  if($("mp-recovery")) $("mp-recovery").hidden=!program;
   for (const selector of [".mp-drive", ".mp-setting", ".mp-hint"]) {
     const row = panel.querySelector(selector);
     const want = program ? "none" : "";
@@ -2743,6 +2744,62 @@ function panelRows(program) {
 function sensorName(s) {
   return `${s.stops<0 ? "Rear" : "Front"} ${s.side>0 ? "left" : s.side<0 ? "right" : "middle"} · ${s.kind==="ground" ? "ground" : "water"}`;
 }
+
+let recoveryBusy = false;
+function recoverySection(program) {
+  const section=document.createElement("section");section.dataset.roverRecovery="";
+  const held=world.held?.recovery===program.id ? world.held : null;
+  const button=document.createElement("button");button.type="button";button.className="pk-recovery";
+  button.dataset.recoveryAction=held ? "release" : "start";
+  button.textContent=held ? "Release rover" : "Take hold to recover";
+  button.disabled=recoveryBusy || !!watchedId || (!held && !!world.held);
+  button.onclick=()=>recoverRover(program,held ? "release" : "start");section.append(button);
+  if(held) {
+    const hand=held.hand || {};
+    section.append(inspectionValues([
+      ["Assembly",`${world.use.kg.toFixed(1)} kg`],
+      ["Pull",`${Math.round(Math.hypot(...(hand.force_n || [0,0,0])))} N`],
+      ["Work",`${Math.round(hand.work_j || 0)} J`],
+      ["Grip",hand.grip_m && hand.target_m && Math.hypot(...hand.grip_m.map((v,i)=>v-hand.target_m[i]))>.25
+        ? "Pulling / obstructed" : "Following"],
+    ]));
+  }
+  const hint=document.createElement("p");hint.className="pk-doing";
+  hint.textContent=held ? "Look up to lift · walk to pull · E releases" : "Approach chassis · rover stops while held";
+  section.append(hint);return section;
+}
+
+function adoptRecovery(program,hand,mass=null) {
+  const entry=world.bodies.get(program.body);
+  if(!entry || !hand?.grip_m) return;
+  const target=new THREE.Vector3(...(hand.target_m || hand.grip_m));
+  const distance=clamp(camera.position.distanceTo(target),.6,2);
+  const from=camera.position.clone().add(forwardVector().multiplyScalar(distance));
+  world.held={name:program.body,loose:false,recovery:program.id,distance,offset:target.sub(from),hand};
+  const kg=mass ?? (program.parts || [program.body]).reduce((sum,n)=>sum+(world.bodies.get(n)?.mass || 0),0);
+  world.use={mode:"carrying",name:program.name,kg,loose:false};
+  clearGuides();showHolding(true);showUse();
+}
+
+async function recoverRover(program,action) {
+  if(recoveryBusy) return;
+  recoveryBusy=true;
+  try {
+    const answer=await api("/api/world/machine",{session:world.session,program:program.id,
+      recovery:action,person:whereIAm()});
+    if(answer.state) draw(answer.state);
+    mergeProgram(answer.program);
+    if(answer.recovering) {
+      adoptRecovery(answer.program,answer.hand,answer.assembly_mass_kg);
+      picked.name=answer.program.body;picked.at=null;
+      lastAction("Rover stopped. Look up to lift; walk to pull; E releases.");
+    } else {
+      world.held=null;world.use={mode:"none"};showHolding(false);clearGuides();showUse();
+      lastAction("Rover released. Turn it on when ready.");
+    }
+  } catch(error) { lastAction(error.message || String(error),"refused");say("bad",error.message || String(error)); }
+  finally { recoveryBusy=false;showPicked();showMachinePanel(); }
+}
 function sensorReading(s) {
   const value=Number(s.reading_m)||0,cm=Math.abs(value)*100;
   const reading=s.kind==="ground" ? (cm<.5 ? "Level" : `${value>0?"Drop":"Step"} ${cm.toFixed(1)} cm`) :
@@ -2753,8 +2810,11 @@ function showProgramPanel(p) {
   panelRows(true);
   setText("mp-kind", "Machine with a program");
   setText("mp-name", titled(p.name));
-  setPressed("mp-on", p.power);
+  setPressed("mp-on", p.power,world.held?.recovery===p.id);
   setPressed("mp-off", !p.power);
+  let recovery=$("mp-recovery");
+  if(!recovery) {recovery=document.createElement("div");recovery.id="mp-recovery";$("mp-measured").before(recovery);}
+  recovery.replaceChildren(...(p.kind==="roam" ? [recoverySection(p)] : []));
   setText("mp-enabled", p.power ? "On" : "Off");
   const wheels = p.kind === "still" ? {
     "standing by": "ready, with nothing to do",
@@ -4181,6 +4241,7 @@ function handBusy() {
 // Q: into the bag -- what the hand holds or, with the hand empty, what the
 // crosshair is on. The room sets it aside (inventory_room.py).
 async function toTheBag() {
+  if(world.held?.recovery) {lastAction("Release the rover before packing an item.","refused");return;}
   if (handBusy()) return;
   const on = world.aim && world.aim.name;
   const name = world.held ? world.held.name
@@ -5181,6 +5242,7 @@ function showPicked() {
       doing.textContent = program.power ? (program.why || program.doing || "running")
                                         : "switched off";
       rows.push(doing);
+      if(program.kind==="roam") rows.push(recoverySection(program));
       if(program.sensors?.length) {
         const readings=document.createElement("section");readings.dataset.roverSensors="";
         const heading=document.createElement("h4");heading.textContent="Sensors";readings.append(heading);
@@ -5200,7 +5262,7 @@ function showPicked() {
       const memberNames=expanded ? new Set(expanded.sources.map(s=>s.name)) : new Set([picked.name]);
       rows.push(inspectionValues([
         ["Material", materials.filter(Boolean).join(" / ") || "Not reported"],
-        ["Mass", entry.anchored ? "Fixed · not reported" : `${mass.toLocaleString(undefined, { maximumFractionDigits: 3 })} kg`],
+        [!expanded && program?.kind==="roam" ? "Body mass" : "Mass", entry.anchored ? "Fixed · not reported" : `${mass.toLocaleString(undefined, { maximumFractionDigits: 3 })} kg`],
         ["Structure", expanded ? "Assembly components" : rigid ? "Rigid parts" : "Cells"],
         [expanded ? "Components" : rigid ? "Parts" : "Cells", entry.geometryPending ? "Updating" :
           (expanded ? expanded.count : rigid ? entry.parts?.length : inspection?.cell_count)?.toLocaleString() || "Not reported"],
@@ -5321,6 +5383,7 @@ function heldChoices() {
   const held = world.held;
   if (!held) return [];
   const name = held.name;
+  if(held.recovery) return [{label:"Release rover",run:()=>intend("drop")}];
   if (held.pick) return [{ label: `Put ${held.pick.object} down`, run: () => intend("put down") }];
   if (held.bow) {
     return [{ label: world.use.mode === "drawing" ? "Let the string down" : `Let go of ${held.bow.object}`,
@@ -5438,6 +5501,11 @@ function detailsModel() {
     if (list.length > 1) rows.push([[k("next")], "E does the next one"]);
   };
   const held = world.held;
+  if(held?.recovery) {
+    model.name=titled(world.use.name);model.facts="Recovery · rover stopped";
+    model.note="Look up to lift · walk to pull · mouse wheel changes reach";
+    choiceRows();return model;
+  }
   if (held) {
     const entry = world.bodies.get(held.name);
     model.name = titled(heldName());
@@ -7680,6 +7748,11 @@ async function pickUp() {
 
 async function dropIt(raw = false) {
   if (!world.held) return;
+  if(world.held.recovery) {
+    const program=programsNow().find(p=>p.id===world.held.recovery);
+    if(program) await recoverRover(program,"release");
+    return;
+  }
   if (!raw && placementEligible()) { await placeHere(); return; }
   stopPlacing(false);
   const name = world.held.name;
@@ -8145,6 +8218,7 @@ function carriedHand(now) {
 // What the engine says the hand did: how far back a wind-up actually got, and
 // how a stroke ended.
 function followTheHand(hand) {
+  if(world.held?.recovery && hand) world.held.hand=hand;
   const use = world.use;
   if (!hand || !world.held || !world.held.throwable) return;
   if (hand.grip_m && hand.holding) use.grip = new THREE.Vector3(...hand.grip_m);
@@ -10020,9 +10094,7 @@ function adoptRebuilt(answer) {
   const carried = !!(restored && restored.tier === "carried");
   const holding = carried && answer.state.hand ? answer.state.hand.holding : "";
   if (holding && world.bodies.has(holding)) {
-    const pinned = (answer.state.joints || []).some((j) => j.attached !== false
-                                                      && (j.a === holding || j.b === holding));
-    if (pinned) adoptHold(holding); else adoptGrip(holding, null);
+    adoptNativeHold(holding,answer.state);
   }
   if (carried && (restored.not_carried || []).length)
     say("world", `As the room has it now: ${restored.not_carried.join("; ")}.`);
@@ -10274,6 +10346,13 @@ function adoptHold(name) {
   }
   showHolding(true);
   showUse();
+}
+
+function adoptNativeHold(name,state) {
+  const rover=(state.machines?.programs || []).find(p=>p.kind==="roam" && p.body===name);
+  if(rover && state.hand?.mode==="grip") {adoptRecovery(rover,state.hand);return;}
+  const pinned=(state.joints || []).some(j=>j.attached!==false && (j.a===name || j.b===name));
+  if(pinned) adoptHold(name);else adoptGrip(name,null);
 }
 
 // The hand on a thing on a joint -- hauled round its pin or along its groove,
@@ -10730,9 +10809,7 @@ async function open({ again = false } = {}) {
                                                 || recordHolds(data.hand.holding))
       ? data.hand.holding : "";
     if (holding && world.bodies.has(holding)) {
-      const pinned = (data.joints || []).some((j) => j.attached !== false
-                                                && (j.a === holding || j.b === holding));
-      if (pinned) adoptHold(holding); else adoptGrip(holding, null);
+      adoptNativeHold(holding,data);
     }
     const focus = new URLSearchParams(location.search).get("focus");
     const focusBody = !watchedId && focus && world.bodies.get(focus);

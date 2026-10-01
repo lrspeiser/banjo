@@ -1273,6 +1273,62 @@ Rover dryGroundRover() {
     return r;
 }
 
+void boundedHandRecoversAnExcavatedRover() {
+    Rover r=dryGroundRover();
+    auto &world=*r.world;
+    // Declared excavation experiment: enough ground storage to cut the basin,
+    // not a player capacity grant or a chassis pose/velocity edit.
+    world.setCarryLimitKg(10000);
+    const auto before=world.poses();
+    const auto original=posed(before,"rover").position_m;
+    require(!world.dig(-.8,0,.8,0,1.6,.6).edit.cells.empty(),"recovery pit removes actual ground");
+    for(int i=0;i<3*240;i++)tick(world);
+    const auto fallen=posed(world.poses(),"rover").position_m;
+    const auto joints_before=world.joints();
+    const double energy_before=world.mechanicalEnergyJ();
+    require(original.y-fallen.y>.2,"the attached rover falls into the actual excavation");
+    world.selectHand("recovering-player");
+    std::string why;
+    require(world.wield("rover",fallen),"a bounded hand can take the chassis");
+    require(length(posed(world.poses(),"rover").position_m-fallen)<1e-12,"taking the grip does not move the rover");
+    const Vec3 raised{fallen.x,original.y+.65,fallen.z};
+    world.moveHeld(raised);
+    require(length(posed(world.poses(),"rover").position_m-fallen)<1e-12,"setting the target does not teleport it");
+    double peak=0;
+    for(int i=0;i<4*240;i++){tick(world);peak=std::max(peak,length(world.hand().force_n));}
+    const auto lifted=posed(world.poses(),"rover").position_m;
+    require(lifted.y>original.y+.25,"native force lifts the entire attached rover above the rim");
+    world.moveHeld({raised.x,raised.y,-2.0});
+    for(int i=0;i<4*240;i++){tick(world);peak=std::max(peak,length(world.hand().force_n));}
+    const auto moved=posed(world.poses(),"rover").position_m;
+    const double work=world.hand().work_j;
+    const double unclosed=work-(world.mechanicalEnergyJ()-energy_before);
+    require(std::isfinite(unclosed),"recovery mechanical energy/work residual remains finite");
+    require(moved.z<-1.5,"bounded grip pulls the assembly onto unexcavated ground");
+    require(peak<=world.handStrength()+1e-6 && work>0,"recovery records bounded force and actual positive hand work");
+    auto saved=world.snapshot(why);
+    auto request=shoreRoom();auto env=nlohmann::json::parse(request.environment_scene_json);
+    env["terrain"]["generate"]["lake_level_m"]=0.;request.environment_scene_json=env.dump();
+    request.precise_rigid_scene_json=roverScene({0,.22,0});
+    auto again=LiveWorld::open(request,saved);again->selectHand("recovering-player");
+    require(again->hand().mode=="grip" && std::abs(again->hand().work_j-work)<1e-6,"restart retains bounded grip and measured work");
+    world.release();for(int i=0;i<3*240;i++)tick(world);
+    const auto after=world.poses();
+    double mass=0,after_mass=0;
+    for(const auto &p:before)mass+=p.mass_kg;
+    for(const auto &p:after)after_mass+=p.mass_kg;
+    require(after.size()==before.size() && std::abs(after_mass-mass)<1e-9,"recovery preserves native bodies and mass");
+    const auto joints_after=world.joints();
+    require(joints_after.size()==joints_before.size(),"recovery preserves joints");
+    for(std::size_t i=0;i<joints_before.size() && i<joints_after.size();i++)
+        require(joints_after[i].attached==joints_before[i].attached,"recovery retains each actual joint attachment");
+    require(!programOf(world,r.program).power && world.hand().holding.empty(),"release leaves the rover stopped and hand empty");
+    require(posed(after,"rover").position_m.z<-1.5,"released rover rests beyond the pit");
+    std::cout<<"    pit drop "<<original.y-fallen.y<<" m; lift "<<lifted.y-fallen.y
+             <<" m; peak hand "<<peak<<" N; measured work "<<work<<" J; native mass "<<mass
+             <<" kg; unclosed work - delta mechanical energy "<<unclosed<<" J\n";
+}
+
 void machineDigUsesActualAttachedCollisionShapes() {
     Rover r=dryGroundRover();
     std::string why;
@@ -1341,6 +1397,7 @@ void groundSensorsReadActualHolesAndSurviveSaving() {
 
 int main() {
     const std::pair<const char *, void (*)()> tests[] = {
+        {"bounded native hand recovers a rover from an actual excavation",boundedHandRecoversAnExcavatedRover},
         {"machine digging preserves support of actual attached collision shapes",machineDigUsesActualAttachedCollisionShapes},
         {"ground probes read and avoid a native dry hole and survive saving",groundSensorsReadActualHolesAndSurviveSaving},
         {"it goes straight and turns on the spot", itGoesStraightAndTurnsOnTheSpot},

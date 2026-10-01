@@ -1,5 +1,20 @@
 # The machine world
 
+**Nearby recovery, October 1:** [Implemented flow and measured boundaries](player-experience-checklist.md#rover-recovery-checkpoint--october-1)
+adds a right-panel and machine-panel Take hold to recover action for wheeled
+rovers. The authenticated `POST /api/world/machine` request is
+`{session, program, recovery: "start" | "release", person}` with the usual world,
+player and CSRF credentials. A native chassis ray must hit within 2 m; personal
+hands, attached-part ownership and the existing carry allowance are checked.
+Start stops the program and acquires a native bounded grip; success is saved
+before acknowledgement. Responses include `recovering`, `program`, `hand`,
+`state` and, on start, `assembly_mass_kg`, `strength_n`, `torque_n_m`.
+Native force/work determine movement. Look up to lift, walk to pull, E or
+Release lets go; power stays off. Failed saves return 503 with retry guidance.
+Reload keeps the actual grip/work; collected goods, parts and joints are retained.
+External-player reactions, physical cargo inertia and general pit/grade routing
+remain separate gates. This HTTP action adds no new MCP or native ABI call.
+
 **Support-aware digging, October 1:** [Measured native guard](player-experience-checklist.md#rover-excavation-support-checkpoint--october-1)
 checks the current attached collision shapes before machine scoops, including
 terrain triangles affected beyond the nominal scoop. Default reach adapts to

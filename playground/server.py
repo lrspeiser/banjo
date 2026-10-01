@@ -65,6 +65,7 @@ import workshop_install
 import world_upgrades
 import world_access
 import machine_witness
+import machine_recovery
 import player_learning
 import scene_chat
 import network_admission
@@ -1938,7 +1939,13 @@ class Handler(BaseHTTPRequestHandler):
                 # direction, a drive setting, by the page's own count, straight
                 # to its controller. Only on the room the page has open.
                 _this_pages_room(self.app,body)
-                return self.send(operate_machine(self.app,body))
+                try:
+                    answer=operate_machine(self.app,body,player)
+                except OSError as exc:
+                    return self.send({"error":str(exc)},503)
+                if player and isinstance(answer.get("state"),dict):
+                    player_world.personalize_hand(answer["state"],player)
+                return self.send(answer)
             if path=="/api/world/watch-machine":
                 _this_pages_room(self.app,body)
                 if not player:
@@ -2915,7 +2922,7 @@ def _control_for(app,which):
     if found: return found[0]
     raise ValueError(f"there is no machine called {which!r} in the room")
 
-def operate_machine(app,body):
+def operate_machine(app,body,player_id=""):
     """One command to a machine's controller (docs/machine-world.md, "Operating
     a machine"), from the page's panel (POST /api/world/machine) or the room's
     chat (operate): {control, sender, seq, power, direction, setting}, each of
@@ -2927,7 +2934,18 @@ def operate_machine(app,body):
     then does comes with every step."""
     if app.live.session is None: raise ValueError("the room is not open")
     if not isinstance(body,dict): raise ValueError("expected {control, sender, seq, power, direction, setting}")
+    if body.get("recovery") is not None:
+        return machine_recovery.request(app,player_id,body,keep_world)
     if body.get("program") is not None:
+        if body.get("power") is True:
+            state=app.live.session.state or {}
+            program=next((p for p in state.get("machines",{}).get("programs",[])
+                          if p["id"]==body["program"] and p.get("kind")=="roam"),None)
+            if program:
+                parts=set(program.get("parts") or [])|{program["body"]}
+                hands=list((state.get("player_hands") or {}).values())+[state.get("hand") or {}]
+                if any(h.get("mode")=="grip" and h.get("holding") in parts for h in hands):
+                    raise ValueError("Release the rover's recovery grip before turning it on")
         # A machine's program, turned on or off from its panel the same way:
         # {program, sender, seq, power}, answered with the program as it now is.
         said=app.live.act({"session":app.live.session.id,"op":"run","program":body.get("program"),

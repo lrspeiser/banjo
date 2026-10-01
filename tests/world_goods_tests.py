@@ -51,6 +51,155 @@ class GoodsJourney(unittest.TestCase):
         self.assertTrue(any(e['kind']=='input' and e['goods_kg']=={'copper ore':5.0} for e in app.brains.goods.activities))
         self.assertTrue(any(e['kind']=='output' and e['goods_kg'].get('copper')==1.5 for e in app.brains.goods.activities))
 
+    def recovery_fixture(self,seed=1):
+        with mock.patch.object(server.secrets,'randbelow',side_effect=[seed,851269740+seed]):
+            world,owner,app=self.setup_world()
+        app.live.act({'session':app.live.session.id,'op':'poses'})
+        program=next(p for p in app.live.session.state['machines']['programs'] if p['kind']=='roam')
+        root=next(b for b in app.live.session.state['bodies'] if b['name']==program['body'])
+        x,y,z=root['position_m']
+        person={'standing_m':[x+.8,y,z+.5],'eyes_m':[x+.8,y+1.1,z+.5],
+                'facing':[-.8,0,-.5],'look_direction':[-.8,-1.1,-.5]}
+        request={'session':app.live.session.id,'program':program['id'],'recovery':'start','person':person}
+        return world,owner,app,program,request
+
+    def test_rover_recovery_is_nearby_personal_bounded_durable_and_preserves_goods(self):
+        for seed in (0,1):
+            with self.subTest(seed=seed):
+                world,owner,app,program,request=self.recovery_fixture(seed)
+                other=self.join(world,'Other recovering player')
+                sid=app.live.session.id
+                def act(op,**args):return app.live.act({'session':sid,'actor':owner['id'],'op':op,**args})
+                import machine_tools
+                brain=app.brains.of(program['name'])
+                machine_tools.run(brain.context(app.brains._ask(app,sid)),machine_tools.Call('dig',{},'routine'))
+                self.assertGreater(brain.routine.kg,0,'Recovery must preserve an actually collected load')
+                act('poses')
+                initial=deepcopy(app.live.session.state['bodies'])
+                goods=deepcopy(app.brains.goods.block)
+                routines=deepcopy(app.brains.runtime())
+                malformed=dict(request,recovery=[])
+                with self.assertRaises(urllib.error.HTTPError) as bad:self.post('/api/world/machine',malformed,world)
+                self.assertEqual(400,bad.exception.code)
+                wheel=next(b for b in initial if b['name'] in program['parts'] and b['name']!=program['body'])
+                app.live.act({'session':sid,'actor':other['id'],'op':'wield','name':wheel['name'],'grip':wheel['position_m']})
+                with self.assertRaises(urllib.error.HTTPError):self.post('/api/world/machine',request,world)
+                app.live.act({'session':sid,'actor':other['id'],'op':'release'})
+                tool=next(b for b in initial if b['name'] not in program['parts'] and not b['anchored'])
+                act('wield',name=tool['name'],grip=tool['position_m'])
+                with self.assertRaises(urllib.error.HTTPError):self.post('/api/world/machine',request,world)
+                act('release')
+                far=deepcopy(request);far['person']['eyes_m'][0]+=20
+                with self.assertRaises(urllib.error.HTTPError):self.post('/api/world/machine',far,world)
+                with mock.patch.object(server,'keep_world',return_value=False):
+                    with self.assertRaises(urllib.error.HTTPError) as failed:self.post('/api/world/machine',request,world)
+                    self.assertEqual(503,failed.exception.code)
+                self.assertFalse((app.live.session.state['player_hands'].get(owner['id']) or {}).get('holding'))
+                act('poses')
+                self.assertEqual(initial,app.live.session.state['bodies'],'Failed/distant acquisition never moves bodies')
+                answer=self.post('/api/world/machine',request,world)
+                self.assertEqual('grip',answer['hand']['mode']);self.assertFalse(answer['program']['power'])
+                self.assertEqual(800,answer['strength_n']);self.assertEqual(60,answer['torque_n_m'])
+                self.assertAlmostEqual(43.54712,answer['assembly_mass_kg'],places=3)
+                repeated=self.post('/api/world/machine',request,world)
+                self.assertEqual(answer['hand'],repeated['hand'],'Retry retains the same grip and accumulated work')
+                with self.assertRaises(urllib.error.HTTPError):self.post('/api/world/machine',request,world,other['token'])
+                with self.assertRaises(urllib.error.HTTPError):
+                    self.post('/api/world/machine',{'session':sid,'program':program['id'],'power':True,
+                        'sender':'other guest','seq':1},world,other['token'])
+                target=answer['hand']['grip_m'][:];target[1]+=.8
+                peak=0
+                for _ in range(8):
+                    moved=act('step',dt=1/240,n=120,hand=target)
+                    hand=moved['player_hands'][owner['id']]
+                    peak=max(peak,sum(v*v for v in hand['force_n'])**.5)
+                self.assertLessEqual(peak,800.00001);self.assertGreater(hand['work_j'],0)
+                self.assertGreater(hand['grip_m'][1],answer['hand']['grip_m'][1]+.2)
+                self.assertEqual(goods,app.brains.goods.block,'Recovery preserves actual hopper/processor ledger')
+                self.assertEqual(routines,app.brains.runtime(),'Recovery preserves collected hopper load and routine')
+                self.assertTrue(server.keep_world(app,'recovery test restart'))
+                held_before=deepcopy(hand)
+                # Reopen the persisted native world without applying a new grasp/target.
+                saved=app.room.world_record
+                app.live.shutdown();app.live.session=None
+                opened=self.post('/api/world/open',{},world)
+                self.assertEqual('grip',opened['hand']['mode']);self.assertEqual(program['body'],opened['hand']['holding'])
+                self.assertAlmostEqual(held_before['work_j'],opened['hand']['work_j'],places=4)
+                self.assertEqual(saved['t_s'],app.room.world_record['t_s'])
+                self.assertEqual(len(saved['joints']),len(app.room.world_record['joints']))
+                self.assertEqual(len(saved['bodies']),len(app.room.world_record['bodies']))
+                # Native hinge angles are recomputed from restored float poses;
+                # work/time/load remain durable, with existing pose wire precision.
+                for a,b in zip(moved['bodies'],opened['bodies']):
+                    self.assertEqual(a['name'],b['name']);self.assertEqual(a['mass_kg'],b['mass_kg'])
+                    for x,y in zip(a['position_m'],b['position_m']):self.assertAlmostEqual(x,y,places=5)
+                request['session']=app.live.session.id
+                request['recovery']='release'
+                with mock.patch.object(server,'keep_world',return_value=False):
+                    with self.assertRaises(urllib.error.HTTPError) as failed:self.post('/api/world/machine',request,world)
+                    self.assertEqual(503,failed.exception.code)
+                    self.assertFalse((app.live.session.state['player_hands'][owner['id']]).get('holding'))
+                self.post('/api/world/machine',request,world)
+                released=self.post('/api/world/machine',request,world)
+                self.assertFalse(released['recovering']);self.assertFalse(released['program']['power'])
+                self.assertEqual(goods,app.brains.goods.block)
+                self.assertEqual(routines,app.brains.runtime())
+
+    def test_browser_rover_recovery_click_lift_readouts_reload_and_release(self):
+        if not qa_browser.CHROME.is_file():self.skipTest('Chrome not installed')
+        world,owner,app,program,request=self.recovery_fixture()
+        chrome=qa_browser.Chrome(1280,800);self.addCleanup(chrome.close)
+        page=chrome.page;page.send('Page.enable');page.send('Runtime.enable')
+        def wait(expression):
+            deadline=time.monotonic()+35
+            while time.monotonic()<deadline:
+                try:
+                    if page.evaluate(expression):return
+                except (RuntimeError,TimeoutError):pass
+                time.sleep(.1)
+            info=page.evaluate('({last:document.querySelector("#details-last-text")?.textContent,picked:document.querySelector("#picked")?.textContent,programs:banjoRoom.world.machines?.programs?.map(p=>({name:p.name,kind:p.kind,parts:p.parts}))})')
+            errors=[e for e in page.events if e.get('method')=='Runtime.exceptionThrown']
+            self.fail('Recovery browser did not reach '+expression+'; '+str(info)+'; '+str(errors))
+        def click(selector):
+            spot=page.evaluate('(()=>{const b=document.querySelector('+json.dumps(selector)+');b.scrollIntoView({block:"center"});const r=b.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()')
+            for kind in ('mousePressed','mouseReleased'):
+                page.send('Input.dispatchMouseEvent',{'type':kind,'button':'left','clickCount':1,**spot})
+        page.send('Page.navigate',{'url':self.base+f'/world?world={world}&hold=1'})
+        wait('window.banjoRoom?.ready()')
+        # Position the test observer beside the actual chassis; acquire through
+        # the visible button and move it through ordinary hand targets/keys.
+        page.evaluate('(()=>{const p=banjoRoom.world.bodies.get("rover").mesh.position;banjoRoom.standAt(p.x+.8,p.y+1.1,p.z+.5);banjoRoom.lookAt(p.x,p.y,p.z);banjoRoom.pick("rover");})()')
+        wait('!!document.querySelector("#picked [data-recovery-action=start]")')
+        click('#picked [data-recovery-action=start]')
+        wait('banjoRoom.world.held?.recovery')
+        self.assertFalse(page.evaluate('banjoRoom.world.held.guide || false'))
+        initial=page.evaluate('banjoRoom.world.held.hand.grip_m')
+        page.evaluate('(()=>{const p=banjoRoom.camera.position;banjoRoom.lookAt(p.x,p.y+1,p.z-.3);banjoRoom.resume();})()')
+        wait(f'banjoRoom.world.held.hand.grip_m[1]>{initial[1]+.3}')
+        wait('document.querySelector("#picked [data-rover-recovery]").textContent.includes("Work") && banjoRoom.world.held.hand.work_j>0')
+        page.send('Input.dispatchKeyEvent',{'type':'keyDown','code':'KeyQ','key':'q'})
+        page.send('Input.dispatchKeyEvent',{'type':'keyUp','code':'KeyQ','key':'q'})
+        wait('document.querySelector("#details-last-text").textContent.includes("Release the rover before packing")')
+        self.assertTrue(page.evaluate('!!banjoRoom.world.held?.recovery'))
+        page.evaluate('banjoRoom.hold()')
+        wait('!banjoRoom.world.busy')
+        held=page.evaluate('banjoRoom.world.held.hand')
+        self.assertTrue(server.keep_world(app,'browser recovery reload'))
+        page.send('Page.reload',{'ignoreCache':True})
+        wait('window.banjoRoom?.ready() && banjoRoom.world.held?.recovery')
+        self.assertFalse(page.evaluate('banjoRoom.world.held.guide || false'))
+        self.assertAlmostEqual(held['work_j'],page.evaluate('banjoRoom.world.held.hand.work_j'),places=3)
+        page.evaluate('(()=>{const p=banjoRoom.world.bodies.get("rover").mesh.position;banjoRoom.lookAt(p.x,p.y,p.z);banjoRoom.pick("rover");})()')
+        wait('!!document.querySelector("#picked [data-recovery-action=release]")')
+        click('#picked .pk-reveal:not([data-recovery-action])')
+        import base64
+        out=ROOT/'build/resource-flow';out.mkdir(parents=True,exist_ok=True)
+        (out/'rover-recovery.png').write_bytes(base64.b64decode(page.send('Page.captureScreenshot',{'format':'png'})['data']))
+        click('#picked [data-recovery-action=release]')
+        wait('!banjoRoom.world.held')
+        self.assertFalse(page.evaluate('banjoRoom.world.machines.programs.find(p=>p.body==="rover").power'))
+        self.assertEqual([],[e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
+
     def personal(self,app,owner):
         token=workshop_library.REQUEST_OWNER.set(owner['id'])
         try:

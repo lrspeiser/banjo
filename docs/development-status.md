@@ -1,5 +1,13 @@
 # Development status and handoff
 
+**Nearby rover recovery, October 1:** [Native/API/Chrome evidence](player-experience-checklist.md#rover-recovery-checkpoint--october-1)
+adds Take hold to recover and Release to the right and machine panels. Actual
+bounded grip lifts an excavated attached rover; two-map collected-load,
+multiplayer, failed-save/retry and reopen checks pass. Native pull/work are
+visible; release keeps power off. No body pose/velocity or goods reset is added.
+The grip supplies external work without a reacting avatar; ledger cargo adds
+no inertia. Extended routes, native grades, physical cargo and repair remain.
+
 **Rover excavation support, October 1:** [Native guard and two-map checks](player-experience-checklist.md#rover-excavation-support-checkpoint--october-1)
 use the solver's current attached collision shapes and affected terrain footprint.
 Refused machine digs leave the complete snapshot unchanged; default scoops still
@@ -51,7 +59,7 @@ partial, physical-avatar collisions, mixed-material picks, repairs and rover
 recovery remain open. Resource-flow code is on main at `9cc3ad1`.
 
 **Current owner acceptance:** [Player experience checklist](player-experience-checklist.md)
-tracks all twelve requested changes and their remaining verification. The
+tracks all fourteen requested changes and their remaining verification. The
 resource-flow checkpoint covers item 1's native/browser loop; the whole list is
 not complete.
 

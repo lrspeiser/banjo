@@ -1,5 +1,11 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Physical rover recovery, October 1:** [Measured external grip](player-experience-checklist.md#rover-recovery-checkpoint--october-1)
+lets a nearby player stop, lift/pull and release a rover using native bounded
+force/torque. Personal ownership, collected load, failed-save/retry and reload
+are verified. The panel reports actual pull/work. Native avatar reactions,
+physical cargo, broad traversal/grades and funded repair remain acceptance work.
+
 **Support-aware machine excavation, October 1:** [Native guard](player-experience-checklist.md#rover-excavation-support-checkpoint--october-1)
 checks current attached solver shapes and affected terrain triangles before a
 machine dig. Both generated maps reject undermining the rover while normal
