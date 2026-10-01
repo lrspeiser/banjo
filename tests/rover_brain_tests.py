@@ -739,6 +739,36 @@ class TheSensesAndTheTools(unittest.TestCase):
         self.assertEqual(["ground_return", "deposit", "behave"], [c["op"] for c in ask.sent[-3:]])
         self.assertEqual((0.0, 30.0, 1), (ctx.routine.kg, ctx.routine.delivered_kg, ctx.routine.trips))
 
+    def test_rounded_scoop_cannot_overfill_an_exact_receiving_hopper(self):
+        original = self.engine()
+        received = []
+        # Display values disagree: 30 kg reported but 0.01876 m3 = 30.016 kg.
+        # The transfer returns its exact native packet, like the real host.
+        def ask(**command):
+            if command['op'] == 'dig':
+                return {'dug': {'kg':30, 'sand_m3':0, 'soil_m3':.01876},
+                        'carried': {'sand_m3':0, 'sand_kg':0,
+                                    'soil_m3':.01876, 'soil_kg':30.016}}
+            if command['op'] == 'ground_withdraw':
+                volume = command['soil_m3']; received.append(volume)
+                return {'material_packet': {'contents':[
+                    {'substance':'soil','volume_m3':volume,'mass_kg':volume*1600}]}}
+            return original(**command)
+        ctx = self.context(ask)
+        ctx.routine = machine_routine.Routine('renamed carrier', {'kind':'dig','hopper_kg':30})
+        machine_tools.run(ctx, machine_tools.Call('dig',{},'routine'))
+        self.assertAlmostEqual(30,ctx.routine.kg,places=12)
+        self.assertAlmostEqual(.01875,received[0],places=15)
+        returned = next(c for c in original.sent if c['op']=='deposit')
+        self.assertAlmostEqual(.01876,received[0]+returned['soil_m3'],places=15)
+        self.assertEqual(ctx.routine.record(),
+                         self._restored_hopper(ctx.routine).record())
+
+    def _restored_hopper(self, routine):
+        restored = machine_routine.Routine('renamed carrier', {'kind':'dig','hopper_kg':30})
+        restored.restore(routine.record())
+        return restored
+
     def test_it_works_the_place_it_is_sent_to_and_never_digs_the_ground_under_itself(self):
         """A machine sent to work a place digs THAT place, off its high ground,
         and will not dig where it is standing or deepen a hole it has made

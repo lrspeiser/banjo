@@ -16,39 +16,14 @@ from urllib import request, error
 import uuid
 
 import inventory_room
+import ai_actions
 import player_world
 import rover_brain
 import world_access
 
-MAX_DECISIONS = 24
+MAX_DECISIONS = 64
 MAX_AGENTS = 4
 CADENCE_S = .8
-CRITERIA = {
-    "bank": "Bank 500 measured joules when energy is needed for the current goal or oak purchases.",
-    "buy_oak": "Buy one oak lot at its current quote, if affordable and in stock, toward the personal supplies goal.",
-    "build_stool": "Walk to the camp site, then preview and commit the declared Camp stool using paid stock.",
-    "pack_stool": "Walk near the personally built stool, then put it in your own inventory.",
-    "wait": "Stop and report a blocker when no offered action can make progress. Do not invent resources or success.",
-}
-
-
-def choices(goals: dict[str, Any], market: dict[str, Any]) -> list[str]:
-    step = goals["next_goal"]
-    if step == "bank-solar": return ["bank", "wait"]
-    if step == "stock-oak":
-        oak = next(o for o in market["offers"] if o["id"] == "oak-stock")
-        left = max(0, math.ceil((3 - goals["goals"][1]["value"]) / oak["mass_kg"]))
-        out = []
-        if market["balance_j"] < left * oak["price_j"] * 1.1: out.append("bank")
-        if oak["remaining"] > 0 and market["balance_j"] >= oak["price_j"]: out.append("buy_oak")
-        return out + ["wait"]
-    return {"build-camp": ["build_stool", "wait"], "carry-camp": ["pack_stool", "wait"]}.get(step, ["wait"])
-
-
-def reference_pick(goals: dict[str, Any], offered: list[str]) -> str:
-    desired = {"bank-solar": "bank", "stock-oak": "buy_oak", "build-camp": "build_stool",
-               "carry-camp": "pack_stool"}.get(goals["next_goal"], "wait")
-    return desired if desired in offered else "bank" if "bank" in offered else "wait"
 
 
 class Manager:
@@ -129,7 +104,7 @@ class Manager:
                 joined = player_world.join(self.app, name=body.get("name") or "Banjo explorer")
                 profile = player_world.records(self.app)[joined["id"]]
                 profile["ai"] = {"controller": owner, "mode": mode, "status": "paused", "decisions": 0,
-                                 "history": [], "message": "Ready for the first-camp goals"}
+                                 "history": [], "memory": {}, "message": "Ready to play the available goal chains"}
                 self._save(profile)
             old = self.workers.get(profile["id"])
             if action == "pause":
@@ -140,7 +115,7 @@ class Manager:
             elif not old or not old[0].is_alive():
                 if profile["ai"]["mode"] == "openai" and not self.app.api_key:
                     raise ValueError("The configured model is unavailable")
-                self._save(profile, status="running", decisions=0, message="Beginning the first-camp goals")
+                self._save(profile, status="running", decisions=0, message="Following the next supported goal")
                 stop = threading.Event()
                 worker = threading.Thread(target=self._run, args=(profile, stop, cookie), daemon=True,
                                           name=f"banjo-ai-{profile['id'][:8]}")
@@ -154,8 +129,9 @@ class Manager:
         ai = profile["ai"]
         return {"id": profile["id"], "name": profile["name"], "pose": deepcopy(profile.get("pose")),
                 "mode": ai["mode"], "status": ai["status"], "message": ai.get("message"),
-                "decisions": ai["decisions"], "can_control": ai["controller"] == owner,
-                "history": deepcopy(ai.get("history", [])[-12:])}
+                "decisions": ai["decisions"], "decision_budget": MAX_DECISIONS,
+                "can_control": ai["controller"] == owner, "memory":deepcopy(ai.get('memory',{})),
+                "history": deepcopy(ai.get("history", [])[-20:])}
 
     def watch(self, profile: dict[str, Any], owner: str, full: bool = False) -> dict[str, Any]:
         if not self.app.live.session or self.app.live_holder != "world":
@@ -172,117 +148,201 @@ class Manager:
         state["players"] = player_world.visible(self.app)
         player_world.personalize_hand(state, ident)
         state["notebook"] = progression.notebook(self.journal(self.app, ident), self.registry())
-        goals = starter_goals.view(self.app, ident, {})
+        goals = starter_goals.view(self.app, ident, {'chain':'active'})
         return {"character": self.summary(profile, owner), "goals": goals,
                 "skills": progression.tech_tree(self.journal(self.app, ident), self.registry()), "state": state}
 
-    def _move(self, profile: dict[str, Any], stop: threading.Event, cookie: str, target: list[float]) -> None:
-        self._save(profile, status="walking", message="Walking to the camp site")
-        start = (profile.get("pose") or {}).get("eyes_m", [0, 1.62, 3])
-        distance = math.hypot(target[0] - start[0], target[1] - start[2])
-        steps = max(1, math.ceil(distance / .4))
-        if steps > 40: raise ValueError("The camp site exceeds the bounded walking route")
-        for step in range(1, steps + 1):
-            if stop.is_set(): return
-            opened = self._post(profile, "/api/world/open", {}, cookie)
-            x = start[0] + (target[0] - start[0]) * step / steps
-            z = start[2] + (target[1] - start[2]) * step / steps
-            surveyed = self._post(profile, "/api/live/act", {"session": opened["session"], "op": "survey",
-                                                          "at": [x, z]}, cookie)
-            ground = surveyed.get("survey") or {}
-            if not ground.get("on_the_ground"): raise ValueError("The camp route leaves the native terrain")
-            person = {"eyes_m": [x, float(ground["ground_m"]) + 1.62, z], "facing": [3-x, 0, -z],
-                      "look_direction": [3-x, -1.5, -z]}
-            self._post(profile, "/api/live/act", {"session": opened["session"], "op": "step", "dt": 1/240,
-                                               "n": 48, "person": person}, cookie)
-            stop.wait(.2)
-        if not stop.is_set(): self._save(profile, status="running", message="At the camp site")
+    def _person(self, profile, cookie, aim=None, eyes=None):
+        pose=profile.get('pose') or {}
+        eyes=eyes or pose.get('eyes_m') or [0,1.62,3]
+        sid=self.app.live.session.id
+        survey=self._post(profile,'/api/live/act',{'session':sid,'op':'survey','at':[eyes[0],eyes[2]]},cookie)['survey']
+        if not survey.get('on_the_ground'):raise ValueError('The selected position is outside native terrain')
+        ground=survey['ground_m']; eyes=[eyes[0],ground+1.62,eyes[2]]
+        ray=[aim[k]-eyes[k] for k in range(3)] if aim else pose.get('look_direction') or [1,-1.5,0]
+        horizontal=math.hypot(ray[0],ray[2])
+        facing=[ray[0]/horizontal,0,ray[2]/horizontal] if horizontal>.001 else [1,0,0]
+        return {'standing_m':[eyes[0],ground,eyes[2]],'eyes_m':eyes,'facing':facing,'look_direction':ray,
+                **({'aim_m':aim} if aim else {})}
 
-    def _run(self, profile: dict[str, Any], stop: threading.Event, cookie: str) -> None:
+    def _move(self, profile, stop, cookie, aim, stand_off_m=1.2):
+        self._save(profile,status='walking',message='Walking toward the selected target')
+        start=(profile.get('pose') or {}).get('eyes_m',[0,1.62,3])
+        sid=self.app.live.session.id
+        def survey(x,z):
+            return self._post(profile,'/api/live/act',{'session':sid,'op':'survey','at':[x,z]},cookie)['survey']
+        route=ai_actions.walking_route(start,aim,stand_off_m,survey,stop.is_set)
+        for x,y,z in route:
+            if stop.is_set():return
+            surveyed=survey(x,z)
+            if not surveyed.get('on_the_ground'):raise ValueError('The route leaves native terrain')
+            if (surveyed.get('water') or {}).get('depth_m',0)>.2:raise ValueError('The walking route enters deep water')
+            y=surveyed['ground_m']
+            dx,dz=aim[0]-x,aim[2]-z;length=math.hypot(dx,dz)
+            direction=[dx/length,dz/length] if length>.01 else [1,0]
+            person={'standing_m':[x,y,z],'eyes_m':[x,y+1.62,z],'facing':[direction[0],0,direction[1]],
+                    'look_direction':[aim[0]-x,aim[1]-y-1.62,aim[2]-z]}
+            self._post(profile,'/api/live/act',{'session':sid,'op':'step','dt':1/240,'n':48,'person':person},cookie)
+            stop.wait(.2)
+        if not stop.is_set():self._save(profile,status='running',message='Near the selected target')
+
+    def _observe(self,profile,cookie):
+        goals=self._post(profile,'/api/workshop/goals',{'chain':'active'},cookie)
+        opened=self._post(profile,'/api/world/open',{},cookie)
+        market=self._post(profile,'/api/workshop/market',{},cookie)
+        skills=self._post(profile,'/api/workshop/skills',{},cookie)['techniques']
+        inventory=self._post(profile,'/api/world/inventory/shown',{'session':opened['session']},cookie)
+        req=ai_actions.requirement_of(goals) or {}
+        recipes=(self._post(profile,'/api/workshop/recipes',{},cookie)['templates']
+                 if req.get('kind') in ('admitted-recipe','funded-box-surface','personal-test') else [])
+        return {'goals':goals,'next_goal':goals['next_goal'],'market':market,'balance_j':market['balance_j'],
+                'skills':skills,'tech_tree':skills,'inventory':inventory,'recipes':recipes,
+                'native':opened,'pose':deepcopy(profile.get('pose'))}
+
+    def _run(self,profile,stop,cookie):
         try:
-            self._post(profile, "/api/world/open", {}, cookie)
-            if profile.get("pose") is None:
-                self._move(profile, stop, cookie, [0, 3])
+            opened=self._post(profile,'/api/world/open',{},cookie)
+            if profile.get('pose') is None:
+                # Report a genuine native standing pose before choosing actions.
+                if opened.get('arrival_unavailable'):raise ValueError(opened['arrival_unavailable'])
+                spawn=(opened.get('arrival') or {}).get('eye_m') or (opened.get('gameplay') or {}).get('spawn_m') or (opened.get('terrain') or {}).get('view',{}).get('eye_m')
+                if not spawn:raise ValueError('The world offers no player arrival position')
+                self._post(profile,'/api/live/act',{'session':self.app.live.session.id,'op':'step','dt':1/240,
+                    'n':1,'person':self._person(profile,cookie,eyes=spawn)},cookie)
             while not stop.is_set():
-                goals = self._post(profile, "/api/workshop/goals", {}, cookie)
-                if goals["complete"]:
-                    self._save(profile, status="complete", message="First camp complete. Ready for another goal chain.")
+                state=self._observe(profile,cookie);goals=state['goals']
+                if goals['complete']:
+                    self._save(profile,status='complete',message='All currently declared goal chains complete; see the separate personal tech tree')
                     return
-                if profile["ai"]["decisions"] >= MAX_DECISIONS:
-                    self._save(profile, status="blocked", message="The 24-decision budget was reached; inspect progress before resuming")
+                if profile['ai']['decisions']>=MAX_DECISIONS:
+                    self._save(profile,status='blocked',message=f'The {MAX_DECISIONS}-decision budget was reached; inspect progress before resuming')
                     return
-                market = self._post(profile, "/api/workshop/market", {}, cookie)
-                offered = choices(goals, market)
-                began = time.monotonic()
-                self._save(profile, status="thinking", message="Choosing the next action")
-                if profile["ai"]["mode"] == "openai":
-                    questions = {"next": {"type": "choice", "instructions":
-                        "Play this character's first-camp goals. Choose an offered action using current evidence. "
-                        "Never claim completion, teach yourself, alter physics, or invent stock. Use wait only for a real blocker.",
-                        "criteria": {key: CRITERIA[key] for key in offered}}}
-                    decision = self.decider_factory().ask({"goals": goals["goals"], "next_goal": goals["next_goal"],
-                        "balance_j": market["balance_j"], "oak": next(o for o in market["offers"] if o["id"] == "oak-stock"),
-                        "inventory": inventory_room.shown(self.app, profile["id"]),
-                        "tech_tree": self._tech_tree(profile["id"]),
-                        "recent_actions": profile["ai"]["history"][-4:]}, questions)["next"]
-                    pick, confidence = decision["choice"], decision["confidence"]
-                else:
-                    pick, confidence = reference_pick(goals, offered), None
-                if stop.is_set(): return
-                if pick not in offered: raise ValueError("The planner chose an unsupported action")
-                ident = uuid.uuid4().hex
-                entry = {"id": ident, "action": pick, "mode": profile["ai"]["mode"],
-                         "model": self.app.model if confidence is not None else None, "confidence": confidence,
-                         "seconds": round(time.monotonic() - began, 3), "goal": goals["next_goal"],
-                         "result": "pending", "at_unix_s": time.time()}
-                history = (profile["ai"]["history"] + [entry])[-64:]
-                self._save(profile, status="running", decisions=profile["ai"]["decisions"] + 1,
-                           history=history, message=CRITERIA[pick])
-                if pick == "wait":
-                    self._save(profile, status="blocked", history=history[:-1] + [{**entry, "result": "blocked"}],
-                               message="Planner stopped for a blocker; inspect the current goals and Market")
-                    return
-                result = self._execute(profile, stop, cookie, pick, goals, market, ident)
-                entry = {**entry, "result": "committed" if result else "cancelled", "receipt": result}
-                self._save(profile, history=history[:-1] + [entry], message=f"Completed action: {pick}")
-                if stop.is_set(): return
+                actions=ai_actions.catalog(state,profile['ai'].get('memory',{}))
+                began=time.monotonic();self._save(profile,status='thinking',message='Choosing from observed player actions')
+                if profile['ai']['mode']=='openai':
+                    questions={'next':{'type':'choice','instructions':
+                        'Play this character through the available goal chains using only offered actions. '
+                        'Targets, prices and recipes in action_catalog are current observations. Compare all recipe gaps; '
+                        'select actual equipment, move within reach, acquire and inspect tools, use supported ground actions, '
+                        'and personally watch supported batches. An action receipt is not automatically goal or skill success. '
+                        'Never invent supplies, completion, physical laws or evidence. Stop only for a real blocker.',
+                        'criteria':{a['id']:a['label'] for a in actions}}}
+                    decision=self.decider_factory().ask(ai_actions.model_view(state,actions,profile['ai']['history']),questions)['next']
+                    pick,confidence=decision['choice'],decision['confidence']
+                else:pick,confidence=ai_actions.reference_pick(state,actions),None
+                if stop.is_set():return
+                action=next((a for a in actions if a['id']==pick),None)
+                if action is None:raise ValueError('The planner chose an unsupported action')
+                ident=uuid.uuid4().hex
+                entry={'id':ident,'action':action['verb'],'choice':pick,'label':action['label'],'mode':profile['ai']['mode'],
+                    'model':self.app.model if confidence is not None else None,'confidence':confidence,
+                    'seconds':round(time.monotonic()-began,3),'chain':goals['chain_id'],'goal':goals['next_goal'],
+                    'result':'pending','at_unix_s':time.time()}
+                history=(profile['ai']['history']+[entry])[-128:]
+                self._save(profile,status='running',decisions=profile['ai']['decisions']+1,history=history,message=action['label'])
+                if action['verb']=='wait':
+                    blockers=action['blockers'] or ['No offered action can advance the observed requirement']
+                    self._save(profile,status='blocked',history=history[:-1]+[{**entry,'result':'blocked','blockers':blockers}],
+                        message='; '.join(blockers)[:240]);return
+                result=self._execute(profile,stop,cookie,action,state,ident)
+                entry={**entry,'result':'committed' if result else 'cancelled','receipt':result}
+                self._save(profile,history=history[:-1]+[entry],message=f"Action ended: {action['label']}")
+                if stop.is_set():return
                 stop.wait(self.cadence_s)
         except Exception as exc:
             if not stop.is_set():
-                history = deepcopy(profile["ai"].get("history", []))
-                if history and history[-1]["result"] == "pending":
-                    history[-1].update(result="refused", error=str(exc)[:240])
-                try: self._save(profile, status="blocked", message=str(exc)[:240], history=history)
-                except Exception: logging.getLogger("banjo").exception("AI character checkpoint failed")
+                history=deepcopy(profile['ai'].get('history',[]))
+                if history and history[-1]['result']=='pending':history[-1].update(result='refused',error=str(exc)[:240])
+                try:self._save(profile,status='blocked',message=str(exc)[:240],history=history)
+                except Exception:logging.getLogger('banjo').exception('AI character checkpoint failed')
 
-    def _tech_tree(self, ident):
-        import progression
-        return progression.tech_tree(self.journal(self.app, ident), self.registry())
-
-    def _execute(self, profile, stop, cookie, pick, goals, market, ident):
-        if pick == "bank":
-            reply = self._post(profile, "/api/workshop/market", {"action": "bank", "joules": 500, "request_id": ident}, cookie)
-            return {"balance_j": reply["balance_j"]}
-        if pick == "buy_oak":
-            oak = next(o for o in market["offers"] if o["id"] == "oak-stock")
-            reply = self._post(profile, "/api/workshop/market", {"action": "buy", "item_id": oak["id"],
-                "quoted_price_j": oak["price_j"], "request_id": ident}, cookie)
-            return {"balance_j": reply["balance_j"], "paid_j": oak["price_j"]}
-        self._move(profile, stop, cookie, [3, 1.2])
-        if stop.is_set(): return {}
-        source = self._post(profile, "/api/world/workshop/context", {}, cookie)
-        if pick == "build_stool":
-            preview = self._post(profile, "/api/world/workshop/preview", {"session": source["session"],
-                "scene": source["scene"], "candidate": goals["recipe"], "mode": "authoring", "position_m": [3, 0]}, cookie)
-            if stop.is_set(): return {}
-            reply = self._post(profile, "/api/world/workshop/commit", {"session": preview["session"],
-                "scene": preview["scene"], "preview_id": preview["preview_id"], "request_id": ident}, cookie)
-            return {"body": reply["root_body"], "mass_kg": reply["mass_kg"], "resources_charged": reply["resources_charged"]}
-        current = self._post(profile, "/api/workshop/goals", {}, cookie)
-        reply = self._post(profile, "/api/world/inventory", {"session": source["session"], "op": "take",
-            "item": current["camp_body"], "request": ident}, cookie)
-        if not reply.get("ok"): raise ValueError(reply.get("why") or "Inventory refused the stool")
-        return {"body": current["camp_body"], "revision": reply["record"]["revision"]}
+    def _execute(self,profile,stop,cookie,action,state,ident):
+        verb=action['verb'];memory=deepcopy(profile['ai'].get('memory',{}));sid=state['native']['session']
+        target=action.get('target') or {}
+        if verb=='compare-recipes':
+            memory.update(comparison_signature=action['signature'],comparison=action['comparison'])
+            self._save(profile,memory=memory)
+            return {'recipes':[{k:r[k] for k in ('id','name','ready','missing','mass_kg')} for r in action['comparison']]}
+        if verb=='select-recipe':
+            memory['selected_recipe']=action['recipe']['id'];self._save(profile,memory=memory)
+            return {'selected_recipe':action['recipe']['name']}
+        if verb=='select-target':
+            memory['selected_target']=target;memory.pop('watching',None);self._save(profile,memory=memory)
+            return {'selected_target':target.get('machine') or target['body']}
+        if verb=='move':
+            self._move(profile,stop,cookie,action['aim'],action['stand_off_m'])
+            return {'pose':deepcopy(profile.get('pose'))} if not stop.is_set() else {}
+        if verb=='bank':
+            reply=self._post(profile,'/api/workshop/market',{'action':'bank','joules':500,'request_id':ident},cookie)
+            return {'balance_j':reply['balance_j']}
+        if verb=='buy':
+            reply=self._post(profile,'/api/workshop/market',{'action':'buy','item_id':action['item'],
+                'quoted_price_j':action['quoted_price_j'],'request_id':ident},cookie)
+            return {'balance_j':reply['balance_j'],'paid_j':action['quoted_price_j'],'item':action['item']}
+        if verb=='build':
+            source=self._post(profile,'/api/world/workshop/context',{},cookie)
+            eyes=(profile.get('pose') or {}).get('eyes_m',[0,1.62,3]);failures=[]
+            for dx,dz in ((3,0),(-3,0),(0,3),(0,-3),(3,3),(-3,-3)):
+                if stop.is_set():return {}
+                try:
+                    preview=self._post(profile,'/api/world/workshop/preview',{'session':source['session'],'scene':source['scene'],
+                        'candidate':action['recipe']['candidate'],'mode':'authoring','position_m':[eyes[0]+dx,eyes[2]+dz]},cookie)
+                    break
+                except ValueError as exc:failures.append(str(exc))
+            else:raise ValueError('No admitted placement near this player: '+'; '.join(failures)[:200])
+            if stop.is_set():return {}
+            reply=self._post(profile,'/api/world/workshop/commit',{'session':preview['session'],'scene':preview['scene'],
+                'preview_id':preview['preview_id'],'request_id':ident},cookie)
+            return {'body':reply['root_body'],'mass_kg':reply['mass_kg'],'resources_charged':reply['resources_charged']}
+        if verb in ('pack','acquire'):
+            op='take' if verb=='pack' else 'equip' if target.get('where')=='stowed' else 'take_up'
+            reply=self._post(profile,'/api/world/inventory',{'session':sid,'op':op,'item':target['body'],'request':ident,
+                'revision':state['inventory']['record']['revision'],'person':self._person(profile,cookie,target['at_m'])},cookie)
+            if not reply.get('ok'):raise ValueError(reply.get('why') or 'The player inventory refused this item')
+            return {'body':target['body'],'revision':reply['record']['revision']}
+        if verb=='inspect':
+            reply=self._post(profile,'/api/world/action',{'session':sid,'object':target['body'],'primary':True,
+                'person':self._person(profile,cookie,target['at_m'])},cookie)
+            if reply.get('refused'):raise ValueError(reply['refused'])
+            return {'object':target['body'],'study':(reply.get('state') or {}).get('study'),'said':reply.get('said')}
+        if verb=='use-tool':
+            person=self._person(profile,cookie,action['at_m'])
+            resolved=self._post(profile,'/api/world/tool',{'session':sid,'person':person,'at_m':action['at_m']},cookie)
+            if not resolved.get('enabled') or (resolved.get('ring') or {}).get('state')=='warn':
+                raise ValueError(resolved.get('reason') or 'The selected native tool action is unavailable')
+            # Like the browser: one use request waits while ordinary steps run
+            # without sending a new held pose that could cancel the stroke.
+            replies=[];errors=[]
+            def use():
+                try:replies.append(self._post(profile,'/api/world/tool/use',{'session':sid,'person':person,'at_m':action['at_m']},cookie))
+                except Exception as exc:errors.append(exc)
+            worker=threading.Thread(target=use,daemon=True);worker.start()
+            while worker.is_alive():
+                self._post(profile,'/api/live/act',{'session':sid,'op':'step','dt':1/240,'n':12},cookie)
+                # Finish an already started physical stroke even after pause;
+                # the stop check prevents any subsequent decision/action.
+                time.sleep(.05)
+            worker.join()
+            if errors:raise errors[0]
+            reply=replies[0]
+            if reply.get('refused'):raise ValueError(reply['refused'])
+            return {'result':reply.get('result'),'said':reply.get('said'),'learning_pending':reply.get('learning_pending',False)}
+        if verb=='power-on':
+            reply=self._post(profile,'/api/world/machine',{'session':sid,'program':target['machine'],'power':True,
+                'sender':profile['id'],'seq':time.time_ns()//1_000_000},cookie)
+            if reply.get('operated')!='applied':raise ValueError('Machine did not accept the power command')
+            return reply
+        if verb in ('watch-batch','observe'):
+            person=self._person(profile,cookie,target['at_m'])
+            reply=self._post(profile,'/api/world/watch-machine',{'session':sid,'machine':target['machine'],'person':person},cookie)
+            memory['watching']=target['machine'];self._save(profile,memory=memory)
+            if verb=='observe':
+                for _ in range(4):
+                    if stop.is_set():break
+                    self._post(profile,'/api/live/act',{'session':sid,'op':'step','dt':1/240,'n':120,'person':person},cookie)
+                    stop.wait(.5)
+            return reply
+        raise ValueError('No implemented execution for this offered action')
 
     def shutdown(self) -> None:
         for _, stop in self.workers.values(): stop.set()

@@ -149,7 +149,7 @@ def view(app,owner,ident):
     chain=definitions().get(ident)
     if chain is None: raise ValueError('Unknown goal chain')
     journal=app.journal_for(owner); reg=app.registry()
-    saved=json.loads(app.store.path_of(app.room.scene).read_text(encoding='utf-8'))
+    saved=app.store.read_record(app.room.scene)
     with workshop_library._connect(app) as db:
         starter_goals._schema(db)
         done={r['goal_id']:json.loads(r['evidence_json']) for r in db.execute(
@@ -162,6 +162,7 @@ def view(app,owner,ident):
                     (owner,ident,step['id'],json.dumps(receipt),workshop_library._now()))
                 done[step['id']]=receipt
     rows=[{k:deepcopy(s[k]) for k in ('id','title','unit','target','guide')} |
+        {'requirement':deepcopy(s['predicate'])} |
         {'value':int(s['id'] in done),'complete':s['id'] in done,'evidence':done.get(s['id'])}
         for s in chain['steps']]
     return {'schema':'banjo.starter-goals.v1','chain_id':ident,'title':chain['title'],

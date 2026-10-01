@@ -1,0 +1,144 @@
+# AI explorer checkpoint — September 30, 2026
+
+## Measured result
+
+The reference character completes **8/8 goals across Camp and Workshop** and
+earns **2/10 personal techniques**: Gathering by hand and Copper smelting.
+The ten techniques are the current catalog, not the older review's nine.
+Completion stops at the end of the declared goal chains; it does not establish
+that the other eight techniques are achievable or that the whole game is done.
+
+[Sanitized seed receipts](evidence/ai-explorer/reference-seeds.json) and
+[Chrome watch capture](evidence/ai-explorer/watching.png) accompany this result.
+
+Two generated maps, ordinary authenticated player APIs, no stock or outcome
+grants, Windows 11 / Python 3.13.5 / MSVC Release CPU runner `f819e81`:
+
+| Terrain / goods seed | Decisions | Wall time | Native time at completion | Removed ground | Tool work |
+|---|---:|---:|---:|---:|---:|
+| 7 / 851269742 | 34 | 59.724 s | 16.754167 s | 0.007445339042138977 m³ | 32.90428 J |
+| 4 / 1 | 35 | 61.245 s | 17.204167 s | 0.008021469915623260 m³ | 27.62231 J |
+
+Each builds and packs its paid Camp stool, takes and studies the actual Field
+pick, uses it on native dry ground, compares compatible recipes, installs a
+resource-funded Work table with 0.1536 m² top surface, approaches the actual
+smelter and explicitly watches its saved batch. The batch consumes 5 kg copper
+ore, produces 1.5 kg copper and draws 10,000 J. The human creator earns no
+technique from the character's actions. Exact runtime and empty learning
+outboxes load unchanged from the saved source checkpoint.
+
+These automated fixtures disable the unattended world clock; the character
+advances ordinary page steps under the normal shared wall-time budget.
+Planning and request time are included in wall time. This is autonomous action
+acceptance, **not a realtime simulation throughput measurement**. Existing
+P0 realtime rover checks remain a separate acceptance gate. Native time step
+is unchanged (`1/240 s`), as are 50 mm scene cells and material/ground laws.
+These numbers are individual measured runs, not bitwise determinism claims.
+
+## General controller contract
+
+`playground/ai_actions.py` builds a bounded action catalog from current goal
+requirements, personal inventory, world-resolved Skills, native target poses,
+actual Market quotes and all compatible recipe gaps. Goal ids and item names
+do not select a hardcoded tutorial command. A renamed tool or different
+compatible box surface follows the same capability path.
+
+Actions: bank, buy, compare/select recipes, select a target, move, take/equip,
+inspect, use a held ground tool, preview/Make, pack, power on a program,
+register observation, observe and stop with explicit blockers. The normal
+player APIs enforce reach, ownership, payment, grid/placement admission and
+physical/economic receipts. A planner's response grants no progress.
+
+The model sees the current offered action ids, labels, arguments and recent
+results. Its planning view omits renderer meshes, the complete terrain and raw
+scene specification; physical admission stays on the server. Prompt instructions require current targets and quotes, recipe-gap
+comparison, supported actions, personal observation and evidence-based
+progress. It cannot invent stock, physical laws, outcomes or skills. Unknown
+choices are refused before a game action. Reference policy and provider
+integration use the same catalog, with distinct mode/model history fields.
+
+Runs stop at complete declared chains, an action failure, an explicit blocker
+or 64 decisions. History retains 128 entries; the public watch summary exposes
+20. Pause discards a returning model choice; an already-started physical stroke
+finishes and records its real result. Restart pauses active characters.
+
+Movement preflights native surveyed columns, tries a direct approach then a
+bounded dry-column A* search (1200 columns, 64 m maximum path). Ground-tool
+approach uses the tool profile's actual reach. This is the existing reported
+avatar pose model, **not physical avatar motion or body-collision navigation**.
+New named-world manifests declare their generated arrival point, and both the
+browser and AI use its native surveyed floor. Reload preserves existing poses;
+legacy manifests retain their original camera view.
+
+## Failures found and repaired
+
+- **Hopper capacity:** rounded scoop mass and volume could disagree, so an exact
+  transfer overfilled the hopper and prevented all later saves. Capacity now
+  bounds the same native-density volumes that are withdrawn; excess is returned
+  before receipt publication. The strict capacity/mass/receiving guards remain.
+  An analytical regression checks 30.016 kg offered to a 30 kg hopper: exactly
+  30 kg received, remainder returned, total volume residual below `1e-15 m³`,
+  and exact runtime accepted on restore.
+- **Save boundary:** native replies could update source receipts between the
+  snapshot and disk write. `Live.checkpoint` holds both native response locks
+  through snapshot, source-account capture and atomic publication. It is never
+  held while waiting for a stroke. A concurrent test verifies the boundary.
+- **Stale fallback:** a ground edit or inventory change could try a room-only
+  save against the last physical snapshot while a stroke was underway. Live
+  operations now retain the visible refusal and retry a complete checkpoint.
+  No future receipt is filtered out and no invariant/tolerance is relaxed.
+- **Arrival/reach assumptions:** terrain's scenic camera could be disconnected
+  from the generated starting terrace; a fixed approach distance could be too
+  near for the declared swing. Explicit shared arrival and actual tool reach
+  replace those assumptions. Dry-route failures remain explicit blockers.
+
+- **Windows goal readers:** the persistent playthrough exposed one transient
+  `Access is denied` during atomic replacement. Goal evidence readers now use
+  `RoomStore.read_record` under the writer's lock, so an open reader cannot deny
+  replacement. A concurrent reader/writer regression proves serialization.
+
+## Persistent review
+
+[Actual fresh-world receipts](evidence/ai-explorer/persistent-review.json): terrain
+4 / goods 21454332, reference controller, normal unattended clock enabled,
+35 decisions in 92.408 s; 8/8 goals and 2/10 techniques, 256 J bot wallet, 0 J
+creator wallet. The source was the outgoing explorer working tree on `de6b90f`,
+before the final goal-reader serialization fix; this run exposed that final
+Windows sharing defect. No provider calls, inventory or outcome grants.
+
+[Watch the character](http://127.0.0.1:8769/world?world=a49789cfd53d4f998ea38dea43ef6c6f&watch=569e64a5cb8e46a281c4b946bfc7bd5a).
+This link requires the local review server. Native time reached 55.4125 s during
+that wall interval: the current AI page-step cadence suppresses some unattended
+clock time. Do not describe this as realtime autonomous throughput. Unifying
+AI/page/background step ownership is a remaining timing gate.
+
+## Verification and remaining gates
+
+`tests/ai_player_tests.py` is now registered as `banjo_ai_player_tests` in CTest
+with a 900 s limit and the actual native runner. The full native/Chrome suite
+passed 17 tests with zero skips in 427.38 s; after final provider-view and reader
+changes, five controller-boundary checks, eight receiving/save checks, the
+substituted-model native journey (64.432 s) and goal-chain CTest (42.94 s) pass.
+The full-suite separate realtime rover case measured 134.196 native s / 136.105
+wall s, two receiving receipts and 3700 J settled wallet, with failed-save,
+duplicate, reload and restart gates intact. Source registration is 286/286;
+Python compile, JavaScript syntax, diff whitespace and relative doc links pass.
+
+Reference play across both
+seeds, separate substituted-model integration, unsupported choices, pause,
+personal journals, restart, realtime rover receiving/banking and Chrome watch
+flows are distinct checks. Empty-shelf fixtures on both seeds remove trader
+oak only: the character banks once then stops with the actual shortage; it
+earns no skill or further goal. They are explicit scarcity fixtures, not
+ordinary player purchases or a test of restocking policy.
+
+**Live provider: not verified.** No OpenAI key is configured locally. A
+substituted structured model tests the real game integration but is not evidence
+of live-model planning quality, latency, token cost or seed/scarcity robustness.
+
+Remaining work: live-provider comparisons; continued play beyond the declared
+chains; replenishing exhausted machine intakes through supported player actions;
+obstacle-aware physical navigation; complete Market gap/total-cost/reachable-goal
+guidance and compact ownership/debit/next-use labels; generated rover delivery
+failures. No full-world conservation, material strength or physical chemistry
+claim is added. Prior glass/oak/iron comparative gates remain unchanged.

@@ -1506,6 +1506,11 @@ endif()
 # Precise live compounds must be tested through the real native subprocess,
 # including installation transactions and persistent state, not only JSON.
 if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
+    add_test(NAME banjo_ai_player_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/ai_player_tests.py -v)
+    set_tests_properties(banjo_ai_player_tests PROPERTIES TIMEOUT 900)
     add_test(NAME banjo_goal_chains_tests
         COMMAND ${CMAKE_COMMAND} -E env
             BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>

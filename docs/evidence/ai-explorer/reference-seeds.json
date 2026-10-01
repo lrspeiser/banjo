@@ -1,0 +1,606 @@
+[
+  {
+    "terrain_seed": 7,
+    "goods_seed": 851269742,
+    "controller": "reference",
+    "provider_calls": 0,
+    "world": "092994099a024702be70739c6e3f1b30",
+    "character": "b2dc1b436ec143d194b3fb21e366f0ae",
+    "wall_s": 59.724,
+    "native_t_s": 16.754166666666038,
+    "decisions": 34,
+    "goal_chain": "first-workshop-v1",
+    "goals_complete": true,
+    "known": [
+      "smelting-copper",
+      "using-ground-tools"
+    ],
+    "tech_tree_total": 10,
+    "evidence": [
+      {
+        "run": "092994099a024702be70739c6e3f1b30:b2dc1b436ec143d194b3fb21e366f0ae:092994099a024702be70739c6e3f1b30:b2dc1b436ec143d194b3fb21e366f0ae:study:field pick:8817ab9798411533bcb5534462b59d166c46290cacf50cae7d46eed952e154f4:c767917076302716874eb5279840053265ed352ddde07d4bba6e3733467df90b",
+        "at": "2026-10-01T03:35:23Z",
+        "design": "field-pick@1",
+        "object": "Field pick",
+        "tool": "field pick",
+        "source": "found-example",
+        "test": "study-example",
+        "passes": true,
+        "action": "inspect held tool",
+        "target": {
+          "object": "tool"
+        },
+        "result": {
+          "body_id": 1000,
+          "point_id": 1,
+          "matter_sha256": "8817ab9798411533bcb5534462b59d166c46290cacf50cae7d46eed952e154f4"
+        },
+        "models": [
+          "native occupied matter",
+          "component-frame point"
+        ],
+        "limitations": [
+          "Inspection is not manufacturing, strength or functional certification"
+        ],
+        "said": "Studied Field pick",
+        "claim": "demonstrated: inspected a whole held example",
+        "scope": "for this inspected construction (field-pick@1)",
+        "id": "ev-36c421abdf"
+      },
+      {
+        "id": "ev-e6dd368516",
+        "run": "092994099a024702be70739c6e3f1b30:b2dc1b436ec143d194b3fb21e366f0ae:009d2350533449bcb5844fc9a6e0a9af:1:2.47500:broke out",
+        "at": "2026-10-01T03:35:28Z",
+        "design": "field-pick@1",
+        "object": "Field pick",
+        "tool": "field pick",
+        "source": "found-example",
+        "test": "loosens-soil",
+        "passes": true,
+        "action": "swing then lever",
+        "target": {
+          "ground": "sand"
+        },
+        "result": {
+          "loosened_m3": 0.007445339042138977,
+          "loosened_kg": 11.91254,
+          "depth_m": 0.14049,
+          "work_j": 32.90428,
+          "closing_speed_m_s": 8.09874
+        },
+        "tool_condition": {
+          "after": {
+            "whole": true,
+            "dent_mm": 0.0
+          }
+        },
+        "models": [
+          "ground-work-v1"
+        ],
+        "limitations": [
+          "ground-work-v1 is declared, not calibrated against a real pick in real soil",
+          "no wet ground",
+          "no fracture of rock under a point",
+          "no wear"
+        ],
+        "said": "the Field pick went 140 mm into the sand at 8.1 m/s and broke out 7.4 L (11.9 kg); it stayed whole",
+        "claim": "demonstrated: loosens the tested sand",
+        "scope": "for this design revision (field-pick@1), this sand, swing then lever"
+      },
+      {
+        "id": "ev-00c359dcfc",
+        "run": "092994099a024702be70739c6e3f1b30:a8ebc35344f3afe04bf1e6855cecc29a960dd3886e0c4ecc999a36f873296c7f:electric-furnace:smelt copper:1",
+        "at": "2026-10-01T03:36:04Z",
+        "design": "copper-smelter@1",
+        "object": "Copper smelter",
+        "source": "watched",
+        "test": "smelts-ore",
+        "passes": true,
+        "action": "work a batch of smelt copper",
+        "target": {
+          "substance": "copper ore"
+        },
+        "result": {
+          "made_kg": 1.5,
+          "used_kg": 5.0,
+          "made": {
+            "copper": 1.5
+          },
+          "used": {
+            "copper ore": 5.0
+          },
+          "drawn_j": 10000.0
+        },
+        "models": [
+          "machine_goods recipe ledger"
+        ],
+        "limitations": [
+          "the recipe's yield is declared by the room, not measured from chemistry",
+          "the work and the time it takes are the recipe's own numbers",
+          "avatar position is reported by the client; visibility occlusion is not checked"
+        ],
+        "said": "Copper smelter worked 5.00 kg of copper ore into 1.50 kg of copper",
+        "claim": "demonstrated: it makes copper of copper ore",
+        "scope": "this recipe, in this room",
+        "machine": "electric-furnace",
+        "observer": {
+          "player": "b2dc1b436ec143d194b3fb21e366f0ae",
+          "pose": {
+            "eyes_m": [
+              -5.916,
+              2.455,
+              -1.35
+            ],
+            "facing": [
+              -0.98,
+              0,
+              -0.2
+            ],
+            "look_direction": [
+              -0.807,
+              -0.5671,
+              -0.1651
+            ]
+          },
+          "machine_at_m": [
+            -7.87481,
+            1.07887,
+            -1.75066
+          ],
+          "t_s": 16.254166666666066,
+          "rule": "explicit watch; fresh reported pose; within 6 m; view cone 120 degrees"
+        }
+      }
+    ],
+    "goals": [
+      {
+        "id": "study-tool",
+        "title": "Study a gathering tool",
+        "unit": "study",
+        "target": 1,
+        "guide": {
+          "where": "World / Inventory",
+          "screen": "skills",
+          "steps": [
+            "In Skills, follow Go to tool. Pick it up with E, or equip it from your bag.",
+            "Choose Study tool / Inspect. The saved study goes in your own journal."
+          ]
+        },
+        "requirement": {
+          "kind": "personal-test",
+          "test": "study-example",
+          "source": "found-example"
+        },
+        "value": 1,
+        "complete": true,
+        "evidence": {
+          "evidence_id": "ev-36c421abdf",
+          "design": "field-pick@1",
+          "test": "study-example",
+          "result": {
+            "body_id": 1000,
+            "point_id": 1,
+            "matter_sha256": "8817ab9798411533bcb5534462b59d166c46290cacf50cae7d46eed952e154f4"
+          }
+        }
+      },
+      {
+        "id": "gather-ground",
+        "title": "Gather measured soil or sand",
+        "unit": "trial",
+        "target": 1,
+        "guide": {
+          "where": "World",
+          "screen": "skills",
+          "steps": [
+            "Equip your gathering tool. Find dry soil or sand near the tool location shown in Skills.",
+            "Aim at the ground and use the tool. A supported removal above zero earns Gathering by hand."
+          ]
+        },
+        "requirement": {
+          "kind": "personal-test",
+          "test": "loosens-soil",
+          "source": "found-example",
+          "positive": "loosened_m3",
+          "technique": "using-ground-tools"
+        },
+        "value": 1,
+        "complete": true,
+        "evidence": {
+          "evidence_id": "ev-e6dd368516",
+          "design": "field-pick@1",
+          "test": "loosens-soil",
+          "result": {
+            "loosened_m3": 0.007445339042138977,
+            "loosened_kg": 11.91254,
+            "depth_m": 0.14049,
+            "work_j": 32.90428,
+            "closing_speed_m_s": 8.09874
+          }
+        }
+      },
+      {
+        "id": "build-surface",
+        "title": "Build a work surface",
+        "unit": "build",
+        "target": 1,
+        "guide": {
+          "where": "Recipes",
+          "screen": "recipes",
+          "recipe": "Work table",
+          "steps": [
+            "Find Work table in Recipes, or make another supported surface of at least 0.1 m\u00b2.",
+            "Check supplies, then Make. The new table receives items with Place; it does not perform shaping."
+          ]
+        },
+        "requirement": {
+          "kind": "funded-box-surface",
+          "minimum_area_m2": 0.1
+        },
+        "value": 1,
+        "complete": true,
+        "evidence": {
+          "request_id": "cbadcee1aa904fa58727cb10b81ff836",
+          "body": "workshop-2e7a2b36eefe407a",
+          "physics_hash": "373667a5d8e1f146c3c0b3f0c02f174c9ab0b80704b12c0ac6522f306857e9e1",
+          "surface": "top",
+          "area_m2": 0.1536,
+          "saved_t_s": 3.554166666666738
+        }
+      },
+      {
+        "id": "observe-process",
+        "title": "Learn from a working machine",
+        "unit": "batch",
+        "target": 1,
+        "guide": {
+          "where": "World",
+          "screen": "skills",
+          "steps": [
+            "In Skills, choose a machine with a supported batch and inputs available.",
+            "Move near it, face it, turn it on and choose Watch next batch. Stay until an actual saved batch is recorded.",
+            "An empty intake needs supplies. Watching alone cannot finish this step."
+          ]
+        },
+        "requirement": {
+          "kind": "personal-batch"
+        },
+        "value": 1,
+        "complete": true,
+        "evidence": {
+          "evidence_id": "ev-00c359dcfc",
+          "design": "copper-smelter@1",
+          "test": "smelts-ore",
+          "result": {
+            "made_kg": 1.5,
+            "used_kg": 5.0,
+            "made": {
+              "copper": 1.5
+            },
+            "used": {
+              "copper ore": 5.0
+            },
+            "drawn_j": 10000.0
+          }
+        }
+      }
+    ],
+    "actions": [
+      "acquire",
+      "bank",
+      "build",
+      "buy",
+      "compare-recipes",
+      "inspect",
+      "move",
+      "observe",
+      "pack",
+      "select-recipe",
+      "select-target",
+      "use-tool",
+      "watch-batch"
+    ]
+  },
+  {
+    "terrain_seed": 4,
+    "goods_seed": 1,
+    "controller": "reference",
+    "provider_calls": 0,
+    "world": "3f56519b2fba4dc888a061f91e73b195",
+    "character": "7326c0e5f5d84bdcbcf1e6da57a1893c",
+    "wall_s": 61.245,
+    "native_t_s": 17.204166666666012,
+    "decisions": 35,
+    "goal_chain": "first-workshop-v1",
+    "goals_complete": true,
+    "known": [
+      "smelting-copper",
+      "using-ground-tools"
+    ],
+    "tech_tree_total": 10,
+    "evidence": [
+      {
+        "run": "3f56519b2fba4dc888a061f91e73b195:7326c0e5f5d84bdcbcf1e6da57a1893c:3f56519b2fba4dc888a061f91e73b195:7326c0e5f5d84bdcbcf1e6da57a1893c:study:field pick:73b16a9fd728516ff12b938051df5a592e4b245500e8b2bf9fffee733cfbb696:c767917076302716874eb5279840053265ed352ddde07d4bba6e3733467df90b",
+        "at": "2026-10-01T03:36:23Z",
+        "design": "field-pick@1",
+        "object": "Field pick",
+        "tool": "field pick",
+        "source": "found-example",
+        "test": "study-example",
+        "passes": true,
+        "action": "inspect held tool",
+        "target": {
+          "object": "tool"
+        },
+        "result": {
+          "body_id": 1000,
+          "point_id": 1,
+          "matter_sha256": "73b16a9fd728516ff12b938051df5a592e4b245500e8b2bf9fffee733cfbb696"
+        },
+        "models": [
+          "native occupied matter",
+          "component-frame point"
+        ],
+        "limitations": [
+          "Inspection is not manufacturing, strength or functional certification"
+        ],
+        "said": "Studied Field pick",
+        "claim": "demonstrated: inspected a whole held example",
+        "scope": "for this inspected construction (field-pick@1)",
+        "id": "ev-a7a5a6720a"
+      },
+      {
+        "id": "ev-8446bc5bf6",
+        "run": "3f56519b2fba4dc888a061f91e73b195:7326c0e5f5d84bdcbcf1e6da57a1893c:c312da2e207e4148a365e287a20c68a0:1:2.77083:broke out",
+        "at": "2026-10-01T03:36:28Z",
+        "design": "field-pick@1",
+        "object": "Field pick",
+        "tool": "field pick",
+        "source": "found-example",
+        "test": "loosens-soil",
+        "passes": true,
+        "action": "swing then lever",
+        "target": {
+          "ground": "sand"
+        },
+        "result": {
+          "loosened_m3": 0.00802146991562326,
+          "loosened_kg": 12.83435,
+          "depth_m": 0.14042,
+          "work_j": 27.62231,
+          "closing_speed_m_s": 7.99046
+        },
+        "tool_condition": {
+          "after": {
+            "whole": true,
+            "dent_mm": 0.0
+          }
+        },
+        "models": [
+          "ground-work-v1"
+        ],
+        "limitations": [
+          "ground-work-v1 is declared, not calibrated against a real pick in real soil",
+          "no wet ground",
+          "no fracture of rock under a point",
+          "no wear"
+        ],
+        "said": "the Field pick went 140 mm into the sand at 8.0 m/s and broke out 8.0 L (12.8 kg); it stayed whole",
+        "claim": "demonstrated: loosens the tested sand",
+        "scope": "for this design revision (field-pick@1), this sand, swing then lever"
+      },
+      {
+        "id": "ev-96324d161a",
+        "run": "3f56519b2fba4dc888a061f91e73b195:a8ebc35344f3afe04bf1e6855cecc29a960dd3886e0c4ecc999a36f873296c7f:electric-furnace:smelt copper:1",
+        "at": "2026-10-01T03:37:05Z",
+        "design": "copper-smelter@1",
+        "object": "Copper smelter",
+        "source": "watched",
+        "test": "smelts-ore",
+        "passes": true,
+        "action": "work a batch of smelt copper",
+        "target": {
+          "substance": "copper ore"
+        },
+        "result": {
+          "made_kg": 1.5,
+          "used_kg": 5.0,
+          "made": {
+            "copper": 1.5
+          },
+          "used": {
+            "copper ore": 5.0
+          },
+          "drawn_j": 10000.0
+        },
+        "models": [
+          "machine_goods recipe ledger"
+        ],
+        "limitations": [
+          "the recipe's yield is declared by the room, not measured from chemistry",
+          "the work and the time it takes are the recipe's own numbers",
+          "avatar position is reported by the client; visibility occlusion is not checked"
+        ],
+        "said": "Copper smelter worked 5.00 kg of copper ore into 1.50 kg of copper",
+        "claim": "demonstrated: it makes copper of copper ore",
+        "scope": "this recipe, in this room",
+        "machine": "electric-furnace",
+        "observer": {
+          "player": "7326c0e5f5d84bdcbcf1e6da57a1893c",
+          "pose": {
+            "eyes_m": [
+              8.389,
+              2.29,
+              2.769
+            ],
+            "facing": [
+              0.872,
+              0,
+              0.49
+            ],
+            "look_direction": [
+              0.7102,
+              -0.5802,
+              0.3988
+            ]
+          },
+          "machine_at_m": [
+            10.13261,
+            0.86549,
+            3.74806
+          ],
+          "t_s": 16.20416666666607,
+          "rule": "explicit watch; fresh reported pose; within 6 m; view cone 120 degrees"
+        }
+      }
+    ],
+    "goals": [
+      {
+        "id": "study-tool",
+        "title": "Study a gathering tool",
+        "unit": "study",
+        "target": 1,
+        "guide": {
+          "where": "World / Inventory",
+          "screen": "skills",
+          "steps": [
+            "In Skills, follow Go to tool. Pick it up with E, or equip it from your bag.",
+            "Choose Study tool / Inspect. The saved study goes in your own journal."
+          ]
+        },
+        "requirement": {
+          "kind": "personal-test",
+          "test": "study-example",
+          "source": "found-example"
+        },
+        "value": 1,
+        "complete": true,
+        "evidence": {
+          "evidence_id": "ev-a7a5a6720a",
+          "design": "field-pick@1",
+          "test": "study-example",
+          "result": {
+            "body_id": 1000,
+            "point_id": 1,
+            "matter_sha256": "73b16a9fd728516ff12b938051df5a592e4b245500e8b2bf9fffee733cfbb696"
+          }
+        }
+      },
+      {
+        "id": "gather-ground",
+        "title": "Gather measured soil or sand",
+        "unit": "trial",
+        "target": 1,
+        "guide": {
+          "where": "World",
+          "screen": "skills",
+          "steps": [
+            "Equip your gathering tool. Find dry soil or sand near the tool location shown in Skills.",
+            "Aim at the ground and use the tool. A supported removal above zero earns Gathering by hand."
+          ]
+        },
+        "requirement": {
+          "kind": "personal-test",
+          "test": "loosens-soil",
+          "source": "found-example",
+          "positive": "loosened_m3",
+          "technique": "using-ground-tools"
+        },
+        "value": 1,
+        "complete": true,
+        "evidence": {
+          "evidence_id": "ev-8446bc5bf6",
+          "design": "field-pick@1",
+          "test": "loosens-soil",
+          "result": {
+            "loosened_m3": 0.00802146991562326,
+            "loosened_kg": 12.83435,
+            "depth_m": 0.14042,
+            "work_j": 27.62231,
+            "closing_speed_m_s": 7.99046
+          }
+        }
+      },
+      {
+        "id": "build-surface",
+        "title": "Build a work surface",
+        "unit": "build",
+        "target": 1,
+        "guide": {
+          "where": "Recipes",
+          "screen": "recipes",
+          "recipe": "Work table",
+          "steps": [
+            "Find Work table in Recipes, or make another supported surface of at least 0.1 m\u00b2.",
+            "Check supplies, then Make. The new table receives items with Place; it does not perform shaping."
+          ]
+        },
+        "requirement": {
+          "kind": "funded-box-surface",
+          "minimum_area_m2": 0.1
+        },
+        "value": 1,
+        "complete": true,
+        "evidence": {
+          "request_id": "05d6a5ce2e1846a290f29825df23036a",
+          "body": "workshop-86e402814c024ee8",
+          "physics_hash": "373667a5d8e1f146c3c0b3f0c02f174c9ab0b80704b12c0ac6522f306857e9e1",
+          "surface": "top",
+          "area_m2": 0.1536,
+          "saved_t_s": 3.8041666666667506
+        }
+      },
+      {
+        "id": "observe-process",
+        "title": "Learn from a working machine",
+        "unit": "batch",
+        "target": 1,
+        "guide": {
+          "where": "World",
+          "screen": "skills",
+          "steps": [
+            "In Skills, choose a machine with a supported batch and inputs available.",
+            "Move near it, face it, turn it on and choose Watch next batch. Stay until an actual saved batch is recorded.",
+            "An empty intake needs supplies. Watching alone cannot finish this step."
+          ]
+        },
+        "requirement": {
+          "kind": "personal-batch"
+        },
+        "value": 1,
+        "complete": true,
+        "evidence": {
+          "evidence_id": "ev-96324d161a",
+          "design": "copper-smelter@1",
+          "test": "smelts-ore",
+          "result": {
+            "made_kg": 1.5,
+            "used_kg": 5.0,
+            "made": {
+              "copper": 1.5
+            },
+            "used": {
+              "copper ore": 5.0
+            },
+            "drawn_j": 10000.0
+          }
+        }
+      }
+    ],
+    "actions": [
+      "acquire",
+      "bank",
+      "build",
+      "buy",
+      "compare-recipes",
+      "inspect",
+      "move",
+      "observe",
+      "pack",
+      "select-recipe",
+      "select-target",
+      "use-tool",
+      "watch-batch"
+    ]
+  }
+]

@@ -424,14 +424,6 @@ def dig(ctx: senses.Context, call: Call) -> dict[str, Any]:
         # (machine_routine reads `idle`). Someone who wants more moves the site.
         return {"did": "dug nothing: the ground here is worked out", "idle": True, "dug": dug,
                 "load": r.load_reading()}
-    room = r.load_room_kg()
-    if kg > room + 1e-6:
-        # More than the hopper holds: the rest goes back on the ground where it came from.
-        share = room / kg
-        back_sand, back_soil = sand * (1.0 - share), soil * (1.0 - share)
-        reply = _act(ctx, op="deposit", at=point, radius_m=width, sand_m3=back_sand, soil_m3=back_soil,
-                     from_carried=True)
-        sand, soil, kg = sand * share, soil * share, room
     # Out of what is carried and into the hopper's account, clamped to what the
     # account holds: the scoop's reply is rounded and the account is exact, and
     # on a scoop of a few grams the rounding is the whole of it -- asking for a
@@ -444,6 +436,21 @@ def dig(ctx: senses.Context, call: Call) -> dict[str, Any]:
         if sand + soil <= 0.0:
             return {"did": "dug nothing: the ground here is worked out", "idle": True, "dug": dug,
                     "load": r.load_reading()}
+    # The display scoop mass and volumes round independently. Capacity must
+    # bound the volumes we actually transfer, at the native carried densities,
+    # rather than a rounded mass that can understate those volumes. The fallback
+    # is the current sand/soil law also enforced by the receiving ledger.
+    densities = {name: (float(carried[name + "_kg"]) / float(carried[name + "_m3"])
+                       if isinstance(carried, dict) and carried.get(name + "_m3", 0) > 0
+                       and name + "_kg" in carried else 1600.0)
+                 for name in ("sand", "soil")}
+    kg = sand * densities["sand"] + soil * densities["soil"]
+    room = r.load_room_kg()
+    if kg > room:
+        share = room / kg
+        _act(ctx, op="deposit", at=point, radius_m=width,
+             sand_m3=sand * (1.0 - share), soil_m3=soil * (1.0 - share), from_carried=True)
+        sand, soil, kg = sand * share, soil * share, room
     if sand > 0.0 or soil > 0.0:
         received=_act(ctx, op="ground_withdraw", sand_m3=sand, soil_m3=soil)
         if received.get("material_packet"):

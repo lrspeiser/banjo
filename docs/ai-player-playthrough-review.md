@@ -1,5 +1,7 @@
 # AI player playthrough review — September 30, 2026
 
+**New autonomous follow-up:** [Expanded explorer review and evidence](ai-explorer-checkpoint.md) measures 8/8 Camp+Workshop goals and 2/10 current techniques on both generated maps through the reference controller. The historical original run below remains 4/4 and 0/9 at its original revision. Live-provider play remains unverified; the current controller stops at the end of declared chains, so this does not establish full tech-tree reachability.
+
 **Follow-up implementation:** [P0 persistence repairs](player-persistence-checkpoint.md) address the recorded save and packed-state failures. [Personal machine learning](player-learning-checkpoint.md), [generated tool access](generated-starter-tool.md) and [durable tool study/use](player-tool-learning.md) now provide actual personal learning. [The next goal chain](goal-chains.md), code `6b45be4` on main, passes Camp → tool study/gathering → funded work surface → supported observed processing through scripted ordinary controls on two generated seeds, with real stool placement and restart. The historical run below retains its original revision and results. Autonomous post-camp play, exhausted-input routes, complete Market guidance and live-provider verification remain unfinished.
 
 ## Result

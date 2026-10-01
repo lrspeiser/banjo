@@ -64,6 +64,16 @@ class RoomStore:
             raise ValueError(f"{scene!r} is not a room that is kept")
         return self.folder / f"{scene}.json"
 
+    def read_record(self, scene: str) -> dict:
+        """Read durable evidence under the same lock as atomic replacement.
+
+        On Windows, an open reader can deny replacement even for this process.
+        Goal readers must release the file before a writer publishes its next
+        checkpoint; parsing returns an independent record, never a live room.
+        """
+        with self.lock:
+            return json.loads(self.path_of(scene).read_text(encoding='utf-8'))
+
     def save(self, room: Any) -> bool:
         """Publish save status only after the atomic disk replacement succeeds."""
         previous = getattr(room, "persistence", {}).get("saved_t_s")

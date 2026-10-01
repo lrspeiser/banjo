@@ -45,47 +45,45 @@ or resumes that mode. **Reference bot · no model calls** is explicitly labeled
 and uses a deterministic policy for reproducible tests. It is available when
 the server has no configured OpenAI key.
 
-The model receives this character's current goal evidence, inventory, tech tree,
-wallet, current oak quote/stock and recent actions. The server offers only
-applicable actions: bank measured energy, buy one quoted oak lot, preview/commit
-the curated Camp stool, put that stool in the character's bag, or stop for a
-blocker. Prompt instructions require the model to use current evidence, never
-claim completion, teach itself, alter physics or invent stock. An unsupported
-choice is refused before a game action. The normal authenticated HTTP game APIs
-enforce payment, admission, resource debit and carrying; the model's assertion
-is never a completion predicate.
+The model receives current goal requirements, personal inventory and tech tree,
+Market quotes, native targets, compatible recipes with every material gap and
+recent action results. A bounded server catalog offers compare/select recipe,
+select target, move, acquire/equip, inspect, use-tool, build/pack, power-on,
+watch/observe, bank/buy and explicit stop actions. Unknown choices are refused
+before a game action. The normal authenticated APIs enforce reach, ownership,
+payment, admission and evidence; the model cannot grant progress or supplies.
 
-Each selected action has a unique decision/request id, controller mode, model
-and confidence where applicable, duration, goal, result and bounded receipt.
-The saved history retains 64 entries; watching exposes the latest 12. Provider
-failures stop with an error rather than granting progress. This is a bounded
-game controller, not arbitrary model-generated executable code.
-
-Runs stop when the four opening goals finish, the planner reports a blocker,
-an action fails, or **24 decisions** are reached. At most four characters belong
-to a world and they count toward its existing 32-guest cap. Resume starts a new
-decision budget. Restart pauses active characters; it never silently restarts
-paid model calls. Pause discards a model choice that returns after the stop
-request; an already executing game transaction may finish and is recorded.
+Each action has a unique request id, controller mode/model, confidence where
+applicable, goal chain, result and bounded receipt. History retains 128 entries;
+watching exposes the latest 20. Runs stop at completed declared chains, a
+blocker, action failure or 64 decisions. At most four characters count toward
+the existing 32-guest cap. Resume starts another budget. Restart pauses paid
+model calls. Pause discards a model choice returning after the stop request;
+an already executing transaction or physical stroke can finish and is recorded.
 
 ## Measured scope and next gates
 
-The implemented action catalog covers [first camp](starter-goals.md), not an
-open-ended survival agent. Its short scripted camp route queries native terrain
-and reports positions using the same visual avatar model as people. It is not
-collision-aware navigation, a physical walking body, swimming or an exploration
-planner. Placement can be blocked by another player or character. It reports
-that refusal instead of bypassing occupied geometry. The opening loop does not
-earn a new technique; the independent journal is a foundation for later goals
-with real learning evidence. The found-pick graph assumption still does not
-provide a mining tool in generated games.
+[The expanded explorer checkpoint](ai-explorer-checkpoint.md) measures autonomous
+reference play through Camp and Workshop on two generated maps: 8/8 goals,
+2/10 personal techniques. Selection, recipe comparison, actual tool study and
+use, funded Work table, nearby saved machine batch and isolated creator state
+pass. Empty Market shelves stop the bot explicitly. Substituted-model native
+integration and live-provider quality remain distinct; no configured local key
+means **live OpenAI play has not been verified**.
 
-Next gates: supply a real gathering tool; add an evidence-backed learning goal
-and a machine-batch witness rule;
-offer terrain/obstacle-aware movement and alternate camp locations; compare
-actual provider playthroughs across seeds and scarcity states; measure several
-active characters and humans together; add accounts/recovery, a character
-retirement policy and multi-instance world ownership.
+New named games declare the same native-surveyed arrival for human and AI
+players. Movement uses a bounded dry-column path search and ordinary reported
+avatar poses, not physical walking, swimming or body-collision navigation.
+Tool approach uses declared reach. Native placement guards still decide Make;
+refused actions cannot publish an item. Goal completion does not prove the
+rest of the tech tree is reachable: the controller currently stops there.
+
+Next gates: live-provider seed/scarcity comparisons; supported replenishment
+of machine intakes and play beyond declared chains; obstacle-aware navigation;
+several active characters plus humans under load; accounts/recovery and
+multi-instance world ownership. Market relevance and compact ownership/debit
+labels remain open. See the checkpoint for save/capacity defects found by the
+longer journey and their strict-guard repairs.
 
 ## Verification
 

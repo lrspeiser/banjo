@@ -1163,6 +1163,10 @@ class WorldHub:
                 or value.get("id") != world_id or not isinstance(value.get("name"), str)
                 or not 1 <= len(value["name"]) <= 80):
             raise ValueError("Invalid world record")
+        arrival=value.get('arrival_xz')
+        if arrival is not None and (not isinstance(arrival,list) or len(arrival)!=2 or
+                any(type(v) not in (int,float) or not math.isfinite(v) or abs(v)>10000 for v in arrival)):
+            raise ValueError('Invalid world arrival position')
         return value
 
     def get(self, world_id):
@@ -1179,6 +1183,7 @@ class WorldHub:
             app = Playground(self.base.engine_path, self.base.studio_path,
                              folder / "runs", planner=self.base.planner)
             app.store, app.world_id, app.world_name = store, world_id, meta["name"]
+            app.arrival_xz=meta.get('arrival_xz')
             app.room = room
             app.rooms = {"new-game": room}
             app.players_lock = threading.RLock()
@@ -1248,7 +1253,8 @@ class WorldHub:
             proof = generated["proof"]
             meta = {"format": "banjo.world.v1", "id": world_id, "name": name,
                     "created_unix_s": time.time(), "terrain_seed": terrain_seed,
-                    "goods_seed": proof["seed"], "reachability": proof}
+                    "goods_seed": proof["seed"], "reachability": proof,
+                    "arrival_xz":list(new_game.ARRIVE_AT)}
             path = folder / "manifest.json"
             partial = folder / "manifest.json.partial"
             partial.write_text(json.dumps(meta, allow_nan=False), encoding="utf-8")
@@ -1794,6 +1800,7 @@ class Handler(BaseHTTPRequestHandler):
                     player_world.personalize_hand(opened,player)
                 if body.get("fresh"): room_store.keep(app,room)
                 opened=world_upgrades.apply(app,opened)
+                player_arrival(app,opened)
                 # Saved now, so what a restart gives back is this world from
                 # here on -- the one just opened again, or the one just opened
                 # from its spec, which a restart must not trade for an older one.
@@ -1981,11 +1988,12 @@ class Handler(BaseHTTPRequestHandler):
                 app=self.app
                 _this_pages_room(app,body)
                 answer=inventory_room.request(app,body,player)
-                # Kept with the world as it now stands -- the thing in the hand
-                # or in the bag in the engine as the record says -- or, with a
-                # world that will not be saved just now, on its own.
-                if answer.get("ok") and not keep_world(app,"what the person has changed"):
-                    room_store.keep(app,app.room)
+                # Inventory and native state are one checkpoint. When the
+                # native world cannot yet save, keep its visible failure and
+                # retry later; a room-only write would pair the new bag/outbox
+                # with an earlier physical snapshot.
+                if answer.get("ok"):
+                    keep_world(app,"what the person has changed")
                 if answer.get("ok"):
                     starter_goals.observe(app, player)
                 return self.send(answer)
@@ -2733,7 +2741,8 @@ def keep_world(app,why=""):
     if snapshot is None: return False
     lock=getattr(app,"world_lock",None)
     if lock is None: lock=app.world_lock=threading.Lock()
-    with world_access.state_lock(app), gameplay_room.LOCK, lock:
+    with world_access.state_lock(app), gameplay_room.LOCK, lock, \
+            getattr(app.live, "checkpoint", nullcontext)():
         saved,refused=snapshot()
         if saved is None:
             room.persistence={"state":"failed","reason":str(refused)[:240],
@@ -2772,6 +2781,22 @@ def keep_world_after(app,body,answer):
         room.world_refused_t=float(t)
 
 
+def player_arrival(app, opened):
+    """New named maps declare an arrival shared by people and AI characters.
+
+    Terrain's scenic camera is not a gameplay spawn. Existing player poses
+    remain authoritative on reload; legacy worlds retain their original view.
+    """
+    at=getattr(app,'arrival_xz',None)
+    if at is None:return
+    surveyed=app.live.act({'session':app.live.session.id,'op':'survey','at':at})['survey']
+    if not surveyed.get('on_the_ground') or (surveyed.get('water') or {}).get('depth_m',0)>.2:
+        opened['arrival_unavailable']='Declared arrival is outside dry native ground'
+        return
+    x,z=at;y=surveyed['ground_m']
+    opened['arrival']={'eye_m':[x,y+1.62,z],'look_m':[x+2,y,z]}
+
+
 def _rejoin(app,scene,player_id=""):
     """The room this server is running, for a page that opens it again: every
     body where it is and as it is now -- moved, broken, dented -- the hand still
@@ -2789,6 +2814,7 @@ def _rejoin(app,scene,player_id=""):
         if rejoin is not None else None
     if opened is None: return None
     opened=world_upgrades.apply(app,opened)
+    player_arrival(app,opened)
     gameplay_room.opened(app, opened)
     opened["inventory"]=inventory_room.shown(app,player_id)
     if player_id: player_world.personalize_hand(opened,player_id)
@@ -3567,7 +3593,9 @@ def remember_ground(app,body,answer=None):
         session.spec=dict(session.spec,terrain=deepcopy(terrain))
     # The ground is part of what the room is, so it is kept with it (room_store),
     # and with the world standing on it as it is now.
-    if not keep_world(app,"the ground changed"): room_store.keep(app,room)
+    if not keep_world(app,"the ground changed") and not (
+            getattr(app,"live_holder",None)=="world" and session is not None):
+        room_store.keep(app,room)
 
 
 def main():

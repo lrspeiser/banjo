@@ -3,6 +3,7 @@ from copy import deepcopy
 from pathlib import Path
 import sys
 import tempfile
+import threading
 from types import SimpleNamespace
 import unittest
 from unittest import mock
@@ -15,6 +16,7 @@ import room_store
 import server
 import world_room
 import rover_brain
+import live_session
 
 
 def packet(volume):
@@ -59,6 +61,65 @@ class ReceivingLedger(unittest.TestCase):
 
 
 class RuntimeAndSave(unittest.TestCase):
+    def test_durable_goal_reader_serializes_with_checkpoint_replacement(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store=room_store.RoomStore(folder);room=world_room.Room('yard')
+            room.world_record={'t_s':1};store.save(room)
+            begun=threading.Event();release=threading.Event();written=threading.Event();read=[]
+            original=Path.read_text
+            def reading(path,*args,**kwargs):
+                begun.set();self.assertTrue(release.wait(2));return original(path,*args,**kwargs)
+            def writing():
+                room.world_record={'t_s':2};store.save(room);written.set()
+            reader=threading.Thread(target=lambda:read.append(store.read_record('yard')))
+            writer=threading.Thread(target=writing)
+            with mock.patch.object(Path,'read_text',reading):
+                reader.start();self.assertTrue(begun.wait(1));writer.start()
+                self.assertFalse(written.wait(.05),'writer replaced an open goal reader')
+                release.set();reader.join(timeout=2);writer.join(timeout=2)
+            self.assertFalse(reader.is_alive());self.assertFalse(writer.is_alive())
+            self.assertEqual(1,read[0]['world']['t_s'])
+            self.assertEqual(2,store.read_record('yard')['world']['t_s'])
+
+    def test_ground_edit_does_not_fall_back_to_a_stale_physical_checkpoint(self):
+        room=world_room.Room('new-game')
+        app=SimpleNamespace(room=room,live_holder='world',
+            live=SimpleNamespace(session=SimpleNamespace(spec=room.spec)))
+        command={'op':'dig','from':[0,0],'width_m':.5,'depth_m':.1}
+        with mock.patch.object(server,'keep_world',return_value=False), \
+                mock.patch.object(server.room_store,'keep') as stale:
+            server.remember_ground(app,command,{'dug':{'depth_m':.05}})
+        stale.assert_not_called()
+        self.assertEqual(.05,room.spec['terrain']['edits'][-1]['dig']['depth_m'])
+
+    def test_native_checkpoint_blocks_new_replies_until_source_save_finishes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            room=world_room.Room('yard'); store=room_store.RoomStore(folder)
+            live=live_session.Live()
+            live.session=SimpleNamespace(_lock=threading.RLock(),t=1.0)
+            live.snapshot=lambda:({'t_s':live.session.t},'')
+            app=SimpleNamespace(room=room,store=store,live_holder='world',live=live)
+            begun=threading.Event(); advanced=threading.Event()
+            def reply():
+                begun.set()
+                # Direct Session.send callers also share this boundary.
+                with live.session._lock:
+                    live.session.t=2.0; advanced.set()
+            original=store.save
+            worker=threading.Thread(target=reply)
+            def saving(record):
+                worker.start(); self.assertTrue(begun.wait(1))
+                self.assertFalse(advanced.wait(.05),'native state changed during source save')
+                return original(record)
+            with mock.patch.object(store,'save',side_effect=saving):
+                self.assertTrue(server.keep_world(app,'atomic source checkpoint'))
+            worker.join(timeout=2)
+            self.assertFalse(worker.is_alive())
+            self.assertTrue(advanced.is_set())
+            self.assertEqual(1.0,store.load('yard').world_record['t_s'])
+            self.assertTrue(server.keep_world(app,'later reply'))
+            self.assertEqual(2.0,store.load('yard').world_record['t_s'])
+
     def test_appending_a_scene_keeps_machine_goods_attached_to_the_new_spec(self):
         spec=world_room.Room("tests-dig").spec
         spec["goods"]={"stockpiles":[],"deposits":[],"recipes":[]}

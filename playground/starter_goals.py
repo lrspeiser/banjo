@@ -108,7 +108,7 @@ def view(app: Any, owner: str, body: Any) -> dict[str, Any]:
     if packed:
         # A failed room save must not award a durable achievement for a bag
         # that will disappear on restart. Check the saved guest record too.
-        saved = json.loads(app.store.path_of(app.room.scene).read_text(encoding="utf-8"))
+        saved = app.store.read_record(app.room.scene)
         saved_bag = ((saved.get("players") or {}).get(owner) or {}).get("inventory") or {}
         saved_held = set(saved_bag.get("stowed") or []) | {
             n for n in (saved_bag.get("hands") or {}).values() if n}
@@ -138,6 +138,11 @@ def view(app: Any, owner: str, body: Any) -> dict[str, Any]:
              "unit": unit, "complete": ident in completed, "evidence": completed.get(ident)}
             for i, (ident, title, instruction, target, unit) in enumerate(STEPS)]
     next_goal = next((r["id"] for r in rows if not r["complete"]), None)
+    requirements=[{'kind':'energy-deposit','minimum_j':STEPS[0][3]},
+        {'kind':'stock-purchase','substance':'oak','remaining_kg':max(0,STEPS[1][3]-rows[1]['value'])},
+        {'kind':'admitted-recipe','candidate':recipe()},
+        {'kind':'bag-product','body':standing.get('root_body') if standing else None}]
+    for row,requirement in zip(rows,requirements):row['requirement']=requirement
     return {"schema": SCHEMA, "chain_id": CHAIN, "title": "Make your first camp",
             "goals": rows, "next_goal": next_goal, "complete": next_goal is None,
             "balance_j": balance, "recipe": recipe(), "recipe_mass_kg": _recipe()[2],

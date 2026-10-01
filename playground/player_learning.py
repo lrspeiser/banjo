@@ -130,7 +130,9 @@ def validate_pending(value, world, players, registry=None):
         for receipt in value:
             _checked(receipt,players,registry)
             if not isinstance(world,dict) or float(world.get('t_s',-1))+1e-9<receipt['t_s']:
-                raise ValueError('Personal tool evidence requires its later physical snapshot')
+                raise ValueError('Personal tool evidence requires its later physical snapshot '
+                    f"({receipt['kind']}: source {receipt['t_s']:.12g} s, "
+                    f"snapshot {(world or {}).get('t_s',-1):.12g} s)")
     except (KeyError,TypeError,OverflowError) as error:
         raise ValueError('Invalid personal tool outbox source') from error
 

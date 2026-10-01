@@ -8763,7 +8763,7 @@ function updateWatchedCharacter(view) {
   }
   $("watch-name").textContent = `Watching ${character.name}`;
   $("watch-status").textContent = `${character.mode === "openai" ? "AI" : "Reference bot"} · ${character.status} · ${character.message}`;
-  $("watch-progress").textContent = `${view.goals.goals.filter((g) => g.complete).length} / ${view.goals.goals.length} goals · ${view.goals.balance_j} J · ${character.decisions} / 24 decisions`;
+  $("watch-progress").textContent = `${view.goals.goals.filter((g) => g.complete).length} / ${view.goals.goals.length} goals · ${view.goals.title} · ${view.goals.balance_j} J · ${character.decisions} / ${character.decision_budget} decisions`;
   const learned = view.skills.filter((s) => s.known);
   $("watch-tech").textContent = `Its tech tree: ${learned.length} / ${view.skills.length} techniques known${learned.length ? " · " + learned.map((s) => s.name).join(", ") : ""}`;
   $("watch-history").replaceChildren(...character.history.slice(-5).map((entry) => {
@@ -10247,7 +10247,7 @@ async function open({ again = false } = {}) {
       if (data.water) drawWater(data.water);
       // Somewhere to stand that looks at something: the valley says where --
       // or, when the room is as it stood, where the person was standing.
-      placeCamera((asItStood && (keptView(data.scene) || playerView(myPlayer?.pose))) || (data.gameplay
+      placeCamera((asItStood && (keptView(data.scene) || playerView(myPlayer?.pose))) || data.arrival || (data.gameplay
         ? {eye_m: data.gameplay.spawn_m, look_m: data.gameplay.nodes[0].at_m}
         : data.terrain.view));
     } else {

@@ -20,7 +20,7 @@ import subprocess
 import threading
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -678,6 +678,18 @@ class Live:
     def __init__(self) -> None:
         self.session: Session | None = None
         self._lock = threading.RLock()
+
+    @contextmanager
+    def checkpoint(self):
+        """Keep native state and reply-derived source accounts at one boundary.
+
+        Hold only while capturing and writing a checkpoint, never while waiting
+        for a stroke to finish. Session.send callers share the second lock.
+        """
+        with self._lock:
+            session = self.session
+            with getattr(session, '_lock', nullcontext()):
+                yield
 
     @contextmanager
     def as_actor(self, player: str):

@@ -7,7 +7,7 @@ are evidence that equipment exists in this world.
 from __future__ import annotations
 
 from typing import Any
-from mcp import progression
+from mcp import progression, interaction_profiles
 import machine_witness
 import workshop_library
 import inventory_room
@@ -49,7 +49,8 @@ def resolve(app: Any, registry: Any, techniques: list[dict]) -> None:
             at=(body or {}).get('position_m') or ((player_world.records(app).get(owner) or {}).get('pose') or {}).get('eyes_m')
             examples.setdefault(design.split('@')[0],[]).append({'body':profile['tool'],
                 'at_m':at, 'where':where,'tab':'inventory' if in_bag else 'world',
-                'ground_at_m':_dry_ground(app,at)})
+                'ground_at_m':_dry_ground(app,at),
+                'reach_m':interaction_profiles.tool_use(profile)['reach_m']})
     for technique in techniques:
         for route in technique.get("earned_by") or []:
             locations, missing = [], []

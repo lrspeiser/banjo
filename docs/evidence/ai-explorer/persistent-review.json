@@ -1,0 +1,1230 @@
+{
+  "source": "uncommitted explorer checkpoint on de6b90f",
+  "native_build": "f819e81",
+  "world_id": "a49789cfd53d4f998ea38dea43ef6c6f",
+  "character_id": "569e64a5cb8e46a281c4b946bfc7bd5a",
+  "terrain_seed": 4,
+  "goods_seed": 21454332,
+  "controller": "reference",
+  "provider_calls": 0,
+  "world_clock": "normal unattended clock enabled; ordinary page steps",
+  "wall_s": 92.408,
+  "status": "complete",
+  "decisions": 35,
+  "message": "All currently declared goal chains complete; see the separate personal tech tree",
+  "goals": {
+    "schema": "banjo.starter-goals.v1",
+    "chain_id": "first-workshop-v1",
+    "title": "Put your camp to work",
+    "goals": [
+      {
+        "id": "study-tool",
+        "title": "Study a gathering tool",
+        "unit": "study",
+        "target": 1,
+        "guide": {
+          "where": "World / Inventory",
+          "screen": "skills",
+          "steps": [
+            "In Skills, follow Go to tool. Pick it up with E, or equip it from your bag.",
+            "Choose Study tool / Inspect. The saved study goes in your own journal."
+          ]
+        },
+        "requirement": {
+          "kind": "personal-test",
+          "test": "study-example",
+          "source": "found-example"
+        },
+        "value": 1,
+        "complete": true,
+        "evidence": {
+          "evidence_id": "ev-58a08277d4",
+          "design": "field-pick@1",
+          "test": "study-example",
+          "result": {
+            "body_id": 1000,
+            "point_id": 1,
+            "matter_sha256": "73b16a9fd728516ff12b938051df5a592e4b245500e8b2bf9fffee733cfbb696"
+          }
+        }
+      },
+      {
+        "id": "gather-ground",
+        "title": "Gather measured soil or sand",
+        "unit": "trial",
+        "target": 1,
+        "guide": {
+          "where": "World",
+          "screen": "skills",
+          "steps": [
+            "Equip your gathering tool. Find dry soil or sand near the tool location shown in Skills.",
+            "Aim at the ground and use the tool. A supported removal above zero earns Gathering by hand."
+          ]
+        },
+        "requirement": {
+          "kind": "personal-test",
+          "test": "loosens-soil",
+          "source": "found-example",
+          "positive": "loosened_m3",
+          "technique": "using-ground-tools"
+        },
+        "value": 1,
+        "complete": true,
+        "evidence": {
+          "evidence_id": "ev-f1ac1ad9f9",
+          "design": "field-pick@1",
+          "test": "loosens-soil",
+          "result": {
+            "loosened_m3": 0.007945754970702953,
+            "loosened_kg": 12.71321,
+            "depth_m": 0.14014,
+            "work_j": 27.9426,
+            "closing_speed_m_s": 7.99722
+          }
+        }
+      },
+      {
+        "id": "build-surface",
+        "title": "Build a work surface",
+        "unit": "build",
+        "target": 1,
+        "guide": {
+          "where": "Recipes",
+          "screen": "recipes",
+          "recipe": "Work table",
+          "steps": [
+            "Find Work table in Recipes, or make another supported surface of at least 0.1 m\u00b2.",
+            "Check supplies, then Make. The new table receives items with Place; it does not perform shaping."
+          ]
+        },
+        "requirement": {
+          "kind": "funded-box-surface",
+          "minimum_area_m2": 0.1
+        },
+        "value": 1,
+        "complete": true,
+        "evidence": {
+          "request_id": "98874112a3864207b4b607694220b051",
+          "body": "workshop-c2b25c8d1aea45f1",
+          "physics_hash": "373667a5d8e1f146c3c0b3f0c02f174c9ab0b80704b12c0ac6522f306857e9e1",
+          "surface": "top",
+          "area_m2": 0.1536,
+          "saved_t_s": 36.39166666666866
+        }
+      },
+      {
+        "id": "observe-process",
+        "title": "Learn from a working machine",
+        "unit": "batch",
+        "target": 1,
+        "guide": {
+          "where": "World",
+          "screen": "skills",
+          "steps": [
+            "In Skills, choose a machine with a supported batch and inputs available.",
+            "Move near it, face it, turn it on and choose Watch next batch. Stay until an actual saved batch is recorded.",
+            "An empty intake needs supplies. Watching alone cannot finish this step."
+          ]
+        },
+        "requirement": {
+          "kind": "personal-batch"
+        },
+        "value": 1,
+        "complete": true,
+        "evidence": {
+          "evidence_id": "ev-10bf0f6d8c",
+          "design": "copper-smelter@1",
+          "test": "smelts-ore",
+          "result": {
+            "made_kg": 1.5,
+            "used_kg": 5.0,
+            "made": {
+              "copper": 1.5
+            },
+            "used": {
+              "copper ore": 5.0
+            },
+            "drawn_j": 10000.0
+          }
+        }
+      }
+    ],
+    "next_goal": null,
+    "complete": true,
+    "limits": "Tool use measures dry soil or sand. A work surface receives items; it does not unlock shaping. Machine batches use the declared recipe ledger, not simulated chemistry.",
+    "follow_up": "Use Skills to find the next supported experiment.",
+    "recipe": {
+      "kind": "bench",
+      "design_id": "starter-work-table",
+      "parameters": {
+        "width_m": 0.48,
+        "depth_m": 0.32,
+        "height_m": 0.5,
+        "top_thickness_m": 0.04,
+        "top_profile": "square",
+        "leg_section_m": 0.04,
+        "leg_style": "straight",
+        "splay_deg": 0.0,
+        "leg_inset_m": 0.05,
+        "material": "oak",
+        "aprons": 0.0,
+        "stretchers": 0.0
+      },
+      "component_overrides": {
+        "top": {
+          "mechanics": {
+            "model": "rigid"
+          }
+        },
+        "leg-1": {
+          "mechanics": {
+            "model": "rigid"
+          }
+        },
+        "leg-2": {
+          "mechanics": {
+            "model": "rigid"
+          }
+        },
+        "leg-3": {
+          "mechanics": {
+            "model": "rigid"
+          }
+        },
+        "leg-4": {
+          "mechanics": {
+            "model": "rigid"
+          }
+        }
+      }
+    },
+    "session": "44202f7e88c643619b9f57b3601ef512",
+    "balance_j": 256,
+    "camp_body": "workshop-321b1f103e3f4b69",
+    "unlocked": true,
+    "chains": [
+      {
+        "id": "first-camp-v1",
+        "title": "Make your first camp"
+      },
+      {
+        "id": "first-workshop-v1",
+        "title": "Put your camp to work"
+      }
+    ]
+  },
+  "skills": [
+    {
+      "id": "burning-lime",
+      "name": "Burning lime",
+      "describes": "Driving the gas out of limestone with heat to leave cement",
+      "practice": "",
+      "rank": 0,
+      "known": false,
+      "within_reach": true,
+      "taught_only": false,
+      "needs": [],
+      "unmet": [],
+      "leads_to": [
+        {
+          "id": "mixing-concrete",
+          "name": "Mixing concrete",
+          "known": false
+        }
+      ],
+      "earned_by": [
+        {
+          "id": "watched-burns-limestone",
+          "says": "Watch a lime kiln burn limestone into cement, once.",
+          "done": false,
+          "all_of": [
+            {
+              "design": "lime-kiln",
+              "demonstrated": true,
+              "test": "burns-limestone",
+              "done": false
+            }
+          ]
+        }
+      ],
+      "opens": [
+        {
+          "id": "lime-kiln",
+          "name": "Lime kiln"
+        }
+      ]
+    },
+    {
+      "id": "firing-ceramic",
+      "name": "Firing ceramic",
+      "describes": "Turning clay into a hard ceramic with heat, in a kiln that holds a batch",
+      "practice": "",
+      "rank": 0,
+      "known": false,
+      "within_reach": true,
+      "taught_only": false,
+      "needs": [],
+      "unmet": [],
+      "leads_to": [],
+      "earned_by": [
+        {
+          "id": "watched-fires-clay",
+          "says": "Watch a kiln fire clay into ceramic, once.",
+          "done": false,
+          "all_of": [
+            {
+              "design": "clay-kiln",
+              "demonstrated": true,
+              "test": "fires-clay",
+              "done": false
+            }
+          ]
+        }
+      ],
+      "opens": [
+        {
+          "id": "clay-kiln",
+          "name": "Clay kiln"
+        }
+      ]
+    },
+    {
+      "id": "using-ground-tools",
+      "name": "Gathering by hand",
+      "describes": "Use a whole ground tool to remove measured dry soil or sand",
+      "practice": "Gather soil / sand",
+      "rank": 0,
+      "known": true,
+      "within_reach": false,
+      "taught_only": false,
+      "needs": [],
+      "unmet": [],
+      "leads_to": [],
+      "earned_by": [
+        {
+          "id": "used-field-pick",
+          "says": "Study a Field pick, then use it on dry soil or sand.",
+          "done": true,
+          "all_of": [
+            {
+              "design": "field-pick",
+              "demonstrated": true,
+              "test": "study-example",
+              "done": true
+            },
+            {
+              "design": "field-pick",
+              "demonstrated": true,
+              "test": "loosens-soil",
+              "done": true
+            }
+          ]
+        },
+        {
+          "id": "used-found-pick",
+          "says": "Study a wooden pick, then use it on dry soil or sand.",
+          "done": false,
+          "all_of": [
+            {
+              "design": "one-piece-wooden-pick",
+              "demonstrated": true,
+              "test": "study-example",
+              "done": false
+            },
+            {
+              "design": "one-piece-wooden-pick",
+              "demonstrated": true,
+              "test": "loosens-soil",
+              "done": false
+            }
+          ]
+        }
+      ],
+      "opens": []
+    },
+    {
+      "id": "rough-shaping-wood",
+      "name": "Rough-shaping wood",
+      "describes": "Taking wood off a piece of stock with a supported shaping process until it has a wanted outline",
+      "practice": "",
+      "rank": 0,
+      "known": false,
+      "within_reach": true,
+      "taught_only": false,
+      "needs": [],
+      "unmet": [],
+      "leads_to": [],
+      "earned_by": [
+        {
+          "id": "studied-a-found-pick",
+          "says": "Study the wooden pick you were given: how it was shaped is in the shape of it.",
+          "done": false,
+          "all_of": [
+            {
+              "design": "one-piece-wooden-pick",
+              "found": true,
+              "done": false
+            }
+          ]
+        }
+      ],
+      "opens": [
+        {
+          "id": "one-piece-wooden-pick",
+          "name": "One-piece wooden pick"
+        }
+      ]
+    },
+    {
+      "id": "smelting-copper",
+      "name": "Smelting copper",
+      "describes": "Working copper ore into copper with heat, in a machine that holds a batch",
+      "practice": "",
+      "rank": 0,
+      "known": true,
+      "within_reach": false,
+      "taught_only": false,
+      "needs": [],
+      "unmet": [],
+      "leads_to": [
+        {
+          "id": "drawing-wire",
+          "name": "Drawing wire",
+          "known": false
+        },
+        {
+          "id": "melting-glass",
+          "name": "Melting glass",
+          "known": false
+        },
+        {
+          "id": "smelting-iron",
+          "name": "Smelting iron",
+          "known": false
+        }
+      ],
+      "earned_by": [
+        {
+          "id": "watched-a-smelt",
+          "says": "Watch a smelter work copper ore into copper, once.",
+          "done": true,
+          "all_of": [
+            {
+              "design": "copper-smelter",
+              "demonstrated": true,
+              "test": "smelts-ore",
+              "done": true
+            }
+          ]
+        }
+      ],
+      "opens": [
+        {
+          "id": "copper-smelter",
+          "name": "Copper smelter"
+        }
+      ]
+    },
+    {
+      "id": "drawing-wire",
+      "name": "Drawing wire",
+      "describes": "Pulling copper down into wire, which is what a machine's windings are made of",
+      "practice": "",
+      "rank": 1,
+      "known": false,
+      "within_reach": true,
+      "taught_only": false,
+      "needs": [
+        {
+          "id": "smelting-copper",
+          "name": "Smelting copper",
+          "known": true
+        }
+      ],
+      "unmet": [],
+      "leads_to": [
+        {
+          "id": "smelting-aluminium",
+          "name": "Smelting aluminium",
+          "known": false
+        }
+      ],
+      "earned_by": [
+        {
+          "id": "watched-a-draw",
+          "says": "Watch a mill draw copper into wire, once.",
+          "done": false,
+          "all_of": [
+            {
+              "design": "copper-mill",
+              "demonstrated": true,
+              "test": "draws-wire",
+              "done": false
+            }
+          ]
+        }
+      ],
+      "opens": [
+        {
+          "id": "copper-mill",
+          "name": "Copper mill"
+        }
+      ]
+    },
+    {
+      "id": "melting-glass",
+      "name": "Melting glass",
+      "describes": "Melting sand into glass in a furnace that holds its heat",
+      "practice": "",
+      "rank": 1,
+      "known": false,
+      "within_reach": true,
+      "taught_only": false,
+      "needs": [
+        {
+          "id": "smelting-copper",
+          "name": "Smelting copper",
+          "known": true
+        }
+      ],
+      "unmet": [],
+      "leads_to": [],
+      "earned_by": [
+        {
+          "id": "watched-melts-sand",
+          "says": "Watch a furnace melt sand into glass, once.",
+          "done": false,
+          "all_of": [
+            {
+              "design": "glass-furnace",
+              "demonstrated": true,
+              "test": "melts-sand",
+              "done": false
+            }
+          ]
+        }
+      ],
+      "opens": [
+        {
+          "id": "glass-furnace",
+          "name": "Glass furnace"
+        }
+      ]
+    },
+    {
+      "id": "mixing-concrete",
+      "name": "Mixing concrete",
+      "describes": "Working cement and sand together into concrete",
+      "practice": "",
+      "rank": 1,
+      "known": false,
+      "within_reach": false,
+      "taught_only": false,
+      "needs": [
+        {
+          "id": "burning-lime",
+          "name": "Burning lime",
+          "known": false
+        }
+      ],
+      "unmet": [
+        "burning-lime"
+      ],
+      "leads_to": [],
+      "earned_by": [
+        {
+          "id": "watched-mixes-concrete",
+          "says": "Watch a mixer work cement and sand into concrete, once.",
+          "done": false,
+          "all_of": [
+            {
+              "design": "concrete-mixer",
+              "demonstrated": true,
+              "test": "mixes-concrete",
+              "done": false
+            }
+          ]
+        }
+      ],
+      "opens": [
+        {
+          "id": "concrete-mixer",
+          "name": "Concrete mixer"
+        }
+      ]
+    },
+    {
+      "id": "smelting-iron",
+      "name": "Smelting iron",
+      "describes": "Working iron ore into iron, at a heat well past what copper asks for",
+      "practice": "",
+      "rank": 1,
+      "known": false,
+      "within_reach": true,
+      "taught_only": false,
+      "needs": [
+        {
+          "id": "smelting-copper",
+          "name": "Smelting copper",
+          "known": true
+        }
+      ],
+      "unmet": [],
+      "leads_to": [],
+      "earned_by": [
+        {
+          "id": "watched-smelts-iron-ore",
+          "says": "Watch an iron smelter work iron ore into iron, once.",
+          "done": false,
+          "all_of": [
+            {
+              "design": "iron-smelter",
+              "demonstrated": true,
+              "test": "smelts-iron-ore",
+              "done": false
+            }
+          ]
+        }
+      ],
+      "opens": [
+        {
+          "id": "iron-smelter",
+          "name": "Iron smelter"
+        }
+      ]
+    },
+    {
+      "id": "smelting-aluminium",
+      "name": "Smelting aluminium",
+      "describes": "Winning aluminium out of bauxite by passing a current through it, which takes more work per kilogram than anything else here",
+      "practice": "",
+      "rank": 2,
+      "known": false,
+      "within_reach": false,
+      "taught_only": false,
+      "needs": [
+        {
+          "id": "drawing-wire",
+          "name": "Drawing wire",
+          "known": false
+        }
+      ],
+      "unmet": [
+        "drawing-wire"
+      ],
+      "leads_to": [],
+      "earned_by": [
+        {
+          "id": "watched-wins-aluminium",
+          "says": "Watch an aluminium cell win metal out of bauxite, once.",
+          "done": false,
+          "all_of": [
+            {
+              "design": "aluminium-cell",
+              "demonstrated": true,
+              "test": "wins-aluminium",
+              "done": false
+            }
+          ]
+        }
+      ],
+      "opens": [
+        {
+          "id": "aluminium-cell",
+          "name": "Aluminium cell"
+        }
+      ]
+    }
+  ],
+  "inventory": {
+    "record": {
+      "revision": 2,
+      "dominant": "right",
+      "hands": {
+        "right": "field pick",
+        "left": null
+      },
+      "stowed": [
+        "workshop-321b1f103e3f4b69"
+      ],
+      "home": {},
+      "facing": {
+        "workshop-321b1f103e3f4b69": [
+          0.99992,
+          0.00056,
+          3e-05,
+          -0.01288
+        ]
+      }
+    },
+    "carried": {
+      "available_kg": 62.852992095660284,
+      "limit_kg": 80.0,
+      "objects_kg": 1.925,
+      "over_limit_kg": 0.0,
+      "rock_kg": 0.0,
+      "rock_m3": 0.0,
+      "sand_kg": 12.713207953124725,
+      "sand_m3": 0.007945754970702953,
+      "soil_kg": 0.0,
+      "soil_m3": 0.0,
+      "total_kg": 1.925
+    },
+    "hands": {
+      "right": {
+        "id": "field pick",
+        "name": "field pick",
+        "material": "oak",
+        "shape": "box",
+        "parts": [
+          "field pick",
+          "field pick-1"
+        ]
+      },
+      "left": null
+    },
+    "stowed": [
+      {
+        "id": "workshop-321b1f103e3f4b69",
+        "name": "workshop-321b1f103e3f4b69"
+      }
+    ],
+    "hand_in_the_world": "right"
+  },
+  "balance_j": 256,
+  "native_t_s": 55.41250000001713,
+  "history": [
+    {
+      "id": "20f429bf5174411c9556d2ce03645398",
+      "action": "acquire",
+      "choice": "acquire:c06d40b075455197",
+      "label": "Pick up field pick",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.157,
+      "chain": "first-workshop-v1",
+      "goal": "study-tool",
+      "result": "committed",
+      "at_unix_s": 1790825786.6629467,
+      "receipt": {
+        "body": "field pick",
+        "revision": 2
+      }
+    },
+    {
+      "id": "b83aca961c884fa1ab14f85b5e903b48",
+      "action": "inspect",
+      "choice": "inspect:fe2741cd7f6a29d7",
+      "label": "Study held field pick",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.144,
+      "chain": "first-workshop-v1",
+      "goal": "study-tool",
+      "result": "committed",
+      "at_unix_s": 1790825788.5431964,
+      "receipt": {
+        "object": "field pick",
+        "study": null,
+        "said": "The field pick: 1.9 kg, 0.80 x 0.05 x 0.35 m, 2 parts, joined."
+      }
+    },
+    {
+      "id": "8ea93242b903497aa1dbaaf19a11a99b",
+      "action": "move",
+      "choice": "move:c86286d7e3becf3b",
+      "label": "Stand within swing reach of the surveyed dry column",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.152,
+      "chain": "first-workshop-v1",
+      "goal": "gather-ground",
+      "result": "committed",
+      "at_unix_s": 1790825790.6309068,
+      "receipt": {
+        "pose": {
+          "eyes_m": [
+            2.497,
+            2.38,
+            -0.537
+          ],
+          "facing": [
+            -0.79,
+            0,
+            0.613
+          ],
+          "look_direction": [
+            -0.5534,
+            -0.7139,
+            0.429
+          ]
+        }
+      }
+    },
+    {
+      "id": "c7dae46d4cfc490eab13eb0e1a4a71cf",
+      "action": "use-tool",
+      "choice": "use-tool:91a562665147cbfc",
+      "label": "Use the held tool on surveyed dry soil or sand",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.085,
+      "chain": "first-workshop-v1",
+      "goal": "gather-ground",
+      "result": "committed",
+      "at_unix_s": 1790825793.126546,
+      "receipt": {
+        "result": {
+          "at_m": [
+            1.23071,
+            0.77359,
+            0.44335
+          ],
+          "at_s": 31.41667,
+          "breakout_work_j": 7.77934,
+          "closing_speed_m_s": 7.99722,
+          "depth_m": 0.14014,
+          "dug": {
+            "depth_m": 0.04237735984374908,
+            "from_m": [
+              1.2307082112896042,
+              0.44334945079930926
+            ],
+            "to_m": [
+              1.0389044727285408,
+              0.5921170915155465
+            ],
+            "width_m": 0.375
+          },
+          "ground": "sand",
+          "impulse_n_s": 25.43891,
+          "kind": "broke out",
+          "loosened": {
+            "sand_m3": 0.007945754970702953,
+            "soil_m3": 0.0
+          },
+          "loosened_kg": 12.71321,
+          "model": "ground-work-v1",
+          "open": false,
+          "passive_n": 272.54192,
+          "peak_force_n": 272.3208,
+          "penetration_work_j": 20.16326,
+          "point": 1,
+          "resistance_n": 273.8669,
+          "sideways_m": 0.19083,
+          "supported": true,
+          "tool": "field pick",
+          "tool_dent_mm": 0.0,
+          "tool_whole": true,
+          "why": "",
+          "work_j": 27.9426
+        },
+        "said": "Dug: 7.9 L of sand (12.7 kg) came loose; the point went 14 cm in. You carry 12.7 kg of ground; H heaps it.",
+        "learning_pending": false
+      }
+    },
+    {
+      "id": "506a615922c64b8eae6498109a502b9c",
+      "action": "compare-recipes",
+      "choice": "compare-recipes:663501dea9be9a70",
+      "label": "Compare compatible recipes, readiness and every material gap",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.094,
+      "chain": "first-workshop-v1",
+      "goal": "build-surface",
+      "result": "committed",
+      "at_unix_s": 1790825797.6214576,
+      "receipt": {
+        "recipes": [
+          {
+            "id": "c0087a9f2df22ce8",
+            "name": "Work table",
+            "ready": true,
+            "missing": [],
+            "mass_kg": 6.36
+          }
+        ]
+      }
+    },
+    {
+      "id": "554f571db9654b3db69f68fd255b97fa",
+      "action": "select-recipe",
+      "choice": "select-recipe:d727cfb7e03dff3b",
+      "label": "Choose Work table",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.13,
+      "chain": "first-workshop-v1",
+      "goal": "build-surface",
+      "result": "committed",
+      "at_unix_s": 1790825799.36287,
+      "receipt": {
+        "selected_recipe": "Work table"
+      }
+    },
+    {
+      "id": "98874112a3864207b4b607694220b051",
+      "action": "build",
+      "choice": "build:d727cfb7e03dff3b",
+      "label": "Preview and Make Work table with available supplies",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.119,
+      "chain": "first-workshop-v1",
+      "goal": "build-surface",
+      "result": "committed",
+      "at_unix_s": 1790825801.0432065,
+      "receipt": {
+        "body": "workshop-c2b25c8d1aea45f1",
+        "mass_kg": 6.361599999999999,
+        "resources_charged": true
+      }
+    },
+    {
+      "id": "5d6e9a1c2914433c8ab4d396204eccd8",
+      "action": "select-target",
+      "choice": "select-target:ba620f8a5764fe3e",
+      "label": "Select electric-furnace",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.114,
+      "chain": "first-workshop-v1",
+      "goal": "observe-process",
+      "result": "committed",
+      "at_unix_s": 1790825803.6485133,
+      "receipt": {
+        "selected_target": "electric-furnace"
+      }
+    },
+    {
+      "id": "efbacb8e8e044178a3f7796625efd459",
+      "action": "move",
+      "choice": "move:ed8cf232bce2a7ad",
+      "label": "Approach electric-furnace",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.097,
+      "chain": "first-workshop-v1",
+      "goal": "observe-process",
+      "result": "committed",
+      "at_unix_s": 1790825805.090083,
+      "receipt": {
+        "pose": {
+          "eyes_m": [
+            8.388,
+            2.29,
+            2.769
+          ],
+          "facing": [
+            0.872,
+            0,
+            0.489
+          ],
+          "look_direction": [
+            0.7103,
+            -0.5801,
+            0.3986
+          ]
+        }
+      }
+    },
+    {
+      "id": "d8822cc5d8aa405caa17cdb730280b84",
+      "action": "watch-batch",
+      "choice": "watch-batch:ba620f8a5764fe3e",
+      "label": "Watch the next saved batch from electric-furnace",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.094,
+      "chain": "first-workshop-v1",
+      "goal": "observe-process",
+      "result": "committed",
+      "at_unix_s": 1790825810.8203897,
+      "receipt": {
+        "watching": "electric-furnace",
+        "recipe": "smelt copper",
+        "until_t": 163.33750000000754,
+        "said": "Stay nearby and face it. The next saved batch goes in your journal.",
+        "persistence": {
+          "state": "saved",
+          "reason": "",
+          "saved_t_s": 43.33750000000752,
+          "attempted_t_s": 43.33750000000752
+        }
+      }
+    },
+    {
+      "id": "7a0d3d6a96fa4334a2972dbfcccb1866",
+      "action": "observe",
+      "choice": "observe:ba620f8a5764fe3e",
+      "label": "Stay near and face electric-furnace while its batch works",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.093,
+      "chain": "first-workshop-v1",
+      "goal": "observe-process",
+      "result": "committed",
+      "at_unix_s": 1790825812.3903651,
+      "receipt": {
+        "watching": "electric-furnace",
+        "recipe": "smelt copper",
+        "until_t": 164.63333333334188,
+        "said": "Stay nearby and face it. The next saved batch goes in your journal.",
+        "persistence": {
+          "state": "saved",
+          "reason": "",
+          "saved_t_s": 44.63333333334189,
+          "attempted_t_s": 44.63333333334189
+        }
+      }
+    },
+    {
+      "id": "3a2b9b108976485ca5e004974f132d1e",
+      "action": "observe",
+      "choice": "observe:ba620f8a5764fe3e",
+      "label": "Stay near and face electric-furnace while its batch works",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.098,
+      "chain": "first-workshop-v1",
+      "goal": "observe-process",
+      "result": "committed",
+      "at_unix_s": 1790825816.2130308,
+      "receipt": {
+        "watching": "electric-furnace",
+        "recipe": "smelt copper",
+        "until_t": 165.90000000000956,
+        "said": "Stay nearby and face it. The next saved batch goes in your journal.",
+        "persistence": {
+          "state": "saved",
+          "reason": "",
+          "saved_t_s": 45.90000000000956,
+          "attempted_t_s": 45.90000000000956
+        }
+      }
+    },
+    {
+      "id": "3db5bad002a24a62a40a510c7e2bd08b",
+      "action": "observe",
+      "choice": "observe:ba620f8a5764fe3e",
+      "label": "Stay near and face electric-furnace while its batch works",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.093,
+      "chain": "first-workshop-v1",
+      "goal": "observe-process",
+      "result": "committed",
+      "at_unix_s": 1790825819.841245,
+      "receipt": {
+        "watching": "electric-furnace",
+        "recipe": "smelt copper",
+        "until_t": 166.90000000001035,
+        "said": "Stay nearby and face it. The next saved batch goes in your journal.",
+        "persistence": {
+          "state": "saved",
+          "reason": "",
+          "saved_t_s": 46.90000000001036,
+          "attempted_t_s": 46.90000000001036
+        }
+      }
+    },
+    {
+      "id": "75370d451542467aa054329b9f45958d",
+      "action": "observe",
+      "choice": "observe:ba620f8a5764fe3e",
+      "label": "Stay near and face electric-furnace while its batch works",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.092,
+      "chain": "first-workshop-v1",
+      "goal": "observe-process",
+      "result": "committed",
+      "at_unix_s": 1790825823.3974102,
+      "receipt": {
+        "watching": "electric-furnace",
+        "recipe": "smelt copper",
+        "until_t": 167.90000000001115,
+        "said": "Stay nearby and face it. The next saved batch goes in your journal.",
+        "persistence": {
+          "state": "saved",
+          "reason": "",
+          "saved_t_s": 47.900000000011154,
+          "attempted_t_s": 47.900000000011154
+        }
+      }
+    },
+    {
+      "id": "17a8436805c54f479fe770fb81d319df",
+      "action": "observe",
+      "choice": "observe:ba620f8a5764fe3e",
+      "label": "Stay near and face electric-furnace while its batch works",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.093,
+      "chain": "first-workshop-v1",
+      "goal": "observe-process",
+      "result": "committed",
+      "at_unix_s": 1790825827.0887172,
+      "receipt": {
+        "watching": "electric-furnace",
+        "recipe": "smelt copper",
+        "until_t": 168.90000000001194,
+        "said": "Stay nearby and face it. The next saved batch goes in your journal.",
+        "persistence": {
+          "state": "saved",
+          "reason": "",
+          "saved_t_s": 48.90000000001195,
+          "attempted_t_s": 48.90000000001195
+        }
+      }
+    },
+    {
+      "id": "6c4062dbe2144e318c2bf4c374ce70b6",
+      "action": "observe",
+      "choice": "observe:ba620f8a5764fe3e",
+      "label": "Stay near and face electric-furnace while its batch works",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.096,
+      "chain": "first-workshop-v1",
+      "goal": "observe-process",
+      "result": "committed",
+      "at_unix_s": 1790825830.6160305,
+      "receipt": {
+        "watching": "electric-furnace",
+        "recipe": "smelt copper",
+        "until_t": 169.90000000001274,
+        "said": "Stay nearby and face it. The next saved batch goes in your journal.",
+        "persistence": {
+          "state": "saved",
+          "reason": "",
+          "saved_t_s": 49.900000000012746,
+          "attempted_t_s": 49.900000000012746
+        }
+      }
+    },
+    {
+      "id": "20aa9a5afeaa4db0bcecc5df5a9183c4",
+      "action": "observe",
+      "choice": "observe:ba620f8a5764fe3e",
+      "label": "Stay near and face electric-furnace while its batch works",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.095,
+      "chain": "first-workshop-v1",
+      "goal": "observe-process",
+      "result": "committed",
+      "at_unix_s": 1790825834.2422972,
+      "receipt": {
+        "watching": "electric-furnace",
+        "recipe": "smelt copper",
+        "until_t": 170.90000000001353,
+        "said": "Stay nearby and face it. The next saved batch goes in your journal.",
+        "persistence": {
+          "state": "saved",
+          "reason": "",
+          "saved_t_s": 50.90000000001354,
+          "attempted_t_s": 50.90000000001354
+        }
+      }
+    },
+    {
+      "id": "1384032c9f6c499198da38cb644d8563",
+      "action": "observe",
+      "choice": "observe:ba620f8a5764fe3e",
+      "label": "Stay near and face electric-furnace while its batch works",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.093,
+      "chain": "first-workshop-v1",
+      "goal": "observe-process",
+      "result": "committed",
+      "at_unix_s": 1790825837.8664439,
+      "receipt": {
+        "watching": "electric-furnace",
+        "recipe": "smelt copper",
+        "until_t": 171.90000000001433,
+        "said": "Stay nearby and face it. The next saved batch goes in your journal.",
+        "persistence": {
+          "state": "saved",
+          "reason": "",
+          "saved_t_s": 51.90000000001434,
+          "attempted_t_s": 51.90000000001434
+        }
+      }
+    },
+    {
+      "id": "4ad91462afa346f6a71e39bc0d5ed690",
+      "action": "observe",
+      "choice": "observe:ba620f8a5764fe3e",
+      "label": "Stay near and face electric-furnace while its batch works",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.094,
+      "chain": "first-workshop-v1",
+      "goal": "observe-process",
+      "result": "committed",
+      "at_unix_s": 1790825841.4131906,
+      "receipt": {
+        "watching": "electric-furnace",
+        "recipe": "smelt copper",
+        "until_t": 172.90000000001513,
+        "said": "Stay nearby and face it. The next saved batch goes in your journal.",
+        "persistence": {
+          "state": "saved",
+          "reason": "",
+          "saved_t_s": 52.90000000001513,
+          "attempted_t_s": 52.90000000001513
+        }
+      }
+    },
+    {
+      "id": "93a6f5a3787e48ae8c483b33a9fa286a",
+      "action": "observe",
+      "choice": "observe:ba620f8a5764fe3e",
+      "label": "Stay near and face electric-furnace while its batch works",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.091,
+      "chain": "first-workshop-v1",
+      "goal": "observe-process",
+      "result": "committed",
+      "at_unix_s": 1790825844.9850862,
+      "receipt": {
+        "watching": "electric-furnace",
+        "recipe": "smelt copper",
+        "until_t": 173.90000000001592,
+        "said": "Stay nearby and face it. The next saved batch goes in your journal.",
+        "persistence": {
+          "state": "saved",
+          "reason": "",
+          "saved_t_s": 53.90000000001593,
+          "attempted_t_s": 53.90000000001593
+        }
+      }
+    }
+  ],
+  "watch_url": "http://127.0.0.1:8769/world?world=a49789cfd53d4f998ea38dea43ef6c6f&watch=569e64a5cb8e46a281c4b946bfc7bd5a",
+  "creator_balance_j": 0
+}

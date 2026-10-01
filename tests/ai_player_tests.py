@@ -20,18 +20,69 @@ sys.path[:0] = [str(ROOT / "playground"), str(ROOT / "tests"), str(ROOT)]
 import server
 import room_store
 import ai_player
+import ai_actions
 import world_hub_tests as hub
 import qa_browser
 import knowledge_tests
 
 
 class ControllerBoundaries(unittest.TestCase):
+    def test_provider_view_omits_render_geometry_but_keeps_current_choices(self):
+        state={'goals':{'chain_id':'new','title':'Goal','next_goal':'need','complete':False,
+            'goals':[{'id':'need','requirement':{'kind':'energy-deposit'}}]},
+            'native':{'session':'actual','t':2,'terrain':{'large mesh':'not planning input'},
+                      'bodies':[{'mesh':['not planning input']}],'spec':{'not':'planning input'}},
+            'market':{'balance_j':12,'offers':[],'bankable':True},'balance_j':12,
+            'inventory':{'hands':{'right':None},'record':{'stowed':[]}},'skills':[]}
+        actions=ai_actions.catalog(state,{})
+        view=ai_actions.model_view(state,actions,[])
+        self.assertEqual({'session':'actual','t':2},view['native'])
+        self.assertEqual(actions,view['action_catalog'])
+        self.assertNotIn('not planning input',json.dumps(view))
+        self.assertEqual({'kind':'energy-deposit'},view['goals']['goals'][0]['requirement'])
+
+    def test_dry_route_avoids_water_and_reports_an_unreachable_target(self):
+        seen=[]
+        def survey(x,z):
+            seen.append((x,z))
+            return {'on_the_ground':True,'ground_m':.25,
+                    'water':{'depth_m':1 if .3<x<1.3 and abs(z)<.5 else 0}}
+        path=ai_actions.walking_route([0,1.87,0],[3,0,0],1.2,survey)
+        self.assertTrue(any(abs(p[2])>=.5 for p in path))
+        self.assertTrue(all(not (.3<x<1.3 and abs(z)<.5) for x,y,z in path))
+        self.assertAlmostEqual(1.2,((path[-1][0]-3)**2+path[-1][2]**2)**.5,delta=.24)
+        with self.assertRaisesRegex(ValueError,'No surveyed dry route'):
+            ai_actions.walking_route([0,1.87,0],[3,0,0],1.2,
+                lambda x,z:{'on_the_ground':abs(x)<.1 and abs(z)<.1,'ground_m':0})
+        self.assertLess(len(seen),1200)
+
+    def test_catalog_uses_requirements_and_observed_targets_not_tutorial_names(self):
+        state={'goals':{'chain_id':'unrelated-chain','next_goal':'renamed-task','goals':[
+            {'id':'renamed-task','requirement':{'kind':'personal-test','test':'study-example'}}]},
+            'pose':{'eyes_m':[0,1.62,0]},'recipes':[],'market':{},'skills':[
+            {'id':'renamed-skill','name':'A technique','known':False,'unmet':[],
+             'earned_by':[{'locations':[{'action':'inspect','body':'my new tool',
+                 'where':'stowed','at_m':[8,0,8]}]}]}]}
+        offered=ai_actions.catalog(state,{})
+        target=next(a['target'] for a in offered if a['verb']=='select-target')
+        offered=ai_actions.catalog(state,{'selected_target':target})
+        self.assertEqual('acquire',next(a['verb'] for a in offered if a['verb']!='wait'))
+        target['where']='right';state['skills'][0]['earned_by'][0]['locations'][0]=target
+        offered=ai_actions.catalog(state,{'selected_target':target})
+        self.assertEqual('inspect',next(a['verb'] for a in offered if a['verb']!='wait'))
+        state['skills'][0]['unmet']=['a missing prerequisite']
+        offered=ai_actions.catalog(state,{})
+        self.assertFalse(any(a['verb']=='select-target' for a in offered))
+        self.assertTrue(any('first needs' in b for a in offered if a['verb']=='wait' for b in a['blockers']))
+
     def test_reference_controller_stops_at_the_decision_budget(self):
         manager = ai_player.Manager.__new__(ai_player.Manager)
         manager.app = SimpleNamespace()
         manager.cadence_s = 0
         profile = {"pose": {}, "ai": {"mode": "reference", "history": [], "decisions": 0}}
-        goals = {"complete": False, "next_goal": "bank-solar"}
+        goals = {"complete":False,"chain_id":"unit","next_goal":"any-energy-goal",
+            "goals":[{"id":"any-energy-goal","requirement":{"kind":"energy-deposit"}}]}
+        manager._observe=lambda p,c:{'goals':goals,'market':{'bankable':True}}
         manager._post = lambda p, path, body, cookie: goals if path.endswith("goals") else {}
         manager._save = lambda p, **updates: p["ai"].update(updates)
         actions = []
@@ -335,13 +386,67 @@ class AutonomousGuests(unittest.TestCase):
         self.assertFalse(changed["within_reach"])
         self.assertTrue(any("intake needs" in m for m in changed["world_missing"]))
 
-    def wait_character(self, world, ident, states=("complete", "blocked"), seconds=40):
+    def wait_character(self, world, ident, states=("complete", "blocked"), seconds=120):
         until = time.monotonic() + seconds
         while time.monotonic() < until:
             view = self.post("/api/world/ai", {"action": "watch", "id": ident}, world)
             if view["character"]["status"] in states: return view
             time.sleep(.15)
-        self.fail("Character never reached a terminal state")
+        self.fail("Character never reached a terminal state: "+json.dumps(view['character']))
+
+    def test_reference_explorer_completes_goal_chains_on_both_generated_terrains(self):
+        reports=[]
+        for terrain_choice,goods_seed in ((1,851269742),(0,1)):
+            with mock.patch.object(server.secrets,'randbelow',side_effect=[terrain_choice,goods_seed-1]):
+                world,owner,app=self.setup_world()
+            began=time.monotonic()
+            bot=self.post('/api/world/ai',{'action':'start','mode':'reference','name':'Seed explorer'},world)
+            final=self.wait_character(world,bot['id'])
+            self.assertEqual('complete',final['character']['status'],final['character'])
+            goals=final['goals']; journal=server.journal_of(app,bot['id'])
+            known=journal.knows()
+            self.assertIn('using-ground-tools',known)
+            self.assertIn('smelting-copper',known)
+            self.assertEqual(set(),server.journal_of(app,owner['id']).knows())
+            self.assertTrue(all(e['mode']=='reference' and not e['model'] for e in final['character']['history']))
+            actions={e['action'] for e in app.room.player_records[bot['id']]['ai']['history']}
+            self.assertTrue({'move','select-target','inspect','acquire','use-tool','watch-batch',
+                             'compare-recipes','build','pack'}<=actions,actions)
+            self.assertEqual('saved',app.room.persistence['state'])
+            evidence=list(journal.data['evidence'].values())
+            reports.append({'terrain_seed':(4,7)[terrain_choice],'goods_seed':goods_seed,
+                'controller':'reference','provider_calls':0,'world':world,'character':bot['id'],
+                'wall_s':round(time.monotonic()-began,3),'native_t_s':app.live.session.state['t'],
+                'decisions':final['character']['decisions'],'goal_chain':goals['chain_id'],
+                'goals_complete':goals['complete'],'known':sorted(known),'tech_tree_total':len(final['skills']),
+                'evidence':evidence,'goals':goals['goals'],'actions':sorted(actions)})
+            # Actual runtime and learning must load unchanged, not just public summaries.
+            self.assertTrue(server.keep_world(app,'reference journey exact reload boundary'))
+            stored=app.store.load(app.room.scene)
+            self.assertEqual(app.brains.runtime(),stored.machine_runtime)
+            self.assertEqual([],stored.player_evidence_pending)
+            self.assertEqual([],stored.machine_evidence_pending)
+        output=ROOT/'build/ai-player';output.mkdir(parents=True,exist_ok=True)
+        (output/'explorer-acceptance.json').write_text(json.dumps(reports,indent=2,allow_nan=False),encoding='utf-8')
+        print('\n    reference explorer: '+json.dumps([{k:r[k] for k in ('terrain_seed','goods_seed','decisions','wall_s','native_t_s','known')} for r in reports]))
+
+    def test_reference_explorer_reports_empty_market_shelves_on_both_terrains(self):
+        for terrain_choice,goods_seed in ((1,851269742),(0,1)):
+            with mock.patch.object(server.secrets,'randbelow',side_effect=[terrain_choice,goods_seed-1]):
+                world,owner,app=self.setup_world()
+            # Explicit scarcity fixture: removes trader stock only. No player
+            # supplies, knowledge, goals or native outcomes are granted.
+            self.post('/api/workshop/market',{},world)
+            with server.workshop_library._connect(app) as db:
+                db.execute("UPDATE market_stock SET remaining=0 WHERE item_id='oak-stock'")
+            bot=self.post('/api/world/ai',{'action':'start','mode':'reference'},world)
+            final=self.wait_character(world,bot['id'])
+            self.assertEqual('blocked',final['character']['status'])
+            self.assertIn('no oak lot in stock',final['character']['message'])
+            self.assertFalse(final['goals']['complete'])
+            self.assertEqual(set(),server.journal_of(app,bot['id']).knows())
+            self.assertEqual(['bank','wait'],[e['action'] for e in final['character']['history']])
+
 
     def test_model_selected_actions_complete_real_goals_with_separate_bag_and_tech_tree(self):
         world, owner, app = self.setup_world()
@@ -349,9 +454,9 @@ class AutonomousGuests(unittest.TestCase):
         class FakeModel:
             def ask(self, state, questions):
                 offered = list(questions["next"]["criteria"])
-                desired = {"bank-solar": "bank", "stock-oak": "buy_oak", "build-camp": "build_stool",
-                           "carry-camp": "pack_stool"}[state["next_goal"]]
-                pick = desired if desired in offered else "bank"
+                pick = ai_actions.reference_pick(state,state['action_catalog'])
+                self_offered = pick in offered
+                if not self_offered:raise AssertionError('Mock provider selected outside the observed catalog')
                 calls.append(state)
                 return {"next": {"choice": pick, "confidence": .9}}
         app.api_key = "test-only-key"
@@ -360,11 +465,14 @@ class AutonomousGuests(unittest.TestCase):
         final = self.wait_character(world, bot["id"])
         self.assertEqual("complete", final["character"]["status"], final["character"])
         self.assertTrue(final["goals"]["complete"])
-        self.assertEqual(10, len(calls))
+        self.assertGreater(len(calls),10)
+        self.assertEqual({'first-camp-v1','first-workshop-v1'},{s['goals']['chain_id'] for s in calls})
         self.assertIn("inventory", calls[0])
         self.assertIn("tech_tree", calls[0])
         self.assertTrue(all(e["mode"] == "openai" and e["result"] == "committed" for e in final["character"]["history"]))
-        self.assertEqual([3, 1.2], [final["character"]["pose"]["eyes_m"][i] for i in (0, 2)])
+        self.assertTrue(all(isinstance(v,(float,int)) for v in final['character']['pose']['eyes_m']))
+        self.assertIn('using-ground-tools',{s['id'] for s in final['skills'] if s['known']})
+        self.assertGreaterEqual(sum(s['known'] for s in final['skills']),2)
         self.assertIn(final["goals"]["camp_body"], final["state"]["inventory"]["record"]["stowed"])
         human = self.post("/api/world/inventory/shown", {"session": final["state"]["session"]}, world)
         self.assertEqual([], human["record"]["stowed"])
@@ -556,14 +664,15 @@ class AutonomousGuests(unittest.TestCase):
         page.evaluate('document.querySelector("#game-menu-ai-start").requestSubmit()')
         wait_for('location.search.includes("watch=") && !!window.banjoRoom?.status().ready && !!document.querySelector("#watch-status")')
         bot_id = page.evaluate('new URLSearchParams(location.search).get("watch")')
-        wait_for('document.querySelector("#watch-status").textContent.includes("complete")')
+        wait_for('document.querySelector("#watch-status").textContent.includes("complete")',seconds=100)
         view = self.post("/api/world/ai", {"action": "watch", "id": bot_id}, world)
         self.assertEqual(viewer_id, page.evaluate('window.banjoRoom.status().player_id'))
         camera = page.evaluate('window.banjoRoom.camera.position.toArray()')
         for a, b in zip(camera, view["character"]["pose"]["eyes_m"]): self.assertAlmostEqual(a, b, places=2)
         after = self.post("/api/world/inventory/shown", {"session": view["state"]["session"]}, world, viewer_token)
         self.assertEqual(before["record"], after["record"])
-        self.assertTrue(page.evaluate('document.querySelector("#watch-tech").textContent.startsWith("Its tech tree: 0 /")'))
+        self.assertGreaterEqual(sum(s['known'] for s in view['skills']),2)
+        self.assertTrue(page.evaluate('document.querySelector("#watch-tech").textContent.includes("Gathering by hand")'))
         self.assertEqual("4 / 4 goals", page.evaluate('document.querySelector("#watch-progress").textContent').split(' · ')[0])
         # Inspection may read native geometry while watching, but does not
         # permit controls or change either character's physical state.
