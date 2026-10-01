@@ -7,6 +7,7 @@ Next bind selected carried Lab source and exact recipe revision, supply an expli
 finite starter battery/station capability, show material/energy/time costs, and
 verify supported remake-to-equip-to-use. Preserve the old body's damage/history;
 no generic healing law. All fourteen gates remain: four verified, ten partial.
+Implementation `a24fe4d` is published on main; selected Lab remake remains next.
 
 **Native repair energy prerequisite, October 1:** [Battery funding](fabrication-energy-checkpoint.md)
 passes actual source debit, receiving supply, accepted-time/source/station power,

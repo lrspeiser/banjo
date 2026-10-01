@@ -142,3 +142,17 @@ costs, and complete remake-to-equip-to-use with failure/retry/restart evidence.
 Retain old native damage/history. Mixed-material interfaces, native fatigue/joint
 health and physical inventory transport remain separate gates. All fourteen
 player requirements stay active: **four verified, ten partial**.
+
+## Published checkpoint
+
+Implementation **`a24fe4d`** is on GitHub main; ordinary fast-forward push verified
+by the remote main ref. No native binary was rebuilt for this host/API change.
+The own 8770 preview was restarted from that implementation and the Chrome
+fresh-entry/condition/source/Inventory check passed again with zero exceptions.
+Usable preview:
+`http://127.0.0.1:8770/world?world=a8def82c0ded4b27a56a0fcea996d8dc`.
+
+All 1,510 local document file references checked exist. Source registration
+remains 287/287. The publication note changes documentation only; it does not
+claim additional physical validation or completed repair. Next work is the
+selected Lab/source binding and ordinary funded remake-to-use journey above.

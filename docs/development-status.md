@@ -9,6 +9,9 @@ zero authored process supplies. Actual old oak cuts remain unchanged during new
 part admission. The full suite caught and resolved an installation lock deadlock;
 no solver law or native tolerance changes. Lab source binding, ordinary finite
 batteries and repair-to-use remain next. Four verified, ten partial.
+Published implementation `a24fe4d` is on main. Refreshed 8770 Chrome acceptance
+passes after restarting that implementation; no configured supply or finite
+starter battery is silently introduced. See the checkpoint for its preview URL.
 
 **Native fabrication energy, October 1:** [Paired native/process checkpoint](fabrication-energy-checkpoint.md)
 adds power/time-bounded charging from actual native batteries, complete-world
