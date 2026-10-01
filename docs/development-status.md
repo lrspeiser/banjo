@@ -1,5 +1,12 @@
 # Development status and handoff
 
+**Player daylight, October 1:** [Day/night acceptance](daylight-player-checkpoint.md)
+closes player item 2 through native accounting and actual Chrome GPU/render
+evidence. Selected stores now show measured incoming/outgoing energy including
+lamp loads. Two day/night cases pass through CTest; affected 15-case player
+suite passes. No native law changes. Verified items: 2, 3, 6, 9; nine partial,
+durability/repair pending. The full fourteen-item goal remains active.
+
 **Repeated generated hauling, October 1:** [Return-route acceptance](rover-return-routing.md)
 passes three real receiving loads on each ordinary map (120 kg total / 36 kg
 mined ore per map), exact routine restore and retained processing/private pickup.

@@ -6,7 +6,7 @@ This is the current acceptance list, not a claim that all features are done.
 | Item | Acceptance | Status |
 |---|---|---|
 | 1. Action clarity | Recorded dig/delivery/process packets, filling rover inventory, visible output, nearby personal pickup; failure/restart/race checks | Native/browser checkpoint verified; general generated routing remains a separate gate. See [resource flow](resource-flow.md). |
-| 2. Day/night | Moving sun/shadows; measured solar charge; dark night; lamp switches on and draws its battery | New games declare a 600 s day and battery-powered automatic camp lamp. Native accelerated 10 s cycle verifies solar accounting, night draw and dawn switching; visual night/shadow review remains. Existing explicit worlds retain their declared sun. |
+| 2. Day/night | Moving sun/shadows; measured solar charge; dark night; lamp switches on and draws its battery | Verified native cycle and ordinary Chrome sun/shadow/charging/night/lamp/dawn journey. Store values/rates come from actual native counters; unwiring the lamp visibly darkens the scene. See [day/night evidence](daylight-player-checkpoint.md). Rendering/photometry approximations are explicit; saved worlds retain their sun. |
 | 3. Fresh start | Ordinary entry creates a new playable generated map with bootstrap equipment; samples remain in Debug | Chrome verifies two plain entries create different generated worlds. Explicit world/scene/QA links preserved. |
 | 4. Resource discovery | Deposits have readable visual cues; selection shows actual substance, quantity, reachable gathering action | Ledger extraction rings/labels implemented and present in Chrome; ground selection shows actual reserve/grade/rover action. Full selection usability review pending. These are extraction areas, not native ore-cell composition. |
 | 5. Gravity mode | Menu toggles exploration/gravity walking; ground support, falling, grounded jump and collision boundaries verified | Chrome verifies menu, falling, one grounded jump per press and fly altitude. Kinematic terrain controller: native physical avatar/body collision boundaries remain open. |
@@ -19,6 +19,14 @@ This is the current acceptance list, not a claim that all features are done.
 | 12. Rover safety/recovery | Actual sensor readings visible; route/dig clearance avoids own support; ordinary recovery available with bounded forces/work | Ground/water probes, support-aware digging and nearby bounded recovery verified. Ordinary recovery stops the rover, preserves collected load and restores the personal grip on reload. Native actual-pit lift passes; extended drive/route/grade qualification remains open. |
 | 13. Water and hills | Gravity walking can leave water and climb ordinary hills; rover climbs measured grades without forced motion | Player river/hill and deep-pool controls pass. [Native stock-rover experiments](rover-grades.md) qualify a 12° generated oak-rover declaration with glass/oak/iron comparisons and native terrain climbs; sharp ground warnings remain. General generated routes, physical payload and native avatars remain open. |
 | 14. Output pickup and contained inputs | Output voxels fly into personal inventory on nearby walking; processor inputs stay in visible hoppers; rover delivery visibly fills them | Native/browser automatic output-only pickup and input bins implemented and verified. Fly leaves outputs untouched; server refuses auto-input pickup. Existing recorded dump/dock transfers retained; broad generated rover delivery and physical cargo/tipping remain open. |
+
+## Day/night checkpoint — October 1
+
+[Native-to-browser acceptance](daylight-player-checkpoint.md) completes item 2:
+moving visible sun and measured shadows, actual solar charge/flow, dark night,
+native 20 W automatic lamp and dawn switching. Verified items are now 2, 3, 6
+and 9; nine remain partial and durability/repair is pending. The full goal stays
+active. Historical checkpoint counts below reflect their earlier state.
 
 ## Generated first-haul checkpoint — October 1
 

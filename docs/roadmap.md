@@ -1,5 +1,11 @@
 # Banjo roadmap and acceptance gates
 
+**Day/night acceptance, October 1:** [Visible sun, shadows and native energy](daylight-player-checkpoint.md)
+passes ordinary browser day/night/lamp/solar readings and the native continuous
+cycle. Player item 2 is verified. Next finish ordinary recipe/tool/capacity
+journeys and the remaining pick/physics gates. Four verified, nine partial and
+one pending; no reduction of the fourteen-item scope.
+
 **Repeated-haul acceptance, October 1:** [Three receiving loads on both maps](rover-return-routing.md)
 passes actual mine/return/dump cycles and exact routine restore. First-load
 processing and private collection remain verified with unchanged yield/credit

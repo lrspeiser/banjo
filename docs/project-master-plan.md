@@ -1,5 +1,11 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Player daylight checkpoint, October 1:** [Native-to-browser day/night](daylight-player-checkpoint.md)
+verifies a visible native-direction sun, moving shadows, solar store charging,
+dark night and a real battery-consuming automatic lamp. Rendering remains an
+explicit approximation; native energy counters drive the UI. Four player gates
+are verified, nine partial and durability/repair pending; the complete scope stays active.
+
 **Generated return checkpoint, October 1:** [Measured repeated hauling](rover-return-routing.md)
 delivers three mined loads on each ordinary map, restores exact routine state
 and retains real processing/private pickup. Actual route departure triggers

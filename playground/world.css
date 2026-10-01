@@ -640,6 +640,7 @@ body.panel-away #panel { transform: translateX(100%); }
 .pk-battery-said strong { font-size: 17px; line-height: 1; font-variant-numeric: tabular-nums; }
 .pk-when { font-size: 11.5px; color: var(--ink); }
 .pk-flow { font-size: 11px; font-variant-numeric: tabular-nums; }
+.pk-energy { font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
 .pk-flow.in { color: var(--good); }
 .pk-flow.out { color: var(--warn); }
 .pk-flow.still { color: var(--dim); }

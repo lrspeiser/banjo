@@ -1,5 +1,14 @@
 # Banjo mechanics scorecard
 
+**Day/night display boundary, October 1:** [Native/store/render evidence](daylight-player-checkpoint.md)
+retains native sun/solar/lamp laws and existing accounting tolerances. Actual
+night lamp draw is 20 W; native accelerated five-second night spends 100 J.
+GPU mean luminance is 167.6 at noon, 11.5 with the night lamp and 7.8 unwired.
+Store flow averages native taken/given counter deltas over native elapsed time.
+Sun disc/halo and illumination remain presentation approximations, not calibrated
+photometry or new constitutive claims. Glass/oak/iron physics gates are retained;
+native cargo, avatar reactions and damage/repair remain open.
+
 **Repeated hauling boundary, October 1:** [Native/API measurements](rover-return-routing.md)
 retain 50 mm / `dt=1/240 s`, native motors/brakes and actual terrain guards.
 Both maps deliver 120 kg total / 36 kg mined ore across three receipts and

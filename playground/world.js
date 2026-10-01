@@ -364,6 +364,7 @@ camera.position.set(0, EYE, 2.6);
 const sky = new THREE.HemisphereLight(0xcfe3f2, 0x1a2830, 0.85);
 scene.add(sky);
 const key = new THREE.DirectionalLight(0xfff2dd, 2.0);
+key.name = "sun-light";
 key.position.set(4, 8, 5);
 scene.add(key);
 // A directional light shines from its position towards its target, so the
@@ -378,6 +379,21 @@ scene.add(fill);
 const KEY_AT = key.position.clone();
 const KEY_LIGHT = key.intensity, SKY_LIGHT = sky.intensity, RIM_LIGHT = rim.intensity;
 const FILL_LIGHT = fill.intensity;
+// A distant disc follows the native sun direction. It contributes no energy;
+// nearer terrain can obscure it, and it disappears below the horizon.
+const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(0.85, 20, 12),
+  new THREE.MeshBasicMaterial({ color: 0xfff0c4, fog: false,
+    toneMapped: false, depthWrite: false }));
+sunDisc.name = "sun-disc";
+sunDisc.visible = false;
+scene.add(sunDisc);
+const sunHalo = new THREE.Mesh(new THREE.SphereGeometry(1.7, 20, 12),
+  new THREE.MeshBasicMaterial({ color: 0xffdf89, fog: false, toneMapped: false,
+    transparent: true, opacity: 0.12, depthWrite: false }));
+sunHalo.name = "sun-halo";
+sunHalo.visible = false;
+scene.add(sunHalo);
+const sunDirection = new THREE.Vector3();
 
 // Underground it is dark (docs/machine-world.md, "Light underground").
 //
@@ -601,6 +617,15 @@ const ORIGIN = new THREE.Vector3(), STRAIGHT_UP = new THREE.Vector3(0, 1, 0);
 const SIDEWAYS = new THREE.Vector3(0, 0, 1);
 
 function followSun() {
+  const toward = world.sun?.toward;
+  sunDisc.visible = Array.isArray(toward) && toward.length === 3
+    && toward.every(Number.isFinite) && toward[1] > 0;
+  sunHalo.visible = sunDisc.visible;
+  if (sunDisc.visible) {
+    sunDirection.fromArray(toward).normalize();
+    sunDisc.position.copy(camera.position).addScaledVector(sunDirection, 180);
+    sunHalo.position.copy(sunDisc.position);
+  }
   // Whoever moved the lamp last says where the sun is: the day (lightFromSun),
   // an expedition (gameplay.js), or the room's own default. All of them mean
   // its position as a DIRECTION from the middle of the room, so that is how it
@@ -707,7 +732,7 @@ function skyPMREM() {
 }
 // The sky's light at night, and the rim's: dim, but enough to see what is in
 // the room by.
-const SKY_NIGHT = 0.4, RIM_NIGHT = 0.3;
+const SKY_NIGHT = 0.035, RIM_NIGHT = 0.015, FILL_NIGHT = 0.01;
 // The sky behind the room under a sun with a day: a day's blue with the sun
 // well up, red as it nears the horizon, and the night's black the page has
 // always had. A room without a day keeps that black.
@@ -741,6 +766,7 @@ function lightFromSun(sun) {
     key.color.setRGB(1, 0.62 + 0.33 * share, 0.45 + 0.42 * share);
     daylight.sky = SKY_NIGHT + (SKY_LIGHT - SKY_NIGHT) * dusk;
     daylight.rim = RIM_NIGHT + (RIM_LIGHT - RIM_NIGHT) * dusk;
+    daylight.fill = FILL_NIGHT + (FILL_LIGHT - FILL_NIGHT) * dusk;
     applyDaylight();
     skyTint.copy(LOW_SKY).lerp(DAY_SKY, Math.min(1, Math.max(0, sun.elevation_deg / 20)));
     scene.background.copy(NIGHT_SKY).lerp(skyTint, dusk);
@@ -751,6 +777,7 @@ function lightFromSun(sun) {
     key.color.setHex(0xfff2dd);
     daylight.sky = SKY_LIGHT;
     daylight.rim = RIM_LIGHT;
+    daylight.fill = FILL_LIGHT;
     applyDaylight();
     if (skyTinted) {
       scene.background.copy(NIGHT_SKY);
@@ -2306,7 +2333,26 @@ function drawRopes() {
 
 // Batteries, motors and ropes on drums, as the last step left them
 // (docs/machine-world.md): every step that has any carries them all.
-function followMachines(machines) {
+const storeFlows = new Map();
+function followMachines(machines, t) {
+  const present = new Set();
+  for (const store of machines?.stores || []) {
+    present.add(store.id);
+    const previous = storeFlows.get(store.id);
+    const sample = { t, taken: store.taken_j, given: store.given_j, known: false };
+    if ([t, store.taken_j, store.given_j].every(Number.isFinite) && previous) {
+      const dt = t - previous.t;
+      const incoming = store.taken_j - previous.taken;
+      const outgoing = store.given_j - previous.given;
+      if (dt > 0 && incoming >= 0 && outgoing >= 0) {
+        Object.assign(sample, { known: true, taking: incoming / dt, using: outgoing / dt });
+      } else if (dt === 0 && incoming === 0 && outgoing === 0) {
+        Object.assign(sample, previous);
+      }
+    }
+    storeFlows.set(store.id, sample);
+  }
+  for (const id of storeFlows.keys()) if (!present.has(id)) storeFlows.delete(id);
   world.machines = machines || null;
   chooseSomethingToRide();
   showRidingSettings();
@@ -2512,15 +2558,19 @@ function energyOf(p) {
   }
   const store = (m.stores || []).find((s) => s.id === ident);
   if (!store) return null;
-  const using = (m.motors || []).filter((x) => x.store === ident).reduce((sum, x) => sum + (x.power_w || 0), 0);
-  const taking = (m.panels || []).filter((x) => x.store === ident).reduce((sum, x) => sum + (x.power_w || 0), 0);
-  return { store, using, taking, net: using - taking };
+  return energyOfStore(store);
+}
+function energyOfStore(store) {
+  const flow = storeFlows.get(store.id);
+  const using = flow?.using || 0, taking = flow?.taking || 0;
+  return { store, using, taking, net: using - taking, known: !!flow?.known };
 }
 const joulesSaid = (j) => (j >= 1e6 ? `${(j / 1e6).toFixed(2)} MJ` : j >= 1e3 ? `${(j / 1e3).toFixed(1)} kJ` : `${Math.round(j)} J`);
 const wattsSaid = (w) => (w >= 1000 ? `${(w / 1000).toFixed(2)} kW` : w >= 10 ? `${Math.round(w)} W` : `${w.toFixed(1)} W`);
 const forHowLong = (s) => (s >= 3600 ? `${(s / 3600).toFixed(1)} hours` : s >= 60 ? `${Math.round(s / 60)} min` : `${Math.round(s)} s`);
 function spendingSaid(power) {
   if (!power) return "";
+  if (power.known === false) return " · reading energy flow…";
   const using = power.using > 0.05 ? `using ${wattsSaid(power.using)}` : "using nothing";
   const taking = power.taking > 0.05 ? `, taking in ${wattsSaid(power.taking)}` : "";
   const left = power.net > 0.05 ? `, ${forHowLong(power.store.charge_j / power.net)} left at that` : "";
@@ -5005,6 +5055,7 @@ function batterySymbol(share) {
 
 // "45 min until full", "1.2 hours left", "holding steady".
 function batteryWord(power) {
+  if (power.known === false) return "Reading flow…";
   const { store, using, taking } = power;
   const room = Math.max(0, store.capacity_j - store.charge_j);
   if (taking - using > 0.05) {
@@ -5019,6 +5070,10 @@ function batteryRow(power) {
   const share = power.store.capacity_j > 0 ? power.store.charge_j / power.store.capacity_j : 0;
   const row = document.createElement("div");
   row.className = "pk-battery";
+  row.dataset.store = power.store.id;
+  row.dataset.chargeJ = power.store.charge_j;
+  row.dataset.capacityJ = power.store.capacity_j;
+  row.dataset.flowW = power.known === false ? "" : power.taking - power.using;
   const said = document.createElement("div");
   said.className = "pk-battery-said";
   const big = document.createElement("strong");
@@ -5031,15 +5086,19 @@ function batteryRow(power) {
   // Which way the energy is going, as an arrow, because that is the thing to
   // see at a glance -- the numbers are for afterwards.
   const net = power.taking - power.using;
-  flow.textContent = net > 0.05 ? `▲ ${wattsSaid(power.taking - power.using)} in`
+  flow.textContent = power.known === false ? "— awaiting next reading"
+    : net > 0.05 ? `▲ ${wattsSaid(power.taking - power.using)} in`
     : net < -0.05 ? `▼ ${wattsSaid(power.using - power.taking)} out`
     : "— nothing flowing";
   flow.classList.add(net > 0.05 ? "in" : net < -0.05 ? "out" : "still");
-  said.append(big, when, flow);
+  const energy = document.createElement("span");
+  energy.className = "pk-energy";
+  energy.textContent = `${joulesSaid(power.store.charge_j)} / ${joulesSaid(power.store.capacity_j)}`;
+  said.append(big, energy, when, flow);
   row.append(batterySymbol(share), said);
   row.title = `${joulesSaid(power.store.charge_j)} of ${joulesSaid(power.store.capacity_j)}`
-    + ` · its motors are asking ${wattsSaid(power.using)}`
-    + ` · its panels are putting back ${wattsSaid(power.taking)}`;
+    + (power.known === false ? " · awaiting next reading"
+      : ` · energy out ${wattsSaid(power.using)} · energy in ${wattsSaid(power.taking)}`);
   return row;
 }
 
@@ -5231,9 +5290,10 @@ function showPicked() {
     if (power) rows.push(batteryRow(power));
     else {
       // Not a program, but it may still BE a battery: the store on this body.
+      const lamp = lampOn(picked.name);
       const store = ((world.machines && world.machines.stores) || [])
-        .find((s) => s.body === picked.name && s.capacity_j > 0);
-      if (store) rows.push(batteryRow({ store, using: 0, taking: 0 }));
+        .find((s) => (sameThing(s.body, picked.name) || s.id === lamp?.store) && s.capacity_j > 0);
+      if (store) rows.push(batteryRow(energyOfStore(store)));
     }
 
     if (program) {
@@ -6069,6 +6129,7 @@ function traceOldWorld() {
 // old world will never have pieces in this one.
 function traceNewWorld(t) {
   world.clock = Number.isFinite(t) ? t : 0;
+  storeFlows.clear();
   world.lastTick = 0;   // its first step is one step, not a catch-up across the change
   trace.frames.length = 0; trace.slow.length = 0; trace.ticks.length = 0;
   trace.bytes.length = 0; trace.breaks.length = 0;
@@ -9350,7 +9411,7 @@ async function tickWatchedCharacter() {
     }
     const state = view.state;
     draw(state); showPlayers(state.players);
-    followMachines(state.machines); followBrains(state.brains); followGoods(state.goods); followPorts(state.ports);
+    followMachines(state.machines, state.t); followBrains(state.brains); followGoods(state.goods); followPorts(state.ports);
     followVessels(state.vessels); drawStrength(state.mechanics); drawHeat(state.heat);
     if (state.sun) lightFromSun(state.sun);
     if (state.joints) drawJoints(state.joints);
@@ -9549,7 +9610,7 @@ async function tick() {
     followTheBow(state);
     tools.follow(state);
     previewShot();
-    followMachines(state.machines);
+    followMachines(state.machines, state.t);
     followBrains(state.brains);
     followGoods(state.goods);
     followPorts(state.ports);
@@ -10770,7 +10831,7 @@ async function open({ again = false } = {}) {
     // Its batteries and motors likewise: none said means none, and a hoist
     // opened again says its own, so its rope and its panel are there before
     // the first step rather than the last room's.
-    followMachines(data.machines);
+    followMachines(data.machines, data.t);
   world.brains.clear();
   followBrains(data.brains);
     // A room opening has no "unchanged": no goods said means this room has none.
