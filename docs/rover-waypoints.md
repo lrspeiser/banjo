@@ -1,5 +1,9 @@
 # Native rover waypoints — October 1
 
+Published implementation: `18180a7ac98822980e3fa013f4d4da5d984721c1` on
+GitHub main. The native runner, platform CLI, DLL and regression executable
+were rebuilt in the separate MSVC Release directory described below.
+
 ## Implemented boundary
 
 The native `behave` operation accepts optional `near_m` from 0.1 to 1 m for
