@@ -20,6 +20,20 @@ This is the current acceptance list, not a claim that all features are done.
 | 13. Water and hills | Gravity walking can leave water and climb ordinary hills; rover climbs measured grades without forced motion | Player river/hill and deep-pool controls pass. [Native stock-rover experiments](rover-grades.md) qualify a 12° generated oak-rover declaration with glass/oak/iron comparisons and native terrain climbs; sharp ground warnings remain. General generated routes, physical payload and native avatars remain open. |
 | 14. Output pickup and contained inputs | Output voxels fly into personal inventory on nearby walking; processor inputs stay in visible hoppers; rover delivery visibly fills them | Native/browser automatic output-only pickup and input bins implemented and verified. Fly leaves outputs untouched; server refuses auto-input pickup. Existing recorded dump/dock transfers retained; broad generated rover delivery and physical cargo/tipping remain open. |
 
+## Generated first-haul checkpoint — October 1
+
+[Two-map acceptance](generated-rover-hauling.md) now verifies ordinary native
+startup, first mining/delivery, processing, nearby personal pickup and exact
+SQL credit/restart/retry. First loads are 40.000000 / 29.995942 kg at 68.2 /
+82.0 s. Two generated cases, all 15 browser/player cases and all 50 rover-brain
+cases pass. The refreshed 8770 preview also passes entry/readings/recovery/release.
+
+Items 1, 12, 13 and 14 gain this first-haul evidence but remain partial:
+sustained return hauling, general terrain clearance and physical cargo/tipping
+are open. Items 3, 6 and 9 remain verified; durability/repair is pending.
+The full fourteen-item goal stays active. Earlier checkpoint entries below
+retain their historical measurements and limitations.
+
 Priorities: preserve the verified transfer checkpoint, repair fresh entry and
 Workshop/tool/capacity blockers, then connect the remaining ordinary-player
 journeys with measured acceptance. Keep CPU/native simulation separate from

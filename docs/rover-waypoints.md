@@ -50,14 +50,14 @@ and `build/resource-flow/waypoint-api-tests.log`.
 
 ## Open acceptance work
 
-The local Python planner, routine arrival handling and generated-layout changes
-remain experimental and unpublished with this engine/API checkpoint. A sample
+At this engine/API checkpoint, the local Python planner, routine arrival handling
+and generated-layout changes were experimental and unpublished. A sample
 delivery passes in that worktree, but both 300 s generated-world route runs
 still make zero deliveries. Heading-aware planning also encounters actual
 ground reflexes. These APIs do not establish successful generated hauling.
 
-Next: keep starter assemblies clear of the working route, predict actual
-turning/drive clearance, and require positive rover receiving receipts followed
-by processing and ordinary player output pickup on both generated maps.
+The subsequent [generated first-haul checkpoint](generated-rover-hauling.md)
+records positive receiving receipts, processing and private pickup on both
+maps; sustained return hauling and actual turning/drive clearance remain next.
 Physical cargo inertia/tipping, reacting avatars and funded repair remain open
 within the full fourteen-item player-experience goal.

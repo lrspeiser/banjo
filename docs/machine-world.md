@@ -1788,6 +1788,13 @@ and snapshots retain them. Terrain `survey` reports `ground_gradient_xz`
 [Native measurements and limits](rover-waypoints.md) cover drive, reopen and
 probe prediction; successful generated-world hauling remains an open gate.
 
+Routine `go_to` now plans bounded local waypoints over merged current native
+geometry and observed terrain. It checks actual arrival/braking before advancing
+and preserves the load/step when blocked. New world opening initializes native
+observations before the first routine step. [Generated first-haul measurements](generated-rover-hauling.md)
+cover both ordinary starts through processing and private pickup/restart;
+sustained return routes and native cargo remain open.
+
 The ask also carries `by_person`: true when a PERSON is ordering it -- the
 chat, the panel, the keys at the bench -- and false for the machine's own
 routine and for whatever decides for it. A person's order outranks the water

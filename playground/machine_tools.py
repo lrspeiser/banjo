@@ -98,13 +98,14 @@ def _act(ctx: senses.Context, **command: Any) -> dict[str, Any]:
     return ctx.ask(**command)
 
 
-def _behave(ctx: senses.Context, call: Call, doing: str, for_s: float, toward: list[float] | None = None) -> dict[str, Any]:
+def _behave(ctx: senses.Context, call: Call, doing: str, for_s: float, toward: list[float] | None = None, near_m: float | None = None) -> dict[str, Any]:
     """An ask on the program, by the caller, with the world's y for the point."""
     command: dict[str, Any] = {"op": "behave", "program": ctx.program["id"], "sender": call.by,
                                "doing": doing, "for_s": float(for_s), "why": call.why[:200]}
     if toward is not None:
         y = float((ctx.program.get("at_m") or [0, 0, 0])[1])
         command["toward"] = [float(toward[0]), y, float(toward[1])]
+    if near_m is not None:command['near_m']=near_m
     reply = _act(ctx, **command)
     program = reply.get("program") or {}
     return {"did": f"asked to be {doing or 'itself again'}" + (f" for {for_s:g} s" if for_s else ""),
@@ -238,11 +239,30 @@ def go_to(ctx: senses.Context, call: Call) -> dict[str, Any]:
     if _flies(ctx):
         stand = 0.0
     aim = _short_of(ctx, point, stand)
-    out = _behave(ctx, call, "approaching", float(call.args.get("for_s", 60.0)), aim)
-    out["did"] = (f"asked to go to {name}, and stand {stand:.1f} m off it" if stand > 0.0
+    navigation=None
+    if call.by=='routine' and ctx.program.get('kind')=='roam' and ctx.bodies:
+        import machine_navigation
+        arrival=(max(0.,stand-.6),max(0.,stand-.3)) if stand>=1.5 else (0.,NEAR_M)
+        pile=ctx.goods.by_name(str(call.args.get('place'))) if ctx.goods and call.args.get('place') else None
+        if pile:arrival=(0.,max(0.,machine_goods_reach()+float(pile.get('radius_m',1.))-.75))
+        planning=point if arrival!=(0.,0.) else aim
+        if arrival!=(0.,0.) or math.hypot(aim[0]-ctx.at()[0],aim[1]-ctx.at()[1])>NEAR_M:
+            navigation=machine_navigation.waypoint(ctx,planning,arrival)
+            if navigation:navigation['arrival_m']=list(arrival)
+            if navigation and navigation.get('blocked'):
+                # A failed plan keeps the load and requests actual braking.
+                _behave(ctx,call,'waiting',0.)
+                return {'did':'go_to blocked: '+navigation['blocked'],
+                        'blocked_route':True,'navigation':navigation,'place_at':point}
+            if navigation:aim=navigation['target']
+    out = _behave(ctx, call, "approaching", float(call.args.get("for_s", 60.0)), aim,
+                  near_m=machine_navigation.WAYPOINT_NEAR_M if navigation else None)
+    out["did"] = (f"following a local route to {name}" if navigation else
+                  f"asked to go to {name}, and stand {stand:.1f} m off it" if stand > 0.0
                   else f"asked to go to {name}, and stop a metre off")
     out["target"] = aim
     out["place_at"] = point
+    if navigation:out['navigation']=navigation
     return out
 
 
@@ -426,10 +446,18 @@ def dig(ctx: senses.Context, call: Call) -> dict[str, Any]:
                        **{"from":point,"to":point},width_m=width)
         automatic=not call.args.get("place") and call.args.get("point") is None and "ahead_m" not in call.args
         if automatic and clearance.get("stand_off_m"):
-            reach=max(DIG_AHEAD_M,float(clearance["stand_off_m"])+.02)
-            if reach>DIG_REACH_M:
-                return refused(f"a {width:g} m scoop needs {reach:.1f} m clearance, beyond its {DIG_REACH_M:g} m reach; use a narrower scoop")
-            point=senses.point_ahead(ctx,reach)
+            reach=min(DIG_REACH_M,max(DIG_AHEAD_M,float(clearance["stand_off_m"])+.02))
+            # The scalar hint does not certify an expanded rectangle's corner
+            # at a diagonal heading. Ask the native guard about the actual
+            # point before spending work or touching terrain, within arm reach.
+            while True:
+                point=senses.point_ahead(ctx,reach)
+                clearance=_act(ctx,op="dig_clearance",program=ctx.program["id"],
+                               **{"from":point,"to":point},width_m=width)
+                if clearance.get("clear"):break
+                if reach>=DIG_REACH_M:
+                    return refused(f"a {width:g} m scoop has no safe point within its {DIG_REACH_M:g} m reach; use a narrower scoop")
+                reach=min(DIG_REACH_M,reach+.1)
         elif clearance.get("clear") is False:
             return refused(clearance["why"])
     # The battery must have the work in it before the ground is touched: a

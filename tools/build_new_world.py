@@ -106,17 +106,19 @@ def compose(ground: dict, world: dict, terrain_seed: int | None = None) -> dict:
     yard = {p["name"]: tuple(p["at_m"]) for p in goods["stockpiles"]}
     intake, rack = yard["smelter intake"], yard["smelter output"]
     middle = ((intake[0] + rack[0]) / 2.0, (intake[1] + rack[1]) / 2.0)
-    # The rover starts beside its own intake, on the far side from the smelter
-    # that stands in the middle of the yard: the first thing it does is drive
-    # away, and the last is come back. The post goes behind the rack for the
-    # same reason -- the yard's middle belongs to the machine working in it.
+    # Start on the working side of its intake. Choosing the opposite side of
+    # the processor could strand the rover between the processor and riverbank.
+    vein = _nearest(goods["deposits"], "copper ore", intake)
+    hauling=_hauling_reservations(intake,vein['at_m'])
     was = (rover_room.ROVER_AT, rover_room.POST_AT, rover_room.TERRAIN)
-    rover_room.ROVER_AT = _clear_of(ground, intake, 2.0, away_from=middle)
+    rover_room.ROVER_AT = _rover_start(ground,intake,vein['at_m'])
     rover_room.POST_AT = _clear_of(ground, rack, 2.5, away_from=middle)
     rover_room.TERRAIN = {"generate": "valley" if terrain_seed is None else
                           {"kind": "valley", "seed": terrain_seed}}
     try:
-        spec = rover_room.compose(ground, "tests-dig")
+        here=rover_room.ROVER_AT
+        yaw=math.atan2(vein['at_m'][0]-here[0],vein['at_m'][1]-here[1])
+        spec = rover_room.compose(ground, "tests-dig",yaw)
     finally:
         rover_room.ROVER_AT, rover_room.POST_AT, rover_room.TERRAIN = was
     spec["water"] = dict(grounds.WATER)
@@ -169,8 +171,8 @@ def compose(ground: dict, world: dict, terrain_seed: int | None = None) -> dict:
         "kind": "custom", "hopper_kg": 40.0,
         "places": {"vein": list(vein["at_m"]), "smelter intake": list(intake)},
         "steps": [
-            {"do": "go_to", "args": {"place": "vein"}, "until": "arrived", "retries": 3},
-            {"do": "dig", "args": {}, "until": "load_full", "repeat": True},
+            {"do": "go_to", "args": {"place": "vein", "stop_at_m":2.0}, "until": "arrived", "retries": 3},
+            {"do": "dig", "args": {"place":"vein"}, "until": "load_full", "repeat": True},
             {"do": "back_off", "args": {"for_s": 1.5}, "until": "asked_done"},
             {"do": "go_to", "args": {"place": "smelter intake"}, "until": "arrived", "retries": 3},
             {"do": "dump", "args": {"place": "smelter intake"}, "until": "load_empty"},
@@ -190,36 +192,7 @@ def compose(ground: dict, world: dict, terrain_seed: int | None = None) -> dict:
     # iron at 1538 as readily as copper if that is what you feed it.
     heaps = {p["name"]: p for p in goods["stockpiles"]}
 
-    # THE YARD'S POWER, before the machines that run off it. The owner,
-    # 2026-09-26: "we can add a solar farm next to these machines and also
-    # provide battery charging that way for all devices."
-    #
-    # It stands clear of the yard's own heaps so nothing drives into it, and
-    # every machine below is wired to ITS store rather than the one each
-    # carries. There is no store-to-store transfer in the engine -- a panel
-    # charges a store and that is all -- so one shared store is what "all
-    # devices" can mean, and every panel in the yard charges it.
-    farm_at = _clear_of(ground, middle, 4.0, away_from=intake)
-    farm_bodies, farm_pins, farm_made, _ = a_built_thing(ground, "solar-array", "solar farm", farm_at)
-    farm_made = workshop_install._named_apart(spec["machines"], farm_made)
-    spec["precise_rigid_bodies"] += farm_bodies
-    spec["joints"] += farm_pins
-    for key in ("stores", "motors", "panels", "controls", "programs"):
-        spec["machines"][key] = spec["machines"].get(key, []) + list(farm_made.get(key) or [])
-    the_grid = (farm_made.get("stores") or [{}])[0].get("name")
-
-    # One buildable camp fitting. Native electrical losses and store demand
-    # determine its light; the host controller only switches at dusk/dawn.
-    lamp_at = _clear_of(ground, ARRIVE_AT, 2.5)
-    light_bodies, light_pins, light_made, _ = a_built_thing(ground, "mine-lamp", "camp light", lamp_at)
-    light_made = workshop_install._named_apart(workshop_install.standing_names(spec), light_made)
-    for lamp in light_made.get("lamps", []):
-        lamp["store"] = the_grid
-        lamp["auto_night"] = True
-    spec["precise_rigid_bodies"] += light_bodies
-    spec["joints"] += light_pins
-    for key in ("stores", "motors", "panels", "controls", "programs", "lamps"):
-        spec["machines"][key] = spec["machines"].get(key, []) + list(light_made.get(key) or [])
+    grid_programs=[];grid_panels=[]
 
     for works in ws.WORKS:
         name = works.machine
@@ -263,7 +236,9 @@ def compose(ground: dict, world: dict, terrain_seed: int | None = None) -> dict:
         bodies, pins, made = a_works(
             ground, name, at,
             {"kind": "process", "recipe": works.recipe, "intake": intake_name,
-             "output": output_name, "batch_kg": 5.0})
+             "output": output_name, "batch_kg": 5.0}, reserved=_standing_footprints(spec)+hauling,
+            service_regions=[(heaps[n]['at_m'], machine_goods.REACH_M +
+                              float(heaps[n].get('radius_m',1.))) for n in (intake_name,output_name)])
         # Its names kept apart from every other machine's, as the install gate
         # keeps them: eight processors all call their battery "battery", and
         # six furnaces all call their chamber "chamber". The same two helpers
@@ -276,11 +251,8 @@ def compose(ground: dict, world: dict, terrain_seed: int | None = None) -> dict:
         # move charge from one store to another, so either the design wants a
         # variant with no battery or the engine wants a wire between stores.
         # Both are worth doing and neither is this change.
-        if the_grid:
-            for program in made.get("programs") or []:
-                program["store"] = the_grid
-            for panel in made.get("panels") or []:
-                panel["store"] = the_grid
+        grid_programs.extend(made.get("programs") or [])
+        grid_panels.extend(made.get("panels") or [])
         # A FURNACE'S CHAMBER IS NOT MACHINERY: it is the space its lining
         # encloses, so it goes to the room as a gas region for the thermal
         # network to heat and leak. Taken out before the machines are merged,
@@ -290,6 +262,43 @@ def compose(ground: dict, world: dict, terrain_seed: int | None = None) -> dict:
         spec["joints"] += pins
         for key in ("stores", "motors", "panels", "controls", "programs"):
             spec["machines"][key] = spec["machines"].get(key, []) + list(made.get(key) or [])
+
+    # Place service-bound processors first, then the yard power and camp light. The owner,
+    # 2026-09-26: "we can add a solar farm next to these machines and also
+    # provide battery charging that way for all devices."
+    #
+    # It stands clear of the yard's own heaps so nothing drives into it, and
+    # every machine below is wired to ITS store rather than the one each
+    # carries. There is no store-to-store transfer in the engine -- a panel
+    # charges a store and that is all -- so one shared store is what "all
+    # devices" can mean, and every panel in the yard charges it.
+    farm_at = _clear_of(ground, middle, 4.0, away_from=intake)
+    farm_bodies, farm_pins, farm_made, _ = a_built_thing(
+        ground, "solar-array", "solar farm", farm_at, reserved=_standing_footprints(spec)+hauling)
+    farm_made = workshop_install._named_apart(spec["machines"], farm_made)
+    spec["precise_rigid_bodies"] += farm_bodies
+    spec["joints"] += farm_pins
+    for key in ("stores", "motors", "panels", "controls", "programs"):
+        spec["machines"][key] = spec["machines"].get(key, []) + list(farm_made.get(key) or [])
+    the_grid = (farm_made.get("stores") or [{}])[0].get("name")
+
+    # One buildable camp fitting. Native electrical losses and store demand
+    # determine its light; the host controller only switches at dusk/dawn.
+    lamp_at = _clear_of(ground, ARRIVE_AT, 2.5)
+    light_bodies, light_pins, light_made, _ = a_built_thing(
+        ground, "mine-lamp", "camp light", lamp_at, reserved=_standing_footprints(spec)+hauling)
+    light_made = workshop_install._named_apart(workshop_install.standing_names(spec), light_made)
+    for lamp in light_made.get("lamps", []):
+        lamp["store"] = the_grid
+        lamp["auto_night"] = True
+    spec["precise_rigid_bodies"] += light_bodies
+    spec["joints"] += light_pins
+    for key in ("stores", "motors", "panels", "controls", "programs", "lamps"):
+        spec["machines"][key] = spec["machines"].get(key, []) + list(light_made.get(key) or [])
+
+    if the_grid:
+        for program in grid_programs:program["store"]=the_grid
+        for panel in grid_panels:panel["store"]=the_grid
 
     # BOTH MACHINES ARE RUNNING WHEN THE ROOM OPENS. A program that does not
     # say `power` opens stopped and waits to be switched on by hand, which is
@@ -315,8 +324,92 @@ def a_lattice_thing(ground: dict, kind: str, name: str, at: tuple[float, float],
     return plan, design
 
 
+def _standing_footprints(spec):
+    return [(lo,hi) for _,lo,hi in rigid_assembly.footprint(
+        {'bodies':spec.get('precise_rigid_bodies') or []})]
+
+
+def _rover_start(ground,intake,vein):
+    """An authored starting pose on the working approach, with clear probes."""
+    bearing=math.atan2(vein[0]-intake[0],vein[1]-intake[1])
+    candidates=[];surface=grounds.surface_at;step=ground['cell']/2
+    for offset in (0.,15.,-15.,30.,-30.):
+        a=bearing+math.radians(offset)
+        for distance in (2.5,3.,2.,3.5):
+            x,z=intake[0]+distance*math.sin(a),intake[1]+distance*math.cos(a)
+            if ws.wet_near(ground,x,z,.8):continue
+            yaw=math.atan2(vein[0]-x,vein[1]-z);c,s=math.cos(yaw),math.sin(yaw)
+            h=surface(ground,x,z)
+            gx=(surface(ground,x+step,z)-surface(ground,x-step,z))/(2*step)
+            gz=(surface(ground,x,z+step)-surface(ground,x,z-step))/(2*step)
+            safe=True
+            for ox,_,oz in (*rover_room.SENSORS_LOCAL_M,*rover_room.REAR_SENSORS_LOCAL_M):
+                dx=ox*c+oz*s;dz=-ox*s+oz*c
+                if ws.wet_near(ground,x+dx,z+dz,.1) or abs(h+gx*dx+gz*dz-surface(ground,x+dx,z+dz))>.10:
+                    safe=False;break
+            if safe:candidates.append((abs(offset)*.01+ws.flatness(ground,x,z,.8),(x,z)))
+    if not candidates:raise ValueError('No dry rover starting approach has clear ground probes')
+    return min(candidates)[1]
+
+
+def _hauling_reservations(intake,vein):
+    """Keep starter assemblies outside the first haul's working corridor.
+
+    These are placement reservations, not terrain edits or a traversal proof.
+    The 1 m half width plus the placement's 0.35 m gap leaves space around the
+    stock rover's 0.675 m occupied radius for turning and braking.
+    """
+    length=math.hypot(vein[0]-intake[0],vein[1]-intake[1])
+    if length<.01:return []
+    direction=((vein[0]-intake[0])/length,(vein[1]-intake[1])/length)
+    # The rover stops within the receiving region and beside the dig, rather
+    # than driving through the processor or onto the excavated deposit centre.
+    start=[intake[a]+direction[a]*min(2.5,length*.3) for a in range(2)]
+    end=[vein[a]-direction[a]*min(1.5,length*.3) for a in range(2)]
+    steps=max(1,math.ceil(math.dist(start,end)/.5))
+    return [([x-1.,z-1.],[x+1.,z+1.]) for x,z in
+            ((start[0]+(end[0]-start[0])*k/steps,
+              start[1]+(end[1]-start[1])*k/steps) for k in range(steps+1))]
+
+
+def _wet_footprint(ground,lo,hi):
+    """Check the sampled terrain beneath this part's rectangular projection."""
+    cell=ground['cell']
+    i0=math.floor((lo[0]-ground['x0'])/cell);i1=math.ceil((hi[0]-ground['x0'])/cell)
+    j0=math.floor((lo[1]-ground['z0'])/cell);j1=math.ceil((hi[1]-ground['z0'])/cell)
+    wet=ground.get('wet') or set()
+    return any((i,j) in wet for i in range(i0,i1+1) for j in range(j0,j1+1))
+
+
+def _placement(ground, artifact, preferred, reserved, service_regions):
+    """Reserve actual compiled parts; retain reach of each served stockpile."""
+    candidates=[preferred]
+    for radius in (.5,1.,1.5,2.,2.5,3.,4.,5.,6.):
+        candidates.extend((preferred[0]+radius*math.cos(k*math.tau/24),
+                           preferred[1]+radius*math.sin(k*math.tau/24)) for k in range(24))
+    for x,z in candidates:
+        flat=rigid_assembly.placed(artifact,[x,0.,z],0.,0.)
+        root=next(b for b in flat['bodies'] if b['name']==artifact['root'])['_centre_m']
+        if any(math.hypot(root[0]-p[0],root[2]-p[1])>reach-.2 for p,reach in service_regions):
+            continue
+        occupied=rigid_assembly.footprint(flat)
+        if any(lo[0]<ground['x0'] or lo[1]<ground['z0'] or
+               hi[0]>ground['x0']+(ground['nx']-1)*ground['cell'] or
+               hi[1]>ground['z0']+(ground['nz']-1)*ground['cell'] for _,lo,hi in occupied):
+            continue
+        if any(_wet_footprint(ground,lo,hi) for _,lo,hi in occupied):
+            continue
+        if any(lo[0]<other_hi[0]+.35 and hi[0]>other_lo[0]-.35 and
+               lo[1]<other_hi[1]+.35 and hi[1]>other_lo[1]-.35
+               for _,lo,hi in occupied for other_lo,other_hi in reserved):
+            continue
+        return x,z
+    raise ValueError(f"No dry placement keeps {artifact['root']} clear and its stockpiles within reach")
+
+
 def a_built_thing(ground: dict, kind: str, name: str, at: tuple[float, float],
-                  parameters: dict | None = None) -> tuple[list[dict], list[dict], Any, Any]:
+                  parameters: dict | None = None, *, reserved=None,
+                  service_regions=()) -> tuple[list[dict], list[dict], Any, Any]:
     """Any Workshop kind, stood on the ground where it goes.
 
     THE SAME PATH A PERSON'S BUILD TAKES: assemble the design, compile it to
@@ -330,6 +423,8 @@ def a_built_thing(ground: dict, kind: str, name: str, at: tuple[float, float],
                  "component_overrides": design.lineage["component_overrides"]}
     design, overrides = workshop_components.design_from_spec(candidate)
     artifact = rigid_assembly.compile_design(design, overrides, root=name)
+    if reserved is not None:
+        at=_placement(ground,artifact,at,reserved,service_regions)
     x, z = at
     flat = rigid_assembly.placed(artifact, [x, 0.0, z], 0.0, 0.0)
     lift = max(grounds.ground_under(ground, lo, hi) - low
@@ -343,7 +438,7 @@ def a_built_thing(ground: dict, kind: str, name: str, at: tuple[float, float],
 
 
 def a_works(ground: dict, name: str, at: tuple[float, float],
-            routine: dict) -> tuple[list[dict], list[dict], dict]:
+            routine: dict, *, reserved=None, service_regions=()) -> tuple[list[dict], list[dict], dict]:
     """The machine that works this recipe, stood on the ground where it goes.
 
     WHICH MACHINE IS THE RECIPE'S TO SAY. A recipe with a temperature needs
@@ -365,7 +460,8 @@ def a_works(ground: dict, name: str, at: tuple[float, float],
     recipe = str(routine.get("recipe") or "")
     needs_c = ws.CHAIN_BY_NAME[recipe].needs_c if recipe in ws.CHAIN_BY_NAME else 0.0
     kind = "electric-furnace" if needs_c > 0.0 else "processor"
-    bodies, pins, made, _ = a_built_thing(ground, kind, name, at, {"recipe": recipe})
+    bodies, pins, made, _ = a_built_thing(ground, kind, name, at, {"recipe": recipe},
+                                      reserved=reserved,service_regions=service_regions)
     for program in made.get("programs") or []:
         program["routine"] = dict(routine)
     return bodies, pins, made

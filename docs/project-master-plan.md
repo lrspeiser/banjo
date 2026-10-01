@@ -1,10 +1,18 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Generated first-haul checkpoint, October 1:** [Native delivery and pickup](generated-rover-hauling.md)
+connect ordinary startup, bounded heading-aware routes and compiled starter
+layout to mined ore delivery, processing and private durable collection on both
+maps. First deliveries occur at 68.2 / 82.0 s. One map still blocks on its
+return approach; sustained hauling, physical cargo/tipping, avatars and repair
+remain open within all fourteen player-experience requirements.
+
 **Native waypoint checkpoint, October 1:** [Bounded approach and terrain readings](rover-waypoints.md)
 add explicit 0.1–1 m roam approach radii, saved arrival braking and read-only
 terrain gradients. Twenty native cases pass; contact/material laws are retained.
-Generated routing/layout work remains local and experimental, with zero
-deliveries in both 300 s trials. All fourteen player-experience gates remain.
+At that checkpoint, experimental generated routing/layout trials produced zero
+deliveries on both maps. The newer first-haul checkpoint above supersedes that
+result. All fourteen player-experience requirements remain in scope.
 
 **Measured stock-rover grades, October 1:** [Native experiments](rover-grades.md)
 qualify the generated unloaded oak-wheel rover's 12° declaration with actual

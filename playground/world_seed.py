@@ -464,15 +464,13 @@ def prove_it_is_only_just_enough(goods_block: dict[str, Any], *,
 # The proof: can you get there
 # ---------------------------------------------------------------------------
 # A wheeled machine climbs a slope or it does not. This is the rise between one
-# heightfield sample and the next that stops a rover, as a fraction: 0.35 is
-# about 19 degrees.
+# heightfield sample and the next admitted by the placement graph, as a fraction.
 #
-# NOT MEASURED. It is a declared limit, chosen because it is under the 20% a
-# table topples on (tools/build_explore_world) and over the grade of every road
-# a person would build. What a rover can really climb is a question for the
-# engine and nobody has put it. Until somebody does, a world proved drivable
-# here is proved against this number and not against the rover.
-CLIMB = 0.35
+# The unloaded stock rover's native experiments qualify a 12 degree policy
+# (docs/rover-grades.md). Leave one degree for the route's sampled terrain.
+# This graph remains a placement filter: actual body/ground routes still run
+# in the engine, and payload, traction and all generated grades are not certified.
+CLIMB = math.tan(math.radians(11.0))
 
 #: How flat the ground has to be over a deposit before a machine can work it:
 #: the rise and fall across the whole patch, in metres.
@@ -494,6 +492,12 @@ def drivable(ground: dict[str, Any], from_xz: tuple[float, float]) -> set[tuple[
     def at(i: int, j: int) -> float:
         return height[j * nx + i]
 
+    def slope(i,j):
+        # Same central/one-sided sample gradient as native TerrainField::slopeDeg.
+        i0,i1=max(0,i-1),min(nx-1,i+1);j0,j1=max(0,j-1),min(nz-1,j+1)
+        return math.hypot((at(i1,j)-at(i0,j))/((i1-i0)*cell),
+                          (at(i,j1)-at(i,j0))/((j1-j0)*cell))
+
     i0 = min(nx - 1, max(0, int(round((from_xz[0] - ground["x0"]) / cell))))
     j0 = min(nz - 1, max(0, int(round((from_xz[1] - ground["z0"]) / cell))))
     if (i0, j0) in wet:
@@ -506,7 +510,7 @@ def drivable(ground: dict[str, Any], from_xz: tuple[float, float]) -> set[tuple[
             a, b = i + di, j + dj
             if not (0 <= a < nx and 0 <= b < nz) or (a, b) in seen or (a, b) in wet:
                 continue
-            if abs(at(a, b) - at(i, j)) / cell > CLIMB:
+            if abs(at(a, b) - at(i, j)) / cell > CLIMB or slope(a,b)>CLIMB:
                 continue
             seen.add((a, b))
             edge.append((a, b))

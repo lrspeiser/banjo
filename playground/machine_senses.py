@@ -49,6 +49,8 @@ class Context:
     goods: Any = None                                    # machine_goods.Goods, the room's ledger, or None
     ports: Any = None                                    # machine_ports.Ports, the room's mouths, or None
     sight: Any = None                                    # machine_sight.Sight: what has been seen, or None
+    terrain_declared: bool = False
+    cell_m: float = .05
     _surveys: dict[tuple[float, float], dict[str, Any]] = field(default_factory=dict)
     _sun: dict[str, Any] | None = None
 

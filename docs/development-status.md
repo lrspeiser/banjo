@@ -1,11 +1,20 @@
 # Development status and handoff
 
+**Generated first-haul implementation, October 1:** [Measured journey](generated-rover-hauling.md)
+delivers 40.000000 / 29.995942 kg on both ordinary generated starts, processes
+the mined ore and collects 9.600000 / 8.699635 kg copper including starter ore.
+Private SQL credit and restart/retry are exact; conversion residual is separately
+bounded at existing ledger precision. New native observations at startup avoid
+requiring a page pose refresh. Compiled placement, local routing and native
+scoop rechecks retain safety guards. Sustained return hauling remains experimental.
+
 **Native waypoint API, October 1:** [Measured scope](rover-waypoints.md) adds
 optional bounded approach radii and matching terrain-gradient observations.
 Twenty native cases and the machine/API documentation gates pass on Windows
-MSVC Release. Default requests and old saves retain 1 m. Local Python navigation
-and generated-layout changes are experimental and unpublished: both 300 s maps
-still fail delivery. Generated hauling, cargo, avatars and repair remain open.
+MSVC Release. Default requests and old saves retain 1 m. At that checkpoint,
+local Python navigation and generated-layout trials failed delivery on both
+300 s maps. The first-haul checkpoint above supersedes that result; sustained
+hauling, cargo, avatars and repair remain open.
 
 **Native hill checkpoint, October 1:** [Measurements and limitations](rover-grades.md)
 cover glass/oak/iron rear wheels at six grades, autonomous ramp and native

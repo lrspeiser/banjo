@@ -1511,6 +1511,13 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/world_goods_tests.py -v)
     set_tests_properties(banjo_world_goods_tests PROPERTIES TIMEOUT 240)
+    # Generated two-map native hauling is longer than the presentation suite.
+    # Keep its actual delivery/processing/restart journey independently runnable.
+    add_test(NAME banjo_generated_rover_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/generated_rover_tests.py -v)
+    set_tests_properties(banjo_generated_rover_tests PROPERTIES TIMEOUT 300)
     add_test(NAME banjo_ai_verification_tests
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/ai_verification_tests.py -v)
     set_tests_properties(banjo_ai_verification_tests PROPERTIES TIMEOUT 60)

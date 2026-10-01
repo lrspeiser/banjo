@@ -1048,6 +1048,162 @@ class InTheDigRoom(unittest.TestCase):
               totals["holders"]["machine:rover"])
 
 
+class LocalNavigation(unittest.TestCase):
+    def context(self, field=None, obstacles=()):
+        self.commands=[]
+        def ask(**command):
+            self.commands.append(command)
+            if command['op']=='survey':
+                x,z=command['at']
+                return {'survey':(field(x,z) if field else {'on_the_ground':True,'ground_m':0.,'slope_deg':0.,'water':None})}
+            return {'program':{'doing':command.get('doing'),'why':command.get('why')}}
+        body={'name':'rover','position_m':[0,.5,0],'dimensions_m':[.5,.5,.7],
+              'orientation_wxyz':[1,0,0,0]}
+        return machine_senses.Context(a_program(at_m=[0,.5,0],height_m=.5,power=True,climb_deg=12),
+                                      bodies=[body,*obstacles],ask=ask,terrain_declared=True)
+
+    def test_observed_geometry_routes_around_solid_without_mutation_or_remote_queries(self):
+        import machine_navigation as nav
+        box={'name':'wall','position_m':[2,.5,0],'dimensions_m':[1,1,1],'orientation_wxyz':[1,0,0,0]}
+        ctx=self.context(obstacles=[box]);before=deepcopy(ctx.bodies)
+        route=nav.waypoint(ctx,[5,0])
+        self.assertNotIn('blocked',route)
+        self.assertTrue(any(abs(p[1])>1 for p in route['path']),route)
+        for p in route['path']:
+            self.assertGreaterEqual(math.hypot(max(1.5-p[0],0,p[0]-2.5),max(-.5-p[1],0,p[1]-.5)),route['radius_m'])
+        self.assertEqual(before,ctx.bodies)
+        self.assertLessEqual(route['surveys'],nav.MAX_SURVEYS)
+        self.assertTrue(all(c['op']=='survey' and math.hypot(*c['at'])<=nav.LOOK_M+1e-9 for c in self.commands))
+
+    def test_actual_radius_does_not_inflate_when_the_assembly_rotates(self):
+        import machine_navigation as nav
+        ctx=self.context();original=nav.waypoint(ctx,[5,0])
+        ctx.bodies[0]['orientation_wxyz']=[math.cos(math.pi/8),0,math.sin(math.pi/8),0]
+        rotated=nav.waypoint(ctx,[5,0])
+        self.assertAlmostEqual(original['radius_m'],rotated['radius_m'],places=12)
+        self.assertAlmostEqual(math.hypot(.25,.35),rotated['radius_m'],places=12)
+
+    def test_valid_short_final_leg_is_not_rejected_for_small_distance_improvement(self):
+        import machine_navigation as nav
+        ctx=self.context()
+        route=nav.waypoint(ctx,[1.55,0],(0,1.))
+        self.assertNotIn('blocked',route);self.assertTrue(route['final'])
+        self.assertGreater(math.hypot(*route['target']),nav.WAYPOINT_NEAR_M)
+
+    def test_dry_drop_within_probe_reach_is_predicted_before_the_occupied_footprint(self):
+        import machine_navigation as nav
+        def ground(x,z):
+            return {'on_the_ground':True,'ground_m':-.3 if x>2 and abs(z)<1 else 0.,
+                    'slope_deg':0.,'ground_gradient_xz':[0.,0.],'water':None}
+        ctx=self.context(field=ground)
+        ctx.program['sensors']=[{'kind':'ground','at_m':[1.5,.5,0.],'depth_m':.12}]
+        route=nav.waypoint(ctx,[4,0])
+        self.assertNotIn('blocked',route)
+        self.assertTrue(any(abs(p[1])>=1 for p in route['path']),route)
+        # This bounded plan may end at the visible frontier. Check the issued
+        # leg and its turn directly, rather than requiring a complete map path.
+        dx,dz=route['target'];yaw=math.atan2(dx,dz)
+        for k in range(17):
+            turn=yaw*k/16
+            self.assertEqual(0.,ground(1.5*math.cos(turn),-1.5*math.sin(turn))['ground_m'])
+            self.assertEqual(0.,ground(dx*k/16+1.5*math.cos(yaw),
+                                      dz*k/16-1.5*math.sin(yaw))['ground_m'])
+        self.assertLessEqual(route['surveys'],nav.MAX_SURVEYS)
+
+    def test_probe_heading_allows_a_parallel_route_but_rejects_a_hazardous_turn(self):
+        import machine_navigation as nav
+        def ground(x,z):
+            return {'on_the_ground':True,'ground_m':-.3 if x>1 else 0.,
+                    'ground_gradient_xz':[0.,0.],'water':None}
+        ctx=self.context(field=ground)
+        ctx.program['sensors']=[{'kind':'ground','at_m':[0.,.5,1.5],'depth_m':.12}]
+        straight=nav.waypoint(ctx,[0,4])
+        self.assertNotIn('blocked',straight)
+        self.assertEqual(0.,straight['target'][0])
+        self.assertGreater(straight['target'][1],1.)
+        toward_drop=nav.waypoint(ctx,[4,0])
+        if 'blocked' not in toward_drop:
+            # Its probe must remain on the high side of the edge throughout
+            # the issued straight leg, including the initial turn.
+            dx,dz=toward_drop['target'];yaw=math.atan2(dx,dz)
+            for k in range(9):
+                self.assertLessEqual(1.5*math.sin(yaw*k/8),1.)
+                self.assertLessEqual(dx*k/8+1.5*math.sin(yaw),1.)
+
+    def test_arrival_waits_for_actual_braking_and_failed_drive_cannot_advance_to_dig(self):
+        ctx=self.context();declaration={'kind':'custom','hopper_kg':20,
+            'steps':[{'do':'go_to','args':{'point':[5,0]},'until':'arrived','retries':0},
+                     {'do':'dig','until':'load_full','repeat':True}]}
+        r=machine_routine.Routine('rover',declaration);ctx.routine=r
+        r.frame.issued={'navigation':{'final':True}}
+        ctx.program.update(doing='waiting',speed_m_s=.2,asked={'by':'routine','doing':'approaching'})
+        self.assertIsNone(r.tick(ctx));self.assertEqual(0,r.frame.step)
+        ctx.program.update(speed_m_s=0,asked=None)
+        r.tick(ctx);self.assertTrue(r.frame.issued['drive_failed'])
+        ctx.program.update(asked={'by':'routine','doing':'waiting'})
+        for t in (1,3,30,300):ctx.t=t;r.tick(ctx)
+        self.assertEqual(0,r.frame.step)
+        self.assertFalse(any(c['op']=='dig' for c in self.commands))
+        restored=machine_routine.Routine('rover',declaration);restored.restore(r.record())
+        self.assertEqual(r.record(),restored.record())
+        r.resume();self.assertIsNone(r.frame.issued)
+
+    def test_wet_or_unreported_ground_is_not_a_route_and_loaded_machine_holds(self):
+        ctx=self.context(field=lambda x,z:{'on_the_ground':False})
+        declaration={'kind':'custom','hopper_kg':20,
+            'steps':[{'do':'go_to','args':{'point':[5,0]},'until':'arrived'},
+                     {'do':'dig','until':'load_full','repeat':True}]}
+        r=machine_routine.Routine('rover',declaration)
+        ctx.routine=r;r.load_in(0,0,3,{'copper ore':3});load=deepcopy(r.load_reading())
+        did=r.tick(ctx);self.assertTrue(did['blocked_route'])
+        self.assertEqual('waiting',self.commands[-1]['doing']);self.assertEqual(0,self.commands[-1]['for_s'])
+        ctx.program.update(doing='waiting',asked={'by':'routine','doing':'waiting'})
+        for t in (1,2,3,4,6,9,12):ctx.t=t;r.tick(ctx)
+        self.assertEqual(0,r.frame.step);self.assertEqual(load,r.load_reading())
+        self.assertTrue(all(c['op'] in ('survey','behave') for c in self.commands))
+        restored=machine_routine.Routine('rover',declaration);restored.restore(r.record())
+        self.assertEqual(r.record(),restored.record())
+
+    def test_waypoint_waiting_replans_and_survives_restore_without_finishing_requested_place(self):
+        ctx=self.context();declaration={'kind':'custom',
+            'steps':[{'do':'go_to','args':{'point':[9,0]},'until':'arrived'}]}
+        r=machine_routine.Routine('rover',declaration)
+        ctx.routine=r;r.frame.issued={'navigation':{'final':False,'target':[2,0]}}
+        ctx.program.update(doing='waiting',asked={'by':'routine','doing':'approaching'})
+        ctx.t=4;r.tick(ctx)
+        self.assertEqual(0,r.frame.step);self.assertFalse(r.frame.issued['navigation']['final'])
+        self.assertEqual(.4,self.commands[-1]['near_m'])
+        restored=machine_routine.Routine('rover',declaration);restored.restore(r.record())
+        self.assertEqual(r.record(),restored.record())
+
+    def test_partial_native_update_keeps_static_geometry_and_actual_removals(self):
+        brains=rover_brain.Brains(lambda:None);brains.spec={'terrain':{'generate':'flat'}}
+        static={'name':'wall','position_m':[2,.5,0],'dimensions_m':[1,1,1]}
+        session=SimpleNamespace(state={'bodies':[static,{'name':'rover','position_m':[0,.5,0]}],'cell_size_m':.05})
+        p=a_program(at_m=[0,.5,0],power=False)
+        reply={'partial':True,'t':1,'bodies':[session.state['bodies'][-1]],'machines':{'programs':[p]}}
+        brains.listen(session,reply)
+        brain=brains.of('rover');self.assertIn(static,brain.bodies);self.assertTrue(brain.terrain_declared)
+        session.state['bodies']=session.state['bodies'][1:];brains.listen(session,dict(reply,gone=['wall']))
+        self.assertNotIn(static,brain.bodies)
+
+    def test_open_replacement_brains_receive_native_observations_before_first_clock_step(self):
+        brains=rover_brain.Brains(lambda:None)
+        spec={'terrain':{'generate':'flat'},'machines':{'programs':[{'name':'rover'}]}}
+        p=a_program(at_m=[3.,.5,4.],power=False)
+        body={'name':'rover','position_m':p['at_m'],'dimensions_m':[.5,.5,.7]}
+        opened={'t':0.,'bodies':[body],'machines':{'programs':[p]}}
+        session=SimpleNamespace(state={'bodies':[body],'cell_size_m':.1})
+        brains.opened(spec)
+        self.assertIsNone(brains.of('rover').before)
+        brains.settle(opened,session)
+        brain=brains.of('rover')
+        self.assertEqual(p,brain.before)
+        self.assertEqual([body],brain.bodies)
+        self.assertTrue(brain.terrain_declared)
+        self.assertEqual(.1,brain.cell_m)
+
+
 class TheScriptedServer(unittest.TestCase):
     """The stand-in speaks the API the client speaks."""
 

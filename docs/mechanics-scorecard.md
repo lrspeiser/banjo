@@ -1,5 +1,14 @@
 # Banjo mechanics scorecard
 
+**Generated hauling boundary, October 1:** [Measured first journeys](generated-rover-hauling.md)
+retain 50 mm / `dt=1/240 s` and actual native motor/brake/support guards.
+First receiving loads are 40.000000 / 29.995942 kg at 68.2 / 82.0 s; mined
+ore is 12.000000 / 8.998783 kg. Existing 0.3 copper yield plus starter ore
+produces 9.600000 / 8.699635 kg, with 0 / `2.211e-7 kg` ledger rounding
+residual. Pickup/SQL/restart credit is exact. Glass/oak/iron and full reaction/
+energy gates remain unchanged. One return route blocks; ledger cargo has no
+native inertia, container or tipping law. Sustained hauling and repair remain.
+
 **Waypoint controller boundary, October 1:** [Native evidence](rover-waypoints.md)
 uses 50 mm / `dt=1/240 s`. A 0.7 m target with 0.2 m approach radius produces
 0.743121 m travel and 0.0431262 m stopping error through real motors/brakes;

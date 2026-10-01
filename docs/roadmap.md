@@ -1,10 +1,17 @@
 # Banjo roadmap and acceptance gates
 
+**Generated first-haul acceptance, October 1:** [Delivery → processing → pickup](generated-rover-hauling.md)
+passes both generated starts with exact private credit/restart and native
+receiving activities. Next fix the first map's excavated return approach,
+require repeated receipts on both maps and measure actual turn clearance and
+planning cost. Native payload/tipping, reacting avatars and material-funded
+repair retain separate gates; the fourteen-item goal remains active.
+
 **Native waypoints, October 1:** [Engine/API gate](rover-waypoints.md) passes
-bounded-radius native drive/braking/reopen and actual probe prediction. Next
-qualify generated layout and heading/turn clearance with real delivery receipts
-on both maps, then processing and nearby output pickup. The local planner is
-unpublished experimental work; passing native/API tests does not close hauling.
+bounded-radius native drive/braking/reopen and actual probe prediction. Its
+then-open first-delivery gate is covered by the newer first-haul checkpoint
+above. Repeated delivery and general heading/turn clearance remain open;
+passing native/API tests alone does not close hauling.
 
 **Stock-rover grade acceptance, October 1:** [Measured native hill work](rover-grades.md)
 extends generated oak-rover autonomy to 12°, retains ground/sharp-curvature

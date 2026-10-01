@@ -227,19 +227,20 @@ def read_ground(engine: Path) -> dict:
     return ground
 
 
-def compose(ground: dict, kind: str) -> dict:
+def compose(ground: dict, kind: str, yaw_rad: float = 0.) -> dict:
     """The room: the post, the rover on the shore, its machine, its panel and
     its program, and the sun -- with the battery and the rest of `kind`."""
     battery = ROOM_KINDS[kind]
     x, z = ROVER_AT
     # Tipped about its own x to the slope it faces down, so its wheels and its
     # caster all meet the ground.
-    fall = grounds.surface_at(ground, x, z + 0.5) - grounds.surface_at(ground, x, z - 0.5)
+    dx,dz=.5*math.sin(yaw_rad),.5*math.cos(yaw_rad)
+    fall = grounds.surface_at(ground, x+dx, z+dz) - grounds.surface_at(ground, x-dx, z-dz)
     pitch = math.atan(-fall)
     artifact = rover_artifact()
-    flat = rigid_assembly.placed(artifact, [x, 0.0, z], 0.0, pitch)
+    flat = rigid_assembly.placed(artifact, [x, 0.0, z], yaw_rad, pitch)
     lift = max(grounds.ground_under(ground, lo, hi) - low for low, lo, hi in rigid_assembly.footprint(flat))
-    rover = rigid_assembly.placed(artifact, [x, lift, z], 0.0, pitch)
+    rover = rigid_assembly.placed(artifact, [x, lift, z], yaw_rad, pitch)
     bodies = rigid_assembly.scene_bodies(rover)
     pins = rigid_assembly.scene_joints(rover)
     q = bodies[0]["orientation_wxyz"]

@@ -1817,7 +1817,7 @@ class Handler(BaseHTTPRequestHandler):
                 # The conversation so far in this room, so the page shows it again
                 # rather than a blank panel beside a room the chat has built in.
                 opened["chat"]=room.chat[-20:]
-                app.brains.settle(opened)
+                app.brains.settle(opened,app.live.session)
                 opened["brains"]=app.brains.summaries()
                 # So the page draws the ground that is known and leaves the rest
                 # dark from the first frame, before anything has stepped.

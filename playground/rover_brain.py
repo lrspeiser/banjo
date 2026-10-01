@@ -473,6 +473,8 @@ class Brain:
         self.before: dict[str, Any] | None = None
         self.machines: dict[str, Any] | None = None
         self.bodies: list[dict[str, Any]] | None = None
+        self.terrain_declared = False
+        self.cell_m = .05
         self.impacts: list[dict[str, Any]] = []
         self.t = 0.0
         self.person: dict[str, Any] | None = None
@@ -505,7 +507,8 @@ class Brain:
         """Its senses' view of the world as the last step left it."""
         return senses.Context(program=self.before or {}, machines=self.machines, bodies=self.bodies, ask=ask,
                               routine=self.routine, person=self.person, impacts=self.impacts, t=self.t,
-                              goods=self.goods, ports=self.ports, sight=self.sight)
+                              goods=self.goods, ports=self.ports, sight=self.sight,
+                              terrain_declared=self.terrain_declared,cell_m=self.cell_m)
 
     def observe(self, program: dict[str, Any], machines: dict[str, Any] | None, impacts: list[dict[str, Any]],
                 t: float, ask: Callable[[Any, dict[str, Any]], dict[str, Any]] | None = None,
@@ -777,14 +780,21 @@ class Brains:
                 if str(program["name"]) in (runtime or {}):
                     brain.routine.restore(runtime[str(program["name"])])
 
-    def settle(self, opened: Any) -> None:
+    def settle(self, opened: Any, session: Any = None) -> None:
         """The room as it opens: every mouth rides to where its body actually
         stands before the first step, so the page draws the indicators at once
         rather than a frame later. Where each mouth sits ON its body was
         already worked out from the spec (machine_ports.as_made), so this is
         only the riding, and a room rejoined half way through gets its mouths
         where the machines have got to."""
-        if self.ports is None or not isinstance(opened, dict):
+        if not isinstance(opened, dict):
+            return
+        # opened() has just replaced the brains after the native open reply's
+        # listeners ran. Restore current observations before the clock's first
+        # routine step; a page's later poses request must not be a prerequisite.
+        if session is not None:
+            self.listen(session, opened)
+        if self.ports is None:
             return
         self.ports.follow(opened.get("bodies"))
         if self.ports:
@@ -810,7 +820,9 @@ class Brains:
         with the room's machines, bodies and knocks."""
         if not isinstance(reply, dict):
             return
-        bodies = reply.get("bodies") if isinstance(reply.get("bodies"), list) else None
+        whole=getattr(session,'state',{}) or {}
+        bodies = whole.get('bodies',reply.get('bodies')) if 'bodies' in reply else None
+        bodies = bodies if isinstance(bodies,list) else None
         t = float(reply.get("t") or 0.0)
         # THE CONTAINERS FIRST, because a bucket is not a machine. What a
         # room holds in its vessels rides the bodies and pours when they are
@@ -849,6 +861,8 @@ class Brains:
         for program in machines["programs"]:
             if isinstance(program, dict) and program.get("name"):
                 brain = self.of(str(program["name"]))
+                brain.terrain_declared=bool((self.spec or {}).get('terrain'))
+                brain.cell_m=float(whole.get('cell_size_m') or .05)
                 brain.person = self.person
                 brain.observe(program, machines, impacts, t, bodies=bodies, engine=engine)
 

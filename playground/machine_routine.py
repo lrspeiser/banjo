@@ -514,10 +514,28 @@ class Routine:
             return None
         if frame.issued is not None:
             if until == "arrived":
-                if asked and asked.get("doing") == "approaching" and program.get("doing") == "waiting":
-                    self._advance("it arrived")
-                    return None
-                if asked is None:
+                if frame.issued.get('blocked_route'):
+                    if frame.issued.get('drive_failed'):return None  # resume/recovery can retry; never dig here
+                    if float(ctx.t)-frame.issued_t<3.:return None
+                    frame.issued=None;asked=None
+                elif asked and asked.get("doing") == "approaching" and program.get("doing") == "waiting":
+                    navigation=frame.issued.get('navigation')
+                    if navigation and (float(program.get('speed_m_s') or 0)>.05 or
+                                       abs(float(program.get('turning_deg_s') or 0))>3.):
+                        return None  # actual brakes must settle before the next turn/work
+                    region=navigation.get('arrival_m') if navigation else None
+                    destination=frame.issued.get('place_at')
+                    in_region=True
+                    if region and destination:
+                        at=ctx.at();distance=math.hypot(at[0]-destination[0],at[1]-destination[1])
+                        in_region=region[0]-.25<=distance<=region[1]+.25
+                    if navigation and (not navigation.get('final') or not in_region):
+                        frame.issued=None  # re-plan the next leg from actual native pose
+                        asked=None
+                    else:
+                        self._advance("it arrived")
+                        return None
+                elif asked is None:
                     # Its time ran out short of the place: again, from here.
                     # A machine that is GOING NOWHERE is the engine's to
                     # notice and get itself out of (LiveWorld, beside the
@@ -527,8 +545,11 @@ class Routine:
                     frame.tries += 1
                     if frame.tries > int(step.get("retries", RETRIES)):
                         self.note(f"gave up going to {step['args'].get('place')}: {frame.tries - 1} tries")
-                        self._advance("given up")
-                        return None
+                        frame.issued=tools.hold_still(ctx,tools.Call('hold_still',{'for_s':0},by))
+                        frame.issued.update(blocked_route=True,drive_failed=True,
+                            navigation={'blocked':'the drive did not reach its destination; recover or resume to retry'})
+                        frame.issued_t=float(ctx.t)
+                        return frame.issued
                     frame.issued = None
             if until == "asked_done" and asked is None:
                 self._advance("done")
@@ -560,6 +581,8 @@ class Routine:
         did = tools.run(ctx, call)
         frame.issued = did
         frame.issued_t = float(ctx.t)
+        if did.get('blocked_route') and (not self.notes or self.notes[-1]!=did['did']):
+            self.note(did['did'])
         if did.get("idle"):
             # Nothing to do yet (nothing on the pile, nothing to work): asked
             # again next time, quietly. A take with something in the hopper
