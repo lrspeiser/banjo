@@ -1,5 +1,13 @@
 # Banjo mechanics scorecard
 
+**Paid AI admission boundary, October 1:** [Controller/native checkpoint](fabrication-ai-build-checkpoint.md)
+adds actual AI-owned 1.925 kg / 192.5 J oak pick admission at 50 mm and
+`dt=1/240 s`, using collected stock and the generated rated solar source.
+Restart/lost receipts preserve one output and exact debit; foreign control and
+unsupported rigid machine admission refuse. Native laws and the retained
+glass/oak/iron comparison set are unchanged. Process calibration, exact rigid
+forming, mixed interfaces, fatigue/joints and full conservation remain open.
+
 **Starter power boundary, October 1:** [Generated-source checkpoint](fabrication-starter-power-checkpoint.md)
 adds authored 10 kW solar battery output to fresh yards; native battery laws,
 20 MJ capacity / 2 MJ initial charge and old worlds remain unchanged. Latest

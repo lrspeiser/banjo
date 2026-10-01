@@ -56,6 +56,12 @@ class ControllerBoundaries(unittest.TestCase):
                 lambda x,z:{'on_the_ground':abs(x)<.1 and abs(z)<.1,'ground_m':0})
         self.assertLess(len(seen),1200)
 
+    def test_pending_paid_work_is_offered_even_after_its_rack_stock_was_spent(self):
+        actions=ai_actions.catalog({'goals':{'goals':[],'next_goal':'need'}},
+            {'fabrication_build':{'job_id':'pending-real-job'}})
+        self.assertEqual(['continue-build','wait'],[a['verb'] for a in actions])
+        self.assertEqual(actions[0]['id'],ai_actions.reference_pick({},actions))
+
     def test_catalog_uses_requirements_and_observed_targets_not_tutorial_names(self):
         state={'goals':{'chain_id':'unrelated-chain','next_goal':'renamed-task','goals':[
             {'id':'renamed-task','requirement':{'kind':'personal-test','test':'study-example'}}]},
@@ -93,6 +99,27 @@ class ControllerBoundaries(unittest.TestCase):
         self.assertEqual(ai_player.MAX_DECISIONS, len(actions))
         self.assertEqual("blocked", profile["ai"]["status"])
         self.assertIn("budget", profile["ai"]["message"])
+
+    def test_completed_chain_finishes_pending_build_receipt_before_stopping(self):
+        # Controller policy only; actual owned native placement/replay is
+        # measured by AutonomousGuests' paid Make/restart case below.
+        manager=ai_player.Manager.__new__(ai_player.Manager)
+        manager.app=SimpleNamespace();manager.cadence_s=0
+        profile={'pose':{},'ai':{'mode':'reference','history':[],'decisions':0,
+            'memory':{'fabrication_build':{'job_id':'accepted-job'}}}}
+        goals={'complete':True,'chain_id':'unit','next_goal':None,'goals':[]}
+        manager._observe=lambda p,c:{'goals':goals}
+        manager._post=lambda *args:{}
+        manager._save=lambda p,**updates:p['ai'].update(updates)
+        actions=[]
+        def execute(p,stop,cookie,action,state,ident):
+            actions.append(action['verb']);p['ai']['memory'].pop('fabrication_build')
+            return {'phase':'installed','body':'accepted-output'}
+        manager._execute=execute
+        manager._run(profile,threading.Event(),'')
+        self.assertEqual(['continue-build'],actions)
+        self.assertEqual('complete',profile['ai']['status'])
+        self.assertEqual('installed',profile['ai']['history'][0]['receipt']['phase'])
 
     def test_named_ground_work_is_attributed_to_the_striking_player_and_tool(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -201,6 +228,125 @@ class AutonomousGuests(unittest.TestCase):
             worker.join(timeout=4)
         self.assertFalse(worker.is_alive())
         self.assertEqual(["Observe briefly"], result[0]["did"])
+
+    def test_ai_paid_make_uses_own_collected_stock_solar_and_recovers_lost_writes_on_restart(self):
+        from copy import deepcopy
+        from fabrication_tests import settings
+        world,human,app=self.setup_world()
+        guest=self.join(world,'Funded builder');peer=self.join(world,'Unrelated player')
+        profile=app.room.player_records[guest['id']]
+        profile['ai']={'controller':human['id'],'mode':'reference','status':'paused',
+                       'decisions':0,'history':[],'memory':{}}
+        sid=app.live.session.id
+        pile=next(p for p in app.brains.goods.stockpiles if (p.get('holds') or {}).get('oak',0)>25)
+        at=pile['at_m'];floor=self.post('/api/live/act',{'session':sid,'op':'survey','at':at},world)['survey']['ground_m']
+        self.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],'request_id':'ai-collect-real-oak',
+            'person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[0,0,-1]}},world,guest['token'])
+        common={'session':sid,'scene':app.room.scene}
+        self.post('/api/world/fabrication/configure',{**common,'settings':settings(stock_kg={},energy_j=0),
+            'request_id':'ai-empty-process-fixture'},world)
+        candidate=self.post('/api/world/workshop/what_made',{'body':'field pick'},world)['recipe']
+        initial=self.post('/api/world/fabrication/state',common,world,guest['token'])
+        self.assertEqual(10000,next(s['max_power_w'] for s in initial['energy_sources'] if s['max_power_w']>0))
+        personal=next(s for s in initial['stock_sources'] if s['pool']=='personal' and s['material']=='oak')
+        self.assertEqual(25.,personal['mass_kg'])
+        shared=[s for s in initial['stock_sources'] if s['pool']=='shared']
+        human_stock=self.post('/api/world/fabrication/state',common,world)['stock_sources']
+        lost={'fund_stock','fund_energy','start_make','commit','before-commit'};phases=[];requests=[]
+        stop=threading.Event();ident='ai-paid-first-job'
+        action={'verb':'build','recipe':{'candidate':candidate}}
+        # The first decision reviews and cannot spend or create a native body.
+        first=app.ai_players._execute(profile,stop,'',action,{'native':{'session':sid}},ident)
+        self.assertEqual('review',first['phase']);phases.append('review')
+        self.assertEqual(initial['state'],self.post('/api/world/fabrication/state',common,world,guest['token'])['state'])
+        before=deepcopy(profile['ai']['memory'])
+        stop.set()
+        self.assertEqual({},app.ai_players._execute(profile,stop,'',{'verb':'continue-build'},
+            {'native':{'session':sid}},'paused-decision'))
+        self.assertEqual(before,profile['ai']['memory']);stop.clear()
+        for decision in range(25):
+            manager=app.ai_players;post=manager._post
+            def observed(p,path,body,cookie):
+                op=path.rsplit('/',1)[-1]
+                if op=='commit' and 'before-commit' in lost:
+                    lost.remove('before-commit');raise ValueError('Injected interrupted before commit')
+                result=post(p,path,body,cookie);requests.append((path,deepcopy(body)))
+                if op in lost:
+                    lost.remove(op);raise ValueError('Injected lost '+op+' acknowledgement')
+                return result
+            with mock.patch.object(manager,'_post',side_effect=observed):
+                try:
+                    result=manager._execute(profile,stop,'',{'verb':'continue-build'},
+                        {'native':{'session':app.live.session.id}},'next-decision-'+str(decision))
+                except ValueError as exc:
+                    self.assertTrue(str(exc).startswith('Injected '),str(exc))
+                    pending=deepcopy(profile['ai']['memory']['fabrication_build']['request'])
+                    self.stop();self.start();app=self.app.hub.get(world)
+                    # Reopen the exact saved world; private character state and
+                    # exact retry arguments survive a real server restart.
+                    self.post('/api/world/open',{},world,guest['token'])
+                    self.post('/api/world/ai',{'action':'list'},world)
+                    profile=app.room.player_records[guest['id']]
+                    self.assertEqual(pending,profile['ai']['memory']['fabrication_build']['request'])
+                    continue
+            phases.append(result['phase'])
+            if result['phase']=='start_make':
+                with self.assertRaises(urllib.error.HTTPError) as refused:
+                    self.post('/api/world/fabrication/pause',{'session':app.live.session.id,'scene':app.room.scene,
+                        'job_id':ident,'revision':app.room.fabrication_record['revision'],'request_id':'foreign-ai-pause'},
+                        world,peer['token'])
+                self.assertIn('Only the player who started',refused.exception.read().decode())
+            if result['phase']=='installed':break
+        else:self.fail('Paid AI build did not finish: '+str(phases))
+        self.assertFalse(lost);self.assertNotIn('fabrication_build',profile['ai']['memory'])
+        self.assertEqual(1,len(app.room.fabrication_record['jobs']))
+        job=app.room.fabrication_record['jobs'][ident]
+        self.assertEqual('installed',job['status']);self.assertEqual(guest['id'],job['make_source']['owner'])
+        self.assertAlmostEqual(1.925,job['product_kg'],places=6)
+        self.assertAlmostEqual(192.5,job['required_j'],places=6)
+        self.assertEqual(1,len(app.room.fabrication_record['stock_imports']))
+        self.assertEqual(1,len(app.room.fabrication_record['energy_imports']))
+        common={'session':app.live.session.id,'scene':app.room.scene}
+        final=self.post('/api/world/fabrication/state',common,world,guest['token'])
+        self.assertAlmostEqual(25-job['stock_kg'],next(s['mass_kg'] for s in final['stock_sources']
+            if s['pool']=='personal' and s['material']=='oak'),places=6)
+        self.assertEqual(shared,[s for s in final['stock_sources'] if s['pool']=='shared'])
+        self.assertEqual(human_stock,self.post('/api/world/fabrication/state',common,world)['stock_sources'])
+        self.assertFalse(any('/workshop/preview' in path or '/workshop/commit' in path for path,_ in requests))
+        self.assertTrue(any(b['name']==job['root_body'] for b in app.live.session.state['bodies']))
+        self.assertEqual(set(),server.journal_of(app,guest['id']).knows(),'Manufacture cannot invent a learned technique')
+        out=ROOT/'build/ai-player';out.mkdir(parents=True,exist_ok=True)
+        report={'phases':phases,'job_id':ident,'mass_kg':job['product_kg'],'work_j':job['required_j'],
+            'native_dt_s':1/240,'cell_m':.05,'lost_writes_replayed':['fund_stock','fund_energy','start_make','commit'],
+            'interrupted_preview_refreshed':True,
+            'own_stock_spent_kg':job['stock_kg'],'source_power_w':10000,'shared_rack_unchanged':True,
+            'human_rack_unchanged':True,'native_output':job['root_body'],'configured_fixture':True}
+        (out/'paid-make.json').write_text(json.dumps(report,indent=2));print('\n    paid AI Make: '+json.dumps(report))
+
+    def test_paid_ai_refuses_unsupported_machine_without_free_install_or_supply_debit(self):
+        from copy import deepcopy
+        from fabrication_tests import settings
+        world,human,app=self.setup_world();guest=self.join(world,'Machine builder')
+        profile=app.room.player_records[guest['id']]
+        profile['ai']={'controller':human['id'],'mode':'reference','status':'paused',
+                       'decisions':0,'history':[],'memory':{}}
+        common={'session':app.live.session.id,'scene':app.room.scene}
+        self.post('/api/world/fabrication/configure',{**common,'settings':settings(stock_kg={},energy_j=0),
+            'request_id':'unsupported-ai-empty-process'},world)
+        initial=deepcopy(app.room.fabrication_record);installs=deepcopy(app.room.workshop_installs)
+        candidate={'kind':'solar-array','parameters':{},'component_overrides':{}}
+        design,_=ai_actions.workshop_components.design_from_spec(candidate)
+        candidate['component_overrides']={p.name:{'mechanics':{'model':'rigid'}} for p in design.parts}
+        manager=app.ai_players;post=manager._post;paths=[]
+        def observed(p,path,body,cookie):
+            paths.append(path);return post(p,path,body,cookie)
+        with mock.patch.object(manager,'_post',side_effect=observed),self.assertRaisesRegex(ValueError,'lattice|precise'):
+            manager._execute(profile,threading.Event(),'',{'verb':'build','recipe':{'candidate':
+                candidate}},
+                {'native':{'session':common['session']}},'unsupported-ai-machine')
+        self.assertEqual(initial,app.room.fabrication_record);self.assertEqual(installs,app.room.workshop_installs)
+        self.assertFalse(any(p.endswith(('/fund_stock','/fund_energy','/start_make','/preview','/commit')) for p in paths))
+        self.assertIn('fabrication_build',profile['ai']['memory'])
 
     def test_ai_turns_on_named_native_program_using_its_current_numeric_id(self):
         world,owner,app=self.setup_world()

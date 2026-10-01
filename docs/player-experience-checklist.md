@@ -1,5 +1,11 @@
 # Player experience work — September 30, 2026
 
+[Paid AI construction](fabrication-ai-build-checkpoint.md) uses the configured
+Lab job/funding APIs, retains pending requests across restarts and produces one
+owned native oak pick from actual collected stock/solar energy. Unsupported
+machines refuse without authoring fallback. Ordinary workbench, machine paid
+admission and full damaged-tool journey remain open: **four verified, ten partial**.
+
 [Finite starter solar output](fabrication-starter-power-checkpoint.md) now funds
 the actual configured Lab journey from the generated array battery, without an
 extra fixture source. Fresh arrays declare 10 kW; existing worlds retain their

@@ -1,5 +1,12 @@
 # Development status and handoff
 
+**Configured AI manufacturing, October 1:** [Paid controller checkpoint](fabrication-ai-build-checkpoint.md)
+passes actual collected personal oak, generated solar charging, native paid pick
+installation, lost stock/energy/Start/commit acknowledgement restarts and an
+interrupted preview. Unknown writes retain their exact request; explicit stale
+refusals refresh. Unsupported rigid machines refuse without unpaid fallback.
+Default workbench and machine admission remain open; four verified, ten partial.
+
 **Finite starter solar output, October 1:** [Native/browser checkpoint](fabrication-starter-power-checkpoint.md)
 passes typed rating preservation from chat/recipe to native export and gives
 fresh generated arrays a declared 10 kW source. Capacity/initial charge are

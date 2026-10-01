@@ -1,5 +1,12 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Paid AI build path, October 1:** [Controller checkpoint](fabrication-ai-build-checkpoint.md)
+connects configured AI construction to reviewed personal stock, actual battery
+charging, native work and owned placement, with pending-write/restart recovery.
+Unsupported rigid machines refuse without free authoring. Default workbench,
+paid machine admission and complete autonomous paid progression remain next;
+all fourteen requirements stay active, four verified, ten partial.
+
 **Finite starter source, October 1:** [Solar output checkpoint](fabrication-starter-power-checkpoint.md)
 adds an explicit 10 kW rating to fresh generated solar batteries, preserving
 20 MJ capacity / 2 MJ initial charge and legacy saved worlds. Actual Lab

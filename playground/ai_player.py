@@ -213,7 +213,7 @@ class Manager:
                     'n':1,'person':self._person(profile,cookie,eyes=spawn)},cookie)
             while not stop.is_set():
                 state=self._observe(profile,cookie);goals=state['goals']
-                if goals['complete']:
+                if goals['complete'] and not profile['ai'].get('memory',{}).get('fabrication_build'):
                     self._save(profile,status='complete',message='All currently declared goal chains complete; see the separate personal tech tree')
                     return
                 if profile['ai']['decisions']>=MAX_DECISIONS:
@@ -227,6 +227,8 @@ class Manager:
                         'Targets, prices and recipes in action_catalog are current observations. Compare all recipe gaps; '
                         'select actual equipment, move within reach, acquire and inspect tools, use supported ground actions, '
                         'and personally watch supported batches. An action receipt is not automatically goal or skill success. '
+                        'Continue a pending reviewed build through funding, native work and placement; '
+                        'a charging or work phase is not a finished product. '
                         'Never invent supplies, completion, physical laws or evidence. Stop only for a real blocker.',
                         'criteria':{a['id']:a['label'] for a in actions}}}
                     decision=self.decider_factory().ask(ai_actions.model_view(state,actions,profile['ai']['history']),questions)['next']
@@ -258,6 +260,110 @@ class Manager:
                 try:self._save(profile,status='blocked',message=str(exc)[:240],history=history)
                 except Exception:logging.getLogger('banjo').exception('AI character checkpoint failed')
 
+    def _fabricated_build(self,profile,stop,cookie,action,ident,common,funding):
+        """One recoverable player operation per decision; never author free output.
+
+        Pending write arguments are saved before HTTP and replayed unchanged if
+        its acknowledgement is lost. Stock comes only from this character's rack;
+        existing station supplies are already funded. Work/charging use accepted
+        native time. A pause/restart leaves a real workpiece to resume.
+        """
+        memory=deepcopy(profile['ai'].get('memory',{}))
+        pending=memory.get('fabrication_build')
+        if pending is None:
+            pending={'candidate':deepcopy(action['recipe']['candidate']),'job_id':ident}
+            memory['fabrication_build']=pending
+            self._save(profile,memory=memory)
+        def save():self._save(profile,memory=memory)
+        def write(op,fields):
+            if stop.is_set():return {}
+            if 'request' not in pending:
+                pending['request']={'op':op,'body':{**common,**fields,'request_id':uuid.uuid4().hex}}
+                save()
+            call=pending['request']
+            try:reply=self._post(profile,'/api/world/fabrication/'+call['op'],call['body'],cookie)
+            except ValueError as exc:
+                # These explicit refusals precede spending. Unknown failures
+                # retain the request, including potentially committed saves.
+                if any(s in str(exc).lower() for s in ('source rack changed','native source changed',
+                    'fabrication revision changed','source world changed','source room changed',
+                    'plan expired','preview expired','preview belongs to a different world session',
+                    'changed after preview')):
+                    pending.pop('request',None)
+                    if 'plan expired' in str(exc).lower():pending.pop('plan',None)
+                    save()
+                    return {'phase':'refresh','job_id':pending['job_id'],'reason':str(exc)}
+                raise
+            pending.pop('request',None)
+            if call['op']=='commit':
+                pending['installed']={k:reply.get(k) for k in ('root_body','mass_kg','resources_charged')}
+            save()
+            return {'phase':call['op'],'job_id':pending['job_id'],
+                    **({'body':reply['root_body'],'mass_kg':reply['mass_kg']} if call['op']=='commit' else {})}
+        if stop.is_set():return {}
+        if pending.get('request'):
+            call=pending['request']
+            return write(call['op'],call['body'])
+        if not funding['configured']:raise ValueError('The pending workpiece has no declared workbench process')
+        state=funding['state'];job=state['jobs'].get(pending['job_id'])
+        if pending.get('installed') or job and job['status']=='installed':
+            result=pending.get('installed') or {'root_body':job['root_body'],'mass_kg':job['product_kg']}
+            memory.pop('fabrication_build');save()
+            return {'phase':'installed','body':result['root_body'],'mass_kg':result['mass_kg']}
+        if job:
+            if job['status']=='paused':return write('resume',{'job_id':pending['job_id'],'revision':state['revision']})
+            if job['status']=='running':
+                if job['condition']!='working':raise ValueError('Workbench '+job['condition']+'; retain the pending workpiece')
+                seconds=max(1,min(10,math.ceil((job['required_j']-job['work_j'])/
+                    (state['config']['power_w']*state['config']['efficiency']))))
+                self._post(profile,'/api/world/fabrication/wait',{**common,'seconds':seconds},cookie)
+                return {'phase':'work','job_id':pending['job_id']}
+            if job['status']!='ready':raise ValueError('The pending workpiece is not placeable')
+            eyes=(profile.get('pose') or {}).get('eyes_m',[0,1.62,3]);failures=[]
+            for dx,dz in ((3,0),(-3,0),(0,3),(0,-3),(3,3),(-3,-3)):
+                if stop.is_set():return {}
+                try:
+                    preview=self._post(profile,'/api/world/fabrication/preview',
+                        {**common,'job_id':pending['job_id'],'position_m':[eyes[0]+dx,eyes[2]+dz]},cookie)
+                    break
+                except ValueError as exc:failures.append(str(exc))
+            else:raise ValueError('No admitted placement near this player: '+'; '.join(failures)[:200])
+            return write('commit',{'job_id':pending['job_id'],'preview_id':preview['preview_id']})
+        if 'plan' not in pending:
+            plan=self._post(profile,'/api/world/fabrication/plan_make',
+                {**common,'candidate':pending['candidate']},cookie)
+            if not plan['available']:raise ValueError(plan['reason'])
+            pending['plan']=plan;save()
+            return {'phase':'review','quote':{k:plan['quote'][k] for k in
+                ('material','stock_kg','product_kg','supply_required_j','minimum_duration_s')},'job_id':pending['job_id']}
+        plan=pending['plan'];quote=plan['quote']
+        shortage=max(0.,quote['stock_kg']-state['stock_kg'].get(quote['material'],0.))
+        if shortage>1e-10:
+            source=next((s for s in funding['stock_sources'] if s['pool']=='personal'
+                         and s['material']==quote['material'] and s['mass_kg']>0),None)
+            if source is None:raise ValueError('This character needs '+quote['material']+' in its own material inventory')
+            return write('fund_stock',{'material':quote['material'],'mass_kg':min(shortage,source['mass_kg']),
+                'pool':'personal','rack_hash':source['rack_hash'],'revision':state['revision']})
+        needed=max(0.,quote['supply_required_j']-state['energy_j'])
+        if needed>1e-10:
+            sources=[s for s in funding['energy_sources'] if s['max_power_w']>0 and s['charge_j']>0]
+            source=next((s for s in sources if s['connected']),None) or next(iter(sources),None)
+            if source is None:raise ValueError('No charged battery with a finite output rating is available')
+            if not source['connected']:
+                return write('connect_energy',{'store':source['id'],'store_hash':source['store_hash'],
+                    'power_w':min(source['max_power_w'],state['config']['power_w']),'revision':state['revision']})
+            amount=min(needed,source['transfer_available_j'])
+            if amount<.000001:
+                self._post(profile,'/api/world/fabrication/wait',{**common,'seconds':1},cookie)
+                return {'phase':'charging','job_id':pending['job_id']}
+            return write('fund_energy',{'store_hash':source['store_hash'],'joules':amount,'revision':state['revision']})
+        if any(j['status']=='running' for j in state['jobs'].values()):
+            raise ValueError('The workbench is occupied; retain the reviewed build')
+        pending['request']={'op':'start_make','body':{**common,'plan_id':plan['plan_id'],
+            'revision':state['revision'],'request_id':pending['job_id']}}
+        save()
+        return write('start_make',{})
+
     def _execute(self,profile,stop,cookie,action,state,ident):
         verb=action['verb'];memory=deepcopy(profile['ai'].get('memory',{}));sid=state['native']['session']
         target=action.get('target') or {}
@@ -281,8 +387,12 @@ class Manager:
             reply=self._post(profile,'/api/workshop/market',{'action':'buy','item_id':action['item'],
                 'quoted_price_j':action['quoted_price_j'],'request_id':ident},cookie)
             return {'balance_j':reply['balance_j'],'paid_j':action['quoted_price_j'],'item':action['item']}
-        if verb=='build':
+        if verb in ('build','continue-build'):
             source=self._post(profile,'/api/world/workshop/context',{},cookie)
+            common={k:source[k] for k in ('session','scene')}
+            funding=self._post(profile,'/api/world/fabrication/state',common,cookie)
+            if funding['configured'] or memory.get('fabrication_build'):
+                return self._fabricated_build(profile,stop,cookie,action,ident,common,funding)
             eyes=(profile.get('pose') or {}).get('eyes_m',[0,1.62,3]);failures=[]
             for dx,dz in ((3,0),(-3,0),(0,3),(0,-3),(3,3),(-3,-3)):
                 if stop.is_set():return {}

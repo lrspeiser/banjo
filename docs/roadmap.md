@@ -1,5 +1,12 @@
 # Banjo roadmap and acceptance gates
 
+**Paid AI construction, October 1:** [Native controller checkpoint](fabrication-ai-build-checkpoint.md)
+passes configured reviewed jobs, own stock/actual energy, retained pending writes
+and restart/placement recovery. Next implement supported exact rigid/machine
+paid admission, then declare the ordinary workbench and run complete paid
+player/AI progression and damaged-tool use. All fourteen gates remain active:
+four verified, ten partial.
+
 **Starter source acceptance, October 1:** [Finite solar output](fabrication-starter-power-checkpoint.md)
 passes actual generated-battery funding in Lab, legacy compatibility,
 day/night charging and two generated rover/processing/restart cases. Next

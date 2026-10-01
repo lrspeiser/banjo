@@ -1,5 +1,11 @@
 # Autonomous characters and watching
 
+**Configured paid construction, October 1:** [AI job checkpoint](fabrication-ai-build-checkpoint.md)
+adds reviewed Make, personal material funding, finite native solar charging,
+work and owned placement. Pending jobs and exact writes survive pause/restart;
+unsupported rigid machines refuse without unpaid authoring. Default workbench
+and complete paid autonomous progression remain open.
+
 **Actual generated-world audit:** [September 30 playthrough review](ai-player-playthrough-review.md) records 4/4 camp goals and 0/9 personal techniques, then failed assistant-guided continuation and rejoin. The run used the reference controller because no provider key was configured; it is not live-model quality evidence. The report includes sanitized receipts and prioritized acceptance gates.
 
 Implemented September 30, 2026. **Menu → Characters** in a named game starts

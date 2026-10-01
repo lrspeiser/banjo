@@ -87,6 +87,10 @@ def catalog(state,memory):
     def offer(verb,label,**args):
         ident=verb if not args else verb+':'+key(args)
         actions.append({'id':ident,'verb':verb,'label':label,**deepcopy(args)})
+    if memory.get('fabrication_build'):
+        offer('continue-build','Continue the reviewed, funded workpiece before starting another build')
+        offer('wait','Stop with the pending workpiece retained',blockers=['A reviewed build is pending'])
+        return actions
     def supplies(missing):
         for gap in missing:
             if gap.get('short_kg',0)<=0:continue
@@ -186,7 +190,7 @@ def reference_pick(state,actions):
     # A deterministic capability policy, not a tutorial step-id script. Model
     # mode sees the same offers, requirements, comparisons and observed state.
     for verb in ('buy','bank','compare-recipes','select-recipe','acquire','inspect','use-tool',
-                 'build','pack','power-on','watch-batch','observe','move','select-target','wait'):
+                 'continue-build','build','pack','power-on','watch-batch','observe','move','select-target','wait'):
         chosen=next((a for a in actions if a['verb']==verb),None)
         if chosen:return chosen['id']
     raise ValueError('The observed catalog has no stop action')
