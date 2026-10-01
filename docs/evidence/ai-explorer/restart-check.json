@@ -1,0 +1,98 @@
+{
+  "published_source": "c4f48e21e39d1e296d7568fe7eb8fa0169cb6756",
+  "world_id": "a49789cfd53d4f998ea38dea43ef6c6f",
+  "character_id": "569e64a5cb8e46a281c4b946bfc7bd5a",
+  "restore": {
+    "bodies": 12,
+    "not_kept": [
+      "legacy snapshots recover body heat; missing heaters are suspended and gas history restarts from the scene",
+      "anything under way: a world is saved only between breaks, strokes of the hand, cuts and a point's time in the ground, so the last one saved before any of those is what comes back",
+      "the solver's memory of its contacts: a thing that was moving carries on from where it was, but not step for step as it would have"
+    ],
+    "parked": [
+      {
+        "at_m": [
+          3.0044486649900692,
+          0.9377655292234918,
+          0.00018928675674339355
+        ],
+        "facing_wxyz": [
+          0.9999169111251831,
+          0.0005564669845625758,
+          3.284226477262564e-05,
+          -0.012882852926850319
+        ],
+        "name": "workshop-321b1f103e3f4b69"
+      }
+    ],
+    "saved_t_s": 485.13749999964097,
+    "tier": "whole",
+    "why": ""
+  },
+  "baseline_t_s": 484.6166666663081,
+  "restored_checkpoint_t_s": 485.13749999964097,
+  "checkpoint_note": "The unattended clock saved again between baseline capture and shutdown. Equality to the earlier baseline is not asserted.",
+  "ground_transfers_unchanged_before_open": true,
+  "status": "complete",
+  "decisions": 35,
+  "known": [
+    "Gathering by hand",
+    "Smelting copper"
+  ],
+  "balance_j": 256,
+  "inventory": {
+    "record": {
+      "revision": 2,
+      "dominant": "right",
+      "hands": {
+        "right": "field pick",
+        "left": null
+      },
+      "stowed": [
+        "workshop-321b1f103e3f4b69"
+      ],
+      "home": {},
+      "facing": {
+        "workshop-321b1f103e3f4b69": [
+          0.99992,
+          0.00056,
+          3e-05,
+          -0.01288
+        ]
+      }
+    },
+    "carried": {
+      "available_kg": 62.84499209566028,
+      "limit_kg": 80.0,
+      "objects_kg": 1.925,
+      "over_limit_kg": 0.0,
+      "rock_kg": 0.0,
+      "rock_m3": 0.0,
+      "sand_kg": 12.721207953124726,
+      "sand_m3": 0.007950754970702953,
+      "soil_kg": 0.0,
+      "soil_m3": 0.0,
+      "total_kg": 1.925
+    },
+    "hands": {
+      "right": {
+        "id": "field pick",
+        "name": "field pick",
+        "material": "oak",
+        "shape": "box",
+        "parts": [
+          "field pick",
+          "field pick-1"
+        ]
+      },
+      "left": null
+    },
+    "stowed": [
+      {
+        "id": "workshop-321b1f103e3f4b69",
+        "name": "workshop-321b1f103e3f4b69"
+      }
+    ],
+    "hand_in_the_world": "right"
+  }
+}

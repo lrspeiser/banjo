@@ -1,5 +1,10 @@
 # Development status and handoff
 
+Latest explorer implementation is published on main as
+`c4f48e21e39d1e296d7568fe7eb8fa0169cb6756`;
+[review and actual server restart receipt](ai-explorer-checkpoint.md#persistent-review)
+retain the measured run's source boundary and restore limitations.
+
 **Expanded AI player, September 30 (verified implementation):** [Checkpoint](ai-explorer-checkpoint.md) measures reference play on both generated terrain seeds: 8/8 Camp+Workshop goals, 2/10 personal techniques, no grants/provider calls, isolated human journal and exact runtime reload. Native-density hopper capacity, atomic snapshot/source save, stale-fallback removal and shared declared arrival repair failures exposed by the longer route. CTest now registers the AI suite. Live-provider play is unverified without a configured key; exhausted-input replenishment, continued tech exploration, Market completeness and compact labels remain open.
 
 **Goal chain checkpoint, September 30:** [Implementation and verification](goal-chains.md) (code `6b45be4`, main) adds the next four-step checklist, a small editable Work table and reusable predicates over durable personal/native receipts. Generated terrain seeds 7 and 4 complete through normal player APIs, including stool placement and restart; another guest receives no completion. Chrome checks chapter/recipe/Skills navigation without awards. These are scripted player checks; the autonomous controller still stops at Camp and provider/scarcity continuation remains open.

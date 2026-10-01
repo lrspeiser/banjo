@@ -1,5 +1,40 @@
 # AI explorer checkpoint — September 30, 2026
 
+Implementation published to GitHub **main** as
+`c4f48e21e39d1e296d7568fe7eb8fa0169cb6756`. The persistent run below used
+the outgoing working tree before its final reader-lock fix; the restart check
+used the published implementation.
+
+## Play experience and recommendations
+
+The opening loop works: collect solar energy, buy supplies, make a stool and
+put it in your own bag. The next loop gives those supplies a purpose: find and
+study a tool, gather material, build a work surface and watch copper being
+smelted. The character keeps its own possessions and learning; watching it does
+not give the human player its techniques.
+
+The experience currently ends too early. Finishing the checklists stops the
+controller at two techniques, even though the catalog lists ten. That is a
+controller boundary, not evidence that the other eight are impossible. The
+next playtest should choose the next reachable technique after each checklist
+and keep going until an actual missing capability or resource prevents play.
+
+Priorities from this run:
+
+1. **Keep progressing after the introduction.** Show the next technique, its
+   prerequisites, the equipment to use and the next supported action.
+2. **Make purchasing a complete plan.** Show every missing material, estimated
+   total energy cost and whether the next useful capability is affordable.
+3. **Make possession and progress readable.** Use product names, compact
+   quantities and personal/shared labels. Keep ids and action diagnostics in
+   an expandable history.
+4. **Repair machine delivery and timing.** The generated rover can fail to
+   reach an intake; AI page steps also slow the world clock. Neither should
+   silently leave the player waiting for a supply chain.
+5. **Run a live LLM comparison.** This playtest uses the reference AI policy.
+   It establishes supported gameplay actions, not language-model planning
+   quality or cost.
+
 ## Measured result
 
 The reference character completes **8/8 goals across Camp and Workshop** and
@@ -111,6 +146,14 @@ This link requires the local review server. Native time reached 55.4125 s during
 that wall interval: the current AI page-step cadence suppresses some unattended
 clock time. Do not describe this as realtime autonomous throughput. Unifying
 AI/page/background step ownership is a remaining timing gate.
+
+[Server restart check](evidence/ai-explorer/restart-check.json) with the published
+code restores the native world at 485.1375 s using the engine's `whole` tier.
+The character retains its completed status, 35 decisions, two techniques,
+256 J, held Field pick and packed stool. The ground-transfer ledger is
+unchanged. The unattended clock saved again between baseline capture and
+shutdown, so this check does not assert equality to that earlier native
+snapshot. The engine's reported restore limitations remain in the receipt.
 
 ## Verification and remaining gates
 
