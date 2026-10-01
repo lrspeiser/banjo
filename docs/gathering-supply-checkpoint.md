@@ -1,7 +1,7 @@
 # Gathering and recursive supply checkpoint — October 1, 2026
 
-Implementation accompanies this checkpoint; the published revision is recorded
-after publication. The fourteen-item goal remains active: four verified, nine
+Published implementation: `39b7494` on GitHub main. The fourteen-item goal
+remains active: four verified, nine
 partial, durability/repair pending.
 
 ## Implemented
