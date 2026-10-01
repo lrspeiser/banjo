@@ -1,5 +1,7 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Mixed-scene gathering-tool admission, September 30:** [Measured native boundary](lattice-tools-with-equipment.md), code `f819e81`: a lattice ground tool can share exact machinery's room and retain its point through save/carry. Comparative glass/oak/iron drop work and trajectory checks pass. Exact tool points, mixed-scene blades and unsupported internal failure remain refused. Providing the generated starter tool and its Workshop build/study/gathering journey is the next gate.
+
 **Personal machine observation, September 30:** [Implemented learning contract](player-learning-checkpoint.md): explicit nearby observation resolves registered learning tests against this world's equipment and earns knowledge only from source-attributed durable work. Source snapshot/runtime, an outbox and personal journals support restart recovery. The larger tool/gathering/work-surface/process goal chain and autonomous exploration beyond camp remain planned; routing proofs remain declared terrain checks until actual machine journeys pass.
 
 **Player persistence implementation, September 30:** [Verified P0 checkpoint](player-persistence-checkpoint.md), code `6d1a317`: machine receiving receipts and exact hopper/order records now accompany the native snapshot; failed saves are visible and bank retries retain their identity. Moving parked records and two guests' packed assemblies survive staging/restart unchanged. Learning, further progression, guidance, expanded AI and Market recommendations remain open.

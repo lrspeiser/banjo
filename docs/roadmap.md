@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Mixed-scene tool prerequisite, September 30:** [Implemented admission](lattice-tools-with-equipment.md) removes the blanket refusal of lattice ground tools beside exact machines, with three-material work/trajectory and save/carry checks. Next: general Workshop tool declaration/build contract → grid-appropriate reachable starter tool → attributed study/gathering/player-control journey. This does not close the generated-world tool gate by itself.
+
 **Personal learning checkpoint, September 30:** [Measured implementation](player-learning-checkpoint.md) supplies source/observer attribution, durable journal recovery and world-aware learning routes. Next: usable starter gathering tool + personal study → measured gathering + useful surface + supported process goals → general AI action catalog → complete Market gaps/costs and compact labels. Also reproduce and fix generated rover steering/delivery failures; declared flood-fill reachability is not a native route acceptance test.
 
 **P0 player persistence acceptance, September 30:** [Checkpoint](player-persistence-checkpoint.md), code `6d1a317`, passes generated real-time receiving/save/bank/restart and multiplayer packed-item staging checks. Next: general world capabilities and attributed evidence → reachable gathering tool → supported goal chain → world-aware guidance and broader AI actions → relevant complete Market guidance and compact labels. Receipt compaction and compound-operation failure recovery remain longer-running persistence gates.
