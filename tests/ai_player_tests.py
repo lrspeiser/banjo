@@ -142,6 +142,59 @@ class AutonomousGuests(unittest.TestCase):
         self.assertFalse(worker.is_alive())
         self.assertEqual(["Observe briefly"], result[0]["did"])
 
+    def test_generated_starter_tool_can_be_taken_re_equipped_and_used_through_player_routes(self):
+        for terrain_choice, goods_seed in ((1,851269742),(0,1)):
+            # Only map selection is pinned. No inventory, geometry, hand
+            # outcome, terrain transfer or journal is supplied by this test.
+            with mock.patch.object(server.secrets,'randbelow',side_effect=[terrain_choice,goods_seed-1]):
+                world,owner,app=self.setup_world()
+            other=self.join(world,'Other guest')
+            session=app.live.session.id
+            surveyed=self.post('/api/live/act',{'session':session,'op':'survey','at':[-.9,.025]},world)
+            floor=surveyed['survey']['ground_m']
+            target=self.post('/api/live/act',{'session':session,'op':'survey','at':[.3,.025]},world)['survey']['ground_m']
+            person={'standing_m':[-.9,floor,.025],'eyes_m':[-.9,floor+1.62,.025],
+                    'facing':[1,0,0],'look_direction':[1.2,target-floor-1.62,0]}
+            def inventory(op):
+                shown=self.post('/api/world/inventory/shown',{'session':session},world)
+                answer=self.post('/api/world/inventory',{'session':session,'request':f'{op}-{terrain_choice}',
+                    'revision':shown['record']['revision'],'op':op,'item':'field pick','person':person},world)
+                self.assertTrue(answer['ok'],answer)
+                return answer
+            inventory('take_up'); inventory('stow'); inventory('equip')
+            owned=self.post('/api/world/inventory/shown',{'session':session},world)
+            self.assertTrue(any((h or {}).get('name')=='field pick' for h in owned['hands'].values()))
+            # The normal player API starts the stroke; the world's normal
+            # clock advances it. This does not mutate the source snapshot.
+            results=[];errors=[]
+            def use():
+                try:results.append(self.post('/api/world/tool/use',{'session':session,
+                        'person':person,'at_m':[.3,target,.025]},world))
+                except Exception as exc:errors.append(exc)
+            worker=threading.Thread(target=use,daemon=True);worker.start()
+            deadline=time.monotonic()+22
+            while worker.is_alive() and time.monotonic()<deadline:
+                app.clock._tick(.05)
+                time.sleep(.015)
+            worker.join(timeout=1)
+            self.assertFalse(worker.is_alive(),'normal player tool use did not finish')
+            self.assertEqual([],errors)
+            self.assertEqual(1,len(results))
+            record=results[0].get('result') or {}
+            self.assertFalse(record.get('open',True),results)
+            self.assertTrue(record.get('supported'),results)
+            self.assertGreater(record.get('loosened_kg',0),0,results)
+            self.assertGreater(record.get('work_j',0),0)
+            self.assertEqual({},server.journal_of(app,other['id']).data['evidence'])
+            self.assertTrue(server.keep_world(app,'starter tool player check'))
+            before=app.live.snapshot()[0]
+            reopened=self.post('/api/world/open',{},world)
+            self.assertEqual(session,reopened['session'])
+            self.assertEqual(before['tool_points'],app.live.snapshot()[0]['tool_points'])
+            print('generated player tool use:',{'terrain_seed':app.room.spec['terrain']['generate']['seed'],
+                'goods_seed':goods_seed,'ground':record['ground'],'work_j':record['work_j'],
+                'loosened':record['loosened'],'other_guest_evidence':0,'provider_calls':0})
+
     def test_actual_machine_batch_is_personal_and_learning_outbox_recovers_after_restart(self):
         import machine_witness
         world, owner, app = self.setup_world()

@@ -77,7 +77,7 @@ WORKS_BLOCK_M = (0.5, 0.65, 0.5)
 #: saying what built it fails the check rather than passing quietly.
 def built_from() -> dict:
     import world_seed as seed
-    made = {"rover": "rover", "solar farm": "solar-array"}
+    made = {"rover": "rover", "solar farm": "solar-array", "field pick": "field-pick"}
     for works in seed.WORKS:
         made[works.machine] = "processor"
     return made
@@ -143,6 +143,23 @@ def compose(ground: dict, world: dict, terrain_seed: int | None = None) -> dict:
          "size_mm": [100.0, 100.0, 100.0],
          "center_mm": [round(mx * 1000.0, 1), round((under - 1.0) * 1000.0, 1),
                        round(mz * 1000.0, 1)]})
+
+    # A hand tool beside arrival, compiled from the same editable recipe that
+    # Recipes offers. It is a bootstrap gift, not a grant awarded by learning.
+    # Terrain support uses its full occupied footprint; native open still
+    # validates the point and actual connected matter.
+    tool_at = _clear_of(ground, ARRIVE_AT, 1.2)
+    plan, design = a_lattice_thing(ground, "field-pick", "field pick", tool_at,
+                                 cell_m=spec["cell_m"])
+    spec["bodies"] += plan["bodies"]
+    spec["tool_points"] = spec.get("tool_points", []) + [plan["tool"]["point"]]
+    spec["interactions"] = spec.get("interactions", []) + [plan["tool"]["profile"]]
+    from mcp import core_use, interaction_points
+    spec["actions"] = spec.get("actions", []) + [core_use.installed(design, "field pick")]
+    com = [sum((g[a]+.5)*spec["cell_m"] for g in plan["cells"])/len(plan["cells"])
+           for a in range(3)]
+    spec["interaction_points"] = spec.get("interaction_points", []) + [
+        interaction_points.installed(design, "field pick", com)]
 
     # The rover's job in the routine language: go to the nearest copper, dig
     # until the hopper is full, come back, tip it into the smelter's intake.
@@ -270,6 +287,18 @@ def compose(ground: dict, world: dict, terrain_seed: int | None = None) -> dict:
         program["power"] = True
 
     return spec
+
+
+def a_lattice_thing(ground: dict, kind: str, name: str, at: tuple[float, float],
+                    *, cell_m: float, parameters: dict | None = None) -> tuple[dict, Any]:
+    """A fixed Workshop solid, using the live installation's occupied compiler."""
+    design = w.assemble(kind, design_id=name, parameters=dict(parameters or {}))
+    candidate = workshop_install.recipe_of(design, design.lineage.get("component_overrides", {}))
+    design, overrides = workshop_components.design_from_spec(candidate)
+    plan = workshop_install.fixed_lattice_plan(design, overrides, root=name,
+        cell_m=cell_m, position_m=at, floor_of=lambda b: grounds.ground_under(
+            ground, (b[0][0], b[0][2]), (b[1][0], b[1][2])))
+    return plan, design
 
 
 def a_built_thing(ground: dict, kind: str, name: str, at: tuple[float, float],

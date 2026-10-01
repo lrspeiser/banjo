@@ -541,7 +541,10 @@ def _request(app: Any, body: Any, player_id: str) -> dict[str, Any]:
             live({"session": sid, "op": "unpark", "name": name, "at": at,
                           "q": record.facing.get(item, [1.0, 0.0, 0.0, 0.0])})
             if into_hand:
-                live({"session": sid, "op": "wield", "name": name, "grip": at})
+                by, grip = hold_point(app, thing, part)
+                now = _body(app, by)
+                live({"session": sid, "op": "wield", "name": by,
+                      "grip": [round(v,4) for v in grip] if grip is not None else _grip(None,now)})
             return {"brought_back": name, "at_m": at, "held": into_hand}
         if plan["from"] in inventory.HANDS and plan["to"] == "world":
             # Whichever of its parts the hand has: a mace taken up by its head

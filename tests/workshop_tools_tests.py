@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from pathlib import Path
 import os
+import math
 import sys
 import tempfile
 import threading
@@ -22,7 +23,7 @@ if os.environ.get('BANJO_GROUND_TOOL_TESTS')=='required' and not (native.ENGINE 
 def candidate(material='oak'):
     # 50 mm native cells: an 800 mm haft and 300 mm arm, meeting face to face.
     # Test design built through the existing custom component API, not grants
-    # or a tool-name shortcut. The production starter recipe is still pending.
+    # or a tool-name shortcut. Compare with the production recipe separately.
     parts=[{'name':'haft','role':'handle','family':'beam','shape':'box',
         'size_m':[.8,.05,.05],'center_m':[0,.025,.175],'rotation_deg':[0,0,0],'material':material},
         {'name':'arm','role':'tool-head','family':'beam','shape':'box',
@@ -36,6 +37,19 @@ def candidate(material='oak'):
 
 
 class ComponentFrames(unittest.TestCase):
+    def test_starter_recipe_has_the_same_geometry_and_declared_grip(self):
+        from mcp import workshop, interaction_points
+        design = workshop.assemble('field-pick', design_id='starter')
+        custom, _ = workshop_components.design_from_spec(candidate())
+        wanted, actual = workshop_tools.frame(custom), workshop_tools.frame(design)
+        for field in ('tip_m','grip_m','pointing'):
+            for a,b in zip(wanted[field],actual[field]): self.assertAlmostEqual(a,b)
+        grip=next(p['position_m'] for p in interaction_points.for_design(design) if p['kind']=='grip')
+        for a,b in zip([-.35,.025,.175],grip): self.assertAlmostEqual(a,b)
+        for material in ('glass','oak','iron'):
+            made = workshop.assemble('field-pick', design_id='starter', parameters={'material':material})
+            self.assertEqual({material}, {p.material for p in made.parts})
+
     def test_declaration_moves_with_components_and_survives_recipe_roundtrip(self):
         import workshop_install
         design,overrides=workshop_components.design_from_spec(candidate())
@@ -87,6 +101,40 @@ class GroundToolInstallation(unittest.TestCase):
     preview=native.NativeInstallation.preview
     request=native.NativeInstallation.request
     do_commit=native.NativeInstallation.do_commit
+    def test_generated_worlds_admit_the_recipe_tool_beside_spawn_and_restore_it(self):
+        sys.path.insert(0,str(ROOT/'tools'))
+        import build_new_world as builder, build_explore_world as terrain, world_seed
+        import inventory, inventory_room
+        for terrain_seed, goods_seed in ((7,851269742),(4,1)):
+            ground=terrain.read_ground(native.ENGINE,terrain_seed)
+            made=world_seed.new_world(ground,seed=goods_seed,start_xz=builder.ARRIVE_AT)
+            spec=builder.compose(ground,made,terrain_seed)
+            self.open(spec)
+            session=self.live.session
+            state=session.state
+            profile=next(p for p in self.room.spec['interactions'] if p['tool']=='field pick')
+            item=next(i for i in inventory.items_of(self.room.spec) if 'field pick' in i['bodies'])
+            body=next(b for b in state['bodies'] if b['name']=='field pick')
+            self.assertAlmostEqual(1.925,body['mass_kg'])
+            self.assertLessEqual(math.hypot(body['position_m'][0],body['position_m'][2]),1.8)
+            self.assertFalse(world_seed.wet_near(ground,body['position_m'][0],body['position_m'][2],.4))
+            root,grip=inventory_room.hold_point(self.app,item,'field pick')
+            declared=self.room.spec['tool_points'][0]
+            self.assertEqual('field pick',root)
+            # Player poses serialize each coordinate to five decimal places;
+            # this is a display bound, not a native point-frame tolerance.
+            self.assertLess(math.dist(grip,[v/1000 for v in declared['grip_mm']]),1e-5)
+            self.assertEqual(set(item['bodies']),set(profile['parts']))
+            self.live.act({'session':session.id,'op':'wield','name':root,'grip':grip})
+            self.assertEqual(root,session.state['hand']['holding'])
+            snapshot=self.snap()
+            opened=self.live.open(self.app,{'spec':self.room.spec,'snapshot':snapshot})
+            self.assertEqual('whole',opened['restored']['tier'])
+            self.assertEqual(snapshot['tool_points'],self.snap()['tool_points'])
+            self.assertEqual(snapshot['bodies'],self.snap()['bodies'])
+            print('generated starter tool:',{'terrain_seed':terrain_seed,'goods_seed':goods_seed,
+                'mass_kg':body['mass_kg'],'at_m':body['position_m'],'native_point_attached':snapshot['tool_points'][0]['attached']})
+
     def test_declarative_tools_install_preserve_points_and_refuse_false_tips(self):
         import world_room
         for material in ('glass','oak','iron'):

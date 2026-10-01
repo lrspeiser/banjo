@@ -988,7 +988,26 @@ def _hold_and_tip(load_kg: float):
     return trials
 
 
+def _build_field_pick(library: ComponentLibrary, values: dict[str, Any]) -> list[WirePart]:
+    length, arm, section = values["length_m"],values["arm_m"],values["section_m"]
+    material=values["material"]
+    values.setdefault("ground_tool", {"schema":"banjo.workshop-ground-tool.v1",
+        "point":{"component":"arm","tip_local_m":[0,0,-arm/2],"direction_local":[0,0,-1],
+                 "width_m":section,"thickness_m":section,"angle_deg":30,"length_m":.2},
+        "grip":{"component":"haft","position_local_m":[-length/2+section,0,0]}})
+    return [WirePart(name="haft",role="handle",family="beam",shape="box",material=material,
+                size_m=(length,section,section),center_m=(0,section/2,(arm+section)/2)),
+            WirePart(name="arm",role="tool-head",family="beam",shape="box",material=material,
+                size_m=(section,section,arm),center_m=((length-section)/2,section/2,0))]
+
+
 ASSEMBLIES: tuple[Assembly, ...] = (
+    Assembly("field-pick", "Field pick", "A fixed lattice gathering tool with a declared point and grip.",
+             (Parameter("length_m","m",.8,.4,1.2),Parameter("arm_m","m",.3,.1,.5),
+              Parameter("section_m","m",.05,.02,.12),
+              Parameter("material","","oak",choices=tuple(sorted(DENSITY_KG_M3)))),
+             _build_field_pick,lambda values: [],
+             uses={"primary_use":{"label":"Study tool","steps":[{"do":"inspect"}]}}),
     Assembly("table", "hold objects on a stable work surface",
              "A slab on four legs, optionally with aprons and stretchers.",
              _FRAME_PARAMETERS, _build_framed, _hold_and_tip(100.0)),

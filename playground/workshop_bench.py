@@ -40,7 +40,7 @@ RETIRED = {"declared_static_load", "drop_product", "slide_product", "impact_prod
 #: needs its own validation at run time; kind alone cannot say whether the
 #: parts connect and install. Making the remaining default templates installable
 #: is separate work.
-CAN_BE_MADE = {"table", "stool", "bench", "breaker", "custom"}
+CAN_BE_MADE = {"table", "stool", "bench", "breaker", "custom", "field-pick"}
 
 #: What a bench does to a thing, all of it in one grounded room.
 LITTLE_WORLD = {

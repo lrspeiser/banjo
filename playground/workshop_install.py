@@ -1070,6 +1070,52 @@ def _with_needs(app: Any, design: Any, answer: dict[str, Any]) -> dict[str, Any]
     return answer
 
 
+def fixed_lattice_plan(design, overrides, *, root, cell_m, position_m, floor_of):
+    """Shared occupied-matter compiler for Workshop builds and world bootstrap.
+
+    The caller supplies measured terrain support and still owns clearance,
+    native admission, inventory charging, source receipts and persistence.
+    """
+    workshop_rigid.require_lattice(design,"Fixed lattice placement")
+    if workshop_articulation.has_bearings(design) or any(p.role not in _FIXED_ROLES for p in design.parts):
+        raise ValueError("Fixed lattice placement needs fixed monolithic solids")
+    if type(cell_m) not in (int,float) or not math.isfinite(cell_m) or cell_m <= 0:
+        raise ValueError("Fixed lattice placement needs a positive finite cell size")
+    if (not isinstance(root,str) or not root.strip() or len(root)>120 or
+            not isinstance(position_m,(list,tuple)) or len(position_m)!=2 or
+            any(type(v) not in (int,float) or not math.isfinite(v) or abs(v)>100 for v in position_m)):
+        raise ValueError("Fixed lattice placement needs a body name and finite [x,z] within 100 metres")
+    h=float(cell_m)
+    matter=workshop_visual.matter_document(design,overrides,cell_size_m=h,exterior_only=False)
+    cells=sparse._grid_set(matter)
+    if not cells or len(cells)>MAX_CELLS:raise ValueError("The prototype exceeds the native room's cell budget")
+    measured=workshop_matter_metrics.measure(matter,expected_components=[p.name for p in design.parts])
+    if not measured['measured']['geometry_coherent']:
+        raise ValueError("The prototype has disconnected or missing physical components; repair it before installation")
+    materials={engine_materials.canonical(c['material']) for c in matter['cells']}
+    if len(materials)!=1:
+        raise ValueError("Mixed-material installation requires explicit interfaces; it cannot be fused into one material")
+    horizontal=(round(position_m[0]/h),0,round(position_m[1]/h))
+    translated={tuple(g[a]+horizontal[a] for a in range(3)) for g in cells}
+    floor=floor_of(_bounds(translated,h))
+    if type(floor) not in (int,float) or not math.isfinite(floor):
+        raise ValueError("Fixed lattice placement needs measured finite terrain support")
+    shift=(horizontal[0],math.ceil(floor/h)-min(g[1] for g in cells),horizontal[2])
+    placed={tuple(g[a]+shift[a] for a in range(3)) for g in cells}
+    placed_parts={tuple(g[a]+shift[a] for a in range(3)):f"{root}/{name}"
+                  for g,name in sparse._grid_parts(matter).items()}
+    labelled=sparse.decompose_by_part(placed,placed_parts)
+    boxes=[box for box,_ in labelled]
+    if len(boxes)>sparse.MAX_SCENE_BOXES or sparse.cells_from_boxes(boxes)!=placed:
+        raise ValueError("Prototype geometry cannot be represented exactly within the native scene limit")
+    added=[sparse._box_body(root if i==0 else f"{root}-{i}",box,h,next(iter(materials)),root,part)
+           for i,(box,part) in enumerate(labelled)]
+    from mcp import workshop_tools
+    tool=workshop_tools.installed(design,root,[b['name'] for b in added],[s*h for s in shift])
+    return {'matter':matter,'cells':cells,'measured':measured,'shift':shift,'placed':placed,
+            'bodies':added,'tool':tool}
+
+
 def preview(app: Any, body: Any) -> dict[str, Any]:
     body = _object(body, {"session", "scene", "mode", "candidate", "position_m", "replace", "places"})
     if body.get("mode") != "authoring":
@@ -1119,42 +1165,16 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
         if any(p.role not in _FIXED_ROLES for p in design.parts):
             raise ValueError("Only fixed structural solids can be placed by this adapter; articulated machines and containers need their own interfaces")
         h = float(old.spec["cell_m"])
-        matter = workshop_visual.matter_document(design, overrides, cell_size_m=h, exterior_only=False)
-        cells = sparse._grid_set(matter)
-        if not cells or len(cells)>MAX_CELLS:
-            raise ValueError("The prototype exceeds the native room's cell budget")
-        measured = workshop_matter_metrics.measure(matter, expected_components=[p.name for p in design.parts])
-        if not measured["measured"]["geometry_coherent"]:
-            raise ValueError("The prototype has disconnected or missing physical components; repair it before installation")
-        materials = {engine_materials.canonical(c["material"]) for c in matter["cells"]}
-        if len(materials) != 1:
-            raise ValueError("Mixed-material installation requires explicit interfaces; it cannot be fused into one material")
-        horizontal = (round(pos[0]/h), 0, round(pos[1]/h))
-        translated = {tuple(g[a]+horizontal[a] for a in range(3)) for g in cells}
-        floor = _terrain_floor(old, _bounds(translated,h))
-        shift = (horizontal[0], math.ceil(floor/h)-min(g[1] for g in cells), horizontal[2])
-        placed = {tuple(g[a]+shift[a] for a in range(3)) for g in cells}
         root = "workshop-" + uuid.uuid4().hex[:16]
-        # Decomposed component by component, so every box still says which part
-        # of the product it is and the joints declared in the Workshop have
-        # something to name once the product is standing in the room (#20).
-        # Moving every cell by the same whole number of cells leaves which
-        # component each one is untouched. The labels carry the root, because a
-        # room may hold two of the same design and a joint in one of them is not
-        # a joint in the other.
-        placed_parts = {tuple(g[a]+shift[a] for a in range(3)): f"{root}/{name}"
-                        for g, name in sparse._grid_parts(matter).items()}
-        labelled = sparse.decompose_by_part(placed, placed_parts)
-        boxes = [box for box, _ in labelled]
-        if len(boxes)>sparse.MAX_SCENE_BOXES or sparse.cells_from_boxes(boxes)!=placed:
-            raise ValueError("Prototype geometry cannot be represented exactly within the native scene limit")
-        added = [sparse._box_body(root if i==0 else f"{root}-{i}", box, h, next(iter(materials)), root, part)
-                 for i,(box,part) in enumerate(labelled)]
+        plan=fixed_lattice_plan(design,overrides,root=root,cell_m=h,position_m=pos,
+                                floor_of=lambda bounds:_terrain_floor(old,bounds))
+        matter,cells,measured=plan['matter'],plan['cells'],plan['measured']
+        shift,placed,added=plan['shift'],plan['placed'],plan['bodies']
         saved = _snapshot(live)
         _clearance(saved, placed, h)
         spec = deepcopy(room.spec)
         spec["bodies"] = spec["bodies"] + added
-        declared_tool = workshop_tools.installed(design, root, [b["name"] for b in added], [s*h for s in shift])
+        declared_tool = plan['tool']
         if declared_tool:
             spec["tool_points"] = spec.get("tool_points", []) + [declared_tool["point"]]
             spec["interactions"] = spec.get("interactions", []) + [declared_tool["profile"]]

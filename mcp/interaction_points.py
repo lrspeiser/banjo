@@ -130,8 +130,11 @@ def for_design(design):
     centre = (list(handle.center_m) if handle else
               [sum(p.center_m[a]*p.mass_kg() for p in design.parts)/total for a in range(3)]
               if total else [0,0,0])
+    from mcp import workshop_tools
+    tool = workshop_tools.frame(design)
     for kind in ("grip", "use"):
-        points.append({"id": kind, "kind": kind, "label": kind.title(), "position_m": centre})
+        at = (tool["grip_m"] if kind == "grip" else tool["tip_m"]) if tool else centre
+        points.append({"id": kind, "kind": kind, "label": kind.title(), "position_m": at})
     return checked(points)
 
 
