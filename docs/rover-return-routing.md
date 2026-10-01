@@ -1,5 +1,10 @@
 # Generated return hauling — October 1
 
+Published implementation: `a64c1e57f185c6cdc4579f5967741fb965e10df4` on
+GitHub main. Native runner/platform CLI and rover tests were rebuilt in
+`build/agent-progression` (MSVC Release); preview 8770 runs these native binaries
+and this checkpoint's Python sources.
+
 ## Implemented
 
 The [first-haul checkpoint](generated-rover-hauling.md) could stop on its

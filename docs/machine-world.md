@@ -1795,7 +1795,8 @@ geometry and observed terrain. It checks actual arrival/braking before advancing
 and preserves the load/step when blocked. New world opening initializes native
 observations before the first routine step. [Generated first-haul measurements](generated-rover-hauling.md)
 cover both ordinary starts through processing and private pickup/restart;
-sustained return routes and native cargo remain open.
+the later return-hauling gate requires three receiving loads on both maps.
+General routes and native cargo remain open.
 
 The ask also carries `by_person`: true when a PERSON is ordering it -- the
 chat, the panel, the keys at the bench -- and false for the machine's own
