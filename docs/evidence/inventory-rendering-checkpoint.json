@@ -115,11 +115,11 @@
     ]
   },
   "preview": {
-    "url": "http://127.0.0.1:8770/world?world=6270029afd3446a09ea50a17cc51b04c&scene=new-game",
+    "url": "http://127.0.0.1:8770/world?world=b425e021e89d4947aa2755f26aa52574&scene=new-game",
     "old_world_body_count": 10,
     "fresh_pick_cells": 22,
     "fresh_pick_design": true,
-    "mini_inventory": "Inventory\nOpen all \u2192\nField pick\nRight hand\nStow\nYour energy\n0 J\nSolar \u00b7 shared\n1,990,336.3 J\nSolar rate\n240.6 J/s",
+    "mini_inventory": "Inventory\nOpen all \u2192\nField pick\nRight hand\nStow\nYour energy\n0 J\nSolar \u00b7 shared\n1,987,810.7 J\nSolar rate\n239.8 J/s",
     "legacy_tabs_removed": true,
     "exception_count": 0
   },
@@ -128,5 +128,7 @@
     "sources": 287,
     "excluded": 0
   },
-  "boundary": "Rendering/geometry transport and owned Inventory UI; no physics law, whole-world conservation or full progression claim."
+  "boundary": "Rendering/geometry transport and owned Inventory UI; no physics law, whole-world conservation or full progression claim.",
+  "published_implementation_revision": "1e532cc27496e5606215c4a7b0152962b9557857",
+  "preview_source_revision": "1e532cc27496e5606215c4a7b0152962b9557857"
 }

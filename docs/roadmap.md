@@ -6,6 +6,8 @@ compact/full Inventory navigation and relocated Menu controls. Duplicate fly UI
 is removed; actual Walk/Fly releases a machine. Ordinary finite workbench,
 complete paid player/AI progression and damaged-tool replacement/use remain next.
 All fourteen requirements remain active: four verified and ten partial.
+Implementation `1e532cc` is published on main; ordinary workbench/full paid
+progression and damaged-tool use retain their acceptance gates.
 
 **Paid machine admission, October 1:** [Exact native checkpoint](fabrication-machine-checkpoint.md)
 passes material allocation, multiple-material stock/charge reservation, native

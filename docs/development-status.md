@@ -7,6 +7,8 @@ Menu retains controls and mini Inventory shares the owned item/stock/wallet data
 Pickup/stow/equip/reload, mouse machine control, unified Walk/Fly and short-window
 checks pass: browser 8/8, native session 10/10, fixed Fabrication QA 64/64.
 No native law change. The fourteen-item goal stays active: four verified, ten partial.
+Implementation `1e532cc` is published on GitHub main; own 8770 preview passes
+fresh item geometry/mini Inventory and prior-world reopening with no JS exceptions.
 
 **Paid exact machines, October 1:** [Native/browser/AI checkpoint](fabrication-machine-checkpoint.md)
 adds exact fixed solids/assemblies/machines, native per-material overlap allocation,

@@ -1,7 +1,9 @@
 # Stable world geometry and compact Inventory
 
 October 1, 2026. Windows, main, based on `c83e56720480b070c58c288f23cc377e5c54298d`.
-Publication mapping is recorded below after the verified checkpoint is pushed.
+Implementation `1e532cc27496e5606215c4a7b0152962b9557857` is published on GitHub
+main. Refreshed own 8770 preview passes fresh/prior-world acceptance on that
+revision; existing worlds and inventories are retained.
 
 ## Implemented
 
