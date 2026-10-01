@@ -2315,6 +2315,8 @@ world.brains = new Map();
 function followBrains(brains) {
   if (!Array.isArray(brains)) return;
   for (const b of brains) if (b && b.name) world.brains.set(b.name, b);
+  resourceVisuals.loads([...world.brains.values()]);
+  drawHolds();
   if (machinePanel.of === "program") showMachinePanel();
 }
 
@@ -3225,14 +3227,18 @@ function dressPorts() {
 // Nothing said means this reply carried none, which is not the same as a room
 // with no heaps -- that is said as empty lists, when the room opens.
 world.goods = null;
-function followGoods(goods) {
+function followGoods(goods, reset = false) {
   if (goods === undefined) return;
   world.goods = goods || null;
+  resourceVisuals.follow(world.goods, reset);
   drawHolds();
 }
 
 const SUBSTANCE_TINT = new Map();
 function substanceColour(what) {
+  const resource={"copper":"#b97647","copper wire":"#db994b","copper ore":"#858c65",
+                  "sand and soil":"#96764c","slag":"#666a70"}[what];
+  if(resource)return resource;
   const drawn = MATERIAL_LOOK[what];
   if (drawn) return `#${drawn.color.toString(16).padStart(6, "0")}`;
   let tint = SUBSTANCE_TINT.get(what);
@@ -3249,6 +3255,180 @@ function substanceColour(what) {
 // "0.28 kg" beside "402.00 kg" is two different questions.
 const heldSaid = (kg) => (kg >= 100 ? `${Math.round(kg)} kg`
   : kg >= 1 ? `${kg.toFixed(1)} kg` : `${Math.round(kg * 1000)} g`);
+
+
+// Resource packets picture recorded ledger transfers. They have no solver
+// mass, collisions or fracture impulses; their count is not the mass count.
+function goodsVisuals({scene,camera,groundAt,body,ports,colour,collect,readonly}) {
+  const root=new THREE.Group(); root.name="resource-packets"; scene.add(root);
+  const cube=new THREE.BoxGeometry(.13,.13,.13);
+  const materials=new Map(), piles=new Map(), hoppers=new Map();
+  const matrix=new THREE.Object3D(), flights=[];
+  let epoch=null, seen=new Set(), goods=null, brains=[], nearest=null, busy=false, retry=null, failureUntil=0;
+  const reduced=matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const pickup=document.createElement("button");
+  pickup.id="collect-output"; pickup.type="button"; pickup.hidden=true;
+  pickup.addEventListener("click",async()=>{
+    if (!nearest || busy || readonly()) return;
+    busy=true; pickup.disabled=true;
+    const pile=retry?.pile || nearest.name;
+    const request=retry?.request || crypto.randomUUID(); retry={pile,request};
+    try {
+      await collect(pile,request); retry=null;
+    } catch(error) { pickup.textContent=error.message; failureUntil=performance.now()+6000; }
+    finally { busy=false; pickup.disabled=false; }
+  });
+  document.body.append(pickup);
+  function material(what) {
+    if (!materials.has(what)) {
+      const tint=colour(what), hsl=tint.match(/^hsl\((\d+) (\d+)% (\d+)%\)$/);
+      const color=hsl ? new THREE.Color().setHSL(Number(hsl[1])/360,Number(hsl[2])/100,Number(hsl[3])/100) : new THREE.Color(tint);
+      materials.set(what,new THREE.MeshStandardMaterial({color,roughness:.8}));
+    }
+    return materials.get(what);
+  }
+  function label(text) {
+    const canvas=document.createElement("canvas"); canvas.width=512; canvas.height=96;
+    const ctx=canvas.getContext("2d");
+    ctx.fillStyle="rgba(14,24,29,.9)"; ctx.fillRect(0,0,512,96);
+    ctx.fillStyle="#f2ece0"; ctx.font="600 26px system-ui"; ctx.textAlign="center";
+    ctx.fillText(text,256,57,490);
+    const map=new THREE.CanvasTexture(canvas), m=new THREE.SpriteMaterial({map,depthTest:true});
+    const sprite=new THREE.Sprite(m); sprite.scale.set(1.6,.3,1); return sprite;
+  }
+  function remove(group) {
+    group.traverse(o=>{
+      if(o.isSprite){o.material.map.dispose();o.material.dispose();}
+      else if(o.geometry && o.geometry!==cube){o.geometry.dispose();o.material.dispose();}
+      if(o.isInstancedMesh)o.dispose();
+    });
+    root.remove(group);
+  }
+  function endpoint(e) {
+    if(e.body) { const mesh=body(e.body)?.mesh; if(mesh) return mesh.position.clone().add(new THREE.Vector3(0,.45,0)); }
+    if(e.port) { const port=ports().find(p=>p.name===e.port); if(port) return new THREE.Vector3(...port.at_m); }
+    const at=e.at_m || (goods?.stockpiles||[]).find(p=>p.name===e.pile)?.at_m;
+    if(at) return new THREE.Vector3(at[0],groundAt(at[0],at[1])+.2,at[1]);
+    return null;
+  }
+  function follow(next,reset=false) {
+    if(next===undefined)return;
+    goods=next;
+    const events=next?.activities||[];
+    if(reset || epoch!==next?.activity_epoch) {
+      epoch=next?.activity_epoch; seen=new Set(events.map(e=>e.id));
+      for(const f of flights)root.remove(f.mesh); flights.length=0;
+    } else {
+      for(const e of events) {
+        if(seen.has(e.id))continue;
+        seen.add(e.id);
+        if(reduced || document.hidden)continue;
+        const from=endpoint(e.from),to=endpoint(e.to);
+        if(!from || !to)continue;
+        for(const [what,kg] of Object.entries(e.goods_kg)) {
+          const count=Math.min(12,Math.max(2,Math.ceil(Math.sqrt(kg)*2)));
+          for(let i=0;i<count && flights.length<192;i++) {
+            const mesh=new THREE.Mesh(cube,material(what)); root.add(mesh);
+            mesh.userData.transferKind=e.kind;
+            flights.push({mesh,from,to,target:e.to,start:performance.now()+i*55+(e.kind==="output"?700:0),index:i});
+          }
+        }
+      }
+      seen=new Set(events.map(e=>e.id));
+    }
+    const keep=new Set();
+    for(const p of next?.stockpiles||[]) {
+      keep.add(p.name);
+      const signature=JSON.stringify(p.holds_kg);
+      if(piles.get(p.name)?.signature===signature)continue;
+      if(piles.has(p.name))remove(piles.get(p.name).group);
+      const group=new THREE.Group(), slots=Object.entries(p.holds_kg).filter(([,kg])=>kg>0);
+      let n=0;
+      for(const [what,kg] of slots) {
+        const count=Math.min(16,Math.max(1,Math.ceil(Math.sqrt(kg)*3)));
+        const mesh=new THREE.InstancedMesh(cube,material(what),count);
+        for(let i=0;i<count;i++,n++) {
+          matrix.position.set((n%5-2)*.16,.075+Math.floor(n/25)*.15,(Math.floor(n/5)%5-2)*.16);
+          matrix.updateMatrix();mesh.setMatrixAt(i,matrix.matrix);
+        }
+        group.add(mesh);
+      }
+      const kg=slots.reduce((a,[,v])=>a+v,0);
+      if(kg>0) {
+        const title=label(`${p.name} · ${kg<1?Math.round(kg*1000)+" g":kg.toFixed(1)+" kg"}`);
+        title.position.y=.7; group.add(title);
+      }
+      group.position.set(p.at_m[0],groundAt(...p.at_m)+.03,p.at_m[1]);
+      root.add(group);piles.set(p.name,{group,signature});
+    }
+    for(const [name,p] of piles)if(!keep.has(name)){remove(p.group);piles.delete(name);}
+  }
+  function loads(next) { if(next!==undefined)brains=next; }
+  function advance(now) {
+    for(const [name,p] of piles) {
+      const at=(goods?.stockpiles||[]).find(s=>s.name===name)?.at_m;
+      if(at)p.group.position.set(at[0],groundAt(...at)+.03,at[1]);
+      for(const child of p.group.children)if(child.isSprite)
+        child.visible=p.group.position.distanceTo(camera.position)<5;
+    }
+    for(let i=flights.length-1;i>=0;i--) {
+      const f=flights[i],t=(now-f.start)/1150;
+      f.mesh.visible=t>=0;
+      if(t>=1){root.remove(f.mesh);flights.splice(i,1);continue;}
+      if(t<0)continue;
+      const to=endpoint(f.target)||f.to;
+      f.mesh.position.copy(f.from).lerp(to,t);
+      f.mesh.position.y+=Math.sin(t*Math.PI)*(.6+f.index*.02);
+      f.mesh.rotation.set(t*2,t*3,0);
+    }
+    const keep=new Set();
+    for(const b of brains) {
+      const load=b.routine?.load;
+      if(!(load?.capacity_kg>0))continue;
+      const port=ports().find(p=>p.machine===b.name&&p.holds==="hopper");
+      const position=port ? new THREE.Vector3(...port.at_m) : endpoint({body:b.body});
+      if(!position)continue;
+      keep.add(b.name);
+      let h=hoppers.get(b.name);
+      const fill=Math.max(0,Math.min(1,load.kg/load.capacity_kg));
+      const signature=`${load.kg}/${load.capacity_kg}`;
+      if(!h || h.signature!==signature) {
+        if(h)remove(h.group);
+        const group=new THREE.Group();
+        const box=new THREE.Mesh(new THREE.BoxGeometry(.7,.65,.5),new THREE.MeshBasicMaterial({color:0xf0cd77,wireframe:true}));
+        group.add(box);
+        for(let i=0;i<Math.ceil(fill*24);i++) {
+          const packet=new THREE.Mesh(cube,material(Object.keys(load.goods_kg||{})[0]||"soil"));
+          packet.position.set((i%4-1.5)*.16,(Math.floor(i/8)-1)*.15,(Math.floor(i/4)%2-.5)*.16);group.add(packet);
+        }
+        const title=label(`Hopper · ${Math.round(fill*100)}%`);title.position.y=.65;group.add(title);
+        root.add(group);h={group,signature};hoppers.set(b.name,h);
+      }
+      h.group.position.copy(position).add(new THREE.Vector3(0,.7,0));
+    }
+    for(const [name,h] of hoppers)if(!keep.has(name)){remove(h.group);hoppers.delete(name);}
+    nearest=(goods?.stockpiles||[]).filter(p=>!p.rack&&(p.name===retry?.pile||Object.values(p.holds_kg).some(v=>v>0)))
+      .map(p=>({...p,d:Math.hypot(camera.position.x-p.at_m[0],camera.position.z-p.at_m[1])}))
+      .filter(p=>p.d<=2).sort((a,b)=>a.d-b.d)[0];
+    pickup.hidden=!nearest || readonly();
+    if(!busy && nearest && now>failureUntil) {
+      const kg=Math.min(25,Object.values(nearest.holds_kg).reduce((a,v)=>a+v,0));
+      pickup.textContent=retry ? `Retry collection · ${retry.pile}` : `Collect ${heldSaid(kg)} · ${nearest.name} → Your inventory`;
+    }
+    pickup.dataset.pile=nearest?.name||"";
+  }
+  return {follow,loads,advance};
+}
+
+const resourceVisuals = goodsVisuals({scene,camera,groundAt,
+  body:name=>world.bodies.get(name), ports:()=>world.ports,
+  colour:substanceColour, readonly:()=>!!watchedId || !worldId,
+  collect:async(pile,request_id)=>{
+    const answer=await api('/api/world/goods/collect',{session:world.session,pile,request_id,person:whereIAm()});
+    followGoods(answer.goods);
+    say('world',`Collected ${Object.entries(answer.collected).map(([what,kg])=>`${heldSaid(kg)} ${what}`).join(' · ')}`);
+    return answer;
+  }});
 
 // What a container on that body holds, said in the fewest words that are
 // still true: "holding 18.0 kg of sand, 20 C", or "empty". Temperature only
@@ -3449,9 +3629,8 @@ function drawHoldList(list, holders) {
   return rows.length;
 }
 
-const HOLDS_NOTE = "A slot is the room's account of what is in a holder, not a picture of a pile:"
-  + " a heap has no shape and no volume, and nothing is drawn on the ground where one is."
-  + " What you carry yourself is in the Bag.";
+const HOLDS_NOTE = "Walk within 2 m of an output pile to collect it into your Inventory."
+  + " Cubes show resource quantities; they are not breakable bodies.";
 
 function drawHolds() {
   const all = holdersNow();
@@ -8821,7 +9000,7 @@ async function tickWatchedCharacter() {
     }
     const state = view.state;
     draw(state); showPlayers(state.players);
-    followMachines(state.machines); followGoods(state.goods); followPorts(state.ports);
+    followMachines(state.machines); followBrains(state.brains); followGoods(state.goods); followPorts(state.ports);
     followVessels(state.vessels); drawStrength(state.mechanics); drawHeat(state.heat);
     if (state.sun) lightFromSun(state.sun);
     if (state.joints) drawJoints(state.joints);
@@ -9260,6 +9439,7 @@ function frame() {
   if (ground.facesStale) buildFaces();
   drawPickedOutline();
   animateReveal(now);
+  resourceVisuals.advance(now);
   render();
   world.framesSinceOpen++;
   requestAnimationFrame(frame);
@@ -10239,7 +10419,7 @@ async function open({ again = false } = {}) {
   world.brains.clear();
   followBrains(data.brains);
     // A room opening has no "unchanged": no goods said means this room has none.
-    followGoods(data.goods || { stockpiles: [], deposits: [] });
+    followGoods(data.goods || { stockpiles: [], deposits: [] }, true);
     followPorts(data.ports || []);
     followVessels(data.vessels || []);
     lightFromSun(data.sun);

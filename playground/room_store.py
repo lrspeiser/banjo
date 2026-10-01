@@ -113,6 +113,10 @@ class RoomStore:
                     for ident, profile in players.items() if isinstance(profile, dict)}
                 record["hand_owner"] = getattr(room, "hand_owner", None)
         pending = getattr(room, "market_pending", None)
+        claims=getattr(room,'goods_claims',[])
+        import world_goods
+        world_goods.validate(claims,getattr(room,'player_records',{}))
+        record['goods_claims']=claims
         if isinstance(pending, list):
             world_for_market = getattr(room, "world_record", None)
             if pending and not isinstance(world_for_market, dict):
@@ -185,6 +189,7 @@ class RoomStore:
             room.market_durable_pending = {r.get("request_id") for r in record.get("market_pending", [])
                                            if isinstance(r, dict)}
             room.player_learning_durable_ids = {r['evidence']['id'] for r in record.get('player_evidence_pending',[])}
+            room.goods_durable_claims={r['request_id'] for r in record['goods_claims']}
         return True
 
     def load(self, scene: str) -> Any:
@@ -241,6 +246,10 @@ class RoomStore:
             raise ValueError("Expedition save needs both native and gameplay state; refusing a reset")
         room.inventory_record = record["inventory"] if isinstance(record.get("inventory"), dict) else None
         room.player_records = record["players"] if isinstance(record.get("players"), dict) else {}
+        import world_goods
+        room.goods_claims=record.get('goods_claims',[])
+        world_goods.validate(room.goods_claims,room.player_records)
+        room.goods_durable_claims={r['request_id'] for r in room.goods_claims}
         room.machine_evidence_pending = record.get("machine_evidence_pending", [])
         import machine_witness
         machine_witness.validate_pending(room.machine_evidence_pending,room.machine_runtime,room.player_records)

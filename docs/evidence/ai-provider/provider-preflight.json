@@ -1,0 +1,64 @@
+{
+  "schema": "banjo.ai-player-verification.v1",
+  "mode": "comparison",
+  "model": "gpt-5-mini",
+  "source": {
+    "commit": "0a49d9e3f08ab89ece6bfa887fb5b7d659d3901e",
+    "working_tree_dirty": true,
+    "changed_files": [
+      " M CMakeLists.txt",
+      " M playground/ai_player.py",
+      " M playground/machine_goods.py",
+      " M playground/machine_tools.py",
+      " M playground/room_store.py",
+      " M playground/rover_brain.py",
+      " M playground/server.py",
+      " M playground/workshop_library.py",
+      " M playground/world.css",
+      " M playground/world.js",
+      " M playground/world_seed.py",
+      " M tests/goods_tests.py",
+      " M tests/rover_brain_tests.py",
+      " M tests/world_seed_tests.py",
+      " M tools/build_new_world.py",
+      "?? playground/world_goods.py",
+      "?? scripts/verify_ai_player.py",
+      "?? tests/ai_verification_tests.py",
+      "?? tests/world_goods_tests.py"
+    ],
+    "tracked_diff_sha256": "c9fd6e27832467d92a459b463cedd2e69857f95f24551a641a38d67e9f80c316",
+    "verification_script_sha256": "9aff148dab52838a3fc4efa5cbc563edb357a14d2b423cc46df44d23d180bc8d",
+    "runner_sha256": "a80170f2dec07b5c83a8a2650b1efedb7d3a97a20e24bd0c0d464c438183dff4",
+    "runner": "C:\\Users\\henry\\Documents\\ChatGPT\\Banjo\\build\\agent-progression\\Release\\banjo_live_world_run.exe",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.13.5"
+  },
+  "status": "unavailable",
+  "reference_verified": false,
+  "live_provider_verified": false,
+  "comparison_verified": false,
+  "cases": [],
+  "provider_tokens": {
+    "calls": 0,
+    "usage_complete": false,
+    "input_tokens": null,
+    "output_tokens": null,
+    "total_tokens": null,
+    "cached_tokens": null,
+    "reasoning_tokens": null
+  },
+  "limits": {
+    "decisions_per_case": 64,
+    "provider_calls_per_case": 64,
+    "max_output_tokens_per_call": 800,
+    "case_wall_timeout_s": 900,
+    "native_dt_s": 0.004166666666666667,
+    "scene_cell_m": 0.05,
+    "unattended_clock": false,
+    "robot_decider": "reflex",
+    "stock_and_outcome_grants": false
+  },
+  "problems": [
+    "OPENAI_API_KEY is not configured locally; live provider verification has not run"
+  ]
+}

@@ -1,5 +1,13 @@
 # Banjo mechanics scorecard
 
+**Resource visualization boundary, September 30:** [Acceptance](resource-flow.md)
+uses existing scoop/receiving and declared goods conversion: 5 kg ore → 1.5 kg
+copper; native mine reaches 1.47 kg wire at 132 s. Pickup survives failures,
+races and restart. Cubes add no solver matter, fracture impulses or physical law;
+50 mm / dt=1/240 unchanged. Retain earlier glass/oak/iron and full closure gates.
+[Provider qualification](ai-provider-verification.md) separates reference play
+from unverified live model behavior.
+
 **Continued player boundary, September 30:** [Wire mill attempt](ai-player-current-review.md)
 uses ordinary power/nearby observation, with no new skill from an empty intake.
 Corrected AI numeric program addressing/counts pass native on/save/no-award and

@@ -104,7 +104,7 @@ def compose(ground: dict, world: dict, terrain_seed: int | None = None) -> dict:
     goods = json.loads(json.dumps(world["goods"]))
     spec_goods = goods
     yard = {p["name"]: tuple(p["at_m"]) for p in goods["stockpiles"]}
-    intake, rack = yard["smelter intake"], yard["workshop rack"]
+    intake, rack = yard["smelter intake"], yard["smelter output"]
     middle = ((intake[0] + rack[0]) / 2.0, (intake[1] + rack[1]) / 2.0)
     # The rover starts beside its own intake, on the far side from the smelter
     # that stands in the middle of the yard: the first thing it does is drive
@@ -445,7 +445,7 @@ def watch(engine: Path, validated: dict) -> list[str]:
                     did = routines[name].tick(ctx)
                     if did is not None:
                         log.append(f"{t:6.1f} s  {name}: {did.get('did', '')}")
-                rack = goods.by_name("workshop rack") or {}
+                rack = goods.by_name("smelter output") or {}
                 if float((rack.get("holds") or {}).get("copper", 0.0)) >= 1.0:
                     seconds = (tick + 1) * PER_QUARTER * DT
                     break
@@ -462,15 +462,14 @@ def watch(engine: Path, validated: dict) -> list[str]:
             vein = _nearest(goods.deposits, "copper ore", (0.0, 0.0))
             print(f"  {vein['name']}: {goods.reserve_kg(vein):.1f} kg of "
                   f"{vein['substance']} left of {vein['reserve_kg']:g}")
-            rack = goods.by_name("workshop rack") or {}
+            rack = goods.by_name("smelter output") or {}
             if float((rack.get("holds") or {}).get("copper", 0.0)) < 1.0:
                 faults.append(
                     f"in {WATCH_S:.0f} s the rover and the smelter put no copper on the rack; "
                     + "; ".join(f"{n}: {r.summary()['doing']} ({', '.join(list(r.notes)[-2:])})"
                                 for n, r in routines.items()))
-            if not landed:
-                faults.append("what reached the rack stockpile did not go onto the "
-                              "Workshop's goods rack")
+            if landed:
+                faults.append("New-world output was automatically banked; it must await nearby collection")
         finally:
             session.close()
     return faults

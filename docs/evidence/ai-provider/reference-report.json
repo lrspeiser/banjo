@@ -1,0 +1,1209 @@
+{
+  "schema": "banjo.ai-player-verification.v1",
+  "mode": "reference",
+  "model": "gpt-5-mini",
+  "source": {
+    "commit": "0a49d9e3f08ab89ece6bfa887fb5b7d659d3901e",
+    "working_tree_dirty": true,
+    "changed_files": [
+      " M CMakeLists.txt",
+      " M playground/ai_player.py",
+      " M playground/machine_goods.py",
+      " M playground/machine_tools.py",
+      " M playground/room_store.py",
+      " M playground/rover_brain.py",
+      " M playground/server.py",
+      " M playground/workshop_library.py",
+      " M playground/world.css",
+      " M playground/world.js",
+      " M playground/world_seed.py",
+      " M tests/goods_tests.py",
+      " M tests/rover_brain_tests.py",
+      " M tests/world_seed_tests.py",
+      " M tools/build_new_world.py",
+      "?? playground/world_goods.py",
+      "?? scripts/verify_ai_player.py",
+      "?? tests/ai_verification_tests.py",
+      "?? tests/world_goods_tests.py"
+    ],
+    "tracked_diff_sha256": "9cd6c4c791c80577e645bcede6e77d8082f1e78cdf1275575614552a918ae9ec",
+    "verification_script_sha256": "9aff148dab52838a3fc4efa5cbc563edb357a14d2b423cc46df44d23d180bc8d",
+    "runner_sha256": "a80170f2dec07b5c83a8a2650b1efedb7d3a97a20e24bd0c0d464c438183dff4",
+    "runner": "C:\\Users\\henry\\Documents\\ChatGPT\\Banjo\\build\\agent-progression\\Release\\banjo_live_world_run.exe",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.13.5"
+  },
+  "status": "passed",
+  "reference_verified": true,
+  "live_provider_verified": false,
+  "comparison_verified": false,
+  "cases": [
+    {
+      "controller": "reference",
+      "model": null,
+      "terrain_seed": 7,
+      "goods_seed": 851269742,
+      "scenario": "normal",
+      "calls": [],
+      "status": "passed",
+      "restart_retained": true,
+      "world": "ab917d3573494e0295ba21610376b45e",
+      "character": "b091918de9da4e25b214cba2e73d430d",
+      "character_status": "complete",
+      "message": "All currently declared goal chains complete; see the separate personal tech tree",
+      "decisions": 34,
+      "native_t_s": 16.754166666666038,
+      "known": [
+        "smelting-copper",
+        "using-ground-tools"
+      ],
+      "tech_tree_total": 10,
+      "source_evidence": [
+        {
+          "id": "ev-f1c1498562",
+          "source": "found-example",
+          "test": "study-example",
+          "passes": true,
+          "result": {
+            "body_id": 1000,
+            "point_id": 1,
+            "matter_sha256": "8817ab9798411533bcb5534462b59d166c46290cacf50cae7d46eed952e154f4"
+          }
+        },
+        {
+          "id": "ev-242ca6be7c",
+          "source": "found-example",
+          "test": "loosens-soil",
+          "passes": true,
+          "result": {
+            "loosened_m3": 0.007445345798433046,
+            "loosened_kg": 11.91255,
+            "depth_m": 0.14049,
+            "work_j": 32.90427,
+            "closing_speed_m_s": 8.09874
+          }
+        },
+        {
+          "id": "ev-a32bdcf3d4",
+          "source": "watched",
+          "test": "smelts-ore",
+          "passes": true,
+          "result": {
+            "made_kg": 1.5,
+            "used_kg": 5.0,
+            "made": {
+              "copper": 1.5
+            },
+            "used": {
+              "copper ore": 5.0
+            },
+            "drawn_j": 10000.0
+          }
+        }
+      ],
+      "actions": [
+        "acquire",
+        "bank",
+        "build",
+        "buy",
+        "compare-recipes",
+        "inspect",
+        "move",
+        "observe",
+        "pack",
+        "select-recipe",
+        "select-target",
+        "use-tool",
+        "watch-batch"
+      ],
+      "history_modes": [
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference"
+      ],
+      "history": [
+        {
+          "action": "bank",
+          "choice": "bank",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.092,
+          "goal": "bank-solar",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "buy",
+          "choice": "buy:f82c7fee83a93825",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.088,
+          "goal": "stock-oak",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "buy",
+          "choice": "buy:0236b14d082b3470",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.088,
+          "goal": "stock-oak",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "buy",
+          "choice": "buy:77123213e7e778d0",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.088,
+          "goal": "stock-oak",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "buy",
+          "choice": "buy:362ee453dda6544e",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.09,
+          "goal": "stock-oak",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "bank",
+          "choice": "bank",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.096,
+          "goal": "stock-oak",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "buy",
+          "choice": "buy:a2d9427f00322b34",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.088,
+          "goal": "stock-oak",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "buy",
+          "choice": "buy:de524a22c6c88e77",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.09,
+          "goal": "stock-oak",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "compare-recipes",
+          "choice": "compare-recipes:34b8103143a2417b",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.091,
+          "goal": "build-camp",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "select-recipe",
+          "choice": "select-recipe:2ca31351550d74f6",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.086,
+          "goal": "build-camp",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "build",
+          "choice": "build:2ca31351550d74f6",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.086,
+          "goal": "build-camp",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "select-target",
+          "choice": "select-target:b77ed59df87875e5",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.094,
+          "goal": "carry-camp",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "move",
+          "choice": "move:8daaf47c039ebd43",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.093,
+          "goal": "carry-camp",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "pack",
+          "choice": "pack:f85214b979485dc9",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.095,
+          "goal": "carry-camp",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "select-target",
+          "choice": "select-target:e3660714c183737b",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.095,
+          "goal": "study-tool",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "acquire",
+          "choice": "acquire:e3660714c183737b",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.098,
+          "goal": "study-tool",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "inspect",
+          "choice": "inspect:e9e3f7ac77c7808d",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.089,
+          "goal": "study-tool",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "move",
+          "choice": "move:a09eb002c0ea3ebf",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.094,
+          "goal": "gather-ground",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "use-tool",
+          "choice": "use-tool:372a7f115bca2d89",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.09,
+          "goal": "gather-ground",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "compare-recipes",
+          "choice": "compare-recipes:f6f96ae5de201e9c",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.119,
+          "goal": "build-surface",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "select-recipe",
+          "choice": "select-recipe:866328f78f050d7f",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.094,
+          "goal": "build-surface",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "build",
+          "choice": "build:866328f78f050d7f",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.092,
+          "goal": "build-surface",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "select-target",
+          "choice": "select-target:9bac1e4da8222f63",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.091,
+          "goal": "observe-process",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "move",
+          "choice": "move:4888a7f2e9db56cf",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.092,
+          "goal": "observe-process",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "watch-batch",
+          "choice": "watch-batch:9bac1e4da8222f63",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.111,
+          "goal": "observe-process",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "observe",
+          "choice": "observe:9bac1e4da8222f63",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.11,
+          "goal": "observe-process",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "observe",
+          "choice": "observe:9bac1e4da8222f63",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.091,
+          "goal": "observe-process",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "observe",
+          "choice": "observe:9bac1e4da8222f63",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.104,
+          "goal": "observe-process",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "observe",
+          "choice": "observe:9bac1e4da8222f63",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.087,
+          "goal": "observe-process",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "observe",
+          "choice": "observe:9bac1e4da8222f63",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.09,
+          "goal": "observe-process",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "observe",
+          "choice": "observe:9bac1e4da8222f63",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.088,
+          "goal": "observe-process",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "observe",
+          "choice": "observe:9bac1e4da8222f63",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.09,
+          "goal": "observe-process",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "observe",
+          "choice": "observe:0dada73d36261bc3",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.096,
+          "goal": "observe-process",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "observe",
+          "choice": "observe:11a38b0ae76670e8",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.091,
+          "goal": "observe-process",
+          "chain": "first-workshop-v1"
+        }
+      ],
+      "all_chains_complete": true,
+      "goals_complete": 8,
+      "goals_total": 8,
+      "packed_built_product": true,
+      "other_guest_known": [],
+      "other_guest_bag": [],
+      "other_guest_wallet_j": 0,
+      "shortage_observed": false,
+      "restart_checks": {
+        "inventory": true,
+        "knowledge": true,
+        "evidence": true,
+        "machine_runtime": true,
+        "player_outbox": true,
+        "machine_outbox": true
+      },
+      "persistence_state": "saved",
+      "wall_s": 61.089,
+      "tokens": {
+        "calls": 0,
+        "usage_complete": false,
+        "input_tokens": null,
+        "output_tokens": null,
+        "total_tokens": null,
+        "cached_tokens": null,
+        "reasoning_tokens": null
+      },
+      "problems": []
+    },
+    {
+      "controller": "reference",
+      "model": null,
+      "terrain_seed": 7,
+      "goods_seed": 851269742,
+      "scenario": "missing-starting-stock",
+      "calls": [],
+      "status": "passed",
+      "restart_retained": true,
+      "world": "7dcd465f21c3410883da6810ef810612",
+      "fixture": {
+        "removed_supply": "oak",
+        "offers": [
+          "oak-stock"
+        ]
+      },
+      "character": "00aef72bdb254f338d86b6850c73bd6b",
+      "character_status": "blocked",
+      "message": "Market has no oak lot in stock",
+      "decisions": 2,
+      "native_t_s": 0.004166666666666667,
+      "known": [],
+      "tech_tree_total": 10,
+      "source_evidence": [],
+      "actions": [
+        "bank",
+        "wait"
+      ],
+      "history_modes": [
+        "reference",
+        "reference"
+      ],
+      "history": [
+        {
+          "action": "bank",
+          "choice": "bank",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.091,
+          "goal": "bank-solar",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "wait",
+          "choice": "wait:5846fb44188cd467",
+          "mode": "reference",
+          "model": null,
+          "result": "blocked",
+          "seconds": 0.088,
+          "goal": "stock-oak",
+          "chain": "first-camp-v1"
+        }
+      ],
+      "all_chains_complete": false,
+      "goals_complete": 1,
+      "goals_total": 8,
+      "packed_built_product": false,
+      "other_guest_known": [],
+      "other_guest_bag": [],
+      "other_guest_wallet_j": 0,
+      "shortage_observed": true,
+      "restart_checks": {
+        "inventory": true,
+        "knowledge": true,
+        "evidence": true,
+        "machine_runtime": true,
+        "player_outbox": true,
+        "machine_outbox": true
+      },
+      "persistence_state": "saved",
+      "wall_s": 4.136,
+      "tokens": {
+        "calls": 0,
+        "usage_complete": false,
+        "input_tokens": null,
+        "output_tokens": null,
+        "total_tokens": null,
+        "cached_tokens": null,
+        "reasoning_tokens": null
+      },
+      "problems": []
+    },
+    {
+      "controller": "reference",
+      "model": null,
+      "terrain_seed": 4,
+      "goods_seed": 1,
+      "scenario": "normal",
+      "calls": [],
+      "status": "passed",
+      "restart_retained": true,
+      "world": "232d2583f9744a098346849459ffeeff",
+      "character": "a42500279cb141509abb896400ba4962",
+      "character_status": "complete",
+      "message": "All currently declared goal chains complete; see the separate personal tech tree",
+      "decisions": 35,
+      "native_t_s": 17.154166666666015,
+      "known": [
+        "smelting-copper",
+        "using-ground-tools"
+      ],
+      "tech_tree_total": 10,
+      "source_evidence": [
+        {
+          "id": "ev-eb6a8b557f",
+          "source": "found-example",
+          "test": "study-example",
+          "passes": true,
+          "result": {
+            "body_id": 1000,
+            "point_id": 1,
+            "matter_sha256": "73b16a9fd728516ff12b938051df5a592e4b245500e8b2bf9fffee733cfbb696"
+          }
+        },
+        {
+          "id": "ev-b404bf4aca",
+          "source": "found-example",
+          "test": "loosens-soil",
+          "passes": true,
+          "result": {
+            "loosened_m3": 0.00802146991562326,
+            "loosened_kg": 12.83435,
+            "depth_m": 0.14042,
+            "work_j": 27.62231,
+            "closing_speed_m_s": 7.99046
+          }
+        },
+        {
+          "id": "ev-91d007e62b",
+          "source": "watched",
+          "test": "smelts-ore",
+          "passes": true,
+          "result": {
+            "made_kg": 1.5,
+            "used_kg": 5.0,
+            "made": {
+              "copper": 1.5
+            },
+            "used": {
+              "copper ore": 5.0
+            },
+            "drawn_j": 10000.0
+          }
+        }
+      ],
+      "actions": [
+        "acquire",
+        "bank",
+        "build",
+        "buy",
+        "compare-recipes",
+        "inspect",
+        "move",
+        "observe",
+        "pack",
+        "select-recipe",
+        "select-target",
+        "use-tool",
+        "watch-batch"
+      ],
+      "history_modes": [
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference",
+        "reference"
+      ],
+      "history": [
+        {
+          "action": "bank",
+          "choice": "bank",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.089,
+          "goal": "bank-solar",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "buy",
+          "choice": "buy:f82c7fee83a93825",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.085,
+          "goal": "stock-oak",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "buy",
+          "choice": "buy:0236b14d082b3470",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.091,
+          "goal": "stock-oak",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "buy",
+          "choice": "buy:77123213e7e778d0",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.092,
+          "goal": "stock-oak",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "buy",
+          "choice": "buy:362ee453dda6544e",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.09,
+          "goal": "stock-oak",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "bank",
+          "choice": "bank",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.097,
+          "goal": "stock-oak",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "buy",
+          "choice": "buy:a2d9427f00322b34",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.086,
+          "goal": "stock-oak",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "buy",
+          "choice": "buy:de524a22c6c88e77",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.085,
+          "goal": "stock-oak",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "compare-recipes",
+          "choice": "compare-recipes:34b8103143a2417b",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.085,
+          "goal": "build-camp",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "select-recipe",
+          "choice": "select-recipe:2ca31351550d74f6",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.084,
+          "goal": "build-camp",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "build",
+          "choice": "build:2ca31351550d74f6",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.087,
+          "goal": "build-camp",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "select-target",
+          "choice": "select-target:813155bcec3906ff",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.094,
+          "goal": "carry-camp",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "move",
+          "choice": "move:914d51ac174ffd8f",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.09,
+          "goal": "carry-camp",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "pack",
+          "choice": "pack:a1bc471848154cfe",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.089,
+          "goal": "carry-camp",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "select-target",
+          "choice": "select-target:c06d40b075455197",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.09,
+          "goal": "study-tool",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "acquire",
+          "choice": "acquire:c06d40b075455197",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.093,
+          "goal": "study-tool",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "inspect",
+          "choice": "inspect:fe2741cd7f6a29d7",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.092,
+          "goal": "study-tool",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "move",
+          "choice": "move:c86286d7e3becf3b",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.092,
+          "goal": "gather-ground",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "use-tool",
+          "choice": "use-tool:91a562665147cbfc",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.09,
+          "goal": "gather-ground",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "compare-recipes",
+          "choice": "compare-recipes:f6f96ae5de201e9c",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.088,
+          "goal": "build-surface",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "select-recipe",
+          "choice": "select-recipe:866328f78f050d7f",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.095,
+          "goal": "build-surface",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "build",
+          "choice": "build:866328f78f050d7f",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.096,
+          "goal": "build-surface",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "select-target",
+          "choice": "select-target:c72a538b2799da8c",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.102,
+          "goal": "observe-process",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "move",
+          "choice": "move:1f0d68201a2fe7d6",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.118,
+          "goal": "observe-process",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "watch-batch",
+          "choice": "watch-batch:c72a538b2799da8c",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.092,
+          "goal": "observe-process",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "observe",
+          "choice": "observe:c72a538b2799da8c",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.091,
+          "goal": "observe-process",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "observe",
+          "choice": "observe:c72a538b2799da8c",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.089,
+          "goal": "observe-process",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "observe",
+          "choice": "observe:c72a538b2799da8c",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.101,
+          "goal": "observe-process",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "observe",
+          "choice": "observe:c72a538b2799da8c",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.092,
+          "goal": "observe-process",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "observe",
+          "choice": "observe:c72a538b2799da8c",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.087,
+          "goal": "observe-process",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "observe",
+          "choice": "observe:c72a538b2799da8c",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.091,
+          "goal": "observe-process",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "observe",
+          "choice": "observe:ba620f8a5764fe3e",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.091,
+          "goal": "observe-process",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "observe",
+          "choice": "observe:ba620f8a5764fe3e",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.088,
+          "goal": "observe-process",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "observe",
+          "choice": "observe:ba620f8a5764fe3e",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.098,
+          "goal": "observe-process",
+          "chain": "first-workshop-v1"
+        },
+        {
+          "action": "observe",
+          "choice": "observe:ba620f8a5764fe3e",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.102,
+          "goal": "observe-process",
+          "chain": "first-workshop-v1"
+        }
+      ],
+      "all_chains_complete": true,
+      "goals_complete": 8,
+      "goals_total": 8,
+      "packed_built_product": true,
+      "other_guest_known": [],
+      "other_guest_bag": [],
+      "other_guest_wallet_j": 0,
+      "shortage_observed": false,
+      "restart_checks": {
+        "inventory": true,
+        "knowledge": true,
+        "evidence": true,
+        "machine_runtime": true,
+        "player_outbox": true,
+        "machine_outbox": true
+      },
+      "persistence_state": "saved",
+      "wall_s": 62.656,
+      "tokens": {
+        "calls": 0,
+        "usage_complete": false,
+        "input_tokens": null,
+        "output_tokens": null,
+        "total_tokens": null,
+        "cached_tokens": null,
+        "reasoning_tokens": null
+      },
+      "problems": []
+    },
+    {
+      "controller": "reference",
+      "model": null,
+      "terrain_seed": 4,
+      "goods_seed": 1,
+      "scenario": "missing-starting-stock",
+      "calls": [],
+      "status": "passed",
+      "restart_retained": true,
+      "world": "5348537877f54c35a89837651f3af31b",
+      "fixture": {
+        "removed_supply": "oak",
+        "offers": [
+          "oak-stock"
+        ]
+      },
+      "character": "65e11fbd71094295b6d89483caf205eb",
+      "character_status": "blocked",
+      "message": "Market has no oak lot in stock",
+      "decisions": 2,
+      "native_t_s": 0.004166666666666667,
+      "known": [],
+      "tech_tree_total": 10,
+      "source_evidence": [],
+      "actions": [
+        "bank",
+        "wait"
+      ],
+      "history_modes": [
+        "reference",
+        "reference"
+      ],
+      "history": [
+        {
+          "action": "bank",
+          "choice": "bank",
+          "mode": "reference",
+          "model": null,
+          "result": "committed",
+          "seconds": 0.092,
+          "goal": "bank-solar",
+          "chain": "first-camp-v1"
+        },
+        {
+          "action": "wait",
+          "choice": "wait:5846fb44188cd467",
+          "mode": "reference",
+          "model": null,
+          "result": "blocked",
+          "seconds": 0.088,
+          "goal": "stock-oak",
+          "chain": "first-camp-v1"
+        }
+      ],
+      "all_chains_complete": false,
+      "goals_complete": 1,
+      "goals_total": 8,
+      "packed_built_product": false,
+      "other_guest_known": [],
+      "other_guest_bag": [],
+      "other_guest_wallet_j": 0,
+      "shortage_observed": true,
+      "restart_checks": {
+        "inventory": true,
+        "knowledge": true,
+        "evidence": true,
+        "machine_runtime": true,
+        "player_outbox": true,
+        "machine_outbox": true
+      },
+      "persistence_state": "saved",
+      "wall_s": 4.153,
+      "tokens": {
+        "calls": 0,
+        "usage_complete": false,
+        "input_tokens": null,
+        "output_tokens": null,
+        "total_tokens": null,
+        "cached_tokens": null,
+        "reasoning_tokens": null
+      },
+      "problems": []
+    }
+  ],
+  "provider_tokens": {
+    "calls": 0,
+    "usage_complete": false,
+    "input_tokens": null,
+    "output_tokens": null,
+    "total_tokens": null,
+    "cached_tokens": null,
+    "reasoning_tokens": null
+  },
+  "limits": {
+    "decisions_per_case": 64,
+    "provider_calls_per_case": 64,
+    "max_output_tokens_per_call": 800,
+    "case_wall_timeout_s": 900,
+    "native_dt_s": 0.004166666666666667,
+    "scene_cell_m": 0.05,
+    "unattended_clock": false,
+    "robot_decider": "reflex",
+    "stock_and_outcome_grants": false
+  }
+}

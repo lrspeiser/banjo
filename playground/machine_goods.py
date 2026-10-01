@@ -36,6 +36,7 @@ good, exported, as a material packet is.
 from __future__ import annotations
 
 import math
+import uuid
 from typing import Any, Callable
 
 # How near a machine must be to a stockpile to put onto it or take from it,
@@ -72,6 +73,17 @@ class Goods:
         # it is made, which is the whole of progression above this layer
         # (docs/knowledge-and-progression.md).
         self.on_made = on_made
+        self.activity_epoch=uuid.uuid4().hex
+        self.activity_sequence=0
+        self.activities=[]
+
+    def activity(self,kind,masses,source,destination,machine):
+        masses={k:float(v) for k,v in masses.items() if math.isfinite(float(v)) and float(v)>0}
+        if not masses: return
+        self.activity_sequence+=1
+        self.activities.append({'id':f'{self.activity_epoch}:{self.activity_sequence}',
+            'kind':kind,'goods_kg':masses,'from':source,'to':destination,'machine':machine})
+        self.activities=self.activities[-96:]
 
     def _kept(self) -> None:
         """The block into the room's spec, once there is something in it."""
@@ -280,6 +292,8 @@ class Goods:
                           "left_kg": round(self.reserve_kg(d), 3),
                           "of_kg": round(float(d.get("reserve_kg", 0.0)), 3)}
                          for d in self.deposits],
+            "activity_epoch":self.activity_epoch,
+            "activities":list(self.activities),
         }
 
 

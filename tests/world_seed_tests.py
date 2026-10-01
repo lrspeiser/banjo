@@ -299,7 +299,9 @@ class TheChainItself(unittest.TestCase):
         spec = {"goods": ws.place(a_valley(), 4, start_xz=START)}
         goods = machine_goods.Goods(spec)
         self.assertEqual(len(spec["goods"]["deposits"]), len(goods.deposits))
-        self.assertTrue(any(p.get("rack") for p in goods.stockpiles))
+        self.assertFalse(any(p.get("rack") for p in goods.stockpiles),
+                         'New worlds require nearby collection, not automatic shared credit')
+        self.assertIsNotNone(goods.by_name('smelter output'))
         for pile in goods.stockpiles:
             self.assertIsNotNone(goods.by_name(pile["name"]))
 

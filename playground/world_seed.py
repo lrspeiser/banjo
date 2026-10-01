@@ -798,13 +798,13 @@ def place(ground: dict[str, Any], seed: int, *,
     got = pick(None, YARD_M + 1.0, near=start_xz) or pick(None, 1.0, near=start_xz)
     middle = (got[0], got[1]) if got else start_xz
     for n, (name, extra) in enumerate((("smelter intake", {}),
-                                       ("workshop rack", {"rack": True}))):
+                                       ("smelter output", {}))):
         a = n * math.tau / 2.0
         x, z = middle[0] + YARD_M * math.cos(a), middle[1] + YARD_M * math.sin(a)
         taken.append((x, z, YARD_PILE_M))
         stockpiles.append({"name": name, "at_m": [round(x, 2), round(z, 2)],
                            "radius_m": YARD_PILE_M, **extra})
-    yards = {WORKS[0].machine: (middle, "smelter intake", "workshop rack")}
+    yards = {WORKS[0].machine: (middle, "smelter intake", "smelter output")}
 
     # ORDER IS THE DIFFERENCE BETWEEN A PLAYABLE MAP AND A BAD ROLL. Laid down
     # seam by seam, with the timber last, 25 of 60 seeds of the valley had no
@@ -862,7 +862,7 @@ def heaps_of(works: Works) -> tuple[str, str]:
     land somewhere a person can build with.
     """
     if works is WORKS[0]:
-        return f"{works.machine} intake", "workshop rack"
+        return f"{works.machine} intake", "smelter output"
     return f"{works.machine} intake", f"{works.machine} output"
 
 

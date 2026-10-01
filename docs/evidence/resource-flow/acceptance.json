@@ -1,0 +1,13 @@
+{
+  "schema": "banjo.resource-flow-acceptance.v1",
+  "native_dt_s": 0.004166666666666667,
+  "cell_m": 0.05,
+  "collected": {
+    "copper": 1.5
+  },
+  "other_guest_collected": {},
+  "restart_retained": true,
+  "save_failure_no_credit": true,
+  "retries_no_duplicate": true,
+  "provider_calls": 0
+}

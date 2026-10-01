@@ -142,6 +142,8 @@ class Manager:
         state = (self.app.live.rejoin(self.app, shared=True) if full else
                  self.app.live.act({"session": self.app.live.session.id, "op": "poses", "actor": ident}))
         if state is None: raise ValueError("The character's world could not be read")
+        self.app.brains.settle(state)
+        state['brains']=self.app.brains.summaries()
         state["session"] = self.app.live.session.id
         state["scene"] = self.app.room.scene
         state["inventory"] = inventory_room.shown(self.app, ident)

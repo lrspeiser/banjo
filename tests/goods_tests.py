@@ -95,7 +95,7 @@ class TheRoomsAccountOfGoods(unittest.TestCase):
         self.assertTrue(reading["stockpiles"][0]["within_reach"])
         self.assertEqual(["copper", "copper ore", "copper wire", "slag"], goods.substances())
 
-    def test_every_holder_reaches_the_page_and_only_when_it_has_moved(self):
+    def test_every_observer_gets_current_holders_without_consuming_another_pages_update(self):
         """What the page's slots are drawn from (docs/machine-world.md, "What
         everything holds, in slots"). Until this, a stockpile was a number in
         the room's spec that the page was never told, so a heap of ore could
@@ -125,14 +125,19 @@ class TheRoomsAccountOfGoods(unittest.TestCase):
         step = {"op": "step"}
         answer: dict = {}
         brains.attach(step, answer)
-        self.assertNotIn("goods", answer, "nothing moved, so nothing is sent")
+        self.assertEqual(opened['goods'],answer['goods'])
         brains.goods.put(-3.0, -8.0, {"copper ore": 1.0})
         answer = {}
         brains.attach(step, answer)
         self.assertEqual({"copper ore": 13.0}, answer["goods"]["stockpiles"][0]["holds_kg"])
         answer = {}
-        brains.attach(step, answer)
-        self.assertNotIn("goods", answer, "sent once, not again until it moves again")
+        brains.attach({'op':'step','actor':'first-guest'}, answer)
+        self.assertEqual({'copper ore':13.0},answer['goods']['stockpiles'][0]['holds_kg'],
+                         'A second observer still receives the same current stock')
+        third={};brains.attach({'op':'poses','actor':'second-guest'},third)
+        self.assertEqual(answer['goods'],third['goods'])
+        unchanged={};brains.attach({'op':'poses','actor':'second-guest'},unchanged)
+        self.assertNotIn('goods',unchanged,'Unchanged replies to this guest stay small')
 
     def test_a_recipe_works_a_batch_and_no_more_than_is_there(self):
         goods = machine_goods.Goods({"goods": goods_block()})
@@ -326,6 +331,10 @@ class TheMine(unittest.TestCase):
         self.assertEqual(rack, self.spec["goods"]["stockpiles"][3]["holds"], "the ledger is the room's own block")
         smelter = self.brains.of("smelter").routine
         self.assertGreaterEqual(smelter.batches, 1)
+        kinds={e['kind'] for e in goods.activities}
+        self.assertTrue({'dig','input','output'}<=kinds,kinds)
+        self.assertTrue({'dump','dock'} & kinds,kinds)
+        self.assertTrue(all(all(kg>0 for kg in e['goods_kg'].values()) for e in goods.activities))
         # A person talks to the smelter: it goes nowhere, says so, and "make"
         # works a batch if there is ore, "stop" holds it.
         talked = rover_talk.talk(self.app, {"program": "smelter", "open": True,

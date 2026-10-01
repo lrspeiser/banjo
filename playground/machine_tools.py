@@ -386,6 +386,15 @@ def _bite(ctx: senses.Context, args: dict[str, Any]) -> dict[str, Any]:
     return {"point": best}
 
 
+def _resource_endpoint(ctx, flow=None):
+    """An actual declared mouth, else the reported body/position."""
+    ports=ctx.ports.of(ctx.program['name']) if ctx.ports is not None else []
+    port=next((p for p in ports if (p.flow==flow if flow else p.holds_name=='hopper')),None)
+    if port is not None:return {'port':port.name}
+    parts=ctx.program.get('parts') or []
+    return {'body':ctx.program.get('body') or (parts[0] if parts else None),'at_m':list(ctx.at())}
+
+
 def dig(ctx: senses.Context, call: Call) -> dict[str, Any]:
     """One scoop of the ground ahead of it into its hopper: the engine's dig,
     the volume moved out of what is carried into the hopper's account, the
@@ -465,6 +474,11 @@ def dig(ctx: senses.Context, call: Call) -> dict[str, Any]:
     ore = ctx.goods.dug(point[0], point[1], kg) if ctx.goods is not None else {}
     ore_share = min(1.0, sum(ore.values()) / kg) if ore else 0.0
     r.load_in(sand * (1.0 - ore_share), soil * (1.0 - ore_share), kg, ore)
+    if ctx.goods is not None:
+        contents=dict(ore)
+        if kg-sum(ore.values())>0: contents['sand and soil']=kg-sum(ore.values())
+        ctx.goods.activity('dig',contents,{'at_m':point},
+                           _resource_endpoint(ctx),ctx.program['name'])
     work_j = kg * float(r.work_j_per_kg)
     drawn = 0.0
     if store is not None and work_j > 0.0:
@@ -666,6 +680,11 @@ def dump(ctx: senses.Context, call: Call) -> dict[str, Any]:
                      sand_m3=sand, soil_m3=soil, from_carried=True)
         heaped = reply.get("heaped")
     r.delivered(sand, soil, kg)
+    if ctx.goods is not None:
+        contents=dict(goods)
+        if kg-sum(goods.values())>0: contents['sand and soil']=kg-sum(goods.values())
+        ctx.goods.activity('dump',contents,_resource_endpoint(ctx),
+                           {'pile':onto} if onto else {'at_m':point},ctx.program['name'])
     _behave(ctx, call, "waiting", 2.0)
     words = ", ".join(f"{v:.1f} kg of {k}" for k, v in goods.items())
     r.note(f"dumped {kg:.1f} kg" + (f" ({words} onto {onto})" if goods else ""))
@@ -698,6 +717,8 @@ def take(ctx: senses.Context, call: Call) -> dict[str, Any]:
                        + (str(call.args.get("substance")) if call.args.get("substance") else "anything")
                        + " on it", "load": r.load_reading(), "idle": True}
     r.load_in(0.0, 0.0, sum(taken.values()), taken)
+    ctx.goods.activity('take',taken,{'pile':got['from']},
+                       _resource_endpoint(ctx),ctx.program['name'])
     took_s = sum(taken.values()) * DIG_S_PER_KG
     _behave(ctx, call, "waiting", max(0.5, took_s))
     words = ", ".join(f"{v:.1f} kg of {k}" for k, v in taken.items())
@@ -849,6 +870,10 @@ def process(ctx: senses.Context, call: Call) -> dict[str, Any]:
         _act(ctx, op="draw", store=store["id"], joules=made["work_j"])
         drawn = made["work_j"]
     ctx.goods.put(float(output["at_m"][0]), float(output["at_m"][1]), made["made"], named=output["name"])
+    ctx.goods.activity('input',made['used'],{'pile':intake['name']},
+                       _resource_endpoint(ctx,'in'),ctx.program['name'])
+    ctx.goods.activity('output',made['made'],_resource_endpoint(ctx,'out'),
+                       {'pile':output['name']},ctx.program['name'])
     r.made_kg += sum(made["made"].values())
     r.batches += 1
     # Somebody saw this happen, and that is how a recipe is learned.
@@ -922,6 +947,9 @@ def dock(ctx: senses.Context, call: Call) -> dict[str, Any]:
             said.append(f"{giving.name} passed nothing to {taking.name}: {passed['why']}")
             continue
         kg = sum(passed["moved"].values())
+        if ctx.goods is not None:
+            ctx.goods.activity('dock',passed['moved'],{'port':giving.name},
+                               {'port':taking.name},machine)
         words = ", ".join(f"{v:.1f} kg of {k}" for k, v in passed["moved"].items())
         # As long as a scoop of the same mass takes, so a dock is watchable
         # rather than instant: the same declared rate the dig and take tools use.

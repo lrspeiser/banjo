@@ -1,5 +1,17 @@
 # Banjo roadmap and acceptance gates
 
+**Current owner goal, September 30:** [Twelve player-experience gates](player-experience-checklist.md)
+supersede the earlier progression-only task. Finish verified action visibility,
+then fresh entry and Workshop/tool/capacity blockers, followed by the full
+day/night, gravity, discovery, recipe, component, repair and rover-safety journeys.
+
+**Resource loop acceptance, September 30:** [Visible transfers and pickup](resource-flow.md)
+are implemented and measured in native/browser fixtures. Next connect personal
+stock to machine intakes, compact receipts safely, define machine permissions
+and qualify generated rover routes and multiplayer rendering costs.
+[Provider harness](ai-provider-verification.md) is implemented; actual provider
+comparison remains an external-configuration gate.
+
 **Post-checklist playtest, September 30:** [Wire-route review](ai-player-current-review.md)
 finds a real empty mill intake after both opening chains. Next implement ordinary
 quantity-bearing input delivery with receipts, then choose reachable techniques

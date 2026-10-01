@@ -23,6 +23,7 @@ import threading
 import time
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -393,6 +394,49 @@ class TheBrainOffTheStep(unittest.TestCase):
 
 class TheModelAsADecider(unittest.TestCase):
     """The chat's model asked the same typed questions, answering in Jev's shape."""
+
+    def test_measured_usage_is_retained_without_response_text_or_credentials(self):
+        import io
+        client=rover_brain.OpenAIDecider('private-test-key','gpt-5-mini')
+        questions={'next':{'type':'choice','criteria':{'inspect':'Inspect','wait':'Wait'}}}
+        response={'status':'completed','usage':{'input_tokens':100,'output_tokens':40,'total_tokens':140,
+            'input_tokens_details':{'cached_tokens':50},'output_tokens_details':{'reasoning_tokens':30}},
+            'output':[{'type':'message','content':[{'type':'output_text',
+                'text':json.dumps({'next':{'choice':'inspect','probabilities':{'inspect':1,'wait':0}}})}]}]}
+        with mock.patch.object(rover_brain.request,'urlopen',return_value=io.BytesIO(json.dumps(response).encode())):
+            result=client.ask({'private_prompt':'not metrics'},questions)
+        self.assertEqual('inspect',result['next']['choice'])
+        self.assertEqual(140,client.last_call['usage']['total_tokens'])
+        self.assertEqual(50,client.last_call['usage']['cached_tokens'])
+        self.assertEqual(30,client.last_call['usage']['reasoning_tokens'])
+        self.assertEqual(200,client.last_call['http_status'])
+        self.assertGreaterEqual(client.last_call['latency_s'],0)
+        self.assertNotIn('private',json.dumps(client.last_call))
+
+    def test_incomplete_response_retains_actual_usage_when_no_choice_was_returned(self):
+        import io
+        client=rover_brain.OpenAIDecider('private-test-key','gpt-5-mini')
+        response={'status':'incomplete','incomplete_details':{'reason':'max_output_tokens'},'output':[],
+                  'usage':{'input_tokens':10,'output_tokens':800,'total_tokens':810}}
+        with mock.patch.object(rover_brain.request,'urlopen',return_value=io.BytesIO(json.dumps(response).encode())):
+            with self.assertRaisesRegex(ValueError,'said nothing'):client.ask({},rover_brain.QUESTIONS)
+        self.assertEqual('incomplete',client.last_call['response_status'])
+        self.assertEqual(810,client.last_call['usage']['total_tokens'])
+        self.assertIsNone(client.last_call['usage']['cached_tokens'])
+
+    def test_failed_http_call_keeps_unknown_usage_and_safe_status(self):
+        client=rover_brain.OpenAIDecider('private-test-key','gpt-5-mini')
+        failure=rover_brain.error.HTTPError(client.url,401,'private diagnostic',{},None)
+        with mock.patch.object(rover_brain.request,'urlopen',side_effect=failure):
+            with self.assertRaisesRegex(ValueError,'HTTP 401'):client.ask({},rover_brain.QUESTIONS)
+        self.assertEqual(401,client.last_call['http_status'])
+        self.assertIsNone(client.last_call['usage'])
+        self.assertNotIn('private',json.dumps(client.last_call))
+
+    def test_invalid_usage_is_unknown_not_an_estimated_zero(self):
+        for usage in ({},{'input_tokens':True,'output_tokens':1,'total_tokens':2},
+                      {'input_tokens':3,'output_tokens':4,'total_tokens':99}):
+            self.assertIsNone(rover_brain.response_usage({'usage':usage}))
 
     def test_the_schema_admits_only_the_answers_asked_for(self):
         schema = rover_brain.answer_schema(rover_brain.questions_for("roam"))

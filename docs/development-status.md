@@ -1,5 +1,17 @@
 # Development status and handoff
 
+**Current owner acceptance:** [Player experience checklist](player-experience-checklist.md)
+tracks all twelve requested changes and their remaining verification. The
+resource-flow checkpoint covers item 1's native/browser loop; the whole list is
+not complete.
+
+**Resource flow checkpoint, September 30:** [Implementation and evidence](resource-flow.md)
+cover native transfer activity, visible hopper/piles and nearby personal pickup,
+including failed save/SQL credit, restart and concurrent collectors. New worlds
+await pickup; legacy shared racks cannot also credit a collector. Cubes are ledger
+pictures. [Provider harness](ai-provider-verification.md) passes four reference
+seed/scarcity cases; actual provider play remains unverified.
+
 **AI playtest follow-up, September 30:** [Current review](ai-player-current-review.md)
 records 8/8 opening goals, 2/10 techniques and an ordinary post-checklist mill
 observation blocked by missing copper input. Other missing equipment is audited,

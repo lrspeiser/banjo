@@ -1,5 +1,11 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Visible resource loop, September 30:** [Recorded transfers and pickup](resource-flow.md)
+show scoop/delivery/batch packets, hopper fill and output piles. New-game output
+awaits personal collection; durable receipts protect retries/restart. Pictures
+add no physical law. [Provider qualification](ai-provider-verification.md) passes
+reference seeds/scarcity; live provider remains unverified without local configuration.
+
 **AI player review, September 30:** [Current journey and blockers](ai-player-current-review.md)
 separates reference autonomy, assistant-guided continuation and unverified live
 LLM planning. Actual post-checklist mill observation is blocked by missing copper

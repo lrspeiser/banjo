@@ -278,6 +278,25 @@ def answers_from(raw: dict[str, Any], questions: dict[str, Any]) -> dict[str, An
     return answers
 
 
+def response_usage(answer: Any) -> dict[str, Any] | None:
+    """Only measured token counts; unknown or inconsistent usage is not zero.
+
+    Cached and reasoning tokens are subsets of input/output, not extra tokens.
+    No prompt, response text or credential enters this small measurement.
+    """
+    usage=answer.get('usage') if isinstance(answer,dict) else None
+    if not isinstance(usage,dict):return None
+    counts={k:usage.get(k) for k in ('input_tokens','output_tokens','total_tokens')}
+    if any(type(v) is not int or v<0 for v in counts.values()):return None
+    if counts['input_tokens']+counts['output_tokens']!=counts['total_tokens']:return None
+    for detail,key,parent in (('input_tokens_details','cached_tokens','input_tokens'),
+                              ('output_tokens_details','reasoning_tokens','output_tokens')):
+        part=usage.get(detail)
+        value=part.get(key) if isinstance(part,dict) else None
+        counts[key]=value if type(value) is int and 0<=value<=counts[parent] else None
+    return counts
+
+
 class OpenAIDecider:
     """The chat's model asked the same typed questions, made to answer in the
     same shape (Responses API, a strict JSON schema, its lightest reasoning).
@@ -289,6 +308,7 @@ class OpenAIDecider:
                  timeout_s: float = OPENAI_TIMEOUT_S):
         self.api_key, self.model, self.effort, self.url, self.timeout_s = api_key, model, effort, url, timeout_s
         self.label = f"OpenAI ({model})"
+        self.last_call = None
 
     def payload(self, state: Any, questions: dict[str, Any]) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -304,13 +324,21 @@ class OpenAIDecider:
         return out
 
     def ask(self, state: Any, questions: dict[str, Any]) -> dict[str, Any]:
+        self.last_call={'model':self.model,'response_status':None,'usage':None,'http_status':None}
+        began=time.monotonic()
+        try:return self._ask(state,questions)
+        finally:self.last_call['latency_s']=round(time.monotonic()-began,6)
+
+    def _ask(self, state: Any, questions: dict[str, Any]) -> dict[str, Any]:
         req = request.Request(self.url, data=json.dumps(self.payload(state, questions), allow_nan=False).encode(),
                               method="POST", headers={"Authorization": "Bearer " + self.api_key,
                                                       "Content-Type": "application/json"})
         try:
             with request.urlopen(req, timeout=self.timeout_s) as response:
                 raw = response.read(4 * 1024 * 1024 + 1)
+            self.last_call['http_status']=200
         except error.HTTPError as exc:
+            self.last_call['http_status']=exc.code
             raise ValueError(f"the model answered HTTP {exc.code}") from None
         except (error.URLError, OSError, TimeoutError) as exc:
             raise ValueError(f"the model could not be reached: {type(exc).__name__}") from None
@@ -318,6 +346,10 @@ class OpenAIDecider:
             answer = json.loads(raw)
         except ValueError:
             raise ValueError("the model's answer was not JSON") from None
+        if not isinstance(answer,dict):raise ValueError("the model's answer was not an object")
+        self.last_call['response_status']=(answer.get('status') if answer.get('status') in
+            ('completed','failed','in_progress','cancelled','queued','incomplete') else None)
+        self.last_call['usage']=response_usage(answer)
         words = []
         for item in answer.get("output") or []:
             if item.get("type") != "message":
@@ -605,11 +637,11 @@ class Brains:
         self.unattended = False
         #: What the page was last told each machine was showing (_showing), so
         #: a hopper filling reaches it and an unchanged machine costs nothing.
-        self._sent: dict[str, tuple] = {}
+        self._sent: dict[tuple[str,str], str] = {}
         #: And what it was last told the room's heaps and ore hold (holders()),
         #: for the same reason: the account changes only when something is
         #: dug, dumped, taken or made, and between those it costs nothing.
-        self._goods_sent: str | None = None
+        self._goods_sent: dict[str,str] = {}
         self.spec: dict[str, Any] | None = None    # the room's, for what each program's routine is
         self.person: dict[str, Any] | None = None  # where the person last said they stood
         # The room's goods ledger (machine_goods.Goods), over the spec's own
@@ -666,17 +698,16 @@ class Brains:
     def _goods_now(self) -> dict[str, Any]:
         """The room's heaps and its ore as they stand, marked as told."""
         holds = self.goods.holders()
-        self._goods_sent = json.dumps(holds, sort_keys=True)
         return holds
 
-    def _goods_moved(self) -> dict[str, Any] | None:
+    def _goods_moved(self, observer='page') -> dict[str, Any] | None:
         """The same, but only when something in it has moved since the page
         was last told; None when nothing has."""
         holds = self.goods.holders()
         mark = json.dumps(holds, sort_keys=True)
-        if mark == self._goods_sent:
+        if mark == self._goods_sent.get(observer):
             return None
-        self._goods_sent = mark
+        self._goods_sent[observer] = mark
         return holds
 
     def runtime(self):
@@ -711,7 +742,7 @@ class Brains:
             self.modes[name] = brain.mode
         self.brains.clear()
         self._sent.clear()
-        self._goods_sent = None
+        self._goods_sent.clear()
         self.spec = spec
         import machine_goods
         import machine_ports
@@ -869,7 +900,7 @@ class Brains:
     def attach(self, body: Any, answer: Any) -> None:
         """On a step's answer: what the room has been seen of now, and the brains
         the page has not heard the latest of."""
-        if not isinstance(body, dict) or body.get("op") != "step" or not isinstance(answer, dict):
+        if not isinstance(body, dict) or body.get("op") not in ("step","poses") or not isinstance(answer, dict):
             return
         # Every mouth, every step, for the page to draw the indicator on the
         # device: where it is now, and whether it is docked. Unlike the brains
@@ -889,15 +920,9 @@ class Brains:
         # dumped, taken or made -- but when it moves it is the whole point of
         # watching, so nothing is held back for a tick.
         if self.goods is not None:
-            holds = self._goods_moved()
+            holds = self._goods_moved(str(body.get('actor') or 'page'))
             if holds is not None:
                 answer["goods"] = holds
-        changed = []
-        for brain in self.brains.values():
-            showing = self._showing(brain)
-            if brain.changed or self._sent.get(brain.name) != showing:
-                changed.append(brain)
-                self._sent[brain.name] = showing
         # What everything in the room can see from where this step left it
         # (machine_sight). Here rather than in the server, because this runs
         # after every step either way -- the page's and a test's.
@@ -907,7 +932,15 @@ class Brains:
             if found:
                 shown["found_cells"] = found
             answer["sight"] = shown
-        changed = [b for b in self.brains.values() if b.changed]
+        # Each guest has their own delivery marker. One observer cannot
+        # consume another's fill/decision updates; unchanged ticks stay small.
+        observer=str(body.get('actor') or 'page')
+        changed=[]
+        for brain in self.brains.values():
+            showing=json.dumps(brain.summary(),sort_keys=True)
+            key=(observer,brain.name)
+            if self._sent.get(key)!=showing:
+                changed.append(brain);self._sent[key]=showing
         if not changed:
             return
         answer["brains"] = [b.summary() for b in changed]

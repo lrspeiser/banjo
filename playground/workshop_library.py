@@ -607,6 +607,8 @@ GOODS_PER = {
 
 def goods_rack(app: Any) -> dict[str, Any]:
     """What the workshop holds of goods, per substance, in kilograms."""
+    import world_goods
+    world_goods.settle(app)
     who, owners = rack_owner_id(app), rack_owners(app)
     with _connect(app) as db:
         rows = db.execute("""SELECT substance,mass_kg,updated_at FROM workshop_goods_rack

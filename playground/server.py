@@ -2001,6 +2001,14 @@ class Handler(BaseHTTPRequestHandler):
                 # And what the person has now, as the page shows it.
                 _this_pages_room(self.app,body)
                 return self.send(inventory_room.shown(self.app,player))
+            if path=="/api/world/goods/collect":
+                import world_goods
+                _this_pages_room(self.app,body)
+                player_world.update_pose(self.app,player,body.get('person'))
+                try: answer=world_goods.collect(self.app,player,body,keep_world)
+                except OSError as exc:
+                    return self.send({'error':'Collection save failed; retry the same request. '+str(exc)},503)
+                return self.send(answer)
             if path=="/api/live/open":
                 if (gameplay_room.active(self.app) or fabrication_room.active(self.app)) and not keep_world(self.app, "opening laboratory"):
                     raise ValueError("Save the expedition before opening the laboratory")
@@ -2756,6 +2764,8 @@ def keep_world(app,why=""):
         if brains is not None and callable(getattr(brains,"runtime",None)):
             room.machine_runtime=brains.runtime()
         if not room_store.keep(app,room): return False
+        import world_goods
+        world_goods.settle(app)
         room.world_saved_t=float(saved.get("t_s") or 0.0)
         machine_witness.saved(app,journal_of,registry())
         if getattr(app,'world_id',None): player_learning.saved(app,journal_of,registry())
