@@ -1,5 +1,11 @@
 # Banjo roadmap and acceptance gates
 
+**Rover support acceptance, October 1:** [Native probes and live panel](player-experience-checklist.md#rover-ground-sensor-checkpoint--october-1)
+pass dry-hole detection/avoidance/reload and ordinary Chrome sensor updates.
+Next guard digging against actual assembled support geometry, provide bounded
+physical recovery and qualify native grades/routes on both generated terrains.
+Keep the existing human driving override visible and preserve old declarations.
+
 **Water and hill acceptance, October 1:** [Controller checkpoint](player-experience-checklist.md#water-and-hill-controller-checkpoint--october-1)
 passes actual two-map river entry/exit and walking uphill, plus separately
 declared deep-pool swimming/flotation/dive/recovery. Next qualify native rover

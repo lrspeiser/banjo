@@ -79,6 +79,17 @@ def jev_says(pick: str, confidence: float = 0.9):
 class WhatHappensToIt(unittest.TestCase):
     """What is noticed between two readings of the program (situations)."""
 
+    def test_ground_hazards_keep_kind_and_direction_separate_from_water(self):
+        before=a_program()
+        before['sensors'][0]['sees']=True
+        now=deepcopy(before)
+        now['sensors'].append({'kind':'ground','side':1,'stops':-1,'reading_m':.5,'depth_m':.12,'sees':True})
+        self.assertIn('ground drop/step behind on its left',machine_senses.situations(before,now,None,[]))
+        self.assertEqual([],machine_senses.situations(now,now,None,[]))
+        now['sensors'][-1]['seeing_s']=machine_senses.STILL_IN_S+1
+        self.assertIn('it still sees a ground drop/step and is not getting clear',
+                      machine_senses.situations(now,now,None,[]))
+
     def test_water_seen_is_an_event_once(self):
         before, now = a_program(), sees(a_program(), 1)
         self.assertEqual(["water ahead on its left"], rover_brain.situations(before, now, None, []))

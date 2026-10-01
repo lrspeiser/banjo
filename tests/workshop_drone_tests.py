@@ -122,7 +122,7 @@ class TheDroneIsInTheCatalogue(unittest.TestCase):
                          (program["kind"], program["hover_m"], program["rotors"], len(program["sensors"]),
                           program["routine"]["kind"], program["routine"]["hopper_kg"]))
         self.assertNotIn("left", program, "a hover program has rotors, not wheels")
-        self.assertEqual("1 store, 4 motors, 1 panel, 4 controls, a hover program with 2 water eyes and a dig routine (20 kg hopper)",
+        self.assertEqual("1 store, 4 motors, 1 panel, 4 controls, a hover program with 2 water probes and a dig routine (20 kg hopper)",
                          workshop_machines.described(design)["says"])
 
     def test_the_record_refuses_a_hover_program_that_is_not_on_four_rotors(self):

@@ -194,14 +194,17 @@ def sense_ground(ctx: Context) -> dict[str, Any]:
     water = s.get("water") or {}
     return {"surface": s.get("surface"), "sand_m": s.get("sand_m"), "soil_m": s.get("soil_m"),
             "loose_soil_m": s.get("loose_soil_m"), "slope_deg": s.get("slope_deg"),
-            "water_under_it_m": water.get("depth_m", 0.0)}
+            "water_under_it_m": water.get("depth_m", 0.0),
+            "probes": [{"side":_side(p),"watches":"rear" if p.get("stops",1)<0 else "front",
+                        "drop_m":p.get("reading_m",0),"limit_m":p.get("depth_m"),"hazard":bool(p.get("sees"))}
+                       for p in ctx.program.get("sensors") or [] if p.get("kind")=="ground"]}
 
 
 def sense_water(ctx: Context) -> dict[str, Any]:
     """Its water sensors, and the nearest water on the rings round it."""
     sensors = [{"side": "left" if s.get("side", 0) > 0 else "right" if s.get("side", 0) < 0 else "middle",
                 "water_under_it_mm": round(1000.0 * float(s.get("reading_m") or 0.0)), "sees_water": bool(s.get("sees"))}
-               for s in ctx.program.get("sensors") or []]
+               for s in ctx.program.get("sensors") or [] if s.get("kind","water")=="water"]
     wet = [p for p in _ring(ctx) if p["water_m"] > 0.003]
     nearest = min(wet, key=lambda p: (p["distance_m"], abs(p["bearing_deg"]))) if wet else None
     return {"sensors": sensors,
@@ -449,7 +452,7 @@ def _still_in(now: dict[str, Any]) -> str:
         return ""
     kind = next((str(s.get("kind") or "water") for s in now.get("sensors") or []
                  if float(s.get("seeing_s") or 0.0) >= STILL_IN_S), "water")
-    return f"it is still in the {kind} and not getting clear"
+    return "it still sees a ground drop/step and is not getting clear" if kind == "ground" else f"it is still in the {kind} and not getting clear"
 
 
 def situations(before: dict[str, Any] | None, now: dict[str, Any], machines: dict[str, Any] | None,
@@ -480,10 +483,12 @@ def situations(before: dict[str, Any] | None, now: dict[str, Any], machines: dic
         out.append(still)
     if now.get("asked"):
         return out
-    seen_was = {_side(s) for s in was.get("sensors") or [] if s.get("sees")}
+    seen_was = {(s.get("kind","water"),s.get("stops",1),_side(s)) for s in was.get("sensors") or [] if s.get("sees")}
     for s in now.get("sensors") or []:
-        if s.get("sees") and _side(s) not in seen_was:
-            out.append(f"water ahead on its {_side(s)}")
+        if s.get("sees") and (s.get("kind","water"),s.get("stops",1),_side(s)) not in seen_was:
+            kind="ground drop/step" if s.get("kind")=="ground" else "water"
+            way="behind" if s.get("stops",1)<0 else "ahead"
+            out.append(f"{kind} {way} on its {_side(s)}")
     controls = {c.get("id"): c for c in (machines or {}).get("controls") or []}
     for side, ident in (("left", now.get("left")), ("right", now.get("right"))):
         condition = str((controls.get(ident) or {}).get("condition") or "")

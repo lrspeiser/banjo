@@ -1498,8 +1498,9 @@ struct LiveWorld::Impl {
             // same way while the sensor still sees it, it stops again at once;
             // the other way, it goes.
             c.tripped = true;
-            why = s.direction > 0 ? "water ahead: it stopped at the water's edge"
-                                  : "water behind: it stopped at the water's edge";
+            const LiveSensor *hit = stopping(s, s.direction);
+            const std::string obstacle = hit && hit->kind == "ground" ? "ground drop/step" : "water";
+            why = obstacle + (s.direction > 0 ? " ahead: it stopped at the edge" : " behind: it stopped at the edge");
         } else if (c.reversing && s.direction * speed < -kReverseAtShare * motor.no_load_rad_s &&
                    c.reversing_s < kReverseMostS) {
             c.reversing_now = true;
@@ -1616,9 +1617,24 @@ struct LiveWorld::Impl {
             if (found != index_of.end() && inWorld(found->second)) {
                 const RigidSnapshot at = world->snapshot(body_of[found->second]);
                 sensor.at_m = at.center_of_mass_world_m + at.orientation_world.rotate(sensor.at_local_m);
-                if (environment) sensor.reading_m = environment->waterDepthAt(sensor.at_m.x, sensor.at_m.z);
+                if (environment && sensor.kind == "ground") {
+                    const auto &terrain = environment->terrain();
+                    if (!terrain.cellAt(sensor.at_m.x, sensor.at_m.z) ||
+                        !terrain.cellAt(at.center_of_mass_world_m.x, at.center_of_mass_world_m.z)) {
+                        sensor.reading_m = 10.0; // bounded out-of-map hazard
+                    } else {
+                        // A tangent plane through the ground under the chassis.
+                        // Local mounting height does not affect a ground probe.
+                        // Read the same interpolated triangles as its collider.
+                        const Vec3 along = at.orientation_world.rotate(
+                            Vec3{sensor.at_local_m.x, 0.0, sensor.at_local_m.z});
+                        sensor.reading_m = terrain.heightAt(at.center_of_mass_world_m.x,
+                                                          at.center_of_mass_world_m.z) + along.y -
+                                           terrain.heightAt(sensor.at_m.x, sensor.at_m.z);
+                    }
+                } else if (environment) sensor.reading_m = environment->waterDepthAt(sensor.at_m.x, sensor.at_m.z);
             }
-            sensor.sees = sensor.reading_m > sensor.depth_m;
+            sensor.sees = (sensor.kind == "ground" ? std::abs(sensor.reading_m) : sensor.reading_m) > sensor.depth_m;
             sensor.seeing_s = sensor.sees ? sensor.seeing_s + dt_s : 0.0;
         }
     }
@@ -2423,16 +2439,19 @@ struct LiveWorld::Impl {
         // wheel into the lake it has just backed away from -- measured on the
         // roaming rover, its caster 15 mm in while "backing off" with the
         // front sensors watching the water in front of it.
-        bool water_left = false, water_right = false, water_behind = false;
+        bool hazard_left = false, hazard_right = false, hazard_behind = false;
         for (const LiveSensor &sensor : s.sensors) {
             if (!sensor.sees) continue;
             if (sensor.stops < 0) {
-                water_behind = true;
+                hazard_behind = true;
                 continue;
             }
-            if (sensor.side >= 0) water_left = true;
-            if (sensor.side <= 0) water_right = true;
+            if (sensor.side >= 0) hazard_left = true;
+            if (sensor.side <= 0) hazard_right = true;
         }
+        const bool ground_ahead = std::any_of(s.sensors.begin(), s.sensors.end(),
+            [](const LiveSensor &sensor) { return sensor.kind == "ground" && sensor.sees && sensor.stops > 0; });
+        const std::string hazard = ground_ahead ? "ground drop/step" : "water";
         const auto stalled = [](const Control &c) {
             return c.tripped && c.said.condition.rfind("stalled", 0) == 0;
         };
@@ -2542,7 +2561,7 @@ struct LiveWorld::Impl {
         // decider make -- and stands aside for a person who says go there. It
         // sees the water all the same and says so; it just does not turn.
         if (!s.asked.empty() && !p.interrupted && driving_ask && !s.asked_by_person &&
-            (water_left || water_right)) {
+            (hazard_left || hazard_right)) {
             // As the roaming reflex meets water: back off first, whatever it
             // was doing -- a turn on the spot where it saw the water swings
             // the caster in -- and then turn away from the side that saw it.
@@ -2550,18 +2569,18 @@ struct LiveWorld::Impl {
             ++p.interruptions;
             // And turn well away -- the ask was driving it AT the water, so
             // a glancing turn leaves a wheel at the edge.
-            if (water_left && water_right) {
-                into("backing off", "water ahead: its reflexes have it");
+            if (hazard_left && hazard_right) {
+                into("backing off", hazard + " ahead: its reflexes have it");
                 p.then_turn = alternate;
-            } else if (water_left) {
-                into("backing off", "water ahead on its left: its reflexes have it");
+            } else if (hazard_left) {
+                into("backing off", hazard + " ahead on its left: its reflexes have it");
                 p.then_turn = -1;
             } else {
-                into("backing off", "water ahead on its right: its reflexes have it");
+                into("backing off", hazard + " ahead on its right: its reflexes have it");
                 p.then_turn = 1;
             }
             p.turn_least_deg = kBackedTurnDeg;
-            p.interrupted_by = "water";
+            p.interrupted_by = hazard;
             p.back_off_for_s = 0.0;
         }
         // Told to go somewhere and getting nowhere: the same interruption. An
@@ -2575,7 +2594,7 @@ struct LiveWorld::Impl {
         // The ask has it back only after a couple of seconds of clear going:
         // turned back towards the water at once, it would turn on the spot at
         // the shore and its caster would go in.
-        if (p.interrupted && (s.asked.empty() || (s.doing == "going forward" && !water_left && !water_right &&
+        if (p.interrupted && (s.asked.empty() || (s.doing == "going forward" && !hazard_left && !hazard_right &&
                                                   s.doing_s >= kClearBeforeAskS))) {
             p.interrupted = false;
             p.interrupted_by.clear();
@@ -2583,7 +2602,7 @@ struct LiveWorld::Impl {
         if (!s.asked.empty() && !p.interrupted && p.interruptions >= kInterruptionsMost) {
             p.interruptions = 0;
             p.interrupted_by.clear();
-            askDone("the water was in the way of what it was asked, so it gave it up and goes on");
+            askDone("the hazard was in the way of what it was asked, so it gave it up and goes on");
         } else if (!s.asked.empty() && s.asked_for_s > 0.0 && s.asked_s >= s.asked_for_s) {
             askDone("it has done what it was asked, and goes on");
         } else if (!s.asked.empty() && !p.interrupted) {
@@ -2673,16 +2692,16 @@ struct LiveWorld::Impl {
             // itself getting nowhere runs its course and turns instead.
             backOut();
         } else if (s.doing == "going forward") {
-            if (water_left && water_right) {
-                into("backing off", "water ahead");
+            if (hazard_left && hazard_right) {
+                into("backing off", hazard + " ahead");
                 p.then_turn = alternate;
                 p.turn_least_deg = kBackedTurnDeg;
-            } else if (water_left) {
-                into("backing off", "water ahead on its left");
+            } else if (hazard_left) {
+                into("backing off", hazard + " ahead on its left");
                 p.then_turn = -1;
                 p.turn_least_deg = kSideTurnDeg;
-            } else if (water_right) {
-                into("backing off", "water ahead on its right");
+            } else if (hazard_right) {
+                into("backing off", hazard + " ahead on its right");
                 p.then_turn = 1;
                 p.turn_least_deg = kSideTurnDeg;
             } else if (stalled(*left) || stalled(*right)) {
@@ -2716,21 +2735,21 @@ struct LiveWorld::Impl {
             // So it backs off until its sensors are clear and only then
             // turns. Capped at three times the run: a rover that cannot get
             // clear has a different problem, and says so by getting nowhere.
-            const bool sees_water = water_left || water_right;
+            const bool sees_hazard = hazard_left || hazard_right;
             const double most_s = 3.0 * back_off_s;
-            const bool cut_short = !backing_out && !sees_water &&
+            const bool cut_short = !backing_out && !sees_hazard &&
                                    (stalled(*left) || stalled(*right));
             // And it stops reversing the moment anything behind it sees water,
             // whatever is still in front: better to turn where it is than to
             // reverse into a lake it cannot see.
-            if (water_behind || (s.doing_s >= back_off_s && !sees_water) ||
+            if (hazard_behind || (s.doing_s >= back_off_s && !sees_hazard) ||
                 s.doing_s >= most_s || cut_short) {
                 const std::string why = s.why;
                 p.back_off_for_s = 0.0;
                 turn(p.then_turn, p.turn_least_deg, why);
             }
         } else if (s.doing == "turning left" || s.doing == "turning right") {
-            const bool clear = !water_left && !water_right && s.pitch_deg <= s.climb_deg &&
+            const bool clear = !hazard_left && !hazard_right && s.pitch_deg <= s.climb_deg &&
                                std::abs(s.roll_deg) <= s.climb_deg;
             const bool turned = clear && s.turned_deg >= p.turn_least_deg;
             if (turned || s.doing_s >= kTurnMostS) {
@@ -5669,7 +5688,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             sensor.at_local_m = vecFrom(p.at("at_local_m"));
             sensor.depth_m = numberFrom(p.at("depth_m"));
             sensor.stops = p.at("stops").get<int>() < 0 ? -1 : 1;
-            if (sensor.kind != "water" || !(sensor.depth_m > 0.0))
+            if ((sensor.kind != "water" && sensor.kind != "ground") || !(sensor.depth_m > 0.0))
                 throw std::invalid_argument("a saved controller's sensor is not one this engine knows");
             c.said.sensors.push_back(std::move(sensor));
         }
@@ -5730,7 +5749,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             // Saved before a program's sensors could look behind: those
             // all looked ahead, which is what 1 means.
             sensor.stops = q.value("stops", 1) < 0 ? -1 : 1;
-            if (sensor.kind != "water" || !(sensor.depth_m > 0.0))
+            if ((sensor.kind != "water" && sensor.kind != "ground") || !(sensor.depth_m > 0.0))
                 throw std::invalid_argument("a saved program's sensor is not one this engine knows");
             p.said.sensors.push_back(std::move(sensor));
         }
@@ -7411,7 +7430,8 @@ bool LiveWorld::sense(unsigned control, const std::string &kind, const std::stri
     Impl::Control *c = nullptr;
     for (Impl::Control &each : impl_->controls)
         if (each.said.id == control) c = &each;
-    if (c == nullptr || kind != "water" || (stops != 1 && stops != -1)) return false;
+    if (c == nullptr || (kind != "water" && kind != "ground") || c->said.sensors.size() >= 16 ||
+        (stops != 1 && stops != -1)) return false;
     if (!std::isfinite(depth_m) || !(depth_m > 0.0) || depth_m > 10.0) return false;
     if (!std::isfinite(point_world_m.x) || !std::isfinite(point_world_m.y) || !std::isfinite(point_world_m.z))
         return false;
@@ -7637,7 +7657,8 @@ bool LiveWorld::programSense(unsigned program, const std::string &kind, const st
     Impl::Program *p = nullptr;
     for (Impl::Program &each : I.programs)
         if (each.said.id == program) p = &each;
-    if (p == nullptr || kind != "water") return false;
+    if (p == nullptr || (kind != "water" && kind != "ground") || p->said.sensors.size() >= 16 ||
+        (watches != 1 && watches != -1)) return false;
     if (!std::isfinite(depth_m) || !(depth_m > 0.0) || depth_m > 10.0) return false;
     if (!std::isfinite(point_world_m.x) || !std::isfinite(point_world_m.y) || !std::isfinite(point_world_m.z))
         return false;

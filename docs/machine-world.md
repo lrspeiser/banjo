@@ -470,11 +470,12 @@ where it is as the room is made, in millimetres, like a pin:
                            "depth_mm": 10, "stops": 1}]}]
 ```
 
-- `kind` is `"water"`, the only kind so far. It reads the depth of the room's
-  water under the point.
+- `kind` is `"water"` or `"ground"`. Water reads the room's depth under the
+  point. Ground reads the signed drop/step from the chassis tangent plane to
+  the native terrain triangles, and trips on the absolute difference.
 - `stops` is the direction it stops the machine going: 1 forward, -1 back.
 - `depth_mm` is more than 0 and at most 10 m.
-- A controller has at most 8 sensors.
+- A controller or program has at most 16 sensors.
 
 The runner's `sense` operation puts one on:
 `{"op": "sense", "control": id, "kind": "water", "body": "cart", "at_m": [x, y, z], "depth_m": 0.01, "stops": 1}`.
@@ -504,7 +505,8 @@ controllers by their names:
 - `setting` is the drive setting it tells its wheels, and `climb_deg` the
   steepest ground it goes on.
 - `power` says whether it starts running.
-- Its sensors stop nothing themselves, so they say no `stops`.
+- Its sensors inform the program's avoidance; `stops` is 1 for the front or
+  -1 for the rear (default 1 for old declarations).
 
 The runner's `program` operation makes one
 (`{"op": "program", "name", "kind", "left": control id, "right": control id,

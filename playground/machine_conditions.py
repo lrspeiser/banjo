@@ -114,7 +114,7 @@ def pile_has(ctx, args):
 
 
 def water_ahead(ctx, args):
-    return any(s.get("sees") for s in ctx.program.get("sensors") or [])
+    return any(s.get("sees") and s.get("kind","water")=="water" for s in ctx.program.get("sensors") or [])
 
 
 def person_near(ctx, args):

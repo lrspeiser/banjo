@@ -240,13 +240,15 @@ def compose(ground: dict, kind: str) -> dict:
     bodies = rigid_assembly.scene_bodies(rover)
     pins = rigid_assembly.scene_joints(rover)
     q = bodies[0]["orientation_wxyz"]
-    def sensor_at(local, watching):
-        return {"kind": "water", "body": "rover",
+    def sensor_at(local, watching,kind="water"):
+        return {"kind": kind, "body": "rover",
                 "at_mm": [round((bodies[0]["position_m"][k] + v) * 1000.0, 1)
                           for k, v in enumerate(grounds._turn(q, local))],
-                "depth_mm": SENSOR_DEPTH_MM, "stops": watching}
+                "depth_mm": SENSOR_DEPTH_MM if kind=="water" else 120.0, "stops": watching}
     sensors = ([sensor_at(local, 1) for local in SENSORS_LOCAL_M] +
                [sensor_at(local, -1) for local in REAR_SENSORS_LOCAL_M])
+    sensors += ([sensor_at(local,1,"ground") for local in SENSORS_LOCAL_M] +
+                [sensor_at(local,-1,"ground") for local in REAR_SENSORS_LOCAL_M])
     print(f"  the rover at ({x:+.2f}, {z:+.2f}), tipped {math.degrees(pitch):.1f} deg to the shore; its sensors "
           f"look down at " + ", ".join(f"({s['at_mm'][0] / 1000:+.2f}, {s['at_mm'][2] / 1000:+.2f})" for s in sensors))
 

@@ -47,6 +47,12 @@ a validated range used by runtime reduction.
 
 ## HTTP API used by the sim
 
+Named-world player surfaces also include `/api/workshop/goals` (personal
+evidence-backed guidance through `starter_goals.view`) and
+`/api/workshop/market` (quotes and transactions through `market.request`).
+They use the existing server authentication, world lock and transaction guards;
+they are HTTP capabilities, separate from isolated Workshop design calls.
+
 Every mutation is local and CSRF-protected by the playground server in the same
 way as the rest of the sim. The Workshop page calls only these routes.
 
@@ -343,10 +349,16 @@ Any program may add `climb_deg` 0 to 89, the steepest ground it will take (not
 `rest_until` the share it sets off again at. `rest_until` needs `rest_below` and
 may not be below it -- a machine rests until it holds MORE than it rested at.
 
-**Sensors** -- `sensors`, at most 8 per program -- are what it reads: `kind`
-`water`, `on` a
+**Sensors** -- `sensors`, at most 16 per program -- are what it reads: `kind`
+`water` or `ground`, `on` a
 component, `at_m` three numbers, and `depth_m` 0.001 to 10 (default 0.003). A
 roaming machine turns away from what its sensors see rather than driving into it.
+`stops` is 1 ahead (default), -1 behind. Water reads depth. Ground reads a signed
+drop (+) or step (-) from the chassis tangent plane to the actual terrain
+triangles and trips at an absolute difference above `depth_m`. Suggested rover
+ground threshold: 0.12 m. Fit probes across the wheel width ahead and behind.
+Continuous slopes remain distinct from abrupt holes; sensors add no traction.
+Intentional human driving orders retain their existing reflex override.
 
 **A routine** is the work a machine does between places, declared on the program
 as `routine`. Its `kind` is `dig`, `haul`, `process`, `custom` or `roam`:

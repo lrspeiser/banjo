@@ -1,5 +1,11 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Rover support feedback, October 1:** [Measured checkpoint](player-experience-checklist.md#rover-ground-sensor-checkpoint--october-1)
+fits native ground probes to new rovers and shows actual hazards in the right
+panel. Ground/water remain distinct through authoring, AI and save/reload.
+Existing motor/brake avoidance passes one dry excavation; physical recovery,
+own-support digging and multiple-terrain/hill acceptance remain required.
+
 **Shore escape and hills, October 1:** [Camera controller checkpoint](player-experience-checklist.md#water-and-hill-controller-checkpoint--october-1)
 uses the terrain collider's interpolated surface, explicit buoyancy/drag and
 swim controls. Two generated river crossings/hills and a separate declared deep

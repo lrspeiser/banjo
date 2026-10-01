@@ -590,17 +590,19 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                             "pose": {"type": "string"},
                             "pose_deg": {"type": "number", "minimum": -360, "maximum": 360}}}},
         {"type": "function", "name": "add_sensor",
-         "description": "A water eye for the program: a point on a component, in the design's own metres "
-                        "(the floor at y = 0, its front towards +z, its left towards +x), that reads the depth "
-                        "of water under it; deeper than depth_m and the program turns away. The room's rover "
-                        "has two, half a metre ahead of its deck and 0.55 m either side of the middle. The "
-                        "program must be set first.",
+         "description": "Add a mounted probe in design metres (+z front, +x left). water reads water depth; "
+                        "ground reads signed drop/step from the chassis slope to actual terrain. depth_m is "
+                        "the positive threshold (absolute difference for ground). stops 1 watches ahead, -1 "
+                        "behind. Fit front and rear probes across the wheel width, at most 16. Suggested "
+                        "ground threshold 0.12 m. Continuous hills are not holes. Set the program first. "
+                        "This adds sensing, not traction.",
          "parameters": {"type": "object", "additionalProperties": False, "required": ["on", "at_m"],
                         "properties": {
-                            "kind": {"type": "string", "enum": ["water"]},
+                            "kind": {"type": "string", "enum": ["water","ground"]},
                             "on": {"type": "string", "description": "the component the point is on"},
                             "at_m": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
-                            "depth_m": {"type": "number", "minimum": 0.001, "maximum": 10}}}},
+                            "depth_m": {"type": "number", "minimum": 0.001, "maximum": 10},
+                            "stops": {"type": "integer", "enum": [-1,1]}}}},
         {"type": "function", "name": "set_routine",
          "description": "What the machine does on its own when nobody is telling it anything: 'dig' goes to "
                         "its dig site, fills its hopper (hopper_kg), carries the load to its depot and dumps "

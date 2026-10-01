@@ -1,5 +1,13 @@
 # Development status and handoff
 
+**Rover support readings, October 1:** [Checkpoint](player-experience-checklist.md#rover-ground-sensor-checkpoint--october-1)
+adds native ground probes, ground/water authoring and live right-panel readouts.
+A real dry-hole avoidance/save test, 12 resource/player journeys, the native cart
+and 77 affected Python checks pass on Windows. This is bounded top-height-field
+sensing with existing motors/brakes, not a new traction law. Existing saved rovers
+retain their declarations; own-support digging, recovery and multiple-terrain
+driving/hill qualification remain open. The fourteen-item goal stays active.
+
 **Automatic output pickup, October 1:** [Resource-flow extension](resource-flow.md)
 collects finished outputs on ordinary nearby walking, animates toward the acting
 player and preserves durable private receipts. Server rejects automatic input

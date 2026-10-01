@@ -161,6 +161,41 @@ class GoodsJourney(unittest.TestCase):
         (out/'collected.png').write_bytes(base64.b64decode(shot))
         self.assertEqual([],[e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
 
+    def test_selected_rover_reports_actual_ground_hazard_probes_in_right_panel(self):
+        if not qa_browser.CHROME.is_file():self.skipTest('Chrome not installed')
+        world,owner,app,*_=self.batch(False)
+        chrome=qa_browser.Chrome(1280,800);self.addCleanup(chrome.close)
+        page=chrome.page;page.send('Page.enable');page.send('Runtime.enable')
+        page.send('Page.navigate',{'url':self.base+f'/world?world={world}&hold=1'})
+        def wait(expression):
+            deadline=time.monotonic()+20
+            while time.monotonic()<deadline:
+                if page.evaluate('Boolean('+expression+')'):return
+                time.sleep(.1)
+            self.fail(expression+'; '+str(page.evaluate('document.querySelector("#picked")?.textContent')))
+        wait('window.banjoRoom?.ready()')
+        page.evaluate('banjoRoom.pick("rover")')
+        wait('document.querySelector("[data-rover-sensors]")')
+        probes=page.evaluate('banjoRoom.world.machines.programs.find(p=>p.body==="rover").sensors')
+        self.assertEqual(10,len(probes));self.assertEqual(5,sum(p['kind']=='ground' for p in probes))
+        self.assertEqual(2,sum(p['kind']=='ground' and p['stops']<0 for p in probes))
+        text=page.evaluate('document.querySelector("[data-rover-sensors]").textContent')
+        self.assertIn('Rear left · ground',text);self.assertIn('Front middle · ground',text)
+        middle=next(p for p in probes if p['kind']=='ground' and p['side']==0 and p['stops']>0)
+        x,y,z=middle['at_m']
+        # The real native dig/report path, not injected sensor readings.
+        page.evaluate(f'banjoRoom.standAt({x},banjoRoom.groundAt({x},{z})+1.6,{z+1})')
+        answer=page.evaluate(f'banjoRoom.digAt({x},{z},.5,.6)',await_promise=True)
+        self.assertGreater((answer.get('dug') or {}).get('kg',0),0,'The native excavation must actually happen')
+        page.evaluate('banjoRoom.resume()')
+        wait('banjoRoom.world.machines.programs.find(p=>p.body==="rover").sensors.some(p=>p.kind==="ground"&&p.sees)')
+        wait('document.querySelector("[data-rover-sensors]").textContent.includes("⚠")')
+        page.evaluate('banjoRoom.hold()')
+        import base64
+        out=ROOT/'build/resource-flow';out.mkdir(parents=True,exist_ok=True)
+        (out/'rover-ground-sensors.png').write_bytes(base64.b64decode(page.send('Page.captureScreenshot',{'format':'png'})['data']))
+        self.assertEqual([],[e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
+
     def test_automatic_collection_refuses_processor_input_and_preserves_output_receipts(self):
         world,owner,app,source,pile,person=self.batch()
         intake=app.brains.goods.by_name(app.brains.of(source['machine']).routine.intake)

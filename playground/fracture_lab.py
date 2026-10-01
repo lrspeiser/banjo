@@ -1432,8 +1432,9 @@ def _sensors(given: Any, name: str, named: set[str], stops: bool = True) -> list
     creature"): each a point on one of the room's things -- where it is as the
     room is made, in the room's millimetres, like a pin's -- that reads the
     world, and the direction it stops the machine going when it reads more than
-    its depth. The one kind there is yet is "water": the depth of the room's
-    water under the point, so a cart stops at a lake's edge.
+    its depth. "water" reads depth under the point; "ground" reads signed
+    drop (+) or step (-) from the body tangent plane to the actual terrain.
+    A ground probe trips at an absolute discrepancy greater than depth_mm.
 
     A PROGRAM'S sensors stop nothing by themselves -- the program reads them
     and decides -- but they still say `stops`, and for them it means which way
@@ -1442,8 +1443,8 @@ def _sensors(given: Any, name: str, named: set[str], stops: bool = True) -> list
     wheel in the lake it has just backed away from."""
     if given in (None, []):
         return []
-    if not isinstance(given, list) or len(given) > 8:
-        raise ValueError(f"control {name!r}: sensors is a list of at most 8")
+    if not isinstance(given, list) or len(given) > 16:
+        raise ValueError(f"control {name!r}: sensors is a list of at most 16")
     out: list[dict[str, Any]] = []
     for k, sensor in enumerate(given):
         what = f"control {name!r} sensor {k}"
@@ -1453,8 +1454,8 @@ def _sensors(given: Any, name: str, named: set[str], stops: bool = True) -> list
         unknown = set(sensor) - keys
         if unknown:
             raise ValueError(f"{what} cannot say {sorted(unknown)}: it holds {', '.join(sorted(keys))}")
-        if sensor.get("kind", "water") != "water":
-            raise ValueError(f"{what} is of kind {sensor.get('kind')!r}; the only kind there is yet is water")
+        if sensor.get("kind", "water") not in ("water", "ground"):
+            raise ValueError(f"{what} is of kind {sensor.get('kind')!r}; supported kinds are water and ground")
         body = str(sensor.get("body", ""))
         if body not in named:
             raise ValueError(f"{what} is on {body!r}, which is not in this room")
@@ -1465,7 +1466,7 @@ def _sensors(given: Any, name: str, named: set[str], stops: bool = True) -> list
         if way not in (1, -1) or isinstance(way, bool):
             raise ValueError(f"{what}: stops is a direction, 1 or -1 -- for a control the way it "
                              f"stops the machine going, for a program the way the sensor watches")
-        made = {"kind": "water", "body": body,
+        made = {"kind": sensor.get("kind","water"), "body": body,
                 "at_mm": [_number(v, -100000.0, 100000.0, f"{what} at_mm") for v in at],
                 # The engine's own bound: deeper than 10 m is no edge.
                 "depth_mm": _number(sensor.get("depth_mm", 10.0), 0.001, 10000.0, f"{what} depth_mm")}

@@ -2353,7 +2353,7 @@ int main(int argc, char **argv) {
                     if (!fitted)
                         throw std::invalid_argument(
                             "a sensor goes on a controller or a program that is there, on a part that is in the "
-                            "world: of kind \"water\", with a depth above nothing and no more than 10 m, stopping "
+                            "world: of kind \"water\" or \"ground\", at most 16, with a positive threshold no more than 10 m, stopping "
                             "the way 1 or -1");
                     reply["sensed"] = true;
                 } else if (op == "sun" && command.contains("day_s")) {

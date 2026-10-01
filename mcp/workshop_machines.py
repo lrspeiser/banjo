@@ -31,7 +31,7 @@ SCHEMA = "banjo.workshop-machines.v1"
 # The room's program kinds. A "drive" program used to be allowed here and
 # refused at the door, which is worse than not offering it at all.
 PROGRAM_KINDS = ("roam", "sit", "hover", "still")
-SENSOR_KINDS = ("water",)
+SENSOR_KINDS = ("water", "ground")
 ROUTINE_KINDS = ("dig", "haul", "process", "custom", "roam")
 MAX_EACH = 32
 
@@ -206,14 +206,17 @@ def checked(value: Any) -> dict[str, Any]:
         if program.get("rest_until") is not None and program.get("rest_below") is None:
             raise ValueError("rest_until says when it sets off again; it needs rest_below to say when it stops")
         sensors = _rows(row.get("sensors"), "a program's sensors")
-        if len(sensors) > 8:
-            raise ValueError("a program reads at most 8 sensors")
+        if len(sensors) > 16:
+            raise ValueError("a program reads at most 16 sensors")
+        if any(isinstance(s.get("stops",1),bool) or s.get("stops",1) not in (-1,1) for s in sensors):
+            raise ValueError("a sensor watches forward (stops 1) or behind (stops -1)")
         if sensors:
             program["sensors"] = [{
                 "kind": _kind(s.get("kind") or "water", SENSOR_KINDS, "a sensor"),
                 "on": _name(s.get("on"), "a sensor's component"),
                 "at_m": _three(s.get("at_m"), "a sensor's at_m"),
                 "depth_m": _number(s.get("depth_m"), "a sensor's depth_m", 0.001, 10.0, default=0.003),
+                "stops": int(s.get("stops",1)),
             } for s in sensors]
         # THE FURNACE'S ELEMENT: which of its chambers this program heats, and
         # how hard. The element is the program's to switch on -- it fires when
@@ -341,9 +344,10 @@ def described(design: Any) -> dict[str, Any]:
     if record.get("programs"):
         program = record["programs"][0]
         words = "a " + program["kind"] + " program"
-        eyes = len(program.get("sensors") or [])
-        if eyes:
-            words += f" with {eyes} water eye{'' if eyes == 1 else 's'}"
+        probes = program.get("sensors") or []
+        if probes:
+            counts = [(kind,sum(s.get("kind","water")==kind for s in probes)) for kind in SENSOR_KINDS]
+            words += " with " + " and ".join(f"{n} {kind} probe{'' if n==1 else 's'}" for kind,n in counts if n)
         if program.get("routine"):
             routine = program["routine"]
             words += f" and a {routine['kind']} routine"
@@ -465,7 +469,7 @@ def installed(design: Any, component_to_body: dict[str, str], frame: Any = None,
         if program.get("sensors"):
             made["sensors"] = [{"kind": s["kind"], "body": body(s["on"], "a sensor"),
                                 "at_mm": [round(1000.0 * v, 1) for v in to_room(s["at_m"])],
-                                "depth_mm": round(1000.0 * s["depth_m"], 3)} for s in program["sensors"]]
+                                "depth_mm": round(1000.0 * s["depth_m"], 3), "stops": s.get("stops",1)} for s in program["sensors"]]
         if program.get("routine"):
             routine = dict(program["routine"])
             if places:

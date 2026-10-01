@@ -1,5 +1,14 @@
 # Banjo mechanics scorecard
 
+**Ground-probe boundary, October 1:** [Measured evidence](player-experience-checklist.md#rover-ground-sensor-checkpoint--october-1)
+reads signed native terrain discrepancy, default absolute threshold 0.12 m.
+The dry-hole fixture measures 0.581449 m; reopen differs by less than `1e-6 m`;
+existing motors/brakes avoid crossing the rim over six seconds. This is sensor/
+controller work at 50 mm / `dt=1/240 s`, no constitutive, traction or energy law.
+Glass/oak/iron and full conservation gates remain unchanged. Point probes do
+not certify all support, cave roofs or obstacles. Next: actual footprint-aware
+dig clearance, physical recovery, multi-terrain and native grade qualification.
+
 **Automatic pickup/container boundary, October 1:** [Resource evidence](resource-flow.md)
 retains 5 kg ore → 1.5 kg copper and durable save/credit accounting. Ordinary
 approach auto-collects output; server refuses auto-intake requests, Fly/watch

@@ -191,8 +191,11 @@ def _rover_overrides(values: dict[str, Any], parts: list[w.WirePart]) -> dict[st
         "programs": [{"kind": "roam", "left": "left wheel", "right": "right wheel", "setting": 1.0, "climb_deg": 8.0,
                       # Its water eyes: half a metre ahead of the deck, 0.55 m
                       # either side of the middle, as the room's rover has them.
-                      "sensors": [{"kind": "water", "on": "deck", "at_m": [sx * 0.55, deck_y - 0.02, depth / 2.0 + 0.5],
-                                   "depth_m": ROVER_SENSOR_DEPTH_M} for sx in (1.0, -1.0)],
+                      "sensors": [{"kind": kind, "on": "deck", "at_m": [sx*.55,deck_y-.02,ahead],
+                                   "depth_m": ROVER_SENSOR_DEPTH_M if kind=="water" else .12,"stops":watching}
+                                  for kind in ("water","ground")
+                                  for sx,ahead,watching in [(1,depth/2+.5,1),(0,depth/2+.5,1),(-1,depth/2+.5,1),
+                                                            (1,-depth/2-.4,-1),(-1,-depth/2-.4,-1)]],
                       "routine": {"kind": "dig", "hopper_kg": values["hopper_kg"]}}],
     })
     out: dict[str, Any] = {workshop_construction.CONSTRUCTION_KEY: construction,

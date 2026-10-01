@@ -16,7 +16,7 @@ This is the current acceptance list, not a claim that all features are done.
 | 9. Workshop chat | Typing, sending and draft selection work; chat focus cannot be stolen by world key bindings | Native Chrome ordinary typing, submission, head edit and subsequent whole-item edit pass. Local failure cleanup and replacement textarea retain selection/disabled state. |
 | 10. Pick authoring | Whole pick appears in Lab; metal head modification has actual component geometry/material; Save and Make give actionable outcomes | Verified exact bootstrap source recovery includes head/handle. Explicit Recipe→Lab survives reload; head-only iron edit and Save pass. Supported oak Make debits stock and preserves existing machines. Mixed-material lattice joining remains unsupported: metal-head Make and visual shape improvement remain open. |
 | 11. Durability/repair | Integrity derives from actual recorded damage; supported repair requires matching material/energy and native restored/admitted geometry | Pending. No invented physical health, strength or free restoration. |
-| 12. Rover safety/recovery | Actual sensor readings visible; route/dig clearance avoids own support; ordinary recovery available with bounded forces/work | Pending native reproduction on multiple terrains. |
+| 12. Rover safety/recovery | Actual sensor readings visible; route/dig clearance avoids own support; ordinary recovery available with bounded forces/work | Ground/water probes and live right-panel readings verified; one native dry-hole avoidance/restart fixture passes. Own-support dig clearance, recovery and multi-terrain driving remain open. |
 | 13. Water and hills | Gravity walking can leave water and climb ordinary hills; rover climbs measured grades without forced motion | Player controller verified on two generated river crossings and hills; declared deep-pool ascent, buoyancy, dive and recovery pass. Native avatar and rover hill capability remain open. |
 | 14. Output pickup and contained inputs | Output voxels fly into personal inventory on nearby walking; processor inputs stay in visible hoppers; rover delivery visibly fills them | Native/browser automatic output-only pickup and input bins implemented and verified. Fly leaves outputs untouched; server refuses auto-input pickup. Existing recorded dump/dock transfers retained; broad generated rover delivery and physical cargo/tipping remain open. |
 
@@ -25,6 +25,41 @@ Workshop/tool/capacity blockers, then connect the remaining ordinary-player
 journeys with measured acceptance. Keep CPU/native simulation separate from
 presentation, retain glass/oak/iron comparisons for physical changes, and publish
 verified coherent checkpoints regularly.
+
+## Rover ground-sensor checkpoint — October 1
+
+Ground probes measure the signed discrepancy between the chassis tangent plane
+and the actual interpolated terrain collider surface: positive is a drop,
+negative a step. They trip on its absolute value. Default fresh/generated and
+Workshop rovers fit five ground probes (three front, two rear), with a 0.12 m
+threshold, beside five 3 mm water probes. Authoring, installation and native
+save/reload preserve both kinds and direction. The bounded authoring/runtime
+limit is 16 probes per controller/program. Existing saved rovers retain their
+original declarations; this checkpoint does not retrofit them.
+
+Selection shows live front/rear, side, Drop/Step/Level and Dry/depth values in
+the right panel, with ground hazards first. Controller readouts, riding displays
+and AI senses retain the kind; a ground hazard is not reported as water. The
+program uses its existing motors/brakes/avoidance reflex. Explicit human driving
+orders retain the existing override, which can drive into a reported hazard.
+
+Windows / MSVC Release / Python 3.13.5 / Chrome, 50 mm matter and native
+`dt=1/240 s`: 13 native rover cases pass, including a real dry cut with a
+0.581449 m reported drop, unchanged rear ground, save/reopen reading difference
+below `1e-6 m`, and six seconds of avoidance with maximum chassis z = 0 m before
+the hole at z = 1.5 m. The cart CTest and 77 affected Python tests pass. All 12
+resource/player journey checks pass, including an actual native dig changing
+the selected rover's panel to Drop + warning; the final focused browser rerun
+passes after rebuilding. Screenshot: ignored
+`build/resource-flow/rover-ground-sensors.png`, visually reviewed. Source
+registration is 286/286; JavaScript syntax passes.
+
+This adds a sensor/query/controller capability, no contact, material,
+constitutive or traction law. Earlier glass/oak/iron and conservation boundaries
+remain. Point probes use the top height field; they do not detect cave roofs,
+dynamic obstacles or every gap between probes. One dry-hole fixture is not
+multi-terrain route qualification. Own-support excavation clearance, ordinary
+physical recovery and native rover hill capability remain open.
 
 ## Verification checkpoint
 

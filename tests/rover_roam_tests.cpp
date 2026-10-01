@@ -1257,8 +1257,65 @@ void aPersonsOrderDrivesItIntoTheWater() {
     require(reflexed, "and its water reflex has it back: " + after.doing + ": " + after.why);
 }
 
+// A dry native basin, with no water cue to stand in for missing ground.
+Rover dryGroundRover() {
+    TileImpactRequest request = shoreRoom();
+    auto environment = nlohmann::json::parse(request.environment_scene_json);
+    environment["terrain"]["generate"]["lake_level_m"] = 0.0;
+    request.environment_scene_json = environment.dump();
+    const Vec3 at{0.0,0.22,0.0};
+    request.precise_rigid_scene_json = roverScene(at);
+    Rover r;
+    r.world=LiveWorld::open(request);
+    r.machine=fit(*r.world,pinUp(*r.world,at));
+    r.program=r.world->program("rover","roam",r.machine.left,r.machine.right,"rover",1.0,8.0);
+    for (int i=0;i<240;i++) tick(*r.world);
+    return r;
+}
+
+void groundSensorsReadActualHolesAndSurviveSaving() {
+    Rover r=dryGroundRover();
+    const auto at=posed(r.world->poses(),"rover").position_m;
+    for (double x : {-.55,0.0,.55})
+        require(r.world->programSense(r.program,"ground","rover",at+Vec3{x,0,1.5},.12,1),"front ground probe fits");
+    for (double x : {-.55,.55})
+        require(r.world->programSense(r.program,"ground","rover",at+Vec3{x,0,-.9},.12,-1),"rear ground probe fits");
+    auto said=programOf(*r.world,r.program);
+    for(const auto &sensor:said.sensors)require(!sensor.sees,"continuous basin is not a hole");
+    const auto cut=r.world->dig(-1,1.5,1,1.5,.8,1.0);
+    require(!cut.edit.cells.empty(),"the hole edits real native ground");
+    for(int i=0;i<24;i++)tick(*r.world);
+    said=programOf(*r.world,r.program);
+    require(said.sensors[1].reading_m>.4 && said.sensors[1].sees,"ground probe sees an actual dry drop");
+    require(!said.sensors[3].sees && !said.sensors[4].sees,"rear reads the unchanged ground behind");
+    std::string why;
+    const auto saved=r.world->snapshot(why);
+    require(!saved.empty(),"ground probes save: "+why);
+    TileImpactRequest request=shoreRoom();
+    auto env=nlohmann::json::parse(request.environment_scene_json);
+    env["terrain"]["generate"]["lake_level_m"]=0.0;
+    request.environment_scene_json=env.dump();request.precise_rigid_scene_json=roverScene({0,.22,0});
+    auto again=LiveWorld::open(request,saved);
+    const auto is=programOf(*again,r.program);
+    require(is.sensors.size()==5 && is.sensors[1].kind=="ground" && is.sensors[3].stops==-1,
+            "saving retains kind, threshold and rear direction");
+    require(std::abs(is.sensors[1].reading_m-said.sensors[1].reading_m)<1e-6,"reopen retains the measured dry drop");
+    runIt(*r.world,r.program,true,1);
+    bool avoided=false;double closest=0;
+    for(int i=0;i<6*240;i++) {
+        tick(*r.world);const auto now=programOf(*r.world,r.program);
+        avoided=avoided || now.why.find("ground drop/step")!=std::string::npos;
+        const auto p=posed(r.world->poses(),"rover").position_m;
+        closest=std::max(closest,p.z);
+    }
+    std::cout<<"    dry drop "<<said.sensors[1].reading_m<<" m; closest chassis z "<<closest<<" m\n";
+    require(avoided,"native rover reports ground avoidance");
+    require(closest<.8,"native torque/brakes keep the chassis before its dry hole");
+}
+
 int main() {
     const std::pair<const char *, void (*)()> tests[] = {
+        {"ground probes read and avoid a native dry hole and survive saving",groundSensorsReadActualHolesAndSurviveSaving},
         {"it goes straight and turns on the spot", itGoesStraightAndTurnsOnTheSpot},
         {"it roams the shore and never gets wet", itRoamsTheShoreAndNeverGetsWet},
         {"a saved rover roams on", aSavedRoverRoamsOn},

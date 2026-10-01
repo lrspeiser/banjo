@@ -2699,14 +2699,12 @@ function showMachinePanel() {
   }
   // What its sensors read, as the last step left them.
   for (const s of c.sensors || []) {
-    const mm = Math.round((s.reading_m || 0) * 1000);
-    measured += ` · its ${s.kind} sensor ${s.stops > 0 ? "ahead" : "behind"}: `
-      + (mm > 0 ? `${mm} mm of water` : "dry");
+    measured += ` · ${sensorName(s)}: ${sensorReading(s)}`;
   }
   setText("mp-measured", measured);
   setText("mp-condition", c.condition || "nothing in its way");
   $("mp-condition").classList.toggle("attention",
-    /stalled|too weak|flat|held back|hand|gone|coasts|water/.test(c.condition || ""));
+    /stalled|too weak|flat|held back|hand|gone|coasts|water|ground drop/.test(c.condition || ""));
   setText("mp-ack", machinePanel.said);
   $("mp-ack").classList.toggle("stale", machinePanel.stale);
   showMachineHolds();
@@ -2742,6 +2740,15 @@ function panelRows(program) {
 
 // A program's panel: whether it is on, what it has its wheels doing, what its
 // sensors and its own slope read, and why it is doing what it does.
+function sensorName(s) {
+  return `${s.stops<0 ? "Rear" : "Front"} ${s.side>0 ? "left" : s.side<0 ? "right" : "middle"} · ${s.kind==="ground" ? "ground" : "water"}`;
+}
+function sensorReading(s) {
+  const value=Number(s.reading_m)||0,cm=Math.abs(value)*100;
+  const reading=s.kind==="ground" ? (cm<.5 ? "Level" : `${value>0?"Drop":"Step"} ${cm.toFixed(1)} cm`) :
+    (cm<.05 ? "Dry" : `${cm.toFixed(1)} cm deep`);
+  return `${reading}${s.sees ? " · ⚠" : ""}`;
+}
 function showProgramPanel(p) {
   panelRows(true);
   setText("mp-kind", "Machine with a program");
@@ -2779,8 +2786,7 @@ function showProgramPanel(p) {
     : [pitch !== 0 ? `${Math.abs(pitch)}° ${pitch > 0 ? "up" : "down"} ahead` : "",
        roll !== 0 ? `${Math.abs(roll)}° down to its ${roll > 0 ? "right" : "left"}` : ""].filter(Boolean).join(", ");
   const sensors = (p.sensors || []).map((s) => {
-    const mm = Math.round((s.reading_m || 0) * 1000);
-    return `${s.side > 0 ? "left" : s.side < 0 ? "right" : "middle"} ${mm > 0 ? `${mm} mm of water` : "dry"}`;
+    return `${sensorName(s)}: ${sensorReading(s)}`;
   });
   const power = energyOf(p);
   const battery = `its battery ${Math.round((p.charge_share || 0) * 100)}%`
@@ -2789,10 +2795,10 @@ function showProgramPanel(p) {
     + spendingSaid(power)
     + (p.kind === "hover" ? ` · ${(p.height_m || 0).toFixed(2)} m up, holding ${p.hover_m} m` : "");
   setText("mp-measured", `${battery} · ${p.turns} turn${p.turns === 1 ? "" : "s"} away · ${slope}`
-    + (sensors.length ? ` · its water sensors: ${sensors.join(", ")}` : ""));
+    + (sensors.length ? ` · sensors: ${sensors.join("; ")}` : ""));
   setText("mp-condition", p.power ? (p.why || "nothing in its way") : "off");
   $("mp-condition").classList.toggle("attention",
-    p.power && /water|steeper|progress|gone|battery is low/.test(p.why || ""));
+    p.power && /water|ground drop|steeper|progress|gone|battery is low/.test(p.why || ""));
   showBrain(p);
   showMachineHolds();
   setText("mp-ack", machinePanel.said);
@@ -5175,6 +5181,14 @@ function showPicked() {
       doing.textContent = program.power ? (program.why || program.doing || "running")
                                         : "switched off";
       rows.push(doing);
+      if(program.sensors?.length) {
+        const readings=document.createElement("section");readings.dataset.roverSensors="";
+        const heading=document.createElement("h4");heading.textContent="Sensors";readings.append(heading);
+        const ordered=[...program.sensors].sort((a,b)=>
+          Number(b.kind==="ground")-Number(a.kind==="ground") || Number(b.sees)-Number(a.sees));
+        readings.append(inspectionValues(ordered.map(s=>[sensorName(s),sensorReading(s)])));
+        rows.push(readings);
+      }
     }
 
     if (entry) {
@@ -5583,8 +5597,10 @@ function detailsModel() {
     if (mine) {
       const how = [];
       if (mine.doing) how.push(mine.why ? `${mine.doing} — ${mine.why}` : mine.doing);
-      const wet = (mine.sensors || []).filter((x) => x.sees).length;
+      const wet = (mine.sensors || []).filter((x) => x.kind !== "ground" && x.sees).length;
       if (wet) how.push(`${wet === 1 ? "a water sensor sees" : wet + " water sensors see"} water`);
+      const groundHazards=(mine.sensors || []).filter(x=>x.kind==="ground"&&x.sees).length;
+      if(groundHazards) how.push(`${groundHazards} ground ${groundHazards===1 ? "probe sees" : "probes see"} a drop/step`);
       if (how.length) model.facts += ` · ${how.join(" · ")}`;
     }
   }
@@ -6834,17 +6850,17 @@ function senseLamp(lit, title) {
 
 // The five water sensors, laid out as they sit on the machine: front row
 // left-middle-right above the back row.
-function waterLamps(program) {
+function sensorLamps(program, kind) {
   const grid = document.createElement("div");
   grid.className = "sense-grid";
   const of = (stops, side) => (program.sensors || []).find(
-    (s) => Math.sign(s.stops) === stops && Math.sign(s.side) === side);
+    (s) => (s.kind || "water") === kind && Math.sign(s.stops) === stops && Math.sign(s.side) === side);
   for (const [stops, side, where] of [[1, 1, "ahead on its left"], [1, 0, "straight ahead"],
                                       [1, -1, "ahead on its right"], [-1, 1, "behind, on its left"],
                                       [0, 0, ""], [-1, -1, "behind, on its right"]]) {
     if (!where) { grid.append(document.createElement("i")); continue; }
     const sensor = of(stops, side);
-    grid.append(senseLamp(!!(sensor && sensor.sees), sensor ? `Water ${where}` : "no sensor here"));
+    grid.append(senseLamp(!!(sensor && sensor.sees), sensor ? `${sensorName(sensor)}: ${sensorReading(sensor)}` : `No ${kind} sensor ${where}`));
   }
   return grid;
 }
@@ -6884,13 +6900,13 @@ function showWhatItSenses() {
   const p = mine.program;
 
   const rows = [];
-  const water = document.createElement("div");
-  water.className = "sense-row";
-  const waterWord = document.createElement("span");
-  waterWord.className = "sense-what";
-  waterWord.textContent = "Water";
-  water.append(waterWord, waterLamps(p));
-  rows.push(water);
+  for(const kind of ["ground","water"]) {
+    if(!(p.sensors || []).some(s=>(s.kind || "water")===kind)) continue;
+    const row=document.createElement("div");row.className="sense-row";
+    const word=document.createElement("span");word.className="sense-what";
+    word.textContent=kind==="ground" ? "Drops / steps" : "Water";
+    row.append(word,sensorLamps(p,kind));rows.push(row);
+  }
 
   // What it is standing on, and what is a couple of metres in front of it.
   const body = world.bodies && world.bodies.get(mine.name);

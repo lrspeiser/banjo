@@ -673,10 +673,10 @@ struct LiveMotor {
 // edge can back away from it. Declared, as a real sensor is fitted: nothing in
 // the world is changed by it, and it reads only what is there.
 struct LiveSensor {
-    std::string kind;             // "water"
+    std::string kind;             // "water" or "ground" (signed tangent-plane drop/step)
     std::string body;             // the part it is on
     Vec3 at_local_m{};            // where on it, in the part's own frame about its centre of mass
-    double depth_m{};             // deeper than this under it, and it stops
+    double depth_m{};             // water depth or absolute ground discrepancy threshold
     int stops{1};                 // the direction it stops: 1 forward, -1 reverse
     // On a program's machine (LiveProgram), the side of it the sensor is on,
     // worked out from where it was fitted: 1 its left wheel's side, -1 its

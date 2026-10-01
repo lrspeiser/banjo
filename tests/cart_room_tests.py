@@ -57,7 +57,7 @@ class TheRoomDeclaresIt(unittest.TestCase):
             with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
                 fracture_lab.validate(room)
 
-        refused(lambda r, s: s.update(kind="smoke"), "only kind there is yet is water")
+        refused(lambda r, s: s.update(kind="smoke"), "supported kinds are water and ground")
         refused(lambda r, s: s.update(body="nothing here"), "not in this room")
         refused(lambda r, s: s.update(stops=0), "1 or -1")
         refused(lambda r, s: s.update(stops=True), "1 or -1")
@@ -65,7 +65,7 @@ class TheRoomDeclaresIt(unittest.TestCase):
         refused(lambda r, s: s.update(depth_mm=20000.0), "depth_mm")
         refused(lambda r, s: s.update(at_mm=[0.0, 0.0]), "at_mm")
         refused(lambda r, s: s.update(range_mm=5.0), "cannot say")
-        refused(lambda r, s: r["machines"]["controls"][0].update(sensors=[deepcopy(s)] * 9), "at most 8")
+        refused(lambda r, s: r["machines"]["controls"][0].update(sensors=[deepcopy(s)] * 17), "at most 16")
 
     def test_a_sensor_on_a_thing_made_of_cells_is_declared_the_same_way(self):
         room = cart_room()

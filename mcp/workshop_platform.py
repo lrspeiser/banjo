@@ -47,6 +47,10 @@ HTTP = {
     "inventory": "/api/workshop/inventory",
     "recipes": "/api/workshop/recipes",
     "skills": "/api/workshop/skills",
+    # Named-world player surfaces served by starter_goals/market on the
+    # existing authenticated server path; these are HTTP capabilities.
+    "goals": "/api/workshop/goals",
+    "market": "/api/workshop/market",
     # Driving a thing at the bench with the keys: a little world kept open,
     # stepped as the keys arrive; start, step, stop.
     "drive": "/api/workshop/drive",

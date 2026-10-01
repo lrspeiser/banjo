@@ -75,7 +75,7 @@ class TheRoverIsInTheCatalogue(unittest.TestCase):
         self.assertEqual(["left motor", "right motor"], [m["name"] for m in machines["motors"]])
         self.assertEqual(["left wheel", "right wheel"], [c["name"] for c in machines["controls"]])
         [program] = machines["programs"]
-        self.assertEqual(("roam", 2, "dig", 40.0), (program["kind"], len(program["sensors"]),
+        self.assertEqual(("roam", 10, "dig", 40.0), (program["kind"], len(program["sensors"]),
                                                    program["routine"]["kind"], program["routine"]["hopper_kg"]))
         self.assertEqual([0.55, 0.36, 1.0], program["sensors"][0]["at_m"])
         self.assertTrue(all(overrides[p.name] == {"mechanics": {"model": "rigid"}} for p in design.parts))
@@ -125,7 +125,7 @@ class TheRoverIsInTheCatalogue(unittest.TestCase):
         spec = {**empty_basin(), "precise_rigid_bodies": rigid_assembly.scene_bodies(placed),
                 "joints": rigid_assembly.scene_joints(placed), "machines": made}
         validated = fracture_lab.validate(spec)
-        self.assertEqual(2, len(validated["machines"]["programs"][0]["sensors"]))
+        self.assertEqual(10, len(validated["machines"]["programs"][0]["sensors"]))
         self.assertEqual("dig", validated["machines"]["programs"][0]["routine"]["kind"])
 
 
@@ -193,7 +193,7 @@ class TheBenchChatMakesItARobot(unittest.TestCase):
         state = workshop_chat._State(SimpleNamespace(runs_path=Path(self.tmp.name), workshop_owner_id="owner"),
                                      candidate, None, ["oak", "iron", "glass"], [])
         described = workshop_machines.described(state.design)
-        self.assertEqual("1 store, 2 motors, 1 panel, 2 controls, a roam program with 2 water eyes and a dig routine (40 kg hopper)",
+        self.assertEqual("1 store, 2 motors, 1 panel, 2 controls, a roam program with 5 water probes and 5 ground probes and a dig routine (40 kg hopper)",
                          described["says"])
         out = state.execute("inspect_design", {})
         self.assertEqual(17, len(state.design.parts))
@@ -246,7 +246,7 @@ class InstalledIntoTheRoom(unittest.TestCase):
         self.assertEqual(5, len(preview["root_bodies"]))
         self.assertEqual({"dig site": [0.0, -6.0], "depot": [0.0, -12.0]}, preview["places"],
                          "its places, three metres ahead and behind where it is set down")
-        self.assertEqual(2, len(preview["machines"]["programs"][0]["sensors"]))
+        self.assertEqual(10, len(preview["machines"]["programs"][0]["sensors"]))
         receipt = install.commit(self.app, {"scene": "basin", "session": self.ctx["session"],
                                             "preview_id": preview["preview_id"], "request_id": "install-rover-1"})
         self.assertEqual("installed", receipt["status"])
@@ -255,14 +255,14 @@ class InstalledIntoTheRoom(unittest.TestCase):
         spec = self.room.spec
         self.assertEqual(5, len(spec["precise_rigid_bodies"]))
         [program] = spec["machines"]["programs"]
-        self.assertEqual(("roam", 2, "dig"), (program["kind"], len(program["sensors"]), program["routine"]["kind"]))
+        self.assertEqual(("roam", 10, "dig"), (program["kind"], len(program["sensors"]), program["routine"]["kind"]))
         self.live.open(self.app, {"spec": spec})
         self.brains.opened(spec)
         opened = self.live.session.state
         self.assertNotIn("machine_problems", opened, opened.get("machine_problems"))
         self.live.session.send(op="step", dt=DT, n=240)
         program = self.program()
-        self.assertEqual(("stopped", False, 2), (program["doing"], program["power"], len(program["sensors"])))
+        self.assertEqual(("stopped", False, 10), (program["doing"], program["power"], len(program["sensors"])))
         self.assertFalse(any(s["sees"] for s in program["sensors"]), "dry where it stands")
         said = self.live.session.send(op="run", program=program["id"], sender="test", seq=1, power=True)
         self.assertEqual("going forward", said["program"]["doing"])
