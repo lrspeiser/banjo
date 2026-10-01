@@ -1,5 +1,7 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**General Workshop ground-tool authoring, September 30:** [Component-frame contract](workshop-ground-tools.md), code `7b4a062`: saved/LLM-authored designs can declare a real bounded point/grip; native staging checks it and preserves existing points. Three-material compilation/restart and an actual oak ground-use fixture pass. Generated starter placement, personal study/use receipts and the longer player/AI goal chain remain the next acceptance gates.
+
 **Mixed-scene gathering-tool admission, September 30:** [Measured native boundary](lattice-tools-with-equipment.md), code `f819e81`: a lattice ground tool can share exact machinery's room and retain its point through save/carry. Comparative glass/oak/iron drop work and trajectory checks pass. Exact tool points, mixed-scene blades and unsupported internal failure remain refused. Providing the generated starter tool and its Workshop build/study/gathering journey is the next gate.
 
 **Personal machine observation, September 30:** [Implemented learning contract](player-learning-checkpoint.md): explicit nearby observation resolves registered learning tests against this world's equipment and earns knowledge only from source-attributed durable work. Source snapshot/runtime, an outbox and personal journals support restart recovery. The larger tool/gathering/work-surface/process goal chain and autonomous exploration beyond camp remain planned; routing proofs remain declared terrain checks until actual machine journeys pass.
