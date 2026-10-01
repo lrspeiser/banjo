@@ -748,6 +748,16 @@ body.moving-a-thing #panel .workshop-entry { border-style: dashed; }
   padding: 8px; background: #163731; color: #a5f6e7; cursor: pointer; }
 .pk-reveal:disabled, .pk-recovery:disabled { opacity: .5; cursor: default; }
 .pk-reveal:focus-visible, .pk-recovery:focus-visible { outline: 2px solid #a5f6e7; outline-offset: 2px; }
+.pk-components { margin: 0; }
+.pk-components summary { cursor: pointer; color: #d7ece7; font-size: 12px; padding: 6px 0; }
+.pk-component-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;
+  max-height: 220px; overflow-y: auto; overscroll-behavior: contain; padding: 2px; }
+.pk-component-grid figure { margin: 0; min-width: 0; padding: 5px; background: #17232c;
+  border: 1px solid #304650; border-radius: 6px; user-select: none; }
+.pk-component-grid img { display: block; width: 100%; height: 60px; object-fit: contain; }
+.pk-component-grid figcaption { display: grid; gap: 2px; font-size: 11px; line-height: 1.3; overflow-wrap: anywhere; }
+.pk-component-grid figcaption span, .pk-component-status, .pk-component-missing { color: var(--muted); font-size: 11px; }
+.pk-component-missing { display: flex; align-items: center; min-height: 60px; }
 #world-save-status {
   padding: .65rem;
   margin: .5rem;

@@ -1,5 +1,12 @@
 # Banjo roadmap and acceptance gates
 
+**Component selection acceptance, October 1:** [Verified UI checkpoint](component-thumbnails-checkpoint.md)
+shows actual parts as right-panel thumbnails and keeps assembled items usable.
+This replaces the earlier exploded-view requirement for item 6. Physical
+dismantling, ordinary finite workbench/full paid progression and damaged-tool
+use retain their gates. All fourteen requirements remain active: four verified,
+ten partial.
+
 **Processed machine supply gate, October 1:** [Measured checkpoint](fabrication-assembly-goods-checkpoint.md)
 passes copper/wire reservation with exact frame materials and battery charge,
 Lab lost-transfer reload/retry, native use/restart and private AI funding. QA

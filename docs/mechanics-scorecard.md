@@ -1,5 +1,12 @@
 # Banjo mechanics scorecard
 
+**Component presentation boundary, October 1:** [Identity checks](component-thumbnails-checkpoint.md)
+replace persistent world expansion with thumbnails of all 14 attached rover parts
+and the pick's 22 actual cells split into haft/arm. Native time/bodies/machines
+and scene geometry/opacity remain unchanged by inspection. Existing cell/ground
+inspection, pickup and recovery pass. No physical law or tolerance changed;
+this adds no dismantling, joint-strength or material-realism certification.
+
 **Processed supply boundary, October 1:** [Measured acceptance](fabrication-assembly-goods-checkpoint.md)
 reserves 0.5 kg copper / 0.6 kg wire alongside matched 0.003072 m³ glass/oak/iron
 frames at 40 mm / dt=1/240 s: native allocation 7.68/2.1504/24.17664 kg, 25 kg

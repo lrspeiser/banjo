@@ -59,7 +59,7 @@ partial**, with all fourteen original requirements retained.
 | 3. Fresh start | Ordinary entry creates a new playable generated map with bootstrap equipment; samples remain in Debug | Chrome verifies two plain entries create different generated worlds. Explicit world/scene/QA links preserved. |
 | 4. Resource discovery | Deposits have readable visual cues; selection shows actual substance, quantity, reachable gathering action | Ledger extraction rings/labels implemented and present in Chrome; ground selection shows actual reserve/grade/rover action. Full selection usability review pending. These are extraction areas, not native ore-cell composition. |
 | 5. Gravity mode | Menu toggles exploration/gravity walking; ground support, falling, grounded jump and collision boundaries verified | Chrome verifies menu, falling, one grounded jump per press and fly altitude. Kinematic terrain controller: native physical avatar/body collision boundaries remain open. |
-| 6. Component inspection | Selected item can expand real components, with names/materials and a return to assembled view | Verified connected rover assembly, actual pick cell partition, names/materials, persistent expansion, Return to assembled and separate native-cell view. Full native-part membership, unchanged physical state, reduced motion and watched inspection pass. See component checkpoint below. |
+| 6. Component inspection | Selected item shows actual subcomponents as thumbnails with names/materials in the right panel; item stays assembled and usable | [Verified replacement](component-thumbnails-checkpoint.md): connected rover parts, actual pick cells, decoded thumbnails, unchanged native/scene state and pickup/recovery. Explicit native-cell and ground inspection remain. |
 | 7. Recipe guidance | Select recipe → exact personal/shared shortages, acquisition routes, blocking skill/equipment | [Ordinary shortage→collect→paid Make](recipe-supply-checkpoint.md) and [recursive raw-source guidance](gathering-supply-checkpoint.md) verified, including empty hopper yield targets and cycle refusal. No invented Make skill gate. Process/output-to-build and broader saved-design shortage journeys remain. |
 | 8. Gathering loop | Reach/find/make tool, explain capacity/refusal, visible carried stock in World, explicit empty/store/use action | [Actual browser Find/E/J/F/full/H/resume](gathering-supply-checkpoint.md) and [private native carrying](private-ground-checkpoint.md) pass: personal capacity/bag mass, stroke ownership, two-player/server restart and staged storage. World/Inventory show actual ground stock. Earlier unassigned-load recovery, broken-rock empty/storage and usable build stock remain. |
 | 9. Workshop chat | Typing, sending and draft selection work; chat focus cannot be stolen by world key bindings | Native Chrome ordinary typing, submission, head edit and subsequent whole-item edit pass. Local failure cleanup and replacement textarea retain selection/disabled state. |
@@ -322,6 +322,10 @@ colliding avatar: no reaction on water, carried objects or terrain is applied.
 Rover torque/traction and grade qualification remain separate item 13 work.
 
 ## Component inspection checkpoint — October 1
+
+**Superseded interaction:** The owner replaced persistent expansion with
+[right-panel component thumbnails](component-thumbnails-checkpoint.md).
+Items now stay assembled and usable. The expansion evidence below is historical.
 
 Published implementation: `bcda7ab` on GitHub main.
 

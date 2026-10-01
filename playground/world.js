@@ -4362,6 +4362,19 @@ function slotColour(material) {
 let miniStock = null, miniWallet = null, miniReading = false;
 const miniPictures = new Map();
 let miniRenderer = null;
+function meshPicture(mesh) {
+  miniRenderer ||= new THREE.WebGLRenderer({alpha:true,antialias:true});
+  miniRenderer.setSize(80,60,false); miniRenderer.outputColorSpace=THREE.SRGBColorSpace;
+  const preview = new THREE.Scene(); preview.add(mesh);
+  const bounds = new THREE.Box3().setFromObject(mesh), centre = bounds.getCenter(new THREE.Vector3());
+  const radius = Math.max(.01,bounds.getSize(new THREE.Vector3()).length()/2);
+  preview.add(new THREE.HemisphereLight(0xffffff,0x45505c,2.1));
+  const light = new THREE.DirectionalLight(0xffffff,2.8); light.position.set(3,5,4); preview.add(light);
+  const camera = new THREE.PerspectiveCamera(38,80/60,.001,radius*20+10);
+  camera.position.copy(centre).add(new THREE.Vector3(1.3,.9,1.7).normalize().multiplyScalar(radius/Math.sin(19*Math.PI/180)*1.12));
+  camera.lookAt(centre); miniRenderer.render(preview,camera);
+  return miniRenderer.domElement.toDataURL();
+}
 function miniPicture(thing) {
   const entry = world.bodies.get(thing.name);
   const key = `${thing.name}:${entry?.revision || 0}:${entry?.material || thing.material}`;
@@ -4370,19 +4383,10 @@ function miniPicture(thing) {
     // A thumbnail of the mesh actually in the world, not a guessed shape or
     // a box surrounding a joined tool. Keep the last picture when stowed.
     try {
-      miniRenderer ||= new THREE.WebGLRenderer({alpha:true,antialias:true});
-      miniRenderer.setSize(80,60,false); miniRenderer.outputColorSpace=THREE.SRGBColorSpace;
-      const preview = new THREE.Scene(), mesh = entry.mesh.clone();
-      mesh.position.set(0,0,0); mesh.quaternion.identity(); preview.add(mesh);
-      const bounds = new THREE.Box3().setFromObject(mesh), centre = bounds.getCenter(new THREE.Vector3());
-      const radius = Math.max(.01,bounds.getSize(new THREE.Vector3()).length()/2);
-      preview.add(new THREE.HemisphereLight(0xffffff,0x45505c,2.1));
-      const light = new THREE.DirectionalLight(0xffffff,2.8); light.position.set(3,5,4); preview.add(light);
-      const camera = new THREE.PerspectiveCamera(38,80/60,.001,radius*20+10);
-      camera.position.copy(centre).add(new THREE.Vector3(1.3,.9,1.7).normalize().multiplyScalar(radius/Math.sin(19*Math.PI/180)*1.12));
-      camera.lookAt(centre); miniRenderer.render(preview,camera);
+      const mesh = entry.mesh.clone();
+      mesh.position.set(0,0,0); mesh.quaternion.identity();
       if (miniPictures.size>=100) miniPictures.delete(miniPictures.keys().next().value);
-      const picture = miniRenderer.domElement.toDataURL();
+      const picture = meshPicture(mesh);
       miniPictures.set(key,picture);
       try { sessionStorage.setItem(savedKey,picture); } catch { /* optional browser cache */ }
     } catch { /* shared Inventory icon if WebGL preview is unavailable */ }
@@ -4738,9 +4742,8 @@ function unpick() {
 
 function somethingIsPinned() { return !!(picked.name || picked.at || picked.resource); }
 
-// A short inspection pulse, entirely in the renderer. Cell centres come from
-// the native snapshot; rigid bodies show parts, never invented voxels. The
-// terrain is a layered height field, so its reveal is one real column.
+// Ordinary selection shows component pictures in the panel. Explicit native
+// cells and ground-layer queries retain their brief renderer-only pulse.
 const REVEAL_MS = 3200, REVEAL_MAX_CELLS = 16000;
 let revealing = null, revealTicket = 0, structureLoading = false;
 function cellInspection(entry) {
@@ -4759,17 +4762,7 @@ function clearReveal() {
     if (mesh.isInstancedMesh) mesh.dispose();
   });
   if (revealing.skin) revealing.skin.dispose();
-  for (const row of revealing.sources || []) row.skin.dispose();
   revealing = null;
-}
-function structureLabel(name, material) {
-  const canvas=document.createElement("canvas"); canvas.width=512; canvas.height=136;
-  const ctx=canvas.getContext("2d"); ctx.fillStyle="rgba(12,22,29,.94)"; ctx.fillRect(0,0,512,136);
-  ctx.fillStyle="#f5f1e8"; ctx.font="600 40px system-ui"; ctx.textAlign="center";
-  ctx.fillText(name,256,55,490);ctx.font="30px system-ui";ctx.fillText(material,256,109,490);
-  const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(canvas),
-    transparent:true,opacity:0,depthTest:false,depthWrite:false}));
-  sprite.scale.set(1.6,.425,1); return sprite;
 }
 function inspectionAssembly(name) {
   const names=new Set([name]);
@@ -4785,11 +4778,37 @@ function inspectionAssembly(name) {
   }
   return [...names].map(name=>({name,entry:world.bodies.get(name)}));
 }
-function explodedStructure(entry, name, group) {
-  const rows=[], sources=[];
-  for (const source of inspectionAssembly(name)) {
+// Component pictures use the reported parts/cells without touching scene meshes.
+let componentSnapshot = null;
+const componentPictures = new Map();
+function requestComponentStructure(source) {
+  const body=source.entry;
+  if (structureLoading || body.geometryPending || body.inspectionError) return;
+  const session=world.session, revision=body.revision;
+  structureLoading=true;
+  act("structure",{name:source.name}).then(answer=>{
+    if (world.session!==session || world.bodies.get(source.name)!==body || body.revision!==revision) return;
+    const value=answer.structure;
+    if (!value || value.name!==source.name || value.revision!==revision) {
+      body.inspectionError="Geometry changed; select the item again";return;
+    }
+    body.inspection=value;
+  }).catch(error=>{
+    if (world.session===session && world.bodies.get(source.name)===body) body.inspectionError=error.message || "Inspection unavailable";
+  }).finally(()=>{
+    structureLoading=false;componentSnapshot=null;
+    if (picked.name) showPicked();
+  });
+}
+function componentData(name) {
+  const members=inspectionAssembly(name);
+  const signature=JSON.stringify([world.session,name,members.map(s=>[s.name,s.entry?.revision,
+    s.entry?.mesh.geometry.uuid,s.entry?.geometryPending,s.entry?.inspection?.revision,s.entry?.inspectionError])]);
+  if (componentSnapshot?.signature===signature) return componentSnapshot;
+  const rows=[],sources=[],unavailable=[];
+  for (const source of members) {
     const body=source.entry;
-    if (!body || body.geometryPending) continue;
+    if (!body || body.geometryPending) {unavailable.push("Updating components");continue;}
     let parts=body.mechanicalModel === "precise-rigid-v1" ? body.parts : null;
     const inspection=cellInspection(body);
     if (!parts && inspection?.complete && inspection.cell_count<=REVEAL_MAX_CELLS) {
@@ -4813,47 +4832,65 @@ function explodedStructure(entry, name, group) {
       if (!parts && inspection.cells_local_m?.length) parts=[{name:source.name,material:body.material,
         center_local_m:[0,0,0],dimensions_m:body.dims,cells:inspection.cells_local_m}];
     }
-    if (!parts?.length) continue;
-    const skin=dressedClone(body.mesh.material);skin.transparent=true;skin.depthWrite=false;
-    sources.push({...source,mesh:body.mesh,revision:body.revision,skin});
+
+    if (!parts?.length) {
+      if (!inspection && body.mechanicalModel!=="precise-rigid-v1") requestComponentStructure(source);
+      unavailable.push(body.inspectionError || (structureLoading ? "Loading components…" : "Component geometry unavailable"));
+      continue;
+    }
+    sources.push(source);
     for (const [i,part] of parts.entries()) {
-      if (rows.length>=256) break;
-      const wrapper=new THREE.Group(), material=new THREE.MeshStandardMaterial({
-        color:look(part.material || body.material).color,transparent:true,opacity:0,
-        depthTest:false,depthWrite:false,roughness:.8});
-      let mesh;
-      if (part.cells) {
-        mesh=new THREE.InstancedMesh(new THREE.BoxGeometry(world.cellSize*.96,world.cellSize*.96,world.cellSize*.96),material,part.cells.length);
-        const matrix=new THREE.Matrix4();
-        part.cells.forEach((at,k)=>mesh.setMatrixAt(k,matrix.makeTranslation(...at)));
-        mesh.instanceMatrix.needsUpdate=true;
-      } else mesh=new THREE.Mesh(preciseGeometry([part],body.material,false),material);
-      mesh.matrixAutoUpdate=false;
+      if (rows.length>=256) {unavailable.push("Component display limit reached");break;}
       const partName=(part.name || `part ${i+1}`).split("/").pop();
       const component=source.name.includes(":") ? `${source.name.split(":").pop().trim()} · ${partName}` : partName;
-      const substance=part.material || body.material;
-      const label=structureLabel(component,`${substance}${part.cells ? ` · ${part.cells.length} cells` : ""}`);
-      wrapper.add(mesh,label);group.add(wrapper);
-      rows.push({wrapper,mesh,label,source:body,sourceName:source.name,part,component,substance});
+      rows.push({source:body,sourceName:source.name,part,index:i,component,substance:part.material || body.material});
     }
   }
-  if (!rows.length) return null;
-  const centre=new THREE.Vector3();
-  for (const row of rows) {
-    row.source.mesh.updateMatrixWorld();
-    row.at=new THREE.Vector3(...row.part.center_local_m).applyMatrix4(row.source.mesh.matrixWorld);
-    centre.add(row.at);
+  componentSnapshot={signature,name,rows,sources,count:rows.length,unavailable};
+  return componentSnapshot;
+}
+function componentPicture(row) {
+  const key=JSON.stringify([world.session,row.sourceName,row.source.mesh.geometry.uuid,row.source.revision,row.index,row.component]);
+  if (componentPictures.has(key)) return componentPictures.get(key);
+  const material=new THREE.MeshStandardMaterial({color:look(row.substance).color,roughness:.8});
+  let mesh;
+  try {
+    if (row.part.cells) {
+      mesh=new THREE.InstancedMesh(new THREE.BoxGeometry(world.cellSize,world.cellSize,world.cellSize),material,row.part.cells.length);
+      const matrix=new THREE.Matrix4();
+      row.part.cells.forEach((at,i)=>mesh.setMatrixAt(i,matrix.makeTranslation(...at)));
+      mesh.instanceMatrix.needsUpdate=true;
+    } else mesh=new THREE.Mesh(preciseGeometry([row.part],row.substance,false),material);
+    const picture=meshPicture(mesh);
+    if (componentPictures.size>=256) componentPictures.delete(componentPictures.keys().next().value);
+    componentPictures.set(key,picture);return picture;
+  } catch {return null;}
+  finally {mesh?.geometry.dispose();if (mesh?.isInstancedMesh) mesh.dispose();material.dispose();}
+}
+function componentPanel(data) {
+  if (data.panel) return data.panel;
+  const section=document.createElement("details");section.className="pk-components";section.open=true;
+  const title=document.createElement("summary");title.textContent=`Components · ${data.count}`;section.append(title);
+  const grid=document.createElement("div");grid.className="pk-component-grid";
+  for (const row of data.rows) {
+    const card=document.createElement("figure");card.dataset.component=row.component;card.dataset.body=row.sourceName;
+    const image=document.createElement("img"),picture=componentPicture(row);
+    image.alt=`${titled(row.component)} · ${titled(row.substance)}`;image.width=80;image.height=60;
+    if (picture) {image.src=picture;card.append(image);}
+    else {const missing=document.createElement("span");missing.className="pk-component-missing";missing.textContent="Preview unavailable";card.append(missing);}
+    const caption=document.createElement("figcaption"),name=document.createElement("strong"),material=document.createElement("span");
+    name.textContent=titled(row.component);material.textContent=titled(row.substance);caption.append(name,material);card.append(caption);grid.append(card);
   }
-  centre.divideScalar(rows.length);
-  rows.forEach((row,i)=>{
-    const out=row.at.clone().sub(centre);
-    if (out.lengthSq()<.001) out.set(Math.cos(i*2.4),.4,Math.sin(i*2.4));
-    row.explode=out.normalize().multiplyScalar(.65+.1*Math.sqrt(rows.length));
-  });
-  return {rows,sources};
+  section.append(grid);
+  if (data.unavailable.length) {
+    const status=document.createElement("p");status.className="pk-component-status";status.textContent=[...new Set(data.unavailable)].join(" · ");section.append(status);
+  }
+  data.panel=section;return section;
 }
 function revealPicked(mode="components") {
   clearReveal();
+  const entry = picked.name && world.bodies.get(picked.name);
+  if (entry && mode!=="cells") {componentData(picked.name);return;}
   const group = new THREE.Group();
   group.name = "selection-structure-reveal";
   const material = color => new THREE.LineBasicMaterial({ color,
@@ -4861,15 +4898,11 @@ function revealPicked(mode="components") {
   const edgesOf = shape => {
     const edges = new THREE.EdgesGeometry(shape); shape.dispose(); return edges;
   };
-  const entry = picked.name && world.bodies.get(picked.name);
-  let kind, count = 0, skin = null, beds = null, cells = null, exploded=null;
+  let kind, count = 0, skin = null, beds = null, cells = null;
   if (entry) {
     if (entry.geometryPending) return;
     const inspection = cellInspection(entry);
-    if (mode!=="cells") exploded=explodedStructure(entry,picked.name,group);
-    if (exploded) {
-      kind="parts";count=exploded.rows.length;
-    } else if (inspection?.cells_local_m?.length && inspection.complete && inspection.cell_count <= REVEAL_MAX_CELLS) {
+    if (inspection?.cells_local_m?.length && inspection.complete && inspection.cell_count <= REVEAL_MAX_CELLS) {
       cells = inspection.cells_local_m;
       kind = "cells"; count = cells.length;
       const edges = edgesOf(new THREE.BoxGeometry(world.cellSize, world.cellSize, world.cellSize));
@@ -4911,11 +4944,9 @@ function revealPicked(mode="components") {
       }
       return; // Missing/over-budget geometry is not a substitute box.
     }
-    if (!exploded) {
-      skin = dressedClone(entry.mesh.material);
-      skin.transparent = true; skin.depthWrite = false;
-      group.matrixAutoUpdate = false;
-    }
+    skin = dressedClone(entry.mesh.material);
+    skin.transparent = true; skin.depthWrite = false;
+    group.matrixAutoUpdate = false;
   } else if (picked.at) {
     beds = bedsUnder(picked.at);
     if (!beds.length) return;
@@ -4937,7 +4968,7 @@ function revealPicked(mode="components") {
   revealing = { group, entry, mesh: entry?.mesh, skin, kind, count, beds, cells,
     revision: entry?.revision,
     name: picked.name, at: picked.at?.slice(), start: performance.now(), amount: 0,
-    ...exploded, reduced: matchMedia("(prefers-reduced-motion: reduce)").matches };
+    reduced: matchMedia("(prefers-reduced-motion: reduce)").matches };
 }
 function animateReveal(now) {
   const r = revealing;
@@ -4946,38 +4977,13 @@ function animateReveal(now) {
   const current = r.name && world.bodies.get(r.name);
   // Never keep drawing cells from a body replaced, removed or awaiting a new
   // geometry revision. Digging also invalidates a revealed ground column.
-  if ((!r.rows && age >= REVEAL_MS) || (r.name && (current !== r.entry || current?.mesh !== r.mesh || current.geometryPending || current.revision !== r.revision))
-      || r.sources?.some(s=>world.bodies.get(s.name)!==s.entry || s.entry.mesh!==s.mesh || s.entry.geometryPending || s.entry.revision!==s.revision)
+  if (age >= REVEAL_MS || (r.name && (current !== r.entry || current?.mesh !== r.mesh || current.geometryPending || current.revision !== r.revision))
       || (!r.name && JSON.stringify(bedsUnder(r.at)) !== JSON.stringify(r.beds))) {
     clearReveal(); showPicked(); return;
   }
-  r.amount = r.reduced ? 1 : r.rows ? Math.min(1,age/600) : Math.min(1, age / 450, (REVEAL_MS - age) / 650);
+  r.amount = r.reduced ? 1 : Math.min(1, age / 450, (REVEAL_MS - age) / 650);
   r.group.traverse(m => { if (m.material) m.material.opacity = r.amount * 0.8; });
-  for (const row of r.rows || []) {
-    row.source.mesh.updateMatrixWorld();row.mesh.matrix.copy(row.source.mesh.matrixWorld);
-    row.wrapper.position.copy(row.explode).multiplyScalar(r.amount);
-    row.label.position.fromArray(row.part.center_local_m).applyMatrix4(row.source.mesh.matrixWorld);
-    row.label.position.y += Math.min(.6,Math.max(...row.part.dimensions_m)/2+.2);
-  }
-  if (r.rows) {
-    // Keep labels readable in the viewport. The complete name/material list
-    // stays in the panel; occluded/out-of-view labels never stack into a blur.
-    r.group.updateMatrixWorld(true);
-    const rects=[], width=renderer.domElement.clientWidth, height=renderer.domElement.clientHeight;
-    for (const row of r.rows) {
-      const worldAt=row.label.getWorldPosition(new THREE.Vector3());
-      const depth=-worldAt.clone().applyMatrix4(camera.matrixWorldInverse).z;
-      const pixels=height*camera.projectionMatrix.elements[5]/(2*Math.max(.01,depth));
-      const p=worldAt.project(camera);
-      const x=(p.x+1)*width/2,y=(1-p.y)*height/2;
-      const w=row.label.scale.x*pixels/2,h=row.label.scale.y*pixels/2;
-      const box={x:x-w,y:y-h,right:x+w,bottom:y+h};
-      row.label.visible=depth>0 && pixels>60 && p.z>=-1 && p.z<=1 && box.x>4 && box.y>4 && box.right<width-4 && box.bottom<height-4
-        && !rects.some(a=>box.x<a.right+6 && box.right>a.x-6 && box.y<a.bottom+6 && box.bottom>a.y-6);
-      if (row.label.visible) rects.push(box);
-    }
-  }
-  if (r.entry && !r.rows) {
+  if (r.entry) {
     r.mesh.updateMatrixWorld(); r.group.matrix.copy(r.mesh.matrixWorld);
   }
 }
@@ -4993,7 +4999,7 @@ function inspectionValues(values) {
 function revealButton() {
   const button = document.createElement("button");
   button.type = "button"; button.className = "pk-reveal";
-  button.textContent = revealing?.rows && revealing.name===picked.name ? "Return to assembled" : "Explode components";
+  button.textContent = "Refresh components";
   const entry = picked.name && world.bodies.get(picked.name);
   if (!entry) button.textContent="Reveal ground layers";
   const inspection = entry && cellInspection(entry);
@@ -5002,11 +5008,11 @@ function revealButton() {
     : !!bedsUnder(picked.at).some(b => !b.hole);
   button.disabled = !available || (!!entry && structureLoading && !inspection && entry.mechanicalModel !== "precise-rigid-v1");
   if (structureLoading && !inspection && entry) button.textContent = "Loading structure…";
-  else if (entry?.inspectionError) { button.textContent = "Retry reveal"; button.title = entry.inspectionError; }
+  else if (entry?.inspectionError) { button.textContent = "Retry components"; button.title = entry.inspectionError; }
   if (!available) button.title = entry?.inspectionError || (entry?.geometryPending ? "Updating geometry" : "No reveal geometry within the display budget");
   button.addEventListener("click", () => {
-    if (revealing?.rows && revealing.name===picked.name) {clearReveal();showPicked();return;}
-    if (entry) entry.inspectionError = null;
+    componentSnapshot=null;
+    if (entry) for (const source of inspectionAssembly(picked.name)) if (source.entry) source.entry.inspectionError = null;
     revealPicked(); showPicked();
   });
   return button;
@@ -5235,7 +5241,9 @@ function coreColumn(beds) {
 
 // ---------------------------------------------------------------------------
 
+let pickedHeading = null;
 function pickedTitle(words, sub) {
+  if (pickedHeading?.words===words && pickedHeading.sub===sub) return pickedHeading.head;
   const head = document.createElement("header");
   head.className = "pk-head";
   const box = document.createElement("div");
@@ -5256,6 +5264,7 @@ function pickedTitle(words, sub) {
   shut.textContent = "×";
   shut.addEventListener("click", unpick);
   head.append(box, shut);
+  pickedHeading={words,sub,head};
   return head;
 }
 
@@ -5319,6 +5328,7 @@ function showPicked() {
     rows.push(pickedTitle(titled(part ? part.object : picked.name),
                           program ? "a machine" : entry && entry.anchored ? "fixed in place" : null));
 
+    if (entry) rows.push(componentPanel(componentData(picked.name)));
     const power = program ? energyOf(program) : null;
     if (power) rows.push(batteryRow(power));
     else {
@@ -5350,7 +5360,8 @@ function showPicked() {
       rows.push(conditionPanel(conditionSession===world.session ? pickedConditions.get(picked.name) : []));
       const rigid = entry.mechanicalModel === "precise-rigid-v1";
       const inspection = cellInspection(entry);
-      const expanded=revealing?.rows && revealing.name===picked.name ? revealing : null;
+      const components=componentData(picked.name);
+      const expanded=components.count && !components.unavailable.length ? components : null;
       const materials = expanded ? [...new Set(expanded.rows.map(r=>r.substance))] : rigid ? [...new Set((entry.parts || []).map(p => p.material || entry.material))] : [entry.material];
       const mass=expanded ? expanded.sources.reduce((sum,s)=>sum+s.entry.mass,0) : entry.mass;
       const memberNames=expanded ? new Set(expanded.sources.map(s=>s.name)) : new Set([picked.name]);
@@ -5365,10 +5376,6 @@ function showPicked() {
         ["Breaking", rigid ? "No cell fracture" : "Tool dependent"],
       ]));
       rows.push(revealButton());
-      if (revealing?.rows && revealing.name===picked.name) {
-        const parts=inspectionValues(revealing.rows.map(r=>[r.component,r.substance]));
-        parts.classList.add("pk-components");rows.push(parts);
-      }
       if (!rigid) {
         const cells=document.createElement("button");cells.className="pk-reveal";cells.type="button";
         cells.textContent="Show native cells";cells.onclick=()=>{revealPicked("cells");showPicked();};rows.push(cells);
@@ -9949,13 +9956,11 @@ function render() {
   const r = revealing;
   // Swap only during rendering, restoring even if rendering fails. The skin
   // and the held-item ghost keep their own materials and lifetimes.
-  if (r && r.amount > 0) {
-    for (const {mesh,skin} of r.sources || (r.skin ? [{mesh:r.mesh,skin:r.skin}] : [])) {
-      const own=mesh.material;swapped.push([mesh,own]);
-      skin.color.copy(own.color);
-      if (own.emissive) {skin.emissive.copy(own.emissive);skin.emissiveIntensity=own.emissiveIntensity;}
-      skin.opacity=own.opacity*(1-.86*r.amount);mesh.material=skin;
-    }
+  if (r?.skin && r.amount > 0) {
+    const {mesh,skin}=r,own=mesh.material;swapped.push([mesh,own]);
+    skin.color.copy(own.color);
+    if (own.emissive) {skin.emissive.copy(own.emissive);skin.emissiveIntensity=own.emissiveIntensity;}
+    skin.opacity=own.opacity*(1-.86*r.amount);mesh.material=skin;
   }
   try { renderer.render(scene, camera); }
   finally { for (const [mesh, material] of swapped.reverse()) mesh.material = material; }
@@ -11034,9 +11039,10 @@ window.banjoRoom = {
     amount: revealing.amount, name: revealing.name, at: revealing.at,
     objects: revealing.group.children.length, matrix: revealing.group.matrix.toArray(),
     cellCentres: revealing.cells,
-    components: revealing.rows?.map(r=>({name:r.component,material:r.substance,body:r.sourceName,
-      cells:r.part.cells?.length,offset:r.wrapper.position.toArray()})),
+
     layers: revealing.beds, skinOpacity: revealing.skin?.opacity }),
+  components: () => picked.name && componentData(picked.name).rows.map(r=>({
+    name:r.component,material:r.substance,body:r.sourceName,cells:r.part.cells?.length})),
   picked: () => ({ name: picked.name, at: picked.at, outlined: !!(pickedBox && pickedBox.visible),
                    said: (document.getElementById("picked") || {}).innerText || "" }),
   aim, pickUp, dropIt, putDown, letFly, intend,

@@ -1,5 +1,12 @@
 # Development status and handoff
 
+**Component thumbnails, October 1:** [UI checkpoint](component-thumbnails-checkpoint.md)
+replaces persistent exploded inspection with actual component pictures in the
+right panel. Selected items remain assembled; names/materials are concise,
+gallery height is bounded and geometry revisions invalidate pictures. Native
+state/mesh identity, pickup/stow/reload, recovery, explicit cell/ground inspection
+and the own 8770 preview pass. No native law change; four verified, ten partial.
+
 **Processed paid machine supplies, October 1:** [Verified checkpoint](fabrication-assembly-goods-checkpoint.md)
 closes the paid path's copper/wire bypass. Native-derived frame costs and declared
 processed requirements are reserved together; Lab/AI share durable personal/shared

@@ -2,9 +2,10 @@
 
 ## Interaction contract — September 30, 2026
 
-Clicking an object pins its analysis in the right rail and briefly reveals its
-structure. The original skin fades back after 3.2 seconds. **Reveal structure**
-replays the view; Escape, closing the card or changing selection removes it.
+Clicking an object pins its analysis and actual component thumbnails in the right
+rail, keeping its assembled skin in the world. [Thumbnail acceptance](component-thumbnails-checkpoint.md)
+replaces the earlier persistent exploded view. **Show native cells** explicitly
+starts a 3.2-second skin/cell pulse; Escape, closing or changing selection removes it.
 **Alt+click** inspects without primary Use, pickup or dropping a carried item.
 Ordinary clicks retain their existing game actions; a tool's ordinary click
 still uses the tool. Reduced-motion users receive a static, temporary reveal.
@@ -22,7 +23,7 @@ There is no new dismantle command or fracture law.
 - Cellular bodies use native cell centres, not a grid reconstructed from the
   skin or bounding box. Hull cells already received in pose packets are retained
   across pose-only updates. Intact boxes use the new read-only `structure` query.
-- Precise rigid assemblies reveal their actual box/cylinder parts; they are
+- Precise rigid assemblies show thumbnails of their actual box/cylinder parts; they are
   never presented as fracture voxels. Authored finishes remain the normal view.
 - Ground remains a layered height field. Its reveal is one actual native column,
   drawn at reported depth and width through the surface. The right-hand core log

@@ -433,7 +433,7 @@ class GoodsJourney(unittest.TestCase):
         self.assertGreater(before_oak,after_oak)
         self.assertEqual([],[e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
 
-    def test_component_inspection_explodes_full_rover_and_actual_pick_cells_without_native_changes(self):
+    def test_component_thumbnails_keep_rover_and_pick_assembled_without_native_changes(self):
         if not qa_browser.CHROME.is_file():self.skipTest('Chrome not installed')
         world,owner,app,*_=self.batch(process=False)
         chrome=qa_browser.Chrome(1440,900);self.addCleanup(chrome.close)
@@ -448,9 +448,20 @@ class GoodsJourney(unittest.TestCase):
         wait('window.banjoRoom?.ready()')
         sid=app.live.session.id
         before=app.live.act({'session':sid,'op':'poses'})
-        page.evaluate('(()=>{const r=banjoRoom,p=r.world.bodies.get("rover").mesh.position;r.standAt(p.x+3,p.y+2,p.z+3);r.lookAt(p.x,p.y,p.z);r.pick("rover")})()')
-        wait('banjoRoom.reveal()?.components?.length>6 && banjoRoom.reveal().amount===1')
-        components=page.evaluate('banjoRoom.reveal().components')
+        geometry='[...banjoRoom.world.bodies].map(([name,b])=>({name,position:b.mesh.position.toArray(),rotation:b.mesh.quaternion.toArray(),vertices:[...b.mesh.geometry.attributes.position.array],opacity:(Array.isArray(b.mesh.material)?b.mesh.material:[b.mesh.material]).map(m=>m.opacity)}))'
+        drawing=page.evaluate(geometry)
+        def inspect(name):
+            page.evaluate('(()=>{const r=banjoRoom,p=r.world.bodies.get('+json.dumps(name)+').mesh.position;r.standAt(p.x,p.y+1.62,p.z+1.1);r.lookAt(p.x,p.y,p.z)})()')
+            x,y=page.evaluate('(()=>{const b=document.querySelector("canvas").getBoundingClientRect();return [b.x+b.width/2,b.y+b.height/2]})()')
+            page.send('Input.dispatchMouseEvent',{'type':'mouseMoved','x':x,'y':y})
+            wait('banjoRoom.world.aim?.name==='+json.dumps(name))
+            # Alt+click inspects without starting/stopping a machine or lifting a tool.
+            for kind in ('mousePressed','mouseReleased'):
+                page.send('Input.dispatchMouseEvent',{'type':kind,'x':x,'y':y,'button':'left','clickCount':1,'modifiers':1})
+            wait('banjoRoom.picked().name==='+json.dumps(name))
+        inspect('rover')
+        wait('banjoRoom.components()?.length>6')
+        components=page.evaluate('banjoRoom.components()')
         members={'rover'}
         while True:
             expanded=members | {end for j in before.get('joints',[]) if j.get('attached')
@@ -461,19 +472,26 @@ class GoodsJourney(unittest.TestCase):
         self.assertEqual(len(native_parts),len(components))
         self.assertEqual({b for b,p in native_parts},{c['body'] for c in components})
         self.assertGreater(len({c['body'] for c in components}),3,components)
-        self.assertTrue(all(c['name'] and c['material'] and sum(v*v for v in c['offset'])>.2 for c in components))
-        self.assertEqual(len(components),page.evaluate('document.querySelectorAll("#picked .pk-components dt").length'))
-        time.sleep(3.3);self.assertTrue(page.evaluate('!!banjoRoom.reveal()?.components'))
+        self.assertTrue(all(c['name'] and c['material'] for c in components))
+        self.assertEqual(len(components),page.evaluate('document.querySelectorAll("#picked .pk-component-grid figure").length'))
+        wait('[...document.querySelectorAll("#picked .pk-component-grid img")].every(i=>i.complete && i.naturalWidth>0)')
+        self.assertEqual(len(components),page.evaluate('document.querySelectorAll("#picked .pk-component-grid img").length'))
+        self.assertIsNone(page.evaluate('banjoRoom.reveal()'))
+        self.assertFalse(page.evaluate('!!banjoRoom.scene.getObjectByName("selection-structure-reveal")'))
+        self.assertEqual(drawing,page.evaluate(geometry),'inspection moved or faded the world geometry')
+        time.sleep(3.3);self.assertEqual(components,page.evaluate('banjoRoom.components()'))
         import base64
         output=ROOT/'build/resource-flow';output.mkdir(parents=True,exist_ok=True)
-        (output/'rover-components.png').write_bytes(base64.b64decode(page.send('Page.captureScreenshot',{'format':'png'})['data']))
+        (output/'component-thumbnails.png').write_bytes(base64.b64decode(page.send('Page.captureScreenshot',{'format':'png'})['data']))
         page.evaluate('document.querySelector("#picked .pk-reveal").click()')
         self.assertIsNone(page.evaluate('banjoRoom.reveal()'))
-        page.evaluate('banjoRoom.pick("field pick")')
-        wait('banjoRoom.reveal()?.components?.length===2')
-        parts=page.evaluate('banjoRoom.reveal().components')
+        inspect('field pick')
+        wait('banjoRoom.components()?.length===2')
+        parts=page.evaluate('banjoRoom.components()')
         self.assertEqual({'haft','arm'},{p['name'] for p in parts})
         self.assertEqual(page.evaluate('banjoRoom.world.bodies.get("field pick").cells.length'),sum(p['cells'] for p in parts))
+        self.assertIsNone(page.evaluate('banjoRoom.reveal()'))
+        self.assertEqual(drawing,page.evaluate(geometry))
         page.evaluate('[...document.querySelectorAll("#picked button")].find(b=>b.textContent==="Show native cells").click()')
         wait('banjoRoom.reveal()?.kind==="cells"')
         page.evaluate('banjoRoom.pick(null)')

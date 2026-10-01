@@ -18,14 +18,20 @@ import qa_browser
 @unittest.skipUnless(guests.hub.RUNNER.is_file() and guests.hub.ENGINE.is_file(), "native world engine not built")
 class GameScreens(unittest.TestCase):
     get, post, join = guests.AutonomousGuests.get, guests.AutonomousGuests.post, guests.AutonomousGuests.join
-    setUp, tearDown = guests.AutonomousGuests.setUp, guests.AutonomousGuests.tearDown
+    setUp = guests.AutonomousGuests.setUp
     start, stop, setup_world = guests.AutonomousGuests.start, guests.AutonomousGuests.stop, guests.AutonomousGuests.setup_world
+
+    def tearDown(self):
+        # Stop browser polling before removing the server's SQLite directory.
+        if getattr(self,"chrome",None): self.chrome.close()
+        guests.AutonomousGuests.tearDown(self)
 
     def browser(self, world, owner):
         if not qa_browser.CHROME.is_file():
             if os.environ.get("BANJO_BROWSER_TESTS") == "required": self.fail("Chrome is required")
             self.skipTest("Chrome not installed")
         chrome = qa_browser.Chrome(1440, 900); self.addCleanup(chrome.close)
+        self.chrome = chrome
         self.page = chrome.page
         self.page.send("Page.enable"); self.page.send("Runtime.enable")
         self.page.send("Page.navigate", {"url":self.base + "/api/status"})
@@ -118,7 +124,10 @@ class GameScreens(unittest.TestCase):
         self.screenshot("save-recovered.png")
 
     def test_world_selection_reveals_reported_structure_then_restores_skin_without_stepping(self):
-        world, owner, app = self.setup_world(); self.browser(world, owner)
+        import server
+        with mock.patch.object(server.secrets,'randbelow',side_effect=[1,851269741]):
+            world, owner, app = self.setup_world()
+        self.browser(world, owner)
         self.page.send("Page.navigate", {"url":self.base + f"/world?world={world}&hold=1"})
         self.wait('window.banjoRoom?.ready()', seconds=60)
         session = app.live.session.id
@@ -139,15 +148,17 @@ class GameScreens(unittest.TestCase):
         self.screenshot("world-cell-reveal.png")
         self.wait('banjoRoom.reveal() === null', seconds=6)
         self.assertTrue(self.page.evaluate('banjoRoom.world.bodies.get(revealTarget).mesh.material === originalSkin && !banjoRoom.scene.getObjectByName("selection-structure-reveal")'))
-        self.click('.pk-reveal'); self.wait('!!banjoRoom.reveal()')
+        self.page.evaluate('[...document.querySelectorAll("#picked button")].find(b=>b.textContent==="Show native cells").click()')
+        self.wait('!!banjoRoom.reveal()')
         self.click('#pk-close'); self.wait('banjoRoom.reveal() === null && document.querySelector("#picked").hidden')
         # Switching selection disposes the old overlay rather than stacking it.
         self.page.evaluate('banjoRoom.pick(revealTarget); banjoRoom.pick("solar farm")')
         self.page.evaluate('(()=>{const r=banjoRoom,p=r.world.bodies.get("solar farm").mesh.position;r.standAt(p.x+2,p.y+2,p.z+3);r.lookAt(p.x,p.y,p.z)})()')
         self.assertEqual("solar farm", self.page.evaluate('banjoRoom.picked().name'))
-        self.assertEqual(1, self.page.evaluate('banjoRoom.scene.children.filter(c=>c.name === "selection-structure-reveal").length'))
+        self.assertEqual(0, self.page.evaluate('banjoRoom.scene.children.filter(c=>c.name === "selection-structure-reveal").length'))
         # The solar farm in the native starter room is a precise assembly.
-        self.assertEqual("parts", self.page.evaluate('banjoRoom.reveal()?.kind'))
+        self.assertIsNone(self.page.evaluate('banjoRoom.reveal()'))
+        self.assertGreater(self.page.evaluate('document.querySelectorAll("#picked .pk-component-grid img").length'),0)
         self.assertIn("No cell fracture", self.page.evaluate('document.querySelector("#picked").textContent'))
         self.screenshot("world-part-reveal.png")
         self.page.evaluate('banjoRoom.pick(null)')
@@ -157,7 +168,10 @@ class GameScreens(unittest.TestCase):
         self.assertFalse([e for e in self.page.events if e.get("method") == "Runtime.exceptionThrown"])
 
     def test_ground_reveal_uses_native_layers_and_reduced_motion_and_escape_clear_it(self):
-        world, owner, app = self.setup_world(); self.browser(world, owner)
+        import server
+        with mock.patch.object(server.secrets,'randbelow',side_effect=[1,851269741]):
+            world, owner, app = self.setup_world()
+        self.browser(world, owner)
         self.page.send("Emulation.setEmulatedMedia", {"features":[{"name":"prefers-reduced-motion", "value":"reduce"}]})
         self.page.send("Page.navigate", {"url":self.base + f"/world?world={world}&hold=1"})
         self.wait('window.banjoRoom?.ready()', seconds=60)

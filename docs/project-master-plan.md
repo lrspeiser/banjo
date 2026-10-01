@@ -164,9 +164,10 @@ nearby walking and renders protected input bins; native cargo geometry and
 general generated rover delivery remain separate gates.
 
 **Inspectable assemblies, October 1:** [Supported player flow](player-experience-checklist.md#component-inspection-checkpoint--october-1)
-expands current connected native components with actual material/name labels,
-complete panel values and an explicit return to the assembled view. Cells remain
-available as a separate inspection. The visual expansion does no physical work;
+shows current connected native components as right-panel thumbnails with actual
+material/name labels while keeping the item assembled and usable. This replaces
+the earlier persistent expansion. Cells remain available as a separate inspection;
+thumbnail rendering does no physical work. See [acceptance](component-thumbnails-checkpoint.md);
 real dismantling, joint failures, repairs and rover recovery retain their own
 native/evidence gates.
 
