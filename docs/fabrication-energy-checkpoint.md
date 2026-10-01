@@ -98,3 +98,21 @@ python scripts/check-source-registration.py
 Use a fresh output directory. The suite owns temporary rooms and does not spend
 the player's resources. The current player screens remain on the previous
 condition checkpoint until the Workshop repair integration is implemented.
+
+## Published checkpoint and live preview
+
+Implementation `7b58f7f` is published on GitHub main by an ordinary fast-forward
+push. Native runner/library remain the prior condition build; Python/API sources
+are this checkpoint. Refreshed preview:
+`http://127.0.0.1:8770/world?world=1df55505671743cdb6a7507fad17fa1b`.
+Chrome verifies fresh entry, visible pick Condition 100%, unconfigured fabrication
+state, native energy-source readiness and zero JavaScript exceptions. Reviewed
+capture/readout: `build/resource-flow/battery-funding-preview.png` and `.json`.
+This check creates no fabrication supplies and spends no battery energy.
+
+The fresh generated starter world exposes three stores, all with native
+zero/unbounded output declarations. A finite-output source declaration therefore
+also remains necessary for the ordinary Workshop repair integration; this
+checkpoint's positive charger journeys use explicitly authored fixture batteries.
+Local doc-target check passes for 1603 links; all affected checks above pass.
+No ordinary-player repair button or complete durability acceptance is claimed.

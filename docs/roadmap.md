@@ -7,6 +7,9 @@ player stock and selected Lab source to a supported remake process that keeps
 the damaged body/history; verify damage-to-repair-to-use in ordinary screens.
 The current charger is a batched approximation with explicit authoring stock,
 not finished repair. Four verified, ten partial; all fourteen gates remain.
+Published `7b58f7f` is on main. The refreshed generated preview confirms starter
+stores declare zero/unbounded output; provide an explicit finite source
+capability alongside real stock reservation before the ordinary repair journey.
 
 **Item condition acceptance, October 1:** [Native/private/browser checks](body-condition.md)
 pass real cut continuity, supported thermal factors, unresolved/broken and exact

@@ -8,6 +8,10 @@ glass/oak/iron output and energy/heat evidence. No native law or existing
 tolerance changes; authored supplies and work coefficients remain approximate.
 Ordinary Lab repair, matching player-stock reservation and retained damage
 history integration remain open. Four player items verified, ten partial.
+Published implementation `7b58f7f` is on main; refreshed 8770 preview Chrome
+entry/condition/source-readiness checks pass with no JavaScript exceptions.
+Starter sources still declare unbounded output and need an explicit finite
+source capability before qualifying ordinary repair.
 
 **Item condition, October 1:** [Native/API/browser evidence](body-condition.md)
 adds actual bond/thermal condition readings in World, carried Inventory and
