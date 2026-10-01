@@ -1,5 +1,13 @@
 # Banjo roadmap and acceptance gates
 
+**Starter source acceptance, October 1:** [Finite solar output](fabrication-starter-power-checkpoint.md)
+passes actual generated-battery funding in Lab, legacy compatibility,
+day/night charging and two generated rover/processing/restart cases. Next
+declare the ordinary workbench process and integrate paid player/AI/machine
+manufacture together; then qualify actual damaged-tool replacement-to-use.
+No new physical law or calibrated forming claim. Four verified, ten partial
+within all fourteen original gates.
+
 **Reviewed paid Make, October 1:** [New/saved design checkpoint](fabrication-paid-design-checkpoint.md)
 passes configured Recipes/Lab review, real funding, owned frozen new-item jobs,
 native installation and restart/replay with glass/oak/iron. Next connect finite

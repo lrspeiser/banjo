@@ -72,6 +72,25 @@ class AddingSolar(unittest.TestCase):
             self.state.execute("add_power_part", {"kind": "motor", "turns": ["bearing-mount-11", "axle-1"],
                                                   "stall_torque_n_m": 20, "no_load_rpm": 60})
 
+    def test_declared_battery_rating_survives_chat_recipe_and_native_install_export(self):
+        self.state.execute("add_power_part", {"kind":"store","name":"rated battery","in":"deck",
+            "capacity_j":5000,"charge_j":1000,"voltage_v":24,"max_power_w":300})
+        record=workshop_machines.of(self.state.design)
+        self.assertEqual(300,record['stores'][0]['max_power_w'])
+        installed=workshop_machines.installed(self.state.design,{'deck':'native deck'})
+        self.assertEqual(300,installed['stores'][0]['max_power_w'])
+        self.assertEqual((5000,1000),(installed['stores'][0]['capacity_j'],installed['stores'][0]['charge_j']))
+        solar=w.assemble('solar-array',parameters={'max_power_w':10000})
+        self.assertEqual(10000,workshop_machines.of(solar)['stores'][0]['max_power_w'])
+        self.assertEqual(0,workshop_machines.of(w.assemble('solar-array'))['stores'][0]['max_power_w'])
+        # Older saved machine records had no rating field at all. Export
+        # preserves that legacy unbounded declaration rather than minting one.
+        self.state.design.lineage['component_overrides']['@machines']['stores'][0].pop('max_power_w')
+        self.assertNotIn('max_power_w',workshop_machines.installed(self.state.design,{'deck':'native deck'})['stores'][0])
+        for value in (-1,True,'300',[],{},float('nan'),float('inf'),1e6+1):
+            with self.subTest(value=value),self.assertRaises(ValueError):
+                workshop_machines.checked({'stores':[{'name':'bad','in':'deck','capacity_j':1000,'max_power_w':value}]})
+
 
 class TheTabs(unittest.TestCase):
     def setUp(self):

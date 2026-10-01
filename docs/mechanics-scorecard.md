@@ -1,5 +1,14 @@
 # Banjo mechanics scorecard
 
+**Starter power boundary, October 1:** [Generated-source checkpoint](fabrication-starter-power-checkpoint.md)
+adds authored 10 kW solar battery output to fresh yards; native battery laws,
+20 MJ capacity / 2 MJ initial charge and old worlds remain unchanged. Latest
+50 mm / `dt=1/240 s` browser oak pick costs 1.925 kg / 192.5 J and loosens
+34.43438 kg for 61.52121 J native work. This timed stroke is not a controlled
+wear/performance comparison. Glass/oak/iron, retained actual cuts and paired
+funding persist; process calibration, fatigue/joints, transport and full-world
+conservation remain open.
+
 **Paid design boundary, October 1:** [Reviewed new/saved Make](fabrication-paid-design-checkpoint.md)
 retains glass/oak/iron native admission and restart at 40 mm / `dt=1/240 s`:
 2.56 / 0.7168 / 8.05888 kg consume 256 / 71.68 / 805.888 J under the existing

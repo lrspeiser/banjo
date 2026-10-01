@@ -1,5 +1,13 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Finite starter source, October 1:** [Solar output checkpoint](fabrication-starter-power-checkpoint.md)
+adds an explicit 10 kW rating to fresh generated solar batteries, preserving
+20 MJ capacity / 2 MJ initial charge and legacy saved worlds. Actual Lab
+funding/use and saved Make now use that source; process configuration remains
+an explicit fixture. Ordinary workbench, AI/machine manufacture and damaged-tool
+acceptance remain next. All fourteen requirements stay active, four verified,
+ten partial.
+
 **Paid new/saved design flow, October 1:** [Reviewed Make checkpoint](fabrication-paid-design-checkpoint.md)
 extends the configured workbench to new recipes and saved designs, retaining
 explicit funding and authenticated frozen jobs. Chrome saved-pick construction,

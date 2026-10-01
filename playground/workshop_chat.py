@@ -294,7 +294,11 @@ Important behavior:
 - MAKING IT GO: add_power_part puts a store, motor, panel or control on the
   design and set_program says what it does on its own. A motor names the two
   components its pin joins and that pin MUST be a bearing -- a bond cannot
-  turn -- and it draws on a store you have already added. A panel sits on a
+  turn -- and it draws on a store you have already added. A battery used for
+  finite fabrication charging must have an
+  explicit positive max_power_w output rating; capacity/charge alone do not
+  declare one. Preserve that rating in the design and explain missing output
+  capability rather than inventing power or initial energy. A panel sits on a
   component and faces the way that component faces. Build the machine the same
   way you build the shape: say what is there, then let check_validity tell you
   whether it is wired to anything real. It names a motor driving a bonded
@@ -553,6 +557,8 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                             "store": {"type": "string", "description": "for a motor or panel: the store it uses"},
                             "capacity_j": {"type": "number"}, "charge_j": {"type": "number"},
                             "voltage_v": {"type": "number"},
+                            "max_power_w": {"type": "number", "minimum":0, "maximum":1e6,
+                                "description":"Battery output rating in watts. Zero is unbounded authoring output; a finite fabrication source needs a positive rating."},
                             "stall_torque_n_m": {"type": "number"}, "no_load_rpm": {"type": "number"},
                             "brake_torque_n_m": {"type": "number"},
                             "rotor": {"type": "object", "additionalProperties": False,

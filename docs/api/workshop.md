@@ -276,7 +276,10 @@ bodies the compiler made.
 ```
 
 **A store** sits `in` a component and holds joules: `capacity_j` 1 to 1e12,
-`charge_j` from 0 (default 0), `voltage_v` 0.1 to 1e5 (default 24). A store told
+`charge_j` from 0 (default 0), `voltage_v` 0.1 to 1e5 (default 24), and
+`max_power_w` 0 to 1e6 W (default 0, unbounded authoring output). Positive ratings
+reach the native store unchanged and allow bounded fabrication charging; a
+zero rating cannot qualify for that charger. A store told
 to hold more than it can is refused before anything is built.
 
 **A motor** names the two components its pin joins in `turns`, the `store` it
@@ -497,7 +500,7 @@ These operations are pure product engineering and do not alter the live world.
 
 ## MCP server
 
-Platform MCP **1.20.0** also exposes the world circuit tools and full-state
+Platform MCP **1.21.0** also exposes the world circuit tools and full-state
 checkpoint tools documented in [machine-networks.md](machine-networks.md).
 `install_circuit` compiles a supplied ProductGraph and binds one operating
 network to already-created world stores/motors. This is separate from Workshop

@@ -52,6 +52,12 @@ def _number(value: Any, what: str, low: float, high: float, default: Any = None)
         raise ValueError(f"{what} must be between {low:g} and {high:g}")
     return out
 
+
+def _output_rating(value: Any) -> float:
+    if value is None:return 0.0
+    if type(value) not in (int,float):raise ValueError("max_power_w must be a finite number")
+    return _number(value,"max_power_w",0.0,1e6)
+
 def _pair(value: Any, what: str) -> list[str]:
     if not isinstance(value, (list, tuple)) or len(value) != 2:
         raise ValueError(f"{what} names the two components its pin joins")
@@ -113,6 +119,9 @@ def checked(value: Any) -> dict[str, Any]:
         "capacity_j": _number(row.get("capacity_j"), "capacity_j", 1.0, 1e12),
         "charge_j": _number(row.get("charge_j"), "charge_j", 0.0, 1e12, default=0.0),
         "voltage_v": _number(row.get("voltage_v"), "voltage_v", 0.1, 1e5, default=24.0),
+        # Zero retains the native authoring convention of unbounded output.
+        # It cannot qualify as a source for finite fabrication charging.
+        "max_power_w": _output_rating(row.get("max_power_w")),
     } for row in _rows(value.get("stores"), "stores")]
     for store in out["stores"]:
         if store["charge_j"] > store["capacity_j"]:
@@ -397,7 +406,8 @@ def installed(design: Any, component_to_body: dict[str, str], frame: Any = None,
     if record.get("stores"):
         out["stores"] = [{"name": s["name"], "body": body(s["in"], "a store"),
                           "capacity_j": s["capacity_j"], "charge_j": s["charge_j"],
-                          "voltage_v": s["voltage_v"]} for s in record["stores"]]
+                          "voltage_v": s["voltage_v"],
+                          **({"max_power_w":s["max_power_w"]} if s.get("max_power_w",0)>0 else {})} for s in record["stores"]]
     if record.get("motors"):
         out["motors"] = [{"on": [body(m["turns"][0], "a motor"), body(m["turns"][1], "a motor")],
                           "store": m["store"], "stall_torque_n_m": m["stall_torque_n_m"],

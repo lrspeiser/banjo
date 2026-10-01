@@ -1,5 +1,11 @@
 # Reviewed paid designs — October 1, 2026
 
+Subsequent [starter-source checkpoint](fabrication-starter-power-checkpoint.md)
+adds finite output to fresh generated solar arrays and uses that actual battery
+in the configured acceptance journey. The ordinary workbench process and
+AI/machine migration remain open; the measurements below describe this earlier
+published implementation.
+
 Published implementation: `ed9e0eb` on GitHub main. Own 8770 preview was
 restarted with this Python implementation and the unchanged native build;
 the existing generated world remains unconfigured as described below.

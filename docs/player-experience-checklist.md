@@ -1,5 +1,11 @@
 # Player experience work — September 30, 2026
 
+[Finite starter solar output](fabrication-starter-power-checkpoint.md) now funds
+the actual configured Lab journey from the generated array battery, without an
+extra fixture source. Fresh arrays declare 10 kW; existing worlds retain their
+ratings. Ordinary workbench process, AI/machine manufacture and damaged-tool
+acceptance remain open. All fourteen gates stay **four verified, ten partial**.
+
 The owner's fourteen-point goal supersedes the earlier progression-only task.
 This is the current acceptance list, not a claim that all features are done.
 

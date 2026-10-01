@@ -247,11 +247,11 @@ class LabRemake(unittest.TestCase):
         self.assertTrue(flow.qa_browser.CHROME.is_file(),'Chrome required for Lab remake acceptance')
         world,owner,app,_,_,_=self.batch(process=False)
         peer=self.join(world,'Remake peer')
-        app.room.spec['bodies'].append({'name':'remake battery host','shape':'box','material':'iron',
-            'size_mm':[100,100,100],'center_mm':[25000,50,25000],'anchored':True})
-        app.room.spec.setdefault('machines',{}).setdefault('stores',[]).append({
-            'name':'remake battery','body':'remake battery host','capacity_j':2000.,'charge_j':2000.,'max_power_w':300.,'voltage_v':24.})
-        app.live.open(app,{'spec':app.room.spec})
+        # Use the generated solar yard's actual finite store. No fixture
+        # battery, initial charge refill, extra body or native reopen.
+        meters=self.post('/api/world/fabrication/state',{'session':app.live.session.id,'scene':app.room.scene},world)['energy_sources']
+        solar=next(s for s in meters if s['max_power_w']>0)
+        self.assertEqual(10000.,solar['max_power_w']);self.assertEqual(2e7,solar['capacity_j'])
         pile=next(p for p in app.brains.goods.stockpiles if (p.get('holds') or {}).get('oak',0)>25)
         at=pile['at_m'];sid=app.live.session.id
         floor=app.live.act({'session':sid,'op':'survey','at':at})['survey']['ground_m']
@@ -410,7 +410,8 @@ class LabRemake(unittest.TestCase):
         (out/'lab-remake-used.png').write_bytes(base64.b64decode(p.send('Page.captureScreenshot',{'format':'png'})['data']))
         self.native_evidence={'material':'oak','stock_kg':plan['quote']['stock_kg'],
             'supply_j':plan['quote']['supply_required_j'],'collect_bag_equip_use':True,
-            'tool_result':used['result'],'lost_stock_ack_retry':True,'lost_energy_ack_retry':True}
+            'tool_result':used['result'],'lost_stock_ack_retry':True,'lost_energy_ack_retry':True,
+            'generated_solar_source':solar['name'],'generated_source_power_w':solar['max_power_w']}
         self.assertEqual([], [e for e in p.events if e.get('method')=='Runtime.exceptionThrown'])
         context['session']=app.live.session.id
         more=self.post('/api/world/goods/collect',{'session':context['session'],'pile':pile['name'],'request_id':'remake-more-oak',

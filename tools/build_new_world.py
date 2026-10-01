@@ -59,6 +59,10 @@ WATCH_S = 600.0
 #: Where a person arrives in the valley: the hill in the middle, which is
 #: where world_room.valley puts them and what the drive map is measured from.
 ARRIVE_AT = (0.0, 0.0)
+# An explicit starter hardware rating, not a material/geometry-derived claim.
+# The yard already powers a 5 kW furnace and its other declared loads; 10 kW
+# leaves a bounded charger margin. Saved worlds retain their existing ratings.
+STARTER_GRID_MAX_POWER_W = 10000.0
 #: A works machine's block: smaller than the mine room's 0.6 x 0.8 x 0.6,
 #: because there are eight of them here and there is one there. At this
 #: room's 50 mm cells the mine's block is 2,304 cells and eight of those are
@@ -274,7 +278,8 @@ def compose(ground: dict, world: dict, terrain_seed: int | None = None) -> dict:
     # devices" can mean, and every panel in the yard charges it.
     farm_at = _clear_of(ground, middle, 4.0, away_from=intake)
     farm_bodies, farm_pins, farm_made, _ = a_built_thing(
-        ground, "solar-array", "solar farm", farm_at, reserved=_standing_footprints(spec)+hauling)
+        ground, "solar-array", "solar farm", farm_at,
+        {"max_power_w":STARTER_GRID_MAX_POWER_W},reserved=_standing_footprints(spec)+hauling)
     farm_made = workshop_install._named_apart(spec["machines"], farm_made)
     spec["precise_rigid_bodies"] += farm_bodies
     spec["joints"] += farm_pins

@@ -624,6 +624,8 @@ SOLAR_ARRAY_PARAMETERS = (
     # makes in an hour stops everything it feeds at dusk.
     w.Parameter("capacity_j", "J", 2.0e7, 100.0, 1e10),
     w.Parameter("charge_j", "J", 2.0e6, 0.0, 1e10),
+    w.Parameter("max_power_w", "W", 0.0, 0.0, 1e6,
+                about="battery output rating; zero is unbounded authoring output"),
     w.Parameter("efficiency", "", 0.2, 0.05, 0.35,
                 about="what share of the sunlight on a panel becomes power"),
     w.Parameter("material", "", "oak", choices=("oak", "iron")),
@@ -693,7 +695,8 @@ def _solar_array_overrides(values: dict[str, Any], parts: list[w.WirePart]) -> d
               for i, b in enumerate(held)]
     machines = workshop_machines.checked({
         "stores": [{"name": "array battery", "in": "battery", "capacity_j": values["capacity_j"],
-                    "charge_j": values["charge_j"], "voltage_v": 48.0}],
+                    "charge_j": values["charge_j"], "voltage_v": 48.0,
+                    "max_power_w":values["max_power_w"]}],
         "motors": [], "controls": [], "programs": [],
         # Every panel on the one store. That is the whole point of a farm:
         # capacity where it is wanted, not a panel per machine.

@@ -1,5 +1,14 @@
 # Development status and handoff
 
+**Finite starter solar output, October 1:** [Native/browser checkpoint](fabrication-starter-power-checkpoint.md)
+passes typed rating preservation from chat/recipe to native export and gives
+fresh generated arrays a declared 10 kW source. Capacity/initial charge are
+unchanged; existing saved worlds retain their ratings. Fixed Fabrication QA
+59/59, daylight 2/2 and generated rover/processing 2/2 pass. Actual Lab funding,
+replacement use and saved Make use the generated source, with the process
+still explicitly configured by the fixture. Ordinary workbench and AI/machine
+manufacture remain next. Four verified, ten partial; all fourteen remain active.
+
 **Paid new/saved designs, October 1:** [Reviewed Make acceptance](fabrication-paid-design-checkpoint.md)
 extends finite funding to new recipes and saved designs without a carried source.
 Configured Recipes Make and Lab Make it review before any debit. Player/draft
