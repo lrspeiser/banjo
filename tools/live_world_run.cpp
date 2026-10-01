@@ -2690,6 +2690,14 @@ int main(int argc, char **argv) {
                     std::cout << nlohmann::json{{"ok", true}, {"thermo", std::move(report)}}.dump()
                               << std::endl;
                     continue;
+                } else if (op == "dig_clearance") {
+                    const auto a = readXZ(command, "from");
+                    const auto b = command.contains("to") ? readXZ(command, "to") : a;
+                    const auto clearance = world->digClearance(command.at("program").get<unsigned>(),
+                        a.first,a.second,b.first,b.second,command.value("width_m",.5));
+                    std::cout << nlohmann::json{{"ok",true},{"clear",clearance.clear},
+                        {"stand_off_m",clearance.stand_off_m},{"why",clearance.why}}.dump() << std::endl;
+                    continue;
                 } else if (op == "dig") {
                     // A trench, or a pit. The ground loses what comes out and
                     // the reply says what it was; the colliders it changed are
@@ -2709,7 +2717,7 @@ int main(int argc, char **argv) {
                     }
                     reply["dug"] = dugJson(world->dig(a.first, a.second, b.first, b.second,
                                                       command.value("width_m", 1.0),
-                                                      command.value("depth_m", 0.5)));
+                                                      command.value("depth_m", 0.5),command.value("program",0u)));
                     // What came out is carried, and the reply says how much is.
                     reply["carried"] = carriedJson(*world->environment(), world->carriedObjectsKg());
                 } else if (op == "ground_return") {

@@ -17,6 +17,7 @@ import server
 import workshop_library
 import world_goods
 import qa_browser
+from live_session import LiveError
 
 
 class GoodsJourney(unittest.TestCase):
@@ -160,6 +161,29 @@ class GoodsJourney(unittest.TestCase):
         shot=page.send('Page.captureScreenshot',{'format':'png'})['data']
         (out/'collected.png').write_bytes(base64.b64decode(shot))
         self.assertEqual([],[e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
+
+    def test_generated_rover_dig_clearance_preserves_support_and_still_collects_a_load(self):
+        import machine_tools
+        for terrain_seed,resource_seed in ((1,851269741),(0,851269742)):
+            with self.subTest(terrain_seed=terrain_seed),mock.patch.object(server.secrets,'randbelow',side_effect=[terrain_seed,resource_seed]):
+                world,owner,app=self.setup_world()
+                programs=app.live.act({'session':app.live.session.id,'op':'poses'})['machines']['programs']
+                program=next(p for p in programs if p['name']=='rover')
+                x,y,z=program['at_m'];sid=app.live.session.id
+                before=app.live.session.send(op='snapshot')['snapshot']
+                with self.assertRaises(LiveError) as blocked:
+                    app.live.act({'session':sid,'op':'dig','program':program['id'],'from':[x,z],
+                                  'to':[x,z],'width_m':.5,'depth_m':.15})
+                self.assertIn('support below',str(blocked.exception))
+                self.assertEqual(before,app.live.session.send(op='snapshot')['snapshot'])
+                brain=app.brains.of('rover')
+                ctx=brain.context(app.brains._ask(app,sid))
+                answer=machine_tools.run(ctx,machine_tools.Call('dig',{},'routine'))
+                self.assertFalse(answer.get('failed'),answer)
+                self.assertGreater(brain.routine.kg,0,answer)
+                self.assertLessEqual(brain.routine.kg,brain.routine.hopper_kg)
+                self.assertIn('dug',answer['did'])
+                print(f"    generated terrain {terrain_seed}: support refused without mutation; actual hopper {brain.routine.kg:.6f} kg")
 
     def test_selected_rover_reports_actual_ground_hazard_probes_in_right_panel(self):
         if not qa_browser.CHROME.is_file():self.skipTest('Chrome not installed')

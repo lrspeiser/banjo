@@ -12901,8 +12901,63 @@ terrain::Environment &requireEnvironment(const std::unique_ptr<terrain::Environm
 }
 } // namespace
 
+LiveWorld::DigClearance LiveWorld::digClearance(unsigned program, double ax, double az, double bx,
+                                               double bz, double width_m) const {
+    const auto &I = *impl_;
+    if (!(width_m > 0.0) || !std::isfinite(ax + az + bx + bz + width_m))
+        throw std::invalid_argument("dig clearance needs a finite trench and positive width");
+    const Impl::Program *machine = nullptr;
+    for (const auto &p : I.programs) if (p.said.id == program) machine = &p;
+    if (!machine) throw std::invalid_argument("dig clearance: no such machine program");
+    const auto root = I.index_of.find(machine->said.body);
+    if (root == I.index_of.end() || !I.inWorld(root->second))
+        throw std::invalid_argument("dig clearance: the machine is not in the world");
+    DigClearance out; out.clear = true;
+    if (machine->said.kind == "hover") return out; // existing airborne scoop contract
+    const auto origin = I.world->snapshot(I.body_of[root->second]).center_of_mass_world_m;
+    std::vector<std::string> parts{machine->said.body};
+    const auto pins = joints();
+    for (std::size_t k = 0; k < parts.size(); ++k) {
+        if (anchored(parts[k])) continue;
+        for (const auto &pin : pins) {
+            if (!pin.attached || pin.kind != "hinge") continue;
+            const auto other = pin.a == parts[k] ? pin.b : pin.b == parts[k] ? pin.a : std::string{};
+            if (other.empty() || anchored(other) || std::find(parts.begin(), parts.end(), other) != parts.end()) continue;
+            if (parts.size() >= 64) throw std::invalid_argument("dig clearance: attached machine exceeds 64 bodies");
+            parts.push_back(other);
+        }
+    }
+    // A changed height-field node changes its adjoining triangles out to one
+    // grid diagonal, beyond the nominal scoop. Account for that support too.
+    const auto &terrain = requireEnvironment(I.environment).terrain();
+    const double margin = .5 * width_m + std::sqrt(2.0) * terrain.grid().dx;
+    for (const auto &name : parts) {
+        const auto found = I.index_of.find(name);
+        if (found == I.index_of.end() || !I.inWorld(found->second)) continue;
+        const auto id = I.body_of[found->second];
+        const auto at = I.world->snapshot(id);
+        const auto [low, high] = I.world->shapeBoundsTurned(id, at.orientation_world);
+        const auto lo = low + at.center_of_mass_world_m, hi = high + at.center_of_mass_world_m;
+        for (const double x : {lo.x, hi.x}) for (const double z : {lo.z, hi.z})
+            out.stand_off_m = std::max(out.stand_off_m, std::hypot(x-origin.x,z-origin.z) + margin);
+        // Conservative rectangle around a trench; a diagonal trench can be
+        // refused even when its narrower swept capsule misses the assembly.
+        if (std::max(ax,bx)+margin >= lo.x && std::min(ax,bx)-margin <= hi.x &&
+            std::max(az,bz)+margin >= lo.z && std::min(az,bz)-margin <= hi.z) {
+            out.clear = false;
+            if (out.why.empty()) out.why = "the scoop would remove support below " + name +
+                "; move farther away or use a narrower scoop";
+        }
+    }
+    return out;
+}
+
 terrain::EditEffect LiveWorld::dig(double ax, double az, double bx, double bz, double width_m,
-                                   double depth_m) {
+                                   double depth_m, unsigned program) {
+    if (program) {
+        const auto clearance = digClearance(program, ax, az, bx, bz, width_m);
+        if (!clearance.clear) throw std::invalid_argument(clearance.why);
+    }
     return requireEnvironment(impl_->environment).dig(*impl_->world, ax, az, bx, bz, width_m, depth_m, impl_->carriedObjectsKg());
 }
 

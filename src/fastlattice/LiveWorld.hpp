@@ -1806,10 +1806,10 @@ public:
     // off, its motor stopped on its brake.
     unsigned control(const std::string &name, unsigned motor, unsigned rope = 0, double top_out_m = 0.0,
                      double bottom_out_m = 0.0);
-    // A sensor on a controller's machine (LiveSensor): of `kind` ("water"), on
+    // A sensor on a controller's machine (LiveSensor): of `kind` ("water" or "ground"), on
     // the named part at a point given where it is now in the world, stopping
     // the machine going `stops` (1 forward, -1 reverse) when it reads deeper
-    // than `depth_m`. Returns false, with nothing changed, when there is no
+    // than `depth_m` (absolute terrain discrepancy for ground). Returns false, with nothing changed, when there is no
     // such controller or part, the kind is not one it knows, or the numbers
     // are not a sensor's.
     bool sense(unsigned control, const std::string &kind, const std::string &body, const Vec3 &point_world_m,
@@ -1876,8 +1876,8 @@ public:
                      double rest_below = 0.0, double rest_until = 0.0,
                      const std::vector<unsigned> &rotors = {}, double hover_m = 0.0);
     // A sensor on a program's machine, as sense() puts one on a controller's:
-    // of `kind` ("water"), on the named part at a point given where it is now,
-    // seeing what is deeper than `depth_m`. Which side it is on is worked out
+    // of `kind` ("water" or "ground"), on the named part at a point given where it is now,
+    // seeing depth/absolute terrain discrepancy above `depth_m`. Which side it is on is worked out
     // from where it is. False, with nothing changed, as sense() refuses.
     // `watches` is 1 for a sensor that looks AHEAD of the machine and -1
     // for one that looks behind: a machine with only forward sensors
@@ -2068,7 +2068,17 @@ public:
     // Dig a trench from a to b (x, z), `width_m` wide and `depth_m` below the
     // ground as it stands. Rebuilds exactly the colliders it changed and wakes
     // exactly what they held up, here, between steps.
-    terrain::EditEffect dig(double ax, double az, double bx, double bz, double width_m, double depth_m);
+    struct DigClearance {
+        bool clear{};
+        double stand_off_m{}; // conservative whole-assembly radial reach, including terrain triangles
+        std::string why;
+    };
+    // Read current collision-shape bounds of the program's attached assembly.
+    // A conservative support exclusion, not a stability/contact-force oracle.
+    [[nodiscard]] DigClearance digClearance(unsigned program, double ax, double az, double bx,
+                                             double bz, double width_m) const;
+    terrain::EditEffect dig(double ax, double az, double bx, double bz, double width_m, double depth_m,
+                            unsigned program = 0);
     // Rock broken out of a column between two heights: a working with rock over
     // it, or an open cut where it reaches daylight. What a tool that can break
     // rock does to the ground (docs/earth-and-mining-plan.md).

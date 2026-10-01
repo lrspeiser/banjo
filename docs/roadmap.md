@@ -1,5 +1,10 @@
 # Banjo roadmap and acceptance gates
 
+**Excavation clearance acceptance, October 1:** [Current native support guard](player-experience-checklist.md#rover-excavation-support-checkpoint--october-1)
+passes full-snapshot refusal and ordinary loaded scoops on both generated maps.
+Next provide nearby physical recovery through bounded work, qualify traversal
+of existing excavations and measure rover grades without forced motion.
+
 **Rover support acceptance, October 1:** [Native probes and live panel](player-experience-checklist.md#rover-ground-sensor-checkpoint--october-1)
 pass dry-hole detection/avoidance/reload and ordinary Chrome sensor updates.
 Next guard digging against actual assembled support geometry, provide bounded

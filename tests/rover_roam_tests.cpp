@@ -1273,6 +1273,32 @@ Rover dryGroundRover() {
     return r;
 }
 
+void machineDigUsesActualAttachedCollisionShapes() {
+    Rover r=dryGroundRover();
+    std::string why;
+    const auto before=r.world->snapshot(why);
+    require(!before.empty(),"the support-check fixture saves: "+why);
+    const auto under=r.world->digClearance(r.program,0,0,0,0,.5);
+    require(!under.clear && under.why.find("support below")!=std::string::npos,"dig reads actual support");
+    const double narrow_margin=.05+std::sqrt(2.0)*r.world->environment()->terrain().grid().dx;
+    const auto wheel=r.world->digClearance(r.program,.35+narrow_margin+.02,-.32,.35+narrow_margin+.02,-.32,.1);
+    require(!wheel.clear && wheel.why.find("left wheel")!=std::string::npos,
+            "attached wheel support outside the chassis is included");
+    bool refused=false;
+    try { r.world->dig(0,0,0,0,.5,.15,r.program); }
+    catch(const std::invalid_argument &) { refused=true; }
+    require(refused,"actual machine dig refuses its support before editing");
+    require(r.world->snapshot(why)==before,"clearance and refused dig preserve the complete native snapshot");
+    const auto pose=posed(r.world->poses(),"rover");
+    const double reach=under.stand_off_m+.02;
+    const auto ahead=pose.position_m+Vec3{0,0,reach};
+    require(r.world->digClearance(r.program,ahead.x,ahead.z,ahead.x,ahead.z,.5).clear,"bounded reach clears the assembly");
+    require(!r.world->dig(ahead.x,ahead.z,ahead.x,ahead.z,.5,.15,r.program).edit.cells.empty(),"safe machine dig removes actual native ground");
+    const auto wide=r.world->digClearance(r.program,ahead.x,ahead.z,ahead.x,ahead.z,2);
+    require(!wide.clear,"a wider scoop cannot bypass footprint clearance");
+    std::cout<<"    shape-derived scoop stand-off "<<under.stand_off_m<<" m; wide scoop refused\n";
+}
+
 void groundSensorsReadActualHolesAndSurviveSaving() {
     Rover r=dryGroundRover();
     const auto at=posed(r.world->poses(),"rover").position_m;
@@ -1315,6 +1341,7 @@ void groundSensorsReadActualHolesAndSurviveSaving() {
 
 int main() {
     const std::pair<const char *, void (*)()> tests[] = {
+        {"machine digging preserves support of actual attached collision shapes",machineDigUsesActualAttachedCollisionShapes},
         {"ground probes read and avoid a native dry hole and survive saving",groundSensorsReadActualHolesAndSurviveSaving},
         {"it goes straight and turns on the spot", itGoesStraightAndTurnsOnTheSpot},
         {"it roams the shore and never gets wet", itRoamsTheShoreAndNeverGetsWet},

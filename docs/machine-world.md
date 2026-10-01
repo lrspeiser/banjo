@@ -1,5 +1,14 @@
 # The machine world
 
+**Support-aware digging, October 1:** [Measured native guard](player-experience-checklist.md#rover-excavation-support-checkpoint--october-1)
+checks the current attached collision shapes before machine scoops, including
+terrain triangles affected beyond the nominal scoop. Default reach adapts to
+that bounded footprint; a wider or explicit unsafe scoop gives a reason and
+removes nothing. Native/runner `dig` accepts an optional positive `program` id;
+machine tools always supply it. `dig_clearance` queries the same guard without
+advancing the world. Manual ground authoring and hover scoops retain their
+existing contracts. Recovery, secondary collapse and general routes remain open.
+
 The owner, 2026-09-15:
 
 > "I'm thinking of making banjo a planet where there are no organics, just

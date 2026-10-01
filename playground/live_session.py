@@ -2010,6 +2010,14 @@ class Live:
             if not all(math.isfinite(v) for v in out):
                 raise LiveError(f"{key} is not a number")
             return [out[0], out[-1]]
+        def dig_program():
+            value=body.get("program")
+            if isinstance(value,bool) or not isinstance(value,int) or not 0<value<=0xffffffff:
+                raise LiveError("dig program needs a positive native program id")
+            return value
+        if op == "dig_clearance":
+            return session.send(op=op,program=dig_program(),**{"from":xz("from"),
+                "to":xz("to",xz("from")),"width_m":float(body.get("width_m",.5))})
         if op == "dig":
             # A spade: the engine takes the ground down, rebuilds the colliders
             # it changed and wakes what they held. Bounded so a slip of the
@@ -2020,7 +2028,8 @@ class Live:
                 raise LiveError("a dig is 0.1 to 10 m wide and 0.02 to 5 m deep")
             start = xz("from")
             return session.send(**{"op": "dig", "from": start, "to": xz("to", start),
-                                   "width_m": width, "depth_m": depth})
+                                   "width_m": width, "depth_m": depth,
+                                   **({"program":dig_program()} if "program" in body else {})})
         if op == "deposit":
             radius = float(body.get("radius_m", 1.0))
             sand = float(body.get("sand_m3", 0.0))

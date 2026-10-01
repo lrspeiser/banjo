@@ -771,7 +771,7 @@ class TheSensesAndTheTools(unittest.TestCase):
                                                         "places": {"depot": [-3.0, 0.0], "dig site": [0.0, 4.0]}})
         did = machine_tools.run(ctx, machine_tools.Call("dig", {}, "routine"))
         ops = [c["op"] for c in ask.sent]
-        self.assertEqual(["survey", "dig", "ground_withdraw", "draw", "behave"], ops)
+        self.assertEqual(["dig_clearance", "survey", "dig", "ground_withdraw", "draw", "behave"], ops)
         dug = next(c for c in ask.sent if c["op"] == "dig")
         self.assertEqual(([0.0, 1.3], 0.5, 0.15), (dug["from"], dug["width_m"], dug["depth_m"]))
         self.assertEqual({"op": "ground_withdraw", "sand_m3": 0.0, "soil_m3": 0.0075},

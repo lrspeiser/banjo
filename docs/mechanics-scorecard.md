@@ -1,5 +1,14 @@
 # Banjo mechanics scorecard
 
+**Excavation policy boundary, October 1:** [Shape-based guard](player-experience-checklist.md#rover-excavation-support-checkpoint--october-1)
+reads native turned collision bounds over attached hinges, plus half scoop width
+and one terrain-grid diagonal. Fixture stand-off 1.23872 m; refused dig snapshot
+is identical; generated scoops retain 40.000000 / 29.994279 kg in 40 kg hoppers. This is a
+conservative action exclusion, no new ground, contact or traction law at 50 mm /
+`dt=1/240 s`. Secondary collapse and diagonal over-refusal are limitations.
+Glass/oak/iron and full conservation gates remain; physical recovery and native
+grade/traversal qualification are next.
+
 **Ground-probe boundary, October 1:** [Measured evidence](player-experience-checklist.md#rover-ground-sensor-checkpoint--october-1)
 reads signed native terrain discrepancy, default absolute threshold 0.12 m.
 The dry-hole fixture measures 0.581449 m; reopen differs by less than `1e-6 m`;

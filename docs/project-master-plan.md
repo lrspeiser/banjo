@@ -1,5 +1,11 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Support-aware machine excavation, October 1:** [Native guard](player-experience-checklist.md#rover-excavation-support-checkpoint--october-1)
+checks current attached solver shapes and affected terrain triangles before a
+machine dig. Both generated maps reject undermining the rover while normal
+scoops still load its hopper. Bounded physical recovery and native grades/routes
+remain next; this policy does not establish slope stability or add traction.
+
 **Rover support feedback, October 1:** [Measured checkpoint](player-experience-checklist.md#rover-ground-sensor-checkpoint--october-1)
 fits native ground probes to new rovers and shows actual hazards in the right
 panel. Ground/water remain distinct through authoring, AI and save/reload.

@@ -16,7 +16,7 @@ This is the current acceptance list, not a claim that all features are done.
 | 9. Workshop chat | Typing, sending and draft selection work; chat focus cannot be stolen by world key bindings | Native Chrome ordinary typing, submission, head edit and subsequent whole-item edit pass. Local failure cleanup and replacement textarea retain selection/disabled state. |
 | 10. Pick authoring | Whole pick appears in Lab; metal head modification has actual component geometry/material; Save and Make give actionable outcomes | Verified exact bootstrap source recovery includes head/handle. Explicit Recipe→Lab survives reload; head-only iron edit and Save pass. Supported oak Make debits stock and preserves existing machines. Mixed-material lattice joining remains unsupported: metal-head Make and visual shape improvement remain open. |
 | 11. Durability/repair | Integrity derives from actual recorded damage; supported repair requires matching material/energy and native restored/admitted geometry | Pending. No invented physical health, strength or free restoration. |
-| 12. Rover safety/recovery | Actual sensor readings visible; route/dig clearance avoids own support; ordinary recovery available with bounded forces/work | Ground/water probes and live right-panel readings verified; one native dry-hole avoidance/restart fixture passes. Own-support dig clearance, recovery and multi-terrain driving remain open. |
+| 12. Rover safety/recovery | Actual sensor readings visible; route/dig clearance avoids own support; ordinary recovery available with bounded forces/work | Ground/water probes and live right-panel readings verified; native dry-hole avoidance/restart passes. Collision-shape dig clearance refuses own support and permits default collection on both generated maps. Physical recovery and extended drive/route qualification remain open. |
 | 13. Water and hills | Gravity walking can leave water and climb ordinary hills; rover climbs measured grades without forced motion | Player controller verified on two generated river crossings and hills; declared deep-pool ascent, buoyancy, dive and recovery pass. Native avatar and rover hill capability remain open. |
 | 14. Output pickup and contained inputs | Output voxels fly into personal inventory on nearby walking; processor inputs stay in visible hoppers; rover delivery visibly fills them | Native/browser automatic output-only pickup and input bins implemented and verified. Fly leaves outputs untouched; server refuses auto-input pickup. Existing recorded dump/dock transfers retained; broad generated rover delivery and physical cargo/tipping remain open. |
 
@@ -26,7 +26,44 @@ journeys with measured acceptance. Keep CPU/native simulation separate from
 presentation, retain glass/oak/iron comparisons for physical changes, and publish
 verified coherent checkpoints regularly.
 
+## Rover excavation support checkpoint — October 1
+
+Machine digs carry their native program id. Native `digClearance` traverses
+the current attached hinge assembly (bounded to 64 non-anchored bodies), reads
+the solver's current turned collision-shape bounds and excludes any scoop/trench
+rectangle intersecting that footprint. The exclusion includes half scoop width
+plus one terrain-grid diagonal, because an edited height-field node changes
+adjacent support triangles. The native dig checks again before removing anything.
+`dig_clearance` is a read-only runner/Live query (`program`, `from`, optional
+`to`, `width_m`), returning `clear`, `stand_off_m` and `why`. Ordinary manual
+terrain edits remain possible; this is a machine digging policy.
+
+The routine's default ahead scoop uses the reported conservative assembly radius
+plus 20 mm, within its existing 2 m reach. Explicit targets/widths that would
+undermine it are refused, with a compact reason retained in its notes. This
+does not turn a flying scoop into a wheeled machine or alter native forces.
+
+The additional native case verifies a wheel outside the chassis, exact snapshot
+equality after refusal, a successful safe native cut and a rejected wider scoop.
+Measured fixture stand-off: 1.23872 m. All 14 native rover cases pass. Ordinary
+generated maps 4/7 refuse digging beneath the chassis without changing the
+snapshot, and normal routine scoops collect 40.000000 / 29.994279 kg into their
+40 kg hoppers (native removal varies with terrain).
+The affected 40-test rover-brain suite passes, retaining its native routine
+delivery and exact receiving/restart receipts. This is conservative collision-
+shape clearance, not proof of slope stability: diagonal trench rectangles may
+over-refuse; secondary collapse, traversing old excavations and a complete
+generated delivery route remain acceptance work. Hover scoops retain their
+existing exemption. Physical recovery and native grade qualification stay open.
+
+Final Windows gates: 37 resource/browser/live/API tests pass in 99.888 s;
+41 generated-scoop + rover-brain tests pass in 6.561 s. The rebuilt cart CTest
+passes in 0.55 s; all 286 native sources remain registered. These measurements
+qualify the guard and retained journeys, not a full material/conservation audit.
+
 ## Rover ground-sensor checkpoint — October 1
+
+Sensor implementation is published on GitHub main at `ff1b252`.
 
 Ground probes measure the signed discrepancy between the chassis tangent plane
 and the actual interpolated terrain collider surface: positive is a drop,

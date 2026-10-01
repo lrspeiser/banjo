@@ -1,5 +1,12 @@
 # Development status and handoff
 
+**Rover excavation support, October 1:** [Native guard and two-map checks](player-experience-checklist.md#rover-excavation-support-checkpoint--october-1)
+use the solver's current attached collision shapes and affected terrain footprint.
+Refused machine digs leave the complete snapshot unchanged; default scoops still
+collect 40.000000 / 29.994279 kg into 40 kg hoppers on the two maps. Fourteen native rover cases and the
+affected brain suite pass. This is a conservative action policy, not a new soil/
+traction law. Recovery, collapse hazards and extended drive/grade routes remain.
+
 **Rover support readings, October 1:** [Checkpoint](player-experience-checklist.md#rover-ground-sensor-checkpoint--october-1)
 adds native ground probes, ground/water authoring and live right-panel readouts.
 A real dry-hole avoidance/save test, 12 resource/player journeys, the native cart

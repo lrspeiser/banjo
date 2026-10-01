@@ -404,6 +404,9 @@ def dig(ctx: senses.Context, call: Call) -> dict[str, Any]:
         raise ValueError("it has no hopper to dig into")
     if r.load_full():
         return {"did": "dug nothing: its hopper is full", "load": r.load_reading()}
+    def refused(words):
+        if not r.notes or r.notes[-1]!=words:r.note(words)
+        return {"did":"dug nothing: "+words,"idle":True,"load":r.load_reading()}
     store = senses._store(ctx)
     bite = _bite(ctx, call.args)
     if bite.get("back_off_m"):
@@ -418,12 +421,23 @@ def dig(ctx: senses.Context, call: Call) -> dict[str, Any]:
     point = bite["point"]
     depth = min(float(call.args.get("depth_m", DIG_DEPTH_M)), 1.0)
     width = min(float(call.args.get("width_m", DIG_WIDTH_M)), 2.0)
+    if not _flies(ctx):
+        clearance=_act(ctx,op="dig_clearance",program=ctx.program["id"],
+                       **{"from":point,"to":point},width_m=width)
+        automatic=not call.args.get("place") and call.args.get("point") is None and "ahead_m" not in call.args
+        if automatic and clearance.get("stand_off_m"):
+            reach=max(DIG_AHEAD_M,float(clearance["stand_off_m"])+.02)
+            if reach>DIG_REACH_M:
+                return refused(f"a {width:g} m scoop needs {reach:.1f} m clearance, beyond its {DIG_REACH_M:g} m reach; use a narrower scoop")
+            point=senses.point_ahead(ctx,reach)
+        elif clearance.get("clear") is False:
+            return refused(clearance["why"])
     # The battery must have the work in it before the ground is touched: a
     # scoop's worth at the depth asked, at the ground's density.
     here = ctx.survey(point[0], point[1])
     if not here.get("on_the_ground", True) and "ground_m" not in here:
         return {"did": "dug nothing: the ground ahead is off the edge of the room"}
-    reply = _act(ctx, op="dig", **{"from": point, "to": point}, width_m=width, depth_m=depth)
+    reply = _act(ctx, op="dig", program=ctx.program["id"],**{"from": point, "to": point}, width_m=width, depth_m=depth)
     dug = reply.get("dug") or {}
     kg = float(dug.get("kg") or 0.0)
     sand, soil = float(dug.get("sand_m3") or 0.0), float(dug.get("soil_m3") or 0.0)
@@ -1031,7 +1045,8 @@ TOOLS: dict[str, Tool] = {t.name: t for t in (
     Tool("go_to", "Go to a place it knows, the person, a point or a bearing, and stop a metre off, or stand "
                   "further out if it is told how far off to stop.", go_to, {**_WHERE, **_FOR_S, **_SHORT}),
     Tool("dig", "Take one scoop into its hopper, drawing the work from its battery: at the place it is working, "
-                "if it is given one, and otherwise straight ahead of it.", dig, _DIG),
+                "if it is given one, and otherwise straight ahead with collision-shape clearance. A scoop may not "
+                "remove support below its attached wheels/body; use a narrower scoop or move if blocked.", dig, _DIG),
     Tool("dump", "Empty its hopper ahead of it: soil onto the ground, goods onto the stockpile there (a "
                  "place it knows, or the nearest, or a new heap).", dump, {"place": _WHERE["place"]}),
     Tool("take", "Take goods off the stockpile within reach of it into its hopper: one substance, or "
