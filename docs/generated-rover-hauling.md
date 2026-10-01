@@ -1,5 +1,9 @@
 # Generated rover hauling — October 1
 
+Published implementation: `0806702c311d26b0fb7d61e42bfcc68f34da8eba` on
+GitHub main. The port 8770 preview runs this checkpoint's Python sources with
+the native engine/API baseline recorded below.
+
 ## Implemented
 
 New generated worlds place their rover on the working approach toward the
