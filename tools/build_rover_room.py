@@ -119,7 +119,10 @@ REAR_SENSORS_LOCAL_M = ((0.55, 0.36, -0.9), (-0.55, 0.36, -0.9))
 SENSOR_DEPTH_MM = 3.0
 MACHINE = {"capacity_j": 100000.0, "voltage_v": 24.0,
            "stall_torque_n_m": 20.0, "no_load_rpm": 60.0, "brake_torque_n_m": 40.0}
-PROGRAM = {"setting": 1.0, "climb_deg": 8.0}
+# Qualified for this unloaded 43.55 kg oak-wheel assembly and existing 20 N m
+# motors: docs/rover-grades.md. This is an autonomous refusal threshold;
+# terrain probes can still refuse sharp changes before that pitch is reached.
+PROGRAM = {"setting": 1.0, "climb_deg": 12.0}
 SUN = {"elevation_deg": 50.0, "azimuth_deg": 200.0, "irradiance_w_m2": 1000.0}
 # The panel, in the rover's own frame: the top of the glass plate on its deck.
 PANEL_AT_LOCAL_M = (0.0, 0.39, -0.05)

@@ -1623,13 +1623,16 @@ struct LiveWorld::Impl {
                         !terrain.cellAt(at.center_of_mass_world_m.x, at.center_of_mass_world_m.z)) {
                         sensor.reading_m = 10.0; // bounded out-of-map hazard
                     } else {
-                        // A tangent plane through the ground under the chassis.
-                        // Local mounting height does not affect a ground probe.
-                        // Read the same interpolated triangles as its collider.
-                        const Vec3 along = at.orientation_world.rotate(
-                            Vec3{sensor.at_local_m.x, 0.0, sensor.at_local_m.z});
-                        sensor.reading_m = terrain.heightAt(at.center_of_mass_world_m.x,
-                                                          at.center_of_mass_world_m.z) + along.y -
+                        // Reference the terrain under the chassis, not its
+                        // instantaneous pitch: suspension/contact settling can
+                        // otherwise make a continuous hill look like a hole.
+                        // Half-cell samples blend adjacent collider triangles;
+                        // the probe still compares their actual interpolated height.
+                        const double x=at.center_of_mass_world_m.x,z=at.center_of_mass_world_m.z;
+                        const double d=.5*terrain.grid().dx;
+                        const double gx=(terrain.heightAt(x+d,z)-terrain.heightAt(x-d,z))/(2*d);
+                        const double gz=(terrain.heightAt(x,z+d)-terrain.heightAt(x,z-d))/(2*d);
+                        sensor.reading_m = terrain.heightAt(x,z) + gx*(sensor.at_m.x-x) + gz*(sensor.at_m.z-z) -
                                            terrain.heightAt(sensor.at_m.x, sensor.at_m.z);
                     }
                 } else if (environment) sensor.reading_m = environment->waterDepthAt(sensor.at_m.x, sensor.at_m.z);

@@ -532,6 +532,14 @@ controllers by their names:
 - Its sensors inform the program's avoidance; `stops` is 1 for the front or
   -1 for the rear (default 1 for old declarations).
 
+New generated stock oak-wheel rovers use the measured 12° declaration;
+the distinct editable Workshop assembly retains 8° and saved programs retain
+their explicit values. [Grade experiments](rover-grades.md) distinguish unloaded
+assembly capacity from a safe general route. Ground probes compare actual
+terrain height with a half-cell terrain-gradient reference under the chassis,
+so body pitch alone does not invent a step; sharp curvature can still warn.
+Motor, contact and material laws are unchanged.
+
 The runner's `program` operation makes one
 (`{"op": "program", "name", "kind", "left": control id, "right": control id,
 "body", "setting", "climb_deg"}`); `sense` with `"program"` in place of

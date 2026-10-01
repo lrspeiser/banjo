@@ -1,5 +1,17 @@
 # Banjo mechanics scorecard
 
+**Stock-rover grade boundary, October 1:** [Material/energy measurements](rover-grades.md)
+retain 50 mm / `dt=1/240 s` and existing native laws. At 12° glass/oak/iron
+assemblies weigh 60.8935 / 43.5471 / 112.644 kg and advance 2.863 / 3.645 /
+0.404 m in six seconds. Work minus full native mechanical-energy change is
+2.583 / 16.353 / 0.665 J, unclosed. Motor battery residuals remain below
+`1e-7 J`; point slip is sampled, not an every-step certificate. Generated
+oak-rover policy is 12°, native ordinary-hill reach 3.341 m versus 1.281 m
+at 8°. Ground reference is terrain-derived; tight curvature still warns.
+No friction, stiffness, deformation or constitutive law changed. Actual
+payload inertia, anchored-ground reaction accounting and general route/soil
+grade certification remain unsupported; inspect failed delivery next.
+
 **Recovery actuator boundary, October 1:** [Native grip checkpoint](player-experience-checklist.md#rover-recovery-checkpoint--october-1)
 reuses 800 N / 60 N m wielding at 50 mm / `dt=1/240 s`. A real 0.601035 m pit
 drop is recovered with 1.23972 m lift and 541.516 J measured hand work; native

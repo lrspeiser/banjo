@@ -1,5 +1,13 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Measured stock-rover grades, October 1:** [Native experiments](rover-grades.md)
+qualify the generated unloaded oak-wheel rover's 12° declaration with actual
+motors, material-derived mass and point slip. Ground readings use the terrain
+reference rather than chassis pitch; sharp curvature still warns. Saved settings
+and the distinct editable Workshop assembly retain their declarations. Two
+300 s generated runs fail delivery, so route/intake qualification remains next.
+Physical cargo, reacting avatars, repair and full conservation remain open.
+
 **Physical rover recovery, October 1:** [Measured external grip](player-experience-checklist.md#rover-recovery-checkpoint--october-1)
 lets a nearby player stop, lift/pull and release a rover using native bounded
 force/torque. Personal ownership, collected load, failed-save/retry and reload

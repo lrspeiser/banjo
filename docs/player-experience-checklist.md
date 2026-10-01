@@ -17,7 +17,7 @@ This is the current acceptance list, not a claim that all features are done.
 | 10. Pick authoring | Whole pick appears in Lab; metal head modification has actual component geometry/material; Save and Make give actionable outcomes | Verified exact bootstrap source recovery includes head/handle. Explicit Recipe→Lab survives reload; head-only iron edit and Save pass. Supported oak Make debits stock and preserves existing machines. Mixed-material lattice joining remains unsupported: metal-head Make and visual shape improvement remain open. |
 | 11. Durability/repair | Integrity derives from actual recorded damage; supported repair requires matching material/energy and native restored/admitted geometry | Pending. No invented physical health, strength or free restoration. |
 | 12. Rover safety/recovery | Actual sensor readings visible; route/dig clearance avoids own support; ordinary recovery available with bounded forces/work | Ground/water probes, support-aware digging and nearby bounded recovery verified. Ordinary recovery stops the rover, preserves collected load and restores the personal grip on reload. Native actual-pit lift passes; extended drive/route/grade qualification remains open. |
-| 13. Water and hills | Gravity walking can leave water and climb ordinary hills; rover climbs measured grades without forced motion | Player controller verified on two generated river crossings and hills; declared deep-pool ascent, buoyancy, dive and recovery pass. Native avatar and rover hill capability remain open. |
+| 13. Water and hills | Gravity walking can leave water and climb ordinary hills; rover climbs measured grades without forced motion | Player river/hill and deep-pool controls pass. [Native stock-rover experiments](rover-grades.md) qualify a 12° generated oak-rover declaration with glass/oak/iron comparisons and native terrain climbs; sharp ground warnings remain. General generated routes, physical payload and native avatars remain open. |
 | 14. Output pickup and contained inputs | Output voxels fly into personal inventory on nearby walking; processor inputs stay in visible hoppers; rover delivery visibly fills them | Native/browser automatic output-only pickup and input bins implemented and verified. Fly leaves outputs untouched; server refuses auto-input pickup. Existing recorded dump/dock transfers retained; broad generated rover delivery and physical cargo/tipping remain open. |
 
 Priorities: preserve the verified transfer checkpoint, repair fresh entry and
@@ -25,6 +25,29 @@ Workshop/tool/capacity blockers, then connect the remaining ordinary-player
 journeys with measured acceptance. Keep CPU/native simulation separate from
 presentation, retain glass/oak/iron comparisons for physical changes, and publish
 verified coherent checkpoints regularly.
+
+## Stock-rover grade checkpoint — October 1
+
+[Full grade measurements](rover-grades.md) record 18 material/grade scenarios,
+autonomous ramp/terrain cases, actual motor torque-speed envelope, battery
+residuals and unclosed mechanical work. Ground probes no longer use chassis
+pitch as the terrain reference. An initially tilted flat-terrain probe reads
+zero, then detects a real 0.5 m cut. Native ordinary-hill travel improves from
+1.28087 to 3.34079 m with 8° / 12° declarations; tight curvature still warns.
+New generated stock oak rovers use 12°; saved programs and the distinct editable
+Workshop assembly retain their settings.
+
+Windows/MSVC Release: 19 native cases pass, three affected CTest suites pass
+in 11.22 s, 15 resource/player/browser checks pass in 104.936 s, source guard
+286/286, rebuilt preview Chrome fresh entry/readings/recovery/release passes
+with 794.61 N pull, 544.19 J hand work and zero exceptions. Native runner and
+platform CLI were rebuilt; ordinary preview remains on port 8770.
+
+Two 300 s baseline generated routes at source `5ab072f` fail to deliver:
+seed 4 never loads, seed 7 holds 40 kg but never reaches its intake. Next
+qualify actual route/obstacle/arrival and receiving receipts on both maps.
+Ledger cargo adds no native inertia; this is not a material realism,
+full conservation or general grade/route certificate. All fourteen gates remain.
 
 ## Rover recovery checkpoint — October 1
 

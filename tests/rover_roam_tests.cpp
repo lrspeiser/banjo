@@ -39,6 +39,7 @@
 //    out. The order is the one bit of difference between 8 and 9.
 
 #include "fastlattice/LiveWorld.hpp"
+#include "fastlattice/PreciseRigidScene.hpp"
 #include "fastlattice/TileImpactScene.hpp"
 
 #include <nlohmann/json.hpp>
@@ -151,12 +152,12 @@ struct Pins {
 };
 // Each wheel on its pin through its mount, and the caster on its swivel and its
 // axle, where the rover was built (`at`).
-Pins pinUp(LiveWorld &world, Vec3 at = {}) {
+Pins pinUp(LiveWorld &world, Vec3 at = {}, Quat facing = {}) {
     Pins p;
-    p.left = world.hinge("rover", "rover: left wheel", at + Vec3{0.1925, 0.16, -0.32}, {1.0, 0.0, 0.0});
-    p.right = world.hinge("rover", "rover: right wheel", at + Vec3{-0.1925, 0.16, -0.32}, {1.0, 0.0, 0.0});
-    p.swivel = world.hinge("rover", "rover: caster", at + Vec3{0.0, 0.31, 0.38}, {0.0, 1.0, 0.0});
-    p.caster = world.hinge("rover: caster", "rover: caster wheel", at + Vec3{0.0, 0.08, 0.32}, {1.0, 0.0, 0.0});
+    p.left = world.hinge("rover", "rover: left wheel", at + facing.rotate({0.1925, 0.16, -0.32}), facing.rotate({1.0, 0.0, 0.0}));
+    p.right = world.hinge("rover", "rover: right wheel", at + facing.rotate({-0.1925, 0.16, -0.32}), facing.rotate({1.0, 0.0, 0.0}));
+    p.swivel = world.hinge("rover", "rover: caster", at + facing.rotate({0.0, 0.31, 0.38}), facing.rotate({0.0, 1.0, 0.0}));
+    p.caster = world.hinge("rover: caster", "rover: caster wheel", at + facing.rotate({0.0, 0.08, 0.32}), facing.rotate({1.0, 0.0, 0.0}));
     if (!p.left || !p.right || !p.swivel || !p.caster) throw std::runtime_error("the rover could not be pinned");
     return p;
 }
@@ -1273,6 +1274,202 @@ Rover dryGroundRover() {
     return r;
 }
 
+TileImpactRequest rampRoom(double grade, const std::string &material) {
+            const double angle=-grade*kPi/180.;
+            const Quat q{std::cos(angle/2),std::sin(angle/2),0,0};
+            const Vec3 floor{0,10,0},at=floor+Vec3{0,.02,0};
+            auto request=flatRoom();
+            SceneBody ramp; ramp.name="ramp";ramp.shape=BodyShape::Box;
+            ramp.material=MaterialPreset::Concrete;ramp.anchored=true;
+            ramp.dimensions_m={3,.1,20};ramp.center_m=floor+q.rotate({0,-.05,0});
+            ramp.rotation_deg={-grade,0,0};request.bodies={ramp};
+            auto scene=nlohmann::json::parse(roverScene({}));
+            for(auto &b:scene) {
+                b["position_m"]={at.x,at.y,at.z};b["orientation_wxyz"]={q.w,q.x,q.y,q.z};
+                if(b["name"]=="rover: left wheel" || b["name"]=="rover: right wheel") {
+                    b["material"]=material;
+                    for(auto &part:b["parts"])if(part["name"]=="wheel")part["material"]=material;
+                }
+            }
+            request.precise_rigid_scene_json=scene.dump();
+            return request;
+}
+
+void rampGradesMeasureNativeDriveSlipAndEnergy() {
+    for(const std::string material : {"glass","oak","iron"}) {
+        for(double grade : {0.,5.,8.,12.,16.,20.}) {
+            const double angle=-grade*kPi/180.;
+            const Quat q{std::cos(angle/2),std::sin(angle/2),0,0};
+            const Vec3 floor{0,10,0},at=floor+Vec3{0,.02,0};
+            auto request=rampRoom(grade,material);
+            const auto compiled=readPreciseRigidScene(request.precise_rigid_scene_json);
+            auto world=LiveWorld::open(request);const auto m=fit(*world,pinUp(*world,at,q));
+            for(int i=0;i<2*240;i++)tick(*world);
+            const auto before=world->poses();const auto from=posed(before,"rover");
+            double mass=0;for(const auto &p:before)mass+=p.mass_kg;
+            const double energy=world->mechanicalEnergyJ();
+            const double charge=world->energyStores()[0].charge_j;
+            tell(*world,m.left,1,1);tell(*world,m.right,1,1);
+            const Vec3 normal=q.rotate({0,1,0}),tangent=q.rotate({0,0,1});
+            double torque=0,slip=0,torque_excess=0;int contacts=0;
+            std::string why;
+            for(int i=0;i<6*240;i++) {
+                const auto previous=world->motors();
+                tick(*world);
+                for(const auto &motor:world->motors()) {
+                    torque=std::max(torque,std::abs(motor.torque_n_m));
+                    const auto was=std::find_if(previous.begin(),previous.end(),[&](const auto &p){return p.id==motor.id;});
+                    // Stall torque is at zero speed, not a current limiter. A
+                    // back-driven DC motor can exceed it; a brake has its own bound.
+                    const double bound=motor.state=="driving" ? std::abs(motor.stall_torque_n_m*
+                        (motor.command-was->speed_rad_s/motor.no_load_rad_s)) : motor.brake_torque_n_m;
+                    torque_excess=std::max(torque_excess,std::abs(motor.torque_n_m)-bound);
+                }
+                if(i%240!=239)continue;
+                const auto saved=nlohmann::json::parse(world->snapshot(why));
+                for(const auto &b:saved["bodies"]) {
+                    if(b["name"]!="rover: left wheel" && b["name"]!="rover: right wheel")continue;
+                    const auto &s=b["pose"];
+                    const auto vector=[](const auto &v){return Vec3{v[0].template get<double>(),v[1].template get<double>(),v[2].template get<double>()};};
+                    const auto turn=s["q_wxyz"];const Quat facing{turn[0],turn[1],turn[2],turn[3]};
+                    const auto name=b["name"].get<std::string>();
+                    const auto authored=std::find_if(compiled.begin(),compiled.end(),[&](const auto &part){return part.name==name;});
+                    const auto rim=std::find(authored->part_names.begin(),authored->part_names.end(),"wheel")-authored->part_names.begin();
+                    const Vec3 axis=facing.rotate({1,0,0});
+                    const Vec3 radial=normal-axis*dot(normal,axis);
+                    const Vec3 lever=facing.rotate(authored->parts[static_cast<std::size_t>(rim)].center_local_m)-radial*(.16/length(radial));
+                    const Vec3 point=vector(s["com_m"])+lever;
+                    // Actual native rigid v/w at the cylinder's supporting point.
+                    // Only sample where its analytical support touches this plane.
+                    if(std::abs(dot(point-floor,normal))>.01)continue;
+                    const Vec3 velocity=vector(s["v_m_s"])+cross(vector(s["w_rad_s"]),lever);
+                    slip=std::max(slip,length(velocity-normal*dot(velocity,normal)));++contacts;
+                }
+            }
+            const auto to=posed(world->poses(),"rover");
+            double work=0,heat=0,drawn=0;
+            for(const auto &motor:world->motors()){work+=motor.work_j;heat+=motor.heat_j;drawn+=motor.drawn_j;}
+            const double battery_residual=charge-world->energyStores()[0].charge_j-drawn;
+            const double mechanical_residual=work-(world->mechanicalEnergyJ()-energy);
+            const double along=dot(to.position_m-from.position_m,tangent);
+            require(torque_excess<1e-4,"ramp drive retains declared DC torque-speed and brake bounds (float joint impulses)");
+            require(std::abs(battery_residual)<1e-7,"ramp battery debit equals actual motor draw");
+            require(std::isfinite(mechanical_residual) && contacts>0,"ramp measures finite energy and real contact-point slip");
+            if(grade==0 && material=="oak")require(along>4,"ordinary oak rover drives at least four metres on the flat ramp");
+            std::cout<<"    ramp "<<material<<" "<<grade<<" deg; mass "<<mass<<" kg; uphill "<<along
+                     <<" m; rise "<<to.position_m.y-from.position_m.y<<" m; slip "<<slip
+                     <<" m/s ("<<contacts<<" contacts); max torque "<<torque<<" N m; motor work "<<work
+                     <<" J; torque envelope excess "<<torque_excess<<" N m"
+                     <<"; heat "<<heat<<" J; battery residual "<<battery_residual
+                     <<" J; unclosed work - delta mechanical "<<mechanical_residual<<" J\n";
+        }
+    }
+}
+
+void autonomousGradeUsesMeasuredLimit() {
+    for(const auto [grade,limit] : {std::pair{10.,8.},std::pair{10.,12.},std::pair{16.,12.}}) {
+        const double angle=-grade*kPi/180.;
+        const Quat q{std::cos(angle/2),std::sin(angle/2),0,0};
+        const Vec3 at{0,10.02,0},tangent=q.rotate({0,0,1});
+        auto world=LiveWorld::open(rampRoom(grade,"oak"));
+        const auto m=fit(*world,pinUp(*world,at,q));
+        const auto id=world->program("rover","roam",m.left,m.right,"rover",1.,limit);
+        require(id!=0,"ramp autonomous program is admitted");
+        for(int i=0;i<2*240;i++)tick(*world);
+        const auto from=posed(world->poses(),"rover").position_m;
+        runIt(*world,id,true,1);
+        bool refused=false;double max_pitch=0;
+        for(int i=0;i<6*240;i++) {
+            tick(*world);const auto said=programOf(*world,id);
+            refused=refused || said.why.find("steeper than it climbs")!=std::string::npos;
+            max_pitch=std::max(max_pitch,said.pitch_deg);
+        }
+        const double uphill=dot(posed(world->poses(),"rover").position_m-from,tangent);
+        std::cout<<"    autonomous ramp "<<grade<<" deg, declared limit "<<limit
+                 <<" deg; uphill "<<uphill<<" m; max pitch "<<max_pitch<<" deg; refused "<<refused<<"\n";
+        if(grade==10 && limit==12) {
+            require(!refused && uphill>3,"qualified oak rover climbs ordinary grade without forced motion");
+        } else require(refused,"autonomous rover refuses a grade beyond its declaration");
+        for(const auto &j:world->joints())require(j.attached,"ramp climbing preserves the assembly");
+        std::string why;const auto saved=world->snapshot(why);
+        auto again=LiveWorld::open(rampRoom(grade,"oak"),saved);
+        require(programOf(*again,id).climb_deg==limit,"reopen retains the explicit grade limit");
+    }
+}
+
+void autonomousGradesOnNativeTerrain() {
+    double old_reach=0,new_reach=0;
+    for(double cell:{.25,.125}) {
+    for(double limit:{8.,12.}) {
+        auto request=shoreRoom();auto environment=nlohmann::json::parse(request.environment_scene_json);
+        auto &generation=environment["terrain"]["generate"];
+        generation["lake_level_m"]=0.;generation["cell_m"]=cell;
+        request.environment_scene_json=environment.dump();request.precise_rigid_scene_json="";
+        auto survey=LiveWorld::open(request);
+        const double z=cell==.25 ? 9. : 2.;
+        const auto height=[&](double point){return survey->environment()->terrain().heightAt(0,point);};
+        const Vec3 at{0,height(z)+.02,z};
+        const double angle=-std::atan((height(z+.38)-height(z-.72))/1.1);
+        const Quat q{std::cos(angle/2),std::sin(angle/2),0,0};
+        auto scene=nlohmann::json::parse(roverScene(at));
+        for(auto &body:scene)body["orientation_wxyz"]={q.w,q.x,q.y,q.z};
+        request.precise_rigid_scene_json=scene.dump();survey.reset();
+        auto world=LiveWorld::open(request);const auto m=fit(*world,pinUp(*world,at,q));
+        const auto id=world->program("rover","roam",m.left,m.right,"rover",1.,limit);
+        for(double side:{-.55,0.,.55})
+            require(world->programSense(id,"ground","rover",at+q.rotate({side,.36,1.5}),.12),"native terrain ground probe admitted");
+        for(int i=0;i<2*240;i++)tick(*world);
+        const auto from=posed(world->poses(),"rover").position_m;
+        runIt(*world,id,true,1);
+        bool refused=false,hazard=false;double furthest=0,max_pitch=0,reading=0;
+        for(int i=0;i<6*240;i++) {
+            tick(*world);const auto said=programOf(*world,id);
+            furthest=std::max(furthest,posed(world->poses(),"rover").position_m.z-from.z);
+            max_pitch=std::max(max_pitch,said.pitch_deg);
+            for(const auto &s:said.sensors){hazard=hazard||s.sees;reading=std::max(reading,std::abs(s.reading_m));}
+            if(said.why.find("steeper than it climbs")!=std::string::npos){refused=true;break;}
+        }
+        std::cout<<"    native dry basin, grid "<<cell<<" m, limit "<<limit<<" deg; uphill reach "<<furthest
+                 <<" m; max pitch "<<max_pitch<<" deg; ground discrepancy "<<reading<<" m; refused "<<refused<<"\n";
+        if(cell==.125) {
+            require(hazard && reading>.12 && furthest<1,"sharp curvature retains a bounded ground warning before driving into it");
+        } else if(limit==8) {
+            require(!hazard,"ordinary continuous hill is not mistaken for a ground hole");
+            require(refused,"old declaration turns away when actual pitch exceeds its limit");old_reach=furthest;
+        } else {
+            require(!hazard,"ordinary continuous hill is not mistaken for a ground hole");
+            require(!refused && max_pitch>8,"qualified rover climbs native terrain beyond the old pitch limit");new_reach=furthest;
+        }
+    }
+    }
+    require(new_reach>old_reach+.5,"qualified declaration extends native hill climbing without forced motion");
+}
+
+void groundProbeDoesNotTreatBodyPitchAsTerrain() {
+    auto request=shoreRoom();auto environment=nlohmann::json::parse(request.environment_scene_json);
+    environment["terrain"]["generate"]["kind"]="flat";
+    environment["terrain"]["generate"]["lake_level_m"]=0.;
+    request.environment_scene_json=environment.dump();
+    // A declared initially tilted pose above a flat surface. This measures
+    // the probe before falling; it never assigns a runtime pose or velocity.
+    const Vec3 at{0,2,0};const double angle=-20*kPi/180.;
+    const Quat q{std::cos(angle/2),std::sin(angle/2),0,0};
+    auto scene=nlohmann::json::parse(roverScene(at));
+    for(auto &body:scene)body["orientation_wxyz"]={q.w,q.x,q.y,q.z};
+    request.precise_rigid_scene_json=scene.dump();
+    auto world=LiveWorld::open(request);const auto m=fit(*world,pinUp(*world,at,q));
+    const auto id=world->program("rover","roam",m.left,m.right,"rover",1.,12.);
+    require(world->programSense(id,"ground","rover",at+q.rotate({0,.36,1.5}),.12),"tilted ground probe admitted");
+    const auto before=programOf(*world,id).sensors[0];
+    require(!before.sees && std::abs(before.reading_m)<1e-9,"body pitch alone does not invent a ground discontinuity");
+    world->setCarryLimitKg(10000);
+    require(!world->dig(-.5,before.at_m.z,.5,before.at_m.z,.8,.5).edit.cells.empty(),"probe experiment cuts real flat terrain");
+    for(int i=0;i<24;i++)tick(*world);
+    const auto after=programOf(*world,id).sensors[0];
+    require(after.sees && after.reading_m>.35,"same tilted probe detects the actual cut");
+    std::cout<<"    tilted flat probe "<<before.reading_m<<" m; actual cut "<<after.reading_m<<" m\n";
+}
+
 void boundedHandRecoversAnExcavatedRover() {
     Rover r=dryGroundRover();
     auto &world=*r.world;
@@ -1395,8 +1592,12 @@ void groundSensorsReadActualHolesAndSurviveSaving() {
     require(closest<.8,"native torque/brakes keep the chassis before its dry hole");
 }
 
-int main() {
+int main(int argc, char **argv) {
     const std::pair<const char *, void (*)()> tests[] = {
+        {"ground probes distinguish actual terrain from body pitch",groundProbeDoesNotTreatBodyPitchAsTerrain},
+        {"autonomous rover climbs native terrain to its declared pitch limit",autonomousGradesOnNativeTerrain},
+        {"autonomous rover uses declared grade limit with actual native motors",autonomousGradeUsesMeasuredLimit},
+        {"native ramp grades measure material mass, bounded torque, contact slip and energy",rampGradesMeasureNativeDriveSlipAndEnergy},
         {"bounded native hand recovers a rover from an actual excavation",boundedHandRecoversAnExcavatedRover},
         {"machine digging preserves support of actual attached collision shapes",machineDigUsesActualAttachedCollisionShapes},
         {"ground probes read and avoid a native dry hole and survive saving",groundSensorsReadActualHolesAndSurviveSaving},
@@ -1415,7 +1616,10 @@ int main() {
         {"it backs out of where it gets nowhere, and says when it cannot",
          itBacksOutOfWhereItGetsNowhereAndSaysWhenItCannot},
     };
+    int ran=0;
     for (const auto &[name, test] : tests) {
+        if(argc>1 && std::string(name).find(argv[1])==std::string::npos)continue;
+        ++ran;
         const int before = failures;
         try {
             test();
@@ -1425,6 +1629,7 @@ int main() {
         }
         if (failures == before) std::cout << "[PASS] " << name << std::endl;
     }
+    require(ran>0,"test filter matches a registered native scenario");
     std::cout << (failures == 0 ? "all passed" : std::to_string(failures) + " failed") << std::endl;
     return failures == 0 ? 0 : 1;
 }

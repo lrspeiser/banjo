@@ -1,5 +1,15 @@
 # Development status and handoff
 
+**Native hill checkpoint, October 1:** [Measurements and limitations](rover-grades.md)
+cover glass/oak/iron rear wheels at six grades, autonomous ramp and native
+terrain climbs, pitch-independent ground reference and retained sharp warnings.
+New generated stock rovers use 12°; the distinct editable Workshop rover and
+existing saves keep their declarations. Nineteen native cases, three affected
+CTest suites and 15 resource/player/browser tests pass (104.936 s for the latter).
+The rebuilt 8770 preview passes fresh-world Chrome recovery with zero exceptions.
+Two prior-source 300 s routes make no delivery; route/intake planning and the
+generator's more permissive flood-fill limit remain open. Full goal stays active.
+
 **Nearby rover recovery, October 1:** [Native/API/Chrome evidence](player-experience-checklist.md#rover-recovery-checkpoint--october-1)
 adds Take hold to recover and Release to the right and machine panels. Actual
 bounded grip lifts an excavated attached rover; two-map collected-load,

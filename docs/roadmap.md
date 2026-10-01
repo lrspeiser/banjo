@@ -1,5 +1,14 @@
 # Banjo roadmap and acceptance gates
 
+**Stock-rover grade acceptance, October 1:** [Measured native hill work](rover-grades.md)
+extends generated oak-rover autonomy to 12°, retains ground/sharp-curvature
+refusals and keeps saved and distinct editable assemblies' settings. Native
+19-case and affected room/brain/Workshop/resource/browser gates pass. Next
+replay both generated routes, inspect actual obstacles/intake arrival and require
+positive receiving receipts followed by processing and personal output pickup.
+Reconcile the generator's declared flood fill with the measured assembly and
+route footprint. Physical payload/tipping and material-funded repair remain.
+
 **Recovery acceptance, October 1:** [Nearby bounded recovery](player-experience-checklist.md#rover-recovery-checkpoint--october-1)
 passes an actual native pit lift, personal/shared hand refusals, real scoop-load
 preservation, failure/retry/reopen and ordinary Chrome controls. Next qualify
