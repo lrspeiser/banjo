@@ -1,6 +1,6 @@
 # Recipe supply checkpoint — October 1, 2026
 
-Implementation publication is recorded after the verified checkpoint push.
+Published implementation: `60abf04` on GitHub main.
 Player item 7 advances but remains partial; the full fourteen-item goal stays
 active (4 verified, 9 partial, durability/repair pending).
 
