@@ -10,7 +10,7 @@ This is the current acceptance list, not a claim that all features are done.
 | 3. Fresh start | Ordinary entry creates a new playable generated map with bootstrap equipment; samples remain in Debug | Chrome verifies two plain entries create different generated worlds. Explicit world/scene/QA links preserved. |
 | 4. Resource discovery | Deposits have readable visual cues; selection shows actual substance, quantity, reachable gathering action | Ledger extraction rings/labels implemented and present in Chrome; ground selection shows actual reserve/grade/rover action. Full selection usability review pending. These are extraction areas, not native ore-cell composition. |
 | 5. Gravity mode | Menu toggles exploration/gravity walking; ground support, falling, grounded jump and collision boundaries verified | Chrome verifies menu, falling, one grounded jump per press and fly altitude. Kinematic terrain controller: native physical avatar/body collision boundaries remain open. |
-| 6. Component inspection | Selected item can expand real components, with names/materials and a return to assembled view | Precise compound parts have a presentation-only expansion; names/material labels, full multi-body assemblies and dedicated visual verification remain pending. No synthetic fracture parts. |
+| 6. Component inspection | Selected item can expand real components, with names/materials and a return to assembled view | Verified connected rover assembly, actual pick cell partition, names/materials, persistent expansion, Return to assembled and separate native-cell view. Full native-part membership, unchanged physical state, reduced motion and watched inspection pass. See component checkpoint below. |
 | 7. Recipe guidance | Select recipe → exact personal/shared shortages, acquisition routes, blocking skill/equipment | Expandable card materials/acquisition routes implemented; native connected tool readiness fixed without granting strength. Full shortage/route browser journey pending. |
 | 8. Gathering loop | Reach/find/make tool, explain capacity/refusal, visible carried stock in World, explicit empty/store/use action | World load meter shows actual native carried mass/limit/materials; full load displays stopped digging and H emptying guidance. Chrome HUD check passes; complete tool/full/empty journey pending. |
 | 9. Workshop chat | Typing, sending and draft selection work; chat focus cannot be stolen by world key bindings | Native Chrome ordinary typing, submission, head edit and subsequent whole-item edit pass. Local failure cleanup and replacement textarea retain selection/disabled state. |
@@ -38,3 +38,34 @@ Focused checks: resource suite (including two-guest failure/restart/races),
 Workshop fitting 47, chat 38, tools 7, solar 9, live session 12, and both CSP
 world-address/current-file hash checks. Remaining acceptance is listed above;
 the twelve-item goal remains active.
+
+## Component inspection checkpoint — October 1
+
+Selection traverses actual attached joints (bounded to 64 bodies) and expands
+reported precise parts (bounded to 256). Authored lattice boxes partition only
+reported cells: every current cell must be assigned and every named component
+must retain matter; otherwise current body matter is shown together. No material,
+cell, joint, fragment or impulse is added to the native world. Body geometry
+revisions invalidate the presentation. Labels identify component and material;
+overlapping/out-of-view world labels are suppressed while the complete panel
+list stays available. The assembly's mass/material/component count are reported
+from all included bodies. Return to assembled restores the view; Show native
+cells retains the existing timed voxel inspection. Reduced motion expands
+immediately. Existing ground-layer inspection remains available.
+
+Windows Chrome/native checks:
+
+- `world_goods_tests.GoodsJourney.test_component_inspection_explodes_full_rover_and_actual_pick_cells_without_native_changes`
+  matches the entire native attached-joint part set (14 parts across five rover
+  bodies), partitions the pick's actual cells into haft/arm, checks persistence
+  and collapse, and compares exact native time/bodies/machines before/after.
+  Screenshot: ignored `build/resource-flow/rover-components.png`, visually reviewed.
+- `workshop_navigation_tests.GameScreens.test_world_selection_reveals_reported_structure_then_restores_skin_without_stepping`
+  retains exact cell edge/centre buffers, faded/restored skins and native state.
+- The ground/reduced-motion/escape navigation case and reference character
+  watched-inspection case retain their native no-mutation checks.
+
+Native engines remain the existing MSVC Release `f819e81` binaries, 50 mm,
+`dt=1/240 s`. This is presentation/inspection work, with no new material,
+constitutive, fracture, repair, collision or conservation claim. Rover ground
+support sensing, avoidance and bounded recovery remain item 12 work.

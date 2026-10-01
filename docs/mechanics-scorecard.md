@@ -1,5 +1,13 @@
 # Banjo mechanics scorecard
 
+**Expanded inspection boundary, October 1:** [Evidence](player-experience-checklist.md#component-inspection-checkpoint--october-1)
+is presentation-only: native attached joints select the assembly, native rigid
+parts and complete reported cells supply its geometry. Exact time/bodies/machines
+remain unchanged during inspection; no precut fracture parts or impulses exist.
+Glass/oak/iron laws, 50 mm grid, native `dt=1/240 s` and earlier conservation
+boundaries remain unchanged. Actual rover support sensing/recovery and repair
+constitutive work remain open; inspection cannot certify them.
+
 **Player controller and lighting boundary, September 30:** [Measured checkpoint](player-experience-checklist.md#verification-checkpoint)
 adds no native material law. Walk/jump uses a kinematic terrain controller,
 9.81 m/s² gravity and 4.5 m/s initial grounded jump; it is not a native rigid

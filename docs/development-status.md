@@ -1,5 +1,13 @@
 # Development status and handoff
 
+**Component inspection, October 1:** [Verified presentation](player-experience-checklist.md#component-inspection-checkpoint--october-1)
+expands actual attached rover assemblies and current pick cells with component
+names/materials, a complete panel list, readable world labels and Return to
+assembled. Chrome matches all native rover parts and retains exact native
+time/body/machine state; cell/layer/reduced-motion and watched inspection checks
+remain. This closes the supported component-inspection journey, not physical
+dismantling, damage/repair or rover ground safety.
+
 **Player entry and Workshop checkpoint, September 30:** [Current gates and
 evidence](player-experience-checklist.md#verification-checkpoint) record fresh
 generated entry, terrain Walk/Jump/Fly, extraction cues, world load meter,

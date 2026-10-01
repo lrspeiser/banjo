@@ -753,7 +753,7 @@ class AutonomousGuests(unittest.TestCase):
         # permit controls or change either character's physical state.
         session_id = view["state"]["session"]
         native_before = self.post("/api/live/act", {"session":session_id, "op":"poses"}, world)
-        page.evaluate('(()=>{const r=banjoRoom,n=[...r.world.bodies].find(([n,e])=>e.mechanicalModel!=="precise-rigid-v1")?.[0];r.pick(n)})()')
+        page.evaluate('(()=>{const r=banjoRoom,n=[...r.world.bodies].find(([n,e])=>e.mechanicalModel!=="precise-rigid-v1")?.[0];r.pick(n,"cells")})()')
         wait_for('banjoRoom.reveal()?.kind === "cells"')
         native_after = self.post("/api/live/act", {"session":session_id, "op":"poses"}, world)
         for key in ("t", "bodies", "machines"):

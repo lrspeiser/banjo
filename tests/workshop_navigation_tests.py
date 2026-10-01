@@ -126,7 +126,7 @@ class GameScreens(unittest.TestCase):
         self.page.evaluate('window.revealTarget=[...banjoRoom.world.bodies].find(([n,e])=>e.mechanicalModel!=="precise-rigid-v1")?.[0]')
         self.assertTrue(self.page.evaluate('!!window.revealTarget'), "fixture needs reported cell geometry")
         self.page.evaluate('(()=>{const r=banjoRoom,p=r.world.bodies.get(revealTarget).mesh.position;r.standAt(p.x+.3,p.y+.25,p.z+.35);r.lookAt(p.x,p.y,p.z)})()')
-        self.page.evaluate('window.originalSkin=banjoRoom.world.bodies.get(revealTarget).mesh.material; banjoRoom.pick(revealTarget)')
+        self.page.evaluate('window.originalSkin=banjoRoom.world.bodies.get(revealTarget).mesh.material; banjoRoom.pick(revealTarget,"cells")')
         self.wait('banjoRoom.reveal()?.kind === "cells" && banjoRoom.reveal().amount > .95')
         # Read the actual GPU vertex buffer. Each native cell gets twelve
         # orthogonal edges centred on that cell, with no triangle diagonals.
@@ -176,7 +176,7 @@ class GameScreens(unittest.TestCase):
         self.assertTrue(layers)
         self.assertTrue(self.page.evaluate('(()=>{const r=banjoRoom,b=r.reveal().layers.filter(b=>!b.hole),m=r.scene.getObjectByName("selection-structure-reveal").children,g=r.groundDrawn();return m.length===b.length && b.every((bed,i)=>{m[i].geometry.computeBoundingBox();const s=m[i].geometry.boundingBox.getSize(new r.THREE.Vector3());return Math.abs(s.y-bed.thick_m)<1e-5 && Math.abs(m[i].position.y-(bed.top_m-bed.thick_m/2))<1e-6 && Math.abs(s.x-g.dx)<1e-6})})()'))
         self.assertEqual(len(layers), self.page.evaluate('document.querySelectorAll("#picked .pk-bed").length'))
-        self.assertIn("Column width", self.page.evaluate('document.querySelector("#picked").textContent'))
+        self.assertIn("Layers", self.page.evaluate('document.querySelector("#picked").textContent'))
         self.assertNotIn("kg", self.page.evaluate('document.querySelector("#picked").textContent'))
         self.screenshot("world-ground-reveal.png")
         self.page.send("Input.dispatchKeyEvent", {"type":"keyDown", "code":"Escape", "key":"Escape"})

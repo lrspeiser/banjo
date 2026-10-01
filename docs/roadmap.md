@@ -1,5 +1,12 @@
 # Banjo roadmap and acceptance gates
 
+**Inspection acceptance, October 1:** [Component checkpoint](player-experience-checklist.md#component-inspection-checkpoint--october-1)
+qualifies connected rover membership, actual pick cell partition, material/name
+labels, persistent expansion/collapse and native no-mutation. Next expose real
+ground/support readings and close rover dig/drive/recovery gates on both
+generated terrains. Keep physical joining, damage and funded repair distinct
+from inspection; the full twelve-item goal remains active.
+
 **Player journey progress, September 30:** [Acceptance table](player-experience-checklist.md)
 now distinguishes verified fresh entry/Workshop flows from partial terrain
 walking, extraction cues and recipe guidance. Next finish visual day/night

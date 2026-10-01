@@ -1,5 +1,12 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Inspectable assemblies, October 1:** [Supported player flow](player-experience-checklist.md#component-inspection-checkpoint--october-1)
+expands current connected native components with actual material/name labels,
+complete panel values and an explicit return to the assembled view. Cells remain
+available as a separate inspection. The visual expansion does no physical work;
+real dismantling, joint failures, repairs and rover recovery retain their own
+native/evidence gates.
+
 **Ordinary player entry and controls, September 30:** [Current twelve gates](player-experience-checklist.md)
 require fresh generated ordinary entry, explicit saved-world links, visible
 quantities and evidence-backed actions. New worlds declare moving sun and a

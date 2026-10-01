@@ -198,6 +198,54 @@ class GoodsJourney(unittest.TestCase):
         self.assertGreater(before_oak,after_oak)
         self.assertEqual([],[e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
 
+    def test_component_inspection_explodes_full_rover_and_actual_pick_cells_without_native_changes(self):
+        if not qa_browser.CHROME.is_file():self.skipTest('Chrome not installed')
+        world,owner,app,*_=self.batch(process=False)
+        chrome=qa_browser.Chrome(1440,900);self.addCleanup(chrome.close)
+        page=chrome.page;page.send('Page.enable');page.send('Runtime.enable')
+        def wait(expression):
+            deadline=time.monotonic()+30
+            while time.monotonic()<deadline:
+                if page.evaluate('Boolean('+expression+')'):return
+                time.sleep(.1)
+            self.fail('Browser did not reach '+expression)
+        page.send('Page.navigate',{'url':self.base+f'/world?world={world}&hold=1'})
+        wait('window.banjoRoom?.ready()')
+        sid=app.live.session.id
+        before=app.live.act({'session':sid,'op':'poses'})
+        page.evaluate('(()=>{const r=banjoRoom,p=r.world.bodies.get("rover").mesh.position;r.standAt(p.x+3,p.y+2,p.z+3);r.lookAt(p.x,p.y,p.z);r.pick("rover")})()')
+        wait('banjoRoom.reveal()?.components?.length>6 && banjoRoom.reveal().amount===1')
+        components=page.evaluate('banjoRoom.reveal().components')
+        members={'rover'}
+        while True:
+            expanded=members | {end for j in before.get('joints',[]) if j.get('attached')
+                and (j['a'] in members or j['b'] in members) for end in (j['a'],j['b'])}
+            if expanded==members:break
+            members=expanded
+        native_parts=[(b['name'],p) for b in before['bodies'] if b['name'] in members for p in b.get('rigid_parts_local',[])]
+        self.assertEqual(len(native_parts),len(components))
+        self.assertEqual({b for b,p in native_parts},{c['body'] for c in components})
+        self.assertGreater(len({c['body'] for c in components}),3,components)
+        self.assertTrue(all(c['name'] and c['material'] and sum(v*v for v in c['offset'])>.2 for c in components))
+        self.assertEqual(len(components),page.evaluate('document.querySelectorAll("#picked .pk-components dt").length'))
+        time.sleep(3.3);self.assertTrue(page.evaluate('!!banjoRoom.reveal()?.components'))
+        import base64
+        output=ROOT/'build/resource-flow';output.mkdir(parents=True,exist_ok=True)
+        (output/'rover-components.png').write_bytes(base64.b64decode(page.send('Page.captureScreenshot',{'format':'png'})['data']))
+        page.evaluate('document.querySelector("#picked .pk-reveal").click()')
+        self.assertIsNone(page.evaluate('banjoRoom.reveal()'))
+        page.evaluate('banjoRoom.pick("field pick")')
+        wait('banjoRoom.reveal()?.components?.length===2')
+        parts=page.evaluate('banjoRoom.reveal().components')
+        self.assertEqual({'haft','arm'},{p['name'] for p in parts})
+        self.assertEqual(page.evaluate('banjoRoom.world.bodies.get("field pick").cells.length'),sum(p['cells'] for p in parts))
+        page.evaluate('[...document.querySelectorAll("#picked button")].find(b=>b.textContent==="Show native cells").click()')
+        wait('banjoRoom.reveal()?.kind==="cells"')
+        page.evaluate('banjoRoom.pick(null)')
+        after=app.live.act({'session':sid,'op':'poses'})
+        for key in ('t','bodies','machines'):self.assertEqual(before[key],after[key],key)
+        self.assertEqual([],[e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
+
     def test_day_cycle_charges_real_store_and_night_lamp_consumes_it(self):
         world,owner,app,*_=self.batch(process=False)
         session=app.live.session
