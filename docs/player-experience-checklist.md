@@ -43,6 +43,9 @@ the full goal remains active.
 
 ## Water and hill controller checkpoint — October 1
 
+Published implementation (including automatic output pickup/input bins):
+`3a6d789` on GitHub main. Local preview restarted at `http://127.0.0.1:8770/world`.
+
 Walking on open ground now reads the same interpolated triangles as the terrain
 collider; underground floors retain solid/void-run support. The controller
 permits half-metre steps and limits grounded hill ascent to 45 degrees. Gravity
