@@ -87,9 +87,12 @@ def apply_overrides(design: WorkshopDesign, overrides: Any) -> WorkshopDesign:
     parts = [_changed(part, patches.get(part.name, {})) for part in built]
     lineage = {**deepcopy(design.lineage), "component_overrides": deepcopy(patches)}
     if CONSTRUCTION_KEY in patches: lineage["components"] = _component_counts(parts)
-    return WorkshopDesign(design_id=design.design_id, purpose=design.purpose, parts=parts,
+    result = WorkshopDesign(design_id=design.design_id, purpose=design.purpose, parts=parts,
         parameters=deepcopy(design.parameters), lineage=lineage,
         tests=deepcopy(design.tests), notes=list(design.notes), kind=design.kind).validate()
+    from mcp import workshop_tools
+    workshop_tools.frame(result)
+    return result
 
 
 def design_from_spec(spec: Any) -> tuple[WorkshopDesign, dict[str, dict[str, Any]]]:

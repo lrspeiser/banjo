@@ -64,6 +64,9 @@ def compile_quote(candidate, stock_kg, cell_m, state):
     design, overrides = workshop_components.design_from_spec(candidate)
     workshop_rigid.require_lattice(design, "Fabrication")
     articulated = articulation.has_bearings(design)
+    from mcp import workshop_tools
+    if workshop_tools.frame(design) and articulated:
+        raise ValueError("Ground tools require a fixed lattice solid; articulated tool points are not supported")
     if not articulated and any(p.role not in install._FIXED_ROLES for p in design.parts):
         raise ValueError("This process supports fixed monolithic solids only")
     # An operating product must carry a deliberate core function.

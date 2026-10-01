@@ -1239,7 +1239,11 @@ def assemble(kind: str, *, design_id: str | None = None, purpose: str | None = N
     use = supplied.pop("primary_use", None)
     use_component = supplied.pop("primary_use_component", None)
     point_components = supplied.pop("interaction_point_components", None)
+    ground_tool = supplied.pop("ground_tool", None)
     values = spec.checked(supplied)
+    if ground_tool is not None:
+        from mcp import workshop_tools
+        values[workshop_tools.KEY] = workshop_tools.checked(ground_tool)
     if use_component is not None:
         if not isinstance(use_component, str) or not use_component or len(use_component)>120:
             raise ValueError("primary_use_component must name a component")

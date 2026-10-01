@@ -23,7 +23,7 @@ import time
 from typing import Any
 from urllib import error, request
 
-from mcp import engine_materials, workshop_components, workshop_construction, workshop_graph, workshop_machines, interaction_points
+from mcp import engine_materials, workshop_components, workshop_construction, workshop_graph, workshop_machines, interaction_points, workshop_tools
 from mcp.product_contract import compile_contract
 from mcp.workshop import WirePart, assemble, assembly
 from mcp.workshop_statics import declared_statics
@@ -72,6 +72,7 @@ DOING = {
     "set_program": "writing what it does on its own",
     "check_validity": "checking the room can carry it",
     "define_interaction_points": "saying where you take hold of it",
+    "define_ground_tool": "locating its ground point and grip",
     "program_use": "writing what it is for",
     "try_it_in_a_room": "trying it in a little world",
     "offer_it_to_the_world": "offering it to your world",
@@ -147,6 +148,15 @@ run, or commit the outside live world. The user expects you to behave like a
 CAD/physics copilot, not a one-shot intent classifier.
 
 Important behavior:
+- define_ground_tool makes an existing fixed lattice design a ground tool.
+  Name the point and grip components; positions are relative to each component's
+  centre in its own rotated frame, in metres. The tip belongs on its actual end,
+  pointing OUT of its matter; the grip belongs inside the handle. Use the real
+  width, thickness, angle and point length. This installs the existing bounded
+  swing/lever model; it creates no material, motor, energy or guaranteed result.
+  Exact rigid or articulated tool points are unsupported. Check geometry and
+  native admission after editing the named components, then test the real tool.
+  Never substitute inspect or a cosmetic primary_use for a digging function.
 - define_interaction_points says where a finished product is taken hold of and
   what it receives: grip/use points, plus real receiving surfaces or cargo
   interiors. Positions are in the design frame; a receiving point sits on the
@@ -427,6 +437,9 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
         },
     }
     return [
+        {"type": "function", "name": "define_ground_tool",
+         "description": "Declare the physical ground point and grip on existing fixed lattice components. Component-local SI frames, not world coordinates. The native engine must admit the sampled tip; no prescribed dig result or strength certification.",
+         "parameters": workshop_tools.AUTHORING_SCHEMA},
         {"type": "function", "name": "define_interaction_points",
          "description": "Define the product's key interactions in design-local metres. grip/use points and surface/container receiving floors; size_m is usable width/height/depth above the floor. Does not add geometry.",
          "parameters": {"type": "object", "additionalProperties": False, "required": ["points"],
@@ -1367,6 +1380,16 @@ class _State:
                                       "components": [_part_doc(next(p for p in self.design.parts if p.name == name))
                                                      for name in names]})
 
+        if tool == "define_ground_tool":
+            declaration = workshop_tools.checked(args)
+            parameters = {**self.design.parameters, workshop_tools.KEY: declaration}
+            candidate = {**self.current_spec(), "parameters": parameters}
+            design, overrides = workshop_components.design_from_spec(candidate)
+            self.design, self.overrides = design, overrides
+            _refresh(self.app, self.candidate, self.design, self.overrides)
+            self.changed.append(workshop_tools.KEY)
+            return self.record(tool, {"summary": "Ground point and grip declared; native admission and use still need testing",
+                                      "ground_tool": declaration})
         if tool == "define_interaction_points":
             points = interaction_points.checked(args.get("points"))
             parameters = {**self.design.parameters, "interaction_points": points}

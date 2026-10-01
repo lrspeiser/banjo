@@ -41,7 +41,7 @@ MAX_PREVIEWS = 8
 PREVIEW_TTL_S = 300
 MAX_RECEIPTS = 64
 MAX_CELLS = 16000
-_FIXED_ROLES = {"leg", "post", "beam", "brace", "apron", "stretcher", "top", "panel", "surface"}
+_FIXED_ROLES = {"leg", "post", "beam", "brace", "apron", "stretcher", "top", "panel", "surface", "handle", "tool-head"}
 _TOKEN = re.compile(r"^[A-Za-z0-9_-]{8,80}$")
 log = logging.getLogger("banjo")
 
@@ -806,8 +806,62 @@ def _appended_joints(before, after, added, definitions, removed=frozenset()):
                 raise ValueError("Staging added an undeclared hinge capacity")
 
 
+def _appended_tool_points(before, after, added, definitions, removed=frozenset()):
+    old = [p for p in before.get("tool_points", []) if p.get("body") not in removed]
+    current = after.get("tool_points", [])
+    if len(current) != len(old)+len(definitions) or current[:len(old)] != old:
+        raise ValueError("Staging changed existing tool points or added unexpected points")
+    bodies = {b["name"]: b for b in after["bodies"]}
+    def rotate(q,v):
+        w,x,y,z=q
+        t=[2*(y*v[2]-z*v[1]),2*(z*v[0]-x*v[2]),2*(x*v[1]-y*v[0])]
+        return [v[0]+w*t[0]+y*t[2]-z*t[1],v[1]+w*t[1]+z*t[0]-x*t[2],v[2]+w*t[2]+x*t[1]-y*t[0]]
+    def near(a,b):
+        return len(a)==len(b) and all(type(x) in (int,float) and math.isfinite(x) and abs(x-y)<=1e-7 for x,y in zip(a,b))
+    for i,(point,definition) in enumerate(zip(current[len(old):],definitions)):
+        if set(point) != {"id","body","tip_local","pointing_local","grip_local","width_local",
+                          "width_m","thickness_m","angle_deg","length_m","body_id",
+                          "frame_nodes_b64","frame_offsets_b64","attached"}:
+            raise ValueError("Staging returned unrecognized tool point state")
+        name = definition["body"]
+        if (name not in added or point.get("body") != name or point.get("id") != before["next"]["point"]+i
+                or point.get("attached") is not True):
+            raise ValueError("Staging changed an added tool point's identity or body")
+        body = bodies[name]; pose = body["pose"]
+        if point.get("body_id") != body.get("body_id"):
+            raise ValueError("Staging changed a tool point's matter frame")
+        if (point.get("frame_nodes_b64") != body.get("nodes_b64") or
+                point.get("frame_offsets_b64") != body.get("offsets_b64")):
+            raise ValueError("Staging changed a tool point's sampled matter")
+        width = point["width_local"]; axis = point["pointing_local"]
+        if (len(width)!=3 or not all(type(v) in (int,float) and math.isfinite(v) for v in width) or
+                abs(sum(v*v for v in width)-1)>1e-7 or abs(sum(v*a for v,a in zip(width,axis)))>1e-7):
+            raise ValueError("Staging changed a tool point's section frame")
+        handle = [g-t for g,t in zip(point["grip_local"],point["tip_local"])]
+        def cross(a,b):return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]]
+        expected_width = cross(axis,handle)
+        norm = math.sqrt(sum(v*v for v in expected_width))
+        if norm<=1e-6:
+            expected_width = cross(axis,[0,1,0]); norm = math.sqrt(sum(v*v for v in expected_width))
+            if norm<=1e-6:
+                expected_width = cross(axis,[1,0,0]); norm = math.sqrt(sum(v*v for v in expected_width))
+        if not near(width,[v/norm for v in expected_width]):
+            raise ValueError("Staging changed a tool point's section direction")
+        for local,field in (("tip_local","tip_mm"),("grip_local","grip_mm")):
+            offset = rotate(pose["q_wxyz"],point[local])
+            if not near([v+s for v,s in zip(offset,pose["com_m"])],[v/1000 for v in definition[field]]):
+                raise ValueError("Staging changed a tool point's tip or grip")
+        direction = definition["pointing"]; norm = math.sqrt(sum(v*v for v in direction))
+        if not near(rotate(pose["q_wxyz"],point["pointing_local"]),[v/norm for v in direction]):
+            raise ValueError("Staging changed a tool point's direction")
+        expected = {"width_m": definition["width_mm"]/1000,"thickness_m":definition["thickness_mm"]/1000,
+                    "angle_deg":definition["angle_deg"],"length_m":definition["length_mm"]/1000}
+        if any(point.get(k) != v for k,v in expected.items()):
+            raise ValueError("Staging changed a tool point's shape")
+
+
 def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[str], *,
-               thermal_transfer=None, added_joints=(), removed=frozenset(),
+               thermal_transfer=None, added_joints=(), added_tool_points=(), removed=frozenset(),
                removed_matter=None) -> None:
     """Append-only carry must keep the serialized physical state, not just poses.
 
@@ -854,8 +908,9 @@ def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[st
         if parts.get(tuple(part["bodies"])) != part:
             raise ValueError("Staging changed existing topology or material declarations")
     exceptions = {"bodies", "parts", "fingerprint", "spec_digest", "next", "heat", "joints",
-                  "material_geometry", *MACHINE_KEYS}
+                  "material_geometry", "tool_points", *MACHINE_KEYS}
     _appended_joints(before, after, added, added_joints, removed_matter)
+    _appended_tool_points(before, after, added, added_tool_points, removed_matter)
     _appended_machines(before, after, added, removed_matter)
     for key in set(before) | set(after):
         if key in exceptions:
@@ -905,7 +960,7 @@ def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[st
     # Removal does not give an id back. The counters only ever go forward, so
     # what a removal changes is the body set, never the numbering.
     bnext, anext = before.get("next", {}), after.get("next", {})
-    increments={"body":len(added),"joint":len(added_joints)}
+    increments={"body":len(added),"joint":len(added_joints),"point":len(added_tool_points)}
     if set(bnext) != set(anext) or any(anext[k] != v+increments.get(k,0) for k,v in bnext.items()):
         raise ValueError("Staging changed unrelated native identifiers")
     bh, ah = before.get("heat"), after.get("heat")
@@ -976,7 +1031,10 @@ def _stage(app, live, old, spec, snapshot, matter, root, shift, removed=frozense
                 if found is None or found.get("mechanical_model") != precise_rigid.MODEL:
                     raise ValueError("Native precise rigid body is missing or not exact: " + body["name"])
         else:
-            _preserved(snapshot, saved, root, removed=in_the_world, removed_matter=removed)
+            roots = {root} if isinstance(root,str) else set(root)
+            added_points = [p for p in spec.get("tool_points", []) if p.get("body") in roots]
+            _preserved(snapshot, saved, root, added_tool_points=added_points,
+                       removed=in_the_world, removed_matter=removed)
             sparse.verify_engine_matter(saved, matter, root, placement_grid=shift)
         return staging, saved
     except BaseException:
@@ -1040,6 +1098,10 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
         else:
             taking_out: list[str] = []
         models = workshop_rigid.requested_models(design, overrides)
+        from mcp import workshop_tools
+        tool = workshop_tools.frame(design)
+        if tool and (models != {"lattice"} or workshop_articulation.has_bearings(design)):
+            raise ValueError("Ground tools require a fixed lattice solid; exact or articulated tool points are not supported")
         if models == {"rigid"} and (workshop_articulation.has_bearings(design) or workshop_machines.of(design)):
             # A machine, or anything on pins, asked for exactly: exact bodies
             # on pins, as the room's rover is made (rigid_assembly).
@@ -1092,6 +1154,10 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
         _clearance(saved, placed, h)
         spec = deepcopy(room.spec)
         spec["bodies"] = spec["bodies"] + added
+        declared_tool = workshop_tools.installed(design, root, [b["name"] for b in added], [s*h for s in shift])
+        if declared_tool:
+            spec["tool_points"] = spec.get("tool_points", []) + [declared_tool["point"]]
+            spec["interactions"] = spec.get("interactions", []) + [declared_tool["profile"]]
         from mcp import core_use
         spec["actions"] = spec.get("actions", []) + [core_use.installed(design, root)]
         from mcp import interaction_points
@@ -1635,6 +1701,7 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
                 else:
                     thermal_transfer, saved = _admit_fabricated_heat(staged, saved, plan["root"], job["product_kg"], fabrication.AMBIENT_K)
                     _preserved(before, saved, plan["root"], thermal_transfer=thermal_transfer,
+                               added_tool_points=[p for p in plan["spec"].get("tool_points", []) if p.get("body")==plan["root"]],
                                removed=lost, removed_matter=removed)
             receipt = {**deepcopy(plan["answer"]), "status": "installed", "request_id": request,
                        "session": staged.session.id, "source_session": old.id, "replayed": False,
