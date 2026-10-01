@@ -1,0 +1,16 @@
+{
+  "schema": "banjo.generated-route-observation.v1",
+  "terrain_seed": 4,
+  "goods_seed": 1,
+  "native_time_s": 149.99999999994574,
+  "native_dt_s": 0.004166666666666667,
+  "accelerated_clock_slice_s": 0.5,
+  "vein_xz_m": [5.12, 2.0],
+  "intake_xz_m": [11.62, 5.0],
+  "rover_step": "go_to vein",
+  "rover_hopper_kg": 0.0,
+  "rover_trips": 0,
+  "returned_m3": {"sand": 0.0, "soil": 0.0, "rock": 0.0},
+  "provider_calls": 0,
+  "claim": "Generated terrain reachability does not demonstrate this native rover route; no load returned by 150 native seconds. No trajectory or physics outcome was prescribed."
+}

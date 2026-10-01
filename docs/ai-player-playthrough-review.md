@@ -1,5 +1,7 @@
 # AI player playthrough review — September 30, 2026
 
+**Follow-up implementation:** [P0 persistence repairs](player-persistence-checkpoint.md) address the recorded save and packed-state failures. [Personal machine learning](player-learning-checkpoint.md) now demonstrates one technique through an explicit nearby observation action, with restart recovery and world-aware guidance. The historical run below still records what happened at its stated revision. Automated post-camp progression, the first gathering tool and the next goal chain remain unfinished; no live-provider trial has been performed.
+
 ## Result
 
 **The character finished first camp, but earned 0 of 9 techniques.** I then

@@ -1,0 +1,33 @@
+{
+  "schema": "banjo.player-learning-acceptance.v1",
+  "native_dt_s": 0.004166666666666667,
+  "scene_cell_m": 0.05,
+  "accelerated_clock_slice_s": 0.2,
+  "source_machine": "electric-furnace",
+  "source_batch": 1,
+  "observed_t_s": 16.416666666666057,
+  "saved_t_s": 16.616666666666045,
+  "result": {
+    "made_kg": 1.5,
+    "used_kg": 5.0,
+    "made": {
+      "copper": 1.5
+    },
+    "used": {
+      "copper ore": 5.0
+    },
+    "drawn_j": 10000.0
+  },
+  "learned": [
+    "smelting-copper"
+  ],
+  "other_guest_learned": [],
+  "evidence_count": 1,
+  "restart_outbox_replayed_once": true,
+  "provider_calls": 0,
+  "limits": [
+    "the recipe's yield is declared by the room, not measured from chemistry",
+    "the work and the time it takes are the recipe's own numbers",
+    "avatar position is reported by the client; visibility occlusion is not checked"
+  ]
+}
