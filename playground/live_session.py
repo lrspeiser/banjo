@@ -195,7 +195,12 @@ def _declared(spec: dict[str, Any], machines: Any = None,
     controls = dict((made or {}).get("controls") or {})
     programs = dict((made or {}).get("programs") or {})
     panels = dict((made or {}).get("panels") or {})
+    fittings = {key: dict((made or {}).get(key) or {}) for key in ("cables", "lamps", "breakers")}
     if isinstance(machines, dict):
+        for key, names in fittings.items():
+            for entry in machines.get(key) or []:
+                if isinstance(entry.get("id"), int):
+                    names.setdefault(str(entry.get("name", "")), entry["id"])
         for store in machines.get("stores") or []:
             if isinstance(store.get("id"), int):
                 stores.setdefault(str(store.get("name", "")), store["id"])
@@ -225,7 +230,10 @@ def _declared(spec: dict[str, Any], machines: Any = None,
                          for q in declared.get("programs") or []
                          if isinstance(q, dict) and programs.get(q.get("name")) is not None],
             "panels": [(_plain(q), panels[q["name"]]) for q in declared.get("panels") or []
-                       if isinstance(q, dict) and panels.get(q.get("name")) is not None]}
+                       if isinstance(q, dict) and panels.get(q.get("name")) is not None],
+            **{key: [(_plain(entry), names[entry["name"]]) for entry in declared.get(key) or []
+                     if isinstance(entry, dict) and names.get(entry.get("name")) is not None]
+               for key, names in fittings.items()}}
 
 
 def carry_plan(was: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
@@ -930,12 +938,23 @@ class Live:
                 except LiveError as error:
                     hung.setdefault("machine_problems", []).append(
                         f"the program {program.get('name')} would not take what it was told: {error}")
-        if new_stores or new_motors or new_controls or new_programs or new_panels:
+        new_fittings = {}
+        for key in ("cables", "lamps", "breakers"):
+            present = {entry.get("id") for entry in machines_now.get(key) or []}
+            made[key] = {}
+            new_fittings[key] = []
+            for i, entry in enumerate(machines.get(key) or []):
+                ident = pairs.get(key, {}).get(i)
+                if ident in present:
+                    made[key][str(entry.get("name", ""))] = ident
+                else:
+                    new_fittings[key].append(entry)
+        if new_stores or new_motors or new_controls or new_programs or new_panels or any(new_fittings.values()):
             # A new panel on a kept store finds the store by its name in
             # `made`, which _power reads its stores from.
             powered = self._power(session, {"stores": new_stores, "motors": new_motors,
                                             "controls": new_controls, "programs": new_programs,
-                                            "panels": new_panels}, pins, made=made)
+                                            "panels": new_panels, **new_fittings}, pins, made=made)
             if powered.get("machine_problems"):
                 hung.setdefault("machine_problems", []).extend(powered["machine_problems"])
         blades = [b for b in spec.get("blades") or []]
@@ -960,7 +979,7 @@ class Live:
         # Machines as they are now, when something was declared or told since
         # the opening said them.
         out.update(self._sun(session, spec.get("sun")))
-        if ((new_stores or new_motors or new_controls or new_programs or new_panels or told)
+        if ((new_stores or new_motors or new_controls or new_programs or new_panels or any(new_fittings.values()) or told)
                 and isinstance(session.state.get("machines"), dict)):
             out["machines"] = session.state["machines"]
         return out
@@ -1638,6 +1657,16 @@ class Live:
             count = max(1, min(int(body.get("n", 1)), MAX_STEPS_PER_CALL))
             if not dt > 0.0:
                 raise LiveError("a step needs a positive dt")
+            automatic = {lamp["name"] for lamp in (session.spec.get("machines") or {}).get("lamps", [])
+                         if lamp.get("auto_night") is True}
+            if automatic:
+                sun = (session.state or {}).get("sun") or session.send(op="sun").get("sun", {})
+                if sun.get("day_s", 0) > 0:
+                    night = float(sun.get("elevation_deg", 0)) <= 0
+                    lamps = ((session.state or {}).get("machines") or {}).get("lamps", [])
+                    for lamp in lamps:
+                        if lamp.get("name") in automatic and bool(lamp.get("on")) != night:
+                            session.send(op="lamp_switch", lamp=lamp["id"], on=night)
             # A host that draws the room asks for only what moved: it keeps
             # its own copy of the scene and merges. One that does not gets the
             # whole world, as it always did.

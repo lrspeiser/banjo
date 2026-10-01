@@ -1,5 +1,15 @@
 # Development status and handoff
 
+**Player entry and Workshop checkpoint, September 30:** [Current gates and
+evidence](player-experience-checklist.md#verification-checkpoint) record fresh
+generated entry, terrain Walk/Jump/Fly, extraction cues, world load meter,
+recipe details, and ordinary Workshop head edit/Save/paid oak Make. Carry now
+retains existing lamp/cable/breaker declarations instead of losing lamps during
+installation. New worlds have a 600 s sun and automatic camp light; an explicit
+10 s native experiment verifies charge/draw/dawn. Component expansion remains
+partial, physical-avatar collisions, mixed-material picks, repairs and rover
+recovery remain open. Resource-flow code is on main at `9cc3ad1`.
+
 **Current owner acceptance:** [Player experience checklist](player-experience-checklist.md)
 tracks all twelve requested changes and their remaining verification. The
 resource-flow checkpoint covers item 1's native/browser loop; the whole list is

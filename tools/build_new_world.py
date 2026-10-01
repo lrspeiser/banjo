@@ -120,6 +120,7 @@ def compose(ground: dict, world: dict, terrain_seed: int | None = None) -> dict:
     finally:
         rover_room.ROVER_AT, rover_room.POST_AT, rover_room.TERRAIN = was
     spec["water"] = dict(grounds.WATER)
+    spec["sun"] = {"day_s":600.0, "noon_elevation_deg":60.0, "hour":8.0, "irradiance_w_m2":1000.0}
     spec["goods"] = spec_goods
     # NOTHING STANDS HERE THAT THE WORKSHOP CANNOT BUILD (the owner,
     # 2026-09-26). The rover room's composer leaves a concrete post in every
@@ -206,6 +207,19 @@ def compose(ground: dict, world: dict, terrain_seed: int | None = None) -> dict:
     for key in ("stores", "motors", "panels", "controls", "programs"):
         spec["machines"][key] = spec["machines"].get(key, []) + list(farm_made.get(key) or [])
     the_grid = (farm_made.get("stores") or [{}])[0].get("name")
+
+    # One buildable camp fitting. Native electrical losses and store demand
+    # determine its light; the host controller only switches at dusk/dawn.
+    lamp_at = _clear_of(ground, ARRIVE_AT, 2.5)
+    light_bodies, light_pins, light_made, _ = a_built_thing(ground, "mine-lamp", "camp light", lamp_at)
+    light_made = workshop_install._named_apart(workshop_install.standing_names(spec), light_made)
+    for lamp in light_made.get("lamps", []):
+        lamp["store"] = the_grid
+        lamp["auto_night"] = True
+    spec["precise_rigid_bodies"] += light_bodies
+    spec["joints"] += light_pins
+    for key in ("stores", "motors", "panels", "controls", "programs", "lamps"):
+        spec["machines"][key] = spec["machines"].get(key, []) + list(light_made.get(key) or [])
 
     for works in ws.WORKS:
         name = works.machine

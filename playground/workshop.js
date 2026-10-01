@@ -1003,7 +1003,13 @@ function installEditor() {
   $("#ws-component-name").oninput = (event) => {
     if (event.target.value.trim()) event.target.dataset.edited = "1"; else delete event.target.dataset.edited;
   };
-  chat.onsubmit = (event) => { event.preventDefault(); guard(chat.querySelector("button"), chatEdit); };
+  chat.onsubmit = async (event) => {
+    event.preventDefault();
+    try { await chatEdit(); }
+    catch (error) { say(error.message || String(error), true);
+      dispatchEvent(new CustomEvent("banjo-workshop-chat-finished", {detail:{error:error.message || String(error)}})); }
+    finally { dispatchEvent(new CustomEvent("banjo-workshop-chat-finished")); }
+  };
   testPicker.onchange = () => { bench.selectedBenchTest = testPicker.value; renderBenchControls(); $("#ws-bench-result").replaceChildren(); clearPlayback(); scheduleSetup(0); };
   $("#ws-run-bench").onclick = (event) => guard(event.currentTarget, runBenchTest);
   $("#ws-save-bench-preset").onclick = (event) => guard(event.currentTarget, saveBenchPreset);
@@ -1280,6 +1286,8 @@ function installBench() {
   checkButton.onclick = () => checkValidity(checkButton);
   const madeButton = make("button", { id:"ws-make", type:"button", class:"ws-action primary" }, "Make it");
   madeButton.onclick = () => makeIt(madeButton);
+  const saveButton = make("button", {id:"ws-quick-save", type:"button", class:"ws-action"}, "Save design");
+  saveButton.onclick = () => $("#ws-save-design").click();
   const notice = $("#ws-notice");
   top.replaceChildren(keep);
   top.hidden = true;
@@ -1533,7 +1541,7 @@ function installBench() {
     keep.append(views);
     for (const button of [...viewbar.children]) if (button.dataset.view) button.hidden = true;
     viewbar.append(make("span", { class:"ws-spacer" }), status,
-                   checkButton, madeButton, make("a", { class:"ws-bar-link", href:homeWorld() }, "The world"));
+                   checkButton, madeButton, saveButton, make("a", { class:"ws-bar-link", href:homeWorld() }, "The world"));
     if (notice) viewport.insertBefore(notice, viewbar.nextSibling);
   }
 
@@ -2438,7 +2446,7 @@ function recipeLine(line) {
   row.append(make("span", { class: "ws-need-said" },
                   line.enough ? kgSaid(wants) : `${kgSaid(have)} / ${kgSaid(wants)}`));
   row.title = line.enough ? `you have enough ${line.material || line.substance}`
-    : `${kgSaid(line.short_kg)} ${line.material || line.substance} missing`;
+    : `${kgSaid(Math.max(0,wants-have))} ${line.material || line.substance} missing`;
   return row;
 }
 
@@ -2582,12 +2590,31 @@ async function showRecipes() {
     for (const line of [...(t.materials || []), ...(t.goods || [])]) if (!line.enough) needs.append(recipeLine(line));
     if (needs.childElementCount) li.append(needs);
     const all = make("details", {class:"ws-recipe-details"}); all.append(make("summary", {}, "Materials & build details"));
+    canvas.style.cursor = "pointer"; canvas.tabIndex = 0; canvas.setAttribute("role", "button");
+    canvas.setAttribute("aria-label", `${t.name} · required materials and how to get them`);
+    canvas.onclick = () => { all.open = !all.open; };
+    canvas.onkeydown = event => { if (["Enter"," "].includes(event.key)) {event.preventDefault();all.open=!all.open;} };
     const materials = make("div", {class:"ws-needs"});
     for (const line of [...(t.materials || []), ...(t.goods || [])]) {
       materials.append(recipeLine(line), recipeValue("Predicted debit",
         `Personal ${kgSaid(line.debit_personal_kg)} · Shared ${kgSaid(line.debit_shared_kg)}`));
     }
     all.append(materials);
+    const acquisition = make("div", {class:"ws-acquisition"});
+    for (const line of [...(t.materials || []), ...(t.goods || [])].filter(l=>!l.enough)) {
+      const substance = line.material || line.substance;
+      const sources = r.deposits.filter(d=>d.substance===substance && d.left_kg>0);
+      const process = r.room_recipes.find(p=>Object.hasOwn(p.out || {},substance));
+      acquisition.append(recipeValue(titleCase(substance), `Missing ${kgSaid(Math.max(0,line.kg-line.held_kg))}`));
+      if (sources.length) acquisition.append(recipeValue("Find", sources.map(d=>d.name).join(" · ")));
+      if (process) {
+        acquisition.append(recipeValue("Process", process.name), recipeValue("Input", Object.keys(process.in || {}).join(" + ")),
+          recipeValue("Machine", process.worked_by?.join(" · ") || "Build a machine for this process first"));
+        if (process.worked_by?.length) acquisition.append(recipeValue("Collect", "Walk to the machine’s output → Collect"));
+      }
+      if (!sources.length && !process) acquisition.append(recipeValue("Get", "Market → buy material with stored energy"));
+    }
+    if (acquisition.childElementCount) all.append(acquisition);
     const readiness = t.readiness || {};
     const fit = !readiness.workshop?.as_drawn ? readiness.workshop?.reason || "Workshop check unavailable"
       : !readiness.world ? "Open a world to check placement."
@@ -2631,6 +2658,14 @@ async function showRecipes() {
       finally { recipeMaking=false; await showRecipes().catch(error=>say(error.message, true)); }
     };
     row.append(made);
+    const inspect = make("button", {type:"button", class:"ws-action", "data-open-recipe":recipeKey(t)}, "Open in Lab");
+    inspect.onclick = () => guard(inspect, async () => {
+      clearLab();
+      const answer = await recipeSource(t);
+      bench.inventorySelection = {id:recipeKey(t), name:t.name, source:"recipe"};
+      if (took(answer)) { $("#ws-archetype").value = answer.kind; showTab("lab"); }
+    });
+    row.append(inspect);
     if (t.saved_design_id) row.append(inventoryDesignButton(t.saved_design_id, "saved"));
     if (!t.enough) {
       const shop = make("button", {type:"button", class:"ws-action"}, "Get supplies"); shop.onclick = () => showTab("market"); row.append(shop);
@@ -2979,9 +3014,9 @@ const WORKSHOP_OPENS_ON = "inventory";
 function showTab(name) {
   if (!["inventory", "lab", "skills", "recipes", "market", "goals"].includes(name)) name = WORKSHOP_OPENS_ON;
   const url = new URL(location.href); url.searchParams.set("tab", name);
-  for (const key of ["carry", "design", "library"]) url.searchParams.delete(key);
+  for (const key of ["carry", "design", "library", "recipe"]) url.searchParams.delete(key);
   if (bench.inventorySelection) {
-    const key = {carried:"carry", saved:"design", library:"library"}[bench.inventorySelection.source];
+    const key = {carried:"carry", saved:"design", library:"library", recipe:"recipe"}[bench.inventorySelection.source];
     if (key) url.searchParams.set(key, bench.inventorySelection.id);
   }
   window.history.replaceState(null, "", url);
@@ -3007,9 +3042,9 @@ function updateLabSelection() {
   const empty = $("#ws-empty"); if (empty) empty.hidden = selected;
   const input = $("#ws-component-chat-text"), send = $("#ws-component-chat button[type=submit]");
   if (input && !selected) { input.disabled = true; input.placeholder = "Choose from Inventory or Recipes first"; }
-  else if (input && !labWasSelected) { input.disabled = false; input.placeholder = "Ask about this item or describe a change"; }
+  else if (input && $("#ws-component-chat")?.dataset.busy !== "true") { input.disabled = false; input.placeholder = "Ask about this item or describe a change"; }
   if (send && !selected) send.disabled = true;
-  else if (send && !labWasSelected) send.disabled = false;
+  else if (send && $("#ws-component-chat")?.dataset.busy !== "true") send.disabled = false;
   const intro = $(".ws-chat-intro");
   const text = selected ? "Discuss, modify or test your selected item. Lab changes leave your carried item or saved version unchanged until you explicitly make or save them."
     : "Choose a product in Inventory or a design in Recipes to open the Lab.";
@@ -3113,7 +3148,9 @@ function watchTheTurn(turn) {
 }
 
 async function chatEdit() {
-  if (!bench.selectedPart) throw new Error("Click the part you want to talk about first.");
+  if (!chosen()) throw new Error("Choose an item from Inventory or Recipes first.");
+  if (!bench.selectedPart) bench.selectedPart = chosen().parts[0]?.name;
+  if (!bench.selectedPart) throw new Error("This design has no components to edit.");
   const input = $("#ws-component-chat-text"), message = input.value.trim();
   if (!message) throw new Error("Tell Workshop what to change.");
   const selected = bench.selectedPart;
@@ -4439,7 +4476,7 @@ $("#ws-save-design").onclick = (event) => guard(event.currentTarget, async () =>
   if (answer.design && bench.inventorySelection) {
     bench.inventorySelection = {id:answer.design.design_id, source:"saved", name:label};
     const url = new URL(location.href);
-    for (const key of ["carry", "library"]) url.searchParams.delete(key);
+    for (const key of ["carry", "library", "recipe"]) url.searchParams.delete(key);
     url.searchParams.set("design", answer.design.design_id);
     window.history.replaceState(null, "", url); refreshNavigation(url.searchParams.get("tab") || "lab");
     $("#ws-screen-status").textContent = label;
@@ -4470,7 +4507,7 @@ stage.visibleGeometry = () => {
 
 async function start() {
   const params = new URLSearchParams(location.search);
-  const wantSaved = params.get("design"), wantLibrary = params.get("library");
+  const wantSaved = params.get("design"), wantLibrary = params.get("library"), wantRecipe = params.get("recipe");
   // ?tab=skills&technique=burning-lime opens the tree on that rung. The
   // world page's "Next: ..." line uses it.
   const wantTab = (params.get("tab") || "").trim();
@@ -4489,8 +4526,17 @@ async function start() {
   bench.pricebook = answer.pricebook || null; bench.rack = answer.rack || null; bench.benchTests = answer.bench_tests || []; bench.benchPresets = answer.bench_presets || []; bench.session = answer.session || null; renderUserLibrary(); renderRack(); renderBuildChoices(); clearLab();
   if (wantCarried) await openTheCarriedThing(wantCarried);
   else if (wantSaved || wantLibrary) await openInventoryDesign(wantSaved || wantLibrary, wantSaved ? "saved" : "library");
+  else if (wantRecipe) {
+    const recipes = await api("/api/workshop/recipes", {});
+    const recipe = recipes.templates.find(t => recipeKey(t) === wantRecipe);
+    if (recipe) {
+      bench.inventorySelection = {id:wantRecipe, name:recipe.name, source:"recipe"};
+      const source = await recipeSource(recipe);
+      if (took(source)) picker.value = source.kind;
+    } else say("That recipe is no longer available. Select another recipe.", true);
+  }
   if (wantTechnique && (!wantTab || wantTab === "skills")) openTheTreeAt(wantTechnique);
-  else showTab(wantTab || (wantCarried || wantSaved || wantLibrary ? "lab" : WORKSHOP_OPENS_ON));
+  else showTab(wantTab || (wantCarried || wantSaved || wantLibrary || wantRecipe ? "lab" : WORKSHOP_OPENS_ON));
   try {
     const remembered = await api("/api/workshop/remembered", {}); $("#ws-feedback-count").textContent = remembered.kept ? `${remembered.kept} feedback records kept` : "";
     bench.personalLibrary = remembered.personal_library || bench.personalLibrary; bench.pricebook = remembered.pricebook || bench.pricebook; bench.benchPresets = remembered.bench_presets || bench.benchPresets;

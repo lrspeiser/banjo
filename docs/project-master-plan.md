@@ -1,5 +1,14 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Ordinary player entry and controls, September 30:** [Current twelve gates](player-experience-checklist.md)
+require fresh generated ordinary entry, explicit saved-world links, visible
+quantities and evidence-backed actions. New worlds declare moving sun and a
+battery-powered automatic camp light. Walk/Jump is presently a terrain
+controller; full physical-avatar collisions remain separate. Recipe selection
+can explicitly open Lab and survive reload. Whole tool source, head edit,
+Save and supported paid oak Make are verified; mixed-material joining,
+physical repairs and rover recovery remain acceptance work.
+
 **Visible resource loop, September 30:** [Recorded transfers and pickup](resource-flow.md)
 show scoop/delivery/batch packets, hopper fill and output piles. New-game output
 awaits personal collection; durable receipts protect retries/restart. Pictures

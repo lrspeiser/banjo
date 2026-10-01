@@ -149,6 +149,122 @@ class GoodsJourney(unittest.TestCase):
         (out/'collected.png').write_bytes(base64.b64decode(shot))
         self.assertEqual([],[e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
 
+    def test_bootstrap_recipe_and_browser_typing_head_edit_save_and_paid_make(self):
+        if not qa_browser.CHROME.is_file():self.skipTest('Chrome not installed')
+        world,owner,app,source,pile,person=self.batch(process=False)
+        made=self.post('/api/world/workshop/what_made',{'body':'field pick'},world)
+        self.assertEqual('field-pick',made['recipe']['kind'])
+        self.assertGreaterEqual(len(made['bodies']),2)
+        recipes=self.post('/api/workshop/recipes',{},world)
+        pick=next(r for r in recipes['templates'] if r['kind']=='field-pick')
+        self.assertTrue(pick['readiness']['ready_as_drawn'],pick)
+        chrome=qa_browser.Chrome(1280,800);self.addCleanup(chrome.close)
+        page=chrome.page;page.send('Page.enable');page.send('Runtime.enable')
+        def wait(expression):
+            deadline=time.monotonic()+40
+            while time.monotonic()<deadline:
+                if page.evaluate('Boolean('+expression+')'):return
+                time.sleep(.12)
+            self.fail('Browser did not reach '+expression+'; '+str(page.evaluate('document.body.innerText.slice(-1200)')))
+        page.send('Page.navigate',{'url':self.base+f'/world?world={world}&workshop=1&tab=recipes'})
+        wait('document.querySelector("[data-open-recipe=\\"field-pick:field-pick\\"]")')
+        page.evaluate('document.querySelector("[data-open-recipe=\\"field-pick:field-pick\\"]").click()')
+        wait('document.querySelectorAll("#ws-parts li").length===2 && !document.querySelector("#ws-component-chat-text").disabled')
+        selected_url=page.evaluate('location.href')
+        page.send('Page.navigate',{'url':'about:blank'})
+        wait('location.href === "about:blank"')
+        page.send('Page.navigate',{'url':selected_url})
+        wait('document.querySelectorAll("#ws-parts li").length===2 && !document.querySelector("#ws-component-chat-text").disabled')
+        def chat(text):
+            page.evaluate('document.querySelector("#ws-component-chat-text").focus()')
+            page.send('Input.insertText',{'text':text})
+            page.evaluate('document.querySelector("#ws-component-chat").requestSubmit()')
+            wait('!document.querySelector("#ws-component-chat-text").disabled && document.querySelector("#ws-component-chat-text").value===""')
+        chat('make the head iron')
+        parts=page.evaluate('[...document.querySelectorAll("#ws-parts li")].map(e=>e.textContent)')
+        self.assertTrue(any('haft' in p and 'oak' in p for p in parts),parts)
+        self.assertTrue(any('arm' in p and 'iron' in p for p in parts),parts)
+        page.evaluate('document.querySelector("#ws-quick-save").click()')
+        wait('document.querySelector("#ws-save-status").textContent.includes("Saved")')
+        # Fused mixed material is deliberately refused by native admission;
+        # the supported monolithic oak source must really install and charge.
+        chat('make the whole object oak')
+        before=workshop_library.rack(app)
+        page.evaluate('document.querySelector("#ws-make").click()')
+        wait('document.querySelector("#ws-make-status").textContent.startsWith("Made.")')
+        self.assertEqual(1,len(app.room.workshop_installs))
+        before_oak=next(r['mass_kg'] for r in before['materials'] if r['material']=='oak')
+        after_oak=next(r['mass_kg'] for r in workshop_library.rack(app)['materials'] if r['material']=='oak')
+        self.assertGreater(before_oak,after_oak)
+        self.assertEqual([],[e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
+
+    def test_day_cycle_charges_real_store_and_night_lamp_consumes_it(self):
+        world,owner,app,*_=self.batch(process=False)
+        session=app.live.session
+        self.assertEqual(600,session.spec['sun']['day_s'])
+        # Explicit accelerated experiment, native dt 1/240; production is 600 s.
+        session.send(op='sun',day_s=10,noon_elevation_deg=60,hour=8,irradiance_w_m2=1000)
+        initial=next(s for s in session.state['machines']['stores'] if s['name']=='array battery')['charge_j']
+        seen_day=seen_night=seen_dawn=False
+        direction=None
+        for _ in range(60):
+            out=app.live.act({'session':session.id,'op':'step','dt':1/30,'n':6})
+            sun=out['sun'];lamp=out['machines']['lamps'][0]
+            store=next(s for s in out['machines']['stores'] if s['id']==lamp['store'])
+            self.assertAlmostEqual(initial+store['taken_j']-store['given_j'],store['charge_j'],delta=3e-5)
+            if direction is None:direction=sun['toward']
+            elif .5<out['t']<2:self.assertNotEqual(direction,sun['toward'])
+            if 1<out['t']<2:
+                seen_day=True;self.assertGreater(store['taken_j'],0);self.assertFalse(lamp['lit'])
+            if 5<out['t']<8:
+                seen_night=True;self.assertLess(sun['elevation_deg'],0)
+                self.assertTrue(lamp['lit']);self.assertEqual(20,lamp['drawn_w'])
+                self.assertGreater(lamp['drawn_j'],0);self.assertEqual(0,sun['irradiance_w_m2'])
+            if out['t']>10:
+                seen_dawn=True;self.assertFalse(lamp['on']);self.assertFalse(lamp['lit'])
+        self.assertTrue(seen_day and seen_night and seen_dawn)
+        self.assertAlmostEqual(100,lamp['drawn_j'],delta=1e-5)
+
+    def test_plain_entry_generates_world_and_menu_switches_fall_jump_and_fly(self):
+        if not qa_browser.CHROME.is_file():self.skipTest('Chrome not installed')
+        chrome=qa_browser.Chrome(1280,800);self.addCleanup(chrome.close)
+        page=chrome.page;page.send('Page.enable');page.send('Runtime.enable')
+        def wait(expression):
+            deadline=time.monotonic()+30
+            while time.monotonic()<deadline:
+                try:
+                    if page.evaluate('Boolean('+expression+')'):return
+                except (RuntimeError,TimeoutError):pass
+                time.sleep(.1)
+            self.fail('Browser did not reach '+expression)
+        page.send('Page.navigate',{'url':self.base+'/world'})
+        wait('window.banjoRoom?.ready() && new URL(location.href).searchParams.has("world")')
+        first=page.evaluate('new URL(location.href).searchParams.get("world")')
+        self.assertTrue(self.app.hub.get(first).room.spec['sun']['day_s']>0)
+        wait('document.querySelector("#world-load-meter")')
+        self.assertIn('Ground materials',page.evaluate('document.querySelector("#world-load-meter").textContent'))
+        self.assertGreater(page.evaluate('banjoRoom.scene.getObjectByName("resource-packets").children.filter(c=>c.userData.resourceDeposit).length'),0)
+        def mode(value):
+            page.evaluate('document.querySelector("[data-game-menu]").click()')
+            page.evaluate(f'(()=>{{const e=document.querySelector("#game-menu-movement select");e.value={json.dumps(value)};e.dispatchEvent(new Event("change"))}})()')
+        mode('fly');page.evaluate('banjoRoom.standAt(0,8,0)')
+        mode('gravity')
+        wait('banjoRoom.camera.position.y<5')
+        room=self.app.hub.get(first)
+        floor=room.live.act({'session':room.live.session.id,'op':'survey','at':[0,0]})['survey']['ground_m']
+        wait(f'Math.abs(banjoRoom.camera.position.y-{floor+1.6})<.03')
+        base_y=page.evaluate('banjoRoom.camera.position.y')
+        page.send('Input.dispatchKeyEvent',{'type':'keyDown','key':' ','code':'Space','windowsVirtualKeyCode':32})
+        wait(f'banjoRoom.camera.position.y>{base_y+.3}')
+        time.sleep(1.3)
+        self.assertAlmostEqual(base_y,page.evaluate('banjoRoom.camera.position.y'),delta=.04,msg='Held jump must not launch repeatedly')
+        page.send('Input.dispatchKeyEvent',{'type':'keyUp','key':' ','code':'Space','windowsVirtualKeyCode':32})
+        mode('fly');page.evaluate('banjoRoom.standAt(0,8,0)');time.sleep(.4)
+        self.assertAlmostEqual(8,page.evaluate('banjoRoom.camera.position.y'),delta=.02)
+        page.send('Page.navigate',{'url':self.base+'/world'})
+        wait(f'window.banjoRoom?.ready() && new URL(location.href).searchParams.get("world")!=={json.dumps(first)}')
+        self.assertEqual([],[e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
+
     def test_two_collectors_race_for_one_actual_output_without_duplicate_credit(self):
         from concurrent.futures import ThreadPoolExecutor
         world,owner,app,source,pile,person=self.batch()

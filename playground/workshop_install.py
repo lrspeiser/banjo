@@ -34,7 +34,7 @@ import workshop_sparse_trial as sparse
 import workshop_articulation
 import workshop_library
 from mcp import (engine_materials, joint_efficiency, workshop_components, workshop_machines,
-                 workshop_visual, workshop_matter_metrics, workshop_rigid)
+                 workshop_visual, workshop_matter_metrics, workshop_rigid, workshop as w)
 
 SCHEMA = "banjo.workshop-install.v1"
 MAX_PREVIEWS = 8
@@ -210,6 +210,41 @@ def made_here(app: Any) -> list[dict[str, Any]]:
         rows.append({"design_id": receipt.get("design_id"), "bodies": bodies,
                      "mass_kg": receipt.get("mass_kg"),
                      "recipe": deepcopy(receipt["recipe"]) if receipt.get("recipe") else None})
+    # Older generated starts predate install receipts. Recover only the exact
+    # two-part bootstrap source, after verifying its occupied boxes and tool
+    # declaration against the same compiler. Never infer a recipe from a name.
+    spec = getattr(room, "spec", {}) or {}
+    if not any("field pick" in r["bodies"] for r in rows):
+        bodies = [b for b in spec.get("bodies", []) if b.get("join") == "field pick"]
+        if bodies:
+            design = w.assemble("field-pick", design_id="field-pick")
+            h = float(spec.get("cell_m", .05))
+            candidate = recipe_of(design, {})
+            floor = min((b["center_mm"][1] - b["size_mm"][1]/2)/1000 for b in bodies)
+            # Horizontal translation is read from the labelled handle.
+            haft = next((b for b in bodies if b.get("part") == "field pick/haft"), None)
+            if haft:
+                try:
+                    base = fixed_lattice_plan(design, {}, root="field pick", cell_m=h,
+                        position_m=[0,0], floor_of=lambda bounds:0)
+                    local = next(b for b in base["bodies"] if b.get("part") == "field pick/haft")["center_mm"]
+                    at = [(haft["center_mm"][axis]-local[axis])/1000 for axis in (0,2)]
+                    plan = fixed_lattice_plan(design, {}, root="field pick", cell_m=h,
+                        position_m=at, floor_of=lambda bounds:floor-1e-9)
+                    def normal(value):
+                        if isinstance(value,float):return round(value,9)
+                        if isinstance(value,list):return [normal(v) for v in value]
+                        if isinstance(value,dict):return {k:normal(v) for k,v in value.items()}
+                        return value
+                    def shape(b):
+                        return (b.get("name"),b.get("material"),b.get("part"),
+                            tuple(normal(b.get("size_mm", []))),tuple(normal(b.get("center_mm", []))))
+                    point = next((p for p in spec.get("tool_points", []) if p.get("body") == "field pick"), None)
+                    if sorted(map(shape,bodies)) == sorted(map(shape,plan["bodies"])) and normal(point) == normal(plan["tool"]["point"]):
+                        rows.append({"design_id":"field-pick", "bodies":sorted(b["name"] for b in bodies),
+                                     "recipe":candidate, "source":"Verified bootstrap geometry"})
+                except ValueError:
+                    pass
     return rows
 
 

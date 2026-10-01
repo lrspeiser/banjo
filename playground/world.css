@@ -734,3 +734,10 @@ body.moving-a-thing #panel .workshop-entry { border-style: dashed; }
   font-size: .85rem;
 }
 #world-save-status[hidden] { display: none; }
+#world-load-meter { position:fixed;left:14px;top:14px;z-index:15;display:grid;grid-template-columns:1fr auto;gap:.3rem .7rem;max-width:19rem;padding:.65rem .8rem;background:#12202bea;color:#f1f5fa;border:1px solid #526578;border-radius:.55rem;font-size:.8rem;pointer-events:auto; }
+#world-load-meter[hidden] { display:none; }
+#world-load-meter a { color:#c3dfef; }
+#world-load-meter b,#world-load-meter progress,#world-load-meter small { grid-column:1/-1; }
+#world-load-meter progress { width:100%;accent-color:#83bfa5; }
+#world-load-meter[data-full="true"] { border-color:#f2b24d; }
+#world-load-meter[data-full="true"] progress { accent-color:#f2b24d; }

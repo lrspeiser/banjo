@@ -1,5 +1,13 @@
 # Banjo roadmap and acceptance gates
 
+**Player journey progress, September 30:** [Acceptance table](player-experience-checklist.md)
+now distinguishes verified fresh entry/Workshop flows from partial terrain
+walking, extraction cues and recipe guidance. Next finish visual day/night
+review, actual component labels/full assemblies, shortage/tool/full-load
+journeys, supported mixed-material construction, physical integrity/paid repair,
+and rover support sensing/avoidance/recovery. Keep strict native carry equality;
+adding a new item must retain existing lights and energy history.
+
 **Current owner goal, September 30:** [Twelve player-experience gates](player-experience-checklist.md)
 supersede the earlier progression-only task. Finish verified action visibility,
 then fresh entry and Workshop/tool/capacity blockers, followed by the full

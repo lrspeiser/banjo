@@ -759,6 +759,14 @@ class PlaygroundHttpTests(PlaygroundTestCase):
                 for source in wanted:
                     self.assertIn(source, policy)
 
+    def test_world_policy_hashes_are_read_after_server_start(self):
+        import access_gate
+        fresh = "'sha256-" + "A"*43 + "='"
+        with mock.patch.object(access_gate, '_world_inline_hashes', return_value=[fresh]):
+            _, headers, _ = self.request('GET', '/world')
+        self.assertIn(fresh, headers['Content-Security-Policy'])
+        self.assertNotIn("'unsafe-inline'", headers['Content-Security-Policy'])
+
     def test_static_allowlist_and_environment_paths(self):
         # The site is the world and the Workshop in it, plus Debug, which is
         # not the game: it is the bench the coding agents work from.

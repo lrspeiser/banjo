@@ -641,7 +641,7 @@ class ChatSurface(unittest.TestCase):
                 self.assertIn('event.key==="Enter"&&!event.shiftKey', page)
             else:
                 self.assertIn(marker, page)
-        self.assertIn("make all four legs longer and thinner", page)
+        self.assertIn("placeholder:oldInput.placeholder", page)
 
     def test_world_csp_hashes_every_added_inline_workshop_block(self):
         scripts = access_gate._world_inline_hashes(r'<script\s+type=["\']module["\']>(.*?)</script>')

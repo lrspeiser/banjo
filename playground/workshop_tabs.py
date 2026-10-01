@@ -56,9 +56,10 @@ def carried(app: Any, player_id: str = "") -> list[dict[str, Any]]:
         # Which design made what, so a thing built on the bench opens its own
         # design rather than a fresh copy of its shape.
         made = {}
-        for receipt in getattr(room, "workshop_installs", None) or []:
-            if isinstance(receipt, dict) and receipt.get("design_id"):
-                made[str(receipt.get("root_body") or "")] = str(receipt["design_id"])
+        import workshop_install
+        for receipt in workshop_install.made_here(app):
+            for name in receipt["bodies"]:
+                made[name] = str(receipt["design_id"])
 
         def one(entry: dict[str, Any] | None, where: str) -> dict[str, Any] | None:
             if not entry:

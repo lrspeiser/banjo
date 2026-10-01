@@ -1713,6 +1713,9 @@ def _wrap_up(app: Any, state: _State, instructions: str, inputs: list[dict[str, 
 
 def _role_from_message(message: str, design: Any) -> str | None:
     lower = message.lower()
+    for word, role in (("head","tool-head"),("handle","handle"),("haft","handle")):
+        if re.search(r"\b"+word+r"\b", lower) and any(p.role == role for p in design.parts):
+            return role
     roles = sorted({str(part.role) for part in design.parts}, key=len, reverse=True)
     for role in roles:
         variants = {role.lower(), role.lower() + "s"}
@@ -1748,7 +1751,9 @@ def fallback(message: str, *, materials: list[str], library: list[dict[str, Any]
 def _fallback_turn(state: _State, message: str) -> str:
     """Useful no-key behavior: supports semantic multi-part and multi-edit requests."""
     lower = message.lower(); role = _role_from_message(message, state.design)
-    selector: dict[str, Any] = {"roles": [role]} if role else {}
+    selector: dict[str, Any] = {"roles": [role]} if role else {"names":[state.selected_name]} if state.selected_name else {}
+    if any(word in lower for word in ("whole object","entire object","everything","whole item")):
+        selector = {"names":[p.name for p in state.design.parts]}
     actions = []
     for action, words in (
         ("longer", ("longer", "lengthen", "taller")),
@@ -1760,12 +1765,15 @@ def _fallback_turn(state: _State, message: str) -> str:
     ):
         if any(word in lower for word in words): actions.append(action)
     material = next((m for m in state.materials if m.lower() in lower), None)
+    if material is None and re.search(r"\bmetal\b",lower) and "iron" in state.materials:
+        material = "iron"
     if material: actions.append("material")
     if actions:
         for action in actions:
             state.execute("edit_components", {"selector": selector, "action": action,
                                                "amount": 0.12, "material": material if action == "material" else None})
-        target = role + "s" if role else (state.selected_name or "selected component")
+        target = role + "s" if role else ("the whole item" if selector.get("names") == [p.name for p in state.design.parts]
+                                           else (state.selected_name or "selected component"))
         return f"Updated {target}: " + ", ".join(actions) + "."
     if any(word in lower for word in ("where", "position", "size", "physics", "mass", "balance", "support")):
         result = state.execute("inspect_physics" if any(w in lower for w in ("physics", "mass", "balance", "support")) else "inspect_design", {})

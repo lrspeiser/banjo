@@ -95,13 +95,6 @@ def _install_world_csp_hashes() -> None:
     left the root serving a page whose own bootstrap the browser then refused.
     Only the script-src and style-src directives are extended.
     """
-    wanted = {
-        "script-src 'self'": _world_inline_hashes(r'<script\s+type=["\']module["\']>(.*?)</script>'),
-        "style-src 'self'": _world_inline_hashes(r"<style\b[^>]*>(.*?)</style>"),
-    }
-    wanted = {needle: hashes for needle, hashes in wanted.items() if hashes}
-    if not wanted:
-        return
     original = BaseHTTPRequestHandler.send_header
     if getattr(original, "_banjo_world_csp_hash", False):
         return
@@ -110,6 +103,13 @@ def _install_world_csp_hashes() -> None:
         if keyword.lower() == "content-security-policy":
             path = urlsplit(getattr(handler, "path", "")).path
             if path in {"/", "/world", "/world.html"}:
+                # The development server serves current files. Hash current
+                # bytes too; hashes cached at process startup silently block
+                # the edited startup/chat blocks until the server restarts.
+                wanted = {
+                    "script-src 'self'": _world_inline_hashes(r'<script\s+type=["\']module["\']>(.*?)</script>'),
+                    "style-src 'self'": _world_inline_hashes(r"<style\b[^>]*>(.*?)</style>"),
+                }
                 for needle, hashes in wanted.items():
                     missing = [h for h in hashes if h not in value]
                     if missing and needle in value:

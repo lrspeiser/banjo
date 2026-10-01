@@ -6,6 +6,29 @@ const validId = /^[0-9a-f]{32}$/;
 const key = "banjo.known-worlds.v1";
 const worldUrl = (id) => `/world?world=${id}&scene=new-game`;
 
+// A plain game entry creates a generated world. Explicit scene/QA links remain
+// available to the laboratory and saved-world links always rejoin their world.
+export async function enterGame() {
+  if (currentId || params.has("scene") || params.has("qa")) return true;
+  const state = document.querySelector("#panel-state");
+  if (state) state.textContent = "Generating your world…";
+  try {
+    const status = await fetch("/api/status").then(r => r.json());
+    const response = await fetch("/api/worlds", {method:"POST",
+      headers:{"Content-Type":"application/json", "X-Banjo-Token":status.csrf_token},
+      body:JSON.stringify({name:"New world"})});
+    const answer = await response.json();
+    if (!response.ok) throw new Error(answer.error || "Map generation failed");
+    remember(answer);
+    const target = new URL(answer.url, location.origin);
+    for (const key of ["workshop", "tab"]) if (params.has(key)) target.searchParams.set(key, params.get(key));
+    location.replace(target.pathname + target.search);
+  } catch (error) {
+    if (state) state.textContent = `Could not start: ${error.message}. Use Menu → New game to retry.`;
+  }
+  return false;
+}
+
 function known() {
   try { return JSON.parse(localStorage.getItem(key) || "[]").filter((w) => validId.test(w.id)); }
   catch { return []; }
@@ -22,6 +45,7 @@ const dialog = document.createElement("dialog");
 dialog.id = "game-menu";
 dialog.innerHTML = `<div class="game-menu-head"><h2>Game menu</h2><button type="button" id="game-menu-close" aria-label="Close menu">×</button></div>
   <p id="game-menu-current">Current world</p>
+  <label id="game-menu-movement">Movement<select><option value="gravity">Walk & jump · gravity</option><option value="fly">Fly · inspect world</option></select></label>
   <form id="game-menu-avatar" hidden><label>Your avatar name<input name="name" maxlength="32" required></label><button type="submit">Save avatar name</button></form>
   <form id="game-menu-new"><label>World name<input name="name" maxlength="80" value="New world" required></label><button type="submit">New game · generate map</button></form>
   <form id="game-menu-join"><label>Join a world<input name="link" placeholder="Paste a world link or id" required></label><button type="submit">Join world</button></form>
@@ -31,6 +55,13 @@ dialog.innerHTML = `<div class="game-menu-head"><h2>Game menu</h2><button type="
 document.body.append(dialog);
 const $ = (q) => dialog.querySelector(q);
 const message = (text) => { $("#game-menu-message").textContent = text; };
+const movementSelect = $("#game-menu-movement select");
+movementSelect.value = localStorage.getItem("banjo.movement") || "gravity";
+movementSelect.addEventListener("change", () => {
+  localStorage.setItem("banjo.movement", movementSelect.value);
+  dispatchEvent(new CustomEvent("banjo-movement-mode", {detail:movementSelect.value}));
+  dialog.close();
+});
 
 function render() {
   const list = $("#game-menu-known");

@@ -3262,7 +3262,7 @@ const heldSaid = (kg) => (kg >= 100 ? `${Math.round(kg)} kg`
 function goodsVisuals({scene,camera,groundAt,body,ports,colour,collect,readonly}) {
   const root=new THREE.Group(); root.name="resource-packets"; scene.add(root);
   const cube=new THREE.BoxGeometry(.13,.13,.13);
-  const materials=new Map(), piles=new Map(), hoppers=new Map();
+  const materials=new Map(), piles=new Map(), hoppers=new Map(), seams=new Map();
   const matrix=new THREE.Object3D(), flights=[];
   let epoch=null, seen=new Set(), goods=null, brains=[], nearest=null, busy=false, retry=null, failureUntil=0;
   const reduced=matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -3362,9 +3362,30 @@ function goodsVisuals({scene,camera,groundAt,body,ports,colour,collect,readonly}
       root.add(group);piles.set(p.name,{group,signature});
     }
     for(const [name,p] of piles)if(!keep.has(name)){remove(p.group);piles.delete(name);}
+    const deposits = new Set();
+    for (const d of next?.deposits || []) {
+      if (!(d.left_kg>0) || !(d.radius_m>0)) continue;
+      deposits.add(d.name);
+      const signature = JSON.stringify([d.at_m,d.substance,d.radius_m,d.left_kg]);
+      if (seams.get(d.name)?.signature === signature) continue;
+      if (seams.has(d.name)) remove(seams.get(d.name).group);
+      const group = new THREE.Group(); group.userData.resourceDeposit = d.name;
+      // Survey markers for ledger extraction areas, not fictitious native ore.
+      const ring = new THREE.Mesh(new THREE.RingGeometry(Math.max(.1,d.radius_m-.08),d.radius_m,48),
+        new THREE.MeshBasicMaterial({color:material(d.substance).color,transparent:true,opacity:.7,side:THREE.DoubleSide,depthWrite:false}));
+      ring.rotation.x = -Math.PI/2; ring.position.y = .07; group.add(ring);
+      const title = label(`${d.substance} · ${heldSaid(d.left_kg)}`); title.position.y = .9; group.add(title);
+      group.position.set(d.at_m[0],groundAt(...d.at_m)+.02,d.at_m[1]);
+      root.add(group); seams.set(d.name,{group,signature});
+    }
+    for (const [name,s] of seams) if (!deposits.has(name)) {remove(s.group);seams.delete(name);}
   }
   function loads(next) { if(next!==undefined)brains=next; }
   function advance(now) {
+    for (const s of seams.values()) {
+      s.group.position.y = groundAt(s.group.position.x,s.group.position.z)+.02;
+      for (const child of s.group.children) if(child.isSprite) child.visible = s.group.position.distanceTo(camera.position)<12;
+    }
     for(const [name,p] of piles) {
       const at=(goods?.stockpiles||[]).find(s=>s.name===name)?.at_m;
       if(at)p.group.position.set(at[0],groundAt(...at)+.03,at[1]);
@@ -4289,8 +4310,24 @@ function showInventory() {
   });
   $("inv-carrying").replaceChildren(...rows(carrying, "nothing yet"));
   $("inv-tools").replaceChildren(...rows(uses, "nothing here yet"));
+  const meter = document.querySelector("#world-load-meter");
+  if (meter) {
+    const limit = world.carryLimitKg, mass = carriedKg();
+    meter.hidden = !world.session || !!watchedId;
+    meter.querySelector("output").textContent = `${mass.toFixed(1)} / ${(limit || 0).toFixed(0)} kg`;
+    meter.querySelector("progress").max = limit || 1;
+    meter.querySelector("progress").value = mass;
+    const full = limit>0 && mass>=limit-.05;
+    meter.dataset.full = String(full);
+    meter.querySelector("b").textContent = full ? "Full · digging stopped" : "Ground materials";
+    meter.querySelector("small").textContent = full ? "Point at clear ground → H to empty your load" :
+      [...world.stock].filter(([,v])=>v.kg>0).map(([what,v])=>`${what} ${v.kg.toFixed(1)} kg`).join(" · ") || "Empty";
+  }
 }
 setInterval(showInventory, 250);
+const loadMeter = document.createElement("aside"); loadMeter.id = "world-load-meter"; loadMeter.hidden = true;
+loadMeter.innerHTML = `<a href="${worldId ? `/world?world=${worldId}&workshop=1&tab=inventory` : "/world?scene=world&workshop=1&tab=inventory"}">Inventory</a><b>Ground materials</b><output></output><progress max="1" value="0"></progress><small></small>`;
+document.body.append(loadMeter);
 
 // The bag's first nine slots along the bottom of the view: each with its number,
 // the colour of what it is made of (round for a ball), and its name. A slot
@@ -4549,6 +4586,7 @@ function clearReveal() {
   if (!revealing) return;
   scene.remove(revealing.group);
   revealing.group.traverse(mesh => {
+    mesh.material?.map?.dispose();
     if (mesh.geometry) mesh.geometry.dispose();
     if (mesh.material) mesh.material.dispose();
     if (mesh.isInstancedMesh) mesh.dispose();
@@ -4572,16 +4610,16 @@ function revealPicked() {
     const inspection = cellInspection(entry);
     if (entry.mechanicalModel === "precise-rigid-v1" && entry.parts?.length) {
       kind = "parts"; count = entry.parts.length;
-      // Keep each part's edges, including a boundary shared by joined parts.
-      const positions = [];
-      for (const part of entry.parts) {
-        const edges = edgesOf(preciseGeometry([part], entry.material, false));
-        for (const v of edges.attributes.position.array) positions.push(v);
-        edges.dispose();
+      for (const [i,part] of entry.parts.entries()) {
+        const mesh = new THREE.Mesh(preciseGeometry([part], entry.material, false),
+          new THREE.MeshStandardMaterial({color:look(part.material || entry.material).color,
+            transparent:true,opacity:0,depthTest:false,depthWrite:false,roughness:.8}));
+        const outward = new THREE.Vector3(...part.center_local_m);
+        if (outward.lengthSq()<.001) outward.set(Math.cos(i*2.4),.3,Math.sin(i*2.4));
+        mesh.userData.explode = outward.normalize().multiplyScalar(.5 + .12*Math.sqrt(count));
+        mesh.userData.component = part.component || part.name || `Part ${i+1}`;
+        group.add(mesh);
       }
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-      group.add(new THREE.LineSegments(geometry, material(0x70eddb)));
     } else if (inspection?.cells_local_m?.length && inspection.complete && inspection.cell_count <= REVEAL_MAX_CELLS) {
       cells = inspection.cells_local_m;
       kind = "cells"; count = cells.length;
@@ -4663,6 +4701,7 @@ function animateReveal(now) {
   }
   r.amount = r.reduced ? 1 : Math.min(1, age / 450, (REVEAL_MS - age) / 650);
   r.group.traverse(m => { if (m.material) m.material.opacity = r.amount * 0.8; });
+  for (const mesh of r.group.children) if (mesh.userData.explode) mesh.position.copy(mesh.userData.explode).multiplyScalar(r.amount);
   if (r.entry) {
     r.mesh.updateMatrixWorld(); r.group.matrix.copy(r.mesh.matrixWorld);
   }
@@ -5005,14 +5044,18 @@ function showPicked() {
       rows.push(coreColumn(beds));
       // The one thing worth calling out of a column of dirt.
       const ore = beds.filter((b) => ORE_NAMES.includes(b.name));
-      const values = [["Column width", deepSaid(ground.grid.dx)], ["Layers", String(beds.length)]];
+      const deposits = (world.goods?.deposits || []).filter(d=>d.left_kg>0 &&
+        Math.hypot(picked.at[0]-d.at_m[0],picked.at[2]-d.at_m[1])<=d.radius_m);
+      const values = [["Surface", top?.name || "Ground"], ["Layers", String(beds.length)]];
+      for (const d of deposits) values.push(["Extraction area",d.substance], ["Reserve",heldSaid(d.left_kg)],
+        ["Yield",`${Math.round(d.grade*100)}% ore / scoop`], ["Get it", "Rover → dig → deliver to intake"]);
       if (ore.length) {
         const thick = ore.reduce((sum, b) => sum + b.thick_m, 0);
         const under = Math.max(0, (beds[0].top_m || 0) - ore[0].top_m);
         values.push(["Resource", [...new Set(ore.map(b => b.name))].join(" / ")],
           ["Ore depth", under > 0.05 ? deepSaid(under) : "At surface"], ["Ore thickness", deepSaid(thick)]);
       } else {
-        values.push(["Resource", "No ore in this column"]);
+        if (!deposits.length) values.push(["Resource", "No ore in this column"]);
       }
       rows.push(inspectionValues(values), revealButton());
     }
@@ -6830,6 +6873,14 @@ function showRidingSettings() {
   }));
 }
 
+let movementMode = localStorage.getItem("banjo.movement") || "gravity";
+let verticalSpeed = 0, jumpHeld = false;
+addEventListener("banjo-movement-mode", event => {
+  movementMode = event.detail === "fly" ? "fly" : "gravity";
+  verticalSpeed = 0; jumpHeld = false;
+  // Return the player's controls from a ridden machine to their own feet.
+  if (movementMode === "gravity") letGoOfTheMachine();
+});
 function walk(dt) {
   // RIDING IS THE ORDINARY WAY TO BE HERE. The keys go to the machine and
   // the eye goes where the machine is; everything below -- the free camera,
@@ -6871,10 +6922,33 @@ function walk(dt) {
   // Up, and down with Shift held (interaction.js BINDINGS). E used to be up and
   // Q down: E is the hand's and Q the bag's now.
   const shifted = keys.has("ShiftLeft") || keys.has("ShiftRight");
-  if (BINDINGS.up.keys.some((k) => keys.has(k))) move.y += shifted ? -speed : speed;
+  const jump = BINDINGS.up.keys.some((k) => keys.has(k));
+  if (movementMode === "fly" && jump) move.y += shifted ? -speed : speed;
   // And where the water is going, as far as it has hold of them.
   if (water && water.carried > 0) { move.x += water.u * water.carried * dt; move.z += water.w * water.carried * dt; }
-  camera.position.add(move);
+  if (movementMode === "gravity") {
+    // Terrain controller: integrate gravity, rather than assigning a hover
+    // height. This is a player's controller, not a native colliding rigid body.
+    const supportAt = (x,z,y) => ground.heights ? standingOn(x,z,y) : 0;
+    const before = camera.position.clone();
+    const feet = before.y - BODY_BELOW_EYE_M;
+    const floor = supportAt(before.x,before.z,feet+.2);
+    const grounded = feet <= floor+.025 && verticalSpeed <= 0;
+    if (jump && !jumpHeld && grounded && !shifted) verticalSpeed = 4.5;
+    jumpHeld = jump;
+    const newFloor = supportAt(before.x+move.x,before.z+move.z,feet+.2);
+    if (newFloor > feet+.35) { move.x = 0; move.z = 0; }
+    camera.position.add(move);
+    const slices = Math.max(1,Math.ceil(Math.min(dt,.1)*120)), h = Math.min(dt,.1)/slices;
+    for (let i=0;i<slices;i++) {
+      verticalSpeed -= 9.81*h;
+      camera.position.y += verticalSpeed*h;
+      const under = supportAt(camera.position.x,camera.position.z,camera.position.y-BODY_BELOW_EYE_M+.2);
+      if (camera.position.y <= under+BODY_BELOW_EYE_M) {
+        camera.position.y = under+BODY_BELOW_EYE_M; verticalSpeed = 0;
+      }
+    }
+  } else { jumpHeld = false; verticalSpeed = 0; camera.position.add(move); }
   // Not below the floor, and not so high the room is a map. On uneven ground
   // the floor is the ground under you.
   // What they are standing on, which inside a working is its floor and not the
@@ -6882,7 +6956,7 @@ function walk(dt) {
   const under = ground.heights
     ? standingOn(camera.position.x, camera.position.z, camera.position.y - BODY_BELOW_EYE_M + 0.2)
     : 0;
-  camera.position.y = clamp(camera.position.y, under + 0.25, under + 12);
+  if (movementMode === "fly") camera.position.y = clamp(camera.position.y, under + 0.25, under + 12);
   camera.position.x = clamp(camera.position.x, -28, 28);
   camera.position.z = clamp(camera.position.z, -28, 28);
   camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, "YXZ"));

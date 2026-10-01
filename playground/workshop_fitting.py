@@ -766,6 +766,23 @@ def check_validity(design: Any, overrides: Any = None, *, cell_m: float = 0.04,
         overrides = _readopt(base, overrides)
     current = _built(base, overrides)
 
+    # A monolithic ground tool is joined by occupied matter, rather than by
+    # the machine graph's bearings/fasteners. Use the installation compiler's
+    # connected, single-material gate and validate the authored point/grip.
+    from mcp import workshop_tools
+    if (workshop_tools.KEY in (current.parameters or {})
+            and not workshop_articulation.has_bearings(current)
+            and not workshop_machines.of(current)):
+        try:
+            workshop_tools.frame(current)
+            _compiled(current, overrides, cell_m, root)
+        except ValueError as problem:
+            return {"schema": SCHEMA, "ok": False, "stage": "drawing", "concepts": [],
+                    "changes": [], "overrides": overrides, "says": str(problem)}
+        return {"schema": SCHEMA, "ok": True, "stage": "ready", "concepts": [],
+                "changes": [], "overrides": overrides,
+                "says": "Connected tool geometry compiles as drawn; native admission and use trial required."}
+
     said = concepts(current)
     missing = [c for c in said if not c["ok"]]
     if missing:

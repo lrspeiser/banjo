@@ -944,7 +944,7 @@ def _lamps(given: Any, cables: list[dict[str, Any]], stores: list[dict[str, Any]
     for i, lamp in enumerate(given):
         if not isinstance(lamp, dict):
             raise ValueError(f"lamp {i} is not an object")
-        unknown = set(lamp) - {"name", "body", "cable", "store", "at_mm", "watts", "efficacy_lm_w", "on"}
+        unknown = set(lamp) - {"name", "body", "cable", "store", "at_mm", "watts", "efficacy_lm_w", "on", "auto_night"}
         if unknown:
             raise ValueError(f"lamp {i} cannot say {sorted(unknown)}: it holds name, body, cable, store, at_mm, "
                              "watts, efficacy_lm_w and on")
@@ -971,7 +971,7 @@ def _lamps(given: Any, cables: list[dict[str, Any]], stores: list[dict[str, Any]
                     "watts": _number(lamp.get("watts", 20.0), 0.01, 100000.0, f"lamp {name!r} watts"),
                     "efficacy_lm_w": _number(lamp.get("efficacy_lm_w", 120.0), 0.1, 1000.0,
                                              f"lamp {name!r} efficacy_lm_w"),
-                    "on": bool(lamp.get("on", False))})
+                    "on": bool(lamp.get("on", False)), **({"auto_night":True} if lamp.get("auto_night") is True else {})})
     return out
 
 

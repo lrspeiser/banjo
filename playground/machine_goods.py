@@ -289,6 +289,7 @@ class Goods:
                            for s in self.stockpiles],
             "deposits": [{"name": d.get("name"), "at_m": _xz(d["at_m"]),
                           "substance": d.get("substance"),
+                          "radius_m":d.get("radius_m"), "grade":d.get("grade"),
                           "left_kg": round(self.reserve_kg(d), 3),
                           "of_kg": round(float(d.get("reserve_kg", 0.0)), 3)}
                          for d in self.deposits],

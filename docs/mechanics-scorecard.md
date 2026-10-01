@@ -1,5 +1,15 @@
 # Banjo mechanics scorecard
 
+**Player controller and lighting boundary, September 30:** [Measured checkpoint](player-experience-checklist.md#verification-checkpoint)
+adds no native material law. Walk/jump uses a kinematic terrain controller,
+9.81 m/s² gravity and 4.5 m/s initial grounded jump; it is not a native rigid
+avatar or reaction/conservation model. New 600 s days and automatic lamp
+switches use existing sun/solar/store/lamp laws. A declared 10 s cycle at 50 mm,
+native `dt=1/240 s`, consumes 100 J for five seconds at 20 W; array-store balance
+is within `3e-5 J` of protocol-rounded collected/delivered energy. No glass/oak/iron
+constitutive comparison or strength claim changes. Repair and rover safety
+remain unqualified. Existing machine snapshot equality remains mandatory.
+
 **Resource visualization boundary, September 30:** [Acceptance](resource-flow.md)
 uses existing scoop/receiving and declared goods conversion: 5 kg ore → 1.5 kg
 copper; native mine reaches 1.47 kg wire at 132 s. Pickup survives failures,
