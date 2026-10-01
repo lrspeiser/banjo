@@ -1,5 +1,9 @@
 # Reviewed paid designs — October 1, 2026
 
+Published implementation: `ed9e0eb` on GitHub main. Own 8770 preview was
+restarted with this Python implementation and the unchanged native build;
+the existing generated world remains unconfigured as described below.
+
 ## Implemented
 
 Configured worlds now route Recipes **Make** and Lab **Make it** through the

@@ -7,6 +7,8 @@ starter capabilities and migrate ordinary Make, AI progression and supported
 machine products together; exact rigid forming and mixed interfaces are still
 unsupported. Damaged carried tool-to-use remains a separate ordinary journey.
 Preserve all fourteen gates: four verified, ten partial.
+Implementation `ed9e0eb` is published on main; ordinary finite capabilities,
+AI and machine manufacture are the next integration gate.
 
 **Lab funding/use acceptance, October 1:** [Reviewed stock/battery and native use](fabrication-lab-funding-checkpoint.md)
 passes explicit personal/shared selection, finite charging, lost-response/reload

@@ -8,6 +8,8 @@ fund/start/run/place pass; the fixed suite is 59/59. Native laws/ABI remain
 unchanged. Fresh starter capability, AI and supported machine manufacture need
 to migrate together before enabling the funded guard by default. Four verified,
 ten partial; all fourteen requirements remain active.
+Implementation `ed9e0eb` is published on GitHub main; refreshed 8770 Chrome
+acceptance passes. The preview retains existing worlds and inventories.
 
 **Lab funding-to-use, October 1:** [Browser/native checkpoint](fabrication-lab-funding-checkpoint.md)
 adds explicit stock-pool and battery controls, accepted charging time, pending
