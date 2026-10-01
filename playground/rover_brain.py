@@ -637,6 +637,7 @@ class Brains:
         self.on_rack: Callable[[str, float], None] | None = None
         #: What a batch of a recipe was: the server turns it into evidence.
         self.on_made: Callable[[str, dict[str, float], dict[str, float]], None] | None = None
+        self.on_machine_made = None
 
     def _made(self) -> tuple[Any, str]:
         made = self._deciders()
@@ -718,6 +719,8 @@ class Brains:
         import vessels
         self.goods = (machine_goods.Goods(spec, on_rack=self.on_rack, on_made=self.on_made)
                       if isinstance(spec, dict) else None)
+        if self.goods is not None:
+            self.goods.on_machine_made = self.on_machine_made
         self.ports = machine_ports.Ports(spec if isinstance(spec, dict) else None, holder_for=self.holder_for)
         self.vessels = vessels.Vessels(spec if isinstance(spec, dict) else None)
         # The room's own air temperature, which is what a vessel nobody

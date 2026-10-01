@@ -18,6 +18,8 @@ own hand did in their own world.
 from __future__ import annotations
 
 import hashlib
+from contextlib import contextmanager
+from copy import deepcopy
 import json
 import os
 import threading
@@ -240,10 +242,22 @@ class Journal:
         partial.write_text(json.dumps(self.data, allow_nan=False, indent=1), encoding="utf-8")
         os.replace(partial, self.path)
 
+    @contextmanager
+    def _changing(self):
+        # A failed file write must leave the in-memory revision unchanged too;
+        # otherwise an idempotent retry skips the missing durable write.
+        with self.lock:
+            before = deepcopy(self.data)
+            try:
+                yield
+            except Exception:
+                self.data = before
+                raise
+
     def add_evidence(self, record: dict[str, Any]) -> bool:
         """Keep one evidence record and what it shows. False, and nothing
         changed, when this engine result was already counted."""
-        with self.lock:
+        with self._changing():
             if record["id"] in self.data["evidence"]:
                 return False
             self.data["evidence"][record["id"]] = record
@@ -264,7 +278,7 @@ class Journal:
     def add_note(self, key: str, text: str) -> bool:
         """A regime the engine said it does not model, met by this person's own
         tool: a note, never evidence. Once per result, like evidence."""
-        with self.lock:
+        with self._changing():
             notes = self.data.setdefault("notes", {})
             if key in notes:
                 return False
@@ -281,7 +295,7 @@ class Journal:
         Nothing about matter is touched here, and nothing here can be read by a
         physics law. Learning stoneworking does not harden a wooden pick.
         """
-        with self.lock:
+        with self._changing():
             if technique in self.data["techniques"]:
                 return False
             self.data["techniques"][technique] = {"since": at, "source": source}
@@ -484,14 +498,23 @@ def evidence_from(record: dict[str, Any], *, session_id: str, spec: dict[str, An
 #: Which design a recipe is worked by, and the test it passes by working it.
 #: A recipe is a room's, and the machine that runs it is a design: watching one
 #: work is how the other is learned.
-MADE_BY = {
-    "smelt copper": ("copper-smelter@1", "smelts-ore", "a smelter"),
-    "draw wire": ("copper-mill@1", "draws-wire", "a mill"),
-}
+def batch_design(registry: Registry, recipe: str) -> tuple[dict, dict] | None:
+    """Resolve a curated ledger test by its declared machine recipe.
+
+    Only the supported measured predicate is admitted. New test languages
+    need an evaluator; a descriptive property must not become an unlock.
+    Ambiguous declarations are refused rather than picked by file order.
+    """
+    matches = [(d, t) for d in registry.designs.values()
+               if (d.get("machine") or {}).get("recipe") == recipe
+               for t in d.get("tests") or []
+               if t.get("passes_when") == {"made_kg": ">0"}]
+    return matches[0] if len(matches) == 1 else None
 
 
 def evidence_from_batch(recipe: str, made: dict[str, float], used: dict[str, float],
-                        *, session_id: str, at: str, batch: int) -> dict[str, Any] | None:
+                        *, session_id: str, at: str, batch: int,
+                        registry: Registry | None = None, machine: str = "") -> dict[str, Any] | None:
     """One batch of a recipe, as evidence that the machine does what it is for.
 
     A recipe nobody has named a machine for makes no evidence -- the room may
@@ -499,11 +522,18 @@ def evidence_from_batch(recipe: str, made: dict[str, float], used: dict[str, flo
     ones it has designs for. Named by the session, the recipe and which batch
     it was, so reading the same reply twice awards nothing twice.
     """
-    known = MADE_BY.get(str(recipe))
-    if known is None or not made:
+    import math
+    known = batch_design(registry or Registry(), str(recipe))
+    if known is None or not made or not used or any(
+            not isinstance(v, (int, float)) or isinstance(v, bool) or not math.isfinite(v) or v <= 0
+            for v in list(made.values()) + list(used.values())):
         return None
-    design, test, what = known
-    key = f"{session_id}:{recipe}:{batch}"
+    declaration, experiment = known
+    if (experiment.get("target") or {}).get("substance") not in used:
+        return None
+    design = f"{declaration['id']}@{declaration['revision']}"
+    test, what = experiment["id"], declaration["name"]
+    key = f"{session_id}:{machine}:{recipe}:{batch}"
     words_in = ", ".join(f"{v:.2f} kg of {k}" for k, v in sorted(used.items()))
     words_out = ", ".join(f"{v:.2f} kg of {k}" for k, v in sorted(made.items()))
     return {
@@ -511,16 +541,15 @@ def evidence_from_batch(recipe: str, made: dict[str, float], used: dict[str, flo
         "run": key, "at": at, "design": design, "object": what,
         "source": "watched", "test": test, "passes": True, "action": f"work a batch of {recipe}",
         "target": {"substance": sorted(used)[0] if used else ""},
-        "result": {"made_kg": round(sum(made.values()), 4), "used_kg": round(sum(used.values()), 4),
-                   "made": {k: round(v, 4) for k, v in made.items()},
-                   "used": {k: round(v, 4) for k, v in used.items()}},
+        "result": {"made_kg": sum(made.values()), "used_kg": sum(used.values()),
+                   "made": dict(made), "used": dict(used)},
         "models": ["machine_goods recipe ledger"],
         "limitations": ["the recipe's yield is declared by the room, not measured from chemistry",
                         "the work and the time it takes are the recipe's own numbers"],
         "said": f"{what} worked {words_in} into {words_out}",
         "claim": f"demonstrated: it makes {' and '.join(sorted(made))} of "
                  f"{' and '.join(sorted(used))}",
-        "scope": "this recipe, in this room",
+        "scope": "this recipe, in this room", "machine": machine,
     }
 
 

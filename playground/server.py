@@ -64,6 +64,7 @@ import ai_player
 import workshop_install
 import world_upgrades
 import world_access
+import machine_witness
 import scene_chat
 import network_admission
 from network_admission import Inadmissible, LIMITS, describe_package
@@ -312,6 +313,8 @@ class Playground:
         # a smelter is how smelting is learned; nothing else teaches it.
         self.batches = 0
         def made(recipe, out, used, app=self):
+            if getattr(app, "world_id", None):
+                return  # Named games use the source/observer callback below.
             app.batches += 1
             at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             session = getattr(getattr(app, "live", None), "session", None)
@@ -328,6 +331,9 @@ class Playground:
                 for learned in progression.earn(journal, registry(), at):
                     log.info("banjo: learned %s by watching %s", learned, recipe)
         self.brains.on_made = made
+        self.brains.on_machine_made = lambda recipe, out, used, **source: (
+            machine_witness.batch(self, recipe, out, used, registry=registry(), **source)
+            if getattr(self, "world_id", None) else None)
 
     def log_event(self, job_id, event, **fields):
         directory = self.runs_path / job_id
@@ -1484,15 +1490,22 @@ class Handler(BaseHTTPRequestHandler):
         if getattr(self.app, "world_id", None) and path == "/api/live/open":
             raise ValueError("The shared world cannot be replaced by a laboratory scene")
         world_call = path.startswith(("/api/world/", "/api/live/")) and not path.startswith(("/api/world/workshop/", "/api/world/fabrication/"))
+        # These programs issue individual native commands and wait for the
+        # clock (or another page) to advance the bounded hand between them.
+        # Holding the receiving-account transaction lock across that wait
+        # prevents the very steps they need. They do not transfer host goods;
+        # Live.act still serializes each native command, and the shared lease
+        # keeps installation from replacing their session mid-program.
+        waits_for_steps = path in {"/api/world/action", "/api/world/tool/use", "/api/world/putdown"}
         # Normal world calls share access; explicit installation is exclusive.
         # Keep ordinary requests concurrent and perform authentication first.
         with (world_access.gate(self.app).enter(exclusive=path in ("/api/world/open", "/api/live/open")) if world_call else nullcontext()), \
-             (world_access.state_lock(self.app) if world_call else nullcontext()), \
-             (gameplay_room.LOCK if world_call and (gameplay_room.active(self.app)
+             (world_access.state_lock(self.app) if world_call and not waits_for_steps else nullcontext()), \
+             (gameplay_room.LOCK if world_call and not waits_for_steps and (gameplay_room.active(self.app)
                  or fabrication_room.active(self.app)
                  or path in ("/api/world/open", "/api/live/open")) else nullcontext()):
             if fabrication_room.active(self.app):
-                allowed_world = {"/api/world/open", "/api/world/action", "/api/world/placement", "/api/world/putdown", "/api/world/inventory", "/api/world/inventory/shown", "/api/world/machine", "/api/world/tool", "/api/world/tool/use"}
+                allowed_world = {"/api/world/open", "/api/world/action", "/api/world/placement", "/api/world/putdown", "/api/world/inventory", "/api/world/inventory/shown", "/api/world/machine", "/api/world/watch-machine", "/api/world/tool", "/api/world/tool/use"}
                 if path.startswith("/api/world/") and path not in allowed_world and not path.startswith("/api/world/fabrication/"):
                     raise ValueError("The fabrication room accepts funded outputs; edit designs in Workshop")
                 if not isinstance(body, dict): raise ValueError("Expected a JSON object")
@@ -1916,6 +1929,11 @@ class Handler(BaseHTTPRequestHandler):
                 # to its controller. Only on the room the page has open.
                 _this_pages_room(self.app,body)
                 return self.send(operate_machine(self.app,body))
+            if path=="/api/world/watch-machine":
+                _this_pages_room(self.app,body)
+                if not player:
+                    raise ValueError("Join a named world to keep a personal learning journal")
+                return self.send(machine_witness.request(self.app,player,body,registry()))
             if path=="/api/world/rover/talk":
                 # Talking to a machine from its panel (rover_talk): opened, it
                 # turns to the person; what they say is sorted and done; closed,
@@ -2718,6 +2736,7 @@ def keep_world(app,why=""):
             room.machine_runtime=brains.runtime()
         if not room_store.keep(app,room): return False
         room.world_saved_t=float(saved.get("t_s") or 0.0)
+        machine_witness.saved(app,journal_of,registry())
     return True
 
 

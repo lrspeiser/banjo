@@ -279,6 +279,11 @@ def skills(app: Any) -> dict[str, Any]:
     journal = app.journal_now() if callable(getattr(app, "journal_now", None)) else None
     techniques = (progression.tech_tree(journal, registry) if journal is not None
                   else _tree_from_known(progression, registry, known))
+    if getattr(app,"world_id",None):
+        import learning_routes
+        import world_access
+        with world_access.state_lock(app):
+            learning_routes.resolve(app,registry,techniques)
     return {"techniques": techniques, "designs": notebook.get("designs") or [],
             "blocked": notebook.get("blocked") or [], "not_modelled": notebook.get("not_modelled") or [],
             "revision": notebook.get("revision"), "known": len(known), "of": len(registry.techniques),

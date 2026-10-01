@@ -847,6 +847,10 @@ def process(ctx: senses.Context, call: Call) -> dict[str, Any]:
     # Somebody saw this happen, and that is how a recipe is learned.
     if getattr(ctx.goods, "on_made", None) is not None:
         ctx.goods.on_made(recipe, dict(made["made"]), dict(made["used"]))
+    if callable(getattr(ctx.goods, "on_machine_made", None)):
+        ctx.goods.on_machine_made(recipe, dict(made["made"]), dict(made["used"]),
+                                  machine=ctx.program["name"], batch=r.batches,
+                                  declaration=r.declaration_digest, drawn_j=drawn)
     took_s = max(0.5, made["took_s"])
     _behave(ctx, call, "waiting", min(60.0, took_s))
     words_in = ", ".join(f"{v:.2f} kg of {k}" for k, v in made["used"].items())

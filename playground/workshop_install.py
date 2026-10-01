@@ -1665,7 +1665,7 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
             # Installation replaces the live session and saves the whole room.
             # Keep every guest, their bag and pending paired energy draws too.
             for field in ("player_records", "player_inventories", "player_lock", "hand_owner",
-                          "market_pending", "ground_transfers"):
+                          "market_pending", "ground_transfers", "machine_evidence_pending"):
                 if hasattr(room, field):
                     setattr(record, field, getattr(room, field))
             brains=getattr(app,"brains",None)

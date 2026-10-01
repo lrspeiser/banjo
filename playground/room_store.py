@@ -155,6 +155,11 @@ class RoomStore:
             if runtime and not isinstance(world,dict):
                 raise ValueError("Machine runtime requires its matching native snapshot")
             record["machine_runtime"] = runtime
+        learning = getattr(room,"machine_evidence_pending",None)
+        if learning is not None:
+            import machine_witness
+            machine_witness.validate_pending(learning,runtime,getattr(room,"player_records",{}))
+            record["machine_evidence_pending"] = learning
         text = json.dumps(record, allow_nan=False)
         path = self.path_of(room.scene)
         with self.lock:
@@ -220,6 +225,9 @@ class RoomStore:
             raise ValueError("Expedition save needs both native and gameplay state; refusing a reset")
         room.inventory_record = record["inventory"] if isinstance(record.get("inventory"), dict) else None
         room.player_records = record["players"] if isinstance(record.get("players"), dict) else {}
+        room.machine_evidence_pending = record.get("machine_evidence_pending", [])
+        import machine_witness
+        machine_witness.validate_pending(room.machine_evidence_pending,room.machine_runtime,room.player_records)
         room.market_pending = record.get("market_pending", [])
         if not isinstance(room.market_pending, list):
             raise ValueError("Invalid market deposit record")
@@ -301,6 +309,8 @@ def funded(room: Any) -> bool:
     return (getattr(room, "scene", None) in ("expedition", "fabrication")
             or getattr(room, "fabrication_required", False)
             or isinstance(getattr(room, "fabrication_record", None), dict)
+            or bool(getattr(room,"machine_runtime",None))
+            or bool(getattr(room,"machine_evidence_pending",None))
             or bool((getattr(room,"ground_transfers",None) or {}).get("receipts")))
 
 

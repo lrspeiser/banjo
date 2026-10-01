@@ -62,6 +62,42 @@ class GameScreens(unittest.TestCase):
         out = ROOT / "build/workshop-navigation"; out.mkdir(parents=True, exist_ok=True)
         (out / name).write_bytes(base64.b64decode(self.page.send("Page.captureScreenshot")["data"]))
 
+    def test_watch_batch_button_earns_personal_skill_and_skills_link_to_real_equipment(self):
+        import machine_witness
+        world, owner, app = self.setup_world(); self.browser(world,owner)
+        source = next(m for m in machine_witness.machines(app) if m["recipe"] == "smelt copper")
+        self.page.send("Page.navigate", {"url":self.base + f"/world?world={world}"})
+        self.wait('window.banjoRoom?.ready()',seconds=60)
+        at = source["at_m"]
+        self.page.evaluate(f'banjoRoom.standAt({at[0]},{at[1]+1.2},{at[2]+2}); banjoRoom.lookAt({at[0]},{at[1]},{at[2]})')
+        self.click("#tab-room")
+        selector = f'[aria-label="Control {source["machine"]}"]'
+        self.wait(f'!!document.querySelector({json.dumps(selector)})')
+        self.click(selector)
+        self.wait('document.querySelector("#mp-watch-batch")?.offsetParent !== null')
+        self.click("#mp-watch-batch")
+        self.wait('document.querySelector("#mp-ack").textContent.includes("Stay nearby")')
+        self.screenshot("watch-next-batch.png")
+        for _ in range(200):
+            app.clock._tick(.2)
+            if "smelting-copper" in guests.server.journal_of(app,owner["id"]).knows(): break
+        self.assertIn("smelting-copper",guests.server.journal_of(app,owner["id"]).knows())
+        self.wait('document.querySelector("#notebook-list").textContent.includes("Copper smelter")')
+        self.assertFalse([e for e in self.page.events if e.get("method") == "Runtime.exceptionThrown"])
+        self.navigate(world,"workshop=1&tab=skills")
+        self.wait('!!document.querySelector("[data-technique=rough-shaping-wood]")')
+        self.click('[data-technique="rough-shaping-wood"]')
+        self.wait('document.querySelector("#ws-tree-about").textContent.includes("Missing example")')
+        self.assertNotIn("you were given",self.page.evaluate('document.querySelector("#ws-tree-about").textContent'))
+        self.assertIn("Process unavailable",self.page.evaluate('document.querySelector("#ws-tree-about").textContent'))
+        self.click('[data-technique="smelting-copper"]')
+        self.assertTrue(self.page.evaluate('!!document.querySelector("a.ws-link[href*=focus]")'))
+        self.screenshot("world-aware-skills.png")
+        self.click('a.ws-link[href*=focus]')
+        self.wait('window.banjoRoom?.ready() && location.search.includes("focus=")',seconds=60)
+        self.assertIn("focus=",self.page.evaluate('location.search'))
+        self.assertFalse([e for e in self.page.events if e.get("method") == "Runtime.exceptionThrown"])
+
     def test_failed_bank_notice_is_visible_and_reload_retry_draws_only_once(self):
         world,owner,app=self.setup_world(); self.browser(world,owner)
         self.navigate(world,"workshop=1&tab=market")

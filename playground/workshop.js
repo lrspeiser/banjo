@@ -2210,7 +2210,8 @@ function treeAbout(t) {
   box.append(make("p", { class: "ws-note" }, t.describes || ""));
 
   const state = t.known ? "You know this." : t.within_reach ? "You can earn this now."
-    : `First: ${t.needs.filter((n) => !n.known).map((n) => n.name).join(", ")}.`;
+    : t.unmet?.length ? `First: ${t.needs.filter((n) => !n.known).map((n) => n.name).join(", ")}.`
+    : (t.world_missing || []).join(" · ") || "No supported learning action in this world.";
   box.append(make("p", { class: t.known ? "ws-tree-state ok" : t.within_reach
                                           ? "ws-tree-state reach" : "ws-tree-state" }, state));
 
@@ -2224,6 +2225,12 @@ function treeAbout(t) {
       li.append(make("i", { class: "ws-tick", "aria-hidden": "true" },
                      route.done ? "\u2713" : "\u25cb"));
       li.append(make("span", {}, route.says || route.id || ""));
+      for (const location of route.locations || []) {
+        if (!location.body) continue;
+        const go = make("a", { class: "ws-link",
+          href: `/world?world=${encodeURIComponent(worldId)}&focus=${encodeURIComponent(location.body)}` }, "Go to machine");
+        li.append(go);
+      }
       list.append(li);
     }
     box.append(list);
@@ -2234,10 +2241,15 @@ function treeAbout(t) {
 
   // WHAT IT LETS YOU MAKE, which is the whole reason to want it.
   if (t.opens && t.opens.length) {
-    box.append(make("h4", {}, t.known ? "It lets you make" : "It would let you make"));
+    box.append(make("h4", {}, "Related designs"));
     const list = make("ul", { class: "ws-tree-opens" });
     for (const design of t.opens) {
       const li = make("li", {});
+      if (design.availability) {
+        li.append(make("strong", {}, design.name), make("span", {}, ` · ${design.availability}`));
+        list.append(li);
+        continue;
+      }
       const go = make("button", { type: "button", class: "ws-link" }, design.name);
       // Straight to the bench for that thing: a tech tree that cannot be
       // acted on is a poster.

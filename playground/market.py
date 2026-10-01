@@ -114,7 +114,8 @@ def _guidance(app: Any, offers: list[dict[str, Any]]) -> dict[str, Any]:
     candidates.sort()
     chosen = candidates[0] if candidates else None
     return {"skill": ({"id": next_skill["id"], "name": next_skill["name"],
-                        "route": next_skill["earned_by"][0]["says"] if next_skill["earned_by"] else ""}
+                        "route": next((r["says"] for r in next_skill["earned_by"]
+                                       if r.get("world_ready",True)), "")}
                        if next_skill else None),
             "recipe": chosen[3] if chosen else None,
             "offer_id": chosen[4] if chosen else None,

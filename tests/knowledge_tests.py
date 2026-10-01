@@ -242,6 +242,25 @@ class TheNotebookKeepsOnePersonsResults(unittest.TestCase):
 
 
 class TheChatReadsItAndCannotWriteIt(unittest.TestCase):
+    def test_failed_journal_write_does_not_publish_or_suppress_retry(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as folder:
+            journal = progression.Journal(Path(folder)/"atomic-journal.json")
+            evidence = progression.evidence_from_batch("smelt copper",{"copper":1.5},{"copper ore":5},
+                session_id="source",at="test",batch=1)
+            with mock.patch.object(progression.os,"replace",side_effect=OSError("disk failure")):
+                with self.assertRaises(OSError): journal.add_evidence(evidence)
+            self.assertEqual(0,journal.data["revision"])
+            self.assertEqual({},journal.data["evidence"])
+            self.assertTrue(journal.add_evidence(evidence))
+            with mock.patch.object(progression.os,"replace",side_effect=OSError("disk failure")):
+                with self.assertRaises(OSError): progression.earn(journal,progression.Registry(),"test")
+            self.assertEqual(set(),journal.knows())
+            self.assertEqual(["smelting-copper"],progression.earn(journal,progression.Registry(),"test"))
+            restored = progression.Journal(journal.path)
+            self.assertEqual({"smelting-copper"},restored.knows())
+            self.assertEqual(1,len(restored.data["evidence"]))
+
     def test_no_tool_the_chat_has_writes_a_notebook(self):
         names = {t["name"] for t in room_world.chat_tools()}
         self.assertIn("read_knowledge", names)
@@ -532,7 +551,7 @@ class ARecipeYouWatchedIsARecipeYouKnow(unittest.TestCase):
         self.assertEqual(["smelting-copper"], learned)
         book = progression.notebook(self.journal, self.registry)
         said = [e["said"] for d in book["designs"] for e in d["evidence"]]
-        self.assertIn("a smelter worked 5.00 kg of copper ore into 1.50 kg of copper", said)
+        self.assertIn("Copper smelter worked 5.00 kg of copper ore into 1.50 kg of copper", said)
 
     def test_the_mill_is_a_rung_above_the_smelter(self):
         """You cannot draw wire out of copper you cannot make, so the graph is
@@ -568,6 +587,25 @@ class ARecipeYouWatchedIsARecipeYouKnow(unittest.TestCase):
     def test_a_batch_that_made_nothing_is_not_evidence(self):
         self.assertIsNone(progression.evidence_from_batch(
             "smelt copper", {}, {"copper ore": 5.0}, session_id="s1", at=self.now, batch=1))
+
+
+class GeneralBatchPredicates(unittest.TestCase):
+    def test_small_positive_source_amounts_are_preserved_in_evidence(self):
+        evidence = progression.evidence_from_batch("fire ceramic",{"ceramic":1e-7},{"clay":1e-6},
+            session_id="source",at="test",batch=1)
+        self.assertEqual(1e-7,evidence["result"]["made_kg"])
+        self.assertEqual({"ceramic":1e-7},evidence["result"]["made"])
+
+    def test_ceramic_batch_uses_curated_test_and_rejects_wrong_input_and_nonfinite_amount(self):
+        registry, journal = progression.Registry(), progression.Journal()
+        evidence = progression.evidence_from_batch("fire ceramic",{"ceramic":.9},{"clay":1},
+            session_id="source",at="test",batch=1)
+        journal.add_evidence(evidence)
+        self.assertEqual(["firing-ceramic"],progression.earn(journal,registry,"test"))
+        for made, used in (({"ceramic":1},{"sand":1}),({"ceramic":float("nan")},{"clay":1}),
+                           ({"ceramic":1},{"clay":-1})):
+            self.assertIsNone(progression.evidence_from_batch("fire ceramic",made,used,
+                session_id="s",at="test",batch=1))
 
 
 if __name__ == "__main__":

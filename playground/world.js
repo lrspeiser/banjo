@@ -2626,6 +2626,7 @@ function showMachinePanel() {
   $("mp-brain").hidden = true;
   $("mp-decided").hidden = true;
   $("mp-routine").hidden = true;
+  if ($("mp-watch-batch")) $("mp-watch-batch").hidden = true;
   $("mp-talk").hidden = true;
   if (!$("mp-chat").hidden) closeTalk(true);
   const hoist = c.kind === "hoist";
@@ -2798,6 +2799,7 @@ function showBrain(p) {
     : "OPENAI_API_KEY is not in the local .env, so the model cannot be asked";
   const who = labels[mode] || (mode === "jev" ? "Jev" : "the model");
   showRoutine(brain && brain.routine);
+  showBatchWatch(p, brain && brain.routine);
   const last = brain && brain.decisions && brain.decisions.length ? brain.decisions[brain.decisions.length - 1] : null;
   const decided = $("mp-decided");
   if (brain && brain.thinking) { decided.textContent = `Asking ${who} about: ${brain.thinking}…`; decided.hidden = false; }
@@ -8773,6 +8775,30 @@ function updateWatchedCharacter(view) {
   world.inventory = view.state.inventory || null;
   if (view.state.notebook) showNotebook(view.state.notebook, false);
   showInventory();
+}
+
+function showBatchWatch(program, routine) {
+  let button = $("mp-watch-batch");
+  if (!button) {
+    button = document.createElement("button"); button.type = "button";
+    button.id = "mp-watch-batch"; button.textContent = "Watch next batch";
+    $("mp-routine").after(button);
+    button.addEventListener("click", async () => {
+      const selected = shownControl();
+      if (!selected || machinePanel.of !== "program") return;
+      button.disabled = true;
+      try {
+        const answer = await api("/api/world/watch-machine", {
+          session: world.session, machine: selected.name, person: whereIAm() });
+        machinePanel.said = answer.said; machinePanel.stale = false;
+      } catch (error) {
+        machinePanel.said = error.message; machinePanel.stale = true;
+      } finally {
+        button.disabled = false; showMachinePanel();
+      }
+    });
+  }
+  button.hidden = !worldId || !!watchedId || routine?.kind !== "process";
 }
 
 async function tickWatchedCharacter() {
