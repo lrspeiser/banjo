@@ -105,7 +105,11 @@ class GeneratedRovers(unittest.TestCase):
                 app.live.act({'session':app.live.session.id,'op':'run','program':program['id'],
                               'sender':'delivery-verification','seq':1,'power':False})
                 expected=(starter_ore+mined_ore)*.3
-                for _ in range(400):
+                # Earlier arrivals leave more cold batches still to heat.
+                # Native replay finishes beyond the old 80 s window (which
+                # stopped at 9.0 / 7.5 kg); allow 160 s for real batch heating.
+                # Yield, ledger precision and exact credit tolerances are unchanged.
+                for _ in range(800):
                     app.clock._tick(.2)
                     if abs(output['holds'].get('copper',0.)-expected)<1e-6:break
                 # Goods.put/convert retain six decimal places in kg. Bound

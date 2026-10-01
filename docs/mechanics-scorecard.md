@@ -1,5 +1,14 @@
 # Banjo mechanics scorecard
 
+**Repeated hauling boundary, October 1:** [Native/API measurements](rover-return-routing.md)
+retain 50 mm / `dt=1/240 s`, native motors/brakes and actual terrain guards.
+Both maps deliver 120 kg total / 36 kg mined ore across three receipts and
+restore routine state exactly. Plan medians are 0.2481 / 0.0580 s, bounded at
+4,096 queries over 6 m. Native 21 cases retain glass/oak/iron grade evidence;
+rear-hazard requested reverse holds while a clear reverse moves physically.
+No material/contact/friction law changes, native cargo inertia or full mechanical
+energy closure are claimed. General routes, payload/tipping, avatars and repair remain.
+
 **Generated hauling boundary, October 1:** [Measured first journeys](generated-rover-hauling.md)
 retain 50 mm / `dt=1/240 s` and actual native motor/brake/support guards.
 First receiving loads are 40.000000 / 29.995942 kg at 68.2 / 82.0 s; mined

@@ -1,5 +1,12 @@
 # Banjo roadmap and acceptance gates
 
+**Repeated-haul acceptance, October 1:** [Three receiving loads on both maps](rover-return-routing.md)
+passes actual mine/return/dump cycles and exact routine restore. First-load
+processing and private collection remain verified with unchanged yield/credit
+checks. Next broaden route families and lower measured planning cost, then
+finish ordinary recipe/tool/capacity and day/night visual journeys. Native
+avatars, cargo/tipping and material-funded damage/repair retain separate gates.
+
 **Generated first-haul acceptance, October 1:** [Delivery → processing → pickup](generated-rover-hauling.md)
 passes both generated starts with exact private credit/restart and native
 receiving activities. Next fix the first map's excavated return approach,

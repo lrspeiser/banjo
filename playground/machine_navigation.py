@@ -14,7 +14,10 @@ from machine_ports import _turn
 CELL_M = .5
 LOOK_M = 6.
 STOP_MARGIN_M = .65
-MAX_SURVEYS = 1024
+# Turning clear of a worked area can require an outward loop before any
+# distance progress. A 1,024-query search stopped before the measured return
+# loop on generated map 0; retain the 6 m horizon and bound the expanded search.
+MAX_SURVEYS = 4096
 WAYPOINT_NEAR_M = .4
 
 
@@ -64,6 +67,9 @@ def waypoint(ctx, target, arrival=(0.,0.)):
             if s.get('kind')=='ground' and s.get('stops',1)>=0]
     probe_radius=max((math.hypot(s['at_m'][0]-at[0],s['at_m'][2]-at[1]) for s in probes),default=0.)
     probe_offsets=[(s['at_m'][0]-at[0],s['at_m'][2]-at[1],float(s['depth_m'])) for s in probes]
+    rear=[s for s in ctx.program.get('sensors') or []
+          if s.get('kind')=='ground' and s.get('stops',1)<0]
+    rear_offsets=[(s['at_m'][0]-at[0],s['at_m'][2]-at[1],float(s['depth_m'])) for s in rear]
     initial_heading=math.radians(ctx.heading())
     obstacles=[]
     for b in ctx.bodies or []:
@@ -122,19 +128,19 @@ def waypoint(ctx, target, arrival=(0.,0.)):
                     rejected('supported_grade',(x,z),{'grade_deg':grade});ok=False
         valid[node]=ok;return ok
     poses={}
-    def clear_pose(node,heading):
+    def clear_pose(node,heading,reverse=False):
         """Predict the declared probes at this heading, using native heights.
 
         A hazard beside a route does not prohibit driving parallel to it. The
         native controller still measures the actual tilted assembly each step.
         """
-        key=(*node,round(heading,8))
+        key=(*node,round(heading,8),reverse)
         if key in poses:return poses[key]
         center=terrain(node);gradient=(center or {}).get('ground_gradient_xz')
         ok=center is not None
         if ok and gradient:
             delta=heading-initial_heading;c=math.cos(delta);s=math.sin(delta)
-            for ox,oz,limit in probe_offsets:
+            for ox,oz,limit in rear_offsets if reverse else probe_offsets:
                 dx=ox*c+oz*s;dz=-ox*s+oz*c
                 observed=terrain((node[0]+dx/CELL_M,node[1]+dz/CELL_M))
                 reading=(float(center['ground_m'])+gradient[0]*dx+gradient[1]*dz-
@@ -167,6 +173,18 @@ def waypoint(ctx, target, arrival=(0.,0.)):
         return {'target':list(at),'final':True,'radius_m':radius,'surveys':queries,'path':[list(at)]}
     if not clear(start):return {'blocked':'there is no clearance around its current assembled footprint',
                                'rejections':rejections,'radius_m':radius,'surveys':queries}
+    # Reserve a checked short retreat before a failed search consumes its
+    # observation budget. No blind reverse: require actual rear probes and
+    # sample a metre including braking room; request only half that distance.
+    retreat=None
+    if len(rear)>=2 and not any(s.get('sees') for s in rear):
+        dx,dz=-math.sin(initial_heading),-math.cos(initial_heading)
+        if all(clear((dx*k*.25/CELL_M,dz*k*.25/CELL_M)) and
+               clear_pose((dx*k*.25/CELL_M,dz*k*.25/CELL_M),initial_heading,reverse=True)
+               for k in range(5)):
+            retreat={'target':[at[0]+dx*.5,at[1]+dz*.5],'from_m':list(at),
+                     'reverse':True,'travel_m':.5,'heading_deg':ctx.heading(),
+                     'final':False,'radius_m':radius}
     # Heading is part of a route state: arrival from one direction can be safe
     # while a turn at the same location would sweep a probe over a drop.
     directions=[(dx,dz,math.atan2(dx,dz)) for dx,dz in product((-1,0,1),repeat=2) if dx or dz]
@@ -190,6 +208,8 @@ def waypoint(ctx, target, arrival=(0.,0.)):
             costs[next_state]=score;parents[next_state]=state
             heapq.heappush(queue,(score+remaining(nxt),score,next_state))
     if best==begin:
+        if retreat:
+            return dict(retreat,surveys=queries)
         return {'blocked':'no visible dry route makes progress toward that place','rejections':rejections,
                 'radius_m':radius,'surveys':queries,'reachable_nodes':len(costs)}
     path=[best]
@@ -199,6 +219,10 @@ def waypoint(ctx, target, arrival=(0.,0.)):
     # This avoids asking the caster to turn at each half-metre grid corner.
     chosen=path[1]
     for candidate in reversed(path[1:]):
+        # A heading-state route may loop back through the same position.
+        # An approach ask inside its arrival radius would brake immediately,
+        # erasing that required loop/turn and replanning forever at the origin.
+        if math.hypot(*candidate)*CELL_M<=WAYPOINT_NEAR_M+.05:continue
         if leg_clear(start,candidate,initial_heading,math.atan2(*candidate)):
             chosen=candidate;break
     destination=list(point(chosen))

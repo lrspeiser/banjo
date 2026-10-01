@@ -255,6 +255,14 @@ def go_to(ctx: senses.Context, call: Call) -> dict[str, Any]:
                 return {'did':'go_to blocked: '+navigation['blocked'],
                         'blocked_route':True,'navigation':navigation,'place_at':point}
             if navigation:aim=navigation['target']
+    if navigation and navigation.get('reverse'):
+        if float(ctx.program.get('speed_m_s') or 0)>.05 or abs(float(ctx.program.get('turning_deg_s') or 0))>3.:
+            _behave(ctx,call,'waiting',0.)
+            return {'did':'go_to waits for its brakes before a checked retreat',
+                    'blocked_route':True,'navigation':{'blocked':'braking before a checked retreat'},'place_at':point}
+        out=_behave(ctx,call,'backing off',2.)
+        out.update(did=f'backing away to replan the route to {name}',target=aim,place_at=point,navigation=navigation)
+        return out
     out = _behave(ctx, call, "approaching", float(call.args.get("for_s", 60.0)), aim,
                   near_m=machine_navigation.WAYPOINT_NEAR_M if navigation else None)
     out["did"] = (f"following a local route to {name}" if navigation else
@@ -338,7 +346,7 @@ def _spots(ctx: senses.Context, middle: list[float]) -> list[list[float]]:
             off = math.hypot(spot[0] - ax, spot[1] - az)
             if clear <= off <= DIG_REACH_M:
                 (far if off >= to_middle - 0.05 else near).append(spot)
-    return far or near
+    return far+near
 
 
 def _bite(ctx: senses.Context, args: dict[str, Any]) -> dict[str, Any]:
@@ -389,21 +397,35 @@ def _bite(ctx: senses.Context, args: dict[str, Any]) -> dict[str, Any]:
         return {"back_off_m": clear + 0.3 - off,
                 "why": f"it is {off:.1f} m from {named} and will not dig the ground under itself"}
     around = _around_m(ctx, middle, _spread_m(ctx, middle) + 0.5)
-    best, high = None, None
+    candidates=[]
     for spot in _spots(ctx, middle):
         here = ctx.survey(spot[0], spot[1]) or {}
         if "ground_m" not in here:
             continue
         ground = float(here["ground_m"] or 0.0)
-        if high is None or ground > high:
-            best, high = spot, ground
-    if best is None:
+        candidates.append((ground,spot))
+    if not candidates:
         return {"why": f"it cannot reach any of {named} from where it stands"}
+    to_middle=math.hypot(middle[0]-ax,middle[1]-az)
+    candidates.sort(key=lambda pair:(math.hypot(pair[1][0]-ax,pair[1][1]-az)>=to_middle-.05,pair[0]),reverse=True)
+    high=max(pair[0] for pair in candidates)
     down_mm = (around - high) * 1000.0
     if down_mm > DIG_FRESH_M * 1000.0:
         return {"why": f"{named} is worked out: the highest ground of it it can reach is {down_mm:.0f} mm down "
                        f"already, and it will not dig one hole deeper"}
-    return {"point": best}
+    # A high reachable point can still intersect the actual turned assembly's
+    # support rectangle. Do not retry that same refused point forever while
+    # other fresh ground is within reach. Explicit point requests retain their
+    # normal single-point refusal; named workings choose an admitted bite.
+    width=min(float(args.get('width_m',DIG_WIDTH_M)),2.)
+    for ground,spot in candidates:
+        if around-ground>DIG_FRESH_M:continue
+        if not _flies(ctx):
+            clearance=_act(ctx,op='dig_clearance',program=ctx.program['id'],
+                           **{'from':spot,'to':spot},width_m=width)
+            if clearance.get('clear') is False:continue
+        return {'point':spot}
+    return {'why':f'{named} has no fresh bite within reach that clears its current support; move to another approach'}
 
 
 def _resource_endpoint(ctx, flow=None):

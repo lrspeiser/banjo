@@ -87,6 +87,11 @@ qualifies those controls; the separate acceptance cases above measure hauling.
 
 ## Remaining boundary
 
+The subsequent [repeated-hauling checkpoint](rover-return-routing.md) supersedes
+the blocked-return result below with three receiving loads on each map and
+retained processing/private pickup. The following describes the first-haul
+checkpoint's historical boundary.
+
 Earlier exploratory 300 s runs with an initial pose refresh produce one delivery
 on choice 0 and four on choice 1. Choice 0 then holds while returning toward
 its excavated area. The heading/probe approximation does not capture the native

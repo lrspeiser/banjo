@@ -1600,6 +1600,43 @@ void groundSensorsReadActualHolesAndSurviveSaving() {
     require(closest<.8,"native torque/brakes keep the chassis before its dry hole");
 }
 
+void requestedReverseStopsAtActualRearHazards() {
+    Rover clear=dryGroundRover();
+    const auto clear_start=posed(clear.world->poses(),"rover").position_m;
+    for(double x:{-.55,.55})
+        require(clear.world->programSense(clear.program,"ground","rover",clear_start+Vec3{x,0,-1.2},.12,-1),"clear rear probe fits");
+    runIt(*clear.world,clear.program,true,1);
+    askIt(*clear.world,clear.program,"backing off",5.,2);
+    for(int i=0;i<120;i++)tick(*clear.world);
+    const double clear_travel=clear_start.z-posed(clear.world->poses(),"rover").position_m.z;
+    require(clear_travel>.02,"a clear autonomous reverse moves through actual motors");
+    Rover r=dryGroundRover();
+    const auto at=posed(r.world->poses(),"rover").position_m;
+    for(double x:{-.55,.55})
+        require(r.world->programSense(r.program,"ground","rover",at+Vec3{x,0,-1.2},.12,-1),"rear probe fits");
+    require(!r.world->dig(-1,-1.2,1,-1.2,.8,.6).edit.cells.empty(),"rear drop cuts actual terrain");
+    for(int i=0;i<24;i++)tick(*r.world);
+    const auto sensed=programOf(*r.world,r.program);
+    require(sensed.sensors[0].sees && sensed.sensors[1].sees,"both rear probes detect the dry drop");
+    runIt(*r.world,r.program,true,1);
+    const auto start=posed(r.world->poses(),"rover").position_m;
+    askIt(*r.world,r.program,"backing off",5.,2);
+    double most=0;
+    for(int i=0;i<240;i++) {
+        tick(*r.world);
+        most=std::max(most,start.z-posed(r.world->poses(),"rover").position_m.z);
+        require(programOf(*r.world,r.program).doing=="waiting","rear hazard brakes the autonomous reverse");
+    }
+    require(most<.01,"an autonomous requested reverse does not enter the rear drop");
+    require(programOf(*r.world,r.program).why.find("rear probes")!=std::string::npos,"held reverse gives its reason");
+    askIt(*r.world,r.program,"backing off",5.,3,"explicit person",nullptr,true);
+    for(int i=0;i<120;i++)tick(*r.world);
+    require(programOf(*r.world,r.program).doing=="backing off","explicit human control retains its override");
+    const double human=start.z-posed(r.world->poses(),"rover").position_m.z;
+    require(human>.02,"human override drives actual wheels");
+    std::cout<<"    reverse: clear autonomous travel "<<clear_travel<<" m; rear-hazard travel "<<most<<" m; explicit human travel "<<human<<" m\n";
+}
+
 void nativeApproachRadiusMovesAndStopsWithoutAPoseConstraint() {
     for(double near:{1.,.2}) {
         auto world=LiveWorld::open(flatRoom());const auto m=fit(*world,pinUp(*world));
@@ -1639,6 +1676,7 @@ int main(int argc, char **argv) {
         {"bounded native hand recovers a rover from an actual excavation",boundedHandRecoversAnExcavatedRover},
         {"machine digging preserves support of actual attached collision shapes",machineDigUsesActualAttachedCollisionShapes},
         {"ground probes read and avoid a native dry hole and survive saving",groundSensorsReadActualHolesAndSurviveSaving},
+        {"requested reverse stops at actual rear hazards",requestedReverseStopsAtActualRearHazards},
         {"it goes straight and turns on the spot", itGoesStraightAndTurnsOnTheSpot},
         {"it roams the shore and never gets wet", itRoamsTheShoreAndNeverGetsWet},
         {"a saved rover roams on", aSavedRoverRoamsOn},

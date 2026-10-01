@@ -1786,7 +1786,9 @@ check actual position. The runner reports `asked.near_m` and `asked.arrived`,
 and snapshots retain them. Terrain `survey` reports `ground_gradient_xz`
 (metres/metre), the same half-cell height derivative the ground probes use.
 [Native measurements and limits](rover-waypoints.md) cover drive, reopen and
-probe prediction; successful generated-world hauling remains an open gate.
+probe prediction. [Repeated generated hauling](rover-return-routing.md) now
+qualifies three loads on both ordinary maps; general terrain and physical cargo
+remain open gates.
 
 Routine `go_to` now plans bounded local waypoints over merged current native
 geometry and observed terrain. It checks actual arrival/braking before advancing

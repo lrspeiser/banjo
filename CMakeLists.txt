@@ -1518,6 +1518,11 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/generated_rover_tests.py -v)
     set_tests_properties(banjo_generated_rover_tests PROPERTIES TIMEOUT 300)
+    add_test(NAME banjo_generated_rover_repeat_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/generated_rover_repeat_tests.py -v)
+    set_tests_properties(banjo_generated_rover_repeat_tests PROPERTIES TIMEOUT 300)
     add_test(NAME banjo_ai_verification_tests
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/ai_verification_tests.py -v)
     set_tests_properties(banjo_ai_verification_tests PROPERTIES TIMEOUT 60)

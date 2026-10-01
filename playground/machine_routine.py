@@ -514,9 +514,49 @@ class Routine:
             return None
         if frame.issued is not None:
             if until == "arrived":
-                if frame.issued.get('blocked_route'):
+                navigation=frame.issued.get('navigation') or {}
+                path=navigation.get('path') or []
+                target=navigation.get('target')
+                if path and target and asked and asked.get('doing')=='approaching' and not frame.issued.get('blocked_route'):
+                    # Native turning/caster motion can leave the surveyed leg.
+                    # Stop on actual brakes and observe a new route instead of
+                    # keeping the stale command alive for its entire minute.
+                    origin=path[0];at=ctx.at()
+                    dx,dz=target[0]-origin[0],target[1]-origin[1]
+                    length2=dx*dx+dz*dz
+                    along=max(0.,min(1.,((at[0]-origin[0])*dx+(at[1]-origin[1])*dz)/length2)) if length2 else 0.
+                    error=math.hypot(at[0]-origin[0]-along*dx,at[1]-origin[1]-along*dz)
+                    import machine_navigation
+                    if error>machine_navigation.STOP_MARGIN_M:
+                        frame.issued=tools.hold_still(ctx,tools.Call('hold_still',{'for_s':0},by))
+                        frame.issued.update(blocked_route=True,
+                            navigation={'blocked':'actual motion left the surveyed leg; braking before replanning',
+                                        'cross_track_m':error})
+                        frame.issued_t=float(ctx.t)
+                        return frame.issued
+                if navigation.get('reverse'):
+                    moving=(float(program.get('speed_m_s') or 0)>.05 or
+                            abs(float(program.get('turning_deg_s') or 0))>3.)
+                    if frame.issued.get('reverse_stopping'):
+                        if moving:return None
+                        frame.issued=None;asked=None
+                    else:
+                        at=ctx.at();origin=navigation['from_m']
+                        travel=math.hypot(at[0]-origin[0],at[1]-origin[1])
+                        turned=abs((ctx.heading()-navigation['heading_deg']+180)%360-180)
+                        rear_hazard=any(s.get('sees') and s.get('stops',1)<0
+                                        for s in program.get('sensors') or [])
+                        if asked is not None and travel<navigation['travel_m'] and turned<15 and not rear_hazard:
+                            return None
+                        frame.issued=tools.hold_still(ctx,tools.Call('hold_still',{'for_s':0},by))
+                        frame.issued.update(navigation=navigation,reverse_stopping=True)
+                        frame.issued_t=float(ctx.t)
+                        return frame.issued
+                if frame.issued is None:
+                    pass  # a completed retreat replans this same requested place
+                elif frame.issued.get('blocked_route'):
                     if frame.issued.get('drive_failed'):return None  # resume/recovery can retry; never dig here
-                    if float(ctx.t)-frame.issued_t<3.:return None
+                    if float(ctx.t)-frame.issued_t<3. or float(program.get('speed_m_s') or 0)>.05 or abs(float(program.get('turning_deg_s') or 0))>3.:return None
                     frame.issued=None;asked=None
                 elif asked and asked.get("doing") == "approaching" and program.get("doing") == "waiting":
                     navigation=frame.issued.get('navigation')
@@ -579,6 +619,12 @@ class Routine:
                and frame.name == "routine" else f"{frame.name}")
         call = tools.Call(step["do"], dict(step.get("args") or {}), by, why=why)
         did = tools.run(ctx, call)
+        if (did.get('navigation') or {}).get('reverse'):
+            frame.tries+=1
+            if frame.tries>int(step.get('retries',RETRIES)):
+                did=tools.hold_still(ctx,tools.Call('hold_still',{'for_s':0},by))
+                did.update(blocked_route=True,drive_failed=True,
+                           navigation={'blocked':'repeated retreats did not clear a route; recover or resume to retry'})
         frame.issued = did
         frame.issued_t = float(ctx.t)
         if did.get('blocked_route') and (not self.notes or self.notes[-1]!=did['did']):

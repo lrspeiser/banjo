@@ -22,6 +22,12 @@ This is the current acceptance list, not a claim that all features are done.
 
 ## Generated first-haul checkpoint — October 1
 
+The subsequent [return-hauling checkpoint](rover-return-routing.md) now verifies
+three positive receiving loads on both maps, exact routine reopen and retained
+first-load processing/private pickup. It supersedes the earlier blocked-return
+result below. Items 1, 12, 13 and 14 remain partial because general terrain,
+physical cargo/tipping and the other listed boundaries are still open.
+
 [Two-map acceptance](generated-rover-hauling.md) now verifies ordinary native
 startup, first mining/delivery, processing, nearby personal pickup and exact
 SQL credit/restart/retry. First loads are 40.000000 / 29.995942 kg at 68.2 /

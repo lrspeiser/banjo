@@ -2677,6 +2677,9 @@ struct LiveWorld::Impl {
                 } else {
                     stay("waiting");
                 }
+            } else if (s.asked == "backing off" && !s.asked_by_person && hazard_behind) {
+                stay("waiting");
+                s.why = "ground or water behind: its rear probes hold the requested reverse";
             } else {
                 stay(s.asked.c_str());
             }

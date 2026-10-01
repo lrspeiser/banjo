@@ -1,5 +1,13 @@
 # Development status and handoff
 
+**Repeated generated hauling, October 1:** [Return-route acceptance](rover-return-routing.md)
+passes three real receiving loads on each ordinary map (120 kg total / 36 kg
+mined ore per map), exact routine restore and retained processing/private pickup.
+Bounded local search, loop-safe smoothing, observed-motion replanning and native
+rear guards retain actual motor/brake motion. Native 21 cases, brain 55 and
+browser/player 15 pass. General routing, physical payload/tipping, avatars and
+repair remain open; the full player-experience goal stays active.
+
 **Generated first-haul implementation, October 1:** [Measured journey](generated-rover-hauling.md)
 delivers 40.000000 / 29.995942 kg on both ordinary generated starts, processes
 the mined ore and collects 9.600000 / 8.699635 kg copper including starter ore.

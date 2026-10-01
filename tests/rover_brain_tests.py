@@ -1049,6 +1049,29 @@ class InTheDigRoom(unittest.TestCase):
 
 
 class LocalNavigation(unittest.TestCase):
+    def test_named_working_skips_a_refused_high_point_for_supported_fresh_ground(self):
+        fixture=TheSensesAndTheTools();base=fixture.engine();checks=[]
+        def ask(**command):
+            if command['op']=='dig_clearance':
+                checks.append(command['from'])
+                return {'clear':abs(command['from'][0])>.1}
+            return base(**command)
+        ctx=fixture.context(ask)
+        ctx.routine=machine_routine.Routine('rover',{'kind':'dig','places':{'site':[0.,1.8]}})
+        bite=machine_tools._bite(ctx,{'place':'site'})
+        self.assertGreater(abs(bite['point'][0]),.1)
+        self.assertEqual([0.,1.8],checks[0]);self.assertGreater(len(checks),1)
+        self.assertFalse(any(c['op'] in ('dig','draw','ground_withdraw') for c in base.sent))
+
+    def test_named_working_uses_fresh_near_side_if_its_preferred_far_side_is_worked(self):
+        fixture=TheSensesAndTheTools()
+        ctx=fixture.context(fixture.engine(heights=lambda x,z:-.1 if math.hypot(x,z)>=1.75 and math.hypot(x,z-1.8)<=.55 else 0.))
+        ctx.routine=machine_routine.Routine('rover',{'kind':'dig','places':{'site':[0.,1.8]}})
+        bite=machine_tools._bite(ctx,{'place':'site'})
+        self.assertIn('point',bite)
+        self.assertLess(math.hypot(*bite['point']),1.8)
+        self.assertEqual(0.,ctx.survey(*bite['point'])['ground_m'])
+
     def context(self, field=None, obstacles=()):
         self.commands=[]
         def ask(**command):
@@ -1109,6 +1132,64 @@ class LocalNavigation(unittest.TestCase):
             self.assertEqual(0.,ground(dx*k/16+1.5*math.cos(yaw),
                                       dz*k/16-1.5*math.sin(yaw))['ground_m'])
         self.assertLessEqual(route['surveys'],nav.MAX_SURVEYS)
+
+    def retreat_context(self,wet=False):
+        def field(x,z):
+            return {'on_the_ground':True,'ground_m':-.3 if z>1.3 else 0.,
+                    'ground_gradient_xz':[0.,0.],
+                    'water':{'depth_m':.2} if wet and z<-.7 else None}
+        ctx=self.context(field=field)
+        ctx.program['sensors']=[{'kind':'ground','at_m':[0,.5,1.5],'depth_m':.12,'stops':1,'sees':True},
+            *[{'kind':'ground','at_m':[x,.5,-1.],'depth_m':.12,'stops':-1,'sees':False} for x in (-.3,.3)]]
+        return ctx
+
+    def test_blocked_front_can_retreat_on_surveyed_dry_rear_ground_but_not_wet_or_blind(self):
+        import machine_navigation as nav
+        route=nav.waypoint(self.retreat_context(),[0,4])
+        self.assertTrue(route['reverse']);self.assertEqual([0.,-.5],route['target'])
+        self.assertLessEqual(route['surveys'],nav.MAX_SURVEYS)
+        self.assertTrue(all(c['op']=='survey' for c in self.commands))
+        wet=nav.waypoint(self.retreat_context(wet=True),[0,4])
+        self.assertIn('blocked',wet);self.assertNotIn('reverse',wet)
+        blind=self.retreat_context();blind.program['sensors']=blind.program['sensors'][:1]
+        self.assertIn('blocked',nav.waypoint(blind,[0,4]))
+        moving=self.retreat_context();moving.program['speed_m_s']=.3
+        result=machine_tools.go_to(moving,machine_tools.Call('go_to',{'point':[0,4]},'routine'))
+        self.assertTrue(result['blocked_route']);self.assertEqual('waiting',self.commands[-1]['doing'])
+
+    def test_retreat_stops_on_actual_distance_waits_for_brakes_and_restores_step_and_load(self):
+        ctx=self.retreat_context();declaration={'kind':'custom','hopper_kg':20,
+            'steps':[{'do':'go_to','args':{'point':[0,4]},'until':'arrived'},
+                     {'do':'dig','until':'load_full','repeat':True}]}
+        r=machine_routine.Routine('rover',declaration);ctx.routine=r
+        r.load_in(0,0,3,{'copper ore':3});before=deepcopy(r.load_reading())
+        r.tick(ctx);self.assertEqual('backing off',self.commands[-1]['doing'])
+        ctx.program.update(asked={'by':'routine','doing':'backing off'},at_m=[0,.5,-.6],speed_m_s=.3)
+        r.tick(ctx);self.assertEqual('waiting',self.commands[-1]['doing'])
+        self.assertTrue(r.frame.issued['reverse_stopping']);saved=deepcopy(r.record())
+        restored=machine_routine.Routine('rover',declaration);restored.restore(saved)
+        self.assertEqual(saved,restored.record());ctx.routine=restored
+        ctx.program.update(asked={'by':'routine','doing':'waiting'})
+        count=len(self.commands);ctx.t=3;restored.tick(ctx)
+        self.assertEqual(count,len(self.commands));self.assertEqual(0,restored.frame.step)
+        self.assertEqual(before,restored.load_reading())
+        self.assertFalse(any(c['op'] in ('dig','draw','ground_withdraw') for c in self.commands))
+
+    def test_actual_departure_from_surveyed_leg_brakes_before_replanning_without_digging(self):
+        ctx=self.context();r=machine_routine.Routine('rover',{'kind':'custom','hopper_kg':20,
+            'steps':[{'do':'go_to','args':{'point':[4,0]},'until':'arrived'},
+                     {'do':'dig','until':'load_full','repeat':True}]})
+        ctx.routine=r;r.load_in(0,0,3,{'copper ore':3})
+        r.frame.issued={'navigation':{'path':[[0,0],[4,0]],'target':[4,0],'final':True}}
+        ctx.program.update(at_m=[1,.5,1],speed_m_s=.4,asked={'by':'routine','doing':'approaching'})
+        r.tick(ctx)
+        self.assertEqual('waiting',self.commands[-1]['doing'])
+        self.assertEqual(1.,r.frame.issued['navigation']['cross_track_m'])
+        ctx.t=30;ctx.program['asked']={'by':'routine','doing':'waiting'}
+        count=len(self.commands);r.tick(ctx)
+        self.assertEqual(count,len(self.commands),'Moving rover cannot issue a fresh turn')
+        self.assertEqual(0,r.frame.step);self.assertEqual(3.,r.kg)
+        self.assertFalse(any(c['op']=='dig' for c in self.commands))
 
     def test_probe_heading_allows_a_parallel_route_but_rejects_a_hazardous_turn(self):
         import machine_navigation as nav

@@ -1,5 +1,12 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Generated return checkpoint, October 1:** [Measured repeated hauling](rover-return-routing.md)
+delivers three mined loads on each ordinary map, restores exact routine state
+and retains real processing/private pickup. Actual route departure triggers
+braking/replanning; autonomous reverse respects rear probes. General terrain,
+native payload/tipping, avatars, damage/repair and the other player-experience
+journeys remain open within the complete fourteen-item scope.
+
 **Generated first-haul checkpoint, October 1:** [Native delivery and pickup](generated-rover-hauling.md)
 connect ordinary startup, bounded heading-aware routes and compiled starter
 layout to mined ore delivery, processing and private durable collection on both
