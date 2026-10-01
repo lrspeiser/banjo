@@ -1,0 +1,669 @@
+{
+  "schema": "banjo.ai-playtest-review.v1",
+  "source_revision": "f50cdcd23671eef24250328f3e0abdcd37e6e6a7",
+  "environment": "Windows 11, Python 3.13, MSVC Release native subprocess; default realtime world clock",
+  "world": {
+    "id": "14d568103b12486594e48247cf444a05",
+    "name": "AI progression review - Sep 30",
+    "url": "/world?world=14d568103b12486594e48247cf444a05&scene=new-game",
+    "terrain_seed": 7,
+    "goods_seed": 851269742
+  },
+  "character_id": "f9120bfdfffd4fe080a06a801c76f935",
+  "controller_mode": "reference",
+  "provider_calls": 0,
+  "opening_elapsed_s": 22.97,
+  "opening_history": [
+    {
+      "id": "8e875350bdf8467aaa130d1e126e8271",
+      "action": "bank",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.085,
+      "goal": "bank-solar",
+      "result": "committed",
+      "at_unix_s": 1790812714.309941,
+      "receipt": {
+        "balance_j": 500
+      }
+    },
+    {
+      "id": "0863cbd077a74483ab5e5040457bb511",
+      "action": "buy_oak",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.215,
+      "goal": "stock-oak",
+      "result": "committed",
+      "at_unix_s": 1790812716.2515836,
+      "receipt": {
+        "balance_j": 380,
+        "paid_j": 120
+      }
+    },
+    {
+      "id": "6ffec38bcb574b37a104aa801fde429f",
+      "action": "buy_oak",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.15,
+      "goal": "stock-oak",
+      "result": "committed",
+      "at_unix_s": 1790812717.9616706,
+      "receipt": {
+        "balance_j": 258,
+        "paid_j": 122
+      }
+    },
+    {
+      "id": "aa76b3372bbd465ab40e103c268496ff",
+      "action": "buy_oak",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.199,
+      "goal": "stock-oak",
+      "result": "committed",
+      "at_unix_s": 1790812719.6390383,
+      "receipt": {
+        "balance_j": 135,
+        "paid_j": 123
+      }
+    },
+    {
+      "id": "4309c6d39b934868ae136144687a5edd",
+      "action": "buy_oak",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.144,
+      "goal": "stock-oak",
+      "result": "committed",
+      "at_unix_s": 1790812721.4181137,
+      "receipt": {
+        "balance_j": 10,
+        "paid_j": 125
+      }
+    },
+    {
+      "id": "a44c05e919fe4413bd721bdb71f2ab3e",
+      "action": "bank",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.19,
+      "goal": "stock-oak",
+      "result": "committed",
+      "at_unix_s": 1790812723.1586306,
+      "receipt": {
+        "balance_j": 510
+      }
+    },
+    {
+      "id": "a38dc81f210842039790541463db5bb4",
+      "action": "buy_oak",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.16,
+      "goal": "stock-oak",
+      "result": "committed",
+      "at_unix_s": 1790812725.1161556,
+      "receipt": {
+        "balance_j": 384,
+        "paid_j": 126
+      }
+    },
+    {
+      "id": "28b4ecfe2c374fe1a60c42d3755500bd",
+      "action": "buy_oak",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.138,
+      "goal": "stock-oak",
+      "result": "committed",
+      "at_unix_s": 1790812726.778986,
+      "receipt": {
+        "balance_j": 256,
+        "paid_j": 128
+      }
+    },
+    {
+      "id": "c2547d95234740ab8d02a8ad1b2d4c2a",
+      "action": "build_stool",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.106,
+      "goal": "build-camp",
+      "result": "committed",
+      "at_unix_s": 1790812728.436836,
+      "receipt": {
+        "body": "workshop-60f504af89d74e35",
+        "mass_kg": 2.5088,
+        "resources_charged": true
+      }
+    },
+    {
+      "id": "3bf18a434b8d4ea3b9d62831b4558def",
+      "action": "pack_stool",
+      "mode": "reference",
+      "model": null,
+      "confidence": null,
+      "seconds": 0.097,
+      "goal": "carry-camp",
+      "result": "committed",
+      "at_unix_s": 1790812733.1134064,
+      "receipt": {
+        "body": "workshop-60f504af89d74e35",
+        "revision": 1
+      }
+    }
+  ],
+  "goals_complete": true,
+  "techniques_known": 0,
+  "techniques_total": 9,
+  "wallet_j": 256,
+  "personal_materials": [
+    {
+      "material": "oak",
+      "mass_kg": 12.8912,
+      "personal_kg": 0.4912,
+      "shared_kg": 12.4
+    }
+  ],
+  "shared_materials": [
+    {
+      "material": "concrete",
+      "mass_kg": 40.0,
+      "personal_kg": 0,
+      "shared_kg": 40.0
+    },
+    {
+      "material": "glass",
+      "mass_kg": 0.6,
+      "personal_kg": 0,
+      "shared_kg": 0.6
+    },
+    {
+      "material": "iron",
+      "mass_kg": 6.2,
+      "personal_kg": 0,
+      "shared_kg": 6.2
+    },
+    {
+      "material": "oak",
+      "mass_kg": 12.8912,
+      "personal_kg": 0.4912,
+      "shared_kg": 12.4
+    },
+    {
+      "material": "rubber",
+      "mass_kg": 1.1,
+      "personal_kg": 0,
+      "shared_kg": 1.1
+    }
+  ],
+  "observer_wallet_j": 0,
+  "observer_bag": [],
+  "character_bag": [
+    "workshop-60f504af89d74e35"
+  ],
+  "skill_routes": [
+    {
+      "id": "burning-lime",
+      "known": false,
+      "within_reach": true,
+      "earned_by": [
+        {
+          "id": "watched-burns-limestone",
+          "says": "Watch a lime kiln burn limestone into cement, once.",
+          "done": false,
+          "all_of": [
+            {
+              "design": "lime-kiln",
+              "demonstrated": true,
+              "test": "burns-limestone"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "firing-ceramic",
+      "known": false,
+      "within_reach": true,
+      "earned_by": [
+        {
+          "id": "watched-fires-clay",
+          "says": "Watch a kiln fire clay into ceramic, once.",
+          "done": false,
+          "all_of": [
+            {
+              "design": "clay-kiln",
+              "demonstrated": true,
+              "test": "fires-clay"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rough-shaping-wood",
+      "known": false,
+      "within_reach": true,
+      "earned_by": [
+        {
+          "id": "studied-a-found-pick",
+          "says": "Study the wooden pick you were given: how it was shaped is in the shape of it.",
+          "done": false,
+          "all_of": [
+            {
+              "design": "one-piece-wooden-pick",
+              "found": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "smelting-copper",
+      "known": false,
+      "within_reach": true,
+      "earned_by": [
+        {
+          "id": "watched-a-smelt",
+          "says": "Watch a smelter work copper ore into copper, once.",
+          "done": false,
+          "all_of": [
+            {
+              "design": "copper-smelter",
+              "demonstrated": true,
+              "test": "smelts-ore"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "drawing-wire",
+      "known": false,
+      "within_reach": false,
+      "earned_by": [
+        {
+          "id": "watched-a-draw",
+          "says": "Watch a mill draw copper into wire, once.",
+          "done": false,
+          "all_of": [
+            {
+              "design": "copper-mill",
+              "demonstrated": true,
+              "test": "draws-wire"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "melting-glass",
+      "known": false,
+      "within_reach": false,
+      "earned_by": [
+        {
+          "id": "watched-melts-sand",
+          "says": "Watch a furnace melt sand into glass, once.",
+          "done": false,
+          "all_of": [
+            {
+              "design": "glass-furnace",
+              "demonstrated": true,
+              "test": "melts-sand"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mixing-concrete",
+      "known": false,
+      "within_reach": false,
+      "earned_by": [
+        {
+          "id": "watched-mixes-concrete",
+          "says": "Watch a mixer work cement and sand into concrete, once.",
+          "done": false,
+          "all_of": [
+            {
+              "design": "concrete-mixer",
+              "demonstrated": true,
+              "test": "mixes-concrete"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "smelting-iron",
+      "known": false,
+      "within_reach": false,
+      "earned_by": [
+        {
+          "id": "watched-smelts-iron-ore",
+          "says": "Watch an iron smelter work iron ore into iron, once.",
+          "done": false,
+          "all_of": [
+            {
+              "design": "iron-smelter",
+              "demonstrated": true,
+              "test": "smelts-iron-ore"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "smelting-aluminium",
+      "known": false,
+      "within_reach": false,
+      "earned_by": [
+        {
+          "id": "watched-wins-aluminium",
+          "says": "Watch an aluminium cell win metal out of bauxite, once.",
+          "done": false,
+          "all_of": [
+            {
+              "design": "aluminium-cell",
+              "demonstrated": true,
+              "test": "wins-aluminium"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "attempts": [
+    {
+      "label": "Try gathering with current equipment",
+      "path": "/api/world/tool",
+      "request_id": null,
+      "result": {
+        "enabled": false,
+        "reason": "Take up a tool first: look at it and press E."
+      }
+    },
+    {
+      "label": "Inspect nearby smelter structure",
+      "path": "/api/live/act",
+      "request_id": null,
+      "result": {}
+    },
+    {
+      "label": "Skills after approaching the working smelter",
+      "path": "/api/workshop/skills",
+      "request_id": null,
+      "result": {
+        "known": 0,
+        "revision": 0
+      }
+    },
+    {
+      "label": "Current Market recommendation",
+      "path": "/api/workshop/market",
+      "request_id": null,
+      "result": {
+        "balance_j": 256,
+        "guidance": {
+          "skill": {
+            "id": "burning-lime",
+            "name": "Burning lime",
+            "route": "Watch a lime kiln burn limestone into cement, once."
+          },
+          "recipe": "processor",
+          "offer_id": "wire-coil",
+          "gap_kg": 0.1,
+          "covers_gap": true
+        }
+      }
+    },
+    {
+      "label": "Bank measured 500 J",
+      "path": "/api/workshop/market",
+      "request_id": "20913a678cbd4cd38df34fa319857717",
+      "result": {
+        "http_status": 400,
+        "error": "The banked energy awaits a durable world save; retry this request id"
+      }
+    },
+    {
+      "label": "Retry the same pending deposit id",
+      "path": "/api/workshop/market",
+      "request_id": "20913a678cbd4cd38df34fa319857717",
+      "result": {
+        "http_status": 400,
+        "error": "The banked energy still awaits a durable world save"
+      }
+    },
+    {
+      "label": "Preview processor without bypassing payment",
+      "path": "/api/world/workshop/preview",
+      "request_id": null,
+      "result": {
+        "http_status": 400,
+        "error": "Staging changed existing physical state for workshop-60f504af89d74e35; installation refused"
+      }
+    },
+    {
+      "label": "Preview bench without bypassing payment",
+      "path": "/api/world/workshop/preview",
+      "request_id": null,
+      "result": {
+        "http_status": 400,
+        "error": "Staging changed existing physical state for workshop-60f504af89d74e35; installation refused"
+      }
+    }
+  ],
+  "archive_techniques": [
+    "smelting-copper",
+    "drawing-wire"
+  ],
+  "archive_evidence": [
+    {
+      "id": "ev-e63d140a51",
+      "design": "copper-mill@1",
+      "passes": true,
+      "result": {
+        "made_kg": 4.9,
+        "used_kg": 5.0,
+        "made": {
+          "copper wire": 4.9
+        },
+        "used": {
+          "copper": 5.0
+        }
+      },
+      "limitations": [
+        "the recipe's yield is declared by the room, not measured from chemistry",
+        "the work and the time it takes are the recipe's own numbers"
+      ]
+    },
+    {
+      "id": "ev-4b7b311785",
+      "design": "copper-mill@1",
+      "passes": true,
+      "result": {
+        "made_kg": 4.9,
+        "used_kg": 5.0,
+        "made": {
+          "copper wire": 4.9
+        },
+        "used": {
+          "copper": 5.0
+        }
+      },
+      "limitations": [
+        "the recipe's yield is declared by the room, not measured from chemistry",
+        "the work and the time it takes are the recipe's own numbers"
+      ]
+    },
+    {
+      "id": "ev-b16a9c95d9",
+      "design": "copper-smelter@1",
+      "passes": true,
+      "result": {
+        "made_kg": 1.5,
+        "used_kg": 5.0,
+        "made": {
+          "copper": 1.5
+        },
+        "used": {
+          "copper ore": 5.0
+        }
+      },
+      "limitations": [
+        "the recipe's yield is declared by the room, not measured from chemistry",
+        "the work and the time it takes are the recipe's own numbers"
+      ]
+    },
+    {
+      "id": "ev-a1a1c6aca0",
+      "design": "copper-smelter@1",
+      "passes": true,
+      "result": {
+        "made_kg": 1.5,
+        "used_kg": 5.0,
+        "made": {
+          "copper": 1.5
+        },
+        "used": {
+          "copper ore": 5.0
+        }
+      },
+      "limitations": [
+        "the recipe's yield is declared by the room, not measured from chemistry",
+        "the work and the time it takes are the recipe's own numbers"
+      ]
+    },
+    {
+      "id": "ev-7ac8849e72",
+      "design": "copper-smelter@1",
+      "passes": true,
+      "result": {
+        "made_kg": 1.5,
+        "used_kg": 5.0,
+        "made": {
+          "copper": 1.5
+        },
+        "used": {
+          "copper ore": 5.0
+        }
+      },
+      "limitations": [
+        "the recipe's yield is declared by the room, not measured from chemistry",
+        "the work and the time it takes are the recipe's own numbers"
+      ]
+    },
+    {
+      "id": "ev-935801a7f6",
+      "design": "copper-smelter@1",
+      "passes": true,
+      "result": {
+        "made_kg": 1.5,
+        "used_kg": 5.0,
+        "made": {
+          "copper": 1.5
+        },
+        "used": {
+          "copper ore": 5.0
+        }
+      },
+      "limitations": [
+        "the recipe's yield is declared by the room, not measured from chemistry",
+        "the work and the time it takes are the recipe's own numbers"
+      ]
+    },
+    {
+      "id": "ev-8612a7a15f",
+      "design": "copper-smelter@1",
+      "passes": true,
+      "result": {
+        "made_kg": 1.5,
+        "used_kg": 5.0,
+        "made": {
+          "copper": 1.5
+        },
+        "used": {
+          "copper ore": 5.0
+        }
+      },
+      "limitations": [
+        "the recipe's yield is declared by the room, not measured from chemistry",
+        "the work and the time it takes are the recipe's own numbers"
+      ]
+    },
+    {
+      "id": "ev-4beff3e824",
+      "design": "copper-smelter@1",
+      "passes": true,
+      "result": {
+        "made_kg": 1.5,
+        "used_kg": 5.0,
+        "made": {
+          "copper": 1.5
+        },
+        "used": {
+          "copper ore": 5.0
+        }
+      },
+      "limitations": [
+        "the recipe's yield is declared by the room, not measured from chemistry",
+        "the work and the time it takes are the recipe's own numbers"
+      ]
+    },
+    {
+      "id": "ev-1a1ea9d82e",
+      "design": "copper-smelter@1",
+      "passes": true,
+      "result": {
+        "made_kg": 0.6,
+        "used_kg": 2.0,
+        "made": {
+          "copper": 0.6
+        },
+        "used": {
+          "copper ore": 2.0
+        }
+      },
+      "limitations": [
+        "the recipe's yield is declared by the room, not measured from chemistry",
+        "the work and the time it takes are the recipe's own numbers"
+      ]
+    },
+    {
+      "id": "ev-a9883e8ed8",
+      "design": "copper-smelter@1",
+      "passes": true,
+      "result": {
+        "made_kg": 1.5,
+        "used_kg": 5.0,
+        "made": {
+          "copper": 1.5
+        },
+        "used": {
+          "copper ore": 5.0
+        }
+      },
+      "limitations": [
+        "the recipe's yield is declared by the room, not measured from chemistry",
+        "the work and the time it takes are the recipe's own numbers"
+      ]
+    }
+  ],
+  "last_durable_world_time_s": 66.14166666668868,
+  "observed_live_world_time_s": 190.45416666657562,
+  "save_guard_error": "Raw returns do not match native ground receipts",
+  "rejoin_error": "Could not open the room: The player could not be saved"
+}

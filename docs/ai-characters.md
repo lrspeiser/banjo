@@ -1,5 +1,7 @@
 # Autonomous characters and watching
 
+**Actual generated-world audit:** [September 30 playthrough review](ai-player-playthrough-review.md) records 4/4 camp goals and 0/9 personal techniques, then failed assistant-guided continuation and rejoin. The run used the reference controller because no provider key was configured; it is not live-model quality evidence. The report includes sanitized receipts and prioritized acceptance gates.
+
 Implemented September 30, 2026. **Menu → Characters** in a named game starts
 a guest character. **Watch through its eyes** follows that guest's camera and
 shows its action results, personal bag, energy, goal progress and tech journal.
