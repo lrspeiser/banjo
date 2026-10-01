@@ -253,8 +253,13 @@ the shared station's stock. A progress meter, **Resume remake** for paused work,
 **Collect in World** use the existing native wait/placement/admission operations.
 Reload retains the pending request/job; uncertain start/install retries retain
 their original IDs. An empty Lab or saved design has no carried-source remake.
-Further funding from personal/shared racks and native chargers still uses the
-API; ordinary starter worlds have no implicit process or invented finite source.
+**Fund workbench** exposes explicit personal/shared stock transfers, material
+acquisition routes, native battery selection/connection, one-second charging
+and needed-energy transfer. Pending monetary/material operations retain their
+original request bodies and show retry controls after uncertain responses or
+reload; Start waits for confirmation. Ordinary starter worlds still have no
+implicit process or invented finite source. See the
+[funding-to-use checkpoint](fabrication-lab-funding-checkpoint.md).
 
 `plan_remake` returns `banjo.remake-plan.v1`, `source`, `quote`, `revision`,
 `station_stock_kg`, `station_energy_j`, `missing_stock_kg`, `missing_energy_j`,

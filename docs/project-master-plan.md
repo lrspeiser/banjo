@@ -1,5 +1,13 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Lab funding/use, October 1:** [Reviewed supplies and native output use](fabrication-lab-funding-checkpoint.md)
+connect personal/shared stock selection and actual finite battery charging to
+the Remake UI. Lost-response/reload retries debit once; actual output pickup,
+bagging, re-equipping and native digging pass with private ownership and the
+original preserved. The funded-room guard now permits ordinary collection/tool
+diagnostics. Ordinary starter capability and damaged-tool-to-use remain next;
+all fourteen requirements stay active, four verified and ten partial.
+
 **Selected-item remake, October 1:** [Source-bound Lab checkpoint](fabrication-remake-checkpoint.md)
 connects a carried native item and frozen draft to reviewed material/energy/time,
 paid work, progress and separate native output. Original damage is retained;

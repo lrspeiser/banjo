@@ -1,5 +1,14 @@
 # Banjo mechanics scorecard
 
+**Lab-funded tool use boundary, October 1:** [Reviewed supply/native stroke](fabrication-lab-funding-checkpoint.md)
+keeps glass/oak/iron paid comparisons and real old cut retention. The 50 mm /
+`dt=1/240 s` browser oak output costs 1.925 kg / 192.5 J under the existing authored
+workbench estimate; actual use loosens 24.64177 kg sand for 46.62703 J native
+ground-work-v1 work. Both old source and peer remain unchanged. No solver law,
+tolerance, wear/fatigue or full-world accounting change; cold stock, process
+calibration, physical transport, starter capability and damaged-tool use retain
+separate gates. M05/M16/M17/P05–P07 remain open.
+
 **Selected-source remake boundary, October 1:** [Native source/admission evidence](fabrication-remake-checkpoint.md)
 retains glass/oak/iron, 40 mm cells, `dt=1/240 s`: 1.28/0.3584/4.02944 kg new
 outputs consume 128/35.84/402.944 J under the authored 100 J/kg process estimate.

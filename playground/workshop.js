@@ -3133,9 +3133,94 @@ function showTab(name) {
 }
 
 let labWasSelected = false;
-const remake = {plan:null,job:null,selection:null,busy:false};
+const remake = {plan:null,job:null,selection:null,busy:false,supply:null,store:null};
 function remakeKey() {return `banjo.remake.${worldId || "local"}.${playerId}.${bench.inventorySelection?.id}`;}
 function remakePending() {try{return JSON.parse(sessionStorage.getItem(remakeKey()) || "null");}catch{return null;}}
+const REMAKE_FUNDING=["fund_stock","connect_energy","fund_energy"];
+function fundingPending(op) {try{return JSON.parse(sessionStorage.getItem(remakeKey()+"."+op) || "null");}catch{return null;}}
+async function fundRemake(op,choice={}) {
+  const key=remakeKey()+"."+op;
+  let request=fundingPending(op);
+  if(!request) {
+    const ctx=await api("/api/world/workshop/context",{});
+    const reading=await api("/api/world/fabrication/state",{session:ctx.session,scene:ctx.scene});
+    if(!reading.configured)throw Error("Review an available workbench first");
+    const fields={};
+    if(op==="fund_stock") {
+      const source=reading.stock_sources.find(s=>s.material===choice.material && s.pool===choice.pool);
+      if(!source || source.mass_kg<choice.mass_kg)throw Error("Material balance changed; review current supplies");
+      Object.assign(fields,choice,{rack_hash:source.rack_hash});
+    } else {
+      const source=reading.energy_sources.find(s=>s.id===choice.store);
+      if(!source || source.max_power_w<=0)throw Error("Battery is unavailable; review current supplies");
+      if(op==="connect_energy")Object.assign(fields,{store:source.id,store_hash:source.store_hash,
+        power_w:Math.min(source.max_power_w,reading.state.config.power_w)});
+      else {
+        if(!source.connected || source.transfer_available_j+1e-8<choice.joules)
+          throw Error("Battery charging interval changed; review current supplies");
+        Object.assign(fields,{store_hash:source.store_hash,joules:choice.joules});
+      }
+    }
+    request={session:ctx.session,scene:ctx.scene,...fields,revision:reading.state.revision,request_id:crypto.randomUUID()};
+    sessionStorage.setItem(key,JSON.stringify(request));
+  }
+  try {await api("/api/world/fabrication/"+op,request);}
+  catch(err) {
+    // These checks precede source debit/reservation. Other failures retain the
+    // exact request, including a receiving save or acknowledgement failure.
+    if(/Source rack changed|Native source changed|Fabrication revision changed|source world changed|source room changed/i.test(err.message))
+      sessionStorage.removeItem(key);
+    try {await reviewRemake();}catch{}
+    throw err;
+  }
+  sessionStorage.removeItem(key);await reviewRemake();
+}
+async function waitRemakeSecond() {
+  const ctx=await api("/api/world/workshop/context",{});
+  await api("/api/world/fabrication/wait",{session:ctx.session,scene:ctx.scene,seconds:1});await reviewRemake();
+}
+function renderRemakeFunding(root,button,plan) {
+  const supply=remake.supply;
+  const pending=REMAKE_FUNDING.filter(op=>fundingPending(op));
+  for(const op of pending)button("ws-remake-retry-"+op,
+    op==="fund_stock" ? "Retry material transfer" : op==="fund_energy" ? "Retry energy transfer" : "Retry battery connection",
+    ()=>fundRemake(op));
+  if(pending.length) {remakeRow(root,"Transfer","Awaiting confirmation");return;}
+  if(plan.missing_stock_kg>1e-10) {
+    for(const source of plan.stock_sources.filter(s=>s.mass_kg>1e-10)) {
+      const amount=Math.min(plan.missing_stock_kg,source.mass_kg),personal=source.pool==="personal";
+      remakeRow(root,personal ? "Your material" : "Shared material",kgSaid(source.mass_kg));
+      button("ws-remake-stock-"+source.pool,`Add ${kgSaid(amount)} · ${personal ? "Your stock" : "Shared stock"}`,
+        ()=>fundRemake("fund_stock",{material:plan.quote.material,pool:source.pool,mass_kg:amount}));
+    }
+    const url=new URL(homeWorld(),location.href);url.searchParams.set("workshop","1");url.searchParams.set("tab","recipes");
+    url.searchParams.set("material",plan.quote.material);
+    root.append(make("a",{class:"ws-action",href:url.pathname+url.search},"Find material supplies"));
+  }
+  if(plan.missing_energy_j<=1e-10)return;
+  const sources=(supply?.energy_sources || []).filter(s=>s.max_power_w>0);
+  if(!sources.length) {remakeRow(root,"Battery",supply?.energy_source_status?.state==="unavailable"
+    ? "Unavailable · Return to World" : "No battery with an output rating");return;}
+  if(!sources.some(s=>s.id===remake.store))remake.store=(sources.find(s=>s.connected) || sources[0]).id;
+  const select=make("select",{id:"ws-remake-battery","aria-label":"Remake energy source"});
+  for(const source of sources) {
+    const option=make("option",{value:String(source.id)},`${source.name} · ${energySaid(source.charge_j)}`);
+    option.selected=source.id===remake.store;select.append(option);
+  }
+  select.onchange=()=>{remake.store=Number(select.value);renderRemake();};root.append(select);
+  const source=sources.find(s=>s.id===remake.store);
+  remakeRow(root,"Source charge",energySaid(source.charge_j));
+  if(!source.connected)button("ws-remake-connect","Connect battery",()=>fundRemake("connect_energy",{store:source.id}));
+  else {
+    remakeRow(root,"Charger",`${supply.state.energy_connection.power_w} W`);
+    remakeRow(root,"Ready to transfer",energySaid(source.transfer_available_j));
+    button("ws-remake-charge-wait","Charge for 1 s",waitRemakeSecond);
+    const amount=Math.min(plan.missing_energy_j,source.transfer_available_j);
+    const transfer=button("ws-remake-energy",`Add ${energySaid(amount)}`,
+      ()=>fundRemake("fund_energy",{store:source.id,joules:amount}));
+    transfer.disabled=amount<.000001;
+  }
+}
 function remakeRow(root,name,value) {
   const row=make("div",{class:"ws-held-row"});row.append(make("span",{},name),make("strong",{},value));root.append(row);
 }
@@ -3146,13 +3231,13 @@ function renderRemake() {
     b.onclick=()=>guard(b,async()=>{remake.busy=true;try{await fn();}finally{remake.busy=false;}});root.append(b);return b;};
   if(!remake.plan && !remake.job) {button("ws-remake-review","Review remake",reviewRemake);return;}
   if(remake.plan?.available===false) {
-    remakeRow(root,"Workbench",remake.plan.reason);button("ws-remake-review","Review again",reviewRemake);return;
+    remakeRow(root,"Workbench",remake.plan.reason);button("ws-remake-review","Review again",()=>reviewRemake(true));return;
   }
   const job=remake.job,plan=remake.plan,quote=job || plan.quote;
+  root.querySelector("h3").append(make("span",{class:"ws-remake-estimate"},"Workbench estimate"));
   remakeRow(root,"Material",`${titleCase(quote.material)} · ${kgSaid(quote.stock_kg)}`);
   remakeRow(root,"Energy",energySaid(quote.supply_required_j));
   remakeRow(root,"Minimum time",`${quote.minimum_duration_s.toFixed(1)} s`);
-  remakeRow(root,"Process","Workbench estimate");
   remakeRow(root,"Original","Kept · Damage retained");
   if(job) {
     remakeRow(root,"Work",`${Math.round(100*job.work_j/job.required_j)}% · ${titleCase(job.status)}`);
@@ -3163,8 +3248,7 @@ function renderRemake() {
         await api("/api/world/fabrication/resume",{session:ctx.session,scene:ctx.scene,
           job_id:remakePending()?.request_id,revision:reading.state.revision,request_id:crypto.randomUUID()});await reviewRemake();});
     } else if(job.status==="running") {
-      button("ws-remake-step","Run 1 s",async()=>{const ctx=await api("/api/world/workshop/context",{});
-        await api("/api/world/fabrication/wait",{session:ctx.session,scene:ctx.scene,seconds:1});await reviewRemake();});
+      button("ws-remake-step","Run 1 s",waitRemakeSecond);
     } else if(job.status==="ready")button("ws-remake-place","Place in World",placeRemake);
     else if(job.status==="installed") {
       const url=new URL(homeWorld(),location.href);url.searchParams.set("focus",job.root_body);
@@ -3175,9 +3259,12 @@ function renderRemake() {
   }
   remakeRow(root,"Workbench stock",`${kgSaid(plan.station_stock_kg)} / ${kgSaid(quote.stock_kg)}`);
   remakeRow(root,"Workbench energy",`${energySaid(plan.station_energy_j)} / ${energySaid(quote.supply_required_j)}`);
-  if(plan.missing_stock_kg>0)remakeRow(root,"Missing material",kgSaid(plan.missing_stock_kg));
-  if(plan.missing_energy_j>0)remakeRow(root,"Missing energy",energySaid(plan.missing_energy_j));
   if(plan.occupied)remakeRow(root,"Workbench","In use");
+  const fundingPendingNow=REMAKE_FUNDING.some(op=>fundingPending(op));
+  const funding=make("details",{id:"ws-remake-supplies"});funding.open=fundingPendingNow || plan.missing_stock_kg>1e-10 || plan.missing_energy_j>1e-10;
+  funding.append(make("summary",{},"Fund workbench"));root.append(funding);
+  const supplyButton=(id,label,fn)=>{const b=button(id,label,fn);funding.append(b);return b;};
+  renderRemakeFunding(funding,supplyButton,plan);
   const begin=button("ws-remake-start","Start remake",async()=>{
     if(remake.selection!==`${bench.inventorySelection?.id}:${bench.revision}`)throw Error("Design changed; review it again");
     let pending=remakePending();
@@ -3190,20 +3277,36 @@ function renderRemake() {
     catch(err) {if(/plan expired|Selected item changed|revision changed|process changed/i.test(String(err.message)))sessionStorage.removeItem(remakeKey());throw err;}
     remake.job=result.state.jobs[result.job_id];remake.plan=null;renderRemake();
   });
-  begin.disabled=plan.missing_stock_kg>1e-10 || plan.missing_energy_j>1e-10 || plan.occupied;
-  button("ws-remake-review","Review again",reviewRemake);
+  begin.disabled=fundingPendingNow || plan.missing_stock_kg>1e-10 || plan.missing_energy_j>1e-10 || plan.occupied;
+  button("ws-remake-review","Review again",()=>reviewRemake(true));
 }
-async function reviewRemake() {
+async function reviewRemake(force=false) {
   const selected=bench.inventorySelection,revision=bench.revision;
   if(selected?.source!=="carried")throw Error("Select a carried item in Inventory first");
   const ctx=await api("/api/world/workshop/context",{});
   const reading=await api("/api/world/fabrication/state",{session:ctx.session,scene:ctx.scene});
   if(selected!==bench.inventorySelection || revision!==bench.revision)return;
+  remake.supply=reading;
   const pending=remakePending(),job=pending && reading.state?.jobs?.[pending.request_id];
+  const previous=remake.selection===`${selected.id}:${revision}` ? remake.plan : null;
   remake.selection=`${selected.id}:${revision}`;
   if(job) {remake.job=job;remake.plan=null;renderRemake();return;}
-  const plan=await api("/api/world/fabrication/plan_remake",{session:ctx.session,scene:ctx.scene,
-    source_item:String(selected.id),candidate:candidateBody()});
+  let plan;
+  // Supply refreshes retain the reviewed draft; a charging loop must not fill
+  // the bounded server plan cache. Renew before its five-minute expiry, or on
+  // explicit review. Native source/draft guards still run at Start.
+  if(!force && previous?.available && !pending && performance.now()-previous.reviewed_ms<240000 && reading.state) {
+    plan={...previous,session:ctx.session,scene:ctx.scene,revision:reading.state.revision,
+      station_stock_kg:reading.state.stock_kg[previous.quote.material] || 0,station_energy_j:reading.state.energy_j,
+      stock_sources:reading.stock_sources.filter(s=>s.material===previous.quote.material),
+      occupied:Object.values(reading.state.jobs).some(j=>j.status==="running")};
+    plan.missing_stock_kg=Math.max(0,plan.quote.stock_kg-plan.station_stock_kg);
+    plan.missing_energy_j=Math.max(0,plan.quote.supply_required_j-plan.station_energy_j);
+  } else {
+    plan=await api("/api/world/fabrication/plan_remake",{session:ctx.session,scene:ctx.scene,
+      source_item:String(selected.id),candidate:candidateBody()});
+    plan.reviewed_ms=performance.now();
+  }
   if(selected!==bench.inventorySelection || revision!==bench.revision)return;
   if(pending?.reviewed_quote && plan.available) {
     plan.quote=pending.reviewed_quote;
@@ -3244,7 +3347,7 @@ setInterval(()=>{
 function updateLabSelection() {
   const selected = Boolean(bench.inventorySelection && chosen());
   let condition=$("#ws-carried-condition");
-  if(!condition) {condition=make("div",{id:"ws-carried-condition"});$("#ws-screen-status").parentElement.after(condition);}
+  if(!condition) {condition=make("div",{id:"ws-carried-condition"});$(".ws-left > .game-tabs").after(condition);}
   const source=bench.inventorySelection;
   condition.hidden=!(selected && source?.source === "carried");
   if(!condition.hidden && condition.dataset.item !== String(source.id)) {

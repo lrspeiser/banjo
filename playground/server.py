@@ -1521,8 +1521,12 @@ class Handler(BaseHTTPRequestHandler):
                 if path.startswith("/api/world/") and path not in allowed_world and not path.startswith("/api/world/fabrication/"):
                     raise ValueError("The fabrication room accepts funded outputs; edit designs in Workshop")
                 if not isinstance(body, dict): raise ValueError("Expected a JSON object")
+                # Ordinary product use needs native tool diagnostics and the
+                # fragment-only collection lane. Native collect preserves
+                # authored whole bodies, even when they are small hulls.
                 if path == "/api/live/act" and body.get("op") not in {"step","poses","wield","hand","move","release","joints","mechanics","thermo","pick","place_check",
-                    "survey","structure","condition","environment","environment_state","terrain","materials","rolling","dig","deposit"}:
+                    "survey","structure","condition","environment","environment_state","terrain","materials","rolling","dig","deposit",
+                    "tool_points","ground_work","collect"}:
                     raise ValueError("This authoring operation is not allowed in the funded room")
             if path.startswith("/api/world/fabrication/"):
                 operation = path.rsplit("/",1)[-1]

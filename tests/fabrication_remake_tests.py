@@ -207,39 +207,80 @@ class LabRemake(unittest.TestCase):
         self.post('/api/world/fabrication/configure',{**context,'settings':funded.settings(stock_kg={},energy_j=0),
             'request_id':'lab-remake-config-0001'},world)
         plan=self.post('/api/world/fabrication/plan_remake',raw,world)
-        stock=next(s for s in plan['stock_sources'] if s['pool']=='personal')
-        self.post('/api/world/fabrication/fund_stock',{**context,'material':'oak','mass_kg':plan['quote']['stock_kg'],
-            'pool':'personal','rack_hash':stock['rack_hash'],'revision':plan['revision'],'request_id':'lab-remake-stock-0001'},world)
-        reading=self.post('/api/world/fabrication/state',context,world)
-        battery=next(s for s in reading['energy_sources'] if s['name']=='remake battery')
-        self.post('/api/world/fabrication/connect_energy',{**context,'store':battery['id'],'store_hash':battery['store_hash'],
-            'power_w':250.,'revision':reading['state']['revision'],'request_id':'lab-remake-connect-0001'},world)
-        self.post('/api/world/fabrication/wait',{**context,'seconds':2},world)
-        reading=self.post('/api/world/fabrication/state',context,world)
-        battery=next(s for s in reading['energy_sources'] if s['name']=='remake battery')
-        energy=self.post('/api/world/fabrication/fund_energy',{**context,'store_hash':battery['store_hash'],
-            'joules':plan['quote']['supply_required_j'],'revision':reading['state']['revision'],'request_id':'lab-remake-energy-0001'},world)
-        context['session']=energy['session']
         original=deepcopy(next(b for b in install._snapshot(app.live)['bodies'] if b['name']=='field pick'))
         chrome=flow.qa_browser.Chrome(1280,800);self.chrome=chrome;p=chrome.page
         p.send('Page.enable');p.send('Runtime.enable')
+        p.send('Page.addScriptToEvaluateOnNewDocument',{'source':'''window.__fundedFailures=[];
+            const fetchObserved=window.fetch;window.fetch=async(url,options)=>{
+                const response=await fetchObserved(url,options);
+                if(!response.ok){let body={};try{body=JSON.parse(options?.body || '{}');}catch{}
+                    window.__fundedFailures.push({url:String(url),op:body.op,error:(await response.clone().json()).error});}
+                return response;};'''})
         p.send('Page.addScriptToEvaluateOnNewDocument',{'source':f'localStorage.setItem("banjo.player.{world}",{json.dumps(owner["token"])});'})
         def wait(expr):
             end=time.monotonic()+30
             while time.monotonic()<end:
                 if p.evaluate('Boolean('+expr+')'):return
                 time.sleep(.1)
-            self.fail(expr+'; '+str(p.evaluate('document.body.innerText.slice(-1800)')))
+            self.fail(expr+'; '+str(p.evaluate('window.__fundedFailures'))+'; '+str(p.evaluate('document.body.innerText.slice(-1800)')))
         url=self.base+f'/world?world={world}&workshop=1&tab=lab&carry=field%20pick'
         p.send('Page.navigate',{'url':url})
         wait('document.querySelector("#ws-remake-review") && !document.querySelector("#ws-remake").hidden')
         p.evaluate('document.querySelector("#ws-remake-review").click()')
+        wait('document.querySelector("#ws-remake-stock-personal")')
+        self.assertTrue(p.evaluate('document.querySelector("#ws-remake-start").disabled'))
+        self.assertTrue(p.evaluate('document.querySelector(".ws-left > .game-tabs").getBoundingClientRect().bottom <= document.querySelector("#ws-remake").getBoundingClientRect().top'))
+        fund_shots=ROOT/'build/resource-flow';fund_shots.mkdir(parents=True,exist_ok=True)
+        wait('document.querySelector("#workshop-stage").visibleGeometry()?.meshes>0')
+        p.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))',await_promise=True)
+        (fund_shots/'lab-remake-funding.png').write_bytes(base64.b64decode(p.send('Page.captureScreenshot',{'format':'png'})['data']))
+        shared_before=deepcopy(self.post('/api/world/fabrication/state',context,world)['stock_sources'])
+        # The real operation commits; its acknowledgement is lost at the client.
+        # Reload + retry must confirm the original transfer, not spend again.
+        p.evaluate('''(()=>{const original=window.fetch;let lose=true;window.fetch=async(...args)=>{
+            const result=await original(...args);if(lose && args[0].endsWith('/fabrication/fund_stock')){
+                lose=false;throw Error('Injected lost transfer acknowledgement');}return result;};})()''')
+        p.evaluate('document.querySelector("#ws-remake-stock-personal").click()')
+        wait('document.body.textContent.includes("Injected lost transfer acknowledgement")')
+        self.assertEqual(1,len(app.room.fabrication_record['stock_imports']))
+        self.assertAlmostEqual(25.-plan['quote']['stock_kg'],flow.GoodsJourney.personal(self,app,owner)['oak'],places=6)
+        p.send('Page.navigate',{'url':url})
+        wait('document.querySelector("#ws-remake-review") && !document.querySelector("#ws-remake").hidden')
+        p.evaluate('document.querySelector("#ws-remake-review").click()')
+        wait('document.querySelector("#ws-remake-retry-fund_stock")')
+        p.evaluate('document.querySelector("#ws-remake-retry-fund_stock").click()')
+        wait('document.querySelector("#ws-remake-connect") && !document.querySelector("#ws-remake-retry-fund_stock")')
+        self.assertEqual(1,len(app.room.fabrication_record['stock_imports']))
+        current=self.post('/api/world/fabrication/state',context,world)['stock_sources']
+        self.assertEqual([s for s in shared_before if s['pool']=='shared'],[s for s in current if s['pool']=='shared'])
+        p.evaluate('document.querySelector("#ws-remake-connect").click()')
+        wait('document.querySelector("#ws-remake-charge-wait")')
+        self.assertTrue(p.evaluate('document.querySelector("#ws-remake-energy").disabled'))
+        plans_before_wait=len(app._fabrication_remake_plans)
+        p.evaluate('document.querySelector("#ws-remake-charge-wait").click()')
+        wait('document.querySelector("#ws-remake-energy") && !document.querySelector("#ws-remake-energy").disabled')
+        self.assertEqual(plans_before_wait,len(app._fabrication_remake_plans),'Supply refresh allocated another frozen plan')
+        p.evaluate('''(()=>{const original=window.fetch;let lose=true;window.fetch=async(...args)=>{
+            const result=await original(...args);if(lose && args[0].endsWith('/fabrication/fund_energy')){
+                lose=false;throw Error('Injected lost energy acknowledgement');}return result;};})()''')
+        p.evaluate('document.querySelector("#ws-remake-energy").click()')
+        wait('document.body.textContent.includes("Injected lost energy acknowledgement")')
+        p.send('Page.navigate',{'url':url})
+        wait('document.querySelector("#ws-remake-review") && !document.querySelector("#ws-remake").hidden')
+        p.evaluate('document.querySelector("#ws-remake-review").click()')
+        wait('document.querySelector("#ws-remake-retry-fund_energy")')
+        self.assertTrue(p.evaluate('document.querySelector("#ws-remake-start").disabled'))
+        p.evaluate('document.querySelector("#ws-remake-retry-fund_energy").click()')
         wait('document.querySelector("#ws-remake-start") && !document.querySelector("#ws-remake-start").disabled')
+        context['session']=app.live.session.id
+        self.assertEqual(1,len(app.room.fabrication_record['energy_imports']))
+        self.assertAlmostEqual(plan['quote']['supply_required_j'],app.room.fabrication_record['energy_j'],places=6)
         p.evaluate('document.querySelector("#ws-remake-start").click()')
         wait('document.querySelector("#ws-remake-step")')
         ident=next(iter(app.room.fabrication_record['jobs']))
-        with self.assertRaises(urllib.error.HTTPError):self.post('/api/world/fabrication/pause',{**context,'job_id':ident,
+        with self.assertRaises(urllib.error.HTTPError) as peer_pause:self.post('/api/world/fabrication/pause',{**context,'job_id':ident,
             'revision':app.room.fabrication_record['revision'],'request_id':'peer-remake-pause-0001'},world,peer['token'])
+        self.assertIn('Only the player who started',peer_pause.exception.read().decode())
         self.post('/api/world/fabrication/pause',{**context,'job_id':ident,
             'revision':app.room.fabrication_record['revision'],'request_id':'owner-remake-pause-0001'},world)
         p.send('Page.navigate',{'url':url})
@@ -251,13 +292,62 @@ class LabRemake(unittest.TestCase):
         wait('document.querySelector("#ws-remake-step")')
         p.evaluate('document.querySelector("#ws-remake-step").click()')
         wait('document.querySelector("#ws-remake-place")')
-        with self.assertRaises(urllib.error.HTTPError):self.post('/api/world/fabrication/preview',{**context,'job_id':ident,'position_m':[3,0]},world,peer['token'])
+        with self.assertRaises(urllib.error.HTTPError) as peer_preview:self.post('/api/world/fabrication/preview',{**context,'job_id':ident,'position_m':[3,0]},world,peer['token'])
+        self.assertIn('Only the player who started',peer_preview.exception.read().decode())
         p.evaluate('document.querySelector("#ws-remake-place").click()')
         wait('document.querySelector("#ws-remake a")?.textContent==="Collect in World"')
         self.assertEqual('installed',app.room.fabrication_record['jobs'][ident]['status'])
         self.assertEqual(original,next(b for b in install._snapshot(app.live)['bodies'] if b['name']=='field pick'))
         out=ROOT/'build/resource-flow';out.mkdir(parents=True,exist_ok=True)
         (out/'lab-remake.png').write_bytes(base64.b64decode(p.send('Page.captureScreenshot',{'format':'png'})['data']))
+        root=app.room.fabrication_record['jobs'][ident]['root_body']
+        # Native collection admits actual fragments only. The new whole hull
+        # must stay available for pickup even inside a large collection radius.
+        swept=self.post('/api/live/act',{'session':app.live.session.id,'op':'collect',
+            'at':next(b for b in app.live.session.state['bodies'] if b['name']==root)['position_m'],
+            'radius_m':2.,'largest_cells':10000},world)
+        self.assertEqual([],swept['collected'])
+        for op,args in (('draw',{'store':1,'joules':1}),('energy_store',{}),('close',{})):
+            with self.assertRaises(urllib.error.HTTPError) as authoring:
+                self.post('/api/live/act',{'session':app.live.session.id,'op':op,**args},world)
+            self.assertIn('authoring operation is not allowed',authoring.exception.read().decode())
+        world_link=p.evaluate('document.querySelector("#ws-remake a").href')
+        p.send('Page.navigate',{'url':world_link})
+        wait('window.banjoRoom?.ready()')
+        self.assertEqual(root,p.evaluate('banjoRoom.picked().name'))
+        def key(code):
+            for kind in ('keyDown','keyUp'):p.send('Input.dispatchKeyEvent',{'type':kind,'code':code,'key':code[-1].lower()})
+        p.evaluate('''(()=>{const at=banjoRoom.world.bodies.get(%s).mesh.position;
+            banjoRoom.standAt(at.x-.8,banjoRoom.groundAt(at.x,at.z)+1.62,at.z);
+            banjoRoom.lookAt(at.x,at.y,at.z);document.activeElement.blur();banjoRoom.resume();})()'''%json.dumps(root))
+        time.sleep(.6);key('KeyE')
+        wait('banjoRoom.world.held?.name===%s && banjoRoom.world.use.mode==="tool-ready"'%json.dumps(root))
+        self.assertIn('put it in your bag',p.evaluate('banjoRoom.details().rows.map(r=>r[1]).join(" · ")'))
+        self.assertNotIn('sweep it up',p.evaluate('banjoRoom.details().rows.map(r=>r[1]).join(" · ")'))
+        key('KeyQ')
+        wait('!banjoRoom.world.held && banjoRoom.world.inventory.stowed.some(t=>t?.name===%s)'%json.dumps(root))
+        slot=p.evaluate('banjoRoom.world.inventory.stowed.findIndex(t=>t?.name===%s)'%json.dumps(root))
+        self.assertGreaterEqual(slot,0)
+        p.evaluate(f'banjoRoom.fromSlot({slot})',await_promise=True)
+        wait('banjoRoom.world.held?.name===%s && banjoRoom.world.use.mode==="tool-ready"'%json.dumps(root))
+        p.evaluate('banjoRoom.standAt(-.9,banjoRoom.groundAt(-.9,.025)+1.62,.025);'
+            'banjoRoom.lookAt(.3,banjoRoom.groundAt(.3,.025),.025);document.activeElement.blur()')
+        time.sleep(.4)
+        p.evaluate('banjoRoom.world.use.last=null');key('KeyJ')
+        wait('banjoRoom.world.use.last && banjoRoom.world.use.mode==="tool-ready"')
+        used=p.evaluate('banjoRoom.world.use.last')
+        self.assertNotIn('refused',used,used)
+        self.assertGreater(used['result']['loosened_kg'],0,used)
+        self.assertGreater(used['result']['work_j'],0,used)
+        self.assertTrue(used['result']['supported'],used)
+        self.assertEqual(original,next(b for b in install._snapshot(app.live)['bodies'] if b['name']=='field pick'))
+        peer_shown=self.post('/api/world/inventory/shown',{'session':app.live.session.id},world,peer['token'])
+        self.assertEqual(0,peer_shown['carried']['sand_kg']+peer_shown['carried']['soil_kg'])
+        self.assertFalse(any(t and t['name']==root for t in list(peer_shown['hands'].values())+peer_shown['stowed']))
+        (out/'lab-remake-used.png').write_bytes(base64.b64decode(p.send('Page.captureScreenshot',{'format':'png'})['data']))
+        self.native_evidence={'material':'oak','stock_kg':plan['quote']['stock_kg'],
+            'supply_j':plan['quote']['supply_required_j'],'collect_bag_equip_use':True,
+            'tool_result':used['result'],'lost_stock_ack_retry':True,'lost_energy_ack_retry':True}
         self.assertEqual([], [e for e in p.events if e.get('method')=='Runtime.exceptionThrown'])
         context['session']=app.live.session.id
         more=self.post('/api/world/goods/collect',{'session':context['session'],'pile':pile['name'],'request_id':'remake-more-oak',

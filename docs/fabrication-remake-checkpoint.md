@@ -1,5 +1,11 @@
 # Selected-item Lab remake checkpoint — October 1, 2026
 
+The subsequent [Lab funding-to-use checkpoint](fabrication-lab-funding-checkpoint.md)
+adds reviewed stock/charger controls and actual output pickup, bag storage,
+equipment and native digging in the explicitly configured fixture. It supersedes
+those earlier next steps below. Ordinary starter capability and a damaged-tool
+journey remain open; all fourteen gates retain four verified, ten partial.
+
 ## Implemented boundary
 
 An authenticated player selects a current hands/bag item in Inventory and opens

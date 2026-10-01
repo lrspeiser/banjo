@@ -5641,7 +5641,7 @@ function detailsModel() {
     // takes it as the material it is made of: the same key, said as what it
     // does.
     if (ours || held.throwable || held.pick || held.blade)
-      rows.push([[k("stow")], entry && entry.shape === "hull" ? "sweep it up into what you carry"
+      rows.push([[k("stow")], entry && entry.shape === "hull" && !ours && !held.pick && !held.bow ? "sweep it up into what you carry"
                                                              : "put it in your bag"]);
     if (held.blade) rows.push([[k("secondary")], "turn the edge a quarter: left, down, right, up"]);
     const breaker = breakerInHand();
@@ -5675,7 +5675,7 @@ function detailsModel() {
     if (holding) model.facts += ` · ${holding}`;
     choiceRows();
     if (entry && !entry.anchored && (tools.profileOf(name) || throwable(entry, onAJoint(name))))
-      rows.push([[k("stow")], entry.shape === "hull" ? "sweep it up into what you carry"
+      rows.push([[k("stow")], entry.shape === "hull" && !part ? "sweep it up into what you carry"
                                                      : "put it in your bag"]);
     // Wiring: a run starts at a battery and is made off at a fitting. What you
     // are looking at decides which end this is.

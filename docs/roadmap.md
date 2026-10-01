@@ -1,5 +1,13 @@
 # Banjo roadmap and acceptance gates
 
+**Lab funding/use acceptance, October 1:** [Reviewed stock/battery and native use](fabrication-lab-funding-checkpoint.md)
+passes explicit personal/shared selection, finite charging, lost-response/reload
+retry, owner-only paid work and E/Q/equip/J use of its separate native output.
+Next declare finite starter source/workbench capabilities, route ordinary Make
+through paid manufacturing, and qualify actual damaged-tool-to-use in a fresh
+generated world. No bond healing or full conservation claim. Four verified and
+ten partial remain within all fourteen gates.
+
 **Selected Lab remake acceptance, October 1:** [Source-bound paid replacement](fabrication-remake-checkpoint.md)
 passes current owned hands/bag selection, exact frozen draft, real material and
 energy costs, native admission, retained actual cuts, retry/reopen and browser

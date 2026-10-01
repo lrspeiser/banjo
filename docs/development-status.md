@@ -1,5 +1,15 @@
 # Development status and handoff
 
+**Lab funding-to-use, October 1:** [Browser/native checkpoint](fabrication-lab-funding-checkpoint.md)
+adds explicit stock-pool and battery controls, accepted charging time, pending
+transfer confirmation and reload retries. Actual E/Q/bag-slot/J replacement use
+passes: 1.925 kg / 192.5 J paid oak pick, 24.64177 kg sand and 46.62703 J recorded
+native stroke work. Old parked source and peer inventory remain unchanged.
+Ordinary funded-room collection/tool diagnostics now work and the whole-tool Q
+hint says bag. Native laws/tolerances are unchanged. Starter finite capabilities,
+ordinary Make integration and damaged-tool acceptance remain next; four verified,
+ten partial within the complete fourteen-item goal.
+
 **Selected-item Lab remake, October 1:** [Native/HTTP/Chrome checkpoint](fabrication-remake-checkpoint.md)
 adds authenticated hands/bag source binding, a frozen draft, reviewed costs,
 finite paid work, owner-only control/placement and retained original damage.

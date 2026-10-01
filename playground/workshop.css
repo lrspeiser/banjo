@@ -333,10 +333,14 @@ body.workshop-mode > :not(#design-workshop):not(#game-menu) { display:none!impor
 .ws-held-row span{flex-grow:1;color:#c3d4e4}
 .ws-held-row strong{font-weight:500;color:#dce7f5}
 .ws-held-run strong{color:#6a7d91}
-#ws-remake {padding:.5rem;border-top:1px solid #27313d;}
+#ws-remake {padding:.5rem;border-top:1px solid #27313d;flex:none;max-height:42vh;overflow:auto;}
 #ws-remake h3 {margin:.25rem 0 .5rem;font-size:.8rem;}
+#ws-remake .ws-remake-estimate {float:right;font-size:.7rem;font-weight:normal;color:var(--dim);}
 #ws-remake progress {width:100%;margin:.4rem 0;}
 #ws-remake .ws-action {margin:.2rem .3rem .2rem 0;}
+#ws-remake-supplies {margin:.5rem 0;border-top:1px solid #27313d;padding-top:.5rem;}
+#ws-remake-supplies summary {cursor:pointer;font-size:.8rem;}
+#ws-remake-battery {max-width:100%;margin:.4rem 0;}
 .ws-group{margin-top:.9rem;border-top:1px solid #27313d;padding-top:.6rem}
 .ws-group>h2,.ws-drawer>summary{margin:0 0 .5rem;font-size:.64rem;letter-spacing:.16em;
   text-transform:uppercase;color:#8fa3b8;font-weight:700}
