@@ -6054,6 +6054,14 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     impl.last_dt_s = numberFrom(doc.at("last_dt_s"));
     impl.foresee_horizon_s = numberFrom(doc.at("foresee_horizon_s"));
     impl.survey_due = true;
+    // Recreating saved constraints can wake bodies after the first placement
+    // pass. Restore their saved sleep state only after those constraints exist.
+    // A changed/removed support deliberately wakes its neighbours; retain that
+    // wake decision rather than hiding a newly unsupported body in sleep.
+    for (const Placement &at : placements)
+        if (!at.anchored && !at.parked && !at.awake &&
+            std::find(woken.begin(), woken.end(), at.name) == woken.end())
+            impl.world->sleep(at.id);
     if (carrying) {
         LiveRestore::Carried &n = said.carried;
         n.placed = put_back.size();
@@ -15992,6 +16000,20 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
             const auto away = I.parked.find(d.name);
             b["precise_mass_kg"] = savedNumber(away != I.parked.end() ? away->second.mass_kg
                                                                      : I.world->mechanicalState(id).mass_kg);
+            std::map<std::string, double> material_mass;
+            for (std::size_t part = 0; part < precise->second.part_mass_kg.size(); ++part)
+                material_mass[std::string(materialSceneName(precise->second.part_materials[part]))]
+                    += precise->second.part_mass_kg[part];
+            b["precise_material_mass_kg"] = nlohmann::json::object();
+            double allocated_mass = 0;
+            for (const auto &[material, mass] : material_mass) {
+                b["precise_material_mass_kg"][material] = savedNumber(mass);
+                allocated_mass += mass;
+            }
+            // A measured residual, not a correction of mass or the motion law.
+            b["precise_material_mass_residual_kg"] = savedNumber(precise->second.mass_kg - allocated_mass);
+            b["precise_declared_mass_kg"] = savedNumber(precise->second.mass_kg);
+            b["precise_mechanical_mass_residual_kg"] = savedNumber(b["precise_mass_kg"].get<double>() - precise->second.mass_kg);
             b["from"] = d.name;
         }
         // Which authored thing its cells came from, by name: a piece of a tool

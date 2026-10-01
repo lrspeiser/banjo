@@ -23,6 +23,7 @@ struct PreciseRigidBody {
     std::uint32_t color_rgba{0x9fd3ffffU};
     std::vector<RigidCompoundPart> parts;          // about the centre of mass
     std::vector<MaterialPreset> part_materials;     // one per part
+    std::vector<double> part_mass_kg;              // same overlap sampling as native mass; earlier part owns overlap
     std::vector<std::string> part_names;            // one per part; may be empty strings
     RigidSnapshot initial;
     double mass_kg{};

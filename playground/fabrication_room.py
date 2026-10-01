@@ -70,21 +70,44 @@ def _state(room):
     if state is None: raise ValueError("Declare initial stock and the finite supply first")
     return model.validate_state(state)
 
-def compile_quote(candidate, stock_kg, cell_m, state):
+def compile_quote(candidate, stock_kg, cell_m, state, *, app=None):
     """Cost the exact occupied matter, not the template's approximate BOM."""
     design, overrides = workshop_components.design_from_spec(candidate)
-    workshop_rigid.require_lattice(design, "Fabrication")
     articulated = articulation.has_bearings(design)
     from mcp import workshop_tools
-    if workshop_tools.frame(design) and articulated:
+    models=workshop_rigid.requested_models(design,overrides)
+    if workshop_tools.frame(design) and (articulated or models!={'lattice'}):
         raise ValueError("Ground tools require a fixed lattice solid; articulated tool points are not supported")
-    if not articulated and any(p.role not in install._FIXED_ROLES for p in design.parts):
-        raise ValueError("This process supports fixed monolithic solids only")
-    # An operating product must carry a deliberate core function.
-    from mcp import core_use
+    from mcp import core_use,workshop_machines
     if not (design.parameters or {}).get("primary_use"):
         raise ValueError("Program the product primary_use before manufacture")
     core_use.installed(design, "fabrication-probe")
+    machines=workshop_machines.of(design)
+    output_energy=sum(s.get('charge_j',0.) for s in (machines or {}).get('stores',[]))
+    model.number(output_energy,'initial battery energy',0,1e12)
+    if models=={'rigid'}:
+        if articulated or machines:
+            if app is None:raise ValueError('Exact machine fabrication requires native material measurement')
+            import rigid_assembly
+            measured=rigid_assembly.measure_for_fabrication(app,design,overrides,cell_m)
+            vector=measured['product_materials_kg'];physics_hash=measured['matter_physics_hash']
+        else:
+            artifact=workshop_rigid.compile_rigid(design,overrides)
+            vector={engine_materials.canonical(artifact['material']):artifact['mass_kg']}
+            physics_hash=artifact['physics_hash']
+        mass=sum(vector.values());stock=model.number(stock_kg,'stock_kg',mass,10000)
+        quote={'candidate':deepcopy(candidate),'material':max(vector,key=vector.get),'stock_kg':stock,
+            'product_kg':mass,'product_materials_kg':vector,
+            'stock_materials_kg':{m:kg*stock/mass for m,kg in vector.items()},
+            'offcut_kg':stock-mass,'cell_m':cell_m,'cells':0,'matter_physics_hash':physics_hash,
+            'mechanical_model':'precise-rigid-v1','thermal_state':'unmodeled', 'output_energy_j':output_energy}
+        return cost_quote(quote,state)
+    workshop_rigid.require_lattice(design,"Fabrication")
+    if machines:
+        raise ValueError('Machine fabrication requires explicit rigid mechanics for every component')
+    if not articulated and any(p.role not in install._FIXED_ROLES for p in design.parts):
+        raise ValueError("This process supports fixed monolithic solids only")
+    # An operating product must carry a deliberate core function.
     matter = workshop_visual.matter_document(design, overrides, cell_size_m=cell_m, exterior_only=False)
     cells = sparse._grid_set(matter)
     if not cells or len(cells) > install.MAX_CELLS: raise ValueError("Product exceeds the native cell budget")
@@ -105,13 +128,23 @@ def compile_quote(candidate, stock_kg, cell_m, state):
             raise ValueError("Assembly material mass does not close")
         physics_hash = artifact["physics_hash"]
     stock = model.number(stock_kg, "stock_kg", mass, 10000)
-    required = stock*state["config"]["work_j_kg"]
-    model.number(required, "required_j", .000001, 1e12)
-    return {"candidate": deepcopy(candidate), "material": material, "stock_kg": stock,
-            "product_kg": mass, "offcut_kg": stock-mass, "required_j": required,
-            "minimum_duration_s": required/(state["config"]["power_w"]*state["config"]["efficiency"]),
-            "supply_required_j": required/state["config"]["efficiency"],
-            "cell_m": cell_m, "cells": len(cells), "matter_physics_hash": physics_hash}
+    return cost_quote({"candidate": deepcopy(candidate), "material": material, "stock_kg": stock,
+            "product_kg": mass, "offcut_kg": stock-mass,"output_energy_j":output_energy,
+            "cell_m": cell_m, "cells": len(cells), "matter_physics_hash": physics_hash},state)
+
+
+def cost_quote(quote,state,*,minimum=False):
+    quote=deepcopy(quote)
+    if minimum:
+        quote.update(stock_kg=quote['product_kg'],offcut_kg=0.)
+        if quote.get('product_materials_kg') is not None:
+            quote['stock_materials_kg']=deepcopy(quote['product_materials_kg'])
+    required=quote['stock_kg']*state['config']['work_j_kg']
+    model.number(required,'required_j',.000001,1e12)
+    quote.update(required_j=required,
+        minimum_duration_s=required/(state['config']['power_w']*state['config']['efficiency']),
+        supply_required_j=required/state['config']['efficiency']+quote.get('output_energy_j',0.))
+    return quote
 
 def _persist(app, room, saved, state):
     model.validate_energy_sources(state, saved, room.scene)
@@ -192,10 +225,13 @@ def request(app, operation, body):
         else:
             if state is None: raise ValueError("Declare initial stock and the finite supply first")
             if operation == "quote":
-                quote = compile_quote(body["candidate"],body["stock_kg"],old.spec["cell_m"],state)
+                quote = compile_quote(body["candidate"],body["stock_kg"],old.spec["cell_m"],state,app=app)
+                required=model.materials(quote,'stock')
+                available={m:state['stock_kg'].get(m,0.) for m in required}
                 return {"quote": quote, "revision": state["revision"],
                         "available_kg": state["stock_kg"].get(quote["material"],0.),
-                        "affordable": state["stock_kg"].get(quote["material"],0.) >= quote["stock_kg"],
+                        "available_materials_kg":available,
+                        "affordable": all(available[m]>=kg for m,kg in required.items()),
                         "changes_world": False}
             action = {k:v for k,v in body.items() if k not in COMMON}
             action["op"] = operation
@@ -205,7 +241,7 @@ def request(app, operation, body):
             # Retries are checked before recompiling the candidate.
             replayed = model.check_request(state, action)
             if not replayed:
-                quote = compile_quote(body["candidate"],body["stock_kg"],old.spec["cell_m"],state) if operation == "start" else None
+                quote = compile_quote(body["candidate"],body["stock_kg"],old.spec["cell_m"],state,app=app) if operation == "start" else None
                 state, replayed = model.mutate(state, action, quote=quote)
         saved = install._snapshot(live)
         _persist(app, room, saved, state)

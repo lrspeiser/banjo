@@ -42,8 +42,8 @@ FIELDS = {
 DESCRIPTIONS = {
     "state": "Read finite stock, energy, workpieces, heat and ledger residuals without advancing time.",
     "configure": "Author the room's initial cold stock, finite isolated supply and declared process law once. Cannot refill, reset or change an existing station.",
-    "quote": "Compile exact Workshop lattice matter and calculate stock, offcuts and declared work. Does not spend anything; candidate must include primary_use.",
-    "start": "Reserve stock and start a bounded process using a trusted compiled quote. revision prevents concurrent spending; request_id makes retries safe.",
+    "quote": "Measure supported lattice matter or exact rigid assemblies/machines; calculate required material allocation, offcuts, declared work and initial battery charge. Does not spend anything; candidate must include primary_use. Exact machine quotes require the updated native material allocation export.",
+    "start": "Atomically reserve each required material and initial product battery charge, then start a bounded process using a trusted compiled quote. Process energy advances with native time. revision prevents concurrent spending; request_id makes retries safe.",
     "pause": "Interrupt a job while keeping its actual reserved workpiece, work and heat; no refund.",
     "resume": "Continue a paused workpiece from its retained work. Needs a free station; spent energy is not restored.",
     "recover": "Transfer measured same-material cold offcuts back to available stock. No new material or refunded energy; excludes installed parts, workpieces and mined ground. revision prevents shared spending; request_id makes retries safe.",

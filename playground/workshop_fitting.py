@@ -765,11 +765,29 @@ def check_validity(design: Any, overrides: Any = None, *, cell_m: float = 0.04,
     if construction.CONSTRUCTION_KEY not in overrides:
         overrides = _readopt(base, overrides)
     current = _built(base, overrides)
+    from mcp import workshop_tools
+
+    if workshop_rigid.requested_models(current, overrides)=={'rigid'}:
+        try:
+            if workshop_tools.frame(current):
+                raise ValueError('Ground tools require fixed lattice mechanics')
+            _compiled(current,overrides,cell_m,root)
+            if workshop_articulation.has_bearings(current) or workshop_machines.of(current):
+                import rigid_assembly
+                artifact=rigid_assembly.compile_design(current,overrides,root=root)
+                rigid_assembly.room_entries(current,artifact)
+        except ValueError as problem:
+            return {'schema':SCHEMA,'ok':False,'stage':'drawing','concepts':[],
+                'changes':[],'overrides':overrides,'says':str(problem)}
+        # Fixed exact groups may share occupied volume. Face-only lattice
+        # interface heuristics cannot certify or reject that native compound.
+        return {'schema':SCHEMA,'ok':True,'stage':'ready','concepts':[],
+            'changes':[],'overrides':overrides,
+            'says':'Exact rigid source compiles as drawn; native geometry, allocation and use trial required.'}
 
     # A monolithic ground tool is joined by occupied matter, rather than by
     # the machine graph's bearings/fasteners. Use the installation compiler's
     # connected, single-material gate and validate the authored point/grip.
-    from mcp import workshop_tools
     if (workshop_tools.KEY in (current.parameters or {})
             and not workshop_articulation.has_bearings(current)
             and not workshop_machines.of(current)):

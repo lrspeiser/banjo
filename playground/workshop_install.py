@@ -933,7 +933,8 @@ def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[st
         if name in removed:
             continue
         if body != current[name]:
-            raise ValueError(f"Staging changed existing physical state for {name}; installation refused")
+            changed=sorted(k for k in set(body)|set(current[name]) if body.get(k)!=current[name].get(k))
+            raise ValueError(f"Staging changed existing physical state for {name} ({', '.join(changed)}); installation refused")
     parts = {tuple(p["bodies"]): p for p in after["parts"]}
     for part in before["parts"]:
         names = set(part["bodies"])
@@ -1196,7 +1197,7 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
                 app, room, live, old, design, overrides, pos, body.get("candidate"),
                 body.get("places")), design, overrides), taking_out))
         if models == {"rigid"}:
-            return _with_needs(app, design, _replaces(app, _kept(app, _preview_rigid(app, room, live, old, design, overrides, pos),
+            return _with_needs(app, design, _replaces(app, _kept(app, _preview_rigid(app, room, live, old, design, overrides, pos, body.get('candidate')),
                                                   design, overrides), taking_out))
         workshop_rigid.require_lattice(design, "Live-room prototype installation")
         if workshop_articulation.has_bearings(design):
@@ -1557,8 +1558,12 @@ def _preview_exact(app, room, live, old, design, overrides, pos, candidate, plac
                 raise ValueError("Prototype placement overlaps the current collision envelope of " + existing["name"])
     fracture_lab.validate(spec)
     roots = set(new_names)
-    staged, _ = _stage(app, live, old, spec, saved, set_down, roots, None)
-    staged.session.close()
+    staged, admitted = _stage(app, live, old, spec, saved, set_down, roots, None)
+    try:
+        measured = (rigid_assembly.material_measurement(artifact, admitted)
+                    if all(b.get('precise_material_mass_kg') for b in admitted['bodies'] if b['name'] in roots) else None)
+    finally:
+        staged.shutdown()
     token = uuid.uuid4().hex
     mass = sum(sum(rigid_assembly._mass(p) for p in design.parts if p.name in b["_components"]) for b in set_down["bodies"])
     answer = {"schema": SCHEMA, "status": "preview", "preview_id": token,
@@ -1566,13 +1571,17 @@ def _preview_exact(app, room, live, old, design, overrides, pos, candidate, plac
               "root_bodies": sorted(roots), "component_to_body": set_down["component_to_body"],
               "source_joints": set_down["source_joints"], "design_id": design.design_id,
               "mechanical_model": precise_rigid.MODEL, "cell_size_m": float(old.spec["cell_m"]),
-              "cells": 0, "mass_kg": round(mass, 4), "requested_position_m": pos,
+              "cells": 0, "mass_kg": measured['mass_kg'] if measured else round(mass, 4), "requested_position_m": pos,
               "placement_grid": None, "applied_translation_m": origin, "machines": made,
               "places": places or {}, "engine_grid_verified": False,
               "native_precise_geometry_verified": True, "existing_state_preserved": True,
               "resources_charged": False, "strength_certified": False, "expires_in_s": PREVIEW_TTL_S,
               "limits": "Exact bodies on ideal pins: no bearing strength, wear or friction; no internal failure. "
                         + precise_rigid.LIMITS}
+    answer['initial_energy_j']=sum(s.get('charge_j',0.) for s in made.get('stores',[]))
+    if measured:
+        answer.update({k:measured[k] for k in ('product_materials_kg','native_mass_kg',
+            'material_mass_residual_kg','mechanical_mass_residual_kg','matter_physics_hash')})
     cache = _preview_cache(app)
     while len(cache) >= MAX_PREVIEWS:
         del cache[next(iter(cache))]
@@ -1585,7 +1594,7 @@ def _preview_exact(app, room, live, old, design, overrides, pos, candidate, plac
     return answer
 
 
-def _preview_rigid(app, room, live, old, design, overrides, pos):
+def _preview_rigid(app, room, live, old, design, overrides, pos, candidate=None):
     artifact = workshop_rigid.compile_rigid(design, overrides)
     saved = _snapshot(live)
     if saved.get("carry_readiness", {}).get("precise_rigid_version") != 1:
@@ -1635,6 +1644,8 @@ def _preview_rigid(app, room, live, old, design, overrides, pos):
               "existing_state_preserved": True, "resources_charged": False, "strength_certified": False,
               "expires_in_s": PREVIEW_TTL_S, "limits": precise_rigid.LIMITS +
               " Geometry, mass and state carry were checked; contact warm-start memory is not persisted."}
+    answer['product_materials_kg']={engine_materials.canonical(artifact['material']):artifact['mass_kg']}
+    answer['initial_energy_j']=0.
     cache = _preview_cache(app)
     while len(cache) >= MAX_PREVIEWS:
         del cache[next(iter(cache))]
@@ -1642,7 +1653,8 @@ def _preview_rigid(app, room, live, old, design, overrides, pos):
                     "source_hash": _hash([saved, room.spec, _inventory(room)]),
                     "source_parts": _source_parts(saved, room),
                     "clear_bounds": bounds,
-                    "spec": spec, "matter": artifact, "root": root, "shift": None}
+                    "spec": spec, "matter": artifact, "root": root, "shift": None,
+                    "candidate_hash":_hash(candidate)}
     return answer
 
 def _admit_fabricated_heat(staged, before, root, expected_mass, temperature):
@@ -1759,7 +1771,17 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
         try:
             thermal_transfer = None
             if funding_job is not None:
-                if plan["matter"].get("schema") == workshop_articulation.SCHEMA:
+                if plan['answer'].get('mechanical_model')==precise_rigid.MODEL:
+                    roots={plan['root']} if isinstance(plan['root'],str) else set(plan['root'])
+                    new_stores=[s for s in saved.get('energy_stores',[]) if s.get('body') in roots]
+                    actual_energy=math.fsum(s['charge_j'] for s in new_stores)
+                    if abs(actual_energy-job.get('output_energy_j',0.))>1e-8:
+                        raise ValueError('Native initial battery energy differs from funded output')
+                    # Exact bodies have no native thermal mechanics. Retain
+                    # that boundary; never declare a fictitious heat parcel.
+                    _preserved(before,saved,roots,added_joints=plan['matter'].get('joints',()),
+                        removed=lost,removed_matter=removed)
+                elif plan["matter"].get("schema") == workshop_articulation.SCHEMA:
                     outputs = {g["root_body"]:g["mass_kg"] for g in plan["matter"]["groups"]}
                     thermal_transfer, saved = _admit_fabricated_outputs(staged, saved, outputs, fabrication.AMBIENT_K)
                     _preserved(before, saved, plan["root"], thermal_transfer=thermal_transfer,
@@ -1789,6 +1811,9 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
             if funding_job is not None:
                 receipt.update(mode="fabrication", fabrication_job_id=funding_job, resources_charged=True,
                                limits="Finite stock and work charged; exact native geometry and prior state verified. " + fabrication.LIMITATIONS[0])
+                if plan['answer'].get('mechanical_model')==precise_rigid.MODEL:
+                    receipt.update(thermal_state='unmodeled',initial_energy_transfer_j=actual_energy,
+                        limits=receipt['limits']+' '+plan['answer']['limits'])
                 if job.get('remake_source') is not None:
                     receipt['remake_source']=deepcopy(job['remake_source'])
                 if job.get('make_source') is not None:

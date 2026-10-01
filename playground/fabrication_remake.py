@@ -90,22 +90,23 @@ def plan(app,body,*,making=False):
         fabrication_stock.validate(app,room.scene,state)
         # Derive the minimum feed from native occupied geometry. Do not use the
         # recipe BOM or charge for whatever rounded number the page displays.
-        preliminary=api.compile_quote(body['candidate'],10000.,old.spec['cell_m'],state)
-        quote=api.compile_quote(body['candidate'],preliminary['product_kg'],old.spec['cell_m'],state)
+        preliminary=api.compile_quote(body['candidate'],10000.,old.spec['cell_m'],state,app=app)
+        quote=api.cost_quote(preliminary,state,minimum=True)
         (model.make_source if making else model.remake_source)(binding)
         ident=uuid.uuid4().hex;cache=_cache(app)
         if len(cache)>=MAX_PLANS:raise ValueError('Too many fabrication plans; wait for old plans to expire')
         cache[ident]={'expires':time.monotonic()+LIFETIME_S,'scene':room.scene,'kind':kind,
             'source':binding,'quote':quote,'config_hash':model.digest(state['config'])}
-        material=quote['material']
         sources=fabrication_stock.sources(app)
-        available=state['stock_kg'].get(material,0.)
+        required=model.materials(quote,'stock')
+        missing={m:max(0.,kg-state['stock_kg'].get(m,0.)) for m,kg in required.items()}
+        available=sum(min(kg,state['stock_kg'].get(m,0.)) for m,kg in required.items())
         return {'schema':'banjo.'+kind+'-plan.v1','plan_id':ident,'session':old.id,'scene':room.scene,
             'available':True,'source':deepcopy(binding),'quote':quote,'revision':state['revision'],
             'station_stock_kg':available,'station_energy_j':state['energy_j'],
-            'missing_stock_kg':max(0.,quote['stock_kg']-available),
+            'missing_stock_kg':sum(missing.values()),'missing_materials_kg':missing,
             'missing_energy_j':max(0.,quote['supply_required_j']-state['energy_j']),
-            'stock_sources':[r for r in sources if r['material']==material],
+            'stock_sources':[r for r in sources if r['material'] in required],
             'occupied':any(j['status']=='running' for j in state['jobs'].values()),
             'changes_world':False,'original_retained':not making}
 

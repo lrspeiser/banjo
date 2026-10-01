@@ -105,6 +105,8 @@ void aCylinderWeighsAndTurnsAsACylinder() {
         const double mass = density(preset) * kPi * r * r * length;
         std::cout << "  " << name(preset) << " wheel: " << wheel.mass_kg << " kg (" << mass << " by hand)\n";
         require(close(wheel.mass_kg, mass, 1e-12), name(preset) + ": a cylinder's mass is not density x pi r^2 L");
+        require(wheel.part_mass_kg.size() == 1 && close(wheel.part_mass_kg[0], mass, 1e-12),
+                name(preset) + ": native material allocation differs from cylinder mass");
         // Laid along x, its own axis is the body's x.
         require(close(wheel.inertia.m[0][0], mass * r * r / 2, 1e-9),
                 name(preset) + ": about its axle a wheel is not m r^2 / 2");
@@ -139,6 +141,14 @@ void anAxleThroughItsWheelsIsCountedOnce() {
             "the wheelset's volume counts the hubs twice");
     require(wheelset.part_materials[0] == MaterialPreset::Iron && wheelset.part_materials[1] == MaterialPreset::Oak,
             "the axle and wheels did not keep their own materials");
+    require(wheelset.part_mass_kg.size() == 3, "wheelset material allocation missing");
+    require(close(wheelset.part_mass_kg[0], density(MaterialPreset::Iron) * axle, 1e-12),
+            "overlap deducted the earlier iron axle instead of later oak hubs");
+    require(std::abs(wheelset.part_mass_kg[1] + wheelset.part_mass_kg[2] -
+                     2 * density(MaterialPreset::Oak) * (wheel - hub)) < 0.03 * 2 * density(MaterialPreset::Oak) * hub,
+            "native oak allocation counts the iron axle overlap twice");
+    require(close(wheelset.part_mass_kg[0] + wheelset.part_mass_kg[1] + wheelset.part_mass_kg[2],
+                  wheelset.mass_kg, 1e-9), "native material allocations do not close on body mass");
     require(wheelset.parts[0].material.has_value() && !wheelset.parts[1].material.has_value(),
             "the iron axle in an oak wheelset should carry its own material, and the oak wheels not");
 }

@@ -243,6 +243,76 @@ class LabRemake(unittest.TestCase):
         if getattr(self,'chrome',None):self.chrome.close()
         flow.GoodsJourney.tearDown(self)
 
+    def test_lab_saved_mixed_machine_reviews_each_material_and_funds_initial_charge(self):
+        from fabrication_tests import mixed_machine
+        self.assertTrue(flow.qa_browser.CHROME.is_file(),'Chrome required for Lab machine acceptance')
+        world,owner,app,_,_,_=self.batch(process=False)
+        pile=app.brains.goods.put(0,0,{'oak':10.,'iron':10.},named='machine browser test supplies')['onto']
+        sid=app.live.session.id;floor=app.live.act({'session':sid,'op':'survey','at':[0,0]})['survey']['ground_m']
+        self.post('/api/world/goods/collect',{'session':sid,'pile':pile,'request_id':'machine-lab-collect',
+            'person':{'eyes_m':[0,floor+1.62,0],'facing':[0,0,-1]}},world)
+        self.post('/api/world/fabrication/configure',{'session':sid,'scene':app.room.scene,
+            'settings':funded.settings(stock_kg={},energy_j=0),'request_id':'machine-lab-empty-process'},world)
+        saved=self.post('/api/workshop/feedback',{**mixed_machine(),'save_design':True,'label':'Mixed battery housing'},world)
+        saved_id=saved['design']['design_id']
+        self.chrome=flow.qa_browser.Chrome(1280,800);p=self.chrome.page
+        p.send('Page.enable');p.send('Runtime.enable')
+        p.send('Page.addScriptToEvaluateOnNewDocument',{'source':f'localStorage.setItem("banjo.player.{world}",{json.dumps(owner["token"])});'})
+        def wait(expr):
+            end=time.monotonic()+35
+            while time.monotonic()<end:
+                if p.evaluate('Boolean('+expr+')'):return
+                time.sleep(.1)
+            self.fail(expr+'; '+str(p.evaluate('document.body.innerText.slice(-1800)')))
+        def click(selector):
+            wait('document.querySelector("#ws-remake").getAttribute("aria-busy")!=="true"')
+            box=p.evaluate('(()=>{const b=document.querySelector(%s);b.scrollIntoView({block:"center"});const r=b.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()'%json.dumps(selector))
+            p.send('Input.dispatchMouseEvent',{'type':'mousePressed',**box,'button':'left','clickCount':1})
+            p.send('Input.dispatchMouseEvent',{'type':'mouseReleased',**box,'button':'left','clickCount':1})
+            wait('document.querySelector("#ws-remake").getAttribute("aria-busy")!=="true"')
+        p.send('Page.navigate',{'url':self.base+f'/world?world={world}&workshop=1&tab=recipes'})
+        selector='#ws-pane-recipes [data-recipe="'+saved_id+'"] .ws-recipe-acts button:first-child'
+        wait('document.querySelector(%s) && !document.querySelector(%s).disabled'%(json.dumps(selector),json.dumps(selector)))
+        p.evaluate('document.querySelector(%s).click()'%json.dumps(selector))
+        wait('document.querySelector("#ws-remake-stock-personal-oak") && document.querySelector("#ws-remake-stock-personal-iron")')
+        self.assertTrue(p.evaluate('document.querySelector("#ws-remake-start").disabled'))
+        self.assertIn('Battery charge',p.evaluate('document.querySelector("#ws-remake").textContent'))
+        out=ROOT/'build/resource-flow';out.mkdir(parents=True,exist_ok=True)
+        (out/'lab-machine-costs.png').write_bytes(base64.b64decode(p.send('Page.captureScreenshot',{'format':'png'})['data']))
+        click('#ws-remake-stock-personal-oak')
+        wait('!document.querySelector("#ws-remake-stock-personal-oak")')
+        self.assertTrue(p.evaluate('document.querySelector("#ws-remake-start").disabled'))
+        self.assertTrue(p.evaluate('Boolean(document.querySelector("#ws-remake-stock-personal-iron"))'))
+        click('#ws-remake-stock-personal-iron')
+        wait('!document.querySelector("#ws-remake-stock-personal-iron")')
+        click('#ws-remake-connect')
+        wait('document.querySelector("#ws-remake-charge-wait")')
+        for _ in range(3):
+            if p.evaluate('!document.querySelector("#ws-remake-start").disabled'):break
+            if p.evaluate('document.querySelector("#ws-remake-energy").disabled'):
+                click('#ws-remake-charge-wait')
+                wait('!document.querySelector("#ws-remake-energy").disabled')
+            click('#ws-remake-energy')
+            wait('!document.querySelector("#ws-remake-start").disabled || document.querySelector("#ws-remake-energy")?.disabled')
+        wait('!document.querySelector("#ws-remake-start").disabled')
+        click('#ws-remake-start');wait('document.querySelector("#ws-remake-step")')
+        click('#ws-remake-step');wait('document.querySelector("#ws-remake-place")')
+        click('#ws-remake-place')
+        wait('document.querySelector("#ws-remake a")?.textContent==="Collect in World"')
+        job=next(iter(app.room.fabrication_record['jobs'].values()))
+        receipt=next(r for r in app.room.workshop_installs if r.get('fabrication_job_id'))
+        native=install._snapshot(app.live)
+        battery=next(s for s in native['energy_stores'] if s['body'] in job['root_bodies'])
+        self.assertEqual(200.,battery['charge_j']);self.assertEqual('unmodeled',receipt['thermal_state'])
+        self.assertEqual(2,len(app.room.fabrication_record['stock_imports']))
+        self.assertEqual('installed',job['status'])
+        self.assertLess(abs(model.audit(app.room.fabrication_record)['energy_residual_j']),1e-7)
+        self.native_evidence={'materials_kg':job['stock_materials_kg'],'work_j':job['required_j'],
+            'initial_battery_j':battery['charge_j'],'supplies':'explicit collected fixture heap; generated solar source',
+            'audit':model.audit(app.room.fabrication_record)}
+        (out/'lab-machine-installed.png').write_bytes(base64.b64decode(p.send('Page.captureScreenshot',{'format':'png'})['data']))
+        self.assertEqual([], [e for e in p.events if e.get('method')=='Runtime.exceptionThrown'])
+
     def test_lab_source_plan_native_paid_start_progress_placement_and_private_owner(self):
         self.assertTrue(flow.qa_browser.CHROME.is_file(),'Chrome required for Lab remake acceptance')
         world,owner,app,_,_,_=self.batch(process=False)

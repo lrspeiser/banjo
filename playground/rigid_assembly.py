@@ -33,6 +33,69 @@ from mcp import core_use, engine_materials, interaction_points, workshop_constru
 SCHEMA = "banjo.rigid-assembly.v1"
 
 
+def material_measurement(artifact, snapshot):
+    """Native overlap allocation, without rounding or summing part envelopes.
+
+    Geometry remains exact primitives; overlap quadrature is the existing native
+    mass model. Its exported residual is retained, never corrected here.
+    """
+    from mcp import fabrication
+    totals=defaultdict(float);outputs={};native_mass=0.;residual=0.;mechanical_residual=0.
+    have={b['name']:b for b in snapshot['bodies']}
+    for declared in artifact['bodies']:
+        body=have.get(declared['name'])
+        if body is None or body.get('mechanical_model')!=precise_rigid.MODEL:
+            raise ValueError('Native precise rigid output is missing')
+        vector=body.get('precise_material_mass_kg')
+        if not isinstance(vector,dict) or not vector:
+            raise ValueError('Rebuild the native engine for precise material allocation')
+        actual={}
+        for raw,mass in vector.items():
+            material=engine_materials.canonical(raw)
+            fabrication.number(mass,'native material mass',0,10000)
+            if mass>0:actual[material]=actual.get(material,0.)+mass
+        total=math.fsum(actual.values())
+        mass=fabrication.number(body['precise_mass_kg'],'native rigid mass',.000001,10000)
+        declared_mass=fabrication.number(body['precise_declared_mass_kg'],'native declared mass',.000001,10000)
+        error=fabrication.number(abs(body.get('precise_material_mass_residual_kg',math.inf)),
+            'native allocation residual',0,1e12)
+        if not math.isclose(total,declared_mass,rel_tol=1e-8,abs_tol=1e-8) or error>1e-8*max(1.,declared_mass):
+            raise ValueError(f'Native material allocation does not close on mechanical mass: allocated={total}, body={mass}, residual={error}')
+        # Jolt stores inverse mass as float after the declared mass conversion.
+        # Two float roundings are bounded here; neither mass is corrected.
+        if not math.isclose(mass,declared_mass,rel_tol=2e-7,abs_tol=1e-12):
+            raise ValueError('Native mechanical mass differs beyond float conversion precision')
+        for material,kg in actual.items():totals[material]+=kg
+        outputs[declared['name']]=actual;native_mass+=mass
+        residual+=body.get('precise_material_mass_residual_kg',0.)
+        mechanical_residual+=mass-declared_mass
+    # Body names and world translation are placement, not physical geometry.
+    shape={'bodies':[{k:b[k] for k in ('material','parts','_components')} for b in artifact['bodies']],
+           'source_joints':artifact['source_joints'],'materials_kg':dict(totals),
+           'backend':'precise-rigid-material-allocation-v1'}
+    return {'product_materials_kg':dict(totals),'mass_kg':math.fsum(totals.values()),
+        'native_mass_kg':native_mass,'material_mass_residual_kg':residual,
+        'mechanical_mass_residual_kg':mechanical_residual,
+        'matter_physics_hash':fabrication.digest(shape),'outputs':outputs}
+
+
+def measure_for_fabrication(app,design,overrides,cell_m):
+    """Isolated native admission; no caller supplies a mass or verdict."""
+    import live_session
+    from types import SimpleNamespace
+    artifact=compile_design(design,overrides)
+    staged=live_session.Live()
+    spec={'cell_m':cell_m,'bodies':[{'name':'quote marker','shape':'box','material':'concrete',
+        'anchored':True,'size_mm':[cell_m*1000]*3,'center_mm':[-5000,1000,-5000]}],
+        'precise_rigid_bodies':scene_bodies(artifact),'joints':scene_joints(artifact)}
+    try:
+        staged.open(SimpleNamespace(engine_path=app.engine_path,runs_path=app.runs_path,live_inprocess=False),{'spec':spec})
+        snapshot,reason=staged.snapshot()
+        if snapshot is None:raise ValueError(reason or 'Native rigid quote is unavailable')
+        return material_measurement(artifact,snapshot)
+    finally:staged.shutdown()
+
+
 def _quaternion(m) -> list[float]:
     """w, x, y, z of a rotation matrix whose columns are a part's own axes."""
     trace = m[0][0] + m[1][1] + m[2][2]

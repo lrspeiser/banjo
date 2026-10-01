@@ -1,5 +1,12 @@
 # Player experience work — September 30, 2026
 
+[Paid exact machine admission](fabrication-machine-checkpoint.md) adds native
+material allocation, atomic multiple-material funding and separately funded
+initial battery charge. Saved-design Recipes/Lab mouse funding and actual AI
+construction pass alongside native use/rollback/restart. Ordinary finite
+workbench, full progression and damaged-tool-to-use remain next; all fourteen
+original gates remain **four verified, ten partial**.
+
 [Paid AI construction](fabrication-ai-build-checkpoint.md) uses the configured
 Lab job/funding APIs, retains pending requests across restarts and produces one
 owned native oak pick from actual collected stock/solar energy. Unsupported

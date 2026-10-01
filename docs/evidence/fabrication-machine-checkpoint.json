@@ -1,0 +1,296 @@
+{
+  "schema": "banjo.fabrication-machine-checkpoint.v1",
+  "environment": "Windows 11; Python 3.13; Visual Studio 17 2022 x64; MSVC 19.44.35228; Release; BANJO_BUILD_LAB=OFF",
+  "verification_source_revision": "d1fe1daa5e8ccc36f753de165160986f21423a7d",
+  "verification_source_dirty": true,
+  "native_engine_sha256": "1cfcb766b24f942df1147f8e9ecd1c00d083105ff71a5bcb9d8da6b50c8d8db9",
+  "native_library_sha256": "ab9b2bd04c082863271592a3b9db2eee5fc2e3666024f3e4184aa71e2e482c8c",
+  "fabrication_checks": 64,
+  "fabrication_elapsed_s": 69.23299932479858,
+  "native_suites": [
+    "banjo_room_carry_tests",
+    "banjo_precise_rigid_parts_tests",
+    "banjo_precise_rigid_live_tests"
+  ],
+  "ai_checks": 10,
+  "fitting_checks": 47,
+  "recipe_guidance_checks": 3,
+  "source_registration": 287,
+  "measurements": [
+    {
+      "id": "fabrication_tests.NativeFabrication.test_paid_exact_machine_native_material_energy_rollback_restart_and_use",
+      "status": "passed",
+      "measurements": [
+        {
+          "material": "glass",
+          "mass_kg": 7.680000000000001,
+          "allocated_kg": {
+            "glass": 7.680000000000001
+          },
+          "work_j": 2500.0,
+          "initial_energy_j": 100.0,
+          "used_energy_j": 0.020056898103128027,
+          "audit": {
+            "material_residual_kg": {
+              "iron": 0.0,
+              "glass": 0.0,
+              "oak": 0.0
+            },
+            "rack_material_received_kg": {},
+            "native_energy_received_j": 0,
+            "reserved_output_energy_j": 0,
+            "transferred_output_energy_j": 100.0,
+            "native_transfer_residual_j": 0,
+            "native_meter_residual_j": 0,
+            "energy_residual_j": 2.7284841053187847e-12,
+            "work_residual_j": 0.0,
+            "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+          },
+          "mechanical_mass_residual_kg": 0.0,
+          "thermal_state": "unmodeled",
+          "restart": "whole",
+          "rollback_verified": true
+        },
+        {
+          "material": "oak",
+          "mass_kg": 2.1504000000000003,
+          "allocated_kg": {
+            "oak": 2.1504000000000003
+          },
+          "work_j": 2500.0,
+          "initial_energy_j": 100.0,
+          "used_energy_j": 0.004253760444700616,
+          "audit": {
+            "material_residual_kg": {
+              "iron": 0.0,
+              "glass": 0.0,
+              "oak": 0.0
+            },
+            "rack_material_received_kg": {},
+            "native_energy_received_j": 0,
+            "reserved_output_energy_j": 0,
+            "transferred_output_energy_j": 200.0,
+            "native_transfer_residual_j": 0,
+            "native_meter_residual_j": 0,
+            "energy_residual_j": 0.0,
+            "work_residual_j": -9.094947017729282e-13,
+            "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+          },
+          "mechanical_mass_residual_kg": 1.1046876213782753e-07,
+          "thermal_state": "unmodeled",
+          "restart": "whole",
+          "rollback_verified": true
+        },
+        {
+          "material": "iron",
+          "mass_kg": 24.176640000000003,
+          "allocated_kg": {
+            "iron": 24.176640000000003
+          },
+          "work_j": 2500.0,
+          "initial_energy_j": 100.0,
+          "used_energy_j": 0.06091260855998035,
+          "audit": {
+            "material_residual_kg": {
+              "iron": 0.0,
+              "glass": 0.0,
+              "oak": 0.0
+            },
+            "rack_material_received_kg": {},
+            "native_energy_received_j": 0,
+            "reserved_output_energy_j": 0,
+            "transferred_output_energy_j": 300.0,
+            "native_transfer_residual_j": 0,
+            "native_meter_residual_j": 0,
+            "energy_residual_j": 3.637978807091713e-12,
+            "work_residual_j": -4.547473508864641e-12,
+            "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+          },
+          "mechanical_mass_residual_kg": -1.102799064511828e-06,
+          "thermal_state": "unmodeled",
+          "restart": "whole",
+          "rollback_verified": true
+        }
+      ]
+    },
+    {
+      "id": "fabrication_tests.NativeFabrication.test_paid_fixed_exact_part_preserves_original_and_has_no_thermal_or_energy_gift",
+      "status": "passed",
+      "measurements": [
+        {
+          "material": "glass",
+          "mass_kg": 2.5600000000000005,
+          "audit": {
+            "material_residual_kg": {
+              "iron": 0.0,
+              "glass": 0.0,
+              "oak": 0.0
+            },
+            "rack_material_received_kg": {},
+            "native_energy_received_j": 0,
+            "reserved_output_energy_j": 0,
+            "transferred_output_energy_j": 0,
+            "native_transfer_residual_j": 0,
+            "native_meter_residual_j": 0,
+            "energy_residual_j": 2.8421709430404007e-12,
+            "work_residual_j": 0.0,
+            "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+          }
+        },
+        {
+          "material": "oak",
+          "mass_kg": 0.7168000000000001,
+          "audit": {
+            "material_residual_kg": {
+              "iron": 0.0,
+              "glass": 0.0,
+              "oak": 0.0
+            },
+            "rack_material_received_kg": {},
+            "native_energy_received_j": 0,
+            "reserved_output_energy_j": 0,
+            "transferred_output_energy_j": 0,
+            "native_transfer_residual_j": 0,
+            "native_meter_residual_j": 0,
+            "energy_residual_j": 3.637978807091713e-12,
+            "work_residual_j": 0.0,
+            "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+          }
+        },
+        {
+          "material": "iron",
+          "mass_kg": 8.058880000000002,
+          "audit": {
+            "material_residual_kg": {
+              "iron": 0.0,
+              "glass": 0.0,
+              "oak": 0.0
+            },
+            "rack_material_received_kg": {},
+            "native_energy_received_j": 0,
+            "reserved_output_energy_j": 0,
+            "transferred_output_energy_j": 0,
+            "native_transfer_residual_j": 0,
+            "native_meter_residual_j": 0,
+            "energy_residual_j": 1.8189894035458565e-12,
+            "work_residual_j": 4.547473508864641e-13,
+            "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+          }
+        }
+      ]
+    },
+    {
+      "id": "fabrication_tests.NativeFabrication.test_paid_mixed_machine_counts_native_overlap_once_and_reserves_each_material",
+      "status": "passed",
+      "measurements": {
+        "materials_kg": {
+          "iron": 4.029440000000001,
+          "oak": 0.17919999999927372
+        },
+        "stock_kg": {
+          "iron": 9.574209245743745,
+          "oak": 0.4257907542562553
+        },
+        "native_mechanical_residual_kg": 2.068070452665438e-07,
+        "native_allocation_residual_kg": -2.1934454252914293e-11,
+        "audit": {
+          "material_residual_kg": {
+            "iron": 0.0,
+            "glass": 0.0,
+            "oak": 0.0
+          },
+          "rack_material_received_kg": {},
+          "native_energy_received_j": 0,
+          "reserved_output_energy_j": 0,
+          "transferred_output_energy_j": 200.0,
+          "native_transfer_residual_j": 0,
+          "native_meter_residual_j": 0,
+          "energy_residual_j": 2.8421709430404007e-12,
+          "work_residual_j": 0.0,
+          "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+        },
+        "initial_energy_j": 200.0,
+        "overlap_counted_once": true
+      }
+    },
+    {
+      "id": "fabrication_remake_tests.LabRemake.test_lab_saved_mixed_machine_reviews_each_material_and_funds_initial_charge",
+      "status": "passed",
+      "measurements": {
+        "materials_kg": {
+          "iron": 4.029440000000001,
+          "oak": 0.17919999999927372
+        },
+        "work_j": 420.86399999992744,
+        "initial_battery_j": 200.0,
+        "supplies": "explicit collected fixture heap; generated solar source",
+        "audit": {
+          "material_residual_kg": {
+            "oak": 0.0,
+            "iron": 0.0
+          },
+          "rack_material_received_kg": {
+            "oak": 0.17919999999927372,
+            "iron": 4.029440000000001
+          },
+          "native_energy_received_j": 620.8639999999275,
+          "reserved_output_energy_j": 0,
+          "transferred_output_energy_j": 200.0,
+          "native_transfer_residual_j": -1.007265382213518e-10,
+          "native_meter_residual_j": 0.0,
+          "energy_residual_j": 5.684341886080802e-14,
+          "work_residual_j": 0.0,
+          "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+        }
+      }
+    }
+  ],
+  "ai_machine": {
+    "phases": [
+      "review",
+      "fund_stock",
+      "fund_stock",
+      "connect_energy",
+      "charging",
+      "fund_energy",
+      "charging",
+      "fund_energy",
+      "charging",
+      "fund_energy",
+      "charging",
+      "fund_energy",
+      "charging",
+      "fund_energy",
+      "start_make",
+      "work",
+      "commit",
+      "installed"
+    ],
+    "stock_kg": {
+      "iron": 20.1472,
+      "oak": 0.35840000000000005
+    },
+    "work_j": 2050.56,
+    "initial_charge_j": 100.0,
+    "supplies": "explicit test heap collected into private rack; actual generated solar battery",
+    "audit": {
+      "material_residual_kg": {
+        "oak": 0.0,
+        "iron": 0.0
+      },
+      "rack_material_received_kg": {
+        "iron": 20.1472,
+        "oak": 0.35840000000000005
+      },
+      "native_energy_received_j": 2150.5600000000004,
+      "reserved_output_energy_j": 0,
+      "transferred_output_energy_j": 100.0,
+      "native_transfer_residual_j": 5.5649707064731047e-11,
+      "native_meter_residual_j": -2.8421709430404007e-13,
+      "energy_residual_j": 4.547473508864641e-13,
+      "work_residual_j": 0.0,
+      "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+    }
+  },
+  "boundary": "Declared process bookkeeping and native admission; exact rigid thermal/internal damage and calibrated forming unsupported. Full fourteen-item goal active: four verified, ten partial."
+}

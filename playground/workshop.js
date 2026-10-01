@@ -3194,6 +3194,16 @@ async function waitRemakeSecond() {
   const ctx=await api("/api/world/workshop/context",{});
   await api("/api/world/fabrication/wait",{session:ctx.session,scene:ctx.scene,seconds:1});await reviewRemake();
 }
+function remakeMaterials(quote) {return quote.stock_materials_kg || {[quote.material]:quote.stock_kg};}
+function refreshRemakeSupplies(plan,reading) {
+  const required=remakeMaterials(plan.quote),stock=reading.state.stock_kg;
+  plan.missing_materials_kg=Object.fromEntries(Object.entries(required).map(([m,kg])=>[m,Math.max(0,kg-(stock[m] || 0))]));
+  plan.missing_stock_kg=Object.values(plan.missing_materials_kg).reduce((a,b)=>a+b,0);
+  plan.station_stock_kg=Object.entries(required).reduce((sum,[m,kg])=>sum+Math.min(kg,stock[m] || 0),0);
+  plan.station_energy_j=reading.state.energy_j;
+  plan.missing_energy_j=Math.max(0,plan.quote.supply_required_j-plan.station_energy_j);
+  plan.stock_sources=reading.stock_sources.filter(s=>s.material in required);
+}
 function renderRemakeFunding(root,button,plan) {
   const supply=remake.supply;
   const pending=REMAKE_FUNDING.filter(op=>fundingPending(op));
@@ -3203,13 +3213,17 @@ function renderRemakeFunding(root,button,plan) {
   if(pending.length) {remakeRow(root,"Transfer","Awaiting confirmation");return;}
   if(plan.missing_stock_kg>1e-10) {
     for(const source of plan.stock_sources.filter(s=>s.mass_kg>1e-10)) {
-      const amount=Math.min(plan.missing_stock_kg,source.mass_kg),personal=source.pool==="personal";
-      remakeRow(root,personal ? "Your material" : "Shared material",kgSaid(source.mass_kg));
-      button("ws-remake-stock-"+source.pool,`Add ${kgSaid(amount)} · ${personal ? "Your stock" : "Shared stock"}`,
-        ()=>fundRemake("fund_stock",{material:plan.quote.material,pool:source.pool,mass_kg:amount}));
+      const gap=plan.missing_materials_kg?.[source.material] ?? plan.missing_stock_kg;
+      if(gap<=1e-10)continue;
+      const amount=Math.min(gap,source.mass_kg),personal=source.pool==="personal";
+      const material=titleCase(source.material),multi=Object.keys(remakeMaterials(plan.quote)).length>1;
+      remakeRow(root,`${personal ? "Your" : "Shared"} ${material}`,kgSaid(source.mass_kg));
+      button("ws-remake-stock-"+source.pool+(multi ? "-"+source.material.replace(/\W/g,"-") : ""),
+        `Add ${kgSaid(amount)} · ${material} · ${personal ? "Your stock" : "Shared stock"}`,
+        ()=>fundRemake("fund_stock",{material:source.material,pool:source.pool,mass_kg:amount}));
     }
     const url=new URL(homeWorld(),location.href);url.searchParams.set("workshop","1");url.searchParams.set("tab","recipes");
-    url.searchParams.set("material",plan.quote.material);
+    url.searchParams.set("material",Object.entries(plan.missing_materials_kg || {}).find(([,kg])=>kg>1e-10)?.[0] || plan.quote.material);
     root.append(make("a",{class:"ws-action",href:url.pathname+url.search},"Find material supplies"));
   }
   if(plan.missing_energy_j<=1e-10)return;
@@ -3222,6 +3236,7 @@ function renderRemakeFunding(root,button,plan) {
     const option=make("option",{value:String(source.id)},`${source.name} · ${energySaid(source.charge_j)}`);
     option.selected=source.id===remake.store;select.append(option);
   }
+  select.disabled=remake.busy;
   select.onchange=()=>{remake.store=Number(select.value);renderRemake();};root.append(select);
   const source=sources.find(s=>s.id===remake.store);
   remakeRow(root,"Source charge",energySaid(source.charge_j));
@@ -3233,7 +3248,7 @@ function renderRemakeFunding(root,button,plan) {
     const amount=Math.min(plan.missing_energy_j,source.transfer_available_j);
     const transfer=button("ws-remake-energy",`Add ${energySaid(amount)}`,
       ()=>fundRemake("fund_energy",{store:source.id,joules:amount}));
-    transfer.disabled=amount<.000001;
+    transfer.disabled=remake.busy || amount<.000001;
   }
 }
 function remakeRow(root,name,value) {
@@ -3242,16 +3257,23 @@ function remakeRow(root,name,value) {
 function renderRemake() {
   const root=$("#ws-remake");if(!root)return;
   const kind=remakeKind();root.replaceChildren(make("h3",{},titleCase(kind)));
+  root.setAttribute('aria-busy',String(remake.busy));
   const button=(id,label,fn)=>{const b=make("button",{id,type:"button",class:"ws-action"},label);
-    b.onclick=()=>guard(b,async()=>{remake.busy=true;try{await fn();}finally{remake.busy=false;}});root.append(b);return b;};
+    b.disabled=remake.busy;
+    b.onclick=()=>{if(remake.busy)return;return guard(b,async()=>{
+      remake.busy=true;root.setAttribute('aria-busy','true');
+      root.querySelectorAll('button,select').forEach(control=>control.disabled=true);
+      try{await fn();}finally{remake.busy=false;renderRemake();}
+    });};root.append(b);return b;};
   if(!remake.plan && !remake.job) {button("ws-remake-review","Review "+kind,()=>reviewRemake());return;}
   if(remake.plan?.available===false) {
     remakeRow(root,"Workbench",remake.plan.reason);button("ws-remake-review","Review again",()=>reviewRemake(true));return;
   }
   const job=remake.job,plan=remake.plan,quote=job || plan.quote;
   root.querySelector("h3").append(make("span",{class:"ws-remake-estimate"},"Workbench estimate"));
-  remakeRow(root,"Material",`${titleCase(quote.material)} · ${kgSaid(quote.stock_kg)}`);
+  for(const [material,kg] of Object.entries(remakeMaterials(quote)))remakeRow(root,titleCase(material),kgSaid(kg));
   remakeRow(root,"Energy",energySaid(quote.supply_required_j));
+  if(quote.output_energy_j>0)remakeRow(root,"Battery charge",energySaid(quote.output_energy_j));
   remakeRow(root,"Minimum time",`${quote.minimum_duration_s.toFixed(1)} s`);
   if(kind==="remake")remakeRow(root,"Original","Kept · Damage retained");
   if(job) {
@@ -3292,7 +3314,7 @@ function renderRemake() {
     catch(err) {if(/plan expired|Selected item changed|revision changed|process changed/i.test(String(err.message)))sessionStorage.removeItem(remakeKey());throw err;}
     remake.job=result.state.jobs[result.job_id];remake.plan=null;renderRemake();
   });
-  begin.disabled=fundingPendingNow || plan.missing_stock_kg>1e-10 || plan.missing_energy_j>1e-10 || plan.occupied;
+  begin.disabled=remake.busy || fundingPendingNow || plan.missing_stock_kg>1e-10 || plan.missing_energy_j>1e-10 || plan.occupied;
   button("ws-remake-review","Review again",()=>reviewRemake(true));
 }
 async function reviewRemake(force=false) {
@@ -3313,11 +3335,7 @@ async function reviewRemake(force=false) {
   // explicit review. Native source/draft guards still run at Start.
   if(!force && previous?.available && !pending && performance.now()-previous.reviewed_ms<240000 && reading.state) {
     plan={...previous,session:ctx.session,scene:ctx.scene,revision:reading.state.revision,
-      station_stock_kg:reading.state.stock_kg[previous.quote.material] || 0,station_energy_j:reading.state.energy_j,
-      stock_sources:reading.stock_sources.filter(s=>s.material===previous.quote.material),
       occupied:Object.values(reading.state.jobs).some(j=>j.status==="running")};
-    plan.missing_stock_kg=Math.max(0,plan.quote.stock_kg-plan.station_stock_kg);
-    plan.missing_energy_j=Math.max(0,plan.quote.supply_required_j-plan.station_energy_j);
   } else {
     plan=await api("/api/world/fabrication/plan_"+kind,{session:ctx.session,scene:ctx.scene,
       ...(kind==="remake" ? {source_item:String(selected.id)} : {}),candidate:candidateBody()});
@@ -3326,9 +3344,8 @@ async function reviewRemake(force=false) {
   if(selected!==bench.inventorySelection || revision!==bench.revision)return;
   if(pending?.reviewed_quote && plan.available) {
     plan.quote=pending.reviewed_quote;
-    plan.missing_stock_kg=Math.max(0,plan.quote.stock_kg-plan.station_stock_kg);
-    plan.missing_energy_j=Math.max(0,plan.quote.supply_required_j-plan.station_energy_j);
   }
+  if(plan.available && reading.state)refreshRemakeSupplies(plan,reading);
   remake.plan=plan;remake.job=null;renderRemake();
   if(pending && plan.available) {
     $("#ws-remake-start").textContent="Retry reviewed "+kind;

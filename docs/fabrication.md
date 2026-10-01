@@ -9,10 +9,10 @@ Use the HTTP/MCP operations below against the existing main world or the separat
 `fabrication` room. Explicitly declare the process once, quote a Workshop candidate,
 start it, advance native time, then preview and place the finished workpiece.
 Native terrain bounds placement. The old `/fabrication` page is removed (404);
-the Lab exposes reviewed remake/start/progress/placement for a carried source
-when a workbench is already configured and funded. Inventory exposes pending
-stock recovery controls. Ordinary starter workbench declarations and UI stock/
-charger funding remain unfinished. Another live world view can advance the shared
+the Lab exposes reviewed Make/Remake, personal/shared stock, native battery
+funding, progress and placement in configured worlds. Recipes Make opens this
+review for new/saved designs. Inventory exposes pending stock recovery controls.
+Ordinary starter workbench declarations remain unfinished. Another live world view can advance the shared
 clock while a process runs.
 Configuring a funded station retains surveying, excavation, tool use and machine
 controls; free authoring operations remain restricted. The [30-item priority list](physics-gameplay-backlog.md) and
@@ -27,18 +27,29 @@ below. It is not attached to a native circuit and cannot claim the same battery 
 The process parameters are declared engineering inputs, not calibrated machining
 properties. Nothing chooses a law from a product name.
 
-A quote compiles the candidate's full Workshop Matter cell set. Product mass is
-occupied cell count × cell volume × engine catalog density. Input stock must
-cover that mass; completed offcuts retain the difference. Only supported,
-connected, single-material lattice products are admitted, including authored fixed/bearing assemblies whose fixed groups compile separately. The
+A lattice quote compiles the candidate's full Workshop Matter cell set. Product
+mass is occupied cell count × cell volume × engine catalog density. Supported
+connected, single-material fixed/bearing lattice products are admitted.
+Exact rigid fixed solids and assemblies/machines use their existing native
+primitive geometry and material allocation. For compound overlap, the earlier
+part owns shared volume under the existing bounded native quadrature; part
+envelopes are not summed twice. Input stock must cover every material; completed
+offcuts retain the per-material difference. The
 candidate must declare `parameters.primary_use`. Assemblies additionally name `primary_use_component` and map every interaction point ID to its owning component in `interaction_point_components`. Construction labels,
 interaction points and the use program travel through the existing installer.
 
 Required useful work is `stock_kg * work_j_kg`. Supplied energy is converted to
-useful process work with `efficiency`; **all** supplied energy eventually heats
-the station or crosses its ambient boundary. Useful work is a progress measure,
-not another energy store. Output remains at the cold-stock reference temperature
-293.15 K. Native output thermal state is admitted atomically at installation; station heat remains isolated. No warm feedstock or chip thermal distribution is claimed by this model.
+useful process work with `efficiency`; process supply heats the station or crosses
+its ambient boundary. Useful work is a progress measure, not another energy
+store. Initial product battery charge is an additional funded reservation:
+`supply_required_j = required_j / efficiency + output_energy_j`. Start removes
+it from the buffer; the pending job owns it until installation transfers it once
+to the actual native stores. It is never counted as process heat.
+Lattice output enters at the cold-stock reference temperature 293.15 K;
+exact rigid thermal mechanics remain explicitly unmodeled, with no fabricated
+heat parcel. Station heat remains isolated. No warm feedstock or chip thermal
+distribution is claimed by this model. See the [machine checkpoint](fabrication-machine-checkpoint.md)
+for native float mass residuals, compatibility and measured limits.
 
 For station heat H above ambient, heat capacity C and cooling conductance G:
 `dH/dt = P - G*H/C`. Each constant-power segment is integrated analytically.
@@ -52,7 +63,8 @@ A native refinement/time-admission stop refuses completion of the requested wait
 
 ## Transactions and persistence
 
-Start reserves the whole workpiece immediately. Pause retains that material,
+Start atomically reserves every required material and initial battery charge.
+Missing one material or that charge refuses before any reservation. Pause retains that material,
 completed work, heat and spent energy. Resume continues from it. There is no
 refund or reset operation. Only one job runs at once; another may occupy the
 station while a paused workpiece is retained. At completion, offcuts enter a

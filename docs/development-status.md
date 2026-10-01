@@ -1,5 +1,15 @@
 # Development status and handoff
 
+**Paid exact machines, October 1:** [Native/browser/AI checkpoint](fabrication-machine-checkpoint.md)
+adds exact fixed solids/assemblies/machines, native per-material overlap allocation,
+atomic material reservation and funded initial battery charge. The complete fixed
+suite passes 64/64; AI checks 10/10; fitting 47/47; recipe guidance 3/3; compiled
+native carry/parts/live suites 3/3. Lab actual mouse funding/use and whole restart
+pass. Saved constraint restoration now retains sleep; explicit support-removal
+wake decisions survive. Exact thermal/internal damage and calibrated forming
+remain unsupported. Default workbench/full progression/damaged-tool use are next;
+four verified, ten partial within the original fourteen-item goal.
+
 **Configured AI manufacturing, October 1:** [Paid controller checkpoint](fabrication-ai-build-checkpoint.md)
 passes actual collected personal oak, generated solar charging, native paid pick
 installation, lost stock/energy/Start/commit acknowledgement restarts and an

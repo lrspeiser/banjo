@@ -334,9 +334,10 @@ class AutonomousGuests(unittest.TestCase):
         self.post('/api/world/fabrication/configure',{**common,'settings':settings(stock_kg={},energy_j=0),
             'request_id':'unsupported-ai-empty-process'},world)
         initial=deepcopy(app.room.fabrication_record);installs=deepcopy(app.room.workshop_installs)
-        candidate={'kind':'solar-array','parameters':{},'component_overrides':{}}
+        candidate={'kind':'solar-array','parameters':{'primary_use':{'label':'Push','steps':[{'do':'push_forward'}]}},'component_overrides':{}}
         design,_=ai_actions.workshop_components.design_from_spec(candidate)
         candidate['component_overrides']={p.name:{'mechanics':{'model':'rigid'}} for p in design.parts}
+        candidate['component_overrides'][design.parts[-1].name]['mechanics']={'model':'lattice'}
         manager=app.ai_players;post=manager._post;paths=[]
         def observed(p,path,body,cookie):
             paths.append(path);return post(p,path,body,cookie)
@@ -347,6 +348,50 @@ class AutonomousGuests(unittest.TestCase):
         self.assertEqual(initial,app.room.fabrication_record);self.assertEqual(installs,app.room.workshop_installs)
         self.assertFalse(any(p.endswith(('/fund_stock','/fund_energy','/start_make','/preview','/commit')) for p in paths))
         self.assertIn('fabrication_build',profile['ai']['memory'])
+
+    def test_paid_ai_mixed_machine_funds_own_materials_and_initial_battery_charge(self):
+        from fabrication_tests import settings,rigid_machine
+        from mcp import fabrication
+        import workshop_install,workshop_library
+        world,human,app=self.setup_world();guest=self.join(world,'Machine builder')
+        profile=app.room.player_records[guest['id']]
+        profile['ai']={'controller':human['id'],'mode':'reference','status':'paused',
+                       'decisions':0,'history':[],'memory':{}}
+        # Authored test supplies enter through actual nearby collection and SQL
+        # receipts; the generated solar battery is the energy source.
+        pile=app.brains.goods.put(0,0,{'oak':25.,'iron':25.},named='paid machine test supplies')['onto']
+        floor=self.post('/api/live/act',{'session':app.live.session.id,'op':'survey','at':[0,0]},world)['survey']['ground_m']
+        for index in range(2):
+            self.post('/api/world/goods/collect',{'session':app.live.session.id,'pile':pile,
+                'request_id':'ai-machine-collect-'+str(index),'person':{'eyes_m':[0,floor+1.62,0],'facing':[0,0,-1]}},world,guest['token'])
+        common={'session':app.live.session.id,'scene':app.room.scene}
+        self.post('/api/world/fabrication/configure',{**common,'settings':settings(stock_kg={},energy_j=0),
+            'request_id':'ai-machine-empty-process'},world)
+        human_stock=self.post('/api/world/fabrication/state',common,world)['stock_sources']
+        candidate=rigid_machine('oak','iron');ident='ai-mixed-paid-machine';phases=[]
+        stop=threading.Event()
+        for decision in range(35):
+            action={'verb':'build','recipe':{'candidate':candidate}} if not decision else {'verb':'continue-build'}
+            result=app.ai_players._execute(profile,stop,'',action,
+                {'native':{'session':app.live.session.id}},ident)
+            phases.append(result['phase'])
+            if result['phase']=='installed':break
+        else:self.fail('Machine did not finish: '+str(phases))
+        job=app.room.fabrication_record['jobs'][ident]
+        self.assertEqual('installed',job['status']);self.assertEqual(guest['id'],job['make_source']['owner'])
+        self.assertEqual({'oak','iron'},set(job['stock_materials_kg']))
+        self.assertEqual({'oak','iron'},set(p['material'] for p in app.room.fabrication_record['stock_imports'].values()))
+        snapshot=workshop_install._snapshot(app.live)
+        store=next(s for s in snapshot['energy_stores'] if s['body'] in job['root_bodies'])
+        self.assertEqual(100.,store['charge_j']);self.assertEqual(100.,job['output_energy_j'])
+        common['session']=app.live.session.id
+        self.assertEqual(human_stock,self.post('/api/world/fabrication/state',common,world)['stock_sources'])
+        self.assertLess(abs(fabrication.audit(app.room.fabrication_record)['energy_residual_j']),1e-7)
+        out=ROOT/'build/ai-player';out.mkdir(parents=True,exist_ok=True)
+        (out/'paid-machine.json').write_text(json.dumps({'phases':phases,'stock_kg':job['stock_materials_kg'],
+            'work_j':job['required_j'],'initial_charge_j':store['charge_j'],
+            'supplies':'explicit test heap collected into private rack; actual generated solar battery',
+            'audit':fabrication.audit(app.room.fabrication_record)},indent=2))
 
     def test_ai_turns_on_named_native_program_using_its_current_numeric_id(self):
         world,owner,app=self.setup_world()

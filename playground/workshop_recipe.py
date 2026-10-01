@@ -31,7 +31,7 @@ def _one(design: Any, overrides: Any, cell_m: float) -> dict[str, Any]:
     elif result["changes"]:
         reason = "Needs a reviewed redraw: " + result["changes"][0]["says"]
     else:
-        reason = "Dimensions and connections compile as drawn"
+        reason = result["says"]
     return {"cell_size_m": cell_m, "as_drawn": bool(result["ok"] and not result["changes"]),
             "reason": reason, "changes": [c["says"] for c in result["changes"]]}
 

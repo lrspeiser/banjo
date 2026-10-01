@@ -1,5 +1,13 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Paid exact machines, October 1:** [Native/Lab/AI checkpoint](fabrication-machine-checkpoint.md)
+adds native material allocation, atomic per-material reservations and separately
+funded initial battery charge. Saved-design Lab mouse input and AI construction
+pass; original state/damage and retry/restart checks remain. Exact thermal/internal
+damage and calibrated forming are unmodeled. Next declare the ordinary workbench
+and qualify complete paid progression/damaged-tool use. All fourteen requirements
+remain active: four verified, ten partial.
+
 **Paid AI build path, October 1:** [Controller checkpoint](fabrication-ai-build-checkpoint.md)
 connects configured AI construction to reviewed personal stock, actual battery
 charging, native work and owned placement, with pending-write/restart recovery.

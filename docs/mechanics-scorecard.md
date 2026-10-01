@@ -1,5 +1,17 @@
 # Banjo mechanics scorecard
 
+**Exact machine funding boundary, October 1:** [Measured checkpoint](fabrication-machine-checkpoint.md)
+retains matched native glass/oak/iron probes: 0.003072 m³ gives 7.68/2.1504/
+24.17664 kg, 25 kg stock/2500 J authored work plus separately reserved 100 J
+initial charge, 40 mm scenery and dt=1/240 s. Native motor use, old-state/damage
+carry and rollback/restart pass. Half-overlapping iron/oak allocates 4.02944/
+0.17920 kg once, allocation residual -2.193e-11 kg; native mechanical float mass
+is reported separately, bounded at 2e-7 relative without correction. Local
+material residuals zero, process energy below 3.7e-12 J. No contact/density/
+inertia/overlap law change; saved sleep survives constraint recreation. Exact
+thermal/internal damage, calibrated forming, physical transport and full-world
+conservation remain open, alongside ordinary workbench/damaged-tool use.
+
 **Paid AI admission boundary, October 1:** [Controller/native checkpoint](fabrication-ai-build-checkpoint.md)
 adds actual AI-owned 1.925 kg / 192.5 J oak pick admission at 50 mm and
 `dt=1/240 s`, using collected stock and the generated rated solar source.

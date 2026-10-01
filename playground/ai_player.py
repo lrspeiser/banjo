@@ -337,12 +337,14 @@ class Manager:
             return {'phase':'review','quote':{k:plan['quote'][k] for k in
                 ('material','stock_kg','product_kg','supply_required_j','minimum_duration_s')},'job_id':pending['job_id']}
         plan=pending['plan'];quote=plan['quote']
-        shortage=max(0.,quote['stock_kg']-state['stock_kg'].get(quote['material'],0.))
-        if shortage>1e-10:
+        materials=quote.get('stock_materials_kg') or {quote['material']:quote['stock_kg']}
+        for material,kg in materials.items():
+            shortage=max(0.,kg-state['stock_kg'].get(material,0.))
+            if shortage<=1e-10:continue
             source=next((s for s in funding['stock_sources'] if s['pool']=='personal'
-                         and s['material']==quote['material'] and s['mass_kg']>0),None)
-            if source is None:raise ValueError('This character needs '+quote['material']+' in its own material inventory')
-            return write('fund_stock',{'material':quote['material'],'mass_kg':min(shortage,source['mass_kg']),
+                         and s['material']==material and s['mass_kg']>0),None)
+            if source is None:raise ValueError('This character needs '+material+' in its own material inventory')
+            return write('fund_stock',{'material':material,'mass_kg':min(shortage,source['mass_kg']),
                 'pool':'personal','rack_hash':source['rack_hash'],'revision':state['revision']})
         needed=max(0.,quote['supply_required_j']-state['energy_j'])
         if needed>1e-10:

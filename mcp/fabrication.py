@@ -2,7 +2,8 @@
 
 This is a process operating model, not a cutting/contact solver. The station
 spends explicitly seeded energy or metered imports from a native battery.
-All supplied work ends in the station heat capacity or its ambient boundary.
+Process work ends in the station heat capacity or its ambient boundary.
+Initial product battery charge is reserved separately and transferred once.
 Native installation is a separate, atomic transfer, verified by the room adapter.
 """
 from __future__ import annotations
@@ -21,8 +22,8 @@ LIMITATIONS = [
     "Declared lumped shaping process; work coefficients are authored, not calibrated cutting laws.",
     "Initial cold stock and the isolated supply are explicitly supplied in authoring mode. They are not mined terrain or a second claim on a native battery.",
     "Native charging is a batched, power-bounded transfer into the finite supply, not an electrical circuit or continuous current simulation. Imported joules are debited from the source once; economic wallet claims are not a source.",
-    "Only supported single-material fixed/bearing lattice products are transferable. No drilling contact, casting, repair or tool-wear claim.",
-    "All process work heats the station; output stock stays at 293.15 K. Station cooling exchanges heat with a prescribed ambient reservoir.",
+    "Supported single-material fixed/bearing lattice products and native-measured exact rigid assemblies/machines are transferable. Mixed lattice interfaces, calibrated forming, casting, bond repair and tool wear remain unsupported.",
+    "Process work heats the station; lattice outputs enter at 293.15 K. Exact rigid thermal mechanics remain unmodeled. Initial product battery charge is funded separately, not counted as process heat. Station cooling exchanges heat with a prescribed ambient reservoir.",
     "The ledger boundary is stock, workpieces, station and supply. Installed material is a measured transfer out, not a whole-world energy audit.",
 ]
 
@@ -79,6 +80,11 @@ def new(settings, time_s):
 def temperature(state):
     return AMBIENT_K + state["station_heat_j"] / state["config"]["heat_capacity_j_k"]
 
+
+def materials(job, kind):
+    """v1 legacy scalar jobs retain their meaning; new jobs carry exact vectors."""
+    return job.get(kind+"_materials_kg", {job["material"]:job[kind+"_kg"]})
+
 def audit(state):
     inputs = deepcopy(state["config"]["stock_kg"])
     imports = {}
@@ -91,19 +97,23 @@ def audit(state):
             totals[material] = totals.get(material, 0.) + mass
     for job in state["jobs"].values():
         if job["status"] != "installed":
-            mass = job["product_kg"] if job["status"] == "ready" else job["stock_kg"]
-            totals[job["material"]] = totals.get(job["material"], 0.) + mass
+            for material,mass in materials(job,"product" if job["status"] == "ready" else "stock").items():
+                totals[material] = totals.get(material,0.)+mass
     residuals = {m: inputs.get(m, 0.)-totals.get(m, 0.) for m in set(totals)|set(inputs)}
     imported = sum(p["joules"] for p in state.get("energy_imports", {}).values())
+    reserved_energy = sum(j.get("output_energy_j",0.) for j in state["jobs"].values() if j["status"]!="installed")
+    transferred_energy = sum(j.get("output_energy_j",0.) for j in state["jobs"].values() if j["status"]=="installed")
     return {"material_residual_kg": residuals,
             "rack_material_received_kg": imports,
             "native_energy_received_j": imported,
+            "reserved_output_energy_j":reserved_energy,
+            "transferred_output_energy_j":transferred_energy,
             "native_transfer_residual_j": sum(p["before"]["charge_j"]-p["after"]["charge_j"]-p["joules"]
                 for p in state.get("energy_imports", {}).values()),
             "native_meter_residual_j": sum(p["after"]["given_j"]-p["before"]["given_j"]-p["joules"]
                 for p in state.get("energy_imports", {}).values()),
             "energy_residual_j": state["config"]["energy_j"]+imported-state["energy_j"]
-                -state["station_heat_j"]-state["ambient_j"],
+                -state["station_heat_j"]-state["ambient_j"]-reserved_energy-transferred_energy,
             "work_residual_j": state["spent_j"]-sum(j["supplied_j"] for j in state["jobs"].values()),
             "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"}
 
@@ -174,6 +184,20 @@ def validate_state(state):
         running += job["status"] == "running"
         for key in ("stock_kg", "product_kg", "required_j", "work_j", "supplied_j"):
             number(job[key], key, 0, 1e12)
+        for kind in ("stock","product"):
+            vector=materials(job,kind)
+            if not isinstance(vector,dict) or not vector or len(vector)>len(engine_materials.MATERIALS):
+                raise ValueError("Invalid workpiece material allocation")
+            for material,mass in vector.items():
+                if material not in funded_materials or engine_materials.canonical(material)!=material:
+                    raise ValueError("Unfunded workpiece material")
+                number(mass,"workpiece material mass",0,10000)
+            if abs(math.fsum(vector.values())-job[kind+"_kg"])>1e-8:
+                raise ValueError("Workpiece material allocation does not close")
+        if any(mass>materials(job,"stock").get(material,0.)+1e-10
+               for material,mass in materials(job,"product").items()):
+            raise ValueError("Product contains unfunded material")
+        number(job.get("output_energy_j",0.),"output_energy_j",0,1e12)
         if job["stock_kg"] < job["product_kg"] or job["required_j"] <= 0 or job["work_j"] > job["required_j"] + 1e-7:
             raise ValueError("Invalid workpiece quantities")
         if abs(job["work_j"]-job["supplied_j"]*state["config"]["efficiency"]) > 1e-6*max(1,job["work_j"]):
@@ -560,8 +584,9 @@ def advance(state, time_s):
         left = max(0.,left-dt)
         if job["required_j"]-job["work_j"] <= 1e-10*max(1,job["required_j"]):
             job["work_j"] = job["required_j"]; job["status"] = "ready"
-            waste = job["stock_kg"]-job["product_kg"]
-            state["waste_kg"][job["material"]] = state["waste_kg"].get(job["material"],0.)+waste
+            for material,stock in materials(job,"stock").items():
+                waste=stock-materials(job,"product").get(material,0.)
+                state["waste_kg"][material] = state["waste_kg"].get(material,0.)+max(0.,waste)
             job = None
     state["time_s"] = target
 
@@ -586,10 +611,14 @@ def mutate(state, body, *, quote=None):
             raise ValueError("The station is occupied; pause its current job first")
         if len(out["jobs"]) >= MAX_JOBS: raise ValueError("Workpiece budget exhausted")
         if quote is None: raise ValueError("A trusted compiled quote is required")
-        material = quote["material"]; stock = quote["stock_kg"]
-        if out["stock_kg"].get(material,0.)+1e-10 < stock:
+        stocks=materials(quote,"stock")
+        if any(out["stock_kg"].get(material,0.)+1e-10 < stock for material,stock in stocks.items()):
             raise ValueError("Insufficient stock; no material was reserved")
-        out["stock_kg"][material] = max(0.,out["stock_kg"][material]-stock)
+        energy=number(quote.get("output_energy_j",0.),"output_energy_j",0,1e12)
+        if out["energy_j"]+1e-10<energy:raise ValueError("Insufficient energy for the product's declared initial battery charge")
+        for material,stock in stocks.items():
+            out["stock_kg"][material] = max(0.,out["stock_kg"][material]-stock)
+        out["energy_j"] = max(0.,out["energy_j"]-energy)
         out["jobs"][body["request_id"]] = {**deepcopy(quote), "status": "running", "work_j": 0., "supplied_j": 0.}
     elif op == "recover":
         material = body.get("material")
@@ -628,10 +657,16 @@ def transfer(state, job_id, preview, request_id):
     if job is None or job["status"] != "ready": raise ValueError("That workpiece is not a finished, uninstalled output")
     if job["matter_physics_hash"] != preview["matter_physics_hash"] or abs(job["product_kg"]-preview["mass_kg"]) > 1e-8:
         raise ValueError("Installed matter differs from the funded workpiece")
+    if job.get("product_materials_kg") is not None:
+        if digest(job["product_materials_kg"])!=digest(preview.get("product_materials_kg")):
+            raise ValueError("Installed material allocation differs from the funded workpiece")
+    if abs(job.get("output_energy_j",0.)-preview.get("initial_energy_j",0.))>1e-8:
+        raise ValueError("Installed initial battery energy differs from the funded workpiece")
     job.update(status="installed", root_body=preview["root_body"], install_request_id=request_id)
     if "root_bodies" in preview:
         job.update(root_bodies=deepcopy(preview["root_bodies"]), component_to_body=deepcopy(preview["component_to_body"]))
-    m = job["material"]; out["transferred_kg"][m] = out["transferred_kg"].get(m,0.)+job["product_kg"]
+    for m,mass in materials(job,"product").items():
+        out["transferred_kg"][m] = out["transferred_kg"].get(m,0.)+mass
     out["revision"] += 1
     validate_state(out)
     return out

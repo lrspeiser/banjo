@@ -33,7 +33,62 @@ def start(state,material="oak",stock=10):
           "revision":state["revision"],"request_id":"job-"+material+"-0001"}
     return model.mutate(state,body,quote=q)[0],body
 
+
+def rigid_machine(material='oak',second=None,charge=100.):
+    from workshop_install_tests import articulated_candidate
+    product=articulated_candidate(material)
+    product['parameters']={'primary_use':{'label':'Push arm','steps':[{'do':'push_forward'}]}}
+    for name in ('support','arm'):product['component_overrides'][name]={'mechanics':{'model':'rigid'}}
+    if second:product['component_overrides']['arm']['material']=second
+    product['component_overrides']['@machines']={'stores':[{'name':'new battery','in':'support',
+        'capacity_j':1000,'charge_j':charge,'voltage_v':24,'max_power_w':50}],
+        'motors':[{'name':'drive','turns':['support','arm'],'store':'new battery',
+            'stall_torque_n_m':2,'no_load_rpm':30}],
+        'controls':[{'name':'switch','turns':['support','arm']}]}
+    return product
+
+
+def mixed_machine():
+    product=candidate('iron');construction=product['component_overrides']['@construction']
+    first=construction['added'][0];first.update(size_m=[.08]*3,center_m=[0,1,0])
+    second=deepcopy(first);second.update(name='outer',material='oak',center_m=[.04,1,0])
+    construction['added'].append(second)
+    construction['joints']=[{'id':'joined','a':'part','b':'outer','kind':'fixed'}]
+    for name in ('part','outer'):product['component_overrides'][name]={'mechanics':{'model':'rigid'}}
+    product['component_overrides']['@machines']={'stores':[{'name':'battery','in':'part',
+        'capacity_j':1000.,'charge_j':200.,'voltage_v':24.,'max_power_w':50.}]}
+    return product
+
 class ProcessModel(unittest.TestCase):
+    def test_material_vector_is_atomic_and_initial_battery_charge_is_reserved_not_heat(self):
+        state=model.new(settings(stock_kg={'oak':3.,'iron':2.},energy_j=1000),0)
+        quote={'candidate':candidate(),'material':'oak','stock_kg':3.,'product_kg':2.5,
+            'stock_materials_kg':{'oak':2.,'iron':1.},'product_materials_kg':{'oak':1.5,'iron':1.},
+            'required_j':300.,'output_energy_j':200.,'matter_physics_hash':'measured'}
+        body={'op':'start','revision':0,'request_id':'multi-model-0001'}
+        poor=deepcopy(state);poor['stock_kg']['iron']=.5;poor['config']['stock_kg']['iron']=.5
+        before=deepcopy(poor)
+        with self.assertRaisesRegex(ValueError,'Insufficient stock'):model.mutate(poor,body,quote=quote)
+        self.assertEqual(before,poor)
+        out,_=model.mutate(state,body,quote=quote)
+        self.assertEqual({'oak':1.,'iron':1.},out['stock_kg'])
+        self.assertEqual(800.,out['energy_j']);self.assertEqual(0.,out['station_heat_j'])
+        self.assertEqual(200.,model.audit(out)['reserved_output_energy_j'])
+        model.advance(out,1.)
+        self.assertEqual({'oak':.5,'iron':0.},out['waste_kg'])
+        self.assertEqual(300.,out['station_heat_j']);self.assertEqual(0.,model.audit(out)['energy_residual_j'])
+        preview={'matter_physics_hash':'measured','mass_kg':2.5,'root_body':'new-machine',
+            'product_materials_kg':quote['product_materials_kg'],'initial_energy_j':200.}
+        missing=deepcopy(preview);missing.pop('product_materials_kg')
+        with self.assertRaisesRegex(ValueError,'allocation'):model.transfer(out,body['request_id'],missing,'place-multi-0001')
+        with self.assertRaisesRegex(ValueError,'initial battery'):model.transfer(out,body['request_id'],{**preview,'initial_energy_j':0},'place-multi-0001')
+        placed=model.transfer(out,body['request_id'],preview,'place-multi-0001')
+        self.assertEqual({'oak':1.5,'iron':1.},placed['transferred_kg'])
+        self.assertEqual(200.,model.audit(placed)['transferred_output_energy_j'])
+        self.assertEqual(0.,model.audit(placed)['energy_residual_j'])
+        bad=deepcopy(placed);bad['jobs'][body['request_id']]['product_materials_kg']['iron']+=.1
+        with self.assertRaisesRegex(ValueError,'allocation'):model.validate_state(bad)
+
     def test_ground_audit_distinguishes_transfer_and_external_material(self):
         zero={"sand_m3":0.,"soil_m3":0.,"rock_m3":0.}
         ground={"ledger":{"dug":{**zero,"sand_m3":.03},
@@ -198,6 +253,105 @@ class ProcessModel(unittest.TestCase):
 
 @unittest.skipUnless(ENGINE and ENGINE.is_file(),"BANJO_LIVE_ENGINE is required; CI supplies it")
 class NativeFabrication(unittest.TestCase):
+    def test_paid_fixed_exact_part_preserves_original_and_has_no_thermal_or_energy_gift(self):
+        measurements=[]
+        for index,material in enumerate(('glass','oak','iron')):
+            product=candidate(material);product['component_overrides']['part']={'mechanics':{'model':'rigid'}}
+            ident='fixed-rigid-'+material
+            self.call('start',candidate=product,stock_kg=10,
+                revision=self.room.fabrication_record['revision'],request_id=ident)
+            self.step(2)
+            before=workshop_install._snapshot(self.live)
+            preview=room_api.preview(self.app,{**self.context(),'job_id':ident,'position_m':[index*2,0]})
+            receipt=room_api.commit(self.app,{**self.context(),'job_id':ident,'preview_id':preview['preview_id'],
+                'request_id':'fixed-place-'+material})
+            after=workshop_install._snapshot(self.live)
+            workshop_install._preserved(before,after,receipt['root_body'])
+            self.assertEqual('unmodeled',receipt['thermal_state']);self.assertEqual(0.,receipt['initial_energy_transfer_j'])
+            self.assertEqual(before['energy_stores'],after['energy_stores'])
+            self.assertAlmostEqual(.16*.08**2*engine_materials.density(material),receipt['mass_kg'],places=7)
+            measurements.append({'material':material,'mass_kg':receipt['mass_kg'],'audit':model.audit(self.room.fabrication_record)})
+        self.native_evidence=measurements
+
+    def test_paid_mixed_machine_counts_native_overlap_once_and_reserves_each_material(self):
+        product=mixed_machine()
+        quoted=self.call('quote',candidate=product,stock_kg=10)
+        quote=quoted['quote'];self.assertTrue(quoted['affordable'])
+        vector=quote['product_materials_kg']
+        self.assertAlmostEqual(.08**3*engine_materials.density('iron'),vector['iron'],places=7)
+        self.assertAlmostEqual(.04*.08**2*engine_materials.density('oak'),vector['oak'],places=7)
+        before=deepcopy(self.room.fabrication_record)
+        poor=deepcopy(before);poor['stock_kg']['oak']=0.;poor['config']['stock_kg']['oak']=0.
+        self.room.fabrication_record=poor
+        self.assertFalse(self.call('quote',candidate=product,stock_kg=10)['affordable'])
+        with self.assertRaisesRegex(ValueError,'Insufficient stock'):
+            self.call('start',candidate=product,stock_kg=10,revision=poor['revision'],request_id='mixed-machine-0001')
+        self.assertEqual(poor,self.room.fabrication_record);self.room.fabrication_record=before
+        self.call('start',candidate=product,stock_kg=10,revision=before['revision'],request_id='mixed-machine-0001')
+        self.assertEqual(before['energy_j']-200.,self.room.fabrication_record['energy_j'])
+        for m,kg in quote['stock_materials_kg'].items():self.assertAlmostEqual(before['stock_kg'][m]-kg,self.room.fabrication_record['stock_kg'][m],places=7)
+        self.step(2)
+        preview=room_api.preview(self.app,{**self.context(),'job_id':'mixed-machine-0001','position_m':[0,0]})
+        receipt=room_api.commit(self.app,{**self.context(),'job_id':'mixed-machine-0001',
+            'preview_id':preview['preview_id'],'request_id':'mixed-place-0001'})
+        snapshot=workshop_install._snapshot(self.live)
+        battery=next(s for s in snapshot['energy_stores'] if s['body'] in receipt['root_bodies'])
+        self.assertEqual(200.,battery['charge_j']);self.assertEqual(vector,receipt['product_materials_kg'])
+        for m,kg in vector.items():self.assertEqual(kg,self.room.fabrication_record['transferred_kg'][m])
+        audit=model.audit(self.room.fabrication_record)
+        self.assertLess(max(abs(v) for v in audit['material_residual_kg'].values()),1e-8)
+        self.assertAlmostEqual(0.,audit['energy_residual_j'],places=7)
+        self.native_evidence={'materials_kg':vector,'stock_kg':quote['stock_materials_kg'],
+            'native_mechanical_residual_kg':receipt['mechanical_mass_residual_kg'],
+            'native_allocation_residual_kg':receipt['material_mass_residual_kg'],'audit':audit,
+            'initial_energy_j':200.,'overlap_counted_once':True}
+
+    def test_paid_exact_machine_native_material_energy_rollback_restart_and_use(self):
+        measurements=[]
+        for i,material in enumerate(('glass','oak','iron')):
+            product=rigid_machine(material);ident='rigid-machine-'+material
+            quote=self.call('quote',candidate=product,stock_kg=25)['quote']
+            self.assertEqual(0,quote['cells']);self.assertEqual(100.,quote['output_energy_j'])
+            self.assertEqual(2600.,quote['supply_required_j'])
+            self.assertAlmostEqual(.003072*engine_materials.density(material),quote['product_kg'],places=7)
+            self.call('start',candidate=product,stock_kg=25,revision=self.room.fabrication_record['revision'],request_id=ident)
+            self.step(6)
+            before=workshop_install._snapshot(self.live);state=deepcopy(self.room.fabrication_record)
+            preview=room_api.preview(self.app,{**self.context(),'job_id':ident,'position_m':[i*2,0]})
+            self.assertEqual(quote['matter_physics_hash'],preview['matter_physics_hash'])
+            self.assertEqual(quote['product_materials_kg'],preview['product_materials_kg'])
+            request={**self.context(),'job_id':ident,'preview_id':preview['preview_id'],'request_id':'rigid-place-'+material}
+            with mock.patch.object(self.app.store,'save',side_effect=OSError('disk full')):
+                with self.assertRaises(OSError):room_api.commit(self.app,request)
+            self.assertEqual(before,workshop_install._snapshot(self.live));self.assertEqual(state,self.room.fabrication_record)
+            receipt=room_api.commit(self.app,request)
+            self.assertEqual('unmodeled',receipt['thermal_state']);self.assertNotIn('thermal_transfers',receipt)
+            self.assertEqual(100.,receipt['initial_energy_transfer_j'])
+            roots=set(receipt['root_bodies']);snapshot=workshop_install._snapshot(self.live)
+            battery=next(s for s in snapshot['energy_stores'] if s['body'] in roots)
+            self.assertEqual((100.,0.),(battery['charge_j'],battery['given_j']))
+            mechanical_mass=sum(b['precise_mass_kg'] for b in snapshot['bodies'] if b['name'] in roots)
+            self.assertTrue(math.isclose(quote['product_kg'],mechanical_mass,rel_tol=2e-7,abs_tol=1e-12))
+            self.assertFalse(any(l['body'] in roots for l in (snapshot.get('heat') or {}).get('lumps',[])))
+            saved=self.app.store.load('fabrication');self.live.open(self.app,{'spec':saved.spec,'snapshot':saved.world_record})
+            self.room=self.app.room=saved;self.assertEqual('whole',self.live.session.state['restored']['tier'])
+            self.assertTrue(room_api.commit(self.app,{**request,**self.context()})['replayed'])
+            old_controls={c['id'] for c in before['controls']}
+            declared=next(c for c in snapshot['controls'] if c['id'] not in old_controls)
+            self.live.session.send(op='operate',control=declared['id'],sender='paid-machine-test',seq=1,
+                                   power=True,direction=1,setting=1.)
+            self.live.session.send(op='step',dt=1/240,n=24)
+            after=workshop_install._snapshot(self.live)
+            used=next(s for s in after['energy_stores'] if s['id']==battery['id'])
+            self.assertGreater(used['given_j'],0.)
+            self.assertAlmostEqual(100.,used['charge_j']+used['given_j'],places=7)
+            measurements.append({'material':material,'mass_kg':quote['product_kg'],
+                'allocated_kg':quote['product_materials_kg'],'work_j':quote['required_j'],
+                'initial_energy_j':100.,'used_energy_j':used['given_j'],'audit':model.audit(self.room.fabrication_record),
+                'mechanical_mass_residual_kg':mechanical_mass-quote['product_kg'],
+                'thermal_state':'unmodeled','restart':'whole','rollback_verified':True})
+        self.native_evidence=measurements
+
     def test_funded_assembly_keeps_groups_heat_use_and_atomic_restart(self):
         from workshop_install_tests import articulated_candidate
         measurements=[]

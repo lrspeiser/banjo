@@ -93,7 +93,8 @@ struct Moments {
 // finer than 0.2 mm -- so an axle's end inside a wheel's hub is resolved to a
 // small fraction of its 20-odd cubic centimetres, and parts that only touch
 // (as every box compound so far does) cost nothing and change nothing.
-void takeBackWhatEarlierPartsClaim(const std::vector<Solid> &solids, Moments &moments) {
+void takeBackWhatEarlierPartsClaim(const std::vector<Solid> &solids, Moments &moments,
+                                  std::vector<double> &part_mass_kg) {
     constexpr double kCellsAcross = 24.0, kFinestM = 0.0002, kPairBudget = 2.0e6, kBodyBudget = 2.0e7;
     double spent = 0;
     for (std::size_t j = 1; j < solids.size(); ++j) {
@@ -135,7 +136,10 @@ void takeBackWhatEarlierPartsClaim(const std::vector<Solid> &solids, Moments &mo
                         bool before = false;
                         for (std::size_t k = 0; k < i && !before; ++k)
                             before = solids[k].around(p) && solids[k].inside(p);
-                        if (!before) moments.add(-dm, p, cell, -dv);
+                        if (!before) {
+                            moments.add(-dm, p, cell, -dv);
+                            part_mass_kg[j] -= dm;
+                        }
                     }
         }
     }
@@ -214,6 +218,7 @@ std::vector<PreciseRigidBody> readPreciseRigidScene(const std::string &text) {
             const RigidCompoundPart &part = b.parts[i];
             const double density = makeReferenceMaterial(b.part_materials[i]).density_kg_m3;
             const double volume = part.geometry.volume(), mass = density * volume;
+            b.part_mass_kg.push_back(mass);
             moments.add(mass, part.center_local_m, rotateInertia(part.geometry.inertia(mass), part.rotation_local), volume);
             Solid solid{&part, conjugate(part.rotation_local), density, {}, {}};
             const Vec3 reach{part.geometry.extent({1, 0, 0}, part.rotation_local),
@@ -223,7 +228,7 @@ std::vector<PreciseRigidBody> readPreciseRigidScene(const std::string &text) {
             solid.hi = part.center_local_m + reach;
             solids.push_back(solid);
         }
-        takeBackWhatEarlierPartsClaim(solids, moments);
+        takeBackWhatEarlierPartsClaim(solids, moments, b.part_mass_kg);
         require(moments.mass > 0 && moments.volume > 0, "precise compound has no matter");
 
         // One rigid thing: every part meets another, touching or within 1 mm.
