@@ -2407,9 +2407,9 @@ function recipeLine(line) {
   bar.append(make("i", { style: `width:${Math.round(got * 100)}%` }));
   row.append(bar);
   row.append(make("span", { class: "ws-need-said" },
-                  line.enough ? `${wants} kg` : `${have} of ${wants} kg`));
+                  line.enough ? kgSaid(wants) : `${kgSaid(have)} / ${kgSaid(wants)}`));
   row.title = line.enough ? `you have enough ${line.material || line.substance}`
-    : `${line.short_kg} kg of ${line.material || line.substance} short`;
+    : `${kgSaid(line.short_kg)} ${line.material || line.substance} missing`;
   return row;
 }
 
@@ -2615,20 +2615,81 @@ async function showRecipes() {
   $("#ws-recipes-processes").hidden = !r.room_recipes.length && !r.deposits.length;
   renderRecipeMaterialFilter(r, inv);
   await showGoalGuide("recipes");
+  const requested = new URLSearchParams(location.search).get("recipe");
+  if (requested) {
+    const card = [...$("#ws-recipes-templates").children].find(c => c.dataset.recipe === requested);
+    if (card) { card.classList.add("ws-goal-target"); card.scrollIntoView({block:"center"}); }
+  }
 }
 
 async function showMarket() {
   const market = await api("/api/workshop/market", { action:"view" });
   $("#ws-market-balance").textContent = `${market.balance_j.toLocaleString()} J`;
-  $("#ws-market-pricing").textContent = `${market.pricing} The trader restocks one lot of each item every two minutes of world time, up to its shelf capacity. Your solar farm keeps generating energy while the world runs.`;
+  $("#ws-market-pricing").textContent = `${market.pricing} One lot restocks every 120 seconds of world time. ${market.guidance?.estimate_basis || ""}`;
   const next = market.guidance?.skill;
-  $("#ws-market-next").textContent = next
-    ? `Next skill: ${next.name}. ${next.route} Buying stock does not teach the skill; use it in the world to demonstrate the technique.`
-    : "You have reached the currently available skills. Keep building and testing designs.";
-  const rec = market.guidance?.recipe;
-  $("#ws-market-recipe").textContent = rec
-    ? `A ready recipe to work toward: ${rec}. The highlighted lot ${market.guidance.covers_gap ? "fills" : "reduces"} its ${kgSaid(market.guidance.gap_kg)} material gap.`
-    : "Open Recipes to see what your next build needs. Market stock can fill material and machine-goods gaps.";
+  const skill = $("#ws-market-next"); skill.replaceChildren();
+  if (next) {
+    skill.append(recipeValue("Next skill", next.name));
+    const location = next.locations?.[0];
+    if (location) skill.append(recipeValue("Where", location.machine || location.body), recipeValue("Action", location.label));
+    const open = make("button", {type:"button", class:"ws-action"}, "Open skill");
+    open.onclick = () => { tree.picked = next.id; showTab("skills"); }; skill.append(open);
+  } else {
+    const blocked = market.guidance?.skill_blocked;
+    skill.append(recipeValue("Next skill", blocked?.name || "All catalog skills learned"));
+    if (blocked) skill.append(recipeValue("Needs", [...blocked.prerequisites, ...blocked.world_missing].join(" · ") || "No supported learning action"));
+  }
+  const recommendation = $("#ws-market-recipe"); recommendation.replaceChildren();
+  const plan = market.guidance?.plan;
+  if (plan) {
+    recommendation.append(make("h3", {}, plan.name));
+    const canvas = make("canvas", {width:"160",height:"112",role:"img","aria-label":`${plan.name} shape preview`});
+    recommendation.append(canvas);
+    const recipe = {...plan.candidate, name:plan.name, source:plan.source, saved_design_id:plan.saved_design_id};
+    loadInventoryPicture(recommendation, {id:recipeKey(recipe),source:"recipe",recipe,
+      version:JSON.stringify([recipe.parameters,recipe.component_overrides])});
+    recommendation.append(recipeValue("Goal", plan.goal?.title || "Optional build"));
+    if (plan.goal?.before?.length) recommendation.append(recipeValue("First", plan.goal.before.join(" → ")));
+    recommendation.append(recipeValue("Build stock estimate", plan.estimated_total_j === null ? "Stock missing" : `${plan.estimated_total_j.toLocaleString()} J`),
+      recipeValue("Build budget", plan.affordable ? "Covered ✓" : plan.energy_gap_j !== null ? `Bank ${plan.energy_gap_j.toLocaleString()} J more` : "Restock / other source needed"));
+    const lines = make("div", {class:"ws-market-needs"});
+    for (const line of plan.lines) {
+      const row = make("div", {class:`ws-market-gap ${line.gap_kg ? "short" : "covered"}`,"data-market-gap":line.substance});
+      row.append(make("strong", {}, titleCase(line.substance)),
+        make("span", {}, line.gap_kg ? `${kgSaid(line.gap_kg)} missing` : "Covered ✓"));
+      row.append(make("small", {}, line.status === "buy" ? `${line.lots} lot${line.lots===1 ? "" : "s"} · ${line.cost_j.toLocaleString()} J`
+        : line.status === "stock-short" ? `${line.lots_available}/${line.lots} lots available`
+        : line.status === "no-offer" ? "No Market supplier" : `${kgSaid(line.needed_kg)} needed`));
+      lines.append(row);
+    }
+    const supplies = market.guidance?.supply_goal;
+    if (supplies) {
+      const box = make("div", {class:"ws-market-goal-stock", "data-market-supply-goal":supplies.goal.id});
+      box.append(recipeValue("Purchase goal", supplies.name));
+      for (const line of supplies.lines) box.append(recipeValue(titleCase(line.substance),
+        `${kgSaid(line.gap_kg)} to buy · ${line.lots_available || 0}/${line.lots} lots in stock`));
+      box.append(recipeValue("Goal stock estimate", supplies.estimated_total_j === null ? "Stock missing" : `${supplies.estimated_total_j.toLocaleString()} J`),
+        recipeValue("Goal budget", supplies.affordable ? "Covered ✓" : supplies.energy_gap_j !== null ? `Bank ${supplies.energy_gap_j.toLocaleString()} J more` : "Wait for restock"));
+      recommendation.append(box);
+    }
+    recommendation.append(lines);
+    const open = make("button", {type:"button",class:"ws-action"}, "Open recipe");
+    open.onclick = () => {
+      const url = new URL(location.href); url.searchParams.delete("material");
+      url.searchParams.set("tab","recipes"); url.searchParams.set("recipe",recipeKey(recipe));
+      location.href = url.pathname + url.search;
+    }; recommendation.append(open);
+    const details = make("details", {}); details.append(make("summary", {}, "Stock & debit details"));
+    for (const line of plan.lines) details.append(recipeValue(titleCase(line.substance),
+      `Personal ${kgSaid(line.personal_kg)} · Shared ${kgSaid(line.shared_kg)}`),
+      recipeValue("Make uses now", `Personal ${kgSaid(line.debit_personal_kg)} → Shared ${kgSaid(line.debit_shared_kg)}`));
+    if (plan.declared_uses?.length) details.append(recipeValue("Declared use", plan.declared_uses.join(" · ")));
+    recommendation.append(details);
+  } else {
+    recommendation.append(recipeValue("Build", market.guidance?.recipe || "Choose a design in Recipes"));
+    const open = make("button", {type:"button",class:"ws-action"}, "Open Recipes");
+    open.onclick = () => showTab("recipes"); recommendation.append(open);
+  }
   const bank = $("#ws-market-bank");
   const guide = new URLSearchParams(location.search).get("guide");
   const bankJ = ["bank-solar", "stock-oak"].includes(guide) ? 500 : 100;
@@ -2657,13 +2718,15 @@ async function showMarket() {
     bank.textContent = pending ? `Retry bank ${pending.joules} J` : `Bank ${bankJ} J`;
   });
   fill("#ws-market-offers", market.offers.map((offer) => {
-    const li = item(offer.name,
-      `${kgSaid(offer.mass_kg)} ${offer.substance} · ${offer.price_j} J · ${offer.remaining} lots in this world`);
+    const li = item(offer.name);
+    li.append(recipeValue("Lot", kgSaid(offer.mass_kg)), recipeValue("Price", `${offer.price_j.toLocaleString()} J`),
+      recipeValue("Stock", `${offer.remaining} lots`));
     if (offer.id === market.guidance?.offer_id) li.classList.add("ws-market-next");
     li.dataset.marketItem = offer.id;
     if (offer.id === "oak-stock" && ["bank-solar", "stock-oak"].includes(guide)) li.classList.add("ws-goal-target");
-    const buy = make("button", { type:"button", class:"ws-action" }, "Buy for Workshop");
+    const buy = make("button", { type:"button", class:"ws-action" }, "Buy → Personal stock");
     buy.disabled = offer.remaining < 1 || market.balance_j < offer.price_j;
+    if (buy.disabled) li.append(recipeValue("Needs", offer.remaining < 1 ? "Restock" : `${(offer.price_j-market.balance_j).toLocaleString()} J more`));
     buy.onclick = () => guard(buy, async () => {
       try {
         const after = await api("/api/workshop/market", { action:"buy", item_id:offer.id,

@@ -1,5 +1,12 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Market progression guidance, September 30:** [Complete purchase plans](market-guidance.md)
+match actual goal capabilities to ready built-in and saved recipes, estimate
+all missing lots at current scarcity prices and name the real personal skill
+action. Covered stock and mandatory purchase-goal stock have separate budgets;
+guidance cannot grant a skill or bypass native Make. Compact product/source
+labels elsewhere and autonomous exploration beyond checklists remain open.
+
 **Expanded autonomous explorer, September 30:** [Capability-based player actions](ai-explorer-checkpoint.md) carry the reference character through both declared goal chains on two generated maps (8/8 goals, 2/10 personal techniques). Actual targets, tool reach, recipe gaps and native batch receipts drive the planner. Arrival, hopper capacity and physical/source checkpoint repairs preserve strict guards. Live-provider quality, further tech-tree exploration, exhausted-intake actions and complete Market/ownership guidance remain open.
 
 **Goal composition, September 30:** [Bounded personal checklists](goal-chains.md) (code `6b45be4`, main) connect Camp to native tool study/removal, a funded receiving surface and a supported personally observed machine batch. Definitions compose existing server evidence predicates; navigation cannot grant progress, and no shaping law is introduced. The ordinary player journey, autonomous exploration and live provider verification remain separate claims.

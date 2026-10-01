@@ -1,5 +1,15 @@
 # Development status and handoff
 
+**Complete Market guidance, September 30:** [Implementation and acceptance](market-guidance.md)
+adds all resource gaps, whole-lot scarcity estimates, typed goal matching and
+affordable compatible alternatives including saved designs. Actual skill
+location/action, recipe navigation and personal/shared predicted debits are
+compact; estimates and diagnostics are folded. Purchase-goal cost stays
+separate from already-funded recipe stock. Native banking/purchase/restart,
+Chrome navigation and focused price/shortage tests pass. Product names and
+next-use labels elsewhere, continued AI exploration and live-provider
+comparisons remain open.
+
 Latest explorer implementation is published on main as
 `c4f48e21e39d1e296d7568fe7eb8fa0169cb6756`;
 [review and actual server restart receipt](ai-explorer-checkpoint.md#persistent-review)

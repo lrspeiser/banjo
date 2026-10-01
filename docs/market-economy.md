@@ -8,7 +8,7 @@ The Market sells fixed mass lots of oak, iron, glass, rubber, copper and copper 
 
 Existing saved Workshop components and designs remain in the world's shared library. This checkpoint changes stock ownership, not legacy design ownership; a future personal-library migration needs an explicit sharing model.
 
-The Market shows the first reachable technique in the existing tech graph and a ready built-in recipe whose material shortfall can be reduced by an offered lot. A purchase fills stock; it does **not** grant a skill or certify a design. The recipe still must pass its Workshop and world admission and be made and used. The tech journal remains world-level in this checkpoint, so the named skill is a shared-world recommendation. Per-player skill journals are a separate follow-up.
+The Market shows the first personally reachable technique, its actual location/action or a missing prerequisite. [Complete guidance](market-guidance.md) compares all gaps and whole-lot costs for goal-compatible built-in and saved recipes. Purchase-goal requirements and recipe stock are distinct budgets. A purchase fills stock; it does **not** grant a skill or certify a design. The recipe still must pass native Workshop/world admission and be made and used. Personal journals and source-attributed actions now scope learning to the acting/watching guest.
 
 ## Price and supply rule
 
@@ -35,7 +35,7 @@ The server recomputes each price inside the purchase transaction. The client sen
 
 `tests/world_hub_tests.py` opens a generated native world, banks 200 J, checks the solar battery falls by 200 J, retries without a second debit, buys oak, checks personal and shared inventory views and restart, and verifies stale quotes are refused. Its browser journey opens Market from the named-world header and confirms the tab loads. `tests/market_tests.py` checks atomic purchase idempotency, personal-then-shared stock spending, disabled free rack editing in named games and world-time restocking. No constitutive solver changed, so these are economy/integration checks rather than material realism or full energy-conservation certification.
 
-Next: player-owned charging connections rather than access to the shared starter grid, delivery based on world-produced goods, a broader seller/buyer market, personal tech journals, and multi-instance storage/transaction testing. The starter farm is shared infrastructure, not a separate owned panel in each avatar's bag.
+Next: player-owned charging connections, delivery based on world-produced goods, a broader seller/buyer market, continued reachable-tech guidance, and multi-instance storage/transaction testing. The starter farm is shared infrastructure, not a separate owned panel in each avatar's bag.
 
 
 **Inventory meters, September 30:** See [screen split and rate semantics](workshop-mode.md#inventory-resources-and-recipes-sources--september-30-2026). Inventory displays private spendable joules separately from shared native solar charge/generation and world motor draw. Banking remains manual; robot currency income is zero and goods output rate is unmetered.

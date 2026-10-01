@@ -279,6 +279,12 @@ class NamedWorlds(unittest.TestCase):
         self.assertEqual(0, before["balance_j"])
         self.assertTrue(before["bankable"])
         self.assertTrue(before["guidance"]["skill"])
+        before_plan=before['guidance']['plan']
+        self.assertEqual('build-camp',before_plan['goal']['id'])
+        self.assertEqual('Camp stool',before_plan['name'])
+        self.assertEqual(0,before_plan['lines'][0]['lots']) # Shared rack already funds this geometry.
+        self.assertEqual(6,before['guidance']['supply_goal']['lines'][0]['lots'])
+        self.assertIsNotNone(before_plan['estimated_total_j'])
         bob_before = self.post("/api/workshop/inventory", {}, ident, bob["token"])
         alice_before = self.post("/api/workshop/inventory", {}, ident, alice["token"])
         bank = {"action": "bank", "joules": 200, "request_id": "alice-first-deposit"}
@@ -292,6 +298,16 @@ class NamedWorlds(unittest.TestCase):
         bought = self.post("/api/workshop/market", {"action": "buy", "item_id": oak["id"],
                            "quoted_price_j": oak["price_j"], "request_id": "alice-oak"}, ident)
         self.assertEqual(200 - oak["price_j"], bought["balance_j"])
+        after_plan=bought['guidance']['plan']
+        self.assertAlmostEqual(.5,after_plan['lines'][0]['personal_kg'])
+        self.assertEqual(0,after_plan['estimated_total_j'])
+        self.assertEqual(before['guidance']['supply_goal']['estimated_total_j']-oak['price_j'],
+                         bought['guidance']['supply_goal']['estimated_total_j'])
+        self.assertEqual(5,bought['guidance']['supply_goal']['lines'][0]['lots'])
+        bob_plan=self.post('/api/workshop/market',{},ident,bob['token'])['guidance']['plan']
+        self.assertEqual(0,bob_plan['lines'][0]['personal_kg'])
+        self.assertEqual(0,bob_plan['lines'][0]['lots'])
+        self.assertEqual(6,self.post('/api/workshop/market',{},ident,bob['token'])['guidance']['supply_goal']['lines'][0]['lots'])
         self.assertGreater(next(o for o in bought["offers"] if o["id"] == "oak-stock")["price_j"],
                            oak["price_j"])
         alice_after = self.post("/api/workshop/inventory", {}, ident, alice["token"])

@@ -1,5 +1,13 @@
 # Banjo roadmap and acceptance gates
 
+**Market guidance acceptance, September 30:** [Complete plans](market-guidance.md)
+cover every line and whole-lot scarcity cost, typed goal relevance, affordable
+saved alternatives, explicit suppliers/stock blockers and private/shared debit
+details. Native and browser purchase flows pass. Next: compact product names,
+ownership and next-use labels throughout Inventory/Recipes/World; continued
+AI play after checklists and live-provider comparisons; rover delivery and
+AI/page/background clock ownership. Preserve finite stock and native save gates.
+
 **Expanded AI acceptance, September 30:** [General observed action catalog](ai-explorer-checkpoint.md) passes autonomous reference Camp→tool→gathering→surface→watched processing on both generated seeds, with explicit empty-shelf blockers. Next: live-provider seed/scarcity comparisons once a local key is configured; complete Market gaps/total estimated cost/associated reachable goal and affordable capability preference; compact ownership/debit/next-use labels. Retain rover delivery and exhausted-intake gates, then extend play beyond declared chains.
 
 **Composed goals, September 30:** [Receipt-backed second checklist](goal-chains.md) (code `6b45be4`, main) passes fresh-world Camp → study/use tool → measured removal → useful receiving surface → supported observed batch on both generated terrain seeds, including ordinary placement and restart. Next extend the general AI action catalog beyond Camp, cover shortages/exhausted inputs and live provider separately, then complete Market costs/recommendation relevance and compact source/debit labels. Preserve the existing native/save gates; checklist completion is not a manufacturing or strength unlock.

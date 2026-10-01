@@ -1,0 +1,127 @@
+{
+  "world_seed": 4,
+  "plan_after_purchase": {
+    "name": "Camp stool",
+    "source": "built-in",
+    "saved_design_id": null,
+    "candidate": {
+      "kind": "stool",
+      "parameters": {
+        "width_m": 0.24,
+        "depth_m": 0.24,
+        "height_m": 0.24,
+        "top_thickness_m": 0.04,
+        "top_profile": "square",
+        "leg_section_m": 0.04,
+        "leg_style": "straight",
+        "splay_deg": 0.0,
+        "leg_inset_m": 0.05,
+        "material": "oak",
+        "aprons": 0.0,
+        "stretchers": 0.0
+      },
+      "component_overrides": {
+        "top": {
+          "mechanics": {
+            "model": "rigid"
+          }
+        },
+        "leg-1": {
+          "mechanics": {
+            "model": "rigid"
+          }
+        },
+        "leg-2": {
+          "mechanics": {
+            "model": "rigid"
+          }
+        },
+        "leg-3": {
+          "mechanics": {
+            "model": "rigid"
+          }
+        },
+        "leg-4": {
+          "mechanics": {
+            "model": "rigid"
+          }
+        }
+      }
+    },
+    "lines": [
+      {
+        "substance": "oak",
+        "needed_kg": 2.5088,
+        "held_kg": 12.9,
+        "personal_kg": 0.5,
+        "shared_kg": 12.4,
+        "gap_kg": 0.0,
+        "debit_personal_kg": 0.5,
+        "debit_shared_kg": 2.0088,
+        "status": "covered",
+        "lots": 0,
+        "cost_j": 0,
+        "available_cost_j": 0
+      }
+    ],
+    "estimated_total_j": 0,
+    "available_cost_j": 0,
+    "affordable": true,
+    "energy_gap_j": 0,
+    "declared_uses": [
+      "seat one person, with no back"
+    ],
+    "goal": {
+      "id": "build-camp",
+      "title": "Build your first camp item",
+      "chain_id": "first-camp-v1",
+      "before": [
+        "Gather building supplies"
+      ]
+    }
+  },
+  "supply_goal_after_purchase": {
+    "name": "Gather building supplies",
+    "source": null,
+    "saved_design_id": null,
+    "candidate": {
+      "kind": {},
+      "parameters": {},
+      "component_overrides": {}
+    },
+    "lines": [
+      {
+        "substance": "oak",
+        "needed_kg": 2.5,
+        "held_kg": 0.0,
+        "personal_kg": 0.0,
+        "shared_kg": 0.0,
+        "gap_kg": 2.5,
+        "debit_personal_kg": 0.0,
+        "debit_shared_kg": 0.0,
+        "status": "buy",
+        "lots": 5,
+        "cost_j": 624,
+        "available_cost_j": 624,
+        "offer_id": "oak-stock",
+        "lots_available": 5,
+        "unavailable_kg": 0.0,
+        "next_lot_covers_gap": false
+      }
+    ],
+    "estimated_total_j": 624,
+    "available_cost_j": 624,
+    "affordable": false,
+    "energy_gap_j": 244,
+    "declared_uses": [],
+    "goal": {
+      "id": "stock-oak",
+      "title": "Gather building supplies",
+      "chain_id": "first-camp-v1"
+    }
+  },
+  "wallet_j": 380,
+  "other_guest_wallet_j": 0,
+  "learned_by_navigation": [],
+  "provider_calls": 0
+}

@@ -611,6 +611,51 @@ class AutonomousGuests(unittest.TestCase):
               f"{len(book['receipts'])} ground receipts; returned {totals['returned']}; "
               f"wallet {balance+100} J, duplicate/failure/rejoin/restart checked")
 
+    def test_market_shows_complete_plan_and_refreshes_after_real_purchase(self):
+        if not qa_browser.CHROME.is_file():
+            if os.environ.get('BANJO_BROWSER_TESTS')=='required':self.fail('Chrome is required')
+            self.skipTest('Chrome not installed')
+        world,owner,app=self.setup_world()
+        chrome=qa_browser.Chrome(1280,800);self.addCleanup(chrome.close)
+        page=chrome.page;page.send('Page.enable');page.send('Runtime.enable')
+        def wait(expression):
+            until=time.monotonic()+35
+            while time.monotonic()<until:
+                try:
+                    if page.evaluate(expression):return
+                except (RuntimeError,TimeoutError):pass
+                time.sleep(.15)
+            self.fail('Browser did not reach '+expression)
+        page.send('Page.navigate',{'url':self.base+f'/world?world={world}&workshop=1&tab=market&guide=stock-oak'})
+        wait('document.querySelector("#ws-market-recipe h3")?.textContent === "Camp stool" && document.querySelectorAll("#ws-market-offers li").length === 6')
+        self.assertIn('Build stock estimate',page.evaluate('document.querySelector("#ws-market-recipe").textContent'))
+        self.assertIn('Covered',page.evaluate('document.querySelector("[data-market-gap=oak]").textContent'))
+        self.assertIn('6/6 lots',page.evaluate('document.querySelector("[data-market-supply-goal]").textContent'))
+        self.assertFalse(page.evaluate('document.querySelector("#ws-market-recipe details").open'))
+        visitor_token=page.evaluate('localStorage.getItem("banjo.player.'+world+'")')
+        visitor=next(p['id'] for p in server.player_world.records(app).values() if p['token']==visitor_token)
+        self.assertEqual(set(),server.journal_of(app,visitor).knows())
+        wait('!document.querySelector("#ws-market-bank").disabled')
+        page.evaluate('document.querySelector("#ws-market-bank").click()')
+        wait('document.querySelector("#ws-market-balance").textContent === "500 J"')
+        page.evaluate('document.querySelector("[data-market-item=oak-stock] button").click()')
+        wait('document.querySelector("#ws-market-balance").textContent === "380 J" && document.querySelector("[data-market-supply-goal]").textContent.includes("5/5 lots")')
+        guidance=self.post('/api/workshop/market',{},world,visitor_token)['guidance']
+        plan=guidance['plan']
+        self.assertAlmostEqual(.5,plan['lines'][0]['personal_kg'])
+        self.assertEqual(0,self.post('/api/workshop/market',{},world,owner['token'])['balance_j'])
+        output=ROOT/'build/market-guidance';output.mkdir(parents=True,exist_ok=True)
+        import base64
+        (output/'market.png').write_bytes(base64.b64decode(page.send('Page.captureScreenshot')['data']))
+        page.evaluate('[...document.querySelectorAll("#ws-market-recipe button")].find(b=>b.textContent==="Open recipe").click()')
+        wait('new URLSearchParams(location.search).get("tab")==="recipes" && [...document.querySelectorAll("[data-recipe]")].some(c=>c.dataset.recipe === "stool:Camp stool" && c.classList.contains("ws-goal-target"))')
+        self.assertEqual(set(),server.journal_of(app,visitor).knows())
+        self.assertFalse([e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
+        (output/'receipt.json').write_text(json.dumps({'world_seed':self.app.hub.metadata(world)['terrain_seed'],
+            'plan_after_purchase':plan,'supply_goal_after_purchase':guidance['supply_goal'],
+            'wallet_j':380,'other_guest_wallet_j':0,
+            'learned_by_navigation':[],'provider_calls':0},indent=2),encoding='utf-8')
+
     def test_skills_links_to_the_tool_without_awarding_progress_for_navigation(self):
         if not qa_browser.CHROME.is_file(): self.skipTest('Chrome not installed')
         world,owner,app=self.setup_world()

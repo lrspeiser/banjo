@@ -92,35 +92,113 @@ def _offers(db: Any) -> list[dict[str, Any]]:
     return out
 
 
-def _guidance(app: Any, offers: list[dict[str, Any]]) -> dict[str, Any]:
+def _build_plan(recipe: dict[str, Any], offers: list[dict[str, Any]], balance: int) -> dict[str, Any]:
+    """Complete stock estimate; no purchase, reservation or physical admission.
+
+    Use the same per-lot scarcity curve as buying. A stock shortage or a
+    substance with no vendor yields no complete quote, rather than pricing
+    only the convenient lines and calling that the total.
+    """
+    available = {o['substance']:o for o in offers}
+    lines, partial_cost, complete_cost = [], 0, 0
+    for source in [*recipe.get('materials',[]), *recipe.get('goods',[])]:
+        name = source.get('material') or source['substance']
+        need, held = float(source['kg']), float(source.get('held_kg',0))
+        personal, shared = float(source.get('personal_kg',0)), float(source.get('shared_kg',0))
+        # This is the rack's existing admission tolerance, not UI rounding.
+        gap = max(0.,need-held) if held+5e-5 < need else 0.
+        own_draw = min(need,personal)
+        shared_draw = min(max(0.,need-own_draw),shared)
+        line = {'substance':name, 'needed_kg':need,'held_kg':held,
+                'personal_kg':personal,'shared_kg':shared,'gap_kg':gap,
+                'debit_personal_kg':own_draw,'debit_shared_kg':shared_draw,
+                'status':'covered','lots':0,'cost_j':0,'available_cost_j':0}
+        offer = available.get(name)
+        if gap and offer:
+            lots = max(1,math.ceil(gap/offer['mass_kg']-1e-10))
+            now = min(lots,offer['remaining'])
+            cost = sum(_price(offer['base_j'],offer['initial'],offer['remaining']-i) for i in range(now))
+            line.update(offer_id=offer['id'],lots=lots,lots_available=now,
+                        available_cost_j=cost, cost_j=cost if now==lots else None,
+                        status='buy' if now==lots else 'stock-short',
+                        unavailable_kg=max(0.,gap-now*offer['mass_kg']),
+                        next_lot_covers_gap=gap<=offer['mass_kg']+5e-5)
+        elif gap:
+            line.update(status='no-offer',cost_j=None,unavailable_kg=gap)
+        partial_cost += line['available_cost_j']
+        if line['cost_j'] is None: complete_cost = None
+        elif complete_cost is not None: complete_cost += line['cost_j']
+        lines.append(line)
+    return {'name':recipe['name'],'source':recipe.get('source'),
+            'saved_design_id':recipe.get('saved_design_id'),
+            'candidate':{k:recipe.get(k,{}) for k in ('kind','parameters','component_overrides')},
+            'lines':lines,'estimated_total_j':complete_cost,'available_cost_j':partial_cost,
+            'affordable':complete_cost is not None and complete_cost<=balance,
+            'energy_gap_j':max(0,complete_cost-balance) if complete_cost is not None else None,
+            'declared_uses':recipe.get('can_do',[]),'goal':None}
+
+
+def _recommend(recipes: list[dict], offers: list[dict], balance: int, goals: dict | None) -> dict | None:
+    import ai_actions
+    plans=[]
+    for recipe in recipes:
+        if recipe.get('problem') or not (recipe.get('readiness') or {}).get('ready_as_drawn'):continue
+        plan=_build_plan(recipe,offers,balance)
+        if goals and goals.get('unlocked',True):
+            preceding=[]
+            for row in goals['goals']:
+                if row.get('complete') or row.get('done'):continue
+                req=row.get('requirement') or {}
+                if req.get('kind') in ('admitted-recipe','funded-box-surface') and ai_actions.fits_requirement(recipe,req):
+                    plan['goal']={'id':row['id'],'title':row['title'],'chain_id':goals['chain_id'],
+                                  'before':list(preceding)}
+                    break
+                preceding.append(row['title'])
+        plans.append(plan)
+    # Goal-compatible alternatives can supply the same next capability at
+    # different costs. An unrelated cheap object is not progress toward it.
+    relevant=[p for p in plans if p['goal']]
+    return min(relevant or plans,key=lambda p:(not p['affordable'],
+               p['estimated_total_j'] is None,
+               p['estimated_total_j'] if p['estimated_total_j'] is not None else math.inf,
+               p['name'])) if plans else None
+
+
+def _guidance(app: Any, offers: list[dict[str, Any]], balance: int) -> dict[str, Any]:
     import workshop_tabs
     skills = workshop_tabs.skills(app)
     next_skill = next((t for t in skills["techniques"] if t["within_reach"]), None)
-    recipes = workshop_tabs.recipes(app)["templates"]
-    available = {o["substance"]: o for o in offers if o["remaining"] > 0}
-    candidates = []
-    for recipe in recipes:
-        if recipe.get("problem") or recipe.get("source") != "built-in":
-            continue
-        if not (recipe.get("readiness") or {}).get("ready_as_drawn"):
-            continue
-        for missing in recipe.get("missing") or []:
-            offer = available.get(missing["what"])
-            if offer:
-                gap = float(missing.get("short_kg", 0))
-                covers = gap <= offer["mass_kg"] + 1e-4
-                candidates.append((not covers, recipe.get("short_share", 1),
-                                   offer["price_j"], recipe["name"], offer["id"], gap))
-    candidates.sort()
-    chosen = candidates[0] if candidates else None
+    goals=None
+    if getattr(app,'world_id',None):
+        import starter_goals
+        goals=starter_goals.view(app,workshop_library.rack_owner_id(app),{'chain':'active'})
+    chosen=_recommend(workshop_tabs.recipes(app)['templates'],offers,balance,goals)
+    supply=None
+    if goals and goals.get('unlocked',True):
+        row=next((g for g in goals['goals'] if not g.get('complete') and not g.get('done') and
+                  (g.get('requirement') or {}).get('kind')=='stock-purchase'),None)
+        if row:
+            req=row['requirement']
+            supply=_build_plan({'name':row['title'],'materials':[{'material':req['substance'],
+                                'kg':req['remaining_kg'],'held_kg':0}]},offers,balance)
+            supply['goal']={'id':row['id'],'title':row['title'],'chain_id':goals['chain_id']}
+    highlighted=supply or chosen
+    gap=next((line for line in highlighted['lines'] if line['status']=='buy'),None) if highlighted else None
+    unknown=[t for t in skills['techniques'] if not t['known']]
+    blocked=unknown[0] if unknown and not next_skill else None
     return {"skill": ({"id": next_skill["id"], "name": next_skill["name"],
                         "route": next((r["says"] for r in next_skill["earned_by"]
-                                       if r.get("world_ready",True)), "")}
+                                       if r.get("world_ready",True)), ""),
+                        "locations": [l for r in next_skill['earned_by'] if r.get('world_ready')
+                                      for l in r.get('locations',[])]}
                        if next_skill else None),
-            "recipe": chosen[3] if chosen else None,
-            "offer_id": chosen[4] if chosen else None,
-            "gap_kg": chosen[5] if chosen else None,
-            "covers_gap": not chosen[0] if chosen else False}
+            'skill_blocked':({'name':blocked['name'],'prerequisites':[n['name'] for n in blocked.get('needs',[]) if not n['known']],
+                              'world_missing':blocked.get('world_missing',[])} if blocked else None),
+            'plan':chosen,'supply_goal':supply,'recipe':chosen['name'] if chosen else None,
+            'offer_id':gap['offer_id'] if gap else None,
+            'gap_kg':gap['gap_kg'] if gap else None,
+            'covers_gap':gap['next_lot_covers_gap'] if gap else False,
+            'estimate_basis':'Whole lots at current stock, including scarcity increases per purchase. No reservation; refresh before buying. Make checks final mass and placement.'}
 
 
 def _settle(app: Any) -> None:
@@ -282,5 +360,5 @@ def request(app: Any, owner: str, body: Any, keep_world: Any) -> dict[str, Any]:
                 "ORDER BY created_at DESC LIMIT 10", (owner,))]
         return {"schema": "banjo.market.v1", "balance_j": balance, "offers": offers,
                 "bankable": getattr(app, "live_holder", None) == "world" and app.live.session is not None,
-                "guidance": _guidance(app, offers), "orders": history,
+                "guidance": _guidance(app, offers, balance), "orders": history,
                 "pricing": "Base price rises by up to 75% as finite world stock is sold."}

@@ -157,18 +157,24 @@ def _can_do(record: dict[str, Any], made: w.Assembly) -> list[str]:
 
 
 def recipes(app: Any) -> dict[str, Any]:
-    held = {r["material"]: float(r["mass_kg"]) for r in workshop_library.rack(app)["materials"]}
-    held_goods = {r["substance"]: float(r["mass_kg"]) for r in workshop_library.goods_rack(app)["goods"]}
+    stock = {r["material"]: r for r in workshop_library.rack(app)["materials"]}
+    goods_stock = {r["substance"]: r for r in workshop_library.goods_rack(app)["goods"]}
+    held = {name: float(r["mass_kg"]) for name,r in stock.items()}
+    held_goods = {name: float(r["mass_kg"]) for name,r in goods_stock.items()}
     world_cell_m = workshop_recipe.world_cell_size(app)
     templates = []
     def add(design: w.WorkshopDesign, made: w.Assembly, *, name: str,
             source: str, saved_design_id: str | None = None) -> None:
         overrides = design.lineage.get("component_overrides", {})
         bom = workshop_library.bill_of_materials(app, design)
-        materials = [{"material": r["material"], "kg": round(float(r["mass_kg"]), 2),
-                      "held_kg": round(held.get(r["material"], 0.0), 2),
+        materials = [{"material": r["material"], "kg": float(r["mass_kg"]),
+                      "held_kg": held.get(r["material"], 0.0),
+                      "personal_kg": stock.get(r["material"],{}).get("personal_kg",0),
+                      "shared_kg": stock.get(r["material"],{}).get("shared_kg",0),
                       "enough": held.get(r["material"], 0.0) + 5e-5 >= float(r["mass_kg"])} for r in bom["materials"]]
-        goods = [{"substance": s, "kg": kg, "held_kg": round(held_goods.get(s, 0.0), 2),
+        goods = [{"substance": s, "kg": kg, "held_kg": held_goods.get(s, 0.0),
+                  "personal_kg": goods_stock.get(s,{}).get("personal_kg",0),
+                  "shared_kg": goods_stock.get(s,{}).get("shared_kg",0),
                   "enough": held_goods.get(s, 0.0) + 5e-5 >= kg}
                  for s, kg in sorted(workshop_library.goods_needed(design).items())]
         record = workshop_machines.of(design)
@@ -251,11 +257,11 @@ def _shortfall(materials: list[dict[str, Any]], goods: list[dict[str, Any]]) -> 
         wants += asked
         gap = max(0.0, asked - have)
         # Per line too, so a tag can say which one is holding it up.
-        line["short_kg"] = round(gap, 3)
+        line["short_kg"] = gap
         if gap > 0.0:
             short += gap
             missing.append({"what": line.get("material") or line.get("substance"),
-                            "short_kg": round(gap, 3),
+                            "short_kg": gap,
                             "share": round(gap / asked, 4)})
     share = (short / wants) if wants > 0.0 else 0.0
     missing.sort(key=lambda m: -m["short_kg"])

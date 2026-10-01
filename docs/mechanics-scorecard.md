@@ -1,5 +1,13 @@
 # Banjo mechanics scorecard
 
+**Market guidance boundary, September 30:** [Complete estimates and scope](market-guidance.md)
+use existing BOM/rack quantities and per-lot scarcity prices. Full estimates
+match sequential purchases; unavailable stock has no complete quote. Native
+banking, guest isolation and restart remain covered. More precise recipe API
+quantities change display/planning inputs, not native mass or stock admission
+tolerances. No constitutive, energy-closure or material-realism claim is added;
+earlier glass/oak/iron gates remain unchanged.
+
 **Autonomous action boundary, September 30:** [Explorer acceptance](ai-explorer-checkpoint.md) measures native ground removal/tool work on seeds 7 and 4 (0.007445339042138977 / 0.008021469915623260 m³; 32.90428 / 27.62231 J), a funded 0.1536 m² surface and a personally watched 5 kg ore→1.5 kg copper batch drawing 10,000 J. Oak tool / 50 mm / dt=1/240 unchanged; this is player action/source-account testing, not a new material law or full-world closure. Strict hopper/save guards stay intact. Earlier glass/oak/iron evidence remains unchanged. Live-provider, physical avatar collision, generated rover delivery and exhausted-input replenishment remain unqualified.
 
 **Goal composition boundary, September 30:** [Player route and evidence](goal-chains.md) (code `6b45be4`, main) adds no physical law: saved study/removal, resource-funded native box surfaces and personally witnessed supported ledger batches feed bounded personal checklists. Two generated seeds at 50 mm / `dt=1/240 s` exercise a real stool placement and restart without stock grants. No strength, chemistry, full-world conservation or autonomous/provider claim is added. Next AI action planning, exhausted-intake routes, rover delivery and Market relevance; earlier glass/oak/iron comparative evidence remains unchanged.
