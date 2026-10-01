@@ -1,5 +1,9 @@
 # Component thumbnails — October 1, 2026
 
+Implementation `acffb5d` is published on GitHub main. The own live preview at
+`http://127.0.0.1:8770/world` serves the updated static interface with existing
+verified native binaries and saved worlds retained.
+
 The owner replaced persistent exploded inspection with component thumbnails in
 the World right panel. Ordinary selection keeps the item assembled and usable.
 The panel opens a bounded, scrollable gallery with a picture, component name and
