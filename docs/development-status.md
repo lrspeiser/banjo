@@ -9,6 +9,8 @@ Ordinary funded-room collection/tool diagnostics now work and the whole-tool Q
 hint says bag. Native laws/tolerances are unchanged. Starter finite capabilities,
 ordinary Make integration and damaged-tool acceptance remain next; four verified,
 ten partial within the complete fourteen-item goal.
+Implementation `7a4ce90` is published on GitHub main; own preview 8770 serves
+the checkpoint with existing worlds and inventories retained.
 
 **Selected-item Lab remake, October 1:** [Native/HTTP/Chrome checkpoint](fabrication-remake-checkpoint.md)
 adds authenticated hands/bag source binding, a frozen draft, reviewed costs,

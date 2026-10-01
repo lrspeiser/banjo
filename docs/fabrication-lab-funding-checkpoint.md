@@ -1,5 +1,11 @@
 # Lab funding and replacement use — October 1, 2026
 
+Published implementation: `7a4ce90` on GitHub main. Final unchanged-source
+remake rerun: **4/4 pass in 21.383 s**. Own preview on port 8770 serves this
+checkpoint at `http://127.0.0.1:8770/world`; its existing generated world remains
+unconfigured. The fixture's extra battery/process declarations are not silently
+applied to players' worlds.
+
 ## Implemented player flow
 
 The carried-item Lab's reviewed Remake panel now contains **Fund workbench**:

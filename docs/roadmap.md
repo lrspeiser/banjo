@@ -7,6 +7,8 @@ Next declare finite starter source/workbench capabilities, route ordinary Make
 through paid manufacturing, and qualify actual damaged-tool-to-use in a fresh
 generated world. No bond healing or full conservation claim. Four verified and
 ten partial remain within all fourteen gates.
+Implementation `7a4ce90` is published on main; finite starter capability and
+ordinary paid Make integration are the next acceptance work.
 
 **Selected Lab remake acceptance, October 1:** [Source-bound paid replacement](fabrication-remake-checkpoint.md)
 passes current owned hands/bag selection, exact frozen draft, real material and
