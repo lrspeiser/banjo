@@ -1,5 +1,9 @@
 # Finite starter solar output — October 1, 2026
 
+Published implementation: `2365ffe86bb321e90e293ddf195fabb870343316` on
+GitHub main. Remote main was checked after the ordinary fast-forward push.
+Own 8770 preview serves this Python implementation with unchanged native binaries.
+
 ## Implemented
 
 Fresh generated yards declare a **10,000 W battery output rating** on their

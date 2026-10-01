@@ -8,6 +8,8 @@ unchanged; existing saved worlds retain their ratings. Fixed Fabrication QA
 replacement use and saved Make use the generated source, with the process
 still explicitly configured by the fixture. Ordinary workbench and AI/machine
 manufacture remain next. Four verified, ten partial; all fourteen remain active.
+Implementation `2365ffe` is published on GitHub main; refreshed 8770 preview
+passes the fresh-source and undeclared-process checks.
 
 **Paid new/saved designs, October 1:** [Reviewed Make acceptance](fabrication-paid-design-checkpoint.md)
 extends finite funding to new recipes and saved designs without a carried source.

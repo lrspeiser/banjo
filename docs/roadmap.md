@@ -7,6 +7,8 @@ declare the ordinary workbench process and integrate paid player/AI/machine
 manufacture together; then qualify actual damaged-tool replacement-to-use.
 No new physical law or calibrated forming claim. Four verified, ten partial
 within all fourteen original gates.
+Implementation `2365ffe` is published on GitHub main; ordinary funded
+workbench and AI/machine migration are the next integration gate.
 
 **Reviewed paid Make, October 1:** [New/saved design checkpoint](fabrication-paid-design-checkpoint.md)
 passes configured Recipes/Lab review, real funding, owned frozen new-item jobs,
