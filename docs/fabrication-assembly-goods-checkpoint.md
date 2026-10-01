@@ -1,6 +1,9 @@
 # Processed supplies in paid machine construction
 
 October 1, 2026. Windows, main, based on `3ec8c4c`.
+Implementation `d2d654d75fd2c6c7a3a5f1e0e533a72cb00b5f4a` is published on
+GitHub main. Refreshed own 8770 preview passes fresh entry, initial pick geometry,
+compact Inventory and prior-world reopening without JavaScript exceptions.
 
 ## Implemented
 
@@ -49,6 +52,7 @@ World MCP 1.20.0 / platform MCP 1.23.0 expose the same funding operation.
   whole reopen and replay leave 2.4 kg personal / 4 kg peer and one 0.6 kg credit.
   Raw stock is unchanged; stale source hashes and peer replay refuse.
 - Source registration **287/287**, no exclusions. No C++/solver/law/tolerance changes.
+  The final malformed-packet input guard additionally passes the two model checks.
 
 Matched exact machine: 0.003072 m³ native frame, 40 mm scenery,
 `dt=1/240 s`; 25 kg feed / 2500 J authored shaping work plus 100 J initial

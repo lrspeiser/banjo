@@ -8,6 +8,8 @@ canonical machine use programs and normal player/AI guards, and run complete
 fresh-world paid progression plus damaged-tool replacement/equip/use. Additional
 goods constituent mass/laws and incorporation work retain explicit modeling gates.
 The original fourteen requirements remain active: four verified, ten partial.
+Implementation `d2d654d` is published on main. Default workbench, canonical
+programs/guards and complete paid progression retain their next acceptance gates.
 
 **Item appearance/navigation acceptance, October 1:** [Verified checkpoint](inventory-rendering-checkpoint.md)
 passes fresh geometry before pickup, unchanged mesh/mass through hands/bag/reload,

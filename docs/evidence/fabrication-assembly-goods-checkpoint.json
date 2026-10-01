@@ -330,5 +330,21 @@
     "sources": 287,
     "excluded": 0
   },
-  "boundary": "Processed assembly input accounting; constituent mass/mechanics/thermal integration and shaping work remain unmodeled. Explicitly configured fixtures; ordinary workbench/full progression remain open."
+  "boundary": "Processed assembly input accounting; constituent mass/mechanics/thermal integration and shaping work remain unmodeled. Explicitly configured fixtures; ordinary workbench/full progression remain open.",
+  "published_implementation_revision": "d2d654d75fd2c6c7a3a5f1e0e533a72cb00b5f4a",
+  "preview_source_revision": "d2d654d75fd2c6c7a3a5f1e0e533a72cb00b5f4a",
+  "preview": {
+    "url": "http://127.0.0.1:8770/world?world=c3432cf54023482d91d0fd73326124eb&scene=new-game",
+    "old_world_body_count": 10,
+    "fresh_pick_cells": 22,
+    "fresh_pick_design": true,
+    "mini_inventory": "Inventory\nOpen all \u2192\nField pick\nRight hand\nStow\nYour energy\n0 J\nSolar \u00b7 shared\n1,987,854.5 J\nSolar rate\n242.1 J/s",
+    "legacy_tabs_removed": true,
+    "exception_count": 0
+  },
+  "final_model_input_guard": {
+    "passed": 2,
+    "total": 2,
+    "elapsed_s": 0.002
+  }
 }
