@@ -6,6 +6,10 @@ observation blocked by missing copper input. Other missing equipment is audited,
 not declared impossible to author. A native test qualifies the corrected AI
 power command's current program id/count, durable power, missing-target refusal
 and no learning award. Live-provider play and supported intake replenishment remain open.
+Published review/power implementation: `8b55116` on main. Chrome reopens the
+character with both techniques and its packed named stool; the follow-up fixes
+the watched hand's label when the viewer carries nothing. Local review server
+8769 loads this backend; other user servers remain unchanged.
 
 **Product guidance checkpoint, September 30:** [Source contract and evidence](product-labels.md)
 adds readable product names to Inventory/World, full source pictures, actual

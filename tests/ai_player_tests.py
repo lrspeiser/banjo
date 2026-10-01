@@ -747,6 +747,7 @@ class AutonomousGuests(unittest.TestCase):
         self.assertEqual(before["record"], after["record"])
         self.assertGreaterEqual(sum(s['known'] for s in view['skills']),2)
         self.assertTrue(page.evaluate('document.querySelector("#watch-tech").textContent.includes("Gathering by hand")'))
+        self.assertIn('Field pick',page.evaluate('document.querySelector("#inv-right").textContent'))
         self.assertEqual("4 / 4 goals", page.evaluate('document.querySelector("#watch-progress").textContent').split(' · ')[0])
         # Inspection may read native geometry while watching, but does not
         # permit controls or change either character's physical state.

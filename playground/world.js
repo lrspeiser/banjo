@@ -4037,7 +4037,9 @@ function showInventory() {
     });
     return b;
   };
-  $("inv-right").replaceChildren(document.createTextNode(held ? `${titled(heldName())}${mass}` : "free"));
+  const rightName = Object.values(inv?.hands || {}).find(x => x && (x.name === held || x.parts?.includes(held)))?.label
+    || titled(heldName()) || bagName({name:held});
+  $("inv-right").replaceChildren(document.createTextNode(held ? `${rightName}${mass}` : "free"));
   if (recordHolds(held)) $("inv-right").append(button("Stow", "stow", held), button("Put down", "drop", held));
   $("inv-left").textContent = left ? bagName(inv.hands.left) : "free";
   const bag = slots.map((thing, i) => [thing, i]).filter(([thing]) => thing);

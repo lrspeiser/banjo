@@ -12,6 +12,15 @@ material-delivery gaps.
 The local review server must be running. The reference controller is complete;
 I subsequently moved this same character to inspect the wire-making route.
 
+Review and native power-command correction are published to GitHub **main** as
+`8b551165cfe2d84e72d07eafed728970ceac2d70`. Final Chrome verification reopened
+the saved character on that backend with the watched-hand name display follow-up.
+It retains 35 decisions, both techniques and its named stool, with no runtime
+exception. [Watch capture](evidence/ai-explorer/watching-current.png) and
+[verification receipt](evidence/ai-explorer/published-check.json) record that
+boundary. The watched hand now displays its inventory label even though the
+viewer has no local held object.
+
 ## How I played
 
 I created a separate generated world and player, with the normal unattended

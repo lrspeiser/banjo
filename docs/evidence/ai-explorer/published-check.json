@@ -1,0 +1,24 @@
+{
+  "schema": "banjo.ai-review-published-check.v1",
+  "source_commit": "8b551165cfe2d84e72d07eafed728970ceac2d70",
+  "watch_url": "http://127.0.0.1:8769/world?world=a49789cfd53d4f998ea38dea43ef6c6f&watch=569e64a5cb8e46a281c4b946bfc7bd5a",
+  "watch_page_ready": true,
+  "browser_runtime_exceptions": 0,
+  "character_status": "complete",
+  "decisions": 35,
+  "known": [
+    "using-ground-tools",
+    "smelting-copper"
+  ],
+  "inventory_labels": [
+    "Camp stool"
+  ],
+  "persistence": {
+    "state": "saved",
+    "reason": "",
+    "saved_t_s": 2497.8499999846886,
+    "attempted_t_s": 2497.8499999846886
+  },
+  "static_followup": "Watched-hand name uses inventory label; verified outgoing working tree on 8b55116",
+  "watched_hand_label": "Field pick"
+}
