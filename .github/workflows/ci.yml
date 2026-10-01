@@ -190,6 +190,9 @@ jobs:
             BANJO_BROWSER_TESTS=required python3 tests/starter_goals_tests.py -v
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run BANJO_CHROME=/usr/bin/google-chrome \
             BANJO_CHROME_ARGS="--no-sandbox --disable-dev-shm-usage --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader" \
+            BANJO_BROWSER_TESTS=required python3 tests/goal_chains_tests.py -v
+          BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run BANJO_CHROME=/usr/bin/google-chrome \
+            BANJO_CHROME_ARGS="--no-sandbox --disable-dev-shm-usage --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader" \
             BANJO_BROWSER_TESTS=required python3 tests/ai_player_tests.py -v
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run BANJO_CHROME=/usr/bin/google-chrome \
             BANJO_CHROME_ARGS="--no-sandbox --disable-dev-shm-usage --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader" \

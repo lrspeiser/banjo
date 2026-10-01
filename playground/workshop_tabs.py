@@ -189,6 +189,9 @@ def recipes(app: Any) -> dict[str, Any]:
     import starter_goals
     starter, _ = workshop_components.design_from_spec(starter_goals.recipe())
     add(starter, w.assembly("stool"), name="Camp stool", source="built-in")
+    import goal_chains
+    table, _ = workshop_components.design_from_spec(goal_chains.work_table_recipe())
+    add(table, w.assembly("bench"), name="Work table", source="built-in")
     for made in w.ASSEMBLIES:
         try:
             design = w.assemble(made.name, design_id=made.name)

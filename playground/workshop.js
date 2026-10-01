@@ -2531,11 +2531,12 @@ async function showRecipes() {
   fill("#ws-recipes-templates", r.templates.map(t => {
     const ready = Boolean(t.readiness?.ready_as_drawn);
     const short = t.enough ? 0 : Math.max(1, Math.round((t.short_share || 0) * 100));
-    const li = item(t.source === "saved" || t.name === "Camp stool" ? t.name : titleCase(t.name), "",
+    const li = item(t.source === "saved" || ["Camp stool", "Work table"].includes(t.name) ? t.name : titleCase(t.name), "",
       !t.enough ? "short" : ready ? "enough" : "blocked");
     li.dataset.recipe = recipeKey(t);
     li.dataset.materials = JSON.stringify([...(t.materials || []), ...(t.goods || [])].map(r => r.material || r.substance));
-    if (t.name === "Camp stool" && new URLSearchParams(location.search).get("guide") === "build-camp") li.classList.add("ws-goal-target");
+    const guidedRecipe = {"build-camp":"Camp stool", "build-surface":"Work table"}[new URLSearchParams(location.search).get("guide")];
+    if (t.name === guidedRecipe) li.classList.add("ws-goal-target");
     const canvas = make("canvas", {width:"160", height:"112", role:"img", "aria-label":`${t.name} shape preview`});
     li.querySelector("strong").before(canvas);
     if (t.problem) {
@@ -2777,7 +2778,22 @@ function goToGoalScreen(id, screen) {
   window.history.replaceState(null, "", url); showTab(screen);
 }
 async function showGoalGuide(screen) {
-  const id = new URLSearchParams(location.search).get("guide"), guide = GOAL_GUIDES[id];
+  const params = new URLSearchParams(location.search), id = params.get("guide");
+  if (params.get("goal-chain") && params.get("goal-chain") !== "first-camp-v1") {
+    const pane=$(`#ws-pane-${screen}`);
+    let box=pane.querySelector(".ws-goal-guide");
+    if (!box) {box=make("section", {class:"ws-goal-guide", hidden:""}); pane.prepend(box);}
+    box.replaceChildren(); box.hidden=true;
+    if (!id) return;
+    const goals=await api("/api/workshop/goals", {chain:params.get("goal-chain")});
+    const goal=goals.goals.find(g=>g.id===id), guide=goal?.guide;
+    if (!guide || guide.screen!==screen) return;
+    box.hidden=false;
+    box.append(make("strong", {}, goal.title), make("p", {}, goal.complete ? "Complete ✓" : guide.steps[0]));
+    const next=make("button", {type:"button", class:"ws-action"}, "View checklist");
+    next.onclick=()=>showTab("goals"); box.append(next); return;
+  }
+  const guide = GOAL_GUIDES[id];
   const pane = $(`#ws-pane-${screen}`);
   let box = pane.querySelector(".ws-goal-guide");
   if (!box) { box=make("section", {class:"ws-goal-guide", hidden:""}); pane.prepend(box); }
@@ -2811,16 +2827,27 @@ async function showGoals() {
   if (!worldId) {
     root.replaceChildren(item("Start your first camp", "Use Menu to create or join a game.")); return;
   }
-  const goals = await api("/api/workshop/goals", {});
+  const selected = new URLSearchParams(location.search).get("goal-chain") || "first-camp-v1";
+  const goals = await api("/api/workshop/goals", {chain:selected});
   root.replaceChildren();
-  $("#ws-goals-progress").textContent = goals.complete ? "First camp complete. Your progress is saved."
-    : `${goals.goals.filter(g=>g.complete).length} / ${goals.goals.length} complete`;
-  $("#ws-goals-next").textContent = goals.complete ? "Ready for your next project. Open Recipes to explore your designs."
-    : "Earn energy → buy wood → make a stool → carry it. Do each step in the game; this checklist updates automatically.";
+  $("#ws-pane-goals h2").textContent = goals.title;
+  const firstCamp=goals.chain_id === "first-camp-v1";
+  const chapters=make("li", {class:"ws-inventory-actions", "aria-label":"Goal chapters"});
+  for (const chain of goals.chains || []) {
+    const button=make("button", {type:"button", class:"ws-action", "aria-pressed":String(chain.id===goals.chain_id)}, chain.title);
+    button.onclick=()=>{const url=new URL(location.href); url.searchParams.set("goal-chain",chain.id); url.searchParams.delete("guide"); window.history.replaceState(null,"",url); showTab("goals");};
+    chapters.append(button);
+  }
+  root.append(chapters);
+  $("#ws-goals-progress").textContent = goals.complete ? `${firstCamp ? "First camp" : goals.title} complete. Your progress is saved.`
+    : `${goals.title} · ${goals.goals.filter(g=>g.complete).length} / ${goals.goals.length} complete`;
+  $("#ws-goals-next").textContent = goals.complete ? goals.follow_up
+    : firstCamp ? "Earn energy → buy wood → make a stool → carry it. Do each step in the game; this checklist updates automatically."
+    : "Study → gather → make a surface → watch a process. Use the normal game controls; saved receipts complete each step.";
   const limits = $("#ws-goals-limits"); limits.replaceChildren();
   const details=make("details", {}); details.append(make("summary", {}, "About this goal"), make("p", {}, goals.limits)); limits.append(details);
   for (const [index, goal] of goals.goals.entries()) {
-    const guide=GOAL_GUIDES[goal.id], current=goals.next_goal===goal.id;
+    const guide=goal.guide || GOAL_GUIDES[goal.id], current=goals.next_goal===goal.id;
     const li=item(goal.title, "", goal.complete ? "enough" : current ? "ws-goal-current" : "ws-goal-later");
     li.dataset.goal=goal.id; li.dataset.complete=String(goal.complete);
     const state=make("div", {class:"ws-goal-state"});
@@ -2842,7 +2869,7 @@ async function showGoals() {
       } else if (goal.id === "bank-solar" && !goals.session) {
         link=make("a", {href:goalWorldLink("solar farm"), class:"ws-action primary", "data-goal-go":goal.id}, "Visit your World first");
       } else {
-        link=make("button", {type:"button", class:current ? "ws-action primary" : "ws-action", "data-goal-go":goal.id}, guide.screen === "recipes" ? "Find Camp stool in Recipes" : "Open Market");
+        link=make("button", {type:"button", class:current ? "ws-action primary" : "ws-action", "data-goal-go":goal.id}, guide.recipe ? `Find ${guide.recipe} in Recipes` : guide.screen === "recipes" ? "Find Camp stool in Recipes" : `Open ${titleCase(guide.screen)}`);
         link.onclick=()=>goToGoalScreen(goal.id, guide.screen);
       }
       li.append(link);

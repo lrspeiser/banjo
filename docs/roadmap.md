@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Composed goals, September 30:** [Receipt-backed second checklist](goal-chains.md) passes fresh-world Camp → study/use tool → measured removal → useful receiving surface → supported observed batch on both generated terrain seeds, including ordinary placement and restart. Next extend the general AI action catalog beyond Camp, cover shortages/exhausted inputs and live provider separately, then complete Market costs/recommendation relevance and compact source/debit labels. Preserve the existing native/save gates; checklist completion is not a manufacturing or strength unlock.
+
 **First personal tool technique, September 30:** [Checkpoint](player-tool-learning.md), code `2ee3ab7`, passes take/stow/equip/study/use, failed-source no-award, failed-journal restart/replay, other-guest isolation and Skills navigation. Next connect that technique to the receipt-backed useful-surface/process chain, then the broader AI action catalog and Market gap/cost guidance. Keep live-provider/scarcity and rover delivery gates explicit.
 
 **Starter tool checkpoint, September 30:** [Evidence](generated-starter-tool.md), code `0fa2b9a`, completes generated access and ordinary use on both supported terrain seeds. Next: personal study plus durable source-attributed tool evidence, actual first technique, then Camp → tool → measured gathering → work surface → supported process. Keep AI/provider and rover delivery gates separate; neither passed merely because hand-tool access did.

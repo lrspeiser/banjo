@@ -1,5 +1,7 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Goal composition, September 30:** [Bounded personal checklists](goal-chains.md) connect Camp to native tool study/removal, a funded receiving surface and a supported personally observed machine batch. Definitions compose existing server evidence predicates; navigation cannot grant progress, and no shaping law is introduced. The ordinary player journey, autonomous exploration and live provider verification remain separate claims.
+
 **Personal ground-tool learning, September 30:** [Implemented contract](player-tool-learning.md), code `2ee3ab7`: inspected native examples and attributed supported use travel in a bounded durable outbox before personal technique evaluation. Gathering by hand proves measured practice only; it adds no manufacturing process or strength law. Two generated seeds and failure/restart checks pass through ordinary controls. Goal composition, autonomous exploration and live-provider play remain the next gates.
 
 **Starter tool access, September 30:** [Generated-world checkpoint](generated-starter-tool.md), code `0fa2b9a`: the same editable Workshop recipe/compiler supplies one bootstrap gathering tool beside arrival. Declared grip anchors survive normal take/stow/equip. Two generated seeds support measured ordinary player use. Durable personal study/use learning and continued autonomous progression remain next gates; this checkpoint does not certify physical avatars, manufactured strength or rover navigation.

@@ -295,6 +295,8 @@ class Playground:
         self.journal = None
         self.player_journals = {}
         self.journal_lock = threading.RLock()
+        self.journal_for = lambda owner: journal_of(self, owner)
+        self.registry = registry
         self.reply_listeners = []
         self.on_live_reply = lambda session, reply: heard(self, session, reply)
         # What thinks for each machine's program on what it meets, and hears

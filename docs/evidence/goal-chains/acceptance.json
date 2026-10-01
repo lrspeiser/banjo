@@ -1,0 +1,402 @@
+[
+  {
+    "terrain_seed": 7,
+    "goods_seed": 851269742,
+    "camp_actions": 10,
+    "chain": {
+      "schema": "banjo.starter-goals.v1",
+      "chain_id": "first-workshop-v1",
+      "title": "Put your camp to work",
+      "goals": [
+        {
+          "id": "study-tool",
+          "title": "Study a gathering tool",
+          "unit": "study",
+          "target": 1,
+          "guide": {
+            "where": "World / Inventory",
+            "screen": "skills",
+            "steps": [
+              "In Skills, follow Go to tool. Pick it up with E, or equip it from your bag.",
+              "Choose Study tool / Inspect. The saved study goes in your own journal."
+            ]
+          },
+          "value": 1,
+          "complete": true,
+          "evidence": {
+            "evidence_id": "ev-b3a2901208",
+            "design": "field-pick@1",
+            "test": "study-example",
+            "result": {
+              "body_id": 1000,
+              "point_id": 1,
+              "matter_sha256": "8817ab9798411533bcb5534462b59d166c46290cacf50cae7d46eed952e154f4"
+            }
+          }
+        },
+        {
+          "id": "gather-ground",
+          "title": "Gather measured soil or sand",
+          "unit": "trial",
+          "target": 1,
+          "guide": {
+            "where": "World",
+            "screen": "skills",
+            "steps": [
+              "Equip your gathering tool. Find dry soil or sand near the tool location shown in Skills.",
+              "Aim at the ground and use the tool. A supported removal above zero earns Gathering by hand."
+            ]
+          },
+          "value": 1,
+          "complete": true,
+          "evidence": {
+            "evidence_id": "ev-daa9c7eda5",
+            "design": "field-pick@1",
+            "test": "loosens-soil",
+            "result": {
+              "loosened_m3": 0.03178217542410151,
+              "loosened_kg": 50.85148,
+              "depth_m": 0.21375,
+              "work_j": 94.88046,
+              "closing_speed_m_s": 14.9124
+            }
+          }
+        },
+        {
+          "id": "build-surface",
+          "title": "Build a work surface",
+          "unit": "build",
+          "target": 1,
+          "guide": {
+            "where": "Recipes",
+            "screen": "recipes",
+            "recipe": "Work table",
+            "steps": [
+              "Find Work table in Recipes, or make another supported surface of at least 0.1 m\u00b2.",
+              "Check supplies, then Make. The new table receives items with Place; it does not perform shaping."
+            ]
+          },
+          "value": 1,
+          "complete": true,
+          "evidence": {
+            "request_id": "surface-1",
+            "body": "workshop-12ce5efb956e42c4",
+            "physics_hash": "373667a5d8e1f146c3c0b3f0c02f174c9ab0b80704b12c0ac6522f306857e9e1",
+            "surface": "top",
+            "area_m2": 0.1536,
+            "saved_t_s": 3.400000000000064
+          }
+        },
+        {
+          "id": "observe-process",
+          "title": "Learn from a working machine",
+          "unit": "batch",
+          "target": 1,
+          "guide": {
+            "where": "World",
+            "screen": "skills",
+            "steps": [
+              "In Skills, choose a machine with a supported batch and inputs available.",
+              "Move near it, face it, turn it on and choose Watch next batch. Stay until an actual saved batch is recorded.",
+              "An empty intake needs supplies. Watching alone cannot finish this step."
+            ]
+          },
+          "value": 1,
+          "complete": true,
+          "evidence": {
+            "evidence_id": "ev-d375e3c393",
+            "design": "copper-smelter@1",
+            "test": "smelts-ore",
+            "result": {
+              "made_kg": 1.5,
+              "used_kg": 5.0,
+              "made": {
+                "copper": 1.5
+              },
+              "used": {
+                "copper ore": 5.0
+              },
+              "drawn_j": 10000.0
+            }
+          }
+        }
+      ],
+      "next_goal": null,
+      "complete": true,
+      "limits": "Tool use measures dry soil or sand. A work surface receives items; it does not unlock shaping. Machine batches use the declared recipe ledger, not simulated chemistry.",
+      "follow_up": "Use Skills to find the next supported experiment.",
+      "recipe": {
+        "kind": "bench",
+        "design_id": "starter-work-table",
+        "parameters": {
+          "width_m": 0.48,
+          "depth_m": 0.32,
+          "height_m": 0.5,
+          "top_thickness_m": 0.04,
+          "top_profile": "square",
+          "leg_section_m": 0.04,
+          "leg_style": "straight",
+          "splay_deg": 0.0,
+          "leg_inset_m": 0.05,
+          "material": "oak",
+          "aprons": 0.0,
+          "stretchers": 0.0
+        },
+        "component_overrides": {
+          "top": {
+            "mechanics": {
+              "model": "rigid"
+            }
+          },
+          "leg-1": {
+            "mechanics": {
+              "model": "rigid"
+            }
+          },
+          "leg-2": {
+            "mechanics": {
+              "model": "rigid"
+            }
+          },
+          "leg-3": {
+            "mechanics": {
+              "model": "rigid"
+            }
+          },
+          "leg-4": {
+            "mechanics": {
+              "model": "rigid"
+            }
+          }
+        }
+      },
+      "session": "e62229ff108744478884930e36be9930",
+      "balance_j": 256,
+      "camp_body": "workshop-8f319f75516544e4",
+      "unlocked": true,
+      "chains": [
+        {
+          "id": "first-camp-v1",
+          "title": "Make your first camp"
+        },
+        {
+          "id": "first-workshop-v1",
+          "title": "Put your camp to work"
+        }
+      ],
+      "persistence": {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 15.904166666666084,
+        "attempted_t_s": 15.904166666666084
+      }
+    },
+    "native_dt_s": 0.004166666666666667,
+    "cell_m": 0.05,
+    "provider_calls": 0,
+    "mode": "scripted HTTP player; accelerated ordinary clock",
+    "other_guest_completed": 0,
+    "restart_preserved": true,
+    "stool_placed_on_table": true
+  },
+  {
+    "terrain_seed": 4,
+    "goods_seed": 1,
+    "camp_actions": 10,
+    "chain": {
+      "schema": "banjo.starter-goals.v1",
+      "chain_id": "first-workshop-v1",
+      "title": "Put your camp to work",
+      "goals": [
+        {
+          "id": "study-tool",
+          "title": "Study a gathering tool",
+          "unit": "study",
+          "target": 1,
+          "guide": {
+            "where": "World / Inventory",
+            "screen": "skills",
+            "steps": [
+              "In Skills, follow Go to tool. Pick it up with E, or equip it from your bag.",
+              "Choose Study tool / Inspect. The saved study goes in your own journal."
+            ]
+          },
+          "value": 1,
+          "complete": true,
+          "evidence": {
+            "evidence_id": "ev-b253431fb9",
+            "design": "field-pick@1",
+            "test": "study-example",
+            "result": {
+              "body_id": 1000,
+              "point_id": 1,
+              "matter_sha256": "73b16a9fd728516ff12b938051df5a592e4b245500e8b2bf9fffee733cfbb696"
+            }
+          }
+        },
+        {
+          "id": "gather-ground",
+          "title": "Gather measured soil or sand",
+          "unit": "trial",
+          "target": 1,
+          "guide": {
+            "where": "World",
+            "screen": "skills",
+            "steps": [
+              "Equip your gathering tool. Find dry soil or sand near the tool location shown in Skills.",
+              "Aim at the ground and use the tool. A supported removal above zero earns Gathering by hand."
+            ]
+          },
+          "value": 1,
+          "complete": true,
+          "evidence": {
+            "evidence_id": "ev-4a16adb770",
+            "design": "field-pick@1",
+            "test": "loosens-soil",
+            "result": {
+              "loosened_m3": 0.02919999052194552,
+              "loosened_kg": 46.71998,
+              "depth_m": 0.20668,
+              "work_j": 62.71566,
+              "closing_speed_m_s": 15.22616
+            }
+          }
+        },
+        {
+          "id": "build-surface",
+          "title": "Build a work surface",
+          "unit": "build",
+          "target": 1,
+          "guide": {
+            "where": "Recipes",
+            "screen": "recipes",
+            "recipe": "Work table",
+            "steps": [
+              "Find Work table in Recipes, or make another supported surface of at least 0.1 m\u00b2.",
+              "Check supplies, then Make. The new table receives items with Place; it does not perform shaping."
+            ]
+          },
+          "value": 1,
+          "complete": true,
+          "evidence": {
+            "request_id": "surface-0",
+            "body": "workshop-bd77e196989e49d7",
+            "physics_hash": "f74ac4c69d4e579f65075a16844580643746082c7c819769a39c604631fe3689",
+            "surface": "top",
+            "area_m2": 0.175,
+            "saved_t_s": 3.400000000000064
+          }
+        },
+        {
+          "id": "observe-process",
+          "title": "Learn from a working machine",
+          "unit": "batch",
+          "target": 1,
+          "guide": {
+            "where": "World",
+            "screen": "skills",
+            "steps": [
+              "In Skills, choose a machine with a supported batch and inputs available.",
+              "Move near it, face it, turn it on and choose Watch next batch. Stay until an actual saved batch is recorded.",
+              "An empty intake needs supplies. Watching alone cannot finish this step."
+            ]
+          },
+          "value": 1,
+          "complete": true,
+          "evidence": {
+            "evidence_id": "ev-bdacbc38cd",
+            "design": "copper-smelter@1",
+            "test": "smelts-ore",
+            "result": {
+              "made_kg": 1.5,
+              "used_kg": 5.0,
+              "made": {
+                "copper": 1.5
+              },
+              "used": {
+                "copper ore": 5.0
+              },
+              "drawn_j": 10000.0
+            }
+          }
+        }
+      ],
+      "next_goal": null,
+      "complete": true,
+      "limits": "Tool use measures dry soil or sand. A work surface receives items; it does not unlock shaping. Machine batches use the declared recipe ledger, not simulated chemistry.",
+      "follow_up": "Use Skills to find the next supported experiment.",
+      "recipe": {
+        "kind": "bench",
+        "design_id": "starter-work-table",
+        "parameters": {
+          "width_m": 0.48,
+          "depth_m": 0.32,
+          "height_m": 0.5,
+          "top_thickness_m": 0.04,
+          "top_profile": "square",
+          "leg_section_m": 0.04,
+          "leg_style": "straight",
+          "splay_deg": 0.0,
+          "leg_inset_m": 0.05,
+          "material": "oak",
+          "aprons": 0.0,
+          "stretchers": 0.0
+        },
+        "component_overrides": {
+          "top": {
+            "mechanics": {
+              "model": "rigid"
+            }
+          },
+          "leg-1": {
+            "mechanics": {
+              "model": "rigid"
+            }
+          },
+          "leg-2": {
+            "mechanics": {
+              "model": "rigid"
+            }
+          },
+          "leg-3": {
+            "mechanics": {
+              "model": "rigid"
+            }
+          },
+          "leg-4": {
+            "mechanics": {
+              "model": "rigid"
+            }
+          }
+        }
+      },
+      "session": "72fb2e2e46e740c7891a3e1b0f927e28",
+      "balance_j": 256,
+      "camp_body": "workshop-6433d2f17a614fb6",
+      "unlocked": true,
+      "chains": [
+        {
+          "id": "first-camp-v1",
+          "title": "Make your first camp"
+        },
+        {
+          "id": "first-workshop-v1",
+          "title": "Put your camp to work"
+        }
+      ],
+      "persistence": {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 16.35416666666606,
+        "attempted_t_s": 16.35416666666606
+      }
+    },
+    "native_dt_s": 0.004166666666666667,
+    "cell_m": 0.05,
+    "provider_calls": 0,
+    "mode": "scripted HTTP player; accelerated ordinary clock",
+    "other_guest_completed": 0,
+    "restart_preserved": true,
+    "stool_placed_on_table": true
+  }
+]

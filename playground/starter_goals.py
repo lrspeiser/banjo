@@ -61,10 +61,28 @@ def _schema(db: Any) -> None:
 
 
 def view(app: Any, owner: str, body: Any) -> dict[str, Any]:
-    if not isinstance(body, dict) or body:
-        raise ValueError("Goals accepts an empty view request; completion comes from game actions")
+    if not isinstance(body, dict) or set(body)-{'chain'}:
+        raise ValueError("Goals accepts only a checklist selector; completion comes from game actions")
     if not getattr(app, "world_id", None) or not owner:
         raise ValueError("Create or join a named game to begin your first camp")
+    import goal_chains
+    selected=body.get('chain',CHAIN)
+    if selected not in (CHAIN,'active',*goal_chains.definitions()):
+        raise ValueError('Unknown goal chain')
+    if selected != CHAIN:
+        camp=view(app,owner,{})
+        if selected=='active':
+            if not camp['complete']: return camp
+            result=None
+            for ident in goal_chains.definitions():
+                result=goal_chains.view(app,owner,ident)
+                if not result['complete']: break
+        else:
+            result=goal_chains.view(app,owner,selected)
+        result.update(balance_j=camp['balance_j'],camp_body=camp['camp_body'],
+                      unlocked=goal_chains.completed(app,owner,goal_chains.definitions()[result['chain_id']]['after']),
+                      chains=camp['chains'])
+        return result
     import json
     with workshop_library._connect(app) as db:
         market._schema(db)
@@ -125,5 +143,9 @@ def view(app: Any, owner: str, body: Any) -> dict[str, Any]:
             "balance_j": balance, "recipe": recipe(), "recipe_mass_kg": _recipe()[2],
             "camp_body": standing.get("root_body") if standing else None,
             "session": session.id if session and app.live_holder == "world" else None,
-            "follow_up": "Next: design a work surface and try the solar-powered machines. Tool gathering and shelter are future goal chains.",
+            "chains": [{'id':CHAIN,'title':'Make your first camp'},
+                       *[{'id':c['id'],'title':c['title']} for c in goal_chains.definitions().values()]],
+            "next_chain": next(iter(goal_chains.definitions())) if next_goal is None else None,
+            "unlocked": True,
+            "follow_up": "Next: study and use a tool, make a work surface, and learn from a working machine.",
             "limits": "Building spends wood. The stool can be carried; sitting and strength are not tested yet. No fabrication energy is charged."}
