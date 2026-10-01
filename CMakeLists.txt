@@ -1288,6 +1288,11 @@ if(BANJO_BUILD_TESTS)
             banjo_enable_warnings(banjo_ground_work_tests)
             add_test(NAME banjo_ground_work_tests COMMAND banjo_ground_work_tests)
 
+            add_executable(banjo_body_condition_tests tests/body_condition_tests.cpp)
+            target_link_libraries(banjo_body_condition_tests PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
+            banjo_enable_warnings(banjo_body_condition_tests)
+            add_test(NAME banjo_body_condition_tests COMMAND banjo_body_condition_tests)
+
             add_executable(banjo_elastic_tests tests/elastic_tests.cpp)
             target_link_libraries(banjo_elastic_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_elastic_tests)

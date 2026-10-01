@@ -109,6 +109,23 @@ def carried(app: Any, player_id: str = "") -> list[dict[str, Any]]:
             got = one(entry, f"bag {i + 1}")
             if got:
                 out.append(got)
+        # The native query includes parked bodies; a missing reading is never
+        # replaced with an invented 100%. Query batches stay bounded.
+        names=list(dict.fromkeys(n for thing in out for n in thing['parts']))
+        readings={}
+        if names and getattr(getattr(app,'live',None),'session',None) is not None:
+            try:
+                for start in range(0,len(names),64):
+                    answer=app.live.act({'session':app.live.session.id,'op':'condition','names':names[start:start+64]})
+                    readings.update({r['name']:r for r in answer['condition']['bodies']})
+            except (ValueError,KeyError,OSError):
+                readings={}
+        for thing in out:
+            rows=[readings.get(n,{'name':n,'state':'unavailable','fraction':None}) for n in thing['parts']]
+            covered={n for row in rows if row['state']!='unavailable' for n in row.get('source_parts',[])}
+            # A joined head/handle can be one native body. Only native-reported
+            # source membership covers an absent authored component name.
+            thing['condition']=[r for r in rows if r['state']!='unavailable' or r['name'] not in covered]
         return out
     except Exception:
         # The bench is worth showing even when the room cannot say what is in a

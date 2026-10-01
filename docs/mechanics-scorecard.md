@@ -1,5 +1,14 @@
 # Banjo mechanics scorecard
 
+**Condition diagnostic, October 1:** [Measured native damage index](body-condition.md)
+retains glass/oak/iron, 10/20 mm cells and `dt=1/240 s`. Actual oak cutting
+severs 104/12,876 bonds for 5.07526 J; same edge makes no unsupported glass/iron
+cut. Matched 2 kW / 10 s section factors are oak 0.836458 and iron 1;
+glass thermal strength is unsupported. Readonly snapshot, persistence and
+native fracture-state checks pass without new laws or tolerances. Retained
+connectivity is not global strength, lifetime wear, joint health or repair;
+funded supported repair and full pipeline conservation remain open.
+
 **Private carrying boundary, October 1:** [Native ownership measurements](private-ground-checkpoint.md)
 retain 40 mm / `dt=1/240 s` matched glass/oak/iron tools. Their parked masses
 are 4.32 / 1.2096 / 13.59936 kg; each actor's ground plus own bag reaches 80 kg

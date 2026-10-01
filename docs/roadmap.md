@@ -1,5 +1,12 @@
 # Banjo roadmap and acceptance gates
 
+**Item condition acceptance, October 1:** [Native/private/browser checks](body-condition.md)
+pass real cut continuity, supported thermal factors, unresolved/broken and exact
+rigid states, no query mutation, bag/restart and ordinary screens. Next implement
+funded native repair with retained history and atomic receipts, then verify the
+actual damage-to-repair-to-use journey. Four verified, ten partial; no full goal
+completion or fatigue/strength claim.
+
 **Private carrying acceptance, October 1:** [Two-player native/storage/browser checks](private-ground-checkpoint.md)
 pass independent budgets, parked ownership, completed-stroke attribution,
 server restart and staged bulk storage. A full requesting player leaves the

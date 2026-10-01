@@ -1404,6 +1404,9 @@ public:
     // Read-only selected-body cell inspection. At most 16,000 cell centres;
     // larger structures report their count without a misleading subset.
     [[nodiscard]] std::string structureJson(const std::string &name) const;
+    // A read-only condition index from retained native bonds and thermal
+    // section factors. It is not a fatigue law or a strength certificate.
+    [[nodiscard]] std::string conditionJson(const std::vector<std::string> &names) const;
     [[nodiscard]] double cellSize() const;
 
     // What happened in the step just taken. Cleared by the next step, so a host

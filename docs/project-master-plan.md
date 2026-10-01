@@ -1,5 +1,11 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Item condition checkpoint, October 1:** [Measured body damage](body-condition.md)
+connects retained native bonds and supported current thermal section factors to
+World/Inventory/carried Lab meters. This index is not strength or fatigue
+certification. Paid material/energy repair, joint condition and exact-rigid
+internal damage remain open; all fourteen player requirements remain in scope.
+
 **Private carrying checkpoint, October 1:** [Measured native ownership](private-ground-checkpoint.md)
 keeps one physical world and shared terrain ledgers while separating native
 player/bag loads and machine scoop accounts. Ordinary personal HUD/Inventory,

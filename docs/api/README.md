@@ -18,6 +18,10 @@ This is the documentation for using that from your own program.
 
 Current native ABI: **25**. World MCP is **1.14.0**; platform MCP is **1.17.0**.
 
+Native runner/Python/HTTP item-condition read: [bounded contract and measured
+scope](../body-condition.md#bounded-native-and-http-read). This adds no C ABI
+or MCP repair operation.
+
 - **[c-api.md](c-api.md)** — the C library: every function, the scene format,
   and the one thing about this engine that surprises people.
 - **[materials.md](materials.md)** — the eight materials, what each actually

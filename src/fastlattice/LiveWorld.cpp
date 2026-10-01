@@ -12998,6 +12998,93 @@ LiveWorld::DigClearance LiveWorld::digClearance(unsigned program, double ax, dou
     return out;
 }
 
+std::string LiveWorld::conditionJson(const std::vector<std::string> &names) const {
+    if (names.empty() || names.size()>64) throw std::invalid_argument("Condition needs 1 to 64 body names");
+    const Impl &I=*impl_;
+    std::set<std::string> unresolved;
+    for (const auto &name:breakable()) unresolved.insert(name);
+    const auto awaiting=[&](const Pending *job) {
+        if (!job) return;
+        unresolved.insert(job->name);
+        for (const auto body:job->island_bodies)
+            if (body<I.described.size()) unresolved.insert(I.described[body].name);
+    };
+    awaiting(I.pending.get());
+    for (const auto &job:I.queued) awaiting(job.get());
+    nlohmann::json rows=nlohmann::json::array();
+    std::unordered_map<std::uint32_t,std::size_t> selected;
+    std::vector<double> lost(names.size(),0.);
+    std::set<std::string> unique;
+    for (const auto &name:names) {
+        if (name.empty() || name.size()>160 || !unique.insert(name).second)
+            throw std::invalid_argument("Condition body names must be unique and bounded");
+        nlohmann::json row={{"name",name},{"fraction",nullptr},{"state","unavailable"},
+            {"bonds",0},{"broken_bonds",0},{"damaged_bonds",0},
+            {"connections_fraction",nullptr},{"thermal_fraction",nullptr}};
+        const auto found=I.index_of.find(name);
+        if (found==I.index_of.end()) {
+            for (const auto &body:I.described)
+                if (body.fragment && body.name.rfind(name+" piece ",0)==0) {
+                    row["state"]="broken";row["fraction"]=0.;break;
+                }
+        } else {
+            const std::size_t body=found->second;
+            const auto &pose=I.described[body];
+            row["material"]=pose.material;row["dent_mm"]=pose.dent_m*1000.;
+            row["source_parts"]=nlohmann::json::array({pose.name});
+            if (!pose.fragment && !I.isPrecise(body))
+                for (const auto &group:I.setup->part_bodies) {
+                    if (group.empty() || I.request.bodies[group.front()].name!=pose.name) continue;
+                    row["source_parts"]=nlohmann::json::array();
+                    for (const auto part:group) row["source_parts"].push_back(I.request.bodies[part].name);
+                    break;
+                }
+            row["fragment"]=pose.fragment;row["parked"]=I.isParked(body);
+            row["mechanical_model"]=pose.mechanical_model;
+            row["state"]=I.isPrecise(body)?"unmodeled":pose.fragment?"broken":"measured";
+            if (unresolved.contains(name)) row["state"]="unresolved";
+            if (!I.isPrecise(body)) {
+                for (const auto node:I.nodes_of[body]) selected.emplace(node,rows.size());
+                const auto material=materialStateOf(body,nullptr);
+                if (material.tracked && !material.law.empty() && material.section.supported) {
+                    const auto &s=material.section;
+                    row["thermal_fraction"]=std::clamp(std::min({s.tension,s.compression,s.shear,s.bending,s.bending_compression}),0.,1.);
+                }
+                row["thermal_law"]=material.law;
+            }
+        }
+        rows.push_back(std::move(row));
+    }
+    // One traversal for the entire request. No geometry, physical state,
+    // timestamps, inventory or damping are changed by this diagnostic.
+    for (std::size_t k=0;k<I.setup->asset.bonds.size();++k) {
+        const auto &bond=I.setup->asset.bonds[k];
+        const auto &state=I.setup->matter.bonds[k];
+        const auto a=selected.find(bond.node_a),b=selected.find(bond.node_b);
+        if (a==selected.end() || b==selected.end() || a->second!=b->second) continue;
+        auto &row=rows[a->second];
+        row["bonds"]=row["bonds"].get<std::size_t>()+1;
+        const double damage=state.alive?std::clamp(state.damage,0.,1.):1.;
+        lost[a->second]+=damage;
+        if (!state.alive) row["broken_bonds"]=row["broken_bonds"].get<std::size_t>()+1;
+        else if (damage>0) row["damaged_bonds"]=row["damaged_bonds"].get<std::size_t>()+1;
+    }
+    for (std::size_t k=0;k<rows.size();++k) {
+        auto &row=rows[k];const auto bonds=row["bonds"].get<std::size_t>();
+        if (bonds>0) row["connections_fraction"]=std::clamp(1.-lost[k]/static_cast<double>(bonds),0.,1.);
+        if (row["state"]=="broken") row["fraction"]=0.;
+        else if (row["state"]=="measured") {
+            for (const char *field:{"connections_fraction","thermal_fraction"})
+                if (row[field].is_number()) row["fraction"]=row["fraction"].is_null()?row[field]:
+                    nlohmann::json(std::min(row["fraction"].get<double>(),row[field].get<double>()));
+            if (row["fraction"].is_null()) row["state"]="unmodeled";
+        }
+    }
+    return nlohmann::json{{"schema","banjo.body-condition.v1"},{"time_s",I.time_s},
+        {"bodies",std::move(rows)},{"basis","minimum of retained bond continuity and supported current thermal section factors"},
+        {"fatigue_supported",false},{"repair_supported",false}}.dump();
+}
+
 terrain::EditEffect LiveWorld::dig(double ax, double az, double bx, double bz, double width_m,
                                    double depth_m, unsigned program) {
     if (program) {

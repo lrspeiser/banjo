@@ -1888,6 +1888,13 @@ class Live:
             return session.send(op="foresee", horizon_s=horizon)
         if op in ("release", "poses", "joints", "overloaded", "blades", "cuts"):
             return session.send(op=op)
+        if op == "condition":
+            names = body.get("names")
+            if (not isinstance(names, list) or not 1 <= len(names) <= 64
+                    or any(not isinstance(n, str) or not n or len(n.encode('utf-8')) > 160 for n in names)
+                    or len(set(names)) != len(names)):
+                raise LiveError("condition needs 1 to 64 unique body names, each at most 160 UTF-8 bytes")
+            return session.send(op=op, names=names)
         if op == "structure":
             name = body.get("name")
             if not isinstance(name, str) or not name or len(name) > 256:

@@ -24,6 +24,7 @@ import { dress, dressedClone, showGrain, grainState } from "/surfaces.js";
 import { makeTools } from "/tools.js";
 import { makeWorkbench } from "/workbench.js";
 import { gameNavigation, showSaveStatus } from "/game_menu.js";
+import { conditionPanel } from "/body_condition.js";
 
 const $ = (id) => document.getElementById(id);
 const worldId = new URLSearchParams(location.search).get("world");
@@ -5280,6 +5281,24 @@ function pickedTitle(words, sub) {
 
 // The whole card. Called every time the room says something new, so everything
 // in it is live: the battery empties while you watch it.
+const pickedConditions=new Map();
+let conditionReading=false,conditionSession=null;
+async function readPickedCondition() {
+  if(conditionReading || !world.session || !picked.name || document.hidden) return;
+  if(conditionSession!==world.session) {pickedConditions.clear();conditionSession=world.session;}
+  const name=picked.name;conditionReading=true;
+  const session=world.session;
+  try {
+    const answer=await act("condition",{names:[name]});
+    if(session===world.session) {
+      pickedConditions.set(name,answer.condition?.bodies || []);
+      if(pickedConditions.size>64)pickedConditions.delete(pickedConditions.keys().next().value);
+      if(picked.name===name)showPicked();
+    }
+  } catch {if(session===world.session)pickedConditions.delete(name);}
+  finally {conditionReading=false;}
+}
+setInterval(readPickedCondition,1000);
 function showPicked() {
   const box = $("picked");
   if (!box) return;
@@ -5348,6 +5367,7 @@ function showPicked() {
     }
 
     if (entry) {
+      rows.push(conditionPanel(conditionSession===world.session ? pickedConditions.get(picked.name) : []));
       const rigid = entry.mechanicalModel === "precise-rigid-v1";
       const inspection = cellInspection(entry);
       const expanded=revealing?.rows && revealing.name===picked.name ? revealing : null;

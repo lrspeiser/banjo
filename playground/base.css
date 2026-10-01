@@ -122,3 +122,7 @@ kbd {
 *::-webkit-scrollbar { width: 9px; height: 9px; }
 *::-webkit-scrollbar-thumb { background: var(--line-soft); border-radius: 5px; }
 *::-webkit-scrollbar-track { background: transparent; }
+
+/* Native damage readings shared by World and Workshop. */
+.body-condition{margin:.55rem 0;min-width:0}.condition-value{display:flex;justify-content:space-between;gap:.7rem;font-size:.8rem}.body-condition meter{display:block;width:100%;height:.85rem;accent-color:#83bda5}.body-condition[data-condition-state="broken"] strong{color:#efad89}.body-condition details{font-size:.7rem;color:#9baebf;margin-top:.3rem}.body-condition details p{margin:.3rem 0;line-height:1.35}
+#ws-carried-condition{padding:0 .95rem}

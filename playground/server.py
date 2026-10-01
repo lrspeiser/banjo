@@ -1416,7 +1416,7 @@ class Handler(BaseHTTPRequestHandler):
             # than in a page of its own, which is how there came to be seven.
             allowed={"/":"world.html","/world":"world.html","/world.html":"world.html",
                 "/world.js":"world.js","/gameplay.js":"gameplay.js","/game_menu.js":"game_menu.js","/world.css":"world.css",
-                "/base.css":"base.css",
+                "/base.css":"base.css","/body_condition.js":"body_condition.js",
                 "/workshop.js":"workshop.js","/workshop.css":"workshop.css",
                 "/blades.js":"blades.js","/interaction.js":"interaction.js","/tools.js":"tools.js","/workbench.js":"workbench.js",
                 "/cellmesh.js":"cellmesh.js","/surfaces.js":"surfaces.js",
@@ -1520,7 +1520,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("The fabrication room accepts funded outputs; edit designs in Workshop")
                 if not isinstance(body, dict): raise ValueError("Expected a JSON object")
                 if path == "/api/live/act" and body.get("op") not in {"step","poses","wield","hand","move","release","joints","mechanics","thermo","pick","place_check",
-                    "survey","structure","environment","environment_state","terrain","materials","rolling","dig","deposit"}:
+                    "survey","structure","condition","environment","environment_state","terrain","materials","rolling","dig","deposit"}:
                     raise ValueError("This authoring operation is not allowed in the funded room")
             if path.startswith("/api/world/fabrication/"):
                 operation = path.rsplit("/",1)[-1]
@@ -1537,7 +1537,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("Expected a JSON object")
                 if path.startswith("/api/world/") and path not in ("/api/world/open", "/api/world/gameplay"):
                     raise ValueError("Expedition resources use the gameplay panel; sandbox authoring belongs in other scenes")
-                if path == "/api/live/act" and body.get("op") not in ("step", "poses", "structure", "environment", "terrain", "survey"):
+                if path == "/api/live/act" and body.get("op") not in ("step", "poses", "structure", "condition", "environment", "terrain", "survey"):
                     raise ValueError("This operation is not part of the bounded expedition")
             if path == "/api/world/gameplay":
                 try:

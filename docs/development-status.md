@@ -1,5 +1,12 @@
 # Development status and handoff
 
+**Item condition, October 1:** [Native/API/browser evidence](body-condition.md)
+adds actual bond/thermal condition readings in World, carried Inventory and
+carried Lab. Real oak cuts persist through reopen/parking; matched glass/oak/iron
+and unresolved-fracture checks pass. Exact rigid and unsupported heat readings
+remain explicit. Four player items verified, ten partial; fatigue and paid native
+repair remain open. No physical law or tolerance changes.
+
 **Private carrying, October 1:** [Native/API/browser checkpoint](private-ground-checkpoint.md)
 separates players' excavated loads and parked mass, attributes completed tool
 work to its holder, and gives routine scoops server-owned machine accounts.

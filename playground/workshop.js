@@ -1,6 +1,7 @@
 // Workshop Mode: product design, physical matter, editable skins and isolated physics playback.
 import * as THREE from "/vendor/three.module.js";
 import { gameNavigation, refreshNavigation, showSaveStatus } from "/game_menu.js";
+import { conditionPanel } from "/body_condition.js";
 
 const $ = (q) => document.querySelector(q);
 const worldId = new URLSearchParams(location.search).get("world");
@@ -1936,6 +1937,7 @@ async function showInventory() {
     const tile = invTile(thing, {quantity:thing.kg != null ? kgSaid(thing.kg) : "Mass unavailable", where:thing.where,
       onOpen:() => openTheCarriedThing(thing.id)});
     card.append(tile, recipeValue("Owner", "You"), recipeValue("Next use", thing.next_use?.[0] || "Hold / place in World"));
+    card.append(conditionPanel(thing.condition));
     const lab = make("button", {type:"button",class:"ws-action"}, "Open in Lab");
     lab.onclick = () => guard(lab, () => openTheCarriedThing(thing.id)); card.append(lab);
     const debug = make("details", {class:"ws-product-debug"}); debug.append(make("summary", {}, "Details"),
@@ -2907,7 +2909,7 @@ async function openTheCarriedThing(id) {
     say("That is not being carried any more.", true);
     return;
   }
-  bench.inventorySelection = {id:thing.id, name:thing.label || thing.name, source:"carried"};
+  bench.inventorySelection = {id:thing.id, name:thing.label || thing.name, source:"carried", condition:thing.condition};
   showTab("lab");
   bench.openedLibraryItem = null;
   try {
@@ -3103,6 +3105,14 @@ function showTab(name) {
 let labWasSelected = false;
 function updateLabSelection() {
   const selected = Boolean(bench.inventorySelection && chosen());
+  let condition=$("#ws-carried-condition");
+  if(!condition) {condition=make("div",{id:"ws-carried-condition"});$("#ws-screen-status").parentElement.after(condition);}
+  const source=bench.inventorySelection;
+  condition.hidden=!(selected && source?.source === "carried");
+  if(!condition.hidden && condition.dataset.item !== String(source.id)) {
+    condition.replaceChildren(conditionPanel(source.condition,{label:"Carried item"}));condition.dataset.item=String(source.id);
+  }
+  if(condition.hidden) delete condition.dataset.item;
   $("#design-workshop").classList.toggle("lab-empty", !selected);
   const empty = $("#ws-empty"); if (empty) empty.hidden = selected;
   const input = $("#ws-component-chat-text"), send = $("#ws-component-chat button[type=submit]");
@@ -3116,6 +3126,35 @@ function updateLabSelection() {
   if (intro && intro.textContent !== text) intro.textContent = text;
   labWasSelected = selected;
 }
+
+let carriedConditionReading=false;
+async function refreshPhysicalConditions() {
+  const selection=bench.inventorySelection;
+  const inventoryVisible=$("#ws-pane-inventory")?.hidden===false;
+  if(carriedConditionReading || document.hidden || (!inventoryVisible && selection?.source!=="carried"))return;
+  carriedConditionReading=true;
+  try {
+    const inv=await api("/api/workshop/inventory");
+    if(inventoryVisible && $("#ws-pane-inventory")?.hidden===false) {
+      for(const card of document.querySelectorAll("#ws-inv-grid [data-product]")) {
+        const thing=inv.carried?.find(t=>String(t.id)===card.dataset.product);
+        const prior=card.querySelector(".body-condition");
+        if(prior) {const panel=conditionPanel(thing?.condition);if(prior.querySelector("details")?.open)panel.querySelector("details")?.setAttribute("open","");prior.replaceWith(panel);}
+      }
+    }
+    if(selection===bench.inventorySelection && selection?.source==="carried") {
+      const thing=inv.carried?.find(t=>String(t.id)===String(selection.id));
+      selection.condition=thing?.condition || [];
+      const area=$("#ws-carried-condition");
+      if(area && !area.hidden) {
+        const panel=conditionPanel(selection.condition,{label:thing?"Carried item":"No longer carried"});
+        if(area.querySelector("details")?.open)panel.querySelector("details")?.setAttribute("open","");
+        area.replaceChildren(panel);
+      }
+    }
+  } finally {carriedConditionReading=false;}
+}
+setInterval(()=>refreshPhysicalConditions().catch(()=>{}),5000);
 
 function clearLab() {
   bench.inventorySelection = null; bench.candidates = []; bench.selectedPart = null;
