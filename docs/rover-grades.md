@@ -1,5 +1,10 @@
 # Native rover grades — October 1
 
+Published implementation: `8d3bc1f68239f0539ba43d54c452b4671fdd1cc8` on
+GitHub main. Native runner/platform CLI and native regression target were
+rebuilt from these sources in `build/agent-progression` (MSVC Release).
+The preview on `http://127.0.0.1:8770/world` was restarted with this build.
+
 ## Implementation
 
 New generated stock rovers declare a 12° autonomous climb limit instead of 8°.
@@ -121,7 +126,9 @@ conservation and material/energy-funded repair as separate unfinished gates.
 The final native suite passes 19 cases, including all 18 material/grade
 experiments. Three affected CTest suites (room, brain, Workshop rover) pass
 in 11.22 s. Source registration remains 286/286 with no exclusions.
-The rebuilt preview on port 8770 passes ordinary Chrome fresh-world selection,
+Fifteen resource/player/browser checks pass in 104.936 s. The rebuilt preview
+on port 8770 passes ordinary Chrome fresh-world selection,
 live ground/water readings, recovery/lift/release and zero browser exceptions:
-794.61 N pull, 544.19 J measured hand work. Resource/player regression results
-are recorded in the player experience checklist after completion.
+794.61 N pull, 544.19 J measured hand work. Raw checks/logs are ignored build
+artifacts; [the acceptance checklist](player-experience-checklist.md) retains
+the open requirements rather than declaring the full goal complete.

@@ -28,6 +28,10 @@ verified coherent checkpoints regularly.
 
 ## Stock-rover grade checkpoint — October 1
 
+Published implementation: `8d3bc1f` on GitHub main. Native runner/platform CLI
+and native test were rebuilt from this checkpoint's sources; preview 8770 was
+restarted and verified with that build.
+
 [Full grade measurements](rover-grades.md) record 18 material/grade scenarios,
 autonomous ramp/terrain cases, actual motor torque-speed envelope, battery
 residuals and unclosed mechanical work. Ground probes no longer use chassis
