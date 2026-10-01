@@ -6,6 +6,9 @@ installation, lost stock/energy/Start/commit acknowledgement restarts and an
 interrupted preview. Unknown writes retain their exact request; explicit stale
 refusals refresh. Unsupported rigid machines refuse without unpaid fallback.
 Default workbench and machine admission remain open; four verified, ten partial.
+Implementation `ae20a23` is published on main. Paid/controller/refusal tests
+pass 9/9; ordinary progression, pause and Chrome Watch pass 4/4. Refreshed
+8770 preview retains the explicit default-process boundary with no JS exceptions.
 
 **Finite starter solar output, October 1:** [Native/browser checkpoint](fabrication-starter-power-checkpoint.md)
 passes typed rating preservation from chat/recipe to native export and gives

@@ -1,5 +1,13 @@
 # AI construction through paid jobs — October 1, 2026
 
+Published implementation: `ae20a233d16e4221a46a4b8dd9a2eae321900d6f` on
+GitHub main, remote revision verified after the ordinary fast-forward push.
+Own 8770 preview was restarted with this implementation and unchanged binaries.
+Chrome entry/Inventory/field-pick take/stow/carried and empty Lab checks pass
+with one finite starter source, no pending transfers and zero JavaScript
+exceptions. Its process remains undeclared, with an explicit Lab refusal.
+Preview: `http://127.0.0.1:8770/world?world=96aac084e2544620ba40d4b0204a7c74`.
+
 ## Implemented
 
 In configured worlds, AI **Build** now uses the same reviewed Make, real stock

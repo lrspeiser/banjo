@@ -6,6 +6,8 @@ and restart/placement recovery. Next implement supported exact rigid/machine
 paid admission, then declare the ordinary workbench and run complete paid
 player/AI progression and damaged-tool use. All fourteen gates remain active:
 four verified, ten partial.
+Implementation `ae20a23` is published on GitHub main; paid machine admission
+and the ordinary workbench remain the next integration gate.
 
 **Starter source acceptance, October 1:** [Finite solar output](fabrication-starter-power-checkpoint.md)
 passes actual generated-battery funding in Lab, legacy compatibility,
