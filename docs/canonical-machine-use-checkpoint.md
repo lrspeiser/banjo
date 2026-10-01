@@ -1,8 +1,10 @@
 # Canonical machine Make and Use
 
 October 1, 2026. Windows main, based on `2db3260333157f8b14f390ff657060cc1130239a`.
-Verification ran with the implementation changes uncommitted; published revision
-is recorded after the ordinary main push.
+Verification ran with the implementation changes uncommitted. Implementation
+`51648f9` is published on GitHub main. Refreshed own 8770 preview reopens the
+existing 10-body world and passes fresh entry, two component thumbnails, native
+22-cell pick pickup and mini Inventory with no JavaScript exceptions.
 
 ## Implemented
 

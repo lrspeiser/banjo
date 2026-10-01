@@ -7,6 +7,9 @@ actual World Use and energy draw pass; unwired lamp stays dark. A mixed
 processor/rover placement validation crash is fixed. Fixed QA 68/68 and final
 clock-reset/retry native checks pass. Default workbench/player guards, complete
 paid progression and damaged-tool use remain next; four verified, ten partial.
+Implementation `51648f9` is published on main. Refreshed 8770 preview passes
+prior-world reopen, fresh component pictures/pickup and mini Inventory with
+no JavaScript exceptions.
 
 **Component thumbnails, October 1:** [UI checkpoint](component-thumbnails-checkpoint.md)
 replaces persistent exploded inspection with actual component pictures in the

@@ -7,6 +7,8 @@ declarations, mixed stationary/roaming validation and idempotent switch recovery
 are covered. Next declare the ordinary zero-supply workbench and migrate normal
 player/AI guards before complete paid progression/damaged-tool acceptance.
 All fourteen requirements stay active: four verified, ten partial.
+Implementation `51648f9` is published on main; the refreshed 8770 preview retains
+existing worlds and passes fresh component pictures, pickup and mini Inventory.
 
 **Component selection acceptance, October 1:** [Verified UI checkpoint](component-thumbnails-checkpoint.md)
 shows actual parts as right-panel thumbnails and keeps assembled items usable.

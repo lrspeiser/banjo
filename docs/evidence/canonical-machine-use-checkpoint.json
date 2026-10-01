@@ -435,5 +435,15 @@
         "restart": "whole"
       }
     ]
+  },
+  "published_implementation_revision": "51648f942eba65b6c4a45e8fef3ceb4472fcd5f3",
+  "own_preview": {
+    "url": "http://127.0.0.1:8770/world?world=92fb4de46ed14d22ba64998b8c13e459&scene=new-game",
+    "old_world_body_count": 10,
+    "fresh_pick_cells": 22,
+    "fresh_pick_design": true,
+    "mini_inventory": "Inventory\nOpen all \u2192\nField pick\nRight hand\nStow\nYour energy\n0 J\nSolar \u00b7 shared\n1,990,362.8 J\nSolar rate\n241.3 J/s",
+    "legacy_tabs_removed": true,
+    "exception_count": 0
   }
 }
