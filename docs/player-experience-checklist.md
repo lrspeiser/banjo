@@ -28,6 +28,11 @@ verified coherent checkpoints regularly.
 
 ## Rover excavation support checkpoint — October 1
 
+Published implementation: `29a3c71` on GitHub main, following sensor checkpoint
+`ff1b252`. MSVC Release native runner and regression targets were rebuilt from
+these sources in `build/agent-progression`; earlier `f819e81` binaries are not
+the current rover sensor/guard build. Local preview: `http://127.0.0.1:8770/world`.
+
 Machine digs carry their native program id. Native `digClearance` traverses
 the current attached hinge assembly (bounded to 64 non-anchored bodies), reads
 the solver's current turned collision-shape bounds and excludes any scoop/trench
