@@ -1,6 +1,6 @@
 # AI player playthrough review — September 30, 2026
 
-**Follow-up implementation:** [P0 persistence repairs](player-persistence-checkpoint.md) address the recorded save and packed-state failures. [Personal machine learning](player-learning-checkpoint.md) now demonstrates one technique through an explicit nearby observation action, with restart recovery and world-aware guidance. The historical run below still records what happened at its stated revision. Automated post-camp progression, the first gathering tool and the next goal chain remain unfinished; no live-provider trial has been performed.
+**Follow-up implementation:** [P0 persistence repairs](player-persistence-checkpoint.md) address the recorded save and packed-state failures. [Personal machine learning](player-learning-checkpoint.md), [generated tool access](generated-starter-tool.md) and [durable tool study/use](player-tool-learning.md) now provide actual personal learning. [The next goal chain](goal-chains.md), code `6b45be4` on main, passes Camp → tool study/gathering → funded work surface → supported observed processing through scripted ordinary controls on two generated seeds, with real stool placement and restart. The historical run below retains its original revision and results. Autonomous post-camp play, exhausted-input routes, complete Market guidance and live-provider verification remain unfinished.
 
 ## Result
 
