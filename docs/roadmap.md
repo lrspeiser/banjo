@@ -1,5 +1,13 @@
 # Banjo roadmap and acceptance gates
 
+**Selected Lab remake acceptance, October 1:** [Source-bound paid replacement](fabrication-remake-checkpoint.md)
+passes current owned hands/bag selection, exact frozen draft, real material and
+energy costs, native admission, retained actual cuts, retry/reopen and browser
+pause/reload/resume/placement. Next add explicit finite starter capabilities,
+reviewed Lab stock/charger controls and ordinary collect/equip/use acceptance.
+Native bond repair, fatigue and mixed interfaces remain open. Preserve all
+fourteen gates; counts remain four verified, ten partial.
+
 **Repair material prerequisite, October 1:** [Real stock funding](fabrication-stock-checkpoint.md)
 passes exact personal/shared source selection, recoverable SQL escrow, browser
 return/finish, collection/native admission/reopen and retained original damage.

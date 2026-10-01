@@ -1,5 +1,13 @@
 # Development status and handoff
 
+**Selected-item Lab remake, October 1:** [Native/HTTP/Chrome checkpoint](fabrication-remake-checkpoint.md)
+adds authenticated hands/bag source binding, a frozen draft, reviewed costs,
+finite paid work, owner-only control/placement and retained original damage.
+Matched glass/oak/iron, actual cut-source admission and reload/resume pass.
+This is a separate replacement product, with no bond healing. Ordinary starter
+capabilities, Lab supply funding and collect/equip/use remain next; the complete
+fourteen-item goal stays active with four verified, ten partial.
+
 **Player material funding, October 1:** [SQL/room/native/browser checkpoint](fabrication-stock-checkpoint.md)
 adds exact rack debits, durable reservations, one-time shared station credits,
 Finish transfer/Return to stock controls and authenticated source isolation.

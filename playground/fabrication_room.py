@@ -35,6 +35,8 @@ COMMAND_FIELDS = {
     "fund_energy": {"store_hash", "joules", "request_id", "revision"},
     "fund_stock": {"material", "mass_kg", "pool", "rack_hash", "request_id", "revision"},
     "release_stock": {"reservation_id", "request_id"},
+    "plan_remake": {"source_item", "candidate"},
+    "start_remake": {"plan_id", "revision", "request_id"},
 }
 
 def active(app):
@@ -140,6 +142,9 @@ def request(app, operation, body):
     if operation in ("store_ground","retrieve_ground"): return transfer_ground(app,body,operation)
     if operation in ("connect_energy", "fund_energy"): return transfer_energy(app, body, operation)
     if operation in ("fund_stock", "release_stock"): return transfer_stock(app, body, operation)
+    if operation in ("plan_remake", "start_remake"):
+        import fabrication_remake
+        return (fabrication_remake.plan if operation=="plan_remake" else fabrication_remake.start)(app,body)
     with install._world(app) as (room, live, old), LOCK:
         install._source(room, old, body)
         if room.scene not in install.world_room.SCENES:
@@ -191,6 +196,9 @@ def request(app, operation, body):
                         "changes_world": False}
             action = {k:v for k,v in body.items() if k not in COMMON}
             action["op"] = operation
+            if operation in ("pause","resume") and body["job_id"] in state["jobs"]:
+                import fabrication_remake
+                fabrication_remake.require_owner(app,state["jobs"][body["job_id"]])
             # Retries are checked before recompiling the candidate.
             replayed = model.check_request(state, action)
             if not replayed:
@@ -387,6 +395,8 @@ def preview(app, body):
         stock.validate(app, room.scene, state)
         job = state["jobs"].get(model.token(body["job_id"],"job_id"))
         if job is None or job["status"] != "ready": raise ValueError("Finish the workpiece before placing it")
+        import fabrication_remake
+        fabrication_remake.require_owner(app,job)
         candidate = deepcopy(job["candidate"])
     # The install preview itself acquires the same exclusive gate. Its commit
     # checks the current funded output again under that gate, before any debit.

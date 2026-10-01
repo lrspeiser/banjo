@@ -1703,6 +1703,9 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
         if funding_job is not None:
             import fabrication_stock
             fabrication_stock.validate(app, room.scene, fabrication_room._state(room))
+            import fabrication_remake
+            job=room.fabrication_record['jobs'].get(funding_job)
+            if job is not None:fabrication_remake.require_owner(app,job)
         if fabrication_room.active(app) and funding_job is None:
             raise ValueError("This room only accepts finished, material-funded workpieces")
         if body.get("scene") != room.scene:
@@ -1786,6 +1789,8 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
             if funding_job is not None:
                 receipt.update(mode="fabrication", fabrication_job_id=funding_job, resources_charged=True,
                                limits="Finite stock and work charged; exact native geometry and prior state verified. " + fabrication.LIMITATIONS[0])
+                if job.get('remake_source') is not None:
+                    receipt['remake_source']=deepcopy(job['remake_source'])
             if needs is not None:
                 drawn = workshop_library.take_from_rack(app, needs)
                 receipt.update(resources_charged=True, materials_taken=drawn["took"], rack=drawn["rack"])

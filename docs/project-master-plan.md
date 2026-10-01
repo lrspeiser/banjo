@@ -1,5 +1,12 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Selected-item remake, October 1:** [Source-bound Lab checkpoint](fabrication-remake-checkpoint.md)
+connects a carried native item and frozen draft to reviewed material/energy/time,
+paid work, progress and separate native output. Original damage is retained;
+glass/oak/iron, a real cut source and browser pause/reload/resume/placement pass.
+Ordinary finite starter supplies, Lab funding and collect/equip/use remain next.
+All fourteen player requirements remain active: four verified, ten partial.
+
 **Player material funding, October 1:** [Durable rack transfer evidence](fabrication-stock-checkpoint.md)
 connects actual personal or explicitly shared catalog stock to shared fabrication.
 Zero initial stock/energy manufacturing, visible escrow recovery, private ownership,

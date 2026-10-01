@@ -783,6 +783,8 @@ class NativeHTTP(WorkbenchTestCase):
                         self.assertIn("fabrication_fund_energy",names)
                         self.assertIn("fabrication_fund_stock",names)
                         self.assertIn("fabrication_release_stock",names)
+                        self.assertIn("fabrication_plan_remake",names)
+                        self.assertIn("fabrication_start_remake",names)
                         self.assertIn("fabrication_qa_run",names)
                         self.assertEqual(client.call("fabrication_qa_status"),{"runs":[]})
                         context=client.call("fabrication_open")

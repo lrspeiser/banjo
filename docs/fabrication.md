@@ -9,8 +9,10 @@ Use the HTTP/MCP operations below against the existing main world or the separat
 `fabrication` room. Explicitly declare the process once, quote a Workshop candidate,
 start it, advance native time, then preview and place the finished workpiece.
 Native terrain bounds placement. The old `/fabrication` page is removed (404);
-there is no ordinary Workshop manufacture/repair interface yet. Inventory exposes
-pending stock recovery controls. Another live world view can advance the shared
+the Lab exposes reviewed remake/start/progress/placement for a carried source
+when a workbench is already configured and funded. Inventory exposes pending
+stock recovery controls. Ordinary starter workbench declarations and UI stock/
+charger funding remain unfinished. Another live world view can advance the shared
 clock while a process runs.
 Configuring a funded station retains surveying, excavation, tool use and machine
 controls; free authoring operations remain restricted. The [30-item priority list](physics-gameplay-backlog.md) and
@@ -102,13 +104,15 @@ that current `scene` and `session`. Unknown fields refuse.
 | `fund_energy` | `fabrication_fund_energy` | Current `store_hash`, positive `joules` (0.000001..1e9), `revision`, `request_id`. Debits the connected native battery and credits the process atomically; returns replacement `session`, `state`, `replayed`. |
 | `fund_stock` | `fabrication_fund_stock` | Canonical `material`, `mass_kg` (0.000001..10000), `pool` (`personal` or explicit `shared`), current `rack_hash`, `revision`, `request_id`. Reserves real rack stock, then credits shared station stock once. Failed receiving saves retain visible escrow. |
 | `release_stock` | `fabrication_release_stock` | `reservation_id`, `request_id`. Returns only an uncredited reservation to its original owner; refuses credited stock. Returns `released`, `replayed`, `session`, `stock_sources`, `stock_reservations`. |
+| `plan_remake` | `fabrication_plan_remake` | `source_item` (current hands/bag ID), `candidate` (frozen Lab draft). Read-only source binding, exact native quote, stock/energy shortages, occupancy and `plan_id`; reports unavailable if no process is declared. |
+| `start_remake` | `fabrication_start_remake` | `plan_id`, `revision`, `request_id`. Validates current owned source, reserves stock and requires enough finite energy. Returns `job_id`, `state`, `replayed`, `original_retained`. Retry the original request after uncertainty. |
 | `wait` | `fabrication_wait` | Integer `seconds` in 1..10. Advances native physics and process, saves both; returns `cell_m` and native poses with geometry too. |
 | `preview` | `fabrication_preview` | `job_id`, `position_m:[x,z]`. Returns native-checked placement and `preview_id`. |
 | `commit` | `fabrication_commit` | `job_id`, `preview_id`, `request_id`. Returns installed root, new session and charged-resource receipt. |
 
 Both MCP servers proxy the same HTTP world through `BANJO_PLAYGROUND_URL`
 (loopback HTTP only, default port 8765). They do not create a second material
-inventory. World MCP is 1.15.0, platform MCP 1.18.0; native ABI remains 25.
+inventory. World MCP is 1.16.0, platform MCP 1.19.0; native ABI remains 25.
 Python callers use `playground/fabrication_room.py` for the same validated room
 operations. `mcp/fabrication.py` owns the pure operating model. No new native C
 API is advertised for this host-side process.
@@ -238,6 +242,40 @@ silently converted to catalog solid stock. Existing raw-ground APIs remain.
 
 No old damaged native body is reclaimed, reset or healed by these transfers.
 See [real stock, retained-cut and browser evidence](fabrication-stock-checkpoint.md).
+
+## Selected-item remake — October 1
+
+Select a carried item in Inventory, open the Lab, and choose **Review remake**.
+For an already declared/funded process, the panel shows exact material mass,
+energy, minimum duration and station shortages. **Start remake** spends/reserves
+the shared station's stock. A progress meter, **Resume remake** for paused work,
+**Run 1 s**, **Place in World** and
+**Collect in World** use the existing native wait/placement/admission operations.
+Reload retains the pending request/job; uncertain start/install retries retain
+their original IDs. An empty Lab or saved design has no carried-source remake.
+Further funding from personal/shared racks and native chargers still uses the
+API; ordinary starter worlds have no implicit process or invented finite source.
+
+`plan_remake` returns `banjo.remake-plan.v1`, `source`, `quote`, `revision`,
+`station_stock_kg`, `station_energy_j`, `missing_stock_kg`, `missing_energy_j`,
+`stock_sources`, `occupied`, `changes_world:false` and `original_retained:true`.
+Plans expire after 300 seconds and are bounded at 32 per world. Unsupported or
+incomplete geometry refuses. A source in an unresolved fracture cannot plan.
+
+The durable job/installation `remake_source` uses `banjo.remake-source.v1`:
+owner, source item/body identities, diagnostic readings, source topology/kerf
+signature, current native body hash and exact `draft_hash`. It is authenticated,
+not an LLM-supplied ownership assertion. Moving the source between hand and bag,
+changing topology/condition or changing the workbench requires a fresh plan.
+The original request survives a native replacement session and a whole reopen.
+Only its initiating player may pause/resume, preview or commit the remake.
+
+Remake produces a separate body from new stock; the original is neither healed,
+removed nor refunded. Supported energy is the declared lumped work estimate.
+No bond-restoration, fatigue, joint repair, transport work or forming calibration
+is added. Real cut-source and matched glass/oak/iron evidence is recorded in
+[selected-source checkpoint](fabrication-remake-checkpoint.md). All fourteen
+player requirements remain active; full ordinary repair-to-use is unfinished.
 
 ## Regression lane
 

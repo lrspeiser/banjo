@@ -1,5 +1,8 @@
 # The Banjo API
 
+Carried Lab source, reviewed costs and paid new-part jobs:
+[selected-item remake contract](../fabrication.md#selected-item-remake--october-1).
+
 Actual player material reservations, shared station credits and recovery:
 [rack funding contract](../fabrication.md#player-rack-funding--october-1).
 
@@ -22,7 +25,7 @@ they do different things, because they are made of different stuff.
 
 This is the documentation for using that from your own program.
 
-Current native ABI: **25**. World MCP is **1.15.0**; platform MCP is **1.18.0**.
+Current native ABI: **25**. World MCP is **1.16.0**; platform MCP is **1.19.0**.
 
 Native runner/Python/HTTP item-condition read: [bounded contract and measured
 scope](../body-condition.md#bounded-native-and-http-read). This adds no C ABI

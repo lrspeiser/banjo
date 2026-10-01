@@ -26,6 +26,7 @@ def main():
     import fabrication_tests
     import fabrication_energy_tests
     import fabrication_stock_tests
+    import fabrication_remake_tests
     from workshop_install_tests import ArticulationCompiler
     from workshop_install_engine_tests import NativeInstallation
     from material_qa import write_json
@@ -44,6 +45,7 @@ def main():
     suite=unittest.defaultTestLoader.loadTestsFromModule(fabrication_tests)
     suite.addTests(unittest.defaultTestLoader.loadTestsFromModule(fabrication_energy_tests))
     suite.addTests(unittest.defaultTestLoader.loadTestsFromModule(fabrication_stock_tests))
+    suite.addTests(unittest.defaultTestLoader.loadTestsFromModule(fabrication_remake_tests))
     suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(ArticulationCompiler))
     suite.addTest(NativeInstallation("test_compiled_bearing_moves_under_gravity_without_fusing_parts"))
     suite.addTest(NativeInstallation("test_articulated_staging_preserves_old_motion_heat_and_constraints"))

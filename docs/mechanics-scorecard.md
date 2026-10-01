@@ -1,5 +1,14 @@
 # Banjo mechanics scorecard
 
+**Selected-source remake boundary, October 1:** [Native source/admission evidence](fabrication-remake-checkpoint.md)
+retains glass/oak/iron, 40 mm cells, `dt=1/240 s`: 1.28/0.3584/4.02944 kg new
+outputs consume 128/35.84/402.944 J under the authored 100 J/kg process estimate.
+A real 10 mm oak source retains 104/12,876 broken bonds and connectivity
+0.9919229574401989 while 0.7 kg / 70 J admits a separate intact part. Old native
+body/history remain exact. No healing, constitutive law or tolerance changes;
+ordinary supply-to-use, fatigue, joints, transport and full conservation retain
+their separate gates. M05/M16/M17/P05–P07 remain open.
+
 **Rack-to-process boundary, October 1:** [Matched native stock evidence](fabrication-stock-checkpoint.md)
 retains glass/oak/iron, 40 mm cells and `dt=1/240 s`. Actual 10 kg rack debits
 and 1000 J native imports produce 2.56/0.7168/8.05888 kg outputs with

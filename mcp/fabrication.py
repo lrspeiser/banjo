@@ -162,6 +162,9 @@ def validate_state(state):
     running = 0
     for ident, job in state["jobs"].items():
         token(ident, "job_id")
+        if job.get("remake_source") is not None:
+            remake_source(job["remake_source"])
+            if job["remake_source"]["draft_hash"]!=digest(job["candidate"]):raise ValueError("Remake draft does not match its source binding")
         if job["material"] not in state["stock_kg"] or job["status"] not in ("running", "paused", "ready", "installed"):
             raise ValueError("Invalid workpiece")
         running += job["status"] == "running"
@@ -178,6 +181,24 @@ def validate_state(state):
     if any(abs(v) > 1e-7 for v in a["material_residual_kg"].values()) or abs(a["energy_residual_j"]) > 1e-6*max(1,state["config"]["energy_j"]+a["native_energy_received_j"]) or abs(a["work_residual_j"]) > 1e-6*max(1,state["spent_j"]):
         raise ValueError("Fabrication save fails its material or energy ledger")
     return state
+
+
+def remake_source(packet):
+    fields={"schema","owner","source_item","source_bodies","source_hash","native_hash","draft_hash","condition"}
+    obj(packet,fields,fields)
+    if packet["schema"]!="banjo.remake-source.v1":raise ValueError("Unsupported remake source binding")
+    for key in ("owner","source_item"):
+        if not isinstance(packet[key],str) or not 1<=len(packet[key])<=160:raise ValueError("Invalid remake source identity")
+    for key in ("source_hash","native_hash","draft_hash"):
+        if not isinstance(packet[key],str) or len(packet[key])!=64 or any(c not in "0123456789abcdef" for c in packet[key]):
+            raise ValueError("Invalid remake source hash")
+    names=packet["source_bodies"]
+    if not isinstance(names,list) or not 1<=len(names)<=64 or any(not isinstance(n,str) or not 1<=len(n)<=160 for n in names) or len(set(names))!=len(names):
+        raise ValueError("Invalid remake source bodies")
+    rows=packet["condition"]
+    if not isinstance(rows,list) or not 1<=len(rows)<=64 or any(not isinstance(r,dict) or r.get("name") not in names for r in rows):
+        raise ValueError("Invalid remake source diagnostics")
+    return packet
 
 
 def stock_packet(packet):

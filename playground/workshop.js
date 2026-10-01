@@ -3133,6 +3133,114 @@ function showTab(name) {
 }
 
 let labWasSelected = false;
+const remake = {plan:null,job:null,selection:null,busy:false};
+function remakeKey() {return `banjo.remake.${worldId || "local"}.${playerId}.${bench.inventorySelection?.id}`;}
+function remakePending() {try{return JSON.parse(sessionStorage.getItem(remakeKey()) || "null");}catch{return null;}}
+function remakeRow(root,name,value) {
+  const row=make("div",{class:"ws-held-row"});row.append(make("span",{},name),make("strong",{},value));root.append(row);
+}
+function renderRemake() {
+  const root=$("#ws-remake");if(!root)return;
+  root.replaceChildren(make("h3",{},"Remake"));
+  const button=(id,label,fn)=>{const b=make("button",{id,type:"button",class:"ws-action"},label);
+    b.onclick=()=>guard(b,async()=>{remake.busy=true;try{await fn();}finally{remake.busy=false;}});root.append(b);return b;};
+  if(!remake.plan && !remake.job) {button("ws-remake-review","Review remake",reviewRemake);return;}
+  if(remake.plan?.available===false) {
+    remakeRow(root,"Workbench",remake.plan.reason);button("ws-remake-review","Review again",reviewRemake);return;
+  }
+  const job=remake.job,plan=remake.plan,quote=job || plan.quote;
+  remakeRow(root,"Material",`${titleCase(quote.material)} · ${kgSaid(quote.stock_kg)}`);
+  remakeRow(root,"Energy",energySaid(quote.supply_required_j));
+  remakeRow(root,"Minimum time",`${quote.minimum_duration_s.toFixed(1)} s`);
+  remakeRow(root,"Process","Workbench estimate");
+  remakeRow(root,"Original","Kept · Damage retained");
+  if(job) {
+    remakeRow(root,"Work",`${Math.round(100*job.work_j/job.required_j)}% · ${titleCase(job.status)}`);
+    const progress=make("progress",{max:"1",value:String(Math.min(1,job.work_j/job.required_j)),"aria-label":"Remake progress"});root.append(progress);
+    if(job.status==="paused") {
+      button("ws-remake-resume","Resume remake",async()=>{const ctx=await api("/api/world/workshop/context",{});
+        const reading=await api("/api/world/fabrication/state",{session:ctx.session,scene:ctx.scene});
+        await api("/api/world/fabrication/resume",{session:ctx.session,scene:ctx.scene,
+          job_id:remakePending()?.request_id,revision:reading.state.revision,request_id:crypto.randomUUID()});await reviewRemake();});
+    } else if(job.status==="running") {
+      button("ws-remake-step","Run 1 s",async()=>{const ctx=await api("/api/world/workshop/context",{});
+        await api("/api/world/fabrication/wait",{session:ctx.session,scene:ctx.scene,seconds:1});await reviewRemake();});
+    } else if(job.status==="ready")button("ws-remake-place","Place in World",placeRemake);
+    else if(job.status==="installed") {
+      const url=new URL(homeWorld(),location.href);url.searchParams.set("focus",job.root_body);
+      root.append(make("a",{class:"ws-action",href:url.pathname+url.search},"Collect in World"));
+      button("ws-remake-another","Review another remake",async()=>{sessionStorage.removeItem(remakeKey());sessionStorage.removeItem(remakeKey()+".install");await reviewRemake();});
+    }
+    button("ws-remake-review","Refresh",reviewRemake);return;
+  }
+  remakeRow(root,"Workbench stock",`${kgSaid(plan.station_stock_kg)} / ${kgSaid(quote.stock_kg)}`);
+  remakeRow(root,"Workbench energy",`${energySaid(plan.station_energy_j)} / ${energySaid(quote.supply_required_j)}`);
+  if(plan.missing_stock_kg>0)remakeRow(root,"Missing material",kgSaid(plan.missing_stock_kg));
+  if(plan.missing_energy_j>0)remakeRow(root,"Missing energy",energySaid(plan.missing_energy_j));
+  if(plan.occupied)remakeRow(root,"Workbench","In use");
+  const begin=button("ws-remake-start","Start remake",async()=>{
+    if(remake.selection!==`${bench.inventorySelection?.id}:${bench.revision}`)throw Error("Design changed; review it again");
+    let pending=remakePending();
+    if(!pending)pending={session:plan.session,scene:plan.scene,
+      plan_id:plan.plan_id,revision:plan.revision,request_id:crypto.randomUUID(),reviewed_quote:plan.quote};
+    sessionStorage.setItem(remakeKey(),JSON.stringify(pending));
+    const {reviewed_quote,...request}=pending;
+    let result;
+    try {result=await api("/api/world/fabrication/start_remake",request);}
+    catch(err) {if(/plan expired|Selected item changed|revision changed|process changed/i.test(String(err.message)))sessionStorage.removeItem(remakeKey());throw err;}
+    remake.job=result.state.jobs[result.job_id];remake.plan=null;renderRemake();
+  });
+  begin.disabled=plan.missing_stock_kg>1e-10 || plan.missing_energy_j>1e-10 || plan.occupied;
+  button("ws-remake-review","Review again",reviewRemake);
+}
+async function reviewRemake() {
+  const selected=bench.inventorySelection,revision=bench.revision;
+  if(selected?.source!=="carried")throw Error("Select a carried item in Inventory first");
+  const ctx=await api("/api/world/workshop/context",{});
+  const reading=await api("/api/world/fabrication/state",{session:ctx.session,scene:ctx.scene});
+  if(selected!==bench.inventorySelection || revision!==bench.revision)return;
+  const pending=remakePending(),job=pending && reading.state?.jobs?.[pending.request_id];
+  remake.selection=`${selected.id}:${revision}`;
+  if(job) {remake.job=job;remake.plan=null;renderRemake();return;}
+  const plan=await api("/api/world/fabrication/plan_remake",{session:ctx.session,scene:ctx.scene,
+    source_item:String(selected.id),candidate:candidateBody()});
+  if(selected!==bench.inventorySelection || revision!==bench.revision)return;
+  if(pending?.reviewed_quote && plan.available) {
+    plan.quote=pending.reviewed_quote;
+    plan.missing_stock_kg=Math.max(0,plan.quote.stock_kg-plan.station_stock_kg);
+    plan.missing_energy_j=Math.max(0,plan.quote.supply_required_j-plan.station_energy_j);
+  }
+  remake.plan=plan;remake.job=null;renderRemake();
+  if(pending && plan.available) {
+    $("#ws-remake-start").textContent="Retry reviewed remake";
+    remakeRow($("#ws-remake"),"Request","Awaiting confirmation · Original reviewed design");
+  }
+}
+async function placeRemake() {
+  const pending=remakePending();if(!pending)throw Error("Review this remake first");
+  const ctx=await api("/api/world/workshop/context",{});
+  const key=remakeKey()+".install";let request;
+  try {request=JSON.parse(sessionStorage.getItem(key) || "null");}catch{}
+  if(request) {
+    try {await api("/api/world/fabrication/commit",request);await reviewRemake();return;}
+    catch(err) {if(!/preview expired|preview belongs|source world changed|changed after preview/i.test(String(err.message)))throw err;sessionStorage.removeItem(key);request=null;}
+  }
+  let preview,refused;
+  for(const position_m of MAKE_SPOTS) {
+    try {preview=await api("/api/world/fabrication/preview",{session:ctx.session,scene:ctx.scene,
+      job_id:pending.request_id,position_m});break;}
+    catch(err) {refused=err;if(!/claim .* of the same cells|placement error|placement overlaps(?: or touches)?/i.test(String(err.message)))throw err;}
+  }
+  if(!preview)throw refused || Error("No clear placement available");
+  request={session:ctx.session,scene:ctx.scene,
+    job_id:pending.request_id,preview_id:preview.preview_id,request_id:crypto.randomUUID()};
+  sessionStorage.setItem(key,JSON.stringify(request));
+  await api("/api/world/fabrication/commit",request);await reviewRemake();
+}
+setInterval(()=>{
+  if(!document.hidden && !$("#ws-remake")?.hidden && remake.job?.status==="running" && !remake.busy)
+    reviewRemake().catch(()=>{});
+},2000);
 function updateLabSelection() {
   const selected = Boolean(bench.inventorySelection && chosen());
   let condition=$("#ws-carried-condition");
@@ -3143,6 +3251,11 @@ function updateLabSelection() {
     condition.replaceChildren(conditionPanel(source.condition,{label:"Carried item"}));condition.dataset.item=String(source.id);
   }
   if(condition.hidden) delete condition.dataset.item;
+  let remakePanel=$("#ws-remake");
+  if(!remakePanel) {remakePanel=make("section",{id:"ws-remake"});condition.after(remakePanel);renderRemake();}
+  remakePanel.hidden=!(selected && source?.source==="carried");
+  const selection=`${source?.id}:${bench.revision}`;
+  if(remake.selection!==selection) {remake.plan=null;remake.job=null;remake.selection=selection;renderRemake();}
   $("#design-workshop").classList.toggle("lab-empty", !selected);
   const empty = $("#ws-empty"); if (empty) empty.hidden = selected;
   const input = $("#ws-component-chat-text"), send = $("#ws-component-chat button[type=submit]");
