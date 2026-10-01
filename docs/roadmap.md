@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Starter tool checkpoint, September 30:** [Evidence](generated-starter-tool.md), code `0fa2b9a`, completes generated access and ordinary use on both supported terrain seeds. Next: personal study plus durable source-attributed tool evidence, actual first technique, then Camp → tool → measured gathering → work surface → supported process. Keep AI/provider and rover delivery gates separate; neither passed merely because hand-tool access did.
+
 **Workshop tool contract, September 30:** [Implemented generic declaration/compiler](workshop-ground-tools.md) supplies the previously missing authoring path. Next: starter tool via that contract + explicit design version → durable personal study/use evidence → generated-world normal-control goal chain → broad AI and complete Market recommendations. Native fixture compilation/use does not qualify generated-world reachability or personal progression.
 
 **Mixed-scene tool prerequisite, September 30:** [Implemented admission](lattice-tools-with-equipment.md) removes the blanket refusal of lattice ground tools beside exact machines, with three-material work/trajectory and save/carry checks. Next: general Workshop tool declaration/build contract → grid-appropriate reachable starter tool → attributed study/gathering/player-control journey. This does not close the generated-world tool gate by itself.

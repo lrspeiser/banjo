@@ -1,5 +1,7 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Starter tool access, September 30:** [Generated-world checkpoint](generated-starter-tool.md), code `0fa2b9a`: the same editable Workshop recipe/compiler supplies one bootstrap gathering tool beside arrival. Declared grip anchors survive normal take/stow/equip. Two generated seeds support measured ordinary player use. Durable personal study/use learning and continued autonomous progression remain next gates; this checkpoint does not certify physical avatars, manufactured strength or rover navigation.
+
 **General Workshop ground-tool authoring, September 30:** [Component-frame contract](workshop-ground-tools.md), code `7b4a062`: saved/LLM-authored designs can declare a real bounded point/grip; native staging checks it and preserves existing points. Three-material compilation/restart and an actual oak ground-use fixture pass. Generated starter placement, personal study/use receipts and the longer player/AI goal chain remain the next acceptance gates.
 
 **Mixed-scene gathering-tool admission, September 30:** [Measured native boundary](lattice-tools-with-equipment.md), code `f819e81`: a lattice ground tool can share exact machinery's room and retain its point through save/carry. Comparative glass/oak/iron drop work and trajectory checks pass. Exact tool points, mixed-scene blades and unsupported internal failure remain refused. Providing the generated starter tool and its Workshop build/study/gathering journey is the next gate.
