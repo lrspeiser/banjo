@@ -1,5 +1,8 @@
 # Complete Market guidance — September 30, 2026
 
+Published implementation: **main**,
+`d7571fb7b2a505e4c406b2f2be8be8467c032d1b`.
+
 ## Player flow
 
 Market now shows the next personally reachable skill, its actual equipment and
