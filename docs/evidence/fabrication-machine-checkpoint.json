@@ -292,5 +292,22 @@
       "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
     }
   },
-  "boundary": "Declared process bookkeeping and native admission; exact rigid thermal/internal damage and calibrated forming unsupported. Full fourteen-item goal active: four verified, ten partial."
+  "boundary": "Declared process bookkeeping and native admission; exact rigid thermal/internal damage and calibrated forming unsupported. Full fourteen-item goal active: four verified, ten partial.",
+  "published_implementation_revision": "7727056814152ccfe8c728f9b5711426b8d0a67d",
+  "preview": {
+    "url": "http://127.0.0.1:8770/world?world=2d9adaf72b664763ae8ac9fd97252a94",
+    "fresh_entry_inventory_carried_empty_lab": true,
+    "pending_stock": 0,
+    "finite_sources": 1,
+    "default_process_configured": false,
+    "unconfigured_review_refused": true,
+    "javascript_exceptions": 0,
+    "existing_world": {
+      "url": "http://127.0.0.1:8770/world?world=96aac084e2544620ba40d4b0204a7c74&hold=1",
+      "ready": true,
+      "restored": null,
+      "bodies": 10,
+      "exceptions": []
+    }
+  }
 }

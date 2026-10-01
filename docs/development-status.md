@@ -9,6 +9,10 @@ pass. Saved constraint restoration now retains sleep; explicit support-removal
 wake decisions survive. Exact thermal/internal damage and calibrated forming
 remain unsupported. Default workbench/full progression/damaged-tool use are next;
 four verified, ten partial within the original fourteen-item goal.
+Implementation `7727056` is published on GitHub main. Own 8770 preview runs
+the verified new native binaries; fresh entry/Inventory/carried and empty Lab,
+explicit undeclared-process refusal and prior-world reopen pass without JS
+exceptions. Existing worlds/inventories are retained.
 
 **Configured AI manufacturing, October 1:** [Paid controller checkpoint](fabrication-ai-build-checkpoint.md)
 passes actual collected personal oak, generated solar charging, native paid pick

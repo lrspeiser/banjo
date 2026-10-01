@@ -8,6 +8,8 @@ machine manufacture, then qualify an actually damaged tool through replacement
 and use in a fresh world. Mixed lattice interfaces, exact tool points and
 thermal/internal damage retain their gates. All fourteen requirements stay
 active: four verified, ten partial.
+Implementation `7727056` is published on main; the ordinary workbench and full
+fresh-world paid progression remain the next integration gate.
 
 **Paid AI construction, October 1:** [Native controller checkpoint](fabrication-ai-build-checkpoint.md)
 passes configured reviewed jobs, own stock/actual energy, retained pending writes

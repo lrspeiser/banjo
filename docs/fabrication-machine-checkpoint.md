@@ -1,7 +1,15 @@
 # Paid exact rigid machines — October 1, 2026
 
-Implementation verified locally against base `d1fe1da` plus this checkpoint's
-changes. Publication revision is recorded after the ordinary main push.
+Published implementation: `7727056814152ccfe8c728f9b5711426b8d0a67d` on
+GitHub main; remote revision verified after the ordinary fast-forward push.
+Verification used base `d1fe1da` plus this checkpoint's changes, as recorded
+in the retained evidence. Own 8770 preview now runs the verified new native
+runner/DLL. Fresh entry/Inventory/pick take-and-stow/carried and empty Lab pass,
+with one rated finite source, zero pending transfers and zero JS exceptions.
+The prior preview world also opens with ten bodies and zero JS exceptions.
+Existing room data is retained. The default process remains undeclared and
+Lab explicitly refuses funded review until it is configured.
+Preview: `http://127.0.0.1:8770/world?world=2d9adaf72b664763ae8ac9fd97252a94`.
 The full player goal remains **four verified, ten partial**. Default workbench
 integration, complete paid progression and damaged-tool-to-use are next.
 
