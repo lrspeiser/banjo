@@ -34,6 +34,19 @@ def rover_room() -> dict:
 class TheRoomDeclaresIt(unittest.TestCase):
     """What the room says of the rover's program, as validate() keeps it."""
 
+    def test_stationary_and_roaming_programs_validate_in_either_order_and_reject_shared_wheels(self):
+        for stationary_first in (True,False):
+            room=rover_room()
+            machine=room['machines']
+            rover=machine['programs'][0]
+            stationary={'name':'station','kind':'still','body':'post','store':machine['stores'][0]['name']}
+            machine['programs']=[stationary,rover] if stationary_first else [rover,stationary]
+            checked=fracture_lab.validate(room)['machines']['programs']
+            self.assertEqual({'station','rover'},{p['name'] for p in checked})
+            machine['programs'].append({**deepcopy(rover),'name':'duplicate wheel owner'})
+            with self.assertRaisesRegex(ValueError,'worked by another program'):
+                fracture_lab.validate(room)
+
     def test_the_program_works_the_two_wheels_controllers_on_the_deck(self):
         machines = fracture_lab.validate(rover_room())["machines"]
         [program] = machines["programs"]

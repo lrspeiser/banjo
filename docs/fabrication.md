@@ -115,6 +115,7 @@ that current `scene` and `session`. Unknown fields refuse.
 | `connect_energy` | `fabrication_connect_energy` | Native `store` ID, current `store_hash`, `power_w`, `revision`, `request_id`. Starts one bounded charger interval; saves identity without spending energy. |
 | `fund_energy` | `fabrication_fund_energy` | Current `store_hash`, positive `joules` (0.000001..1e9), `revision`, `request_id`. Debits the connected native battery and credits the process atomically; returns replacement `session`, `state`, `replayed`. |
 | `fund_stock` | `fabrication_fund_stock` | Canonical `material`, `mass_kg` (0.000001..10000), `pool` (`personal` or explicit `shared`), current `rack_hash`, `revision`, `request_id`. Reserves real rack stock, then credits shared station stock once. Failed receiving saves retain visible escrow. |
+| `fund_goods` | `fabrication_fund_goods` | Declared processed `material`, positive `mass_kg`, `pool` (`personal` or explicit `shared`), current `rack_hash`, `revision`, `request_id`. Reserves real collected goods and credits station assembly supplies once; failed saves retain visible escrow. |
 | `release_stock` | `fabrication_release_stock` | `reservation_id`, `request_id`. Returns only an uncredited reservation to its original owner; refuses credited stock. Returns `released`, `replayed`, `session`, `stock_sources`, `stock_reservations`. |
 | `plan_remake` | `fabrication_plan_remake` | `source_item` (current hands/bag ID), `candidate` (frozen Lab draft). Read-only source binding, exact native quote, stock/energy shortages, occupancy and `plan_id`; reports unavailable if no process is declared. |
 | `start_remake` | `fabrication_start_remake` | `plan_id`, `revision`, `request_id`. Validates current owned source, reserves stock and requires enough finite energy. Returns `job_id`, `state`, `replayed`, `original_retained`. Retry the original request after uncertainty. |
@@ -126,7 +127,7 @@ that current `scene` and `session`. Unknown fields refuse.
 
 Both MCP servers proxy the same HTTP world through `BANJO_PLAYGROUND_URL`
 (loopback HTTP only, default port 8765). They do not create a second material
-inventory. World MCP is 1.16.0, platform MCP 1.19.0; native ABI remains 25.
+inventory. World MCP is 1.21.0, platform MCP 1.24.0; native ABI remains 25.
 Python callers use `playground/fabrication_room.py` for the same validated room
 operations. `mcp/fabrication.py` owns the pure operating model. No new native C
 API is advertised for this host-side process.

@@ -1,5 +1,13 @@
 # Development status and handoff
 
+**Canonical machine Use, October 1:** [Paid/browser checkpoint](canonical-machine-use-checkpoint.md)
+adds bounded native program/lamp switches and preserves template declarations
+through bare candidate/Save/quote requests. Paid canonical rover construction,
+actual World Use and energy draw pass; unwired lamp stays dark. A mixed
+processor/rover placement validation crash is fixed. Fixed QA 68/68 and final
+clock-reset/retry native checks pass. Default workbench/player guards, complete
+paid progression and damaged-tool use remain next; four verified, ten partial.
+
 **Component thumbnails, October 1:** [UI checkpoint](component-thumbnails-checkpoint.md)
 replaces persistent exploded inspection with actual component pictures in the
 right panel. Selected items remain assembled; names/materials are concise,

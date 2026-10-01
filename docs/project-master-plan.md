@@ -1,5 +1,12 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Canonical machine controls, October 1:** [Verified paid rover/lamp checkpoint](canonical-machine-use-checkpoint.md)
+adds portable bounded switches tied to existing native controllers, explicit
+on/off retry semantics and preserved bare template declarations. No energy,
+motion, materials or result is granted by Use. Fixed QA 68/68 and actual Chrome
+paid rover Use pass. Fresh workbench/normal guards and full paid progression
+remain next; all fourteen requirements stay active, four verified, ten partial.
+
 **Paid processed inputs, October 1:** [Lab/AI/native checkpoint](fabrication-assembly-goods-checkpoint.md)
 requires the declared copper/wire assembly supplies in paid machine construction,
 with durable escrow, owned inventory, retry/restart and separate local audits.

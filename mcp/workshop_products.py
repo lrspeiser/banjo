@@ -993,7 +993,8 @@ def install() -> None:
         "A deck on two driven wheels and a caster, with a battery, a solar panel, a hopper and two water eyes: "
         "the room's rover, as exact bodies on pins, with its program and its dig routine.",
         ROVER_PARAMETERS, _build_rover, _rover_trials, _rover_overrides,
-        uses={"primary_use_component": "deck",
+        uses={"primary_use":{"label":"Start rover","steps":[{"do":"machine_power","device":"program","power":True}]},
+              "primary_use_component": "deck",
               "interaction_point_components": {"deck": "deck", "grip": "deck", "use": "deck"}})
 
     ordered, seen = [], set()
@@ -1005,14 +1006,16 @@ def install() -> None:
         "The rover's deck, battery, panel, hopper and water eyes on four rotors instead of wheels: a machine "
         "that flies, as exact bodies on pins, with a hover program and the dig routine.",
         DRONE_PARAMETERS, _build_drone, _drone_trials, _drone_overrides,
-        uses={"primary_use_component": "deck",
+        uses={"primary_use":{"label":"Start drone","steps":[{"do":"machine_power","device":"program","power":True}]},
+              "primary_use_component": "deck",
               "interaction_point_components": {"deck": "deck", "grip": "deck", "use": "deck"}})
     existing["processor"] = w.Assembly(
         "processor", "make one thing of another, standing still",
         "A machine that goes nowhere: a deck on legs with an intake bin and an output bin, a battery and a "
         "panel, and a still program working the room's recipe from the one bin into the other.",
         PROCESSOR_PARAMETERS, _build_processor, _processor_trials, _processor_overrides,
-        uses={"primary_use_component": "deck",
+        uses={"primary_use":{"label":"Start processing","steps":[{"do":"machine_power","device":"program","power":True}]},
+              "primary_use_component": "deck",
               "interaction_point_components": {"deck": "deck", "grip": "deck", "use": "intake bin"}})
     if "rover" not in seen: ordered.append(existing["rover"])
     if "drone" not in seen: ordered.append(existing["drone"])
@@ -1022,7 +1025,8 @@ def install() -> None:
         "and anything nearby can draw on: the farm, as exact bodies, so a yard is not eight machines each "
         "carrying its own.",
         SOLAR_ARRAY_PARAMETERS, _build_solar_array, _solar_array_trials, _solar_array_overrides,
-        uses={"primary_use_component": "frame",
+        uses={"primary_use":{"label":"Inspect power","steps":[{"do":"inspect"}]},
+              "primary_use_component": "frame",
               "interaction_point_components": {"deck": "frame", "grip": "frame", "use": "battery"}})
     existing["electric-furnace"] = w.Assembly(
         "electric-furnace", "make the inside hot enough to smelt",
@@ -1032,7 +1036,8 @@ def install() -> None:
         "it is at temperature.",
         ELECTRIC_FURNACE_PARAMETERS, _build_electric_furnace, _electric_furnace_trials,
         _electric_furnace_overrides,
-        uses={"primary_use_component": "shell-floor",
+        uses={"primary_use":{"label":"Start furnace","steps":[{"do":"machine_power","device":"program","power":True}]},
+              "primary_use_component": "shell-floor",
               "interaction_point_components": {"deck": "shell-roof", "grip": "shell-left",
                                                "use": "intake bin"}})
     existing["mine-lamp"] = w.Assembly(
@@ -1040,7 +1045,8 @@ def install() -> None:
         "A glass globe on an iron bracket, on a foot you stand on the floor. It comes out of the Workshop "
         "dark: a lamp is a fitting, and it lights when a cable is run to it.",
         MINE_LAMP_PARAMETERS, _build_mine_lamp, _mine_lamp_trials, _mine_lamp_overrides,
-        uses={"primary_use_component": "foot",
+        uses={"primary_use":{"label":"Switch light on","steps":[{"do":"machine_power","device":"lamp","power":True}]},
+              "primary_use_component": "foot",
               "interaction_point_components": {"deck": "foot", "grip": "globe bracket", "use": "globe"}})
     existing["breaker"] = w.Assembly(
         "breaker", "break rock out of a face faster than an arm can",

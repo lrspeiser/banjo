@@ -56,6 +56,8 @@ DESIGN_FIELDS = {
                    "The LLM must program the product\'s core use. Portable steps: inspect; "
                    "strike (held, distance_m 0.05–0.8, speed_m_s 0.1–5); "
                    "push_forward (empty hand, distance_m 0.05–1.5, speed_m_s 0.1–1.5). "
+                   "machine_power (device program or lamp, explicit boolean power) switches the product's "
+                   "one declared native device through the playground controller; no free energy or imposed motion. "
                    "Articulated products also need primary_use_component and interaction_point_components "
                    "mapping every interaction point ID to its owning component. "
                    "No arbitrary code. Preserved in ProductGraph controls and installation."},

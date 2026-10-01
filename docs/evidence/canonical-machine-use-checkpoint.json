@@ -1,0 +1,439 @@
+{
+  "schema": "banjo.canonical-machine-use-checkpoint.v1",
+  "source_base_revision": "2db3260333157f8b14f390ff657060cc1130239a",
+  "source_dirty_during_verification": true,
+  "environment": "Windows / Python 3.13 / MSVC 19.44 Release / headless Chrome ordinary input",
+  "engine_sha256": "1cfcb766b24f942df1147f8e9ecd1c00d083105ff71a5bcb9d8da6b50c8d8db9",
+  "library_sha256": "ab9b2bd04c082863271592a3b9db2eee5fc2e3666024f3e4184aa71e2e482c8c",
+  "fabrication_qa": {
+    "status": "passed",
+    "total": 68,
+    "elapsed_wall_s": 101.98582983016968,
+    "selected_results": [
+      {
+        "id": "fabrication_tests.NativeFabrication.test_canonical_machine_paid_admission_primary_switch_native_motion_and_restart",
+        "status": "passed",
+        "measurements": [
+          {
+            "kind": "rover",
+            "materials_kg": {
+              "glass": 4.0,
+              "oak": 37.80779050893583,
+              "iron": 11.73124138114862
+            },
+            "assembly_goods_kg": {
+              "copper wire": 2.3,
+              "copper": 0.5
+            },
+            "paid_j": 6353.903189008445,
+            "primary_use": {
+              "label": "Start rover",
+              "steps": [
+                {
+                  "do": "machine_power",
+                  "device": "program",
+                  "power": false
+                }
+              ],
+              "body": "workshop-494731f575414e77",
+              "primary": true
+            },
+            "audit": {
+              "material_residual_kg": {
+                "oak": 0.0,
+                "glass": 0.0,
+                "iron": 0.0
+              },
+              "assembly_goods_received_kg": {
+                "copper wire": 2.3,
+                "copper": 0.5
+              },
+              "assembly_goods_reserved_or_transferred_kg": {
+                "copper wire": 2.3,
+                "copper": 0.5
+              },
+              "assembly_goods_residual_kg": {
+                "copper wire": 0.0,
+                "copper": 0.0
+              },
+              "rack_material_received_kg": {
+                "oak": 7.807790508935831
+              },
+              "native_energy_received_j": 0,
+              "reserved_output_energy_j": 0,
+              "transferred_output_energy_j": 1000.0,
+              "native_transfer_residual_j": 0,
+              "native_meter_residual_j": 0,
+              "energy_residual_j": 0.0,
+              "work_residual_j": 0.0,
+              "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+            },
+            "restart": "whole"
+          },
+          {
+            "kind": "mine-lamp",
+            "materials_kg": {
+              "glass": 4.319999999999999,
+              "iron": 12.68644
+            },
+            "assembly_goods_kg": {},
+            "paid_j": 1700.6439999999998,
+            "primary_use": {
+              "label": "Switch light on",
+              "steps": [
+                {
+                  "do": "machine_power",
+                  "device": "lamp",
+                  "power": true
+                }
+              ],
+              "body": "workshop-149096cd46a44ba9",
+              "primary": true
+            },
+            "audit": {
+              "material_residual_kg": {
+                "oak": 0.0,
+                "glass": 0.0,
+                "iron": 0.0
+              },
+              "assembly_goods_received_kg": {
+                "copper wire": 2.3,
+                "copper": 0.5
+              },
+              "assembly_goods_reserved_or_transferred_kg": {
+                "copper wire": 2.3,
+                "copper": 0.5
+              },
+              "assembly_goods_residual_kg": {
+                "copper wire": 0.0,
+                "copper": 0.0
+              },
+              "rack_material_received_kg": {
+                "oak": 7.807790508935831
+              },
+              "native_energy_received_j": 0,
+              "reserved_output_energy_j": 0,
+              "transferred_output_energy_j": 1000.0,
+              "native_transfer_residual_j": 0,
+              "native_meter_residual_j": 0,
+              "energy_residual_j": 2.7284841053187847e-12,
+              "work_residual_j": -1.8189894035458565e-12,
+              "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+            },
+            "restart": "whole"
+          }
+        ]
+      },
+      {
+        "id": "fabrication_tests.NativeFabrication.test_paid_exact_machine_native_material_energy_rollback_restart_and_use",
+        "status": "passed",
+        "measurements": [
+          {
+            "material": "glass",
+            "mass_kg": 7.680000000000001,
+            "allocated_kg": {
+              "glass": 7.680000000000001
+            },
+            "work_j": 2500.0,
+            "initial_energy_j": 100.0,
+            "used_energy_j": 0.020056898103128027,
+            "audit": {
+              "material_residual_kg": {
+                "oak": 0.0,
+                "glass": 0.0,
+                "iron": 0.0
+              },
+              "assembly_goods_received_kg": {
+                "copper wire": 0.6,
+                "copper": 0.5
+              },
+              "assembly_goods_reserved_or_transferred_kg": {
+                "copper wire": 0.6,
+                "copper": 0.5
+              },
+              "assembly_goods_residual_kg": {
+                "copper wire": 0.0,
+                "copper": 0.0
+              },
+              "rack_material_received_kg": {},
+              "native_energy_received_j": 0,
+              "reserved_output_energy_j": 0,
+              "transferred_output_energy_j": 100.0,
+              "native_transfer_residual_j": 0,
+              "native_meter_residual_j": 0,
+              "energy_residual_j": 2.7284841053187847e-12,
+              "work_residual_j": 0.0,
+              "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+            },
+            "mechanical_mass_residual_kg": 0.0,
+            "thermal_state": "unmodeled",
+            "restart": "whole",
+            "rollback_verified": true
+          },
+          {
+            "material": "oak",
+            "mass_kg": 2.1504000000000003,
+            "allocated_kg": {
+              "oak": 2.1504000000000003
+            },
+            "work_j": 2500.0,
+            "initial_energy_j": 100.0,
+            "used_energy_j": 0.004253760444700616,
+            "audit": {
+              "material_residual_kg": {
+                "oak": 0.0,
+                "glass": 0.0,
+                "iron": 0.0
+              },
+              "assembly_goods_received_kg": {
+                "copper wire": 1.2,
+                "copper": 1.0
+              },
+              "assembly_goods_reserved_or_transferred_kg": {
+                "copper wire": 1.2,
+                "copper": 1.0
+              },
+              "assembly_goods_residual_kg": {
+                "copper wire": 0.0,
+                "copper": 0.0
+              },
+              "rack_material_received_kg": {},
+              "native_energy_received_j": 0,
+              "reserved_output_energy_j": 0,
+              "transferred_output_energy_j": 200.0,
+              "native_transfer_residual_j": 0,
+              "native_meter_residual_j": 0,
+              "energy_residual_j": 0.0,
+              "work_residual_j": -9.094947017729282e-13,
+              "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+            },
+            "mechanical_mass_residual_kg": 1.1046876213782753e-07,
+            "thermal_state": "unmodeled",
+            "restart": "whole",
+            "rollback_verified": true
+          },
+          {
+            "material": "iron",
+            "mass_kg": 24.176640000000003,
+            "allocated_kg": {
+              "iron": 24.176640000000003
+            },
+            "work_j": 2500.0,
+            "initial_energy_j": 100.0,
+            "used_energy_j": 0.06091260855998035,
+            "audit": {
+              "material_residual_kg": {
+                "oak": 0.0,
+                "glass": 0.0,
+                "iron": 0.0
+              },
+              "assembly_goods_received_kg": {
+                "copper wire": 1.7999999999999998,
+                "copper": 1.5
+              },
+              "assembly_goods_reserved_or_transferred_kg": {
+                "copper wire": 1.7999999999999998,
+                "copper": 1.5
+              },
+              "assembly_goods_residual_kg": {
+                "copper wire": 0.0,
+                "copper": 0.0
+              },
+              "rack_material_received_kg": {},
+              "native_energy_received_j": 0,
+              "reserved_output_energy_j": 0,
+              "transferred_output_energy_j": 300.0,
+              "native_transfer_residual_j": 0,
+              "native_meter_residual_j": 0,
+              "energy_residual_j": 3.637978807091713e-12,
+              "work_residual_j": -4.547473508864641e-12,
+              "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+            },
+            "mechanical_mass_residual_kg": -1.102799064511828e-06,
+            "thermal_state": "unmodeled",
+            "restart": "whole",
+            "rollback_verified": true
+          }
+        ]
+      },
+      {
+        "id": "fabrication_remake_tests.LabRemake.test_canonical_rover_paid_build_and_primary_use_in_browser",
+        "status": "passed",
+        "measurements": {
+          "quote": {
+            "product_materials_kg": {
+              "glass": 4.0,
+              "oak": 37.80779050893583,
+              "iron": 11.73124138114862
+            },
+            "assembly_goods_kg": {
+              "copper wire": 2.3,
+              "copper": 0.5
+            },
+            "required_j": 5353.903189008445,
+            "output_energy_j": 1000.0
+          },
+          "use_program_power": true,
+          "audit": {
+            "material_residual_kg": {
+              "oak": 0.0,
+              "glass": 0.0,
+              "iron": 0.0
+            },
+            "assembly_goods_received_kg": {
+              "copper": 0.5,
+              "copper wire": 2.3
+            },
+            "assembly_goods_reserved_or_transferred_kg": {
+              "copper wire": 2.3,
+              "copper": 0.5
+            },
+            "assembly_goods_residual_kg": {
+              "copper wire": 0.0,
+              "copper": 0.0
+            },
+            "rack_material_received_kg": {
+              "oak": 37.80779050893583,
+              "iron": 11.73124138114862,
+              "glass": 4.0
+            },
+            "native_energy_received_j": 6353.903189008444,
+            "reserved_output_energy_j": 0,
+            "transferred_output_energy_j": 1000.0,
+            "native_transfer_residual_j": 1.4568968254025094e-10,
+            "native_meter_residual_j": 1.0800249583553523e-12,
+            "energy_residual_j": 0.0,
+            "work_residual_j": 0.0,
+            "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+          },
+          "supplies": "explicit collected fixture heap; generated native solar battery"
+        }
+      }
+    ]
+  },
+  "focused_checks": {
+    "actions": 40,
+    "workshop_chat": 38,
+    "workshop_api": 16,
+    "rover_declarations": 7,
+    "api_docs": 12,
+    "components": 6,
+    "fitting": 47,
+    "paid_ai": 4
+  },
+  "boundary": "Explicitly configured finite process and collected fixture supplies; ordinary fresh-world workbench, full paid progression, constituent physics and damaged-tool-to-use remain open.",
+  "final_session_sequence_check": {
+    "status": "passed",
+    "tests": 1,
+    "measurements": [
+      {
+        "kind": "rover",
+        "materials_kg": {
+          "glass": 4.0,
+          "oak": 37.80779050893583,
+          "iron": 11.73124138114862
+        },
+        "assembly_goods_kg": {
+          "copper wire": 2.3,
+          "copper": 0.5
+        },
+        "paid_j": 6353.903189008445,
+        "primary_use": {
+          "label": "Start rover",
+          "steps": [
+            {
+              "do": "machine_power",
+              "device": "program",
+              "power": false
+            }
+          ],
+          "body": "workshop-e9872a31722e4483",
+          "primary": true
+        },
+        "audit": {
+          "material_residual_kg": {
+            "glass": 0.0,
+            "oak": 0.0,
+            "iron": 0.0
+          },
+          "assembly_goods_received_kg": {
+            "copper wire": 2.3,
+            "copper": 0.5
+          },
+          "assembly_goods_reserved_or_transferred_kg": {
+            "copper wire": 2.3,
+            "copper": 0.5
+          },
+          "assembly_goods_residual_kg": {
+            "copper": 0.0,
+            "copper wire": 0.0
+          },
+          "rack_material_received_kg": {
+            "oak": 7.807790508935831
+          },
+          "native_energy_received_j": 0,
+          "reserved_output_energy_j": 0,
+          "transferred_output_energy_j": 1000.0,
+          "native_transfer_residual_j": 0,
+          "native_meter_residual_j": 0,
+          "energy_residual_j": 0.0,
+          "work_residual_j": 0.0,
+          "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+        },
+        "restart": "whole"
+      },
+      {
+        "kind": "mine-lamp",
+        "materials_kg": {
+          "glass": 4.319999999999999,
+          "iron": 12.68644
+        },
+        "assembly_goods_kg": {},
+        "paid_j": 1700.6439999999998,
+        "primary_use": {
+          "label": "Switch light on",
+          "steps": [
+            {
+              "do": "machine_power",
+              "device": "lamp",
+              "power": true
+            }
+          ],
+          "body": "workshop-70fa5ad17078423f",
+          "primary": true
+        },
+        "audit": {
+          "material_residual_kg": {
+            "glass": 0.0,
+            "oak": 0.0,
+            "iron": 0.0
+          },
+          "assembly_goods_received_kg": {
+            "copper wire": 2.3,
+            "copper": 0.5
+          },
+          "assembly_goods_reserved_or_transferred_kg": {
+            "copper wire": 2.3,
+            "copper": 0.5
+          },
+          "assembly_goods_residual_kg": {
+            "copper": 0.0,
+            "copper wire": 0.0
+          },
+          "rack_material_received_kg": {
+            "oak": 7.807790508935831
+          },
+          "native_energy_received_j": 0,
+          "reserved_output_energy_j": 0,
+          "transferred_output_energy_j": 1000.0,
+          "native_transfer_residual_j": 0,
+          "native_meter_residual_j": 0,
+          "energy_residual_j": 2.7284841053187847e-12,
+          "work_residual_j": -1.8189894035458565e-12,
+          "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+        },
+        "restart": "whole"
+      }
+    ]
+  }
+}

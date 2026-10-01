@@ -1154,7 +1154,7 @@ def _programs(given: Any, controls: list[dict[str, Any]], named: set[str],
                 raise ValueError(f"program {name!r}: {control['name']!r} works a hoist, not a wheel")
             if body not in control["on"]:
                 raise ValueError(f"program {name!r}: {control['name']!r} does not turn a wheel on {body!r}")
-            if any(control["name"] in (o["left"], o["right"]) for o in out):
+            if any(control["name"] in (o.get("left"), o.get("right")) for o in out):
                 raise ValueError(f"program {name!r}: {control['name']!r} is worked by another program")
             wheels.append(control["name"])
         if wheels[0] == wheels[1]:
@@ -1588,7 +1588,7 @@ INTERACTION_TEMPLATES = interaction_profiles.TEMPLATES
 ACTION_STEPS = ("stand", "take_hold", "carry_to", "put_down", "let_go", "push", "turn", "slide",
                 "heat", "wait", "drive") + core_use.STEPS
 ACTION_STEP_FIELDS = {"do", "part", "stand", "along", "where", "to", "toward", "distance_m",
-                      "degrees", "stop", "speed_m_s", "power_w", "seconds", "command", "brake"}
+                      "degrees", "stop", "speed_m_s", "power_w", "seconds", "command", "brake", "device", "power"}
 ACTION_PLACE_FIELDS = {"kind", "in_front_m", "height_m", "on", "beside", "side", "gap_m",
                        "from", "offset_m"}
 

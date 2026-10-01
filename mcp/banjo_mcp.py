@@ -52,7 +52,7 @@ import constructions  # noqa: E402
 import machine_mcp_tools  # noqa: E402
 
 PROTOCOL_VERSION = "2024-11-05"
-SERVER = {"name": "banjo", "version": "1.20.0"}
+SERVER = {"name": "banjo", "version": "1.21.0"}
 
 # How many worlds may be open at once. Each is a physics engine with its scene
 # resident in it, and nothing here is a long-lived service.
@@ -1513,7 +1513,7 @@ def _action_number(value: Any, what: str, low: float, high: float,
 # sent every step every field six times over and gave up. So a step reads only
 # its kind's fields and a place only its kind's, and the rest is set aside and
 # said, as the interaction profiles do.
-STEP_FIELDS = {"inspect": (), "place": (), "strike": ("distance_m", "speed_m_s"),
+STEP_FIELDS = {"inspect": (), "place": (), "machine_power": ("device", "power"), "strike": ("distance_m", "speed_m_s"),
                "push_forward": ("distance_m", "speed_m_s"), "stand": ("stand", "along", "where"), "take_hold": ("part",),
                "carry_to": ("to", "speed_m_s"), "put_down": (), "let_go": (),
                "push": ("part", "toward", "distance_m", "speed_m_s"),
@@ -1668,7 +1668,7 @@ def _action_checked(entry: dict[str, Any], name: str, action: Any, names: set[st
             except ValueError as error:
                 raise Refused(str(error)) from error
             if do == "place": holding = None
-            if do != "inspect" and body.get("anchored"):
+            if do not in ("inspect", "machine_power") and body.get("anchored"):
                 raise Refused(f"{where}: {name} is fixed in place")
         elif do == "stand":
             if holding:
@@ -2978,6 +2978,8 @@ def tool_use_action(args: dict[str, Any]) -> dict[str, Any]:
         action = offered[int(key) - 1]
     if action is None:
         raise Refused(f"{name} has no action {which!r}: its actions are {', '.join(labels)}")
+    if any(s["do"] == "machine_power" for s in action["steps"]):
+        raise Refused("machine_power uses the playground native program/lamp controller; this C API world has no portable controller binding")
     hand = sorted({s["do"] for s in action["steps"] if s["do"] not in ("drive", "wait", "inspect")})
     if hand:
         raise Refused(f"'{action['label']}' has {', '.join(hand)} steps, which the person's hand takes in "
@@ -6797,6 +6799,8 @@ TOOLS = [
                          "speed_m_s": {"type": "number",
                                        "description": "strike: 0.1 to 5 m/s. push_forward, carry_to, push: how fast the hand "
                                                       "goes, 0.1 to 1.5 m/s."},
+                         "device": {"type":"string","enum":["program","lamp"],"description":"machine_power: exactly one declared device in this product."},
+                         "power": {"type":"boolean","description":"machine_power: explicitly on or off; never a toggle."},
                          "power_w": {"type": "number", "description": "heat: 100 to 10,000 W."},
                          "seconds": {"type": "number",
                                      "description": "heat: 1 to 60 s; wait: 0.1 to 10 s."}}}}}}}}}},

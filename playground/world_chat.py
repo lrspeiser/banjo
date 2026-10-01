@@ -348,7 +348,10 @@ one action, named for the product's purpose. The LLM writes this bounded program
 at creation; no LLM call is needed per press. A hand tool can use strike (held
 first, 0.05–0.8 m, 0.1–5 m/s); a cart can use push_forward (empty hand, 0.05–1.5 m,
 0.1–1.5 m/s, along the person's facing). Motion comes from the engine's bounded
-hand and contacts. Powered products use drive on a real motor and battery. For
+hand and contacts. Powered products use drive on a real motor and battery, or
+machine_power with device program/lamp and power true/false for exactly one
+declared native device. The latter requires a clear view within 3 m and grants
+no inputs, battery charge or processing result. For
 passive objects choose inspect, or an honest supported handling action. Never
 pretend inspection implements an unsupported machine function. Program the
 product root; fixed constituent parts need not each duplicate its program.

@@ -2930,7 +2930,7 @@ def _control_for(app,which):
     if found: return found[0]
     raise ValueError(f"there is no machine called {which!r} in the room")
 
-def operate_machine(app,body,player_id=""):
+def operate_machine(app,body,player_id="",*,require_saved=False):
     """One command to a machine's controller (docs/machine-world.md, "Operating
     a machine"), from the page's panel (POST /api/world/machine) or the room's
     chat (operate): {control, sender, seq, power, direction, setting}, each of
@@ -2959,7 +2959,10 @@ def operate_machine(app,body,player_id=""):
         said=app.live.act({"session":app.live.session.id,"op":"run","program":body.get("program"),
                            "sender":str(body.get("sender") or "")[:64],"seq":body.get("seq",0),
                            "power":body.get("power")})
-        if said.get("ran")=="applied": keep_world(app,"a machine's program was turned on or off")
+        if said.get("ran")=="applied":
+            saved=keep_world(app,"a machine's program was turned on or off")
+            if require_saved and not saved:
+                raise ValueError("Program switched, but the change was not saved; retry the same on/off command")
         return {"operated":said.get("ran"),"program":said.get("program")}
     command={"session":app.live.session.id,"op":"operate","control":body.get("control"),
              "sender":str(body.get("sender") or "")[:64],"seq":body.get("seq",0)}
@@ -3043,6 +3046,54 @@ def _chat_live(app,name,args,person=None,player_id=""):
         return {"error":f"{name} is not something done to the room as it stands"}
     except Exception as failure:
         return {"error":str(failure)}
+
+def _core_machine_step(app, name, step, person):
+    """Operate the current attached product through its native controller."""
+    from mcp import core_use
+    step=core_use.checked_step(step)
+    if not person or not person.get("eyes_m"):
+        raise ValueError("Approach the machine before using its switch")
+    # An action does not hold the state lock while a hand waits for steps;
+    # this instantaneous controller write does require current membership.
+    with world_access.state_lock(app):
+        state=app.live.act({"session":app.live.session.id,"op":"poses"})
+        target=next((b for b in state.get("bodies",[]) if b["name"]==name),None)
+        if not target or target.get("parked"):
+            raise ValueError("That machine is no longer available in the world")
+        members={name}
+        for _ in range(64):
+            expanded=members | {end for joint in state.get("joints",[]) if joint.get("attached")
+                and (joint["a"] in members or joint["b"] in members) for end in (joint["a"],joint["b"])}
+            if len(expanded)>64:raise ValueError("Machine exceeds the controller body budget")
+            if expanded==members:break
+            members=expanded
+        eyes=person["eyes_m"]
+        direction=[target["position_m"][i]-eyes[i] for i in range(3)]
+        hit=app.live.act({"session":app.live.session.id,"op":"pick","from":eyes,"dir":direction,"max_m":3.})
+        if not hit.get("hit") or hit.get("name") not in members:
+            raise ValueError("Get within 3 m of the machine with a clear view to use its switch")
+        machines=state.get("machines") or {}
+        device=step["device"]
+        rows=[r for r in machines.get(device+"s",[]) if r.get("body") in members]
+        if len(rows)!=1:raise ValueError("This assembly needs exactly one current native "+device)
+        current=rows[0]
+        if device=="program":
+            # A reopened native session gets a new sender namespace: a host
+            # reboot may reset monotonic time below the last saved sequence.
+            owner=workshop_library.REQUEST_OWNER.get() or "local"
+            sender="use-"+hashlib.sha256((owner+":"+app.live.session.id).encode()).hexdigest()[:56]
+            reply=operate_machine(app,{"program":current["id"],"power":step["power"],
+                "sender":sender,"seq":time.monotonic_ns()},
+                workshop_library.REQUEST_OWNER.get() or "",require_saved=True)
+            if reply.get("operated")!="applied":raise ValueError("Native program refused the switch command")
+        else:
+            app.live.act({"session":app.live.session.id,"op":"lamp_switch","lamp":current["id"],"on":step["power"]})
+            if not keep_world(app,"a product lamp was switched"):
+                raise ValueError("Lamp switched, but the change was not saved; retry the same on/off command")
+        return ("Switched "+current.get("name",name)+( " on" if step["power"] else " off")
+                +(" · connect a powered cable to light it" if device=="lamp" and step["power"]
+                  and not current.get("store") and not current.get("cable") else "")),None
+
 
 def _core_hand_step(app, name, step, person):
     """Execute a declared gesture, never prescribe an object trajectory."""
@@ -3280,7 +3331,7 @@ def _run_action(app,body,own_hold=False):
     # to put down what you held; with it for everyone, "put it on the ground"
     # ran on a winch handle mid-turn.
     if held and not (own_hold and held == name) and \
-            action["steps"][0]["do"] not in ("turn","slide","drive","strike","inspect","place"):
+            action["steps"][0]["do"] not in ("turn","slide","drive","strike","inspect","place","machine_power"):
         raise ValueError("put down what you are holding first: the action needs your hand")
     done,opened,holding,problem,index=[],None,held or None,None,0
     # What the hand held before the action: the action lets go only of what it
@@ -3294,6 +3345,10 @@ def _run_action(app,body,own_hold=False):
                 if line: done.append(line)
                 if problem: break
                 holding = None
+            elif do=="machine_power":
+                line,problem=_core_machine_step(app,name,step,person)
+                if line:done.append(line)
+                if problem:break
             elif do in ("inspect", "strike", "push_forward"):
                 line, problem = _core_hand_step(app, name, step, person)
                 if line: done.append(line)

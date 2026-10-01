@@ -108,7 +108,7 @@ def _candidate(app: Any, design: Any, spec: Any, overrides: Any = None) -> dict[
     engine_materials.synchronize_workshop_model()
     # A template with joints and machines of its own (Assembly.overrides)
     # opens with them, unless the person's own overrides are given.
-    if overrides in (None, {}) and (design.lineage or {}).get("component_overrides"):
+    if overrides is None and (design.lineage or {}).get("component_overrides"):
         overrides = design.lineage["component_overrides"]
     wire = design.wireframe()
     wire["label"] = _label(design.kind, design.parameters, spec)
@@ -158,7 +158,7 @@ def _spread(app: Any, kind: str, base: dict[str, Any], sweeps: dict[str, list[An
     # A template with joints and machines of its own (Assembly.overrides) is
     # spread with them when the person gives none: a machine's template says
     # how it is fastened and what drives it, and that is what is opened.
-    if not checked and (root.lineage or {}).get("component_overrides"):
+    if overrides is None and (root.lineage or {}).get("component_overrides"):
         checked = workshop_components.checked_overrides(root.lineage["component_overrides"])
     # Parts a person put in stand where they were put. Sweeping the template's
     # numbers would move the template out from under them, so a built design is
@@ -372,7 +372,7 @@ def candidates(app: Any, body: Any) -> dict[str, Any]:
     kind = _kind(body)
     current = {"kind": kind, "design_id": str(body.get("design_id") or f"{kind}-g{generation}"),
                "purpose": body.get("purpose"), "parameters": _parameters(body),
-               "component_overrides": body.get("component_overrides") or {}}
+               **({"component_overrides":body["component_overrides"]} if "component_overrides" in body else {})}
     if isinstance(body.get("component_chat"), dict):
         chat, part_name = body["component_chat"], str(body["component_chat"].get("part_name") or "")
         design, overrides = workshop_components.design_from_spec(current)
@@ -450,7 +450,9 @@ def candidates(app: Any, body: Any) -> dict[str, Any]:
 def more_like_this(app: Any, body: Any) -> dict[str, Any]:
     body, kind = _object(body), _kind(_object(body))
     spec, base = assembly(kind), assembly(kind).checked(_parameters(body))
-    overrides, generation = workshop_components.checked_overrides(body.get("component_overrides")), _generation(body) + 1
+    inherited=assemble(kind, parameters=base).lineage.get("component_overrides", {})
+    overrides = workshop_components.checked_overrides(body["component_overrides"] if "component_overrides" in body else inherited)
+    generation = _generation(body) + 1
     if workshop_construction.CONSTRUCTION_KEY in overrides:
         raise ValueError("This design has parts you put in or took off. Variants change the template's "
                          "sizes underneath them, so they are not offered; change its parts directly.")
@@ -505,7 +507,7 @@ def plan(app: Any, body: Any) -> dict[str, Any]:
     body, kind = _object(body), _kind(_object(body))
     design, overrides = workshop_components.design_from_spec(
         {"kind": kind, "design_id": str(body.get("design_id") or kind), "parameters": _parameters(body),
-         "component_overrides": body.get("component_overrides") or {}})
+         **({"component_overrides":body["component_overrides"]} if "component_overrides" in body else {})})
     try:
         cell = float(body.get("cell_size_m", 0.04))
     except (TypeError, ValueError):
@@ -578,7 +580,7 @@ def remember(app: Any, body: Any) -> dict[str, Any]:
     design_id = workshop_store.safe_design_id(body.get("design_id") or kind)
     design, overrides = workshop_components.design_from_spec(
         {"kind": kind, "design_id": design_id, "parameters": _parameters(body),
-         "component_overrides": body.get("component_overrides") or {}})
+         **({"component_overrides":body["component_overrides"]} if "component_overrides" in body else {})})
     rating = body.get("rating")
     if rating not in (None, "") and int(rating) not in range(1, 6):
         raise ValueError("rating must be 1 through 5")

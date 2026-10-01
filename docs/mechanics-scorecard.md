@@ -1,5 +1,14 @@
 # Banjo mechanics scorecard
 
+**Canonical switch boundary, October 1:** [Native/browser evidence](canonical-machine-use-checkpoint.md)
+connects paid rover/lamp primary Use to their existing controllers. Native rover
+draw, explicit stop, lost-save retry, distant refusal and whole reopen/clock
+reset pass; an unwired lamp remains dark. Fixed QA 68/68 retains glass/oak/iron
+comparisons, dt=1/240 s and 40 mm scenery. No law or tolerance changes;
+local processed/material residuals zero, browser transfer residual 1.457e-10 J.
+Default workbench/player guards, full progression, constituent physics and
+damaged-tool-to-use remain next; no full-world conservation certification.
+
 **Component presentation boundary, October 1:** [Identity checks](component-thumbnails-checkpoint.md)
 replace persistent world expansion with thumbnails of all 14 attached rover parts
 and the pick's 22 actual cells split into haft/arm. Native time/bodies/machines

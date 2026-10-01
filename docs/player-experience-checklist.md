@@ -1,5 +1,12 @@
 # Player experience work — September 30, 2026
 
+[Canonical machine Use](canonical-machine-use-checkpoint.md) passes configured
+saved-rover Recipes → paid Make → native World operation with battery draw,
+plus unwired-lamp, retry/clock-reset and mixed-controller validation checks.
+The component-thumbnail replacement remains verified. Ordinary fresh workbench,
+normal guards, full paid progression and damaged-tool use remain open.
+All fourteen original gates stay **four verified, ten partial**.
+
 [Paid exact machine admission](fabrication-machine-checkpoint.md) adds native
 material allocation, atomic multiple-material funding and separately funded
 initial battery charge. Saved-design Recipes/Lab mouse funding and actual AI

@@ -33,6 +33,21 @@ class Opening(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_canonical_machine_declarations_survive_bare_candidates_and_variants_refuse_construction(self):
+        from mcp import core_use,workshop_components,workshop_machines
+        answer=workshop_api.candidates(self.app,{'kind':'rover'})
+        for candidate in answer['candidates']:
+            design,_=workshop_components.design_from_spec(candidate)
+            self.assertEqual(1,len(workshop_machines.of(design)['programs']))
+            self.assertEqual('machine_power',core_use.installed(design,'rover')['steps'][0]['do'])
+        with self.assertRaisesRegex(ValueError,'parts you put in or took off'):
+            workshop_api.more_like_this(self.app,{'kind':'rover'})
+        stripped=workshop_api.candidates(self.app,{'kind':'rover','component_overrides':{}})['candidates'][0]
+        design,_=workshop_components.design_from_spec(stripped)
+        self.assertFalse(workshop_machines.of(design))
+        with self.assertRaisesRegex(ValueError,'exactly one'):
+            core_use.installed(design,'rover')
+
     def test_opening_a_bench_offers_a_library_and_a_first_set(self):
         answer = workshop_api.open_workshop(self.app, {"kind": "table"})
         self.assertTrue(answer["session"]["outside_paused"])

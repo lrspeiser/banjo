@@ -253,6 +253,77 @@ class ProcessModel(unittest.TestCase):
 
 @unittest.skipUnless(ENGINE and ENGINE.is_file(),"BANJO_LIVE_ENGINE is required; CI supplies it")
 class NativeFabrication(unittest.TestCase):
+    def test_canonical_machine_paid_admission_primary_switch_native_motion_and_restart(self):
+        import server,workshop_library as library
+        measurements=[]
+        for index,kind in enumerate(('rover','mine-lamp')):
+            product={'kind':kind,'parameters':{'capacity_j':1000.,'charge_j':1000.} if kind=='rover' else {}}
+            plan=self.call('plan_make',candidate=product)
+            quote=plan['quote']
+            for material,missing in plan['missing_materials_kg'].items():
+                if missing<=1e-10:continue
+                library.set_rack(self.app,material,missing)
+                source=next(s for s in self.call('state')['stock_sources'] if s['material']==material and s['pool']=='personal')
+                self.call('fund_stock',material=material,mass_kg=missing,pool='personal',rack_hash=source['rack_hash'],
+                    revision=self.room.fabrication_record['revision'],request_id='canonical-stock-'+kind+'-'+material)
+            self.fund_assembly_goods(quote,'canonical-goods-'+kind)
+            ident='canonical-job-'+kind
+            self.call('start_make',plan_id=plan['plan_id'],revision=self.room.fabrication_record['revision'],request_id=ident)
+            remaining=max(1,math.ceil(quote['minimum_duration_s']))
+            while remaining:
+                seconds=min(10,remaining);self.step(seconds);remaining-=seconds
+            preview=room_api.preview(self.app,{**self.context(),'job_id':ident,'position_m':[index*4.,0]})
+            receipt=room_api.commit(self.app,{**self.context(),'job_id':ident,'preview_id':preview['preview_id'],
+                'request_id':'canonical-place-'+kind})
+            root=receipt['root_body'];roots=set(receipt['root_bodies'])
+            before=deepcopy(self.live.session.state)
+            position=next(b['position_m'] for b in before['bodies'] if b['name']==root)
+            person={'eyes_m':[position[0],position[1]+1.,position[2]+1.],
+                'standing_m':[position[0],position[1],position[2]+1.], 'facing':[0,0,-1]}
+            remote={**person,'eyes_m':[position[0]+100,position[1]+1,position[2]]}
+            answer=server.run_action(self.app,{'object':root,'primary':True,'person':remote})
+            self.assertIn('within 3 m',answer['refused'])
+            self.assertEqual(before['machines'],self.live.session.state['machines'])
+            answer=server.run_action(self.app,{'object':root,'primary':True,'person':person})
+            self.assertNotIn('refused',answer,answer)
+            self.assertTrue(answer['done'])
+            device='program' if kind=='rover' else 'lamp'
+            native=next(r for r in self.live.session.state['machines'][device+'s'] if r['body'] in roots)
+            self.assertTrue(native['power'] if device=='program' else native['on'])
+            if kind=='rover':
+                battery=next(s for s in self.live.session.state['machines']['stores'] if s['body'] in roots)
+                self.step(1)
+                after=next(s for s in self.live.session.state['machines']['stores'] if s['id']==battery['id'])
+                self.assertGreater(after['given_j'],battery['given_j'])
+                action=next(a for a in self.room.spec['actions'] if a['body']==root and a.get('primary'))
+                action['steps'][0]['power']=False
+                with mock.patch.object(server,'keep_world',return_value=False):
+                    uncertain=server.run_action(self.app,{'object':root,'primary':True,'person':person})
+                self.assertIn('retry the same on/off command',uncertain['refused'])
+                self.assertFalse(next(p for p in self.live.session.state['machines']['programs'] if p['id']==native['id'])['power'])
+                answer=server.run_action(self.app,{'object':root,'primary':True,'person':person})
+                self.assertNotIn('refused',answer,answer)
+                self.assertFalse(next(p for p in self.live.session.state['machines']['programs'] if p['id']==native['id'])['power'])
+            else:
+                self.assertFalse(native['lit'],'Unwired fitting must not invent energy/light')
+            saved=self.app.store.load('fabrication');self.live.open(self.app,{'spec':saved.spec,'snapshot':saved.world_record})
+            self.room=self.app.room=saved
+            self.assertEqual('whole',self.live.session.state['restored']['tier'])
+            if kind=='rover':
+                action=next(a for a in saved.spec['actions'] if a['body']==root and a.get('primary'))
+                action['steps'][0]['power']=True
+                with mock.patch.object(server.time,'monotonic_ns',return_value=1):
+                    restarted=server.run_action(self.app,{'object':root,'primary':True,'person':person})
+                self.assertNotIn('refused',restarted,restarted)
+                self.assertTrue(next(p for p in self.live.session.state['machines']['programs'] if p['id']==native['id'])['power'])
+                action['steps'][0]['power']=False
+                self.assertTrue(server.keep_world(self.app,'retain reviewed off action after restart test'))
+            measurements.append({'kind':kind,'materials_kg':quote['product_materials_kg'],
+                'assembly_goods_kg':quote.get('assembly_goods_kg',{}),'paid_j':quote['supply_required_j'],
+                'primary_use':next(a for a in saved.spec['actions'] if a['body']==root and a.get('primary')),
+                'audit':model.audit(self.room.fabrication_record),'restart':'whole'})
+        self.native_evidence=measurements
+
     def fund_assembly_goods(self,quote,ident):
         import workshop_library as library
         for name,kg in quote.get('assembly_goods_kg',{}).items():

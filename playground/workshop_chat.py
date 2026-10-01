@@ -172,6 +172,12 @@ Important behavior:
   world. Never claim a product is operational if its intended action is
   unsupported. Do not write one as a bonus on top of an edit that had nothing to
   do with what the thing is for.
+- machine_power uses the existing native program or lamp, with device="program"
+  or "lamp" and power=true/false. Exactly one matching device must be declared
+  in this product. It is an explicit on/off command, not a toggle, free power,
+  imposed motion or a processing result. A powered lamp still needs its real
+  cable/battery; processing still needs its recipe, inputs, energy and heat.
+  Use inspect only for passive products such as an automatic solar array.
 - MAKE YOUR BEST GUESS AND GO. Do not ask before you start. Every round trip
   to ask something costs the person a wait as long as the work itself, and
   anything you do can be taken back -- take_it_back undoes it, and they know
@@ -449,13 +455,15 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
          "parameters": {"type": "object", "additionalProperties": False, "required": ["points"],
                         "properties": {"points": interaction_points.LIST_SCHEMA}}},
         {"type": "function", "name": "program_use",
-         "description": "Program the product's single core Use on Left mouse / J. Physical bounded steps; never arbitrary code. strike and place require holding it; place uses the visible contextual destination. push_forward requires an empty hand. Use inspect for a passive product, not as a pretend machine function.",
+         "description": "Program the product's single core Use on Left mouse / J. Physical bounded steps; never arbitrary code. strike and place require holding it; place uses the visible contextual destination. push_forward requires an empty hand. machine_power explicitly sets power true/false on this product's one declared program or lamp, within 3 m with a clear view. It supplies no energy or recipe inputs. Use inspect for a passive product, not as a pretend machine function.",
          "parameters": {"type": "object", "additionalProperties": False, "required": ["label", "steps"],
                         "properties": {
                             "label": {"type": "string", "minLength": 1, "maxLength": 60},
                             "steps": {"type": "array", "minItems": 1, "maxItems": 12, "items": {
                                 "type": "object", "additionalProperties": False, "required": ["do"],
-                                "properties": {"do": {"type": "string", "enum": ["inspect", "strike", "push_forward", "place"]},
+                                "properties": {"do": {"type": "string", "enum": ["inspect", "strike", "push_forward", "place", "machine_power"]},
+                                               "device": {"type":"string","enum":["program","lamp"]},
+                                               "power": {"type":"boolean"},
                                                "distance_m": {"type": "number"},
                                                "speed_m_s": {"type": "number"}}}}}}},
         {"type": "function", "name": "how_do_i_make_it",
@@ -1414,7 +1422,9 @@ class _State:
             parameters = {**self.design.parameters, "primary_use": program}
             base = assemble(str(self.design.kind), design_id=self.design.design_id,
                             purpose=self.design.purpose, parameters=parameters)
-            self.design = workshop_components.apply_overrides(base, self.overrides)
+            revised = workshop_components.apply_overrides(base, self.overrides)
+            core_use.installed(revised,"use-probe")
+            self.design = revised
             _refresh(self.app, self.candidate, self.design, self.overrides)
             self.changed.append("primary_use")
             return self.record(tool, {"summary": f"Use: {program['label']}", "primary_use": program})

@@ -2,7 +2,7 @@
 
 Contextual placement and saved interaction points: [contract](placement-and-interaction-points.md).
 
-September 19, 2026. MCP 1.5.0; native ABI 25 is unchanged.
+Updated October 1, 2026. World MCP 1.21.0, platform MCP 1.24.0; native ABI 25 is unchanged.
 
 Every finished product should have one purpose-specific **Use** program. Left
 mouse or **J** uses the held product first, otherwise the product under the
@@ -39,11 +39,12 @@ action becomes primary when none is marked. An object with no program has a
 read-only Inspect fallback; this is not certification that its intended
 machine function is implemented.
 
-Four additional steps are available:
+Five additional steps are available:
 
 | Step | Preconditions | Bounds and effect |
 | --- | --- | --- |
 | `inspect` | Body exists | Read current body state; no physical act |
+| `machine_power` | Nearby visible assembly has exactly one declared/current native `program` or `lamp` | Explicit boolean `power` switches its existing controller on/off; no toggle, motion, charge, feed or output grant. Playground controller required. |
 | `place` | This body is already held | Resolve nearby receiving points or ground, carry with the bounded hand, recheck actual arrival and release; [placement contract](placement-and-interaction-points.md) |
 | `strike` | This body is already held | Hand travels along current look direction, then returns to its starting grip; distance 0.05–0.8 m (default 0.35), speed 0.1–5 m/s (default 3) |
 | `push_forward` | Empty hand; body unanchored and within 3 m | Hand pushes along the person's horizontal facing, then releases; distance 0.05–1.5 m (default 0.4), speed 0.1–1.5 m/s (default 0.4) |
@@ -109,13 +110,26 @@ component edits and library serialization. ProductGraph and PhysicsContract
 carry a `controls` entry with `kind: "primary-use"`, `binding: "primary"`,
 `programmed` and `program`.
 
-The portable Workshop subset is inspect, strike, push_forward and place,
+The portable Workshop subset is inspect, strike, push_forward, place and machine_power,
 referencing the product itself. Mixed held-strike/empty-hand-push programs,
 unknown executable steps, non-finite numbers and out-of-range parameters are
 rejected. Both lattice and precise-rigid installation map the program to the
 installed root body. Old candidates without a declaration receive Inspect;
 their graph says `programmed: false`. Room chat still refuses authoring edits
 to precise-rigid rooms, as before.
+
+Canonical rover/drone/processor/furnace recipes declare Start programs;
+mine-lamp declares Switch light on, and the passive solar array declares Inspect
+power. `machine_power` uses `device: "program"` or `device: "lamp"` and literal
+boolean `power`. Admission checks exactly one declared device; execution checks
+the current attached assembly, 3 m reach and native line of sight. Program
+control retains recovery-grip refusal and native energy/input/heat limits. An
+unwired lamp can be switched on but remains dark. Failed saves report uncertainty
+and ask for the same explicit on/off command, making retries idempotent.
+Standalone C API worlds refuse this primitive because they lack its controller
+binding. Existing saved programs are retained; unsupported recipes still refuse
+paid admission. Bare canonical requests inherit their machine declarations;
+explicit override documents, including `{}`, remain authoritative.
 
 A cart's declared Use does not add missing wheels, bearings or an engine.
 Workshop's articulated installation limitations remain in force. Room-authored

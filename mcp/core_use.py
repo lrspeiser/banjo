@@ -6,22 +6,29 @@ import math
 
 # These additional hand primitives share validation between Workshop, saved
 # rooms and MCP. Existing action primitives retain their richer MCP checks.
-STEPS = ("inspect", "strike", "push_forward", "place")
+STEPS = ("inspect", "strike", "push_forward", "place", "machine_power")
 DEFAULT = {"label": "Inspect", "steps": [{"do": "inspect"}]}
 
 
 def checked_step(value):
     if not isinstance(value, dict) or value.get("do") not in STEPS:
-        raise ValueError("core step must be inspect, strike, push_forward or place")
+        raise ValueError("core step must be inspect, strike, push_forward, place or machine_power")
     do = value["do"]
-    allowed = {"do"} if do in ("inspect", "place") else {"do", "distance_m", "speed_m_s"}
+    allowed = ({"do", "device", "power"} if do == "machine_power" else
+               {"do"} if do in ("inspect", "place") else {"do", "distance_m", "speed_m_s"})
     if set(value) - allowed:
         extra = sorted(set(value) - allowed)
+        if do == "machine_power":
+            raise ValueError("machine_power reads only do, device and power; unknown fields: "+", ".join(extra))
         raise ValueError(
             f"{do} cannot say {extra}: leave {' and '.join(extra)} out of this step and send "
             f'{{"do": "{do}"}} on its own. Only strike and push_forward carry a distance and a '
             "speed.")
     out = {"do": do}
+    if do == "machine_power":
+        if value.get("device") not in ("program", "lamp") or type(value.get("power")) is not bool:
+            raise ValueError("machine_power needs device program or lamp and boolean power")
+        return {"do":do,"device":value["device"],"power":value["power"]}
     if do not in ("inspect", "place"):
         limits = (0.05, 0.8, 0.35, 0.1, 5.0, 3.0) if do == "strike" else (0.05, 1.5, 0.4, 0.1, 1.5, 0.4)
         for key, low, high, default in (
@@ -65,4 +72,10 @@ def selected(actions):
 def installed(design, root):
     value = design.parameters.get("primary_use")
     program = checked_program(value) if value is not None else deepcopy(DEFAULT)
+    for step in program["steps"]:
+        if step["do"] == "machine_power":
+            from mcp import workshop_machines
+            machines = workshop_machines.of(design) or {}
+            if len(machines.get(step["device"]+"s",[])) != 1:
+                raise ValueError("machine_power needs exactly one declared "+step["device"]+" in this product")
     return dict(program, body=root, primary=True)

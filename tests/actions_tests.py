@@ -691,6 +691,31 @@ class RunningAnAction(PlaygroundTestCase):
 
 
 class CoreUseContract(unittest.TestCase):
+    def test_machine_power_requires_a_real_unique_device_and_survives_graph_roundtrip(self):
+        from mcp import core_use, workshop, workshop_components, workshop_graph, product_contract, workshop_machines
+        start={"label":"Start processing","steps":[{"do":"machine_power","device":"program","power":True}]}
+        design=workshop.assemble('processor')
+        self.assertEqual(start,design.parameters['primary_use'])
+        graph=workshop_graph.product(design)
+        portable=product_contract.compile_contract(graph)['controls'][0]['program']
+        self.assertEqual(start,{k:portable[k] for k in ('label','steps')})
+        rebuilt,_=workshop_components.design_from_spec(design.wireframe())
+        self.assertEqual(start,rebuilt.parameters['primary_use'])
+        self.assertEqual(start['steps'],core_use.installed(rebuilt,'native-root')['steps'])
+        for changes in ({'power':1},{'power':'on'},{'device':'motor'},{'device':None},{'target':'peer-device'}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                core_use.checked_step({**start['steps'][0],**changes})
+        with self.assertRaisesRegex(ValueError,'exactly one'):
+            core_use.installed(workshop.assemble('table',parameters={'primary_use':start}),'table')
+        with self.assertRaisesRegex(ValueError,'mix'):
+            core_use.checked_program({'label':'Mixed','steps':start['steps']+[{'do':'strike'}]})
+        bare,overrides=workshop_components.design_from_spec({'kind':'processor'})
+        self.assertEqual(workshop_machines.of(design),workshop_machines.of(bare))
+        self.assertTrue(overrides)
+        stripped,_=workshop_components.design_from_spec({'kind':'processor','component_overrides':{}})
+        self.assertFalse(workshop_machines.of(stripped))
+        with self.assertRaisesRegex(ValueError,'exactly one'):core_use.installed(stripped,'root')
+
     def test_bad_core_programs_and_ambiguous_primaries_fail(self):
         import core_use
         for bad in (True, float("inf"), float("nan"), -1, "3", 100):
@@ -759,6 +784,9 @@ class CoreUseContract(unittest.TestCase):
             before = json.dumps(candidate)
             with self.assertRaises(ValueError):
                 state.execute("program_use", {"label": "Fly", "steps": [{"do": "teleport"}]})
+            self.assertEqual(json.dumps(candidate), before)
+            with self.assertRaisesRegex(ValueError,'exactly one'):
+                state.execute('program_use',{'label':'Run','steps':[{'do':'machine_power','device':'program','power':True}]})
             self.assertEqual(json.dumps(candidate), before)
 
 

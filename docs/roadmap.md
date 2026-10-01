@@ -1,5 +1,13 @@
 # Banjo roadmap and acceptance gates
 
+**Canonical machine operation, October 1:** [Configured Make/Use acceptance](canonical-machine-use-checkpoint.md)
+passes saved canonical rover funding, native placement, actual World Use and
+battery draw; lamp admission preserves its wiring requirement. Bare template
+declarations, mixed stationary/roaming validation and idempotent switch recovery
+are covered. Next declare the ordinary zero-supply workbench and migrate normal
+player/AI guards before complete paid progression/damaged-tool acceptance.
+All fourteen requirements stay active: four verified, ten partial.
+
 **Component selection acceptance, October 1:** [Verified UI checkpoint](component-thumbnails-checkpoint.md)
 shows actual parts as right-panel thumbnails and keeps assembled items usable.
 This replaces the earlier exploded-view requirement for item 6. Physical

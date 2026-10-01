@@ -243,6 +243,87 @@ class LabRemake(unittest.TestCase):
         if getattr(self,'chrome',None):self.chrome.close()
         flow.GoodsJourney.tearDown(self)
 
+    def test_canonical_rover_paid_build_and_primary_use_in_browser(self):
+        self.assertTrue(flow.qa_browser.CHROME.is_file(),'Chrome required')
+        world,owner,app,*_=self.batch(process=False)
+        pile=app.brains.goods.put(0,0,{'oak':40.,'iron':12.,'glass':5.,'copper':.5,'copper wire':2.3},
+            named='explicit canonical build fixture supplies')['onto']
+        sid=app.live.session.id
+        floor=app.live.act({'session':sid,'op':'survey','at':[0,0]})['survey']['ground_m']
+        collected={}
+        for index in range(3):
+            receipt=self.post('/api/world/goods/collect',{'session':sid,'pile':pile,
+                'request_id':f'canonical-browser-collect-{index}',
+                'person':{'eyes_m':[0,floor+1.62,0],'facing':[0,0,-1]}},world)
+            for material,mass in receipt['collected'].items():
+                collected[material]=collected.get(material,0)+mass
+        self.assertEqual({'oak':40.,'iron':12.,'glass':5.,'copper':.5,'copper wire':2.3},collected)
+        self.post('/api/world/fabrication/configure',{'session':sid,'scene':app.room.scene,
+            'settings':funded.settings(stock_kg={},energy_j=0),'request_id':'canonical-browser-process'},world)
+        candidate={'kind':'rover','parameters':{'capacity_j':1000.,'charge_j':1000.}}
+        saved=self.post('/api/workshop/feedback',{**candidate,'save_design':True,'label':'Canonical rover'},world)
+        self.chrome=flow.qa_browser.Chrome(1280,900);p=self.chrome.page
+        p.send('Page.enable');p.send('Runtime.enable')
+        p.send('Page.addScriptToEvaluateOnNewDocument',{'source':f'localStorage.setItem("banjo.player.{world}",{json.dumps(owner["token"])});'})
+        def wait(expr):
+            end=time.monotonic()+35
+            while time.monotonic()<end:
+                if p.evaluate('Boolean('+expr+')'):return
+                time.sleep(.1)
+            self.fail(expr+'; '+str(p.evaluate('document.body.innerText.slice(-1600)')))
+        def click(selector):
+            wait('document.querySelector("#ws-remake").getAttribute("aria-busy")!=="true"')
+            point=p.evaluate('(()=>{const b=document.querySelector(%s);b.scrollIntoView({block:"center"});const r=b.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()'%json.dumps(selector))
+            for event in ('mousePressed','mouseReleased'):
+                p.send('Input.dispatchMouseEvent',{'type':event,**point,'button':'left','clickCount':1})
+            wait('document.querySelector("#ws-remake").getAttribute("aria-busy")!=="true"')
+        p.send('Page.navigate',{'url':self.base+f'/world?world={world}&workshop=1&tab=recipes'})
+        selector='#ws-pane-recipes [data-recipe="'+saved['design']['design_id']+'"] .ws-recipe-acts button:first-child'
+        wait('document.querySelector(%s) && !document.querySelector(%s).disabled'%(json.dumps(selector),json.dumps(selector)))
+        p.evaluate('document.querySelector(%s).click()'%json.dumps(selector))
+        wait('document.querySelector("#ws-remake-stock-personal-oak")')
+        for material in ('oak','iron','glass'):
+            wait('document.querySelector("#ws-remake-stock-personal-'+material+'")')
+            click('#ws-remake-stock-personal-'+material)
+            wait('!document.querySelector("#ws-remake-stock-personal-'+material+'")')
+        for substance in ('copper','copper wire'):
+            selector='#ws-remake-goods-personal-'+substance.replace(' ','-')
+            wait('document.querySelector('+json.dumps(selector)+')')
+            click(selector);wait('!document.querySelector('+json.dumps(selector)+')')
+        click('#ws-remake-connect');wait('document.querySelector("#ws-remake-charge-wait")')
+        for _ in range(20):
+            if p.evaluate('!document.querySelector("#ws-remake-start").disabled'):break
+            if p.evaluate('document.querySelector("#ws-remake-energy").disabled'):
+                click('#ws-remake-charge-wait');wait('!document.querySelector("#ws-remake-energy").disabled')
+            click('#ws-remake-energy')
+        wait('!document.querySelector("#ws-remake-start").disabled')
+        click('#ws-remake-start');wait('document.querySelector("#ws-remake-step")')
+        for _ in range(20):
+            if p.evaluate('!!document.querySelector("#ws-remake-place")'):break
+            click('#ws-remake-step')
+        wait('document.querySelector("#ws-remake-place")');click('#ws-remake-place')
+        wait('document.querySelector("#ws-remake a")?.textContent==="Collect in World"')
+        job=next(iter(app.room.fabrication_record['jobs'].values()));root=job['root_body']
+        p.send('Page.navigate',{'url':self.base+f'/world?world={world}&hold=1'})
+        wait('window.banjoRoom?.ready()')
+        p.evaluate('(()=>{const r=banjoRoom,b=r.world.bodies.get('+json.dumps(root)+');r.standAt(b.mesh.position.x,b.mesh.position.y+1,b.mesh.position.z+1);r.lookAt(...b.mesh.position.toArray())})()')
+        wait('banjoRoom.world.aim?.name==='+json.dumps(root))
+        # J runs the installed primary action through the ordinary server route.
+        p.evaluate('banjoRoom.resume()')
+        for event in ('keyDown','keyUp'):
+            p.send('Input.dispatchKeyEvent',{'type':event,'code':'KeyJ','key':'j','windowsVirtualKeyCode':74})
+        wait('banjoRoom.world.last?.text?.includes("Switched rover")')
+        program=next(p for p in app.live.session.state['machines']['programs'] if p['body'] in job['root_bodies'])
+        self.assertTrue(program['power'])
+        wait('banjoRoom.world.machines.stores.some(s=>'+json.dumps(job['root_bodies'])+'.includes(s.body) && s.given_j>0)')
+        out=ROOT/'build/resource-flow';out.mkdir(parents=True,exist_ok=True)
+        p.evaluate('banjoRoom.pick('+json.dumps(root)+')')
+        (out/'canonical-paid-rover-use.png').write_bytes(base64.b64decode(p.send('Page.captureScreenshot',{'format':'png'})['data']))
+        self.assertEqual([], [e for e in p.events if e.get('method')=='Runtime.exceptionThrown'])
+        self.native_evidence={'quote':{k:job[k] for k in ('product_materials_kg','assembly_goods_kg','required_j','output_energy_j')},
+            'use_program_power':program['power'],'audit':model.audit(app.room.fabrication_record),
+            'supplies':'explicit collected fixture heap; generated native solar battery'}
+
     def test_lab_saved_mixed_machine_reviews_each_material_and_funds_initial_charge(self):
         from fabrication_tests import mixed_machine
         self.assertTrue(flow.qa_browser.CHROME.is_file(),'Chrome required for Lab machine acceptance')

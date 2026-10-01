@@ -103,7 +103,11 @@ def design_from_spec(spec: Any) -> tuple[WorkshopDesign, dict[str, dict[str, Any
     if not isinstance(parameters, dict): raise ValueError("candidate parameters must be an object")
     base = assemble(kind, design_id=str(spec.get("design_id") or kind),
         purpose=(str(spec["purpose"]) if spec.get("purpose") else None), parameters=parameters)
-    overrides = checked_overrides(spec.get("component_overrides"))
+    # A bare canonical recipe retains its declared mechanics and machines.
+    # An explicit override document remains authoritative, including an empty
+    # document that deliberately removes those declarations.
+    overrides = checked_overrides(spec["component_overrides"] if "component_overrides" in spec
+                                  else base.lineage.get("component_overrides"))
     return apply_overrides(base, overrides), overrides
 
 
