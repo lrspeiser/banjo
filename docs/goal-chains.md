@@ -1,5 +1,7 @@
 # Personal goal chains
 
+Implementation and measured evidence: **`6b45be4393a7c98e3db1bb743000912329c1207f`**, published to GitHub main. The native runner remains the MSVC CPU build from `f819e81`; the Python/UI/catalog checkpoint introduces no native solver change.
+
 ## Implemented contract
 
 The Goals screen now has two checklists: **Make your first camp** and **Put your camp to work**. Links take the player to Market, Recipes, Skills or World. No checklist control performs a physical action or supplies completion evidence.
@@ -33,6 +35,15 @@ Tests run on Windows 11 / Python 3.13.5 / MSVC Release CPU runner built from `f8
 The new CTest target and CI command run `tests/goal_chains_tests.py`: two complete generated-world journeys, personal isolation/restart, rejection of unsupported declarations and false surface annotations, and a Chrome chapter/guide/recipe navigation check. The first seed uses the advertised Work table; the second changes its id and dimensions to verify general geometry qualification. Both place the carried Camp stool on the admitted surface through the native placement resolver and normal Put down control.
 
 Final source revision and measured receipts are recorded with the [acceptance evidence](evidence/goal-chains/acceptance.json). Browser output is [the checklist](evidence/goal-chains/checklist.png). The existing opening-goals suite, Workshop tabs suite, source registration guard, Python compilation, JavaScript syntax and changed-file checks are also retained.
+
+| Generated terrain / goods seed | Measured removed volume | Tool/ground work | Funded receiving area |
+|---|---:|---:|---:|
+| 7 / 851269742 | 0.03178217542410151 m³ | 94.88046 J | 0.1536 m² |
+| 4 / 1 | 0.02919999052194552 m³ | 62.71566 J | 0.175 m² |
+
+Both runs finish the four opening goals in ten normal actions, then the four new goals. Both place the stool on the table and observe an actual 5 kg ore → 1.5 kg copper batch drawing 10,000 J. Another guest completes zero new steps, and restart preserves all source-linked goal receipts. Numerical tool results vary with settle/clock phase; these are recorded runs, not a bitwise determinism claim.
+
+Final registered CTest: four tests, zero skips, 43.17 s. Existing opening-goals suite: four passes; Workshop tabs: nine passes. Source registration remains 286 / 286. Earlier failing fixture checks were corrected by supplying the normal standing pose, advancing the clock while the physical placement waited, and using the actual browser label/link selectors; no physical law or tolerance was relaxed.
 
 No material law, tolerance or solver changed. This checkpoint adds no new full-world conservation, chemistry, strength or cross-GPU claim; earlier glass/oak/iron comparative physics remains bounded by its existing evidence.
 
