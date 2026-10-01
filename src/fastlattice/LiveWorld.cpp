@@ -39,6 +39,15 @@
 
 namespace banjo::fastlattice {
 namespace {
+// A machine may work while a different player or the clock steps the world.
+// Select only its receiving account; the active hand and solver stay unchanged.
+struct GroundCarrierScope {
+    terrain::Environment &env;
+    std::string previous;
+    GroundCarrierScope(terrain::Environment &environment, const std::string &actor)
+        : env(environment), previous(environment.selectedCarrier()) { env.selectCarrier(actor); }
+    ~GroundCarrierScope() { env.selectCarrier(previous); }
+};
 // The lattice's own vector type. The support planes are templated on it, and a
 // scene's Vec3 is a different struct with the same three numbers in it.
 V3<double> toV3(const Vec3 &v) { return {v.x, v.y, v.z}; }
@@ -1974,8 +1983,10 @@ struct LiveWorld::Impl {
             const double hardness = terrain::groundHardnessPa(field.kindAt(*column, face.y));
             if (!(hardness > 0.0)) { breaker.why = "there is nothing there to break"; continue; }
             const double bought = terrain::brokenVolumeM3(hardness, work_j);
+            const std::string carrier = carrierOfBody(found->second);
+            const GroundCarrierScope receiving(*environment,carrier);
             const terrain::Environment::Chipped chipped =
-                environment->chip(*world, face.x, face.z, face.y, bought, carriedObjectsKg());
+                environment->chip(*world, face.x, face.z, face.y, bought, carriedObjectsKgFor(carrier));
             breaker.broken_share = chipped.broken;
             if (chipped.full) {
                 breaker.why = "the cell is worked through and more rock than can be carried";
@@ -3271,6 +3282,7 @@ struct LiveWorld::Impl {
         let_go_velocity = h.let_go_velocity; hand_step = h.hand_step;
     }
     void selectHand(const std::string &player) {
+        if (environment) environment->selectCarrier(player);
         if (player == selected_hand) return;
         hands[selected_hand] = handContext();
         selected_hand = player;
@@ -3282,6 +3294,12 @@ struct LiveWorld::Impl {
         for (const auto &[player, hand] : hands)
             if (player != selected_hand && hand.holding == body) return true;
         return false;
+    }
+    [[nodiscard]] std::string carrierOfBody(std::size_t body) const {
+        if (holding == body) return selected_hand;
+        for (const auto &[actor, hand] : hands)
+            if (actor != selected_hand && hand.holding == body) return actor;
+        return {};
     }
     [[nodiscard]] bool heldByOther(std::size_t body) const {
         for (const auto &[player, hand] : hands)
@@ -3324,6 +3342,7 @@ struct LiveWorld::Impl {
     struct ParkedRecord {
         RigidSnapshot pose{};
         double mass_kg{};
+        std::string actor;
     };
     std::unordered_map<std::string, ParkedRecord> parked;
     [[nodiscard]] bool isParked(std::size_t slot) const {
@@ -3363,12 +3382,17 @@ struct LiveWorld::Impl {
         return false;
     }
     [[nodiscard]] double carriedObjectsKg(bool include_hand = true) const {
+        return carriedObjectsKgFor(selected_hand, include_hand);
+    }
+    [[nodiscard]] double carriedObjectsKgFor(const std::string &actor, bool include_hand = true) const {
         // Use native mass, including saved parked mass. Construction recipes
         // would silently restore material removed by damage or burning.
         double kg=0;
-        for (const auto &entry:parked) kg+=entry.second.mass_kg;
-        if (include_hand && holding!=static_cast<std::size_t>(-1) && inWorld(holding))
-            kg+=world->mechanicalState(body_of[holding]).mass_kg;
+        for (const auto &entry:parked) if (entry.second.actor==actor) kg+=entry.second.mass_kg;
+        const auto found=hands.find(actor);
+        const auto held=actor==selected_hand?holding:found==hands.end()?static_cast<std::size_t>(-1):found->second.holding;
+        if (include_hand && held!=static_cast<std::size_t>(-1) && inWorld(held))
+            kg+=world->mechanicalState(body_of[held]).mass_kg;
         return kg;
     }
     // The lattice this world's scene builds, in a few numbers (fingerprintOf):
@@ -3696,6 +3720,7 @@ struct Placement {
     bool awake{true};
     bool parked{};
     double parked_mass_kg{};
+    std::string parked_actor;
 };
 
 // What the scene declares about heat, for a world opened from a saved one:
@@ -4735,6 +4760,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
                 // where unpark deliberately starts it at rest. Restore must
                 // retain the recorded motion even though no parked body steps.
                 at.parked_mass_kg = numberFrom(b.at("parked").at("mass_kg"));
+                at.parked_actor = b.at("parked").value("actor",std::string{});
             } else {
                 at.pose = rigidFrom(b.at("pose"));
                 at.awake = b.value("awake", true);
@@ -4892,6 +4918,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         bool awake = true;
         bool away = false;
         double away_kg = 0.0;
+        std::string away_actor;
         if (previous) {
             if (previous->value("shape", std::string{}) != "compound" ||
                 previous->value("anchored", false) || previous->value("fragment", false) ||
@@ -4916,6 +4943,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             pose = rigidFrom(away ? previous->at("parked").at("pose") : previous->at("pose"));
             if (away) {
                 away_kg = numberFrom(previous->at("parked").at("mass_kg"));
+                away_actor = previous->at("parked").value("actor",std::string{});
             }
             awake = !away && previous->at("awake").get<bool>();
         }
@@ -4929,7 +4957,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
                 numberFrom(previous->at("rolling_resistance")) != surface.rolling_resistance)
                 throw std::invalid_argument("saved precise-rigid surface differs from its material model");
             Placement at; at.name=name; at.id=id; at.pose=pose; at.awake=awake;
-            at.parked=away; at.parked_mass_kg=away_kg;
+            at.parked=away; at.parked_mass_kg=away_kg; at.parked_actor=away_actor;
             placements.push_back(at);
         }
         LiveBodyPose d;
@@ -5315,7 +5343,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         std::string refused;
         if (!impl.world->park(at.id, refused))
             throw std::invalid_argument("the saved " + at.name + " could not be set aside again: " + refused);
-        impl.parked.emplace(at.name, Impl::ParkedRecord{at.pose, at.parked_mass_kg});
+        impl.parked.emplace(at.name, Impl::ParkedRecord{at.pose, at.parked_mass_kg, at.parked_actor});
         if (impl.thermo && impl.thermo->holds(at.name)) impl.thermo->park(at.name);
         said.parked.push_back({at.name, at.pose.center_of_mass_world_m,
                                composeTurns(at.pose.orientation_world, impl.shapeTurn(impl.index_of.at(at.name)))});
@@ -13724,6 +13752,30 @@ std::map<std::string, LiveHand> LiveWorld::playerHands() {
     return out;
 }
 
+std::string LiveWorld::playerCarriedGround() const {
+    const Impl &I=*impl_;
+    if (!I.environment) return "{}";
+    auto accounts=I.environment->carriedAccounts();
+    for (const auto &[actor, hand] : I.hands) { (void)hand; accounts.try_emplace(actor); }
+    for (const auto &[name, parked] : I.parked) { (void)name; accounts.try_emplace(parked.actor); }
+    auto out=nlohmann::json::object();
+    for (const auto &[actor, volume] : accounts) {
+        const double sand=volume.sand_m3*terrain::sandMaterial().density_kg_m3;
+        const double soil=volume.soil_m3*terrain::soilMaterial().density_kg_m3;
+        const double rock=volume.rock_m3*terrain::rockMaterial().density_kg_m3;
+        const double objects=I.carriedObjectsKgFor(actor), total=sand+soil+rock+objects;
+        nlohmann::json reading={{"sand_m3",volume.sand_m3},{"soil_m3",volume.soil_m3},{"rock_m3",volume.rock_m3},
+            {"sand_kg",sand},{"soil_kg",soil},{"rock_kg",rock},{"objects_kg",objects},{"total_kg",total}};
+        const double limit=I.environment->carryLimitKg();
+        if (std::isfinite(limit)) {
+            reading["limit_kg"]=limit;reading["available_kg"]=std::max(0.0,limit-total);
+            reading["over_limit_kg"]=std::max(0.0,total-limit);
+        }
+        out[actor]=std::move(reading);
+    }
+    return out.dump();
+}
+
 void LiveWorld::beginHandStep(double dt_s) {
     Impl &I = *impl_;
     I.hand_step = Impl::HandStep{};
@@ -15352,6 +15404,12 @@ ToolTerrainHost LiveWorld::toolHost() const {
     host.cell_m = I.request.cell_size_m;
     host.time_s = I.time_s;
     host.carried_objects_kg = I.carriedObjectsKg();
+    host.carrier_of = [this](const std::string &body) {
+        const auto found=impl_->index_of.find(body);
+        if (found==impl_->index_of.end()) return std::string{};
+        return impl_->carrierOfBody(found->second);
+    };
+    host.objects_of = [this](const std::string &actor) { return impl_->carriedObjectsKgFor(actor); };
     host.id_of = [this](const std::string &name) -> std::optional<MatterBodyId> {
         const auto found = impl_->index_of.find(name);
         if (found == impl_->index_of.end()) return std::nullopt;
@@ -15593,7 +15651,7 @@ bool LiveWorld::park(const std::string &name, std::string &why) {
     std::vector<std::pair<std::size_t, Impl::ParkedRecord>> away;
     for (const std::size_t k : group) {
         const MatterBodyId id = I.body_of[k];
-        away.push_back({k, Impl::ParkedRecord{I.world->snapshot(id), I.world->mechanicalState(id).mass_kg}});
+        away.push_back({k, Impl::ParkedRecord{I.world->snapshot(id), I.world->mechanicalState(id).mass_kg, I.selected_hand}});
     }
     for (std::size_t n = 0; n < away.size(); ++n) {
         const std::size_t k = away[n].first;
@@ -15678,6 +15736,13 @@ bool LiveWorld::unpark(const std::string &name, const Vec3 &at_world_m, const Qu
             why = "the " + I.described[k].name + " joined to it is in the world already, not set aside with it";
             return false;
         }
+    for (const std::size_t k : group) {
+        const auto &owner=I.parked.at(I.described[k].name).actor;
+        if (!owner.empty() && owner!=I.selected_hand) {
+            why="it is in another player's bag";
+            return false;
+        }
+    }
     const RigidSnapshot was = I.parked.at(name).pose;
     const Quat undo = conjugateOf(was.orientation_world);
     std::vector<std::pair<std::size_t, RigidSnapshot>> poses;
@@ -15858,7 +15923,8 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
         b["nodes_b64"] = packedArray(nodes);
         b["offsets_b64"] = packedVecs(offsets);
         if (const auto away = I.parked.find(d.name); away != I.parked.end()) {
-            b["parked"] = {{"pose", savedRigid(away->second.pose)}, {"mass_kg", savedNumber(away->second.mass_kg)}};
+            b["parked"] = {{"pose", savedRigid(away->second.pose)}, {"mass_kg", savedNumber(away->second.mass_kg)},
+                           {"actor", away->second.actor}};
         } else if (I.world->contains(id)) {
             b["pose"] = savedRigid(I.world->snapshot(id));
             b["awake"] = I.world->isAwake(id);

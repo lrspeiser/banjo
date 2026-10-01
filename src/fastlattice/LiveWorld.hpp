@@ -1140,6 +1140,7 @@ struct LiveToolPoint {
 struct LiveGroundWork {
     unsigned point{};          // the tool point
     std::string tool;          // the body carrying it
+    std::string actor;         // native owner of material loosened by this meeting
     std::string ground;        // what the point met: "soil", "sand", "loose soil", "rock", "the floor"
     // "in the ground"  the point is in and the ground is resisting it (open)
     // "broke out"      a pry broke ground out, and it came loose
@@ -2232,6 +2233,7 @@ public:
     // the original single-user hand. Selection changes no body pose or time.
     void selectHand(const std::string &player);
     [[nodiscard]] std::map<std::string, LiveHand> playerHands();
+    [[nodiscard]] std::string playerCarriedGround() const;
     // Previews, for aiming. Neither changes the world, and both are bounded:
     // at most ten seconds of flight, and a stroke at most its own give_up_s.
     [[nodiscard]] LiveStrokePreview previewStroke(const LiveStroke &stroke, double dt_s,

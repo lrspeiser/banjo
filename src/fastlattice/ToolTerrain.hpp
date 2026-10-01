@@ -45,6 +45,8 @@ struct ToolTerrainHost {
     double cell_m{};
     double time_s{};
     double carried_objects_kg{}; // measured held and stored bodies share the ground budget
+    std::function<std::string(const std::string &)> carrier_of;
+    std::function<double(const std::string &)> objects_of;
     std::function<std::optional<MatterBodyId>(const std::string &)> id_of;
     // A body's cells: node number, and its centre in the body's own frame.
     std::function<std::vector<std::pair<std::uint32_t, Vec3>>(const std::string &)> cells_of;
@@ -139,6 +141,7 @@ private:
         double rock_hardness_pa{};
         double broke_m3{};      // what this meeting has broken out of the rock
         std::string ground;  // the layer the tip is in
+        std::string carrier; // owner when this meeting began, even if the tool is later released
         // As the step began, for what the step did.
         Vec3 tip_before{};
         double vn_before{}, vx_before{}, vz_before{};

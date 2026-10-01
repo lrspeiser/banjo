@@ -151,3 +151,12 @@ def personalize_hand(state: dict[str, Any], player_id: str) -> None:
     if player_id:
         state["hand"] = (state.get("player_hands") or {}).get(player_id) or {}
         state["hand_owner"] = player_id
+        accounts=state.get('player_carried')
+        if isinstance(accounts,dict):
+            carried=accounts.get(player_id)
+            if not isinstance(carried,dict):
+                limit=(state.get('carried') or {}).get('limit_kg',80.)
+                carried={'sand_m3':0.,'soil_m3':0.,'rock_m3':0.,'sand_kg':0.,'soil_kg':0.,
+                         'rock_kg':0.,'objects_kg':0.,'total_kg':0.,'limit_kg':limit,'available_kg':limit,'over_limit_kg':0.}
+            state['carried']=dict(carried)
+            if isinstance(state.get('terrain'),dict):state['terrain']={**state['terrain'],'carried':dict(carried)}

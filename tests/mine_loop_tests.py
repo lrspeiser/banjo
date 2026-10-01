@@ -124,7 +124,7 @@ class TheMineLoop(unittest.TestCase):
     def act(self, op: str, **body) -> dict:
         return self.live.act({"session": self.live.session.id, "op": op, **body})
 
-    def step(self, seconds: float) -> dict:
+    def step(self, seconds: float, actor: str = "") -> dict:
         """Run the world for that long, at the page's own step.
 
         A step is told `dt` and `n`, never "seconds" -- a call that says seconds
@@ -135,7 +135,7 @@ class TheMineLoop(unittest.TestCase):
         left = max(1, int(round(seconds / dt)))
         while left > 0:
             n = min(left, 120)
-            said = self.act("step", dt=dt, n=n)
+            said = self.act("step", dt=dt, n=n, actor=actor)
             left -= n
         return said
 
@@ -193,6 +193,12 @@ class TheMineLoop(unittest.TestCase):
 
     # ---- 4: the breaker drives a heading ---------------------------------
     def test_3_the_breaker_drives_a_heading_and_the_rock_is_carried(self):
+        self.heading()
+
+    def test_3b_a_held_breaker_credits_its_owner_during_other_player_and_clock_steps(self):
+        self.heading("alice")
+
+    def heading(self, owner=""):
         breaker, breaker_rows = made("breaker")
         # A wall of rock to work: flat ground at y = 0, the breaker standing over
         # it with its chisel looking down.
@@ -213,14 +219,22 @@ class TheMineLoop(unittest.TestCase):
             "watts": 1500.0, "reach_m": 0.5, "on": True}]
         opened = self.open(spec)
         self.assertFalse(opened.get("machine_problems"), opened.get("machine_problems"))
+        if owner:
+            # Let the tool settle through ordinary gravity/contact before the
+            # native hand takes hold; no pose or velocity assignment.
+            self.step(1.0)
+            pose=next(b for b in self.act("poses")["bodies"] if b["name"]=="breaker")
+            self.act("wield",actor=owner,name="breaker",grip=pose["position_m"])
         # A person can hold 80 kg, and a cell of rock is 37.5, so the heading
         # stops after two cells until something is put down. This is about the
         # tool, so nothing is limiting what it can carry.
-        before = (self.machines().get("stores") or [{}])[0].get("charge_j", 0.0)
+        initial=self.machines()
+        before = (initial.get("stores") or [{}])[0].get("charge_j", 0.0)
+        initial_work=(initial.get("breakers") or [{}])[0].get("broke_total_m3",0.0)
         cell_m3 = CELL_M ** 3
         seen, worked, ran_s, rock_kg = [], 0.0, 0.0, 0.0
-        for _ in range(400):
-            said = self.step(1.0)
+        for frame in range(400):
+            said = self.step(1.0,"bob" if owner and frame%2==0 else "")
             ran_s += 1.0
             machines = said.get("machines") or {}
             breaker = (machines.get("breakers") or [{}])[0]
@@ -230,12 +244,24 @@ class TheMineLoop(unittest.TestCase):
             # blow AFTER the one that pays for it. What settles this is the
             # ground: a cell is out when somebody is carrying it.
             if worked >= cell_m3:
-                ground = (self.act("environment").get("environment") or {}).get("ground") or {}
+                ground = (self.act("environment",actor=owner).get("environment") or {}).get("ground") or {}
                 rock_kg = float((ground.get("carried") or {}).get("rock_kg", 0.0))
                 if rock_kg > 0.0:
                     break
+        if owner and rock_kg==0:
+            # The actual 47.023 kg tool plus a 37.5 kg cell exceeds the normal
+            # 80 kg account. Refusal must use Alice's budget despite Bob's empty
+            # account. Increase only this experiment's declared allowance to
+            # 100 kg, then let native work resume; production stays at 80 kg.
+            self.assertIn("more rock than can be carried",breaker["why"])
+            blocked=self.act("poses",actor=owner)["player_carried"]
+            self.assertGreater(blocked[owner]["objects_kg"],42.5)
+            self.assertEqual(0,blocked["bob"]["total_kg"])
+            self.live.session.send(op="carry_limit",kg=100)
+            self.step(1/240,"bob")
+            worked=self.live.session.state["machines"]["breakers"][0]["broke_total_m3"]
         after = (self.machines().get("stores") or [{}])[0].get("charge_j", 0.0)
-        ground = (self.act("environment").get("environment") or {}).get("ground") or {}
+        ground = (self.act("environment",actor=owner).get("environment") or {}).get("ground") or {}
         carried = ground.get("carried") or {}
         rock_kg = float(carried.get("rock_kg", 0.0))
         dug = float((ground.get("ledger") or {}).get("dug", {}).get("rock_m3", 0.0))
@@ -245,10 +271,16 @@ class TheMineLoop(unittest.TestCase):
         self.assertGreaterEqual(worked, cell_m3 * 0.99, f"it did not get through a cell: {seen[:3]}")
         # rock-work-v1: 30 MJ the cubic metre for fresh rock, and every joule
         # out of the battery.
-        self.assertAlmostEqual(before - after, worked * 30.0e6, delta=worked * 30.0e6 * 0.02)
+        self.assertAlmostEqual(before - after, (worked-initial_work) * 30.0e6, delta=worked * 30.0e6 * 0.02)
         self.assertGreater(rock_kg, 0.9 * cell_m3 * ROCK_KG_M3, carried)
         # And the ground lost exactly that: the heading is a cell deeper.
         self.assertAlmostEqual(dug, cell_m3, delta=1e-9)
+        if owner:
+            accounts=self.act("poses",actor=owner)["player_carried"]
+            self.assertAlmostEqual(rock_kg,accounts[owner]["rock_kg"],places=6)
+            for actor in ("bob",""):
+                self.assertEqual(0,accounts[actor]["rock_kg"])
+            print("  breaker output belongs to Alice; Bob and the unattended account carry no rock")
 
     # ---- 5 and 6: the cable, and the sun ---------------------------------
     def test_4_a_run_of_cable_from_the_array_lights_the_lamp(self):

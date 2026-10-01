@@ -1,5 +1,13 @@
 # Banjo mechanics scorecard
 
+**Private carrying boundary, October 1:** [Native ownership measurements](private-ground-checkpoint.md)
+retain 40 mm / `dt=1/240 s` matched glass/oak/iron tools. Their parked masses
+are 4.32 / 1.2096 / 13.59936 kg; each actor's ground plus own bag reaches 80 kg
+independently. Shared terrain residuals stay below 1.3e-13 m³. A 9.542 kg real
+oak breakout credits its original holder through other-player/clock stepping.
+No law or tolerance changes; ledger bag/cargo inertia, avatar reactions,
+anonymous recovery, broken-rock storage and full conservation remain open.
+
 **Gathering/supply boundary, October 1:** [Measured native stroke/carry/deposit](gathering-supply-checkpoint.md)
 keeps ground-work-v1 and native mass/capacity laws. Browser J/F strokes fill
 the actual 80 kg allowance, a full load starts no stroke, and H returns carried

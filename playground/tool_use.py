@@ -390,7 +390,7 @@ def _closed(app: Any, tool: str, since: float, heard: dict[Any, dict[str, Any]],
 
 def _carried(app: Any) -> dict[str, Any]:
     """What the person carries now: from the room's last reply, or asked."""
-    carried = (app.live.session.state or {}).get("carried")
+    carried = live_session.current_carried(app.live.session)
     if isinstance(carried, dict):
         return carried
     try:

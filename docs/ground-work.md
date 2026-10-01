@@ -1,5 +1,13 @@
 # Ground work: tools that dig
 
+**October 1 ownership checkpoint:** [Private carrying evidence](private-ground-checkpoint.md)
+keeps ground-work-v1 and rock-work-v1. A bite captures its holder when it begins;
+closed breakout goes to that holder's native account even while another player
+or the clock steps. Ground-state-v5 preserves named accounts and earlier anonymous
+loads; aggregate diagnostics count them all. Parked native mass is private.
+Material/contact laws and tolerances are unchanged; bag inertia, avatar reactions,
+earlier-load recovery and broken-rock storage remain explicit boundaries.
+
 A pick is a body with a point. What the ground does about the point is the
 engine's, decided in the solver from the ground's own materials and the point's
 shape -- never from what the tool is called, and never from anything a player

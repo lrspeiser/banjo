@@ -42,7 +42,10 @@ def _as_legacy(ground,schema):
     not enough -- a v2 world had never heard of a bed, and the engine refuses a
     save that says v2 and carries them."""
     out=deepcopy(ground)
+    if any(sum(stock.values())>0 for stock in out.get("carriers",{}).values()):
+        raise ValueError("A legacy fixture cannot discard private carried ground")
     out["schema"]=schema
+    out.pop("carriers",None)
     out.pop("beds",None)
     out["rock"]=b64encode(array("d",_rock_tops(ground)).tobytes()).decode("ascii")
     return out
@@ -568,7 +571,7 @@ class NativeInstallation(unittest.TestCase):
         came_back=install._snapshot(resumed)["ground"]
         # What was dug and taken out of the world is still taken out of it; what
         # a v2 save could not say, that none of it went back, is said now.
-        self.assertEqual(came_back["schema"],"banjo.ground-state.v4")
+        self.assertEqual(came_back["schema"],"banjo.ground-state.v5")
         self.assertEqual(original["ground"]["exported"],came_back["exported"])
         self.assertEqual(original["ground"]["carried"],came_back["carried"])
         self.assertEqual(came_back["returned"],{"rock_m3":0.,"sand_m3":0.,"soil_m3":0.})
@@ -594,7 +597,7 @@ class NativeInstallation(unittest.TestCase):
         migrated=install._snapshot(resumed)["ground"]
         # A save from before any of this is the ground it always was, with an
         # account that begins at nothing and the deep earth under it.
-        self.assertEqual(migrated["schema"],"banjo.ground-state.v4")
+        self.assertEqual(migrated["schema"],"banjo.ground-state.v5")
         self.assertEqual(migrated["exported"],{"rock_m3":0.,"sand_m3":0.,"soil_m3":0.})
         self.assertEqual(migrated["returned"],{"rock_m3":0.,"sand_m3":0.,"soil_m3":0.})
         self.assertEqual(_rock_tops(migrated),rock,"the rock came back where it was")

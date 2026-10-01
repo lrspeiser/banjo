@@ -1,5 +1,12 @@
 # Banjo roadmap and acceptance gates
 
+**Private carrying acceptance, October 1:** [Two-player native/storage/browser checks](private-ground-checkpoint.md)
+pass independent budgets, parked ownership, completed-stroke attribution,
+server restart and staged bulk storage. A full requesting player leaves the
+rover's own scoop account available. Next provide explicit earlier-load recovery,
+broken-rock storage and usable recipe stock, then complete the remaining
+process-to-build/saved-design and pick/repair journeys. All fourteen gates remain.
+
 **Gathering/supply acceptance, October 1:** [Ordinary native loop](gathering-supply-checkpoint.md)
 passes actual tool discovery, primary/F digging, full refusal, H heaping and
 resumed digging; recursive process input guidance reaches actual raw deposits.

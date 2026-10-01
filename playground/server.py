@@ -2084,6 +2084,8 @@ class Handler(BaseHTTPRequestHandler):
                     if clock.has_it(): body["moved"]=False
                     clock.page_stepped()
                     self.app.brains.unattended=False
+                if player and body.get("op") in ("ground_withdraw","ground_return"):
+                    raise ValueError("Move ground through storage or machine transfers")
                 self.app.brains.before(self.app,body)
                 with (player_world.lock_of(app) if player else nullcontext()):
                     if player: body["actor"]=player

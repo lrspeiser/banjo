@@ -185,6 +185,12 @@ public:
     // edits carries the same. A heap a scene declares beyond it is declared
     // ground and leaves nothing owed; a cut leaves as a body, not carried.
     [[nodiscard]] const Volumes &carried() const { return carried_; }
+    // Selection changes only the account used by the next bounded operation.
+    // Shared terrain and excavation/export ledgers remain world-wide.
+    void selectCarrier(const std::string &actor);
+    [[nodiscard]] const std::string &selectedCarrier() const { return selected_carrier_; }
+    [[nodiscard]] std::map<std::string, Volumes> carriedAccounts() const;
+    [[nodiscard]] Volumes carriedTotal() const;
     [[nodiscard]] const Volumes &returned() const { return returned_; }
     // Transfer already excavated bulk material out of the carried account.
     // A host must durably accept the returned packet with the saved world in
@@ -309,6 +315,8 @@ private:
     std::vector<std::vector<float>> collider_heights_;
     bool attached_{};
     Volumes carried_{};
+    std::string selected_carrier_;
+    std::map<std::string, Volumes> carried_accounts_;
     Volumes exported_{};
     Volumes returned_{};
     double carry_limit_kg_{std::numeric_limits<double>::infinity()};

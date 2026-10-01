@@ -734,7 +734,12 @@ std::string Environment::groundStateJson() const {
     // v4 carries the rock as BEDS. Before it there was one number a column --
     // the top of the rock -- and a v3 state read here becomes one bed of rock,
     // which is what it was.
-    return Json{{"schema","banjo.ground-state.v4"},{"exported",volumesJson(exported_)},{"returned",volumesJson(returned_)},
+    auto accounts = carriedAccounts();
+    const Volumes legacy = accounts[""];
+    accounts.erase("");
+    Json actors = Json::object();
+    for (const auto &[actor, volume] : accounts) actors[actor] = volumesJson(volume);
+    return Json{{"schema","banjo.ground-state.v5"},{"exported",volumesJson(exported_)},{"returned",volumesJson(returned_)},
         {"grid",{s.grid.nx,s.grid.nz,s.grid.dx,s.grid.x0,s.grid.z0}},
         {"beds",{{"start",packed(s.beds.start)},{"count",packed(s.beds.count)},
                  {"kind",packed(s.beds.kind)},{"top",packed(s.beds.top)}}},
@@ -745,7 +750,7 @@ std::string Environment::groundStateJson() const {
             {"slumped_m3",s.ledger.slumped_m3},{"loosened_m3",s.ledger.loosened_m3}}},
         {"frontier",s.frontier},{"dirty_chunks",s.dirty_chunks},{"changed",rect(s.changed)},
         {"checked_total",s.checked_total},{"frontier_peak",s.frontier_peak},
-        {"carried",volumesJson(carried_)},{"carry_limit_kg",std::isfinite(carry_limit_kg_)?Json(carry_limit_kg_):Json(nullptr)},
+        {"carried",volumesJson(legacy)},{"carriers",actors},{"carry_limit_kg",std::isfinite(carry_limit_kg_)?Json(carry_limit_kg_):Json(nullptr)},
         {"time_s",time_s_},{"ground_behind_s",ground_behind_s_},{"water_behind_s",water_behind_s_},
         {"since_rebuild_s",since_rebuild_s_},{"commits",commits_},
         {"pending_chunks",pending_chunks_},{"pending_wake",rect(pending_wake_)},{"colliders",colliders}}.dump();
@@ -756,15 +761,18 @@ void Environment::restoreGroundState(const std::string &text) {
     const Json d=Json::parse(text);
     const std::initializer_list<const char *> keys={"schema","exported","returned","grid","rock","beds","soil","sand","loose","moisture",
         "floor","ledger","frontier","dirty_chunks","changed","checked_total","frontier_peak","carried",
-        "carry_limit_kg","time_s","ground_behind_s","water_behind_s","since_rebuild_s","commits",
+        "carriers","carry_limit_kg","time_s","ground_behind_s","water_behind_s","since_rebuild_s","commits",
         "pending_chunks","pending_wake","colliders"};
     if (!d.is_object()) throw std::invalid_argument("ground state must be an object");
     onlyKeys(d,keys,"ground state");
     const std::string schema=d.value("schema","");
-    const bool v4=schema=="banjo.ground-state.v4";
+    const bool v5=schema=="banjo.ground-state.v5";
+    if (!v5 && d.contains("carriers")) throw std::invalid_argument("ground carriers require v5 state");
+    const bool v4=schema=="banjo.ground-state.v4" || v5;
     for (const char *key:keys) if (!d.contains(key) && !((std::string(key)=="exported" && schema=="banjo.ground-state.v1") ||
         (std::string(key)=="returned" && schema!="banjo.ground-state.v3" && !v4) ||
-        (std::string(key)=="rock" && v4) || (std::string(key)=="beds" && !v4)))
+        (std::string(key)=="rock" && v4) || (std::string(key)=="beds" && !v4) ||
+        (std::string(key)=="carriers" && !v5)))
         throw std::invalid_argument(std::string("missing ground state ")+key);
     const auto integer=[](const Json &v,std::uint64_t maximum) {
         if (!v.is_number_integer() || (!v.is_number_unsigned() && v.get<std::int64_t>()<0) ||
@@ -854,6 +862,22 @@ void Environment::restoreGroundState(const std::string &text) {
     s.checked_total=static_cast<std::size_t>(integer(d.at("checked_total"),std::numeric_limits<std::size_t>::max()));
     s.frontier_peak=static_cast<std::size_t>(integer(d.at("frontier_peak"),s.grid.cells()));
     const auto carried=volumes(d.at("carried"));
+    auto total_carried = carried;
+    std::map<std::string, Volumes> accounts;
+    if (v5) {
+        const auto &actors = d.at("carriers");
+        if (!actors.is_object() || actors.size()>4096) throw std::invalid_argument("invalid ground carriers");
+        for (const auto &[actor, value] : actors.items()) {
+            if (actor.empty() || actor.size()>128) throw std::invalid_argument("invalid ground carrier id");
+            const auto volume = volumes(value);
+            for (double v : {volume.rock_m3,volume.soil_m3,volume.sand_m3})
+                if (!std::isfinite(v) || v<0) throw std::invalid_argument("invalid carried ground");
+            accounts.emplace(actor,volume);
+            total_carried.rock_m3+=volume.rock_m3;
+            total_carried.soil_m3+=volume.soil_m3;
+            total_carried.sand_m3+=volume.sand_m3;
+        }
+    }
     const auto exported=d.contains("exported")?volumes(d.at("exported")):Volumes{};
     const auto returned=d.contains("returned")?volumes(d.at("returned")):Volumes{};
     for (double v:{returned.rock_m3,returned.soil_m3,returned.sand_m3})
@@ -862,9 +886,11 @@ void Environment::restoreGroundState(const std::string &text) {
         throw std::invalid_argument("returned ground exceeds exports");
     for (double v:{exported.rock_m3,exported.soil_m3,exported.sand_m3})
         if (!std::isfinite(v) || v<0) throw std::invalid_argument("invalid exported ground");
-    if (exported.rock_m3!=0 || exported.soil_m3-returned.soil_m3+carried.soil_m3>s.ledger.dug.soil_m3+1e-9 ||
-        exported.sand_m3-returned.sand_m3+carried.sand_m3>s.ledger.dug.sand_m3+1e-9)
+    if (exported.rock_m3!=0 || exported.soil_m3-returned.soil_m3+total_carried.soil_m3>s.ledger.dug.soil_m3+1e-9 ||
+        exported.sand_m3-returned.sand_m3+total_carried.sand_m3>s.ledger.dug.sand_m3+1e-9)
         throw std::invalid_argument("exported and carried ground exceed excavation");
+    if (v5 && total_carried.rock_m3>s.ledger.dug.rock_m3+s.ledger.cut.rock_m3+1e-9)
+        throw std::invalid_argument("carried rock exceeds excavation and breakage");
     for (double v:{carried.rock_m3,carried.soil_m3,carried.sand_m3})
         if (!std::isfinite(v) || v<0) throw std::invalid_argument("invalid carried ground");
     const double limit=d.at("carry_limit_kg").is_null()?std::numeric_limits<double>::infinity():
@@ -896,6 +922,7 @@ void Environment::restoreGroundState(const std::string &text) {
     }
     const auto commits=integer(d.at("commits"),std::numeric_limits<std::uint64_t>::max());
     terrain_=std::move(candidate);carried_=carried;exported_=exported;returned_=returned;carry_limit_kg_=limit;
+    selected_carrier_.clear();carried_accounts_=std::move(accounts);
     time_s_=time;ground_behind_s_=ground;water_behind_s_=water;since_rebuild_s_=since;commits_=commits;
     pending_chunks_=chunks;pending_wake_=wake;collider_heights_=std::move(colliders);
     for (std::size_t c=0;c<s.grid.cells();++c) water_->setTerrain(c,terrain_->height(c));
@@ -1183,6 +1210,31 @@ void Environment::stepNetwork(double dt_s) {
     network_->startExchange();
     for (const Link &link : links_) network_->exchange(link.end, -water_->takeCrossed(link.connection), dt_s);
     network_->advance(dt_s);
+}
+
+void Environment::selectCarrier(const std::string &actor) {
+    if (actor == selected_carrier_) return;
+    if (actor.size()>128 || (!carried_accounts_.contains(actor) && carried_accounts_.size()>=4096))
+        throw std::invalid_argument("ground carrier limit exceeded");
+    carried_accounts_[selected_carrier_] = carried_;
+    selected_carrier_ = actor;
+    const auto found=carried_accounts_.find(actor);
+    carried_=found==carried_accounts_.end()?Volumes{}:found->second;
+}
+
+std::map<std::string, Volumes> Environment::carriedAccounts() const {
+    auto accounts=carried_accounts_;
+    accounts[selected_carrier_]=carried_;
+    return accounts;
+}
+
+Volumes Environment::carriedTotal() const {
+    Volumes total{};
+    for (const auto &[actor, volume] : carriedAccounts()) {
+        (void)actor;
+        total.rock_m3+=volume.rock_m3;total.soil_m3+=volume.soil_m3;total.sand_m3+=volume.sand_m3;
+    }
+    return total;
 }
 
 double Environment::carriedKg() const {
@@ -1481,6 +1533,7 @@ std::string Environment::reportJson(bool full) const {
                                 {"cut", volumesJson(gl.cut)}, {"deposited", volumesJson(gl.deposited)},
                                 {"slumped_m3", gl.slumped_m3}, {"loosened_m3", gl.loosened_m3}}},
                     {"carried", carriedJson(carried_)},
+                    {"carried_all", carriedJson(carriedTotal())},
                     {"exported", carriedJson(exported_)},
                     {"returned", carriedJson(returned_)},
                     {"residual", volumesJson(residual)},

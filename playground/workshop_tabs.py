@@ -118,6 +118,10 @@ def carried(app: Any, player_id: str = "") -> list[dict[str, Any]]:
 
 
 def inventory(app: Any, player_id: str = "") -> dict[str, Any]:
+    import inventory_room,live_session
+    session=getattr(getattr(app,"live",None),"session",None)
+    ground_load=inventory_room._carried(app,player_id) if session is not None else {}
+    unassigned=live_session.current_carried(session,"") if player_id else {}
     rack = workshop_library.rack(app)
     goods = workshop_library.goods_rack(app)
     items = workshop_library.list_items(app, limit=200)
@@ -149,7 +153,7 @@ def inventory(app: Any, player_id: str = "") -> dict[str, Any]:
             "components": [i for i in items if i.get("item_type") == "component"],
             "designs": [i for i in items if i.get("item_type") == "assembly"],
             "families": families, "in_world": in_world, "saved": saved,
-            "carried": carried(app, player_id)}
+            "carried": carried(app, player_id),"ground_load":ground_load,"unassigned_ground":unassigned}
 
 
 def _can_do(record: dict[str, Any], made: w.Assembly) -> list[str]:

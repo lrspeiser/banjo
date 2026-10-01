@@ -15,10 +15,11 @@ COMMON = {"session", "scene"}
 #: Ground accounts a bulk transfer can be made against: one that counts what has
 #: been taken out (v2 and after) and, to put any back, what has gone back (v3
 #: and after). v4 is the same account with the beds of rock under the surface
-#: added to it (docs/earth-and-mining-plan.md); only v1, which counted neither,
+#: added to it (docs/earth-and-mining-plan.md); v5 adds private carrier stocks.
+#: Only v1, which counted neither,
 #: is refused.
-ACCOUNTED = ("banjo.ground-state.v2", "banjo.ground-state.v3", "banjo.ground-state.v4")
-RETURNS = ("banjo.ground-state.v3", "banjo.ground-state.v4")
+ACCOUNTED = ("banjo.ground-state.v2", "banjo.ground-state.v3", "banjo.ground-state.v4", "banjo.ground-state.v5")
+RETURNS = ("banjo.ground-state.v3", "banjo.ground-state.v4", "banjo.ground-state.v5")
 COMMAND_FIELDS = {
     "state": set(), "configure": {"settings", "request_id"},
     "quote": {"candidate", "stock_kg"},
@@ -187,24 +188,27 @@ def transfer_ground(app,body,operation):
         ground=before.get("ground") or {}
         if ground.get("schema") not in ACCOUNTED: raise ValueError("Native runtime needs accounted bulk transfers")
         retrieving=operation=="retrieve_ground"
+        actor=getattr(getattr(old,'_actor_local',None),'actor','')
+        carried=ground.get('carriers',{}).get(actor,{}) if actor else ground['carried']
         if retrieving and ground["schema"] not in RETURNS: raise ValueError("Native runtime needs accounted returns")
         model.validate_ground_stock(state,before,getattr(room,"ground_transfers",None))
         if retrieving:
             state,_=model.return_bulk(state,action)
         else:
             for key,amount in quantities.items():
-                if amount>ground["carried"][key]: raise ValueError("Insufficient carried ground")
+                if amount>carried.get(key,0): raise ValueError("Insufficient carried ground")
         staged=install.live_session.Live()
         try:
             opened=staged.open(SimpleNamespace(engine_path=app.engine_path,runs_path=app.runs_path),
                 {"spec":deepcopy(room.spec),"snapshot":before})
             if opened.get("restored",{}).get("tier")!="whole": raise ValueError("Native world did not restore whole")
             install._preserved(before,install._snapshot(staged),set())
-            reply=staged.session.send(op="ground_return" if retrieving else "ground_withdraw",**quantities)
+            reply=staged.session.send(op="ground_return" if retrieving else "ground_withdraw",actor=actor,**quantities)
             saved=install._snapshot(staged)
             expected=deepcopy(before)
+            target=expected['ground'].setdefault('carriers',{}).setdefault(actor,{'rock_m3':0.,'soil_m3':0.,'sand_m3':0.}) if actor else expected['ground']['carried']
             for key,amount in quantities.items():
-                expected["ground"]["carried"][key]+=amount if retrieving else -amount
+                target[key]+=amount if retrieving else -amount
                 expected["ground"]["returned" if retrieving else "exported"][key]+=amount
             install._preserved(expected,saved,set())
             if not retrieving: state,_=model.receive_bulk(state,action,reply["material_packet"])

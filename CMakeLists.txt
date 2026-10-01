@@ -1601,6 +1601,16 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/gathering_journey_tests.py -v)
     set_tests_properties(banjo_gathering_journey_tests PROPERTIES TIMEOUT 180)
+    add_test(NAME banjo_private_ground_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/private_ground_tests.py -v)
+    set_tests_properties(banjo_private_ground_tests PROPERTIES TIMEOUT 180)
+    add_test(NAME banjo_mine_loop_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/mine_loop_tests.py -v)
+    set_tests_properties(banjo_mine_loop_tests PROPERTIES TIMEOUT 180)
     # And what thinks for the rover, and talking to it: what is made of Jev's
     # answers, a decision applied before the next step, and the chat's open,
     # say and close working the tests-rover room's program, with a scripted Jev.

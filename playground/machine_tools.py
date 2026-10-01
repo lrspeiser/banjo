@@ -93,6 +93,11 @@ def _act(ctx: senses.Context, **command: Any) -> dict[str, Any]:
     if ctx.ask is None:
         raise ValueError("this machine has no engine to act on")
     transfer = getattr(ctx.ask, "transfer_ground", None)
+    if callable(transfer) and command.get("op") in ("dig","deposit","ground_withdraw","ground_return"):
+        # A server-owned machine account follows the program across chat,
+        # other-player requests and unattended stepping. Its scoop cannot use
+        # the caller's personal carrying allowance or withdraw their stock.
+        command["actor"]="machine:" + str(ctx.program["name"])
     if command.get("op") in ("ground_withdraw", "ground_return") and callable(transfer):
         return transfer("machine:" + str(ctx.program["name"]), command)
     return ctx.ask(**command)

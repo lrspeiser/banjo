@@ -1,5 +1,12 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Private carrying checkpoint, October 1:** [Measured native ownership](private-ground-checkpoint.md)
+keeps one physical world and shared terrain ledgers while separating native
+player/bag loads and machine scoop accounts. Ordinary personal HUD/Inventory,
+restart and atomic storage checks pass. Earlier anonymous loads retain their
+unknown ownership; recovery, broken-rock storage, physical cargo/avatars and
+the rest of the fourteen-item player goal remain acceptance work.
+
 **Gathering/supply checkpoint, October 1:** [Native input and recursive guidance](gathering-supply-checkpoint.md)
 verify tool discovery, actual primary/F digging, full refusal, H heaping and
 resumed digging. Processor inputs expand to raw sources with bounded cycle

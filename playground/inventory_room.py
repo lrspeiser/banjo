@@ -32,6 +32,7 @@ import math
 from typing import Any
 
 import inventory
+import live_session
 import player_world
 import room_world
 import world_chat
@@ -176,14 +177,15 @@ def _carried(app: Any, player_id: str = "") -> Any:
     budget at the moment of taking hold counts that one body too; that is the
     engine's, and not changed here."""
     state = _state(app)
-    carried = state.get("carried")
+    carried = live_session.current_carried(app.live.session,player_id)
     held = str(_hand_of(app, player_id).get("holding") or "")
     if player_id and isinstance(carried, dict):
-        # The ground remains shared, while each player's held objects have
-        # their own mass. The legacy native carried meter has one hand only.
+        # Native ground and parked bodies belong to this player. Add only the
+        # extra parts of a jointed held item beyond the native gripped body.
         thing = item_holding(app, held) if held else None
         own_kg = whole_kg(app, thing) if thing else 0.0
-        own_kg = float(own_kg or 0.0)
+        gripped = sum(float(b.get('mass_kg') or 0.0) for b in state.get('bodies') or [] if b.get('name')==held)
+        own_kg = float(carried.get('objects_kg') or 0.0) + max(0.,float(own_kg or 0.)-gripped)
         ground_kg = sum(float(carried.get(k) or 0.0) for k in ("sand_kg", "soil_kg", "rock_kg"))
         total = ground_kg + own_kg
         limit = float(carried.get("limit_kg") or 0.0)

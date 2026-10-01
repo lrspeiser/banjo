@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import player_world
 import world_chat
-from live_session import LiveError
+from live_session import LiveError, current_carried
 
 REACH_M = 2.0
 
@@ -61,7 +61,7 @@ def request(app, player, body, keep):
     if not rover or rover.get("anchored") or rover.get("parked"):
         raise ValueError("That rover is not available in the world")
     already = own.get("holding") == root and own.get("mode") == "grip"
-    carried = (state.get("terrain") or {}).get("carried") or {}
+    carried = current_carried(session,player)
     if not already and carried.get("available_kg",math.inf)<rover.get("mass_kg",0):
         raise ValueError("Empty some carried ground material or your bag before taking hold of the rover")
     person = world_chat.where_the_person_is(body.get("person"))

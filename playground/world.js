@@ -2156,6 +2156,7 @@ function advanceGlides(now) {
 // A full reply (the scene opening, or one carrying geometry) is not partial,
 // and then anything it leaves out really has gone.
 function draw(state) {
+  if (state.carried) carryGround(state.carried);
   const at = performance.now();
   if (lastStateAt) stateGapMs = Math.min(400, Math.max(16, at - lastStateAt));
   lastStateAt = at;

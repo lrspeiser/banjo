@@ -478,6 +478,10 @@ def _terrain_state(old):
     if not isinstance(ledger, dict):
         raise ValueError("Native engine did not return terrain material accounting")
     state["material_accounting"] = deepcopy(ledger)
+    if 'carried_all' in ledger:
+        # Account selection is a view; physical staging preserves every actor.
+        state['carried']=deepcopy(ledger['carried_all'])
+        state['material_accounting']['carried']=deepcopy(ledger['carried_all'])
     return state
 
 

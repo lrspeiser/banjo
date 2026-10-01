@@ -1,5 +1,13 @@
 # Development status and handoff
 
+**Private carrying, October 1:** [Native/API/browser checkpoint](private-ground-checkpoint.md)
+separates players' excavated loads and parked mass, attributes completed tool
+work to its holder, and gives routine scoops server-owned machine accounts.
+Two-player capacity, token spoof refusal, full restart, failed-save storage and
+personal World/Inventory readings pass. Earlier unassigned loads stay visible;
+their recovery and usable broken-rock storage remain. Four verified, nine partial,
+repair pending; the complete fourteen-item goal stays active.
+
 **Gathering/supply, October 1:** [Native/browser checkpoint](gathering-supply-checkpoint.md)
 fixes Study intercepting the held pick's primary action and ordinary F bypassing
 native tool work. Find/equip/dig/full/heap/resume passes; inventory totals retain

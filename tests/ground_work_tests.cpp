@@ -676,6 +676,99 @@ void latticeGroundToolsCanShareExactEquipment() {
     }
 }
 
+void playersHaveSeparateGroundBudgets() {
+    for (const std::string material : {"glass","oak","iron"}) {
+        Json scene{{"terrain",ground(.4,0.)},{"bodies",pick(material,.4)}};
+        auto live=open(scene);
+        live->setCarryLimitKg(80);
+        live->selectHand("alice");
+        require(live->wield("pick",{kGripX,1.42,kTipZ}),"Alice could not hold tool");
+        const double tool=live->carriedObjectsKg();
+        near(tool,poseOf(*live,"pick").mass_kg,1e-9,"native tool mass");
+        std::string why;
+        require(live->park("pick",why),"Alice could not stow tool: "+why);
+        near(live->carriedObjectsKg(),tool,1e-9,"Alice parked mass");
+        const auto alice=live->dig(-1,0,-1,0,.8,.4);
+        near(alice.edit.mass_kg+tool,80,1e-5,"Alice capacity includes her bag");
+        const auto alice_volume=live->environment()->carried();
+        live->selectHand("bob");
+        near(live->carriedObjectsKg(),0,0,"Bob does not carry Alice's bag");
+        near(live->environment()->carriedKg(),0,0,"Bob starts empty");
+        const auto bob=live->dig(1,0,1,0,.8,.4);
+        near(bob.edit.mass_kg,80,1e-5,"Bob has his own capacity");
+        const auto bob_volume=live->environment()->carried();
+        live->selectHand("");
+        near(live->environment()->carriedKg(),0,0,"clock does not own either load");
+        auto accounts=Json::parse(live->playerCarriedGround());
+        near(accounts["alice"]["total_kg"].get<double>(),80,1e-5,"Alice report");
+        near(accounts["bob"]["total_kg"].get<double>(),80,1e-5,"Bob report");
+        const std::string saved=live->snapshot(why);
+        require(!saved.empty(),"private loads did not save: "+why);
+        TileImpactRequest request;request.cell_size_m=kCell;request.backend=BackendKind::CpuParallel;
+        request.bodies=readSceneJson(scene.dump());readSceneSettings(scene.dump(),request);
+        Json forged=Json::parse(saved);
+        forged["ground"]["carriers"]["clone"]=forged["ground"]["carriers"]["alice"];
+        bool refused=false;
+        try { (void)LiveWorld::open(request,forged.dump()); }
+        catch (const std::exception &) { refused=true; }
+        require(refused,"cloned private ground exceeded excavation without refusal");
+        auto restored=LiveWorld::open(request,saved);
+        require(restored->restored().tier=="whole","private loads did not restore whole");
+        near(restored->environment()->carriedTotal().total(),alice_volume.total()+bob_volume.total(),1e-12,"restored total");
+        restored->selectHand("bob");
+        const std::string protected_bag=restored->snapshot(why);
+        require(!restored->unpark("pick",{1,1,0},{},why),"Bob took Alice's bag item");
+        require(why=="it is in another player's bag","bag refusal does not explain ownership");
+        require(restored->snapshot(why)==protected_bag,"bag refusal changed saved state");
+        restored->selectHand("alice");
+        near(restored->carriedObjectsKg(),tool,1e-9,"parked owner restored");
+        near(restored->environment()->carried().total(),alice_volume.total(),1e-12,"Alice restored stock");
+        (void)restored->deposit(-1,1,.8,alice_volume.sand_m3,alice_volume.soil_m3);
+        near(restored->environment()->carriedKg(),0,1e-9,"Alice heaps only her own stock");
+        restored->selectHand("bob");
+        near(restored->environment()->carried().total(),bob_volume.total(),1e-12,"Alice heap preserves Bob");
+        near(restored->environment()->terrain().residual().total(),0,1e-10,"shared terrain mass ledger");
+        std::printf("  private %s h %.3f dt %.9f: tool %.6f kg; Alice %.6f kg, Bob %.6f kg; terrain residual %.12g m3\n",
+            material.c_str(),kCell,kDt,tool,alice.edit.mass_kg,bob.edit.mass_kg,
+            restored->environment()->terrain().residual().total());
+    }
+}
+
+void toolMeetingKeepsItsOwner() {
+    const double top=.4;
+    Json scene{{"terrain",ground(top,0.)},{"bodies",pick("oak",top)}};
+    auto live=open(scene);live->selectHand("alice");live->setCarryLimitKg(80);
+    const Vec3 grip{kGripX,top+1.02,kTipZ};
+    require(live->toolPoint("pick",{kTipX,top+.72,kTipZ},{0,-1,0},.04,.04,30,kPointLength,grip)!=0,"declare owned point");
+    require(live->wield("pick",grip),"wield owned point");
+    const auto finish=[&](int most,int settle) {
+        for (int i=0;i<most;++i) {
+            live->selectHand("bob");stepOnce(*live);live->selectHand("alice");
+            if (!live->hand().stroking) break;
+        }
+        live->moveHeld(live->hand().grip_m);
+        for (int i=0;i<settle;++i) { live->selectHand("");stepOnce(*live); }
+        live->selectHand("alice");
+    };
+    LiveStrike strike;strike.target_m={.3,top,kTipZ};strike.shoulder_m={-.9,top+1.45,kTipZ};
+    strike.speed_m_s=4;strike.raise_deg=110;std::string why;
+    require(live->strike(strike,why),"owned strike: "+why);finish(480,120);
+    require(!live->groundWork().empty() && live->groundWork().front().open,"owned stroke did not enter soil");
+    LiveStrike lever;lever.lever=true;lever.shoulder_m=strike.shoulder_m;lever.speed_m_s=1.2;lever.lever_deg=40;
+    require(live->strike(lever,why),"owned lever: "+why);finish(960,30);
+    if (live->groundWork().front().open) {
+        LiveStroke up;const Vec3 at=live->hand().grip_m;up.path_m={at,at+Vec3{0,.4,0}};
+        up.speed_m_s=.6;up.accel_m_s2=4;up.give_up_s=3;
+        require(live->stroke(up,why),"owned pull: "+why);finish(960,30);
+    }
+    const auto work=live->groundWork().front();
+    require(!work.open && work.loosened_kg>0 && work.actor=="alice","completed bite lost its owner");
+    near(live->environment()->carried().total(),work.loosened.total(),1e-12,"Alice receives measured loosened ground");
+    live->selectHand("bob");near(live->environment()->carriedKg(),0,0,"stepping player receives none");
+    live->selectHand("");near(live->environment()->carriedKg(),0,0,"clock receives none");
+    std::printf("  owned native stroke: %s; owner %s; terrain residual %.12g m3\n",said(work).c_str(),work.actor.c_str(),live->environment()->terrain().residual().total());
+}
+
 } // namespace
 
 int main() {
@@ -689,6 +782,8 @@ int main() {
         {"a grip off the body is refused", aGripOffTheBodyIsRefused},
         {"a broad end meets the ground from wherever it is swung", aBroadEndMeetsTheGroundFromWhereverItIsSwung},
         {"lattice ground tools share exact equipment", latticeGroundToolsCanShareExactEquipment},
+        {"players have separate ground and bag budgets",playersHaveSeparateGroundBudgets},
+        {"tool meetings keep their owner during shared stepping",toolMeetingKeepsItsOwner},
     };
     int failed = 0;
     for (const auto &[name, check] : checks) {

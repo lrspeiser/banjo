@@ -64,6 +64,22 @@ def current_hand(session: Any) -> dict[str, Any]:
     return ((state.get("player_hands") or {}).get(actor) or {}) if actor else (state.get("hand") or {})
 
 
+def current_carried(session: Any, player_id: str | None = None) -> dict[str, Any]:
+    """Native carrying account of this request's actor, independent of clock replies."""
+    if session is None:return {}
+    state=session.state or {}
+    actor=player_id if player_id is not None else getattr(getattr(session,'_actor_local',None),'actor','')
+    accounts=state.get('player_carried')
+    if isinstance(accounts,dict):
+        own=accounts.get(actor or '')
+        if isinstance(own,dict):return own
+        # A newly joined actor has no excavation or parked bodies yet.
+        limit=(state.get('carried') or {}).get('limit_kg',CARRY_LIMIT_KG)
+        return {'sand_m3':0.,'soil_m3':0.,'rock_m3':0.,'sand_kg':0.,'soil_kg':0.,
+                'rock_kg':0.,'objects_kg':0.,'total_kg':0.,'limit_kg':limit,'available_kg':limit,'over_limit_kg':0.}
+    return state.get('carried') or {}
+
+
 # What a person can carry of the ground they dig: what their hand can lift. The
 # hand in the engine and in the page is 800 N (LiveWorld's hand_strength_n,
 # interaction.js HAND_STRENGTH_N), which holds 81.5 kg against gravity, so 80.

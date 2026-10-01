@@ -294,6 +294,35 @@ class NativeFabrication(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"Insufficient"):
             self.call("store_ground",sand_m3=.001,soil_m3=0,revision=state["revision"],request_id="store-ground-0002")
 
+    def test_private_ground_staging_preserves_other_players_and_legacy_stock(self):
+        self.excavate()
+        for actor,x in (("alice",1),("bob",-1)):
+            self.live.session.send(op="dig",actor=actor,**{"from":[x,0],"to":[x,0],"width_m":.4,"depth_m":.1})
+        before=workshop_install._snapshot(self.live)
+        have={k:before["ground"]["carriers"]["alice"][k] for k in ("sand_m3","soil_m3")}
+        request={**self.context(),**have,"revision":self.room.fabrication_record["revision"],
+                 "request_id":"private-ground-0001"}
+        with self.live.as_actor("alice"),mock.patch.object(self.app.store,"save",side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):room_api.request(self.app,"store_ground",request)
+        self.assertEqual(before,workshop_install._snapshot(self.live))
+        with self.live.as_actor("alice"):
+            room_api.request(self.app,"store_ground",request)
+        stored=workshop_install._snapshot(self.live)
+        self.assertEqual(before["ground"]["carriers"]["bob"],stored["ground"]["carriers"]["bob"])
+        self.assertEqual(before["ground"]["carried"],stored["ground"]["carried"])
+        self.assertEqual(0,sum(stored["ground"]["carriers"]["alice"].values()))
+        with self.live.as_actor("alice"):
+            self.assertTrue(room_api.request(self.app,"store_ground",request)["replayed"])
+            self.call("retrieve_ground",lot_id=request["request_id"],**have,
+                revision=self.room.fabrication_record["revision"],request_id="private-return-0001")
+        returned=workshop_install._snapshot(self.live)
+        self.assertEqual(before["ground"]["carriers"],returned["ground"]["carriers"])
+        self.assertEqual(before["ground"]["carried"],returned["ground"]["carried"])
+        self.assertEqual("matched",self.call("state")["ground_audit"]["status"])
+        saved=self.app.store.load("fabrication")
+        self.live.open(self.app,{"spec":saved.spec,"snapshot":saved.world_record})
+        self.assertEqual(returned["ground"],workshop_install._snapshot(self.live)["ground"])
+
     def test_retrieval_is_atomic_partial_restartable_and_can_be_deposited(self):
         self.excavate();native=workshop_install._snapshot(self.live)
         have={k:native["ground"]["carried"][k] for k in ("sand_m3","soil_m3")}

@@ -1904,7 +1904,7 @@ const MATERIAL_LOOK = {
   "iron": "8d949c", "aluminum": "c6ccd2", "glass": "9fd3ff",
   "alumina ceramic": "eee6da", "oak": "b07a43", "rubber": "2b2f33",
   "ice": "cfeaf5", "concrete": "9a9285", "copper": "b87333",
-  "limestone": "ded6c4", "clay": "9d7b5f", "sand": "d8c89a",
+  "limestone": "ded6c4", "clay": "9d7b5f", "sand": "d8c89a", "soil":"8a6b50", "rock":"9a9285",
   "copper ore": "7f8b74", "iron ore": "8a6a58", "cement": "b9b4a8",
   "wire": "c98b5a", "steel": "9aa3ab",
 };
@@ -1955,6 +1955,19 @@ async function showInventory() {
   });
   $("#ws-inv-grid").replaceChildren(...carried);
   $("#ws-inv-note").textContent = carried.length ? "Select → Lab" : "Empty · Pick up items in World";
+  const load=inv.ground_load || {};
+  const budget=energyCard("▦","Your load",[["Carried",kgSaid(load.total_kg)],["Capacity",kgSaid(load.limit_kg)]]);
+  budget.append(make("a",{class:"ws-action",href:homeWorld(),title:"In World, press H to heap your carried sand and soil"},"Heap → World"));
+  const groundCards=(account,where) => ["sand","soil","rock"].filter(s => Number(account?.[`${s}_kg`])>.0005)
+    .map(s => {
+      const card=invTile({name:s,label:s==="rock"?"Broken rock":titleCase(s),material:s,shape:"box",color_rgba:MATERIAL_LOOK[s]},
+        {quantity:kgSaid(account[`${s}_kg`]),where,onOpen:()=>openMaterialRecipes(s)});
+      card.dataset.groundLoad=s; return card;
+    });
+  $("#ws-inv-ground").replaceChildren(budget,...groundCards(load,"You"));
+  const unassigned=groundCards(inv.unassigned_ground,"Unassigned");
+  $("#ws-inv-unassigned").replaceChildren(...unassigned);
+  $("#ws-inv-unassigned").parentElement.hidden=unassigned.length===0;
   const stock = (inv.materials || []).filter(r => r.mass_kg > 0).map(r => resourceTile(r,"box"));
   $("#ws-inv-stock").replaceChildren(...stock);
   $("#ws-inv-stock-empty").hidden = stock.length > 0;
@@ -2068,6 +2081,8 @@ function installInventory() {
   screenSection(pane, "Energy & rates", "ws-inv-energy", "ws-energy-grid");
   const carried = screenSection(pane, "Products · hands & bag", "ws-inv-grid");
   carried.append(make("p", {id:"ws-inv-note", class:"ws-note"}));
+  screenSection(pane,"Ground load","ws-inv-ground");
+  screenSection(pane,"World load · unassigned","ws-inv-unassigned");
   const stock = screenSection(pane, "Raw materials", "ws-inv-stock");
   stock.append(make("p", {id:"ws-inv-stock-empty", class:"ws-note"}, "Empty · Market → Supplies"));
   const goods = screenSection(pane, "Processed goods", "ws-inv-goods");

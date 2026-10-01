@@ -12,6 +12,16 @@
 namespace banjo::fastlattice {
 namespace {
 
+// Shared stepping may be called by any player or the unattended clock. A
+// completed bite credits the account captured when that bite began.
+struct CarrierScope {
+    terrain::Environment &env;
+    std::string previous;
+    CarrierScope(terrain::Environment &environment, const std::string &actor)
+        : env(environment), previous(environment.selectedCarrier()) { env.selectCarrier(actor); }
+    ~CarrierScope() { env.selectCarrier(previous); }
+};
+
 constexpr double kPi = 3.14159265358979323846;
 // A point more than 60 degrees off straight down meets the ground side-on: it
 // does not go in, it skids or stops, an ordinary contact.
@@ -577,6 +587,8 @@ void ToolTerrain::meet(const ToolTerrainHost &host, Point &p, MatterBodyId id, c
     closeNote(host, p);
 
     LiveGroundWork opened;
+    p.carrier = host.carrier_of ? host.carrier_of(p.body) : host.environment->selectedCarrier();
+    opened.actor = p.carrier;
     opened.point = p.id;
     opened.tool = p.body;
     opened.ground = in.name;
@@ -706,8 +718,11 @@ void ToolTerrain::settle(const ToolTerrainHost &host, double dt_s) {
                     // takes the rock out in front of the miner, not off the top
                     // of the hill above them.
                     const terrain::Environment::Chipped chipped =
-                        host.environment->chip(world, tip.x, tip.z, tip.y, bought,
-                                               host.carried_objects_kg);
+                        [&]() {
+                            CarrierScope account(*host.environment, p.carrier);
+                            return host.environment->chip(world, tip.x, tip.z, tip.y, bought,
+                                host.objects_of ? host.objects_of(p.carrier) : host.carried_objects_kg);
+                        }();
                     r.broken_share = chipped.broken;
                     if (chipped.full) {
                         // The cell is worked through and whoever is swinging
@@ -782,6 +797,7 @@ void ToolTerrain::finish(const ToolTerrainHost &host, Point &p, bool tool_here) 
         // the point was pried, as one even layer: the columns are what the
         // ground is made of, and they are coarser than the wedge.
         terrain::Environment &env = *host.environment;
+        CarrierScope account(env, p.carrier);
         const terrain::TerrainField &field = env.terrain();
         Vec3 way = level(p.pry);
         if (!(length(way) > 1e-6)) way = level(p.across_x);
@@ -796,7 +812,8 @@ void ToolTerrain::finish(const ToolTerrainHost &host, Point &p, bool tool_here) 
         const std::size_t columns = field.columnsAlong(ax, az, bx, bz, width).size();
         if (columns > 0) {
             const double depth = volume / (static_cast<double>(columns) * dx * dx);
-            const terrain::EditEffect effect = env.dig(world, ax, az, bx, bz, width, depth, host.carried_objects_kg);
+            const terrain::EditEffect effect = env.dig(world, ax, az, bx, bz, width, depth,
+                host.objects_of ? host.objects_of(p.carrier) : host.carried_objects_kg);
             r.loosened = effect.edit.moved;
             r.loosened_kg = effect.edit.mass_kg;
             // And the dig as an edit would say it, exactly: made again from

@@ -970,6 +970,7 @@ nlohmann::json groundWorkFields(const LiveGroundWork &w);
 
 nlohmann::json groundWorkJson(const LiveGroundWork &w) {
     nlohmann::json out = groundWorkFields(w);
+    out["actor"] = w.actor;
     // Where what came loose went out through the ground's dig, as a dig edit
     // says it, and not rounded: a host that keeps the ground's edits makes it
     // again from these numbers and has to get the same hole.
@@ -1414,6 +1415,7 @@ nlohmann::json carriedJson(const banjo::terrain::Environment &env, double object
                        {"soil_kg", c.soil_m3 * banjo::terrain::soilMaterial().density_kg_m3},
                        {"rock_kg", c.rock_m3 * banjo::terrain::rockMaterial().density_kg_m3}};
     // How much of it a person can carry, where a host has said.
+    out["actor"]=env.selectedCarrier();
     out["objects_kg"]=objects_kg;out["total_kg"]=objects_kg+env.carriedKg();
     if (std::isfinite(env.carryLimitKg())) {
         out["limit_kg"] = env.carryLimitKg();
@@ -1649,6 +1651,7 @@ void addEnvironment(LiveWorld &world, nlohmann::json &reply, bool whole) {
     const banjo::terrain::Environment *env = world.environment();
     if (env == nullptr) return;
     reply["carried"]=carriedJson(*env, world.carriedObjectsKg());
+    reply["player_carried"]=nlohmann::json::parse(world.playerCarriedGround());
     // The ground whole when a world opens; afterwards only the rectangle an
     // edit or a slump changed since the last reply, as the ground itself
     // keeps it -- nothing copied or compared when nothing changed. Every reply
