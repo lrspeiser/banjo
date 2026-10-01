@@ -1,5 +1,14 @@
 # Banjo mechanics scorecard
 
+**Geometry transport boundary, October 1:** [Identity/UI checkpoint](inventory-rendering-checkpoint.md)
+retains native geometry before the first frame and startup/restore receipts.
+Matched glass/oak/iron joined T fixtures at 20 mm have 56 cells and
+1.12/0.3136/3.52576 kg; a geometry read changes neither mass nor elapsed time.
+Fresh 50 mm oak pick retains 22 cells, local vertices and 1.925 kg through
+pickup/stow/reload/equip. No solver/material law/tolerance change or new physical
+certification. Existing forming, mixed-interface, damage and conservation limits
+remain; ordinary funded workbench and full progression are still next.
+
 **Exact machine funding boundary, October 1:** [Measured checkpoint](fabrication-machine-checkpoint.md)
 retains matched native glass/oak/iron probes: 0.003072 m³ gives 7.68/2.1504/
 24.17664 kg, 25 kg stock/2500 J authored work plus separately reserved 100 J

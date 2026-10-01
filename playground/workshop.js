@@ -1,3 +1,4 @@
+import { thumbnail, massLabel as kgSaid } from "/game_menu.js";
 // Workshop Mode: product design, physical matter, editable skins and isolated physics playback.
 import * as THREE from "/vendor/three.module.js";
 import { gameNavigation, refreshNavigation, showSaveStatus } from "/game_menu.js";
@@ -1833,49 +1834,6 @@ function fill(id, rows, empty) { const root = $(id); if (!root) return; root.rep
 // and its own colour. Not a render of the real body -- the bench's 3D view is
 // for the design being worked on -- but enough to tell a rubber ball from an
 // iron sword at a glance, which a column of names never did.
-function thumbnail(thing) {
-  const size = 48;
-  const canvas = make("canvas", { width: String(size), height: String(size),
-                                  role: "img", "aria-label": `${thing.name}, ${thing.material}` });
-  const pen = canvas.getContext("2d");
-  if (!pen) return canvas;
-  const hex = /^[0-9a-f]{6,8}$/i.test(thing.color_rgba || "") ? thing.color_rgba.slice(0, 6) : "9aa7b4";
-  const face = `#${hex}`;
-  const dark = (amount) => {
-    const n = parseInt(hex, 16);
-    const mix = (c) => Math.max(0, Math.min(255, Math.round(c * amount)));
-    return `rgb(${mix((n >> 16) & 255)}, ${mix((n >> 8) & 255)}, ${mix(n & 255)})`;
-  };
-  const m = 8, w = size - m * 2;
-  pen.clearRect(0, 0, size, size);
-  if (thing.shape === "sphere" || thing.shape === "capsule") {
-    const light = pen.createRadialGradient(size * 0.38, size * 0.36, 2, size / 2, size / 2, w / 2);
-    light.addColorStop(0, face);
-    light.addColorStop(1, dark(0.45));
-    pen.fillStyle = light;
-    pen.beginPath(); pen.arc(size / 2, size / 2, w / 2, 0, Math.PI * 2); pen.fill();
-  } else if (thing.shape === "cylinder") {
-    pen.fillStyle = dark(0.7);
-    pen.fillRect(m, m + 5, w, w - 10);
-    pen.fillStyle = face;
-    pen.beginPath(); pen.ellipse(size / 2, m + 5, w / 2, 5, 0, 0, Math.PI * 2); pen.fill();
-    pen.fillStyle = dark(0.5);
-    pen.beginPath(); pen.ellipse(size / 2, size - m - 5, w / 2, 5, 0, 0, Math.PI * 2); pen.fill();
-  } else {
-    // A box, drawn with its top and one side, so it reads as a solid.
-    const d = 7;
-    pen.fillStyle = face;
-    pen.fillRect(m, m + d, w - d, w - d);
-    pen.fillStyle = dark(1.25);
-    pen.beginPath(); pen.moveTo(m, m + d); pen.lineTo(m + d, m);
-    pen.lineTo(size - m, m); pen.lineTo(size - m - d, m + d); pen.closePath(); pen.fill();
-    pen.fillStyle = dark(0.6);
-    pen.beginPath(); pen.moveTo(size - m - d, m + d); pen.lineTo(size - m, m);
-    pen.lineTo(size - m, size - m - d); pen.lineTo(size - m - d, size - m); pen.closePath(); pen.fill();
-  }
-  return canvas;
-}
-
 // Opening a carried thing on the bench. Something the Workshop made opens its
 // own design; anything else becomes a design of one part, from the shape,
 // size and material the room has for it, so it can be edited and made again.
@@ -1918,12 +1876,6 @@ const MATERIAL_LOOK = {
   "limestone": "ded6c4", "clay": "9d7b5f", "sand": "d8c89a", "soil":"8a6b50", "rock":"9a9285",
   "copper ore": "7f8b74", "iron ore": "8a6a58", "cement": "b9b4a8",
   "wire": "c98b5a", "steel": "9aa3ab",
-};
-const kgSaid = (kg) => {
-  const value = Number(kg) || 0, magnitude = Math.abs(value);
-  const unit = magnitude >= 1000 ? "t" : magnitude >= 1 || !magnitude ? "kg" : "g";
-  const amount = unit === "t" ? value / 1000 : unit === "g" ? value * 1000 : value;
-  return `${amount.toLocaleString(undefined, {maximumFractionDigits:2})} ${unit}`;
 };
 
 // One tile: a picture, a name, and how much of it there is.

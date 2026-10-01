@@ -1,5 +1,12 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Stable item identity and compact Inventory, October 1:** [UI/native checkpoint](inventory-rendering-checkpoint.md)
+fixes the fresh pick's bounding-box rendering, removes the legacy right-side
+tab strip and shares hands/bag/stock/energy with compact Inventory. Extra controls
+live in Menu; one Walk/Fly selector releases machine control. Native identity,
+actual browser input/reload and fabrication regressions pass. No physical law
+change; all fourteen requirements remain active, four verified and ten partial.
+
 **Paid exact machines, October 1:** [Native/Lab/AI checkpoint](fabrication-machine-checkpoint.md)
 adds native material allocation, atomic per-material reservations and separately
 funded initial battery charge. Saved-design Lab mouse input and AI construction

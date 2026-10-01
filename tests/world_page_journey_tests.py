@@ -468,6 +468,28 @@ class PageJourney(unittest.TestCase):
                                                         "clickCount": 1})
             time.sleep(0.05)
 
+    def click_selector(self, selector):
+        target = json.dumps(selector)
+        self.assertTrue(self.wait_for(f"!!document.querySelector({target})"))
+        xy = self.js(f"""(() => {{
+          const el = document.querySelector({target}); el.scrollIntoView({{block:'center'}});
+          const r=el.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2;
+          const hit=document.elementFromPoint(x,y);
+          return [x,y,el===hit || el.contains(hit)];
+        }})()""")
+        self.assertTrue(xy[2], f"{selector} is covered or off screen")
+        for kind in ("mousePressed", "mouseReleased"):
+            self.page.send("Input.dispatchMouseEvent", {"type":kind,"x":xy[0],"y":xy[1],
+                "button":"left","clickCount":1})
+            time.sleep(.05)
+
+    def open_world_menu(self, section):
+        if not self.js("document.querySelector('#game-menu').open"):
+            self.click_selector("#panel [data-game-menu]")
+        target = f'[data-world-menu="{section}"]'
+        if not self.js(f"document.querySelector({json.dumps(target)}).open"):
+            self.click_selector(target + " > summary")
+
     def touch_and_cancel(self, element_id):
         """A finger put on a button and taken away by the browser -- a scroll,
         a gesture -- rather than lifted: pointerdown, then pointercancel, and
@@ -1281,7 +1303,7 @@ class YouAreAMachineInTheRoom(PageJourney):
     """
 
     def settings(self):
-        self.click("tab-settings")
+        self.open_world_menu("settings")
         return self.js("document.getElementById('settings-said').textContent")
 
     def get_into(self, name):
@@ -1290,14 +1312,14 @@ class YouAreAMachineInTheRoom(PageJourney):
         You start as the camera: being a machine is something you do, not
         where you begin. See the note on `riding` in world.js for the six
         things that being one by default took away."""
-        self.click("tab-settings")
+        self.open_world_menu("settings")
         self.assertTrue(self.wait_for(
             f"!!document.querySelector('[data-rides=\"{name}\"]')", 30),
             f"{name} is not offered as something to be")
         self.js(f"(document.querySelector('[data-rides=\"{name}\"]')"
                 f".scrollIntoView({{block: 'center'}}), true)")
         time.sleep(0.2)
-        self.js(f"(document.querySelector('[data-rides=\"{name}\"]').click(), true)")
+        self.click_selector(f'[data-rides="{name}"]')
         self.assertTrue(self.wait_for(
             f"document.getElementById('settings-said').textContent.includes('You are {name}')", 15),
             f"choosing {name} did not make you it")
@@ -1310,8 +1332,8 @@ class YouAreAMachineInTheRoom(PageJourney):
                        {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-rover"})
         self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.status().scene === 'tests-rover'"
                                       " && banjoRoom.ready()", 300), "the rover room did not open")
-        self.assertTrue(self.wait_for("!!document.getElementById('tab-settings')", 30),
-                        "there is no Settings tab")
+        self.assertTrue(self.wait_for("!!document.getElementById('pane-settings')", 30),
+                        "there are no machine driving controls in Menu")
         self.assertIn("god", self.settings().lower() + " god",
                       "you should start as the camera")
         self.get_into("rover")
@@ -1429,19 +1451,18 @@ class YouAreAMachineInTheRoom(PageJourney):
         hint = self.js("document.querySelector('#machine-panel .mp-hint').textContent")
         self.assertIn("program has this wheel", hint, hint)
         # And it says where you CAN drive it from.
-        self.assertIn("Settings", hint, hint)
+        self.assertIn("Menu → Drive a machine", hint, hint)
 
     def test_god_mode_lets_go_of_the_machine_and_flies(self):
         self.page.send("Page.navigate",
                        {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-rover"})
         self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.ready()", 300), "it did not open")
         self.get_into("rover")
-        self.assertTrue(self.wait_for("!!document.getElementById('settings-god')", 30))
-        # The panel scrolls, and a button below its fold is one a person
-        # scrolls to before pressing.
-        self.js("(document.getElementById('settings-god').scrollIntoView({block: 'center'}), true)")
-        time.sleep(0.2)
-        self.click("settings-god")
+        self.open_world_menu("settings")
+        self.assertEqual("machine",self.js("document.querySelector('#game-menu-movement select').value"))
+        self.click_selector("#game-menu-movement select")
+        self.press_key("KeyF", "f")
+        self.press_key("Enter", "Enter")
         self.assertTrue(self.wait_for(
             "document.getElementById('settings-said').textContent.includes('Flying')", 15),
             "pressing Fly did not let go of the machine: "
@@ -1452,9 +1473,7 @@ class YouAreAMachineInTheRoom(PageJourney):
         self.assertGreater(self.js("banjoRoom.camera.position.y"), above + 0.3,
                            "Space did not take the eye up in god mode")
         # And back into it.
-        self.js("(document.getElementById('settings-god').scrollIntoView({block: 'center'}), true)")
-        time.sleep(0.2)
-        self.click("settings-god")
+        self.get_into("rover")
         self.assertIn("You are rover", self.js("document.getElementById('settings-said').textContent"))
 
 
@@ -2977,9 +2996,9 @@ class TheBottomOfThePanelCanBeReached(PageJourney):
                        {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-rover"})
         self.assertTrue(self.wait_for("window.banjoRoom && banjoRoom.ready()", 300),
                         "the room did not open")
-        self.assertTrue(self.wait_for("!!document.getElementById('tab-settings')", 30),
-                        "there is no Settings tab")
-        self.click("tab-settings")
+        self.assertTrue(self.wait_for("!!document.getElementById('pane-settings')", 30),
+                        "there are no machine driving controls in Menu")
+        self.open_world_menu("settings")
         # The panel scrolls when it needs to, rather than hiding its own foot.
         panel = self.js("""JSON.stringify((() => {
           const p = document.getElementById('panel');
@@ -2990,8 +3009,7 @@ class TheBottomOfThePanelCanBeReached(PageJourney):
                       f"the panel cannot scroll, so its foot is unreachable: {panel}")
         # And the button can actually be pressed -- aim_at scrolls to it and
         # checks the press would land on it.
-        x, y, why = self.aim_at("settings-god")
-        self.assertFalse(why, f"cannot reach the Fly button: {why}")
+        self.click_selector("#game-menu-movement select")
 
 
 class ClickingSomethingKeepsIt(PageJourney):
@@ -3273,6 +3291,58 @@ class TheHotListTakesWhatYouPutInIt(PageJourney):
         self.assertTrue(self.wait_for("!!document.querySelector('#ws-name')"
                                       " && document.querySelector('#ws-name').textContent.trim()", 60),
                         "the bench opened on nothing")
+
+
+class CompactInventoryAndStableToolShape(PageJourney):
+    """A fresh pick keeps its native geometry; the mini inventory uses its ledger."""
+
+    def test_pickup_stow_equip_reload_and_compact_inventory_navigation(self):
+        self.page.send("Runtime.enable")
+        self.page.send("Page.navigate", {"url":f"http://127.0.0.1:{self.port}/world"})
+        self.assertTrue(self.wait_for("window.banjoRoom?.ready()",60),self.situation())
+        self.assertFalse(self.js("!!document.querySelector('#tabs, #panel [role=tablist], #tab-settings')"))
+        self.assertTrue(self.wait_for("document.querySelector('#mini-energy').textContent.includes(' J')"))
+        geometry = """(() => {
+          const b=banjoRoom.world.bodies.get('field pick');
+          return {cells:b.cells, mass:b.mass, design:!!b.mesh.userData.drawnToDesign,
+            vertices:[...b.mesh.geometry.attributes.position.array]};
+        })()"""
+        before = self.js(geometry)
+        self.assertTrue(before["cells"],"the first frame drew a slab instead of the pick")
+        self.assertTrue(before["design"],"the handle/head did not draw before pickup")
+        self.js("""(() => {const p=banjoRoom.world.bodies.get('field pick').mesh.position;
+            banjoRoom.standAt(p.x,p.y+1.62,p.z+1.1);banjoRoom.lookAt(p.x,p.y,p.z);return true;})()""")
+        self.assertTrue(self.wait_for("banjoRoom.world.aim?.name==='field pick'",15),self.situation())
+        self.assertTrue(self.when_idle())
+        self.press_e()
+        self.assertTrue(self.wait_for("banjoRoom.held()?.name==='field pick'",20),self.situation())
+        self.assertTrue(self.wait_for("banjoRoom.use().mode==='tool-ready'",20),self.situation())
+        self.assertTrue(self.when_idle())
+        self.assertEqual(before,self.js(geometry),"pickup changed the local mesh, matter or mass")
+        self.assertTrue(self.wait_for("!!document.querySelector('.mini-product img')"))
+        picture = self.js("document.querySelector('.mini-product img').src")
+        self.click_selector(".mini-product button")
+        self.assertTrue(self.wait_for("!banjoRoom.held() && document.querySelector('.mini-product small')?.textContent.startsWith('Bag')"),self.situation())
+        self.assertEqual(picture,self.js("document.querySelector('.mini-product img').src"))
+        self.page.send("Page.reload")
+        self.assertTrue(self.wait_for("window.banjoRoom?.ready() && !!document.querySelector('.mini-product img')",30))
+        self.assertEqual(picture,self.js("document.querySelector('.mini-product img').src"))
+        self.click_selector(".mini-product button")
+        self.assertTrue(self.wait_for("banjoRoom.held()?.name==='field pick'",20),self.situation())
+        self.assertEqual(before,self.js(geometry),"equipping after reload changed the tool")
+        self.open_world_menu("keys")
+        self.assertGreater(self.js("document.querySelectorAll('#keys-list dt').length"),0)
+        self.press_key("KeyQ","q")
+        self.assertEqual("field pick",self.js("banjoRoom.held()?.name"),"Menu keyboard help also stowed the tool")
+        self.click("game-menu-close")
+        self.press_key("KeyK","k")
+        self.assertTrue(self.wait_for("document.querySelector('#game-menu').open && document.querySelector('[data-world-menu=bench]').open"))
+        self.assertTrue(self.wait_for("document.querySelector('#workbench-runs li') && !document.querySelector('#workbench-runs').textContent.includes('Looking for')"))
+        self.click("game-menu-close")
+        self.click_selector("#mini-inventory header a")
+        self.assertTrue(self.wait_for("!!document.querySelector('#ws-inv-grid [data-product]')",30))
+        self.assertIn("field pick",self.js("document.querySelector('#ws-inv-grid').textContent.toLowerCase()"))
+        self.assertFalse([event for event in self.page.events if event.get("method")=="Runtime.exceptionThrown"])
 
 
 # Workshop controls share the existing required Chrome/engine CI gate.

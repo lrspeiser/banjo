@@ -8,6 +8,7 @@ is gravity, a hold is honoured, and a request the engine cannot satisfy comes ba
 as something a person can read rather than a stack trace.
 """
 import os
+import json
 from pathlib import Path
 import signal
 import sys
@@ -87,6 +88,30 @@ class LiveSession(unittest.TestCase):
         self.assertEqual(self.body(state, "ball")["shape"], "sphere")
         self.assertTrue(self.body(state, "floor")["anchored"])
         self.assertTrue(state["session"])
+
+    def test_joined_geometry_is_present_before_the_first_frame(self):
+        evidence = []
+        for material in ("glass", "oak", "iron"):
+            with self.subTest(material=material):
+                spec = scene(bodies=[
+                    {"name":"handle","join":"tool","material":material,"shape":"box",
+                     "size_mm":[200,40,40],"center_mm":[0,500,0]},
+                    {"name":"head","join":"tool","material":material,"shape":"box",
+                     "size_mm":[40,40,120],"center_mm":[80,500,0]},
+                ], sun={"elevation_deg":45,"azimuth_deg":0,"irradiance_w_m2":1000})
+                opened = self.live.open(self.app,{"spec":spec})
+                tool = self.body(opened,"handle")
+                self.assertEqual("hull",tool["shape"])
+                self.assertTrue(tool.get("cells_local_m"), "startup returned only a bounding box")
+                poses = self.live.act({"session":opened["session"],"op":"poses"})
+                after = self.body(poses,"handle")
+                self.assertEqual(tool["cells_local_m"],after["cells_local_m"])
+                self.assertEqual(tool["mass_kg"],after["mass_kg"])
+                self.assertEqual(opened["t"],poses["t"],"geometry read advanced the world")
+                evidence.append({"material":material,"cells":len(tool["cells_local_m"]),
+                    "mass_kg":tool["mass_kg"],"geometry_read_dt_s":poses["t"]-opened["t"],
+                    "mass_change_kg":after["mass_kg"]-tool["mass_kg"]})
+        print("OPENING_GEOMETRY_EVIDENCE",json.dumps(evidence),flush=True)
 
     def test_stepping_is_gravity(self):
         state = self.live.open(self.app, {"spec": scene()})

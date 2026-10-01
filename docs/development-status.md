@@ -1,5 +1,13 @@
 # Development status and handoff
 
+**World geometry and compact Inventory, October 1:** [Measured checkpoint](inventory-rendering-checkpoint.md)
+fixes the wooden-slab/pick mismatch by including native hull geometry before
+the first frame and preserving restore receipts. Legacy sidebar tabs are removed;
+Menu retains controls and mini Inventory shares the owned item/stock/wallet data.
+Pickup/stow/equip/reload, mouse machine control, unified Walk/Fly and short-window
+checks pass: browser 8/8, native session 10/10, fixed Fabrication QA 64/64.
+No native law change. The fourteen-item goal stays active: four verified, ten partial.
+
 **Paid exact machines, October 1:** [Native/browser/AI checkpoint](fabrication-machine-checkpoint.md)
 adds exact fixed solids/assemblies/machines, native per-material overlap allocation,
 atomic material reservation and funded initial battery charge. The complete fixed

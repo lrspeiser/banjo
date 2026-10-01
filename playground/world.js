@@ -23,7 +23,7 @@ import { cellSurface } from "/cellmesh.js";
 import { dress, dressedClone, showGrain, grainState } from "/surfaces.js";
 import { makeTools } from "/tools.js";
 import { makeWorkbench } from "/workbench.js";
-import { gameNavigation, showSaveStatus } from "/game_menu.js";
+import { gameNavigation, showSaveStatus, screenUrl, thumbnail, massLabel } from "/game_menu.js";
 import { conditionPanel } from "/body_condition.js";
 
 const $ = (id) => document.getElementById(id);
@@ -2610,6 +2610,7 @@ function mergeProgram(program) {
 }
 
 function openMachinePanel(control) {
+  $("game-menu")?.close();
   machinePanel.of = isProgram(control) ? "program" : "control";
   machinePanel.id = control.id;
   machinePanel.name = control.name;
@@ -2725,7 +2726,7 @@ function showMachinePanel() {
     ownedHint.textContent = owner
       ? `${titled(owner.name)}'s program has this wheel and tells it every step, on or off, `
         + "so a direction set here would be put back before the next frame. "
-        + "Turn that program off to work it by hand — or be the machine: Settings, "
+        + "Turn that program off to work it by hand — or use Menu → Drive a machine, "
         + `then ${owner.name}.`
       : "A share of the battery's voltage, not a speed: what the machine does with it is below.";
     ownedHint.classList.toggle("owned", !!owner);
@@ -4356,130 +4357,109 @@ function slotColour(material) {
   return `#${(seen ? seen.color : 0x9aa6ae).toString(16).padStart(6, "0")}`;
 }
 
+// The compact and full Inventory read the same owned item/stock ledger.
+// Background reads never advance the simulation or collect/bank anything.
+let miniStock = null, miniWallet = null, miniReading = false;
+const miniPictures = new Map();
+let miniRenderer = null;
+function miniPicture(thing) {
+  const entry = world.bodies.get(thing.name);
+  const key = `${thing.name}:${entry?.revision || 0}:${entry?.material || thing.material}`;
+  const savedKey = `banjo.inventory-picture.${worldId || world.scene}.${playerId || "local"}.${thing.name}`;
+  if (entry && !miniPictures.has(key)) {
+    // A thumbnail of the mesh actually in the world, not a guessed shape or
+    // a box surrounding a joined tool. Keep the last picture when stowed.
+    try {
+      miniRenderer ||= new THREE.WebGLRenderer({alpha:true,antialias:true});
+      miniRenderer.setSize(80,60,false); miniRenderer.outputColorSpace=THREE.SRGBColorSpace;
+      const preview = new THREE.Scene(), mesh = entry.mesh.clone();
+      mesh.position.set(0,0,0); mesh.quaternion.identity(); preview.add(mesh);
+      const bounds = new THREE.Box3().setFromObject(mesh), centre = bounds.getCenter(new THREE.Vector3());
+      const radius = Math.max(.01,bounds.getSize(new THREE.Vector3()).length()/2);
+      preview.add(new THREE.HemisphereLight(0xffffff,0x45505c,2.1));
+      const light = new THREE.DirectionalLight(0xffffff,2.8); light.position.set(3,5,4); preview.add(light);
+      const camera = new THREE.PerspectiveCamera(38,80/60,.001,radius*20+10);
+      camera.position.copy(centre).add(new THREE.Vector3(1.3,.9,1.7).normalize().multiplyScalar(radius/Math.sin(19*Math.PI/180)*1.12));
+      camera.lookAt(centre); miniRenderer.render(preview,camera);
+      if (miniPictures.size>=100) miniPictures.delete(miniPictures.keys().next().value);
+      const picture = miniRenderer.domElement.toDataURL();
+      miniPictures.set(key,picture);
+      try { sessionStorage.setItem(savedKey,picture); } catch { /* optional browser cache */ }
+    } catch { /* shared Inventory icon if WebGL preview is unavailable */ }
+  }
+  let picture = miniPictures.get(key) || [...miniPictures].reverse().find(([k])=>k.startsWith(`${thing.name}:`))?.[1];
+  if (!picture && !entry) { try { picture=sessionStorage.getItem(savedKey); } catch { /* optional cache */ } }
+  if (!picture) return thumbnail({...thing,color_rgba:slotColour(thing.material).slice(1)});
+  const image = document.createElement("img"); image.src=picture; image.alt=bagName(thing); return image;
+}
+async function readMiniInventory() {
+  if (miniReading || !world.session || world.opening || document.hidden || watchedId) return;
+  miniReading = true;
+  const session = world.session;
+  try {
+    const [stock,wallet] = await Promise.allSettled([api("/api/workshop/inventory"),api("/api/workshop/market",{action:"view"})]);
+    if (session !== world.session) return;
+    miniStock = stock.status==="fulfilled" ? stock.value : null;
+    miniWallet = wallet.status==="fulfilled" ? wallet.value : null;
+    showInventory();
+  } finally { miniReading=false; }
+}
+setInterval(readMiniInventory,5000);
 function showInventory() {
+  if (!$("mini-products")) return;
+  const energy=$("mini-energy"), solar=world.machines?.stores?.find(s=>s.body==="solar farm");
+  const value=j=>`${Number(j).toLocaleString(undefined,{maximumFractionDigits:1})} J`;
+  const energyValues = [["Your energy",miniWallet?value(miniWallet.balance_j):watchedId?"Unavailable":"Loading…"],
+    ["Solar · shared",solar?value(solar.charge_j):"—"],
+    ["Solar rate",`${value((world.machines?.panels || []).reduce((n,p)=>n+(Number(p.power_w)||0),0))}/s`]];
+  if (!energy.children.length) for (const [name] of energyValues) {
+    const row=document.createElement("div"), label=document.createElement("span"), count=document.createElement("b");
+    label.textContent=name; row.append(label,count); energy.append(row);
+  }
+  energyValues.forEach(([,amount],i)=>{if(energy.children[i].lastChild.textContent!==amount)energy.children[i].lastChild.textContent=amount;});
   const inv = world.inventory;
-  const hand = inv && inv.hands ? inv.hands[inv.hand_in_the_world] : null;
-  const held = watchedId ? hand?.name : world.held && world.held.name;
-  const entry = held ? world.bodies.get(held) : null;
-  const mass = entry && entry.mass ? ` · ${grams(entry.mass)}` : "";
-  const left = inv && inv.hands && inv.hands.left ? inv.hands.left.name : null;
-  const slots = inv && Array.isArray(inv.stowed) ? inv.stowed : [];
-  const carrying = [...world.stock].sort((a, b) => b[1].kg - a[1].kg)
-    .map(([what, have]) => ({ what, much: grams(have.kg) }));
-  // How near that is to all a person can carry, and what it is doing to them.
-  const wet = world.inWater;
-  if (wet)
-    carrying.unshift({ what: wet.head_under ? "under water" : wet.under >= WADE_TO_SWIM_M ? "swimming" : "wading",
-                       much: `${Math.round(100 * wet.under)} cm of you under · moving at ${Math.round(100 * wet.pace)}%`
-                         + (wet.carried > 0 && wet.speed > 0.005 ? ` · the water carries you at ${(wet.speed * wet.carried).toFixed(2)} m/s` : "") });
-  if (carriedKg() > 0 && world.carryLimitKg)
-    carrying.push({ what: carriedKg() >= world.carryLimitKg - 0.05 ? "all you can carry" : "of what you can carry",
-                    much: `${Math.round(carriedKg())} of ${Math.round(world.carryLimitKg)} kg · walking at ${Math.round(100 * loadPace())}%` });
-  // A key and the short thing it does, rather than a sentence about it: these
-  // are read at a glance while looking at the room, not studied (the owner,
-  // 2026-09-14: "there is way too much text on the screen").
-  const uses = [
-    ...(world.tools || []).map((p) => ({ what: p.object,
-      binds: [[keyOf("interact"), "take it up"], [keyOf("primary"), "use it, hold to keep going"]] })),
-    ...(world.profiles || []).map((p) => ({ what: p.object,
-      binds: [[keyOf("interact"), "take it up"], [keyOf("primary"), "hold to draw, let go to shoot"]] })),
-  ];
-  const storedHeat = new Map((heat.last?.stored || []).map(b => [b.name, b]));
-  const temperatures = slots.map(thing => thing ? storedHeat.get(thing.name) : null);
-  const said = JSON.stringify([held, heldName(), mass, recordHolds(held), hand, left, slots, carrying, uses, temperatures, movementMode]);
+  const hand = inv?.hands?.[inv.hand_in_the_world];
+  const slots = inv?.stowed || [], wet = world.inWater;
+  const materials = [...(miniStock?.materials || []),...(miniStock?.goods || [])].filter(r=>r.mass_kg>0);
+  const ground = [...world.stock].filter(([,v])=>v.kg>0);
+  const held = watchedId ? hand?.name : world.held?.name;
+  const said = JSON.stringify([inv,held,materials,ground,movementMode,wet,world.carryLimitKg]);
   if (said === inventorySaid) return;
-  inventorySaid = said;
-  showHotbar(slots, hand);
-  // A button in the panel is not the room: clicking one never also acts in the
-  // world, and it lets go of the focus, so Space cannot click it again.
-  const button = (label, op, item) => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.textContent = label;
-    b.addEventListener("click", (e) => {
-      e.stopPropagation(); b.blur();
-      if (op !== "drop") { inventoryChange(op, item); return; }
-      if (world.held?.name === item) { intend("put down"); return; }
-      if (world.held) { lastAction("Put down what you are holding first.", "refused"); return; }
-      // Take a bag item into the hand so its destination is visible before
-      // committing. E then uses precisely that preview.
-      inventoryChange("equip", item);
-    });
-    return b;
-  };
-  const rightName = Object.values(inv?.hands || {}).find(x => x && (x.name === held || x.parts?.includes(held)))?.label
-    || titled(heldName()) || bagName({name:held});
-  $("inv-right").replaceChildren(document.createTextNode(held ? `${rightName}${mass}` : "free"));
-  if (recordHolds(held)) $("inv-right").append(button("Stow", "stow", held), button("Put down", "drop", held));
-  $("inv-left").textContent = left ? bagName(inv.hands.left) : "free";
-  const bag = slots.map((thing, i) => [thing, i]).filter(([thing]) => thing);
-  // The Workshop link takes a drop too, whether or not the bag has
-  // anything in it this moment. Made once; the guard sees to that.
+  inventorySaid=said; showHotbar(slots,hand);
   workshopTakesDrops();
-  $("inv-bag").replaceChildren(...(bag.length ? bag.map(([thing, i]) => {
-    const li = document.createElement("li");
-    const key = document.createElement("span");
-    key.className = "slot-key";
-    key.textContent = i < SLOT_KEYS ? slotKeySaid(i) : "";
-    li.append(key, document.createTextNode(bagName(thing)),
-              button("Hold", "equip", thing.id), button("Hold to place", "drop", thing.id));
-    // PICK IT UP WITH THE MOUSE and drop it on a slot in the row over the
-    // room: that is the hot list. The buttons still work for anyone who
-    // would rather not drag, and for a touch screen, which has no drag.
-    li.draggable = !watchedId;
-    li.addEventListener("dragstart", (e) => {
-      e.dataTransfer.setData(BAG_DRAG, thing.id);
-      e.dataTransfer.effectAllowed = "move";
-      document.body.classList.add("moving-a-thing");
-    });
-    li.addEventListener("dragend", () => document.body.classList.remove("moving-a-thing"));
-    li.title = watchedId ? bagName(thing) : `${bagName(thing)} — drag it onto a slot in the row over the `
-            + "room, or onto Workshop to open it on the bench";
-    const measured = storedHeat.get(thing.name);
-    if (measured && Number.isFinite(measured.t_k) && Number.isFinite(measured.core_k)) {
-      const condition = document.createElement("small");
-      condition.className = "much";
-      condition.textContent = `Surface ~${Math.round(measured.t_k - 273.15)} °C · core ~${Math.round(measured.core_k - 273.15)} °C · insulated storage`;
-      li.append(condition);
-    }
-    const details = document.createElement("details"), summary = document.createElement("summary");
-    summary.textContent = "Details"; details.append(summary);
-    const identity = document.createElement("small"); identity.className = "much";
-    identity.textContent = `Item: ${thing.id} · Body: ${thing.name}`; details.append(identity);
-    if (!measured) {
-      const condition = document.createElement("small"); condition.className = "much";
-      condition.textContent = "Temperature not tracked"; details.append(condition);
-    }
-    li.append(details);
-    return li;
-  }) : [Object.assign(document.createElement("li"), { className: "none",
-         textContent: `nothing yet: ${keyOf("stow")} puts what you hold, or look at, in it` })]));
-  const rows = (items, none) => (items.length ? items : [{ none }]).map((item) => {
-    const li = document.createElement("li");
-    if (item.none) { li.className = "none"; li.textContent = item.none; return li; }
-    li.textContent = item.what;
-    if (item.much) {
-      const much = document.createElement("span");
-      much.className = "much";
-      much.textContent = item.much;
-      li.append(much);
-    }
-    if (item.binds) {
-      for (const [pressed, does] of item.binds) {
-        const line = document.createElement("span");
-        line.className = "bind";
-        const key = document.createElement("kbd");
-        key.textContent = pressed;
-        const what = document.createElement("span");
-        what.textContent = does;
-        line.append(key, what);
-        li.append(line);
-      }
-    }
-    return li;
-  });
-  $("inv-carrying").replaceChildren(...rows(carrying, "nothing yet"));
-  $("inv-tools").replaceChildren(...rows(uses, "nothing here yet"));
+  const products = $("mini-products"); products.replaceChildren();
+  const add = (thing,where,inHand) => {
+    const row = document.createElement("article"); row.className="mini-product"; row.dataset.item=thing.id || thing.name;
+    const picture=miniPicture(thing), label=document.createElement("strong"), position=document.createElement("small");
+    label.textContent=bagName(thing); position.textContent=where;
+    const copy=document.createElement("div"); copy.append(label,position); row.append(picture,copy);
+    const action=document.createElement("button"); action.type="button"; action.textContent=inHand?"Stow":"Hold";
+    action.disabled=!!watchedId; action.addEventListener("click",e=>{e.stopPropagation();action.blur();
+      if (handBusy()) return;
+      if (inHand && (world.held?.name===thing.name || thing.parts?.includes(world.held?.name))) toTheBag();
+      else inventoryChange(inHand?"stow":"equip",thing.id || thing.name);});
+    row.append(action); products.append(row);
+  };
+  for (const [side,thing] of Object.entries(inv?.hands || {})) if (thing) add(thing,`${titled(side)} hand`,true);
+  slots.forEach((thing,i)=>{if(thing)add(thing,`Bag · ${slotKeySaid(i)}`,false);});
+  if (held && !Object.values(inv?.hands || {}).some(t=>t?.name===held || t?.parts?.includes(held)))
+    add({name:held,label:heldName(),material:world.bodies.get(held)?.material},"In hand",true);
+  if (!products.children.length) products.textContent="Hands & bag · Empty";
+  const stock = $("mini-materials"); stock.replaceChildren();
+  const resource = (material,kg,where) => {
+    const button=document.createElement("a"); button.className="mini-resource";
+    const url=new URL(screenUrl("recipes"),location.origin); url.searchParams.set("material",material);
+    button.href=url.pathname+url.search; button.dataset.material=material;
+    button.append(thumbnail({name:titled(material),material,shape:"box",color_rgba:slotColour(material).slice(1)}));
+    const name=document.createElement("span"), value=document.createElement("b");
+    name.textContent=titled(material); value.textContent=massLabel(kg);
+    const caption=document.createElement("small"); caption.textContent=where;
+    button.append(name,value,caption); stock.append(button);
+  };
+  ground.forEach(([material,v])=>resource(material,v.kg,"Carried"));
+  materials.forEach(r=>resource(r.material || r.substance,r.mass_kg,
+    r.shared_kg>0 ? "Stock · includes shared" : "Your stock"));
+  if (!miniStock && !miniReading && !watchedId) readMiniInventory();
   const meter = document.querySelector("#world-load-meter");
   if (meter) {
     const limit = world.carryLimitKg, mass = carriedKg();
@@ -5159,7 +5139,7 @@ function keysForPicked(name) {
   // which is what whatCanBeRidden() answers -- a key that is shown is a key
   // that works.
   if (whatCanBeRidden().some((m) => m.name === name)) {
-    out.push({ key: "Settings", what: "be it, from the Settings tab" });
+    out.push({ key: "Menu", what: "Drive a machine" });
   }
   if (machinesOfPart(name).length && !out.some((k) => /panel/.test(k.what))) {
     out.push({ key: "Click", what: "open its panel" });
@@ -5726,7 +5706,7 @@ function detailsModel() {
           : list.length ? ""
             // WHICH tool, and nothing about how to hold it. How to hold it is
             // already written twice over: on the tool itself in the Bag tab,
-            // and in the Keys tab. Saying it a third time here is what turned
+            // and in Menu → Keyboard & mouse. Saying it a third time here is what turned
             // the side view into a wall of text.
             // tool.object already reads "the pick", so it only wants a capital
             // and a stop -- writing "The " in front of it gave "The the pick".
@@ -5859,17 +5839,37 @@ let runsListed = false, scrubbing = false, workbenchSaid = "";
 // The side view's tabs, one shown at a time (the owner: "all the other text
 // needs to be in tabs in part of the side view"). A tab lets go of the focus
 // once clicked, so the keys go back to the room.
-const TABS = ["bag", "notes", "room", "bench", "keys"];
+// Extra world controls belong in Menu. The side rail has one compact
+// Inventory, alongside the same screen navigation as the Workshop.
+const worldMenu = $("game-menu");
+const worldMenuSections = new Map();
+for (const [name, label] of [["keys", "Keyboard & mouse"], ["bench", "Recorded experiments"],
+                             ["room", "World diagnostics"]]) {
+  const section = document.createElement("details"), summary = document.createElement("summary");
+  summary.textContent = label; section.dataset.worldMenu = name;
+  const pane = $(`pane-${name}`); pane.hidden = false;
+  pane.removeAttribute("role"); pane.removeAttribute("aria-labelledby");
+  section.append(summary, pane); worldMenu.append(section); worldMenuSections.set(name, section);
+}
+const miniInventory = $("pane-bag");
+miniInventory.removeAttribute("role"); miniInventory.removeAttribute("aria-labelledby");
+miniInventory.id = "mini-inventory";
+miniInventory.innerHTML = `<header><h2>Inventory</h2><a href="${screenUrl("inventory")}">Open all →</a></header>
+  <div id="mini-products"></div><div id="mini-energy"></div><div id="mini-materials"></div>`;
+$("tabs").replaceWith(miniInventory);
 function showTab(which) {
-  for (const tab of TABS) {
-    $(`tab-${tab}`).setAttribute("aria-selected", String(tab === which));
-    $(`pane-${tab}`).hidden = tab !== which;
-  }
+  if (which === "bag") { miniInventory.scrollIntoView({block:"nearest"}); return; }
+  if (which === "notes") { location.assign(screenUrl("skills")); return; }
+  const section = worldMenuSections.get(which);
+  if (!section) return;
+  section.open = true;
+  if (!worldMenu.open) worldMenu.showModal();
+  section.scrollIntoView({block:"nearest"});
   if (which === "bench" && !runsListed) listRuns();
 }
-for (const tab of TABS) {
-  $(`tab-${tab}`).addEventListener("click", (e) => { e.currentTarget.blur(); showTab(tab); });
-}
+worldMenuSections.get("bench").addEventListener("toggle", () => {
+  if (worldMenuSections.get("bench").open && !runsListed) listRuns();
+});
 
 // K: the Bench tab, with the mouse let go so a run can be chosen with it.
 function openWorkbench() {
@@ -6214,7 +6214,7 @@ function typing(target) {
 }
 
 addEventListener("keydown", (e) => {
-  if (typing(e.target)) return;
+  if (typing(e.target) || $("game-menu")?.open) return;
   // "/" opens the room's chat, as it does in a game: say what you want -- "turn
   // this upright and set it in front of me" -- and the room does it.
   if (e.key === "/" || isKey("talk", e.code)) { e.preventDefault(); talk(); return; }
@@ -6823,7 +6823,7 @@ const RIDE_EYE_M = 1.1;
 // not a machine.
 //
 // So you begin as the camera and get into something when you choose to,
-// from the Settings tab. Everything the owner asked for is there; what is
+// from Menu → Drive a machine. Everything the owner asked for is there; what is
 // not there is it being the only way to be.
 const riding = { name: null, asked: null, at: 0, seq: 0, sending: false, godMode: true,
                  powering: false, poweredAt: 0 };
@@ -7139,24 +7139,14 @@ function showWhatItSenses() {
 // (docs, and the hard way).
 
 function buildRidingSettings() {
-  const strip = document.querySelector("#tabs > div[role=tablist]");
-  const tabs = $("tabs");
-  if (!strip || !tabs || $("tab-settings")) return;
-
-  const tab = document.createElement("button");
-  tab.type = "button";
-  tab.id = "tab-settings";
-  tab.setAttribute("role", "tab");
-  tab.setAttribute("aria-controls", "pane-settings");
-  tab.setAttribute("aria-selected", "false");
-  tab.textContent = "Settings";
-  strip.append(tab);
+  if ($("pane-settings")) return;
+  const section = document.createElement("details"), summary = document.createElement("summary");
+  summary.textContent = "Drive a machine"; section.dataset.worldMenu = "settings";
+  worldMenuSections.set("settings", section);
 
   const pane = document.createElement("div");
   pane.id = "pane-settings";
-  pane.setAttribute("role", "tabpanel");
-  pane.setAttribute("aria-labelledby", "tab-settings");
-  pane.hidden = true;
+  pane.hidden = false;
   pane.innerHTML = "";
 
   const who = document.createElement("section");
@@ -7174,59 +7164,44 @@ function buildRidingSettings() {
   senses.hidden = true;
   who.append(title, said, senses, list);
 
-  const god = document.createElement("section");
-  god.setAttribute("aria-label", "God mode");
-  const godTitle = document.createElement("h3");
-  godTitle.textContent = "God mode";
-  const godWhy = document.createElement("p");
-  godWhy.className = "mp-hint";
-  godWhy.textContent = "Leave the machine and float: Space rises, Shift+Space sinks, "
-    + "and nothing in the room can stop you. For looking at the room rather than being in it.";
-  const godButton = document.createElement("button");
-  godButton.type = "button";
-  godButton.id = "settings-god";
-  godButton.setAttribute("aria-pressed", "false");
-  godButton.textContent = "Fly";
-  godButton.addEventListener("click", () => {
-    godButton.blur();
-    // Going up: let go properly, which tells the machine to wait. An ask
-    // stands for three seconds now, and one that outlives the person who
-    // gave it drives a machine nobody is in.
-    if (!riding.godMode) { letGoOfTheMachine(); return; }
-    riding.godMode = false;
-    riding.asked = null;
-    chooseSomethingToRide();
-    rememberRiding();
-    showRidingSettings();
-  });
-  god.append(godTitle, godWhy, godButton);
-
-  pane.append(who, god);
-  tabs.append(pane);
-  TABS.push("settings");
-  tab.addEventListener("click", (e) => { e.currentTarget.blur(); showTab("settings"); });
+  pane.append(who);
+  section.append(summary, pane);
+  worldMenuSections.get("room").before(section);
   showRidingSettings();
 }
 
 // What the tab says now: what you are, and what else you could be.
 function showRidingSettings() {
-  const said = $("settings-said"), list = $("settings-riders"), god = $("settings-god");
-  if (!said || !list || !god) return;
-  god.setAttribute("aria-pressed", String(!!riding.godMode));
-  god.textContent = riding.godMode ? "Stop flying" : "Fly";
+  const said = $("settings-said"), list = $("settings-riders");
+  if (!said || !list) return;
 
   const all = whatCanBeRidden();
   const mine = whatIsRidden();
+  const movement = worldMenu.querySelector("#game-menu-movement select");
+  const controller = !riding.godMode && mine ? `machine:${mine.name}` : movementMode;
+  if (movement && movement.dataset.controller !== controller) {
+    movement.dataset.controller = controller;
+    movement.querySelector('[value="machine"]')?.remove();
+    if (controller.startsWith("machine:")) {
+      const current=document.createElement("option"); current.value="machine"; current.disabled=true;
+      current.textContent=`Driving ${mine.name}`; movement.prepend(current); movement.value="machine";
+    } else movement.value=movementMode;
+  }
   said.textContent = riding.godMode
-    ? "Flying. Nothing in the room can stop you, and nothing in it is yours to drive."
+    ? movementMode === "fly" ? "Flying · Space up · Shift + Space down" : "On foot · walk, jump & swim"
     : mine
       ? `You are ${mine.name}. W A S D drive it`
         + (mine.kind === "hover" ? ", Space up, Shift+Space down." : ".")
       : all.length
-        ? "Pick something to be."
-        : "There is no machine in this room to be, so you are a camera above it.";
+        ? "Choose a machine to drive."
+        : "No machine to drive.";
 
   showWhatItSenses();
+  // Native meters arrive every frame. Keep the actual choice buttons while
+  // their choices are unchanged so pointer-down/up reaches the same control.
+  const choices = JSON.stringify([all.map(m => m.name), mine?.name, !!riding.godMode]);
+  if (list.dataset.choices === choices) return;
+  list.dataset.choices = choices;
   list.replaceChildren(...all.map((m) => {
     const li = document.createElement("li");
     const button = document.createElement("button");
@@ -7243,6 +7218,7 @@ function showRidingSettings() {
       riding.asked = null;
       rememberRiding();
       showRidingSettings();
+      $("game-menu")?.close();
     });
     li.append(button);
     return li;
@@ -7259,7 +7235,7 @@ addEventListener("banjo-movement-mode", event => {
   movementMode = event.detail === "fly" ? "fly" : "gravity";
   verticalSpeed = 0; jumpHeld = false;
   // Return the player's controls from a ridden machine to their own feet.
-  if (movementMode === "gravity") letGoOfTheMachine();
+  letGoOfTheMachine();
 });
 function walk(dt) {
   // RIDING IS THE ORDINARY WAY TO BE HERE. The keys go to the machine and
@@ -10350,7 +10326,7 @@ function showNotebook(book, fresh) {
   }
   for (const n of book.not_modelled || []) rows.push(["noted", `Not modelled yet: ${n}.`]);
   showNextStep(book);
-  $("notebook-list").replaceChildren(...rows.map(([kind, text]) => {
+  $("notebook-list")?.replaceChildren(...rows.map(([kind, text]) => {
     const li = document.createElement("li");
     li.className = `nb-${kind}`;
     li.textContent = text;
@@ -10358,7 +10334,7 @@ function showNotebook(book, fresh) {
   }));
   // There is always a next rung, so the panel is not empty just because
   // nothing has been tried yet.
-  $("notebook-empty").hidden = (book.designs || []).length > 0 || (book.next || []).length > 0;
+  if ($("notebook-empty")) $("notebook-empty").hidden = (book.designs || []).length > 0 || (book.next || []).length > 0;
 }
 
 function actionsFor(name) {
@@ -10860,6 +10836,7 @@ async function open({ again = false } = {}) {
       ? (watchedView = await api("/api/world/ai", { action:"watch", id:watchedId, full:true })).state
       : await api("/api/world/open", qa !== null ? { qa } : { scene: $("scene").value, ...(again ? { again } : {}) });
     world.session = data.session;
+    miniStock = null; miniWallet = null; inventorySaid = "";
     expedition.update(data.gameplay);
     // What the person has, with the bag's things already set aside by the server.
     world.inventory = data.inventory || null;

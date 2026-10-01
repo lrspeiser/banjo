@@ -846,9 +846,9 @@ class Live:
             # has changed since.
             adopted.update(self._sun(session, spec.get("sun")))
             session.declared = _declared(spec, opening.get("machines"), made)
-            return {"session": session.id, "spec": spec, **opening, **adopted}
+            return self._opening_geometry(session, {"session": session.id, "spec": spec, **opening, **adopted})
         if tier == "carried" and plan is not None:
-            return self._carried(session, spec, opening, plan)
+            return self._opening_geometry(session, self._carried(session, spec, opening, plan))
         made: dict[str, Any] = {}
         hung = self._hang(session, pins)
         # And its batteries and the motors on its pins, which name the pins.
@@ -861,8 +861,22 @@ class Live:
         # And the points of tools that dig, likewise. docs/ground-work.md.
         tooled = self._point(session, spec.get("tool_points") or [])
         session.declared = _declared(spec, None, made)
-        return {"session": session.id, "spec": spec, **opening, **session.state, **hung, **armed,
-                **tooled}
+        return self._opening_geometry(session, {"session": session.id, "spec": spec,
+                **opening, **session.state, **hung, **armed, **tooled})
+
+    @staticmethod
+    def _opening_geometry(session: Any, opening: dict[str, Any]) -> dict[str, Any]:
+        # Startup declarations return poses without hull cells and replace the
+        # session's opening picture. A bounding box is not a joined object's
+        # shape: send the native geometry after all declarations, before the
+        # first frame. Read-only; no simulation step or inventory change.
+        if not isinstance(session, live_inprocess.InProcessSession):
+            before = session.state
+            opening["bodies"] = session.send(op="poses")["bodies"]
+            # Retain startup/restore receipts in the host's initial picture.
+            # The poses read does not repeat them; it must not erase them.
+            session.state = {**before, **session.state}
+        return opening
 
     def _carried(self, session: Any, spec: dict[str, Any], opening: dict[str, Any],
                  plan: dict[str, Any]) -> dict[str, Any]:

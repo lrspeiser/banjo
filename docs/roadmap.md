@@ -1,5 +1,12 @@
 # Banjo roadmap and acceptance gates
 
+**Item appearance/navigation acceptance, October 1:** [Verified checkpoint](inventory-rendering-checkpoint.md)
+passes fresh geometry before pickup, unchanged mesh/mass through hands/bag/reload,
+compact/full Inventory navigation and relocated Menu controls. Duplicate fly UI
+is removed; actual Walk/Fly releases a machine. Ordinary finite workbench,
+complete paid player/AI progression and damaged-tool replacement/use remain next.
+All fourteen requirements remain active: four verified and ten partial.
+
 **Paid machine admission, October 1:** [Exact native checkpoint](fabrication-machine-checkpoint.md)
 passes material allocation, multiple-material stock/charge reservation, native
 installation/motor use, rollback/restart, Lab mouse funding and AI paid builds.

@@ -1,0 +1,132 @@
+{
+  "schema": "banjo.inventory-rendering-checkpoint.v1",
+  "source_base_revision": "c83e56720480b070c58c288f23cc377e5c54298d",
+  "source_dirty_during_verification": true,
+  "environment": "Windows / MSVC Release / headless Chrome actual mouse and keyboard",
+  "engine_sha256": "1cfcb766b24f942df1147f8e9ecd1c00d083105ff71a5bcb9d8da6b50c8d8db9",
+  "library_sha256": "ab9b2bd04c082863271592a3b9db2eee5fc2e3666024f3e4184aa71e2e482c8c",
+  "fabrication_qa": {
+    "status": "passed",
+    "total": 64,
+    "elapsed_wall_s": 72.98066592216492,
+    "cases": [
+      "fabrication_tests.NativeFabrication.test_a_changed_use_cannot_consume_a_workpiece_and_a_running_room_can",
+      "fabrication_tests.NativeFabrication.test_cold_output_does_not_inherit_hot_room_temperature",
+      "fabrication_tests.NativeFabrication.test_failed_start_and_install_saves_leave_stock_native_world_and_output",
+      "fabrication_tests.NativeFabrication.test_funded_assembly_keeps_groups_heat_use_and_atomic_restart",
+      "fabrication_tests.NativeFabrication.test_funded_save_refuses_either_missing_half_or_changed_clock",
+      "fabrication_tests.NativeFabrication.test_glass_oak_iron_work_restart_native_mass_and_duplicate_install",
+      "fabrication_tests.NativeFabrication.test_paid_exact_machine_native_material_energy_rollback_restart_and_use",
+      "fabrication_tests.NativeFabrication.test_paid_fixed_exact_part_preserves_original_and_has_no_thermal_or_energy_gift",
+      "fabrication_tests.NativeFabrication.test_paid_mixed_machine_counts_native_overlap_once_and_reserves_each_material",
+      "fabrication_tests.NativeFabrication.test_preexisting_new_output_parcel_is_an_accounted_replacement",
+      "fabrication_tests.NativeFabrication.test_private_ground_staging_preserves_other_players_and_legacy_stock",
+      "fabrication_tests.NativeFabrication.test_raw_stock_save_rejects_missing_or_changed_source_and_destination",
+      "fabrication_tests.NativeFabrication.test_recovered_stock_save_failure_restart_and_native_state",
+      "fabrication_tests.NativeFabrication.test_retrieval_capacity_and_corrupt_receipts_are_refused",
+      "fabrication_tests.NativeFabrication.test_retrieval_is_atomic_partial_restartable_and_can_be_deposited",
+      "fabrication_tests.NativeFabrication.test_store_ground_commits_both_accounts_and_retries_after_restart",
+      "fabrication_tests.NativeHTTP.test_actual_platform_and_legacy_protocol_publish_fabrication_tools",
+      "fabrication_tests.NativeHTTP.test_http_mcp_restart_and_room_switch_keep_both_halves",
+      "fabrication_tests.NativeHTTP.test_main_world_funded_outputs_preserve_terrain_water_and_stock",
+      "fabrication_tests.NativeHTTP.test_main_world_process_preserves_receipts_and_cannot_reset",
+      "fabrication_tests.NativeHTTP.test_mcp_stores_main_world_ground_and_replays_original_session",
+      "fabrication_tests.ProcessModel.test_exact_catalog_geometry_and_material_work_accounting",
+      "fabrication_tests.ProcessModel.test_ground_audit_distinguishes_transfer_and_external_material",
+      "fabrication_tests.ProcessModel.test_material_vector_is_atomic_and_initial_battery_charge_is_reserved_not_heat",
+      "fabrication_tests.ProcessModel.test_native_batch_size_does_not_change_work_or_heat",
+      "fabrication_tests.ProcessModel.test_pausing_retains_workpiece_and_resume_does_not_refund",
+      "fabrication_tests.ProcessModel.test_recovery_conserves_material_and_does_not_refund_work",
+      "fabrication_tests.ProcessModel.test_recovery_rejects_invalid_amounts_and_changed_retries",
+      "fabrication_tests.ProcessModel.test_retry_stale_revision_and_shared_stock",
+      "fabrication_tests.ProcessModel.test_strict_inputs_and_no_clock_rewind_or_save_refill",
+      "fabrication_tests.ProcessModel.test_supply_and_temperature_limits_do_not_invent_finished_parts",
+      "fabrication_tests.ProcessModel.test_transfer_is_exact_and_single_use",
+      "fabrication_energy_tests.EnergyHTTP.test_same_http_and_mcp_charger_meter_receipts_and_rejoin",
+      "fabrication_energy_tests.EnergyLedger.test_bad_receipt_power_timing_and_source_snapshots_are_refused",
+      "fabrication_energy_tests.EnergyLedger.test_import_spending_and_serialized_retry_close_the_energy_boundary",
+      "fabrication_energy_tests.NativeEnergy.test_battery_funded_native_products_glass_oak_iron",
+      "fabrication_energy_tests.NativeEnergy.test_limits_failed_save_restart_retry_and_meter_tamper",
+      "fabrication_energy_tests.NativeEnergy.test_other_consumers_share_source_power_and_reconnect_cannot_reuse_time",
+      "fabrication_energy_tests.NativeEnergy.test_process_state_stays_readable_when_native_transfer_snapshot_is_unavailable",
+      "fabrication_energy_tests.NativeEnergy.test_stale_source_shared_revision_reconnect_and_insufficient_supply",
+      "fabrication_stock_tests.CollectedStock.test_collected_stock_private_escrow_browser_return_finish_and_reopen",
+      "fabrication_stock_tests.NativeStock.test_failed_save_retains_visible_escrow_release_restores_exact_rack_once",
+      "fabrication_stock_tests.NativeStock.test_funded_new_part_preserves_real_native_cut_and_original_body",
+      "fabrication_stock_tests.NativeStock.test_lost_save_acknowledgement_cannot_refund_already_credited_stock",
+      "fabrication_stock_tests.NativeStock.test_rack_and_battery_funded_native_glass_oak_iron_outputs_from_zero_seeds",
+      "fabrication_stock_tests.NativeStock.test_source_debit_recovers_after_restart_without_duplicate_credit_or_rewinding_native_state",
+      "fabrication_stock_tests.NativeStock.test_two_players_stale_sources_and_receiving_history_cannot_spend_peer_stock",
+      "fabrication_stock_tests.StockMCP.test_same_mcp_tools_reserve_release_and_credit_exact_rack",
+      "fabrication_stock_tests.StockModel.test_zero_initial_resources_import_mass_and_recovery_receipt",
+      "fabrication_remake_tests.LabRemake.test_lab_saved_mixed_machine_reviews_each_material_and_funds_initial_charge",
+      "fabrication_remake_tests.LabRemake.test_lab_source_plan_native_paid_start_progress_placement_and_private_owner",
+      "fabrication_remake_tests.NativeRemake.test_actual_cut_source_in_bag_remakes_without_healing_original",
+      "fabrication_remake_tests.NativeRemake.test_glass_oak_iron_frozen_source_funded_remake_admission_and_restart",
+      "fabrication_remake_tests.NativeRemake.test_new_design_glass_oak_iron_paid_make_has_no_carried_source_and_survives_restart",
+      "fabrication_remake_tests.NativeRemake.test_new_design_plan_peer_wrong_operation_expiry_and_saved_binding_refuse_without_spend",
+      "fabrication_remake_tests.NativeRemake.test_source_move_expiry_shortages_and_invalid_bindings_refuse_without_spend",
+      "workshop_install_tests.ArticulationCompiler.test_bearing_keeps_separate_exact_material_groups",
+      "workshop_install_tests.ArticulationCompiler.test_fixed_members_share_one_body_but_keep_component_labels",
+      "workshop_install_tests.ArticulationCompiler.test_fixed_path_cannot_silently_lock_a_bearing",
+      "workshop_install_tests.ArticulationCompiler.test_interaction_binding_requires_known_components_and_complete_points",
+      "workshop_install_tests.ArticulationCompiler.test_open_and_unconnected_parts_are_refused",
+      "workshop_install_tests.ArticulationCompiler.test_overlapping_shaft_requires_actual_clearance",
+      "workshop_install_engine_tests.NativeInstallation.test_compiled_bearing_moves_under_gravity_without_fusing_parts",
+      "workshop_install_engine_tests.NativeInstallation.test_articulated_staging_preserves_old_motion_heat_and_constraints"
+    ]
+  },
+  "browser_journeys": {
+    "passed": 8,
+    "total": 8,
+    "elapsed_s": 44.516,
+    "final_helper_layout_and_k_followup": "Compact Inventory + short-window, Menu controller indicator/fly selection, retained Stow/Q delegation all pass"
+  },
+  "native_session": {
+    "passed": 10,
+    "total": 10,
+    "elapsed_s": 0.436
+  },
+  "joined_geometry": {
+    "cell_m": 0.02,
+    "step_dt_s": null,
+    "cases": [
+      {
+        "material": "glass",
+        "cells": 56,
+        "mass_kg": 1.12,
+        "geometry_read_dt_s": 0,
+        "mass_change_kg": 0
+      },
+      {
+        "material": "oak",
+        "cells": 56,
+        "mass_kg": 0.3136,
+        "geometry_read_dt_s": 0,
+        "mass_change_kg": 0
+      },
+      {
+        "material": "iron",
+        "cells": 56,
+        "mass_kg": 3.52576,
+        "geometry_read_dt_s": 0,
+        "mass_change_kg": 0
+      }
+    ]
+  },
+  "preview": {
+    "url": "http://127.0.0.1:8770/world?world=6270029afd3446a09ea50a17cc51b04c&scene=new-game",
+    "old_world_body_count": 10,
+    "fresh_pick_cells": 22,
+    "fresh_pick_design": true,
+    "mini_inventory": "Inventory\nOpen all \u2192\nField pick\nRight hand\nStow\nYour energy\n0 J\nSolar \u00b7 shared\n1,990,336.3 J\nSolar rate\n240.6 J/s",
+    "legacy_tabs_removed": true,
+    "exception_count": 0
+  },
+  "source_registration": {
+    "registered": 287,
+    "sources": 287,
+    "excluded": 0
+  },
+  "boundary": "Rendering/geometry transport and owned Inventory UI; no physics law, whole-world conservation or full progression claim."
+}
