@@ -65,6 +65,20 @@ class RoomStore:
         return self.folder / f"{scene}.json"
 
     def save(self, room: Any) -> bool:
+        """Publish save status only after the atomic disk replacement succeeds."""
+        previous = getattr(room, "persistence", {}).get("saved_t_s")
+        attempted = (getattr(room, "world_record", None) or {}).get("t_s")
+        try:
+            saved = self._save(room)
+        except (OSError, ValueError, TypeError) as problem:
+            room.persistence = {"state": "failed", "reason": str(problem)[:240],
+                                "saved_t_s": previous, "attempted_t_s": attempted}
+            raise
+        room.persistence = {"state": "saved" if saved else "unavailable", "reason": "",
+                            "saved_t_s": attempted if saved else previous, "attempted_t_s": attempted}
+        return saved
+
+    def _save(self, room: Any) -> bool:
         """Write the room whole -- to a new file, then put in place -- or not at all."""
         if getattr(room, "scene", None) not in world_room.SCENES:
             return False
@@ -127,7 +141,20 @@ class RoomStore:
             record["fabrication_required"] = True
         if isinstance(world,dict):
             from mcp.fabrication import validate_ground_stock
-            validate_ground_stock(fabrication or {},world)
+            validate_ground_stock(fabrication or {},world,getattr(room,"ground_transfers",None))
+        transfers = getattr(room,"ground_transfers",None)
+        if transfers is not None:
+            from mcp.ground_transfers import totals
+            if totals(transfers)["holders"] and not isinstance(world,dict):
+                raise ValueError("Ground receivers require their matching native snapshot")
+            record["ground_transfers"] = transfers
+        runtime = getattr(room,"machine_runtime",None)
+        if runtime is not None:
+            import machine_routine
+            machine_routine.validate_runtime(room.spec,runtime)
+            if runtime and not isinstance(world,dict):
+                raise ValueError("Machine runtime requires its matching native snapshot")
+            record["machine_runtime"] = runtime
         text = json.dumps(record, allow_nan=False)
         path = self.path_of(room.scene)
         with self.lock:
@@ -178,9 +205,16 @@ class RoomStore:
             if not isinstance(record.get("world"),dict) or abs(record["world"]["t_s"]-room.fabrication_record["time_s"]) > 1e-7:
                 raise ValueError("Fabrication save requires its matching native world")
         room.gameplay_record = record.get("gameplay")
+        room.ground_transfers = record.get("ground_transfers")
+        from mcp.ground_transfers import totals
+        totals(room.ground_transfers)
+        room.machine_runtime = record.get("machine_runtime")
+        if room.machine_runtime is not None:
+            import machine_routine
+            machine_routine.validate_runtime(room.spec,room.machine_runtime)
         if isinstance(record.get("world"),dict):
             from mcp.fabrication import validate_ground_stock
-            validate_ground_stock(room.fabrication_record or {},record["world"])
+            validate_ground_stock(room.fabrication_record or {},record["world"],room.ground_transfers)
         if scene == "expedition" and (not isinstance(room.gameplay_record, dict)
                                       or not isinstance(record.get("world"), dict)):
             raise ValueError("Expedition save needs both native and gameplay state; refusing a reset")
@@ -200,6 +234,8 @@ class RoomStore:
                                        if isinstance(r, dict)}
         room.hand_owner = record.get("hand_owner") if record.get("hand_owner") in room.player_records else None
         room.world_record = record["world"] if isinstance(record.get("world"), dict) else None
+        room.persistence = {"state":"saved","reason":"",
+                            "saved_t_s":(room.world_record or {}).get("t_s"),"attempted_t_s":None}
         receipts = record.get("workshop_installs")
         room.workshop_installs = [r for r in receipts[-64:] if isinstance(r, dict)] if isinstance(receipts, list) else []
         return room
@@ -208,8 +244,8 @@ class RoomStore:
         """A saved world the engine would not put back whole: written out beside
         the room, with why -- never deleted -- and the room kept without it."""
         world = getattr(room, "world_record", None)
-        if getattr(room, "fabrication_record", None) is not None:
-            raise ValueError("Cannot discard the native half of a funded fabrication room")
+        if funded(room):
+            raise ValueError("Cannot discard the native half of a room with physical receiving accounts")
         room.world_record = None
         scene = getattr(room, "scene", None)
         if not isinstance(world, dict) or scene not in world_room.SCENES:
@@ -242,25 +278,30 @@ class RoomStore:
             log.warning("rooms: %s could not be used (%s) or moved aside: %s", path.name, why, problem)
 
 
-def keep(app: Any, room: Any) -> None:
+def keep(app: Any, room: Any) -> bool:
     """After anything that changes a room: write it down, if this server keeps rooms.
 
     A disk that will not take it is said in the log and changes nothing else: the
     room in memory is still the room."""
     store = getattr(app, "store", None)
     if store is None or room is None:
-        return
+        return False
     try:
-        store.save(room)
+        return store.save(room)
     except (OSError, ValueError, TypeError) as problem:
+        previous=getattr(room,"persistence",{}).get("saved_t_s")
+        room.persistence={"state":"failed","reason":str(problem)[:240],
+                          "saved_t_s":previous,"attempted_t_s":(getattr(room,"world_record",None) or {}).get("t_s")}
         log.warning("rooms: could not keep %s: %s", getattr(room, "scene", "?"), problem)
+        return False
 
 
 def funded(room: Any) -> bool:
     """Physical resource history requires an exact restore in any saved room."""
     return (getattr(room, "scene", None) in ("expedition", "fabrication")
             or getattr(room, "fabrication_required", False)
-            or isinstance(getattr(room, "fabrication_record", None), dict))
+            or isinstance(getattr(room, "fabrication_record", None), dict)
+            or bool((getattr(room,"ground_transfers",None) or {}).get("receipts")))
 
 
 def room_for(app: Any, scene: str, have: Any, fresh: bool) -> tuple[Any, bool]:

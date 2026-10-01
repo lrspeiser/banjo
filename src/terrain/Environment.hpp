@@ -185,6 +185,7 @@ public:
     // edits carries the same. A heap a scene declares beyond it is declared
     // ground and leaves nothing owed; a cut leaves as a body, not carried.
     [[nodiscard]] const Volumes &carried() const { return carried_; }
+    [[nodiscard]] const Volumes &returned() const { return returned_; }
     // Transfer already excavated bulk material out of the carried account.
     // A host must durably accept the returned packet with the saved world in
     // one transaction. This does not turn sand into glass or consume an object.

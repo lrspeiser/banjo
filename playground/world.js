@@ -23,7 +23,7 @@ import { cellSurface } from "/cellmesh.js";
 import { dress, dressedClone, showGrain, grainState } from "/surfaces.js";
 import { makeTools } from "/tools.js";
 import { makeWorkbench } from "/workbench.js";
-import { gameNavigation } from "/game_menu.js";
+import { gameNavigation, showSaveStatus } from "/game_menu.js";
 
 const $ = (id) => document.getElementById(id);
 const worldId = new URLSearchParams(location.search).get("world");
@@ -114,6 +114,7 @@ async function api(path, body, renewed = false) {
   }
   let data = {};
   try { data = text ? JSON.parse(text) : {}; } catch { data = { error: text.slice(0, 300) }; }
+  showSaveStatus(data.persistence);
   // Behind a password (docs/deploy.md), a session that has run out -- the
   // server was started again, say -- goes to log in again rather than being
   // shown as a room that has stopped working.
@@ -129,6 +130,7 @@ async function api(path, body, renewed = false) {
   }
   return data;
 }
+
 
 const world = {
   session: null,

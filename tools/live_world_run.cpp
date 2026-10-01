@@ -1223,7 +1223,7 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
         if (!impact.declined.empty()) said["declined"] = impact.declined;
         impacts.push_back(std::move(said));
     }
-    nlohmann::json state = {{"ok", true}, {"t", world.time_s()}, {"stepped_back", world.steppedBack()},
+    nlohmann::json state = {{"ok", true}, {"bulk_transfer_receipts", 1}, {"t", world.time_s()}, {"stepped_back", world.steppedBack()},
             {"cell_size_m", world.cellSize()}, {"geometry", with_geometry},
             // `partial` true means bodies missing from this reply are unchanged,
             // not gone; `gone` names the ones that really did go. `count` is how
@@ -2713,8 +2713,15 @@ int main(int argc, char **argv) {
                     // What came out is carried, and the reply says how much is.
                     reply["carried"] = carriedJson(*world->environment(), world->carriedObjectsKg());
                 } else if (op == "ground_return") {
+                    const auto before = world->environment()->returned();
                     world->returnGround(command.value("sand_m3",0.0),command.value("soil_m3",0.0),
                                         command.value("rock_m3",0.0));
+                    const auto after = world->environment()->returned();
+                    // Report the accepted quantities, including ledger slack
+                    // clamping, rather than echoing requested amounts.
+                    reply["ground_returned"] = {{"sand_m3", after.sand_m3-before.sand_m3},
+                        {"soil_m3", after.soil_m3-before.soil_m3},
+                        {"rock_m3", after.rock_m3-before.rock_m3}};
                     reply["carried"] = carriedJson(*world->environment(), world->carriedObjectsKg());
                 } else if (op == "ground_withdraw") {
                     reply["material_packet"] = nlohmann::json::parse(world->withdrawGround(

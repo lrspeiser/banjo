@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 import time
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "tests"), str(ROOT / "playground"), str(ROOT)]
@@ -60,6 +61,25 @@ class GameScreens(unittest.TestCase):
     def screenshot(self, name):
         out = ROOT / "build/workshop-navigation"; out.mkdir(parents=True, exist_ok=True)
         (out / name).write_bytes(base64.b64decode(self.page.send("Page.captureScreenshot")["data"]))
+
+    def test_failed_bank_notice_is_visible_and_reload_retry_draws_only_once(self):
+        world,owner,app=self.setup_world(); self.browser(world,owner)
+        self.navigate(world,"workshop=1&tab=market")
+        self.wait('document.querySelectorAll("#ws-market-offers li").length > 0 && !document.querySelector("#ws-market-bank").disabled')
+        charge=next(s["given_j"] for s in app.live.session.state["machines"]["stores"] if s["body"]=="solar farm")
+        with mock.patch.object(app.store,"_save",side_effect=OSError("test disk unavailable")):
+            self.click("#ws-market-bank")
+            self.wait('document.querySelector("#world-save-status")?.offsetParent !== null && document.querySelector("#world-save-status").textContent.includes("test disk unavailable")')
+            self.wait('document.querySelector("#ws-market-bank").textContent.startsWith("Retry") && !document.querySelector("#ws-market-bank").disabled')
+            self.screenshot("save-failure.png")
+        self.navigate(world,"workshop=1&tab=market")
+        self.wait('document.querySelector("#ws-market-bank")?.textContent === "Retry bank 100 J"')
+        self.click("#ws-market-bank")
+        self.wait('document.querySelector("#ws-market-balance").textContent === "100 J" && document.querySelector("#world-save-status").hidden')
+        given=next(s["given_j"] for s in app.live.session.state["machines"]["stores"] if s["body"]=="solar farm")
+        self.assertAlmostEqual(100,given-charge,places=6)
+        self.assertFalse([e for e in self.page.events if e.get("method")=="Runtime.exceptionThrown"])
+        self.screenshot("save-recovered.png")
 
     def test_world_selection_reveals_reported_structure_then_restores_skin_without_stepping(self):
         world, owner, app = self.setup_world(); self.browser(world, owner)

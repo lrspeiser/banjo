@@ -136,6 +136,7 @@ jobs:
           python3 tests/server_failure_detail_tests.py -v
           python3 tests/room_trace_tests.py -v
           python3 tests/room_store_tests.py -v
+          python3 tests/ground_transfers_tests.py -v
           python3 tests/access_gate_tests.py -v
           BANJO_LIBRARY=build/ci/libbanjo.so python3 tests/chat_history_tests.py -v
           BANJO_LIBRARY=build/ci/libbanjo.so python3 tests/actions_tests.py -v

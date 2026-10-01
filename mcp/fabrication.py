@@ -224,7 +224,7 @@ def return_bulk(state,body):
     return out,False
 
 
-def validate_ground_stock(state,world):
+def validate_ground_stock(state,world,transfers=None):
     """The receiving account must match the native source's cumulative debit."""
     received={"sand_m3":0.,"soil_m3":0.,"rock_m3":0.}
     for packet in state.get("raw_lots",{}).values():
@@ -241,6 +241,11 @@ def validate_ground_stock(state,world):
     for record in state.get("raw_returns",{}).values():
         for item in record["packet"]["contents"]:
             returned[item["substance"]+"_m3"]+=item["volume_m3"]
+    from .ground_transfers import totals
+    other = totals(transfers)
+    for key in returned:
+        returned[key] += other["returned"][key]
+        received[key] += other["exported"][key]
     native_returns=(world.get("ground") or {}).get("returned",{})
     for key,total in returned.items():
         if not math.isclose(total,number(native_returns.get(key,0),"returned volume",0,1e12),rel_tol=1e-12,abs_tol=1e-10):
@@ -252,7 +257,7 @@ def validate_ground_stock(state,world):
             raise ValueError("Raw stock does not match native ground exports")
     return received
 
-def ground_audit(state, ground):
+def ground_audit(state, ground, transfers=None):
     """Read-only cross-boundary diagnostics from the current native report.
 
     Authored terrain deposits may include outside material. Without a separate
@@ -273,6 +278,11 @@ def ground_audit(state, ground):
         for item in record["packet"]["contents"]:
             amounts=received[item["substance"]]
             amounts[0]-=item["volume_m3"];amounts[1]-=item["mass_kg"]
+    from .ground_transfers import totals
+    other=totals(transfers)
+    for substance,amounts in received.items():
+        delta=other["exported"][substance+"_m3"]-other["returned"][substance+"_m3"]
+        amounts[0]+=delta; amounts[1]+=delta*1600
     rows = {}
     for substance, (volume, mass) in received.items():
         key = substance + "_m3"

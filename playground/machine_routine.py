@@ -40,13 +40,17 @@ the ground, so the ground's ledger stays whole) and of the goods in it -- ore
 a scoop brought up from a deposit, or what it took off a stockpile -- by
 substance and mass. A machine that processes (the "process" routine) holds
 nothing itself: it works its intake stockpile into its output one by a
-recipe of the room's (machine_goods). The hopper is not saved with the world
-yet: a restart empties it.
+recipe of the room's (machine_goods). Exact hopper and execution records are
+saved beside the native snapshot; a mismatched declaration refuses restore.
 """
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
+from copy import deepcopy
+import hashlib
+import json
+import math
 from typing import Any
 
 import machine_senses as senses
@@ -205,6 +209,7 @@ class Routine:
 
     def __init__(self, name: str, declared: dict[str, Any] | None):
         declared = declared or {}
+        self.declaration_digest = hashlib.sha256(json.dumps(declared,sort_keys=True,allow_nan=False).encode()).hexdigest()
         self.name = name
         self.kind = str(declared.get("kind") or "roam")
         self.spec = ROUTINES.get(self.kind) or ROUTINES["roam"]
@@ -243,6 +248,68 @@ class Routine:
         self.finished: deque[dict[str, Any]] = deque(maxlen=8)  # orders and watches that ran to their end
         self.seq = 0
         self.next_order = 1
+
+    def record(self):
+        """Exact load and execution state; display summaries deliberately round."""
+        return {"schema":"banjo.machine-runtime.v1", "declaration":self.declaration_digest,
+                **{k:deepcopy(getattr(self,k)) for k in
+                   ("sand_m3","soil_m3","kg","goods","made_kg","batches","delivered_kg",
+                    "trips","watching","paused_by","seq","next_order")},
+                "frames":[asdict(f) for f in self.frames],
+                "notes":list(self.notes),"finished":list(self.finished)}
+
+    def restore(self, record):
+        # Validate the entire candidate before changing any running state.
+        if not isinstance(record,dict) or set(record)!=set(self.record()):
+            raise ValueError("Invalid machine runtime record")
+        if record["schema"]!="banjo.machine-runtime.v1" or record["declaration"]!=self.declaration_digest:
+            raise ValueError("Machine runtime requires its original routine declaration")
+        def number(v, integer=False):
+            if type(v) not in ((int,) if integer else (int,float)) or not math.isfinite(v) or not 0<=v<=1e15:
+                raise ValueError("Invalid machine runtime quantity")
+        for k in ("sand_m3","soil_m3","kg","made_kg","delivered_kg"): number(record[k])
+        for k in ("batches","trips","seq","next_order"): number(record[k],True)
+        if not isinstance(record["goods"],dict) or len(record["goods"])>256:
+            raise ValueError("Invalid machine hopper goods")
+        for k,v in record["goods"].items():
+            if not isinstance(k,str) or not 1<=len(k)<=128: raise ValueError("Invalid machine substance")
+            number(v)
+        if record["sand_m3"]*1600+record["soil_m3"]*1600+sum(record["goods"].values())>record["kg"]+1e-5:
+            raise ValueError("Machine hopper contents exceed its recorded mass")
+        if record["kg"]>self.hopper_kg+1e-5:
+            raise ValueError("Machine hopper exceeds its capacity")
+        if not isinstance(record["watching"],list) or len(record["watching"])!=len(self.watch) or any(type(v)!=bool for v in record["watching"]):
+            raise ValueError("Invalid machine watch state")
+        if record["paused_by"] is not None and (not isinstance(record["paused_by"],str) or len(record["paused_by"])>256):
+            raise ValueError("Invalid machine pause state")
+        frames=record["frames"]
+        if not isinstance(frames,list) or not 1<=len(frames)<=64:
+            raise ValueError("Invalid machine execution stack")
+        rebuilt=[]
+        for i,f in enumerate(frames):
+            if not isinstance(f,dict) or set(f)!=set(asdict(Frame("",[]))): raise ValueError("Invalid machine frame")
+            if not isinstance(f["name"],str) or not 1<=len(f["name"])<=256 or f["then"] not in ("round","resume","restart"):
+                raise ValueError("Invalid machine frame identity")
+            steps=checked_steps(f["steps"]) if f["steps"] else []
+            if i==0 and (f["name"]!="routine" or f["then"]!="round" or f["steps"]!=self.steps):
+                raise ValueError("Machine execution stack changed its base routine")
+            for k in ("step","tries"): number(f[k],True)
+            if f["then"]!="round" and f["step"]>len(steps): raise ValueError("Invalid machine frame position")
+            number(f["issued_t"])
+            if f["began_t"] is not None: number(f["began_t"])
+            if f["order_id"] is not None: number(f["order_id"],True)
+            if f["issued"] is not None and not isinstance(f["issued"],dict): raise ValueError("Invalid issued machine action")
+            rebuilt.append(Frame(**deepcopy(f)))
+        if not isinstance(record["notes"],list) or len(record["notes"])>NOTES_KEPT or any(not isinstance(n,str) or len(n)>4096 for n in record["notes"]):
+            raise ValueError("Invalid machine notes")
+        if not isinstance(record["finished"],list) or len(record["finished"])>8 or any(not isinstance(f,dict) for f in record["finished"]):
+            raise ValueError("Invalid machine completed orders")
+        if len(json.dumps(record,allow_nan=False))>262144: raise ValueError("Machine runtime exceeds its size bound")
+        for k in ("sand_m3","soil_m3","kg","goods","made_kg","batches","delivered_kg","trips","watching","paused_by","seq","next_order"):
+            setattr(self,k,deepcopy(record[k]))
+        self.frames=rebuilt
+        self.notes=deque(record["notes"],maxlen=NOTES_KEPT)
+        self.finished=deque(record["finished"],maxlen=8)
 
     # ---- the hopper ------------------------------------------------------------
     def carries(self) -> bool:
@@ -526,6 +593,15 @@ class Routine:
             out["making"] = {"recipe": self.recipe, "intake": self.intake, "output": self.output,
                              "batch_kg": self.batch_kg, "made_kg": round(self.made_kg, 2), "batches": self.batches}
         return out
+
+
+def validate_runtime(spec, runtime):
+    if not isinstance(runtime,dict) or len(runtime)>256:
+        raise ValueError("Invalid world machine runtime")
+    names={p.get("name") for p in ((spec or {}).get("machines") or {}).get("programs",[]) if isinstance(p,dict)}
+    for name,record in runtime.items():
+        if name not in names: raise ValueError("Machine runtime has no matching program")
+        Routine(name,declared_for(spec,name)).restore(record)
 
 
 def declared_for(spec: dict[str, Any] | None, name: str) -> dict[str, Any] | None:

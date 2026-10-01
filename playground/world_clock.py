@@ -170,6 +170,11 @@ class WorldClock:
                                  "slices of at most %.2f s", -spare, MOST_AT_ONCE_S)
 
     def _tick(self, world_s: float = TICK_S) -> bool:
+        import world_access
+        with world_access.gate(self.app).enter(), world_access.state_lock(self.app):
+            return self._tick_locked(world_s)
+
+    def _tick_locked(self, world_s: float) -> bool:
         """This much world time, stepped the way the page steps it."""
         app = self.app
         live = getattr(app, "live", None)
@@ -189,9 +194,8 @@ class WorldClock:
         # A page that comes back is sent the machines whole by the open path,
         # so nothing is attached here -- there is nobody to attach it to.
         self.ticks += 1
-        self.world_s += TICK_S
+        self.world_s += body["n"]*DT_S
         if callable(self.keep):
-            # Time-gated inside itself (KEEP_WORLD_EVERY_S of world time), so
-            # this is not a write per tick.
+            # Capture native state and receiving accounts at this same tick.
             self.keep(app, "the world ran on while nobody was looking")
         return isinstance(answer, dict)

@@ -721,3 +721,13 @@ body.moving-a-thing #panel .workshop-entry { border-style: dashed; }
   padding: 8px; background: #163731; color: #a5f6e7; cursor: pointer; }
 .pk-reveal:disabled { opacity: .5; cursor: default; }
 .pk-reveal:focus-visible { outline: 2px solid #a5f6e7; outline-offset: 2px; }
+#world-save-status {
+  padding: .65rem;
+  margin: .5rem;
+  border: 1px solid #d19a4c;
+  border-radius: .5rem;
+  background: #3f2d1a;
+  color: #ffe0ab;
+  font-size: .85rem;
+}
+#world-save-status[hidden] { display: none; }

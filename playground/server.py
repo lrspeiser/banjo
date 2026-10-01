@@ -1279,6 +1279,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, *_): pass # No prompts, credentials or response bodies in access logs.
     def send(self, value, status=200, content_type="application/json; charset=utf-8"):
+        route=urlsplit(self.path).path
+        if isinstance(value,dict) and content_type.startswith("application/json") and (
+                route=="/api/status" or route.startswith(("/api/world/","/api/live/","/api/workshop/"))):
+            persistence=getattr(getattr(self.app,"room",None),"persistence",None)
+            if persistence is not None: value={**value,"persistence":persistence}
         data = json.dumps(value,allow_nan=False).encode() if isinstance(value,(dict,list)) else value
         self.send_response(status)
         self.send_header("Content-Type",content_type)
@@ -1455,7 +1460,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/world/player/join":
             if not isinstance(body, dict) or set(body) - {"token", "name"}:
                 raise ValueError("Expected a player token and optional name")
-            return self.send(player_world.join(self.app, body.get("token"), body.get("name")))
+            with world_access.gate(self.app).enter(), world_access.state_lock(self.app):
+                if getattr(self.app,"live_holder",None)=="world" and self.app.live.session is not None:
+                    if not keep_world(self.app,"before joining a guest"):
+                        raise ValueError("The current world could not be saved; retry joining after saving recovers")
+                return self.send(player_world.join(self.app, body.get("token"), body.get("name")))
         if path == "/api/world/ai":
             app = self.app
             if not getattr(app, "world_id", None): raise ValueError("AI characters belong to a named game")
@@ -1478,6 +1487,7 @@ class Handler(BaseHTTPRequestHandler):
         # Normal world calls share access; explicit installation is exclusive.
         # Keep ordinary requests concurrent and perform authentication first.
         with (world_access.gate(self.app).enter(exclusive=path in ("/api/world/open", "/api/live/open")) if world_call else nullcontext()), \
+             (world_access.state_lock(self.app) if world_call else nullcontext()), \
              (gameplay_room.LOCK if world_call and (gameplay_room.active(self.app)
                  or fabrication_room.active(self.app)
                  or path in ("/api/world/open", "/api/live/open")) else nullcontext()):
@@ -1772,6 +1782,7 @@ class Handler(BaseHTTPRequestHandler):
                 # here on -- the one just opened again, or the one just opened
                 # from its spec, which a restart must not trade for an older one.
                 gameplay_room.opened(app, opened)
+                app.brains.opened(room.spec,getattr(room,"machine_runtime",None))
                 saved_now = keep_world(app,"the room opened")
                 if (gameplay_room.active(app) or fabrication_room.active(app)) and not saved_now:
                     raise ValueError("The funded room could not be saved")
@@ -1782,7 +1793,6 @@ class Handler(BaseHTTPRequestHandler):
                 # The conversation so far in this room, so the page shows it again
                 # rather than a blank panel beside a room the chat has built in.
                 opened["chat"]=room.chat[-20:]
-                app.brains.opened(room.spec)
                 app.brains.settle(opened)
                 opened["brains"]=app.brains.summaries()
                 # So the page draws the ground that is known and leaves the rest
@@ -2034,10 +2044,9 @@ class Handler(BaseHTTPRequestHandler):
                 if player:
                     answer["players"] = player_world.visible(app)
                     player_world.personalize_hand(answer,player)
-                self.send(with_notebook(self.app,answer,seen))
-                # After the page has its answer: the running world kept with
-                # the room when a break is done, and every few seconds of it.
+                # Report this request's save failure in its own response.
                 keep_world_after(self.app,body,answer)
+                self.send(with_notebook(self.app,answer,seen))
                 return
             # Save the frame the 3D viewer is showing. The page cannot write
             # a file and cannot reach any other origin, so the one way a
@@ -2694,20 +2703,20 @@ def keep_world(app,why=""):
     if snapshot is None: return False
     lock=getattr(app,"world_lock",None)
     if lock is None: lock=app.world_lock=threading.Lock()
-    with gameplay_room.LOCK, lock:
+    with world_access.state_lock(app), gameplay_room.LOCK, lock:
         saved,refused=snapshot()
         if saved is None:
+            room.persistence={"state":"failed","reason":str(refused)[:240],
+                              "saved_t_s":getattr(room,"world_saved_t",None),"attempted_t_s":None}
             log.info("rooms: the running world was not saved (%s): %s; the last one saved is kept",why,refused)
             return False
         gameplay_room.sync(app, {"t": float(saved.get("t_s") or 0.0)})
         fabrication_room.sync(app, {"t": float(saved.get("t_s") or 0.0)})
         room.world_record=saved
-        if gameplay_room.active(app) or fabrication_room.active(app):
-            store = getattr(app, "store", None)
-            if store is None or not store.save(room):
-                return False
-        else:
-            room_store.keep(app,room)
+        brains=getattr(app,"brains",None)
+        if brains is not None and callable(getattr(brains,"runtime",None)):
+            room.machine_runtime=brains.runtime()
+        if not room_store.keep(app,room): return False
         room.world_saved_t=float(saved.get("t_s") or 0.0)
     return True
 

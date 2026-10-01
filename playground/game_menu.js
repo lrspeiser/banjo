@@ -231,3 +231,20 @@ export function refreshNavigation(active) {
     else tab.setAttribute("aria-selected", String(tab.dataset.screen === active));
   }
 }
+
+export function showSaveStatus(status) {
+  if (!status) return;
+  let banner = document.getElementById("world-save-status");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "world-save-status";
+    banner.setAttribute("role", "status");
+    const rail = document.body.classList.contains("workshop-mode")
+      ? document.querySelector(".ws-left") : document.getElementById("panel");
+    rail?.prepend(banner);
+  }
+  banner.hidden = status.state !== "failed";
+  if (!banner.hidden) {
+    banner.textContent = "World not saved. " + (status.reason || "Saving failed.") + " Progress since the last save is still pending.";
+  }
+}

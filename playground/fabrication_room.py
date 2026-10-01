@@ -106,11 +106,18 @@ def _persist(app, room, saved, state):
         gameplay_record=deepcopy(getattr(room,"gameplay_record",None)),
         fabrication_record=state,
         world_upgrades=deepcopy(getattr(room, "world_upgrades", {})))
+    for field in ("player_records","player_inventories","player_lock","hand_owner","market_pending","ground_transfers"):
+        if hasattr(room,field): setattr(record,field,getattr(room,field))
+    brains=getattr(app,"brains",None)
+    record.machine_runtime=brains.runtime() if brains is not None else getattr(room,"machine_runtime",None)
     if not getattr(app, "store", None) or not app.store.save(record):
         raise ValueError("Fabrication requires a complete durable room save")
     room.fabrication_record = state
     room.world_record = saved
     room.world_saved_t = saved["t_s"]
+    room.machine_runtime=record.machine_runtime
+    room.persistence=getattr(record,"persistence",None)
+    if brains is not None: brains.rebind(room.spec)
 
 def request(app, operation, body):
     if operation not in COMMAND_FIELDS: raise ValueError("Unknown fabrication operation")
@@ -130,7 +137,7 @@ def request(app, operation, body):
                     if old.spec.get("terrain") else {})
             carried=ground.get("carried",{})
             return {"scene": room.scene, "session": old.id, "cell_m": old.spec["cell_m"], "configured": state is not None,
-                    "carried_ground":carried, "ground_audit":model.ground_audit(state,ground),
+                    "carried_ground":carried, "ground_audit":model.ground_audit(state,ground,getattr(room,"ground_transfers",None)),
                     "state": model.report(state) if state is not None else None}
         if operation == "configure":
             model.token(body["request_id"])
@@ -178,7 +185,7 @@ def transfer_ground(app,body,operation):
         if ground.get("schema") not in ACCOUNTED: raise ValueError("Native runtime needs accounted bulk transfers")
         retrieving=operation=="retrieve_ground"
         if retrieving and ground["schema"] not in RETURNS: raise ValueError("Native runtime needs accounted returns")
-        model.validate_ground_stock(state,before)
+        model.validate_ground_stock(state,before,getattr(room,"ground_transfers",None))
         if retrieving:
             state,_=model.return_bulk(state,action)
         else:
@@ -198,7 +205,7 @@ def transfer_ground(app,body,operation):
                 expected["ground"]["returned" if retrieving else "exported"][key]+=amount
             install._preserved(expected,saved,set())
             if not retrieving: state,_=model.receive_bulk(state,action,reply["material_packet"])
-            model.validate_ground_stock(state,saved)
+            model.validate_ground_stock(state,saved,getattr(room,"ground_transfers",None))
             _persist(app,room,saved,state)
             live.session=staged.session;staged.session=None
             live.session.on_reply=getattr(app,"on_live_reply",None)

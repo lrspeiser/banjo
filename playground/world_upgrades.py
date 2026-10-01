@@ -153,6 +153,9 @@ def apply_one(app, package):
             if not app.store.save(record):
                 raise ValueError("Could not save starting equipment; original world retained")
             room.spec, room.world_record, room.world_upgrades = spec, saved, receipts
+            room.persistence=getattr(record,"persistence",None)
+            brains=getattr(app,"brains",None)
+            if brains is not None and brains.spec is not None: brains.rebind(spec)
             if staged is not None:
                 live.session = staged.session
                 staged.session = None

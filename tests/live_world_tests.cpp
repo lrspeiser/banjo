@@ -2461,10 +2461,12 @@ void selectedStructureInspectionIsReadOnlyAndInTheFacingFrame() {
     for (const MaterialPreset material : {MaterialPreset::Glass, MaterialPreset::Oak, MaterialPreset::Iron}) {
         auto request = turnedPlank({0.0, 30.0, 0.0}, false);
         request.bodies[0].material = material;
+        request.bodies[0].velocity_m_s = {0.3, 0.2, 0.1};
         const auto live = LiveWorld::open(request);
         std::string why;
         const std::string before = live->snapshot(why);
         const auto pose = live->poses()[0];
+        require(length(pose.velocity_m_s)>0.1, "packed preservation fixture must have recorded motion");
         const auto report = nlohmann::json::parse(live->structureJson(pose.name));
         require(report.at("complete") == true, "bounded inspection was truncated");
         require(report.at("cell_count").get<std::size_t>() == report.at("cells_local_m").size(), "inspection count differs from cells");
@@ -2485,6 +2487,10 @@ void selectedStructureInspectionIsReadOnlyAndInTheFacingFrame() {
         std::cout << "  material " << pose.material << ": " << report.at("cell_count")
                   << " cells, h=" << request.cell_size_m << " m, unchanged snapshot\n";
         require(live->park(pose.name, why), "inspection fixture could not be parked");
+        const std::string packed = live->snapshot(why);
+        const auto restored = LiveWorld::open(request, packed);
+        require(restored->restored().tier == "whole", "packed body did not restore whole");
+        requireSameSaved(packed, restored->snapshot(why), "packed moving body's exact state");
         bool refused = false;
         try { (void)live->structureJson(pose.name); } catch (const std::invalid_argument &) { refused = true; }
         require(refused, "inspection exposed a parked body");

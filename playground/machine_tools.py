@@ -92,6 +92,9 @@ class Call:
 def _act(ctx: senses.Context, **command: Any) -> dict[str, Any]:
     if ctx.ask is None:
         raise ValueError("this machine has no engine to act on")
+    transfer = getattr(ctx.ask, "transfer_ground", None)
+    if command.get("op") in ("ground_withdraw", "ground_return") and callable(transfer):
+        return transfer("machine:" + str(ctx.program["name"]), command)
     return ctx.ask(**command)
 
 
@@ -442,7 +445,12 @@ def dig(ctx: senses.Context, call: Call) -> dict[str, Any]:
             return {"did": "dug nothing: the ground here is worked out", "idle": True, "dug": dug,
                     "load": r.load_reading()}
     if sand > 0.0 or soil > 0.0:
-        _act(ctx, op="ground_withdraw", sand_m3=sand, soil_m3=soil)
+        received=_act(ctx, op="ground_withdraw", sand_m3=sand, soil_m3=soil)
+        if received.get("material_packet"):
+            contents=received["material_packet"]["contents"]
+            sand=sum(p["volume_m3"] for p in contents if p["substance"]=="sand")
+            soil=sum(p["volume_m3"] for p in contents if p["substance"]=="soil")
+            kg=sum(p["mass_kg"] for p in contents)
     # What the scoop brought up from a deposit besides soil (machine_goods):
     # ore, at the deposit's grade of the scoop's mass. Its share of the
     # volume has left the ground for good -- exported, as a material packet

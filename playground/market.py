@@ -123,6 +123,11 @@ def _guidance(app: Any, offers: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _settle(app: Any) -> None:
+    with world_access.state_lock(app):
+        _settle_locked(app)
+
+
+def _settle_locked(app: Any) -> None:
     """Credit saved native draws exactly once, including after a crash/restart."""
     room = getattr(app, "room", None)
     durable = getattr(room, "market_durable_pending", set())
@@ -165,7 +170,7 @@ def _bank(app: Any, owner: str, body: dict[str, Any], keep_world: Any) -> None:
     room = getattr(app, "room", None)
     if room is None or getattr(app, "live_holder", None) != "world" or app.live.session is None:
         raise ValueError("Open your world before banking solar energy")
-    with world_access.gate(app).enter(exclusive=True), gameplay_room.LOCK:
+    with world_access.gate(app).enter(exclusive=True), world_access.state_lock(app), gameplay_room.LOCK:
         pending = getattr(room, "market_pending", None)
         if not isinstance(pending, list):
             pending = room.market_pending = []

@@ -1,6 +1,6 @@
 // Workshop Mode: product design, physical matter, editable skins and isolated physics playback.
 import * as THREE from "/vendor/three.module.js";
-import { gameNavigation, refreshNavigation } from "/game_menu.js";
+import { gameNavigation, refreshNavigation, showSaveStatus } from "/game_menu.js";
 
 const $ = (q) => document.querySelector(q);
 const worldId = new URLSearchParams(location.search).get("world");
@@ -12,6 +12,7 @@ const homeWorld = () => worldId ? backToWorld("new-game") : "/world";
 let token = "";
 let designAssistantConnected = false;
 let playerReady = null;
+let playerId = "";
 async function ensurePlayer() {
   if (!worldId) return;
   if (!playerReady) playerReady = (async () => {
@@ -23,8 +24,10 @@ async function ensurePlayer() {
                              name: localStorage.getItem("banjo.avatar-name") || undefined }),
     });
     const answer = await response.json();
+    showSaveStatus(answer.persistence);
     if (!response.ok) throw new Error(answer.error || "Could not join the world");
     localStorage.setItem(key, answer.token);
+    playerId = answer.id;
     worldHeaders["X-Banjo-Player"] = answer.token;
   })();
   return playerReady;
@@ -45,6 +48,7 @@ async function api(path, body, {preview = false} = {}) {
     body: JSON.stringify(body || {}),
   });
   const answer = await response.json().catch(() => ({ error: "the bench gave no answer" }));
+  showSaveStatus(answer.persistence);
   if (!response.ok) throw new Error(answer.error || `${path} failed (${response.status})`);
   if (requestId !== null) answer.clientRequest = requestId;
   return answer;
@@ -2609,17 +2613,29 @@ async function showMarket() {
   const bank = $("#ws-market-bank");
   const guide = new URLSearchParams(location.search).get("guide");
   const bankJ = ["bank-solar", "stock-oak"].includes(guide) ? 500 : 100;
-  bank.textContent = `Bank ${bankJ} J`;
+  const pendingKey = `banjo.pending-bank.${worldId || "local"}.${playerId}`;
+  let pending = null;
+  try { pending = JSON.parse(sessionStorage.getItem(pendingKey) || "null"); } catch {}
+  bank.textContent = pending ? `Retry bank ${pending.joules} J` : `Bank ${bankJ} J`;
   bank.disabled = !market.bankable;
   bank.title = market.bankable ? `Draw ${bankJ} measured joules from the solar farm's battery` : "Open the world before banking energy";
   bank.onclick = () => guard(bank, async () => {
     try {
-      const after = await api("/api/workshop/market", { action:"bank", joules:bankJ, request_id:crypto.randomUUID() });
-      $("#ws-market-status").textContent = `Banked ${bankJ} J. Balance: ${after.balance_j.toLocaleString()} J.`;
+      if (!pending) {
+        pending = { action:"bank", joules:bankJ, request_id:crypto.randomUUID() };
+        sessionStorage.setItem(pendingKey, JSON.stringify(pending));
+      }
+      const after = await api("/api/workshop/market", pending);
+      const depositedJ = pending.joules;
+      sessionStorage.removeItem(pendingKey); pending = null;
+      $("#ws-market-status").textContent = `Banked ${depositedJ} J. Balance: ${after.balance_j.toLocaleString()} J.`;
       await showMarket();
     } catch (error) {
+      bank.textContent = `Retry bank ${pending?.joules || bankJ} J`;
       $("#ws-market-status").textContent = error.message || String(error);
     }
+  }).then(() => {
+    bank.textContent = pending ? `Retry bank ${pending.joules} J` : `Bank ${bankJ} J`;
   });
   fill("#ws-market-offers", market.offers.map((offer) => {
     const li = item(offer.name,

@@ -4701,8 +4701,9 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
                 // Set aside: made where it was put away, and set aside again
                 // before anything steps (below).
                 at.pose = rigidFrom(b.at("parked").at("pose"));
-                at.pose.linear_velocity_m_s = {};
-                at.pose.angular_velocity_rad_s = {};
+                // Parking freezes the original state; putting it down is
+                // where unpark deliberately starts it at rest. Restore must
+                // retain the recorded motion even though no parked body steps.
                 at.parked_mass_kg = numberFrom(b.at("parked").at("mass_kg"));
             } else {
                 at.pose = rigidFrom(b.at("pose"));
@@ -4884,8 +4885,6 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             away = previous->contains("parked");
             pose = rigidFrom(away ? previous->at("parked").at("pose") : previous->at("pose"));
             if (away) {
-                pose.linear_velocity_m_s = {};
-                pose.angular_velocity_rad_s = {};
                 away_kg = numberFrom(previous->at("parked").at("mass_kg"));
             }
             awake = !away && previous->at("awake").get<bool>();

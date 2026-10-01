@@ -72,7 +72,7 @@ class Manager:
         return profile
 
     def _save(self, profile: dict[str, Any], **updates: Any) -> None:
-        with world_access.gate(self.app).enter(exclusive=True):
+        with world_access.gate(self.app).enter(exclusive=True), world_access.state_lock(self.app):
             with player_world.lock_of(self.app):
                 worker = self.workers.get(profile["id"])
                 if worker and worker[1].is_set() and updates.get("status") in ("running", "thinking", "walking"):

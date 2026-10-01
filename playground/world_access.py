@@ -20,6 +20,9 @@ class WorldAccess:
         self.writer = False
         self.writer_thread = None
         self.waiting = 0
+        # Native state and its host receiving accounts are one transaction.
+        # This is per world; unrelated worlds never block each other's clock.
+        self.state_lock = threading.RLock()
 
     @contextmanager
     def enter(self, *, exclusive: bool = False) -> Iterator[None]:
@@ -60,3 +63,7 @@ def gate(app: Any) -> WorldAccess:
         if found is None:
             found = app._world_access = WorldAccess()
         return found
+
+
+def state_lock(app: Any):
+    return gate(app).state_lock

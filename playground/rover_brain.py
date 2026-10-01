@@ -678,9 +678,34 @@ class Brains:
         self._goods_sent = mark
         return holds
 
-    def opened(self, spec: dict[str, Any] | None = None) -> None:
+    def runtime(self):
+        return {name:brain.routine.record() for name,brain in self.brains.items()}
+
+    def rebind(self, spec):
+        """Publish an appended scene without detaching its running host accounts."""
+        routines.validate_runtime(spec,self.runtime())
+        self.spec=spec
+        if self.goods is not None:
+            self.goods.spec=spec
+            self.goods.block=spec.get("goods",{})
+            for key in ("deposits","stockpiles","recipes"): self.goods.block.setdefault(key,[])
+        if self.vessels is not None: self.vessels.spec=spec
+        import machine_ports
+        ports=machine_ports.Ports(spec,holder_for=self.holder_for)
+        if self.ports is not None:
+            old={(p.machine,p.name):p for p in self.ports.ports}
+            ports.ports=[old.get((p.machine,p.name),p) for p in ports.ports]
+            ports.poses=self.ports.poses
+        self.ports=ports
+        for brain in self.brains.values(): brain.ports=ports
+        for program in (spec.get("machines") or {}).get("programs",[]):
+            if isinstance(program,dict) and program.get("name"): self.of(str(program["name"]))
+
+    def opened(self, spec: dict[str, Any] | None = None, runtime=None) -> None:
         """A room opened: what was observed of the last one is forgotten, the
         modes are kept, and the room's spec says what each routine is."""
+        if runtime is not None:
+            routines.validate_runtime(spec,runtime)
         for name, brain in self.brains.items():
             self.modes[name] = brain.mode
         self.brains.clear()
@@ -714,7 +739,9 @@ class Brains:
         # carry None for the rest of the room's life.
         for program in ((spec or {}).get("machines") or {}).get("programs") or []:
             if isinstance(program, dict) and program.get("name"):
-                self.of(str(program["name"]))
+                brain=self.of(str(program["name"]))
+                if str(program["name"]) in (runtime or {}):
+                    brain.routine.restore(runtime[str(program["name"])])
 
     def settle(self, opened: Any) -> None:
         """The room as it opens: every mouth rides to where its body actually
@@ -737,7 +764,12 @@ class Brains:
             opened["goods"] = self._goods_now()
 
     def _ask(self, app: Any, session_id: Any) -> Callable[..., dict[str, Any]]:
-        return lambda **command: app.live.act({"session": session_id, **command})
+        def ask(**command):
+            return app.live.act({"session": session_id, **command})
+        from functools import partial
+        import bulk_transfer_room
+        ask.transfer_ground = partial(bulk_transfer_room.transfer, app)
+        return ask
 
     def listen(self, session: Any, reply: Any) -> None:
         """The reply listener (app.reply_listeners): every step's programs,

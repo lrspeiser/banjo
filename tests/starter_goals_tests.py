@@ -103,6 +103,25 @@ class StarterGoals(unittest.TestCase):
         second = play_first_camp(self, world, bob["token"])
         self.assertTrue(second["complete"])
         self.assertNotEqual(result["goals"]["camp_body"], second["goals"]["camp_body"])
+        # Both guests' packed precise assemblies must remain byte-for-byte
+        # intact while another recipe is admitted into the shared scene.
+        room_path=Path(self.temp.name)/"rooms"/"worlds"/world/"rooms"/"new-game.json"
+        before=json.loads(room_path.read_text())
+        bench=starter_goals.recipe(); bench["kind"]="bench"; bench["design_id"]="packed-bench-regression"
+        bench["parameters"].update(width_m=.48,height_m=.3)
+        context=self.post("/api/world/workshop/context",{},world)
+        preview=self.post("/api/world/workshop/preview",{**{k:context[k] for k in ("session","scene")},
+            "mode":"authoring","candidate":bench,"position_m":[4.5,0]},world)
+        built=self.post("/api/world/workshop/commit",{**{k:preview[k] for k in ("session","scene","preview_id")},
+            "request_id":"multi-packed-bench"},world)
+        after=json.loads(room_path.read_text())
+        self.assertEqual(before["players"],after["players"])
+        by_name={b["name"]:b for b in after["world"]["bodies"]}
+        for b in before["world"]["bodies"]:
+            self.assertEqual(b,by_name[b["name"]],"staging changed existing body state")
+        for body in (result["goals"]["camp_body"],second["goals"]["camp_body"]):
+            self.assertTrue(by_name[body]["parked"])
+        self.assertGreater(built["mass_kg"],result["goals"]["recipe_mass_kg"])
         native = self.post("/api/world/open", {}, world)
         charge = next(s["charge_j"] for s in native["machines"]["stores"] if s["id"] == source["id"])
         self.assertAlmostEqual(source["charge_j"] - 2000, charge, places=4)

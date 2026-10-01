@@ -78,7 +78,7 @@ def _world(app: Any):
             raise ValueError("Open a world first; Workshop cannot silently open or replace a room")
         live = app.live
         inventory_lock = getattr(getattr(app.room, "inventory", None), "lock", None)
-        with (inventory_lock if inventory_lock is not None else nullcontext()), live._lock:
+        with world_access.state_lock(app), (inventory_lock if inventory_lock is not None else nullcontext()), live._lock:
             old = live.session
             if old is None:
                 raise ValueError("Open a world first")
@@ -1665,9 +1665,11 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
             # Installation replaces the live session and saves the whole room.
             # Keep every guest, their bag and pending paired energy draws too.
             for field in ("player_records", "player_inventories", "player_lock", "hand_owner",
-                          "market_pending"):
+                          "market_pending", "ground_transfers"):
                 if hasattr(room, field):
                     setattr(record, field, getattr(room, field))
+            brains=getattr(app,"brains",None)
+            record.machine_runtime=brains.runtime() if brains is not None else getattr(room,"machine_runtime",None)
             # The only fallible persistent write occurs BEFORE the live swap.
             # A failed atomic save leaves the original process and room intact.
             if not app.store.save(record):
@@ -1682,6 +1684,10 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
         room.world_record = saved
         room.workshop_installs = kept
         room.fabrication_record = fabrication_state
+        room.machine_runtime=record.machine_runtime
+        room.persistence=getattr(record,"persistence",None)
+        room.world_saved_t=saved["t_s"]
+        if brains is not None: brains.rebind(room.spec)
         live.session = staged.session
         staged.session = None
         live.session.on_reply = getattr(app, "on_live_reply", None)

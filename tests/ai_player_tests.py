@@ -210,6 +210,61 @@ class AutonomousGuests(unittest.TestCase):
         self.assertIn("smelting-copper", server.journal_of(app, shared=True).knows())
         self.assertNotIn("smelting-copper", server.journal_of(app, owner["id"]).knows())
 
+    def test_realtime_rover_returns_bank_retries_reload_and_restart_agree(self):
+        from mcp import ground_transfers, fabrication
+        import world_access
+        world,owner,app=self.setup_world()
+        app.clock.start()
+        self.addCleanup(app.clock.stop)
+        began=time.monotonic(); returned=False; requests=[]
+        while time.monotonic()-began<150:
+            receipt="realtime-bank-"+str(len(requests))
+            bank=self.post("/api/workshop/market",{"action":"bank","joules":100,"request_id":receipt},world)
+            requests.append(receipt)
+            again=self.post("/api/workshop/market",{"action":"bank","joules":100,"request_id":receipt},world)
+            self.assertEqual(bank["balance_j"],again["balance_j"])
+            with world_access.state_lock(app):
+                totals=ground_transfers.totals(getattr(app.room,"ground_transfers",None))
+                returned=sum(totals["returned"].values())>.001
+            if returned: break
+            time.sleep(3)
+        self.assertTrue(returned,"Generated realtime rover never returned a measurable load")
+        self.assertGreater(app.live.session.state["t"],.5*(time.monotonic()-began))
+        # A disk refusal must not credit the attempted draw or hide the error.
+        balance=again["balance_j"]
+        with mock.patch.object(app.store,"_save",side_effect=OSError("test disk unavailable")):
+            with self.assertRaises(urllib.error.HTTPError) as failed:
+                self.post("/api/workshop/market",{"action":"bank","joules":100,"request_id":"recover-bank"},world)
+            failure=json.load(failed.exception)
+            self.assertEqual("failed",failure["persistence"]["state"])
+            self.assertEqual(balance,self.post("/api/workshop/market",{},world)["balance_j"])
+        recovered=self.post("/api/workshop/market",{"action":"bank","joules":100,"request_id":"recover-bank"},world)
+        self.assertEqual(balance+100,recovered["balance_j"])
+        for _ in range(2):
+            self.assertEqual(balance+100,self.post("/api/workshop/market",{"action":"bank","joules":100,"request_id":"recover-bank"},world)["balance_j"])
+        rejoined=self.post("/api/world/player/join",{"token":owner["token"]},world)
+        self.assertEqual(owner["id"],rejoined["id"])
+        self.post("/api/world/open",{},world)
+        app.clock.stop()
+        with world_access.state_lock(app):
+            self.assertTrue(server.keep_world(app,"realtime acceptance checkpoint"))
+            book=json.loads(json.dumps(app.room.ground_transfers))
+            runtime=app.brains.runtime()
+            fabrication.validate_ground_stock({},app.room.world_record,book)
+        duration=time.monotonic()-began; native_t=app.room.world_record["t_s"]
+        self.stop(); self.start()
+        self.post("/api/world/player/join",{"token":owner["token"]},world)
+        restored=self.post("/api/world/open",{},world)
+        restarted=self.app.hub.get(world)
+        self.assertEqual("whole",restored["restored"]["tier"])
+        self.assertEqual(book,restarted.room.ground_transfers)
+        self.assertEqual(runtime,restarted.brains.runtime())
+        self.assertEqual(balance+100,self.post("/api/workshop/market",{},world)["balance_j"])
+        fabrication.validate_ground_stock({},restarted.room.world_record,book)
+        print(f"\n    generated realtime: {native_t:.3f} native s / {duration:.3f} wall s; "
+              f"{len(book['receipts'])} ground receipts; returned {totals['returned']}; "
+              f"wallet {balance+100} J, duplicate/failure/rejoin/restart checked")
+
     def test_menu_starts_reference_bot_and_camera_watches_without_control(self):
         if not qa_browser.CHROME.is_file():
             if os.environ.get("BANJO_BROWSER_TESTS") == "required": self.fail("Chrome is required")

@@ -934,6 +934,34 @@ class InTheDigRoom(unittest.TestCase):
         self.assertEqual(1, summary["load"]["trips"])
         self.assertIn("step", summary)
 
+    def test_restart_retains_exact_hopper_receipts_and_continues_to_return_it(self):
+        import server
+        from mcp import fabrication, ground_transfers
+        self.live.session.send(op="step",dt=DT,n=240)
+        self.live.session.send(op="run",program=self.program()["id"],sender="test",seq=1,power=True)
+        brain=self.brains.of("rover")
+        self.assertTrue(self.run_as_the_page_does(180,until=lambda:brain.routine.kg>20))
+        self.assertTrue(server.keep_world(self.app,"loaded hopper"))
+        exact=brain.routine.record(); book=deepcopy(self.room.ground_transfers)
+        self.live.shutdown()
+        self.room=self.app.room=self.app.store.load("tests-dig")
+        self.brains=self.app.brains=rover_brain.Brains(lambda:None)
+        self.opened=self.live.open(self.app,{"spec":self.room.spec,"snapshot":self.room.world_record})
+        self.assertEqual("whole",self.opened["restored"]["tier"])
+        self.brains.opened(self.room.spec,self.room.machine_runtime)
+        self.brains.settle(self.opened); self.session_id=self.live.session.id
+        brain=self.brains.of("rover")
+        self.assertEqual(exact,brain.routine.record())
+        self.assertEqual(book,self.room.ground_transfers)
+        self.assertTrue(self.run_as_the_page_does(300,until=lambda:brain.routine.trips>=1))
+        self.assertTrue(server.keep_world(self.app,"returned hopper"))
+        fabrication.validate_ground_stock({},self.room.world_record,self.room.ground_transfers)
+        totals=ground_transfers.totals(self.room.ground_transfers)
+        self.assertGreater(totals["returned"]["soil_m3"],.01)
+        self.assertLess(abs(totals["holders"]["machine:rover"]["soil_m3"]),1e-10)
+        print("\n    loaded/restarted/returned: native source and exact receiving receipts agree; holder residual",
+              totals["holders"]["machine:rover"])
+
 
 class TheScriptedServer(unittest.TestCase):
     """The stand-in speaks the API the client speaks."""
