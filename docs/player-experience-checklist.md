@@ -41,6 +41,8 @@ the twelve-item goal remains active.
 
 ## Component inspection checkpoint — October 1
 
+Published implementation: `bcda7ab` on GitHub main.
+
 Selection traverses actual attached joints (bounded to 64 bodies) and expands
 reported precise parts (bounded to 256). Authored lattice boxes partition only
 reported cells: every current cell must be assigned and every named component
