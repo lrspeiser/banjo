@@ -1,6 +1,6 @@
 # Player day/night checkpoint — October 1, 2026
 
-Implementation publication is recorded below after the verified checkpoint push.
+Published implementation: `bb91f6f` on GitHub main.
 This completes player-experience item 2 within its declared rendering/native
 energy boundary. The full fourteen-item goal remains active.
 
