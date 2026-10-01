@@ -555,6 +555,8 @@ body.workshop-mode > :not(#design-workshop):not(#game-menu) { display:none!impor
 .ws-recipe-value progress { width:100%;height:.65rem;accent-color:#83c397; }
 .ws-recipe-uses { display:flex;align-items:center;gap:.35rem;flex-wrap:wrap;font-size:.8rem; }
 .ws-recipe-uses .ws-tag { margin:0;font-size:.7rem; }
+.ws-supply-route { display:grid;gap:.3rem;padding:.55rem 0;border-bottom:1px solid #34404e; }
+.ws-acquisition > section { margin-top:.6rem; }
 .ws-recipe-grid .ws-missing,.ws-recipe-grid .ws-recipe-readiness,.ws-recipe-grid .ws-needs { margin:0; }
 .ws-recipe-details { font-size:.75rem;color:var(--dim); }
 .ws-recipe-details summary { cursor:pointer; }

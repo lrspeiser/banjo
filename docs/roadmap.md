@@ -1,5 +1,11 @@
 # Banjo roadmap and acceptance gates
 
+**Recipe supply acceptance, October 1:** [Shortage→collect→Make](recipe-supply-checkpoint.md)
+passes ordinary World/Recipes/Market navigation and actual personal/shared
+debits. Next trace empty processor inputs to raw sources and verify output-to-build,
+then complete real tool/full/empty acceptance. Item 7 remains partial; all
+fourteen requirements retain their full scope.
+
 **Day/night acceptance, October 1:** [Visible sun, shadows and native energy](daylight-player-checkpoint.md)
 passes ordinary browser day/night/lamp/solar readings and the native continuous
 cycle. Player item 2 is verified. Next finish ordinary recipe/tool/capacity

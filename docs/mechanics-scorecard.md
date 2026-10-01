@@ -1,5 +1,12 @@
 # Banjo mechanics scorecard
 
+**Recipe supply boundary, October 1:** [Measured ledger/native install](recipe-supply-checkpoint.md)
+collects 25 kg personal oak and spends it plus 5.7776 kg shared for a 30.7776 kg
+table; shared remainder is 6.6224 kg. Other-player credit remains separate,
+exhausted sources disappear, and live input/missing-equipment facts drive routes.
+No native material/contact/terrain/energy law or tolerance changes. This is
+not recursive supply-chain reachability, native cargo inertia or repair evidence.
+
 **Day/night display boundary, October 1:** [Native/store/render evidence](daylight-player-checkpoint.md)
 retains native sun/solar/lamp laws and existing accounting tolerances. Actual
 night lamp draw is 20 W; native accelerated five-second night spends 100 J.

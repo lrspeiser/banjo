@@ -2531,6 +2531,49 @@ function recipeValue(name, value, cls = "") {
   const row = make("div", {class:`ws-recipe-value ${cls}`.trim()});
   row.append(make("span", {}, name), make("b", {}, value)); return row;
 }
+function recipeWorldRoute(route, label) {
+  const url = new URL(homeWorld(), location.origin);
+  if (route.body) url.searchParams.set("focus", route.body);
+  else url.searchParams.set("resource", route.name);
+  return make("a", {href:url.pathname+url.search, class:"ws-action", "data-supply-route":route.name}, label);
+}
+function recipeAcquisition(line) {
+  const box = make("section", {class:"ws-acquisition", "data-supply":line.material || line.substance});
+  box.append(recipeValue(titleCase(line.material || line.substance), `Missing ${kgSaid(line.short_kg)}`));
+  for (const route of line.acquisition || []) {
+    const row = make("div", {class:"ws-supply-route", "data-supply-kind":route.kind});
+    if (route.kind === "pile") {
+      row.append(recipeValue(route.name, kgSaid(route.available_kg)),
+        recipeValue("Take", route.input_to.length ? "Manual collection · machine input" : "Walk within 2 m → Collect"),
+        recipeWorldRoute(route, "Locate pile in World"));
+      if (route.input_to.length) row.append(recipeValue("Feeds", route.input_to.join(" · ")));
+    } else if (route.kind === "deposit") {
+      row.append(recipeValue(route.name, kgSaid(route.left_kg)),
+        recipeValue("Equipment", route.equipment.join(" · ") || "Make a mining rover"),
+        recipeValue("Route", "Rover → dig → intake"), recipeWorldRoute(route, "Locate deposit in World"));
+    } else if (route.kind === "process") {
+      row.append(recipeValue("Process", route.name));
+      if (!route.machines.length) row.append(recipeValue("Blocked", "Processing machine required"));
+      for (const machine of route.machines) {
+        row.append(recipeValue("Machine", machine.name));
+        for (const input of machine.inputs) row.append(recipeValue(titleCase(input.substance),
+          input.held_kg > 0 ? `${kgSaid(input.held_kg)} in hopper` : "Hopper empty"));
+        row.append(recipeValue("Output", machine.output || "No output configured"),
+          recipeValue("Collect", "Walk to output · nearby pickup"), recipeWorldRoute(machine, "Locate machine in World"));
+      }
+    } else if (route.kind === "market") {
+      const shop = make("button", {type:"button",class:"ws-action","data-supply-offer":route.offer_id}, "Check Market");
+      shop.onclick = () => {
+        const url = new URL(location.href);url.searchParams.set("offer",route.offer_id);
+        window.history.replaceState(null,"",url);showTab("market");
+      };
+      row.append(shop);
+    }
+    box.append(row);
+  }
+  if (!line.acquisition?.length) box.append(recipeValue("Source", "No source in this world or Market"));
+  return box;
+}
 function recipeUses(t) {
   const uses = new Set(["Carry", "Place"]);
   // These badges summarize source declarations, not successful use trials.
@@ -2596,23 +2639,14 @@ async function showRecipes() {
     canvas.onkeydown = event => { if (["Enter"," "].includes(event.key)) {event.preventDefault();all.open=!all.open;} };
     const materials = make("div", {class:"ws-needs"});
     for (const line of [...(t.materials || []), ...(t.goods || [])]) {
-      materials.append(recipeLine(line), recipeValue("Predicted debit",
+      materials.append(recipeLine(line), recipeValue("Stock",
+        `Personal ${kgSaid(line.personal_kg)} · Shared ${kgSaid(line.shared_kg)}`), recipeValue("Make takes",
         `Personal ${kgSaid(line.debit_personal_kg)} · Shared ${kgSaid(line.debit_shared_kg)}`));
     }
     all.append(materials);
     const acquisition = make("div", {class:"ws-acquisition"});
     for (const line of [...(t.materials || []), ...(t.goods || [])].filter(l=>!l.enough)) {
-      const substance = line.material || line.substance;
-      const sources = r.deposits.filter(d=>d.substance===substance && d.left_kg>0);
-      const process = r.room_recipes.find(p=>Object.hasOwn(p.out || {},substance));
-      acquisition.append(recipeValue(titleCase(substance), `Missing ${kgSaid(Math.max(0,line.kg-line.held_kg))}`));
-      if (sources.length) acquisition.append(recipeValue("Find", sources.map(d=>d.name).join(" · ")));
-      if (process) {
-        acquisition.append(recipeValue("Process", process.name), recipeValue("Input", Object.keys(process.in || {}).join(" + ")),
-          recipeValue("Machine", process.worked_by?.join(" · ") || "Build a machine for this process first"));
-        if (process.worked_by?.length) acquisition.append(recipeValue("Collect", "Walk to the machine’s output → Collect"));
-      }
-      if (!sources.length && !process) acquisition.append(recipeValue("Get", "Market → buy material with stored energy"));
+      acquisition.append(recipeAcquisition(line));
     }
     if (acquisition.childElementCount) all.append(acquisition);
     const readiness = t.readiness || {};
@@ -2791,6 +2825,7 @@ async function showMarket() {
       recipeValue("Stock", `${offer.remaining} lots`));
     if (offer.id === market.guidance?.offer_id) li.classList.add("ws-market-next");
     li.dataset.marketItem = offer.id;
+    if (offer.id === new URLSearchParams(location.search).get("offer")) li.classList.add("ws-goal-target");
     if (offer.id === "oak-stock" && ["bank-solar", "stock-oak"].includes(guide)) li.classList.add("ws-goal-target");
     const buy = make("button", { type:"button", class:"ws-action" }, "Buy → Personal stock");
     buy.disabled = offer.remaining < 1 || market.balance_j < offer.price_j;
@@ -2809,6 +2844,9 @@ async function showMarket() {
     li.append(buy);
     return li;
   }), "The trader has no stock right now. A new lot arrives after two minutes of world time.");
+  const supplyOffer = new URLSearchParams(location.search).get("offer");
+  if (supplyOffer) [...document.querySelectorAll("[data-market-item]")]
+    .find(card=>card.dataset.marketItem===supplyOffer)?.scrollIntoView({block:"center"});
   fill("#ws-market-orders", market.orders.map((order) => item(
     market.offers.find((offer) => offer.id === order.item_id)?.name || order.item_id,
     `${order.price_j} J · ${order.created_at}`)), "No purchases yet.");

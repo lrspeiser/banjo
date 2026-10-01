@@ -1,5 +1,12 @@
 # Development status and handoff
 
+**Recipe supply, October 1:** [Native/API/browser checkpoint](recipe-supply-checkpoint.md)
+verifies personal/shared shortage→world oak collection→paid table placement and
+fresh debit display. Current processor inputs, missing equipment and Market
+offer navigation are implemented. Two new, fifteen player, nine Workshop and
+one Market cases pass. Item 7 remains partial for recursive supply/process and
+saved-design journeys; item 8 tool/capacity acceptance remains next.
+
 **Player daylight, October 1:** [Day/night acceptance](daylight-player-checkpoint.md)
 closes player item 2 through native accounting and actual Chrome GPU/render
 evidence. Selected stores now show measured incoming/outgoing energy including

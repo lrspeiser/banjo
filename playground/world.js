@@ -4658,7 +4658,7 @@ function groundUnderfoot(at) {
 // owner had already said there was too much in the panel, and two cards saying
 // nearly the same thing about two different objects is the worst of it.
 
-const picked = { name: null, at: null, box: null };
+const picked = { name: null, at: null, resource: null, box: null };
 
 // Its section, made here. world.html's inline blocks are hashed into the
 // content policy every running server sends, so a card added there would shut
@@ -4718,6 +4718,7 @@ function drawPickedOutline() {
 // place on the ground it met. Clicking the same thing twice lets it go, which
 // is what a second click on a selected thing does everywhere else.
 function pinWhatWasClicked() {
+  picked.resource = null;
   const was = picked.name;
   if (world.aim && world.aim.name) {
     picked.name = was === world.aim.name ? null : world.aim.name;
@@ -4736,10 +4737,11 @@ function unpick() {
   clearReveal();
   picked.name = null;
   picked.at = null;
+  picked.resource = null;
   showPicked();
 }
 
-function somethingIsPinned() { return !!(picked.name || picked.at); }
+function somethingIsPinned() { return !!(picked.name || picked.at || picked.resource); }
 
 // A short inspection pulse, entirely in the renderer. Cell centres come from
 // the native snapshot; rigid bodies show parts, never invented voxels. The
@@ -5278,7 +5280,25 @@ function showPicked() {
   if (details) details.hidden = true;     // one card about one thing, not two
   const rows = [];
 
-  if (picked.name) {
+  if (picked.resource) {
+    const pile = world.goods?.stockpiles?.find(p=>p.name===picked.resource);
+    const deposit = world.goods?.deposits?.find(p=>p.name===picked.resource);
+    const source = pile || deposit;
+    rows.push(pickedTitle(titled(picked.resource), pile ? "Material pile" : "Extraction area"));
+    if (source) {
+      const distance = Math.hypot(camera.position.x-source.at_m[0],camera.position.z-source.at_m[1]);
+      const values = [["Distance",`${distance.toFixed(1)} m`]];
+      if (pile) {
+        for (const [substance,kg] of Object.entries(pile.holds_kg || {})) values.push([titled(substance),heldSaid(kg)]);
+        if (!Object.keys(pile.holds_kg || {}).length) values.push(["Stock","Empty"]);
+        const inputs = (world.machines?.programs || []).filter(p=>p.routine?.intake===pile.name).map(p=>p.name);
+        if (inputs.length) values.push(["Feeds",inputs.join(" · ")]);
+        values.push(["Collect",pile.rack ? "Already shared stock" : distance>2 ? "Walk within 2 m · Collect nearby pile" : "Collect nearby pile"]);
+      } else values.push(["Material",titled(deposit.substance)], ["Reserve",heldSaid(deposit.left_kg)],
+        ["Equipment","Mining rover"], ["Route","Dig → deliver to intake → process"]);
+      rows.push(inspectionValues(values));
+    } else rows.push(inspectionValues([["Source","No longer available"]]));
+  } else if (picked.name) {
     const entry = world.bodies && world.bodies.get(picked.name);
     const part = tools.profileOf(picked.name) || profileOf(picked.name);
     const programs = machinesOfPart(picked.name);
@@ -10879,6 +10899,15 @@ async function open({ again = false } = {}) {
       window.banjoRoom.lookAt(at.x, at.y, at.z);
       picked.name = focus; picked.at = null; showPicked();
     }
+    const resourceName = !watchedId && new URLSearchParams(location.search).get("resource");
+    if (resourceName) {
+      const source = [...(world.goods?.stockpiles || []),...(world.goods?.deposits || [])].find(p=>p.name===resourceName);
+      if (source) {
+        const [x,z] = source.at_m;
+        window.banjoRoom.lookAt(x,groundAt(x,z)+.15,z);
+        picked.resource = resourceName; picked.name = null; picked.at = null; showPicked();
+      } else lastAction("This material source is no longer available.", "refused");
+    }
     world.framesSinceOpen = 0;
     // Drawn and ready to step: the frame report starts here, with this world's
     // clock and the wall from now -- not from the page load, nor the last room.
@@ -10965,11 +10994,13 @@ window.banjoRoom = {
   // drives the same state a click sets, so what it reads is what a person
   // would see.
   pick(name, mode) {
+    picked.resource = null;
     picked.name = name || null;
     picked.at = null;
     revealPicked(mode); showPicked();
   },
   pickGround(x, y, z) {
+    picked.resource = null;
     picked.name = null;
     picked.at = [x, y, z];
     revealPicked(); showPicked();

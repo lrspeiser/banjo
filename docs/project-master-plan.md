@@ -1,5 +1,11 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Recipe supply checkpoint, October 1:** [Current stock and actionable routes](recipe-supply-checkpoint.md)
+connect ordinary shortages to actual world piles, private collection and paid
+Make; processor inputs/equipment and targeted Market routes are visible.
+Recursive supply chains and the complete tool/capacity journey remain open.
+Four player gates are verified, nine partial and repair pending.
+
 **Player daylight checkpoint, October 1:** [Native-to-browser day/night](daylight-player-checkpoint.md)
 verifies a visible native-direction sun, moving shadows, solar store charging,
 dark night and a real battery-consuming automatic lamp. Rendering remains an

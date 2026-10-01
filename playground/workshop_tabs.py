@@ -252,7 +252,45 @@ def recipes(app: Any) -> dict[str, Any]:
                     for d in block.get("deposits") or []]
     else:
         deposits = []
-    return {"templates": templates, "room_recipes": room_recipes, "deposits": deposits,
+    holders = getattr(getattr(app, 'brains', None), 'goods', None)
+    piles = holders.holders()['stockpiles'] if holders is not None else []
+    if holders is not None:
+        deposits = holders.holders()['deposits']
+    import market
+    traded = {lot[3]: lot[0] for lot in market.LOTS}
+    programs = ((room.get('machines') or {}).get('programs') or [])
+    for template in templates:
+        for line in [*template.get('materials', []), *template.get('goods', [])]:
+            substance = line.get('material') or line.get('substance')
+            routes = []
+            for pile in piles:
+                kg = pile['holds_kg'].get(substance, 0)
+                if kg <= 0 or pile.get('rack'): continue
+                input_to = [p['name'] for p in programs if (p.get('routine') or {}).get('intake') == pile['name']]
+                routes.append({'kind':'pile', 'name':pile['name'], 'at_m':pile['at_m'],
+                               'available_kg':kg, 'input_to':input_to})
+            for deposit in deposits:
+                if deposit['substance'] != substance or deposit['left_kg'] <= 0: continue
+                diggers = [p['name'] for p in programs if p.get('kind') == 'roam' and
+                    ((p.get('routine') or {}).get('kind') == 'mine-haul' or
+                     any(step.get('do') == 'dig' for step in (p.get('routine') or {}).get('steps', [])))]
+                routes.append({'kind':'deposit', **deposit, 'equipment':diggers})
+            for process in room_recipes:
+                if substance not in (process.get('out') or {}): continue
+                machines = []
+                for program in programs:
+                    routine = program.get('routine') or {}
+                    if routine.get('recipe') != process['name']: continue
+                    intake = next((p for p in piles if p['name'] == routine.get('intake')), {})
+                    machines.append({'name':program['name'], 'body':program.get('body'),
+                        'intake':routine.get('intake'), 'output':routine.get('output'),
+                        'inputs':[{'substance':s,'share':share,'held_kg':intake.get('holds_kg',{}).get(s,0)}
+                                  for s,share in (process.get('in') or {}).items()]})
+                routes.append({'kind':'process', 'name':process['name'], 'inputs':process.get('in') or {},
+                               'machines':machines})
+            if substance in traded: routes.append({'kind':'market', 'offer_id':traded[substance]})
+            line['acquisition'] = routes
+    return {"templates": templates, "room_recipes": room_recipes, "deposits": deposits, "stockpiles": piles,
             "goods_per": {k: {"substance": v[0], "per": v[1], "rate": v[2], "least_kg": v[3]}
                           for k, v in workshop_library.GOODS_PER.items()}}
 
