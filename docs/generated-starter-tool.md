@@ -2,6 +2,8 @@
 
 Implementation `0fa2b9a` follows the [Workshop ground-tool contract](workshop-ground-tools.md). This is a usable-tool checkpoint; the larger progression goal remains active.
 
+Follow-up `2ee3ab7` implements [personal study, durable tool receipts and the first use-earned technique](player-tool-learning.md). The access measurements below remain the original checkpoint's evidence.
+
 ## Implementation
 
 New named worlds get one oak Field pick near arrival. It is an explicit bootstrap gift, not a learning reward. Its source is the `field-pick` Workshop assembly, also available in Recipes. Default geometry is an 800 × 50 × 50 mm haft and 50 × 50 × 300 mm arm, face-connected, sampled at 50 mm into 22 cells / 0.00275 m³ / 1.925 kg. The builder and ordinary installation share `fixed_lattice_plan`; placement uses measured terrain under the whole footprint, then ordinary native admission checks the point and connected matter.

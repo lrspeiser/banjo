@@ -1,0 +1,194 @@
+{
+  "schema": "banjo.player-tool-acceptance.v1",
+  "mode": "scripted authenticated player controls; no provider calls",
+  "runs": [
+    {
+      "terrain_seed": 7,
+      "goods_seed": 851269742,
+      "ground": "sand",
+      "work_j": 58.42453,
+      "loosened": {
+        "sand_m3": 0.016307715822450396,
+        "soil_m3": 8.225750851535533e-05
+      },
+      "other_guest_evidence": 0,
+      "provider_calls": 0,
+      "learned": [
+        "using-ground-tools"
+      ],
+      "evidence_count": 2,
+      "source_save_failure_awarded_nothing": true,
+      "journal_failure_recovered_on_restart": true,
+      "repeated_save_awarded_nothing_twice": true,
+      "native_dt_s": 0.004166666666666667,
+      "cell_m": 0.05,
+      "saved_t_s": 1.7499999999999951,
+      "evidence": [
+        {
+          "run": "eeee73f06e174bdcae059ec050760ddd:8565b9d3b2f04ce484799914e41cda77:eeee73f06e174bdcae059ec050760ddd:8565b9d3b2f04ce484799914e41cda77:study:field pick:8817ab9798411533bcb5534462b59d166c46290cacf50cae7d46eed952e154f4:c767917076302716874eb5279840053265ed352ddde07d4bba6e3733467df90b",
+          "at": "2026-10-01T02:46:17Z",
+          "design": "field-pick@1",
+          "object": "Field pick",
+          "tool": "field pick",
+          "source": "found-example",
+          "test": "study-example",
+          "passes": true,
+          "action": "inspect held tool",
+          "target": {
+            "object": "tool"
+          },
+          "result": {
+            "body_id": 1000,
+            "point_id": 1,
+            "matter_sha256": "8817ab9798411533bcb5534462b59d166c46290cacf50cae7d46eed952e154f4"
+          },
+          "models": [
+            "native occupied matter",
+            "component-frame point"
+          ],
+          "limitations": [
+            "Inspection is not manufacturing, strength or functional certification"
+          ],
+          "said": "Studied Field pick",
+          "claim": "demonstrated: inspected a whole held example",
+          "scope": "for this inspected construction (field-pick@1)",
+          "id": "ev-f208e1e7f1"
+        },
+        {
+          "id": "ev-dcf3c2e738",
+          "run": "eeee73f06e174bdcae059ec050760ddd:8565b9d3b2f04ce484799914e41cda77:f5b6e16cb98d4b5cbbf0a99bfe919ff2:1:0.76250:broke out",
+          "at": "2026-10-01T02:46:18Z",
+          "design": "field-pick@1",
+          "object": "Field pick",
+          "tool": "field pick",
+          "source": "found-example",
+          "test": "loosens-soil",
+          "passes": true,
+          "action": "swing then lever",
+          "target": {
+            "ground": "sand"
+          },
+          "result": {
+            "loosened_m3": 0.01638997333096575,
+            "loosened_kg": 26.22396,
+            "depth_m": 0.17137,
+            "work_j": 58.42453,
+            "closing_speed_m_s": 8.70351
+          },
+          "tool_condition": {
+            "after": {
+              "whole": true,
+              "dent_mm": 0.0
+            }
+          },
+          "models": [
+            "ground-work-v1"
+          ],
+          "limitations": [
+            "ground-work-v1 is declared, not calibrated against a real pick in real soil",
+            "no wet ground",
+            "no fracture of rock under a point",
+            "no wear"
+          ],
+          "said": "the Field pick went 171 mm into the sand at 8.7 m/s and broke out 16.4 L (26.2 kg); it stayed whole",
+          "claim": "demonstrated: loosens the tested sand",
+          "scope": "for this design revision (field-pick@1), this sand, swing then lever"
+        }
+      ]
+    },
+    {
+      "terrain_seed": 4,
+      "goods_seed": 1,
+      "ground": "sand",
+      "work_j": 60.73312,
+      "loosened": {
+        "sand_m3": 0.020205271718234143,
+        "soil_m3": 0.0
+      },
+      "other_guest_evidence": 0,
+      "provider_calls": 0,
+      "learned": [
+        "using-ground-tools"
+      ],
+      "evidence_count": 2,
+      "source_save_failure_awarded_nothing": true,
+      "journal_failure_recovered_on_restart": true,
+      "repeated_save_awarded_nothing_twice": true,
+      "native_dt_s": 0.004166666666666667,
+      "cell_m": 0.05,
+      "saved_t_s": 3.1500000000000514,
+      "evidence": [
+        {
+          "run": "dbe16ede6c8f4f038c7892810889507c:7770b38ba0e348989dc6242a0f5b578d:dbe16ede6c8f4f038c7892810889507c:7770b38ba0e348989dc6242a0f5b578d:study:field pick:73b16a9fd728516ff12b938051df5a592e4b245500e8b2bf9fffee733cfbb696:c767917076302716874eb5279840053265ed352ddde07d4bba6e3733467df90b",
+          "at": "2026-10-01T02:46:21Z",
+          "design": "field-pick@1",
+          "object": "Field pick",
+          "tool": "field pick",
+          "source": "found-example",
+          "test": "study-example",
+          "passes": true,
+          "action": "inspect held tool",
+          "target": {
+            "object": "tool"
+          },
+          "result": {
+            "body_id": 1000,
+            "point_id": 1,
+            "matter_sha256": "73b16a9fd728516ff12b938051df5a592e4b245500e8b2bf9fffee733cfbb696"
+          },
+          "models": [
+            "native occupied matter",
+            "component-frame point"
+          ],
+          "limitations": [
+            "Inspection is not manufacturing, strength or functional certification"
+          ],
+          "said": "Studied Field pick",
+          "claim": "demonstrated: inspected a whole held example",
+          "scope": "for this inspected construction (field-pick@1)",
+          "id": "ev-54f8477408"
+        },
+        {
+          "id": "ev-cee0222129",
+          "run": "dbe16ede6c8f4f038c7892810889507c:7770b38ba0e348989dc6242a0f5b578d:c973bae3d8074f178584daa6807d8efb:1:0.76667:broke out",
+          "at": "2026-10-01T02:46:23Z",
+          "design": "field-pick@1",
+          "object": "Field pick",
+          "tool": "field pick",
+          "source": "found-example",
+          "test": "loosens-soil",
+          "passes": true,
+          "action": "swing then lever",
+          "target": {
+            "ground": "sand"
+          },
+          "result": {
+            "loosened_m3": 0.020205271718234143,
+            "loosened_kg": 32.32843,
+            "depth_m": 0.18686,
+            "work_j": 60.73312,
+            "closing_speed_m_s": 8.60886
+          },
+          "tool_condition": {
+            "after": {
+              "whole": true,
+              "dent_mm": 0.0
+            }
+          },
+          "models": [
+            "ground-work-v1"
+          ],
+          "limitations": [
+            "ground-work-v1 is declared, not calibrated against a real pick in real soil",
+            "no wet ground",
+            "no fracture of rock under a point",
+            "no wear"
+          ],
+          "said": "the Field pick went 187 mm into the sand at 8.6 m/s and broke out 20.2 L (32.3 kg); it stayed whole",
+          "claim": "demonstrated: loosens the tested sand",
+          "scope": "for this design revision (field-pick@1), this sand, swing then lever"
+        }
+      ]
+    }
+  ]
+}
