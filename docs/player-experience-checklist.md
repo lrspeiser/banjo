@@ -27,7 +27,7 @@ verified coherent checkpoints regularly.
 ## Verification checkpoint
 
 Resource flow implementation is published as `9cc3ad1` on main. The next
-player-entry/Workshop checkpoint uses Python 3.13.5, Windows Chrome and the
+player-entry/Workshop checkpoint is published as `6098387` on main and uses Python 3.13.5, Windows Chrome and the
 existing MSVC Release native engines from `f819e81`, at 50 mm and native
 `dt=1/240 s`. No C++ or constitutive law changed. The explicit 10 s lighting
 experiment consumed 100 J over five seconds at 20 W; array charge agrees with
