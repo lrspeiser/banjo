@@ -47,15 +47,23 @@ class ControllerBoundaries(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             alice, bob = "a" * 32, "b" * 32
             session = SimpleNamespace(id="fixture", room_spec=knowledge_tests.PICK_ROOM,
-                state={"player_hands": {alice: {"holding": "pick haft"}, bob: {"holding": "other tool"}}})
+                state={"t":4,"player_hands": {alice: {"holding": "pick haft"}, bob: {"holding": "other tool"}}})
             app = SimpleNamespace(world_id="c" * 32, journal_lock=threading.RLock(), player_journals={},
-                store=room_store.RoomStore(temp), room=SimpleNamespace(spec=knowledge_tests.PICK_ROOM),
+                store=room_store.RoomStore(temp), room=SimpleNamespace(spec=knowledge_tests.PICK_ROOM,
+                    player_records={alice:{},bob:{}}),
                 live=SimpleNamespace(session=session))
             for owner in (alice, bob):
                 scope = server.workshop_library.REQUEST_OWNER.set(owner)
                 try: server.note_strike(app, {"t": 3.1})
                 finally: server.workshop_library.REQUEST_OWNER.reset(scope)
             server.hear(app, session, {"ground_work": [knowledge_tests.closed("broke out")]})
+            self.assertEqual({},server.journal_of(app,alice).data['evidence'])
+            self.assertEqual([alice],[r['owner'] for r in app.room.player_evidence_pending])
+            # This unit boundary uses an explicit source-save fixture. The
+            # actual native/restart path is tested in AutonomousGuests.
+            app.room.world_record={'t_s':4}
+            app.room.player_learning_durable_ids={r['evidence']['id'] for r in app.room.player_evidence_pending}
+            server.player_learning.saved(app,server.journal_of,server.registry())
             self.assertEqual(1, len(server.journal_of(app, alice).data["evidence"]))
             self.assertEqual({}, server.journal_of(app, bob).data["evidence"])
             scope = server.workshop_library.REQUEST_OWNER.set(bob)
@@ -64,6 +72,7 @@ class ControllerBoundaries(unittest.TestCase):
                 self.assertIsNot(server.journal_of(app), server.journal_of(app, shared=True))
             finally: server.workshop_library.REQUEST_OWNER.reset(scope)
             server.hear(app, session, {"ground_work": [knowledge_tests.closed("broke out")]})
+            server.player_learning.saved(app,server.journal_of,server.registry())
             self.assertEqual(1, len(server.journal_of(app, alice).data["evidence"]))
             server.hear(app, session, {"ground_work": [knowledge_tests.closed("broke out", at_s=20)]})
             self.assertEqual(1, len(server.journal_of(app, alice).data["evidence"]))
@@ -143,6 +152,7 @@ class AutonomousGuests(unittest.TestCase):
         self.assertEqual(["Observe briefly"], result[0]["did"])
 
     def test_generated_starter_tool_can_be_taken_re_equipped_and_used_through_player_routes(self):
+        reports=[]
         for terrain_choice, goods_seed in ((1,851269742),(0,1)):
             # Only map selection is pinned. No inventory, geometry, hand
             # outcome, terrain transfer or journal is supplied by this test.
@@ -164,6 +174,16 @@ class AutonomousGuests(unittest.TestCase):
             inventory('take_up'); inventory('stow'); inventory('equip')
             owned=self.post('/api/world/inventory/shown',{'session':session},world)
             self.assertTrue(any((h or {}).get('name')=='field pick' for h in owned['hands'].values()))
+            with mock.patch.object(app.store,'save',return_value=False):
+                studied=self.post('/api/world/action',{'session':session,'object':'field pick',
+                    'primary':True,'person':person},world)
+            self.assertNotIn('refused',studied,studied)
+            journal=server.journal_of(app,owner['id'])
+            self.assertEqual({},journal.data['evidence'],'failed physical save must not publish study')
+            self.assertEqual(1,len(app.room.player_evidence_pending))
+            self.assertTrue(server.keep_world(app,'retry tool study physical save'))
+            self.assertTrue(journal.standing_of('field-pick').get('demonstrated',{}).get('study-example'),studied)
+            self.assertNotIn('using-ground-tools',journal.knows(),'inspection alone is not functional success')
             # The normal player API starts the stroke; the world's normal
             # clock advances it. This does not mutate the source snapshot.
             results=[];errors=[]
@@ -171,12 +191,13 @@ class AutonomousGuests(unittest.TestCase):
                 try:results.append(self.post('/api/world/tool/use',{'session':session,
                         'person':person,'at_m':[.3,target,.025]},world))
                 except Exception as exc:errors.append(exc)
-            worker=threading.Thread(target=use,daemon=True);worker.start()
-            deadline=time.monotonic()+22
-            while worker.is_alive() and time.monotonic()<deadline:
-                app.clock._tick(.05)
-                time.sleep(.015)
-            worker.join(timeout=1)
+            with self.assertLogs('banjo',level='ERROR'), mock.patch.object(journal,'_save',side_effect=OSError('injected personal journal failure')):
+                worker=threading.Thread(target=use,daemon=True);worker.start()
+                deadline=time.monotonic()+22
+                while worker.is_alive() and time.monotonic()<deadline:
+                    app.clock._tick(.05)
+                    time.sleep(.015)
+                worker.join(timeout=1)
             self.assertFalse(worker.is_alive(),'normal player tool use did not finish')
             self.assertEqual([],errors)
             self.assertEqual(1,len(results))
@@ -185,15 +206,44 @@ class AutonomousGuests(unittest.TestCase):
             self.assertTrue(record.get('supported'),results)
             self.assertGreater(record.get('loosened_kg',0),0,results)
             self.assertGreater(record.get('work_j',0),0)
+            self.assertTrue(results[0].get('learning_pending'))
+            self.assertIn('Journal update pending',results[0]['said'])
+            self.assertNotIn('using-ground-tools',journal.knows())
+            self.assertEqual(1,len(app.room.player_evidence_pending),'journal failure retains source outbox')
+            # Close with the journal still unavailable: restart must recover
+            # the durably saved source, rather than an in-memory retry.
+            with self.assertLogs('banjo',level='ERROR'), mock.patch.object(journal,'_save',side_effect=OSError('injected personal journal failure')):
+                self.stop()
+            self.start()
+            reopened=self.post('/api/world/open',{},world)
+            app=self.app.hub.get(world); session=reopened['session']
+            journal=server.journal_of(app,owner['id'])
+            self.assertIn('using-ground-tools',journal.knows())
+            self.assertNotIn('rough-shaping-wood',journal.knows(),'gathering cannot certify unsupported shaping')
+            self.assertTrue(journal.standing_of('field-pick').get('demonstrated',{}).get('loosens-soil'))
             self.assertEqual({},server.journal_of(app,other['id']).data['evidence'])
+            studied_again=self.post('/api/world/action',{'session':session,'object':'field pick',
+                'primary':True,'person':person},world)
+            self.assertNotIn('refused',studied_again,studied_again)
+            kept=journal.copy()
             self.assertTrue(server.keep_world(app,'starter tool player check'))
+            self.assertEqual(kept,journal.copy(),'outbox replay cannot duplicate evidence or rewards')
             before=app.live.snapshot()[0]
             reopened=self.post('/api/world/open',{},world)
             self.assertEqual(session,reopened['session'])
             self.assertEqual(before['tool_points'],app.live.snapshot()[0]['tool_points'])
-            print('generated player tool use:',{'terrain_seed':app.room.spec['terrain']['generate']['seed'],
+            report={'terrain_seed':app.room.spec['terrain']['generate']['seed'],
                 'goods_seed':goods_seed,'ground':record['ground'],'work_j':record['work_j'],
-                'loosened':record['loosened'],'other_guest_evidence':0,'provider_calls':0})
+                'loosened':record['loosened'],'other_guest_evidence':0,'provider_calls':0,
+                'learned':sorted(journal.knows()),'evidence_count':len(journal.data['evidence']),
+                'source_save_failure_awarded_nothing':True,'journal_failure_recovered_on_restart':True,
+                'repeated_save_awarded_nothing_twice':True,'native_dt_s':1/240,'cell_m':.05,
+                'saved_t_s':before['t_s'],'evidence':list(journal.data['evidence'].values())}
+            reports.append(report)
+            print('generated player tool use:',{k:v for k,v in report.items() if k!='evidence'})
+        output=ROOT/'build/player-learning';output.mkdir(parents=True,exist_ok=True)
+        (output/'tool-acceptance.json').write_text(json.dumps({'schema':'banjo.player-tool-acceptance.v1',
+            'mode':'scripted authenticated player controls; no provider calls','runs':reports},indent=2),encoding='utf-8')
 
     def test_actual_machine_batch_is_personal_and_learning_outbox_recovers_after_restart(self):
         import machine_witness
@@ -273,7 +323,11 @@ class AutonomousGuests(unittest.TestCase):
         location = copper["earned_by"][0]["locations"][0]
         self.assertEqual("watch-machine",location["action"])
         self.assertEqual(3,len(location["at_m"]))
-        self.assertEqual("smelting-copper",self.post("/api/workshop/market",{},world)["guidance"]["skill"]["id"])
+        self.assertTrue(tree['using-ground-tools']['within_reach'])
+        tool_route=tree['using-ground-tools']['earned_by'][0]
+        self.assertEqual({'inspect','tool/use'},{l['action'] for l in tool_route['locations']})
+        self.assertTrue(all(l['body']=='field pick' for l in tool_route['locations']))
+        self.assertEqual("using-ground-tools",self.post("/api/workshop/market",{},world)["guidance"]["skill"]["id"])
         # A shortage fixture removes input; it grants no stock or skill.
         intake = next(p for p in app.room.spec["goods"]["stockpiles"] if p["name"] == location["intake"])
         intake["holds"].clear()
@@ -448,6 +502,34 @@ class AutonomousGuests(unittest.TestCase):
         print(f"\n    generated realtime: {native_t:.3f} native s / {duration:.3f} wall s; "
               f"{len(book['receipts'])} ground receipts; returned {totals['returned']}; "
               f"wallet {balance+100} J, duplicate/failure/rejoin/restart checked")
+
+    def test_skills_links_to_the_tool_without_awarding_progress_for_navigation(self):
+        if not qa_browser.CHROME.is_file(): self.skipTest('Chrome not installed')
+        world,owner,app=self.setup_world()
+        chrome=qa_browser.Chrome(1280,800);self.addCleanup(chrome.close)
+        page=chrome.page;page.send('Page.enable');page.send('Runtime.enable')
+        def wait(expression):
+            until=time.monotonic()+35
+            while time.monotonic()<until:
+                try:
+                    if page.evaluate(expression):return
+                except (RuntimeError,TimeoutError):pass
+                time.sleep(.15)
+            self.fail('Browser did not reach '+expression)
+        page.send('Page.navigate',{'url':self.base+f'/world?world={world}&workshop=1&tab=skills&technique=using-ground-tools'})
+        wait('!!document.querySelector("[data-technique=using-ground-tools]") && [...document.querySelectorAll(".ws-tree-todo a")].some(a=>a.textContent==="Go to tool")')
+        viewer=page.evaluate('localStorage.getItem("banjo.player.'+world+'")')
+        # Viewer identity can differ from the HTTP fixture's creator.
+        ident=next(p['id'] for p in server.player_world.records(app).values() if p['token']==viewer)
+        self.assertEqual(set(),server.journal_of(app,ident).knows())
+        output=ROOT/'build/player-learning';output.mkdir(parents=True,exist_ok=True)
+        import base64
+        (output/'tool-skills.png').write_bytes(base64.b64decode(page.send('Page.captureScreenshot')['data']))
+        page.evaluate('[...document.querySelectorAll(".ws-tree-todo a")].find(a=>a.textContent==="Go to tool").click()')
+        wait('new URLSearchParams(location.search).get("focus")==="field pick" && !!window.banjoRoom?.status().ready')
+        self.assertEqual(set(),server.journal_of(app,ident).knows())
+        self.assertEqual({},server.journal_of(app,ident).data['evidence'])
+        self.assertFalse([e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
 
     def test_menu_starts_reference_bot_and_camera_watches_without_control(self):
         if not qa_browser.CHROME.is_file():

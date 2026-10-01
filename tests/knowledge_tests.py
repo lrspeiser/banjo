@@ -18,6 +18,8 @@ import sys
 import tempfile
 import types
 import unittest
+from copy import deepcopy
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -606,6 +608,85 @@ class GeneralBatchPredicates(unittest.TestCase):
                            ({"ceramic":1},{"clay":-1})):
             self.assertIsNone(progression.evidence_from_batch("fire ceramic",made,used,
                 session_id="s",at="test",batch=1))
+
+
+class PersonalToolSourceReceipts(unittest.TestCase):
+    def setUp(self):
+        import player_learning
+        self.learning=player_learning
+        self.owner='a'*32
+        self.registry=progression.Registry()
+        self.app=types.SimpleNamespace(world_id='c'*32,
+            room=types.SimpleNamespace(player_records={self.owner:{}}))
+        self.session=types.SimpleNamespace(id='unit-native-source',state={'t':4},room_spec=PICK_ROOM)
+
+    def test_ground_outbox_preserves_tiny_source_amounts_and_requires_later_snapshot(self):
+        source=closed('broke out',loosened={'soil_m3':1e-12,'sand_m3':0},loosened_kg=1.6e-9)
+        self.learning.ground(self.app,self.owner,self.session,source,self.registry)
+        pending=self.learning.pending_of(self.app)
+        self.assertEqual(1e-12,pending[0]['evidence']['result']['loosened_m3'])
+        self.learning.validate_pending(pending,{'t_s':4},self.app.room.player_records,self.registry)
+        with self.assertRaises(ValueError):
+            self.learning.validate_pending(pending,{'t_s':3},self.app.room.player_records,self.registry)
+        for change in ('owner','id','passes','result','nan','open','supported','timestamp'):
+            bad=deepcopy(pending)
+            if change=='owner':bad[0]['owner']='b'*32
+            elif change=='id':bad[0]['evidence']['id']='ev-'+('0'*10)
+            elif change=='passes':bad[0]['evidence']['passes']=False
+            elif change=='result':bad[0]['evidence']['result']['loosened_m3']=1
+            elif change=='nan':bad[0]['source']['record']['work_j']=float('nan')
+            elif change=='open':bad[0]['source']['record']['open']=True
+            elif change=='supported':bad[0]['source']['record']['supported']=False
+            elif change=='timestamp':bad[0]['source']['record']['at_s']=5
+            with self.subTest(change=change),self.assertRaises(ValueError):
+                self.learning.validate_pending(bad,{'t_s':4},self.app.room.player_records,self.registry)
+
+    def test_unsaved_receipt_cannot_publish_and_saved_retry_is_idempotent(self):
+        self.learning.ground(self.app,self.owner,self.session,closed('broke out'),self.registry)
+        journal=progression.Journal()
+        self.app.room.world_record={'t_s':4}
+        self.learning.saved(self.app,lambda app,owner:journal,self.registry)
+        self.assertEqual({},journal.data['evidence'])
+        self.app.room.player_learning_durable_ids={r['evidence']['id'] for r in self.learning.pending_of(self.app)}
+        self.learning.saved(self.app,lambda app,owner:journal,self.registry)
+        kept=journal.copy()
+        self.learning.ground(self.app,self.owner,self.session,closed('broke out'),self.registry)
+        self.learning.saved(self.app,lambda app,owner:journal,self.registry)
+        self.assertEqual(kept,journal.copy())
+
+    def test_malformed_study_and_unknown_actor_are_rejected(self):
+        source={'construction':progression.construction_of(PICK_ROOM,PICK_ROOM['interactions'][0]),
+            'object':'Pick','tool':'pick haft','body_id':1,'point_id':1,'matter_sha256':'d'*64}
+        self.learning.queue(self.app,self.owner,'study',source,session=self.session.id,t_s=4,registry=self.registry)
+        for field,value in (('body_id',True),('point_id',0),('matter_sha256','invented'),('construction',None)):
+            bad=deepcopy(self.learning.pending_of(self.app));bad[0]['source'][field]=value
+            with self.subTest(field=field),self.assertRaises(ValueError):
+                self.learning.validate_pending(bad,{'t_s':4},self.app.room.player_records,self.registry)
+        with self.assertRaises(ValueError):
+            self.learning.queue(self.app,'b'*32,'study',source,session=self.session.id,t_s=4,registry=self.registry)
+
+
+class WorldLearningRouteBoundaries(unittest.TestCase):
+    def test_one_ready_machine_is_enough_and_completed_conditions_do_not_require_new_gifts(self):
+        import learning_routes
+        registry=progression.Registry()
+        app=types.SimpleNamespace(room=types.SimpleNamespace(spec={
+            'machines':{'programs':[{'name':name,'body':name,'routine':{'intake':name+' intake'}} for name in ('empty','ready')]},
+            'goods':{'recipes':[{'name':'smelt copper','in':{'copper ore':1}}],
+                'stockpiles':[{'name':'empty intake','holds':{}},{'name':'ready intake','holds':{'copper ore':5}}]}}),
+            live=types.SimpleNamespace(session=types.SimpleNamespace(state={'bodies':[]})))
+        sources=[{'machine':name,'recipe':'smelt copper','program':'processor','at_m':[i,0,0]}
+                 for i,name in enumerate(('empty','ready'))]
+        # Explicit resolver fixtures test alternatives, not native processing.
+        sources=[dict(s,program=registry.designs['copper-smelter']['machine']['program']) for s in sources]
+        tree=[{'id':'unit-chain','within_reach':True,'earned_by':[{'all_of':[
+            {'design':'one-piece-wooden-pick','found':True,'done':True},
+            {'design':'copper-smelter','demonstrated':True,'test':'smelts-ore','done':False}]}]}]
+        with mock.patch.object(learning_routes.machine_witness,'machines',return_value=sources):
+            learning_routes.resolve(app,registry,tree)
+        self.assertTrue(tree[0]['within_reach'])
+        self.assertEqual([],tree[0]['world_missing'])
+        self.assertEqual(['ready'],[l['machine'] for l in tree[0]['earned_by'][0]['locations']])
 
 
 if __name__ == "__main__":

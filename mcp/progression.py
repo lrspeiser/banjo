@@ -386,7 +386,8 @@ def design_of(registry: Registry, construction: dict[str, Any]) -> str | None:
                     continue
                 if (abs(point["width_m"] - float(spec_point["width_m"])) > within
                         or abs(point["thickness_m"] - float(spec_point["thickness_m"])) > within
-                        or abs(point["angle_deg"] - float(spec_point["angle_deg"])) > 1.0):
+                        or abs(point["angle_deg"] - float(spec_point["angle_deg"])) > 1.0
+                        or ("length_m" in spec_point and abs(point["length_m"]-float(spec_point["length_m"]))>within)):
                     continue
             return f"{design['id']}@{design['revision']}"
     return None
@@ -485,9 +486,9 @@ def evidence_from(record: dict[str, Any], *, session_id: str, spec: dict[str, An
         "run": key, "at": at, "design": design, "object": profile["object"], "tool": tool,
         "source": "found-example", "test": test, "passes": passes, "action": action,
         "target": {"ground": ground},
-        "result": {"loosened_m3": round(loosened_m3, 6), "loosened_kg": round(float(record.get("loosened_kg", 0.0)), 3),
-                   "depth_m": round(float(record.get("depth_m", 0.0)), 4), "work_j": round(float(record.get("work_j", 0.0)), 3),
-                   "closing_speed_m_s": round(speed, 3)},
+        "result": {"loosened_m3": loosened_m3, "loosened_kg": float(record.get("loosened_kg", 0.0)),
+                   "depth_m": float(record.get("depth_m", 0.0)), "work_j": float(record.get("work_j", 0.0)),
+                   "closing_speed_m_s": speed},
         "tool_condition": {"after": {"whole": whole, "dent_mm": float(record.get("tool_dent_mm", 0.0))}},
         "models": [str(record.get("model") or "ground-work-v1")],
         "limitations": list(GROUND_WORK_LIMITS),
@@ -728,11 +729,12 @@ def tech_tree(journal: Journal, registry: Registry) -> list[dict[str, Any]]:
                    "done": all(_met(journal, need) for need in route.get("all_of") or []),
                    # The conditions themselves, so a page can show progress
                    # rather than only a sentence.
-                   "all_of": [dict(need) for need in route.get("all_of") or []]}
+                   "all_of": [dict(need, done=_met(journal,need)) for need in route.get("all_of") or []]}
                   for route in (technique.get("earned_by") or {}).get("any_of") or []]
         out.append({
             "id": ident, "name": technique["name"],
             "describes": technique.get("describes", ""),
+            "practice": technique.get("practice", ""),
             "rank": rank.get(ident, 0),
             "known": ident in known,
             # Within reach: everything it stands on is known, and there is a

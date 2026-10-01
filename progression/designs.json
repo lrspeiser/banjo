@@ -8,6 +8,21 @@
   },
   "designs": [
     {
+      "id": "field-pick", "revision": 1, "name": "Field pick",
+      "purpose": {"function": "Gather dry soil or sand by swinging and levering", "claim": "Demonstrated only by measured use"},
+      "construction": {
+        "one_piece": true, "material_class": "wood", "matches_within_m": 0.005,
+        "parts": [{"role":"handle","size_m":[0.8,0.05,0.05]}, {"role":"arm","size_m":[0.05,0.05,0.3]}],
+        "tool_point": {"width_m":0.05,"thickness_m":0.05,"angle_deg":30,"length_m":0.2}
+      },
+      "components": [],
+      "routes": {"any_of":[{"id":"found-whole","obtain":"Find and study the whole tool"}]},
+      "interaction": {"template":"swing-and-lever"},
+      "tests": [{"id":"study-example","action":"Inspect a whole held tool","target":{"object":"tool"},"records":"Native matter and point inspected"},
+                {"id":"loosens-soil","action":"Swing and lever","target":{"ground":"soil or sand"},
+                 "passes_when":{"loosened_m3":">0","tool":"whole"}}]
+    },
+    {
       "id": "one-piece-wooden-pick",
       "revision": 1,
       "name": "One-piece wooden pick",
@@ -95,6 +110,7 @@
         "template": "swing-and-lever"
       },
       "tests": [
+        {"id":"study-example","action":"Inspect a whole held tool","target":{"object":"tool"},"records":"Native matter and point inspected"},
         {
           "id": "loosens-soil",
           "action": "swing, then lever",

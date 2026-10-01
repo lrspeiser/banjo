@@ -2225,10 +2225,16 @@ function treeAbout(t) {
       li.append(make("i", { class: "ws-tick", "aria-hidden": "true" },
                      route.done ? "\u2713" : "\u25cb"));
       li.append(make("span", {}, route.says || route.id || ""));
+      const destinations = new Set();
       for (const location of route.locations || []) {
         if (!location.body) continue;
+        const key = `${location.tab || "world"}:${location.body}`;
+        if (destinations.has(key)) continue;
+        destinations.add(key);
         const go = make("a", { class: "ws-link",
-          href: `/world?world=${encodeURIComponent(worldId)}&focus=${encodeURIComponent(location.body)}` }, "Go to machine");
+          href: location.tab === "inventory" ? `/world?world=${encodeURIComponent(worldId)}&workshop=1&tab=inventory` :
+            `/world?world=${encodeURIComponent(worldId)}&focus=${encodeURIComponent(location.body)}` },
+          location.tab === "inventory" ? "Open Inventory" : location.action === "watch-machine" ? "Go to machine" : "Go to tool");
         li.append(go);
       }
       list.append(li);
@@ -2309,7 +2315,7 @@ function drawTree() {
       // One line under the name, and it is the useful one: what it makes.
       const opens = (t.opens || []).map((o) => o.name);
       card.append(make("span", { class: "ws-tech-opens" },
-                       opens.length ? opens.join(", ") : "nothing new yet"));
+                       opens.length ? opens.join(", ") : t.practice || "Measured practice"));
       if (t.known) card.append(make("i", { class: "ws-tech-mark" }, "\u2713"));
       if (lit && !lit.has(t.id)) card.classList.add("dim");
       if (tree.picked === t.id) card.classList.add("on");

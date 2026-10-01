@@ -3,6 +3,18 @@
   "about": "What a person can know how to do (docs/knowledge-and-progression.md, 3.1). A technique names the processes it lets someone operate and is never a property of matter.",
   "techniques": [
     {
+      "id":"using-ground-tools", "version":1, "name":"Gathering by hand",
+      "practice":"Gather soil / sand",
+      "describes":"Use a whole ground tool to remove measured dry soil or sand",
+      "prerequisites":{"all_of":[]}, "learn_from":["experiment"], "processes":[],
+      "earned_by":{"any_of":[
+        {"id":"used-field-pick","says":"Study a Field pick, then use it on dry soil or sand.",
+         "all_of":[{"design":"field-pick","demonstrated":true,"test":"study-example"},{"design":"field-pick","demonstrated":true,"test":"loosens-soil"}]},
+        {"id":"used-found-pick","says":"Study a wooden pick, then use it on dry soil or sand.",
+         "all_of":[{"design":"one-piece-wooden-pick","demonstrated":true,"test":"study-example"},{"design":"one-piece-wooden-pick","demonstrated":true,"test":"loosens-soil"}]}
+      ]}
+    },
+    {
       "id": "rough-shaping-wood",
       "version": 1,
       "name": "Rough-shaping wood",

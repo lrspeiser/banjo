@@ -160,6 +160,11 @@ class RoomStore:
             import machine_witness
             machine_witness.validate_pending(learning,runtime,getattr(room,"player_records",{}))
             record["machine_evidence_pending"] = learning
+        personal = getattr(room,"player_evidence_pending",None)
+        if personal is not None:
+            import player_learning
+            player_learning.validate_pending(personal,world,getattr(room,"player_records",{}))
+            record["player_evidence_pending"] = json.loads(json.dumps(personal,allow_nan=False))
         text = json.dumps(record, allow_nan=False)
         path = self.path_of(room.scene)
         with self.lock:
@@ -169,6 +174,7 @@ class RoomStore:
             os.replace(partial, path)
             room.market_durable_pending = {r.get("request_id") for r in record.get("market_pending", [])
                                            if isinstance(r, dict)}
+            room.player_learning_durable_ids = {r['evidence']['id'] for r in record.get('player_evidence_pending',[])}
         return True
 
     def load(self, scene: str) -> Any:
@@ -228,6 +234,10 @@ class RoomStore:
         room.machine_evidence_pending = record.get("machine_evidence_pending", [])
         import machine_witness
         machine_witness.validate_pending(room.machine_evidence_pending,room.machine_runtime,room.player_records)
+        room.player_evidence_pending = record.get("player_evidence_pending", [])
+        import player_learning
+        player_learning.validate_pending(room.player_evidence_pending,record.get("world"),room.player_records)
+        room.player_learning_durable_ids = {r['evidence']['id'] for r in room.player_evidence_pending}
         room.market_pending = record.get("market_pending", [])
         if not isinstance(room.market_pending, list):
             raise ValueError("Invalid market deposit record")
@@ -311,6 +321,7 @@ def funded(room: Any) -> bool:
             or isinstance(getattr(room, "fabrication_record", None), dict)
             or bool(getattr(room,"machine_runtime",None))
             or bool(getattr(room,"machine_evidence_pending",None))
+            or bool(getattr(room,"player_evidence_pending",None))
             or bool((getattr(room,"ground_transfers",None) or {}).get("receipts")))
 
 

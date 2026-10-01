@@ -65,6 +65,7 @@ import workshop_install
 import world_upgrades
 import world_access
 import machine_witness
+import player_learning
 import scene_chat
 import network_admission
 from network_admission import Inadmissible, LIMITS, describe_package
@@ -1958,8 +1959,17 @@ class Handler(BaseHTTPRequestHandler):
                 # the page keeps the room running (tool_use.run). The swing is
                 # the person's, so what it does is credited to their notebook.
                 _this_pages_room(self.app,body)
+                player_learning.require_capacity(self.app)
                 with (self.app.live.as_actor(player) if player else nullcontext()):
                     answer=tool_use.run(self.app,body,note=note_strike)
+                if getattr(self.app,'world_id',None):
+                    if not keep_world(self.app,'the personal tool action closed'):
+                        answer['learning_pending']=True
+                    if any(r['owner']==player for r in player_learning.pending_of(self.app)):
+                        answer['learning_pending']=True
+                    if answer.get('learning_pending'):
+                        answer['said']=(answer.get('said') or '')+' Journal update pending.'
+                    answer['notebook']=knowledge_view(self.app)
                 return self.send(answer)
             if path=="/api/world/inventory":
                 # One change to what the person has (inventory_room.request):
@@ -2737,6 +2747,7 @@ def keep_world(app,why=""):
         if not room_store.keep(app,room): return False
         room.world_saved_t=float(saved.get("t_s") or 0.0)
         machine_witness.saved(app,journal_of,registry())
+        if getattr(app,'world_id',None): player_learning.saved(app,journal_of,registry())
     return True
 
 
@@ -2976,6 +2987,10 @@ def _core_hand_step(app, name, step, person):
     target = _live_body(app, name)
     if step["do"] == "inspect":
         state = {k: target[k] for k in ("position_m", "mass_kg", "dimensions_m", "anchored", "temperature_k") if k in target}
+        if player_learning.study(app,workshop_library.REQUEST_OWNER.get(),name,registry()):
+            saved=keep_world(app,'the held tool was studied')
+            pending=any(r['owner']==workshop_library.REQUEST_OWNER.get() for r in player_learning.pending_of(app))
+            state['study']='journal update pending' if not saved or pending else 'saved'
         return f"inspected {name}: " + json.dumps(state, allow_nan=False), None
     if person is None:
         raise ValueError("Use needs the person's position and facing")
@@ -3436,7 +3451,9 @@ def hear(app,session,reply):
             journal.add_note(progression.result_key(session.id,record),why)
             continue
         evidence=progression.evidence_from(record,session_id=session.id,spec=spec,registry=registry(),at=at)
-        if evidence is not None: journal.add_evidence(evidence)
+        if evidence is not None:
+            if getattr(app,'world_id',None): player_learning.ground(app,owner,session,record,registry())
+            else: journal.add_evidence(evidence)
     # And what that has now earned them. Learning is the only thing here that
     # was missing: evidence has been piling up in the journal since increment 2
     # and no code path could turn any of it into a capability.
