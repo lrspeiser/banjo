@@ -420,6 +420,57 @@ class ObjectControls(unittest.TestCase):
         self.assertEqual([],app.reply_listeners)
         self.assertFalse(app.live.session.tool_busy)
 
+    def test_grounded_readiness_lifts_before_turning_and_keeps_failure_receipt(self):
+        for mode in ('reached','parted','blocked'):
+            with self.subTest(mode=mode):
+                detach=mode=='parted'
+                app=self.app();native=app.live.act;count=0
+                app.live.session.state['hand']['grip_m']=[13,.65,-4.9]
+                grounded={**self.point,'tip':[13,.62,-4.9]}
+                joint={'id':7,'a':'pick arm','b':'pick haft','attached':True}
+                def act(body):
+                    nonlocal count
+                    if body['op']=='joints':return {'joints':[joint]}
+                    if body['op']=='step':
+                        app.live.requests.append(body);return {'ok':True}
+                    if body['op']=='stroke':
+                        app.live.requests.append(body);count+=1
+                        hand=app.live.session.state['hand']
+                        hand.update(grip_m=body['path'][-1],stroking=False,stroke_ended='reached',work_j=-.25)
+                        if detach and count==1:
+                            joint.update(attached=False,parted_because='native mount load exceeded capacity')
+                            for listener in list(app.reply_listeners):
+                                listener(app.live.session,{'joints':[joint]})
+                        return {'ok':True,'stroking':True}
+                    return native(body)
+                app.live.act=act
+                def point(*args):
+                    if detach and count:return None
+                    return grounded if count==0 or mode=='blocked' else self.point
+                with mock.patch.object(tool_use,'_native_point',side_effect=point):
+                    answer=tool_use.run(app,{'person':self.person,'target_name':'made item'})
+                actions=[r for r in app.live.requests if r['op'] in ('stroke','step')]
+                self.assertEqual('stroke',actions[0]['op'],'do not turn the wrist against the floor')
+                self.assertEqual([13,1.25,-4.9],actions[0]['path'][-1])
+                if detach:
+                    self.assertEqual(1,count)
+                    self.assertEqual('lift',answer['result']['phase'])
+                    self.assertEqual(-.25,answer['result']['hand_work_j'])
+                    self.assertEqual([joint],answer['result']['parted_joints'])
+                    self.assertEqual([],answer['result']['impacts'])
+                    self.assertEqual([],answer['did'])
+                    self.assertFalse(answer['repeat'])
+                    self.assertIn('lifting',answer['refused'])
+                elif mode=='blocked':
+                    self.assertEqual(1,count)
+                    self.assertEqual('lift',answer['result']['phase'])
+                    self.assertIn('cannot lift clear',answer['refused'])
+                    self.assertFalse(any(r['op']=='step' for r in actions))
+                else:
+                    self.assertNotIn('refused',answer)
+                self.assertEqual([],app.reply_listeners)
+                self.assertFalse(app.live.session.tool_busy)
+
     def test_object_ready_pose_points_at_contact_including_vertical_rays(self):
         import tool_gestures as gestures
         for direction in ([0,0,-1],[0,-1,0],[0,1,0],[1,0,0]):

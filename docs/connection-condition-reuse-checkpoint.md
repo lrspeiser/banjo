@@ -145,11 +145,62 @@ transport reset; a fetch and ordinary HTTP/1.1 fast-forward push succeeded.
 The unchanged older preview runner/DLL/CLI hashes were rechecked; no preview
 server was restarted or binary overwritten.
 
+## Manufactured-source and readiness follow-up
+
+Object preparation now asks the native survey for the actual ground or flat
+floor height. A grounded working point is lifted with the bounded native hand
+before the wrist turns; a blocked lift refuses instead of turning against the
+floor. Already positioned short taps retain their existing path. The native
+survey exposes the concrete floor height without reporting diggable terrain.
+No body pose, force cap, material strength or elapsed time is assigned by the host.
+
+Every normal/refused object attempt retains measured contact, connection, signed
+hand-work and clock receipts, including a phase identifying a lifting or
+positioning failure. No target impact is claimed when preparation failed.
+The HTTP tool response reconciles all native separated inventory groups before
+the paired save and supplies the current private Inventory to the page immediately.
+
+The new `NativeRemake` paid-source case uses normal gravity, 5 mm cells and
+1/240 s. Explicit finite rack/battery supplies manufacture an 8.06588 kg
+iron-head/oak-handle item. Its 5 mm square sampled mount is 0.000025 m² and has
+catalog-derived 2250 N tension / 275 N shear capacity, with the existing 1.0
+efficiency factors. Bounded lift produces an actual 536.34764 N shear failure;
+no target impact occurs. The remaining handle is stowed, its actual condition
+is reviewed, and paid Make spends supplies for a stronger 1.38528 kg replacement.
+Ordinary pickup and object Use produce native contact with the glass fixture.
+Failed Start save restores the exact native/ledger state; retry reserves once;
+whole reopening retains the failed original connection, parked source, review
+binding and accepted request. This is a replacement, not healing or repair.
+
+Combined stock received is 0.259 kg oak + 9.19216 kg iron and native energy
+received is 945.116 J. Local fabrication material, energy and work residuals
+are zero; native transfer residual is -2.274e-13 J. Grip/contact physics and
+global momentum/energy/reaction qualification are unchanged. The weak mount's
+lifting failure does not qualify target-impact damage or realistic strength.
+
+Verification on Windows/MSVC Release in `build/agent-object-strike`: all 30
+host tool controls pass; the existing 18 object-strike/quick-tool/fabrication
+checks pass in 118.339 s; the focused paid-source/browser pair passes in
+11.977 s; the final host/paid-source selection passes in 12.168 s. The rebuilt
+LiveWorld suite passes in 26.20 s. Browser verification includes the actual
+tool response reaching Inventory; this does not qualify a native raylib window.
+Source registration is 297/297; JavaScript syntax and diff whitespace pass.
+Evidence is `build/resource-flow/paid-source-lift-replacement.json`,
+`object-positioning-tests.log`, `paid-source-positioning-test.log` and
+`positioning-final.log`. Existing preview servers/binaries are unchanged.
+
+The separate paid made-tool → made-object probe reaches actual native contacts,
+but its iron target connection does not fail in four ordinary uses. It therefore
+does not qualify the requested made-object damage route. Fresh-world supplies,
+target-impact damage, held internal fracture, genuine repair, peers and server
+restart across that complete journey remain R3.
+
 ## Remaining R3 work
 
 Host inventory now separates native connection groups as described above. The
-test's original source is an authored weak fixture, not a previously paid
-manufactured product. Complete the fresh-world made-item damage → Lab review →
+earlier test's source is an authored weak fixture; the paid-source follow-up
+above extends manufacture but still fails during lifting. Complete the
+fresh-world made-item damage → Lab review →
 paid result → collection/equip/use journey with correct detached ownership,
 peers, failure/retry and server restart. Integrate actual held source/target
 internal damage and finite interface/clock/grip handling through the paired

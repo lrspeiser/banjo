@@ -38,7 +38,7 @@ const LIFT_M = 0.6;
 const LIFT_MS = 200;
 export function makeTools(ctx) {
   const { world, act, api, say, remember, showUse, camera, carryGround, scene, whereIAm,
-          lastAction, takeIntoHand, showHolding, showNotebook } = ctx;
+          lastAction, takeIntoHand, showHolding, showNotebook, showInventory } = ctx;
 
   function profileOf(name) {
     return (world.tools || []).find((p) => p.parts.includes(name)) || null;
@@ -244,6 +244,10 @@ export function makeTools(ctx) {
     // A finished stroke can carry a newer personal journal, even if the
     // player has since put down the tool. Do not wait for another live step.
     if (answer?.notebook) showNotebook(answer.notebook, true);
+    if (answer?.inventory) {
+      world.inventory = answer.inventory;
+      showInventory?.();
+    }
     if (world.held !== held) return;          // put down meanwhile
     use.last = answer;                        // each stroke and how it ended (done)
     if (answer && answer.refused) {

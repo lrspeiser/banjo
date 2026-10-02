@@ -13311,7 +13311,8 @@ std::string LiveWorld::environmentState() const {
 }
 
 std::string LiveWorld::survey(double x, double z) const {
-    if (!impl_->environment) return R"({"on_the_ground":false})";
+    if (!impl_->environment) return nlohmann::json{{"on_the_ground", false},
+        {"floor_m", impl_->setup->ground_y}}.dump();
     return impl_->environment->surveyJson(x, z);
 }
 

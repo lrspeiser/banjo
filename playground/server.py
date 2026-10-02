@@ -1985,6 +1985,9 @@ class Handler(BaseHTTPRequestHandler):
                 player_learning.require_capacity(self.app)
                 with (self.app.live.as_actor(player) if player else nullcontext()):
                     answer=tool_use.run(self.app,body,note=note_strike)
+                # Reconcile native separation before saving the paired world
+                # and return the current hand/bag even after refused readiness.
+                answer['inventory']=inventory_room.shown(self.app,player)
                 if getattr(self.app,'world_id',None):
                     if not keep_world(self.app,'the personal tool action closed'):
                         answer['learning_pending']=True

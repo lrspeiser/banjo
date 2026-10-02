@@ -377,12 +377,55 @@ def _object_contact(app,said,use,tool,eyes,note):
     if listeners is not None: listeners.append(listen)
     began=float(session.state.get('t') or 0)
     work_before=float(live_session.current_hand(session).get('work_j') or 0)
-    ready=said['ready'];direction=target['direction'];done=[]
+    ready=said['ready'];direction=target['direction'];done=[];phase='ready'
+    def finish(refused=None):
+        # Preparation can itself separate a real connection. Keep its work,
+        # clock and failure history even when the selected target was not hit.
+        listen(session,app.live.act({'session':session.id,'op':'joints'}))
+        hand=live_session.current_hand(session)
+        connected=hand.get('holding')==tool and _native_point(app,tool) is not None
+        complete=not overflow and not hand.get('stroking')
+        result={'schema':'banjo.object-strike.v1','target':name,'tool':tool,
+                'from_s':began,'to_s':float(session.state.get('t') or began),
+                'hand_work_j':float(hand.get('work_j') or 0)-work_before,
+                'impacts':impacts,'parted_joints':list(parted.values()),'phase':phase,
+                'complete':complete,'working_point_connected':connected,
+                'internal_fracture_supported':False,'wear_supported':False}
+        said_result=(f'{len(parted)} connection'+('s' if len(parted)!=1 else '')+' separated.') if parted else \
+            (f'Struck {name}.' if impacts else 'No contact with the selected item.')
+        answer={'action':'Strike','did':['Strike'] if impacts else [],'done':done,'said':said_result,
+                'detail':'Internal fracture from held strikes is not available yet.',
+                'result':result,'carried':_carried(app),
+                'repeat':bool(not refused and use['repeat'] and connected and impacts and complete),
+                'gesture':'object-contact'}
+        if refused: answer['refused']=refused
+        return answer
     try:
         # A wish, never a placement. The actor's normal world clock moves the
         # actual head/handle and can refuse readiness if an obstacle stops it.
         grip=_grip(session)
         if grip is not None and math.dist(grip,ready['hand'])>.1:
+            point=_native_point(app,tool)
+            if not point: return finish('The working point is disconnected. Inspect the tool in Lab.')
+            survey=(app.live.act({'session':session.id,'op':'survey',
+                                  'at':[point['tip'][0],point['tip'][2]]}) or {}).get('survey') or {}
+            floor=survey.get('ground_m',survey.get('floor_m'))
+            if floor is not None and point['tip'][1]<float(floor)+.45:
+                phase='lift'
+                high=[grip[0],grip[1]+.6,grip[2]]
+                started=app.live.act({'session':session.id,'op':'stroke','path':[grip,high],
+                    'speed_m_s':2.,'accel_m_s2':8.,'lead_m':tool_gestures.LEAD_M,
+                    'give_up_s':2.,'let_go':False})
+                done.append('lift: '+_stroke(app,started=bool(started.get('stroking'))))
+                if live_session.current_hand(session).get('holding')!=tool:
+                    return finish('The tool is no longer in your hand.')
+                lifted=_native_point(app,tool)
+                if not lifted:
+                    return finish('The working point disconnected while lifting. Inspect the tool in Lab.')
+                if lifted['tip'][1]<float(floor)+.45:
+                    return finish('The tool cannot lift clear of the floor. Move to a clear spot.')
+                grip=_grip(session)
+            phase='ready'
             # Pickup can start far from the working pose. Move the wish along
             # a bounded path instead of giving idle feedback a large jump.
             app.live.act({'session':session.id,'op':'step','dt':1/240,'n':1,
@@ -397,18 +440,19 @@ def _object_contact(app,said,use,tool,eyes,note):
         deadline=time.monotonic()+2
         while time.monotonic()<deadline:
             if live_session.current_hand(session).get('holding')!=tool:
-                return {'action':'Strike','refused':'The tool is no longer in your hand.','done':done}
+                return finish('The tool is no longer in your hand.')
             point=_native_point(app,tool)
             if not point:
-                return {'action':'Strike','refused':'The working point is disconnected. Inspect the tool in Lab.','done':done}
+                return finish('The working point disconnected while positioning. Inspect the tool in Lab.')
             if (math.dist(point['tip'],wanted)<.035 and
                 sum(point['pointing'][i]*direction[i] for i in range(3))>.98): break
             time.sleep(.005)
         else:
-            return {'action':'Strike','refused':'The tool cannot reach that contact from here.','done':done}
+            return finish('The tool cannot reach that contact from here.')
         # A blocked solid should receive a brief press, not a one-second hold.
         # Cadence sets the bounded wish duration, never force or contact outcome.
         duration=.5/use['cadence_hz']
+        phase='press'
         grip=_grip(session)
         into=[grip[i]+(tool_gestures.CLEARANCE_M+tool_gestures.BITE_M)*direction[i] for i in range(3)]
         started=app.live.act({'session':session.id,'op':'stroke','path':[grip,into],
@@ -420,29 +464,13 @@ def _object_contact(app,said,use,tool,eyes,note):
         hand=live_session.current_hand(session)
         if (grip is not None and hand.get('holding')==tool and not hand.get('stroking')
                 and _native_point(app,tool) is not None):
+            phase='withdraw'
             back=[grip[i]-tool_gestures.CLEARANCE_M*direction[i] for i in range(3)]
             started=app.live.act({'session':session.id,'op':'stroke','path':[grip,back],
                 'speed_m_s':use['swing']['speed_m_s'],'accel_m_s2':tool_gestures.ACCEL_M_S2,
                 'lead_m':tool_gestures.LEAD_M,'give_up_s':duration,'let_go':False})
             done.append('withdraw: '+_stroke(app,started=bool(started.get('stroking'))))
-        # Native joint failure is retained in the body's save state. A joint
-        # query may still carry the latest one-shot failure if no page step did.
-        listen(session,app.live.act({'session':session.id,'op':'joints'}))
-        hand=live_session.current_hand(session)
-        connected=hand.get('holding')==tool and _native_point(app,tool) is not None
-        complete=not overflow and not hand.get('stroking')
-        work=float(live_session.current_hand(session).get('work_j') or 0)-work_before
-        result={'schema':'banjo.object-strike.v1','target':name,'tool':tool,
-                'from_s':began,'to_s':float(session.state.get('t') or began),
-                'hand_work_j':work,'impacts':impacts,'parted_joints':list(parted.values()),
-                'complete':complete,'working_point_connected':connected,
-                'internal_fracture_supported':False,'wear_supported':False}
-        said_result=(f'{len(parted)} connection'+('s' if len(parted)!=1 else '')+' separated.') if parted else \
-            (f'Struck {name}.' if impacts else 'No contact with the selected item.')
-        return {'action':'Strike','did':['Strike'],'done':done,'said':said_result,
-                'detail':'Internal fracture from held strikes is not available yet.',
-                'result':result,'carried':_carried(app),'repeat':bool(use['repeat'] and connected and impacts and complete),
-                'gesture':'object-contact'}
+        return finish()
     finally:
         if listeners is not None and listen in listeners: listeners.remove(listen)
 

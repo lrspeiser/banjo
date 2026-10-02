@@ -8600,6 +8600,7 @@ function rememberProfiles(spec) {
 // tool ready, draws the ring and sends the click.
 const tools = makeTools({ world, act, api, say, remember, showUse, camera, carryGround, scene,
                           whereIAm, lastAction, takeIntoHand, showHolding,
+                          showInventory,
                           showNotebook: (book) => showNotebook(book, notebookRevision >= 0) });
 
 function profileOf(name) {

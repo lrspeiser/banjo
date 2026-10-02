@@ -245,6 +245,8 @@ class NativeObjectStrikes(unittest.TestCase):
             'native':self.post('/api/live/act',{'session':sid,'op':'tool_points'},world),
             'view':page.evaluate('({camera:banjoRoom.camera.position.toArray(),target:banjoRoom.use().target})')})
         self.assertEqual('object-contact',answer['gesture'])
+        self.assertEqual(answer['inventory']['record']['revision'],
+                         page.evaluate('banjoRoom.world.inventory.record.revision'))
         self.assertTrue(answer['result']['parted_joints'],answer)
         # A browser can begin Use in sustained native contact after its carry
         # clock has already reported the impact. Require the target's actual
