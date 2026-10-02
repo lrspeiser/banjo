@@ -3037,6 +3037,92 @@ std::pair<Vec3, Vec3> JoltWorld::shapeBoundsTurned(MatterBodyId body_id,
             Vec3{box.mMax.GetX(), box.mMax.GetY(), box.mMax.GetZ()}};
 }
 
+PointShapeQuery JoltWorld::pointShapeContacts(MatterBodyId body_id,Vec3 point,
+    double radius,double separation,unsigned maximum_contacts) const {
+    const auto finite=[](Vec3 value){return std::isfinite(value.x)&&std::isfinite(value.y)&&std::isfinite(value.z);};
+    if(!finite(point)||!std::isfinite(radius)||radius<1e-6||radius>100||
+        !std::isfinite(separation)||separation<0||separation>1||maximum_contacts==0||maximum_contacts>256)
+        throw std::invalid_argument("invalid material-point native shape query or budget");
+    const auto found=impl_->bodies_.find(body_id);
+    if(found==impl_->bodies_.end())throw std::invalid_argument("point shape query body is missing");
+    JPH::TransformedShape source;
+    {
+        JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(),found->second);
+        if(!lock.Succeeded())throw std::runtime_error("cannot lock point query shape");
+        source=lock.GetBody().GetTransformedShape();
+    }
+    // Subtract the double world origin before converting the local collision
+    // frame to float. A distant world must not collapse centimetre geometry.
+    const Vec3 offset{double(source.mShapePositionCOM.GetX())-point.x,
+        double(source.mShapePositionCOM.GetY())-point.y,double(source.mShapePositionCOM.GetZ())-point.z};
+    const double relative_limit=std::sqrt(double(std::numeric_limits<float>::max()))/8;
+    if(!finite(offset)||std::hypot(offset.x,offset.y,offset.z)>relative_limit)
+        throw std::invalid_argument("point shape query exceeds native relative range");
+    PointShapeQuery result;
+    result.envelope_radius_m=double(float(radius));
+    float search=float(separation);
+    if(double(search)<separation)search=std::nextafter(search,std::numeric_limits<float>::infinity());
+    result.separation_limit_m=double(search);
+    JPH::RefConst<JPH::Shape> envelope=new JPH::SphereShape(float(result.envelope_radius_m));
+    JPH::CollideShapeSettings settings;
+    settings.mMaxSeparationDistance=search;
+    settings.mActiveEdgeMode=JPH::EActiveEdgeMode::CollideWithAll;
+    settings.mBackFaceMode=JPH::EBackFaceMode::CollideWithBackFaces;
+    class BoundedCollector final : public JPH::CollideShapeCollector {
+    public:
+        explicit BoundedCollector(unsigned limit):limit_(limit) {hits.reserve(limit);}
+        void AddHit(const JPH::CollideShapeResult &hit) override {
+            if(hits.size()==limit_) {overflow=true;ForceEarlyOut();return;}
+            hits.push_back(hit);
+        }
+        std::vector<JPH::CollideShapeResult> hits;
+        bool overflow{};
+    private:
+        unsigned limit_;
+    } collector(maximum_contacts);
+    JPH::CollisionDispatch::sCollideShapeVsShape(envelope.GetPtr(),source.mShape.GetPtr(),
+        JPH::Vec3::sReplicate(1),source.GetShapeScale(),JPH::Mat44::sIdentity(),
+        JPH::Mat44::sRotationTranslation(source.mShapeRotation,toJolt(offset)),
+        JPH::SubShapeIDCreator(),source.mSubShapeIDCreator,settings,collector);
+    if(collector.overflow)throw std::length_error("material-point native contact witness budget exceeded");
+    const auto &material=impl_->contact_states_.at(body_id);
+    result.contacts.reserve(collector.hits.size());
+    for(const auto &hit:collector.hits) {
+        const Vec3 axis=fromJoltVector(hit.mPenetrationAxis);
+        const double axis_length=std::hypot(axis.x,axis.y,axis.z);
+        const Vec3 on_source=fromJoltVector(hit.mContactPointOn2),on_envelope=fromJoltVector(hit.mContactPointOn1);
+        if(!finite(axis)||!std::isfinite(axis_length)||axis_length<=0||!finite(on_source)||!finite(on_envelope)||
+            !std::isfinite(hit.mPenetrationDepth))
+            throw std::domain_error("native material-point witness is unresolved");
+        PointShapeContact contact;
+        contact.gap_m=-double(hit.mPenetrationDepth);
+        contact.normal_world=-axis/axis_length;
+        contact.point_on_body_world_m=point+on_source;
+        contact.point_on_envelope_world_m=point+on_envelope;
+        contact.sub_shape_id=hit.mSubShapeID2.GetValue();
+        contact.shape_user_data=source.GetSubShapeUserData(hit.mSubShapeID2);
+        contact.body_contact=material.contact;
+        if(!material.part_contacts.empty()) {
+            const auto index=contact.shape_user_data;
+            if(index<1||index>material.part_contacts.size())
+                throw std::domain_error("native contact leaf has no declared material");
+            contact.body_contact=material.part_contacts[std::size_t(index-1)];
+        }
+        if(!finite(contact.point_on_body_world_m)||!finite(contact.point_on_envelope_world_m))
+            throw std::invalid_argument("native contact world witness exceeds finite range");
+        result.contacts.push_back(contact);
+    }
+    std::sort(result.contacts.begin(),result.contacts.end(),[](const PointShapeContact &a,const PointShapeContact &b) {
+        if(a.shape_user_data!=b.shape_user_data)return a.shape_user_data<b.shape_user_data;
+        if(a.sub_shape_id!=b.sub_shape_id)return a.sub_shape_id<b.sub_shape_id;
+        if(a.gap_m!=b.gap_m)return a.gap_m<b.gap_m;
+        if(a.normal_world.x!=b.normal_world.x)return a.normal_world.x<b.normal_world.x;
+        if(a.normal_world.y!=b.normal_world.y)return a.normal_world.y<b.normal_world.y;
+        return a.normal_world.z<b.normal_world.z;
+    });
+    return result;
+}
+
 std::vector<PlacementOverlap> JoltWorld::overlapsAt(MatterBodyId body_id, const Vec3 &center_of_mass_world_m,
                                                     const Quat &orientation_world, double tolerance_m) const {
     const auto found = impl_->bodies_.find(body_id);

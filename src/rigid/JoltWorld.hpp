@@ -110,6 +110,18 @@ struct PointContactKick {
     double numerical_energy_change_j{},delivered_normal_speed_m_s{},delivered_slip_m_s{};
     Vec3 momentum_error_kg_m_s{},angular_momentum_error_kg_m2_s{};
 };
+struct PointShapeContact {
+    double gap_m{}; // Positive separation, negative envelope penetration.
+    Vec3 normal_world{}; // Native body toward envelope centre.
+    Vec3 point_on_body_world_m{},point_on_envelope_world_m{};
+    std::uint32_t sub_shape_id{}; // Transient native leaf ID, not saved identity.
+    std::uint64_t shape_user_data{};
+    CompiledContactMaterial body_contact;
+};
+struct PointShapeQuery {
+    double envelope_radius_m{},separation_limit_m{}; // Actual native float inputs.
+    std::vector<PointShapeContact> contacts;
+};
 struct CohesiveTensionKick {
     CohesiveInterfaceIncrement interface_increment;
     PairImpulseAudit transfer;
@@ -406,6 +418,17 @@ public:
     [[nodiscard]] PointContactKick applyExternalPointContact(MatterBodyId target_proxy,
         MatterBodyId striker,ActiveNodeState &point,Vec3 normal_world,double gap_m,double dt_s,
         const PointRigidContactSettings &settings,const PointContactRoundoffBudget &budget);
+    // Read-only native shape query for a material point's spherical contact
+    // envelope. All native leaf witnesses within the separation limit, ordered
+    // by leaf identity; no AABB substitution, closest-only truncation or pair
+    // response. Source pose/shape and per-leaf contact material are read now.
+    // Host thread between steps. Radius 1 um..100 m, separation 0..1 m,
+    // contact budget 1..256; overflow refuses the whole result. Native GJK/EPA
+    // geometry tolerances apply. No surface/manifold reduction, pose correction,
+    // impulse, spin, fracture, time integration or persistence is provided.
+    [[nodiscard]] PointShapeQuery pointShapeContacts(MatterBodyId body,
+        Vec3 point_world_m,double envelope_radius_m,double separation_limit_m=0,
+        unsigned maximum_contacts=64) const;
     // Central tensile connector between body-local points; Jolt retains every
     // surface contact. Compression stiffness must be zero. Requires double
     // positions and Jolt pair ownership; material-activation deferral rejects.

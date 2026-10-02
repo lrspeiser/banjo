@@ -8,10 +8,12 @@
 and tested, with [wrist torque and named source accounts](held-strike-wrench-checkpoint.md).
 The [finite rigid contact/native reaction primitive](held-strike-contact-checkpoint.md)
 retains full source inertia and measured recoil/spin, with explicit float error
-accounts. These are tested integration boundaries. Next connect complete native
-geometry witnesses and preserve finite fixing load paths, held assemblies,
-hand/joint reactions and accepted elapsed time, then the object-target route
-and complete acceptance checks below. R3 remains open.
+accounts. [Actual native geometry and a fixed-tool reaction phase](held-strike-shape-checkpoint.md)
+retain current shape/leaf materials, head/handle bodies and local native fixing
+loads. These are tested integration boundaries. Next synchronize the CPU target
+with actual native held assemblies, hand/joint reactions and accepted elapsed
+time, then the object-target route and complete acceptance checks below.
+R3 remains open.
 
 The current primary-use route only accepts a terrain target. Native fracture
 islands also omit a striker while it remains held; an exact rigid part has no

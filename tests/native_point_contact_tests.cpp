@@ -174,9 +174,266 @@ void repeatedContactRetainsNativeState() {
             "repeated contact lost the native source spin reaction");
     std::cout<<"ordered contacts retain native recoil and separate measured reactions\n";
 }
+void nearVec(Vec3 value,Vec3 expected,double tolerance,const char *message) {
+    near(length(value-expected),0,tolerance,message);
+}
+const PointShapeContact &single(const PointShapeQuery &query) {
+    require(query.contacts.size()==1,"expected one complete native leaf witness");return query.contacts.front();
+}
+void materialMatches(const CompiledContactMaterial &actual,const MaterialDefinition &material) {
+    const auto expected=compileContactMaterial(material);
+    require(actual.static_friction==expected.static_friction&&actual.dynamic_friction==expected.dynamic_friction&&
+            actual.restitution==expected.restitution&&actual.rolling_resistance==expected.rolling_resistance&&
+            actual.young_modulus_pa==expected.young_modulus_pa&&actual.poisson_ratio==expected.poisson_ratio&&
+            actual.contact_damping_ratio==expected.contact_damping_ratio,"witness lost its native leaf material");
+}
+void nativeSphereAndRotatedBoxWitnesses() {
+    constexpr double envelope=.016;
+    const Vec3 normal=normalized(Vec3{1,2,-3}),centre{10,.5,-4};
+    for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        JoltWorld world;world.setGravity({});
+        const auto material=makeReferenceMaterial(preset,17);
+        world.addBall({1,.08,material,centre,{1,2,3},{.1,-.2,.3}});
+        const auto before=world.snapshot(1);
+        for(double gap:{-.002,0.,.003}) {
+            const Vec3 at=centre+(.08+envelope+gap)*normal;
+            const auto query=world.pointShapeContacts(1,at,envelope,.004);
+            const auto &hit=single(query);
+            near(hit.gap_m,gap,1e-6,"sphere signed envelope gap");
+            nearVec(hit.normal_world,normal,2e-6,"native sphere normal orientation");
+            nearVec(hit.point_on_body_world_m,centre+.08*normal,2e-6,"actual sphere surface witness");
+            nearVec(hit.point_on_envelope_world_m,at-query.envelope_radius_m*normal,2e-6,"actual point envelope witness");
+            near(dot(hit.point_on_envelope_world_m-hit.point_on_body_world_m,hit.normal_world),hit.gap_m,
+                 1e-6,"signed gap agrees with witness pair");
+            materialMatches(hit.body_contact,material);
+        }
+        require(world.pointShapeContacts(1,centre+.2*normal,envelope,.004).contacts.empty(),"distant sphere returned a witness");
+        same(before,world.snapshot(1));require(world.drainImpacts().empty(),"read-only sphere query produced a contact event");
+    }
+    const Quat turn{std::cos(std::numbers::pi/8),0,std::sin(std::numbers::pi/8),0};
+    const auto iron=makeReferenceMaterial(MaterialPreset::Iron,17);
+    JoltWorld world;world.addBox({1,{.4,.08,.06},iron,{centre,turn,{},{}},false});
+    const Vec3 face{.2,.01,0},outward=turn.rotate({1,0,0});
+    for(double gap:{-.004,0.,.002}) {
+        const Vec3 at=centre+turn.rotate(face+(envelope+gap)*Vec3{1,0,0});
+        const auto query=world.pointShapeContacts(1,at,envelope,.003);
+        const auto &hit=single(query);
+        near(hit.gap_m,gap,1e-6,"rotated box signed gap");
+        nearVec(hit.normal_world,outward,2e-6,"rotated box actual face normal");
+        nearVec(hit.point_on_body_world_m,centre+turn.rotate(face),2e-6,"rotated box surface witness");
+    }
+    // Inside the rotated box's world AABB, far outside its actual thin shape.
+    require(world.pointShapeContacts(1,centre+Vec3{.14,0,.14},.01,.003).contacts.empty(),
+            "native point query used the box's world bounds as occupied geometry");
+    const Vec3 shift{1e8,-2e8,3e8};
+    JoltWorld shifted;shifted.addBox({1,{.4,.08,.06},iron,{centre+shift,turn,{},{}},false});
+    const Vec3 at=centre+turn.rotate(face+(envelope+.002)*Vec3{1,0,0});
+    const auto base_query=world.pointShapeContacts(1,at,envelope,.003);
+    const auto far_query=shifted.pointShapeContacts(1,at+shift,envelope,.003);
+    const auto &base=single(base_query),&far=single(far_query);
+    near(far.gap_m,base.gap_m,1e-6,"native geometry lost local precision at distant world origin");
+    nearVec(far.normal_world,base.normal_world,2e-6,"origin shift changed native shape normal");
+    std::cout<<"sphere/rotated-box witnesses retain signed gap, native surface and distant local precision\n";
+}
+RigidCompoundDescription compound(std::vector<RigidCompoundPart> parts,Vec3 at={},Quat turn={}) {
+    RigidCompoundDescription out;out.body_id=1;out.material=makeReferenceMaterial(MaterialPreset::Oak,17);
+    Vec3 centroid{};
+    for(const auto &part:parts) {
+        const auto &material=part.material?*part.material:out.material;
+        const double mass=part.geometry.volume()*material.density_kg_m3;
+        out.mass_kg+=mass;centroid+=mass*part.center_local_m;
+    }
+    centroid=centroid/out.mass_kg;
+    out.state.center_of_mass_world_m=at+turn.rotate(centroid);out.state.orientation_world=turn;
+    for(auto &part:parts) {
+        const auto &material=part.material?*part.material:out.material;
+        const double mass=part.geometry.volume()*material.density_kg_m3;
+        part.center_local_m-=centroid;
+        const auto intrinsic=rotateInertia(part.geometry.inertia(mass),part.rotation_local);
+        const Vec3 arm=part.center_local_m;
+        const double components[]{arm.x,arm.y,arm.z};
+        for(unsigned i=0;i<3;++i)for(unsigned j=0;j<3;++j)
+            out.inertia_local_kg_m2.m[i][j]+=intrinsic.m[i][j]+mass*((i==j?lengthSquared(arm):0)-components[i]*components[j]);
+    }
+    out.parts=std::move(parts);return out;
+}
+void compoundMaterialsVoidsAndBudgets() {
+    const auto glass=makeReferenceMaterial(MaterialPreset::Glass,17),iron=makeReferenceMaterial(MaterialPreset::Iron,17);
+    const RigidPrimitive box{PrimitiveKind::Box,0,{.04,.04,.04}};
+    const Vec3 at{3,.2,-1};
+    JoltWorld world;
+    world.addCompound(compound({{box,{-.06,0,0},{},glass},{box,{.06,0,0},{},iron}},at));
+    const auto before=world.snapshot(1);
+    require(world.pointShapeContacts(1,at,.01,.005).contacts.empty(),"compound void was filled by a bounding box");
+    const auto left_query=world.pointShapeContacts(1,at+Vec3{-.025,0,0},.016,.003);
+    const auto &left=single(left_query);
+    require(left.shape_user_data==1,"left compound contact lost authored leaf tag");materialMatches(left.body_contact,glass);
+    near(left.gap_m,-.001,1e-6,"compound left actual gap");nearVec(left.normal_world,{1,0,0},2e-6,"compound left outward normal");
+    const auto right_query=world.pointShapeContacts(1,at+Vec3{.025,0,0},.016,.003);
+    const auto &right=single(right_query);
+    require(right.shape_user_data==2,"right compound contact lost authored leaf tag");materialMatches(right.body_contact,iron);
+    near(right.gap_m,-.001,1e-6,"compound right actual gap");nearVec(right.normal_world,{-1,0,0},2e-6,"compound right outward normal");
+    const auto both=world.pointShapeContacts(1,at,.045,0,2);
+    require(both.contacts.size()==2&&both.contacts[0].shape_user_data==1&&both.contacts[1].shape_user_data==2,
+            "query discarded another native leaf contact or lost canonical ordering");
+    const auto again=world.pointShapeContacts(1,at,.045,0,2);
+    for(unsigned i=0;i<2;++i) {
+        require(both.contacts[i].gap_m==again.contacts[i].gap_m&&both.contacts[i].sub_shape_id==again.contacts[i].sub_shape_id,
+                "identical query changed its native witness ordering");
+        same(both.contacts[i].point_on_body_world_m,again.contacts[i].point_on_body_world_m,"identical query changed witness");
+    }
+    bool overflow=false;try {(void)world.pointShapeContacts(1,at,.045,0,1);}catch(const std::length_error &) {overflow=true;}
+    require(overflow,"contact capacity silently truncated a multi-leaf result");
+    same(before,world.snapshot(1));require(world.drainImpacts().empty(),"read-only compound query changed contact events");
+    std::cout<<"mixed compound witnesses preserve both leaf materials and voids; overflow refuses\n";
+}
+void turnedCylinderAndConvexWitnesses() {
+    const auto oak=makeReferenceMaterial(MaterialPreset::Oak,17),glass=makeReferenceMaterial(MaterialPreset::Glass,17);
+    const RigidPrimitive cylinder{PrimitiveKind::Cylinder,0,{.08,.2,.08}};
+    const Quat part_turn{std::sqrt(.5),0,0,std::sqrt(.5)};
+    const Quat body_turn{std::cos(std::numbers::pi/12),0,std::sin(std::numbers::pi/12),0};
+    const Vec3 centre{1,.4,-2};
+    JoltWorld world;world.addCompound(compound({{cylinder,{},part_turn,oak}},centre,body_turn));
+    for(bool cap:{false,true}) {
+        const Vec3 local_normal=cap?Vec3{0,1,0}:Vec3{1,0,0};
+        const double extent=cap?.1:.04;
+        const Vec3 normal=body_turn.rotate(part_turn.rotate(local_normal));
+        const Vec3 at=centre+(extent+.016+.002)*normal;
+        const auto query=world.pointShapeContacts(1,at,.016,.003);
+        const auto &hit=single(query);
+        near(hit.gap_m,.002,3e-5,"turned native cylinder side/cap gap");
+        nearVec(hit.normal_world,normal,3e-4,"turned native cylinder side/cap normal");
+        materialMatches(hit.body_contact,oak);
+    }
+    // Uniform tetrahedron: independent simplex mass/covariance about centroid.
+    constexpr double edge=.1;
+    RigidConvexDescription tetra;tetra.body_id=2;tetra.material=glass;
+    const Vec3 centroid{edge/4,edge/4,edge/4};
+    tetra.state.center_of_mass_world_m=centre+centroid;
+    for(Vec3 vertex:{Vec3{},Vec3{edge,0,0},Vec3{0,edge,0},Vec3{0,0,edge}})tetra.vertices_local_m.push_back(vertex-centroid);
+    tetra.mass_kg=glass.density_kg_m3*edge*edge*edge/6;
+    for(unsigned i=0;i<3;++i)for(unsigned j=0;j<3;++j)
+        tetra.inertia_local_kg_m2.m[i][j]=tetra.mass_kg*edge*edge*(i==j?3./40:1./80);
+    world.addConvex(tetra);
+    const Vec3 face{edge/3,edge/3,edge/3},normal=normalized(Vec3{1,1,1});
+    const auto query=world.pointShapeContacts(2,centre+face+(.01+.002)*normal,.01,.003);
+    const auto &hit=single(query);
+    near(hit.gap_m,.002,3e-5,"convex tetrahedron diagonal face gap");
+    nearVec(hit.normal_world,normal,3e-4,"convex tetrahedron diagonal normal");
+    materialMatches(hit.body_contact,glass);
+    require(world.pointShapeContacts(2,centre+Vec3{.075,.075,.075},.01,.003).contacts.empty(),
+            "convex tetrahedron query substituted its enclosing box");
+    std::cout<<"turned cylinder and convex tetrahedron use their actual native surfaces\n";
+}
+void actualWitnessFeedsNativeReaction() {
+    constexpr double envelope=.016;
+    const Vec3 centre{1,.5,-.5};
+    const Quat turn{std::cos(std::numbers::pi/12),0,std::sin(std::numbers::pi/12),0};
+    const auto oak=makeReferenceMaterial(MaterialPreset::Oak,17);
+    for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        JoltWorld world;world.setGravity({});
+        const auto material=makeReferenceMaterial(preset,17);
+        world.addBox({1,{.4,.08,.06},material,{centre,turn,{-1,.2,.4},{1,-2,.3}},false});
+        world.addBox({2,{.01,.01,.01},oak,{{4,4,4},{},{},{}},true});
+        world.setPairContactOwner(2,1,PairContactOwner::External);
+        const auto before=world.mechanicalState(1);
+        ActiveNodeState point;
+        point.position_world_m=centre+turn.rotate({.2+envelope-.001,.01,0});
+        point.previous_position_world_m=point.position_world_m;
+        point.mass_kg=oak.density_kg_m3*cell*cell*cell;
+        const auto query=world.pointShapeContacts(1,point.position_world_m,envelope,.003);
+        const auto &hit=single(query);
+        const Vec3 tangent=turn.rotate({0,1,0});
+        point.velocity_m_s=before.motion.linear_velocity_m_s+
+            cross(before.motion.angular_velocity_rad_s,point.position_world_m-centre)-2*hit.normal_world+.5*tangent;
+        const auto law=combineContactMaterials(compileContactMaterial(oak),hit.body_contact);
+        const auto result=world.applyExternalPointContact(2,1,point,hit.normal_world,hit.gap_m,dt,
+            {law.static_friction,law.dynamic_friction,law.restitution},rounding);
+        require(result.contact.applied,"actual native shape witness did not produce contact reaction");
+        require(std::abs(result.numerical_energy_change_j)<rounding.energy_j,"actual-witness native reaction work budget");
+        std::cout<<"actual "<<materialPresetName(preset)<<" box: source mass="<<before.mass_kg<<" kg; gap="<<hit.gap_m
+                 <<" m; Jn="<<result.contact.normal_impulse_n_s<<" N s; loss="<<result.contact.dissipated_energy_j
+                 <<" J; dE="<<result.numerical_energy_change_j<<" J; dP="<<length(result.momentum_error_kg_m_s)
+                 <<" N s; dL="<<length(result.angular_momentum_error_kg_m2_s)<<" kg m2/s\n";
+    }
+}
+void nativeFixedToolRetainsItsLoadPath() {
+    const auto oak=makeReferenceMaterial(MaterialPreset::Oak,17);
+    for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        JoltWorld world;world.setGravity({});
+        const auto material=makeReferenceMaterial(preset,17);
+        world.addBox({1,{.08,.08,.08},material,{{},{},{2,0,0},{}},false});
+        world.addBox({10,{.24,.04,.04},oak,{{-.16,0,0},{},{2,0,0},{}},false});
+        world.addBox({2,{.01,.01,.01},oak,{{5,5,5},{},{},{}},true});
+        const unsigned fixing=world.addFixing({10,1,{-.04,0,0},{1,0,0},5000,5000,0});
+        // The fixing owns the joined seam's response; the external target owns
+        // both source/target pairs. No head/handle is released or merged.
+        for(auto pair:{std::pair{10U,1U},std::pair{2U,1U},std::pair{2U,10U}})
+            world.setPairContactOwner(pair.first,pair.second,PairContactOwner::External);
+        world.setDamping(1,0,0);world.setDamping(10,0,0);
+        ActiveNodeState point;point.mass_kg=oak.density_kg_m3*cell*cell*cell;
+        point.position_world_m={.04+.016-.001,.01,0};point.previous_position_world_m=point.position_world_m;
+        const auto query=world.pointShapeContacts(1,point.position_world_m,.016,.003);
+        const auto &hit=single(query);
+        const auto law=combineContactMaterials(compileContactMaterial(oak),hit.body_contact);
+        const auto handle_before=world.snapshot(10);
+        const auto kick=world.applyExternalPointContact(2,1,point,hit.normal_world,hit.gap_m,dt,
+            {law.static_friction,law.dynamic_friction,law.restitution},rounding);
+        require(kick.contact.applied,"tool head witness produced no native reaction");
+        same(handle_before,world.snapshot(10)); // A head contact is not spread over its handle.
+        const auto before=world.mechanicalTotals();
+        const auto root=world.snapshot(10);
+        const Vec3 grip_local{-.08,0,0},grip=root.center_of_mass_world_m+root.orientation_world.rotate(grip_local);
+        const Vec3 force{25,-7,3},torque{0,.2,-.1};
+        require(length(force)<800&&length(torque)<60,"fixture exceeded the native hand bounds");
+        const Vec3 old_grip_velocity=root.linear_velocity_m_s+
+            cross(root.angular_velocity_rad_s,root.orientation_world.rotate(grip_local));
+        world.pushBodyAt(10,force,grip);world.twistBody(10,torque);
+        world.step(dt);
+        const auto after=world.mechanicalTotals();
+        const auto now=world.snapshot(10);
+        const Vec3 grip_velocity=now.linear_velocity_m_s+cross(now.angular_velocity_rad_s,now.orientation_world.rotate(grip_local));
+        const double work=dt*(dot(force,.5*(old_grip_velocity+grip_velocity))+
+            dot(torque,.5*(root.angular_velocity_rad_s+now.angular_velocity_rad_s)));
+        const Vec3 p_error=after.linear_momentum_kg_m_s-before.linear_momentum_kg_m_s-dt*force;
+        const Vec3 l_error=after.angular_momentum_kg_m2_s-before.angular_momentum_kg_m2_s-dt*(cross(grip,force)+torque);
+        require(length(p_error)<1e-5&&length(l_error)<1e-5,"native fixing/root load momentum residual exceeded fixture bound");
+        const auto load=world.jointLoad(fixing,{1,0,0});
+        require(std::isfinite(load.tension_n)&&std::isfinite(load.shear_n)&&load.tension_n>0&&
+            load.tension_n<5000&&load.shear_n<5000,"ordinary tool fixing did not retain its measured finite load");
+        require(length(now.linear_velocity_m_s-handle_before.linear_velocity_m_s)>0,"head reaction bypassed the native handle load path");
+        std::cout<<materialPresetName(preset)<<" fixed source: head mass="<<kick.delivered_rigid.mass_kg
+                 <<" kg; handle mass="<<world.mechanicalState(10).mass_kg<<" kg; axial="<<load.axial_n
+                 <<" N; shear="<<load.shear_n<<" N; root work="<<work<<" J; dP="<<length(p_error)
+                 <<" N s; dL="<<length(l_error)<<" kg m2/s; unallocated dK-work="
+                 <<after.kinetic_energy_j-before.kinetic_energy_j-work<<" J\n";
+    }
+}
+void invalidQueriesRefuse() {
+    Fixture f;const auto before=f.world.snapshot(1);
+    for(const auto values:std::vector<std::pair<double,double>>{{0,0},{1e-7,0},{101,0},{.01,-1},{.01,1.01},
+        {std::numeric_limits<double>::infinity(),0},{.01,std::numeric_limits<double>::quiet_NaN()}}) {
+        bool refused=false;try {(void)f.world.pointShapeContacts(1,f.point.position_world_m,values.first,values.second);}
+        catch(const std::invalid_argument &) {refused=true;}require(refused,"invalid envelope/search distance admitted");
+    }
+    for(unsigned budget:{0U,257U}) {
+        bool refused=false;try {(void)f.world.pointShapeContacts(1,f.point.position_world_m,.01,0,budget);}
+        catch(const std::invalid_argument &) {refused=true;}require(refused,"invalid witness budget admitted");
+    }
+    for(Vec3 at:{Vec3{std::numeric_limits<double>::quiet_NaN(),0,0},Vec3{1e300,0,0}}) {
+        bool refused=false;try {(void)f.world.pointShapeContacts(1,at,.01);}
+        catch(const std::invalid_argument &) {refused=true;}require(refused,"invalid native query coordinates admitted");
+    }
+    bool refused=false;try {(void)f.world.pointShapeContacts(999,{},.01);}
+    catch(const std::invalid_argument &) {refused=true;}require(refused,"missing native query body admitted");
+    same(before,f.world.snapshot(1));
+}
 } // namespace
 int main() {
     try { std::cout.precision(12);materialReactionAndRounding();atomicRefusal();repeatedContactRetainsNativeState();
-        std::cout<<"[PASS] native material-point transfer, actual float accounting and atomic refusal\n";return 0;
+        nativeSphereAndRotatedBoxWitnesses();compoundMaterialsVoidsAndBudgets();turnedCylinderAndConvexWitnesses();
+        actualWitnessFeedsNativeReaction();invalidQueriesRefuse();
+        nativeFixedToolRetainsItsLoadPath();
+        std::cout<<"[PASS] native material-point transfer, shape witnesses, float accounting and atomic refusal\n";return 0;
     }catch(const std::exception &e) {std::cerr<<"[FAIL] "<<e.what()<<'\n';return 1;}
 }
