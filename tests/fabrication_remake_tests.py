@@ -609,6 +609,151 @@ class LabRemake(unittest.TestCase):
         if getattr(self,'chrome',None):self.chrome.close()
         flow.GoodsJourney.tearDown(self)
 
+    def test_fresh_market_paid_pick_contacts_peer_product_and_server_restart_keeps_both(self):
+        """Default 50 mm world and public supplies, without authored weak fixings.
+
+        This qualifies contact/ownership/persistence, not normal-grid destruction:
+        the current sampled catalog mounts can remain intact after a strike.
+        """
+        import workshop_fixed_assembly_tests as mixed
+        with mock.patch.object(flow.server.secrets,'randbelow',side_effect=[0,1]):
+            world,owner,app=self.setup_world()
+        peer=self.join(world,'Product holder')
+        self.assertEqual(.05,app.room.spec['cell_m'])
+        self.assertEqual({},app.room.fabrication_record['stock_kg'])
+        self.assertEqual(0,app.room.fabrication_record['energy_j'])
+        def post(path,body,player=None):return self.post(path,body,world,player)
+        def context():return {'session':app.live.session.id,'scene':app.room.scene}
+        def stock(material,mass,key):
+            reading=post('/api/workshop/market',{'action':'view'});bank_index=0
+            lot=next(o['mass_kg'] for o in reading['offers'] if o['substance']==material)
+            for index in range(math.ceil(mass/lot)):
+                offer=next(o for o in reading['offers'] if o['substance']==material)
+                while reading['balance_j']<offer['price_j']:
+                    reading=post('/api/workshop/market',{'action':'bank','joules':500,
+                        'request_id':key+'-bank-'+str(bank_index)})
+                    bank_index+=1
+                reading=post('/api/workshop/market',{'action':'buy','item_id':offer['id'],
+                    'quoted_price_j':offer['price_j'],'request_id':key+'-buy-'+str(index)})
+            reading=post('/api/world/fabrication/state',context())
+            source=next(s for s in reading['stock_sources'] if s['material']==material and s['pool']=='personal')
+            post('/api/world/fabrication/fund_stock',{**context(),'material':material,'mass_kg':mass,
+                'pool':'personal','rack_hash':source['rack_hash'],'revision':reading['state']['revision'],
+                'request_id':key+'-fund'})
+        def paid(candidate,key,position):
+            plan=post('/api/world/fabrication/plan_make',{**context(),'candidate':candidate})
+            for material,mass in model.materials(plan['quote'],'stock').items():stock(material,mass,key+'-'+material)
+            reading=post('/api/world/fabrication/state',context())
+            source=next(s for s in reading['energy_sources'] if s['max_power_w']>0)
+            post('/api/world/fabrication/connect_energy',{**context(),'store':source['id'],
+                'store_hash':source['store_hash'],'power_w':500,'revision':reading['state']['revision'],
+                'request_id':key+'-connect'})
+            post('/api/world/fabrication/wait',{**context(),'seconds':math.ceil(plan['quote']['supply_required_j']/500)})
+            reading=post('/api/world/fabrication/state',context())
+            source=next(s for s in reading['energy_sources'] if s['connected'])
+            post('/api/world/fabrication/fund_energy',{**context(),'store_hash':source['store_hash'],
+                'joules':plan['quote']['supply_required_j'],'revision':reading['state']['revision'],
+                'request_id':key+'-energy'})
+            plan=post('/api/world/fabrication/plan_make',{**context(),'candidate':candidate})
+            made=post('/api/world/fabrication/start_make',{**context(),'plan_id':plan['plan_id'],
+                'revision':plan['revision'],'request_id':key})
+            post('/api/world/fabrication/wait',{**context(),'seconds':math.ceil(made['state']['jobs'][key]['minimum_duration_s'])})
+            preview=post('/api/world/fabrication/preview',{**context(),'job_id':key,'position_m':position})
+            return post('/api/world/fabrication/commit',{**context(),'job_id':key,
+                'preview_id':preview['preview_id'],'request_id':key+'-place'})
+        target_design={'kind':'custom','parameters':{'primary_use':{'label':'Push','steps':[
+            {'do':'push_forward','distance_m':.2,'speed_m_s':.4}]}},
+            'component_overrides':{'@construction':{'added':[
+                {'name':'beam','role':'panel','family':'panel','shape':'box','material':'oak',
+                 'size_m':[2.5,.05,.05],'center_m':[0,.025,.075],'rotation_deg':[0,0,0]},
+                {'name':'head','role':'panel','family':'panel','shape':'box','material':'iron',
+                 'size_m':[.1,.1,.1],'center_m':[1.275,.05,0],'rotation_deg':[0,0,0]}]}}}
+        target=paid(target_design,'fresh-target',[-2,0])
+        design=mixed.pick();design['parameters'].update(length_m=.5,arm_m=.2,section_m=.05)
+        design['parameters']['ground_tool']['point']['tip_local_m']=[0,0,-.1]
+        design['parameters']['ground_tool']['grip']['position_local_m']=[-.2,0,0]
+        source=paid(design,'fresh-source',[-.9,1]);sid=app.live.session.id
+        self.assertTrue(source['resources_charged']);self.assertTrue(target['resources_charged'])
+        head=target['component_to_body']['head'];root=target['component_to_body']['beam']
+        def position(name):return next(b['position_m'] for b in post('/api/live/act',{'session':sid,'op':'poses'})['bodies'] if b['name']==name)
+        def person_at(x,z):
+            floor=post('/api/live/act',{'session':sid,'op':'survey','at':[x,z]})['survey']['ground_m']
+            return {'standing_m':[x,floor,z],'eyes_m':[x,floor+1.62,z],'facing':[0,0,-1]}
+        def inventory(op,item,key,person,player=None,**extra):
+            shown=post('/api/world/inventory/shown',{'session':sid},player)
+            answer=post('/api/world/inventory',{'session':sid,'op':op,'item':item,'request':key,
+                'revision':shown['record']['revision'],'person':person,**extra},player)
+            self.assertTrue(answer['ok'],answer);return answer
+        at=position(head);peer_person=person_at(at[0],at[2]+.8)
+        inventory('take_up',head,'fresh-peer-take',peer_person,peer['token'],grip=at)
+        post('/api/live/act',{'session':sid,'op':'stroke','path':[at,[at[0],at[1]+1.5,at[2]]],
+            'speed_m_s':.3,'accel_m_s2':1,'lead_m':.025,'give_up_s':8,'let_go':False},peer['token'])
+        # Named-world public steps share elapsed wall time. Tight n=120 loops
+        # do not grant eight seconds and would leave this peer mid-stroke.
+        deadline=time.monotonic()+12
+        while time.monotonic()<deadline:
+            post('/api/live/act',{'session':sid,'op':'step','dt':1/240,'n':60})
+            hand=post('/api/live/act',{'session':sid,'op':'poses'},peer['token'])['hand']
+            if not hand.get('stroking'):break
+            time.sleep(.02)
+        self.assertFalse(hand.get('stroking'),hand);self.assertEqual('reached',hand.get('stroke_ended'))
+        joint=next(j for j in post('/api/live/act',{'session':sid,'op':'joints'})['joints'] if root in (j['a'],j['b']))
+        self.assertTrue(joint['attached']);self.assertAlmostEqual(225000,joint['holds_tension_n'])
+        at=position(root);person=person_at(at[0],at[2]+1.3)
+        inventory('take_up',source['root_body'],'fresh-owner-take',person)
+        direction=[at[i]-person['eyes_m'][i] for i in range(3)];length=math.sqrt(sum(v*v for v in direction))
+        person['look_direction']=[v/length for v in direction]
+        stop=threading.Event();errors=[]
+        def clock():
+            try:
+                while not stop.is_set():
+                    post('/api/live/act',{'session':sid,'op':'step','dt':1/240,'n':60});time.sleep(.02)
+            except Exception as error:errors.append(str(error))
+        pump=threading.Thread(target=clock,daemon=True);pump.start()
+        try:hit=post('/api/world/tool/use',{'session':sid,'person':person,'target_name':root})
+        finally:stop.set();pump.join(5)
+        self.assertFalse(pump.is_alive());self.assertEqual([],errors)
+        self.assertNotIn('refused',hit,hit);self.assertTrue(hit['result']['impacts'],hit)
+        self.assertTrue(hit['result']['complete']);self.assertTrue(hit['result']['working_point_connected'])
+        self.assertFalse(hit['result']['internal_fracture_supported']);self.assertFalse(hit['result']['wear_supported'])
+        owner_shown=post('/api/world/inventory/shown',{'session':sid})
+        carried_id=next(e['id'] for e in owner_shown['hands'].values() if e)
+        inventory('stow',carried_id,'fresh-owner-stow',person)
+        owner_shown=post('/api/world/inventory/shown',{'session':sid})
+        peer_shown=post('/api/world/inventory/shown',{'session':sid},peer['token'])
+        self.assertEqual(set(source['component_to_body'].values()),set(owner_shown['stowed'][0]['parts']))
+        peer_item=next(e for e in peer_shown['hands'].values() if e)
+        self.assertEqual(set(target['component_to_body'].values()),set(peer_item['parts']))
+        self.assertEqual(head,post('/api/live/act',{'session':sid,'op':'poses'},peer['token'])['hand']['holding'])
+        self.assertTrue(flow.server.keep_world(app,'fresh paid strike and private inventories'))
+        before=install._snapshot(app.live);ledger=deepcopy(app.room.fabrication_record)
+        owner_market=post('/api/workshop/market',{'action':'view'})
+        peer_market=post('/api/workshop/market',{'action':'view'},peer['token'])
+        self.assertEqual(0,peer_market['balance_j']);self.assertEqual([],peer_market['orders'])
+        self.stop();self.start()
+        post('/api/world/player/join',{'token':owner['token']})
+        reopened=post('/api/world/open',{});sid=reopened['session'];app=self.app.hub.get(world)
+        after=install._snapshot(app.live)
+        # Whole-world restoration uses the existing bounded native hinge-angle
+        # comparison (1e-6 rad); recomputing the rover angle is not bit-exact.
+        # The two manufactured fixings and their retained history stay exact.
+        install._preserved(before,after,set())
+        made_names=set(source['component_to_body'].values())|set(target['component_to_body'].values())
+        self.assertEqual([j for j in before['joints'] if j['a'] in made_names],
+                         [j for j in after['joints'] if j['a'] in made_names])
+        self.assertEqual(before.get('player_hands'),after.get('player_hands'))
+        self.assertEqual(ledger,app.room.fabrication_record)
+        self.assertEqual(owner_shown['record'],post('/api/world/inventory/shown',{'session':sid})['record'])
+        self.assertEqual(peer_shown['record'],post('/api/world/inventory/shown',{'session':sid},peer['token'])['record'])
+        self.assertEqual(owner_market['balance_j'],post('/api/workshop/market',{'action':'view'})['balance_j'])
+        audit=model.audit(app.room.fabrication_record)
+        self.assertLess(abs(audit['energy_residual_j']),1e-7)
+        self.assertLess(max(abs(v) for v in audit['material_residual_kg'].values()),1e-12)
+        out=ROOT/'build/resource-flow';out.mkdir(parents=True,exist_ok=True)
+        (out/'fresh-paid-peer-strike-restart.json').write_text(json.dumps({
+            'cell_m':.05,'dt_s':1/240,'source':source,'target':target,'hit':hit,'audit':audit,
+            'limits':'Default generated world and public Market/solar supplies. Contact and private server restart; no target separation, held internal fracture, repair, wear or full strike conservation qualification.'},indent=2)+'\n',encoding='utf-8')
+
     def test_mixed_pick_chat_edit_save_paid_make_pickup_dig_and_restart(self):
         self.assertTrue(flow.qa_browser.CHROME.is_file(), 'Chrome required')
         with mock.patch.object(flow.server.secrets, 'randbelow', side_effect=[0, 1]):

@@ -167,7 +167,13 @@ Important behavior:
   normal-stress limit. The compiler derives the section and capacities from
   occupied faces and weaker constituent strength; never invent a damage amount
   or lower a capacity just to make a strike succeed. Thin mounts and long levers
-  need actual lifting/striking tests. Internal held-strike fracture, wear and
+  need actual lifting/striking tests at the installation world's cell size.
+  A finer Lab trial does not qualify the installed product. For a filled square
+  one-cell mount with unchanged strength, axial capacity scales with cell size
+  squared and bending capacity with cell size cubed. Keep original dimensions;
+  do not silently enlarge thin parts, change the world grid or activate proposed
+  joint-efficiency reductions to claim breakability. Report contact, separation
+  and unsupported internal damage separately. Internal held-strike fracture, wear and
   genuine repair are unavailable; paid remake creates a separate replacement
   and retains the original item and failure history.
   Exact rigid or articulated tool points are unsupported. Check geometry and
