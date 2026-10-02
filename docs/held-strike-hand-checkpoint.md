@@ -28,7 +28,8 @@ material damping or a correction impulse.
 This is an integration reference, not an installed ordinary object-strike route.
 The normal LiveWorld object/hand/fracture scheduler still needs accepted-clock
 rollback and finite fixing failure. App/preview binaries are unchanged. R1 and
-R3–R6 remain open. Publication revision is recorded after verification.
+R3–R6 remain open. Implementation `9b09d6a85be2de2ef2ef0ef21275922d14edda75`
+is published on GitHub main.
 
 ## Declared matched experiment
 
