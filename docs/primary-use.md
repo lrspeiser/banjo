@@ -1,5 +1,7 @@
 # Primary Use programs
 
+Ground-tool targeting returns [read-only material candidates](material-preview-checkpoint.md) through `/api/world/tool`: `gather.method`, `materials`, `state`, `label`. Only closed native work credits soil/sand. Rover ore and whole-object pickup remain separate; no authored preview decides drops or quantities.
+
 Ground tools follow the [shared fast-contact contract](quick-tools-checkpoint.md): short clicks/held repeat, bounded native completion, no model call per use. New Workshop and MCP authored tools inherit it; an animation does not determine work or yield.
 
 Contextual placement and saved interaction points: [contract](placement-and-interaction-points.md).

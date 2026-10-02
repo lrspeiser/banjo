@@ -1,0 +1,117 @@
+{
+  "schema": "banjo.material-preview-checkpoint.v1",
+  "source_base_revision": "3c0e9d08e14ef3b016967b5d33c2f7c8dab40a32",
+  "source_dirty_during_verification": true,
+  "environment": "Windows / Python 3.13 / MSVC 19.44 Release / actual Chrome / CPU ABI 25",
+  "source_sha256": {
+    ".github/workflows/ci.yml": "cac75714aa2c4d9b3c8405f6b2df59929e26d17550a9079efc5963cdb670168d",
+    "mcp/resource_previews.py": "c4d86247c2bbaeac00a68e551f771c5b84eafbd6aba334074dbde82050a7041d",
+    "mcp/banjo_mcp.py": "2baf18b8cec66d1e9c44d9b5ae69a6f64c55cf4dfb088bda7ae1c1f10dbe2a58",
+    "playground/tool_use.py": "b3a5f563c4e0034f3b3ce4925accb9b689e8070aac8692836676688437f6e754",
+    "playground/tools.js": "362890e8a9a22b05870d41bd38adb2a930092d93c08c7f7b50030e8b9d34dbf8",
+    "playground/world.js": "1332b2ca9e8b4cdea547cb315c5418b6793ff7f6ffbf58f06b6fadd861cdd8cb",
+    "playground/world.css": "4f4e062ccdedaa02f596bbe0b734173744f0363d7502bf8fd16fbd55ea4fb6ad",
+    "playground/game_menu.js": "78d710be32b3ab6330424be7782ae515ca04cdc7f4bebbb5c13d37126fd340ed",
+    "playground/world_chat.py": "4f4809b0b2e19529f47841dadc99db8a98cab2b471d842980ab8220141d34654",
+    "tests/material_preview_tests.py": "5c1300b890e57da502dbc9887db19bb7d28cdbdde5a69bf2471c8fcb5b986cd1",
+    "tests/world_goods_tests.py": "7e76e189796f3709c1267357bb01e31d76fadc6ccc95199be94615a8bd14c22c"
+  },
+  "engine_sha256": "6ce0e6d010d9ef23fd354c7f4d98a4eba93638c065f8f6979bdeefbaf13b9107",
+  "library_sha256": "198ab769e09fd915262402da85b54ede02973461bc6811a5b38e58ff2aa30ecb",
+  "scene_cell_m": 0.05,
+  "native_dt_s": 0.004166666666666667,
+  "native_collection": {
+    "native_seed": 4,
+    "preview": [
+      "sand",
+      "soil"
+    ],
+    "receipt": {
+      "actor": "aee8f51d20504048a38d42f3791616eb",
+      "at_m": [
+        0.28871,
+        0.76943,
+        0.02498
+      ],
+      "at_s": 3.55,
+      "breakout_work_j": 2.18112,
+      "closing_speed_m_s": 2.55157,
+      "depth_m": 0.09502,
+      "dug": {
+        "depth_m": 0.019129410271863476,
+        "from_m": [
+          0.28870806161876933,
+          0.024980520702774765
+        ],
+        "to_m": [
+          0.11728730498417111,
+          0.024986676318855778
+        ],
+        "width_m": 0.375
+      },
+      "ground": "sand",
+      "impulse_n_s": 2.78179,
+      "kind": "broke out",
+      "loosened": {
+        "sand_m3": 0.0023911762839829345,
+        "soil_m3": 0
+      },
+      "loosened_kg": 3.82588,
+      "model": "ground-work-v1",
+      "open": false,
+      "passive_n": 33.44367,
+      "peak_force_n": 117.00577,
+      "penetration_work_j": 4.69727,
+      "point": 1,
+      "resistance_n": 116.05722,
+      "sideways_m": 0.09732,
+      "supported": true,
+      "tool": "field pick",
+      "tool_dent_mm": 0,
+      "tool_whole": true,
+      "why": "",
+      "work_j": 6.87839
+    },
+    "carried": {
+      "available_kg": 74.24911797144357,
+      "limit_kg": 80,
+      "objects_kg": 1.9249999741837385,
+      "over_limit_kg": 0,
+      "rock_kg": 0,
+      "rock_m3": 0,
+      "sand_kg": 3.8258820543726952,
+      "sand_m3": 0.0023911762839829345,
+      "soil_kg": 0,
+      "soil_m3": 0,
+      "total_kg": 5.7508820285564335
+    },
+    "ore_reserve_before": 899.8,
+    "ore_reserve_after": 899.8,
+    "exceptions": []
+  },
+  "tests_passed": {
+    "material_preview_tests": 6,
+    "tool_use_tests": 20,
+    "quick_tool_tests": 5,
+    "world_goods_tests": 15,
+    "ground_work_mcp_tests": 24,
+    "api_docs_tests": 12,
+    "source_registration": 287
+  },
+  "preview_reopen": {
+    "url": "http://127.0.0.1:8770/world?world=efa05c7d7ae64689b687642a02500a9a&scene=new-game",
+    "old_world_body_count": 10,
+    "fresh_pick_cells": 22,
+    "fresh_pick_design": true,
+    "legacy_world_funded_make": false,
+    "fresh_world_funded_make": true,
+    "workbench_stock_kg": {},
+    "workbench_energy_j": 0.0,
+    "mini_inventory": "Inventory\nOpen all \u2192\nField pick\nRight hand\nStow\nYour energy\n0 J\nSolar \u00b7 shared\n1,987,806.4 J\nSolar rate\n243 J/s",
+    "skill_progress": "0 / 1",
+    "skill_card": "Field pick\nSkills \u2197\nGathering by hand\nStep back\n0 / 1\n\nDig soil or sand with your Field pick once.",
+    "legacy_tabs_removed": true,
+    "exception_count": 0
+  },
+  "limits": "No new native law, loot grants or quantity guarantee. Soil/sand native receipts, rover ore ledgers and whole products remain distinct. No full-world conservation, material/fracture calibration or cross-GPU claims."
+}

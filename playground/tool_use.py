@@ -29,6 +29,7 @@ from typing import Any, Callable
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "mcp"))
 import interaction_profiles  # noqa: E402
 import tool_gestures
+import resource_previews
 
 import world_chat  # noqa: E402  where the person is, as the page says and the chat is told
 import live_session
@@ -161,8 +162,11 @@ def resolve(app: Any, body: dict[str, Any]) -> dict[str, Any]:
                 else (water or 0.0))
     surface = str(survey.get("surface") or "ground")
     out["target"]["ground"] = surface
+    point=_native_point(app,profile['tool'])
+    out['gather']=resource_previews.ground_tool(survey,use,float((point or {}).get('length_m',.2)))
+    if point is None:
+        out['gather'].update(materials=[],state='unavailable',label='No attached tool point')
     if use['gesture']=='contact':
-        point=_native_point(app,profile['tool'])
         if point and all(k in point for k in ('tip_local','grip_local','pointing_local')):
             out['ready']=tool_gestures.ready_pose(point,out['target']['at_m'],eyes)
     out["enabled"] = True

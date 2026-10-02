@@ -1,11 +1,13 @@
 # Visible resource flow — September 30, 2026
 
+**October 1 presentation update:** [Material thumbnails](material-preview-checkpoint.md) replace ground circles and floating source labels. At crosshair shows possible soil/sand, separate rover ore, whole products and actual output stock. Nearby Look changes camera direction; output Collect uses the existing personal durable collector.
+
 ## Implemented player loop
 
 Recorded scoops send colored packets from worked ground into the rover. A visible
-hopper cage/percentage and the machine panel's quantity meter follow its actual
+hopper cage/fill and the machine panel's quantity meter follow its actual
 load. Recorded takes, dumps and docks show holder transfers. Supported batches
-show inputs entering the machine and outputs moving to a labeled pile.
+show inputs entering the machine and outputs moving to a visible pile.
 
 In gravity mode, walk within **1.6 horizontal metres** of a finished machine
 output, standing within 3 m above its ground: it collects automatically and the
@@ -40,7 +42,7 @@ another guest's hopper update.
 replaying past production. At most 192 flight packets are drawn; reduced-motion
 preferences retain quantities and omit flights. Ground remains the heightfield.
 Displayed cubes/cages are quantity pictures without solver mass, collision,
-fracture or arbitrary impulses. Cube count is schematic; the label carries the
+fracture or arbitrary impulses. Cube count is schematic; the side panel carries the
 quantity. Goods still have no simulated heap volume. The ledger books a batch
 immediately; the short animation pictures that transaction, not a new process solver.
 

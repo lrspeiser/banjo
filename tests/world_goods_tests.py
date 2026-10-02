@@ -564,7 +564,9 @@ class GoodsJourney(unittest.TestCase):
         self.assertTrue(self.app.hub.get(first).room.spec['sun']['day_s']>0)
         wait('document.querySelector("#world-load-meter")')
         self.assertIn('Ground materials',page.evaluate('document.querySelector("#world-load-meter").textContent'))
-        self.assertGreater(page.evaluate('banjoRoom.scene.getObjectByName("resource-packets").children.filter(c=>c.userData.resourceDeposit).length'),0)
+        self.assertEqual(0,page.evaluate('banjoRoom.scene.getObjectByName("resource-packets").children.filter(c=>c.userData.resourceDeposit).length'))
+        wait('document.querySelector("#material-preview details canvas")')
+        self.assertIn('Mining rover',page.evaluate('document.querySelector("#material-preview").textContent'))
         def mode(value):
             page.evaluate('document.querySelector("[data-game-menu]").click()')
             page.evaluate(f'(()=>{{const e=document.querySelector("#game-menu-movement select");e.value={json.dumps(value)};e.dispatchEvent(new Event("change"))}})()')

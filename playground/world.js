@@ -2627,6 +2627,7 @@ function openMachinePanel(control) {
 }
 
 function closeMachinePanel() {
+  if($("machine-panel").contains(document.activeElement))document.activeElement.blur();
   if (!$("mp-chat").hidden) closeTalk(true);
   machinePanel.id = null;
   machinePanel.name = "";
@@ -3400,16 +3401,17 @@ const heldSaid = (kg) => (kg >= 100 ? `${Math.round(kg)} kg`
 function goodsVisuals({scene,camera,groundAt,body,ports,colour,collect,readonly}) {
   const root=new THREE.Group(); root.name="resource-packets"; scene.add(root);
   const cube=new THREE.BoxGeometry(.13,.13,.13);
-  const materials=new Map(), piles=new Map(), hoppers=new Map(), seams=new Map();
+  const materials=new Map(), piles=new Map(), hoppers=new Map();
   const matrix=new THREE.Object3D(), flights=[];
   let epoch=null, seen=new Set(), goods=null, brains=[], nearest=null, busy=false, retry=null, failureUntil=0, nextPickup=0;
   const reduced=matchMedia("(prefers-reduced-motion: reduce)").matches;
   const pickup=document.createElement("button");
   pickup.id="collect-output"; pickup.type="button"; pickup.hidden=true;
-  async function takeNearby(automatic=false) {
-    if (!nearest || busy || readonly()) return;
+  async function takeNearby(automatic=false, selected=null) {
+    const source=selected || nearest;
+    if (!source || busy || readonly()) return;
     busy=true; pickup.disabled=true;
-    const pile=retry?.pile || nearest.name;
+    const pile=retry?.pile || source.name;
     const request=retry?.request || crypto.randomUUID(); retry={pile,request};
     try {
       await collect(pile,request,automatic); retry=null;
@@ -3425,15 +3427,6 @@ function goodsVisuals({scene,camera,groundAt,body,ports,colour,collect,readonly}
       materials.set(what,new THREE.MeshStandardMaterial({color,roughness:.8}));
     }
     return materials.get(what);
-  }
-  function label(text) {
-    const canvas=document.createElement("canvas"); canvas.width=512; canvas.height=96;
-    const ctx=canvas.getContext("2d");
-    ctx.fillStyle="rgba(14,24,29,.9)"; ctx.fillRect(0,0,512,96);
-    ctx.fillStyle="#f2ece0"; ctx.font="600 26px system-ui"; ctx.textAlign="center";
-    ctx.fillText(text,256,57,490);
-    const map=new THREE.CanvasTexture(canvas), m=new THREE.SpriteMaterial({map,depthTest:true});
-    const sprite=new THREE.Sprite(m); sprite.scale.set(1.6,.3,1); return sprite;
   }
   function remove(group) {
     group.traverse(o=>{
@@ -3519,39 +3512,14 @@ function goodsVisuals({scene,camera,groundAt,body,ports,colour,collect,readonly}
         }
         group.add(mesh);
       }
-      const kg=slots.reduce((a,[,v])=>a+v,0);
-      if(kg>0 || role==="input") {
-        const title=label(`${role==="input"?"Input hopper":p.name} · ${heldSaid(kg)}`);
-        title.position.y=.7; group.add(title);
-      }
       group.position.copy(pilePosition(p));
       root.add(group);piles.set(p.name,{group,signature});
     }
     for(const [name,p] of piles)if(!keep.has(name)){remove(p.group);piles.delete(name);}
-    const deposits = new Set();
-    for (const d of next?.deposits || []) {
-      if (!(d.left_kg>0) || !(d.radius_m>0)) continue;
-      deposits.add(d.name);
-      const signature = JSON.stringify([d.at_m,d.substance,d.radius_m,d.left_kg]);
-      if (seams.get(d.name)?.signature === signature) continue;
-      if (seams.has(d.name)) remove(seams.get(d.name).group);
-      const group = new THREE.Group(); group.userData.resourceDeposit = d.name;
-      // Survey markers for ledger extraction areas, not fictitious native ore.
-      const ring = new THREE.Mesh(new THREE.RingGeometry(Math.max(.1,d.radius_m-.08),d.radius_m,48),
-        new THREE.MeshBasicMaterial({color:material(d.substance).color,transparent:true,opacity:.7,side:THREE.DoubleSide,depthWrite:false}));
-      ring.rotation.x = -Math.PI/2; ring.position.y = .07; group.add(ring);
-      const title = label(`${d.substance} · ${heldSaid(d.left_kg)}`); title.position.y = .9; group.add(title);
-      group.position.set(d.at_m[0],groundAt(...d.at_m)+.02,d.at_m[1]);
-      root.add(group); seams.set(d.name,{group,signature});
-    }
-    for (const [name,s] of seams) if (!deposits.has(name)) {remove(s.group);seams.delete(name);}
   }
+
   function loads(next) { if(next!==undefined){brains=next;follow(goods);} }
   function advance(now) {
-    for (const s of seams.values()) {
-      s.group.position.y = groundAt(s.group.position.x,s.group.position.z)+.02;
-      for (const child of s.group.children) if(child.isSprite) child.visible = s.group.position.distanceTo(camera.position)<12;
-    }
     for(const [name,p] of piles) {
       const pile=(goods?.stockpiles||[]).find(s=>s.name===name);
       if(pile)p.group.position.copy(pilePosition(pile));
@@ -3589,7 +3557,6 @@ function goodsVisuals({scene,camera,groundAt,body,ports,colour,collect,readonly}
           const packet=new THREE.Mesh(cube,material(Object.keys(load.goods_kg||{})[0]||"soil"));
           packet.position.set((i%4-1.5)*.16,(Math.floor(i/8)-1)*.15,(Math.floor(i/4)%2-.5)*.16);group.add(packet);
         }
-        const title=label(`Hopper · ${Math.round(fill*100)}%`);title.position.y=.65;group.add(title);
         root.add(group);h={group,signature};hoppers.set(b.name,h);
       }
       h.group.position.copy(position).add(new THREE.Vector3(0,.7,0));
@@ -3609,7 +3576,32 @@ function goodsVisuals({scene,camera,groundAt,body,ports,colour,collect,readonly}
         camera.position.y-groundAt(...nearest.at_m)>=0 && camera.position.y-groundAt(...nearest.at_m)<=3)
       void takeNearby(true);
   }
-  return {follow,loads,advance};
+  const ray=new THREE.Raycaster();
+  function pick(from,dir,limit) {
+    ray.set(from,dir); ray.far=limit;
+    const hits=ray.intersectObjects([...piles.values()].map(p=>p.group),true);
+    for(const hit of hits) {
+      let group=hit.object;
+      while(group && !group.userData.resourcePile)group=group.parent;
+      const pile=goods?.stockpiles?.find(p=>p.name===group?.userData.resourcePile);
+      if(pile && !pile.rack && Object.values(pile.holds_kg).some(kg=>kg>0))
+        return {pile,role:storage(pile.name),distance:hit.distance};
+    }
+    return null;
+  }
+  function collectPile(name) {
+    const pile=goods?.stockpiles?.find(p=>p.name===name);
+    if(!pile || pile.rack || storage(name)==="input" ||
+       Math.hypot(camera.position.x-pile.at_m[0],camera.position.z-pile.at_m[1])>2)return;
+    return takeNearby(false,pile);
+  }
+  function lookAtPile(name) {
+    const group=piles.get(name)?.group, mesh=group?.children.find(c=>c.isInstancedMesh);
+    if(!mesh)return null;
+    const pose=new THREE.Matrix4();mesh.getMatrixAt(0,pose);mesh.updateWorldMatrix(true,false);
+    return new THREE.Vector3().setFromMatrixPosition(pose).applyMatrix4(mesh.matrixWorld);
+  }
+  return {follow,loads,advance,pick,collectPile,lookAtPile};
 }
 
 const resourceVisuals = goodsVisuals({scene,camera,groundAt,
@@ -3618,6 +3610,7 @@ const resourceVisuals = goodsVisuals({scene,camera,groundAt,
   collect:async(pile,request_id,automatic=false)=>{
     const answer=await api('/api/world/goods/collect',{session:world.session,pile,request_id,automatic,person:whereIAm()});
     followGoods(answer.goods);
+    void readMiniInventory();
     lastAction(`+ ${Object.entries(answer.collected).map(([what,kg])=>`${heldSaid(kg)} ${what}`).join(' · ')} → Inventory`);
     return answer;
   }});
@@ -4355,7 +4348,11 @@ function bagName(thing) {
 // A thing's colour in its slot: the colour the room draws its material with.
 function slotColour(material) {
   const seen = MATERIAL_LOOK[material];
-  return `#${(seen ? seen.color : 0x9aa6ae).toString(16).padStart(6, "0")}`;
+  if(seen)return `#${seen.color.toString(16).padStart(6,"0")}`;
+  const raw={soil:"#8b6445",sand:"#d5bd80",rock:"#818085","iron ore":"#8f7363"}[material];
+  const tint=raw || substanceColour(material || "item"),hsl=tint.match(/^hsl\((\d+) (\d+)% (\d+)%\)$/);
+  const color=hsl ? new THREE.Color().setHSL(Number(hsl[1])/360,Number(hsl[2])/100,Number(hsl[3])/100) : new THREE.Color(tint);
+  return `#${color.getHexString()}`;
 }
 
 // The compact and full Inventory read the same owned item/stock ledger.
@@ -5393,21 +5390,17 @@ function showPicked() {
     rows.push(pickedTitle(titled(top ? top.name : "the ground"),
                           `the ground, ${away.toFixed(1)} m away`));
     if (beds.length) {
-      rows.push(coreColumn(beds));
+      const layers=document.createElement("details"),summary=document.createElement("summary");
+      summary.textContent="Ground layers";layers.append(summary,coreColumn(beds));
+      rows.push(layers);
       // The one thing worth calling out of a column of dirt.
       const ore = beds.filter((b) => ORE_NAMES.includes(b.name));
       const deposits = (world.goods?.deposits || []).filter(d=>d.left_kg>0 &&
         Math.hypot(picked.at[0]-d.at_m[0],picked.at[2]-d.at_m[1])<=d.radius_m);
-      const values = [["Surface", top?.name || "Ground"], ["Layers", String(beds.length)]];
-      for (const d of deposits) values.push(["Extraction area",d.substance], ["Reserve",heldSaid(d.left_kg)],
-        ["Yield",`${Math.round(d.grade*100)}% ore / scoop`], ["Get it", "Rover → dig → deliver to intake"]);
+      const values = [["Surface", top?.name || "Ground"]];
+      for (const d of deposits) values.push([titled(d.substance),"Mining rover"]);
       if (ore.length) {
-        const thick = ore.reduce((sum, b) => sum + b.thick_m, 0);
-        const under = Math.max(0, (beds[0].top_m || 0) - ore[0].top_m);
-        values.push(["Resource", [...new Set(ore.map(b => b.name))].join(" / ")],
-          ["Ore depth", under > 0.05 ? deepSaid(under) : "At surface"], ["Ore thickness", deepSaid(thick)]);
-      } else {
-        if (!deposits.length) values.push(["Resource", "No ore in this column"]);
+        values.push(["Layers contain", [...new Set(ore.map(b => b.name))].join(" / ")]);
       }
       rows.push(inspectionValues(values), revealButton());
     }
@@ -5418,8 +5411,7 @@ function showPicked() {
       wet.textContent = `under ${deepSaid(water.depth)} of water`;
       rows.push(wet);
     }
-    rows.push(keyRows([{ key: keyOf("dig"), what: "dig here" },
-                       { key: keyOf("heap"), what: "heap what you carry here" }]));
+    if(world.held?.pick)rows.push(keyRows([{key:keyOf("dig"),what:"Use tool · preview at crosshair"}]));
   }
 
   box.replaceChildren(...rows);
@@ -5697,12 +5689,7 @@ function detailsModel() {
       model.name = water && water.depth > 0.05 ? "Water" : titled(underfoot);
       // What it is made of down there, not only what is on top: this is the
       // whole of knowing where you are digging.
-      const under = groundUnderfoot(world.groundAim);
-      model.facts = [under ? `the ground: ${under}` : `the ground, ${underfoot}`,
-                     `${groundAt(x, z).toFixed(2)} m up`,
-                     water && water.depth > 0.005
-                       ? `under ${(water.depth * 100).toFixed(0)} cm of water flowing ${Math.hypot(water.u, water.w).toFixed(2)} m/s`
-                       : ""].filter(Boolean).join(" · ");
+      model.facts = water && water.depth > .005 ? "Under water" : "Ground";
       if (underfoot !== "rock") rows.push([[k("dig")], worldId ? "dig with an equipped tool" : `dig here, in the ${underfoot}`]);
       const carried = world.carriedGround
         ? (Number(world.carriedGround.soil_kg) || 0) + (Number(world.carriedGround.sand_kg) || 0) : 0;
@@ -5781,9 +5768,113 @@ function detailsModel() {
 // The details, drawn from the model: only when it has changed, several times a
 // second, and at once when the hand's state changes (showUse). The crosshair's
 // ring fills with the meter.
+let materialPreviewSaid = "";
+function showMaterialPreview() {
+  const point=world.groundAim, pileHit=world.resourceAim;
+  const target=world.use.target;
+  const gather=target?.gather;
+  const fresh=point && target?.target?.at_m &&
+    Math.hypot(point[0]-target.target.at_m[0],point[2]-target.target.at_m[2])<.35;
+  const rows=[], nearby=[];
+  const add=(material,label,value,action=null,kind="material")=>rows.push({material,label,value,action,kind});
+  if(pileHit) {
+    const pile=pileHit.pile, distance=Math.hypot(camera.position.x-pile.at_m[0],camera.position.z-pile.at_m[1]);
+    const action=pileHit.role==="input" ? "Machine input" : distance<=2 ? "Collect" : "Walk closer";
+    for(const [material,kg] of Object.entries(pile.holds_kg))if(kg>0)
+      add(material,titled(material),massLabel(kg),action,"pile");
+  } else if(world.aim?.name) {
+    const name=world.aim.name, entry=world.bodies.get(name), profile=tools.profileOf(name)||profileOf(name);
+    if(entry)rows.push({name,material:entry.material,revision:entry.revision,label:titled(profile?.object||name),value:"Whole item",
+      action:world.held ? "Hands occupied" : entry.anchored ? "Fixed" : onAJoint(name) ? "Attached" :
+        world.aim.point_m && camera.position.distanceTo(new THREE.Vector3(...world.aim.point_m))>2.5 ? "Walk closer" : "E · Pick up",kind:"product"});
+  } else if(point) {
+    const surface=groundMadeOf(point), water=waterAt(point[0],point[2]);
+    if(world.held?.pick && fresh && gather?.materials?.length) {
+      for(const material of gather.materials)add(material,titled(material),"Possible material","J / click · Dig","dig");
+    } else if(surface) {
+      const action=!world.held?.pick ? "Equip tool" : target?.carried?.available_kg<=.0005 ? "Load full" : fresh ?
+        target.enabled===false ? ({far:"Move closer",near:"Step back"}[target.ring?.state] || "Cannot dig here") :
+        gather?.label || "Cannot dig here" : "Move closer";
+      add(surface,titled(surface),water?.depth>.005 ? "Under water" : "Surface",action,"surface");
+    }
+    for(const d of world.goods?.deposits||[])if(d.left_kg>0 &&
+      Math.hypot(point[0]-d.at_m[0],point[2]-d.at_m[1])<=d.radius_m)
+      add(d.substance,titled(d.substance),"Mining rover","View source","ore");
+  }
+  const sources=[...(world.goods?.deposits||[]).filter(d=>d.left_kg>0).map(d=>({...d,method:"Mining rover",material:d.substance})),
+    ...(world.goods?.stockpiles||[]).filter(p=>!p.rack && Object.values(p.holds_kg).some(v=>v>0)).map(p=>
+      ({...p,method:"Material pile",material:Object.keys(p.holds_kg).find(k=>p.holds_kg[k]>0)}))];
+  sources.map(s=>({...s,d:Math.round(Math.hypot(camera.position.x-s.at_m[0],camera.position.z-s.at_m[1]))}))
+    .sort((a,b)=>a.d-b.d).slice(0,3).forEach(s=>nearby.push(s));
+  const model={rows,nearby:nearby.map(s=>[s.name,s.material,s.method,s.d]),readonly:!!watchedId};
+  const said=JSON.stringify(model);
+  if(said===materialPreviewSaid)return;
+  materialPreviewSaid=said;
+  let box=$("material-preview");
+  if(!box) {
+    box=document.createElement("section");box.id="material-preview";box.setAttribute("aria-label","Material preview");
+    $("details").before(box);
+  }
+  box.replaceChildren();
+  const heading=document.createElement("h3");heading.textContent="At crosshair";box.append(heading);
+  function materialRow(row,parent,onAction=null) {
+    const item=document.createElement("article");item.className="material-card";
+    item.dataset.material=row.material||"";item.dataset.method=row.kind||"source";
+    item.append(row.kind==="product" ? miniPicture(row) :
+      thumbnail({name:row.label,material:row.material,shape:"granules",color_rgba:slotColour(row.material).slice(1)}));
+    const text=document.createElement("div"),name=document.createElement("strong"),value=document.createElement("small");
+    name.textContent=row.label;value.textContent=row.value;text.append(name,value);item.append(text);
+    if(row.action) {
+      const action=document.createElement(onAction ? "button" : "span");action.textContent=row.action;
+      if(onAction){action.type="button";action.disabled=!!watchedId;action.onclick=onAction;}
+      item.append(action);
+    }
+    parent.append(item);
+  }
+  async function openSource(material) {
+    const deposits=(world.goods?.deposits||[]).filter(d=>d.substance===material && d.left_kg>0);
+    const rover=programsNow().find(p=>{
+      if(p.kind!=="roam")return false;
+      const declared=world.sourcePrograms?.find(s=>s.name===p.name)?.routine;
+      const routine=world.brains.get(p.name)?.routine,places=routine?.places || declared?.places || {};
+      const sites=[];
+      if(declared?.kind==="dig" && places["dig site"])sites.push(places["dig site"]);
+      let lastPlace=null;
+      for(const step of declared?.steps || []) {
+        if(step.do==="go_to")lastPlace=step.args?.place;
+        if(step.do==="dig") {
+          const site=places[step.args?.place || lastPlace];if(site)sites.push(site);
+        }
+      }
+      return sites.some(site=>deposits.some(d=>Math.hypot(site[0]-d.at_m[0],site[1]-d.at_m[1])<=d.radius_m));
+    });
+    if(rover)openMachinePanel(rover);
+    else {
+      const url=new URL(screenUrl("recipes"),location.origin);
+      try {
+        const catalog=await api("/api/workshop/recipes",{}),recipe=catalog.templates.find(t=>t.kind==="rover"&&!t.problem);
+        if(recipe)url.searchParams.set("recipe",recipe.saved_design_id || `${recipe.kind}:${recipe.name}`);
+      } catch { /* Recipes can still show available designs after a catalog error. */ }
+      location.href=url.pathname+url.search;
+    }
+  }
+  for(const row of rows)materialRow(row,box,
+    row.action==="Collect" ? ()=>{void resourceVisuals.collectPile(pileHit.pile.name);} :
+    row.action==="Equip tool" ? ()=>{location.href=screenUrl("inventory");} :
+    row.kind==="ore" ? ()=>openSource(row.material) : null);
+  if(!rows.length){const empty=document.createElement("small");empty.textContent="Aim at ground, an item or machine output";box.append(empty);}
+  if(nearby.length) {
+    const more=document.createElement("details"),title=document.createElement("summary");title.textContent="Nearby materials";more.open=true;more.append(title);
+    for(const s of nearby)materialRow({material:s.material,label:titled(s.material),value:`${s.method} · ${s.d} m`,action:"Look"},more,
+      ()=>{const at=resourceVisuals.lookAtPile(s.name) || new THREE.Vector3(s.at_m[0],groundAt(...s.at_m)+.015,s.at_m[1]);
+        window.banjoRoom.lookAt(at.x,at.y,at.z);});
+    box.append(more);
+  }
+}
 let detailsSaid = "";
 let lastDetails = { name: "", facts: "", rows: [], note: "", meter: null, last: null };
 function showDetails(now = false) {
+  showMaterialPreview();
   showToolSkills();
   // What is pinned is about one thing and stays about it, but everything IN it
   // is live -- the battery empties while you watch. Rebuilt on the same beat.
@@ -7468,6 +7559,8 @@ async function aim() {
     // Where the crosshair meets the ground, when it is the ground it meets:
     // that is where a spade goes in.
     world.groundAim = found.hit && !found.name ? found.point_m : null;
+    const hitDistance=found.hit && found.point_m ? from.distanceTo(new THREE.Vector3(...found.point_m)) : 40;
+    world.resourceAim=resourceVisuals.pick(from,dir,hitDistance+.02);
     if (!world.held) showLabel(world.aim);
   } catch { /* the next frame asks again */ } finally { aimBusy = false; }
 }
@@ -7487,11 +7580,7 @@ function showLabel(found) {
     cross.classList.toggle("on", !entry?.anchored || !!part);
   } else {
     cross.classList.toggle("on", false);
-    if (world.groundAim && ground.grid) {
-      const [x, , z] = world.groundAim;
-      const water = waterAt(x, z);
-      name = water && water.depth > 0.05 ? "Water" : titled(groundMadeOf(world.groundAim) || "the ground");
-    }
+
   }
   box.hidden = !name;
   $("label-name").textContent = name;
@@ -8464,6 +8553,7 @@ function showUse() {
 // and nothing here lets the arrow go.
 
 function rememberProfiles(spec) {
+  world.sourcePrograms = spec?.machines?.programs || [];
   // The actions the room's chat gave its things (offer_actions), each
   // {body, label, steps}: in the side view's details when the crosshair is on it.
   world.actions = (spec && spec.actions) || [];
@@ -9244,11 +9334,7 @@ const guideLine = (color) => {
 const lineX = guideLine(0xff7a6b), lineY = guideLine(0x7ee08a), lineZ = guideLine(0x6ba8ff);
 const dropLine = guideLine(0xf0b429);
 dropLine.material.opacity = 0.95;
-const landing = new THREE.Mesh(
-  new THREE.RingGeometry(0.055, 0.075, 28),
-  new THREE.MeshBasicMaterial({ color: 0xf0b429, side: THREE.DoubleSide,
-                                transparent: true, opacity: 0.9 }));
-landing.rotation.x = -Math.PI / 2;
+const landing = new THREE.Object3D();
 guides.add(lineX, lineY, lineZ, dropLine, landing);
 guides.visible = false;
 
@@ -9302,7 +9388,7 @@ async function askWhatIsBelow(at, clear) {
 }
 
 function updateGuides() {
-  if (!world.held) { world.carry = null; return; }
+  if (!world.held || world.held.pick) { clearGuides(); world.carry = null; return; }
   // Placing: the see-through copy says where it goes, and the side view what
   // the engine made of the spot -- not the drop straight down from the hand.
   if (world.placing) {
@@ -9326,7 +9412,7 @@ function updateGuides() {
   setLine(dropLine, new THREE.Vector3(at.x, bottom, at.z),
                     new THREE.Vector3(at.x, dropOnto.y, at.z));
   landing.position.set(at.x, dropOnto.y + 0.004, at.z);
-  landing.visible = !dropOnto.empty;
+  landing.visible = false;
 
   // Said in the side view's details, under what is held.
   world.carry = `${dropOnto.empty ? "over nothing" : `over ${dropOnto.name}`},`

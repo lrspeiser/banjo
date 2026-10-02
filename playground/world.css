@@ -106,6 +106,17 @@ body.head-under-water #stage { filter: brightness(.72) sepia(.45) hue-rotate(155
 
 #tool-skill { margin: 8px 12px; padding: 12px; border: 1px solid #36566a; border-radius: 10px; background: #10202c; }
 #tool-skill[hidden] { display: none; }
+#material-preview { margin:8px 12px; padding:10px; border:1px solid var(--edge); border-radius:10px; background:#10202c; }
+#material-preview h3 { font-size:13px; margin:0 0 7px; }
+#material-preview summary { font-size:12px; color:var(--dim); margin:8px 0 4px; cursor:pointer; }
+.material-card { display:flex; gap:8px; align-items:center; padding:5px 0; }
+.material-card canvas,.material-card img { width:40px; height:34px; object-fit:contain; flex-shrink:0; }
+.material-card div { flex:1; min-width:0; }
+.material-card strong,.material-card small { display:block; }
+.material-card strong { font-size:12px; }
+.material-card small { font-size:11px; color:var(--dim); }
+.material-card > span,.material-card button { font-size:11px; max-width:110px; }
+.material-card button { cursor:pointer; padding:5px 8px; }
 #tool-skill header, #tool-skill .skill-read { display: flex; justify-content: space-between; gap: 12px; }
 #tool-skill header { color: var(--dim); font-size: 11px; }
 #tool-skill h3 { margin: 8px 0; font-size: 15px; }

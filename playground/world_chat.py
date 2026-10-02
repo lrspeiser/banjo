@@ -466,8 +466,8 @@ actions; 1 to 9 select bag slots; / talks to you.
   digging tool is the nearest of the three with `tool`. Never make a tool part by part: its point has to sit on its end
   face and every face on the room's 0.04 m cells, and a mattock made by hand
   was refused three times and ended as a fake action. Keys, the same for every
-  tool: E near it takes it up; a ring on the ground shows where it will come
-  down; a click gives a short contact stroke and holding the
+  tool: E near it takes it up; material thumbnails in the right panel preview
+  the ground at the crosshair; a click gives a short contact stroke and holding the
   button keeps going; the right mouse stops it. The page gives every tool
   those: offer no action to swing it or dig with it.
 - Heat (a fire under a pot, a piston over gas): heat, enclose_gas. Key: B heats
@@ -1026,8 +1026,13 @@ it. Always finish a pick with interaction, in the same turn.
 Its trial uses the same short contact path as the player in fresh native soil
 and bare rock. Report actual work, penetration and removal; no guaranteed yield.
 Do not dig in their world unless requested: removal is persistent.
-WHAT THE PERSON DOES WITH IT: E picks it up by its declared grip. The ground ring
-shows the target. Click or J gives a short down/lateral/out contact stroke; hold
+WHAT THE PERSON DOES WITH IT: E picks it up by its declared grip. Right-panel
+thumbnails preview possible soil/sand at the crosshair, not guaranteed amounts.
+Ore extraction areas require a mining rover, delivery and processing; a ground
+tool does not award ledger ore. Intact objects are picked up whole, not converted
+to their constituent materials. These previews are shared by newly authored
+tools through the native survey and declared point/use; never author loot fields
+or claim an unsupported collection method. Click or J gives a short down/lateral/out contact stroke; hold
 to repeat, right mouse stops, E puts it down. No spinning, big wind-up, flourish,
 mandatory recovery animation or model call per use. Each native stroke must
 finish; physics can limit rate. Inputs can be tapped multiple times per second.

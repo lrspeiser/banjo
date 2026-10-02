@@ -3476,10 +3476,10 @@ def tool_interaction(args: dict[str, Any]) -> dict[str, Any]:
                 "draws it straight back out: this one is only swung, never pried")
         answer["how_a_person_uses_it"] = (
             f"In the playground a person takes {checked['object']} up with E near any of its "
-            f"parts, by the grip its point was given with. A ring on the ground shows where it "
-            f"will come down -- green where it can work, amber when that is too far or too "
-            f"near (it comes down {use['reach_m'][0]:g} to {use['reach_m'][1]:g} m in front of "
-            f"them), red on bare rock -- and one click of the left mouse button, "
+            f"parts, by the grip its point was given with. The right panel previews possible "
+            f"soil/sand at the crosshair and whether the target is in reach "
+            f"({use['reach_m'][0]:g} to {use['reach_m'][1]:g} m). Ore extraction areas need "
+            f"a mining rover; an intact object is picked up whole. One left click, "
             f"'{use['label']}', uses the shared {use['gesture']} stroke at up to "
             f"{use['cadence_hz']:g} requested uses/s, "
             f"with an 800 N hand and a 60 N m wrist, the ground decides how far it goes in, "

@@ -300,7 +300,15 @@ export function thumbnail(thing) {
     return `rgb(${mix((n>>16)&255)},${mix((n>>8)&255)},${mix(n&255)})`;
   };
   const face = `#${hex}`;
-  if (thing.shape === "sphere" || thing.shape === "capsule") {
+  if (thing.shape === "granules") {
+    // A material sample, distinct from a manufactured product's silhouette.
+    for (let i=0;i<14;i++) {
+      const x=9+(i*13%30), y=37-Math.floor(i/5)*9;
+      pen.fillStyle=i%3 ? face : dark(.65);
+      pen.beginPath(); pen.moveTo(x,y-6);pen.lineTo(x+6,y-2);
+      pen.lineTo(x+4,y+4);pen.lineTo(x-3,y+3);pen.closePath();pen.fill();
+    }
+  } else if (thing.shape === "sphere" || thing.shape === "capsule") {
     const light = pen.createRadialGradient(18,17,2,24,24,16);
     light.addColorStop(0,face); light.addColorStop(1,dark(.45)); pen.fillStyle=light;
     pen.beginPath(); pen.arc(24,24,16,0,Math.PI*2); pen.fill();

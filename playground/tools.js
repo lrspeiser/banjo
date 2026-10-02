@@ -2,9 +2,9 @@
 //
 // The server (tool_use.py) says what the tool in hand does where the crosshair
 // meets the ground -- its action and label, whether it can be done there and
-// why not, and the ring to draw -- and does it when the button is pressed: the
+// why not, and possible materials -- and does it when the button is pressed: the
 // shared short contact stroke (or an explicitly authored full swing), each
-// stroke the engine's. This page only holds the tool ready, draws the ring,
+// stroke the engine's. This page only holds the tool ready, shows material previews,
 // sends the click and says what came of it. It never knows a tool's steps, so
 // a new kind of tool needs nothing here (the owner: "make sure this is designed
 // to be a generic capability, so if I build a hoe or an axe it will have the
@@ -26,7 +26,7 @@ const READY = { out: 0.55, down: 0.5, right: 0.18 };
 // within reach -- a pick lies flat and is 4 cm thick.
 const NEAR_M = 0.3;
 const REACH_M = 2.5;
-// The ring follows the crosshair at up to five answers a second, one in flight.
+// The target preview follows the crosshair at up to five answers a second, one in flight.
 const ASK_EVERY_MS = 200;
 // Taken up from where it lies, a tool is first lifted straight up by its grip,
 // turned as it lay, and only then brought round into the ready pose. Brought
@@ -36,21 +36,9 @@ const ASK_EVERY_MS = 200;
 // point was left 197 mm into the soil.
 const LIFT_M = 0.6;
 const LIFT_MS = 200;
-// Its colours, by what the server says of the target (tool_use.resolve).
-const RING = { ok: 0x4fbf6a, far: 0xf0b429, near: 0xf0b429, warn: 0xe0533d, no: 0x8a949c };
-
 export function makeTools(ctx) {
   const { world, act, api, say, remember, showUse, camera, carryGround, scene, whereIAm,
           lastAction, takeIntoHand, showHolding, showNotebook } = ctx;
-
-  const ring = new THREE.Mesh(
-    new THREE.RingGeometry(0.11, 0.16, 40),
-    new THREE.MeshBasicMaterial({ color: RING.ok, side: THREE.DoubleSide, transparent: true,
-                                  opacity: 0.85, depthWrite: false }));
-  ring.rotation.x = -Math.PI / 2;
-  ring.renderOrder = 2;
-  ring.visible = false;
-  scene.add(ring);
 
   function profileOf(name) {
     return (world.tools || []).find((p) => p.parts.includes(name)) || null;
@@ -189,18 +177,17 @@ export function makeTools(ctx) {
     askedAt = 0;
     showHolding(true);
     remember(`took up ${profile.object} by its grip`);
-    lastAction(`Took up ${profile.object} by the grip: the ring on the ground shows where it will`
-      + " come down. Click to use it there, and hold the button to keep going.");
+    lastAction(`Took up ${profile.object}. Point at ground to preview materials; click or hold to dig.`);
     showUse();
   }
 
   // Each frame while a tool is held ready: what the server says it does where
-  // the crosshair meets the ground, and the ring drawn there. Asking never does
+  // the crosshair meets the ground, and possible materials there. Asking never does
   // anything to the room.
   let asking = false, askedAt = 0, askedFor = null;
   function followAim() {
     const held = world.held, use = world.use;
-    if (!held || !held.pick) { ring.visible = false; return; }
+    if (!held || !held.pick) { return; }
     if (use.mode !== "tool-ready" || asking) return;
     const at = world.groundAim;
     const now = performance.now();
@@ -214,19 +201,10 @@ export function makeTools(ctx) {
       .then((answer) => {
         if (world.held !== held) return;
         use.target = answer;
-        drawRing(use.mode === "tool-ready" ? answer : null);
         showUse();
       })
       .catch(() => { /* the next frame asks again */ })
       .finally(() => { asking = false; });
-  }
-
-  function drawRing(answer) {
-    const r = answer && answer.ring;
-    if (!r || !r.at_m) { ring.visible = false; return; }
-    ring.material.color.setHex(RING[r.state] || RING.no);
-    ring.position.set(r.at_m[0], r.at_m[1] + 0.012, r.at_m[2]);
-    ring.visible = true;
   }
 
   // One use, the whole of it, done by the server with the bounded hand
@@ -239,7 +217,7 @@ export function makeTools(ctx) {
     use.mode = "tool-working";
     use.startedAt = performance.now();
     use.result = "";
-    ring.visible = false;
+
     showUse();
     let answer = null;
     try {
@@ -336,7 +314,7 @@ export function makeTools(ctx) {
   async function putDown(text) {
     world.held = null;
     world.use = { mode: "none" };
-    ring.visible = false;
+
     showHolding(false);
     showUse();
     try { await act("release"); } catch (error) { say("bad", String(error.message || error)); }
@@ -344,8 +322,8 @@ export function makeTools(ctx) {
   }
 
   // The tool has left the hand some other way -- set aside into the bag, or the
-  // room opened again: its ring goes with it.
-  function forget() { ring.visible = false; }
+  // room opened again: refresh its target preview.
+  function forget() { askedAt = 0; }
 
   return { profileOf, nearTool, takeUp, adopt, press, release, stop, hand, follow, followAim,
            putDown, forget };
