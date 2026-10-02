@@ -58,11 +58,12 @@ def source(app, live, item_id):
     topology={n:{k:v for k,v in b.items() if k not in ('pose','awake','color_rgba')}
               for n,b in actual.items()}
     kerfs={n:(snapshot.get('kerfs') or {}).get(n,[]) for n in actual}
+    joints={j['id']:j for r in readings for j in r.get('joints',[])}
     signature={'scene':app.room.scene,'owner':who,'source_item':item_id,
         'source_bodies':names,'item':item,'condition':readings,'topology':topology,'kerfs':kerfs}
     return {'schema':'banjo.remake-source.v1','owner':who,'source_item':item_id,
         'source_bodies':names,'source_hash':model.digest(signature),
-        'native_hash':model.digest({'bodies':actual,'kerfs':kerfs}),
+        'native_hash':model.digest({'bodies':actual,'kerfs':kerfs,'joints':list(joints.values())}),
         'condition':deepcopy(readings)}
 
 

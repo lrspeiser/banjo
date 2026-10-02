@@ -381,6 +381,16 @@ def _object_contact(app,said,use,tool,eyes,note):
     try:
         # A wish, never a placement. The actor's normal world clock moves the
         # actual head/handle and can refuse readiness if an obstacle stops it.
+        grip=_grip(session)
+        if grip is not None and math.dist(grip,ready['hand'])>.1:
+            # Pickup can start far from the working pose. Move the wish along
+            # a bounded path instead of giving idle feedback a large jump.
+            app.live.act({'session':session.id,'op':'step','dt':1/240,'n':1,
+                          'hand':grip,'hand_q':ready['hand_q']})
+            started=app.live.act({'session':session.id,'op':'stroke','path':[grip,ready['hand']],
+                'speed_m_s':2.,'accel_m_s2':8.,'lead_m':tool_gestures.LEAD_M,
+                'give_up_s':2.,'let_go':False})
+            done.append('ready: '+_stroke(app,started=bool(started.get('stroking'))))
         app.live.act({'session':session.id,'op':'step','dt':1/240,'n':1,
                       'hand':ready['hand'],'hand_q':ready['hand_q']})
         wanted=[target['at_m'][i]-tool_gestures.CLEARANCE_M*direction[i] for i in range(3)]
@@ -445,11 +455,16 @@ def _native_point(app,tool):
         points=app.live.act({'session':session.id,'op':'tool_points'}).get('tool_points') or []
         point = next((p for p in points if (p.get('grip_body') or p.get('body'))==tool and
                       p.get('attached',True) and p.get('grip_connected',True)),None)
-        if point and point.get('body') != tool:
+        if point and all(_point(point.get(k)) is not None for k in ('tip','grip','pointing')):
             poses=app.live.act({'session':session.id,'op':'poses'})
             pose = next((b for b in poses.get('bodies') or [] if b.get('name') == tool),None)
             if pose:
-                point = {**point, **tool_gestures.local_frame(point['tip'],point['grip'],point['pointing'],
+                hand=live_session.current_hand(session)
+                grip=_point(hand.get('grip_m')) if hand.get('holding')==tool else None
+                # The player can take a tool at a different point from its
+                # authored grip. The bounded controller pulls there, so its
+                # readiness frame must use that actual native hand position.
+                point = {**point, **tool_gestures.local_frame(point['tip'],grip or point['grip'],point['pointing'],
                     pose['position_m'],pose['orientation_wxyz'])}
         return point
 

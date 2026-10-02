@@ -8,13 +8,14 @@ from pathlib import Path
 import threading
 import time
 import unittest
+import urllib.error
 from unittest import mock
 import ai_player_tests as ai
 
 ROOT=Path(__file__).resolve().parents[1]
 
 
-def fixture(material='glass'):
+def fixture(material='glass',tool_capacity=0):
     return {**deepcopy(ai.server.fracture_lab.DEFAULT),'cell_m':.02,
         'bodies':[
             {'name':'head','shape':'sphere','material':'iron','size_mm':[100,100,100],'center_mm':[80,1500,0]},
@@ -22,7 +23,8 @@ def fixture(material='glass'):
             {'name':'target','shape':'box','material':material,'size_mm':[100,100,100],'center_mm':[240,1500,0]},
             {'name':'anchor','shape':'box','material':'iron','size_mm':[80,80,80],'center_mm':[400,1500,0],'anchored':True}],
         'joints':[
-            {'kind':'fixing','a':'field pick','b':'head','at_mm':[20,1490,0],'axis':[0,1,0]},
+            {'kind':'fixing','a':'field pick','b':'head','at_mm':[20,1490,0],'axis':[0,1,0],
+             'holds_tension_n':tool_capacity,'holds_shear_n':tool_capacity},
             {'kind':'fixing','a':'anchor','b':'target','at_mm':[300,1500,0],'axis':[1,0,0],
              'holds_tension_n':200,'holds_shear_n':200}],
         'tool_points':[{'body':'head','grip_body':'field pick','tip_mm':[120,1500,0],
@@ -38,7 +40,7 @@ class NativeObjectStrikes(unittest.TestCase):
         ai.AutonomousGuests.tearDown,ai.AutonomousGuests.setup_world,
         ai.AutonomousGuests.get,ai.AutonomousGuests.post,ai.AutonomousGuests.join)
 
-    def open_fixture(self,material,take_up=True):
+    def open_fixture(self,material,take_up=True,tool_capacity=0):
         with mock.patch.object(ai.server.secrets,'randbelow',side_effect=[0,1]):
             world=self.post('/api/worlds',{'name':f'{material} connection fixture'})['id']
         owner=self.join(world,'Fixture player');self.players={world:owner}
@@ -46,7 +48,7 @@ class NativeObjectStrikes(unittest.TestCase):
         players=app.room.player_records
         app.room=ai.server.world_room.Room('yard');app.room.scene='new-game'
         app.room.player_records=players
-        app.rooms={'new-game':app.room};app.room.spec=fixture(material)
+        app.rooms={'new-game':app.room};app.room.spec=fixture(material,tool_capacity)
         opened=app.live.open(app,{'spec':app.room.spec});app.live_holder='world'
         ai.server.inventory_room.after_open(app,opened,owner['id'])
         sid=opened['session']
@@ -57,6 +59,71 @@ class NativeObjectStrikes(unittest.TestCase):
             self.post('/api/world/inventory',{'session':sid,'op':'take_up','item':'field pick',
                 'revision':shown['record']['revision'],'request':'fixture-take','person':person},world)
         return world,owner,app,sid,person
+
+    def test_failed_tool_connection_invalidates_review_and_survives_private_restart(self):
+        import fabrication_tests as paid
+        evidence=[]
+        for material in ('glass','oak','iron'):
+            world,owner,app,sid,person=self.open_fixture(material,tool_capacity=60)
+            context={'scene':app.room.scene,'session':sid}
+            self.post('/api/world/fabrication/configure',{**context,
+                'settings':paid.settings(stock_kg={},energy_j=0),'request_id':'connection-config-0001'},world)
+            shown=self.post('/api/world/inventory/shown',{'session':sid},world)
+            held=next(e for e in shown['hands'].values() if e)
+            request={**context,'source_item':held['id'],'candidate':paid.candidate()}
+            try:reviewed=self.post('/api/world/fabrication/plan_remake',request,world)
+            except urllib.error.HTTPError as error:self.fail(error.read().decode())
+            self.assertTrue(all(j['attached'] for r in reviewed['source']['condition'] for j in r['joints']))
+            hand=self.post('/api/live/act',{'session':sid,'op':'poses'},world)['hand']
+            grip=hand['grip_m'];end=grip[:];end[0]+=.14
+            self.post('/api/live/act',{'session':sid,'op':'stroke','path':[grip,end],
+                'speed_m_s':4,'accel_m_s2':80,'lead_m':.025,'give_up_s':.125},world)
+            self.post('/api/live/act',{'session':sid,'op':'step','dt':1/240,'n':120},world)
+            damaged=self.post('/api/world/fabrication/plan_remake',request,world)
+            self.assertNotEqual(reviewed['source']['source_hash'],damaged['source']['source_hash'])
+            self.assertNotEqual(reviewed['source']['native_hash'],damaged['source']['native_hash'])
+            rows=damaged['source']['condition']
+            self.assertEqual([1,1],[r['fraction'] for r in rows])
+            failure=rows[0]['joints'][0]
+            self.assertFalse(failure['attached']);self.assertGreater(failure['parted_load_n'],60)
+            self.assertEqual(60,failure['parted_capacity_n']);self.assertTrue(failure['parted_because'])
+            self.assertEqual(failure,rows[1]['joints'][0])
+            before=deepcopy(app.room.fabrication_record)
+            with self.assertRaises(urllib.error.HTTPError) as stale:
+                self.post('/api/world/fabrication/start_remake',{**context,'plan_id':reviewed['plan_id'],
+                    'revision':before['revision'],'request_id':'stale-connection-remake'},world)
+            self.assertIn('Selected item changed',stale.exception.read().decode())
+            self.assertEqual(before,app.room.fabrication_record)
+            carried=self.post('/api/workshop/inventory',{},world)['carried']
+            self.assertEqual({r['name']:r for r in rows},{r['name']:r for r in carried[0]['condition']})
+            peer=self.join(world,'Connection peer')
+            self.assertEqual([],self.post('/api/workshop/inventory',{},world,peer['token'])['carried'])
+            with self.assertRaises(urllib.error.HTTPError):
+                self.post('/api/world/fabrication/plan_remake',request,world,peer['token'])
+            self.assertTrue(ai.server.keep_world(app,'failed tool connection review checkpoint'))
+            self.stop();self.start();self.post('/api/world/player/join',{'token':owner['token']},world)
+            self.post('/api/world/open',{},world)
+            reopened=self.post('/api/workshop/inventory',{},world)['carried']
+            self.assertEqual({r['name']:r for r in rows},{r['name']:r for r in reopened[0]['condition']})
+            evidence.append({'material':material,'failure':failure,'source_review_invalidated':True,
+                'private_restart_retained':True,'constituent_fractions':[r['fraction'] for r in rows]})
+        if ai.qa_browser.CHROME.is_file():
+            chrome=ai.qa_browser.Chrome(1280,800);self.addCleanup(chrome.close)
+            page=chrome.page;page.send('Page.enable');page.send('Runtime.enable')
+            page.send('Page.addScriptToEvaluateOnNewDocument',{'source':
+                f'localStorage.setItem("banjo.player.{world}",{json.dumps(owner["token"])});'})
+            page.send('Page.navigate',{'url':self.base+f'/world?world={world}&workshop=1&tab=inventory'})
+            deadline=time.monotonic()+15
+            while time.monotonic()<deadline:
+                if page.evaluate('Boolean(document.querySelector("#ws-inv-grid .body-condition[data-condition-state=disconnected]"))'):break
+                time.sleep(.05)
+            self.assertEqual('Disconnected',page.evaluate('document.querySelector("#ws-inv-grid .condition-value strong")?.textContent'))
+            self.assertFalse(page.evaluate('Boolean(document.querySelector("#ws-inv-grid .body-condition meter"))'))
+            self.assertEqual([],[e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
+            chrome.close()
+        (ROOT/'build/resource-flow/connection-review-http.json').write_text(json.dumps({
+            'dt_s':1/240,'cell_m':.02,'gravity_m_s2':[0,-9.81,0],'results':evidence,
+            'limits':'Authored weak tool connection; not wear, material fracture, paid replacement or separated-part inventory qualification.'},indent=2)+'\n',encoding='utf-8')
 
     def test_native_http_strike_separates_declared_target_and_reopens(self):
         results=[]
@@ -133,8 +200,13 @@ class NativeObjectStrikes(unittest.TestCase):
             'native':self.post('/api/live/act',{'session':sid,'op':'tool_points'},world),
             'view':page.evaluate('({camera:banjoRoom.camera.position.toArray(),target:banjoRoom.use().target})')})
         self.assertEqual('object-contact',answer['gesture'])
-        self.assertTrue(answer['result']['impacts'],answer)
         self.assertTrue(answer['result']['parted_joints'],answer)
+        # A browser can begin Use in sustained native contact after its carry
+        # clock has already reported the impact. Require the target's actual
+        # overload receipt; a fresh impact event is not a continuous load.
+        failure=next(j for j in answer['result']['parted_joints'] if 'target' in (j['a'],j['b']))
+        self.assertFalse(failure['attached']);self.assertEqual(200,failure['parted_capacity_n'])
+        self.assertGreater(failure['parted_load_n'],200)
         self.assertEqual('field pick',page.evaluate('banjoRoom.held().name'))
         (ROOT/'build/resource-flow/object-strike-browser.json').write_text(
             json.dumps(answer,indent=2)+'\n',encoding='utf-8')

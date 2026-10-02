@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import sys
 import time
+import threading
 import unittest
 import urllib.error
 from unittest import mock
@@ -226,6 +227,115 @@ class NativeRemake(unittest.TestCase):
             'old_fraction':diagnostic['fraction'],'new_mass_kg':result['mass_kg'],
             'paid_stock_kg':plan['quote']['stock_kg'],'paid_j':plan['quote']['supply_required_j'],
             'cell_m':.01,'dt_s':1/240,'old_body_retained':True}
+
+    def test_failed_connection_paid_mixed_replacement_retains_original_and_works(self):
+        import object_strike_tests as strikes
+        import workshop_fixed_assembly_tests as mixed
+        import tool_use
+        marker=deepcopy(next(b for b in self.room.spec['bodies'] if b['name']=='marker stone'))
+        marker.update(center_mm=[-3000,1500,0],anchored=True)
+        spec=strikes.fixture('glass',tool_capacity=60)
+        spec['cell_m']=.04
+        spec['bodies'].append(marker);spec['machines']=deepcopy(self.room.spec['machines'])
+        self.app.reply_listeners=[]
+        def heard(session,reply):
+            for listener in list(self.app.reply_listeners):listener(session,reply)
+        self.app.on_live_reply=heard
+        self.room.spec=spec;self.live.open(self.app,{'spec':spec})
+        sid=self.live.session.id
+        person={'standing_m':[-1.25,-.12,0],'eyes_m':[-1.25,1.5,0],
+                'facing':[1,0,0],'look_direction':[1,0,0]}
+        shown=inventory_room.shown(self.app)
+        taken=inventory_room.request(self.app,{'session':sid,'op':'take_up','item':'field pick',
+            'grip':[0,1.3,0],'revision':shown['record']['revision'],'request':'breakable-take','person':person})
+        self.assertTrue(taken['ok'],taken)
+        source_id=next(e['id'] for e in inventory_room.shown(self.app)['hands'].values() if e)
+        grip=self.live.session.send(op='poses')['hand']['grip_m'];end=grip[:];end[0]+=.14
+        self.live.act({'session':sid,'op':'stroke','path':[grip,end],'speed_m_s':4,
+            'accel_m_s2':80,'lead_m':.025,'give_up_s':.125})
+        self.live.act({'session':sid,'op':'step','dt':1/240,'n':120})
+        damaged=self.live.session.send(op='condition',names=['field pick'])['condition']['bodies'][0]
+        self.assertFalse(damaged['joints'][0]['attached'])
+        design=mixed.pick('iron');plan=self.plan(source_id,design)
+        for material,mass in model.materials(plan['quote'],'stock').items():
+            self.call('fund_stock',**{k:v for k,v in self.request(mass,material,'broken-feed-'+material).items()
+                                     if k not in ('scene','session')})
+        reading=self.call('state');store=reading['energy_sources'][0]
+        self.call('connect_energy',store=store['id'],store_hash=store['store_hash'],power_w=250,
+            revision=reading['state']['revision'],request_id='broken-energy-connect')
+        api.wait(self.app,{**self.context(),'seconds':max(1,math.ceil(plan['quote']['supply_required_j']/250))})
+        reading=self.call('state');store=reading['energy_sources'][0]
+        self.call('fund_energy',store_hash=store['store_hash'],joules=plan['quote']['supply_required_j'],
+            revision=reading['state']['revision'],request_id='broken-energy-feed')
+        plan=self.plan(source_id,design);ident='broken-replacement-job'
+        request={**self.context(),'plan_id':plan['plan_id'],'revision':plan['revision'],'request_id':ident}
+        ledger=deepcopy(self.room.fabrication_record);before=install._snapshot(self.live)
+        with mock.patch.object(self.app.store,'save',side_effect=OSError('broken replacement save failed')):
+            with self.assertRaises(OSError):api.request(self.app,'start_remake',request)
+        self.assertEqual(ledger,self.room.fabrication_record);self.assertEqual(before,install._snapshot(self.live))
+        accepted=api.request(self.app,'start_remake',request)
+        self.assertTrue(api.request(self.app,'start_remake',request)['replayed'])
+        job=accepted['state']['jobs'][ident]
+        self.assertEqual(plan['source']['condition'],job['remake_source']['condition'])
+        self.assertTrue(any(not j['attached'] for r in job['remake_source']['condition'] for j in r['joints']))
+        api.wait(self.app,{**self.context(),'seconds':max(1,math.ceil(job['minimum_duration_s']))})
+        preview=api.preview(self.app,{**self.context(),'job_id':ident,'position_m':[0,1.5]})
+        original=install._snapshot(self.live)
+        result=api.commit(self.app,{**self.context(),'job_id':ident,'preview_id':preview['preview_id'],
+            'request_id':'broken-replacement-install'})
+        after=install._snapshot(self.live)
+        for name in ('field pick','head'):
+            self.assertEqual(next(b for b in original['bodies'] if b['name']==name),
+                             next(b for b in after['bodies'] if b['name']==name))
+        self.assertEqual(original['joints'],after['joints'][:len(original['joints'])])
+        root=result['root_body'];shown=inventory_room.shown(self.app)
+        dropped=inventory_room.request(self.app,{'session':self.live.session.id,'op':'drop','item':source_id,
+            'revision':shown['record']['revision'],'request':'broken-source-put-down','person':person})
+        self.assertTrue(dropped['ok'],dropped)
+        shown=inventory_room.shown(self.app)
+        taken=inventory_room.request(self.app,{'session':self.live.session.id,'op':'take_up','item':root,
+            'revision':shown['record']['revision'],'request':'replacement-take','person':person})
+        self.assertTrue(taken['ok'],taken)
+        stop=threading.Event();errors=[]
+        def clock():
+            try:
+                while not stop.is_set():
+                    self.live.act({'session':self.live.session.id,'op':'step','dt':1/240,'n':1})
+                    time.sleep(1/240)
+            except Exception as error:errors.append(str(error))
+        pump=threading.Thread(target=clock,daemon=True);pump.start()
+        try:used=tool_use.run(self.app,{'session':self.live.session.id,'person':person,'target_name':'target'})
+        finally:stop.set();pump.join(5)
+        self.assertEqual([],errors);self.assertNotIn('refused',used,{
+            'answer':used,'poses':self.live.session.send(op='poses'),
+            'points':self.live.session.send(op='tool_points')})
+        self.assertTrue(used['result']['impacts'],used)
+        self.assertTrue(used['result']['working_point_connected'],used)
+        self.assertTrue(used['result']['parted_joints'],used)
+        # Persist the post-use native state before the whole reopen, as a host
+        # completion checkpoint does. The paid ledger and source stay intact.
+        final_snapshot=install._snapshot(self.live);final_ledger=deepcopy(self.room.fabrication_record)
+        model.advance(final_ledger,final_snapshot['t_s'])
+        api._persist(self.app,self.room,final_snapshot,final_ledger)
+        saved=self.app.store.load('fabrication')
+        self.live.open(self.app,{'spec':saved.spec,'snapshot':saved.world_record});self.room=self.app.room=saved
+        self.assertTrue(api.request(self.app,'start_remake',{**request,'session':self.live.session.id})['replayed'])
+        binding=self.room.fabrication_record['jobs'][ident]['remake_source']
+        self.assertEqual(job['remake_source'],binding)
+        self.assertFalse(self.live.session.send(op='condition',names=['field pick'])['condition']['bodies'][0]['joints'][0]['attached'])
+        audit=model.audit(self.room.fabrication_record)
+        self.assertLess(abs(audit['energy_residual_j']),1e-7)
+        self.assertLess(max(abs(v) for v in audit['material_residual_kg'].values()),1e-12)
+        self.assertAlmostEqual(sum(model.materials(job,'product').values()),result['mass_kg'],places=12)
+        self.native_evidence={'source_failure':damaged['joints'][0],
+            'stock_materials_kg':model.materials(job,'stock'),'paid_j':job['supply_required_j'],
+            'replacement_mass_kg':result['mass_kg'],'replacement_strike':used['result'],
+            'save_failure_rollback_and_retry':True,'whole_reopen_preserves_source_history':True,
+            'dt_s':1/240,'cell_m':.04,
+            'audit':audit,
+            'limits':'Explicit finite test rack/battery supplies; detached-part inventory reconciliation remains open.'}
+        (ROOT/'build/resource-flow/broken-replacement-native.json').write_text(
+            json.dumps(self.native_evidence,indent=2)+'\n',encoding='utf-8')
 
 
 @unittest.skipUnless(ENGINE and ENGINE.is_file(),'BANJO_LIVE_ENGINE is required')

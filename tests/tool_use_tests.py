@@ -332,6 +332,10 @@ class ObjectControls(unittest.TestCase):
     def app(self, hit=None):
         app=app_with();app.live.requests=[]
         app.live.session.state.update(t=10)
+        # This stand-in point is already in the working pose. Give its hand
+        # the matching grip; distant pickup readiness is a separate scenario.
+        app.live.session.state['hand']['grip_m']=tool_use.tool_gestures.ready_pose(
+            self.point,self.hit['point_m'],self.person['eyes_m'],self.person['look_direction'])['hand']
         native=app.live.act
         def act(body):
             app.live.requests.append(body)
@@ -427,6 +431,22 @@ class ObjectControls(unittest.TestCase):
                 self.assertAlmostEqual(got,want,places=10)
             for got,want in zip(frame['tip_local'],[a-b for a,b in zip(self.point['tip_local'],self.point['grip_local'])]):
                 self.assertAlmostEqual(got,want,places=10)
+
+    def test_native_frame_uses_actual_hand_grip_for_single_and_joined_tools(self):
+        for body in ('pick haft','pick arm'):
+            app=self.app();app.live.session.state['hand']['grip_m']=[1.2,2,3]
+            point={'body':body,'grip_body':'pick haft','attached':True,'grip_connected':True,
+                   'tip':[1.4,2,3],'grip':[1.1,2,3],'pointing':[0,0,-1]}
+            def act(request):
+                if request['op']=='tool_points':return {'tool_points':[point]}
+                if request['op']=='poses':return {'bodies':[{'name':'pick haft',
+                    'position_m':[1,2,3],'orientation_wxyz':[1,0,0,0]}]}
+                self.fail('unexpected command '+request['op'])
+            app.live.act=act
+            actual=tool_use._native_point(app,'pick haft')
+            for got,want in zip(actual['grip_local'],[.2,0,0]):self.assertAlmostEqual(got,want,places=12)
+            for got,want in zip(actual['tip_local'],[.4,0,0]):self.assertAlmostEqual(got,want,places=12)
+            self.assertEqual([0,0,-1],actual['pointing_local'])
 
 
 if __name__ == "__main__":

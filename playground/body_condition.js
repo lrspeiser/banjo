@@ -1,8 +1,14 @@
 // A reading of retained native damage, not a fatigue/strength prediction.
+function connections(rows) {
+  return [...new Map(rows.flatMap(r=>r.joints || []).map(j=>[j.id,j])).values()];
+}
+
 export function conditionSummary(rows = []) {
   if (!rows.length) return {state:"unavailable", fraction:null, text:"Not reported"};
   if (rows.some(r => r.state === "unresolved")) return {state:"unresolved",fraction:null,text:"Checking damage"};
   if (rows.some(r => r.state === "broken")) return {state:"broken",fraction:0,text:"Broken"};
+  if (connections(rows).some(j=>j.attached===false && (j.kind==="fixing" || j.parted_capacity_n>0)))
+    return {state:"disconnected",fraction:null,text:"Disconnected"};
   if (rows.some(r => r.state === "unavailable")) return {state:"unavailable",fraction:null,text:"Not reported"};
   if (rows.some(r => r.state !== "measured" || !Number.isFinite(r.fraction)))
     return {state:"unmodeled",fraction:null,text:"Not modeled"};
@@ -19,7 +25,7 @@ export function conditionPanel(rows, {label="Condition"} = {}) {
   const line=document.createElement("div");line.className="condition-value";
   const name=document.createElement("span");name.textContent=label;
   const value=document.createElement("strong");value.textContent=reading.text;line.append(name,value);panel.append(line);
-  panel.title="Recorded bond continuity and supported current thermal section factors. No fatigue or strength certification. Exact rigid parts have no internal damage model.";
+  panel.title="Recorded part damage and assembly connections. No fatigue or strength certification. Exact rigid parts have no internal damage model.";
   if (reading.fraction !== null) {
     const meter=document.createElement("meter");meter.min=0;meter.max=1;meter.value=reading.fraction;
     meter.setAttribute("aria-label",`${label}: ${reading.text}`);panel.append(meter);
@@ -34,7 +40,13 @@ export function conditionPanel(rows, {label="Condition"} = {}) {
       part.textContent=`${row.name} · ${bonds} · ${heat}${row.dent_mm>0 ? ` · Dent: ${row.dent_mm.toFixed(2)} mm` : ""}`;
       details.append(part);
     }
-    const scope=document.createElement("p");scope.textContent="Current retained connections; heat can soften or permanently damage material. Dents are separate. Use alone does not yet cause fatigue. Repair is not available yet.";
+    for (const joint of connections(rows)) {
+      const part=document.createElement("p");
+      part.textContent=`${joint.a} ↔ ${joint.b} · ${joint.attached ? "Connected" : "Disconnected"}`;
+      if (!joint.attached && joint.parted_because) part.title=joint.parted_because;
+      details.append(part);
+    }
+    const scope=document.createElement("p");scope.textContent="Part damage and separated connections are different readings. Use alone does not yet cause fatigue. Repair is not available yet.";
     details.append(scope);panel.append(details);
   }
   return panel;

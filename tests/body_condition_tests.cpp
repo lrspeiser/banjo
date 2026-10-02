@@ -135,8 +135,75 @@ void unresolvedFracture() {
     require(done["state"]=="broken" && done["fraction"]==0.,"separated pane reported whole integrity");
     std::cout<<"3 m glass impact pending -> "<<done.dump()<<"\n";
 }
+void separatedConnections() {
+    // Same native finite-fixing experiment as the ordinary strike checkpoint.
+    // No body damage is fabricated when the fixing, rather than a body, fails.
+    for (const bool source_fails:{false,true})
+    for (const auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        TileImpactRequest r;r.cell_size_m=.02;r.backend=BackendKind::CpuParallel;r.gravity_m_s2={};
+        auto head=box("head",MaterialPreset::Iron,{.1,.1,.1},{.08,1.5,0});head.shape=BodyShape::Sphere;
+        r.bodies={head,box("handle",MaterialPreset::Oak,{.04,.24,.04},{0,1.38,0}),
+            box("target",material,{.1,.1,.1},{.24,1.5,0}),
+            box("anchor",MaterialPreset::Iron,{.08,.08,.08},{.4,1.5,0},true)};
+        auto world=LiveWorld::open(r);world->foreseeCollisions(0);
+        const double capacity=source_fails?60:200;
+        const auto source=world->fix("handle","head",{.02,1.49,0},{0,1,0},source_fails?capacity:0,source_fails?capacity:0);
+        const auto target=world->fix("anchor","target",{.3,1.5,0},{1,0,0},source_fails?0:capacity,source_fails?0:capacity);
+        require(source && target,"condition fixture cannot connect its parts");
+        const Vec3 grip{0,1.3,0};
+        require(world->toolPoint("head",{.12,1.5,0},{1,0,0},.04,.04,30,.1,grip,"handle")!=0,"condition fixture has no point");
+        world->selectHand("condition player");require(world->wield("handle",grip),"condition fixture cannot wield");
+        const std::vector<std::string> names{"handle","head","target","anchor"};
+        const auto intact=Json::parse(world->conditionJson(names))["bodies"];
+        for (const auto &row:intact)
+            require(row["joints"].size()==1 && row["joints"][0]["attached"]==true,"intact fixing not reported");
+        for (unsigned i=0;i<240;++i)tick(*world);
+        LiveStroke stroke;stroke.path_m={world->hand().grip_m,world->hand().grip_m+Vec3{.14,0,0}};
+        stroke.speed_m_s=4;stroke.accel_m_s2=80;stroke.lead_m=.025;stroke.give_up_s=.125;
+        std::string why;require(world->stroke(stroke,why),why);
+        for (unsigned i=0;i<120;++i) {
+            world->step(dt);require(!world->steppedBack(),"condition fixture entered incomplete held fracture");
+        }
+        world->cancelStroke();const auto saved=world->snapshot(why);require(!saved.empty(),why);
+        const auto broken=Json::parse(world->conditionJson(names))["bodies"];
+        const auto &failure=broken[source_fails?0:2]["joints"][0];
+        require(failure["id"]==(source_fails?source:target) && failure["attached"]==false,"condition lost failed connection");
+        require(failure["parted_load_n"].get<double>()>capacity && failure["parted_capacity_n"]==capacity &&
+                !failure["parted_because"].get<std::string>().empty(),"condition lost native failure evidence");
+        require(broken[source_fails?1:3]["joints"][0]==failure,"two ends disagree about connection failure");
+        for (const auto &row:broken)
+            require(row["fraction"]==1 && row["broken_bonds"]==0,"joint failure manufactured internal damage");
+        for (unsigned i=0;i<100;++i)
+            require(Json::parse(world->conditionJson(names))["bodies"]==broken,"read-only failure history changed");
+        require(world->snapshot(why)==saved,"connection inspection changed native state");
+        auto reopened=LiveWorld::open(r,saved);
+        require(reopened->restored().tier=="whole" && Json::parse(reopened->conditionJson(names))["bodies"]==broken,
+                "connection condition/history changed on whole reopen");
+        if (source_fails) {
+            const auto head_pose=world->poses().front();
+            require(world->park("handle",why),"separated handle cannot be stored with history: "+why);
+            require(world->parked("handle") && !world->parked("head"),"stowing handle also stored its detached head");
+            const auto packed=Json::parse(world->conditionJson(names))["bodies"];
+            require(packed[0]["joints"][0]==failure && packed[1]["joints"][0]==failure,
+                    "parking erased or healed failure history");
+            const auto away=world->snapshot(why);require(!away.empty(),why);
+            auto bag=LiveWorld::open(r,away);bag->selectHand("another player");
+            require(!bag->unpark("handle",{0,1.38,0},{1,0,0,0},why),"another player took the separated handle from the bag");
+            bag->selectHand("condition player");
+            require(bag->unpark("handle",{0,1.38,0},{1,0,0,0},why),"separated handle cannot come back: "+why);
+            require(condition(*bag,"handle")["joints"][0]==failure && !bag->toolPoints().front().grip_connected,
+                    "unpark repaired failed fixing or working point");
+            require(bag->poses().front().position_m.x==head_pose.position_m.x &&
+                    bag->poses().front().position_m.y==head_pose.position_m.y &&
+                    bag->poses().front().position_m.z==head_pose.position_m.z,
+                    "bag operations moved the detached head in the world");
+        }
+        std::cout<<"condition / "<<(source_fails?"tool":"target")<<" / "<<materialPresetName(material)
+            <<": "<<failure.dump()<<"; intact constituent bonds; read-only and whole reopen\n";
+    }
+}
 }
 int main() {
-    try{coldAndHeated();realCuts();boundedAndUnsupported();unresolvedFracture();std::cout<<"4 native condition cases passed\n";return 0;}
+    try{coldAndHeated();realCuts();boundedAndUnsupported();unresolvedFracture();separatedConnections();std::cout<<"5 native condition cases passed\n";return 0;}
     catch(const std::exception &e){std::cerr<<e.what()<<"\n";return 1;}
 }

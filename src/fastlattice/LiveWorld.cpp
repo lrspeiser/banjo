@@ -13097,6 +13097,7 @@ std::string LiveWorld::conditionJson(const std::vector<std::string> &names) cons
     for (const auto &job:I.queued) awaiting(job.get());
     nlohmann::json rows=nlohmann::json::array();
     std::unordered_map<std::uint32_t,std::size_t> selected;
+    std::unordered_map<std::string,std::size_t> joint_rows;
     std::vector<double> lost(names.size(),0.);
     std::set<std::string> unique;
     for (const auto &name:names) {
@@ -13104,7 +13105,9 @@ std::string LiveWorld::conditionJson(const std::vector<std::string> &names) cons
             throw std::invalid_argument("Condition body names must be unique and bounded");
         nlohmann::json row={{"name",name},{"fraction",nullptr},{"state","unavailable"},
             {"bonds",0},{"broken_bonds",0},{"damaged_bonds",0},
-            {"connections_fraction",nullptr},{"thermal_fraction",nullptr}};
+            {"connections_fraction",nullptr},{"thermal_fraction",nullptr},
+            {"joints",nlohmann::json::array()}};
+        joint_rows.emplace(name,rows.size());
         const auto found=I.index_of.find(name);
         if (found==I.index_of.end()) {
             for (const auto &body:I.described)
@@ -13138,6 +13141,33 @@ std::string LiveWorld::conditionJson(const std::vector<std::string> &names) cons
             }
         }
         rows.push_back(std::move(row));
+    }
+    for (std::size_t k=0;k<rows.size();++k)
+        if (rows[k].contains("source_parts"))
+            for (const auto &part:rows[k]["source_parts"])
+                joint_rows[part.get<std::string>()]=k;
+    // Assembly separation is distinct from damage inside either constituent.
+    // Retain stable connection/failure history, not current reaction loads or
+    // poses: merely moving an intact item must not invalidate a Lab review.
+    for (const auto &joint:I.joints) {
+        const auto a=joint_rows.find(joint.a),b=joint_rows.find(joint.b);
+        if (a==joint_rows.end() && b==joint_rows.end()) continue;
+        const char *kind=joint.kind==JoltWorld::JointKind::Slider?"slider":
+            joint.kind==JoltWorld::JointKind::Link?"link":
+            joint.kind==JoltWorld::JointKind::Pulley?"pulley":
+            joint.kind==JoltWorld::JointKind::Fixing?"fixing":
+            joint.kind==JoltWorld::JointKind::Elastic?"elastic":
+            joint.kind==JoltWorld::JointKind::Drum?"drum":"hinge";
+        const nlohmann::json reading={{"id",joint.id},{"kind",kind},
+            {"a",joint.a},{"b",joint.b},
+            {"attached",joint.attached && (joint.rigid!=0 || I.setAside(joint))},
+            {"holds_tension_n",joint.holds_tension_n},{"holds_shear_n",joint.holds_shear_n},
+            {"comes_off_n",joint.comes_off_n},{"breaks_at_n",joint.breaks_at_n},
+            {"parted_because",joint.parted_because},{"parted_load_n",joint.parted_load_n},
+            {"parted_capacity_n",joint.parted_capacity_n}};
+        if (a!=joint_rows.end()) rows[a->second]["joints"].push_back(reading);
+        if (b!=joint_rows.end() && (a==joint_rows.end() || a->second!=b->second))
+            rows[b->second]["joints"].push_back(reading);
     }
     // One traversal for the entire request. No geometry, physical state,
     // timestamps, inventory or damping are changed by this diagnostic.
@@ -15610,8 +15640,11 @@ bool LiveWorld::park(const std::string &name, std::string &why) {
             if (joint.a != own && joint.b != own) continue;
             const std::string &other = joint.a == own ? joint.b : joint.a;
             const std::string word = jointWord(joint.kind);
-            // Parted, but still on record between two names: with one of them
-            // away, it would be a joint to nothing.
+            // A failed fixing has no live constraint. Its retained endpoints
+            // and failure receipt remain meaningful if either part is in a
+            // bag; neither parking nor unpark may recreate or erase it.
+            if (!joint.attached && joint.kind==JoltWorld::JointKind::Fixing && joint.rigid==0)
+                continue;
             if (!joint.attached)
                 return "the " + word + " that joined it to the " + other +
                        " has parted but is still on record: take the " + word + " away first";
