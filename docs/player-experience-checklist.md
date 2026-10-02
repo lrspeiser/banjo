@@ -1,6 +1,6 @@
 # Remaining player goals — October 1, 2026
 
-Updated against published main `3e2b508`. This is the current working list: six remaining goals, consolidated from the owner's fourteen experience requests and the earlier AI/tech-tree playthrough request. Each goal describes unfinished work; existing implementations and evidence are linked so they can be extended.
+Updated against published main `ea9dc5b`. This is the current working list: six remaining goals, consolidated from the owner's fourteen experience requests and the earlier AI/tech-tree playthrough request. Each goal describes unfinished work; existing implementations and evidence are linked so they can be extended.
 
 ## Remaining work
 
@@ -23,7 +23,9 @@ Updated against published main `3e2b508`. This is the current working list: six 
 
 ## Working features covered by existing checkpoints
 
-**Latest verified slice, October 1:** quiet autosave retries, faster walking/edge look, Esc Cursor/resume and water immersion/flow feedback. [Navigation/water evidence](navigation-water-checkpoint.md) confirms native object forces and actual player entry; player swimming remains a camera approximation, so R5 is still open.
+**Latest verified slice, October 1:** [Mixed-tool draft fidelity](mixed-tool-draft-checkpoint.md) retains iron/oak through edits, Save and reload; Make explains its unsupported native joint without spending. R2 stays open.
+
+**Navigation verified slice, October 1:** quiet autosave retries, faster walking/edge look, Esc Cursor/resume and water immersion/flow feedback. [Navigation/water evidence](navigation-water-checkpoint.md) confirms native object forces and actual player entry; player swimming remains a camera approximation, so R5 is still open.
 
 Fresh generated entry and the Menu; Walk/Fly, gravity/jump and measured river/hill escape; moving sun/shadows, solar charging and battery-powered night light; contextual material thumbnails and nearby Look; component thumbnails that keep items assembled; compact personal Inventory; recipe shortage guidance; tool discovery, fast repeated use, full-load feedback and heaping; direct skill progress/achievements; Workshop typing and whole-pick selection/head editing/Save; supported single-material paid Make; sensor readouts and bounded rover recovery; visible transfers, protected input hoppers and personal output collection.
 

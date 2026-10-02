@@ -67,3 +67,14 @@ then run paid modification → Save → Make → pickup → native use in normal
 R1–R6 and the full fourteen player requests remain active. This checkpoint fixes
 design substitution and makes its capability boundary reviewable; it does not
 claim mixed-material tools now work in the World.
+
+## Published checkpoint
+
+Implementation **`ea9dc5b`** is on GitHub main; the remote main ref matches the
+full revision in the evidence file. Own preview [World](http://127.0.0.1:8770/world)
+was restarted with these host sources and the unchanged native binaries.
+Actual Chrome reopens the earlier ten-body world and creates a fresh funded world
+with empty workbench supplies, the 22-cell intact pick, component pictures,
+private mini Inventory and contextual 0/1 gathering progress. Zero JavaScript
+exceptions. The isolated mixed-draft test above covers the edit/save/refusal flow.
+The remaining six goals and the complete fourteen-request objective stay active.

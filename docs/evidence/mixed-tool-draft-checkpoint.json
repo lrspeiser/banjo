@@ -280,5 +280,21 @@
     "total": 98,
     "duration_s": 28.599,
     "skips": 0
+  },
+  "published_implementation_revision": "ea9dc5bf2ba629adc417ec0c2660987f8cec31a6",
+  "preview": {
+    "url": "http://127.0.0.1:8770/world?world=31c66cd971614223bd8be8ec9e51516e&scene=new-game",
+    "old_world_body_count": 10,
+    "fresh_pick_cells": 22,
+    "fresh_pick_design": true,
+    "legacy_world_funded_make": false,
+    "fresh_world_funded_make": true,
+    "workbench_stock_kg": {},
+    "workbench_energy_j": 0.0,
+    "mini_inventory": "Inventory\nOpen all \u2192\nField pick\nRight hand\nStow\nYour energy\n0 J\nSolar \u00b7 shared\n1,987,883 J\nSolar rate\n242.8 J/s",
+    "skill_progress": "0 / 1",
+    "skill_card": "Field pick\nSkills \u2197\nGathering by hand\nReady\n0 / 1\n\nDig soil or sand with your Field pick once.",
+    "legacy_tabs_removed": true,
+    "exception_count": 0
   }
 }
