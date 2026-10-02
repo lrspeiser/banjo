@@ -143,5 +143,10 @@ Sources: [CPU fixed contact](../src/physics/FixedAssemblyContact.cpp),
 
 ## Publication
 
-Implementation publication is pending the final fetch and ordinary main push.
-Preview binaries are not rebuilt by this checkpoint; no deployment is included.
+Implementation `1a713a56487a04c8d4557506f7f939ece0dd85ce` is published on
+GitHub main by an ordinary fast-forward push. The recorded tests were compiled
+from those exact implementation sources; this following publication record
+changes only documentation. Preview 8770 remains HTTP 200 with unchanged R2
+`banjo_live_world_run.exe` and `banjo.dll` hashes. No deployment is included.
+Ordinary held-tool object destruction and the five remaining player goals are
+still open; this publication qualifies only the constrained contact phase.
