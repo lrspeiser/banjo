@@ -26,11 +26,14 @@
 
 #include "fastlattice/LiveWorld.hpp"
 #include "physics/GripPull.hpp"
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <functional>
 #include <iostream>
+#include <map>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -512,6 +515,110 @@ void aGateTooHeavyToLiftStillSwings() {
             "the hand took more oak up its grooves than its strength can hold up");
 }
 
+void refusedStepsRestoreEveryPlayersHand() {
+    const auto sameHand=[](const LiveHand &a,const LiveHand &b) {
+        require(a.holding==b.holding&&a.mode==b.mode&&length(a.target_m-b.target_m)==0&&
+            length(a.grip_m-b.grip_m)==0&&length(a.grip_velocity_m_s-b.grip_velocity_m_s)==0&&
+            length(a.force_n-b.force_n)==0&&a.work_j==b.work_j&&a.stroking==b.stroking&&
+            a.stroke_along_m==b.stroke_along_m&&a.stroke_length_m==b.stroke_length_m&&a.stroke_ended==b.stroke_ended&&
+            a.let_go_body==b.let_go_body&&length(a.let_go_velocity_m_s-b.let_go_velocity_m_s)==0&&
+            a.let_go_at_s==b.let_go_at_s&&a.let_go_work_j==b.let_go_work_j,"refused/retried step changed a player's hand state");
+    };
+    for (const std::string mode:{"grip","haul","fixed"}) for (auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        auto request=aBall(material,.1,{-1,1.5,1});request.gravity_m_s2={};request.bodies[0].name="left tool";
+        auto right=request.bodies[0];right.name="right tool";right.center_m={1,1.5,1};request.bodies.push_back(right);
+        SceneBody pane;pane.name="pane";pane.shape=BodyShape::Box;pane.material=MaterialPreset::Glass;
+        pane.dimensions_m={.3,.04,.3};pane.center_m={0,.1,0};request.bodies.push_back(pane);
+        SceneBody striker;striker.name="striker";striker.shape=BodyShape::Sphere;striker.material=MaterialPreset::Iron;
+        striker.dimensions_m={.1,.1,.1};striker.center_m={0,.24,0};striker.velocity_m_s={0,-8,0};request.bodies.push_back(striker);
+        if (mode!="grip") for (const std::string actor:{"left","right"}) {
+            SceneBody support;support.name=actor+(mode=="haul"?" anchor":" handle");support.shape=BodyShape::Box;
+            support.material=mode=="haul"?MaterialPreset::Iron:MaterialPreset::Oak;
+            support.anchored=mode=="haul";support.dimensions_m=mode=="haul"?Vec3{.04,.04,.04}:Vec3{.24,.04,.04};
+            support.center_m={actor=="left"?-1.16:1.16,1.5,mode=="haul"?.8:1.0};request.bodies.push_back(support);
+        }
+        auto live=LiveWorld::open(request),control=LiveWorld::open(request);
+        for (auto *world:{live.get(),control.get()}) {
+            world->foreseeCollisions(0);
+            for (auto actor:{std::string("left"),std::string("right")}) {
+                world->selectHand(actor);const bool left=actor=="left";
+                const Vec3 start{left?-1.0:1.0,1.5,1};
+                if (mode=="haul") require(world->hinge(actor+" anchor",actor+" tool",start+Vec3{0,0,-.1},{0,1,0},-180,180,0)!=0,
+                    "two-player hinge creation failed");
+                if (mode=="fixed") require(world->fix(actor+" handle",actor+" tool",start+Vec3{left?-.05:.05,0,0},{1,0,0},0,0)!=0,
+                    "two-player ideal fixed-group creation failed");
+                require(mode=="haul"?world->grab(actor+" tool"):world->wield(actor+" tool",start),"two-player fixture could not hold tool");
+                LiveStroke stroke;stroke.path_m={start,start+Vec3{left?.8:-.8,0,0}};
+                stroke.speed_m_s=4;stroke.accel_m_s2=40;stroke.lead_m=.05;
+                stroke.facings_wxyz={{},{std::cos(.2),0,0,std::sin(.2)}};
+                std::string why;require(world->stroke(stroke,why),"two-player fixture could not begin stroke: "+why);
+            }
+        }
+        bool refused=false;
+        for (unsigned step=0;step<24&&!refused;++step) {
+            std::map<std::string,LiveHand> before;
+            for (auto actor:{std::string("left"),std::string("right")}) {live->selectHand(actor);before[actor]=live->hand();}
+            const double time=live->time_s();live->step(kDt);
+            refused=live->steppedBack();
+            if (refused) {
+                require(live->time_s()==time,"refused player step advanced world time");
+                for (auto actor:{std::string("left"),std::string("right")}) {live->selectHand(actor);sameHand(before.at(actor),live->hand());}
+                const auto waiting=live->breakable();require(!waiting.empty(),"refused fixture has no real material admission");
+                for (const auto &name:waiting) {live->declineBreak(name);control->declineBreak(name);}
+                live->step(kDt);require(!live->steppedBack(),"declined material offer did not admit retry");
+            }
+            control->step(kDt);require(!control->steppedBack(),"never-rejected control refused the selected collision");
+            require(live->time_s()==control->time_s(),"retry/control accepted clocks diverged");
+            for (auto actor:{std::string("left"),std::string("right")}) {
+                live->selectHand(actor);control->selectHand(actor);sameHand(live->hand(),control->hand());
+                for (const std::string suffix:mode=="fixed"?std::vector<std::string>{" tool"," handle"}:std::vector<std::string>{" tool"}) {
+                    const auto a=named(live->poses(),actor+suffix),b=named(control->poses(),actor+suffix);
+                    require(length(a.position_m-b.position_m)==0&&length(a.velocity_m_s-b.velocity_m_s)==0&&
+                        std::equal(std::begin(a.orientation_wxyz),std::end(a.orientation_wxyz),std::begin(b.orientation_wxyz)),
+                        "retry changed a player's constituent motion or desired wrist facing");
+                }
+            }
+        }
+        require(refused,"two-player hand rollback fixture never refused a collision");
+        const auto before_error=live->playerHands();const double accepted_time=live->time_s();bool threw=false;
+        try {live->step(std::numeric_limits<double>::max());}catch (const std::invalid_argument &) {threw=true;}
+        require(threw&&live->time_s()==accepted_time,"unrepresentable native step was accepted or advanced time");
+        for (const std::string actor:{"left","right"}) {live->selectHand(actor);sameHand(before_error.at(actor),live->hand());}
+        live->step(kDt);control->step(kDt);
+        require(!live->steppedBack()&&!control->steppedBack()&&live->time_s()==control->time_s(),"exception recovery failed to accept one step");
+        for (const std::string actor:{"left","right"}) {
+            live->selectHand(actor);control->selectHand(actor);sameHand(live->hand(),control->hand());live->cancelStroke();control->cancelStroke();
+        }
+        std::string why;const auto saved=live->snapshot(why);require(!saved.empty(),"post-rollback snapshot refused: "+why);
+        const auto saved_control=control->snapshot(why);require(!saved_control.empty(),"control snapshot refused: "+why);
+        const auto state=nlohmann::json::parse(saved),expected=nlohmann::json::parse(saved_control);
+        require(state.at("steps")==expected.at("steps")&&state.at("steps").get<std::uint64_t>()==static_cast<std::uint64_t>(std::llround(live->time_s()/kDt))&&
+            state.at("last_dt_s")==expected.at("last_dt_s"),"refused/exceptional attempts polluted persisted accepted scheduler metadata");
+        require(state.at("player_hands")==expected.at("player_hands")&&state.at("hand")==expected.at("hand"),
+            "refused/exceptional attempts polluted saved personal grip, wrist or work history");
+        require(std::isfinite(live->hand().work_j)&&std::abs(live->hand().work_j)>0,"rollback fixture did not retain actual hand work");
+        auto restarted=LiveWorld::open(request,saved),restarted_control=LiveWorld::open(request,saved_control);
+        require(restarted->restored().tier=="whole"&&restarted_control->restored().tier=="whole",
+            "post-rollback fixture could not restore the whole saved world");
+        for (unsigned step=0;step<8;++step) {
+            restarted->step(kDt);restarted_control->step(kDt);
+            require(!restarted->steppedBack()&&!restarted_control->steppedBack()&&restarted->time_s()==restarted_control->time_s(),
+                "restarted rollback/control clocks diverged");
+            for (const std::string actor:{"left","right"}) {
+                restarted->selectHand(actor);restarted_control->selectHand(actor);
+                sameHand(restarted->hand(),restarted_control->hand());
+                for (const std::string suffix:mode=="fixed"?std::vector<std::string>{" tool"," handle"}:std::vector<std::string>{" tool"}) {
+                    const auto a=named(restarted->poses(),actor+suffix),b=named(restarted_control->poses(),actor+suffix);
+                    require(length(a.position_m-b.position_m)==0&&length(a.velocity_m_s-b.velocity_m_s)==0&&
+                        std::equal(std::begin(a.orientation_wxyz),std::end(a.orientation_wxyz),std::begin(b.orientation_wxyz)),
+                        "restarted tool/constituent motion diverged after rollback");
+                }
+            }
+        }
+        std::cout<<"  "<<mode<<" "<<materialPresetName(material)<<": two-player refused/exceptional hand and accepted retry = exact; work="
+            <<live->hand().work_j<<" J; mass="<<named(live->poses(),"right tool").mass_kg<<" kg\n";
+    }
+}
 } // namespace
 
 int main() {
@@ -519,6 +626,7 @@ int main() {
     // hides the rest.
     const std::vector<std::pair<const char *, std::function<void()>>> tests = {
         {"shared grip effective mass, bounds and root-feedback oracles", sharedGripAnalyticalOracles},
+        {"refused native collision restores every player's hand", refusedStepsRestoreEveryPlayersHand},
         {"a stroke needs a hand that pulls", aStrokeNeedsAHandThatPulls},
         {"the same throw, light and heavy balls", lightAndHeavyBalls},
         {"a draw against a spring", drawingAgainstASpring},

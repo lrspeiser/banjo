@@ -3253,13 +3253,13 @@ struct LiveWorld::Impl {
                 stroke_ended, let_go_body, hand_work_j, let_go_at_s, let_go_work_j,
                 hand_applied_n, haul_pushed, let_go_velocity, hand_step};
     }
-    void loadHand(const HandContext &h) {
+    void loadHand(HandContext h) {
         holding = h.holding; held_at = h.held_at; held_velocity = h.held_velocity;
         grip_local = h.grip_local; hand_force = h.hand_force;
         held_facing = h.held_facing; hand_strength_n = h.hand_strength_n;
         hand_torque_n_m = h.hand_torque_n_m; hand_mass_kg = h.hand_mass_kg;
-        wielding = h.wielding; stroke = h.stroke; stroke_ended = h.stroke_ended;
-        let_go_body = h.let_go_body; hand_work_j = h.hand_work_j;
+        wielding = h.wielding; stroke = std::move(h.stroke); stroke_ended = std::move(h.stroke_ended);
+        let_go_body = std::move(h.let_go_body); hand_work_j = h.hand_work_j;
         let_go_at_s = h.let_go_at_s; let_go_work_j = h.let_go_work_j;
         hand_applied_n = h.hand_applied_n; haul_pushed = h.haul_pushed;
         let_go_velocity = h.let_go_velocity; hand_step = h.hand_step;
@@ -6320,6 +6320,27 @@ void LiveWorld::step(double dt_s) {
 
     const std::string caller = impl_->selected_hand;
     impl_->hands[caller] = impl_->handContext();
+    auto hands_before = impl_->hands;
+    auto active_hand_before = impl_->handContext();
+    const auto steps_before = impl_->steps_taken;
+    const double horizon_before = impl_->last_dt_s;
+    bool actor_step_kept = false, actor_step_restored = false;
+    const auto restoreActorStep = [&](bool retain_refused_horizon) {
+        // Select without flushing tentative working fields over the saved map.
+        // Consume the snapshot only once, including if carrier selection fails.
+        actor_step_restored = true;
+        impl_->hands = std::move(hands_before);
+        impl_->loadHand(std::move(active_hand_before));
+        impl_->selected_hand = caller;
+        impl_->steps_taken = steps_before;
+        // A material offer still needs the duration of its refused rigid step
+        // to size the fracture window; an exceptional step creates no offer.
+        if (!retain_refused_horizon) impl_->last_dt_s = horizon_before;
+        if (impl_->environment) {
+            try { impl_->environment->selectCarrier(caller); }
+            catch (...) { throw std::runtime_error("live player carrier restoration failed; discard this world"); }
+        }
+    };
     std::vector<std::string> actors;
     actors.reserve(impl_->hands.size());
     for (const auto &[actor, unused] : impl_->hands) {
@@ -6338,6 +6359,7 @@ void LiveWorld::step(double dt_s) {
     // Where a stroke wants the grip for this step, and where the grip is, for
     // the work the step does. Before the grip's pull below, which is towards
     // exactly that.
+    try {
     forHands([&](const std::string &) { beginHandStep(dt_s); });
 
     // The hand on a wielded grip: pulling AT the grip with a bounded force and
@@ -6524,10 +6546,11 @@ void LiveWorld::step(double dt_s) {
         // and the clock moves again.
         if (!committed) {
             // The step did not happen, so neither did the hand's part of it.
-            forHands([&](const std::string &) { abandonHandStep(); });
+            restoreActorStep(true);
             if (impl_->pending) queueBreaks();
             return;
         }
+        actor_step_kept = true;
         impl_->time_s += dt_s;
         impl_->advanceSun();
         impl_->rememberJointAngles(*impl_->world);
@@ -6573,6 +6596,7 @@ void LiveWorld::step(double dt_s) {
     pushWater();
     impl_->pushCircuits();
     impl_->world->step(dt_s);
+    actor_step_kept = true;
     holdStill();
     holdPending();
     (void)judgeStep();
@@ -6616,6 +6640,10 @@ void LiveWorld::step(double dt_s) {
             [&](const HandPush &h) { return h.actor == actor; });
         endHandStep(push->force, push->torque, dt_s);
     });
+    } catch (...) {
+        if (!actor_step_kept && !actor_step_restored) restoreActorStep(false);
+        throw;
+    }
 }
 
 // Part every link carrying more than it can take.
@@ -13830,14 +13858,6 @@ void LiveWorld::beginHandStep(double dt_s) {
     // the hand; the wrist turns the thing towards it with what it has.
     if (!s.asked.facings_wxyz.empty())
         I.held_facing = facingAlong(s.asked.facings_wxyz, s.at_m, next.along);
-}
-
-void LiveWorld::abandonHandStep() {
-    Impl &I = *impl_;
-    // The world is back as it was when the step began, and the pulls it began
-    // with are back in the accumulator; whatever the trial pushed is gone.
-    I.haul_pushed = I.hand_step.haul_in;
-    I.hand_step = Impl::HandStep{};
 }
 
 void LiveWorld::endHandStep(const Vec3 &grip_force_n, const Vec3 &grip_torque_n_m, double dt_s) {

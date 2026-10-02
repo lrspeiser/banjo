@@ -2469,7 +2469,6 @@ private:
     // taken back undoes the first half and never gets the second.
     void beginHandStep(double dt_s);
     void endHandStep(const Vec3 &grip_force_n, const Vec3 &grip_torque_n_m, double dt_s);
-    void abandonHandStep();
     // Whether what the hand holds is attached to something, which makes holding
     // it a haul rather than a carry.
     [[nodiscard]] bool hauling() const;

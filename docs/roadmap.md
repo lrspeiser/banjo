@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Actual actor rollback prerequisite, October 2:** [LiveWorld hand checkpoint](held-strike-actor-checkpoint.md) restores every player's tentative hand context and accepted scheduler counter, retaining the refused material-offer horizon and restoring it on exception. Two-player glass/oak/iron free-grip, hinge-haul and fixed-group retry/save/reopen cases pass; fourteen affected suites pass, registration 297/297. Next coordinate these actual live actors with the paired native/CPU target clock, account finite interface failure and grip remapping, then install ordinary object strikes and qualify damage/paid repair/replacement/restart. Other preparation histories and large-world fallback rollback remain outside this boundary. R3 is open; preview binaries are unchanged.
+
 **Owned solver rollback prerequisite, October 2:** [Native/CPU trial checkpoint](held-strike-rollback-checkpoint.md) restores source/target dynamics, constitutive history, pending loads, captures and clock metadata on refusal/exception, with matched glass/oak/iron retries. Native gear/rope configuration and mutation-admission gaps are addressed. Next coordinate actual LiveWorld hand/actor and accepted scheduler history, finite interface failure and grip remapping, then install ordinary object strikes and verify damage/paid repair/replacement/restart. Five player goals remain open; this does not close R3. Verification: 26 affected ordinary suites pass; source registration 297/297. The full long material-network capacity suite is not qualified by this checkpoint.
 
 **Bounded hand/target prerequisite, October 2:** [Shared grip reference](held-strike-hand-checkpoint.md) now uses the actual LiveWorld controller law in a local native-root wrench and simultaneous native/CPU clock experiment. Analytical feedback/force/torque gates, matched glass/oak/iron cases and eighteen affected suites pass. Signed hand work and native source remainders are retained; external contact joint impulses are not mistaken for cached native strength loads. Next implement full source/target/hand rollback, finite interface failure and grip/history handling, then wire normal object strikes and complete the paid damage/reuse/restart journey. R3 and the five remaining player goals stay open.
@@ -63,6 +65,14 @@ that manufactured items cannot be damaged.
    torque, hand work, fracture/contact losses and numerical correction. Include
    repeated strikes, another player's hand, detached heads, failed saves and
    restart. Keep the ground-use and paid Make regressions passing.
+
+The striking tool must participate in supported damage and finite-fixing
+failure too. Remap the hand to its retained grip matter, stop use when the
+working point/head disconnects, and preserve the tool's damage through the
+same private inventory and paid reuse journey. Ordinary use currently has no
+fatigue, abrasive wear or edge-blunting law; a per-click health decrement
+would not supply one. Supported impact damage and joint failure must remain
+distinct from future material-derived wear.
 
 This route is planned, not implemented or validated by the paid Make checkpoint.
 
