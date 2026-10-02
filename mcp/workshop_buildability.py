@@ -104,6 +104,11 @@ def assess(design: WorkshopDesign, component_overrides: Any = None, *,
                   preview_complete=False, errors=[], warnings=[], missing_components=[],
                   costs={"stored_cells": None, "collision_boxes": None,
                          "active_deformation_cells": None, "fragment_count": None})
+    from . import workshop_material_support
+    blocker = workshop_material_support.fixed_lattice_blocker(design, component_overrides)
+    if blocker:
+        report["blocker"] = blocker
+        report["errors"].append(blocker["message"])
     try:
         full = visual.matter_document(design, component_overrides, cell_size_m=cell_size_m)
     except ValueError as exc:
@@ -137,7 +142,7 @@ def assess(design: WorkshopDesign, component_overrides: Any = None, *,
             if len(boxes) > MAX_SCENE_BOXES:
                 report["errors"].append(f"{len(boxes)} joined boxes exceed the {MAX_SCENE_BOXES}-box exact bridge budget")
         materials = {c["material"] for c in full["cells"]}
-        if len(materials) > 1:
+        if len(materials) > 1 and not blocker:
             report["errors"].append("Mixed-material fixed interfaces are not supported by the current installation adapter")
     else:
         report["errors"].append("No physical cells exist at this resolution")

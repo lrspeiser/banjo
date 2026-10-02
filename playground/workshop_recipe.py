@@ -33,7 +33,8 @@ def _one(design: Any, overrides: Any, cell_m: float) -> dict[str, Any]:
     else:
         reason = result["says"]
     return {"cell_size_m": cell_m, "as_drawn": bool(result["ok"] and not result["changes"]),
-            "reason": reason, "changes": [c["says"] for c in result["changes"]]}
+            "reason": reason, "changes": [c["says"] for c in result["changes"]],
+            **({"blocker": result["blocker"]} if result.get("blocker") else {})}
 
 
 def assess(design: Any, overrides: Any = None, *, world_cell_m: float | None) -> dict[str, Any]:

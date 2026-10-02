@@ -29,6 +29,13 @@ def block(name, role, size, at, material="oak"):
                     material=material, rotation_deg=(0.0, 0.0, 0.0), shape="box", family=role)
 
 
+def wooden_cart(**kwargs):
+    """Explicit all-oak fixture; the ordinary catalog cart remains mixed."""
+    base = assemble("cart", **kwargs)
+    return workshop_components.apply_overrides(base, {
+        p.name: {"material": "oak"} for p in base.parts if p.material != "oak"})
+
+
 def door_and_frame():
     """Two posts, a lintel across them, and a leaf hung on the left post."""
     base = WorkshopDesign(design_id="door", purpose="a door that swings in its frame",
@@ -60,7 +67,7 @@ class TheCart(unittest.TestCase):
     def setUp(self):
         # A cart is worked by its handle, and every place you touch it names a
         # part: the world hands you a component, not an assembly.
-        self.design = assemble("cart", design_id="c", parameters={
+        self.design = wooden_cart( design_id="c", parameters={
             "primary_use_component": "handle",
             "interaction_point_components": {"deck": "deck", "grip": "handle", "use": "handle"}})
 
@@ -101,6 +108,19 @@ class TheCart(unittest.TestCase):
             self.assertTrue(change["says"].strip())
             self.assertIn(change["part"].split(",")[0].strip(), change["says"])
             self.assertTrue(change["rule"].strip())
+
+    def test_catalog_mixed_cart_is_refused_without_recoloring_or_redrawing(self):
+        base = assemble("cart", design_id="mixed-cart")
+        before = base.wireframe()
+        answer = workshop_fitting.check_validity(base, {}, cell_m=CELL)
+        self.assertFalse(answer["ok"])
+        self.assertEqual([], answer["changes"])
+        self.assertEqual("mixed_lattice_interface_unsupported", answer["blocker"]["code"])
+        self.assertEqual(before, base.wireframe())
+        preserved = workshop_components.apply_overrides(base, answer["overrides"])
+        self.assertEqual({p.name: p.material for p in base.parts},
+                         {p.name: p.material for p in preserved.parts})
+        self.assertTrue(answer["blocker"]["can_save_design"])
 
 
 class ADoorNobodyTunedFor(unittest.TestCase):
@@ -287,7 +307,7 @@ class DressingAProductWithoutChangingIt(unittest.TestCase):
         runs = Path(self.tmp.name) / "runs"
         runs.mkdir(parents=True)
         app = types.SimpleNamespace(runs_path=runs, workshop_owner_id="owner")
-        design = assemble("cart", design_id="c")
+        design = wooden_cart( design_id="c")
         candidate = design.wireframe()
         candidate["component_overrides"] = {}
         self.state = workshop_chat._State(app, candidate, None, ["oak", "iron"], [])
@@ -331,7 +351,7 @@ class AProductThatDrivesItself(unittest.TestCase):
     """
 
     def driven_cart(self, motor_on=("bearing-mount-11", "axle-1"), store="battery"):
-        base = assemble("cart", design_id="c", parameters={
+        base = wooden_cart( design_id="c", parameters={
             "primary_use_component": "handle",
             "interaction_point_components": {"deck": "deck", "grip": "handle", "use": "handle"}})
         record = {
@@ -467,7 +487,7 @@ class TheChatCanMakeItGo(unittest.TestCase):
         runs = Path(self.tmp.name) / "runs"
         runs.mkdir(parents=True)
         app = types.SimpleNamespace(runs_path=runs, workshop_owner_id="owner")
-        design = assemble("cart", design_id="c")
+        design = wooden_cart( design_id="c")
         candidate = design.wireframe()
         candidate["component_overrides"] = {}
         self.state = workshop_chat._State(app, candidate, None, ["oak", "iron"], [])
@@ -717,14 +737,11 @@ class ARobotBuiltThroughTheChatsTools(unittest.TestCase):
         self.state.design = workshop_components.apply_overrides(self.state.base, self.state.overrides)
         return self.state
 
-    def test_a_small_part_is_grown_to_the_grid_as_cells_and_kept_when_finalized(self):
-        """The owner's requirement: draw it in cells, then finalize it so the
-        parts too small for cells survive.
+    def test_a_mixed_pin_is_preserved_and_refused_as_lattice(self):
+        """A grid diagnostic must retain the requested iron pin in an oak frame.
 
-        A 12 mm pin cannot be made of 40 mm cells -- a part thinner than two of
-        them is lost between its neighbours -- so the bench grows it to 80 mm,
-        which is a different object than the one asked for. Finalized, none of
-        the grid's rules apply, and it is a 12 mm pin.
+        A separate exact-rigid test below qualifies that declared machine model;
+        lattice fitting cannot simulate its material interface by substitution.
         """
         self.state.execute("add_part", {"name": "pin", "role": "axle", "size_m": [0.012, 0.012, 0.06],
                                         "center_m": [0.0, 0.234, -0.27], "material": "iron",
@@ -735,13 +752,13 @@ class ARobotBuiltThroughTheChatsTools(unittest.TestCase):
 
         self.assertAlmostEqual(0.012, thickness())
 
-        # As cells: grown to two of them, and it says so.
+        # A fitting pass cannot turn the iron pin into wood to pass the grid.
         answer = self.state.execute("check_validity", {})
-        self.assertTrue(answer["ok"], answer.get("summary"))
-        grown = thickness()
-        self.assertAlmostEqual(CELL * 2, grown, places=6)
-        self.assertTrue(any(c["part"] == "pin" for c in answer["changes"]), answer["changes"])
-        print(f"\n    as cells, a 12 mm pin is drawn {grown * 1000:.0f} mm")
+        self.assertFalse(answer["ok"], answer.get("summary"))
+        self.assertAlmostEqual(0.012, thickness())
+        self.assertEqual([], answer["changes"])
+        self.assertEqual("mixed_lattice_interface_unsupported", answer["blocker"]["code"])
+        self.assertEqual("iron", next(p.material for p in self.state.design.parts if p.name == "pin"))
 
     def test_finalized_it_compiles_a_twelve_millimetre_part_as_it_was_drawn(self):
         self.state.execute("add_part", {"name": "pin", "role": "axle", "size_m": [0.012, 0.012, 0.06],

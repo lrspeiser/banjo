@@ -16,6 +16,7 @@ Updated against published main `3e2b508`. This is the current working list: six 
 ## Evidence to extend
 
 - R1: [recipe supplies](recipe-supply-checkpoint.md), [gathering](gathering-supply-checkpoint.md), [material previews](material-preview-checkpoint.md), [fresh workbench and paid opening progression](fresh-workbench-checkpoint.md).
+- R2: [mixed-tool draft fidelity and Make boundary](mixed-tool-draft-checkpoint.md).
 - R2–R3: [selected-item remake](fabrication-remake-checkpoint.md), [funding and output use](fabrication-lab-funding-checkpoint.md), [actual condition](body-condition.md), [paid machine supplies](fabrication-assembly-goods-checkpoint.md).
 - R4–R5: [repeated hauling](rover-return-routing.md), [grade measurements](rover-grades.md), [private carrying](private-ground-checkpoint.md), [visible resource flow](resource-flow.md).
 - R6: [current AI review](ai-player-current-review.md), [fresh paid progression](fresh-workbench-checkpoint.md), [live-provider qualification boundary](ai-provider-verification.md).

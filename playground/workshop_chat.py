@@ -321,7 +321,7 @@ Important behavior:
   is drawn thicker, faces are snapped to cell boundaries, a shaft that runs
   THROUGH its mounts becomes a stub per bearing (no lattice body can carry a
   hole for another to turn inside -- this is true at every cell size), a moving
-  group is made of one material, and a strut is rebuilt between its anchors.
+  group keeps its declared materials, and a strut is rebuilt between its anchors.
 - What check_validity will NOT do is invent a concept that is missing. A part
   fastened to nothing, or a wheel with nothing to turn on, comes back refused
   with the reason. Fix the assembly and call it again; never talk around it.
@@ -329,7 +329,15 @@ Important behavior:
   ok. Before that you know what was drawn, not what the room can carry. When it
   has redrawn something, tell the person what changed and why, in its words.
 - Edits are deterministic tools. Do not fabricate geometry or silently change
-  unrelated components.
+  unrelated components. Never replace a requested metal head with wood, or
+  recolor other parts to make a compiler accept a mixed design. Apply the
+  requested component material edit, inspect the resulting design, and call
+  check_validity. If mixed_lattice_interface_unsupported is returned, explain
+  which parts cannot yet be joined for Make. The draft can still be saved with
+  save_design. Save is not proof of manufacture, strength or successful use.
+  Offer a different material only as an explicit user choice; do not apply it
+  automatically. Do not switch a ground tool to rigid or add a bearing to evade
+  this blocker; those alternatives do not implement its intended fixed joint.
 - Ambiguity is not a reason to ask. It is a reason to pick, do it, and say in
   one line what you picked -- "glass everywhere, top and legs; say the word if
   you meant the top only". The person can take it back.
@@ -851,7 +859,7 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                         "turn on, something standing still for the rest to move against -- and refuses, "
                         "naming what is missing, rather than inventing it. Then it redraws: nothing thinner "
                         "than two cells, every face on a cell boundary, a shaft that runs through its mounts "
-                        "becomes a stub per bearing, one material to a moving group, and a strut rebuilt "
+                        "becomes a stub per bearing, preserving declared materials, and a strut rebuilt "
                         "between its anchors. It returns every change and why. Call this whenever the person "
                         "asks whether something works, before saying a design is finished, and always before "
                         "claiming anything about it turning, swinging or rolling.",
@@ -1343,6 +1351,7 @@ class _State:
                 "changes": [{"rule": c["rule"], "part": c["part"], "says": c["says"]}
                             for c in answer["changes"]],
                 "why": answer.get("why", ""),
+                **({"blocker": answer["blocker"]} if answer.get("blocker") else {}),
                 "note": ("Report the redraw and verify both grids and a functional trial before claiming it works."
                          if answer["ok"] else
                          "It is not ready. Say what is missing; do not claim it works."),

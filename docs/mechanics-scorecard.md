@@ -1,5 +1,7 @@
 # Banjo mechanics scorecard
 
+**Mixed-tool admission, October 1:** [Source-preserving checkpoint](mixed-tool-draft-checkpoint.md) removes host fitting substitutions; no new joint, solver or constitutive law. Fixed fabrication QA 69/69 retains glass/oak/iron mass/work, energy, thermal, native use and restart cases with unchanged conditions/tolerances. Unsupported fixed mixed lattice groups now retain their declared materials and refuse; R2 stays open.
+
 **Water/player review, October 1:** [Measured checkpoint](navigation-water-checkpoint.md) retains native shallow-water/body coupling; same-box oak/glass/iron hydrostatic oracles and existing native wood drift/iron sink pass. Full-volume lift 904.0896 N, pressure residual 0 N; local closed-basin drift 4.26326e-14 m³. Player entry/swim uses the camera approximation, with no native avatar/contact/fluid/cargo reactions. No solver, force law, dt or tolerance changes; R5 remains open.
 
 **Tool autosave host checkpoint, October 1:** [Measured save handling](tool-autosave-checkpoint.md) retains native incomplete-stroke/embedded-tool guards and complete checkpoint boundaries. Actual Chrome rapid use, private excavated stock restart and glass/oak/iron contact regression pass. No force, material law, dt, tolerance or conservation claim changes.

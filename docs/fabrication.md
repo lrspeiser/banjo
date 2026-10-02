@@ -521,3 +521,16 @@ Funded installation now initializes the new body's native material parcel at the
 The energy value includes the thermochemical model's reference energy of the already-funded material. It is not free electrical work and does not refill a supply. The fabrication work ledger remains the existing stock/workpieces/station/supply boundary; this receipt is not proof of whole-world energy closure. Glass, oak and iron tests cover immediate storage, exact thermal restart, a 330 K room, and a separately preactivated output parcel. Browser QA runs those tests. Existing already-installed untracked objects are not retroactively cooled or assigned invented history.
 
 The main-world demonstration consumed 0.1792 kg oak and 17.92 J of finite supply, installed the output and left it in bag slot 2. Its thermal reading survives reopening. BAG shows approximate whole-degree Celsius, avoiding apparent surface/core differences caused solely by converting the wire's rounded Kelvin values. [Measured deployment](evidence/fabricated-heat-deployment.json), [before](evidence/fabricated-heat-before.png), [after](evidence/fabricated-heat-after.png).
+
+## Mixed-material drafts — October 1
+
+A saved draft may contain currently unsupported fixed lattice material joints.
+Checks/readiness/buildability may return `blocker` with code
+`mixed_lattice_interface_unsupported`, `groups` (component names and canonical
+materials), `can_save_design: true` and a message. This is diagnostic metadata;
+Save never authorizes installation or proves native use. Paid quote/plan refuses
+before reserving supplies. The fitter preserves the requested constituent
+materials. Exact rigid machine allocation remains a separate supported model;
+there is no automatic model or material conversion.
+
+See [verification and remaining native work](mixed-tool-draft-checkpoint.md).

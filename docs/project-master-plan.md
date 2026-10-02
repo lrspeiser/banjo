@@ -1,5 +1,7 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Mixed-tool source fidelity, October 1:** [Draft checkpoint](mixed-tool-draft-checkpoint.md) preserves requested constituent materials through edits, checks, Save and reload. Mixed fixed lattice joints refuse before an automatic material substitution. Shared model instructions explain Make versus Save; native mixed-tool construction/use remains R2. No native law change.
+
 **Player water boundary, October 1:** [Control and water checkpoint](navigation-water-checkpoint.md) distinguishes native object pressure/buoyancy/current from the player camera approximation. Faster navigation and Esc Cursor are verified; physical avatars and fluid/cargo reactions stay in R5.
 
 **Tool autosave boundary, October 1:** [Pending checkpoint retries](tool-autosave-checkpoint.md) distinguish normal in-flight tool work from persistence errors. Progress is durable only after the safe paired checkpoint; real failures stay visible. No platform or physics scope change.

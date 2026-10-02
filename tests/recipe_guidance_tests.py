@@ -64,7 +64,9 @@ class RecipeGuidance(unittest.TestCase):
     def test_browser_shortage_locate_collect_make_and_targeted_market(self):
         if not flow.qa_browser.CHROME.is_file():self.skipTest('Chrome not installed')
         with mock.patch.object(flow.server.secrets,'randbelow',side_effect=[0,851269740]):
-            world,owner,app=self.setup_world()
+            # This test covers the legacy recipe-supply authoring route. Fresh
+            # finite-workbench Make/funding is covered by fabrication_remake_tests.
+            world,owner,app=self.setup_world(legacy_process=True)
         chrome=flow.qa_browser.Chrome(1440,900);self.addCleanup(chrome.close)
         p=chrome.page;p.send('Page.enable');p.send('Runtime.enable')
         def wait(expr):

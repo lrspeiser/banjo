@@ -493,59 +493,6 @@ def _shaft_stubs(base: Any, design: Any, overrides: dict[str, Any], cell_m: floa
     return work, said
 
 
-def _one_material_to_a_group(base: Any, design: Any, overrides: dict[str, Any], cell_m: float) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Parts fastened rigidly into one moving group are made of one material.
-
-    The compiler carries a group as one lattice body, and a body is one
-    material. The group takes the material of most of its bulk, so a small
-    iron stub bonded into an oak wheel becomes oak rather than the wheel
-    becoming iron.
-    """
-    parts = {p.name: p for p in design.parts}
-    joints = construction.joints(design)
-    parent = {name: name for name in parts}
-
-    def find(name: str) -> str:
-        while parent[name] != name:
-            parent[name] = parent[parent[name]]
-            name = parent[name]
-        return name
-
-    for joint in joints:
-        if joint["kind"] == "fixed" and joint["a"] in parent and joint["b"] in parent:
-            parent[find(joint["b"])] = find(joint["a"])
-
-    groups: dict[str, list[str]] = {}
-    for name in parts:
-        groups.setdefault(find(name), []).append(name)
-
-    # The construction rides along: it carries the parts a redraw has added.
-    patch = {k: deepcopy(v) for k, v in overrides.items()}
-    said: list[dict[str, Any]] = []
-    for members in groups.values():
-        bulk: dict[str, float] = {}
-        for name in members:
-            part = parts[name]
-            bulk[part.material] = bulk.get(part.material, 0.0) + math.prod(part.size_m)
-        if len(bulk) < 2:
-            continue
-        winner = max(bulk, key=bulk.get)
-        changed = [n for n in members if parts[n].material != winner]
-        for name in changed:
-            patch.setdefault(name, {})["material"] = winner
-        said.append({"rule": "one material to a moving group", "part": ", ".join(sorted(changed)),
-                     "says": f"{', '.join(sorted(changed))} moved as one body with "
-                             f"{len(members) - len(changed)} {winner} part(s), and a body is one "
-                             f"material; drawn in {winner}, which is weaker or stronger than "
-                             f"you drew it"})
-    if not said:
-        return overrides, []
-    # Only materials changed, so nothing moved and the construction still holds.
-    merged = dict(overrides)
-    merged.update({k: v for k, v in patch.items() if k != construction.CONSTRUCTION_KEY})
-    return merged, said
-
-
 def _snap_to_the_grid(base: Any, design: Any, overrides: dict[str, Any], cell_m: float) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Every face lands on a cell boundary, so no part is rounded out of existence.
 
@@ -739,7 +686,6 @@ RULES = (
     ("no longer touch", _rebuild_struts),
     ("Moving groups overlap", _shaft_stubs),
     ("is claimed by both", _shaft_stubs),
-    ("mixed-material interface", _one_material_to_a_group),
     ("has nothing to work it", _a_control_for_each_motor),
 )
 
@@ -765,7 +711,13 @@ def check_validity(design: Any, overrides: Any = None, *, cell_m: float = 0.04,
     if construction.CONSTRUCTION_KEY not in overrides:
         overrides = _readopt(base, overrides)
     current = _built(base, overrides)
-    from mcp import workshop_tools
+    from mcp import workshop_tools, workshop_material_support
+
+    blocker = workshop_material_support.fixed_lattice_blocker(current, overrides)
+    if blocker:
+        return {"schema": SCHEMA, "ok": False, "stage": "drawing", "concepts": [],
+                "changes": [], "overrides": overrides, "blocker": blocker,
+                "why": blocker["code"], "says": blocker["message"]}
 
     if workshop_rigid.requested_models(current, overrides)=={'rigid'}:
         try:

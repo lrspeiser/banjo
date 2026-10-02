@@ -243,6 +243,88 @@ class LabRemake(unittest.TestCase):
         if getattr(self,'chrome',None):self.chrome.close()
         flow.GoodsJourney.tearDown(self)
 
+    def test_mixed_pick_chat_edit_save_reload_and_make_refusal_preserve_source_and_supplies(self):
+        self.assertTrue(flow.qa_browser.CHROME.is_file(), 'Chrome required')
+        with mock.patch.object(flow.server.secrets, 'randbelow', side_effect=[0, 1]):
+            world, owner, app = self.setup_world()
+        person = self.take_pick(world, app)
+        sid = app.live.session.id
+        shown = self.post('/api/world/inventory/shown', {'session': sid}, world)
+        self.post('/api/world/inventory', {'session': sid, 'op': 'stow', 'item': 'field pick',
+            'request': 'mixed-stow', 'revision': shown['record']['revision'], 'person': person}, world)
+        original = deepcopy(next(b for b in install._snapshot(app.live)['bodies'] if b['name'] == 'field pick'))
+        rack = self.post('/api/workshop/library', {}, world)['rack']
+        before = deepcopy(app.room.fabrication_record)
+        recipe = self.post('/api/world/workshop/what_made', {'body': 'field pick'}, world)['recipe']
+        from mcp import workshop_components
+        design, _ = workshop_components.design_from_spec(recipe)
+        head = next(p.name for p in design.parts if 'arm' in p.name)
+        self.chrome = flow.qa_browser.Chrome(1280, 900)
+        p = self.chrome.page
+        p.send('Page.enable'); p.send('Runtime.enable')
+        p.send('Page.addScriptToEvaluateOnNewDocument', {'source':
+            f'localStorage.setItem("banjo.player.{world}",{json.dumps(owner["token"])});'})
+        def wait(expr):
+            end = time.monotonic() + 30
+            while time.monotonic() < end:
+                if p.evaluate('Boolean(' + expr + ')'): return
+                time.sleep(.05)
+            (ROOT / 'build/resource-flow/mixed-pick-failure.png').write_bytes(base64.b64decode(p.send('Page.captureScreenshot', {'format': 'png'})['data']))
+            self.fail(expr + '; ' + str(p.evaluate('document.body.innerText.slice(-1800)')))
+        def click(selector):
+            wait('document.querySelector(' + json.dumps(selector) + ') && !document.querySelector(' + json.dumps(selector) + ').disabled')
+            point = p.evaluate('(()=>{const e=document.querySelector(%s);e.scrollIntoView({block:"center"});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()' % json.dumps(selector))
+            for event in ('mousePressed', 'mouseReleased'):
+                p.send('Input.dispatchMouseEvent', {'type': event, **point, 'button': 'left', 'clickCount': 1})
+        p.send('Page.navigate', {'url': self.base + f'/world?world={world}&workshop=1&tab=lab&carry=field%20pick'})
+        wait('document.querySelector("#workshop-stage")?.visibleGeometry?.()?.meshes>0')
+        point = p.evaluate('document.querySelector("#workshop-stage").pagePointOf(%s)' % json.dumps(next(part.center_m for part in design.parts if part.name == head)))
+        for event in ('mousePressed', 'mouseReleased'):
+            p.send('Input.dispatchMouseEvent', {'type': event, 'x': point[0], 'y': point[1], 'button': 'left', 'clickCount': 1})
+        wait('document.querySelector("#ws-selected-part").textContent.includes(' + json.dumps(head) + ')')
+        wait('!document.querySelector("#ws-component-chat-text").disabled')
+        p.evaluate('document.querySelector("#ws-component-chat-text").value="make this iron"')
+        click('#ws-component-chat button[type=submit]')
+        wait('document.querySelector("#ws-part-material").value==="iron" && !document.querySelector("#ws-component-chat-text").disabled')
+        click('#ws-quick-save')
+        wait('document.querySelector("#ws-save-status").textContent.includes("Saved") && new URL(location.href).searchParams.has("design")')
+        saved_url = p.evaluate('location.href')
+        items = self.post('/api/workshop/library', {}, world)['personal_library']
+        item = next(i for i in items if i['item_type'] == 'assembly')
+        # Library listings omit the draft; inspect the stored payload through
+        # the normal library route before checking materials.
+        stored = self.post('/api/workshop/library', {'action': 'load', 'item_id': item['item_id']}, world)
+        payload = stored['library_item']['payload']
+        edited, overrides = workshop_components.design_from_spec(payload)
+        materials = {part.name: part.material for part in edited.parts}
+        self.assertEqual('iron', materials[head])
+        self.assertEqual({'oak'}, {m for name, m in materials.items() if name != head})
+        from mcp import workshop_buildability
+        report, _, _ = workshop_buildability.assess(edited, overrides, cell_size_m=.05)
+        self.assertEqual('mixed_lattice_interface_unsupported', report['blocker']['code'])
+        p.send('Page.navigate', {'url': saved_url})
+        wait('document.querySelector("#workshop-stage")?.visibleGeometry?.()?.meshes>0')
+        wait('document.querySelector("#ws-buildability-summary").textContent.includes("Make: Joint not supported yet")')
+        rows = p.evaluate('[...document.querySelectorAll("#ws-parts li")].map(e=>e.textContent)')
+        self.assertTrue(any(head in row and 'iron' in row for row in rows), rows)
+        self.assertTrue(any('oak' in row for row in rows), rows)
+        p.evaluate('window.mixedMakeReplies=[];const oldFetch=window.fetch;window.fetch=async function(url){const r=await oldFetch.apply(this,arguments);if(String(url).includes("/fabrication/plan_"))mixedMakeReplies.push({status:r.status,body:await r.clone().json()});return r}')
+        click('#ws-make')
+        wait('mixedMakeReplies.length>0')
+        answer = p.evaluate('mixedMakeReplies[0]')
+        self.assertGreaterEqual(answer['status'], 400, answer)
+        self.assertIn('material joint is unsupported', json.dumps(answer))
+        self.assertEqual(original, next(b for b in install._snapshot(app.live)['bodies'] if b['name'] == 'field pick'))
+        self.assertEqual(rack, self.post('/api/workshop/library', {}, world)['rack'])
+        for key in ('stock_kg', 'energy_j', 'jobs', 'stock_imports'):
+            self.assertEqual(before.get(key), app.room.fabrication_record.get(key), key)
+        self.native_evidence = {'materials': materials, 'source_preserved': True,
+            'supplies_unchanged': True, 'saved_reload': True, 'make_refusal': answer,
+            'provider_calls': 0, 'boundary': 'Unsupported mixed lattice interface; no native mixed-tool use claimed.'}
+        out = ROOT / 'build/resource-flow'; out.mkdir(parents=True, exist_ok=True)
+        (out / 'mixed-pick-save-refusal.png').write_bytes(base64.b64decode(p.send('Page.captureScreenshot', {'format': 'png'})['data']))
+        self.assertEqual([], [e for e in p.events if e.get('method') == 'Runtime.exceptionThrown'])
+
     def test_canonical_rover_paid_build_and_primary_use_in_browser(self):
         self.assertTrue(flow.qa_browser.CHROME.is_file(),'Chrome required')
         world,owner,app,*_=self.batch(process=False,legacy_process=True)
@@ -462,7 +544,7 @@ class LabRemake(unittest.TestCase):
         self.assertTrue(p.evaluate('document.querySelector("#ws-remake-start").disabled'))
         self.assertTrue(p.evaluate('document.querySelector(".ws-left > .game-tabs").getBoundingClientRect().bottom <= document.querySelector("#ws-remake").getBoundingClientRect().top'))
         fund_shots=ROOT/'build/resource-flow';fund_shots.mkdir(parents=True,exist_ok=True)
-        wait('document.querySelector("#workshop-stage").visibleGeometry()?.meshes>0')
+        wait('document.querySelector("#workshop-stage")?.visibleGeometry?.()?.meshes>0')
         p.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))',await_promise=True)
         (fund_shots/'lab-remake-funding.png').write_bytes(base64.b64decode(p.send('Page.captureScreenshot',{'format':'png'})['data']))
         shared_before=deepcopy(self.post('/api/world/fabrication/state',context,world)['stock_sources'])

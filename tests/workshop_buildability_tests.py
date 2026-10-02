@@ -19,6 +19,29 @@ THIN = {"kind": "table", "parameters": {"top_thickness_m": .005, "leg_section_m"
 
 
 class Buildability(unittest.TestCase):
+    def test_mixed_material_blocker_keeps_drawn_materials_and_save_capability(self):
+        from mcp import workshop_material_support
+        for head in ('glass', 'oak', 'iron'):
+            candidate = {'kind': 'custom', 'component_overrides': {'@construction': {
+                'added': [
+                    {'name': 'handle', 'role': 'handle', 'family': 'handle', 'shape': 'box',
+                     'size_m': [.08, .4, .08], 'center_m': [0, .2, 0], 'rotation_deg': [0, 0, 0], 'material': 'oak'},
+                    {'name': 'head', 'role': 'panel', 'family': 'panel', 'shape': 'box',
+                     'size_m': [.24, .08, .08], 'center_m': [0, .44, 0], 'rotation_deg': [0, 0, 0], 'material': head}],
+                'joints_authored': True}}}
+            design, overrides = workshop_components.design_from_spec(candidate)
+            before = deepcopy(design.wireframe())
+            report, full, _ = build.assess(design, overrides, cell_size_m=.04)
+            self.assertEqual(before, design.wireframe())
+            if head == 'oak':
+                self.assertIsNone(workshop_material_support.fixed_lattice_blocker(design, overrides))
+                self.assertTrue(report['compilation_ready'], report)
+            else:
+                self.assertFalse(report['compilation_ready'])
+                self.assertTrue(report['blocker']['can_save_design'])
+                self.assertEqual({'handle': 'oak', 'head': head}, report['blocker']['groups'][0]['materials'])
+                self.assertEqual({'oak', head}, {c['material'] for c in full['cells']})
+
     def test_thin_table_all_four_resolutions_and_no_mutation(self):
         design, overrides = workshop_components.design_from_spec(THIN)
         before = deepcopy(design.wireframe())

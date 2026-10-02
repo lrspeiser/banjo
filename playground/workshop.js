@@ -3602,6 +3602,15 @@ function renderBuildability() {
   if (!summary || !parts) return;
   parts.replaceChildren();
   if (!report) { summary.textContent = "Not assessed. The design remains editable."; return; }
+  if (report.blocker?.code === "mixed_lattice_interface_unsupported") {
+    const group = report.blocker.groups[0];
+    const materials = group.components.map(name => `${name}: ${group.materials[name]}`).join(" · ");
+    summary.textContent = `${materials} · Make: Joint not supported yet · Save: Available`;
+    summary.title = (report.errors || []).join("\n");
+    say(summary.textContent, true);
+    return;
+  }
+  summary.removeAttribute("title");
   const issues = [...(report.errors || []), ...(report.warnings || [])];
   const cost = report.costs;
   const rigid = report.requested_model === "rigid";

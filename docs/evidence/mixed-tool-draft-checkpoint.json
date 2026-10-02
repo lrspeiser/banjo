@@ -1,0 +1,284 @@
+{
+  "schema": "banjo.mixed-tool-draft-checkpoint.v1",
+  "date": "2026-10-01",
+  "base_revision": "36093baecbbf8c8ae27c35be5f7c567c31807f97",
+  "source_dirty_during_checks": true,
+  "environment": "Windows; MSVC 19.44 Release; Python 3.13; actual Chrome; CPU ABI 25",
+  "native_engine_sha256": "6ce0e6d010d9ef23fd354c7f4d98a4eba93638c065f8f6979bdeefbaf13b9107",
+  "native_library_sha256": "198ab769e09fd915262402da85b54ede02973461bc6811a5b38e58ff2aa30ecb",
+  "native_sources_changed": false,
+  "native_dt_s": 0.004166666666666667,
+  "fixed_fabrication_qa": {
+    "passed": 69,
+    "total": 69,
+    "duration_s": 108.6178970336914,
+    "skips": 0
+  },
+  "mixed_draft_browser": {
+    "materials": {
+      "haft": "oak",
+      "arm": "iron"
+    },
+    "source_preserved": true,
+    "supplies_unchanged": true,
+    "saved_reload": true,
+    "make_refusal": {
+      "status": 400,
+      "body": {
+        "error": "Cannot make arm (iron), haft (oak) together yet: this material joint is unsupported. You can save the design.",
+        "persistence": {
+          "state": "saved",
+          "reason": "",
+          "saved_t_s": 0,
+          "attempted_t_s": 0
+        }
+      }
+    },
+    "provider_calls": 0,
+    "boundary": "Unsupported mixed lattice interface; no native mixed-tool use claimed."
+  },
+  "retained_material_cases": [
+    {
+      "id": "fabrication_tests.NativeFabrication.test_glass_oak_iron_work_restart_native_mass_and_duplicate_install",
+      "status": "passed",
+      "measurements": [
+        {
+          "material": "glass",
+          "mass_kg": 2.56,
+          "cells": 16,
+          "audit": {
+            "material_residual_kg": {
+              "oak": 0.0,
+              "iron": 0.0,
+              "glass": 0.0
+            },
+            "assembly_goods_received_kg": {},
+            "assembly_goods_reserved_or_transferred_kg": {},
+            "assembly_goods_residual_kg": {},
+            "rack_material_received_kg": {},
+            "native_energy_received_j": 0,
+            "reserved_output_energy_j": 0,
+            "transferred_output_energy_j": 0,
+            "native_transfer_residual_j": 0,
+            "native_meter_residual_j": 0,
+            "energy_residual_j": 1.8189894035458565e-12,
+            "work_residual_j": 0.0,
+            "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+          }
+        },
+        {
+          "material": "oak",
+          "mass_kg": 0.7168,
+          "cells": 16,
+          "audit": {
+            "material_residual_kg": {
+              "oak": 0.0,
+              "iron": 0.0,
+              "glass": 0.0
+            },
+            "assembly_goods_received_kg": {},
+            "assembly_goods_reserved_or_transferred_kg": {},
+            "assembly_goods_residual_kg": {},
+            "rack_material_received_kg": {},
+            "native_energy_received_j": 0,
+            "reserved_output_energy_j": 0,
+            "transferred_output_energy_j": 0,
+            "native_transfer_residual_j": 0,
+            "native_meter_residual_j": 0,
+            "energy_residual_j": 1.8189894035458565e-12,
+            "work_residual_j": 0.0,
+            "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+          }
+        },
+        {
+          "material": "iron",
+          "mass_kg": 8.05888,
+          "cells": 16,
+          "audit": {
+            "material_residual_kg": {
+              "oak": 0.0,
+              "iron": 0.0,
+              "glass": 0.0
+            },
+            "assembly_goods_received_kg": {},
+            "assembly_goods_reserved_or_transferred_kg": {},
+            "assembly_goods_residual_kg": {},
+            "rack_material_received_kg": {},
+            "native_energy_received_j": 0,
+            "reserved_output_energy_j": 0,
+            "transferred_output_energy_j": 0,
+            "native_transfer_residual_j": 0,
+            "native_meter_residual_j": 0,
+            "energy_residual_j": 4.547473508864641e-13,
+            "work_residual_j": 4.547473508864641e-13,
+            "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+          }
+        }
+      ]
+    },
+    {
+      "id": "fabrication_energy_tests.NativeEnergy.test_battery_funded_native_products_glass_oak_iron",
+      "status": "passed",
+      "measurements": [
+        {
+          "material": "glass",
+          "mass_kg": 2.56,
+          "source_draw_j": 1000.0,
+          "useful_work_j": 1000.0,
+          "output_temperature_k": 293.15,
+          "energy_residual_j": 0.0,
+          "work_residual_j": 0.0
+        },
+        {
+          "material": "oak",
+          "mass_kg": 0.7168,
+          "source_draw_j": 1000.0,
+          "useful_work_j": 1000.0,
+          "output_temperature_k": 293.15,
+          "energy_residual_j": -4.547473508864641e-13,
+          "work_residual_j": 4.547473508864641e-13
+        },
+        {
+          "material": "iron",
+          "mass_kg": 8.05888,
+          "source_draw_j": 1000.0,
+          "useful_work_j": 1000.0,
+          "output_temperature_k": 293.15,
+          "energy_residual_j": -9.094947017729282e-13,
+          "work_residual_j": 9.094947017729282e-13
+        }
+      ]
+    },
+    {
+      "id": "fabrication_stock_tests.NativeStock.test_rack_and_battery_funded_native_glass_oak_iron_outputs_from_zero_seeds",
+      "status": "passed",
+      "measurements": [
+        {
+          "material": "glass",
+          "rack_debit_kg": 10.0,
+          "native_output_kg": 2.5600000000000005,
+          "offcut_kg": 7.4399999999999995,
+          "battery_debit_j": 1000.0,
+          "material_residual_kg": 0.0,
+          "energy_residual_j": 0.0
+        },
+        {
+          "material": "oak",
+          "rack_debit_kg": 10.0,
+          "native_output_kg": 0.7168000000000001,
+          "offcut_kg": 9.2832,
+          "battery_debit_j": 1000.0,
+          "material_residual_kg": 0.0,
+          "energy_residual_j": -4.547473508864641e-13
+        },
+        {
+          "material": "iron",
+          "rack_debit_kg": 10.0,
+          "native_output_kg": 8.058880000000002,
+          "offcut_kg": 1.941119999999998,
+          "battery_debit_j": 1000.0,
+          "material_residual_kg": 0.0,
+          "energy_residual_j": -9.094947017729282e-13
+        }
+      ]
+    },
+    {
+      "id": "fabrication_remake_tests.NativeRemake.test_glass_oak_iron_frozen_source_funded_remake_admission_and_restart",
+      "status": "passed",
+      "measurements": [
+        {
+          "material": "glass",
+          "native_mass_kg": 1.2800000000000002,
+          "stock_kg": 1.2800000000000002,
+          "supplied_j": 128.00000000000003,
+          "old_native_body_preserved": true,
+          "cell_m": 0.04,
+          "dt_s": 0.004166666666666667
+        },
+        {
+          "material": "oak",
+          "native_mass_kg": 0.35840000000000005,
+          "stock_kg": 0.35840000000000005,
+          "supplied_j": 35.84,
+          "old_native_body_preserved": true,
+          "cell_m": 0.04,
+          "dt_s": 0.004166666666666667
+        },
+        {
+          "material": "iron",
+          "native_mass_kg": 4.029440000000001,
+          "stock_kg": 4.029440000000001,
+          "supplied_j": 402.9440000000001,
+          "old_native_body_preserved": true,
+          "cell_m": 0.04,
+          "dt_s": 0.004166666666666667
+        }
+      ]
+    },
+    {
+      "id": "fabrication_remake_tests.NativeRemake.test_new_design_glass_oak_iron_paid_make_has_no_carried_source_and_survives_restart",
+      "status": "passed",
+      "measurements": [
+        {
+          "material": "glass",
+          "native_mass_kg": 2.5600000000000005,
+          "paid_stock_kg": 2.5600000000000005,
+          "paid_j": 256.00000000000006,
+          "carried_source_required": false,
+          "restart_replay": true,
+          "cell_m": 0.04,
+          "dt_s": 0.004166666666666667
+        },
+        {
+          "material": "oak",
+          "native_mass_kg": 0.7168000000000001,
+          "paid_stock_kg": 0.7168000000000001,
+          "paid_j": 71.68,
+          "carried_source_required": false,
+          "restart_replay": true,
+          "cell_m": 0.04,
+          "dt_s": 0.004166666666666667
+        },
+        {
+          "material": "iron",
+          "native_mass_kg": 8.058880000000002,
+          "paid_stock_kg": 8.058880000000002,
+          "paid_j": 805.8880000000001,
+          "carried_source_required": false,
+          "restart_replay": true,
+          "cell_m": 0.04,
+          "dt_s": 0.004166666666666667
+        }
+      ]
+    }
+  ],
+  "source_registration": {
+    "registered": 287,
+    "sources": 287
+  },
+  "changed_source_sha256": {
+    "mcp/workshop_buildability.py": "efaeb7755104c619ac2405fcd0bf805a76a69fea7847a5e064af202c154dc02c",
+    "playground/fabrication_room.py": "05b96ce1426280072eb63d15153498e494501a8502915df4376e08bea52d8d94",
+    "playground/workshop.js": "15f3d9dddc93a8652b81c47d378d6be068761ad44da66c7437b998e1f4eed526",
+    "playground/workshop_chat.py": "6f776698151c5902c1cc4a3cacccce6b43661e1c43d21b66017a110b266f7e58",
+    "playground/workshop_fitting.py": "65da1554175f0ac6abba7778a5bfaa4b21efceda678472f444f9ff07ec14f302",
+    "playground/workshop_recipe.py": "73f842eeb338ca867de5f257a9db6e0ad041066000eb25d4bc5ca6d5c21938cf",
+    "tests/fabrication_remake_tests.py": "78ed6283ea070bb03f065e90a61b58a9b5072c50aae96344e258c86a935ac293",
+    "tests/recipe_guidance_tests.py": "db542e35c2b322259fb804fff107185a4f3d14568dc4c44c7afb6fd13149565b",
+    "tests/workshop_buildability_tests.py": "d74f228e8c427d1adcf0527db41fc37da85de033d1c82b8f2e31d343911800bb",
+    "tests/workshop_fitting_tests.py": "b43f1c13f26857ad9a143f723758424fd65f55867b749df624ccd16bb7074332",
+    "mcp/workshop_material_support.py": "3a5ef2fc3b9ec10157ce133b4e772cc642030110731dc469c8230c8cd28f56fb"
+  },
+  "limits": [
+    "No native mixed-material lattice joint or tool use implemented.",
+    "No new constitutive, fracture, fatigue, joint-strength or full-world conservation validation.",
+    "Browser chat uses the deterministic local parser; zero live provider calls.",
+    "Default mixed lattice cart is now honestly refused; an explicitly chosen same-material variant and exact rigid machine path retain their own tests."
+  ],
+  "workshop_regressions": {
+    "passed": 98,
+    "total": 98,
+    "duration_s": 28.599,
+    "skips": 0
+  }
+}

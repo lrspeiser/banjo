@@ -1,5 +1,7 @@
 # Development status and handoff
 
+**Mixed-tool drafts, October 1:** [Verified checkpoint](mixed-tool-draft-checkpoint.md) removes automatic material substitution, adds component/material joint blockers and a compact Lab notice, and verifies real Chrome head edit → Save → reload → refused Make with unchanged source/supplies. Fixed QA 69/69 passes. Native mixed fixed joints/use remain R2.
+
 **Walking/water/cursor, October 1:** [Verified controls checkpoint](navigation-water-checkpoint.md) speeds unloaded walk to 4.2 m/s and sprint to 6.8, adds Esc Cursor/resume and water immersion/flow values. Actual generated water entry and separate deep-controller swimming/current checks pass. Native objects retain water forces; a colliding physical avatar remains R5.
 
 **Tool autosave, October 1:** [Verified checkpoint](tool-autosave-checkpoint.md) queues known native in-flight guards as pending and retries promptly. Actual Chrome rapid tool use has no save warning; injected disk failure remains visible and private excavated stock survives restart. No native law change.
