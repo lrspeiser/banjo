@@ -103,9 +103,10 @@ Logs (ignored local artifacts):
 `actor-rollback-restart-build.log`, `actor-rollback-restart-results.log`,
 `actor-rollback-regression-build.log`, `actor-rollback-regression-results.log`.
 
-Publication: pending verified implementation checkpoint on main. No app or
-preview EXE/DLL is replaced; no new interactive window or ordinary object-use
-route is verified by this engine regression.
+Published implementation: `ef5ebc046e967610c7c6b033e8147c984f9545b4`
+on GitHub main. The compiled implementation sources and tests are those at
+that revision. No app or preview EXE/DLL is replaced; no new interactive window
+or ordinary object-use route is verified by this engine regression.
 
 ## Next player work
 
