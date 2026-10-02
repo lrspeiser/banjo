@@ -47,6 +47,42 @@ HTTP_MARKS = ("urlopen", "http.client", "BANJO_PLAYGROUND_URL", "_post(")
 
 
 class TheChatUsesTheMCP(unittest.TestCase):
+    def test_funded_chat_uses_native_reads_and_existing_actions_without_opening_authoring_copy(self):
+        from copy import deepcopy
+        from types import SimpleNamespace
+        room=SimpleNamespace(spec={'precise_rigid_bodies':[{'name':'actual product'}]})
+        before=deepcopy(room.spec);calls=[]
+        def model(key,model,conversation):
+            self.assertEqual(world_chat.FUNDED_TOOLS,{t['name'] for t in world_chat.payload(model,conversation)['tools']})
+            if not calls:
+                calls.append(True)
+                return {'status':'completed','output':[{'type':'function_call','call_id':'forbidden','name':'add_object','arguments':'{}'},
+                    {'type':'function_call','call_id':'read','name':'describe_world','arguments':'{}'},
+                    {'type':'function_call','call_id':'use','name':'use_action','arguments':'{"name":"actual product","primary":true}'}]}
+            self.assertIn('Edit designs in Lab',conversation[-3]['output'])
+            return {'status':'completed','output':[{'type':'message','content':[{'type':'output_text','text':'The existing switch was used.'}]}]}
+        seen=[]
+        def live(name,args):
+            seen.append(name)
+            return {'objects':[{'name':'actual product'}]} if name=='describe_world' else {'used':'actual product','action':'Start','done':['Switched on']}
+        with mock.patch.object(world_chat,'_call',side_effect=model),mock.patch.object(room_world,'open_room') as author:
+            result=world_chat.ask('test-key','test-model',room,{'bodies':[]},'Start it',[],live=live,funded=True)
+        author.assert_not_called()
+        self.assertEqual(['describe_world','use_action'],seen)
+        self.assertEqual(before,room.spec)
+        self.assertFalse(result['changed']);self.assertTrue(result['worked'])
+        self.assertFalse(world_chat.FUNDED_CHAT.get())
+
+    def test_incomplete_funded_response_never_runs_partial_tool_calls(self):
+        from types import SimpleNamespace
+        with mock.patch.object(world_chat,'_call',return_value={'status':'incomplete','output':[
+            {'type':'function_call','name':'use_action','call_id':'partial','arguments':'{"name":"item","primary":true}'}]}),\
+             mock.patch.object(room_world,'open_room') as author:
+            live=mock.Mock()
+            with self.assertRaisesRegex(ValueError,'did not complete'):
+                world_chat.ask('test','test',SimpleNamespace(spec={}),{'bodies':[]},'Use it',[],live=live,funded=True)
+        author.assert_not_called();live.assert_not_called()
+        self.assertFalse(world_chat.FUNDED_CHAT.get())
     def test_every_mcp_tool_reaches_the_chat_or_is_excluded_for_a_reason(self):
         offered = {t["name"] for t in room_world.chat_tools()}
         for tool in banjo_mcp.TOOLS:

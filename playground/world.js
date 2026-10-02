@@ -5721,7 +5721,7 @@ function detailsModel() {
     }
   } else {
     model.facts = "Look at something to see what it is and what you can do with it.";
-    rows.push([[k("talk")], "ask the room to build or change anything"]);
+    rows.push([[k("talk")], world.fundedMake ? "ask about this world or use an item" : "ask the room to build or change anything"]);
   }
   const focused = world.bodies.get(held?.name || world.aim?.name);
   if (focused?.fromPrecise) {
@@ -10847,6 +10847,8 @@ async function open({ again = false } = {}) {
     world.inventory = data.inventory || null;
     if (worldId) showPlayers(data.players);
     world.scene = data.scene || null;
+    world.fundedMake = data.funded_make === true;
+    $("ask-text").placeholder = world.fundedMake ? "Ask about this world or use an item" : "Press / and ask — “make me a hoe”";
     // A link naming no room opens the world: the menu says which room opened.
     if (qa === null && data.scene && $("scene").value !== data.scene) showSceneLink(data.scene);
     world.openError = null;
@@ -10972,7 +10974,8 @@ async function open({ again = false } = {}) {
         [...new Set(data.bodies.map((b) => b.material).filter(Boolean))].join(", ")
       }. Click the room to look around, and walk with W A S D. ${keyOf("interact")} picks up`
       + ` what you look at and puts it down again, and ${keyOf("stow")} puts it in your bag;`
-      + ` what else you can do is under this conversation. Ask me to build or change anything.`);
+      + (world.fundedMake ? ` Create or change a design in Recipes → Lab, then fund Make.`
+                         : ` what else you can do is under this conversation. Ask me to build or change anything.`));
     // Said, not dropped, as when the chat rebuilds the room: a gate that does
     // not swing reads as broken physics rather than as a pin in the wrong place.
     if (data.joint_problems && data.joint_problems.length)

@@ -405,7 +405,7 @@ class CollectedStock(unittest.TestCase):
 
     def test_collected_stock_private_escrow_browser_return_finish_and_reopen(self):
         self.assertTrue(flow.qa_browser.CHROME.is_file(),'Chrome required for player recovery acceptance')
-        world,owner,app,_,_,_=self.batch(process=False)
+        world,owner,app,_,_,_=self.batch(process=False,legacy_process=True)
         # Finite source explicitly authored for this isolated acceptance fixture.
         app.room.spec['bodies'].append({'name':'stock fixture battery host','shape':'box',
             'material':'iron','size_mm':[100,100,100],'center_mm':[25000,50,25000],'anchored':True})

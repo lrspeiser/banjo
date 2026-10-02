@@ -1,5 +1,16 @@
 # Banjo mechanics scorecard
 
+**Default process boundary, October 1:** [Fresh-map evidence](fresh-workbench-checkpoint.md)
+adds only host declaration/routing/planning, with 500 W supply and 100 J/kg
+un-calibrated shaping input. Empty initial buffer/stock; native battery charge
+is metered into it. On both terrains the reference AI spends 8.8704 kg oak /
+887.04 J for a 2.5088 kg stool and 6.3616 kg work table. Local raw mass/work
+residuals zero, process-energy residual at most 5.627e-13 J and battery transfer
+residual 1.956e-10 J. Native dt=1/240 s and 50 mm generated scene are unchanged;
+68/68 fabrication regressions retain matched glass/oak/iron cases. No law,
+tolerance or full-world conservation claim changes. Physical station geometry,
+calibrated forming, mixed interfaces and damaged-tool use remain open.
+
 **Canonical switch boundary, October 1:** [Native/browser evidence](canonical-machine-use-checkpoint.md)
 connects paid rover/lamp primary Use to their existing controllers. Native rover
 draw, explicit stop, lost-save retry, distant refusal and whole reopen/clock

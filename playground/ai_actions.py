@@ -87,10 +87,6 @@ def catalog(state,memory):
     def offer(verb,label,**args):
         ident=verb if not args else verb+':'+key(args)
         actions.append({'id':ident,'verb':verb,'label':label,**deepcopy(args)})
-    if memory.get('fabrication_build'):
-        offer('continue-build','Continue the reviewed, funded workpiece before starting another build')
-        offer('wait','Stop with the pending workpiece retained',blockers=['A reviewed build is pending'])
-        return actions
     def supplies(missing):
         for gap in missing:
             if gap.get('short_kg',0)<=0:continue
@@ -103,6 +99,29 @@ def catalog(state,memory):
             elif state['market'].get('bankable'):
                 if not any(a['verb']=='bank' for a in actions):offer('bank','Bank 500 J from the measured shared solar battery')
             else:blockers.append('Open a solar-powered world before banking energy')
+    pending=memory.get('fabrication_build')
+    if pending:
+        funding=state.get('fabrication') or {}
+        process=funding.get('state') or {}
+        plan=pending.get('plan') or {}
+        # Retry an uncertain write before choosing any new purchase or debit.
+        # After review, use current station and personal balances; recipe cards
+        # may include shared stock that this autonomous guest cannot spend.
+        missing=[]
+        if plan and not pending.get('request') and not pending.get('installed') and pending['job_id'] not in process.get('jobs',{}):
+            quote=plan['quote']
+            for needed,held,sources in (
+                (quote.get('stock_materials_kg') or {quote['material']:quote['stock_kg']},
+                 process.get('stock_kg',{}),funding.get('stock_sources',[])),
+                (quote.get('assembly_goods_kg',{}),process.get('goods_stock_kg',{}),funding.get('goods_sources',[]))):
+                for material,kg in needed.items():
+                    personal=sum(s['mass_kg'] for s in sources if s['pool']=='personal' and s['material']==material)
+                    gap=kg-held.get(material,0)-personal
+                    if gap>1e-10:missing.append({'what':material,'short_kg':gap})
+        if missing:supplies(missing)
+        else:offer('continue-build','Continue the reviewed, funded workpiece before starting another build')
+        offer('wait','Stop with the pending workpiece retained',blockers=blockers or ['A reviewed build is pending'])
+        return actions
     def building(requirement):
         compared=recipe_comparison(state,requirement)
         signature=key([state['goals']['chain_id'],state['goals']['next_goal'],[(r['id'],r['ready'],r['missing']) for r in compared]])

@@ -1,5 +1,14 @@
 # Banjo roadmap and acceptance gates
 
+**Ordinary paid Make gate, October 1:** [Fresh-map acceptance](fresh-workbench-checkpoint.md)
+passes empty workbench declaration, paired persistence, native player controls,
+Chrome Market/Recipes/Lab/World First Camp and separate player products/bags.
+Two-map reference AI completes both available chains with personal market
+supplies and native energy, including a paid work table. Next qualify an
+actually damaged tool through funded replacement, pickup, equip and native
+use in an ordinary fresh world; extend material-source and machine progression
+beyond these two chains. The fourteen gates stay four verified, ten partial.
+
 **Canonical machine operation, October 1:** [Configured Make/Use acceptance](canonical-machine-use-checkpoint.md)
 passes saved canonical rover funding, native placement, actual World Use and
 battery draw; lamp admission preserves its wiring requirement. Bare template

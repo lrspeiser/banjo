@@ -31,6 +31,7 @@ def _recipe() -> tuple[dict[str, Any], str, float]:
         "width_m": .24, "depth_m": .24, "height_m": .24,
         "top_profile": "square", "leg_section_m": .04, "top_thickness_m": .04,
         "aprons": 0, "stretchers": 0, "splay_deg": 0, "material": "oak"})
+    design.parameters['primary_use']={'label':'Place stool','steps':[{'do':'place'}]}
     overrides = {p.name: {"mechanics": {"model": "rigid"}} for p in design.parts}
     artifact = workshop_rigid.compile_rigid(design, overrides)
     return ({"kind": design.kind, "design_id": design.design_id,
@@ -153,4 +154,6 @@ def view(app: Any, owner: str, body: Any) -> dict[str, Any]:
             "next_chain": next(iter(goal_chains.definitions())) if next_goal is None else None,
             "unlocked": True,
             "follow_up": "Next: study and use a tool, make a work surface, and learn from a working machine.",
-            "limits": "Building spends wood. The stool can be carried; sitting and strength are not tested yet. No fabrication energy is charged."}
+            "limits": ("Building spends wood and native battery energy at the workbench. The stool can be carried; sitting and strength are not tested yet."
+                if getattr(app.room,'fabrication_record',None) is not None else
+                "Building spends wood. The stool can be carried; sitting and strength are not tested yet. No fabrication energy is charged.")}

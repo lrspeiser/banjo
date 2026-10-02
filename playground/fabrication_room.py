@@ -14,6 +14,38 @@ import workshop_library
 LOCK = threading.RLock()
 COMMON = {"session", "scene"}
 
+def starter_settings():
+    """New-map process declaration. Supplies must be gathered and funded."""
+    return model.config({'mode':'authoring','stock_kg':{},'energy_j':0.,
+        'power_w':500.,'work_j_kg':100.,'efficiency':1.,
+        'heat_capacity_j_k':10000.,'cooling_w_k':2.,'max_temperature_k':473.15})
+
+def opened(app, answer):
+    room=getattr(app,'room',None)
+    declaration=getattr(app,'starter_workbench',None)
+    if declaration is None or getattr(room,'fabrication_record',None) is not None:return False
+    room.fabrication_record=model.new(declaration,float(answer['t']))
+    room.fabrication_required=True
+    return True
+
+PLAYER_ROUTES = {'/api/world/open','/api/world/ask','/api/world/action','/api/world/placement',
+    '/api/world/putdown','/api/world/inventory','/api/world/inventory/shown',
+    '/api/world/machine','/api/world/watch-machine','/api/world/tool','/api/world/tool/use',
+    '/api/world/goods/collect','/api/world/rover/talk','/api/world/rover/brain',
+    '/api/world/workshop/context','/api/world/workshop/what_made'}
+PLAYER_NATIVE_OPS = {'step','poses','wield','grab','hand','move','release','stroke',
+    'preview_stroke','preview_flight','joints','mechanics','thermo','pick','place_check',
+    'survey','structure','condition','environment','environment_state','terrain','materials',
+    'rolling','dig','deposit','tool_points','ground_work','collect','fracture','unhinge',
+    'behave','lamp_switch','breaker_switch'}
+
+def check_player_request(path,body):
+    if not isinstance(body,dict):raise ValueError('Expected a JSON object')
+    if path.startswith('/api/world/') and path not in PLAYER_ROUTES and not path.startswith('/api/world/fabrication/'):
+        raise ValueError('Create or change designs in Lab, then fund and make them at the workbench')
+    if path=='/api/live/act' and body.get('op') not in PLAYER_NATIVE_OPS:
+        raise ValueError('This authoring operation is not allowed in the funded room')
+
 #: Ground accounts a bulk transfer can be made against: one that counts what has
 #: been taken out (v2 and after) and, to put any back, what has gone back (v3
 #: and after). v4 is the same account with the beds of rock under the surface

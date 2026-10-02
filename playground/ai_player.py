@@ -197,9 +197,12 @@ class Manager:
         req=ai_actions.requirement_of(goals) or {}
         recipes=(self._post(profile,'/api/workshop/recipes',{},cookie)['templates']
                  if req.get('kind') in ('admitted-recipe','funded-box-surface','personal-test') else [])
+        funding=(self._post(profile,'/api/world/fabrication/state',
+                 {'session':opened['session'],'scene':opened['scene']},cookie)
+                 if profile['ai'].get('memory',{}).get('fabrication_build') else None)
         return {'goals':goals,'next_goal':goals['next_goal'],'market':market,'balance_j':market['balance_j'],
                 'skills':skills,'tech_tree':skills,'inventory':inventory,'recipes':recipes,
-                'native':opened,'pose':deepcopy(profile.get('pose'))}
+                'native':opened,'pose':deepcopy(profile.get('pose')),'fabrication':funding}
 
     def _run(self,profile,stop,cookie):
         try:

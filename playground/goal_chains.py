@@ -81,6 +81,7 @@ def work_table_recipe():
         'width_m':.48,'depth_m':.32,'height_m':.50,'top_profile':'square',
         'leg_section_m':.04,'top_thickness_m':.04,'aprons':0,'stretchers':0,
         'splay_deg':0,'material':'oak'})
+    design.parameters['primary_use']={'label':'Place work surface','steps':[{'do':'place'}]}
     return {'kind':design.kind,'design_id':design.design_id,'parameters':dict(design.parameters),
         'component_overrides':{p.name:{'mechanics':{'model':'rigid'}} for p in design.parts}}
 

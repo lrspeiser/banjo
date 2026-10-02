@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from http.server import ThreadingHTTPServer
+from contextlib import nullcontext
 import json
 import os
 from pathlib import Path
@@ -61,6 +62,24 @@ class ControllerBoundaries(unittest.TestCase):
             {'fabrication_build':{'job_id':'pending-real-job'}})
         self.assertEqual(['continue-build','wait'],[a['verb'] for a in actions])
         self.assertEqual(actions[0]['id'],ai_actions.reference_pick({},actions))
+
+    def test_pending_build_buys_personal_shortages_and_retries_unknown_writes_first(self):
+        state={'goals':{'goals':[],'next_goal':'need'},'market':{'balance_j':100,'bankable':True,
+            'offers':[{'id':'oak-stock','substance':'oak','mass_kg':.5,'price_j':30,'remaining':20}]},
+            'fabrication':{'state':{'stock_kg':{'oak':1},'jobs':{}},'stock_sources':[
+                {'pool':'personal','material':'oak','mass_kg':.5},
+                {'pool':'shared','material':'oak','mass_kg':100}]}}
+        pending={'job_id':'paid-job','plan':{'quote':{'material':'oak','stock_kg':3}}}
+        actions=ai_actions.catalog(state,{'fabrication_build':pending})
+        self.assertEqual(['buy','wait'],[a['verb'] for a in actions])
+        state['market']['balance_j']=0
+        self.assertEqual('bank',ai_actions.catalog(state,{'fabrication_build':pending})[0]['verb'])
+        pending['request']={'op':'fund_stock','body':{'request_id':'uncertain'}}
+        self.assertEqual('continue-build',ai_actions.catalog(state,{'fabrication_build':pending})[0]['verb'])
+        pending.pop('request');state['market']['offers'][0]['remaining']=0
+        actions=ai_actions.catalog(state,{'fabrication_build':pending})
+        self.assertEqual(['wait'],[a['verb'] for a in actions])
+        self.assertIn('no oak lot',actions[0]['blockers'][0])
 
     def test_catalog_uses_requirements_and_observed_targets_not_tutorial_names(self):
         state={'goals':{'chain_id':'unrelated-chain','next_goal':'renamed-task','goals':[
@@ -175,6 +194,9 @@ class AutonomousGuests(unittest.TestCase):
         self.app.hub = server.WorldHub(self.app)
         self.app.password = None; self.app.public_host = None
         self.httpd = ThreadingHTTPServer(("127.0.0.1", self.port), server.Handler)
+        # Join in-flight requests before deleting the temporary SQLite/native
+        # world. ThreadingHTTPServer otherwise detaches its request threads.
+        self.httpd.daemon_threads = False
         self.httpd.app = self.app
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True); self.thread.start()
         self.token = self.get("/api/status")["csrf_token"]
@@ -188,16 +210,75 @@ class AutonomousGuests(unittest.TestCase):
         self.app.hub.shutdown(); self.app.live.shutdown(); self.app.pool.shutdown(wait=False)
 
     def tearDown(self):
+        # Close browser keep-alive connections before joining HTTP handlers.
+        self.doCleanups()
         self.stop(); self.temp.cleanup()
 
-    def setup_world(self):
-        world = self.post("/api/worlds", {"name": "AI camp"})["id"]
+    def setup_world(self,legacy_process=False):
+        # Explicit v1-world fixture for tests that author a process themselves.
+        with (mock.patch.object(server.fabrication_room,'starter_settings',return_value=None)
+              if legacy_process else nullcontext()):
+            world = self.post("/api/worlds", {"name": "AI camp"})["id"]
         owner = self.join(world, "Human"); self.players = {world: owner}
         self.post("/api/world/open", {}, world)
         self.post("/api/world/ai", {"action": "list"}, world)
         app = self.app.hub.get(world)
         app.ai_players.cadence_s = .02
         return world, owner, app
+
+    def test_fresh_workbench_is_empty_paired_durable_and_initial_save_can_retry(self):
+        from copy import deepcopy
+        world=self.post('/api/worlds',{'name':'Empty paid workbench'})['id']
+        owner=self.join(world,'Human');self.players={world:owner}
+        app=self.app.hub.get(world)
+        self.assertIsNone(app.room.fabrication_record)
+        with mock.patch.object(app.store,'save',return_value=False):
+            with self.assertRaises(urllib.error.HTTPError):self.post('/api/world/open',{},world)
+        process=deepcopy(app.room.fabrication_record)
+        self.assertEqual({},process['stock_kg']);self.assertEqual(0,process['energy_j'])
+        opened=self.post('/api/world/open',{},world)
+        self.assertEqual(process,app.room.fabrication_record)
+        stored=app.store.load('new-game')
+        self.assertEqual(process,stored.fabrication_record)
+        self.assertEqual(opened['t'],stored.world_record['t_s'])
+        common={'session':opened['session'],'scene':'new-game'}
+        with self.assertRaises(urllib.error.HTTPError):
+            self.post('/api/world/fabrication/configure',{**common,'settings':server.fabrication_room.starter_settings(),
+                'request_id':'no-refill'},world)
+        for command in ({'op':'charge','store':0,'joules':1000},{'op':'create','name':'free box'}):
+            with self.assertRaises(urllib.error.HTTPError):self.post('/api/live/act',{'session':opened['session'],**command},world)
+        self.assertEqual(process,app.room.fabrication_record)
+        self.stop();self.start()
+        self.post('/api/world/player/join',{'token':owner['token']},world)
+        self.post('/api/world/open',{},world)
+        self.assertEqual(process,self.app.hub.get(world).room.fabrication_record)
+        self.assertEqual({},process['jobs'])
+
+    def test_legacy_world_keeps_undeclared_workbench_after_restart(self):
+        world,owner,app=self.setup_world(legacy_process=True)
+        self.assertIsNone(app.room.fabrication_record)
+        self.stop();self.start()
+        self.post('/api/world/player/join',{'token':owner['token']},world)
+        opened=self.post('/api/world/open',{},world)
+        state=self.post('/api/world/fabrication/state',{'session':opened['session'],'scene':'new-game'},world)
+        self.assertFalse(state['configured']);self.assertIsNone(self.app.hub.get(world).starter_workbench)
+
+    def test_funded_chat_reads_actual_precise_world_and_refuses_free_creation(self):
+        from copy import deepcopy
+        world,owner,app=self.setup_world();app.api_key='mock-provider-only'
+        before=deepcopy(app.live.session.state['bodies']);sid=app.live.session.id
+        outputs=[{'status':'completed','output':[{'type':'function_call','name':'describe_world','call_id':'read','arguments':'{}'},
+            {'type':'function_call','name':'add_object','call_id':'blocked','arguments':'{"name":"free item"}'}]},
+            {'status':'completed','output':[{'type':'message','content':[{'type':'output_text','text':'Open your recipe in Lab, then fund Make.'}]}]}]
+        with mock.patch.object(server.world_chat,'_call',side_effect=outputs) as provider,\
+             mock.patch.object(server.world_chat.room_world,'open_room',side_effect=AssertionError('authoring copy')):
+            reply=self.post('/api/world/ask',{'session':sid,'scene':'new-game','message':'Make me a table'},world)
+        self.assertIn('fund Make',reply['reply']);self.assertFalse(reply['worked'])
+        conversation=provider.call_args.args[2]
+        answers={c['call_id']:json.loads(c['output']) for c in conversation if c.get('type')=='function_call_output'}
+        self.assertIn('objects',answers['read']);self.assertIn('error',answers['blocked'])
+        self.assertEqual(sid,app.live.session.id);self.assertEqual(before,app.live.session.state['bodies'])
+        self.assertEqual({},app.room.fabrication_record['jobs']);self.assertEqual([],app.room.workshop_installs)
 
     def test_waiting_action_allows_world_clock_and_other_guest_to_run(self):
         world, owner, app = self.setup_world()
@@ -232,7 +313,7 @@ class AutonomousGuests(unittest.TestCase):
     def test_ai_paid_make_uses_own_collected_stock_solar_and_recovers_lost_writes_on_restart(self):
         from copy import deepcopy
         from fabrication_tests import settings
-        world,human,app=self.setup_world()
+        world,human,app=self.setup_world(legacy_process=True)
         guest=self.join(world,'Funded builder');peer=self.join(world,'Unrelated player')
         profile=app.room.player_records[guest['id']]
         profile['ai']={'controller':human['id'],'mode':'reference','status':'paused',
@@ -326,7 +407,7 @@ class AutonomousGuests(unittest.TestCase):
     def test_paid_ai_refuses_unsupported_machine_without_free_install_or_supply_debit(self):
         from copy import deepcopy
         from fabrication_tests import settings
-        world,human,app=self.setup_world();guest=self.join(world,'Machine builder')
+        world,human,app=self.setup_world(legacy_process=True);guest=self.join(world,'Machine builder')
         profile=app.room.player_records[guest['id']]
         profile['ai']={'controller':human['id'],'mode':'reference','status':'paused',
                        'decisions':0,'history':[],'memory':{}}
@@ -353,7 +434,7 @@ class AutonomousGuests(unittest.TestCase):
         from fabrication_tests import settings,rigid_machine
         from mcp import fabrication
         import workshop_install,workshop_library
-        world,human,app=self.setup_world();guest=self.join(world,'Machine builder')
+        world,human,app=self.setup_world(legacy_process=True);guest=self.join(world,'Machine builder')
         profile=app.room.player_records[guest['id']]
         profile['ai']={'controller':human['id'],'mode':'reference','status':'paused',
                        'decisions':0,'history':[],'memory':{}}
@@ -649,6 +730,18 @@ class AutonomousGuests(unittest.TestCase):
             self.assertEqual(app.brains.runtime(),stored.machine_runtime)
             self.assertEqual([],stored.player_evidence_pending)
             self.assertEqual([],stored.machine_evidence_pending)
+            from mcp import fabrication
+            process=stored.fabrication_record
+            self.assertEqual(2,len(process['jobs']))
+            self.assertTrue(all(j['status']=='installed' and j['make_source']['owner']==bot['id'] for j in process['jobs'].values()))
+            self.assertTrue(all(r['source_owner']==bot['id'] for r in process['stock_imports'].values()))
+            totals=fabrication.audit(process)
+            self.assertLess(abs(totals['energy_residual_j']),1e-7)
+            self.assertTrue(all(abs(v)<1e-7 for v in totals['material_residual_kg'].values()))
+            reports[-1]['paid_make']={'default_workbench':True,'initial_stock_kg':{},'initial_energy_j':0,
+                'jobs':[{'status':j['status'],'owner':j['make_source']['owner'],'product_kg':j['product_kg'],
+                         'stock_kg':j['stock_kg'],'work_j':j['required_j']} for j in process['jobs'].values()],
+                'audit':totals,'funding':'Own market purchases; native generated solar battery; no shared rack debit.'}
         output=ROOT/'build/ai-player';output.mkdir(parents=True,exist_ok=True)
         (output/'explorer-acceptance.json').write_text(json.dumps(reports,indent=2,allow_nan=False),encoding='utf-8')
         print('\n    reference explorer: '+json.dumps([{k:r[k] for k in ('terrain_seed','goods_seed','decisions','wall_s','native_t_s','known')} for r in reports]))

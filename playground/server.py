@@ -1165,6 +1165,10 @@ class WorldHub:
                 or not 1 <= len(value["name"]) <= 80):
             raise ValueError("Invalid world record")
         arrival=value.get('arrival_xz')
+        if value.get('workbench') is not None:
+            declaration=fabrication_room.model.config(value['workbench'])
+            if declaration['stock_kg'] or declaration['energy_j']:
+                raise ValueError('A new-map workbench cannot supply materials or energy')
         if arrival is not None and (not isinstance(arrival,list) or len(arrival)!=2 or
                 any(type(v) not in (int,float) or not math.isfinite(v) or abs(v)>10000 for v in arrival)):
             raise ValueError('Invalid world arrival position')
@@ -1185,6 +1189,7 @@ class WorldHub:
                              folder / "runs", planner=self.base.planner)
             app.store, app.world_id, app.world_name = store, world_id, meta["name"]
             app.arrival_xz=meta.get('arrival_xz')
+            app.starter_workbench=meta.get('workbench')
             app.room = room
             app.rooms = {"new-game": room}
             app.players_lock = threading.RLock()
@@ -1256,6 +1261,8 @@ class WorldHub:
                     "created_unix_s": time.time(), "terrain_seed": terrain_seed,
                     "goods_seed": proof["seed"], "reachability": proof,
                     "arrival_xz":list(new_game.ARRIVE_AT)}
+            declaration=fabrication_room.starter_settings()
+            if declaration is not None:meta['workbench']=declaration
             path = folder / "manifest.json"
             partial = folder / "manifest.json.partial"
             partial.write_text(json.dumps(meta, allow_nan=False), encoding="utf-8")
@@ -1298,7 +1305,8 @@ class Handler(BaseHTTPRequestHandler):
         route=urlsplit(self.path).path
         if isinstance(value,dict) and content_type.startswith("application/json") and (
                 route=="/api/status" or route.startswith(("/api/world/","/api/live/","/api/workshop/"))):
-            persistence=getattr(getattr(self.app,"room",None),"persistence",None)
+            try:persistence=getattr(getattr(self.app,"room",None),"persistence",None)
+            except (ValueError,FileNotFoundError):persistence=None
             if persistence is not None: value={**value,"persistence":persistence}
         data = json.dumps(value,allow_nan=False).encode() if isinstance(value,(dict,list)) else value
         self.send_response(status)
@@ -1506,7 +1514,7 @@ class Handler(BaseHTTPRequestHandler):
         # prevents the very steps they need. They do not transfer host goods;
         # Live.act still serializes each native command, and the shared lease
         # keeps installation from replacing their session mid-program.
-        waits_for_steps = path in {"/api/world/action", "/api/world/tool/use", "/api/world/putdown"}
+        waits_for_steps = path in {"/api/world/action", "/api/world/tool/use", "/api/world/putdown", "/api/world/ask"}
         # Normal world calls share access; explicit installation is exclusive.
         # Keep ordinary requests concurrent and perform authentication first.
         with (world_access.gate(self.app).enter(exclusive=path in ("/api/world/open", "/api/live/open")) if world_call else nullcontext()), \
@@ -1515,19 +1523,7 @@ class Handler(BaseHTTPRequestHandler):
                  or fabrication_room.active(self.app)
                  or path in ("/api/world/open", "/api/live/open")) else nullcontext()):
             if fabrication_room.active(self.app):
-                allowed_world = {"/api/world/open", "/api/world/action", "/api/world/placement", "/api/world/putdown", "/api/world/inventory", "/api/world/inventory/shown", "/api/world/machine", "/api/world/watch-machine", "/api/world/tool", "/api/world/tool/use",
-                                 "/api/world/workshop/context", "/api/world/workshop/what_made"}
-                allowed_world.add("/api/world/goods/collect")
-                if path.startswith("/api/world/") and path not in allowed_world and not path.startswith("/api/world/fabrication/"):
-                    raise ValueError("The fabrication room accepts funded outputs; edit designs in Workshop")
-                if not isinstance(body, dict): raise ValueError("Expected a JSON object")
-                # Ordinary product use needs native tool diagnostics and the
-                # fragment-only collection lane. Native collect preserves
-                # authored whole bodies, even when they are small hulls.
-                if path == "/api/live/act" and body.get("op") not in {"step","poses","wield","hand","move","release","joints","mechanics","thermo","pick","place_check",
-                    "survey","structure","condition","environment","environment_state","terrain","materials","rolling","dig","deposit",
-                    "tool_points","ground_work","collect"}:
-                    raise ValueError("This authoring operation is not allowed in the funded room")
+                fabrication_room.check_player_request(path,body)
             if path.startswith("/api/world/fabrication/"):
                 operation = path.rsplit("/",1)[-1]
                 try:
@@ -1813,10 +1809,12 @@ class Handler(BaseHTTPRequestHandler):
                 # from its spec, which a restart must not trade for an older one.
                 gameplay_room.opened(app, opened)
                 app.brains.opened(room.spec,getattr(room,"machine_runtime",None))
+                fabrication_room.opened(app,opened)
                 saved_now = keep_world(app,"the room opened")
                 if (gameplay_room.active(app) or fabrication_room.active(app)) and not saved_now:
                     raise ValueError("The funded room could not be saved")
                 opened["scene"]=app.room.scene
+                opened['funded_make']=fabrication_room.active(app)
                 opened["scenes"]=sorted(world_room.SCENES)
                 opened["kept"]=kept
                 if kept: opened["kept_since_unix_s"]=getattr(room,"kept_since",None)
@@ -1856,10 +1854,11 @@ class Handler(BaseHTTPRequestHandler):
                                           [str(s)[:200] for s in (body.get("story") or [])][-24:],
                                           trace=trace,water_state=live_water(session,room.spec),
                                           person=person,history=room.chat,journal=journal_of(app),
+                                          funded=fabrication_room.active(app),
                                           # Working what is in the room -- a thing's action
                                           # pressed, a motor told -- happens to the room as
                                           # it stands.
-                                          live=lambda name,args:_chat_live(app,name,args,body.get("person"),player))
+                                          live=lambda name,args:_player_chat_live(app,name,args,body.get("person"),player))
                 except Exception as failure:
                     world_chat.remember_turn(room.chat,message,None,failure=str(failure)[:300])
                     room_store.keep(app,room)
@@ -2035,6 +2034,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(body,dict): raise ValueError("Expected a live action object")
                 seen=body.pop("notebook_seen",None)
                 app=self.app
+                if fabrication_room.active(app) and body.get('op')=='behave' and body.get('doing') not in ('','waiting'):
+                    require_released_rover(app,body.get('program'))
                 if player and isinstance(body,dict):
                     if body.get("op") in {"park","unpark"}:
                         raise ValueError("Use your inventory to move a world item")
@@ -2841,9 +2842,14 @@ def _rejoin(app,scene,player_id=""):
     opened=world_upgrades.apply(app,opened)
     player_arrival(app,opened)
     gameplay_room.opened(app, opened)
+    declared=fabrication_room.opened(app,opened)
+    if declared or (fabrication_room.active(app) and (getattr(room,'persistence',{}) or {}).get('state')=='failed'):
+        if not keep_world(app,'retrying initial workbench save'):
+            raise ValueError('The workbench and world could not be saved; retry opening this world')
     opened["inventory"]=inventory_room.shown(app,player_id)
     if player_id: player_world.personalize_hand(opened,player_id)
     opened["scene"]=room.scene
+    opened['funded_make']=fabrication_room.active(app)
     opened["scenes"]=sorted(world_room.SCENES)
     # Not read back from disk: this server holds it (kept means that).
     opened["kept"]=False
@@ -2930,6 +2936,18 @@ def _control_for(app,which):
     if found: return found[0]
     raise ValueError(f"there is no machine called {which!r} in the room")
 
+def require_released_rover(app,program_id):
+    try:program_id=int(program_id)
+    except (ValueError,TypeError):return  # Native validation reports malformed ids.
+    state=app.live.session.state or {}
+    program=next((p for p in state.get('machines',{}).get('programs',[])
+                  if p['id']==program_id and p.get('kind')=='roam'),None)
+    if program:
+        parts=set(program.get('parts') or [])|{program['body']}
+        hands=list((state.get('player_hands') or {}).values())+[state.get('hand') or {}]
+        if any(h.get('mode')=='grip' and h.get('holding') in parts for h in hands):
+            raise ValueError("Release the rover's recovery grip before turning it on")
+
 def operate_machine(app,body,player_id="",*,require_saved=False):
     """One command to a machine's controller (docs/machine-world.md, "Operating
     a machine"), from the page's panel (POST /api/world/machine) or the room's
@@ -2946,14 +2964,7 @@ def operate_machine(app,body,player_id="",*,require_saved=False):
         return machine_recovery.request(app,player_id,body,keep_world)
     if body.get("program") is not None:
         if body.get("power") is True:
-            state=app.live.session.state or {}
-            program=next((p for p in state.get("machines",{}).get("programs",[])
-                          if p["id"]==body["program"] and p.get("kind")=="roam"),None)
-            if program:
-                parts=set(program.get("parts") or [])|{program["body"]}
-                hands=list((state.get("player_hands") or {}).values())+[state.get("hand") or {}]
-                if any(h.get("mode")=="grip" and h.get("holding") in parts for h in hands):
-                    raise ValueError("Release the rover's recovery grip before turning it on")
+            require_released_rover(app,body['program'])
         # A machine's program, turned on or off from its panel the same way:
         # {program, sender, seq, power}, answered with the program as it now is.
         said=app.live.act({"session":app.live.session.id,"op":"run","program":body.get("program"),
@@ -2974,6 +2985,10 @@ def operate_machine(app,body,player_id="",*,require_saved=False):
     if said.get("operated")=="applied": keep_world(app,"a machine was told what to do")
     return {"operated":said.get("operated"),"control":said.get("control")}
 
+def _player_chat_live(app,name,args,person,player):
+    with (app.live.as_actor(player) if player else nullcontext()):
+        return _chat_live(app,name,args,person,player)
+
 def _chat_live(app,name,args,person=None,player_id=""):
     """What the room's chat does to the room as it stands (room_world.LIVE): one
     of a thing's actions pressed, as the page's E presses it, or its motor told
@@ -2981,6 +2996,9 @@ def _chat_live(app,name,args,person=None,player_id=""):
     owner, 2026-09-15: "nothing should be resetting rooms". What it did, or
     {"error": why}, for the model."""
     try:
+        if name=='describe_world':
+            state=app.live.act({'session':app.live.session.id,'op':'poses'})
+            return {'objects':world_chat._now(state),'machines':state.get('machines',{}),'time_s':state.get('t')}
         if name=="use_action":
             thing=str(args.get("name",""))[:200]
             offered=[a for a in (app.room.spec.get("actions") or []) if a.get("body")==thing]

@@ -86,7 +86,8 @@ The header is `X-Banjo-Token`, **not** `X-CSRF-Token`; without it the answer is
 | `GET /api/<suite>/runs/<id>` | one run's report: `status`, `total`, `completed`, `results` |
 | `POST /api/<suite>/run` | start it; `202` with the new run's `id` |
 | `POST /api/<suite>/cancel` | `{"run_id": "..."}` |
-| `POST /api/world/open` | `{"scene": "world"}` |
+| `POST /api/world/open` | `{"scene": "world"}`; `funded_make` reports the running workbench guard |
+| `POST /api/world/ask` | Current-world discussion and saved actions in a funded room; new designs use Lab and paid Make |
 | `POST /api/live/act` | `{"session", "op": "step", "dt", "n"}` |
 
 `<suite>` is `material-qa`, `mechanics-qa`, `tool-qa` or `fabrication-qa`. A run

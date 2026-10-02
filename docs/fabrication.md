@@ -6,13 +6,16 @@ those broad capabilities or claim physical drilling, general assembly, casting,
 repair, machining calibration or automated production.
 
 Use the HTTP/MCP operations below against the existing main world or the separate
-`fabrication` room. Explicitly declare the process once, quote a Workshop candidate,
+`fabrication` room. New generated maps declare a zero-stock, zero-energy
+workbench; existing worlds keep their saved declaration or its absence. For
+explicit authoring rooms, declare the process once. Quote a Workshop candidate,
 start it, advance native time, then preview and place the finished workpiece.
 Native terrain bounds placement. The old `/fabrication` page is removed (404);
 the Lab exposes reviewed Make/Remake, personal/shared stock, native battery
 funding, progress and placement in configured worlds. Recipes Make opens this
 review for new/saved designs. Inventory exposes pending stock recovery controls.
-Ordinary starter workbench declarations remain unfinished. Another live world view can advance the shared
+[Fresh-workbench acceptance](fresh-workbench-checkpoint.md) covers ordinary
+player/AI paid progression through the two available goal chains. Another live world view can advance the shared
 clock while a process runs.
 Configuring a funded station retains surveying, excavation, tool use and machine
 controls; free authoring operations remain restricted. The [30-item priority list](physics-gameplay-backlog.md) and

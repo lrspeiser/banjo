@@ -1,5 +1,16 @@
 # Development status and handoff
 
+**Fresh-workbench integration, October 1:** [Measured checkpoint](fresh-workbench-checkpoint.md)
+adds a declared 500 W lumped workbench with no initial supplies to new maps,
+paired save/retry/restart, ordinary player routes and funded native chat.
+Default-world Chrome First Camp and paid pick authoring pass. The reference
+AI purchases its own missing stock and completes the two available goal
+chains on both terrains in 61 choices; it learns ground tools and copper
+smelting. This is deterministic controller evidence with zero provider calls.
+Fixed fabrication QA remains 68/68; legacy worlds are not retrofitted.
+No native law change. Damaged-tool replacement/equip/use, broader generated
+routes and physical constituent incorporation remain; four verified, ten partial.
+
 **Canonical machine Use, October 1:** [Paid/browser checkpoint](canonical-machine-use-checkpoint.md)
 adds bounded native program/lamp switches and preserves template declarations
 through bare candidate/Save/quote requests. Paid canonical rover construction,

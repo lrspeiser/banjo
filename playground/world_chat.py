@@ -25,6 +25,7 @@ while it tries things out, and in the person's room once it is handed back.
 from __future__ import annotations
 
 import json
+from contextvars import ContextVar
 import math
 import re
 import time
@@ -46,6 +47,20 @@ MAX_TURN_S = 420.0
 TIMEOUT_S = 90
 # What one answer may spend, its thinking included.
 MAX_OUTPUT_TOKENS = 6000
+FUNDED_CHAT = ContextVar('banjo_funded_world_chat',default=False)
+FUNDED_TOOLS = {'describe_world','use_action'}
+FUNDED_GUIDE = """You help a player in their current persistent Banjo world.
+Read describe_world for actual bodies, machine state and time. use_action runs
+only an already saved action in the current native world, with the player's
+position and existing reach/energy/hand limits. A switch supplies no energy or
+materials and does not guarantee movement, production or success. Report the
+tool's measured outcome and refusals. You cannot spawn, reset, heal or change
+objects. For a new or modified product, direct the player to select a recipe or
+owned item, open Lab, discuss the draft there, review its actual shortages, fund
+the workbench from inventory and a native battery, Make, and collect/use it in
+World. Do not claim you created a draft or item without an available tool.
+Keep replies concise and actionable, using names and values when useful.
+"""
 # Said to the chat, once a turn, when it changed the room and offered nothing.
 NOTHING_OFFERED = ("A note from the room, not from the person: nothing you made this turn has "
                    "actions yet. If a person would do something with one of those things that "
@@ -1116,8 +1131,8 @@ def payload(model: str, conversation: list[dict[str, Any]]) -> dict[str, Any]:
             # Handed back each round with the calls it led to, so that a model
             # that planned a gate in round one still has the plan in round five.
             "include": ["reasoning.encrypted_content"],
-            "instructions": GUIDE,
-            "tools": room_world.chat_tools(),
+            "instructions": FUNDED_GUIDE if FUNDED_CHAT.get() else GUIDE,
+            "tools": [t for t in room_world.chat_tools() if not FUNDED_CHAT.get() or t['name'] in FUNDED_TOOLS],
             "input": conversation}
 
 
@@ -1522,6 +1537,50 @@ def clear_spots(person: dict[str, Any], bodies: list[dict[str, Any]],
     return chosen
 
 
+def ask_funded(api_key,model,live_state,message,story,history,person,live,trace):
+    """Use the authoritative room; no authoring copy or export exists here."""
+    began=time.perf_counter();did=[];usage={'input_tokens':0,'output_tokens':0}
+    conversation=_earlier_turns(history)+[{'role':'user','content':json.dumps({
+        'what_you_were_asked':message,'objects_now':_now(live_state),
+        'machines':live_state.get('machines',{}),'time_s':live_state.get('t'),
+        'person':person,'recent_actions':story[-24:]},allow_nan=False)}]
+    reply='The turn ended before an answer; no design was changed.'
+    rounds=0
+    token=FUNDED_CHAT.set(True)
+    try:
+        for rounds in range(1,MAX_ROUNDS+1):
+            if time.perf_counter()-began>MAX_TURN_S:break
+            result=_call(api_key,model,conversation)
+            for key in usage:usage[key]+=int((result.get('usage') or {}).get(key) or 0)
+            if result.get('status')!='completed':
+                raise ValueError('The model response did not complete; current item state is retained')
+            outputs=result.get('output') or []
+            if any(c.get('type')=='refusal' for o in outputs for c in o.get('content',[]) or []):
+                raise ValueError('The model declined this request')
+            calls=[o for o in outputs if o.get('type')=='function_call']
+            if not calls:
+                reply='\n'.join(c.get('text','') for o in outputs if o.get('type')=='message'
+                    for c in o.get('content',[]) if c.get('type')=='output_text').strip() or reply
+                break
+            conversation.extend(o for o in outputs if o.get('type') in ('reasoning','function_call'))
+            record={'calls':[]}
+            for call in calls:
+                name=call.get('name','')
+                try:
+                    args=json.loads(call.get('arguments') or '{}')
+                    if name not in FUNDED_TOOLS or not isinstance(args,dict):
+                        raise ValueError('Edit designs in Lab, then fund and make them; this world only runs existing actions')
+                    answer=live(name,args)
+                except Exception as failure:answer={'error':str(failure)}
+                if name=='use_action' and 'error' not in answer:did.append(_did(name,args,answer))
+                record['calls'].append({'name':name,'arguments':call.get('arguments'),'answer':answer})
+                conversation.append({'type':'function_call_output','call_id':call.get('call_id'),
+                    'output':json.dumps(answer,allow_nan=False)})
+            if trace is not None:trace.append(record)
+        return {'reply':reply,'did':did,'changed':False,'worked':bool(did),'rounds':rounds,
+            'usage':usage,'wall_s':round(time.perf_counter()-began,2),'the_person':person,'checked':[],'deferred':[]}
+    finally:FUNDED_CHAT.reset(token)
+
 def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
         message: str, story: list[str],
         trace: list[dict[str, Any]] | None = None,
@@ -1529,7 +1588,7 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
         person: Any = None,
         history: list[dict[str, Any]] | None = None,
         journal: Any = None,
-        live: Any = None) -> dict[str, Any]:
+        live: Any = None, funded: bool = False) -> dict[str, Any]:
     """One turn. Returns what to say, what was changed, and whether to reopen.
 
     `live`, when given, works the running room for the calls in
@@ -1557,6 +1616,8 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
                          "nobody to talk to. Add it and restart the server. Everything "
                          "else on this page works without it.")
 
+    if funded:
+        return ask_funded(api_key,model,live_state,message,story,history,person,live,trace)
     world_id = room_world.open_room(room.spec, water_state=water_state)
     entry = room_world.entry_of(world_id)
     # The person's notebook, for read_knowledge -- read-only, since no tool

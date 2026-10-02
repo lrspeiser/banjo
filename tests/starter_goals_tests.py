@@ -6,6 +6,7 @@ and refusals. This is a reproducible planner, not an LLM-success judgement.
 from __future__ import annotations
 
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -16,6 +17,50 @@ import uuid
 from types import SimpleNamespace
 from unittest import mock
 import tempfile
+
+def make_paid(client,world,player,candidate,position,ident):
+    context=client.post('/api/world/workshop/context',{},world,player)
+    common={k:context[k] for k in ('session','scene')}
+    def call(path,body,world_id,player_token):
+        try:reply=client.post(path,body,world_id,player_token)
+        except urllib.error.HTTPError as failure:
+            raise AssertionError(failure.read().decode()) from failure
+        if reply.get('session'):common['session']=reply['session']
+        return reply
+    plan=call('/api/world/fabrication/plan_make',{**common,'candidate':candidate},world,player)
+    for material,kg in plan['missing_materials_kg'].items():
+        if kg<=1e-10:continue
+        funding=call('/api/world/fabrication/state',common,world,player)
+        source=next(s for s in funding['stock_sources'] if s['pool']=='personal' and s['material']==material)
+        if source['mass_kg']<kg:raise AssertionError('Personal inventory cannot cover '+material)
+        call('/api/world/fabrication/fund_stock',{**common,'material':material,'mass_kg':kg,'pool':'personal',
+            'rack_hash':source['rack_hash'],'revision':funding['state']['revision'],'request_id':ident+'-stock-'+material},world,player)
+    funding=call('/api/world/fabrication/state',common,world,player)
+    source=next(s for s in funding['energy_sources'] if s['body']=='solar farm')
+    call('/api/world/fabrication/connect_energy',{**common,'store':source['id'],'store_hash':source['store_hash'],
+        'power_w':min(source['max_power_w'],funding['state']['config']['power_w']),
+        'revision':funding['state']['revision'],'request_id':ident+'-connect'},world,player)
+    funding=call('/api/world/fabrication/wait',{**common,'seconds':1},world,player)
+    funding=call('/api/world/fabrication/state',common,world,player)
+    source=next(s for s in funding['energy_sources'] if s['connected'])
+    need=max(0,plan['quote']['supply_required_j']-funding['state']['energy_j'])
+    if need:
+        call('/api/world/fabrication/fund_energy',{**common,'store_hash':source['store_hash'],'joules':need,
+            'revision':funding['state']['revision'],'request_id':ident+'-energy'},world,player)
+    funding=call('/api/world/fabrication/state',common,world,player)
+    started=call('/api/world/fabrication/start_make',{**common,'plan_id':plan['plan_id'],
+        'revision':funding['state']['revision'],'request_id':ident},world,player)
+    remaining=max(1,math.ceil(plan['quote']['minimum_duration_s']))
+    while remaining:
+        seconds=min(10,remaining)
+        call('/api/world/fabrication/wait',{**common,'seconds':seconds},world,player);remaining-=seconds
+    preview=call('/api/world/fabrication/preview',{**common,'job_id':ident,'position_m':position},world,player)
+    before=call('/api/world/inventory/shown',{'session':common['session']},world,player)
+    built=call('/api/world/fabrication/commit',{**common,'job_id':ident,'preview_id':preview['preview_id'],
+        'request_id':ident+'-place'},world,player)
+    after=call('/api/world/inventory/shown',{'session':built['session']},world,player)
+    if before['record']!=after['record']:raise AssertionError('Placement changed the player bag')
+    return built
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "tests"), str(ROOT / "playground"), str(ROOT)]
@@ -49,21 +94,9 @@ def play_first_camp(client, world, player):
                 reply = client.post("/api/workshop/market", {"action": "buy", "item_id": oak["id"],
                     "quoted_price_j": oak["price_j"], "request_id": key}, world, player)
         elif step == "build-camp":
-            source = client.post("/api/world/workshop/context", {}, world, player)
-            preview = client.post("/api/world/workshop/preview", {"session": source["session"],
-                "scene": source["scene"], "mode": "authoring", "candidate": goals["recipe"],
-                "position_m": [3, 0]}, world, player)
-            if not preview["needs"]["enough"]:
-                raise AssertionError("The purchased starter supplies cannot cover the build")
-            room_path = Path(client.temp.name) / "rooms" / "worlds" / world / "rooms" / "new-game.json"
-            before_players = json.loads(room_path.read_text())["players"]
-            reply = client.post("/api/world/workshop/commit", {"session": preview["session"],
-                "scene": preview["scene"], "preview_id": preview["preview_id"], "request_id": key}, world, player)
+            reply=make_paid(client,world,player,goals['recipe'],[3,0],key)
             if not reply["native_precise_geometry_verified"] or not reply["resources_charged"]:
                 raise AssertionError("Build did not pass native admission and resource debit")
-            saved = json.loads(room_path.read_text())
-            if saved.get("players") != before_players:
-                raise AssertionError("Installation changed or omitted a guest profile or bag")
         elif step == "carry-camp":
             reply = client.post("/api/world/inventory", {"session": goals["session"], "op": "take",
                 "item": goals["camp_body"], "request": key}, world, player)
@@ -114,24 +147,34 @@ class StarterGoals(unittest.TestCase):
         before=json.loads(room_path.read_text())
         bench=starter_goals.recipe(); bench["kind"]="bench"; bench["design_id"]="packed-bench-regression"
         bench["parameters"].update(width_m=.48,height_m=.3)
-        context=self.post("/api/world/workshop/context",{},world)
-        preview=self.post("/api/world/workshop/preview",{**{k:context[k] for k in ("session","scene")},
-            "mode":"authoring","candidate":bench,"position_m":[4.5,0]},world)
-        built=self.post("/api/world/workshop/commit",{**{k:preview[k] for k in ("session","scene","preview_id")},
-            "request_id":"multi-packed-bench"},world)
+        # Buy the additional real stock for the larger third product.
+        self.post('/api/workshop/market',{'action':'bank','joules':500,'request_id':'packed-bench-bank'},world)
+        for index in range(10):
+            market=self.post('/api/workshop/market',{},world)
+            oak=next(o for o in market['offers'] if o['id']=='oak-stock')
+            if market['balance_j']<oak['price_j']:
+                self.post('/api/workshop/market',{'action':'bank','joules':500,
+                    'request_id':f'packed-bench-extra-bank-{index}'},world)
+            self.post('/api/workshop/market',{'action':'buy','item_id':oak['id'],'quoted_price_j':oak['price_j'],
+                'request_id':f'packed-bench-oak-{index}'},world)
+        before=json.loads(room_path.read_text())
+        built=make_paid(self,world,alice['token'],bench,[4.5,0],'multi-packed-bench')
         after=json.loads(room_path.read_text())
         self.assertEqual(before["players"],after["players"])
         by_name={b["name"]:b for b in after["world"]["bodies"]}
         for b in before["world"]["bodies"]:
+            if not b.get('parked'):continue
             self.assertEqual(b,by_name[b["name"]],"staging changed existing body state")
         for body in (result["goals"]["camp_body"],second["goals"]["camp_body"]):
             self.assertTrue(by_name[body]["parked"])
         import hashlib
         digest=lambda value:hashlib.sha256(json.dumps(value,sort_keys=True).encode()).hexdigest()
-        report={'schema':'banjo.product-presentation-acceptance.v1','players':2,
+        parked=[b for b in before['world']['bodies'] if b.get('parked')]
+        report={'schema':'banjo.product-presentation-acceptance.v2','players':2,
             'native_dt_s':1/240,'scene_cell_m':.05,
-            'existing_bodies_sha256_before':digest(before['world']['bodies']),
-            'existing_bodies_sha256_after':digest([by_name[b['name']] for b in before['world']['bodies']]),
+            'parked_bodies_sha256_before':digest(parked),
+            'parked_bodies_sha256_after':digest([by_name[b['name']] for b in parked]),
+            'boundary':'Parked products retain exact state; unparked bodies advance during funded native work.',
             'player_records_unchanged':before['players']==after['players'],
             'products':[{'label':'Camp stool','native_body':body,
                          'parked_mass_kg':by_name[body]['parked']['mass_kg']}
@@ -139,7 +182,10 @@ class StarterGoals(unittest.TestCase):
         self.assertGreater(built["mass_kg"],result["goals"]["recipe_mass_kg"])
         native = self.post("/api/world/open", {}, world)
         charge = next(s["charge_j"] for s in native["machines"]["stores"] if s["id"] == source["id"])
-        self.assertAlmostEqual(source["charge_j"] - 2000, charge, places=4)
+        process=self.post('/api/world/fabrication/state',{'session':native['session'],'scene':'new-game'},world)['state']
+        self.assertEqual(3,len(process['jobs']))
+        self.assertTrue(all(j['status']=='installed' for j in process['jobs'].values()))
+        self.assertGreater(process['audit']['native_energy_received_j'],0)
         # Another player's recipe cannot be reported as my build by name alone.
         with self.assertRaises(urllib.error.HTTPError):
             self.post("/api/workshop/goals", {"complete": True}, world)
@@ -164,11 +210,15 @@ class StarterGoals(unittest.TestCase):
         context = self.post("/api/world/workshop/context", {}, world)
         candidate = starter_goals.recipe()
         candidate["parameters"]["width_m"] = .3
-        preview = self.post("/api/world/workshop/preview", {"session": context["session"],
-            "scene": context["scene"], "mode": "authoring", "candidate": candidate,
-            "position_m": [3, 0]}, world)
-        self.post("/api/world/workshop/commit", {"session": preview["session"], "scene": preview["scene"],
-            "preview_id": preview["preview_id"], "request_id": "wrong-stool-geometry"}, world)
+        self.post('/api/workshop/market',{'action':'bank','joules':500,'request_id':'wrong-stool-bank'},world)
+        for index in range(9):
+            market=self.post('/api/workshop/market',{},world)
+            oak=next(o for o in market['offers'] if o['id']=='oak-stock')
+            if market['balance_j']<oak['price_j']:
+                self.post('/api/workshop/market',{'action':'bank','joules':500,'request_id':f'wrong-stool-bank-{index}'},world)
+            self.post('/api/workshop/market',{'action':'buy','item_id':oak['id'],'quoted_price_j':oak['price_j'],
+                'request_id':f'wrong-stool-oak-{index}'},world)
+        make_paid(self,world,alice['token'],candidate,[3,0],'wrong-stool-geometry')
         self.assertFalse(self.post("/api/workshop/goals", {}, world)["goals"][2]["complete"])
 
     def test_browser_completes_goals_in_market_recipes_and_world(self):
@@ -186,8 +236,9 @@ class StarterGoals(unittest.TestCase):
                 except (RuntimeError, TimeoutError): pass
                 time.sleep(.15)
             self.fail(f"Browser did not reach {expression}; status=" + str(page.evaluate(
-                'document.querySelector("#ws-market-status")?.textContent || document.querySelector("#ws-goals-status")?.textContent')))
+                'document.body.innerText.slice(-2200)')))
         def click(selector):
+            wait_for(f'!!document.querySelector({json.dumps(selector)}) && !document.querySelector({json.dumps(selector)}).disabled')
             page.evaluate(f'document.querySelector({json.dumps(selector)}).scrollIntoView({{block:"center"}})')
             point=page.evaluate(f'(()=>{{const r=document.querySelector({json.dumps(selector)}).getBoundingClientRect();return {{x:r.x+r.width/2,y:r.y+r.height/2}}}})()')
             for event in ("mousePressed", "mouseReleased"):
@@ -198,6 +249,7 @@ class StarterGoals(unittest.TestCase):
             (out / name).write_bytes(base64.b64decode(page.send("Page.captureScreenshot")["data"]))
         page.send("Page.navigate", {"url":self.base + f"/world?world={world}"})
         wait_for('window.banjoRoom?.status().ready')
+        self.assertIn('use an item',page.evaluate('document.querySelector("#ask-text").placeholder'))
         player=page.evaluate(f'localStorage.getItem("banjo.player.{world}")')
         click('.game-tabs [data-screen="goals"]')
         wait_for('!!document.querySelector("[data-goal-go=bank-solar]")')
@@ -233,7 +285,21 @@ class StarterGoals(unittest.TestCase):
         camp_selector = '[data-recipe="stool:Camp stool"]'
         wait_for(f'!!document.querySelector({json.dumps(camp_selector + ".ws-goal-target")})')
         click('[data-recipe="stool:Camp stool"] .ws-recipe-acts button')
-        wait_for('!!document.querySelector(".ws-recipe-result a[data-made-body]")')
+        wait_for('!!document.querySelector("#ws-remake-stock-personal")')
+        click('#ws-remake-stock-personal')
+        wait_for('!!document.querySelector("#ws-remake-connect")')
+        click('#ws-remake-connect')
+        wait_for('!!document.querySelector("#ws-remake-charge-wait")')
+        click('#ws-remake-charge-wait')
+        wait_for('!document.querySelector("#ws-remake-energy").disabled')
+        click('#ws-remake-energy')
+        wait_for('!document.querySelector("#ws-remake-start").disabled')
+        click('#ws-remake-start')
+        wait_for('!!document.querySelector("#ws-remake-step")')
+        click('#ws-remake-step')
+        wait_for('!!document.querySelector("#ws-remake-place")')
+        click('#ws-remake-place')
+        wait_for('document.querySelector("#ws-remake a")?.textContent === "Collect in World"')
         click('.game-tabs [data-screen="goals"]')
         wait_for('document.querySelector("[data-goal=build-camp]")?.dataset.complete === "true"')
         click('[data-goal-go="carry-camp"]')
@@ -245,8 +311,8 @@ class StarterGoals(unittest.TestCase):
             page.send("Input.dispatchKeyEvent", {"type":event, "key":"q", "code":"KeyQ", "windowsVirtualKeyCode":81})
         wait_for('window.banjoRoom.world.inventory?.record?.stowed?.includes(new URLSearchParams(location.search).get("focus"))')
         wait_for('window.banjoRoom.world.inventory?.labels?.[new URLSearchParams(location.search).get("focus")] === "Camp stool"')
-        self.assertIn('Camp stool',page.evaluate('document.querySelector("#inv-bag li .slot-key").nextSibling.textContent'))
-        self.assertFalse(page.evaluate('document.querySelector("#inv-bag li details").open'))
+        wait_for('document.querySelector("#mini-products").textContent.includes("Camp stool")')
+        self.assertEqual(0,page.evaluate('document.querySelectorAll("#mini-products details").length'))
         screenshot("packed-in-world.png")
         click('.game-tabs [data-screen="goals"]')
         wait_for('document.querySelector("#ws-goals-progress")?.textContent.includes("First camp complete")')

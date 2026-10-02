@@ -1,0 +1,244 @@
+{
+  "schema": "banjo.fresh-workbench-checkpoint.v1",
+  "source_base_revision": "94a52ad9177937e48c596ea5a5af11d2c074a7c9",
+  "source_dirty_during_verification": true,
+  "environment": "Windows / Python 3.13 / MSVC 19.44 Release / Chrome ordinary input",
+  "engine_sha256": "1cfcb766b24f942df1147f8e9ecd1c00d083105ff71a5bcb9d8da6b50c8d8db9",
+  "library_sha256": "ab9b2bd04c082863271592a3b9db2eee5fc2e3666024f3e4184aa71e2e482c8c",
+  "process_declaration": {
+    "initial_stock_kg": {},
+    "initial_energy_j": 0,
+    "power_w": 500,
+    "work_j_kg": 100,
+    "efficiency": 1,
+    "heat_capacity_j_k": 10000,
+    "cooling_w_k": 2,
+    "max_temperature_k": 473.15
+  },
+  "fabrication_qa": {
+    "status": "passed",
+    "total": 68,
+    "elapsed_wall_s": 103.41107678413391,
+    "glass_oak_iron_regressions_retained": true
+  },
+  "reference_explorers": [
+    {
+      "terrain_seed": 7,
+      "goods_seed": 851269742,
+      "controller": "reference",
+      "provider_calls": 0,
+      "wall_s": 102.825,
+      "native_t_s": 18.754166666665924,
+      "decisions": 61,
+      "goal_chain": "first-workshop-v1",
+      "goals_complete": true,
+      "known": [
+        "smelting-copper",
+        "using-ground-tools"
+      ],
+      "tech_tree_total": 10,
+      "actions": [
+        "acquire",
+        "bank",
+        "build",
+        "buy",
+        "compare-recipes",
+        "continue-build",
+        "inspect",
+        "move",
+        "observe",
+        "pack",
+        "select-recipe",
+        "select-target",
+        "use-tool",
+        "watch-batch"
+      ],
+      "paid_make": {
+        "default_workbench": true,
+        "initial_stock_kg": {},
+        "initial_energy_j": 0,
+        "jobs": [
+          {
+            "status": "installed",
+            "owner": "61382979580d42b5aa4a86488f54839c",
+            "product_kg": 2.5088,
+            "stock_kg": 2.5088,
+            "work_j": 250.88
+          },
+          {
+            "status": "installed",
+            "owner": "61382979580d42b5aa4a86488f54839c",
+            "product_kg": 6.361599999999999,
+            "stock_kg": 6.361599999999999,
+            "work_j": 636.16
+          }
+        ],
+        "audit": {
+          "material_residual_kg": {
+            "oak": 0.0
+          },
+          "assembly_goods_received_kg": {},
+          "assembly_goods_reserved_or_transferred_kg": {},
+          "assembly_goods_residual_kg": {},
+          "rack_material_received_kg": {
+            "oak": 8.8704
+          },
+          "native_energy_received_j": 887.04,
+          "reserved_output_energy_j": 0,
+          "transferred_output_energy_j": 0,
+          "native_transfer_residual_j": -1.9554136088117957e-10,
+          "native_meter_residual_j": 2.7284841053187847e-12,
+          "energy_residual_j": 5.626610288800293e-13,
+          "work_residual_j": 0.0,
+          "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+        },
+        "funding": "Own market purchases; native generated solar battery; no shared rack debit."
+      }
+    },
+    {
+      "terrain_seed": 4,
+      "goods_seed": 1,
+      "controller": "reference",
+      "provider_calls": 0,
+      "wall_s": 102.463,
+      "native_t_s": 18.954166666665913,
+      "decisions": 61,
+      "goal_chain": "first-workshop-v1",
+      "goals_complete": true,
+      "known": [
+        "smelting-copper",
+        "using-ground-tools"
+      ],
+      "tech_tree_total": 10,
+      "actions": [
+        "acquire",
+        "bank",
+        "build",
+        "buy",
+        "compare-recipes",
+        "continue-build",
+        "inspect",
+        "move",
+        "observe",
+        "pack",
+        "select-recipe",
+        "select-target",
+        "use-tool",
+        "watch-batch"
+      ],
+      "paid_make": {
+        "default_workbench": true,
+        "initial_stock_kg": {},
+        "initial_energy_j": 0,
+        "jobs": [
+          {
+            "status": "installed",
+            "owner": "069f866e0ca24cdebef193e8d51e93ef",
+            "product_kg": 2.5088,
+            "stock_kg": 2.5088,
+            "work_j": 250.88
+          },
+          {
+            "status": "installed",
+            "owner": "069f866e0ca24cdebef193e8d51e93ef",
+            "product_kg": 6.361599999999999,
+            "stock_kg": 6.361599999999999,
+            "work_j": 636.16
+          }
+        ],
+        "audit": {
+          "material_residual_kg": {
+            "oak": 0.0
+          },
+          "assembly_goods_received_kg": {},
+          "assembly_goods_reserved_or_transferred_kg": {},
+          "assembly_goods_residual_kg": {},
+          "rack_material_received_kg": {
+            "oak": 8.8704
+          },
+          "native_energy_received_j": 887.04,
+          "reserved_output_energy_j": 0,
+          "transferred_output_energy_j": 0,
+          "native_transfer_residual_j": -1.9554136088117957e-10,
+          "native_meter_residual_j": 2.7284841053187847e-12,
+          "energy_residual_j": 3.68594044175552e-14,
+          "work_residual_j": 0.0,
+          "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+        },
+        "funding": "Own market purchases; native generated solar battery; no shared rack debit."
+      }
+    }
+  ],
+  "two_player_products": {
+    "schema": "banjo.product-presentation-acceptance.v2",
+    "players": 2,
+    "native_dt_s": 0.004166666666666667,
+    "scene_cell_m": 0.05,
+    "parked_bodies_sha256_before": "17bf9a4561523a726b4810a94d7f1a008fed6c1531dac3379fcfc1355c9d3b86",
+    "parked_bodies_sha256_after": "17bf9a4561523a726b4810a94d7f1a008fed6c1531dac3379fcfc1355c9d3b86",
+    "boundary": "Parked products retain exact state; unparked bodies advance during funded native work.",
+    "player_records_unchanged": true,
+    "products": [
+      {
+        "label": "Camp stool",
+        "native_body": "workshop-41023a96fd3f4207",
+        "parked_mass_kg": 2.5087999770312504
+      },
+      {
+        "label": "Camp stool",
+        "native_body": "workshop-64faa9dd52f44e38",
+        "parked_mass_kg": 2.5087999770312504
+      }
+    ],
+    "both_names_and_bags_retained_after_restart": true
+  },
+  "browser_first_camp": {
+    "status": "passed",
+    "screenshot": "build/starter-goals/packed-in-world.png",
+    "visual_inspection": true,
+    "flow": "Market bank/buy -> Recipes Make -> Lab personal stock/connect/charge/fund/work/place -> World Q -> compact Inventory -> Goals/reload",
+    "initial_process_stock_kg": {},
+    "initial_process_energy_j": 0,
+    "exceptions": 0
+  },
+  "checks": {
+    "starter_goals": {
+      "passed": 4,
+      "wall_s": 53.317
+    },
+    "default_legacy_chat_controller": {
+      "passed": 12,
+      "wall_s": 8.324
+    },
+    "rover_recovery_native_browser": {
+      "passed": 2,
+      "wall_s": 9.493
+    },
+    "chat_tool_parity": {
+      "passed": 24,
+      "wall_s": 0.008
+    },
+    "actions": {
+      "passed": 40,
+      "wall_s": 23.094
+    },
+    "source_registration": {
+      "registered": 287,
+      "unbuilt": 0
+    },
+    "world_goods": {
+      "passed": 15,
+      "wall_s": 107.296
+    },
+    "funded_chat_final_http": {
+      "passed": 1,
+      "wall_s": 1.183
+    }
+  },
+  "boundary": "Lumped authored shaping process and local transfers; no physical station mesh, calibrated forming, whole-world conservation or full tech-tree qualification.",
+  "goal_status": {
+    "verified": 4,
+    "partial": 10,
+    "active": true
+  }
+}

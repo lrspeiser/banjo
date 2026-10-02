@@ -30,9 +30,9 @@ class GoodsJourney(unittest.TestCase):
     join=fixture.AutonomousGuests.join
     setup_world=fixture.AutonomousGuests.setup_world
 
-    def batch(self,process=True):
+    def batch(self,process=True,legacy_process=False):
         with mock.patch.object(server.secrets,'randbelow',side_effect=[1,851269741]):
-            world,owner,app=self.setup_world()
+            world,owner,app=self.setup_world(legacy_process=legacy_process)
         source=next(m for m in machine_witness.machines(app) if m['recipe']=='smelt copper')
         output=app.brains.goods.by_name(app.brains.of(source['machine']).routine.output)
         self.assertFalse(output.get('rack'), 'New games leave output awaiting pickup')
@@ -107,6 +107,11 @@ class GoodsJourney(unittest.TestCase):
                 with self.assertRaises(urllib.error.HTTPError):
                     self.post('/api/world/machine',{'session':sid,'program':program['id'],'power':True,
                         'sender':'other guest','seq':1},world,other['token'])
+                for command in ({'op':'run','program':program['id'],'power':True},
+                                {'op':'behave','program':str(program['id']),'doing':'forward','sender':'recovery-bypass','seq':1,'for_s':1}):
+                    with self.assertRaises(urllib.error.HTTPError):
+                        self.post('/api/live/act',{'session':sid,**command},world,other['token'])
+                self.assertFalse(next(p for p in app.live.session.state['machines']['programs'] if p['id']==program['id'])['power'])
                 target=answer['hand']['grip_m'][:];target[1]+=.8
                 peak=0
                 for _ in range(8):
@@ -121,8 +126,9 @@ class GoodsJourney(unittest.TestCase):
                 held_before=deepcopy(hand)
                 # Reopen the persisted native world without applying a new grasp/target.
                 saved=app.room.world_record
-                app.live.shutdown();app.live.session=None
-                opened=self.post('/api/world/open',{},world)
+                app.live.shutdown();app.live.session=None;app.live_holder=None
+                try:opened=self.post('/api/world/open',{},world)
+                except urllib.error.HTTPError as failure:self.fail(failure.read().decode())
                 self.assertEqual('grip',opened['hand']['mode']);self.assertEqual(program['body'],opened['hand']['holding'])
                 self.assertAlmostEqual(held_before['work_j'],opened['hand']['work_j'],places=4)
                 self.assertEqual(saved['t_s'],app.room.world_record['t_s'])
@@ -426,11 +432,25 @@ class GoodsJourney(unittest.TestCase):
         chat('make the whole object oak')
         before=workshop_library.rack(app)
         page.evaluate('document.querySelector("#ws-make").click()')
-        wait('document.querySelector("#ws-make-status").textContent.startsWith("Made.")')
+        def paid_click(selector):
+            wait(f'document.querySelector({json.dumps(selector)}) && !document.querySelector({json.dumps(selector)}).disabled')
+            page.evaluate(f'document.querySelector({json.dumps(selector)}).click()')
+        # Ordinary generated workbench, with explicit shared-stock selection
+        # and an actual native battery debit; no seeded process supply.
+        paid_click('#ws-remake-stock-shared')
+        paid_click('#ws-remake-connect')
+        paid_click('#ws-remake-charge-wait')
+        paid_click('#ws-remake-energy')
+        paid_click('#ws-remake-start')
+        paid_click('#ws-remake-step')
+        paid_click('#ws-remake-place')
+        wait('document.querySelector("#ws-remake a")?.textContent==="Collect in World"')
         self.assertEqual(1,len(app.room.workshop_installs))
         before_oak=next(r['mass_kg'] for r in before['materials'] if r['material']=='oak')
         after_oak=next(r['mass_kg'] for r in workshop_library.rack(app)['materials'] if r['material']=='oak')
         self.assertGreater(before_oak,after_oak)
+        self.assertEqual(0,app.room.fabrication_record['config']['energy_j'])
+        self.assertEqual('installed',next(iter(app.room.fabrication_record['jobs'].values()))['status'])
         self.assertEqual([],[e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
 
     def test_component_thumbnails_keep_rover_and_pick_assembled_without_native_changes(self):

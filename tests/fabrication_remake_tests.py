@@ -245,7 +245,7 @@ class LabRemake(unittest.TestCase):
 
     def test_canonical_rover_paid_build_and_primary_use_in_browser(self):
         self.assertTrue(flow.qa_browser.CHROME.is_file(),'Chrome required')
-        world,owner,app,*_=self.batch(process=False)
+        world,owner,app,*_=self.batch(process=False,legacy_process=True)
         pile=app.brains.goods.put(0,0,{'oak':40.,'iron':12.,'glass':5.,'copper':.5,'copper wire':2.3},
             named='explicit canonical build fixture supplies')['onto']
         sid=app.live.session.id
@@ -327,7 +327,7 @@ class LabRemake(unittest.TestCase):
     def test_lab_saved_mixed_machine_reviews_each_material_and_funds_initial_charge(self):
         from fabrication_tests import mixed_machine
         self.assertTrue(flow.qa_browser.CHROME.is_file(),'Chrome required for Lab machine acceptance')
-        world,owner,app,_,_,_=self.batch(process=False)
+        world,owner,app,_,_,_=self.batch(process=False,legacy_process=True)
         pile=app.brains.goods.put(0,0,{'oak':10.,'iron':10.,'copper':.5},named='machine browser test supplies')['onto']
         sid=app.live.session.id;floor=app.live.act({'session':sid,'op':'survey','at':[0,0]})['survey']['ground_m']
         self.post('/api/world/goods/collect',{'session':sid,'pile':pile,'request_id':'machine-lab-collect',
@@ -413,7 +413,7 @@ class LabRemake(unittest.TestCase):
 
     def test_lab_source_plan_native_paid_start_progress_placement_and_private_owner(self):
         self.assertTrue(flow.qa_browser.CHROME.is_file(),'Chrome required for Lab remake acceptance')
-        world,owner,app,_,_,_=self.batch(process=False)
+        world,owner,app,_,_,_=self.batch(process=False,legacy_process=True)
         peer=self.join(world,'Remake peer')
         # Use the generated solar yard's actual finite store. No fixture
         # battery, initial charge refill, extra body or native reopen.

@@ -1,5 +1,15 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Ordinary workbench, October 1:** [Fresh-world paid progression](fresh-workbench-checkpoint.md)
+now declares a zero-stock, zero-energy workbench on new maps. Normal player
+controls and native chat remain available; Make spends reviewed supplies.
+Chrome First Camp and private two-player/restart checks pass. The reference
+AI completes both available goal chains on both generated terrains in 61
+choices using personal purchases and native solar energy. This covers two
+learned techniques, not the entire tech tree. Legacy worlds retain their
+saved process; damaged-tool use, calibrated forming and broader progression
+remain open. All fourteen requirements stay four verified, ten partial.
+
 **Canonical machine controls, October 1:** [Verified paid rover/lamp checkpoint](canonical-machine-use-checkpoint.md)
 adds portable bounded switches tied to existing native controllers, explicit
 on/off retry semantics and preserved bare template declarations. No energy,
