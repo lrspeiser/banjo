@@ -1,6 +1,6 @@
 # Development status and handoff
 
-**Live tool skill progress, October 1:** [Verified player flow](live-tool-skills-checkpoint.md) fixes the inspection prerequisite and ignored tool-use notebook response. Native two-map recovery and actual Chrome E/J, 0/1 → 1/1, achievement/fade, repeat/reload and Skills completion pass. Knowledge 48, tool handling 20, controller 9, API docs 12 and First Camp 4 pass. Current Field pick has one tracked skill; no extra unlock is invented. Publication revision follows in the checkpoint. Four verified, ten partial.
+**Live tool skill progress, October 1:** [Verified player flow](live-tool-skills-checkpoint.md) fixes the inspection prerequisite and ignored tool-use notebook response. Native two-map recovery and actual Chrome E/J, 0/1 → 1/1, achievement/fade, repeat/reload and Skills completion pass. Knowledge 48, tool handling 20, controller 9, API docs 12 and First Camp 4 pass. Current Field pick has one tracked skill; no extra unlock is invented. Implementation `a9ba0e3` is published on main. Refreshed 8770 preview retains legacy worlds and passes fresh pickup, the concise skill card and empty funded workbench with no JS exceptions. Four verified, ten partial.
 
 **Fresh-workbench integration, October 1:** [Measured checkpoint](fresh-workbench-checkpoint.md)
 adds a declared 500 W lumped workbench with no initial supplies to new maps,

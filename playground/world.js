@@ -10295,7 +10295,8 @@ function showToolSkills() {
   const pending = held && world.use.last?.learning_pending && !step?.known;
   const status = step?.known ? "Learned ✓" : working ? "Digging…"
     : pending ? "Saving progress…" : step?.unmet?.length ? "Skill needed"
-    : held && world.use.target?.enabled === false ? world.use.target.reason
+    : held && world.use.target?.enabled === false
+      ? ({ near: "Step back", far: "Move closer" }[world.use.target.ring?.state] || "Cannot dig here")
     : "Ready";
   const next = skills.find(s => !s.known && s.id !== step?.id);
   const model = { object: profile.object, id: step?.id, name: step?.name, known: step?.known,

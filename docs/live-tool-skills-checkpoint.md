@@ -1,6 +1,6 @@
 # Live tool skill progress — October 1, 2026
 
-Status: implemented and verified on Windows against source base `3dd8f074282096ae872a0e6823eac41ea30e2a13` with the outgoing edits. Publication revision follows below. [Retained measurements](evidence/live-tool-skills-checkpoint.json).
+Status: implemented and verified on Windows against source base `3dd8f074282096ae872a0e6823eac41ea30e2a13` with the outgoing edits. Implementation `a9ba0e3cfa158417f1919e0f69ecb3801d5964d0` is published on GitHub main. The following presentation refinement shortens refused target labels; it changes no learning condition. [Retained measurements](evidence/live-tool-skills-checkpoint.json).
 
 ## Player flow
 
@@ -23,6 +23,8 @@ Windows / Python 3.13 / MSVC 19.44 Release CPU binaries / ordinary Chrome E and 
 - Existing Chrome Skills navigation **1/1**, 4.217 s; world-aware Skills/Market guidance **1/1**, 1.437 s. Navigation grants nothing.
 - Default First Camp suite **4/4**, 53.985 s; paid construction and separate player inventory remain valid.
 - Source-registration **287/287** and changed-file/diff checks pass. Browser fixture closure can log aborted in-flight HTTP writes; these do not indicate an application exception or a failed assertion.
+
+The refreshed local preview at **http://127.0.0.1:8770/world** passes legacy-world reopen (10 bodies), fresh funded workbench with zero stock/energy, unchanged 22-cell pick, native E pickup, component thumbnails and the 0/1 contextual skill card. Its positioning state is the short **Step back** label. No JavaScript exceptions. Existing worlds/players are preserved; other local servers are untouched.
 
 ## Limits / next work
 

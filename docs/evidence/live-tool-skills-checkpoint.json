@@ -236,5 +236,26 @@
   "player_goal_status": {
     "verified": 4,
     "partial": 10
+  },
+  "published_implementation_revision": "a9ba0e3cfa158417f1919e0f69ecb3801d5964d0",
+  "preview": {
+    "url": "http://127.0.0.1:8770/world?world=7d57f8cf50cf456fa5fcb9882a4703ff&scene=new-game",
+    "old_world_body_count": 10,
+    "fresh_pick_cells": 22,
+    "fresh_pick_design": true,
+    "legacy_world_funded_make": false,
+    "fresh_world_funded_make": true,
+    "workbench_stock_kg": {},
+    "workbench_energy_j": 0.0,
+    "mini_inventory": "Inventory\nOpen all \u2192\nField pick\nRight hand\nStow\nYour energy\n0 J\nSolar \u00b7 shared\n1,990,404.6 J\nSolar rate\n242.6 J/s",
+    "skill_progress": "0 / 1",
+    "skill_card": "Field pick\nSkills \u2197\nGathering by hand\nStep back\n0 / 1\n\nDig soil or sand with your Field pick once.",
+    "legacy_tabs_removed": true,
+    "exception_count": 0
+  },
+  "presentation_refinement": {
+    "change": "Short positioning state labels; no skill condition change",
+    "world_js_sha256": "e4725483ab1f68c43f273358b766725fe50ecf59b37becf2a779df9efab68dcf",
+    "verified": "actual Chrome preview 0/1 card, Step back, E pickup, no JS exceptions"
   }
 }
