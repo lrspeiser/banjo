@@ -1,0 +1,944 @@
+{
+  "schema": "banjo.quick-tools-checkpoint.v1",
+  "source_base_revision": "953aef6e7e54e9838c62288b0f470570c1e884e8",
+  "source_dirty_during_verification": true,
+  "environment": "Windows / Python 3.13 / MSVC 19.44 Release / Chrome / CPU native ABI 25",
+  "source_sha256": {
+    ".github/workflows/ci.yml": "5ab0f96e58f9155be5099ecc3fa5f9b8df027d6f99ac7142dd1ae7057eef71f4",
+    "mcp/banjo_mcp.py": "6a5a2b3f3ffc095275340e0d4cbab5a1414a1de1d00821925c20f1819171aa2d",
+    "mcp/interaction_profiles.py": "8a9da8631229eceb7686382694ed50dd952ce4d363dc4b38e031fd044eb77e9c",
+    "mcp/workshop_tools.py": "7787096e0567638ea4632693de651966c08758a93f146dfbfbb8263c96187363",
+    "playground/live_session.py": "70134333f10f64bcd7d6adb6e395b28057acb71979a9d4bd6c5f5b293e846dfd",
+    "playground/server.py": "cd320f4789d5010f3dbd6fcf41cbd31f0fec3d675c03bfec813c926f9c5de54c",
+    "playground/tool_use.py": "04d6abe6023cf1ff24f897cffd9914a34a8e22fae5fd931768e5b9fd789bc7a5",
+    "playground/tools.js": "260a60a4192f4dbfadb2d10298b8ad64be58dd7c4c87769ffa1026e8a5d5c6ac",
+    "playground/workshop_chat.py": "869bdf96319f1fe947d56ea6c5b4d40138755f571fe436204e6d35a8d4572981",
+    "playground/world.js": "d54ccd85cb94d49032dea6cc8900ecc65d4f7e96cd5f3ae1c5be7c77dad1a794",
+    "playground/world_chat.py": "7e591b8b3fad5f5c224d64fa095327e7b4725bb31907312961e4307835f48ce1",
+    "src/fastlattice/LiveWorld.cpp": "f0c1d8c5a6ca079deca241166f90dca08567c354bccb0ca60be11a39f2a0ed10",
+    "src/fastlattice/LiveWorld.hpp": "b69ad5f57f82d33bdb196a0d585c6e0f30f0379018951031a7cb422163aad2e4",
+    "tests/live_world_tests.cpp": "d720d47ff37c89d8f92a21cc1465b1b8413e08c27e53d70b2df0909c2ab7a268",
+    "tests/tool_use_tests.py": "39a492d989b071f846dce2050cda159145faaf1b109fab0ede5c0cfd4bfe99b6",
+    "tools/live_world_run.cpp": "25740c9afea1d7c7e9007a661ee23e84efe1cb1fda70da4f3864c8be7b1d89f1",
+    "mcp/tool_gestures.py": "8ff00513cf04c6709ab2e9cca0239c33f9bc33d9219f353d50ab5cdae3412af0",
+    "tests/quick_tool_tests.py": "b086354b32cc0df48bec56f12c39ea27c2d857750f1333ac38cef0ad4a935f8d"
+  },
+  "engine_sha256": "6ce0e6d010d9ef23fd354c7f4d98a4eba93638c065f8f6979bdeefbaf13b9107",
+  "library_sha256": "198ab769e09fd915262402da85b54ede02973461bc6811a5b38e58ff2aa30ecb",
+  "defaults": {
+    "gesture": "contact",
+    "requested_cadence_hz": 4,
+    "dt_s": 0.004166666666666667,
+    "scene_cell_m": 0.05
+  },
+  "browser": {
+    "completed_uses_per_s": 2.75044312690815,
+    "max_rotation_deg": 6.121095162470314,
+    "max_concurrent_requests": 1,
+    "terrain_seed": 4
+  },
+  "held_replies": [
+    {
+      "start_ms": 5308.299999952316,
+      "end_ms": 5648.700000047684,
+      "done": [
+        "contact stroke: reached after 0.16 s"
+      ],
+      "result": {
+        "actor": "399b3147da80441ea4ccf1a08cf3c212",
+        "at_m": [
+          0.2904,
+          0.75216,
+          0.02498
+        ],
+        "at_s": 3.35833,
+        "breakout_work_j": 1.84702,
+        "closing_speed_m_s": 3.04005,
+        "depth_m": 0.09148,
+        "dug": {
+          "depth_m": 0.018725020695430503,
+          "from_m": [
+            0.29039877906859096,
+            0.0249846146164661
+          ],
+          "to_m": [
+            0.12535775077193065,
+            0.024991885902678847
+          ],
+          "width_m": 0.375
+        },
+        "ground": "sand",
+        "impulse_n_s": 2.45281,
+        "kind": "broke out",
+        "loosened": {
+          "sand_m3": 0.002340627586928813,
+          "soil_m3": 0
+        },
+        "loosened_kg": 3.745,
+        "model": "ground-work-v1",
+        "open": false,
+        "passive_n": 30.24471,
+        "peak_force_n": 114.06075,
+        "penetration_work_j": 4.27412,
+        "point": 1,
+        "resistance_n": 112.84107,
+        "sideways_m": 0.10746,
+        "supported": true,
+        "tool": "field pick",
+        "tool_dent_mm": 0,
+        "tool_whole": true,
+        "why": "",
+        "work_j": 6.12114
+      }
+    },
+    {
+      "start_ms": 5649.5,
+      "end_ms": 6027.600000143051,
+      "done": [
+        "contact stroke: reached after 0.20 s"
+      ],
+      "result": {
+        "actor": "399b3147da80441ea4ccf1a08cf3c212",
+        "at_m": [
+          0.30115,
+          0.73536,
+          0.02498
+        ],
+        "at_s": 3.72083,
+        "breakout_work_j": 2.20903,
+        "closing_speed_m_s": 2.54909,
+        "depth_m": 0.09506,
+        "dug": {
+          "depth_m": 0.019200349126620785,
+          "from_m": [
+            0.3011522251238527,
+            0.024983481751662394
+          ],
+          "to_m": [
+            0.12965601875741942,
+            0.02499051215418633
+          ],
+          "width_m": 0.375
+        },
+        "ground": "sand",
+        "impulse_n_s": 2.79072,
+        "kind": "broke out",
+        "loosened": {
+          "sand_m3": 0.002400043640827598,
+          "soil_m3": 0
+        },
+        "loosened_kg": 3.84007,
+        "model": "ground-work-v1",
+        "open": false,
+        "passive_n": 33.48277,
+        "peak_force_n": 117.08459,
+        "penetration_work_j": 4.70666,
+        "point": 1,
+        "resistance_n": 116.09526,
+        "sideways_m": 0.0978,
+        "supported": true,
+        "tool": "field pick",
+        "tool_dent_mm": 0,
+        "tool_whole": true,
+        "why": "",
+        "work_j": 6.91569
+      }
+    },
+    {
+      "start_ms": 6028.200000047684,
+      "end_ms": 6393.900000095367,
+      "done": [
+        "contact stroke: reached after 0.19 s"
+      ],
+      "result": {
+        "actor": "399b3147da80441ea4ccf1a08cf3c212",
+        "at_m": [
+          0.31352,
+          0.71815,
+          0.02498
+        ],
+        "at_s": 4.09583,
+        "breakout_work_j": 2.92716,
+        "closing_speed_m_s": 2.5781,
+        "depth_m": 0.09216,
+        "dug": {
+          "depth_m": 0.013992504177542582,
+          "from_m": [
+            0.31352172925861177,
+            0.024983420937732835
+          ],
+          "to_m": [
+            0.15388899254882116,
+            0.024987209819525312
+          ],
+          "width_m": 0.375
+        },
+        "ground": "sand",
+        "impulse_n_s": 2.7154,
+        "kind": "broke out",
+        "loosened": {
+          "sand_m3": 0.0017490630221928228,
+          "soil_m3": 0
+        },
+        "loosened_kg": 2.7985,
+        "model": "ground-work-v1",
+        "open": false,
+        "passive_n": 119.20714,
+        "peak_force_n": 239.96172,
+        "penetration_work_j": 4.78813,
+        "point": 1,
+        "resistance_n": 239.22292,
+        "sideways_m": 0.06289,
+        "supported": true,
+        "tool": "field pick",
+        "tool_dent_mm": 0,
+        "tool_whole": true,
+        "why": "",
+        "work_j": 7.71529
+      }
+    },
+    {
+      "start_ms": 6394.700000047684,
+      "end_ms": 6781.5,
+      "done": [
+        "contact stroke: reached after 0.18 s"
+      ],
+      "result": {
+        "actor": "399b3147da80441ea4ccf1a08cf3c212",
+        "at_m": [
+          0.33535,
+          0.70567,
+          0.02498
+        ],
+        "at_s": 4.47083,
+        "breakout_work_j": 3.77587,
+        "closing_speed_m_s": 2.59449,
+        "depth_m": 0.08331,
+        "dug": {
+          "depth_m": 0.010273022985002942,
+          "from_m": [
+            0.33534680099210995,
+            0.024983391979081747
+          ],
+          "to_m": [
+            0.19104920122738955,
+            0.024984279821379587
+          ],
+          "width_m": 0.375
+        },
+        "ground": "sand",
+        "impulse_n_s": 3.10696,
+        "kind": "broke out",
+        "loosened": {
+          "sand_m3": 0.0012841278731253677,
+          "soil_m3": 0
+        },
+        "loosened_kg": 2.0546,
+        "model": "ground-work-v1",
+        "open": false,
+        "passive_n": 98.72954,
+        "peak_force_n": 221.326,
+        "penetration_work_j": 4.47461,
+        "point": 1,
+        "resistance_n": 215.83559,
+        "sideways_m": 0.05181,
+        "supported": true,
+        "tool": "field pick",
+        "tool_dent_mm": 0,
+        "tool_whole": true,
+        "why": "",
+        "work_j": 8.25049
+      }
+    },
+    {
+      "start_ms": 6782.600000143051,
+      "end_ms": 7179.200000047684,
+      "done": [
+        "contact stroke: reached after 0.19 s"
+      ],
+      "result": {
+        "actor": "399b3147da80441ea4ccf1a08cf3c212",
+        "at_m": [
+          0.34205,
+          0.69646,
+          0.02498
+        ],
+        "at_s": 4.8625,
+        "breakout_work_j": 4.08856,
+        "closing_speed_m_s": 2.58672,
+        "depth_m": 0.0785,
+        "dug": {
+          "depth_m": 0.008799846689394422,
+          "from_m": [
+            0.34204712986776836,
+            0.024983417744383243
+          ],
+          "to_m": [
+            0.20607383138129926,
+            0.024984491877222646
+          ],
+          "width_m": 0.375
+        },
+        "ground": "sand",
+        "impulse_n_s": 3.07918,
+        "kind": "broke out",
+        "loosened": {
+          "sand_m3": 0.0010999808361743027,
+          "soil_m3": 0
+        },
+        "loosened_kg": 1.75997,
+        "model": "ground-work-v1",
+        "open": false,
+        "passive_n": 88.53845,
+        "peak_force_n": 205.29317,
+        "penetration_work_j": 4.55006,
+        "point": 1,
+        "resistance_n": 199.86175,
+        "sideways_m": 0.0489,
+        "supported": true,
+        "tool": "field pick",
+        "tool_dent_mm": 0,
+        "tool_whole": true,
+        "why": "",
+        "work_j": 8.63863
+      }
+    },
+    {
+      "start_ms": 7179.799999952316,
+      "end_ms": 7561.100000143051,
+      "done": [
+        "contact stroke: reached after 0.20 s"
+      ],
+      "result": {
+        "actor": "399b3147da80441ea4ccf1a08cf3c212",
+        "at_m": [
+          0.34783,
+          0.68857,
+          0.02498
+        ],
+        "at_s": 5.2625,
+        "breakout_work_j": 4.0797,
+        "closing_speed_m_s": 2.58545,
+        "depth_m": 0.07435,
+        "dug": {
+          "depth_m": 0.007948123636923477,
+          "from_m": [
+            0.34782692442381685,
+            0.02498343451719858
+          ],
+          "to_m": [
+            0.21904045566045915,
+            0.024984278622001557
+          ],
+          "width_m": 0.375
+        },
+        "ground": "sand",
+        "impulse_n_s": 3.13212,
+        "kind": "broke out",
+        "loosened": {
+          "sand_m3": 0.0009935154546154346,
+          "soil_m3": 0
+        },
+        "loosened_kg": 1.58962,
+        "model": "ground-work-v1",
+        "open": false,
+        "passive_n": 80.24773,
+        "peak_force_n": 190.98719,
+        "penetration_work_j": 4.93964,
+        "point": 1,
+        "resistance_n": 186.45203,
+        "sideways_m": 0.05049,
+        "supported": true,
+        "tool": "field pick",
+        "tool_dent_mm": 0,
+        "tool_whole": true,
+        "why": "",
+        "work_j": 9.01934
+      }
+    },
+    {
+      "start_ms": 7561.700000047684,
+      "end_ms": 7824.400000095367,
+      "done": [
+        "contact stroke: reached after 0.15 s"
+      ],
+      "result": {
+        "actor": "399b3147da80441ea4ccf1a08cf3c212",
+        "at_m": [
+          0.31348,
+          0.68123,
+          0.02498
+        ],
+        "at_s": 5.55833,
+        "breakout_work_j": 3.53764,
+        "closing_speed_m_s": 2.76488,
+        "depth_m": 0.06855,
+        "dug": {
+          "depth_m": 0.006692603525728591,
+          "from_m": [
+            0.31347728122014556,
+            0.02498400928370824
+          ],
+          "to_m": [
+            0.1947482560011018,
+            0.02498573646788264
+          ],
+          "width_m": 0.375
+        },
+        "ground": "sand",
+        "impulse_n_s": 3.10031,
+        "kind": "broke out",
+        "loosened": {
+          "sand_m3": 0.0008365754407160739,
+          "soil_m3": 0
+        },
+        "loosened_kg": 1.33852,
+        "model": "ground-work-v1",
+        "open": false,
+        "passive_n": 69.41536,
+        "peak_force_n": 170.72854,
+        "penetration_work_j": 4.45927,
+        "point": 1,
+        "resistance_n": 168.27945,
+        "sideways_m": 0.05044,
+        "supported": true,
+        "tool": "field pick",
+        "tool_dent_mm": 0,
+        "tool_whole": true,
+        "why": "",
+        "work_j": 7.99692
+      }
+    },
+    {
+      "start_ms": 7825.100000143051,
+      "end_ms": 8198.100000143051,
+      "done": [
+        "contact stroke: reached after 0.18 s"
+      ],
+      "result": {
+        "actor": "399b3147da80441ea4ccf1a08cf3c212",
+        "at_m": [
+          0.35748,
+          0.67544,
+          0.02498
+        ],
+        "at_s": 5.92083,
+        "breakout_work_j": 4.18626,
+        "closing_speed_m_s": 2.60888,
+        "depth_m": 0.07299,
+        "dug": {
+          "depth_m": 0.007780619040341735,
+          "from_m": [
+            0.3574846905032044,
+            0.024983386176842887
+          ],
+          "to_m": [
+            0.23106429882890975,
+            0.024984136145796563
+          ],
+          "width_m": 0.375
+        },
+        "ground": "sand",
+        "impulse_n_s": 3.11908,
+        "kind": "broke out",
+        "loosened": {
+          "sand_m3": 0.0009725773800427169,
+          "soil_m3": 0
+        },
+        "loosened_kg": 1.55612,
+        "model": "ground-work-v1",
+        "open": false,
+        "passive_n": 77.61936,
+        "peak_force_n": 187.57215,
+        "penetration_work_j": 5.70374,
+        "point": 1,
+        "resistance_n": 182.11455,
+        "sideways_m": 0.05243,
+        "supported": true,
+        "tool": "field pick",
+        "tool_dent_mm": 0,
+        "tool_whole": true,
+        "why": "",
+        "work_j": 9.89
+      }
+    },
+    {
+      "start_ms": 8198.799999952316,
+      "end_ms": 8580.5,
+      "done": [
+        "contact stroke: reached after 0.17 s"
+      ],
+      "result": {
+        "actor": "399b3147da80441ea4ccf1a08cf3c212",
+        "at_m": [
+          0.36253,
+          0.66846,
+          0.02498
+        ],
+        "at_s": 6.3,
+        "breakout_work_j": 3.90596,
+        "closing_speed_m_s": 2.6017,
+        "depth_m": 0.07235,
+        "dug": {
+          "depth_m": 0.007394532942381649,
+          "from_m": [
+            0.3625304843380615,
+            0.024983462730032827
+          ],
+          "to_m": [
+            0.2372192205310156,
+            0.02498394571085516
+          ],
+          "width_m": 0.375
+        },
+        "ground": "sand",
+        "impulse_n_s": 3.35576,
+        "kind": "broke out",
+        "loosened": {
+          "sand_m3": 0.0009243166177977061,
+          "soil_m3": 0
+        },
+        "loosened_kg": 1.47891,
+        "model": "ground-work-v1",
+        "open": false,
+        "passive_n": 76.40435,
+        "peak_force_n": 184.45587,
+        "penetration_work_j": 5.59971,
+        "point": 1,
+        "resistance_n": 180.0945,
+        "sideways_m": 0.049,
+        "supported": true,
+        "tool": "field pick",
+        "tool_dent_mm": 0,
+        "tool_whole": true,
+        "why": "",
+        "work_j": 9.50567
+      }
+    }
+  ],
+  "rapid_taps_completed": 5,
+  "right_mouse_stop_verified": true,
+  "material_comparison": {
+    "dt_s": 0.004166666666666667,
+    "cell_m": 0.04,
+    "results": [
+      {
+        "material": "glass",
+        "mass_kg": 4.32000007209778,
+        "trial": {
+          "tried": true,
+          "tool": "pick haft",
+          "mass_kg": 4.32,
+          "gesture": "contact",
+          "into_soil": {
+            "at_m": [
+              -0.96,
+              0.0,
+              1.22
+            ],
+            "standing_m": [
+              0.24,
+              1.2200000000017843
+            ],
+            "stroke_ended": "reached",
+            "gesture": "contact",
+            "swung": [
+              {
+                "tool": "pick haft",
+                "ground": "soil",
+                "what_happened": "broke out",
+                "supported": true,
+                "at_m": [
+                  -0.963,
+                  0.0,
+                  1.22
+                ],
+                "arrived_m_s": 1.64,
+                "model": "ground-work-v1",
+                "went_in_mm": 86.3,
+                "sideways_mm": 72.6,
+                "work_j": 13.392,
+                "of_it_going_in_j": 7.473,
+                "of_it_prying_j": 5.919,
+                "impulse_n_s": 6.334,
+                "peak_force_n": 147.2,
+                "the_ground_resisted_it_going_in_n": 147.6,
+                "a_pry_there_meets_n": 97.7,
+                "loosened_litres": 1.512,
+                "loosened_kg": 2.419,
+                "still_in_the_ground": false,
+                "tool_whole": true,
+                "tool_dent_mm": 0.0
+              }
+            ],
+            "levered": [
+              {
+                "tool": "pick haft",
+                "ground": "soil",
+                "what_happened": "broke out",
+                "supported": true,
+                "at_m": [
+                  -0.963,
+                  0.0,
+                  1.22
+                ],
+                "arrived_m_s": 1.64,
+                "model": "ground-work-v1",
+                "went_in_mm": 86.3,
+                "sideways_mm": 72.6,
+                "work_j": 13.392,
+                "of_it_going_in_j": 7.473,
+                "of_it_prying_j": 5.919,
+                "impulse_n_s": 6.334,
+                "peak_force_n": 147.2,
+                "the_ground_resisted_it_going_in_n": 147.6,
+                "a_pry_there_meets_n": 97.7,
+                "loosened_litres": 1.512,
+                "loosened_kg": 2.419,
+                "still_in_the_ground": false,
+                "tool_whole": true,
+                "tool_dent_mm": 0.0
+              }
+            ]
+          },
+          "into_rock": {
+            "at_m": [
+              1.24,
+              0.12,
+              -0.98
+            ],
+            "standing_m": [
+              0.5889438819074589,
+              0.028030719320731423
+            ],
+            "stroke_ended": "reached",
+            "gesture": "contact",
+            "swung": [
+              {
+                "tool": "pick haft",
+                "ground": "rock",
+                "what_happened": "chipped the rock",
+                "supported": true,
+                "at_m": [
+                  1.315,
+                  0.12,
+                  -0.947
+                ],
+                "arrived_m_s": 1.96,
+                "model": "ground-work-v1",
+                "went_in_mm": 0.0,
+                "sideways_mm": 0.0,
+                "work_j": 4.414,
+                "of_it_going_in_j": 4.414,
+                "of_it_prying_j": 0.0,
+                "impulse_n_s": 9.353,
+                "peak_force_n": 1077.7,
+                "the_ground_resisted_it_going_in_n": 2400.0,
+                "a_pry_there_meets_n": 0.0,
+                "loosened_litres": 0.0,
+                "loosened_kg": 0.0,
+                "still_in_the_ground": false,
+                "tool_whole": true,
+                "tool_dent_mm": 0.0
+              }
+            ],
+            "levered": [
+              {
+                "tool": "pick haft",
+                "ground": "rock",
+                "what_happened": "chipped the rock",
+                "supported": true,
+                "at_m": [
+                  1.315,
+                  0.12,
+                  -0.947
+                ],
+                "arrived_m_s": 1.96,
+                "model": "ground-work-v1",
+                "went_in_mm": 0.0,
+                "sideways_mm": 0.0,
+                "work_j": 4.414,
+                "of_it_going_in_j": 4.414,
+                "of_it_prying_j": 0.0,
+                "impulse_n_s": 9.353,
+                "peak_force_n": 1077.7,
+                "the_ground_resisted_it_going_in_n": 2400.0,
+                "a_pry_there_meets_n": 0.0,
+                "loosened_litres": 0.0,
+                "loosened_kg": 0.0,
+                "still_in_the_ground": false,
+                "tool_whole": true,
+                "tool_dent_mm": 0.0
+              }
+            ]
+          },
+          "tool_whole": true,
+          "what_broke": null,
+          "simulated_s": 4.288
+        },
+        "removed_m3": 0.001511984266177057,
+        "carried_m3": 0.001511984266177057,
+        "local_volume_residual_m3": 0.0
+      },
+      {
+        "material": "oak",
+        "mass_kg": 1.2095999921557619,
+        "trial": {
+          "tried": true,
+          "tool": "pick haft",
+          "mass_kg": 1.21,
+          "gesture": "contact",
+          "into_soil": {
+            "at_m": [
+              -0.96,
+              0.0,
+              1.22
+            ],
+            "standing_m": [
+              0.24,
+              1.2200000000031814
+            ],
+            "stroke_ended": "reached",
+            "gesture": "contact",
+            "swung": [
+              {
+                "tool": "pick haft",
+                "ground": "soil",
+                "what_happened": "broke out",
+                "supported": true,
+                "at_m": [
+                  -0.962,
+                  0.0,
+                  1.22
+                ],
+                "arrived_m_s": 2.54,
+                "model": "ground-work-v1",
+                "went_in_mm": 70.4,
+                "sideways_mm": 44.3,
+                "work_j": 8.682,
+                "of_it_going_in_j": 5.512,
+                "of_it_prying_j": 3.17,
+                "impulse_n_s": 2.682,
+                "peak_force_n": 140.4,
+                "the_ground_resisted_it_going_in_n": 139.2,
+                "a_pry_there_meets_n": 66.7,
+                "loosened_litres": 0.763,
+                "loosened_kg": 1.221,
+                "still_in_the_ground": false,
+                "tool_whole": true,
+                "tool_dent_mm": 0.0
+              }
+            ],
+            "levered": [
+              {
+                "tool": "pick haft",
+                "ground": "soil",
+                "what_happened": "broke out",
+                "supported": true,
+                "at_m": [
+                  -0.962,
+                  0.0,
+                  1.22
+                ],
+                "arrived_m_s": 2.54,
+                "model": "ground-work-v1",
+                "went_in_mm": 70.4,
+                "sideways_mm": 44.3,
+                "work_j": 8.682,
+                "of_it_going_in_j": 5.512,
+                "of_it_prying_j": 3.17,
+                "impulse_n_s": 2.682,
+                "peak_force_n": 140.4,
+                "the_ground_resisted_it_going_in_n": 139.2,
+                "a_pry_there_meets_n": 66.7,
+                "loosened_litres": 0.763,
+                "loosened_kg": 1.221,
+                "still_in_the_ground": false,
+                "tool_whole": true,
+                "tool_dent_mm": 0.0
+              }
+            ]
+          },
+          "into_rock": {
+            "at_m": [
+              1.24,
+              0.12,
+              -0.98
+            ],
+            "standing_m": [
+              0.5886326311230371,
+              0.027829623876130416
+            ],
+            "stroke_ended": "reached",
+            "gesture": "contact",
+            "swung": [
+              {
+                "tool": "pick haft",
+                "ground": "rock",
+                "what_happened": "stopped",
+                "supported": true,
+                "at_m": [
+                  1.308,
+                  0.12,
+                  -0.955
+                ],
+                "arrived_m_s": 2.62,
+                "model": "ground-work-v1",
+                "why": "rock, as hard as the engine's stone (100 MPa): a point of oak (35 MPa) cannot press into it, so the rock stops it and nothing comes loose"
+              }
+            ],
+            "levered": [
+              {
+                "tool": "pick haft",
+                "ground": "rock",
+                "what_happened": "stopped",
+                "supported": true,
+                "at_m": [
+                  1.308,
+                  0.12,
+                  -0.955
+                ],
+                "arrived_m_s": 2.62,
+                "model": "ground-work-v1",
+                "why": "rock, as hard as the engine's stone (100 MPa): a point of oak (35 MPa) cannot press into it, so the rock stops it and nothing comes loose"
+              }
+            ]
+          },
+          "tool_whole": true,
+          "what_broke": null,
+          "simulated_s": 3.021
+        },
+        "removed_m3": 0.0007632074236303192,
+        "carried_m3": 0.0007632074236303192,
+        "local_volume_residual_m3": 0.0
+      },
+      {
+        "material": "iron",
+        "mass_kg": 13.599360043123124,
+        "trial": {
+          "tried": true,
+          "tool": "pick haft",
+          "mass_kg": 13.599,
+          "gesture": "contact",
+          "into_soil": {
+            "at_m": [
+              -0.96,
+              0.0,
+              1.22
+            ],
+            "standing_m": [
+              0.24,
+              1.2200000000031233
+            ],
+            "stroke_ended": "reached",
+            "gesture": "contact",
+            "swung": [
+              {
+                "tool": "pick haft",
+                "ground": "soil",
+                "what_happened": "broke out",
+                "supported": true,
+                "at_m": [
+                  -0.925,
+                  0.0,
+                  1.233
+                ],
+                "arrived_m_s": 5.83,
+                "model": "ground-work-v1",
+                "went_in_mm": 189.8,
+                "sideways_mm": 159.1,
+                "work_j": 50.417,
+                "of_it_going_in_j": 24.964,
+                "of_it_prying_j": 25.453,
+                "impulse_n_s": 5.008,
+                "peak_force_n": 191.0,
+                "the_ground_resisted_it_going_in_n": 195.4,
+                "a_pry_there_meets_n": 497.1,
+                "loosened_litres": 13.283,
+                "loosened_kg": 21.253,
+                "still_in_the_ground": false,
+                "tool_whole": true,
+                "tool_dent_mm": 0.0
+              }
+            ],
+            "levered": [
+              {
+                "tool": "pick haft",
+                "ground": "soil",
+                "what_happened": "broke out",
+                "supported": true,
+                "at_m": [
+                  -0.925,
+                  0.0,
+                  1.233
+                ],
+                "arrived_m_s": 5.83,
+                "model": "ground-work-v1",
+                "went_in_mm": 189.8,
+                "sideways_mm": 159.1,
+                "work_j": 50.417,
+                "of_it_going_in_j": 24.964,
+                "of_it_prying_j": 25.453,
+                "impulse_n_s": 5.008,
+                "peak_force_n": 191.0,
+                "the_ground_resisted_it_going_in_n": 195.4,
+                "a_pry_there_meets_n": 497.1,
+                "loosened_litres": 13.283,
+                "loosened_kg": 21.253,
+                "still_in_the_ground": false,
+                "tool_whole": true,
+                "tool_dent_mm": 0.0
+              }
+            ]
+          },
+          "into_rock": {
+            "refused": "tool did not reach its bounded ready pose"
+          },
+          "tool_whole": true,
+          "what_broke": null,
+          "simulated_s": 4.188
+        },
+        "removed_m3": 0.013283107354248373,
+        "carried_m3": 0.013283107354248373,
+        "local_volume_residual_m3": 0.0
+      }
+    ],
+    "limits": "Native point/ground model; no calibrated fracture, wood grain/plasticity or full-world energy/momentum certification."
+  },
+  "checks": {
+    "quick_tools": 5,
+    "tool_handling": 20,
+    "workshop_tool_authoring": 7,
+    "ground_work_mcp": 24,
+    "knowledge": 48,
+    "api_docs": 12,
+    "native_two_map_journey": 1,
+    "chrome_skill_journey": 1,
+    "native_live_world_ctest": 1,
+    "registered_sources": 287
+  },
+  "limits": [
+    "Measured player speed on one Windows machine and fixed generated terrain; heavy tools and resistance may be slower.",
+    "Native point/ground model and hand law unchanged; ray filtering changes targeting only.",
+    "Terrain removal/carried-volume and tool-mass checks are local accounts, not full-pipeline momentum or energy certification.",
+    "No calibrated soil, fracture under a point, wet-ground, wear or oak grain/plasticity claim."
+  ],
+  "preview": {
+    "port": 8770,
+    "legacy_and_fresh": {
+      "url": "http://127.0.0.1:8770/world?world=96484ab77f6c492bba7982b48562c88c&scene=new-game",
+      "old_world_body_count": 10,
+      "fresh_pick_cells": 22,
+      "fresh_pick_design": true,
+      "legacy_world_funded_make": false,
+      "fresh_world_funded_make": true,
+      "workbench_stock_kg": {},
+      "workbench_energy_j": 0.0,
+      "mini_inventory": "Inventory\nOpen all \u2192\nField pick\nRight hand\nStow\nYour energy\n0 J\nSolar \u00b7 shared\n1,990,253.6 J\nSolar rate\n238.4 J/s",
+      "skill_progress": "0 / 1",
+      "skill_card": "Field pick\nSkills \u2197\nGathering by hand\nStep back\n0 / 1\n\nDig soil or sand with your Field pick once.",
+      "legacy_tabs_removed": true,
+      "exception_count": 0
+    }
+  }
+}

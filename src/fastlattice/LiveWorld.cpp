@@ -11169,9 +11169,14 @@ std::size_t LiveWorld::fracture(const std::string &name, double window_s) {
 }
 
 LivePick LiveWorld::pick(const Vec3 &from_world_m, const Vec3 &direction,
-                         double max_distance_m) const {
+                         double max_distance_m, bool past_held) const {
     LivePick out{};
-    const RayHit hit = impl_->world->castRay(from_world_m, direction, max_distance_m);
+    // The selected actor's held body may cross the ground-use sight line.
+    // Filter it in the native ray, so ray marching cannot skip nearby terrain.
+    std::optional<MatterBodyId> ignore;
+    if (past_held && impl_->holding < impl_->body_of.size())
+        ignore = impl_->body_of[impl_->holding];
+    const RayHit hit = impl_->world->castRay(from_world_m, direction, max_distance_m, ignore);
     if (!hit.hit) return out;
     out.hit = true;
     out.distance_m = hit.distance_m;

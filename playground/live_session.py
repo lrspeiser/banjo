@@ -2361,7 +2361,8 @@ class Live:
                     raise LiveError(f"pick was given a {key} that is not a number")
                 return out
             return session.send(op="pick", **{"from": ray("from"), "dir": ray("dir"),
-                                              "max_m": float(body.get("max_m", 1000.0))})
+                                              "max_m": float(body.get("max_m", 1000.0)),
+                                              "past_held": body.get("past_held") is True})
         if op == "fracture":
             # `wait` false starts the run on a worker and comes straight back.
             # The world keeps stepping and a later step carries the answer.

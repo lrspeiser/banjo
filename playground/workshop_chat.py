@@ -153,7 +153,12 @@ Important behavior:
   centre in its own rotated frame, in metres. The tip belongs on its actual end,
   pointing OUT of its matter; the grip belongs inside the handle. Use the real
   width, thickness, angle and point length. This installs the existing bounded
-  swing/lever model; it creates no material, motor, energy or guaranteed result.
+  ground model. Omit use for short contact strokes at 4 requested uses/s.
+  Click or hold repeats; native completion limits rate. All tools share these
+  controls: no spinning, wind-up, mandatory flourish or LLM call per use.
+  use follows the same validated schema as world interaction and recipes;
+  gesture swing is only for an explicitly requested full-swing experiment.
+  It creates no material, motor, energy, skill award or guaranteed result.
   Exact rigid or articulated tool points are unsupported. Check geometry and
   native admission after editing the named components, then test the real tool.
   Never substitute inspect or a cosmetic primary_use for a digging function.

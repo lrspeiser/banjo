@@ -1,5 +1,7 @@
 # Development status and handoff
 
+**Fast ground-tool handling, October 1:** [Verified checkpoint](quick-tools-checkpoint.md) replaces default wind-up/pry animation and fixed repeat pause with a short native contact path. Chrome measures 2.75 uses/s, 5/5 rapid taps and stop; Lab/MCP and Workshop use the same schema and gesture. Matched glass/oak/iron accounts, installed-tool use, native ray ownership and two-map personal learning pass. Local preview 8770 is refreshed. Publication revision is in the checkpoint. Four verified, ten partial.
+
 **Live tool skill progress, October 1:** [Verified player flow](live-tool-skills-checkpoint.md) fixes the inspection prerequisite and ignored tool-use notebook response. Native two-map recovery and actual Chrome E/J, 0/1 → 1/1, achievement/fade, repeat/reload and Skills completion pass. Knowledge 48, tool handling 20, controller 9, API docs 12 and First Camp 4 pass. Current Field pick has one tracked skill; no extra unlock is invented. Implementation `a9ba0e3` is published on main. Refreshed 8770 preview retains legacy worlds and passes fresh pickup, the concise skill card and empty funded workbench with no JS exceptions. Four verified, ten partial.
 
 **Fresh-workbench integration, October 1:** [Measured checkpoint](fresh-workbench-checkpoint.md)

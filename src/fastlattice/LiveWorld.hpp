@@ -1588,7 +1588,7 @@ public:
                                           bool square = true) const;
 
     [[nodiscard]] LivePick pick(const Vec3 &from_world_m,const Vec3 &direction,
-                                double max_distance_m = 1000.0) const;
+                                double max_distance_m = 1000.0, bool past_held = false) const;
 
     // Hang one named thing off another on a pin.
     //

@@ -46,6 +46,7 @@ import core_use
 
 import banjo  # noqa: E402
 import interaction_profiles  # noqa: E402
+import tool_gestures  # noqa: E402
 import interaction_points  # noqa: E402
 import progression  # noqa: E402
 import constructions  # noqa: E402
@@ -3479,10 +3480,10 @@ def tool_interaction(args: dict[str, Any]) -> dict[str, Any]:
             f"will come down -- green where it can work, amber when that is too far or too "
             f"near (it comes down {use['reach_m'][0]:g} to {use['reach_m'][1]:g} m in front of "
             f"them), red on bare rock -- and one click of the left mouse button, "
-            f"'{use['label']}', does the whole of it: the hand raises it back over their "
-            f"shoulder and brings the point down there at {use['swing']['speed_m_s']:g} m/s, "
+            f"'{use['label']}', uses the shared {use['gesture']} stroke at up to "
+            f"{use['cadence_hz']:g} requested uses/s, "
             f"with an 800 N hand and a 60 N m wrist, the ground decides how far it goes in, "
-            f"and the hand {then}."
+            f"and the hand withdraws it after the working motion."
             + (" Holding the button keeps going; the right button stops it." if use["repeat"]
                else "")
             + " E puts it down.")
@@ -3641,6 +3642,8 @@ def _swing_and_pry(world: banjo.World, tool: str,
     interaction_profiles.tool_use) -- the same numbers the playground swings it
     with."""
     use = use or interaction_profiles.tool_use(None)
+    if use['gesture'] == 'contact':
+        return _contact_trial(world, tool, use)
     swing = use["swing"]
     lever = use["lever"]
     events: list[dict[str, Any]] = []
@@ -3705,6 +3708,65 @@ def _swing_and_pry(world: banjo.World, tool: str,
     said["tool_whole"] = body is not None
     said["what_broke"] = events or None
     said["simulated_s"] = round(passed, 2)
+    return said
+
+
+def _contact_trial(world, tool, use):
+    """Same bounded point frame/path as live use; controlled native dt, not wall speed."""
+    events=[];passed=0.0
+    def step():
+        nonlocal passed
+        _step_answering(world,events);passed+=TRIAL_STEP_S
+    for _ in range(120): step()
+    point=next((p for p in world.tool_points() if p.body==tool and p.attached),None)
+    body=world.body(tool)
+    if not point or not body: return {'tried':False,'why':f'{tool} has no attached point'}
+    frame=tool_gestures.local_frame(point.tip_m,point.grip_m,point.pointing,
+                                    body.position_m,body.orientation_wxyz)
+    targets=_trial_targets(world,list(point.grip_m))
+    world.wield(tool,list(point.grip_m))
+    said={'tried':True,'tool':tool,'mass_kg':round(body.mass_kg,3),'gesture':'contact'}
+    for what,at in targets.items():
+        if at is None:
+            said[f'into_{what}']=f'no level {what} nearby';continue
+        eyes=_shoulder_for(world,at,list(world.hand().grip_m))
+        point=next((p for p in world.tool_points() if p.body==tool and p.attached),None)
+        lift=tool_gestures.lift_path(list(world.hand().grip_m),point.tip_m,point.pointing,at) if point else None
+        if lift:
+            world.stroke(lift,2.0,tool_gestures.ACCEL_M_S2,tool_gestures.LEAD_M,False,2.0)
+            took,_=_play_stroke(world,events,3.0,.05);passed+=took
+        ready=tool_gestures.ready_pose(frame,at,eyes)
+        if point and point.pointing[1]>-.98:
+            high=list(ready['hand']);high[1]+=.6
+            world.aim_held(ready['hand_q']);world.move_held(high)
+            for _ in range(480):
+                step()
+                point=next((p for p in world.tool_points() if p.body==tool and p.attached),None)
+                if (point and point.pointing[1]<-.98 and
+                    math.dist(point.tip_m,[at[0],at[1]+tool_gestures.CLEARANCE_M+.6,at[2]])<.035):break
+            else:
+                said[f'into_{what}']={'refused':'tool did not reach its bounded orientation'};continue
+            world.stroke([list(world.hand().grip_m),ready['hand']],1.0,8.0,
+                tool_gestures.LEAD_M,False,2.0)
+            took,_=_play_stroke(world,events,3.0,.05);passed+=took
+        world.aim_held(ready['hand_q']);world.move_held(ready['hand'])
+        for _ in range(480):
+            step()
+            point=next((p for p in world.tool_points() if p.body==tool and p.attached),None)
+            if (point and point.pointing[1]<-.98 and
+                math.dist(point.tip_m,[at[0],at[1]+tool_gestures.CLEARANCE_M,at[2]])<.035): break
+        else:
+            said[f'into_{what}']={'refused':'tool did not reach its bounded ready pose'};continue
+        world.forget_ground_work()
+        world.stroke(tool_gestures.contact_path(list(world.hand().grip_m),use,eyes,at),
+            use['swing']['speed_m_s'],tool_gestures.ACCEL_M_S2,tool_gestures.LEAD_M,False,1.0)
+        took,ended=_play_stroke(world,events,2.0,.05);passed+=took
+        records=[_ground_work_said(w) for w in world.ground_work()]
+        trial={'at_m':at,'standing_m':[eyes[0],eyes[2]],'stroke_ended':ended,
+            'gesture':'contact','swung':records or 'its point met no ground'}
+        trial['levered' if use['lever'] else 'drawn_out']=records
+        said[f'into_{what}']=trial
+    said.update(tool_whole=world.body(tool) is not None,what_broke=events or None,simulated_s=round(passed,3))
     return said
 
 
@@ -4504,40 +4566,15 @@ def _tool_recipe(kind: str, options: dict[str, Any] | None = None,
                        "position_m": (hx, hy, round(-head_length / 2, 4)), "join": stem}],
             "joints": [], "then": then, "actions": {},
             "use": f"they press E near it and it is held ready by its grip, point down; a ring on "
-                   f"the ground shows where it will come down; a click does '{label}' -- swung, "
-                   f"pried and drawn out -- and holding the button goes on"}
+                   f"the ground shows its target; click for a short contact stroke; hold to repeat "
+                   f"at 4 requested uses/s; native resistance determines the result"}
 
 
 RECIPES.update({kind: _tool_recipe(kind) for kind in TOOL_KINDS})
 
 # How the person uses a tool, as a tool call says it (interaction's `use`, and
 # build_recipe's `tool` `use`): interaction_profiles checks it.
-TOOL_USE_SCHEMA = {
-    "type": "object",
-    "description": "swing-and-lever only, and optional: how the PERSON uses the tool -- the "
-                   "playground gives every tool the same ring, one click that does the whole of "
-                   "it (swing, pry, draw out) and holding to keep going. label: what the click is "
-                   "called ('Break up the soil'); past: how a result is said ('broke up'); swing "
-                   "and lever: how the hand moves it, within its bounds; pry false for a tool "
-                   "only swung and drawn out; reach_m: [nearest, furthest] in front of the person "
-                   "it comes down; repeat: whether holding goes on. Say only what differs from "
-                   "the defaults: Dig here, dug, a 4 m/s swing raised 110 degrees, a 40 degree "
-                   "pry at 1.2 m/s, 1.15 to 2 m, repeating. How deep it goes and what comes loose "
-                   "stay the ground's.",
-    "properties": {
-        "label": {"type": "string", "description": "What the click is called, at most 40 letters."},
-        "past": {"type": "string", "description": "How a result is said, in the past, at most 24 letters."},
-        "swing": {"type": "object",
-                  "description": "speed_m_s 1 to 5: how fast the HAND moves along the swing -- "
-                                 "the point arrives two to three times faster, so a trial's "
-                                 "9 m/s point is a 4 m/s swing; raise_deg 30 to 170.",
-                  "properties": {"speed_m_s": {"type": "number"}, "raise_deg": {"type": "number"}}},
-        "lever": {"type": "object", "description": "speed_m_s 0.3 to 4, lever_deg 5 to 80.",
-                  "properties": {"speed_m_s": {"type": "number"}, "lever_deg": {"type": "number"}}},
-        "pry": {"type": "boolean", "description": "false: swung and drawn out, never pried."},
-        "reach_m": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2,
-                    "description": "[nearest, furthest], within 0.3 to 2 m."},
-        "repeat": {"type": "boolean", "description": "false: holding the button does not go on."}}}
+TOOL_USE_SCHEMA = interaction_profiles.TOOL_USE_SCHEMA
 
 
 def tool_build_recipe(args: dict[str, Any]) -> dict[str, Any]:

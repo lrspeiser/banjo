@@ -467,7 +467,7 @@ actions; 1 to 9 select bag slots; / talks to you.
   face and every face on the room's 0.04 m cells, and a mattock made by hand
   was refused three times and ended as a fake action. Keys, the same for every
   tool: E near it takes it up; a ring on the ground shows where it will come
-  down; a click does the whole of it -- swing, pry, draw out -- and holding the
+  down; a click gives a short contact stroke and holding the
   button keeps going; the right mouse stops it. The page gives every tool
   those: offer no action to swing it or dig with it.
 - Heat (a fire under a pot, a piston over gas): heat, enclose_gas. Key: B heats
@@ -1023,36 +1023,28 @@ grip stay together:
 A pick is not the person's to swing until interaction declares it: tool_point
 gives it a point, not controls, and without the interaction they can only carry
 it. Always finish a pick with interaction, in the same turn.
-Its trial swings it into the nearest level soil, levers it out, and swings it at
-the nearest bare rock: say how deep it went, what came loose and what stopped
-it, in its numbers. Do not strike in your copy unless they ask: what a pick
-breaks out of the ground is gone from their room's ground too.
-WHAT THE PERSON DOES WITH IT: they walk up to the pick and press E, looking at it
-or at the ground beside it: it is held ready by its grip, point down. A ring on
-the ground shows where it will come down -- green where it can work, amber when
-that is too far or too near, red on bare rock. One click does the whole of it:
-the hand swings it over and down, the point goes in, the hand pries it and
-draws it out, and what it breaks out is carried. Holding the button keeps
-going; the right mouse stops it. Aimed at the rock, the rock stops it. E puts
-it down. Tell them that in your answer.
-SHAPING HOW IT IS USED. The page uses every tool the same way, and interaction
-takes `use` to shape it for what you made -- only what you say is kept:
-label, what the click is called ("Dig here" unless you say; "Break up the soil"
-for a mattock, "Drive it in" for a stake); past, how a result is said ("dug");
-swing {speed_m_s 1 to 5, raise_deg 30 to 170}, how fast the HAND swings it (4
-m/s, raised 110 degrees -- the point arrives two to three times faster, so the
-9 m/s a trial says is the point, not the hand; leave it out unless it should
-swing slower); lever {speed_m_s 0.3 to 4, lever_deg 5 to 80}, how it is
-pried (1.2 m/s, 40 degrees); pry false for a tool that is only swung and drawn
-out, never pried; reach_m [nearest, furthest], within 0.3 to 2 m ([1.15, 2]);
-repeat false when holding the button should not go on. Say only what differs
-from those. How deep it goes and what comes loose are still the ground's, and
-its trial swings it with the use you gave it. For a grub hoe: build_recipe
-"hoe" at the place with tool {call_it "the grub hoe", use {label "Grub it
-out", past "grubbed out"}} -- one call. Said again for a tool already built,
-interaction replaces how it is used, whatever it was called. A hoe's draw through the soil
-and an axe's chop are not modelled: a hoe made with a point is swung and pried
-like a pick, and an axe is a blade.
+Its trial uses the same short contact path as the player in fresh native soil
+and bare rock. Report actual work, penetration and removal; no guaranteed yield.
+Do not dig in their world unless requested: removal is persistent.
+WHAT THE PERSON DOES WITH IT: E picks it up by its declared grip. The ground ring
+shows the target. Click or J gives a short down/lateral/out contact stroke; hold
+to repeat, right mouse stops, E puts it down. No spinning, big wind-up, flourish,
+mandatory recovery animation or model call per use. Each native stroke must
+finish; physics can limit rate. Inputs can be tapped multiple times per second.
+SHAPING HOW IT IS USED: interaction.use is the shared validated contract for
+all authored ground tools, including custom names and saved designs. Default
+is gesture contact, cadence_hz 4 (requested rate, never accelerated world time).
+Omitted fields in existing designs inherit these defaults. Name the real point
+and grip and preserve material/geometry/native admission; never add fabricated
+work, drops, skill awards, forced poses or arbitrary forces. Prefer defaults.
+label/past customize concise feedback; repeat false disables held repeat.
+pry false omits lateral motion and may loosen nothing. reach_m stays within
+0.3..2 m; swing.speed_m_s within 1..5 drives the bounded hand. Angular
+swing/lever fields only affect gesture swing; select that legacy full-swing
+experiment only when explicitly requested. Hoe and mattock recipes still use
+the native point/ground law, not calibrated farming or an axe cutting law.
+For a grub hoe use build_recipe hoe with tool {call_it "the grub hoe",
+use {label "Grub it out", past "grubbed out"}}. Custom tools share these controls.
 
 WHAT THE PERSON KNOWS. their_notebook, in what you are given, is their notebook
 as it stands (read_knowledge gives the same in full): what the engine measured

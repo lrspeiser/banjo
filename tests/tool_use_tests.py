@@ -127,6 +127,7 @@ class AToolsUseIsShapedByItsProfile(unittest.TestCase):
     def test_what_is_left_unsaid_is_the_default(self):
         self.assertEqual(interaction_profiles.tool_use(PICK),
                          {"label": "Dig here", "past": "dug",
+                          "gesture":"contact", "cadence_hz":4.0,
                           "swing": {"speed_m_s": 4.0, "raise_deg": 110.0},
                           "lever": {"speed_m_s": 1.2, "lever_deg": 40.0},
                           "reach_m": [1.15, 2.0], "repeat": True})
@@ -231,6 +232,8 @@ class WhatAToolDoesWhereYouLook(unittest.TestCase):
 
 class OneUseIsTheWholeOfIt(unittest.TestCase):
     def run_it(self, at=IN_REACH, **room):
+        profile=room.pop('profile',PICK)
+        room['profile']=dict(profile,use={'gesture':'swing',**(profile.get('use') or {})})
         app = app_with(**room)
         noted = []
         said = tool_use.run(app, {"person": PERSON, "at_m": at}, note=lambda _app, a: noted.append(a))
@@ -284,7 +287,7 @@ class OneUseIsTheWholeOfIt(unittest.TestCase):
     def test_a_swing_that_stops_short_says_where_its_point_ended(self):
         # Measured in the page: from 1.1 m, a point that ended 7 mm above the
         # ground and 4 cm before the aim was said to have "met no ground".
-        app = app_with(meets=False)
+        app = app_with(meets=False,profile=dict(PICK,use={'gesture':'swing'}))
         room = app.live
         asked = room.act
 

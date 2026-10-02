@@ -2639,7 +2639,8 @@ int main(int argc, char **argv) {
                     // it answers on its own rather than through describe().
                     const LivePick found = world->pick(readVec(command, "from"),
                                                        readVec(command, "dir"),
-                                                       command.value("max_m", 1000.0));
+                                                       command.value("max_m", 1000.0),
+                                                       command.value("past_held", false));
                     nlohmann::json answer{{"ok", true}, {"hit", found.hit},
                                           {"name", found.name},
                                           {"distance_m", found.distance_m},

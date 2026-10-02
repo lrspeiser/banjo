@@ -555,7 +555,18 @@ void aRayFindsWhatItActuallyHits() {
     // The pointer's real job: pick something and it is the thing you can grab.
     require(live->grab(top.name), "what the ray found could not be picked up");
     require(live->held() == top.name, "a different object ended up in the hand");
+    require(live->pick({0.0, 6.0, 0.0}, {0.0, -1.0, 0.0}).name == "ball",
+            "ordinary inspection must still see the held body");
+    const LivePick past = live->pick({0.0, 6.0, 0.0}, {0.0, -1.0, 0.0}, 40.0, true);
+    require(past.hit && past.name != "ball" && past.distance_m > top.distance_m,
+            "ground-tool targeting must see past its own held body");
+    live->selectHand("peer");
+    require(live->pick({0.0, 6.0, 0.0}, {0.0, -1.0, 0.0}, 40.0, true).name == "ball",
+            "targeting must still see another player's held body");
+    live->selectHand("");
     live->release();
+    require(live->pick({0.0, 6.0, 0.0}, {0.0, -1.0, 0.0}, 40.0, true).name == "ball",
+            "targeting must not hide a released body");
 }
 
 // A piece that broke off something can be pointed at.

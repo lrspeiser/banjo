@@ -10,31 +10,25 @@ So the page never knows a tool's steps. It asks here what the tool in the
 person's hand does where the crosshair meets the ground (`resolve`): the action
 and its label, whether it can be done there and why not, and the ring to draw.
 A click asks for it to be done (`run`), and it is done here with the bounded
-hand while the page keeps the room running: the tool held still, swung, pried
-when the point is in, drawn back out -- and what came of it said in plain
-words, with the engine's numbers beside them. How deep a point goes and what
-comes loose are the ground's (docs/ground-work.md); what a profile's `use` may
-shape is the handling (interaction_profiles.tool_use).
+hand while the page keeps the room running. Default ground tools use the shared
+short contact path in mcp/tool_gestures.py. Clicks are sequential and repeat
+without a flourish or fixed recovery sleep. An explicit gesture="swing" retains
+the historical full-swing experiment below. A profile controls bounded hand
+wishes, never penetration, resistance, resource yield or learning evidence.
 
-One template so far, swing-and-lever: the only tool motion the engine plans. A
-hoe's draw through the soil and an axe's chop are not modelled yet; their
-motions would come in here as templates, and the page would not change.
-
-Measured with the pick before this (the scratchpad's headless_world_pick.py):
-E took it only with the crosshair exactly on its 4 cm haft, a second left
-click with the point in the ground dropped it, and one swing in three came back
-"It met no ground" on plain sand.
 """
 from __future__ import annotations
 
 import math
 import sys
 import time
+import threading
 from pathlib import Path
 from typing import Any, Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "mcp"))
 import interaction_profiles  # noqa: E402
+import tool_gestures
 
 import world_chat  # noqa: E402  where the person is, as the page says and the chat is told
 import live_session
@@ -115,6 +109,7 @@ def resolve(app: Any, body: dict[str, Any]) -> dict[str, Any]:
                            "tool": profile["tool"], "template": profile["template"],
                            "label": use["label"], "input": "primary", "hands": 1,
                            "repeat": use["repeat"], "enabled": False, "reason": None,
+                           "gesture": use["gesture"], "cadence_hz": use["cadence_hz"],
                            "ring": None, "target": None}
     carried = _carried(app)
     if (float(carried.get("limit_kg") or 0.0) > 0
@@ -166,6 +161,10 @@ def resolve(app: Any, body: dict[str, Any]) -> dict[str, Any]:
                 else (water or 0.0))
     surface = str(survey.get("surface") or "ground")
     out["target"]["ground"] = surface
+    if use['gesture']=='contact':
+        point=_native_point(app,profile['tool'])
+        if point and all(k in point for k in ('tip_local','grip_local','pointing_local')):
+            out['ready']=tool_gestures.ready_pose(point,out['target']['at_m'],eyes)
     out["enabled"] = True
     if wet > WET_M:
         ring["state"] = "warn"
@@ -203,9 +202,6 @@ def run(app: Any, body: dict[str, Any],
     session = app.live.session
     actor = getattr(getattr(session, "_actor_local", None), "actor", "")
     busy_players = session.__dict__.setdefault("tool_busy_players", set()) if actor else set()
-    busy = actor in busy_players if actor else getattr(session, "tool_busy", False)
-    if busy:
-        return {"action": label, "refused": "The hand is still busy with the last use.", "done": []}
     profile = profile_held(app)
     use = interaction_profiles.tool_use(profile)
     tool = profile["tool"]
@@ -220,14 +216,21 @@ def run(app: Any, body: dict[str, Any],
                 heard[(record.get("point"), record.get("at_s"))] = record
 
     listeners = getattr(app, "reply_listeners", None)
+    use_lock=session.__dict__.setdefault('tool_use_lock',threading.Lock())
+    with use_lock:
+        busy=actor in busy_players if actor else getattr(session,'tool_busy',False)
+        if busy:
+            return {'action':label,'refused':'The hand is still busy with the last use.','done':[]}
+        if actor: busy_players.add(actor)
+        else: session.tool_busy=True
     if listeners is not None:
         listeners.append(listen)
-    if actor: busy_players.add(actor)
-    else: session.tool_busy = True
     done: list[str] = []
     record: dict[str, Any] | None = None
     short: str | None = None
     try:
+        if use['gesture']=='contact':
+            return _contact(app,said,use,tool,eyes,heard,note)
         if _point_in(app, tool):
             # A point still in the ground from before is drawn out first: a
             # swing planned from a tool the ground holds fast goes nowhere.
@@ -304,6 +307,72 @@ def run(app: Any, body: dict[str, Any],
             "said": short if record is None and short else _said(record, use, kg),
             "detail": _detail(record), "result": record, "carried": carried,
             "repeat": use["repeat"]}
+
+
+def _native_point(app,tool):
+    points=app.live.act({'session':app.live.session.id,'op':'tool_points'}).get('tool_points') or []
+    return next((p for p in points if p.get('body')==tool and p.get('attached',True)),None)
+
+
+def _contact(app,said,use,tool,eyes,heard,note):
+    session=app.live.session
+    ready=said.get('ready')
+    if not ready:
+        return {'action':said['label'],'refused':'This tool has no attached native point and grip frame','done':[]}
+    at=said['target']['at_m']
+    point=_native_point(app,tool)
+    path=tool_gestures.lift_path(_grip(session),point['tip'],point['pointing'],at) if point else None
+    if path:
+        app.live.act({'session':session.id,'op':'stroke','path':path,'speed_m_s':2.0,
+            'accel_m_s2':tool_gestures.ACCEL_M_S2,'lead_m':tool_gestures.LEAD_M,
+            'give_up_s':2.0,'let_go':False})
+        _stroke(app)
+    point=_native_point(app,tool)
+    if point and point['pointing'][1]>-.98:
+        # Turn above the terrain before lowering. Rotating and translating to
+        # near-ground ready simultaneously can sweep the point through soil.
+        high=[*ready['hand']];high[1]+=.6
+        app.live.act({'session':session.id,'op':'step','dt':1/240,'n':1,
+            'hand':high,'hand_q':ready['hand_q']})
+        began=time.monotonic()
+        while time.monotonic()-began<2:
+            point=_native_point(app,tool)
+            if (point and point['pointing'][1]<-.98 and
+                math.dist(point['tip'],[at[0],at[1]+tool_gestures.CLEARANCE_M+.6,at[2]])<.035):break
+            time.sleep(.005)
+        else:
+            return {'action':said['label'],'refused':'The tool is still turning into position','done':[]}
+        app.live.act({'session':session.id,'op':'stroke','path':[_grip(session),ready['hand']],
+            'speed_m_s':1.0,'accel_m_s2':8.0,'lead_m':tool_gestures.LEAD_M,
+            'give_up_s':2.0,'let_go':False})
+        _stroke(app)
+    # Establish a bounded wish once. The world clock, not this handler, moves
+    # the tool to it. Do not insert settling sleeps between established taps.
+    app.live.act({'session':session.id,'op':'step','dt':1/240,'n':1,
+                  'hand':ready['hand'],'hand_q':ready['hand_q']})
+    began=time.monotonic()
+    point=_native_point(app,tool)
+    while point and time.monotonic()-began<2:
+        tip=point.get('tip') or []
+        direction=point.get('pointing') or []
+        if (len(tip)==3 and len(direction)==3 and direction[1]<-.98
+            and math.dist(tip,[at[0],at[1]+tool_gestures.CLEARANCE_M,at[2]])<.035): break
+        time.sleep(.005);point=_native_point(app,tool)
+    else:
+        return {'action':said['label'],'refused':'The tool is still moving into position','done':[]}
+    grip=_grip(session)
+    started=app.live.act({'session':session.id,'op':'stroke',
+        'path':tool_gestures.contact_path(grip,use,eyes,at),
+        'speed_m_s':use['swing']['speed_m_s'],'accel_m_s2':tool_gestures.ACCEL_M_S2,
+        'lead_m':tool_gestures.LEAD_M,'give_up_s':1.0,'let_go':False})
+    if note: note(app,started)
+    since=float(started.get('t') or 0)
+    ended=_stroke(app)
+    record=_closed(app,tool,since,heard,_latest(app,tool,since,heard))
+    carried=_carried(app);kg=sum(float(carried.get(k) or 0) for k in ('soil_kg','sand_kg'))
+    return {'action':said['label'],'did':[said['label']], 'done':[f'contact stroke: {ended}'],
+            'said':_said(record,use,kg),'detail':_detail(record),'result':record,
+            'carried':carried,'repeat':use['repeat'],'gesture':'contact'}
 
 
 def _settle(app: Any, tool: str) -> bool:

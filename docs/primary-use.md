@@ -1,5 +1,7 @@
 # Primary Use programs
 
+Ground tools follow the [shared fast-contact contract](quick-tools-checkpoint.md): short clicks/held repeat, bounded native completion, no model call per use. New Workshop and MCP authored tools inherit it; an animation does not determine work or yield.
+
 Contextual placement and saved interaction points: [contract](placement-and-interaction-points.md).
 
 Updated October 1, 2026. World MCP 1.21.0, platform MCP 1.24.0; native ABI 25 is unchanged.

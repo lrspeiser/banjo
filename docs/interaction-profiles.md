@@ -1,5 +1,7 @@
 # Interaction profiles
 
+**October 1:** [Fast shared ground-tool controls](quick-tools-checkpoint.md) supersede the historical default full swing described below. Existing profiles inherit contact strokes and 4 Hz requested cadence; new MCP and Lab designs share the schema. Explicit gesture swing retains the earlier experiment.
+
 Products now have a saved primary Use on Left mouse / J. See the [primary Use contract](primary-use.md) for programming, API payloads, bounds and compatibility.
 
 Every object someone can use carries an **interaction profile**: a validated

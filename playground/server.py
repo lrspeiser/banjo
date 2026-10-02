@@ -2043,6 +2043,13 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError("Use your inventory to move a world item")
                     if body.get("op")=="step":
                         player_world.update_pose(app,player,body.get("person"))
+                if isinstance(body,dict) and body.get('op')=='step':
+                    session=app.live.session
+                    busy=(player in getattr(session,'tool_busy_players',set())) if player else getattr(session,'tool_busy',False)
+                    if busy:
+                        # An in-flight ready-pose packet must not cancel the
+                        # authoritative stroke. Other actors and time continue.
+                        body.pop('hand',None);body.pop('hand_q',None)
                 if getattr(app, "world_id", None) and isinstance(body,dict) and body.get("op")=="step":
                     # Every tab used to advance a full frame, so two people
                     # made time run twice as fast. Share a wall-time budget

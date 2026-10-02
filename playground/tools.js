@@ -3,13 +3,13 @@
 // The server (tool_use.py) says what the tool in hand does where the crosshair
 // meets the ground -- its action and label, whether it can be done there and
 // why not, and the ring to draw -- and does it when the button is pressed: the
-// tool held still, swung, pried if the point went in, drawn back out, each
+// shared short contact stroke (or an explicitly authored full swing), each
 // stroke the engine's. This page only holds the tool ready, draws the ring,
 // sends the click and says what came of it. It never knows a tool's steps, so
 // a new kind of tool needs nothing here (the owner: "make sure this is designed
 // to be a generic capability, so if I build a hoe or an axe it will have the
 // same capabilities"). How it is used -- what the click is called, how the hand
-// swings it -- is its profile's `use`, which the room's chat may shape.
+// uses it -- is its profile's `use`, which the room's chat may shape.
 //
 // Measured with the pick before this (the scratchpad's headless_world_pick.py):
 // E took it only with the crosshair exactly on its 4 cm haft; a second left
@@ -28,8 +28,6 @@ const NEAR_M = 0.3;
 const REACH_M = 2.5;
 // The ring follows the crosshair at up to five answers a second, one in flight.
 const ASK_EVERY_MS = 200;
-// Held, the next use waits this long in the ready pose after the last.
-const REPEAT_AFTER_MS = 700;
 // Taken up from where it lies, a tool is first lifted straight up by its grip,
 // turned as it lay, and only then brought round into the ready pose. Brought
 // round at once, its point was swung through the ground on the way: on the
@@ -37,7 +35,7 @@ const REPEAT_AFTER_MS = 700;
 // The pry broke out 26.70 L" before they had swung it at all, and then the
 // point was left 197 mm into the soil.
 const LIFT_M = 0.6;
-const LIFT_MS = 700;
+const LIFT_MS = 200;
 // Its colours, by what the server says of the target (tool_use.resolve).
 const RING = { ok: 0x4fbf6a, far: 0xf0b429, near: 0xf0b429, warn: 0xe0533d, no: 0x8a949c };
 
@@ -115,6 +113,7 @@ export function makeTools(ctx) {
   // Held ready: the point straight down and the haft back towards the person,
   // in the plane they face.
   function readyPose() {
+    if (world.use.target?.gesture === "contact" && world.use.target.ready) return world.use.target.ready;
     const f = levelForward();
     const up = new THREE.Vector3(0, 1, 0);
     const k = new THREE.Vector3().crossVectors(up, f).normalize();
@@ -238,6 +237,7 @@ export function makeTools(ctx) {
     const held = world.held, use = world.use;
     if (!held || !held.pick || use.mode !== "tool-ready") return;
     use.mode = "tool-working";
+    use.startedAt = performance.now();
     use.result = "";
     ring.visible = false;
     showUse();
@@ -267,14 +267,25 @@ export function makeTools(ctx) {
     use.mode = "tool-ready";
     askedAt = 0;                               // the ring asked for again at once
     showUse();
-    // Held down, and the tool goes on while it is: again, where the crosshair
-    // is now -- each use its own target, checked again before it is done --
-    // once the hand has had it back in the ready pose a moment. Swung the
-    // instant a use ended, it was swung from a tool still on its way back, and
-    // a swing planned from a moving tool joins its path part way.
-    if (use.down && !use.stop && answer && !answer.refused && answer.repeat) {
-      setTimeout(() => { if (world.held === held && use.down && !use.stop) useOnce(); }, REPEAT_AFTER_MS);
+    // Explicit taps and held repeat share one scheduler. Never overlap native
+    // uses or impose a flourish/pause after a completed contact stroke.
+    if (!use.stop && answer && !answer.refused && (use.queued || (use.down && answer.repeat))) {
+      schedule();
+    } else if (answer?.refused) {
+      use.queued = 0;
     }
+  }
+
+  function schedule() {
+    const held = world.held, use = world.use;
+    if (!use || use.timer || use.mode !== "tool-ready" || use.stop) return;
+    const interval = 1000 / (use.target?.cadence_hz || 4);
+    use.timer = setTimeout(() => {
+      use.timer = null;
+      if (world.held !== held || use.stop || (!use.queued && !use.down)) return;
+      if (use.queued) use.queued--;
+      useOnce();
+    }, Math.max(0, interval - (performance.now() - (use.startedAt || 0))));
   }
 
   // The primary button: down uses it, and holding it goes on; up lets it stop
@@ -285,10 +296,14 @@ export function makeTools(ctx) {
     if (!use || !world.held || !world.held.pick) return;
     use.down = true;
     use.stop = false;
-    if (use.mode === "tool-ready") useOnce();
+    use.queued = Math.min(3, (use.queued || 0) + 1);
+    if (use.mode === "tool-ready") schedule();
   }
   function release() { if (world.use) world.use.down = false; }
-  function stop() { if (world.use) { world.use.stop = true; world.use.down = false; } }
+  function stop() { if (world.use) {
+    world.use.stop = true; world.use.down = false; world.use.queued = 0;
+    clearTimeout(world.use.timer); world.use.timer = null;
+  } }
 
   // Where the hand is sent with each step: held ready while nothing is being
   // done; while the server works it, nothing -- the hand is the engine's stroke.

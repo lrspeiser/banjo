@@ -22,7 +22,8 @@ AUTHORING_SCHEMA = {"type": "object", "additionalProperties": False, "required":
                 "angle_deg": {"type": "number", "minimum": 5, "maximum": 170},
                 "length_m": {"type": "number", "minimum": .01, "maximum": 1}}},
         "grip": {"type": "object", "additionalProperties": False, "required": ["component", "position_local_m"],
-            "properties": {"component": {"type": "string"}, "position_local_m": _VECTOR}}}}
+            "properties": {"component": {"type": "string"}, "position_local_m": _VECTOR}},
+        "use": interaction_profiles.TOOL_USE_SCHEMA}}
 
 
 def _name(value, label):

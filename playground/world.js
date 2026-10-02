@@ -7462,15 +7462,8 @@ async function aim() {
     const from = camera.position;
     const dir = aimVector();
     let found = await act("pick", { from: [from.x, from.y, from.z],
-                                    dir: [dir.x, dir.y, dir.z], max_m: 40 });
-    // Past the tool in your own hand: held ready it can be under the
-    // crosshair, and where you are looking is the ground beyond it.
-    for (let past = 0; past < 3 && found.hit && found.name && found.point_m && world.held
-         && world.held.pick && world.held.pick.parts.includes(found.name); past++) {
-      const p = found.point_m;
-      found = await act("pick", { from: [p[0] + 0.05 * dir.x, p[1] + 0.05 * dir.y, p[2] + 0.05 * dir.z],
-                                  dir: [dir.x, dir.y, dir.z], max_m: 40 });
-    }
+                                    dir: [dir.x, dir.y, dir.z], max_m: 40,
+                                    past_held: !!world.held?.pick });
     world.aim = found.hit && found.name ? found : null;
     // Where the crosshair meets the ground, when it is the ground it meets:
     // that is where a spade goes in.

@@ -36,20 +36,11 @@ KEYS = {
     "swing-and-lever": {"object", "template", "parts", "tool", "use"},
 }
 
-# How a person uses a tool that works the ground, when its profile does not say:
-# what the click is called and how a result is said; the swing -- raised back
-# over the shoulder and brought down at the hand's speed -- and the pry after
-# it, turned about where the point went in; how far in front of them it can be
-# brought down (a haft and an arm at most, and not at their own feet); and
-# whether holding the button goes on. One copy, read by the MCP's trial and by
-# the playground's page and server alike, so what a trial measured is what the
-# person gets. The bounds are the hand's: live_session's strike op refuses
-# anything outside 0.3 to 12 m/s, a raise up to 170 degrees, a pry of 5 to 80.
-# The nearest it comes down by default is 1.15 m: in the page, on untouched
-# ground, every swing from 1.2 m to 1.84 m in front dug, while at 1.05-1.1 m
-# about one in several stopped short -- its point 1 cm above the ground and 4 cm
-# before the aim -- and the MCP's trial stands 1.2 m back (banjo_mcp STAND_BACK_M).
+# Existing and newly authored ground tools inherit fast contact handling.
+# Legacy swing/lever parameters remain bounded for an explicit full-swing
+# experiment; no saved name selects physics or a scripted yield.
 TOOL_USE_DEFAULTS = {"label": "Dig here", "past": "dug",
+                     "gesture": "contact", "cadence_hz": 4.0,
                      "swing": {"speed_m_s": 4.0, "raise_deg": 110.0},
                      "lever": {"speed_m_s": 1.2, "lever_deg": 40.0}, "pry": True,
                      "reach_m": [1.15, 2.0], "repeat": True}
@@ -64,6 +55,33 @@ _SWING_BOUNDS = {"speed_m_s": (1.0, 5.0), "raise_deg": (30.0, 170.0)}
 _LEVER_BOUNDS = {"speed_m_s": (0.3, 4.0), "lever_deg": (5.0, 80.0)}
 REACH_BOUNDS_M = (0.3, 2.0)
 
+# One authoring contract for MCP recipes and Workshop-created designs.
+TOOL_USE_SCHEMA = {
+    "type": "object", "additionalProperties": False,
+    "description": "Shared ground-tool controls. Omit use to inherit a short contact stroke, "
+        "4 Hz requested cadence, click or hold to repeat. Native motion and resistance can take "
+        "longer. No spinning animation, mandatory flourish or model call per use. Declare the "
+        "physical point and grip; never promise a yield, skill award or strength. Choose swing "
+        "only for an explicitly requested full-swing experiment.",
+    "properties": {
+        "gesture": {"type": "string", "enum": ["contact", "swing"], "default": "contact"},
+        "cadence_hz": {"type": "number", "minimum": 1, "maximum": 8, "default": 4,
+            "description": "Requested input rate; never accelerates simulation or guarantees work."},
+        "label": {"type": "string", "maxLength": 40},
+        "past": {"type": "string", "maxLength": 24},
+        "swing": {"type": "object", "additionalProperties": False,
+            "description": "speed_m_s drives contact and swing; raise_deg only affects swing.",
+            "properties": {k: {"type": "number", "minimum": lo, "maximum": hi}
+                for k, (lo, hi) in _SWING_BOUNDS.items()}},
+        "lever": {"type": "object", "additionalProperties": False,
+            "description": "Angular settings only affect swing. Contact uses a short lateral stroke.",
+            "properties": {k: {"type": "number", "minimum": lo, "maximum": hi}
+                for k, (lo, hi) in _LEVER_BOUNDS.items()}},
+        "pry": {"type": "boolean", "description": "false omits the lateral working motion."},
+        "reach_m": {"type": "array", "minItems": 2, "maxItems": 2,
+            "items": {"type": "number", "minimum": .3, "maximum": 2}},
+        "repeat": {"type": "boolean", "default": True}}}
+
 
 def tool_use(profile: dict[str, Any] | None) -> dict[str, Any]:
     """What a tool's profile says of how it is used, with what it leaves unsaid
@@ -72,6 +90,8 @@ def tool_use(profile: dict[str, Any] | None) -> dict[str, Any]:
     said = (profile or {}).get("use") or {}
     out = {"label": said.get("label", TOOL_USE_DEFAULTS["label"]),
            "past": said.get("past", TOOL_USE_DEFAULTS["past"]),
+           "gesture": said.get("gesture", TOOL_USE_DEFAULTS["gesture"]),
+           "cadence_hz": said.get("cadence_hz", TOOL_USE_DEFAULTS["cadence_hz"]),
            "swing": {**TOOL_USE_DEFAULTS["swing"], **(said.get("swing") or {})},
            "lever": (None if said.get("pry") is False
                      else {**TOOL_USE_DEFAULTS["lever"], **(said.get("lever") or {})}),
@@ -89,6 +109,15 @@ def _use_checked(name: str, use: Any) -> dict[str, Any]:
     if unknown:
         raise ValueError(f"{name}: use has no {sorted(unknown)}; it may say {sorted(_USE_KEYS)}")
     out: dict[str, Any] = {}
+    if "gesture" in use:
+        if use["gesture"] not in ("contact", "swing"):
+            raise ValueError(f"{name}: use gesture is contact or swing")
+        out["gesture"] = use["gesture"]
+    if "cadence_hz" in use:
+        rate=use["cadence_hz"]
+        if type(rate) not in (int,float) or not math.isfinite(rate) or not 1<=rate<=8:
+            raise ValueError(f"{name}: use cadence_hz is 1 to 8; native work may take longer")
+        out["cadence_hz"] = float(rate)
     for key, most in (("label", 40), ("past", 24)):
         if key in use:
             words = use[key]

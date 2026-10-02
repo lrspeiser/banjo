@@ -1,5 +1,7 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Fast tool controls, October 1:** [Shared handling checkpoint](quick-tools-checkpoint.md) gives ground tools short repeated contact strokes and shared LLM authoring defaults. Actual Chrome completes 2.75 native uses/s with rapid taps and stop; physical results and personal skill evidence remain native. Other families, damaged tools and broader progression remain partial. Four verified, ten partial.
+
 **Live tool learning, October 1:** [Skill progress checkpoint](live-tool-skills-checkpoint.md) makes successful saved digging earn gathering without a hidden Study step. The right panel shows contextual progress; achievements fade and Skills reflects completion. Earlier personal success is reconciled on load. No law change; later catalog routes and broader progression remain partial. Four verified, ten partial.
 
 **Ordinary workbench, October 1:** [Fresh-world paid progression](fresh-workbench-checkpoint.md)

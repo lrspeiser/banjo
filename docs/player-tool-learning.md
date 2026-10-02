@@ -1,5 +1,7 @@
 # Personal tool learning — September 30, 2026
 
+**Fast handling update:** [Short contact checkpoint](quick-tools-checkpoint.md) changes the default controller path. Native successful saved receipts still determine knowledge; historical full-swing measurements below are retained as historical results.
+
 Source `2ee3ab7` builds on [starter-tool access](generated-starter-tool.md) and [personal machine witnessing](player-learning-checkpoint.md). The broader player progression goal remains active.
 
 **October 1 update:** [Live progress and achievement checkpoint](live-tool-skills-checkpoint.md) supersedes the separate Study prerequisite below. Historical September 30 results remain recorded. Ordinary successful saved digging now earns gathering directly.
