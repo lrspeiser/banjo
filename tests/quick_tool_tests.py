@@ -126,6 +126,8 @@ class RapidPlayer(unittest.TestCase):
         page.evaluate('banjoRoom.lookAt(.3,banjoRoom.groundAt(.3,.025),.025)')
         wait('banjoRoom.use().target?.enabled')
         before=page.evaluate('banjoRoom.use().target.carried || {}')
+        self.assertEqual(0,sum(before.get(k,0) for k in ('soil_kg','sand_kg')),
+            'pickup and idle positioning must not excavate before Use')
         # Observe real HTTP replies, including refusals. Never synthesize work.
         page.evaluate('''(()=>{window.quickUses=[];window.quickActive=0;window.quickMax=0;
           const original=window.fetch;window.fetch=async function(url,options){

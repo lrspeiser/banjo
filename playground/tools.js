@@ -264,6 +264,7 @@ export function makeTools(ctx) {
       remember(`${answer.action}: ${answer.said}`);
     }
     if (answer && answer.carried) carryGround(answer.carried);
+    if (answer?.gesture === "contact" && !answer.refused) use.positioned = true;
     use.mode = "tool-ready";
     askedAt = 0;                               // the ring asked for again at once
     showUse();
@@ -318,6 +319,12 @@ export function makeTools(ctx) {
       showUse();
     }
     if (use.mode !== "tool-ready") return { hand: null, hand_q: null };
+    if (!use.positioned && (use.target?.gesture || held.pick.use?.gesture || "contact") === "contact") {
+      // Carry above terrain in its pickup orientation. The server performs a
+      // safe lift/turn/lower on first Use; an abrupt idle turn can scrape soil.
+      const eyes = whereIAm().eyes_m;
+      return { hand: [eyes[0], eyes[1] - 0.5, eyes[2]], hand_q: null };
+    }
     return readyPose();
   }
 
