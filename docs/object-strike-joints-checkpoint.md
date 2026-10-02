@@ -121,8 +121,8 @@ Ignored local evidence: `build/resource-flow/object-strike-fixing-results.log`,
 `object-strike-browser.json`, `object-strike-quick-final-results.log` and
 `build/player-learning/quick-tool-browser.json`.
 
-Publication: verified worktree based on `a0afab4f757f16cd99a99195b1a2c79c6cfeccf7`;
-the published implementation revision is recorded after the ordinary push.
+Published implementation: `5ed05e0e1e21be971b42e35e26c16050aaa11174` on
+GitHub main, based on `a0afab4f757f16cd99a99195b1a2c79c6cfeccf7`.
 Running preview executables were not overwritten. Existing preview servers
 have not been restarted onto this native build.
 
