@@ -35,6 +35,7 @@
 
 #include "fastlattice/LiveWorld.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -481,10 +482,156 @@ void aOneWayFixingHasNoTensionStrength() {
             "a one-way fixing was given a tension strength as well, and took it");
 }
 
+void aHeldToolCanPartANativeFixing() {
+    for (const bool break_tool : {false,true}) {
+    for (const auto material : {MaterialPreset::Glass, MaterialPreset::Oak, MaterialPreset::Iron}) {
+        TileImpactRequest request;
+        request.cell_size_m = .02;
+        request.backend = BackendKind::CpuParallel;
+        request.gravity_m_s2 = {};
+        SceneBody head;
+        head.name = "head"; head.shape = BodyShape::Sphere; head.material = MaterialPreset::Iron;
+        head.dimensions_m = {.1,.1,.1}; head.center_m = {.08,1.5,0};
+        SceneBody handle;
+        handle.name = "handle"; handle.shape = BodyShape::Box; handle.material = MaterialPreset::Oak;
+        handle.dimensions_m = {.04,.24,.04}; handle.center_m = {0,1.38,0};
+        SceneBody target;
+        target.name = "target"; target.shape = BodyShape::Box; target.material = material;
+        target.dimensions_m = {.1,.1,.1}; target.center_m = {.24,1.5,0};
+        SceneBody anchor;
+        anchor.name = "anchor"; anchor.shape = BodyShape::Box; anchor.material = MaterialPreset::Iron;
+        anchor.dimensions_m = {.08,.08,.08}; anchor.center_m = {.4,1.5,0}; anchor.anchored = true;
+        request.bodies = {head,handle,target,anchor};
+        auto world = LiveWorld::open(request);
+        world->foreseeCollisions(0);
+        const double capacity = break_tool?60:200;
+        const auto source_joint = world->fix("handle","head",{.02,1.49,0},{0,1,0},break_tool?capacity:0,break_tool?capacity:0);
+        const auto target_joint = world->fix("anchor","target",{.3,1.5,0},{1,0,0},break_tool?0:200,break_tool?0:200);
+        const auto failed_joint = break_tool?source_joint:target_joint;
+        require(source_joint && target_joint, "object-strike native fixture cannot fix its parts");
+        const Vec3 grip{0,1.3,0};
+        const auto point = world->toolPoint("head",{.12,1.5,0},{1,0,0},.04,.04,30,.1,grip,"handle");
+        require(point!=0, "object-strike fixture cannot attach its working point: "+world->toolPointRefusal());
+        world->selectHand("striker player");
+        require(world->wield("handle",grip), "object-strike fixture cannot wield its handle");
+        const double mass = named(world->poses(),"target").mass_kg;
+        const double initial_energy = world->mechanicalEnergyJ();
+        world->moveHeld(grip);
+        run(*world,240);
+        require(jointNumber(world->joints(),source_joint).attached,
+                "tool fixture failed during readiness rather than object contact");
+        const auto ready = world->hand().grip_m;
+        LiveStroke stroke;
+        stroke.path_m = {ready,ready+Vec3{.14,0,0}};
+        stroke.speed_m_s = 4; stroke.accel_m_s2 = 80; stroke.lead_m = .025;
+        stroke.give_up_s = .125;
+        std::string why;
+        require(world->stroke(stroke,why), "object-strike fixture cannot start its bounded stroke: "+why);
+        bool contacted = false, parted = false, withdrew = false;
+        double failure_load = 0, first_contact_s = -1, failure_s = -1;
+        for (unsigned step=0; step<120; ++step) {
+            world->step(1.0/240.0);
+            require(!world->steppedBack(), "held contact tried to run a target without its hand/source");
+            for (const auto &impact : world->impacts()) if (impact.struck=="target" && impact.by=="head") {
+                if (!contacted) first_contact_s = (step+1)/240.0;
+                contacted = true;
+                if (impact.would_break || impact.would_dent)
+                    require(!impact.declined.empty(), "unsupported held internal damage was silently reported as held");
+            }
+            for (const auto &joint : world->joints()) if (joint.id==failed_joint && !joint.attached) {
+                if (!parted) failure_s = (step+1)/240.0;
+                parted = true; failure_load = joint.parted_load_n;
+                require(!joint.parted_because.empty(), "native failure lost its reason");
+            }
+            require(world->breakable().empty(), "declined held damage still launches a detached fracture job");
+            if (!withdrew && !world->hand().stroking) {
+                withdrew = true;
+                if (world->toolPoints().front().grip_connected) {
+                    LiveStroke withdrawal = stroke;
+                    const Vec3 now = world->hand().grip_m;
+                    withdrawal.path_m = {now,now-Vec3{.06,0,0}};
+                    require(world->stroke(withdrawal,why), "object-strike withdrawal refused: "+why);
+                }
+            }
+        }
+        require(contacted && parted && failure_load>capacity, "bounded held contact did not overload the declared fixing");
+        require(jointNumber(world->joints(),break_tool?target_joint:source_joint).attached &&
+                world->toolPoints().front().grip_connected!=break_tool,
+                "native failure changed the wrong fixture or retained a disconnected working point");
+        require(world->held()=="handle" && named(world->poses(),"target").mass_kg==mass,
+                "native part separation released the player's tool or changed target mass");
+        world->cancelStroke();
+        const auto saved = world->snapshot(why);
+        require(!saved.empty(), "native separated state cannot be saved: "+why);
+        auto reopened = LiveWorld::open(request,saved);
+        require(reopened->restored().tier=="whole" && named(reopened->poses(),"target").mass_kg==mass,
+                "native separated state lost geometry/mass at restart");
+        for (const auto &joint : reopened->joints())
+            require(joint.id!=failed_joint || !joint.attached, "restart silently repaired the overloaded fixing");
+        reopened->selectHand("striker player");
+        require(reopened->held()=="handle" && reopened->toolPoints().front().grip_connected!=break_tool,
+                "restart lost the player's retained grip or working-point connection state");
+        std::cout << "  held contact / " << (break_tool?"tool fixing / ":"target fixing / ")
+                  << materialPresetName(material) << ": mass=" << mass
+                  << " kg; failed joint load=" << failure_load
+                  << " N; first contact=" << first_contact_s << " s; connection failure=" << failure_s << " s; hand work=" << world->hand().work_j
+                  << " J; mechanical energy=" << initial_energy << " -> " << world->mechanicalEnergyJ()
+                  << " J; delta mechanical energy minus hand work="
+                  << world->mechanicalEnergyJ()-initial_energy-world->hand().work_j << " J (unclosed native remainder)\n";
+    }
+    }
+}
+
+void aHeldContactRefusesAnIncompleteFractureIsland() {
+    bool offered = false;
+    for (const auto material : {MaterialPreset::Glass, MaterialPreset::Oak, MaterialPreset::Iron}) {
+        TileImpactRequest request;
+        request.cell_size_m = .02;
+        request.backend = BackendKind::CpuParallel;
+        request.gravity_m_s2 = {};
+        SceneBody head;
+        head.name="head"; head.shape=BodyShape::Sphere; head.material=MaterialPreset::Iron;
+        head.dimensions_m={.1,.1,.1}; head.center_m={.08,1.5,0};
+        SceneBody target;
+        target.name="target"; target.material=material;
+        target.dimensions_m={.1,.1,.1}; target.center_m={.6,1.5,0};
+        request.bodies={head,target};
+        auto world=LiveWorld::open(request);
+        world->foreseeCollisions(0);
+        require(world->wield("head",{.08,1.5,0}),"guard fixture cannot wield its source");
+        LiveStroke stroke;
+        stroke.path_m={{.08,1.5,0},{.88,1.5,0}};
+        stroke.speed_m_s=4; stroke.accel_m_s2=80; stroke.lead_m=.025; stroke.give_up_s=1;
+        std::string why;
+        require(world->stroke(stroke,why),"guard fixture cannot stroke: "+why);
+        bool contacted=false, material_offer=false;
+        for (unsigned step=0;step<360;++step) {
+            world->step(1.0/240);
+            require(!world->steppedBack(),"held source was omitted from a target-only fracture offer");
+            for (const auto &impact:world->impacts()) if (impact.struck=="target" && impact.by=="head") {
+                contacted=true;
+                if (impact.would_break || impact.would_dent) {
+                    material_offer=true; offered=true;
+                    require(impact.declined.find("held tool")!=std::string::npos,
+                            "held admission lost its explicit unsupported coupled-target reason");
+                }
+            }
+            require(world->breakable().empty(),"held admission still queues an incomplete fracture island");
+        }
+        require(contacted,"guard fixture never met the target");
+        std::cout << "  held admission / " << materialPresetName(material)
+                  << ": native contact=1; declined material offer=" << material_offer << "\n";
+    }
+    require(offered,"held guard test never reached material admission");
+}
+
 } // namespace
 
 int main() {
     try {
+        aHeldToolCanPartANativeFixing();
+        aHeldContactRefusesAnIncompleteFractureIsland();
+        std::cout << "[PASS] bounded held contact separates native fixings and retains state across restart\n";
         aFixingHolds();
         std::cout << "[PASS] a fixing holds\n";
         aFixingHoldsTheAlignment();

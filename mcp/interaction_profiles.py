@@ -58,11 +58,15 @@ REACH_BOUNDS_M = (0.3, 2.0)
 # One authoring contract for MCP recipes and Workshop-created designs.
 TOOL_USE_SCHEMA = {
     "type": "object", "additionalProperties": False,
-    "description": "Shared ground-tool controls. Omit use to inherit a short contact stroke, "
+    "description": "Shared tool controls. Omit use to inherit a short contact stroke, "
         "4 Hz requested cadence, click or hold to repeat. Native motion and resistance can take "
         "longer. No spinning animation, mandatory flourish or model call per use. Declare the "
         "physical point and grip; never promise a yield, skill award or strength. Choose swing "
-        "only for an explicitly requested full-swing experiment.",
+        "only for an explicitly requested full-swing experiment. The World click resolves either "
+        "terrain or a named native object. Object strikes use the same speed, cadence, reach and "
+        "connected point/grip contract; native forces decide contact and finite joint separation. "
+        "Internal fracture from held object strikes, abrasive wear, fatigue and edge blunting "
+        "are not available yet. Never declare per-hit damage, guaranteed breakage or drops.",
     "properties": {
         "gesture": {"type": "string", "enum": ["contact", "swing"], "default": "contact"},
         "cadence_hz": {"type": "number", "minimum": 1, "maximum": 8, "default": 4,

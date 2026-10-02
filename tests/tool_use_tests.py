@@ -22,6 +22,7 @@ import sys
 import threading
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -319,6 +320,113 @@ class OneUseIsTheWholeOfIt(unittest.TestCase):
         self.assertEqual(said["said"], "The swing stopped short: its point ended 7 mm above the "
                                        "ground, 4 cm from where you aimed. Step back a little and "
                                        "swing again.")
+
+
+class ObjectControls(unittest.TestCase):
+    """Host admission/receipts only; native fixing tests measure the physics."""
+    person={**PERSON,'look_direction':[0,0,-1]}
+    point={'tip_local':[.1,0,0],'grip_local':[0,-.2,0],'pointing_local':[1,0,0],
+           'tip':[13,2.22,-5.82],'pointing':[0,0,-1]}
+    hit={'hit':True,'name':'made item','point_m':[13,2.22,-5.88]}
+
+    def app(self, hit=None):
+        app=app_with();app.live.requests=[]
+        app.live.session.state.update(t=10)
+        native=app.live.act
+        def act(body):
+            app.live.requests.append(body)
+            if body['op']=='pick': return self.hit if hit is None else hit
+            return native(body)
+        app.live.act=act
+        return app
+
+    def resolve(self,app,**body):
+        return tool_use.resolve(app,{'person':self.person,'target_name':'made item',**body})
+
+    def test_native_recast_ignores_client_point_and_allows_full_bag(self):
+        app=self.app();app.live.session.state['carried']={'limit_kg':80,'available_kg':0}
+        with mock.patch.object(tool_use,'_native_point',return_value=self.point):
+            said=self.resolve(app,at_m=[900,900,900])
+        self.assertTrue(said['enabled'])
+        self.assertEqual(self.hit['point_m'],said['target']['at_m'])
+        self.assertTrue(app.live.requests[0]['past_held'])
+        self.assertFalse(said['internal_fracture_supported'])
+        self.assertIsNone(said['ring'])
+
+    def test_occluded_stale_malformed_and_out_of_reach_targets_refuse(self):
+        for hit,body in [({'hit':False},{}),({**self.hit,'name':'occluder'},{}),
+                         (self.hit,{'target_name':['made item']}),
+                         ({**self.hit,'point_m':[13,2.22,-7.88]},{}),
+                         ({**self.hit,'point_m':[13,2.22,-4.88]},{}),
+                         ({**self.hit,'point_m':[13,float('nan'),-5.88]}, {})]:
+            with self.subTest(hit=hit,body=body),mock.patch.object(tool_use,'_native_point',return_value=self.point):
+                app=self.app(hit);self.assertFalse(self.resolve(app,**body)['enabled'])
+                self.assertFalse(any(r['op']=='stroke' for r in app.live.requests))
+
+    def test_disconnected_point_refuses_before_stroke(self):
+        app=self.app()
+        with mock.patch.object(tool_use,'_native_point',return_value=None):
+            said=tool_use.run(app,{'person':self.person,'target_name':'made item'})
+        self.assertIn('connected working point',said['refused'])
+        self.assertFalse(any(r['op']=='stroke' for r in app.live.requests))
+
+    def test_receipts_repeat_and_cleanup_follow_native_contact_and_connection(self):
+        for contact,detach in [(False,False),(True,False),(True,True)]:
+            with self.subTest(contact=contact,detach=detach):
+                app=self.app();native=app.live.act;count=0
+                joint={'id':7,'a':'pick arm','b':'pick haft','attached':True}
+                def act(body):
+                    nonlocal count
+                    if body['op']=='joints':return {'joints':[joint]}
+                    if body['op']=='step':return {'ok':True}
+                    if body['op']=='stroke':
+                        app.live.requests.append(body);count+=1
+                        hand=app.live.session.state['hand']
+                        hand.update(stroking=False,stroke_ended='reached',work_j=-.5)
+                        reply={'t':10.125,'impacts':[{'struck':'made item','by':'pick arm'}] if contact else []}
+                        if detach:
+                            joint.update(attached=False,parted_because='shear exceeded declared capacity')
+                            reply['joints']=[joint]
+                        for listener in list(app.reply_listeners):listener(app.live.session,reply)
+                        return {'ok':True,'stroking':True}
+                    return native(body)
+                app.live.act=act
+                def point(*args):return None if detach and count else self.point
+                with mock.patch.object(tool_use,'_native_point',side_effect=point):
+                    said=tool_use.run(app,{'person':self.person,'target_name':'made item'})
+                self.assertEqual(bool(contact and not detach),said['repeat'])
+                self.assertEqual(1 if detach else 2,count,'a detached head stops further tool strokes')
+                self.assertEqual(-.5,said['result']['hand_work_j'],'signed native work is retained')
+                self.assertEqual(1 if detach else 0,len(said['result']['parted_joints']))
+                self.assertFalse(said['result']['wear_supported'])
+                self.assertEqual([],app.reply_listeners)
+                self.assertFalse(app.live.session.tool_busy)
+                self.assertEqual(0,app.live.session.state['carried']['soil_kg'])
+                self.assertEqual(0,app.live.session.state['carried']['sand_kg'])
+
+    def test_exception_removes_both_listeners_and_busy_state(self):
+        app=self.app();native=app.live.act
+        def act(body):
+            if body['op']=='joints':return {'joints':[]}
+            if body['op']=='step':raise RuntimeError('native step refused')
+            return native(body)
+        app.live.act=act
+        with mock.patch.object(tool_use,'_native_point',return_value=self.point),self.assertRaisesRegex(RuntimeError,'native step refused'):
+            tool_use.run(app,{'person':self.person,'target_name':'made item'})
+        self.assertEqual([],app.reply_listeners)
+        self.assertFalse(app.live.session.tool_busy)
+
+    def test_object_ready_pose_points_at_contact_including_vertical_rays(self):
+        import tool_gestures as gestures
+        for direction in ([0,0,-1],[0,-1,0],[0,1,0],[1,0,0]):
+            ready=gestures.ready_pose(self.point,[1,2,3],[1,4,3],direction)
+            frame=gestures.local_frame([1-gestures.CLEARANCE_M*direction[0],
+                2-gestures.CLEARANCE_M*direction[1],3-gestures.CLEARANCE_M*direction[2]],
+                ready['hand'],direction,ready['hand'],ready['hand_q'])
+            for got,want in zip(frame['pointing_local'],self.point['pointing_local']):
+                self.assertAlmostEqual(got,want,places=10)
+            for got,want in zip(frame['tip_local'],[a-b for a,b in zip(self.point['tip_local'],self.point['grip_local'])]):
+                self.assertAlmostEqual(got,want,places=10)
 
 
 if __name__ == "__main__":

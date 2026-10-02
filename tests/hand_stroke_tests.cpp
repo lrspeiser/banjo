@@ -64,6 +64,9 @@ void sharedGripAnalyticalOracles() {
     require(std::abs(full.force.x-800)<1e-12,"hand force cap");
     const Quat facing{std::cos(.05),0,0,std::sin(.05)};
     const auto wrist=gripPull(body,{},{},{},facing,800,60,{});
+    const auto separate=gripPull(body,{},{.01,0,0},{},facing,800,60,{},100,20);
+    require(std::abs(separate.force.x-160)<1e-12&&std::abs(separate.torque.z-40)<1e-11,
+        "separate fixed-group movement/wrist feedback changed the force or angular oracle");
     require(std::abs(wrist.torque.z-60)<1e-12,"wrist torque cap");
     const auto opposite=gripTurnBetween({},Quat{-facing.w,0,0,-facing.z});
     require(length(opposite-Vec3{0,0,.1})<1e-14,"short rotation must not depend on quaternion sign");

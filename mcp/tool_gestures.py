@@ -53,18 +53,22 @@ def _quaternion(m):
     return q
 
 
-def ready_pose(point, at, eyes):
+def ready_pose(point, at, eyes, direction=None):
     """Point above the actual surveyed contact, handle towards its user. The
     native wrist/hand must achieve this wish; selecting it grants no work."""
     tip,grip=point['tip_local'],point['grip_local']
     y=_unit(point['pointing_local'])
     z=_unit(_cross(y,[g-t for g,t in zip(grip,tip)]));x=_cross(y,z)
-    forward=_unit([at[0]-eyes[0],0,at[2]-eyes[2]])
-    into=[0,-1,0];side=_cross([0,1,0],forward);across=_cross(into,side)
+    horizontal=[at[0]-eyes[0],0,at[2]-eyes[2]]
+    forward=_unit(horizontal) if sum(v*v for v in horizontal)>1e-12 else [0,0,-1]
+    into=_unit(direction) if direction is not None else [0,-1,0]
+    side=_cross([0,1,0],into) if direction is not None else _cross([0,1,0],forward)
+    if sum(v*v for v in side)<1e-12: side=_cross([0,1,0],forward)
+    side=_unit(side);across=_cross(into,side)
     local=[x,y,z];world=[across,into,side]
     matrix=[[sum(world[k][i]*local[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
     offset=[sum(matrix[i][j]*(grip[j]-tip[j]) for j in range(3)) for i in range(3)]
-    return {'hand':[at[i]+offset[i]+(CLEARANCE_M if i==1 else 0) for i in range(3)],
+    return {'hand':[at[i]+offset[i]-CLEARANCE_M*into[i] for i in range(3)],
             'hand_q':_quaternion(matrix)}
 
 

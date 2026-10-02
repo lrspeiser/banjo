@@ -113,6 +113,8 @@ def resolve(app: Any, body: dict[str, Any]) -> dict[str, Any]:
                            "repeat": use["repeat"], "enabled": False, "reason": None,
                            "gesture": use["gesture"], "cadence_hz": use["cadence_hz"],
                            "ring": None, "target": None}
+    if body.get('target_name') is not None:
+        return _resolve_object(app,body,profile,use,out)
     carried = _carried(app)
     if (float(carried.get("limit_kg") or 0.0) > 0
             and float(carried.get("available_kg", 1.0)) <= 0.0005):
@@ -184,6 +186,41 @@ def resolve(app: Any, body: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _resolve_object(app,body,profile,use,out):
+    """Recast the current native sight line; client names/points grant no contact."""
+    out.update(label='Strike',gesture='object-contact',damage='Native joints',
+               internal_fracture_supported=False,source_parts=list(profile.get('parts') or [profile['tool']]))
+    name=body.get('target_name')
+    if not isinstance(name,str) or not name or len(name.encode('utf-8'))>160:
+        out['reason']='Aim at an item in the world.'
+        return out
+    person=world_chat.where_the_person_is(body.get('person'))
+    if not person or not person.get('eyes_m') or not person.get('look_direction'):
+        out['reason']='The page did not say where you are looking.'
+        return out
+    eyes=person['eyes_m'];direction=person['look_direction']
+    session=app.live.session
+    hit=app.live.act({'session':session.id,'op':'pick','from':eyes,'dir':direction,
+                      'max_m':40,'past_held':True})
+    if not hit.get('hit') or hit.get('name')!=name or _point(hit.get('point_m')) is None:
+        out['reason']='The target moved or is behind something. Aim again.'
+        return out
+    at=_point(hit['point_m']);distance=math.dist(at,eyes)
+    out['target']={'kind':'object','name':name,'at_m':at,'distance_m':distance,
+                   'direction':direction}
+    least,most=use['reach_m']
+    if not least<=distance<=most:
+        out['reason']='Move closer.' if distance>most else 'Step back.'
+        return out
+    point=_native_point(app,profile['tool'])
+    if not point or not all(k in point for k in ('tip_local','grip_local','pointing_local')):
+        out['reason']='No connected working point. Inspect the head and handle in Lab.'
+        return out
+    out['ready']=tool_gestures.ready_pose(point,at,eyes,direction)
+    out['enabled']=True
+    return out
+
+
 def run(app: Any, body: dict[str, Any],
         note: Callable[[Any, dict[str, Any]], None] | None = None) -> dict[str, Any]:
     """One use of the tool in hand where the person looks: the whole of it, as
@@ -237,6 +274,8 @@ def run(app: Any, body: dict[str, Any],
     record: dict[str, Any] | None = None
     short: str | None = None
     try:
+        if said.get('gesture')=='object-contact':
+            return _object_contact(app,said,use,tool,eyes,note)
         if use['gesture']=='contact':
             return _contact(app,said,use,tool,eyes,heard,note)
         if _point_in(app, tool):
@@ -315,6 +354,87 @@ def run(app: Any, body: dict[str, Any],
             "said": short if record is None and short else _said(record, use, kg),
             "detail": _detail(record), "result": record, "carried": carried,
             "repeat": use["repeat"]}
+
+
+def _object_contact(app,said,use,tool,eyes,note):
+    """One short native push and withdrawal. No scripted damage or material yield."""
+    session=app.live.session;target=said['target'];name=target['name']
+    source=set(said.get('source_parts') or [tool])
+    joints=app.live.act({'session':session.id,'op':'joints'}).get('joints') or []
+    relevant={j['id'] for j in joints if j.get('attached') and
+              (j.get('a') in source or j.get('b') in source or name in (j.get('a'),j.get('b')))}
+    impacts=[];parted={};overflow=False
+    def listen(_session,reply):
+        nonlocal overflow
+        for event in (reply or {}).get('impacts') or []:
+            if event.get('struck')==name and event.get('by') in source:
+                if len(impacts)<128: impacts.append({**event,'at_s':reply.get('t')})
+                else: overflow=True
+        for joint in (reply or {}).get('joints') or []:
+            if joint.get('id') in relevant and joint.get('attached') is False and joint.get('parted_because'):
+                parted[joint['id']]=dict(joint)
+    listeners=getattr(app,'reply_listeners',None)
+    if listeners is not None: listeners.append(listen)
+    began=float(session.state.get('t') or 0)
+    work_before=float(live_session.current_hand(session).get('work_j') or 0)
+    ready=said['ready'];direction=target['direction'];done=[]
+    try:
+        # A wish, never a placement. The actor's normal world clock moves the
+        # actual head/handle and can refuse readiness if an obstacle stops it.
+        app.live.act({'session':session.id,'op':'step','dt':1/240,'n':1,
+                      'hand':ready['hand'],'hand_q':ready['hand_q']})
+        wanted=[target['at_m'][i]-tool_gestures.CLEARANCE_M*direction[i] for i in range(3)]
+        deadline=time.monotonic()+2
+        while time.monotonic()<deadline:
+            if live_session.current_hand(session).get('holding')!=tool:
+                return {'action':'Strike','refused':'The tool is no longer in your hand.','done':done}
+            point=_native_point(app,tool)
+            if not point:
+                return {'action':'Strike','refused':'The working point is disconnected. Inspect the tool in Lab.','done':done}
+            if (math.dist(point['tip'],wanted)<.035 and
+                sum(point['pointing'][i]*direction[i] for i in range(3))>.98): break
+            time.sleep(.005)
+        else:
+            return {'action':'Strike','refused':'The tool cannot reach that contact from here.','done':done}
+        # A blocked solid should receive a brief press, not a one-second hold.
+        # Cadence sets the bounded wish duration, never force or contact outcome.
+        duration=.5/use['cadence_hz']
+        grip=_grip(session)
+        into=[grip[i]+(tool_gestures.CLEARANCE_M+tool_gestures.BITE_M)*direction[i] for i in range(3)]
+        started=app.live.act({'session':session.id,'op':'stroke','path':[grip,into],
+            'speed_m_s':use['swing']['speed_m_s'],'accel_m_s2':tool_gestures.ACCEL_M_S2,
+            'lead_m':tool_gestures.LEAD_M,'give_up_s':duration,'let_go':False})
+        if note: note(app,started)
+        done.append('press: '+_stroke(app,started=bool(started.get('stroking'))))
+        grip=_grip(session)
+        hand=live_session.current_hand(session)
+        if (grip is not None and hand.get('holding')==tool and not hand.get('stroking')
+                and _native_point(app,tool) is not None):
+            back=[grip[i]-tool_gestures.CLEARANCE_M*direction[i] for i in range(3)]
+            started=app.live.act({'session':session.id,'op':'stroke','path':[grip,back],
+                'speed_m_s':use['swing']['speed_m_s'],'accel_m_s2':tool_gestures.ACCEL_M_S2,
+                'lead_m':tool_gestures.LEAD_M,'give_up_s':duration,'let_go':False})
+            done.append('withdraw: '+_stroke(app,started=bool(started.get('stroking'))))
+        # Native joint failure is retained in the body's save state. A joint
+        # query may still carry the latest one-shot failure if no page step did.
+        listen(session,app.live.act({'session':session.id,'op':'joints'}))
+        hand=live_session.current_hand(session)
+        connected=hand.get('holding')==tool and _native_point(app,tool) is not None
+        complete=not overflow and not hand.get('stroking')
+        work=float(live_session.current_hand(session).get('work_j') or 0)-work_before
+        result={'schema':'banjo.object-strike.v1','target':name,'tool':tool,
+                'from_s':began,'to_s':float(session.state.get('t') or began),
+                'hand_work_j':work,'impacts':impacts,'parted_joints':list(parted.values()),
+                'complete':complete,'working_point_connected':connected,
+                'internal_fracture_supported':False,'wear_supported':False}
+        said_result=(f'{len(parted)} connection'+('s' if len(parted)!=1 else '')+' separated.') if parted else \
+            (f'Struck {name}.' if impacts else 'No contact with the selected item.')
+        return {'action':'Strike','did':['Strike'],'done':done,'said':said_result,
+                'detail':'Internal fracture from held strikes is not available yet.',
+                'result':result,'carried':_carried(app),'repeat':bool(use['repeat'] and connected and impacts and complete),
+                'gesture':'object-contact'}
+    finally:
+        if listeners is not None and listen in listeners: listeners.remove(listen)
 
 
 def _native_point(app,tool):
@@ -423,13 +543,12 @@ def _settle(app: Any, tool: str) -> bool:
     return False
 
 
-def _stroke(app: Any) -> str:
+def _stroke(app: Any, started: bool = False) -> str:
     """Wait -- while the page keeps the room running -- for the hand's stroke to
     end, and say how: reached, blocked, gave up, cancelled; with how long it was
     waited for, and "never seen going" when the room never said it was under
     way (the end then said may be the last stroke's)."""
     began = time.monotonic()
-    started = False
     while time.monotonic() - began < STROKE_LIMIT_S:
         hand = live_session.current_hand(app.live.session)
         waited = time.monotonic() - began

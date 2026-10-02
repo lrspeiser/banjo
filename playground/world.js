@@ -5796,8 +5796,9 @@ function showMaterialPreview() {
       add(material,titled(material),massLabel(kg),action,"pile");
   } else if(world.aim?.name) {
     const name=world.aim.name, entry=world.bodies.get(name), profile=tools.profileOf(name)||profileOf(name);
+    const strike=world.held?.pick && target?.target?.kind==="object" && target.target.name===name;
     if(entry)rows.push({name,material:entry.material,revision:entry.revision,label:titled(profile?.object||name),value:"Whole item",
-      action:world.held ? "Hands occupied" : entry.anchored ? "Fixed" : onAJoint(name) ? "Attached" :
+      action:strike ? target.enabled ? "J / click · Strike" : target.reason : world.held ? "Hands occupied" : entry.anchored ? "Fixed" : onAJoint(name) ? "Attached" :
         world.aim.point_m && camera.position.distanceTo(new THREE.Vector3(...world.aim.point_m))>2.5 ? "Walk closer" : "E · Pick up",kind:"product"});
   } else if(point) {
     const surface=groundMadeOf(point), water=waterAt(point[0],point[2]);
@@ -10396,7 +10397,7 @@ function showToolSkills() {
   const held = world.held?.pick?.tool === profile.tool;
   const working = held && world.use.mode === "tool-working";
   const pending = held && world.use.last?.learning_pending && !step?.known;
-  const status = step?.known ? "Learned ✓" : working ? "Digging…"
+  const status = step?.known ? "Learned ✓" : working ? world.use.target?.target?.kind==="object" ? "Striking…" : "Digging…"
     : pending ? "Saving progress…" : step?.unmet?.length ? "Skill needed"
     : held && world.use.target?.enabled === false
       ? ({ near: "Step back", far: "Move closer" }[world.use.target.ring?.state] || "Cannot dig here")
@@ -10656,6 +10657,9 @@ function adoptHold(name) {
 function adoptNativeHold(name,state) {
   const rover=(state.machines?.programs || []).find(p=>p.kind==="roam" && p.body===name);
   if(rover && state.hand?.mode==="grip") {adoptRecovery(rover,state.hand);return;}
+  // A carried tool can contain native fixings. The native hand mode, rather
+  // than the presence of a head/handle joint, decides whether it is being hauled.
+  if(state.hand?.mode==="grip") {adoptGrip(name,null);return;}
   const pinned=(state.joints || []).some(j=>j.attached!==false && (j.a===name || j.b===name));
   if(pinned) adoptHold(name);else adoptGrip(name,null);
 }

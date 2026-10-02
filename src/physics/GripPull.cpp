@@ -72,6 +72,15 @@ namespace {
                                 const Vec3 &wanted_at, const Vec3 &wanted_velocity,
                                 const Quat &wanted_facing, double strength_n,
                                 double torque_n_m, const Vec3 &gravity, double bandwidth_rad_s) {
+    return gripPull(held,grip_local,wanted_at,wanted_velocity,wanted_facing,
+                    strength_n,torque_n_m,gravity,bandwidth_rad_s,bandwidth_rad_s);
+}
+
+[[nodiscard]] GripPull gripPull(const RigidMechanicalState &held, const Vec3 &grip_local,
+                                const Vec3 &wanted_at, const Vec3 &wanted_velocity,
+                                const Quat &wanted_facing, double strength_n,
+                                double torque_n_m, const Vec3 &gravity,
+                                double movement_rad_s, double wrist_rad_s) {
     const RigidSnapshot &now = held.motion;
     const Vec3 arm = now.orientation_world.rotate(grip_local);
     const Vec3 grip = now.center_of_mass_world_m + arm;
@@ -86,7 +95,7 @@ namespace {
     // cutting nobody pushed it to do. The rate is 100 rad/s, a tenth of a
     // step per radian, unless full strength would then come sooner than
     // 50 mm off along the arm, where the grip has the whole mass.
-    const double kFastest = bandwidth_rad_s;
+    const double kFastest = movement_rad_s;
     constexpr double kDamping = 0.9;
     const double rate = std::min(kFastest, std::sqrt(strength_n / (0.05 * held.mass_kg)));
     const Mat3 feels = gripEffectiveMass(held.mass_kg, held.inertia_world_kg_m2, arm);
@@ -117,8 +126,8 @@ namespace {
     // answer the turn the grip force itself puts about the centre of mass:
     // what the wrist supplies is what is left after the grip's own moment.
     const Vec3 turn = gripTurnBetween(now.orientation_world, wanted_facing);
-    const Vec3 wanted = (kFastest * kFastest) * turn -
-                        (2.0 * kDamping * kFastest) * now.angular_velocity_rad_s;
+    const Vec3 wanted = (wrist_rad_s * wrist_rad_s) * turn -
+                        (2.0 * kDamping * wrist_rad_s) * now.angular_velocity_rad_s;
     Vec3 torque = held.inertia_world_kg_m2 * wanted - cross(arm, force);
     const double twist = length(torque);
     if (twist > torque_n_m && twist > 0.0) torque = (torque_n_m / twist) * torque;

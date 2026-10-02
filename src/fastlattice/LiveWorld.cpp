@@ -6152,6 +6152,15 @@ bool LiveWorld::judgeStep() {
     for (std::size_t i = 0; i < impl_->body_of.size(); ++i)
         index_of_body.emplace(impl_->body_of[i], i);
     bool any_would_break = false;
+    std::set<std::size_t> held_groups;
+    const auto includeHeld = [&](std::size_t root) {
+        if (root >= impl_->body_of.size()) return;
+        const auto group = impl_->jointedWith(root, true);
+        held_groups.insert(group.begin(), group.end());
+    };
+    includeHeld(impl_->holding);
+    for (const auto &[actor, hand] : impl_->hands)
+        if (actor != impl_->selected_hand) includeHeld(hand.holding);
     std::set<std::string> breaking_now;
     std::unordered_map<std::size_t, double> worst_speed;
     impl_->blade_contacts.clear();
@@ -6225,13 +6234,16 @@ bool LiveWorld::judgeStep() {
             // need the run it is declined -- said, not hidden -- and the
             // contact stays Jolt's.
             const bool rigid_striker = both && other != struck && impl_->isPrecise(other);
+            const bool held_contact = held_groups.count(struck) || (both && held_groups.count(other));
             if (rigid_striker && admission.worthRunning())
                 impact.declined = "struck by an exact rigid body, which the lattice run cannot hold yet";
+            else if (held_contact && admission.worthRunning())
+                impact.declined = "internal fracture with a held tool needs the coupled hand/target simulation; native contact and finite joint failure remain active";
             // Either one needs the lattice, and only the lattice can say which
             // of them actually happens. A trigger that asked about breaking
             // alone never ran below the breaking bar, which is exactly where a
             // dent lives.
-            if (admission.worthRunning() && !rigid_striker) {
+            if (admission.worthRunning() && !rigid_striker && !held_contact) {
                 breaking_now.insert(impact.struck);
                 // Remember what hit it, for the island a fracture would build.
                 // The hardest contact wins: a body resting on the floor and
@@ -6383,16 +6395,19 @@ void LiveWorld::step(double dt_s) {
         if (!impl_->world->contains(id)) return out;
         const auto [held, grip_local] = impl_->gripMatter();
         if (!(held.mass_kg > 0.0)) return out;
-        // A finite fixing has solver compliance: the free body's 100 rad/s
-        // feedback excited relative head/handle motion. Use 20 rad/s for fixed
-        // groups, retaining the same force/torque limits and actual constraints.
+        // A fixed group's large idle wishes retain the stable 20 rad/s law.
+        // Bounded strokes track their continuous path at 100 rad/s while the
+        // wrist remains at 20 rad/s. Slowing both stalled short strokes;
+        // speeding idle position jumps instead destabilized heavy tools.
         // The free-body preview uses the unchanged single-body controller;
         // jointed projections are explicitly refused below.
+        const bool fixed_group = impl_->jointedWith(impl_->holding,true).size()>1;
         const GripPull pull = gripPull(held, grip_local, impl_->held_at,
                                        impl_->held_velocity, impl_->held_facing,
                                        impl_->hand_strength_n, impl_->hand_torque_n_m,
                                        impl_->request.gravity_m_s2,
-                                       impl_->jointedWith(impl_->holding,true).size()>1 ? 20.0 : 100.0);
+                                       fixed_group && !impl_->stroke ? 20.0 : 100.0,
+                                       fixed_group ? 20.0 : 100.0);
         out.on = true;
         out.id = id;
         out.force = pull.force;
@@ -9717,7 +9732,7 @@ std::vector<std::string> LiveWorld::breakable() const {
         // thing the lattice was ever run for; what it means is "the lattice has
         // something to say about this one", and a dent is one of the things it
         // can say.
-        if (!impact.would_break && !impact.would_dent) continue;
+        if ((!impact.would_break && !impact.would_dent) || !impact.declined.empty()) continue;
         if (impl_->held_through.count(impact.struck)) continue;
         // Gone: it broke, and what it became carries different names. Or set
         // aside (park): it is not in the world to be broken.

@@ -11,6 +11,11 @@ struct GripFeedback { RigidMechanicalState held;Vec3 grip_local{}; };
 [[nodiscard]] GripPull gripPull(const RigidMechanicalState &held,const Vec3 &grip_local,
     const Vec3 &wanted_at,const Vec3 &wanted_velocity,const Quat &wanted_facing,
     double strength_n,double torque_n_m,const Vec3 &gravity,double bandwidth_rad_s=100.0);
+// Separate movement/wrist feedback for fixed assemblies. The original overload
+// retains its single-rate law. Rates size bounded feedback, not physical caps.
+[[nodiscard]] GripPull gripPull(const RigidMechanicalState &held,const Vec3 &grip_local,
+    const Vec3 &wanted_at,const Vec3 &wanted_velocity,const Quat &wanted_facing,
+    double strength_n,double torque_n_m,const Vec3 &gravity,double movement_rad_s,double wrist_rad_s);
 // Aggregate mass/inertia size the controller; feedback velocity/spin remains
 // the actual gripped root's. Members are the currently attached native group,
 // including root. This is a feedback frame, not merged physical geometry.

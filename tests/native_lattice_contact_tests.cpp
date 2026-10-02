@@ -180,7 +180,7 @@ void pairedTrialsRestoreAndReplay() {
                 }
                 const auto root=source.world.mechanicalState(10);
                 const auto feedback=makeGripFeedback(root,{root,source.world.mechanicalState(1)},{-.08,0,0});
-                const auto pull=gripPull(feedback.held,feedback.grip_local,{-.24+6*(k+1)*dt,0,0},{6,0,0},{},800,60,{},20);
+                const auto pull=gripPull(feedback.held,feedback.grip_local,{-.24+6*(k+1)*dt,0,0},{6,0,0},{},800,60,{},100,20);
                 source.world.pushBodyAt(10,pull.force,pull.grip);source.world.twistBody(10,pull.torque);source.world.wake(10);
                 source.world.step(dt);b.run({.max_steps=1,.capture_stride=64,.max_frames=40});
             }
@@ -319,7 +319,7 @@ void coupledMatchedTargets() {
                 // Current actual fixed constituents and actual root feedback;
                 // one bounded local wrench, never distributed over the members.
                 const auto feedback=makeGripFeedback(root,{root,tool.world.mechanicalState(1)},grip_local);
-                hand=gripPull(feedback.held,feedback.grip_local,{-.24+6*step*timestep,0,0},{6,0,0},{},800,60,{},20);
+                hand=gripPull(feedback.held,feedback.grip_local,{-.24+6*step*timestep,0,0},{6,0,0},{},800,60,{},100,20);
                 tool.world.pushBodyAt(10,hand.force,hand.grip);tool.world.twistBody(10,hand.torque);tool.world.wake(10);
                 max_hand_force=std::max(max_hand_force,length(hand.force));max_hand_torque=std::max(max_hand_torque,length(hand.torque));
             }

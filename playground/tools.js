@@ -101,7 +101,7 @@ export function makeTools(ctx) {
   // Held ready: the point straight down and the haft back towards the person,
   // in the plane they face.
   function readyPose() {
-    if (world.use.target?.gesture === "contact" && world.use.target.ready) return world.use.target.ready;
+    if (["contact", "object-contact"].includes(world.use.target?.gesture) && world.use.target.ready) return world.use.target.ready;
     const f = levelForward();
     const up = new THREE.Vector3(0, 1, 0);
     const k = new THREE.Vector3().crossVectors(up, f).normalize();
@@ -186,22 +186,28 @@ export function makeTools(ctx) {
   // Each frame while a tool is held ready: what the server says it does where
   // the crosshair meets the ground, and possible materials there. Asking never does
   // anything to the room.
-  let asking = false, askedAt = 0, askedFor = null;
+  let asking = false, askedAt = 0, askedFor = null, askedName = null;
   function followAim() {
     const held = world.held, use = world.use;
     if (!held || !held.pick) { return; }
     if (use.mode !== "tool-ready" || asking) return;
-    const at = world.groundAim;
+    const name = world.aim?.name || null;
+    const at = name ? world.aim.point_m : world.groundAim;
     const now = performance.now();
-    const moved = (!askedFor) !== (!at)
-      || (at && askedFor && Math.hypot(at[0] - askedFor[0], at[2] - askedFor[2]) > 0.03);
+    const moved = name !== askedName || (!askedFor) !== (!at)
+      || (at && askedFor && Math.hypot(...at.map((v, i) => v - askedFor[i])) > 0.03);
     if (now - askedAt < ASK_EVERY_MS || (!moved && now - askedAt < 1500)) return;
     asking = true;
     askedAt = now;
     askedFor = at ? at.slice() : null;
-    api("/api/world/tool", { session: world.session, person: whereIAm(), at_m: at || null })
+    askedName = name;
+    api("/api/world/tool", { session: world.session, person: whereIAm(), at_m: at || null, target_name: name })
       .then((answer) => {
         if (world.held !== held) return;
+        const currentName = world.aim?.name || null;
+        const currentAt = currentName ? world.aim.point_m : world.groundAim;
+        if (currentName !== name || (!currentAt) !== (!at)
+          || (currentAt && at && Math.hypot(...currentAt.map((v, i) => v - at[i])) > 0.03)) return;
         use.target = answer;
         showUse();
       })
@@ -223,8 +229,14 @@ export function makeTools(ctx) {
     showUse();
     let answer = null;
     try {
+      // The preview may still describe the previous view while its ray query
+      // is in flight. Use the current sight line at click time.
+      const from = camera.position, direction = new THREE.Vector3();
+      camera.getWorldDirection(direction);
+      const hit = await act("pick", { from: from.toArray(), dir: direction.toArray(),
+        max_m: 40, past_held: true });
       answer = await api("/api/world/tool/use", { session: world.session, person: whereIAm(),
-                                                  at_m: world.groundAim || null });
+        at_m: hit.hit ? hit.point_m : null, target_name: hit.hit ? hit.name || null : null });
     } catch (error) {
       use.result = String(error.message || error);
       say("bad", String(error.message || error));
@@ -244,7 +256,7 @@ export function makeTools(ctx) {
       remember(`${answer.action}: ${answer.said}`);
     }
     if (answer && answer.carried) carryGround(answer.carried);
-    if (answer?.gesture === "contact" && !answer.refused) use.positioned = true;
+    if (["contact", "object-contact"].includes(answer?.gesture) && !answer.refused) use.positioned = true;
     use.mode = "tool-ready";
     askedAt = 0;                               // the ring asked for again at once
     showUse();

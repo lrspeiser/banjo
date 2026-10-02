@@ -161,7 +161,8 @@ class RapidPlayer(unittest.TestCase):
             time.sleep(.005)
         self.assertEqual('pending',app.room.persistence['state'],save_events)
         wait('quickUses.length===1 && banjoRoom.use().mode==="tool-ready"')
-        self.assertGreater(page.evaluate('quickUses[0].answer.result?.loosened_kg || 0'),0)
+        self.assertGreater(page.evaluate('quickUses[0].answer.result?.loosened_kg || 0'),0,
+                           str(page.evaluate('({use:quickUses[0],target:banjoRoom.use().target,aim:banjoRoom.world.aim})')))
         first=page.evaluate('quickUses[0].answer')
         delta=sum(first['carried'].get(k,0)-before.get(k,0) for k in ('soil_kg','sand_kg'))
         self.assertAlmostEqual(delta,first['result']['loosened_kg'],delta=5e-6)
@@ -189,7 +190,7 @@ class RapidPlayer(unittest.TestCase):
         page.evaluate('window.quickUses=[]')
         for _ in range(5):
             key('keyDown','KeyJ','j');key('keyUp','KeyJ','j');time.sleep(.12)
-        wait('quickActive===0 && !banjoRoom.use().queued && !banjoRoom.use().timer')
+        wait('quickActive===0 && banjoRoom.use().mode==="tool-ready" && !banjoRoom.use().queued && !banjoRoom.use().timer')
         taps=page.evaluate('quickUses')
         self.assertEqual(5,len(taps),'rapid explicit taps should not be lost')
         self.assertEqual(1,page.evaluate('quickMax'),'requests must be sequential')
