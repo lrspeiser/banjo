@@ -1,6 +1,6 @@
 # Fast shared tool handling — October 1, 2026
 
-Implementation verified on main's `953aef6` base, with changes present during testing. [Machine-readable evidence](evidence/quick-tools-checkpoint.json) records source and rebuilt engine/DLL hashes. Implementation **`df15b5955684066a3e8b28779af19bdb022247b6`** is published on GitHub main. Broader progression remains four verified requirements and ten partial.
+Implementation verified on main's `953aef6` base, with changes present during testing. [Machine-readable evidence](evidence/quick-tools-checkpoint.json) records source and rebuilt engine/DLL hashes. Implementation **`df15b5955684066a3e8b28779af19bdb022247b6`** is published on GitHub main; pickup refinement **`6ebbf5053add2a098f74bdefb0071ad694c598c5`** is also published on main. Broader progression remains four verified requirements and ten partial.
 
 ## Player behavior
 

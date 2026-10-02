@@ -943,5 +943,6 @@
   },
   "published_implementation_revision": "df15b5955684066a3e8b28779af19bdb022247b6",
   "pickup_refinement_base_revision": "1674dc3",
-  "pickup_does_not_excavate_before_use": true
+  "pickup_does_not_excavate_before_use": true,
+  "published_pickup_revision": "6ebbf5053add2a098f74bdefb0071ad694c598c5"
 }
