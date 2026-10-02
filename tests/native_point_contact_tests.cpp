@@ -409,6 +409,146 @@ void nativeFixedToolRetainsItsLoadPath() {
                  <<after.kinetic_energy_j-before.kinetic_energy_j-work<<" J\n";
     }
 }
+struct FixedFixture {
+    JoltWorld world;ActiveNodeState point;PointRigidContactSettings law;unsigned fixing{};
+    explicit FixedFixture(MaterialPreset preset=MaterialPreset::Glass,bool turned=false,bool static_handle=false,double one_way=0) {
+        world.setGravity({});
+        const auto oak=makeReferenceMaterial(MaterialPreset::Oak,17),material=makeReferenceMaterial(preset,17);
+        const Quat rotation=turned?Quat{std::sqrt(.5),0,std::sqrt(.5),0}:Quat{};
+        const Vec3 origin=turned?Vec3{1,.5,-.5}:Vec3{};
+        world.addBox({1,{.08,.08,.08},material,{origin,rotation,rotation.rotate({2,0,0}),{}},false});
+        world.addBox({10,{.24,.04,.04},oak,{origin+rotation.rotate({-.16,0,0}),rotation,
+            static_handle?Vec3{}:rotation.rotate({2,0,0}),{}},static_handle});
+        world.addBox({2,{.01,.01,.01},oak,{{5,5,5},{},{},{}},true});
+        fixing=world.addFixing({10,1,origin+rotation.rotate({-.04,0,0}),rotation.rotate({1,0,0}),one_way>0?0.:5000.,5000,one_way});
+        for(auto pair:{std::pair{10U,1U},std::pair{2U,1U},std::pair{2U,10U}})
+            world.setPairContactOwner(pair.first,pair.second,PairContactOwner::External);
+        world.setDamping(1,0,0);if(!static_handle)world.setDamping(10,0,0);
+        point.mass_kg=oak.density_kg_m3*cell*cell*cell;
+        point.position_world_m=origin+rotation.rotate({.055,.01,0});point.previous_position_world_m=point.position_world_m;
+        const auto contact=combineContactMaterials(compileContactMaterial(material),compileContactMaterial(oak));
+        law={contact.static_friction,contact.dynamic_friction,contact.restitution};
+    }
+    FixedPointContactKick kick(const PointContactRoundoffBudget &budget=rounding) {
+        const auto query=world.pointShapeContacts(1,point.position_world_m,.016,.003);
+        const auto &hit=single(query);
+        return world.applyExternalFixedPointContact(2,1,point,hit.normal_world,hit.gap_m,dt,law,budget);
+    }
+};
+void nativeFixedContactUsesActualConstraintInertia() {
+    for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        FixedFixture f(preset);
+        const auto head=f.world.mechanicalState(1),handle=f.world.mechanicalState(10);
+        const auto old_point=f.point;const auto proxy=f.world.snapshot(2);
+        const auto receipt=f.kick();
+        require(receipt.contact.modal_contact.applied&&receipt.body_ids==std::vector<MatterBodyId>{1,10}&&
+            receipt.joint_ids==std::vector<unsigned>{f.fixing},"native fixed contact lost member/constraint identity");
+        require(receipt.links.size()==1&&receipt.links[0].a==1&&receipt.links[0].b==0,
+            "native constraint orientation changed");
+        near(length(receipt.links[0].point_a_world_m-Vec3{-.04,0,0}),0,2e-8,"native handle attachment witness");
+        near(length(receipt.links[0].point_b_world_m-Vec3{-.04,0,0}),0,2e-8,"native head attachment witness");
+        require(length(f.world.snapshot(10).linear_velocity_m_s-handle.motion.linear_velocity_m_s)>0&&
+            length(receipt.contact.contact_reactions[0].impulse_on_b_n_s)>0,"handle had no simultaneous contact reaction");
+        double change=0;
+        for(std::size_t i=0;i<receipt.body_ids.size();++i) {
+            const auto state=f.world.mechanicalState(receipt.body_ids[i]);const auto &before=i==0?head:handle;
+            same(state.motion,receipt.delivered_bodies[i].motion);
+            same(state.motion.center_of_mass_world_m,before.motion.center_of_mass_world_m,"fixed contact moved source geometry");
+            require(state.mass_kg==before.mass_kg&&state.inertia_world_kg_m2.m==before.inertia_world_kg_m2.m,
+                "native constrained response changed constituent mass/tensor");
+            change+=measureRigidMechanics(state).kinetic_energy_j-measureRigidMechanics(before).kinetic_energy_j;
+        }
+        change+=.5*old_point.mass_kg*dot(f.point.velocity_m_s-old_point.velocity_m_s,f.point.velocity_m_s+old_point.velocity_m_s);
+        near(change+receipt.contact.reconciliation_loss_j+receipt.contact.modal_contact.dissipated_energy_j,
+            receipt.numerical_energy_change_j,1e-12,"actual fixed transfer kinetic/work ledger");
+        same(proxy,f.world.snapshot(2));same(old_point.position_world_m,f.point.position_world_m,"fixed contact moved target");
+        const auto &link=receipt.links[0];
+        const auto &a=receipt.delivered_bodies[link.a].motion,&b=receipt.delivered_bodies[link.b].motion;
+        near(length(a.linear_velocity_m_s+cross(a.angular_velocity_rad_s,link.point_a_world_m-a.center_of_mass_world_m)-
+            b.linear_velocity_m_s-cross(b.angular_velocity_rad_s,link.point_b_world_m-b.center_of_mass_world_m)),0,2e-7,
+            "native float fixing velocity residual");
+        const auto load=f.world.jointLoad(f.fixing,{1,0,0});
+        require(load.tension_n==0&&load.shear_n==0,"external contact falsely rewrote native cached constraint lambda");
+        std::cout<<materialPresetName(preset)<<" simultaneous fixing: Jn="<<receipt.contact.modal_contact.normal_impulse_n_s
+            <<" N s; joint impulse="<<length(receipt.contact.contact_reactions[0].impulse_on_b_n_s)
+            <<" N s; loss="<<receipt.contact.modal_contact.dissipated_energy_j<<" J; reconcile="<<receipt.contact.reconciliation_loss_j
+            <<" J; dE="<<receipt.numerical_energy_change_j<<" J; dP="<<length(receipt.momentum_error_kg_m_s)
+            <<" N s; dL="<<length(receipt.angular_momentum_error_kg_m2_s)<<" kg m2/s\n";
+        // The next native step retains source motion, rather than resetting the tool.
+        const auto before=f.world.mechanicalTotals();f.world.step(dt);const auto after=f.world.mechanicalTotals();
+        require(length(after.linear_momentum_kg_m_s-before.linear_momentum_kg_m_s)<1e-5&&
+            length(after.angular_momentum_kg_m2_s-before.angular_momentum_kg_m2_s)<1e-5,
+            "following native fixed step lost momentum");
+        require(f.world.drainImpacts().empty(),"proxy or seam supplied a duplicate native contact");
+        std::cout<<"  subsequent free fixed step unallocated dK="<<after.kinetic_energy_j-before.kinetic_energy_j<<" J\n";
+    }
+    FixedFixture rotated(MaterialPreset::Iron,true);
+    const auto receipt=rotated.kick();
+    near(length(receipt.links[0].point_a_world_m-Vec3{1,.5,-.46}),0,2e-8,"rotated native constraint attachment");
+    require(std::abs(receipt.numerical_energy_change_j)<rounding.energy_j,"rotated fixed native transfer roundoff");
+}
+template<class Action> void fixedRefusedWithoutMutation(FixedFixture &f,Action action) {
+    const auto head=f.world.snapshot(1),handle=f.world.snapshot(10),proxy=f.world.snapshot(2);const auto point=f.point;
+    bool refused=false;try{action();}catch(const std::invalid_argument &){refused=true;}
+    require(refused,"unsupported fixed contact admitted");
+    same(head,f.world.snapshot(1));same(handle,f.world.snapshot(10));same(proxy,f.world.snapshot(2));
+    same(point.velocity_m_s,f.point.velocity_m_s,"refused fixed response changed external point");
+}
+void nativeFixedContactRefusesAtomically() {
+    FixedFixture measured;const auto receipt=measured.kick();
+    for(unsigned field=0;field<3;++field) {
+        FixedFixture f;auto budget=rounding;
+        if(field==0)budget.energy_j=.5*std::abs(receipt.numerical_energy_change_j);
+        if(field==1)budget.linear_impulse_n_s=.5*length(receipt.momentum_error_kg_m_s);
+        if(field==2)budget.angular_impulse_kg_m2_s=.5*length(receipt.angular_momentum_error_kg_m2_s);
+        fixedRefusedWithoutMutation(f,[&]{(void)f.kick(budget);});
+    }
+    FixedFixture missing;missing.world.setPairContactOwner(2,10,PairContactOwner::Jolt);
+    fixedRefusedWithoutMutation(missing,[&]{(void)missing.kick();});
+    FixedFixture seam;seam.world.setPairContactOwner(1,10,PairContactOwner::Jolt);
+    fixedRefusedWithoutMutation(seam,[&]{(void)seam.kick();});
+    FixedFixture pinned;pinned.world.pinToWorld(10);fixedRefusedWithoutMutation(pinned,[&]{(void)pinned.kick();});
+    FixedFixture anchored(MaterialPreset::Glass,false,true);fixedRefusedWithoutMutation(anchored,[&]{(void)anchored.kick();});
+    FixedFixture one_way(MaterialPreset::Glass,false,false,100);fixedRefusedWithoutMutation(one_way,[&]{(void)one_way.kick();});
+    FixedFixture spring;spring.world.addDistanceSpring(1,10,.16,1000,0);
+    fixedRefusedWithoutMutation(spring,[&]{(void)spring.kick();});
+    FixedFixture loop;(void)loop.world.addFixing({1,10,{-.04,0,0},{1,0,0},5000,5000,0});
+    fixedRefusedWithoutMutation(loop,[&]{(void)loop.kick();});
+    FixedFixture speed;speed.point.velocity_m_s={-1e6,0,0};fixedRefusedWithoutMutation(speed,[&]{(void)speed.kick();});
+    FixedFixture trial;bool refused=false;const auto old_point=trial.point;
+    const auto head=trial.world.snapshot(1),handle=trial.world.snapshot(10);
+    const bool accepted=trial.world.runReversibleTrial([&]{try{(void)trial.kick();}catch(const std::logic_error &){refused=true;}return false;});
+    require(refused&&!accepted,"fixed contact escaped native trial recorder");
+    same(old_point.velocity_m_s,trial.point.velocity_m_s,"fixed trial changed external point");
+    same(head,trial.world.snapshot(1));same(handle,trial.world.snapshot(10));
+}
+void orderedNativeFixedContactsRetainAllAccounts() {
+    FixedFixture f(MaterialPreset::Iron);auto second=f.point;second.position_world_m.y=-.01;
+    second.previous_position_world_m=second.position_world_m;
+    const auto totals=[&]() {
+        auto out=f.world.mechanicalTotals();
+        for(const auto *p:{&f.point,&second}) {
+            out.linear_momentum_kg_m_s+=p->mass_kg*p->velocity_m_s;
+            out.angular_momentum_kg_m2_s+=cross(p->position_world_m,p->mass_kg*p->velocity_m_s);
+            out.kinetic_energy_j+=.5*p->mass_kg*lengthSquared(p->velocity_m_s);
+        }
+        return out;
+    };
+    const auto before=totals();const auto first=f.kick();
+    const auto query=f.world.pointShapeContacts(1,second.position_world_m,.016,.003);const auto &hit=single(query);
+    const auto next=f.world.applyExternalFixedPointContact(2,1,second,hit.normal_world,hit.gap_m,dt,f.law,rounding);
+    require(next.contact.modal_contact.applied,"second fixed contact lost source recoil");
+    const auto after=totals();
+    near(length(after.linear_momentum_kg_m_s-before.linear_momentum_kg_m_s-first.momentum_error_kg_m_s-next.momentum_error_kg_m_s),
+        0,1e-12,"cumulative fixed contact momentum receipts");
+    near(length(after.angular_momentum_kg_m2_s-before.angular_momentum_kg_m2_s-first.contact.geometry_couple_kg_m2_s-
+        next.contact.geometry_couple_kg_m2_s-first.angular_momentum_error_kg_m2_s-next.angular_momentum_error_kg_m2_s),
+        0,1e-12,"cumulative fixed contact moment/couple receipts");
+    near(after.kinetic_energy_j-before.kinetic_energy_j+first.contact.reconciliation_loss_j+next.contact.reconciliation_loss_j+
+        first.contact.modal_contact.dissipated_energy_j+next.contact.modal_contact.dissipated_energy_j,
+        first.numerical_energy_change_j+next.numerical_energy_change_j,1e-12,"cumulative fixed contact kinetic/work receipts");
+    std::cout<<"ordered fixed contacts preserve actual native recoil and separate joint/work accounts\n";
+}
 void invalidQueriesRefuse() {
     Fixture f;const auto before=f.world.snapshot(1);
     for(const auto values:std::vector<std::pair<double,double>>{{0,0},{1e-7,0},{101,0},{.01,-1},{.01,1.01},
@@ -434,6 +574,8 @@ int main() {
         nativeSphereAndRotatedBoxWitnesses();compoundMaterialsVoidsAndBudgets();turnedCylinderAndConvexWitnesses();
         actualWitnessFeedsNativeReaction();invalidQueriesRefuse();
         nativeFixedToolRetainsItsLoadPath();
+        nativeFixedContactUsesActualConstraintInertia();nativeFixedContactRefusesAtomically();
+        orderedNativeFixedContactsRetainAllAccounts();
         std::cout<<"[PASS] native material-point transfer, shape witnesses, float accounting and atomic refusal\n";return 0;
     }catch(const std::exception &e) {std::cerr<<"[FAIL] "<<e.what()<<'\n';return 1;}
 }

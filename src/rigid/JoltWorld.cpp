@@ -2845,6 +2845,138 @@ PointContactKick JoltWorld::applyExternalPointContact(MatterBodyId proxy,MatterB
     point.velocity_m_s=out.contact.node_velocity_m_s;
     return out;
 }
+FixedPointContactKick JoltWorld::applyExternalFixedPointContact(MatterBodyId proxy,MatterBodyId striker,
+    ActiveNodeState &point,Vec3 normal,double gap,double duration,
+    const PointRigidContactSettings &settings,const PointContactRoundoffBudget &budget) {
+    impl_->requireConfigurationMutable();
+    if(!contains(proxy)||!contains(striker)||proxy==striker)
+        throw std::invalid_argument("fixed point contact needs distinct existing source and target proxy");
+    for(double limit:{budget.energy_j,budget.linear_impulse_n_s,budget.angular_impulse_kg_m2_s})
+        if(!std::isfinite(limit)||limit<0)throw std::invalid_argument("invalid fixed contact roundoff budget");
+    std::unordered_map<MatterBodyId,std::vector<unsigned>> adjacent;
+    for(const auto &[id,joint]:impl_->joints_) {
+        adjacent[joint.a].push_back(id);adjacent[joint.b].push_back(id);
+    }
+    std::set<MatterBodyId> members{striker};std::set<unsigned> joint_ids;
+    std::vector<MatterBodyId> queue{striker};
+    for(std::size_t k=0;k<queue.size();++k) {
+        const auto at=queue[k];
+        for(auto id:adjacent[at]) {
+            const auto &joint=impl_->joints_.at(id);
+            if(joint.kind!=JointKind::Fixing||joint.one_way||!joint.constraint->GetEnabled())
+                throw std::invalid_argument("fixed contact encountered an unsupported joint");
+            if(pairContactOwner(joint.a,joint.b)!=PairContactOwner::External)
+                throw std::invalid_argument("fixed contact seam has duplicate native surface ownership");
+            joint_ids.insert(id);
+            const auto next=joint.a==at?joint.b:joint.a;
+            if(next==proxy)throw std::invalid_argument("target proxy belongs to the striker assembly");
+            if(members.insert(next).second)queue.push_back(next);
+            if(members.size()>256)throw std::invalid_argument("fixed contact assembly exceeds 256 bodies");
+        }
+    }
+    for(const auto &[id,spring]:impl_->springs_) {
+        (void)id;
+        if(members.contains(spring.a)||members.contains(spring.b))
+            throw std::invalid_argument("fixed contact cannot bypass a native distance spring");
+    }
+    FixedPointContactKick out;out.body_ids.assign(members.begin(),members.end());
+    out.joint_ids.assign(joint_ids.begin(),joint_ids.end());
+    std::unordered_map<MatterBodyId,std::uint32_t> index;
+    std::vector<RigidMechanicalState> before,symmetric;
+    for(std::uint32_t i=0;i<out.body_ids.size();++i) {
+        const auto id=out.body_ids[i];index.emplace(id,i);
+        if(pairContactOwner(proxy,id)!=PairContactOwner::External||impl_->pins_.contains(id))
+            throw std::invalid_argument("fixed contact requires unpinned external target ownership for every member");
+        {
+            JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(),impl_->bodies_.at(id));
+            if(!lock.Succeeded())throw std::runtime_error("cannot lock fixed contact member");
+            const auto &body=lock.GetBody();
+            if(!body.IsDynamic()||body.GetMotionProperties()->GetAllowedDOFs()!=JPH::EAllowedDOFs::All)
+                throw std::invalid_argument("fixed contact requires unrestricted dynamic members");
+        }
+        before.push_back(mechanicalState(id));auto state=before.back();
+        double scale=0;for(const auto &row:state.inertia_world_kg_m2.m)for(double entry:row)scale=std::max(scale,std::abs(entry));
+        for(unsigned a=0;a<3;++a)for(unsigned b=a+1;b<3;++b) {
+            const double x=state.inertia_world_kg_m2.m[a][b],y=state.inertia_world_kg_m2.m[b][a];
+            if(std::abs(x-y)>1e-6*scale)throw std::invalid_argument("fixed contact runtime tensor skew exceeds float tolerance");
+            state.inertia_world_kg_m2.m[a][b]=state.inertia_world_kg_m2.m[b][a]=.5*(x+y);
+        }
+        symmetric.push_back(state);
+    }
+    for(auto id:out.joint_ids) {
+        const auto &joint=impl_->joints_.at(id);
+        const auto *fixed=static_cast<const JPH::FixedConstraint *>(joint.constraint.GetPtr());
+        const auto a=index.at(joint.a),b=index.at(joint.b);
+        const auto attachment=[](const RigidMechanicalState &body,JPH::Vec3Arg local) {
+            return body.motion.center_of_mass_world_m+body.motion.orientation_world.rotate(fromJoltVector(local));
+        };
+        out.links.push_back({a,b,attachment(before[a],fixed->GetConstraintToBody1Matrix().GetTranslation()),
+            attachment(before[b],fixed->GetConstraintToBody2Matrix().GetTranslation())});
+    }
+    out.contact=evaluatePointFixedAssemblyContact(point,symmetric,out.links,index.at(striker),normal,gap,duration,settings);
+    out.delivered_bodies=before;
+    out.delivered_normal_speed_m_s=out.contact.modal_contact.relative_normal_after_m_s;
+    out.delivered_slip_m_s=out.contact.modal_contact.slip_after_m_s;
+    if(!out.contact.modal_contact.applied)return out;
+    std::vector<JPH::Vec3> velocities,spins;
+    const auto representable=[](Vec3 v) {
+        const double limit=std::numeric_limits<float>::max();
+        return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z)&&
+            std::abs(v.x)<=limit&&std::abs(v.y)<=limit&&std::abs(v.z)<=limit;
+    };
+    for(std::size_t i=0;i<out.body_ids.size();++i) {
+        const auto &candidate=out.contact.bodies[i].motion;
+        if(!representable(candidate.linear_velocity_m_s)||!representable(candidate.angular_velocity_rad_s))
+            throw std::invalid_argument("fixed contact velocity is not representable");
+        const auto velocity=toJolt(candidate.linear_velocity_m_s),spin=toJolt(candidate.angular_velocity_rad_s);
+        JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(),impl_->bodies_.at(out.body_ids[i]));
+        if(!lock.Succeeded())throw std::runtime_error("cannot lock fixed contact candidate");
+        const auto *motion=lock.GetBody().GetMotionProperties();
+        if(!std::isfinite(velocity.LengthSq())||!std::isfinite(spin.LengthSq())||
+            velocity.LengthSq()>motion->GetMaxLinearVelocity()*motion->GetMaxLinearVelocity()||
+            spin.LengthSq()>motion->GetMaxAngularVelocity()*motion->GetMaxAngularVelocity())
+            throw std::invalid_argument("fixed contact exceeds runtime velocity limits");
+        velocities.push_back(velocity);spins.push_back(spin);
+        out.delivered_bodies[i].motion.linear_velocity_m_s=fromJoltVector(velocity);
+        out.delivered_bodies[i].motion.angular_velocity_rad_s=fromJoltVector(spin);
+    }
+    const auto audit=[&]() {
+        const Vec3 point_j=point.mass_kg*(out.contact.modal_contact.node_velocity_m_s-point.velocity_m_s);
+        out.momentum_error_kg_m_s=point_j;
+        out.angular_momentum_error_kg_m2_s=cross(point.position_world_m,point_j)-out.contact.geometry_couple_kg_m2_s;
+        double source_change=0;
+        for(std::size_t i=0;i<before.size();++i) {
+            const auto &state=out.delivered_bodies[i];const auto &old=before[i];
+            const Vec3 j=old.mass_kg*(state.motion.linear_velocity_m_s-old.motion.linear_velocity_m_s);
+            out.momentum_error_kg_m_s+=j;
+            out.angular_momentum_error_kg_m2_s+=cross(old.motion.center_of_mass_world_m,j)+old.inertia_world_kg_m2*
+                (state.motion.angular_velocity_rad_s-old.motion.angular_velocity_rad_s);
+            source_change+=measureRigidMechanics(state).kinetic_energy_j-measureRigidMechanics(old).kinetic_energy_j;
+        }
+        const double point_change=.5*point.mass_kg*dot(out.contact.modal_contact.node_velocity_m_s-point.velocity_m_s,
+            out.contact.modal_contact.node_velocity_m_s+point.velocity_m_s);
+        out.numerical_energy_change_j=source_change+point_change+out.contact.reconciliation_loss_j+
+            out.contact.modal_contact.dissipated_energy_j;
+        const auto &source=out.delivered_bodies[index.at(striker)].motion;
+        const Vec3 relative=out.contact.modal_contact.node_velocity_m_s-source.linear_velocity_m_s-
+            cross(source.angular_velocity_rad_s,point.position_world_m-source.center_of_mass_world_m);
+        const Vec3 unit=normal/length(normal);out.delivered_normal_speed_m_s=dot(relative,unit);
+        out.delivered_slip_m_s=length(relative-out.delivered_normal_speed_m_s*unit);
+    };
+    audit();
+    const auto finite=[](Vec3 v){return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z);};
+    if(!std::isfinite(out.numerical_energy_change_j)||!finite(out.momentum_error_kg_m_s)||!finite(out.angular_momentum_error_kg_m2_s)||
+        std::abs(out.numerical_energy_change_j)>budget.energy_j||length(out.momentum_error_kg_m_s)>budget.linear_impulse_n_s||
+        length(out.angular_momentum_error_kg_m2_s)>budget.angular_impulse_kg_m2_s)
+        throw std::invalid_argument("fixed contact exceeds runtime roundoff budget");
+    // Every member, constraint, speed and roundoff budget passed before the first write.
+    auto &bodies=impl_->physics_->GetBodyInterface();
+    for(std::size_t i=0;i<out.body_ids.size();++i)
+        bodies.SetLinearAndAngularVelocity(impl_->bodies_.at(out.body_ids[i]),velocities[i],spins[i]);
+    for(std::size_t i=0;i<out.body_ids.size();++i)out.delivered_bodies[i]=mechanicalState(out.body_ids[i]);
+    audit();point.velocity_m_s=out.contact.modal_contact.node_velocity_m_s;
+    return out;
+}
 CohesiveTensionKick JoltWorld::applyCohesiveTensionKick(MatterBodyId a,MatterBodyId b,
     Vec3 local_a,Vec3 local_b,double rest,const CohesiveInterfaceLaw &law,
     const CohesiveInterfaceState &history,double duration,double budget) {

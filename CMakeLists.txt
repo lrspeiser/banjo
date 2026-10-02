@@ -99,6 +99,7 @@ add_library(
     src/physics/RollingKinematics.cpp
     src/physics/SphereMaterialContact.cpp
     src/physics/PointRigidContact.cpp
+    src/physics/FixedAssemblyContact.cpp
     src/fracture/ActivationPolicy.cpp
     src/fracture/FracturePreview.cpp
     src/fracture/RuptureCascade.cpp
@@ -968,6 +969,11 @@ if(BANJO_BUILD_TESTS)
     target_link_libraries(banjo_point_rigid_contact_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_point_rigid_contact_tests)
     add_test(NAME banjo_point_rigid_contact_tests COMMAND banjo_point_rigid_contact_tests)
+
+    add_executable(banjo_fixed_assembly_contact_tests tests/fixed_assembly_contact_tests.cpp)
+    target_link_libraries(banjo_fixed_assembly_contact_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_fixed_assembly_contact_tests)
+    add_test(NAME banjo_fixed_assembly_contact_tests COMMAND banjo_fixed_assembly_contact_tests)
 
     if(TARGET banjo_runtime)
         add_executable(banjo_spring_trial_tests tests/spring_trial_tests.cpp)

@@ -14,6 +14,7 @@
 #include "physics/CohesiveRigidPair.hpp"
 #include "physics/RigidAttachment.hpp"
 #include "physics/PointRigidContact.hpp"
+#include "physics/FixedAssemblyContact.hpp"
 
 #include <memory>
 #include <optional>
@@ -107,6 +108,15 @@ struct PointContactRoundoffBudget {
 struct PointContactKick {
     PointRigidContactResult contact; // Double candidate; measured runtime state is separate.
     RigidMechanicalState delivered_rigid;
+    double numerical_energy_change_j{},delivered_normal_speed_m_s{},delivered_slip_m_s{};
+    Vec3 momentum_error_kg_m_s{},angular_momentum_error_kg_m2_s{};
+};
+struct FixedPointContactKick {
+    FixedAssemblyContactResult contact; // Double candidate, including joint receipts.
+    std::vector<MatterBodyId> body_ids;
+    std::vector<unsigned> joint_ids; // Same order as contact reaction/link receipts.
+    std::vector<FixedVelocityLink> links; // Actual native attachment witnesses.
+    std::vector<RigidMechanicalState> delivered_bodies;
     double numerical_energy_change_j{},delivered_normal_speed_m_s{},delivered_slip_m_s{};
     Vec3 momentum_error_kg_m_s{},angular_momentum_error_kg_m2_s{};
 };
@@ -416,6 +426,18 @@ public:
     // refuse. No geometry search, hand/fixing solve, fracture or time advance.
     // Active joints remain native, but their later reaction is not this kick.
     [[nodiscard]] PointContactKick applyExternalPointContact(MatterBodyId target_proxy,
+        MatterBodyId striker,ActiveNodeState &point,Vec3 normal_world,double gap_m,double dt_s,
+        const PointRigidContactSettings &settings,const PointContactRoundoffBudget &budget);
+    // Constrained variant using the striker's complete ordinary native fixed
+    // tree and each constraint's actual two attachment points. Every member
+    // must be unrestricted dynamic and externally own its target-proxy pair;
+    // joined seams must also be External. Pins, springs, other joint kinds,
+    // one-way/disabled fixings, loops, >256 members and trials refuse atomically.
+    // Impulses act through the fixed velocity constraints during contact. Joint
+    // receipts do NOT update Jolt's cached lambda or enforce strength/failure;
+    // the caller must account them with subsequent native loads and elapsed time.
+    // No pose correction, hand force, target integration or fracture is supplied.
+    [[nodiscard]] FixedPointContactKick applyExternalFixedPointContact(MatterBodyId target_proxy,
         MatterBodyId striker,ActiveNodeState &point,Vec3 normal_world,double gap_m,double dt_s,
         const PointRigidContactSettings &settings,const PointContactRoundoffBudget &budget);
     // Read-only native shape query for a material point's spherical contact

@@ -1,4 +1,5 @@
 #include "physics/PointRigidContact.hpp"
+#include "physics/ContactTensor.hpp"
 
 #include <algorithm>
 #include <array>
@@ -13,27 +14,6 @@ bool finite(Vec3 v) { return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfini
 double norm(Vec3 v) { return std::hypot(v.x,v.y,v.z); }
 void require(bool ok,const char *why) { if (!ok) throw std::invalid_argument(why); }
 
-Mat3 inversePositiveTensor(const Mat3 &tensor) {
-    double scale=0;
-    for (const auto &row:tensor.m) for (const double entry:row) {
-        require(std::isfinite(entry),"point-rigid inertia/effective mass is nonfinite");
-        scale=std::max(scale,std::abs(entry));
-    }
-    require(scale>0,"point-rigid inertia/effective mass is zero");
-    Mat3 normalized=tensor;
-    for (auto &row:normalized.m) for (double &entry:row) entry/=scale;
-    for (unsigned a=0;a<3;++a) for (unsigned b=0;b<3;++b)
-        require(std::abs(normalized.m[a][b]-normalized.m[b][a])<=1e-12,
-                "point-rigid inertia/effective mass is asymmetric");
-    require(normalized.m[0][0]>0&&normalized.m[0][0]*normalized.m[1][1]-
-            normalized.m[0][1]*normalized.m[1][0]>0&&normalized.determinant()>1e-14,
-            "point-rigid inertia/effective mass is not well-conditioned positive definite");
-    auto out=normalized.inverse(0).value();
-    for (auto &row:out.m) for (double &entry:row) {
-        entry/=scale;require(std::isfinite(entry),"point-rigid inverse tensor overflow");
-    }
-    return out;
-}
 double kinetic(const ActiveNodeState &node,const RigidMechanicalState &rigid) {
     const auto &motion=rigid.motion;
     return .5*node.mass_kg*lengthSquared(node.velocity_m_s)+
@@ -128,7 +108,7 @@ PointRigidContactResult evaluatePointRigidContact(const ActiveNodeState &node,
             finite(node.position_world_m)&&finite(node.velocity_m_s)&&
             finite(rigid.motion.center_of_mass_world_m)&&finite(rigid.motion.linear_velocity_m_s)&&
             finite(rigid.motion.angular_velocity_rad_s),"invalid point-rigid mass or motion");
-    const Mat3 inverse_inertia=inversePositiveTensor(rigid.inertia_world_kg_m2);
+    const Mat3 inverse_inertia=inverseContactTensor(rigid.inertia_world_kg_m2);
     normal=normal/norm(normal);
     const Vec3 arm=node.position_world_m-rigid.motion.center_of_mass_world_m;
     const Vec3 relative=node.velocity_m_s-rigid.motion.linear_velocity_m_s-
@@ -152,7 +132,7 @@ PointRigidContactResult evaluatePointRigidContact(const ActiveNodeState &node,
         const Vec3 response=inverse_mass*directions[column]+cross(inverse_inertia*cross(arm,directions[column]),arm);
         effective.m[0][column]=response.x;effective.m[1][column]=response.y;effective.m[2][column]=response.z;
     }
-    const auto inverse_effective=inversePositiveTensor(effective);
+    const auto inverse_effective=inverseContactTensor(effective);
     Vec3 impulse=inverse_effective*(out.target_normal_speed_m_s*normal-relative);
     const double normal_candidate=dot(impulse,normal);
     if (normal_candidate>0&&norm(tangentPart(impulse,normal))<=settings.static_friction*normal_candidate) {

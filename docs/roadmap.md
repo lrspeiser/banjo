@@ -10,7 +10,11 @@ The [finite rigid contact/native reaction primitive](held-strike-contact-checkpo
 retains full source inertia and measured recoil/spin, with explicit float error
 accounts. [Actual native geometry and a fixed-tool reaction phase](held-strike-shape-checkpoint.md)
 retain current shape/leaf materials, head/handle bodies and local native fixing
-loads. These are tested integration boundaries. Next synchronize the CPU target
+loads. [Constrained fixed-source contact](held-strike-fixed-contact-checkpoint.md)
+now uses the actual fixing anchors and full constituent effective inertia during
+the contact itself. Its joint impulse and reconciliation accounts remain separate
+from later native cached loads; failure/strength handling is not yet integrated.
+These are tested integration boundaries. Next synchronize the CPU target
 with actual native held assemblies, hand/joint reactions and accepted elapsed
 time, then the object-target route and complete acceptance checks below.
 R3 remains open.
