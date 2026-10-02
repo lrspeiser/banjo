@@ -15,6 +15,7 @@
 #include "fracture/ActiveMatter.hpp"
 
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <stdexcept>
@@ -224,6 +225,14 @@ struct FrameCapture {
 class LatticeBackend {
 public:
     virtual ~LatticeBackend() = default;
+    // Trusted host callback between run calls. Serial double CPU only. False
+    // or an exception restores every working array, history/cache, load/span,
+    // status/clock, frame and first-failure receipt. Upload is forbidden inside.
+    // No portable snapshot; tentative outputs must not escape before acceptance.
+    // Keep this backend alive/unmoved. 16 MiB copied payload; no nested trials.
+    [[nodiscard]] virtual bool runReversibleTrial(const std::function<bool()> &) {
+        throw std::invalid_argument("this lattice backend has no qualified reversible trial");
+    }
     [[nodiscard]] virtual std::string name() const = 0;
     virtual void upload(const LatticeState &state, const StepSettings<double> &settings,
                         const SphereState<double> &sphere) = 0;

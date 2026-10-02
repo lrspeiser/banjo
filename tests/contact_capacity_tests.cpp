@@ -321,7 +321,11 @@ void rejectedTrialRestoresContactDiagnosticsAndReplayState() {
 
 } // namespace
 
-int main() {
+int main(int argc,char **argv) {
+    const bool native_only=argc==2&&std::string_view(argv[1])=="--native-trials-only";
+    if (argc!=1&&!native_only) {
+        std::cerr<<"usage: banjo_contact_capacity_tests [--native-trials-only]\n";return 2;
+    }
     const std::vector<std::pair<std::string_view, std::function<void()>>> tests{
         {"capacity-sized matter balls step", capacitySizedMatterBallsStep},
         {"old contact budget rejects overloaded load", oldContactBudgetRejectsOverloadedMatterBalls},
@@ -332,12 +336,17 @@ int main() {
          rejectedTrialRestoresContactDiagnosticsAndReplayState},
     };
     std::size_t failures = 0;
+    std::size_t completed = 0;
     for (const auto &[name, test] : tests) {
+        if (native_only&&name!="impact observation toggle preserves response"&&
+            name!="rejected trial restores contact diagnostics and replay state") continue;
+        std::cout<<"[RUN] "<<name<<std::endl;
+        ++completed;
         try { test(); std::cout << "[PASS] " << name << '\n'; }
         catch (const std::exception &error) {
             ++failures; std::cerr << "[FAIL] " << name << ": " << error.what() << '\n';
         }
     }
-    std::cout << tests.size() - failures << '/' << tests.size() << " tests passed\n";
+    std::cout << completed - failures << '/' << completed << " tests passed\n";
     return failures == 0 ? 0 : 1;
 }

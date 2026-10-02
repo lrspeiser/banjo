@@ -142,6 +142,137 @@ void preparedContactIsImmutableAndInvalidates() {
         {state.inertia_world_kg_m2.m[0][0],state.inertia_world_kg_m2.m[1][1],state.inertia_world_kg_m2.m[2][2]});
     rejects(reshaped,shape_plan);
 }
+void sameTarget(const LatticeState &a,const LatticeState &b) {
+    near(length(a.origin-b.origin),0,0,"rollback target origin");
+#define SAME(field) require(a.field==b.field,"rollback/retry target " #field)
+    SAME(node_count);SAME(bond_count);SAME(max_degree);SAME(x0);SAME(u);SAME(u_prev);SAME(v);SAME(inv_mass);SAME(mass);
+    SAME(adj_offsets);SAME(adj_bonds);SAME(nbr_bond);SAME(nbr_other);SAME(nbr_rest);SAME(nbr_weight);SAME(nbr_alive);
+    SAME(bond_slot_a);SAME(bond_slot_b);SAME(bond_a);SAME(bond_b);SAME(rest_edge);SAME(rest_length);
+    SAME(rest_length_sq_minus);SAME(weight);SAME(compliance);SAME(threshold);SAME(alive);SAME(failure_mode);
+    SAME(damage);SAME(prev_tensile);SAME(prev_compressive);SAME(prev_shear);SAME(plastic_extension);SAME(plastic_strain);
+#undef SAME
+}
+void sameNative(const RigidSnapshot &a,const RigidSnapshot &b) {
+    near(length(a.center_of_mass_world_m-b.center_of_mass_world_m),0,0,"rollback native position");
+    near(length(a.linear_velocity_m_s-b.linear_velocity_m_s),0,0,"rollback native velocity");
+    near(length(a.angular_velocity_rad_s-b.angular_velocity_rad_s),0,0,"rollback native spin");
+    require(a.orientation_world.w==b.orientation_world.w&&a.orientation_world.x==b.orientation_world.x&&
+        a.orientation_world.y==b.orientation_world.y&&a.orientation_world.z==b.orientation_world.z,"rollback native facing");
+}
+void pairedTrialsRestoreAndReplay() {
+    for (auto mode:{kBondXpbd,kBondVelocityVerlet}) for (auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        Target target(preset,true,dt,mode);auto backend=target.backend(),control=target.backend();Tool tool(6),reference(6);
+        ExternalWrench queued{"queued",{},target.state.origin,{.3,.2,0},{0,0,.001}};
+        for (unsigned i=0;i<target.state.node_count;++i) queued.nodes.push_back(i);
+        for (auto *b:{backend.get(),control.get()}) {b->setExternalWrenches({queued},20);b->run({.max_steps=1,.capture_stride=1,.max_frames=40});}
+        tool.world.step(dt);reference.world.step(dt); // Both clocks include the load/capture warm-up.
+        const auto initial=target.download(*backend);const auto old=backend->status();const auto head=tool.world.snapshot(1),handle=tool.world.snapshot(10);
+        const auto old_failure=backend->firstFailureBonds();
+        const auto advance=[&](Tool &source,LatticeBackend &b) {
+            for (unsigned k=0;k<2048;++k) {
+                for (unsigned i=0;i<target.state.node_count;++i) {
+                    const auto point=b.externalContactPoint(i);const auto query=source.world.pointShapeContacts(1,point.position_world_m,.016,.00001);
+                    for (const auto &hit:query.contacts) {
+                        const auto law=combineContactMaterials(compileContactMaterial(target.material),hit.body_contact);
+                        (void)applyNativeFixedPointTransfer(source.world,b,i,2,1,hit.normal_world,hit.gap_m,
+                            {law.static_friction,law.dynamic_friction,law.restitution},budget);
+                    }
+                }
+                const auto root=source.world.mechanicalState(10);
+                const auto feedback=makeGripFeedback(root,{root,source.world.mechanicalState(1)},{-.08,0,0});
+                const auto pull=gripPull(feedback.held,feedback.grip_local,{-.24+6*(k+1)*dt,0,0},{6,0,0},{},800,60,{},20);
+                source.world.pushBodyAt(10,pull.force,pull.grip);source.world.twistBody(10,pull.torque);source.world.wake(10);
+                source.world.step(dt);b.run({.max_steps=1,.capture_stride=64,.max_frames=40});
+            }
+        };
+        const auto restored=[&] {
+            sameTarget(initial,target.download(*backend));sameNative(head,tool.world.snapshot(1));sameNative(handle,tool.world.snapshot(10));
+            const auto &s=backend->status();
+            require(s.total_steps==old.total_steps&&s.launches==old.launches&&s.frames_captured==old.frames_captured&&
+                s.broken_bonds==old.broken_bonds&&s.failure_rounds==old.failure_rounds&&s.first_failure_step==old.first_failure_step&&
+                s.last_failure_step==old.last_failure_step&&s.external_point_transfer.transfers==old.external_point_transfer.transfers&&
+                s.external_sources.size()==old.external_sources.size()&&s.external_load.steps==old.external_load.steps&&
+                s.external_load.work_j==old.external_load.work_j&&s.wall_seconds==old.wall_seconds&&
+                s.plastic_work_j==old.plastic_work_j&&s.integration_numerical_energy_j==old.integration_numerical_energy_j&&
+                backend->firstFailureBonds()==old_failure,"rollback target clocks/receipts/accounting");
+            for (unsigned i=0;i<kPhaseCount;++i) near(s.phase_seconds[i],old.phase_seconds[i],0,"rollback phase clock");
+        };
+        require(!runNativeFixedTargetTrial(tool.world,*backend,[&] {advance(tool,*backend);return false;}),"paired refusal accepted");restored();
+        bool threw=false;
+        try {(void)runNativeFixedTargetTrial(tool.world,*backend,[&]() -> bool {
+            advance(tool,*backend);(void)backend->takeFrames();backend->setExternalForces({},0);
+            throw std::runtime_error("late test refusal");
+        });} catch (const std::runtime_error &e) {if (std::string(e.what())!="late test refusal") throw;threw=true;}
+        require(threw,"paired exception disappeared");restored();
+        require(runNativeFixedTargetTrial(tool.world,*backend,[&] {advance(tool,*backend);return true;}),"paired acceptance rejected");
+        require(runNativeFixedTargetTrial(reference.world,*control,[&] {advance(reference,*control);return true;}),"control acceptance rejected");
+        sameTarget(target.download(*backend),target.download(*control));sameNative(tool.world.snapshot(1),reference.world.snapshot(1));
+        sameNative(tool.world.snapshot(10),reference.world.snapshot(10));
+        const auto &s=backend->status(),&c=control->status();
+        require(s.total_steps==2049&&s.total_steps==c.total_steps&&s.external_load.steps==20&&s.external_load.steps==c.external_load.steps&&
+            s.external_load.work_j==c.external_load.work_j&&s.external_point_transfer.transfers==c.external_point_transfer.transfers&&
+            s.external_point_transfer.work_j==c.external_point_transfer.work_j&&s.plastic_work_j==c.plastic_work_j&&
+            backend->firstFailureBonds()==control->firstFailureBonds(),"retry changed pending load/history/contact accounts");
+        near(tool.world.jointTension(tool.fixing),reference.world.jointTension(reference.fixing),0,"retry native last timestep/load");
+        auto frames=backend->takeFrames(),expected=control->takeFrames();require(frames.size()==expected.size()&&frames.size()>1,"rollback lost captures");
+        for (std::size_t i=0;i<frames.size();++i) require(frames[i].step==expected[i].step&&frames[i].u==expected[i].u&&
+            frames[i].alive==expected[i].alive&&frames[i].damage==expected[i].damage,"retry changed captured history");
+        if (preset==MaterialPreset::Glass) require(s.broken_bonds>0&&!backend->firstFailureBonds().empty(),"rollback fixture missed fracture history");
+        if (preset==MaterialPreset::Iron) require(s.plastic_work_j>0,"rollback fixture missed plastic history");
+        std::cout<<"Rollback "<<(mode==kBondXpbd?"XPBD ":"Verlet ")<<materialPresetName(preset)<<": retry=exact steps="<<s.total_steps
+            <<" fracture="<<s.broken_bonds<<" plastic="<<s.plastic_work_j<<" J\n";
+    }
+}
+void trialAdmissionAndAbandonedPlans() {
+    Tool tool;Target target(MaterialPreset::Oak,false);auto backend=target.backend();
+    auto point=backend->externalContactPoint(0);PreparedFixedPointContact abandoned;
+    require(!runNativeFixedTargetTrial(tool.world,*backend,[&] {
+        abandoned=tool.world.prepareExternalFixedPointContact(2,1,point,{1,0,0},-.001,dt,{},budget);
+        for (unsigned kind=0;kind<3;++kind) {
+            bool refused=false;
+            try {
+                if (kind==0) backend->upload(target.state,target.settings,{});
+                if (kind==1) (void)backend->runReversibleTrial([] {return true;});
+                if (kind==2) (void)tool.world.runReversibleTrial([] {return true;});
+            } catch (const std::exception &) {refused=true;}
+            require(refused,"paired trial admitted nested trial/upload");
+        }
+        bool refused=false;try {tool.world.removeJoint(tool.fixing);}catch (const std::logic_error &) {refused=true;}
+        require(refused&&tool.world.hasJoint(tool.fixing),"paired trial admitted topology change");
+        const double facing[]{1,0,0,0};
+        const std::vector<std::function<void()>> mutations{
+            [&] {tool.world.setMass(1,2);},[&] {tool.world.setDamping(1,1,1);},
+            [&] {tool.world.setGroundRollingResistance([](double,double) {return .1;});},
+            [&] {tool.world.reshapePrimitive(1,false,{.08,.08,.08},facing,2,{1,1,1});},
+            [&] {tool.world.driveHinge(tool.fixing,1,1);},[&] {tool.world.coastHinge(tool.fixing);},
+            [&] {tool.world.setJointFriction(tool.fixing,1);},[&] {tool.world.updateKerf(tool.fixing,1,1);},
+            [&] {tool.world.updateGroundBite(tool.fixing,1,1,1);}};
+        for (const auto &mutate:mutations) {
+            refused=false;try {mutate();}catch (const std::logic_error &) {refused=true;}
+            require(refused,"paired trial admitted native configuration mutation");
+        }
+        return false;
+    }),"abandoned plan trial accepted");
+    bool refused=false;try {(void)tool.world.commitExternalFixedPointContact(abandoned,point);}catch (const std::invalid_argument &) {refused=true;}
+    require(refused,"plan escaped an abandoned trial with no elapsed tick");
+    require(!tool.world.runReversibleTrial([&] {
+        bool rejected=false;try {(void)applyNativeFixedPointTransfer(tool.world,*backend,0,2,1,{1,0,0},-.001,{},budget);}
+        catch (const std::logic_error &) {rejected=true;}require(rejected,"unpaired trial admitted external point mutation");return false;
+    }),"unpaired trial accepted");
+    for (auto precision:{Precision::Float,Precision::Double}) {
+        auto unsupported=precision==Precision::Float?target.backend(precision):makeParallelCpuLatticeBackend(target.schedule,precision,2,1);
+        if (precision==Precision::Double) unsupported->upload(target.state,target.settings,{});
+        bool called=false;refused=false;
+        try {(void)runNativeFixedTargetTrial(tool.world,*unsupported,[&] {called=true;return true;});}
+        catch (const std::invalid_argument &) {refused=true;}require(refused&&!called,"unsupported backend entered paired trial");
+    }
+    ExternalWrench oversized{std::string(16U*1024U*1024U,'x'),{0},point.position_world_m,{1,0,0},{}};
+    backend->setExternalWrenches({oversized},1);bool called=false;refused=false;
+    try {(void)runNativeFixedTargetTrial(tool.world,*backend,[&] {called=true;return true;});}
+    catch (const std::invalid_argument &) {refused=true;}
+    require(refused&&!called,"oversized target entered paired trial");backend->setExternalForces({},0);
+    require(runNativeFixedTargetTrial(tool.world,*backend,[] {return true;}),"budget refusal left trial state open");
+}
 void coupledMatchedTargets() {
     for(auto configuration:{std::pair{kBondXpbd,false},std::pair{kBondVelocityVerlet,false},std::pair{kBondVelocityVerlet,true}}) {
     const auto [integrator,held]=configuration;
@@ -285,6 +416,6 @@ void coupledMatchedTargets() {
     }
 }
 }
-int main(){try{std::cout.precision(12);targetTransferPreservesHistoryAndAccounts(kBondXpbd);targetTransferPreservesHistoryAndAccounts(kBondVelocityVerlet);preparedContactIsImmutableAndInvalidates();coupledMatchedTargets();
+int main(){try{std::cout.precision(12);targetTransferPreservesHistoryAndAccounts(kBondXpbd);targetTransferPreservesHistoryAndAccounts(kBondVelocityVerlet);preparedContactIsImmutableAndInvalidates();trialAdmissionAndAbandonedPlans();pairedTrialsRestoreAndReplay();coupledMatchedTargets();
     std::cout<<"[PASS] checked native/CPU contact transfer and continuous target integration\n";return 0;}
     catch(const std::exception &e){std::cerr<<"[FAIL] "<<e.what()<<'\n';return 1;}}

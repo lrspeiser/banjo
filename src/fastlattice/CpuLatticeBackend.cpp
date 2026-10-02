@@ -26,12 +26,42 @@ class CpuLatticeBackend final : public LatticeBackend {
 public:
     explicit CpuLatticeBackend(LatticeSchedule schedule) : schedule_(std::move(schedule)) {}
 
+    bool runReversibleTrial(const std::function<bool()> &trial) override {
+        if constexpr (!std::is_same_v<Real,double>) {
+            throw std::invalid_argument("lattice trials require serial double CPU");
+        } else {
+            if (!trial||!L_.node_count||trial_depth_) throw std::invalid_argument("invalid lattice trial; nesting is forbidden");
+            std::size_t bytes=working_.payloadBytes()+external_.payloadBytes()+gravity_.payloadBytes()+sizeof(status_)+
+                sizeof(S_)+sizeof(sphere_)+sizeof(origin_)+sizeof(dirty_start_)+sizeof(contact_rebuild_)+
+                sizeof(energy_flat_fraction_)+sizeof(phase_clock_)+
+                first_failure_bonds_.size()*sizeof(std::uint32_t)+frames_.size()*sizeof(FrameCapture);
+            for (const auto &frame:frames_) bytes+=frame.u.size()*sizeof(float)+frame.alive.size()+frame.damage.size()*sizeof(float);
+            for (const auto &source:status_.external_sources) bytes+=sizeof(source)+source.source.size();
+            if (bytes>16U*1024U*1024U) throw std::invalid_argument("lattice trial exceeds 16 MiB payload budget");
+            auto working=working_;auto external=external_;auto gravity=gravity_;auto status=status_;
+            auto frames=frames_;auto failures=first_failure_bonds_;
+            const auto settings=S_;const auto sphere=sphere_;const auto origin=origin_;
+            const bool dirty=dirty_start_,rebuild=contact_rebuild_;
+            const double fraction=energy_flat_fraction_;const auto phase=phase_clock_;
+            const auto restore=[&] {
+                working_=std::move(working);L_=working_.arrays();external_=std::move(external);gravity_=std::move(gravity);
+                status_=std::move(status);frames_=std::move(frames);first_failure_bonds_=std::move(failures);
+                S_=settings;sphere_=sphere;origin_=origin;dirty_start_=dirty;contact_rebuild_=rebuild;
+                energy_flat_fraction_=fraction;phase_clock_=phase;
+            };
+            ++trial_depth_;bool accepted=false;
+            try {accepted=trial();}catch (...) {--trial_depth_;restore();throw;}
+            --trial_depth_;if (!accepted) restore();return accepted;
+        }
+    }
+
     [[nodiscard]] std::string name() const override {
         return std::string("cpu-") + (sizeof(Real) == 4 ? "float" : "double");
     }
 
     void upload(const LatticeState &state, const StepSettings<double> &settings,
                 const SphereState<double> &sphere) override {
+        if (trial_depth_) throw std::logic_error("lattice upload is forbidden during a trial");
         if (settings.bond_integrator!=kBondXpbd&&settings.bond_integrator!=kBondVelocityVerlet)
             throw std::invalid_argument("unknown bond integrator");
         if (settings.bond_integrator==kBondVelocityVerlet) {
@@ -388,6 +418,7 @@ private:
     RunStatus status_{};
     CpuExternalLoads<Real> external_;
     CpuExternalLoads<Real> gravity_;
+    unsigned trial_depth_{};
     Vec3 origin_{};
     // RunControl::energy_flat_fraction, held here because the substep that
     // accumulates removed energy does not see the control.

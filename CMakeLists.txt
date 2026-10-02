@@ -1496,6 +1496,10 @@ if(BANJO_BUILD_TESTS AND TARGET banjo_platform)
  target_link_libraries(banjo_contact_capacity_tests PRIVATE banjo_platform nlohmann_json::nlohmann_json)
  target_compile_definitions(banjo_contact_capacity_tests PRIVATE BANJO_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
  add_test(NAME banjo_contact_capacity_tests COMMAND banjo_contact_capacity_tests)
+ # Keep native diagnostics/rollback in the ordinary gate; the material-network
+ # capacity experiments below retain the full long suite.
+ add_test(NAME banjo_native_contact_capacity_tests
+     COMMAND banjo_contact_capacity_tests --native-trials-only)
  # Three 7^3 matter balls and a twice-stepped panel, fully resolved under the
  # substep cap: about 34 minutes (2,039 s measured).
  set_tests_properties(banjo_contact_capacity_tests PROPERTIES

@@ -36,6 +36,20 @@ struct WorkingLattice {
     std::vector<std::uint32_t> bucket_begin, bucket_cursor, bucket_nodes;
     std::vector<std::uint32_t> pair_other, pair_bond, pair_fill, pair_node_list, pair_node_count;
 
+    [[nodiscard]] std::size_t payloadBytes() const {
+        std::size_t bytes=sizeof(*this);
+        const auto add=[&](const auto &v){bytes+=v.size()*sizeof(v[0]);};
+        add(x0);add(u);add(u_prev);add(v);add(inv_mass);add(mass);add(rinv);add(node_unmeasured);add(strain);add(approach);
+        add(node_valid);add(node_dirty);add(engaged);add(candidate);add(adj_offsets);add(adj_bonds);add(node_block_begin);
+        add(nbr_bond);add(nbr_other);add(nbr_rest);add(nbr_weight);add(nbr_alive);add(bond_slot_a);add(bond_slot_b);
+        add(bond_a);add(bond_b);add(rest_edge);add(rest_length);add(rest_length_sq_minus);add(weight);add(compliance);add(threshold);
+        add(alive);add(failure_mode);add(damage);add(accumulated_lambda);add(prev_tensile);add(prev_compressive);add(prev_shear);
+        add(plastic_extension);add(plastic_strain);add(range_begin);add(range_end);add(bond_block_begin);
+        add(candidate_list);add(candidate_count);add(rank_deficient_nodes);add(node_cell);add(build_u);
+        add(bucket_begin);add(bucket_cursor);add(bucket_nodes);add(pair_other);add(pair_bond);add(pair_fill);add(pair_node_list);add(pair_node_count);
+        return bytes;
+    }
+
     static WorkingLattice fromState(const LatticeState &state, const LatticeSchedule &schedule) {
         WorkingLattice w;
         w.node_count = state.node_count;

@@ -23,6 +23,11 @@
 #include <vector>
 
 namespace banjo {
+class JoltWorld;
+namespace fastlattice {
+class LatticeBackend;
+[[nodiscard]] bool runNativeFixedTargetTrial(JoltWorld &,LatticeBackend &,const std::function<bool()> &);
+}
 
 struct RigidSurfaceDescription {
     SupportPlaneFrame frame{};
@@ -1044,6 +1049,8 @@ public:
 private:
     [[nodiscard]] PairImpulseAudit applyAuditedPairImpulses(MatterBodyId a,MatterBodyId b,
         const std::vector<AttachmentImpulse> &impulses,double maximum_roundoff_energy_j);
+    friend bool fastlattice::runNativeFixedTargetTrial(JoltWorld &,fastlattice::LatticeBackend &,const std::function<bool()> &);
+    [[nodiscard]] bool runExternalFixedTrial(const std::function<bool()> &trial);
     class Impl;
     std::unique_ptr<Impl> impl_;
 };

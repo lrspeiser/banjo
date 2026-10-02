@@ -1239,6 +1239,12 @@ public:
             throw std::logic_error("spring changes are forbidden during a reversible trial");
     }
     unsigned trial_depth_{};
+    bool external_fixed_trial_{};
+    void requireFixedContactMutable() const {
+        if ((trial_depth_||spring_trial_depth_) &&
+            !(external_fixed_trial_&&trial_depth_==1&&spring_trial_depth_==0))
+            throw std::logic_error("fixed point contact requires a paired native/target trial");
+    }
     unsigned spring_trial_depth_{};
     BroadPhaseLayerInterface broad_phase_interface_;
     ObjectVsBroadPhaseLayerFilter object_vs_broad_phase_filter_;
@@ -1263,6 +1269,7 @@ public:
     std::atomic<std::uint64_t> tick_{0};
     const std::shared_ptr<const int> contact_plan_identity_{std::make_shared<const int>(0)};
     ImpactCollector impact_collector_;
+    std::uint64_t contact_plan_epoch_{};
     JPH::BodyID floor_id_;
     std::unordered_map<MatterBodyId,JPH::Ref<JPH::Constraint>> pins_;
     struct Spring { MatterBodyId a,b; JPH::Ref<JPH::DistanceConstraint> constraint; };
@@ -1326,6 +1333,44 @@ public:
     // What rolling resistance has taken out of the motion, in all and by body.
     double rolling_loss_j_{};
     std::unordered_map<MatterBodyId, double> rolling_loss_of_;
+    // SaveState omits constraint configuration, and step may strip gears.
+    // Keep the exact native order and strong refs before any tentative step.
+    struct TrialConfiguration {
+        JPH::Constraints order;
+        std::unordered_map<unsigned,Joint> joints;
+        std::unordered_map<unsigned,double> gears;
+        std::vector<unsigned> stripped;
+        struct Link {JPH::Ref<JPH::DistanceConstraint> constraint;float minimum,maximum;};
+        std::vector<Link> links;
+        double dt{};
+        std::unordered_map<MatterBodyId,BeforeStep> before;
+        bool cache_readable{};
+        unsigned manifolds{},points{},speculative{};
+    };
+    TrialConfiguration captureTrialConfiguration() const {
+        TrialConfiguration out{physics_->GetConstraints(),joints_,gear_strength_,stripped_gears_,{},last_dt_s,before_step_,cache_readable_};
+        out.manifolds=impact_collector_.manifolds.load(std::memory_order_relaxed);
+        out.points=impact_collector_.points.load(std::memory_order_relaxed);
+        out.speculative=impact_collector_.speculative_manifolds.load(std::memory_order_relaxed);
+        for (const auto &[id,joint]:joints_) {
+            (void)id;
+            if (joint.kind!=JointKind::Link) continue;
+            auto *link=static_cast<JPH::DistanceConstraint *>(joint.constraint.GetPtr());
+            out.links.push_back({link,link->GetMinDistance(),link->GetMaxDistance()});
+        }
+        return out;
+    }
+    void restoreTrialConfiguration(TrialConfiguration &saved) {
+        const auto current=physics_->GetConstraints();
+        for (const auto &constraint:current) physics_->RemoveConstraint(constraint.GetPtr());
+        for (const auto &constraint:saved.order) physics_->AddConstraint(constraint.GetPtr());
+        joints_=std::move(saved.joints);gear_strength_=std::move(saved.gears);stripped_gears_=std::move(saved.stripped);
+        for (const auto &link:saved.links) link.constraint->SetDistance(link.minimum,link.maximum);
+        last_dt_s=saved.dt;before_step_=std::move(saved.before);cache_readable_=saved.cache_readable;
+        impact_collector_.manifolds.store(saved.manifolds,std::memory_order_relaxed);
+        impact_collector_.points.store(saved.points,std::memory_order_relaxed);
+        impact_collector_.speculative_manifolds.store(saved.speculative,std::memory_order_relaxed);
+    }
 };
 
 namespace {
@@ -1920,6 +1965,7 @@ JoltWorld::JointReport JoltWorld::jointState(unsigned joint) const {
 }
 
 void JoltWorld::driveHinge(unsigned joint, double target_rad_s, double torque_limit_n_m) {
+    impl_->requireConfigurationMutable();
     if (!std::isfinite(target_rad_s) || !(torque_limit_n_m >= 0.0) || !std::isfinite(torque_limit_n_m))
         throw std::invalid_argument("a pin is driven at a finite speed with a torque of zero or more");
     const auto found = impl_->joints_.find(joint);
@@ -1938,6 +1984,7 @@ void JoltWorld::driveHinge(unsigned joint, double target_rad_s, double torque_li
 }
 
 void JoltWorld::coastHinge(unsigned joint) {
+    impl_->requireConfigurationMutable();
     const auto found = impl_->joints_.find(joint);
     if (found == impl_->joints_.end() || found->second.kind != JointKind::Hinge) return;
     static_cast<JPH::HingeConstraint *>(found->second.constraint.GetPtr())->SetMotorState(JPH::EMotorState::Off);
@@ -2006,6 +2053,7 @@ void JoltWorld::addTorque(MatterBodyId body_id, const Vec3 &torque_n_m) {
 }
 
 void JoltWorld::setDamping(MatterBodyId body_id, double linear_per_s, double angular_per_s) {
+    impl_->requireConfigurationMutable();
     if (!(linear_per_s >= 0.0) || !(angular_per_s >= 0.0) || !std::isfinite(linear_per_s + angular_per_s))
         throw std::invalid_argument("damping is a share of the speed per second, zero or more");
     const auto found = impl_->bodies_.find(body_id);
@@ -2018,6 +2066,7 @@ void JoltWorld::setDamping(MatterBodyId body_id, double linear_per_s, double ang
 }
 
 void JoltWorld::setJointFriction(unsigned joint, double friction) {
+    impl_->requireConfigurationMutable();
     if (!(friction >= 0.0) || !std::isfinite(friction))
         throw std::invalid_argument("joint friction must be zero or more");
     auto &held = impl_->joints_.at(joint);
@@ -2456,6 +2505,7 @@ unsigned JoltWorld::addKerf(const KerfDescription &d) {
 }
 
 void JoltWorld::updateKerf(unsigned joint, double resist_facing_n, double resist_along_n) {
+    impl_->requireConfigurationMutable();
     const auto found = impl_->joints_.find(joint);
     if (found == impl_->joints_.end() || found->second.kind != JointKind::Kerf) return;
     if (!(resist_facing_n >= 0.0) || !(resist_along_n >= 0.0) ||
@@ -2691,6 +2741,7 @@ unsigned JoltWorld::addSlider(const SliderDescription &d) {
 }
 
 void JoltWorld::removeJoint(unsigned joint) {
+    impl_->requireConfigurationMutable();
     const auto found = impl_->joints_.find(joint);
     if (found == impl_->joints_.end()) return;
     impl_->physics_->RemoveConstraint(found->second.constraint.GetPtr());
@@ -2849,6 +2900,7 @@ PointContactKick JoltWorld::applyExternalPointContact(MatterBodyId proxy,MatterB
 struct PreparedFixedPointContact::Data {
     std::shared_ptr<const int> identity;
     std::uint64_t tick{};
+    std::uint64_t epoch{};
     MatterBodyId proxy{},striker{};
     JPH::BodyID native_proxy;
     std::vector<JPH::BodyID> native_bodies;
@@ -2867,7 +2919,7 @@ const FixedPointContactKick &PreparedFixedPointContact::receipt() const {
 PreparedFixedPointContact JoltWorld::prepareExternalFixedPointContact(MatterBodyId proxy,MatterBodyId striker,
     const ActiveNodeState &point,Vec3 normal,double gap,double duration,
     const PointRigidContactSettings &settings,const PointContactRoundoffBudget &budget) const {
-    impl_->requireConfigurationMutable();
+    impl_->requireFixedContactMutable();
     if(!contains(proxy)||!contains(striker)||proxy==striker)
         throw std::invalid_argument("fixed point contact needs distinct existing source and target proxy");
     for(double limit:{budget.energy_j,budget.linear_impulse_n_s,budget.angular_impulse_kg_m2_s})
@@ -2939,6 +2991,7 @@ PreparedFixedPointContact JoltWorld::prepareExternalFixedPointContact(MatterBody
     const auto finish=[&]() {
         auto data=std::make_shared<PreparedFixedPointContact::Data>();
         data->identity=impl_->contact_plan_identity_;data->tick=impl_->tick_.load(std::memory_order_relaxed);
+        data->epoch=impl_->contact_plan_epoch_;
         data->proxy=proxy;data->striker=striker;data->native_proxy=impl_->bodies_.at(proxy);
         data->before=before;data->point=point;data->normal=normal;data->gap=gap;data->duration=duration;
         data->settings=settings;data->budget=budget;data->receipt=out;
@@ -3003,10 +3056,10 @@ PreparedFixedPointContact JoltWorld::prepareExternalFixedPointContact(MatterBody
     return finish();
 }
 FixedPointContactKick JoltWorld::commitExternalFixedPointContact(const PreparedFixedPointContact &prepared,ActiveNodeState &point) {
-    impl_->requireConfigurationMutable();
+    impl_->requireFixedContactMutable();
     if(!prepared.data_||prepared.data_->identity!=impl_->contact_plan_identity_||
-        prepared.data_->tick!=impl_->tick_.load(std::memory_order_relaxed))
-        throw std::invalid_argument("prepared fixed contact belongs to another world or elapsed tick");
+        prepared.data_->tick!=impl_->tick_.load(std::memory_order_relaxed)||prepared.data_->epoch!=impl_->contact_plan_epoch_)
+        throw std::invalid_argument("prepared fixed contact belongs to another world, elapsed tick or abandoned trial");
     const auto equal=[](Vec3 a,Vec3 b){return a.x==b.x&&a.y==b.y&&a.z==b.z;};
     const auto &saved=*prepared.data_;
     if(!equal(point.position_world_m,saved.point.position_world_m)||!equal(point.previous_position_world_m,saved.point.previous_position_world_m)||
@@ -3619,6 +3672,7 @@ unsigned JoltWorld::addGroundBite(const GroundBiteDescription &d) {
 
 void JoltWorld::updateGroundBite(unsigned joint, double resist_into_n, double resist_x_n,
                                  double resist_z_n) {
+    impl_->requireConfigurationMutable();
     const auto found = impl_->joints_.find(joint);
     if (found == impl_->joints_.end() || found->second.kind != JointKind::GroundBite) return;
     if (!(resist_into_n >= 0.0) || !(resist_x_n >= 0.0) || !(resist_z_n >= 0.0) ||
@@ -3643,6 +3697,7 @@ Vec3 JoltWorld::groundBiteImpulse(unsigned joint) const {
 }
 
 void JoltWorld::setGroundRollingResistance(std::function<double(double, double)> surface_at) {
+    impl_->requireConfigurationMutable();
     impl_->ground_rolling_at_ = std::move(surface_at);
 }
 
@@ -3658,6 +3713,7 @@ double JoltWorld::rollingLossJ(MatterBodyId body_id) const {
 }
 
 void JoltWorld::setMass(MatterBodyId body_id, double mass_kg) {
+    impl_->requireConfigurationMutable();
     const auto found = impl_->bodies_.find(body_id);
     if (found == impl_->bodies_.end()) throw std::invalid_argument("rigid body is missing");
     if (!(mass_kg > 0.0) || !std::isfinite(mass_kg))
@@ -3672,6 +3728,7 @@ void JoltWorld::setMass(MatterBodyId body_id, double mass_kg) {
 void JoltWorld::reshapePrimitive(MatterBodyId body_id, bool sphere, const Vec3 &d,
                                  const double rotation_wxyz[4], double mass_kg, const Vec3 &inertia,
                                  bool activate) {
+    impl_->requireConfigurationMutable();
     const auto found = impl_->bodies_.find(body_id);
     if (found == impl_->bodies_.end()) throw std::invalid_argument("rigid body is missing");
     const bool sized = std::isfinite(d.x) && d.x > 0.0 &&
@@ -4051,18 +4108,24 @@ void JoltWorld::addFragments(
 unsigned JoltWorld::positionPrecisionBits() noexcept { return 8*sizeof(JPH::Real); }
 
 bool JoltWorld::runReversibleTrial(const std::function<bool()> &trial) {
-    if(!trial||impl_->bodies_.size()>2048||impl_->trial_depth_>=16)
+    if (impl_->external_fixed_trial_&&impl_->trial_depth_)
+        throw std::invalid_argument("native trial nesting is forbidden during a paired target trial");
+    if(!trial||impl_->bodies_.size()>2048||impl_->trial_depth_>=16||
+       impl_->contact_plan_epoch_>std::numeric_limits<std::uint64_t>::max()-32)
         throw std::invalid_argument("invalid reversible trial or body/depth budget exceeded");
     JPH::StateRecorderImpl recorder;impl_->physics_->SaveState(recorder);
     if(recorder.IsFailed()||recorder.GetDataSize()>16U*1024U*1024U)
         throw std::runtime_error("cannot capture bounded Jolt trial state");
     auto events=impl_->impact_collector_.capture();const auto tick=impl_->tick_.load(std::memory_order_relaxed);
     const auto diagnostics=impl_->contact_diagnostics_;
+    auto configuration=impl_->captureTrialConfiguration();
     // What rolling resistance carries into the next step goes back with the
     // world: a step taken back found none of the contacts it recorded.
     auto rolling=impl_->rolling_;auto rolling_report=impl_->rolling_report_;
     const double rolling_loss=impl_->rolling_loss_j_;auto rolling_loss_of=impl_->rolling_loss_of_;
     const auto restore=[&] {
+        impl_->restoreTrialConfiguration(configuration);
+        ++impl_->contact_plan_epoch_;
         recorder.Rewind();
         if(!impl_->physics_->RestoreState(recorder)||recorder.IsFailed())
             throw std::runtime_error("Jolt trial restore failed; discard this world");
@@ -4077,11 +4140,22 @@ bool JoltWorld::runReversibleTrial(const std::function<bool()> &trial) {
     --impl_->trial_depth_;if(!accepted)restore();return accepted;
 }
 
+bool JoltWorld::runExternalFixedTrial(const std::function<bool()> &trial) {
+    if (!trial||impl_->external_fixed_trial_||impl_->trial_depth_||impl_->spring_trial_depth_)
+        throw std::invalid_argument("paired fixed contact trial cannot nest in another native trial");
+    impl_->external_fixed_trial_=true;
+    try {
+        const bool accepted=runReversibleTrial(trial);
+        impl_->external_fixed_trial_=false;return accepted;
+    } catch (...) {impl_->external_fixed_trial_=false;throw;}
+}
+
 bool JoltWorld::runSpringTrial(const std::function<bool()> &trial) {
     constexpr std::size_t kMaximumStateBytes=16U*1024U*1024U;
     constexpr unsigned kMaximumDepth=16;
     if(!trial||impl_->trial_depth_!=0||impl_->bodies_.size()>1024||
-       impl_->springs_.size()>20000||impl_->spring_trial_depth_>=kMaximumDepth)
+       impl_->springs_.size()>20000||impl_->spring_trial_depth_>=kMaximumDepth||
+       impl_->contact_plan_epoch_>std::numeric_limits<std::uint64_t>::max()-32)
         throw std::invalid_argument("invalid spring trial or body/spring/depth budget exceeded");
 
     JPH::StateRecorderImpl recorder;impl_->physics_->SaveState(recorder);
@@ -4091,7 +4165,7 @@ bool JoltWorld::runSpringTrial(const std::function<bool()> &trial) {
     // PhysicsSystem::RestoreState addresses constraints by their current
     // indices and DistanceConstraint::SaveState omits configuration. Hold refs
     // to the exact list so removals cannot destroy constraints before rollback.
-    const JPH::Constraints constraint_order=impl_->physics_->GetConstraints();
+    auto configuration=impl_->captureTrialConfiguration();
     const auto springs=impl_->springs_;
     struct SpringConfiguration {
         float minimum_distance;
@@ -4118,16 +4192,13 @@ bool JoltWorld::runSpringTrial(const std::function<bool()> &trial) {
         // Remove/add is intentionally done for the whole list: Jolt removes by
         // swap-with-last, so selectively re-adding removed springs cannot
         // recover the solver order required by the saved state.
-        JPH::Constraints current=impl_->physics_->GetConstraints();
-        for(const JPH::Ref<JPH::Constraint> &constraint:current)
-            impl_->physics_->RemoveConstraint(constraint.GetPtr());
-        for(const JPH::Ref<JPH::Constraint> &constraint:constraint_order)
-            impl_->physics_->AddConstraint(constraint.GetPtr());
+        impl_->restoreTrialConfiguration(configuration);
+        ++impl_->contact_plan_epoch_;
         impl_->springs_=springs;impl_->next_spring_=next_spring;
-        for(const auto &[id,configuration]:spring_configuration) {
+        for(const auto &[id,spring_settings]:spring_configuration) {
             auto *constraint=impl_->springs_.at(id).constraint.GetPtr();
-            constraint->SetDistance(configuration.minimum_distance,configuration.maximum_distance);
-            constraint->SetLimitsSpringSettings(configuration.settings);
+            constraint->SetDistance(spring_settings.minimum_distance,spring_settings.maximum_distance);
+            constraint->SetLimitsSpringSettings(spring_settings.settings);
         }
         recorder.Rewind();
         if(!impl_->physics_->RestoreState(recorder)||recorder.IsFailed())
@@ -4148,8 +4219,9 @@ bool JoltWorld::runSpringTrial(const std::function<bool()> &trial) {
 }
 
 void JoltWorld::step(double fixed_dt_s) {
-    if (fixed_dt_s <= 0.0) {
-        throw std::invalid_argument("Jolt step must be positive");
+    if (!std::isfinite(fixed_dt_s)||fixed_dt_s <= 0.0||
+        fixed_dt_s>std::numeric_limits<float>::max()||static_cast<float>(fixed_dt_s)==0.0F) {
+        throw std::invalid_argument("Jolt step must be finite, positive and representable");
     }
     impl_->last_dt_s = fixed_dt_s;
     impl_->applyRollingResistance(fixed_dt_s);

@@ -1,6 +1,10 @@
 #include "fastlattice/NativeFixedContact.hpp"
 
 namespace banjo::fastlattice {
+bool runNativeFixedTargetTrial(JoltWorld &world,LatticeBackend &target,const std::function<bool()> &trial) {
+    if (!trial) throw std::invalid_argument("empty native/target trial");
+    return target.runReversibleTrial([&] {return world.runExternalFixedTrial(trial);});
+}
 NativeFixedPointTransfer applyNativeFixedPointTransfer(JoltWorld &world,LatticeBackend &target,
     std::uint32_t node,MatterBodyId proxy,MatterBodyId striker,Vec3 normal,double gap,
     const PointRigidContactSettings &settings,const PointContactRoundoffBudget &budget) {

@@ -3,6 +3,12 @@
 #include "rigid/JoltWorld.hpp"
 
 namespace banjo::fastlattice {
+// Trusted serial host callback. False/exception restores native state and the
+// serial-double target's histories, queued loads, captures and clocks together.
+// Configuration/upload remain forbidden; no nested paired trial. Caller owns
+// hand/controller state and must not publish tentative receipts from the callback.
+[[nodiscard]] bool runNativeFixedTargetTrial(JoltWorld &world,LatticeBackend &target,
+    const std::function<bool()> &trial);
 struct NativeFixedPointTransfer {
     FixedPointContactKick source;
     ExternalPointTransferLedger target;

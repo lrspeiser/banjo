@@ -17,6 +17,11 @@ namespace banjo::fastlattice {
 template <typename Real>
 class CpuExternalLoads {
 public:
+    [[nodiscard]] std::size_t payloadBytes() const {
+        std::size_t bytes=sizeof(*this)+nodes_.size()*sizeof(Node)+wrenches_.size()*sizeof(ExternalWrench);
+        for (const auto &w:wrenches_) bytes+=w.source.size()+w.nodes.size()*sizeof(std::uint32_t);
+        return bytes;
+    }
     void reset(const Vec3 &origin) { origin_=origin; nodes_.clear(); wrenches_.clear(); remaining_=0; }
 
     void set(const std::vector<Vec3> &forces, std::uint64_t substeps,

@@ -162,13 +162,37 @@ void teethStripUnderTooMuch() {
     world.setJointFriction(large.pin, 5000.0);
     world.driveHinge(small.pin, 20.0, 400.0);
 
+    const auto initial_small=world.snapshot(small.body),initial_large=world.snapshot(large.body);
+    const auto same=[](const RigidSnapshot &a,const RigidSnapshot &b) {
+        require(length(a.center_of_mass_world_m-b.center_of_mass_world_m)==0&&
+            length(a.linear_velocity_m_s-b.linear_velocity_m_s)==0&&length(a.angular_velocity_rad_s-b.angular_velocity_rad_s)==0&&
+            a.orientation_world.w==b.orientation_world.w&&a.orientation_world.x==b.orientation_world.x&&
+            a.orientation_world.y==b.orientation_world.y&&a.orientation_world.z==b.orientation_world.z,"gear trial replay changed motion");
+    };
+    RigidSnapshot expected_small,expected_large;unsigned expected_ticks=0;
+    const auto strip_trial=[&] {
+        expected_ticks=0;
+        while (world.hasJoint(coupling)&&expected_ticks<600) {world.step(kDt);++expected_ticks;}
+        require(!world.hasJoint(coupling)&&!world.strippedGears().empty(),"gear trial never stripped actual coupling");
+        expected_small=world.snapshot(small.body);expected_large=world.snapshot(large.body);return false;
+    };
+    for (bool spring_trial:{false,true}) {
+        require(!(spring_trial?world.runSpringTrial(strip_trial):world.runReversibleTrial(strip_trial)),"gear refusal accepted");
+        require(world.hasJoint(coupling)&&world.strippedGears().empty()&&world.gearTorque(coupling)==0,
+            "gear rollback lost coupling, strength metadata, prior strip receipt or timestep");
+        same(initial_small,world.snapshot(small.body));same(initial_large,world.snapshot(large.body));
+    }
     bool stripped = false;
+    unsigned ticks=0;
     for (int tick = 0; tick < 600 && !stripped; ++tick) {
         world.step(kDt);
+        ++ticks;
         for (const unsigned id : world.strippedGears()) stripped = stripped || id == coupling;
     }
     require(stripped, "the teeth carried 400 N m through a 2 N m gear and held");
     require(!world.hasJoint(coupling), "a gear that stripped is gone");
+    require(ticks==expected_ticks,"gear retry changed strip time");
+    same(expected_small,world.snapshot(small.body));same(expected_large,world.snapshot(large.body));
     // And with the teeth off, the driver runs away: nothing is holding it now.
     const double before = turnRate(world, small.body);
     for (int tick = 0; tick < 120; ++tick) world.step(kDt);

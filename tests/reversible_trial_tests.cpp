@@ -1,6 +1,7 @@
 #include "rigid/JoltWorld.hpp"
 #include "material/MaterialCatalog.hpp"
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 using namespace banjo;
 void check(bool ok,const char *message){if(!ok)throw std::runtime_error(message);}
@@ -8,7 +9,38 @@ void same(const RigidSnapshot &a,const RigidSnapshot &b){
     check(length(a.center_of_mass_world_m-b.center_of_mass_world_m)==0&&length(a.linear_velocity_m_s-b.linear_velocity_m_s)==0&&length(a.angular_velocity_rad_s-b.angular_velocity_rad_s)==0&&
         a.orientation_world.w==b.orientation_world.w&&a.orientation_world.x==b.orientation_world.x&&a.orientation_world.y==b.orientation_world.y&&a.orientation_world.z==b.orientation_world.z,"trial motion replays exactly on this build");
 }
+void ropeConfigurationAndTimestepRestore() {
+    for (auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        JoltWorld world;const auto material=makeReferenceMaterial(preset);
+        world.addBox({1,{.08,.08,.08},material,{{0,1,0},{},{},{}},true});
+        world.addBox({2,{.08,.08,.08},material,{{0,.5,0},{},{},{}},false});
+        const auto rope=world.addLink({1,2,{0,1,0},{0,.5,0},.5,0});
+        for (unsigned k=0;k<40;++k) world.step(1.0/240);
+        const auto initial=world.snapshot(2);const auto configuration=world.jointState(rope);
+        const double tension=world.jointTension(rope);
+        check(tension>0&&configuration.lower==configuration.upper,"rope rollback fixture must start taut and loaded");
+        for (double duration:{0.0,-1.0,1e-300,std::numeric_limits<double>::infinity(),std::numeric_limits<double>::quiet_NaN()}) {
+            bool refused=false;try {world.step(duration);}catch (const std::invalid_argument &) {refused=true;}
+            check(refused&&world.jointTension(rope)==tension,"invalid native duration changed metadata");same(initial,world.snapshot(2));
+        }
+        RigidSnapshot expected;
+        const auto slack=[&] {
+            auto lifted=initial;lifted.center_of_mass_world_m.y+=.1;lifted.linear_velocity_m_s={};
+            world.applyRigidState(2,lifted);world.step(.01);expected=world.snapshot(2);
+            check(world.jointState(rope).lower==0,"tentative step must switch the rope to slack");return false;
+        };
+        for (bool spring_trial:{false,true}) {
+            check(!(spring_trial?world.runSpringTrial(slack):world.runReversibleTrial(slack)),"slack trial refused");
+            same(initial,world.snapshot(2));
+            check(world.jointState(rope).lower==configuration.lower&&world.jointState(rope).upper==configuration.upper&&
+                world.jointTension(rope)==tension,"rope rollback lost taut configuration, cached load or last timestep");
+        }
+        const auto wanted=expected;(void)slack();same(wanted,world.snapshot(2));
+        std::cout<<materialPresetName(preset)<<" rope configuration/timestep restore=exact tension="<<tension<<" N\n";
+    }
+}
 int main(){try{
+    ropeConfigurationAndTimestepRestore();
     for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
         const auto material=makeReferenceMaterial(preset);JoltWorld world;world.setGravity({0,-9.81,0});
         world.addBox({1,{.1,.1,.1},material,{{0,.12,0},{},{0,-1,0},{0,0,.2}},false});
