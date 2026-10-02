@@ -242,6 +242,11 @@ it does not certify the exploratory made-target experiment or a new damage law.
 
 ## Carried-item Lab entry and paid placement recovery
 
+Published implementation: `69f36f20e64c45eed930bfbf3a3d01e626dc9bcc` on GitHub main.
+All 39 final checks above the following boundary pass; the native binaries
+remain the preceding unchanged physics build. This is an entry/recovery
+checkpoint, and the remaining R3 work below stays open.
+
 The preceding published checkpoint is `2853df44a27aa09b93e89e852f5bcf407e283901`
 on GitHub main. Compact World Inventory now offers Lab for each actual carried
 item, using its current Inventory ID even when it differs from the native grip
