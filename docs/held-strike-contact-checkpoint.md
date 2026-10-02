@@ -165,4 +165,10 @@ remains unsupported; manufactured lattice geometry is not exempt from damage.
 
 ## Publication
 
-Pending the final regression and ordinary fast-forward publication to main.
+Implementation `c79b0ebacc022aa775d957d22915ffd142245287` is published on
+GitHub main by an ordinary fast-forward push. The recorded tests were built
+from those exact implementation sources; this following record changes only
+documentation. Preview 8770 remains HTTP 200 with the unchanged R2 native
+runner and DLL hashes recorded in the paid mixed-tool checkpoint. The native
+runner is `banjo_live_world_run.exe`; the server's separate platform CLI was
+not rebuilt in this checkpoint. No held-tool destruction deployment is claimed.
