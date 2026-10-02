@@ -195,7 +195,52 @@ does not qualify the requested made-object damage route. Fresh-world supplies,
 target-impact damage, held internal fracture, genuine repair, peers and server
 restart across that complete journey remain R3.
 
-## Remaining R3 work
+## Contact receipt and made-target investigation
+
+The published preparation/replacement follow-up is
+`2353c1da6eae50f929c47f4df85c219888ccbe9a` on GitHub main.
+The next host change reads the target's full initially attached native
+connection graph, so a downstream fixing failure is retained even when it
+does not directly name the struck body. Receipts distinguish tool failures,
+target failures, both, contact without detected connection failure, and no
+contact. A failed connection is not claimed to have separated pieces when
+another connection may still hold them together.
+
+Native frame reads could repeat an impact in the host's result. Receipts now
+deduplicate by native time, event-array position and content. Separate identical
+contacts within a frame and contacts at later native times remain distinct;
+the existing 128-event admission limit still applies. This changes reporting,
+not collision impulses, native damage, energy or learning awards.
+
+The exploratory paid made-target probe remains unfinished evidence: a paid
+2.46272 kg iron/oak pick hits a paid 3.69016 kg iron/oak item. Its 0.000025 m²
+sampled fixing has the catalog-derived 275 N shear limit. At 5 mm / 1/240 s /
+normal gravity, native peer grip/lifting of the target's head keeps its fixing
+attached before four ordinary strikes against its haft. Peak sampled shear is
+5.30422 N and no connection fails. Holding the haft instead can fail the mount
+during lifting; that does not prove impact damage. The native peer grip is a
+probe, not a completed private player Inventory journey.
+
+Two temporary native comparisons were tried and then removed: 256 global
+velocity iterations yielded 7.7977 N peak sampled target shear; a 100 rad/s
+working wrist yielded 6.00598 N. Neither caused target damage, so neither is
+published as a fix or a solver qualification. The separate build was rebuilt
+after restoring the unchanged native source. Logs are
+`build/resource-flow/made-target-probe.log`, `made-target-256.log`,
+`made-target-working-wrist.log` and `contact-probe-restore-build.log`.
+These are negative workflow probes, not full conservation, material realism
+or converged-strength results. The native held-contact internal fracture
+decline remains; complete coupled contact/damage and the ordinary fresh-world
+journey remain required. No native law, force cap or strength change is retained.
+
+All 35 host/native/browser checks in the affected selection pass: 31 tool
+controls, the three object-strike HTTP/Chrome cases (retaining matched
+glass/oak/iron) and the paid manufactured-source failure/replacement/reopen
+case. Log: `build/resource-flow/contact-receipts-final.log`. Source registration
+remains 297/297. This verification covers reporting and existing workflows;
+it does not certify the exploratory made-target experiment or a new damage law.
+
+## Remaining R3 work after this investigation
 
 Host inventory now separates native connection groups as described above. The
 earlier test's source is an authored weak fixture; the paid-source follow-up

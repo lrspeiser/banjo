@@ -402,6 +402,10 @@ class ObjectControls(unittest.TestCase):
                 self.assertEqual(1 if detach else 2,count,'a detached head stops further tool strokes')
                 self.assertEqual(-.5,said['result']['hand_work_j'],'signed native work is retained')
                 self.assertEqual(1 if detach else 0,len(said['result']['parted_joints']))
+                self.assertEqual('tool-connection-failed' if detach else 'contact-only' if contact else 'no-contact',
+                                 said['result']['outcome'])
+                self.assertEqual([7] if detach else [],said['result']['tool_connections_failed'])
+                self.assertEqual([],said['result']['target_connections_failed'])
                 self.assertFalse(said['result']['wear_supported'])
                 self.assertEqual([],app.reply_listeners)
                 self.assertFalse(app.live.session.tool_busy)
@@ -419,6 +423,39 @@ class ObjectControls(unittest.TestCase):
             tool_use.run(app,{'person':self.person,'target_name':'made item'})
         self.assertEqual([],app.reply_listeners)
         self.assertFalse(app.live.session.tool_busy)
+
+    def test_repeated_frame_reads_preserve_distinct_contacts_and_downstream_target_failure(self):
+        app=self.app();native=app.live.act;count=0
+        joints=[{'id':8,'a':'made item','b':'target mount','attached':True},
+                {'id':9,'a':'target mount','b':'target foot','attached':True},
+                {'id':10,'a':'unrelated','b':'other','attached':True}]
+        event={'struck':'made item','by':'pick arm','energy_j':.25}
+        def act(body):
+            nonlocal count
+            if body['op']=='joints':return {'joints':joints}
+            if body['op']=='step':return {'ok':True}
+            if body['op']=='stroke':
+                count+=1
+                app.live.session.state['hand'].update(stroking=False,stroke_ended='reached')
+                if count==1:
+                    joints[1].update(attached=False,parted_because='native downstream shear failure')
+                    joints[2].update(attached=False,parted_because='unrelated failure')
+                    reply={'t':10.125,'impacts':[event,event],'joints':joints}
+                    for _ in range(3):
+                        for listener in list(app.reply_listeners):listener(app.live.session,reply)
+                    for listener in list(app.reply_listeners):
+                        listener(app.live.session,{**reply,'t':10.25})
+                return {'ok':True,'stroking':True}
+            return native(body)
+        app.live.act=act
+        with mock.patch.object(tool_use,'_native_point',return_value=self.point):
+            answer=tool_use.run(app,{'person':self.person,'target_name':'made item'})
+        self.assertEqual(4,len(answer['result']['impacts']))
+        self.assertEqual([9],answer['result']['target_connections_failed'])
+        self.assertEqual([],answer['result']['tool_connections_failed'])
+        self.assertEqual('target-connection-failed',answer['result']['outcome'])
+        self.assertEqual([joints[1]],answer['result']['parted_joints'])
+        self.assertEqual([],app.reply_listeners)
 
     def test_grounded_readiness_lifts_before_turning_and_keeps_failure_receipt(self):
         for mode in ('reached','parted','blocked'):

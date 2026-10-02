@@ -195,6 +195,8 @@ class NativeObjectStrikes(unittest.TestCase):
             self.assertEqual('banjo.object-strike.v1',result['schema'])
             self.assertTrue(result['impacts'],answer)
             self.assertTrue(result['parted_joints'],answer)
+            self.assertTrue(result['target_connections_failed'],answer)
+            self.assertEqual('target-connection-failed',result['outcome'])
             self.assertFalse(result['internal_fracture_supported'])
             self.assertFalse(result['wear_supported'])
             self.assertTrue(result['working_point_connected'])

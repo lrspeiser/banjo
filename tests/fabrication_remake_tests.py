@@ -299,6 +299,8 @@ class NativeRemake(unittest.TestCase):
         source=original['root_body'];inventory('take_up',source,'paid-source-pickup')
         failed=use();self.assertIn('refused',failed,failed)
         self.assertEqual('lift',failed['result']['phase']);self.assertEqual([],failed['result']['impacts'])
+        self.assertEqual('tool-connection-failed',failed['result']['outcome'])
+        self.assertEqual([],failed['result']['target_connections_failed'])
         self.assertEqual([],failed['did']);self.assertFalse(failed['repeat'])
         failure=failed['result']['parted_joints'][0]
         self.assertGreater(failure['parted_load_n'],275);self.assertEqual(275,failure['parted_capacity_n'])

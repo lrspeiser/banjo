@@ -20,6 +20,7 @@ wishes, never penetration, resistance, resource yield or learning evidence.
 from __future__ import annotations
 
 import math
+import json
 import sys
 import time
 import threading
@@ -361,14 +362,32 @@ def _object_contact(app,said,use,tool,eyes,note):
     session=app.live.session;target=said['target'];name=target['name']
     source=set(said.get('source_parts') or [tool])
     joints=app.live.act({'session':session.id,'op':'joints'}).get('joints') or []
+    # A hit can fail a downstream connection in the same native assembly.
+    # Follow the admitted graph before the stroke, not just the hit body.
+    neighbors={}
+    for joint in joints:
+        a,b=joint.get('a'),joint.get('b')
+        if joint.get('attached') and isinstance(a,str) and isinstance(b,str):
+            neighbors.setdefault(a,set()).add(b);neighbors.setdefault(b,set()).add(a)
+    target_parts=set();pending=[name]
+    while pending:
+        part=pending.pop()
+        if part in target_parts:continue
+        target_parts.add(part);pending.extend(neighbors.get(part,set())-target_parts)
     relevant={j['id'] for j in joints if j.get('attached') and
-              (j.get('a') in source or j.get('b') in source or name in (j.get('a'),j.get('b')))}
-    impacts=[];parted={};overflow=False
+              (j.get('a') in source or j.get('b') in source or
+               j.get('a') in target_parts or j.get('b') in target_parts)}
+    impacts=[];parted={};overflow=False;seen_impacts=set()
     def listen(_session,reply):
         nonlocal overflow
-        for event in (reply or {}).get('impacts') or []:
+        for index,event in enumerate((reply or {}).get('impacts') or []):
             if event.get('struck')==name and event.get('by') in source:
-                if len(impacts)<128: impacts.append({**event,'at_s':reply.get('t')})
+                # Reads can repeat the same native frame. The array index
+                # preserves separate identical contacts within that frame.
+                key=(reply.get('t'),index,json.dumps(event,sort_keys=True))
+                if reply.get('t') is not None and key in seen_impacts:continue
+                if len(impacts)<128:
+                    impacts.append({**event,'at_s':reply.get('t')});seen_impacts.add(key)
                 else: overflow=True
         for joint in (reply or {}).get('joints') or []:
             if joint.get('id') in relevant and joint.get('attached') is False and joint.get('parted_because'):
@@ -385,14 +404,23 @@ def _object_contact(app,said,use,tool,eyes,note):
         hand=live_session.current_hand(session)
         connected=hand.get('holding')==tool and _native_point(app,tool) is not None
         complete=not overflow and not hand.get('stroking')
+        tool_failed=[j['id'] for j in parted.values() if j.get('a') in source or j.get('b') in source]
+        target_failed=[j['id'] for j in parted.values() if j.get('a') in target_parts or j.get('b') in target_parts]
+        outcome=('tool-and-target-connections-failed' if tool_failed and target_failed else
+                 'tool-connection-failed' if tool_failed else
+                 'target-connection-failed' if target_failed else 'contact-only' if impacts else 'no-contact')
         result={'schema':'banjo.object-strike.v1','target':name,'tool':tool,
                 'from_s':began,'to_s':float(session.state.get('t') or began),
                 'hand_work_j':float(hand.get('work_j') or 0)-work_before,
                 'impacts':impacts,'parted_joints':list(parted.values()),'phase':phase,
+                'outcome':outcome,'tool_connections_failed':tool_failed,'target_connections_failed':target_failed,
                 'complete':complete,'working_point_connected':connected,
                 'internal_fracture_supported':False,'wear_supported':False}
-        said_result=(f'{len(parted)} connection'+('s' if len(parted)!=1 else '')+' separated.') if parted else \
-            (f'Struck {name}.' if impacts else 'No contact with the selected item.')
+        said_result={'tool-and-target-connections-failed':'Tool and target connections failed.',
+                     'tool-connection-failed':'Tool connection failed. Inspect it in Lab.',
+                     'target-connection-failed':'Target connection failed.',
+                     'contact-only':f'Hit {name}. No connection failure detected.',
+                     'no-contact':'No contact with the selected item.'}[outcome]
         answer={'action':'Strike','did':['Strike'] if impacts else [],'done':done,'said':said_result,
                 'detail':'Internal fracture from held strikes is not available yet.',
                 'result':result,'carried':_carried(app),
