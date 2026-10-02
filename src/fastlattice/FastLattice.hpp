@@ -126,12 +126,28 @@ struct ExternalLoadLedger {
     std::uint64_t steps{};
     double elapsed_s{};
     Vec3 requested_impulse_n_s{}, impulse_n_s{};
+    Vec3 requested_angular_impulse_kg_m2_s{};
     Vec3 angular_impulse_kg_m2_s{};
     double work_j{}; // exact kinetic-energy change across the external kick
 };
 
+// A wrench applied to an explicitly selected nodal load region. Point is in
+// world metres, force in newtons, free couple in newton metres. This is a
+// mass-weighted distributed load, not a fixing or a local hand traction law.
+// Node indices are in the current schedule order, not parent cell numbering.
+struct ExternalWrench {
+    std::string source;
+    std::vector<std::uint32_t> nodes;
+    Vec3 point_world_m{}, force_n{}, torque_n_m{};
+};
+struct ExternalWrenchLedger {
+    std::string source;
+    ExternalLoadLedger load{};
+};
+
 struct RunStatus {
     ExternalLoadLedger external_load{};
+    std::vector<ExternalWrenchLedger> external_sources;
     std::uint64_t total_steps{};
     std::uint64_t first_failure_step{std::numeric_limits<std::uint64_t>::max()};
     std::uint64_t last_failure_step{std::numeric_limits<std::uint64_t>::max()};
@@ -207,6 +223,17 @@ public:
     virtual void setExternalForces(const std::vector<Vec3> &forces_world_n, std::uint64_t substeps) {
         if (!forces_world_n.empty() || substeps != 0)
             throw std::invalid_argument("this lattice backend does not implement external forces");
+    }
+    // Replaces the force field. Disjoint named regions allow separate source
+    // reactions/work to be retained. Forces are recomputed from current node
+    // positions every kick to retain the requested resultant and moment.
+    // Unsampled torque, duplicate sources/nodes and overlapping regions refuse.
+    // Source labels identify accounts; they do not authorize player ownership.
+    // Point and wrench remain fixed in world coordinates for the finite span;
+    // a live hand controller must update them on its own declared clock.
+    virtual void setExternalWrenches(const std::vector<ExternalWrench> &wrenches, std::uint64_t substeps) {
+        if (!wrenches.empty() || substeps != 0)
+            throw std::invalid_argument("this lattice backend does not implement external wrenches");
     }
     // Continue from the current state; the status accumulates across calls.
     virtual RunStatus run(const RunControl &control) = 0;

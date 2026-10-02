@@ -37,7 +37,7 @@ the browser, LLM tools or C ABI. Running preview 8770 retains the R2 executables
 
 ## Matched experiments
 
-Windows x64, VS 2022 / MSVC 17.14.51, Release CPU, `BANJO_BUILD_LAB=OFF`,
+Windows x64, VS 2022 / MSVC 19.44.35228.0 (MSBuild 17.14.51), Release CPU, `BANJO_BUILD_LAB=OFF`,
 separate `build/agent-paid-machine`. Source baseline `e626ef5` plus the
 implementation recorded below. All three materials use a 120 mm cube,
 40 mm cells, horizon 1, 27 nodes, four constraint iterations, `dt=1e-7 s`

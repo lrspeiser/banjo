@@ -46,6 +46,9 @@ public:
     void setExternalForces(const std::vector<Vec3> &forces, std::uint64_t substeps) override {
         external_.set(forces,substeps,L_);
     }
+    void setExternalWrenches(const std::vector<ExternalWrench> &wrenches, std::uint64_t substeps) override {
+        external_.setWrenches(wrenches,substeps,L_);
+    }
 
     RunStatus run(const RunControl &control) override {
         energy_flat_fraction_ = control.energy_flat_fraction;
@@ -137,7 +140,7 @@ private:
             dirty_start_ = false;
         }
         // Kick, classify, ordered candidate lists per block.
-        external_.kick(L_,S_.dt,status_.external_load);
+        external_.kick(L_,S_.dt,status_.external_load,&status_.external_sources);
         SphereState<Real> kicked = sphere_;
         kicked.velocity = kicked.velocity + S_.dt * S_.gravity;
         for (std::uint32_t block = 0; block < L_.block_count; ++block) {

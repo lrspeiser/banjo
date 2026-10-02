@@ -1,5 +1,7 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Wrist and source accounting, October 2:** [Distributed CPU wrench input](held-strike-wrench-checkpoint.md) preserves force/moment and separate named work/reaction accounts without assigning material damage. It does not replace native finite-cell inertia, fixing load paths or local hand traction. Those and consistent native hand/fracture time remain required before ordinary held strikes and damaged-tool reuse can close R3; all remaining player/platform goals stay active.
+
 **Held-impact prerequisite, October 2:** [Finite CPU load boundary](held-strike-load-checkpoint.md) adds actual force/impulse/work input without replacing material laws or assigning damage. It does not yet couple a live hand/assembly into fracture or enable tool use on built objects. Source reactions, consistent elapsed time and the ordinary player journey remain R3 requirements; the full platform conservation and qualification gates remain.
 
 **Paid mixed tools, October 2:** [Verified Lab/player checkpoint](paid-mixed-tool-checkpoint.md) completes R2's iron-head/oak-handle edit → Save → reviewed per-material funded Make → native pickup/dig → private bag/restart/re-equip. Native material laws and force limits are unchanged. Supported planar fixings retain explicit limits; calibrated joint failure and mixed articulated lattice groups are unqualified. R1 and R3–R6 remain; ordinary held-tool object strikes are still a missing damage/use route.
