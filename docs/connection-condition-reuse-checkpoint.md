@@ -52,7 +52,7 @@ Evidence: `build/resource-flow/separated-inventory-final.log`,
 `separated-controls-final.log` (retains the initial rapid-input failure),
 `separated-quick-final.log` (resolved), `separated-retry-final.log`, updated
 `connection-review-http.json` and `broken-replacement-native.json`.
-This follow-up is based on `526e23b` on main. Preview servers are unchanged.
+Published separated-inventory follow-up: `7b85a3429b37590e12b54f0c7ce0230309aee755` on GitHub main, based on `526e23b`. Preview servers are unchanged.
 
 ## Implemented boundary
 
