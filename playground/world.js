@@ -4441,7 +4441,14 @@ function showInventory() {
       if (handBusy()) return;
       if (inHand && (world.held?.name===thing.name || thing.parts?.includes(world.held?.name))) toTheBag();
       else inventoryChange(inHand?"stow":"equip",thing.id || thing.name);});
-    row.append(action); products.append(row);
+    const actions=document.createElement("div");actions.className="mini-product-actions";actions.append(action);
+    if (!watchedId && thing.id) {
+      const lab=document.createElement("a");lab.className="mini-product-lab";lab.textContent="Lab";
+      const url=new URL(screenUrl("lab"),location.origin);url.searchParams.set("carry",thing.id);
+      lab.href=url.pathname+url.search;lab.title=`Inspect or review a replacement for ${bagName(thing)}`;
+      lab.addEventListener("click",e=>{e.stopPropagation();tools.stop();});actions.append(lab);
+    }
+    row.append(actions);products.append(row);
   };
   for (const [side,thing] of Object.entries(inv?.hands || {})) if (thing) add(thing,`${titled(side)} hand`,true);
   slots.forEach((thing,i)=>{if(thing)add(thing,`Bag · ${slotKeySaid(i)}`,false);});

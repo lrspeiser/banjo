@@ -1485,6 +1485,9 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(body, dict) or set(body) - {"token", "name"}:
                 raise ValueError("Expected a player token and optional name")
             with world_access.gate(self.app).enter(), world_access.state_lock(self.app):
+                returning = player_world.resume(self.app, body.get("token"), body.get("name"))
+                if returning is not None:
+                    return self.send(returning)
                 if getattr(self.app,"live_holder",None)=="world" and self.app.live.session is not None:
                     if not keep_world(self.app,"before joining a guest"):
                         raise ValueError("The current world could not be saved; retry joining after saving recovers")

@@ -753,6 +753,8 @@ body.moving-a-thing #panel .workshop-entry { border-style: dashed; }
 .mini-product strong, .mini-product small { display:block; }
 .mini-product strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mini-product button { padding:3px 7px; font-size:11px; }
+.mini-product-actions { display:flex; gap:6px; align-items:center; }
+.mini-product-lab { font-size:11px; }
 #mini-materials { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; margin-top:8px; }
 .mini-resource { display:grid; grid-template-columns:30px minmax(0,1fr); align-items:center; padding:5px; border:1px solid var(--edge); border-radius:6px; user-select:none; }
 .mini-resource canvas { width:28px; height:28px; grid-row:span 3; }

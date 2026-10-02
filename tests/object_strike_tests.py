@@ -229,8 +229,9 @@ class NativeObjectStrikes(unittest.TestCase):
                 if page.evaluate('Boolean('+expression+')'):return
                 time.sleep(.025)
             self.fail('did not reach '+expression+'; '+str(page.evaluate(
-                '({use:banjoRoom.use(),tools:banjoRoom.world.tools,aim:banjoRoom.world.aim,'
-                'camera:banjoRoom.camera.position.toArray(),target:banjoRoom.world.bodies.get("target").mesh.position.toArray()})')))
+                '({href:location.href,use:window.banjoRoom?.use(),inventory:window.banjoRoom?.world.inventory,'
+                'products:document.querySelector("#mini-products")?.textContent,lab:document.querySelector("#ws-carried-condition")?.outerHTML,'
+                'text:document.body.innerText.slice(0,4500),errors:[...document.querySelectorAll(".ws-bad")].map(e=>e.textContent)})')))
         page.send('Page.navigate',{'url':self.base+f'/world?world={world}'})
         wait('window.banjoRoom?.ready() && banjoRoom.use().mode==="tool-ready"')
         page.evaluate('banjoRoom.standAt(-1.25,1.62,0);banjoRoom.lookAt(.24,1.5,0)')
@@ -259,6 +260,48 @@ class NativeObjectStrikes(unittest.TestCase):
         self.assertEqual('field pick',page.evaluate('banjoRoom.held().name'))
         (ROOT/'build/resource-flow/object-strike-browser.json').write_text(
             json.dumps(answer,indent=2)+'\n',encoding='utf-8')
+        # Returning membership is read-only, even while the world's physical
+        # work prevents a complete checkpoint. Navigation must not save first.
+        with mock.patch.object(ai.server,'keep_world',side_effect=AssertionError('unnecessary rejoin save')):
+            returning=self.post('/api/world/player/join',{'token':owner['token']},world)
+            self.assertEqual(owner['id'],returning['id'])
+            unchanged=self.post('/api/world/player/join',{'token':owner['token'],'name':owner['name']},world)
+            self.assertEqual(returning,unchanged)
+        # Isolated browser scheduler contract, not a simulated damage result:
+        # taps queued behind a delayed response must stop when its native
+        # working-point reading says the head disconnected.
+        page.evaluate('''void (async()=>{const {makeTools}=await import('/tools.js');const noop=()=>{};
+          window.burstWorld={held:{pick:{}},use:{mode:'tool-ready',target:{cadence_hz:4},stop:false}};
+          window.burstCalls=0;window.burstTools=makeTools({world:burstWorld,
+            camera:banjoRoom.camera,act:async()=>({hit:false}),
+            api:()=>{burstCalls++;return new Promise(resolve=>window.finishBurst=resolve);},
+            say:noop,remember:noop,showUse:noop,carryGround:noop,whereIAm:()=>({}),lastAction:noop});
+          burstTools.press();})()''')
+        wait('window.burstCalls===1 && burstWorld.use.mode==="tool-working"')
+        page.evaluate('burstTools.press();burstTools.press();burstTools.press();burstTools.release()')
+        self.assertEqual(3,page.evaluate('burstWorld.use.queued'))
+        page.evaluate('finishBurst({gesture:"object-contact",repeat:false,said:"Tool connection failed.",result:{working_point_connected:false}})')
+        wait('burstWorld.use.mode==="tool-ready" && burstWorld.use.stop && !burstWorld.use.queued && !burstWorld.use.timer')
+        time.sleep(.35)
+        self.assertEqual(1,page.evaluate('burstCalls'))
+        self.assertFalse(page.evaluate('burstWorld.use.down'))
+        # The compact Inventory opens the exact carried source for a paid
+        # replacement review, rather than landing on an unrelated Lab design.
+        source_id=answer['inventory']['record']['hands'][answer['inventory']['hand_in_the_world']]
+        wait('document.querySelector("#mini-products .mini-product-lab")')
+        for kind in ('keyDown','keyUp'):
+            page.send('Input.dispatchKeyEvent',{'type':kind,'code':'Escape','key':'Escape','windowsVirtualKeyCode':27})
+        link=page.evaluate('''(()=>{const a=document.querySelector('#mini-products .mini-product-lab');
+          a.scrollIntoView({block:'center'});const r=a.getBoundingClientRect();return {href:a.href,x:r.x+r.width/2,y:r.y+r.height/2};})()''')
+        self.assertIn('carry='+source_id,link['href']);self.assertIn('tab=lab',link['href'])
+        for kind in ('mousePressed','mouseReleased'):
+            page.send('Input.dispatchMouseEvent',{'type':kind,'x':link['x'],'y':link['y'],
+                'button':'left','clickCount':1})
+        wait('document.querySelector("#ws-carried-condition") && !document.querySelector("#ws-carried-condition").hidden')
+        self.assertEqual(source_id,page.evaluate('document.querySelector("#ws-carried-condition").dataset.item'))
+        wait('document.querySelector("#ws-remake-review")')
+        self.assertEqual('Review remake',page.evaluate('document.querySelector("#ws-remake-review").textContent'))
+        self.assertFalse([e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
         chrome.close()
 
 

@@ -240,6 +240,58 @@ case. Log: `build/resource-flow/contact-receipts-final.log`. Source registration
 remains 297/297. This verification covers reporting and existing workflows;
 it does not certify the exploratory made-target experiment or a new damage law.
 
+## Carried-item Lab entry and paid placement recovery
+
+The preceding published checkpoint is `2853df44a27aa09b93e89e852f5bcf407e283901`
+on GitHub main. Compact World Inventory now offers Lab for each actual carried
+item, using its current Inventory ID even when it differs from the native grip
+body. Actual Chrome mouse navigation selects that guest's item and reaches the
+remake review. Watching another guest does not offer these links. Following the
+link stops pending tool input.
+
+The browser test exposed an intermittent navigation failure: rejoining an
+existing character checkpointed the world before recognizing the token. A
+stroke/fracture in progress deferred that save and left Lab empty. Unchanged
+returning membership now authenticates without native snapshot or disk write.
+New guests and actual name changes still require persistence; unknown tokens
+cannot create replacement identities or checkpoint the world. Unit checks retain
+private inventory and exercise failed-save rollback for creation and renaming.
+The HTTP check explicitly forbids `keep_world` on unchanged token/name requests.
+
+Shared tool input also clears queued taps and held repeat when a native receipt
+reports the working point disconnected. It retains the remaining grip part.
+An isolated browser scheduler harness queues three taps behind a delayed
+disconnected-point receipt and checks that no second use starts. This checks
+the control contract; it is not physical damage evidence.
+
+The real paid manufactured-source test now injects a placement-save failure
+after the native replacement was staged. Original native state, Inventory and
+funded ledger remain exact; the workpiece stays ready. The same placement can
+be retried; replay changes neither native state nor the ledger. Existing source
+failure remains a lifting failure. Replacement pickup/contact and original
+damage across whole reopening remain verified. These are replacement and
+recovery boundaries, not made-target impact damage or genuine repair.
+
+Windows / unchanged MSVC Release native build at the preceding revision:
+The final 39 affected host/native/Chrome checks pass in 39.812 s, including
+three identity/persistence checks. The extended Chrome check
+also covers the delayed-response scheduler and carried Lab navigation. Logs:
+`build/resource-flow/strike-reuse-followup-tests.log`,
+`strike-lab-navigation.log`, `strike-lab-identity.log`, `paid-placement-recovery.log`.
+The final run is `strike-reuse-final-tests.log`. Registration: 297/297.
+No material law, strength, force cap, timestep or physics tolerance changes;
+no new conservation or full-world physics qualification. Previews are unchanged.
+
+Two additional authored-geometry probes remain negative evidence. A shorter
+source grip and a 1.01436 kg paid target supported at its shaft retain the
+target's catalog-derived 275 N mount; peak sampled shear is 34.59996 N, without
+failure. A 3.69016 kg target gripped near its mount fails at 407.26793 N while
+lifting, before the strikes. Both use 5 mm cells, 1/240 s, normal gravity and
+direct native peer grips. Logs: `made-contact-journey-probe.log` and
+`made-contact-held-mount-probe.log` under `build/resource-flow/`. No probe
+geometry/controller change is published; private peer Inventory and fresh-world
+impact damage remain unqualified.
+
 ## Remaining R3 work after this investigation
 
 Host inventory now separates native connection groups as described above. The

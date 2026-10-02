@@ -268,8 +268,24 @@ class NativeRemake(unittest.TestCase):
             job=self.room.fabrication_record['jobs'][ident]
             api.wait(self.app,{**self.context(),'seconds':math.ceil(job['minimum_duration_s'])})
             preview=api.preview(self.app,{**self.context(),'job_id':ident,'position_m':at})
-            made=api.commit(self.app,{**self.context(),'job_id':ident,'preview_id':preview['preview_id'],
-                                     'request_id':ident+'-place'})
+            placement={**self.context(),'job_id':ident,'preview_id':preview['preview_id'],
+                       'request_id':ident+'-place'}
+            if source:
+                before=install._snapshot(self.live);ledger=deepcopy(self.room.fabrication_record)
+                inventory_before=inventory_room.inventory_of(self.app).record()
+                with mock.patch.object(self.app.store,'save',side_effect=OSError('paid placement save failure')):
+                    with self.assertRaisesRegex(OSError,'paid placement save failure'):
+                        api.commit(self.app,placement)
+                self.assertEqual(before,install._snapshot(self.live))
+                self.assertEqual(ledger,self.room.fabrication_record)
+                self.assertEqual(inventory_before,inventory_room.inventory_of(self.app).record())
+                self.assertEqual('ready',self.room.fabrication_record['jobs'][ident]['status'])
+                placement['session']=self.live.session.id
+            made=api.commit(self.app,placement)
+            after=install._snapshot(self.live);ledger=deepcopy(self.room.fabrication_record)
+            self.assertTrue(api.commit(self.app,{**placement,'session':self.live.session.id})['replayed'])
+            self.assertEqual(after,install._snapshot(self.live))
+            self.assertEqual(ledger,self.room.fabrication_record)
             return made,request
         design=mixed.pick();design['parameters'].update(length_m=.4,arm_m=.16,section_m=.02)
         design['parameters']['ground_tool']['point'].update(tip_local_m=[0,0,-.08],width_m=.08,thickness_m=.08)

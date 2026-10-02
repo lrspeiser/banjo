@@ -260,6 +260,12 @@ export function makeTools(ctx) {
       remember(`${answer.action}: ${answer.said}`);
     }
     if (answer && answer.carried) carryGround(answer.carried);
+    if (answer?.result?.working_point_connected === false) {
+      // A separated head ends this burst even if clicks were queued while the
+      // native stroke ran. The retained grip part can still be inspected in Lab.
+      use.stop = true; use.down = false; use.queued = 0;
+      clearTimeout(use.timer); use.timer = null;
+    }
     if (["contact", "object-contact"].includes(answer?.gesture) && !answer.refused) use.positioned = true;
     use.mode = "tool-ready";
     askedAt = 0;                               // the ring asked for again at once

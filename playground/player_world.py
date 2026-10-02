@@ -35,12 +35,42 @@ def records(app: Any) -> dict[str, dict[str, Any]]:
     return players
 
 
+def _public_profile(player: dict[str, Any]) -> dict[str, Any]:
+    return {"id": player["id"], "token": player["token"],
+            "name": player["name"], "color": player["color"],
+            "pose": player.get("pose")}
+
+
+def resume(app: Any, token: Any = None, name: Any = None) -> dict[str, Any] | None:
+    """Authenticate unchanged membership without writing a live-world checkpoint.
+
+    None means a new guest or an actual name change still needs persistence.
+    A bad token must never create a replacement identity or save the world.
+    """
+    if not getattr(app, "world_id", None):
+        raise ValueError("Player profiles belong to a named world")
+    if name is not None and (not isinstance(name, str) or not 1 <= len(name.strip()) <= 32):
+        raise ValueError("Avatar name must be 1 to 32 characters")
+    if not token:
+        return None
+    with lock_of(app):
+        existing = next((p for p in records(app).values() if isinstance(token, str)
+                         and TOKEN.fullmatch(token)
+                         and secrets.compare_digest(p.get("token", ""), token)), None)
+        if existing is None:
+            raise ValueError("This player token is not in this world; the saved inventory was not replaced")
+        return _public_profile(existing) if name is None or name.strip() == existing["name"] else None
+
+
 def join(app: Any, token: Any = None, name: Any = None) -> dict[str, Any]:
     if not getattr(app, "world_id", None):
         raise ValueError("Player profiles belong to a named world")
     if name is not None and (not isinstance(name, str) or not 1 <= len(name.strip()) <= 32):
         raise ValueError("Avatar name must be 1 to 32 characters")
     with lock_of(app):
+        returning = resume(app, token, name)
+        if returning is not None:
+            return returning
         players = records(app)
         existing = next((p for p in players.values() if TOKEN.fullmatch(str(token or ""))
                          and secrets.compare_digest(p.get("token", ""), token)), None)
@@ -83,9 +113,7 @@ def join(app: Any, token: Any = None, name: Any = None) -> dict[str, Any]:
             else:
                 existing["name"] = old_name
             raise ValueError("The player could not be saved") from error
-        return {"id": existing["id"], "token": existing["token"],
-                "name": existing["name"], "color": existing["color"],
-                "pose": existing.get("pose")}
+        return _public_profile(existing)
 
 
 def require(app: Any, token: Any) -> str:
