@@ -367,6 +367,20 @@ void oakFloatsAtSeventyPercentAndIronSinks() {
     require(full < iron_weight, "which is less than iron weighs: it sinks");
     std::cout << "    iron (7870 kg/m^3): lift " << full << " N against a weight of " << iron_weight
               << " N\n";
+    // Same geometry, depth, fluid and resting velocity: a declared glass
+    // density changes weight, not the displaced-water pressure law.
+    const double glass = 2400.0;
+    const double glass_full = lift(glass, size.y + 0.1);
+    const double glass_weight = glass * size.x * size.y * size.z * 9.81;
+    near(glass_full, full, 1.0e-6 * full,
+         "equal immersed glass and iron volumes receive equal hydrostatic lift");
+    near(lift(oak, size.y + 0.1), full, 1.0e-6 * full,
+         "equal fully immersed oak volume receives the same hydrostatic lift");
+    require(glass_full < glass_weight, "fully immersed glass also sinks");
+    std::cout << "    glass (2400 kg/m^3): lift " << glass_full << " N against a weight of "
+              << glass_weight << " N\n";
+    std::cout << "    full-volume pressure residual: "
+              << full - 1000.0 * 9.81 * size.x * size.y * size.z << " N\n";
 }
 
 // 10. A ball displaces exactly its own volume, not the volume of whatever

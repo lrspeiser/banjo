@@ -102,7 +102,7 @@ export function controls() {
     [k("workbench"), "the workbench's recorded runs"],
     ["R", "release a latch"],
     ["L", "mark that it lagged"],
-    ["Esc", "let the mouse go"],
+    ["Esc", "switch between exploring and cursor for panels; click the world to resume"],
   ];
 }
 

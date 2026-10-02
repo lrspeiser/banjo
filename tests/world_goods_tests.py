@@ -566,7 +566,7 @@ class GoodsJourney(unittest.TestCase):
         self.assertIn('Ground materials',page.evaluate('document.querySelector("#world-load-meter").textContent'))
         self.assertEqual(0,page.evaluate('banjoRoom.scene.getObjectByName("resource-packets").children.filter(c=>c.userData.resourceDeposit).length'))
         wait('document.querySelector("#material-preview details canvas")')
-        self.assertIn('Mining rover',page.evaluate('document.querySelector("#material-preview").textContent'))
+        self.assertIn('Nearby materials',page.evaluate('document.querySelector("#material-preview").textContent'))
         def mode(value):
             page.evaluate('document.querySelector("[data-game-menu]").click()')
             page.evaluate(f'(()=>{{const e=document.querySelector("#game-menu-movement select");e.value={json.dumps(value)};e.dispatchEvent(new Event("change"))}})()')
@@ -636,6 +636,9 @@ class GoodsJourney(unittest.TestCase):
                 key('KeyS',True)
                 try:wait('banjoRoom.world.inWater?.under>.3')
                 finally:key('KeyS',False)
+                entry=page.evaluate('({pose:banjoRoom.camera.position.toArray(),water:banjoRoom.world.inWater})')
+                self.assertLess(entry['pose'][1]-1.6,entry['water']['level']-.25)
+                wait('document.querySelector("[data-movement]").textContent.includes("immersed")')
                 key('KeyW',True);key('Space',True)
                 try:wait('!banjoRoom.world.inWater')
                 finally:key('KeyW',False);key('Space',False)
@@ -649,7 +652,7 @@ class GoodsJourney(unittest.TestCase):
                 self.assertAlmostEqual(floor+1.6,pose[1],delta=.04)
                 self.assertGreater(pose[1]-(y+1.6),.35)
                 reports.append({'goods_seed':seed,'terrain_seed':app.room.spec['terrain']['generate']['seed'],
-                    'shore':spots['shore'],'hill_rise_m':pose[1]-(y+1.6)})
+                    'shore':spots['shore'],'hill_rise_m':pose[1]-(y+1.6),'actual_water_entry':entry})
         # A declared deep pool checks the camera approximation separately from
         # the native shallow river. No native water volume/force claim is made.
         page.evaluate('banjoRoom.standAt(0,banjoRoom.groundAt(0,0)+1.6,0);window.poolLevel=banjoRoom.groundAt(0,0)+2.3;banjoRoom.waterForThePerson((x,z)=>({level:poolLevel,depth:poolLevel-banjoRoom.groundAt(x,z),u:0,w:0}))')
@@ -667,11 +670,18 @@ class GoodsJourney(unittest.TestCase):
         key('Space',True)
         try:wait('banjoRoom.camera.position.y>poolLevel')
         finally:key('Space',False)
+        page.evaluate('banjoRoom.waterForThePerson((x,z)=>({level:poolLevel,depth:poolLevel-banjoRoom.groundAt(x,z),u:.4,w:0}))')
+        wait('banjoRoom.world.inWater?.carried>.5')
+        start=page.evaluate('banjoRoom.camera.position.toArray()');time.sleep(.8)
+        finish=page.evaluate('banjoRoom.camera.position.toArray()')
+        self.assertGreater(finish[0]-start[0],.15,'declared deep current carries the controller without keys')
+        wait('document.querySelector("[data-water-flow]").textContent.includes("Flow E")')
         page.evaluate('banjoRoom.waterForThePerson(null)')
         self.assertEqual([],[e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
         out=ROOT/'build/resource-flow';out.mkdir(parents=True,exist_ok=True)
         (out/'movement-acceptance.json').write_text(json.dumps({'generated_crossings':reports,
             'declared_deep_pool_m':2.3,'swim_rise_dive_recovery':True,
+            'declared_current_m_s':.4,'declared_current_drift_m':finish[0]-start[0],
             'scope':'kinematic player controller; native avatar and rover unchanged'},indent=2),encoding='utf-8')
 
     def test_two_collectors_race_for_one_actual_output_without_duplicate_credit(self):

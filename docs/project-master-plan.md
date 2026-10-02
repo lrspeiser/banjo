@@ -1,5 +1,7 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Player water boundary, October 1:** [Control and water checkpoint](navigation-water-checkpoint.md) distinguishes native object pressure/buoyancy/current from the player camera approximation. Faster navigation and Esc Cursor are verified; physical avatars and fluid/cargo reactions stay in R5.
+
 **Tool autosave boundary, October 1:** [Pending checkpoint retries](tool-autosave-checkpoint.md) distinguish normal in-flight tool work from persistence errors. Progress is durable only after the safe paired checkpoint; real failures stay visible. No platform or physics scope change.
 
 **Current player goals, October 1:** [Six remaining goals](player-experience-checklist.md#remaining-work) cover the complete supply/build loop, mixed-material tools, damaged-tool repair/use, rover reliability, physical avatar/cargo handling and broader human/AI progression. Existing verified UI and opening journeys are recorded below; the full platform scope remains in this plan.

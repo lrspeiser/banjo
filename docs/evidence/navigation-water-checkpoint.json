@@ -1,0 +1,148 @@
+{
+  "schema": "banjo.navigation-water-checkpoint.v1",
+  "source_base_revision": "04f5789bddda27b96aba2cdb0b64d5e764becd26",
+  "source_dirty_during_verification": true,
+  "environment": "Windows / Python 3.13 / MSVC 19.44 Release CPU ABI 25 / actual Chrome",
+  "source_sha256": {
+    ".github/workflows/ci.yml": "a5356d8bb7c18c009abbbee12a5a720348d8bdbe8d9c6ed88a9aca3b67642b27",
+    "playground/world.js": "307ff8b603a4b2030c812775c40e52a287d29e5d7f5a3ca1fb2d4a534ddb07dd",
+    "playground/world.css": "93ed3c2b8d51315e232edd8d4be1d36660bd66dc1948ee5935ce68d59356971b",
+    "playground/interaction.js": "5be763ffc4c8f15790a424a8082e9a71233f02a047ab06a91120390cc1b33f5b",
+    "tests/world_navigation_tests.py": "b696172e1b3b4e0285e66a90fcc4fe73b0f6816bdc3dab7c0232086eb034e513",
+    "tests/world_goods_tests.py": "c1dc5a177f206c9fbbc28b0134f8a753eccbd6aebbc5087055ee245e382127bf",
+    "tests/quick_tool_tests.py": "8714a112571d899c94cd7fe648e7bee9ac636bfb7d21500462646d18fda05990",
+    "tests/world_page_journey_tests.py": "663221692fccbd4948e07a9d9ecf7e30b501cb035fdf414b831892a66d41430d",
+    "tests/water_tests.cpp": "161445af74fb3ad4a33122b6cf62529a91cc0d11ea6deb5ec718629be35c4523"
+  },
+  "binaries_sha256": {
+    "banjo_live_world_run.exe": "6ce0e6d010d9ef23fd354c7f4d98a4eba93638c065f8f6979bdeefbaf13b9107",
+    "banjo.dll": "198ab769e09fd915262402da85b54ede02973461bc6811a5b38e58ff2aa30ecb",
+    "banjo_water_tests.exe": "39ab0a5835eb8518c45152fdc281bef4a109b2177496d0f203882f491fe67149",
+    "banjo_valley_live_tests.exe": "75aa7a91b726d10e0ecded9520ca3c30d5f1b132a9ae9d5949c6f42905aeb8d0"
+  },
+  "browser_navigation": {
+    "walk_m_s": 4.186470318144837,
+    "run_m_s": 6.781218352501355,
+    "edge_turn_rad_in_055_s": 0.9350159701178549,
+    "cursor_stops_look_and_keys": true,
+    "resume_click_preserves_hand": true,
+    "escape_preserves_selection": true,
+    "legacy_movement_preference_uses_gravity": true,
+    "native_terrain_seed": 4
+  },
+  "browser_water": {
+    "generated_crossings": [
+      {
+        "goods_seed": 851269741,
+        "terrain_seed": 4,
+        "shore": {
+          "wet": [
+            3.125,
+            -8
+          ],
+          "dry": [
+            3.125,
+            -5
+          ]
+        },
+        "hill_rise_m": 0.48777976036071813,
+        "actual_water_entry": {
+          "pose": [
+            3.125,
+            2.0221437053129914,
+            -7.368330570244532
+          ],
+          "water": {
+            "under": 0.46428914619017725,
+            "level": 0.8915055990219116,
+            "u": 0,
+            "w": 0,
+            "speed": 0,
+            "pace": 0.7291646647223966,
+            "carried": 0,
+            "head_under": false
+          }
+        }
+      },
+      {
+        "goods_seed": 851269742,
+        "terrain_seed": 7,
+        "shore": {
+          "wet": [
+            4.625,
+            -4
+          ],
+          "dry": [
+            7.625,
+            -4
+          ]
+        },
+        "hill_rise_m": 0.5857207298278819,
+        "actual_water_entry": {
+          "pose": [
+            5.308772035560802,
+            2.020290175806577,
+            -4
+          ],
+          "water": {
+            "under": 0.4340057839535243,
+            "level": 0.8576211929321289,
+            "u": 0,
+            "w": 0,
+            "speed": 0,
+            "pace": 0.7468299593604442,
+            "carried": 0,
+            "head_under": false
+          }
+        }
+      }
+    ],
+    "declared_deep_pool_m": 2.3,
+    "swim_rise_dive_recovery": true,
+    "declared_current_m_s": 0.4,
+    "declared_current_drift_m": 0.326560000038147,
+    "scope": "kinematic player controller; native avatar and rover unchanged"
+  },
+  "native_water_oracle": {
+    "tests_passed": 19,
+    "geometry_m": [
+      1.6,
+      0.24,
+      0.24
+    ],
+    "water_density_kg_m3": 1000,
+    "gravity_m_s2": 9.81,
+    "same_full_volume_lift_n": 904.0896,
+    "pressure_residual_n": 0,
+    "oak_density_kg_m3": 700,
+    "oak_equilibrium_immersed_fraction": 0.7,
+    "glass_density_kg_m3": 2400,
+    "iron_density_kg_m3": 7870,
+    "glass_weight_n": 2169.81504,
+    "iron_weight_n": 7115.185152,
+    "force_oracle_relative_tolerance": 1e-06,
+    "closed_basin_volume_worst_drift_m3": 4.26326e-14,
+    "river_100_s_volume_residual_m3": -2.61569e-13,
+    "scope": "Force oracle and shallow-water local volume ledger, not full-pipeline energy/momentum conservation or material calibration."
+  },
+  "native_live_body_test": {
+    "passed": 1,
+    "oak_drift_m_s": 0.554044,
+    "oak_y_m": 0.457333,
+    "surface_m": 0.496979,
+    "iron_y_m": 0.458346,
+    "iron_bed_m": 0.332339,
+    "dt_s": 0.004166666666666667,
+    "scope": "Existing native LiveWorld test; no avatar body."
+  },
+  "checks": {
+    "navigation_browser": 1,
+    "generated_river_and_modes_browser": 2,
+    "quick_tools": 5,
+    "material_preview": 6,
+    "selected_item_escape": 1,
+    "source_registration": "287/287"
+  },
+  "preview_url": "http://127.0.0.1:8770/world",
+  "limitations": "Player camera controller, no native avatar contact or fluid/cargo reactions. Below 0.5 m immersion current does not entrain player; full entrainment at 1.2 m. Declared deep-pool test is separate from generated native river entry. No native law or tolerance change; broader R5 remains open."
+}

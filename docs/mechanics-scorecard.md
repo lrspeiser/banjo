@@ -1,5 +1,7 @@
 # Banjo mechanics scorecard
 
+**Water/player review, October 1:** [Measured checkpoint](navigation-water-checkpoint.md) retains native shallow-water/body coupling; same-box oak/glass/iron hydrostatic oracles and existing native wood drift/iron sink pass. Full-volume lift 904.0896 N, pressure residual 0 N; local closed-basin drift 4.26326e-14 m³. Player entry/swim uses the camera approximation, with no native avatar/contact/fluid/cargo reactions. No solver, force law, dt or tolerance changes; R5 remains open.
+
 **Tool autosave host checkpoint, October 1:** [Measured save handling](tool-autosave-checkpoint.md) retains native incomplete-stroke/embedded-tool guards and complete checkpoint boundaries. Actual Chrome rapid use, private excavated stock restart and glass/oak/iron contact regression pass. No force, material law, dt, tolerance or conservation claim changes.
 
 **Player goal reconciliation, October 1:** [Six remaining player goals](player-experience-checklist.md#remaining-work) retain mixed interfaces, damaged-tool reuse, broad rover terrain, native avatar/cargo reactions and constituent/process accounting as open work. This documentation update changes no mechanics status, solver, tolerance or physical validation.

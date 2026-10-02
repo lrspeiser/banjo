@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Player navigation gate, October 1:** [Browser/native checkpoint](navigation-water-checkpoint.md) passes faster walk, edge look, safe Esc Cursor/resume, water entry, mode persistence and retained tool/item flows. Next implement native avatar contact and water/cargo reactions under R5; camera wading/swimming is an approximation.
+
 **Tool save usability gate, October 1:** [Quiet retry checkpoint](tool-autosave-checkpoint.md) passes real stroke deferral, early safe retry, disk failure/recovery and private stock restart. Keep native snapshot restrictions and paired learning/stock durability for subsequent tool and paid-work flows.
 
 **Next player work, October 1:** Use the [six remaining goals](player-experience-checklist.md#remaining-work): complete supplies/builds, mixed-material tools, damaged-tool repair/use, dependable rover routes, physical avatar/cargo handling and broader human/AI progression. Completed interface slices are recorded with evidence; retain the platform acceptance gates below.

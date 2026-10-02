@@ -2634,6 +2634,7 @@ function closeMachinePanel() {
   $("machine-panel").hidden = true;
   document.body.classList.remove("machine-open");
   showMachineHolds();
+  setCursorFree(false);
 }
 
 function mergeControl(control) {
@@ -4476,12 +4477,20 @@ function showInventory() {
       [...world.stock].filter(([,v])=>v.kg>0).map(([what,v])=>`${what} ${v.kg.toFixed(1)} kg`).join(" · ") || "Empty";
     meter.querySelector("[data-tool-guide]").hidden = !!world.held?.pick;
     meter.querySelector("[data-movement]").textContent = movementMode === "fly" ? "Fly · Space ↑ · Shift + Space ↓" :
-      wet && wet.under>.5 ? "Swim · Space ↑ · Shift + Space ↓" : "Walk · Space jump · Shift run";
+      wet ? `${wet.under>.5 ? "Swim" : "Wade"} · ${Math.round(wet.under*100)} cm immersed · Space ${wet.under>.5 ? "↑ / Shift ↓" : "jump"}` :
+      "Walk · Space jump · Shift run";
+    const flow = meter.querySelector("[data-water-flow]");
+    flow.hidden = !wet || wet.speed<.025;
+    if (!flow.hidden) {
+      const direction=["E","SE","S","SW","W","NW","N","NE"][(Math.round(Math.atan2(wet.w,wet.u)/(Math.PI/4))+8)%8];
+      flow.textContent=`Flow ${direction} · ${wet.speed.toFixed(1)} m/s`;
+    }
   }
 }
 setInterval(showInventory, 250);
 const loadMeter = document.createElement("aside"); loadMeter.id = "world-load-meter"; loadMeter.hidden = true;
 loadMeter.innerHTML = `<a href="${worldId ? `/world?world=${worldId}&workshop=1&tab=inventory` : "/world?scene=world&workshop=1&tab=inventory"}">Inventory</a><b>Ground materials</b><output></output><progress max="1" value="0"></progress><small></small><small data-movement></small>`;
+loadMeter.insertAdjacentHTML("beforeend", '<small data-water-flow hidden></small><button type="button" id="cursor-mode" aria-pressed="false">Explore · Esc for cursor</button>');
 const toolGuide = document.createElement("nav"); toolGuide.dataset.toolGuide = "";
 toolGuide.innerHTML = `<button type="button" data-find-tool>Find tool</button><a href="${worldId ? `/world?world=${worldId}&workshop=1&tab=recipes&material=oak` : "/world?scene=world&workshop=1&tab=recipes"}">Make tool · Recipes</a>`;
 toolGuide.querySelector("button").addEventListener("click", (e) => {
@@ -4649,7 +4658,7 @@ function groundUnderfoot(at) {
 // Until now the side view followed the crosshair, so the moment you looked
 // away to read it, it was about something else. This pins: a click says THAT
 // ONE, a box is drawn round it in the room, and the panel is about it until
-// you click something else. Escape lets go.
+// you click something else. Close dismisses it; Escape gives you the cursor.
 //
 // A pinned thing REPLACES the hovering view rather than sitting under it. The
 // owner had already said there was too much in the panel, and two cards saying
@@ -5126,7 +5135,7 @@ function keysForPicked(name) {
     if ((mine.program.can || []).some((a) => RIDE_FLIES_ONLY.has(a))) {
       out.push({ key: "Space", what: "climb" }, { key: "Shift+Space", what: "come down" });
     }
-    out.push({ key: "Esc", what: "get out of it" });
+    out.push({ key: "Esc", what: "cursor · Menu → Walk to leave" });
     return out;
   }
   // Not being it: what the side view is really offering for it, each with the
@@ -6305,6 +6314,32 @@ function markLag() {
 
 const keys = new Set();
 let yaw = 0, pitch = 0, looking = false;
+let cursorFree = false, resumeClick = false;
+function setCursorFree(free) {
+  cursorFree=!!free;
+  keys.clear();
+  cursor=null; drag=null; markAt(null);
+  if (cursorFree) {
+    tools.stop();
+    if (world.use.mode === "preparing") cancelWindUp();
+    primaryUsed=false;
+    stick.on=false;
+    if (world.placing && !world.placing.carrying) stopPlacing(true);
+    if (!riding.godMode && riding.name) letGoOfTheKeys();
+    if (document.pointerLockElement) document.exitPointerLock?.();
+  }
+  const button=$("cursor-mode");
+  button.setAttribute("aria-pressed",String(cursorFree));
+  button.textContent=cursorFree ? "Cursor · Click world to explore" : "Explore · Esc for cursor";
+}
+$("cursor-mode").addEventListener("click", () => {
+  setCursorFree(!cursorFree); $("cursor-mode").blur();
+});
+// Clicking/focusing controls suspends gameplay without pausing the world.
+$("panel").addEventListener("pointerdown", () => setCursorFree(true));
+addEventListener("focusin", event => {
+  if (typing(event.target) || worldMenu.contains(event.target)) setCursorFree(true);
+});
 
 // Typing in a field is typing: no key pressed there is a control -- the chat's
 // box, or anything else that takes text.
@@ -6329,40 +6364,15 @@ addEventListener("keydown", (e) => {
   // first place. Shift is ours: Shift+Space is how a flying camera goes
   // down, and Shift runs.
   if (e.ctrlKey || e.altKey || e.metaKey) return;
+  if (e.code === "Escape") {
+    e.preventDefault(); setCursorFree(!cursorFree); return;
+  }
+  if (cursorFree) return;
   keys.add(e.code);
 
   // The one control language (interaction.js): E does what the side view marks
   // -- picks up, puts down, opens -- and Tab moves it on; Q puts in the bag, and
   // the number keys take a thing out of the bag's slots and put it back.
-  // Esc while placing: the copy goes, and the thing stays in the hand.
-  // Esc while a throw is aimed is how you change your mind: wound up, it comes
-  // down and stays in the hand; otherwise it is put back down where the ghost
-  // shows. Never a throw -- there is no key that throws by accident.
-  //
-  // It goes AHEAD of stopping a placement, because a throwable thing in the
-  // hand always has a placing ghost up the moment it is picked up: Esc would
-  // otherwise only ever dismiss the ghost, and a second Esc would be needed to
-  // put the thing back, which is not what one key meaning "never mind" does.
-  if (e.code === "Escape" && world.held?.throwable
-      && ["ready", "preparing", "blocked"].includes(world.use.mode)) {
-    if (world.use.mode === "preparing") cancelWindUp();
-    else {
-      if (world.placing) stopPlacing(true);
-      intend(() => putDown(false));
-    }
-  }
-  else if (e.code === "Escape" && world.placing && !world.placing.carrying) stopPlacing(true);
-  // Esc closes a machine's panel when nothing else is using it -- and not
-  // while the mouse is looking round, where Esc gives the mouse back first.
-  else if (e.code === "Escape" && machinePanel.id != null && !document.pointerLockElement) closeMachinePanel();
-  // Esc is "never mind", and it means the lightest thing still standing:
-  // let go of what is pinned before letting go of the machine you are being.
-  else if (e.code === "Escape" && somethingIsPinned()) unpick();
-  // And last, out of the machine. The panel tells you this key, so it has to
-  // be true -- the owner's complaint about the panel was keys that were not.
-  else if (e.code === "Escape" && !riding.godMode && riding.name && !document.pointerLockElement) {
-    letGoOfTheMachine();
-  }
   if (isKey("primary", e.code)) { e.preventDefault(); primaryUsed = pressPrimary(); }
   if (isKey("interact", e.code)) intend(doChoice);
   if (isKey("next", e.code)) nextChoice();
@@ -6419,8 +6429,7 @@ $("keys-list").replaceChildren(...controls().flatMap(([keysSaid, what]) => {
 // What they hold or look at, where they stand and which way they face go with
 // what they say (whereIAm), so "this" and "in front of me" mean something.
 function talk() {
-  keys.clear();
-  if (document.pointerLockElement) document.exitPointerLock?.();
+  setCursorFree(true);
   $("ask-text").focus();
 }
 // And Esc in the box goes back to the room without sending anything.
@@ -6568,6 +6577,11 @@ function releasePrimary() {
 //
 // Looking around is dragging, which is what the drag handler was always for.
 canvas.addEventListener("pointerdown", (e) => {
+  if (cursorFree) {
+    if (e.button === 0) { setCursorFree(false); resumeClick=true; }
+    return;
+  }
+  resumeClick=false;
   offerStick(e);
   // The LEFT button only. The right one releases a latch, and it used to do
   // that and then pick the thing up as well, because a pointerup is a
@@ -6584,6 +6598,7 @@ canvas.addEventListener("pointerdown", (e) => {
   try { canvas.setPointerCapture(e.pointerId); } catch { /* look without it */ }
 });
 canvas.addEventListener("pointermove", (e) => {
+  if (cursorFree) return;
   cursor = cursorAt(e);
   if (cursor) cursor.touch = e.pointerType !== "mouse";
   offerStick(e);
@@ -6613,6 +6628,7 @@ function markAt(at) {
   mark.style.top = `${box.top + at.py}px`;
 }
 canvas.addEventListener("pointerup", (e) => {
+  if (resumeClick || cursorFree) return;
   if (e.button !== 0) return;
   if (e.altKey && !primaryUsed) return;
   // Letting go of primary after a wind-up throws, however much the view was
@@ -6644,6 +6660,8 @@ canvas.addEventListener("pointerup", (e) => {
 // and a click on bare ground -- which does nothing at all -- now says what
 // the ground is.
 canvas.addEventListener("click", (e) => {
+  if (resumeClick) { resumeClick=false; return; }
+  if (cursorFree) return;
   if (e.button !== 0) return;
   if (world.held && world.held.pick && !e.altKey) return;   // a swing, not a choice
   pinWhatWasClicked();
@@ -6651,6 +6669,7 @@ canvas.addEventListener("click", (e) => {
 
 document.addEventListener("pointerlockchange", () => {
   looking = document.pointerLockElement === canvas;
+  setCursorFree(!looking);
 });
 
 function turn(dx, dy) {
@@ -6681,12 +6700,10 @@ addEventListener("mousemove", (e) => {
 // click straight onto a thing rather than line the crosshair up with it: the
 // place you click in is the place that does not turn.
 const LOOK_DEAD = 0.55;        // share of the half-width that turns nothing
-// Measured in the real page rather than guessed: at 2.2 the cursor in the
-// corner brought the view round 122 degrees a second -- a whole turn in under
-// three -- which is a flick, not a look. These are 63 and 34 degrees a second
-// at the very edge, and gentler than that for most of the way out.
-const LOOK_YAW_RATE = 1.1;     // radians a second at the very edge, side to side
-const LOOK_PITCH_RATE = 0.6;   // and up and down, slower -- there is less of it
+// Faster edge turning retains the wide click/aim dead zone. Esc suspends it
+// before crossing toward the panels.
+const LOOK_YAW_RATE = 1.7;     // radians a second at the very edge, side to side
+const LOOK_PITCH_RATE = 0.9;   // and up and down, slower -- there is less of it
 
 // How hard the cursor pushes at `v`, which is -1 to 1 across the visible view.
 // Squared, so it eases in at the edge of the dead zone instead of stepping.
@@ -6699,7 +6716,7 @@ function lookPush(v) {
 
 function lookFromCursor(dt) {
   // Dragging already turns the view, and a wind-up is aimed by hand.
-  if (!cursor || drag) return;
+  if (cursorFree || looking || !cursor || drag || typing(document.activeElement) || worldMenu.open) return;
   // And a finger is not a cursor. It has no hover: the last place it touched
   // stays put once it lifts, so an edge push would turn the room for ever.
   // On a touch screen looking around IS the drag, which already works.
@@ -7319,13 +7336,16 @@ function showRidingSettings() {
       rememberRiding();
       showRidingSettings();
       $("game-menu")?.close();
+      setCursorFree(false);
     });
     li.append(button);
     return li;
   }));
 }
 
-let movementMode = localStorage.getItem("banjo.movement") || "gravity";
+// Only an explicit Fly preference may bypass gravity. Legacy/unknown values
+// must not display Walk while falling through to the free-camera branch.
+let movementMode = localStorage.getItem("banjo.movement") === "fly" ? "fly" : "gravity";
 let verticalSpeed = 0, jumpHeld = false;
 // Camera-controller approximation: 70 kg, 75 litres over the 1.6 m below
 // the eye. Buoyancy and drag accelerate the controller; this is not a native
@@ -7336,6 +7356,7 @@ addEventListener("banjo-movement-mode", event => {
   verticalSpeed = 0; jumpHeld = false;
   // Return the player's controls from a ridden machine to their own feet.
   letGoOfTheMachine();
+  setCursorFree(false);
 });
 function walk(dt) {
   // RIDING IS THE ORDINARY WAY TO BE HERE. The keys go to the machine and
@@ -7357,7 +7378,7 @@ function walk(dt) {
   const water = inTheWater();
   world.inWater = water;
   document.body.classList.toggle("head-under-water", !!(water && water.head_under));
-  const speed = (running && !water ? 5.6 : 2.4) * loadPace() * (water ? water.pace : 1) * dt;
+  const speed = (running && !water ? 6.8 : 4.2) * loadPace() * (water ? water.pace : 1) * dt;
   const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
   const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
   const move = new THREE.Vector3();
@@ -11205,6 +11226,9 @@ window.banjoRoom = {
   // will not stop: Ctrl+A was one, and a check can only see that by looking
   // at the set itself.
   keysDown: () => [...keys].sort(),
+  controls: () => ({cursorFree, movementMode, walk_m_s:4.2, run_m_s:6.8,
+    yaw, pitch, edge_yaw_rad_s:LOOK_YAW_RATE, edge_pitch_rad_s:LOOK_PITCH_RATE,
+    player_model:"camera-controller", water:world.inWater}),
   // What is pinned in the side view, and pinning it without a mouse: a check
   // drives the same state a click sets, so what it reads is what a person
   // would see.

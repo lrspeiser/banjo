@@ -203,6 +203,16 @@ class RapidPlayer(unittest.TestCase):
         key('keyUp','KeyJ','j');wait('quickActive===0')
         stopped=page.evaluate('quickUses.length');time.sleep(.6)
         self.assertEqual(stopped,page.evaluate('quickUses.length'))
+        # Esc gives the mouse to navigation without dropping the tool or
+        # leaving held repeat queued. The already executing use may finish.
+        key('keyDown','KeyJ','j');wait('quickActive===1')
+        page.send('Input.dispatchKeyEvent',{'type':'keyDown','code':'Escape','key':'Escape','windowsVirtualKeyCode':27})
+        page.send('Input.dispatchKeyEvent',{'type':'keyUp','code':'Escape','key':'Escape','windowsVirtualKeyCode':27})
+        key('keyUp','KeyJ','j');wait('quickActive===0')
+        self.assertTrue(page.evaluate('banjoRoom.controls().cursorFree'))
+        self.assertEqual('field pick',page.evaluate('banjoRoom.held().name'))
+        stopped=page.evaluate('quickUses.length');time.sleep(.5)
+        self.assertEqual(stopped,page.evaluate('quickUses.length'))
         wait('document.querySelector("#world-save-status")?.hidden')
         self.assertEqual([],page.evaluate('saveWarnings'))
         self.assertTrue(any(s['state']=='pending' for s in save_events),save_events)

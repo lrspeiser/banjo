@@ -3105,15 +3105,13 @@ class ClickingSomethingKeepsIt(PageJourney):
         self.assertIn("ore", self.js("document.getElementById('picked').innerText"),
                       "the panel says nothing about ore either way")
 
-    def test_escape_lets_go_of_what_was_clicked(self):
+    def test_escape_frees_cursor_and_preserves_the_selected_item(self):
         self.open_rover_room()
         self.js("(banjoRoom.pick('rover'), true)")
         self.assertTrue(self.wait_for("banjoRoom.picked().name === 'rover'", 15))
         self.press_key("Escape", "Escape")
-        self.assertTrue(self.wait_for("!banjoRoom.picked().name", 10),
-                        "Escape did not let go")
-        self.assertFalse(self.js("document.getElementById('details').hidden"),
-                         "the hovering view did not come back")
+        self.assertTrue(self.wait_for("banjoRoom.controls().cursorFree", 10))
+        self.assertEqual("rover",self.js("banjoRoom.picked().name"))
 
 
 class TheHotListTakesWhatYouPutInIt(PageJourney):
