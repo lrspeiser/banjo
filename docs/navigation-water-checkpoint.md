@@ -1,6 +1,6 @@
 # Walking, water and cursor controls — October 1, 2026
 
-Verified on main base `04f5789bddda27b96aba2cdb0b64d5e764becd26` with outgoing changes present. [Machine-readable evidence](evidence/navigation-water-checkpoint.json) retains source/binary hashes, input measurements and water results. Preview: http://127.0.0.1:8770/world.
+Verified on main base `04f5789bddda27b96aba2cdb0b64d5e764becd26` with outgoing changes present. [Machine-readable evidence](evidence/navigation-water-checkpoint.json) retains source/binary hashes, input measurements and water results. Implementation **`3e2b508de9e3864d792e68a26a5bfa0cee4491a8`** is published on GitHub main. Preview: http://127.0.0.1:8770/world.
 
 ## Player changes
 

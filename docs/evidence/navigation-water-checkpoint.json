@@ -144,5 +144,6 @@
     "source_registration": "287/287"
   },
   "preview_url": "http://127.0.0.1:8770/world",
-  "limitations": "Player camera controller, no native avatar contact or fluid/cargo reactions. Below 0.5 m immersion current does not entrain player; full entrainment at 1.2 m. Declared deep-pool test is separate from generated native river entry. No native law or tolerance change; broader R5 remains open."
+  "limitations": "Player camera controller, no native avatar contact or fluid/cargo reactions. Below 0.5 m immersion current does not entrain player; full entrainment at 1.2 m. Declared deep-pool test is separate from generated native river entry. No native law or tolerance change; broader R5 remains open.",
+  "published_implementation_revision": "3e2b508de9e3864d792e68a26a5bfa0cee4491a8"
 }
