@@ -10,7 +10,8 @@ player journey is complete.** The five remaining goals are R1 and R3–R6 in the
 
 Developed from published main `de9f4f8`. Native sources in this checkpoint
 retain ABI 26 and require a rebuild for the assembly ray filter below.
-Implementation publication is recorded in development status after the verified push.
+Implementation `ce8866f` is published on main; native sources at that revision
+produced the binary hashes below. Publication is also recorded in development status.
 
 This does not close raw supply routes, damaged-tool repair, physical avatars,
 general rover reliability or live-provider progression. In particular, ordinary
