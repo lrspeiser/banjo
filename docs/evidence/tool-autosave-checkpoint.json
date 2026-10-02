@@ -382,5 +382,7 @@
     "source_registration": "287/287",
     "world_goods": 15
   },
-  "limits": "Expected native in-flight snapshot guards only; pending is not durable. Last complete checkpoint remains until safe save. No native solver/material law/tolerance changes; no full-world conservation or deployment scaling claim."
+  "limits": "Expected native in-flight snapshot guards only; pending is not durable. Last complete checkpoint remains until safe save. No native solver/material law/tolerance changes; no full-world conservation or deployment scaling claim.",
+  "published_implementation_revision": "910e6ab20329ba2d608498188a8cba2001228181",
+  "preview_url": "http://127.0.0.1:8770/world"
 }

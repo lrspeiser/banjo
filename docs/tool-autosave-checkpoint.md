@@ -1,6 +1,6 @@
 # Quiet tool autosave retries — October 1, 2026
 
-Verified on base main `11ab00ceb87de42afb6f6015a2513448140ca69e` with outgoing source changes present. [Machine-readable evidence](evidence/tool-autosave-checkpoint.json) records source/binary hashes and actual save transitions.
+Verified on base main `11ab00ceb87de42afb6f6015a2513448140ca69e` with outgoing source changes present. [Machine-readable evidence](evidence/tool-autosave-checkpoint.json) records source/binary hashes and actual save transitions. Implementation **`910e6ab20329ba2d608498188a8cba2001228181`** is published on GitHub main; the refreshed local preview is http://127.0.0.1:8770/world.
 
 ## Cause and change
 
