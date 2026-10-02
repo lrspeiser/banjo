@@ -144,6 +144,13 @@ or a closed whole-pipeline conservation result. This fixture does not advance
 the deformable target, fracture the head, qualify strength/fatigue or use a
 physical avatar reaction. The live assembly/time bridge remains necessary.
 
+This sequential fixture uses the head's contact effective mass before the
+fixing reacts in a later native step. It does not solve contact and fixing
+constraints simultaneously, or qualify the constrained assembly's impact
+restitution/effective mass. The target/source/constraint coupling needs that
+solve and timestep convergence; these phase results must not be substituted
+for a complete held-tool impact trajectory.
+
 ## Checks and next step
 
 ```powershell
@@ -173,4 +180,10 @@ Sources: [native query/transfer](../src/rigid/JoltWorld.cpp),
 
 ## Publication
 
-Pending final affected checks and ordinary fast-forward publication to main.
+Implementation `cdacd637a11860c1f2d06b84b3d0f645cbd7f3c5` is published on
+GitHub main by an ordinary fast-forward push. Recorded tests were built from
+those exact implementation sources; this following record changes only
+documentation. Preview 8770 is HTTP 200 with unchanged R2
+`banjo_live_world_run.exe` and `banjo.dll` hashes. No normal-input/browser,
+graphical build, production deployment or cross-platform qualification is
+claimed for the new boundary. R3's ordinary object destruction remains open.
