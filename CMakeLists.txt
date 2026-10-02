@@ -1045,6 +1045,11 @@ if(BANJO_BUILD_TESTS)
             banjo_enable_warnings(banjo_fast_lattice_tests)
             add_test(NAME banjo_fast_lattice_tests COMMAND banjo_fast_lattice_tests)
 
+            add_executable(banjo_lattice_external_load_tests tests/lattice_external_load_tests.cpp)
+            target_link_libraries(banjo_lattice_external_load_tests PRIVATE banjo_fastlattice)
+            banjo_enable_warnings(banjo_lattice_external_load_tests)
+            add_test(NAME banjo_lattice_external_load_tests COMMAND banjo_lattice_external_load_tests)
+
             # A scene that keeps running instead of being run: stepping, reading
             # where everything is, and taking hold of something.
             add_executable(banjo_live_world_tests tests/live_world_tests.cpp)

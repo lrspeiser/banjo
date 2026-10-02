@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -99,6 +100,8 @@ struct RunControl {
     // turning it into 83 pieces (docs/what-a-break-costs.md). The ceiling is
     // the island's own kinetic and stored elastic energy, so it needs no
     // number anyone picked; the caller works it out and passes it in.
+    // CPU external loads add their signed measured work to an enabled ceiling.
+    // Removing all available energy stops the run rather than disabling it.
     //
     // It is checked after a substep, like every other stop, so a run can
     // overspend by at most what one substep removes. What it cannot do is go
@@ -116,7 +119,19 @@ constexpr unsigned kPhaseCount = 16;
 // Names of the per-substep phases the backends attribute time to.
 [[nodiscard]] const char *latticePhaseName(unsigned phase);
 
+// CPU external-load phase only. World-space angular impulse is about the
+// world origin. The source must receive the opposite delivered impulse;
+// recording it here does not add that source to a live world.
+struct ExternalLoadLedger {
+    std::uint64_t steps{};
+    double elapsed_s{};
+    Vec3 requested_impulse_n_s{}, impulse_n_s{};
+    Vec3 angular_impulse_kg_m2_s{};
+    double work_j{}; // exact kinetic-energy change across the external kick
+};
+
 struct RunStatus {
+    ExternalLoadLedger external_load{};
     std::uint64_t total_steps{};
     std::uint64_t first_failure_step{std::numeric_limits<std::uint64_t>::max()};
     std::uint64_t last_failure_step{std::numeric_limits<std::uint64_t>::max()};
@@ -184,6 +199,15 @@ public:
     [[nodiscard]] virtual std::string name() const = 0;
     virtual void upload(const LatticeState &state, const StepSettings<double> &settings,
                         const SphereState<double> &sphere) = 0;
+    // Finite world-space forces in schedule node order, held constant for at
+    // most `substeps` actual substeps, including across successive run calls.
+    // Upload clears a load. Empty + zero cancels; invalid replacement leaves
+    // the old load intact. CPU reference/parallel implement this; GPU support
+    // is deliberately explicit rather than silently omitting a force.
+    virtual void setExternalForces(const std::vector<Vec3> &forces_world_n, std::uint64_t substeps) {
+        if (!forces_world_n.empty() || substeps != 0)
+            throw std::invalid_argument("this lattice backend does not implement external forces");
+    }
     // Continue from the current state; the status accumulates across calls.
     virtual RunStatus run(const RunControl &control) = 0;
     virtual void download(LatticeState &state, SphereState<double> &sphere) = 0;

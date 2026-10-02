@@ -23,6 +23,7 @@
 
 #include "fastlattice/FastLattice.hpp"
 #include "fastlattice/LatticeWorking.hpp"
+#include "fastlattice/ExternalLoads.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -180,6 +181,7 @@ public:
         S_ = convertSettings<Real>(settings);
         sphere_ = convertSphere<Real>(sphere);
         status_ = {};
+        external_.reset(state.origin);
         dirty_start_ = true;
         contact_rebuild_ = true;
         status_.energy_audited = S_.audit_energy != 0;
@@ -192,6 +194,10 @@ public:
         scratch_ = std::vector<Scratch>(threads);
         views_.assign(threads, L_);
         for (unsigned t = 0; t < threads; ++t) views_[t].rank_deficient_nodes = &scratch_[t].degenerate;
+    }
+
+    void setExternalForces(const std::vector<Vec3> &forces, std::uint64_t substeps) override {
+        external_.set(forces,substeps,L_);
     }
 
     RunStatus run(const RunControl &control) override {
@@ -215,13 +221,15 @@ public:
                 status_.last_failure_step = step;
                 ++status_.failure_rounds;
             }
-            status_.exit_reason = latticeExitReason(status_.total_steps, status_.broken_bonds,
+            const double available = control.removable_energy_j + status_.external_load.work_j;
+            status_.exit_reason = control.removable_energy_j > 0 && available <= 0 ? 6 :
+                latticeExitReason(status_.total_steps, status_.broken_bonds,
                 status_.last_failure_step, control.quiet_steps, control.min_steps,
                 control.no_failure_steps, control.energy_flat_steps,
                 status_.last_energy_gain_step, control.calm_steps,
                 status_.last_damage_gain_step, status_.max_damage,
                 control.calm_damage_margin, status_.removed_energy_j,
-                control.removable_energy_j);
+                control.removable_energy_j > 0 ? available : 0.0);
             if (status_.exit_reason != 0) break;
         }
         if (status_.exit_reason == 0 && done >= control.max_steps) status_.exit_reason = 3;
@@ -339,6 +347,7 @@ private:
         // Kick and classify in parallel; the ordered candidate lists are built
         // by a serial scan of the flags, which is the order the serial backend
         // pushes them in.
+        external_.kick(L_,S_.dt,status_.external_load);
         SphereState<Real> kicked = sphere_;
         kicked.velocity = kicked.velocity + S_.dt * S_.gravity;
         forEach(N, [&](std::uint32_t i, unsigned thread) {
@@ -495,6 +504,7 @@ private:
     StepSettings<Real> S_{};
     SphereState<Real> sphere_{};
     RunStatus status_{};
+    CpuExternalLoads<Real> external_;
     // RunControl::energy_flat_fraction, held here because the substep that
     // accumulates removed energy does not see the control.
     double energy_flat_fraction_{1.0e-3};

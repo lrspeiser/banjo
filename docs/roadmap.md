@@ -4,6 +4,11 @@
 
 ### Next R3 prerequisite: ordinary tool strikes against built objects
 
+[Finite CPU external-load input](held-strike-load-checkpoint.md) is implemented
+and tested. It supplies a force/work boundary only. Next integrate native held
+assemblies, hand/joint reactions and elapsed time, then the object-target route
+and complete acceptance checks below. R3 remains open.
+
 The current primary-use route only accepts a terrain target. Native fracture
 islands also omit a striker while it remains held; an exact rigid part has no
 internal fracture law. These are implementation gaps, not an intentional rule
