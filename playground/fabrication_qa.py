@@ -12,6 +12,9 @@ from mechanics_qa import binary
 
 ROOT=Path(__file__).resolve().parents[1]
 _LOCK=threading.Lock()
+# 77 fixed cases, including real Chrome/restart journeys, measured 127.384 s
+# on Windows. This is an orchestration deadline, not a physics tolerance.
+RUN_LIMIT_S=180
 
 def stop_tree(process):
     if process.poll() is not None:return
@@ -52,11 +55,11 @@ class Manager(artifacts.Manager):
                         process=subprocess.Popen([sys.executable,str(ROOT/"scripts/fabrication_qa.py"),
                             "--engine",str(engine),"--out",str(folder)],cwd=ROOT,env=env,
                             stdin=subprocess.DEVNULL,stdout=log,stderr=log,**kwargs)
-                        deadline=time.monotonic()+120
+                        deadline=time.monotonic()+RUN_LIMIT_S
                         while process.poll() is None:
                             if self.cancel_event.wait(.1) or time.monotonic()>=deadline:
                                 stop_tree(process)
-                                raise ValueError("cancelled" if self.cancel_event.is_set() else "Fabrication QA exceeded 120 seconds")
+                                raise ValueError("cancelled" if self.cancel_event.is_set() else f"Fabrication QA exceeded {RUN_LIMIT_S} seconds")
                         if not (folder/"report.json").is_file():raise ValueError("QA did not produce a final report")
                         report=artifacts.read_json(folder/"report.json")
                         if process.returncode and report.get("status")=="passed":raise ValueError("QA process failed after reporting success")

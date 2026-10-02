@@ -107,7 +107,7 @@ def compile_quote(candidate, stock_kg, cell_m, state, *, app=None):
     """Cost the exact occupied matter, not the template's approximate BOM."""
     design, overrides = workshop_components.design_from_spec(candidate)
     from mcp import workshop_material_support
-    blocker = workshop_material_support.fixed_lattice_blocker(design, overrides)
+    blocker = workshop_material_support.fixed_lattice_blocker(design, overrides, cell_m=cell_m)
     if blocker:
         raise ValueError(blocker["message"])
     articulated = articulation.has_bearings(design)
@@ -154,7 +154,27 @@ def compile_quote(candidate, stock_kg, cell_m, state, *, app=None):
     if not articulated and not measured["measured"]["geometry_coherent"]:
         raise ValueError("Product has disconnected or missing components")
     materials = {engine_materials.canonical(c["material"]) for c in matter["cells"]}
-    if len(materials) != 1: raise ValueError("Mixed-material fabrication needs explicit interfaces")
+    if len(materials) != 1:
+        from mcp import workshop_fixed_assembly
+        artifact = workshop_fixed_assembly.layout(design, overrides, cell_m=cell_m, matter=matter)
+        if app is None:
+            raise ValueError('Mixed fixed fabrication requires native constituent measurement')
+        native=install.measure_fixed_for_fabrication(app,design,overrides,cell_m)
+        if native['physics_hash']!=artifact['physics_hash'] or native['material_mass_kg']!=artifact['material_mass_kg']:
+            raise ValueError('Native fixed quote changed the requested material allocation')
+        mass = artifact['mass_kg']
+        if abs(mass-measured['measured']['mass_kg']) > 1e-8:
+            raise ValueError('Compiled constituent mass does not close')
+        stock = model.number(stock_kg, 'stock_kg', mass, 10000)
+        vector = artifact['material_mass_kg']
+        return cost_quote({'candidate': deepcopy(candidate), 'material': max(vector,key=vector.get),
+            'stock_kg': stock, 'product_kg': mass, 'offcut_kg': stock-mass,
+            'product_materials_kg': vector,
+            'stock_materials_kg': {m: kg*stock/mass for m,kg in vector.items()},
+            'cell_m': cell_m, 'cells': len(cells), 'matter_physics_hash': artifact['physics_hash'],
+            'output_energy_j': output_energy, 'fixed_interfaces': artifact['connections'],
+            'native_constituents_verified': True,
+            'interface_limits': artifact['limitations']}, state)
     material = next(iter(materials))
     mass = len(cells)*cell_m**3*engine_materials.density(material)
     if abs(mass-measured["measured"]["mass_kg"]) > 1e-8:

@@ -159,6 +159,10 @@ Important behavior:
   use follows the same validated schema as world interaction and recipes;
   gesture swing is only for an explicitly requested full-swing experiment.
   It creates no material, motor, energy, skill award or guaranteed result.
+  Different head/handle materials use separate native bodies and reviewed fixed
+  mounts. Preserve each material. The sampled mount must touch and remain connected;
+  Make reviews every material debit and finite work/energy. Declared mount limits
+  are not adhesive, fatigue, bending or torsional-strength certification.
   Exact rigid or articulated tool points are unsupported. Check geometry and
   native admission after editing the named components, then test the real tool.
   Never substitute inspect or a cosmetic primary_use for a digging function.
@@ -333,7 +337,9 @@ Important behavior:
   recolor other parts to make a compiler accept a mixed design. Apply the
   requested component material edit, inspect the resulting design, and call
   check_validity. If mixed_lattice_interface_unsupported is returned, explain
-  which parts cannot yet be joined for Make. The draft can still be saved with
+  which sampled mounts cannot be represented and how to repair that geometry.
+  Supported fixed head/handle groups retain per-material quotes and native
+  point/grip bindings. The draft can still be saved with
   save_design. Save is not proof of manufacture, strength or successful use.
   Offer a different material only as an explicit user choice; do not apply it
   automatically. Do not switch a ground tool to rigid or add a bearing to evade

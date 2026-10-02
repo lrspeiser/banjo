@@ -34,7 +34,8 @@ import workshop_sparse_trial as sparse
 import workshop_articulation
 import workshop_library
 from mcp import (engine_materials, joint_efficiency, workshop_components, workshop_machines,
-                 workshop_visual, workshop_matter_metrics, workshop_rigid, workshop as w)
+                 workshop_visual, workshop_matter_metrics, workshop_rigid, workshop as w,
+                 workshop_fixed_assembly)
 
 SCHEMA = "banjo.workshop-install.v1"
 MAX_PREVIEWS = 8
@@ -815,9 +816,10 @@ def _appended_joints(before, after, added, definitions, removed=frozenset()):
 
     for i,(joint,definition) in enumerate(zip(current[len(old):],definitions)):
         a,b=definition["a"],definition["b"]
-        if definition.get("kind")!="hinge" or a not in added or b not in added or a==b:
-            raise ValueError("New assembly constraints must be hinges between its new bodies")
-        if (joint.get("id")!=before["next"]["joint"]+i or joint.get("kind")!="hinge"
+        kind=definition.get('kind')
+        if kind not in ('hinge','fixing') or a not in added or b not in added or a==b:
+            raise ValueError("New assembly constraints must be reviewed hinges or fixings between its new bodies")
+        if (joint.get("id")!=before["next"]["joint"]+i or joint.get("kind")!=kind
                 or joint.get("a")!=a or joint.get("b")!=b or joint.get("attached") is not True):
             raise ValueError("Staging changed an added hinge's identity or endpoints")
         point=[v/1000 for v in definition["at_mm"]]
@@ -829,8 +831,8 @@ def _appended_joints(before, after, added, definitions, removed=frozenset()):
         axis=definition["axis"];length=math.sqrt(sum(v*v for v in axis))
         if not near(rotate(bodies[a]["pose"]["q_wxyz"],joint["axis_local_a"]),[v/length for v in axis]):
             raise ValueError("Staging changed an added hinge's axis")
-        expected={"lower":math.radians(definition.get("lower_deg",-180)),
-                  "upper":math.radians(definition.get("upper_deg",180)),
+        expected={"lower":math.radians(definition.get("lower_deg",-180)) if kind=='hinge' else 0.,
+                  "upper":math.radians(definition.get("upper_deg",180)) if kind=='hinge' else 0.,
                   "friction":definition.get("friction_n_m",0)}
         if any(not math.isclose(joint.get(k,math.nan),v,rel_tol=0,abs_tol=1e-12) for k,v in expected.items()):
             raise ValueError("Staging changed an added hinge's limits or friction")
@@ -843,8 +845,13 @@ def _appended_joints(before, after, added, definitions, removed=frozenset()):
         for key in ("breaks_at_n","comes_off_n","holds_shear_n","holds_tension_n","stiffness_n_m",
                     "damping_n_s_m","rated_breaks_at_n","rated_shear_n","rated_tension_n",
                     "declared_breaks_at_n","declared_shear_n","declared_tension_n","declared_stiffness_n_m"):
-            if joint.get(key)!=0:
+            expected_value=definition.get(key,0.) if kind=='fixing' and key in ('holds_shear_n','holds_tension_n') else 0.
+            if joint.get(key)!=expected_value:
                 raise ValueError("Staging added an undeclared hinge capacity")
+        if kind=='fixing' and (joint.get('capacity_fraction')!=1. or joint.get('checked_fraction')!=1.
+                or joint.get('rechecks')!=0 or joint.get('parted_load_n')!=0.
+                or joint.get('parted_capacity_n')!=0.):
+            raise ValueError('Staging changed new fixing condition')
 
 
 def _appended_tool_points(before, after, added, definitions, removed=frozenset()):
@@ -862,8 +869,12 @@ def _appended_tool_points(before, after, added, definitions, removed=frozenset()
     for i,(point,definition) in enumerate(zip(current[len(old):],definitions)):
         if set(point) != {"id","body","tip_local","pointing_local","grip_local","width_local",
                           "width_m","thickness_m","angle_deg","length_m","body_id",
-                          "frame_nodes_b64","frame_offsets_b64","attached"}:
+                          "frame_nodes_b64","frame_offsets_b64","attached", *({'grip_body'} if definition.get('grip_body') else set())}:
             raise ValueError("Staging returned unrecognized tool point state")
+        if point.get('grip_body')!=definition.get('grip_body'):
+            raise ValueError('Staging changed the point-to-handle binding')
+        if definition.get('grip_body') and definition['grip_body'] not in added:
+            raise ValueError('The point must be bound to a new reviewed handle')
         name = definition["body"]
         if (name not in added or point.get("body") != name or point.get("id") != before["next"]["point"]+i
                 or point.get("attached") is not True):
@@ -1050,9 +1061,11 @@ def _stage(app, live, old, spec, snapshot, matter, root, shift, removed=frozense
         saved = _snapshot(staging)
         if _terrain_state(staging.session) != terrain_before:
             raise ValueError("Staging changed terrain or carried excavated material")
-        if matter.get("schema") == workshop_articulation.SCHEMA:
+        if matter.get("schema") in (workshop_articulation.SCHEMA, workshop_fixed_assembly.SCHEMA):
             roots={group["root_body"] for group in matter["groups"]}
-            _preserved(snapshot, saved, roots, added_joints=matter["joints"], removed=in_the_world, removed_matter=removed)
+            added_points=[p for p in spec.get('tool_points',[]) if p.get('body') in roots]
+            _preserved(snapshot, saved, roots, added_joints=matter["joints"], added_tool_points=added_points,
+                       removed=in_the_world, removed_matter=removed)
             for group in matter["groups"]:
                 sparse.verify_engine_matter(saved, group["matter"], group["root_body"], placement_grid=shift)
         elif matter.get("schema") == rigid_assembly.SCHEMA:
@@ -1135,8 +1148,6 @@ def fixed_lattice_plan(design, overrides, *, root, cell_m, position_m, floor_of)
     if not measured['measured']['geometry_coherent']:
         raise ValueError("The prototype has disconnected or missing physical components; repair it before installation")
     materials={engine_materials.canonical(c['material']) for c in matter['cells']}
-    if len(materials)!=1:
-        raise ValueError("Mixed-material installation requires explicit interfaces; it cannot be fused into one material")
     horizontal=(round(position_m[0]/h),0,round(position_m[1]/h))
     translated={tuple(g[a]+horizontal[a] for a in range(3)) for g in cells}
     floor=floor_of(_bounds(translated,h))
@@ -1144,6 +1155,38 @@ def fixed_lattice_plan(design, overrides, *, root, cell_m, position_m, floor_of)
         raise ValueError("Fixed lattice placement needs measured finite terrain support")
     shift=(horizontal[0],math.ceil(floor/h)-min(g[1] for g in cells),horizontal[2])
     placed={tuple(g[a]+shift[a] for a in range(3)) for g in cells}
+    if len(materials)!=1:
+        artifact=workshop_fixed_assembly.layout(design, overrides, cell_m=h, matter=matter)
+        from mcp import workshop_tools
+        frame=workshop_tools.frame(design)
+        held=frame['grip']['component'] if frame else sorted(p.name for p in design.parts)[0]
+        mapping={g['component']:root if g['component']==held else f'{root}-g{i}'
+                 for i,g in enumerate(artifact['groups'])}
+        added=[]
+        for group in artifact['groups']:
+            name=mapping[group['component']];group['root_body']=name
+            group['components']=[group['component']]
+            gcells={tuple(c['grid'][a]+shift[a] for a in range(3)) for c in group['matter']['cells']}
+            labels={g:f"{root}/{group['component']}" for g in gcells}
+            boxes=sparse.decompose_by_part(gcells,labels)
+            if sparse.cells_from_boxes([b for b,_ in boxes])!=gcells:
+                raise ValueError('Fixed constituent decomposition changed occupied cells')
+            added.extend(sparse._box_body(name if k==0 else f'{name}-{k}',box,h,
+                group['material'],name,part) for k,(box,part) in enumerate(boxes))
+        if len(added)>sparse.MAX_SCENE_BOXES:
+            raise ValueError('Fixed constituents exceed the native box budget')
+        pins=[{'kind':'fixing','a':mapping[c['components'][0]],'b':mapping[c['components'][1]],
+            'at_mm':[1000*(c['at_m'][a]+shift[a]*h) for a in range(3)],'axis':c['axis'],
+            'holds_tension_n':c['holds_tension_n'],'holds_shear_n':c['holds_shear_n']}
+            for c in artifact['connections']]
+        artifact.update(bodies=added, joints=fracture_lab.normalise_joints(pins,added),
+                        component_to_body=mapping, canonical_matter=matter)
+        tool=workshop_tools.installed(design,root,list(mapping.values()),[s*h for s in shift])
+        if tool:
+            tool['point']['body']=mapping[frame['point']['component']]
+            if tool['point']['body']!=root:tool['point']['grip_body']=root
+        return {'matter':artifact,'cells':cells,'measured':measured,'shift':shift,'placed':placed,
+                'bodies':added,'tool':tool}
     placed_parts={tuple(g[a]+shift[a] for a in range(3)):f"{root}/{name}"
                   for g,name in sparse._grid_parts(matter).items()}
     labelled=sparse.decompose_by_part(placed,placed_parts)
@@ -1156,6 +1199,42 @@ def fixed_lattice_plan(design, overrides, *, root, cell_m, position_m, floor_of)
     tool=workshop_tools.installed(design,root,[b['name'] for b in added],[s*h for s in shift])
     return {'matter':matter,'cells':cells,'measured':measured,'shift':shift,'placed':placed,
             'bodies':added,'tool':tool}
+
+
+def measure_fixed_for_fabrication(app,design,overrides,cell_m):
+    """Admit each cell body, fixing and tool binding before any paid work."""
+    plan=fixed_lattice_plan(design,overrides,root='fixed-quote',cell_m=cell_m,
+        position_m=[0,0],floor_of=lambda bounds:0.)
+    artifact=plan['matter']
+    if artifact.get('schema')!=workshop_fixed_assembly.SCHEMA:
+        raise ValueError('Native constituent quote requires a mixed fixed assembly')
+    spec={'cell_m':cell_m,'bodies':plan['bodies'],'joints':artifact['joints']}
+    if plan['tool']:
+        spec.update(tool_points=[plan['tool']['point']],interactions=[plan['tool']['profile']])
+    staged=live_session.Live()
+    try:
+        opened=staged.open(SimpleNamespace(engine_path=app.engine_path,runs_path=app.runs_path,
+            live_inprocess=False),{'spec':spec})
+        if any(opened.get(k) for k in ('joint_problems','tool_point_problems')):
+            raise ValueError('Native quote could not admit every fixed mount and tool binding')
+        saved=_snapshot(staged)
+        roots={g['root_body'] for g in artifact['groups']}
+        _appended_joints({'joints':[],'next':{'joint':1}},saved,roots,artifact['joints'])
+        _appended_tool_points({'tool_points':[],'next':{'point':1}},saved,roots,spec.get('tool_points',[]))
+        vector={}
+        for group in artifact['groups']:
+            sparse.verify_engine_matter(saved,group['matter'],group['root_body'],placement_grid=plan['shift'])
+            pose=next(b for b in opened['bodies'] if b['name']==group['root_body'])
+            if not math.isclose(pose['mass_kg'],group['mass_kg'],rel_tol=2e-7,abs_tol=1e-9):
+                raise ValueError('Native fixed constituent mass differs from the reviewed allocation')
+            vector[group['material']]=vector.get(group['material'],0.)+group['mass_kg']
+        points=staged.act({'session':staged.session.id,'op':'tool_points'})['tool_points']
+        if plan['tool'] and (len(points)!=1 or not points[0]['attached'] or not points[0].get('grip_connected',True)):
+            raise ValueError('Native quote has no connected working point and handle')
+        if vector!=artifact['material_mass_kg']:
+            raise ValueError('Native fixed material allocation does not close')
+        return artifact
+    finally:staged.shutdown()
 
 
 def preview(app: Any, body: Any) -> dict[str, Any]:
@@ -1216,6 +1295,8 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
         _clearance(saved, placed, h)
         spec = deepcopy(room.spec)
         spec["bodies"] = spec["bodies"] + added
+        fixed=matter.get('schema')==workshop_fixed_assembly.SCHEMA
+        if fixed: spec['joints']=(spec.get('joints') or [])+matter['joints']
         declared_tool = plan['tool']
         if declared_tool:
             spec["tool_points"] = spec.get("tool_points", []) + [declared_tool["point"]]
@@ -1228,7 +1309,7 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
         # What each of its joints leaves the bonds that cross it, so a blow
         # landing on it in the room breaks it where it is actually weak rather
         # than treating every joint as the solid wood.
-        declared = joint_efficiency.scene_interfaces(design, prefix=f"{root}/")
+        declared = [] if fixed else joint_efficiency.scene_interfaces(design, prefix=f"{root}/")
         # Every one of them has to be a joint the room can still recognise as it
         # is edited: two parts meeting across a face. One that the cell grid
         # leaves apart would be honoured by the engine now -- its bonds reach
@@ -1242,7 +1323,8 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
         if declared:
             spec["interfaces"] = (spec.get("interfaces") or []) + declared
         fracture_lab.validate(spec)  # admission only; never rewrite the old declarations
-        staged, _ = _stage(app, live, old, spec, saved, matter, root, shift)
+        roots=set(matter['component_to_body'].values()) if fixed else root
+        staged, _ = _stage(app, live, old, spec, saved, matter, roots, shift)
         staged.session.close()
         token = uuid.uuid4().hex
         answer = {"schema": SCHEMA, "status": "preview", "preview_id": token,
@@ -1256,6 +1338,10 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
                   "existing_state_preserved": True, "resources_charged": False,
                   "strength_certified": False, "expires_in_s": PREVIEW_TTL_S,
                   "limits": "Monolithic authoring prototype; not inventory-funded fabrication. Exact geometry is not proof of strength. Contact warm-start memory is not carried. Derived hinge-angle readouts may differ by at most four float32 ULP; all other compared state is exact."}
+        if fixed:
+            answer.update(root_bodies=sorted(roots),component_to_body=matter['component_to_body'],
+                product_materials_kg=matter['material_mass_kg'],initial_energy_j=0.,
+                fixed_interfaces=matter['connections'],limits=workshop_fixed_assembly.LIMITS)
         cache = _preview_cache(app)
         while len(cache)>=MAX_PREVIEWS:
             del cache[next(iter(cache))]
@@ -1263,7 +1349,7 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
                         "source_hash": _hash([saved,room.spec,_inventory(room)]),
                         "source_parts": _source_parts(saved, room),
                         "clear_cells": placed, "clear_h": h,
-                        "spec": spec, "matter": matter, "root": root, "shift": shift,
+                        "spec": spec, "matter": matter, "root": roots, "shift": shift,
                         "candidate_hash": _hash(body["candidate"])}
         return _with_needs(app, design, _replaces(app, _kept(app, answer, design, overrides), taking_out))
 
@@ -1781,11 +1867,12 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
                     # that boundary; never declare a fictitious heat parcel.
                     _preserved(before,saved,roots,added_joints=plan['matter'].get('joints',()),
                         removed=lost,removed_matter=removed)
-                elif plan["matter"].get("schema") == workshop_articulation.SCHEMA:
+                elif plan["matter"].get("schema") in (workshop_articulation.SCHEMA, workshop_fixed_assembly.SCHEMA):
                     outputs = {g["root_body"]:g["mass_kg"] for g in plan["matter"]["groups"]}
                     thermal_transfer, saved = _admit_fabricated_outputs(staged, saved, outputs, fabrication.AMBIENT_K)
                     _preserved(before, saved, plan["root"], thermal_transfer=thermal_transfer,
                                added_joints=plan["matter"]["joints"],
+                               added_tool_points=[p for p in plan['spec'].get('tool_points',[]) if p.get('body') in outputs],
                                removed=lost, removed_matter=removed)
                 else:
                     thermal_transfer, saved = _admit_fabricated_heat(staged, saved, plan["root"], job["product_kg"], fabrication.AMBIENT_K)

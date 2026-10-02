@@ -1,5 +1,7 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Paid mixed tools, October 2:** [Verified Lab/player checkpoint](paid-mixed-tool-checkpoint.md) completes R2's iron-head/oak-handle edit → Save → reviewed per-material funded Make → native pickup/dig → private bag/restart/re-equip. Native material laws and force limits are unchanged. Supported planar fixings retain explicit limits; calibrated joint failure and mixed articulated lattice groups are unqualified. R1 and R3–R6 remain; ordinary held-tool object strikes are still a missing damage/use route.
+
 **Native constituent tools, October 1:** [Fixed head/handle checkpoint](mixed-tool-native-checkpoint.md) connects authored per-material lattice bodies through explicit ordinary native fixings. The native hand, terrain and ownership accounts control use; Save/reopen retain the separate binding. This qualifies a native R2 prerequisite. Paid mixed lattice installation, calibrated interface failure and the full player fabrication journey remain open.
 
 **Skill guidance, October 1:** [Skills checkpoint](skills-guidance-checkpoint.md) distinguishes completed evidence, available alternative routes and unavailable manufacturing. It adds no skill, process or physics law; broader progression remains R6.
@@ -10,7 +12,7 @@
 
 **Tool autosave boundary, October 1:** [Pending checkpoint retries](tool-autosave-checkpoint.md) distinguish normal in-flight tool work from persistence errors. Progress is durable only after the safe paired checkpoint; real failures stay visible. No platform or physics scope change.
 
-**Current player goals, October 1:** [Six remaining goals](player-experience-checklist.md#remaining-work) cover the complete supply/build loop, mixed-material tools, damaged-tool repair/use, rover reliability, physical avatar/cargo handling and broader human/AI progression. Existing verified UI and opening journeys are recorded below; the full platform scope remains in this plan.
+**Current player goals, October 1:** [Five remaining goals](player-experience-checklist.md#remaining-work) cover the complete supply/build loop, damaged-tool repair/use, rover reliability, physical avatar/cargo handling and broader human/AI progression. The supported paid mixed-tool journey is complete. Existing verified UI and opening journeys are recorded below; the full platform scope remains in this plan.
 
 **Material discovery, October 1:** [Collection preview checkpoint](material-preview-checkpoint.md) replaces ground circles/labels with crosshair and nearby material thumbnails. Native soil/sand digging, rover ore extraction, whole-object pickup and actual output collection are distinct. LLM-authored ground tools share read-only candidates; no loot or law changes. Four verified, ten partial.
 

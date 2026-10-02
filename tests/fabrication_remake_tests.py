@@ -243,7 +243,7 @@ class LabRemake(unittest.TestCase):
         if getattr(self,'chrome',None):self.chrome.close()
         flow.GoodsJourney.tearDown(self)
 
-    def test_mixed_pick_chat_edit_save_reload_and_make_refusal_preserve_source_and_supplies(self):
+    def test_mixed_pick_chat_edit_save_paid_make_pickup_dig_and_restart(self):
         self.assertTrue(flow.qa_browser.CHROME.is_file(), 'Chrome required')
         with mock.patch.object(flow.server.secrets, 'randbelow', side_effect=[0, 1]):
             world, owner, app = self.setup_world()
@@ -263,6 +263,7 @@ class LabRemake(unittest.TestCase):
         p = self.chrome.page
         p.send('Page.enable'); p.send('Runtime.enable')
         p.send('Page.addScriptToEvaluateOnNewDocument', {'source':
+            f'if(location.protocol==="http:" && location.hostname==="127.0.0.1") '
             f'localStorage.setItem("banjo.player.{world}",{json.dumps(owner["token"])});'})
         def wait(expr):
             end = time.monotonic() + 30
@@ -301,10 +302,10 @@ class LabRemake(unittest.TestCase):
         self.assertEqual({'oak'}, {m for name, m in materials.items() if name != head})
         from mcp import workshop_buildability
         report, _, _ = workshop_buildability.assess(edited, overrides, cell_size_m=.05)
-        self.assertEqual('mixed_lattice_interface_unsupported', report['blocker']['code'])
+        self.assertTrue(report['compilation_ready'],report)
         p.send('Page.navigate', {'url': saved_url})
         wait('document.querySelector("#workshop-stage")?.visibleGeometry?.()?.meshes>0')
-        wait('document.querySelector("#ws-buildability-summary").textContent.includes("Make: Joint not supported yet")')
+        wait('!document.querySelector("#ws-buildability-summary").textContent.includes("Make: Unavailable")')
         rows = p.evaluate('[...document.querySelectorAll("#ws-parts li")].map(e=>e.textContent)')
         self.assertTrue(any(head in row and 'iron' in row for row in rows), rows)
         self.assertTrue(any('oak' in row for row in rows), rows)
@@ -312,17 +313,109 @@ class LabRemake(unittest.TestCase):
         click('#ws-make')
         wait('mixedMakeReplies.length>0')
         answer = p.evaluate('mixedMakeReplies[0]')
-        self.assertGreaterEqual(answer['status'], 400, answer)
-        self.assertIn('material joint is unsupported', json.dumps(answer))
+        self.assertEqual(200,answer['status'],answer)
         self.assertEqual(original, next(b for b in install._snapshot(app.live)['bodies'] if b['name'] == 'field pick'))
         self.assertEqual(rack, self.post('/api/workshop/library', {}, world)['rack'])
         for key in ('stock_kg', 'energy_j', 'jobs', 'stock_imports'):
             self.assertEqual(before.get(key), app.room.fabrication_record.get(key), key)
+        wait('document.querySelector("#ws-remake-review")')
+        click('#ws-remake-review')
+        wait('document.querySelector("#ws-remake-start")')
+        self.assertTrue(p.evaluate('document.querySelector("#ws-remake-start").disabled'))
+        # Explicit finite test supplies, collected through ordinary private
+        # receipts. This qualifies Make; it does not close all supply routes.
+        pile=app.brains.goods.put(0,0,{'oak':20.,'iron':20.},named='mixed pick test supplies')['onto']
+        floor=app.live.act({'session':app.live.session.id,'op':'survey','at':[0,0]})['survey']['ground_m']
+        for number in range(2):
+            self.post('/api/world/goods/collect',{'session':app.live.session.id,'pile':pile,
+                'request_id':'mixed-pick-supplies-'+str(number),'person':{'eyes_m':[0,floor+1.62,0],'facing':[0,0,-1]}},world)
+        click('#ws-remake-review')
+        wait('document.querySelector("#ws-remake-stock-personal-oak")')
+        click('#ws-remake-stock-personal-oak');wait('!document.querySelector("#ws-remake-stock-personal-oak")')
+        click('#ws-remake-stock-personal-iron');wait('!document.querySelector("#ws-remake-stock-personal-iron")')
+        wait('document.querySelector("#ws-remake-connect")')
+        click('#ws-remake-connect');wait('document.querySelector("#ws-remake-energy")')
+        for _ in range(5):
+            wait('document.querySelector("#ws-remake-start") && (!document.querySelector("#ws-remake-start").disabled || '
+                 '(document.querySelector("#ws-remake-charge-wait") && !document.querySelector("#ws-remake-charge-wait").disabled))')
+            if p.evaluate('!document.querySelector("#ws-remake-start").disabled'):break
+            click('#ws-remake-charge-wait')
+            click('#ws-remake-energy')
+            wait('!document.querySelector("#ws-remake-energy") || document.querySelector("#ws-remake-energy").disabled')
+        click('#ws-remake-start')
+        for _ in range(5):
+            wait('document.querySelector("#ws-remake-step") || document.querySelector("#ws-remake-place")')
+            if p.evaluate('Boolean(document.querySelector("#ws-remake-place"))'):break
+            previous=app.room.fabrication_record['jobs'][next(iter(app.room.fabrication_record['jobs']))]['work_j']
+            click('#ws-remake-step')
+            wait('!document.querySelector("#ws-remake-step") || !document.querySelector("#ws-remake-step").disabled')
+            end=time.monotonic()+10
+            while time.monotonic()<end and app.room.fabrication_record['jobs'][next(iter(app.room.fabrication_record['jobs']))]['work_j']<=previous:time.sleep(.01)
+        click('#ws-remake-place')
+        wait('document.querySelector("#ws-remake a")?.textContent==="Collect in World"')
+        ident=next(iter(app.room.fabrication_record['jobs']))
+        job=app.room.fabrication_record['jobs'][ident];root=job['root_body']
+        self.assertEqual({'oak','iron'},set(job['product_materials_kg']))
+        self.assertEqual(original,next(b for b in install._snapshot(app.live)['bodies'] if b['name']=='field pick'))
+        p.send('Page.navigate',{'url':p.evaluate('document.querySelector("#ws-remake a").href')})
+        wait('window.banjoRoom?.ready()')
+        def key(code):
+            for event in ('keyDown','keyUp'):p.send('Input.dispatchKeyEvent',{'type':event,'code':code,'key':code[-1].lower()})
+        p.evaluate('''(()=>{const at=banjoRoom.world.bodies.get(%s).mesh.position;
+            banjoRoom.standAt(at.x-.8,banjoRoom.groundAt(at.x,at.z)+1.62,at.z);
+            banjoRoom.lookAt(at.x,at.y,at.z);document.activeElement.blur();banjoRoom.resume();})()'''%json.dumps(root))
+        wait('banjoRoom.world.aim?.name===%s'%json.dumps(root));key('KeyE')
+        wait('banjoRoom.held()?.name===%s && banjoRoom.use().mode==="tool-ready"'%json.dumps(root))
+        # Work nearby after pickup. Teleporting the camera across the map
+        # while holding a physical tool injects an unrelated carry transient.
+        p.evaluate('''(()=>{const at=banjoRoom.camera.position;
+            banjoRoom.lookAt(at.x+1.2,banjoRoom.groundAt(at.x+1.2,at.z),at.z);
+            document.activeElement.blur();})()''')
+        contact_trace={}
+        original_contact=flow.server.tool_use._contact
+        def observed_contact(*args):
+            result=original_contact(*args)
+            contact_trace['native']=deepcopy(app.live.session.state)
+            contact_trace['ready']=deepcopy(args[1].get('ready'))
+            contact_trace['points']=flow.server.tool_use._native_point(app,args[3])
+            return result
+        contact_patch=mock.patch.object(flow.server.tool_use,'_contact',side_effect=observed_contact)
+        contact_patch.start();self.addCleanup(contact_patch.stop)
+        wait('banjoRoom.use().target?.enabled && banjoRoom.use().target.target.distance_m>=1.15');key('KeyJ')
+        wait('banjoRoom.use().last && banjoRoom.use().mode==="tool-ready"')
+        used=p.evaluate('banjoRoom.use().last')
+        if used.get('refused'):
+            trace={'used':{k:v for k,v in used.items() if k!='notebook'},
+                'target':p.evaluate('banjoRoom.use().target'),
+                'native':app.live.session.state,
+                'points':self.post('/api/live/act',{'session':app.live.session.id,'op':'tool_points'},world),
+                'snapshot':install._snapshot(app.live),'contact_trace':contact_trace}
+            (ROOT/'build/resource-flow/paid-mixed-use-failure.json').write_text(json.dumps(trace,indent=2),encoding='utf-8')
+        self.assertFalse(used.get('refused'),used.get('refused'));self.assertGreater(used['result']['loosened_kg'],0)
+        point=self.post('/api/live/act',{'session':app.live.session.id,'op':'tool_points'},world)['tool_points'][-1]
+        self.assertEqual(root,point['grip_body']);self.assertTrue(point['grip_connected'])
+        in_bag='banjoRoom.world.inventory.stowed.some(t=>t?.name===%s || t?.parts?.includes(%s))'%(json.dumps(root),json.dumps(root))
+        key('KeyQ');wait('!banjoRoom.held() && '+in_bag)
+        p.send('Page.navigate',{'url':'about:blank'});self.stop();self.start()
+        self.post('/api/world/player/join',{'token':owner['token']},world)
+        reopened=self.post('/api/world/open',{},world);app=self.app.hub.get(world)
+        p.send('Page.navigate',{'url':self.base+f'/world?world={world}'})
+        wait('window.banjoRoom?.ready() && '+in_bag)
+        key('Digit2')
+        wait('banjoRoom.held()?.name===%s && banjoRoom.use().mode==="tool-ready"'%json.dumps(root))
+        point=self.post('/api/live/act',{'session':reopened['session'],'op':'tool_points'},world)['tool_points'][-1]
+        self.assertEqual(root,point['grip_body']);self.assertTrue(point['attached']);self.assertTrue(point['grip_connected'])
+        key('KeyQ');wait('!banjoRoom.held() && '+in_bag)
         self.native_evidence = {'materials': materials, 'source_preserved': True,
-            'supplies_unchanged': True, 'saved_reload': True, 'make_refusal': answer,
-            'provider_calls': 0, 'boundary': 'Unsupported mixed lattice interface; no native mixed-tool use claimed.'}
+            'saved_reload': True, 'paid_make': True, 'native_use': used['result'],
+            'bag_server_restart': True, 'provider_calls': 0,
+            'boundary': 'Explicit collected test supplies; no complete raw supply or live-provider qualification.'}
+        p.send('Page.navigate',{'url':self.base+f'/world?world={world}&workshop=1&tab=inventory'})
+        wait('document.body.innerText.includes("Field pick")')
+        wait('document.querySelector("#ws-inv-grid canvas[data-preview=ready]")')
+        self.native_evidence['inventory_source_thumbnail']=True
         out = ROOT / 'build/resource-flow'; out.mkdir(parents=True, exist_ok=True)
-        (out / 'mixed-pick-save-refusal.png').write_bytes(base64.b64decode(p.send('Page.captureScreenshot', {'format': 'png'})['data']))
+        (out / 'mixed-pick-paid-restart.png').write_bytes(base64.b64decode(p.send('Page.captureScreenshot', {'format': 'png'})['data']))
         self.assertEqual([], [e for e in p.events if e.get('method') == 'Runtime.exceptionThrown'])
 
     def test_canonical_rover_paid_build_and_primary_use_in_browser(self):

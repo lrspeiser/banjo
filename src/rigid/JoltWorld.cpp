@@ -2892,6 +2892,12 @@ void JoltWorld::releaseFromWorld(MatterBodyId body_id) {
 
 RayHit JoltWorld::castRay(const Vec3 &from_world_m,const Vec3 &direction,
                           double max_distance_m, std::optional<MatterBodyId> ignore_body) const {
+    return castRayIgnoring(from_world_m, direction, max_distance_m,
+                          ignore_body ? std::span<const MatterBodyId>(&*ignore_body, 1) : std::span<const MatterBodyId>{});
+}
+
+RayHit JoltWorld::castRayIgnoring(const Vec3 &from_world_m, const Vec3 &direction,
+                                 double max_distance_m, std::span<const MatterBodyId> ignore_bodies) const {
     RayHit out{};
     // A ray with no direction is a question with no answer, and normalising it
     // would divide by zero rather than say so.
@@ -2903,8 +2909,10 @@ RayHit JoltWorld::castRay(const Vec3 &from_world_m,const Vec3 &direction,
     // The closest hit, against the real shapes the solver collides -- including
     // a fragment's convex hull -- so the answer cannot disagree with what the
     // body actually does.
-    const auto ignored = ignore_body ? impl_->bodies_.find(*ignore_body) : impl_->bodies_.end();
-    const JPH::IgnoreSingleBodyFilter filter(ignored != impl_->bodies_.end() ? ignored->second : JPH::BodyID{});
+    JPH::IgnoreMultipleBodiesFilter filter;
+    for (const auto id : ignore_bodies)
+        if (const auto ignored = impl_->bodies_.find(id); ignored != impl_->bodies_.end())
+            filter.IgnoreBody(ignored->second);
     if(!impl_->physics_->GetNarrowPhaseQuery().CastRay(ray,result, {}, {}, filter))return out;
     out.hit=true;
     out.distance_m=static_cast<double>(result.mFraction)*max_distance_m;

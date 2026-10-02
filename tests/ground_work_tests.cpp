@@ -329,6 +329,38 @@ void aSeparateHeadNeedsAnActualFixedHandle() {
     require(headPoint(*world) != 0, "actual fixed handle refused: " + world->toolPointRefusal());
 }
 
+void groundRaysIgnoreOnlyTheActorsWholeFixedTool() {
+    for (const std::string material : {"glass", "oak", "iron"}) {
+        auto scene = splitPick(material);
+        scene["bodies"].push_back(box("target", "oak", {.04,.12,.04}, {.37,.76,.02}));
+        auto world = open(scene);
+        const auto joint = world->fix("handle", "head", {.38,1.4,.02}, {0,1,0}, 5000,5000);
+        require(joint != 0, "fixture fixing refused");
+        world->selectHand("alice");
+        require(world->wield("handle", {-.36,1.42,.02}), "fixture handle refused");
+        const Vec3 from{.38,2,.02}, down{0,-1,0};
+        std::string why;
+        const auto before = world->snapshot(why);
+        const auto ordinary = world->pick(from, down, 3, false);
+        require(ordinary.hit && ordinary.name == "handle", material + ": ordinary ray lost held matter");
+        const auto past = world->pick(from, down, 3, true);
+        require(past.hit && past.name == "target", material + ": own separate head hid unrelated matter");
+        const auto ground_ray = world->pick({.38,1.0,.025}, down, 3, true);
+        require(ground_ray.hit && ground_ray.name == "target", "ray skipped the next actual shape");
+        const auto bare = world->pick({.395,2,.02}, down, 3, true);
+        require(bare.hit && bare.name.empty(), "filtered ray lost terrain");
+        near(bare.point_world_m.y, .4, 1e-5, "actual terrain height");
+        require(world->snapshot(why) == before, "ray filtering changed the world");
+        world->selectHand("bob");
+        const auto peer = world->pick({.38,1.3,.02}, down, 3, true);
+        require(peer.hit && peer.name == "head", "another actor's held head was hidden");
+        world->selectHand("alice");
+        world->unhinge(joint);
+        const auto detached = world->pick({.38,1.3,.02}, down, 3, true);
+        require(detached.hit && detached.name == "head", "detached head was still filtered as held");
+    }
+}
+
 void fixedMixedToolsRetainMaterialsMassAndOwnedWork() {
     for (const auto &[material, density] : std::vector<std::pair<std::string,double>>{
             {"glass",2500}, {"oak",700}, {"iron",7870}}) {
@@ -982,6 +1014,7 @@ int main() {
         {"players have separate ground and bag budgets",playersHaveSeparateGroundBudgets},
         {"tool meetings keep their owner during shared stepping",toolMeetingKeepsItsOwner},
         {"a separate head needs an actual fixed handle",aSeparateHeadNeedsAnActualFixedHandle},
+        {"ground rays ignore only the actor's whole fixed tool",groundRaysIgnoreOnlyTheActorsWholeFixedTool},
         {"fixed mixed tools retain materials mass and owned work",fixedMixedToolsRetainMaterialsMassAndOwnedWork},
         {"a detached head cannot be used through its old handle",aDetachedHeadCannotBeUsedThroughItsOldHandle},
         {"fixed horizontal tools lift without a second seam response",fixedHorizontalToolsLiftWithoutASecondSeamResponse},

@@ -1,5 +1,35 @@
 # Banjo roadmap and acceptance gates
 
+**Paid mixed-tool acceptance, October 2:** [Normal Lab/World evidence](paid-mixed-tool-checkpoint.md) completes R2's requested iron/oak Make and use journey with private restart and unchanged source. This supersedes the earlier native-only/draft gates below. Next finish R1 supply routes and R3 actual damage → paid reuse, including the missing ordinary tool/object strike path. R4–R6 remain active; retain unsupported interface refusal and the full platform gates.
+
+### Next R3 prerequisite: ordinary tool strikes against built objects
+
+The current primary-use route only accepts a terrain target. Native fracture
+islands also omit a striker while it remains held; an exact rigid part has no
+internal fracture law. These are implementation gaps, not an intentional rule
+that manufactured items cannot be damaged.
+
+1. Resolve the actual crosshair shape as terrain or a named object, retaining
+   the shared tool profile, native working point, reach and short cadence.
+   Display target components/materials and supported action in the right panel.
+2. Route object contact through the bounded native hand. Integrate the continuing
+   held striker, its fixed constituents and hand work/reactions into the fracture
+   boundary. Do not run the same response in Jolt and the lattice, treat the held
+   tool as a free projectile, force release, or inject damage from a click count.
+3. Retain measured damage, separated components/materials and tool history
+   through private inventory, Lab, paid replacement and restart. A strike may
+   fail to break the target; show the measured result. Unsupported rigid-body
+   internal fracture remains a named limitation.
+4. Qualify ordinary clicks against matched glass/oak/iron targets with the same
+   declared tool, timestep and resolution. Audit target/striker mass, momentum,
+   torque, hand work, fracture/contact losses and numerical correction. Include
+   repeated strikes, another player's hand, detached heads, failed saves and
+   restart. Keep the ground-use and paid Make regressions passing.
+
+This route is planned, not implemented or validated by the paid Make checkpoint.
+
+### Earlier acceptance checkpoints
+
 **Native mixed-tool gate, October 1:** [Fixed head/handle evidence](mixed-tool-native-checkpoint.md) qualifies authored per-material native pickup, digging, private bag and reopen with explicit finite fixings. Next implement reviewed allocation and funded mixed lattice installation, then run normal Lab edit → Save → paid Make → pickup/use with recovery. Keep R2 open and retain unsupported joint/material refusal.
 
 **Skills guidance gate, October 1:** [Verified presentation](skills-guidance-checkpoint.md) prevents an unavailable alternative from masquerading as a required step. Retain real native learning receipts; implement additional supported techniques and live model progression under R6.

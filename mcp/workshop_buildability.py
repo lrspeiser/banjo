@@ -105,7 +105,7 @@ def assess(design: WorkshopDesign, component_overrides: Any = None, *,
                   costs={"stored_cells": None, "collision_boxes": None,
                          "active_deformation_cells": None, "fragment_count": None})
     from . import workshop_material_support
-    blocker = workshop_material_support.fixed_lattice_blocker(design, component_overrides)
+    blocker = workshop_material_support.fixed_lattice_blocker(design, component_overrides, cell_m=cell_size_m)
     if blocker:
         report["blocker"] = blocker
         report["errors"].append(blocker["message"])
@@ -139,11 +139,21 @@ def assess(design: WorkshopDesign, component_overrides: Any = None, *,
         if full["total_cells"] <= MAX_SCENE_CELLS:
             boxes = decompose_cells({tuple(c["grid"]) for c in full["cells"]})
             report["costs"]["collision_boxes"] = len(boxes)
-            if len(boxes) > MAX_SCENE_BOXES:
-                report["errors"].append(f"{len(boxes)} joined boxes exceed the {MAX_SCENE_BOXES}-box exact bridge budget")
         materials = {c["material"] for c in full["cells"]}
         if len(materials) > 1 and not blocker:
-            report["errors"].append("Mixed-material fixed interfaces are not supported by the current installation adapter")
+            from . import workshop_fixed_assembly
+            try:
+                fixed=workshop_fixed_assembly.layout(design,component_overrides,cell_m=cell_size_m,matter=full)
+                report['fixed_interfaces']=fixed['connections']
+                report['warnings'].extend(fixed['limitations'])
+                # Constituent bodies cannot share a box across a material seam.
+                report['costs']['collision_boxes']=sum(len(decompose_cells(
+                    {tuple(c['grid']) for c in group['matter']['cells']})) for group in fixed['groups'])
+            except ValueError as error:
+                report['errors'].append(str(error))
+        count=report['costs']['collision_boxes']
+        if count is not None and count > MAX_SCENE_BOXES:
+            report['errors'].append(f"{count} joined boxes exceed the {MAX_SCENE_BOXES}-box exact bridge budget")
     else:
         report["errors"].append("No physical cells exist at this resolution")
     report["clearance_checks"] = _clearances(design, visual.skin_overrides(component_overrides), full)

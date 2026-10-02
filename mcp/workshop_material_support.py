@@ -1,13 +1,12 @@
 """Read-only admission of constituent materials in fixed lattice groups.
 
-No solver implements a mixed-material lattice interface yet. Preserve the
-authored draft and describe that boundary; never substitute a material to pass.
-Exact rigid assemblies have a separate native constituent allocation model.
+Mixed fixed products use separate material bodies and reviewed native fixings.
+Preserve a draft when its sampled mounts cannot be represented.
 """
 from . import engine_materials, workshop_construction, workshop_machines, workshop_rigid
 
 
-def fixed_lattice_blocker(design, overrides=None):
+def fixed_lattice_blocker(design, overrides=None, *, cell_m=.04):
     if workshop_rigid.requested_models(design, overrides) != {"lattice"}:
         return None
     parts = {p.name: p for p in design.parts}
@@ -38,8 +37,17 @@ def fixed_lattice_blocker(design, overrides=None):
             blocked.append({"components": sorted(members), "materials": materials})
     if not blocked:
         return None
+    if not any(j["kind"] == "bearing" for j in joints) and not workshop_machines.of(design):
+        from . import workshop_fixed_assembly
+        try:
+            workshop_fixed_assembly.layout(design, overrides, cell_m=cell_m)
+            return None
+        except ValueError as error:
+            reason = str(error)
+    else:
+        reason = "Mixed fixed groups within articulated machines need their own native adapter"
     first = blocked[0]
     names = ", ".join(f"{name} ({first['materials'][name]})" for name in first["components"])
     return {"code": "mixed_lattice_interface_unsupported", "groups": blocked,
             "can_save_design": True,
-            "message": f"Cannot make {names} together yet: this material joint is unsupported. You can save the design."}
+            "message": f"Cannot make {names}: {reason}. You can save the design."}

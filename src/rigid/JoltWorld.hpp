@@ -16,6 +16,7 @@
 
 #include <memory>
 #include <optional>
+#include <span>
 #include <functional>
 #include <vector>
 
@@ -874,6 +875,10 @@ public:
                                                            double tolerance_m) const;
     [[nodiscard]] RayHit castRay(const Vec3 &from_world_m,const Vec3 &direction,
                                  double max_distance_m, std::optional<MatterBodyId> ignore_body = std::nullopt) const;
+    // Filter complete held assemblies without advancing the ray past terrain
+    // or hiding bodies belonging to another actor.
+    [[nodiscard]] RayHit castRayIgnoring(const Vec3 &from_world_m, const Vec3 &direction,
+                                        double max_distance_m, std::span<const MatterBodyId> ignore_bodies) const;
     // Put a body back into simulation and clear how long it has been still.
     // A body that has come to rest is dropped from the step -- that is what
     // keeps a scene of a hundred settled pieces cheap -- and nothing that only

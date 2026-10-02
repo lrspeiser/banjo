@@ -3266,6 +3266,15 @@ function renderRemake() {
   remakeRow(root,"Energy",energySaid(quote.supply_required_j));
   if(quote.output_energy_j>0)remakeRow(root,"Battery charge",energySaid(quote.output_energy_j));
   remakeRow(root,"Minimum time",`${quote.minimum_duration_s.toFixed(1)} s`);
+  if(quote.fixed_interfaces?.length) {
+    remakeRow(root,"Connections",`${quote.fixed_interfaces.length} · Fixed`);
+    const details=make("details",{});details.append(make("summary",{},"Connection limits"));
+    for(const mount of quote.fixed_interfaces) {
+      const row=make("p",{},`${mount.components.join(" ↔ ")} · Pull ${Math.round(mount.holds_tension_n)} N · Shear ${Math.round(mount.holds_shear_n)} N`);
+      details.append(row);
+    }
+    details.append(make("p",{},"Catalog estimate · Joint quality, fatigue and twisting strength uncalibrated"));root.append(details);
+  }
   if(kind==="remake")remakeRow(root,"Original","Kept · Damage retained");
   if(job) {
     remakeRow(root,"Work",`${Math.round(100*job.work_j/job.required_j)}% · ${titleCase(job.status)}`);
@@ -3627,7 +3636,7 @@ function renderBuildability() {
   if (report.blocker?.code === "mixed_lattice_interface_unsupported") {
     const group = report.blocker.groups[0];
     const materials = group.components.map(name => `${name}: ${group.materials[name]}`).join(" · ");
-    summary.textContent = `${materials} · Make: Joint not supported yet · Save: Available`;
+    summary.textContent = `${materials} · Make: Unavailable · Save: Available`;
     summary.title = (report.errors || []).join("\n");
     say(summary.textContent, true);
     return;

@@ -33,9 +33,9 @@ class IsolatedRunner(WorkbenchTestCase):
         ident=json.loads(raw)["id"]
         status,_,_=self.request(app,"POST","/api/fabrication-qa/run",{})
         self.assertEqual(status,400)
-        # Match the worker's declared 120 s deadline plus bounded cleanup. This
+        # Match the worker's declared deadline plus bounded cleanup. This
         # suite now includes ordinary Chrome journeys, not only native units.
-        manager.thread.join(timeout=130);self.assertFalse(manager.thread.is_alive())
+        manager.thread.join(timeout=fabrication_qa.RUN_LIMIT_S+10);self.assertFalse(manager.thread.is_alive())
         report=self.get(app,"/api/fabrication-qa/runs/"+ident)
         self.assertEqual(report["status"],"passed",report)
         self.assertEqual(report["completed"],len(report["results"]))

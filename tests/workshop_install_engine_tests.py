@@ -325,6 +325,10 @@ class NativeInstallation(unittest.TestCase):
         # Drawn as the person left it, the cart does not compile; Check it
         # redraws it until it does, and that is what gets made.
         cart = self.solar_cart()
+        # Explicit homogeneous articulation fixture. The catalog's mixed
+        # axle/wheel lattice group remains refused, covered separately below.
+        fixture,_=workshop_components.design_from_spec(cart)
+        cart['component_overrides'].update({p.name:{'material':'oak'} for p in fixture.parts})
         design, overrides = workshop_components.design_from_spec(cart)
         checked = workshop_fitting.check_validity(design, overrides, cell_m=0.04, root="cart")
         self.assertTrue(checked["ok"], checked.get("says"))
@@ -361,6 +365,16 @@ class NativeInstallation(unittest.TestCase):
         self.assertEqual(9000, workshop_machines.of_overrides(
             back["recipe"]["component_overrides"])["stores"][0]["capacity_j"])
         print(f"    made again with a 9 kJ battery: {again['mass_kg']:.1f} kg", flush=True)
+
+    def test_catalog_solar_cart_retains_mixed_constituents_when_refused(self):
+        import workshop_fitting
+        cart=self.solar_cart();before=deepcopy(cart)
+        design,overrides=workshop_components.design_from_spec(cart)
+        checked=workshop_fitting.check_validity(design,overrides,cell_m=.04,root='cart')
+        self.assertFalse(checked['ok'])
+        self.assertEqual('mixed_lattice_interface_unsupported',checked['blocker']['code'])
+        self.assertEqual([],checked['changes'])
+        self.assertEqual(before,cart)
 
     def test_native_terrain_install_keeps_excavation_and_rejects_changed_ground(self):
         import server
@@ -821,9 +835,10 @@ class NativeInstallation(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'overlaps|touches'):self.preview(position=(-5,-5))
         self.assertEqual(before,self.snap());self.assertIs(old,self.live.session)
 
-    def test_mixed_material_articulated_and_disconnected_candidates_are_refused(self):
+    def test_unconnected_mixed_material_articulated_and_disconnected_candidates_are_refused(self):
         for candidate in (
-          {'kind':'table','component_overrides':{'leg-1':{'material':'iron'}}},
+          {'kind':'table','component_overrides':{'leg-1':{'material':'iron'},
+             '@construction':{'joints_authored':True}}},
           {'kind':'cart'},
           {'kind':'table','component_overrides':{'top':{'skin':{'profile':'curve','bend_m':1,'physical':True}}}}):
             with self.subTest(candidate=candidate):

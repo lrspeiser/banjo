@@ -23,6 +23,7 @@ import math
 import sys
 import time
 import threading
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Callable
 
@@ -317,15 +318,20 @@ def run(app: Any, body: dict[str, Any],
 
 
 def _native_point(app,tool):
-    points=app.live.act({'session':app.live.session.id,'op':'tool_points'}).get('tool_points') or []
-    point = next((p for p in points if (p.get('grip_body') or p.get('body'))==tool and
-                  p.get('attached',True) and p.get('grip_connected',True)),None)
-    if point and point.get('body') != tool:
-        pose = next((b for b in app.live.session.state.get('bodies') or [] if b.get('name') == tool),None)
-        if pose:
-            point = {**point, **tool_gestures.local_frame(point['tip'],point['grip'],point['pointing'],
-                pose['position_m'],pose['orientation_wxyz'])}
-    return point
+    session=app.live.session
+    # The point and the handle pose must describe one native instant. A clock
+    # step between them turns an old renderer pose into a wrong grip frame.
+    with getattr(app.live,'_lock',nullcontext()):
+        points=app.live.act({'session':session.id,'op':'tool_points'}).get('tool_points') or []
+        point = next((p for p in points if (p.get('grip_body') or p.get('body'))==tool and
+                      p.get('attached',True) and p.get('grip_connected',True)),None)
+        if point and point.get('body') != tool:
+            poses=app.live.act({'session':session.id,'op':'poses'})
+            pose = next((b for b in poses.get('bodies') or [] if b.get('name') == tool),None)
+            if pose:
+                point = {**point, **tool_gestures.local_frame(point['tip'],point['grip'],point['pointing'],
+                    pose['position_m'],pose['orientation_wxyz'])}
+        return point
 
 
 def _contact(app,said,use,tool,eyes,heard,note):
@@ -350,6 +356,10 @@ def _contact(app,said,use,tool,eyes,heard,note):
         # Turn above the terrain before lowering. Rotating and translating to
         # near-ground ready simultaneously can sweep the point through soil.
         high=[*ready['hand']];high[1]+=.6
+        app.live.act({'session':session.id,'op':'stroke','path':[_grip(session),high],
+            'speed_m_s':1.0,'accel_m_s2':8.0,'lead_m':tool_gestures.LEAD_M,
+            'give_up_s':2.0,'let_go':False})
+        _stroke(app)
         app.live.act({'session':session.id,'op':'step','dt':1/240,'n':1,
             'hand':high,'hand_q':ready['hand_q']})
         began=time.monotonic()
