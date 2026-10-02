@@ -1,5 +1,7 @@
 # Remaining player goals — October 2, 2026
 
+**Owner-directed R1 handoff, October 2:** [Current checkpoint and failed acceptance](material-build-handoff.md) stop at the verified rock-storage implementation `0801d3f` on GitHub main. The draft fresh-world journey reached private copper funding but failed a later solar-bank durable save; final build/use/restart remain unqualified. Next fix that receipt/snapshot mismatch and resume R1. The draft is preserved locally, R3 remains paused, and previews are unchanged.
+
 ## Owner-directed handoff — October 2
 
 Stop the current R3 damage/reuse work at the published checkpoint: implementation `cff3b95`, publication record `0e6a205`, on GitHub main. R3 remains unfinished: normal-world target damage, held internal damage, genuine repair and wear are not qualified. Existing preview binaries were not refreshed by these checkpoints.

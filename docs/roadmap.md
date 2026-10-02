@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Owner-directed R1 handoff, October 2:** [Current checkpoint and failed acceptance](material-build-handoff.md) stop at the verified rock-storage implementation `0801d3f` on GitHub main. The draft fresh-world journey reached private copper funding but failed a later solar-bank durable save; final build/use/restart remain unqualified. Next fix that receipt/snapshot mismatch and resume R1. The draft is preserved locally, R3 remains paused, and previews are unchanged.
+
 **R1 storage progress, October 2:** [Broken-rock receiving/restore](material-build-storage-checkpoint.md) completes the API raw-storage boundary with actual-source rollback/retry/whole reopening. Continue the ordinary collection/process/private output/paid build/use/restart journey, broader saved designs, unassigned recovery and exhausted-input/storage guidance. R1 remains open; storage supplies no finished material or new physics law.
 
 **Owner-directed priority, October 2:** Wrap the current R3 work at published implementation `cff3b95` / record `0e6a205`; retain its unfinished acceptance gates. Next is **R1: complete the material-to-build loop**, scoped to the fresh-world collection/processing/private output/paid build/use/restart journey in the [working-list handoff](player-experience-checklist.md#owner-directed-handoff--october-2). This priority supersedes the historical R3 “next” instructions below; it does not mark R3 complete or refresh preview binaries.
