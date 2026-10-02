@@ -163,6 +163,10 @@ Sources: [native preparation](../src/rigid/JoltWorld.cpp),
 
 ## Publication
 
-Implementation publication is pending the final fetch and ordinary main push.
-This is an experimental integration checkpoint; player object destruction stays
-open and preview binaries are unchanged. No production deployment is included.
+Implementation `cf9ce923de715e5eabd0f4265350e3251d1c8087` is published on
+GitHub main by an ordinary fast-forward push. The recorded tests were compiled
+from those exact implementation sources; this following publication record
+changes only documentation. Preview 8770 remains HTTP 200 with unchanged R2
+`banjo_live_world_run.exe` and `banjo.dll` hashes. No production deployment is
+included. This is an experimental integration checkpoint: unclosed solver
+accounts, player object destruction and all five remaining goals stay open.
