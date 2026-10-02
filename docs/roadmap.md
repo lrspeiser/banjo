@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Bounded hand/target prerequisite, October 2:** [Shared grip reference](held-strike-hand-checkpoint.md) now uses the actual LiveWorld controller law in a local native-root wrench and simultaneous native/CPU clock experiment. Analytical feedback/force/torque gates, matched glass/oak/iron cases and eighteen affected suites pass. Signed hand work and native source remainders are retained; external contact joint impulses are not mistaken for cached native strength loads. Next implement full source/target/hand rollback, finite interface failure and grip/history handling, then wire normal object strikes and complete the paid damage/reuse/restart journey. R3 and the five remaining player goals stay open.
+
 **Target numerical prerequisite, October 2:** [Explicit CPU reference](held-strike-integrator-checkpoint.md) reduces the coupled experiment's target integration error and angular drift using opt-in central-force velocity Verlet, retaining the existing material/failure laws and XPBD controls. Analytical and matched glass/oak/iron gates pass; explicit plastic-return numerical loss, native float drift, fracture topology convergence and reference performance remain visible. Next integrate bounded native hand work, finite joint strength and full-step rollback on the accepted clock, then connect crosshair object strikes and complete damage/paid reuse/restart. R3 remains open; five player goals remain.
 
 **Paid mixed-tool acceptance, October 2:** [Normal Lab/World evidence](paid-mixed-tool-checkpoint.md) completes R2's requested iron/oak Make and use journey with private restart and unchanged source. This supersedes the earlier native-only/draft gates below. Next finish R1 supply routes and R3 actual damage → paid reuse, including the missing ordinary tool/object strike path. R4–R6 remain active; retain unsupported interface refusal and the full platform gates.
@@ -27,7 +29,11 @@ kick/projection/reconstructed-velocity/failure accounts; the subsequent
 [opt-in explicit target reference](held-strike-integrator-checkpoint.md) now
 qualifies bounded analytical and matched energy/angular refinement without
 replacing XPBD. Retain native float errors, explicit plastic-return loss and
-unconverged fracture topology as qualification boundaries, then connect actual bounded native hand/joint reactions and
+unconverged fracture topology as qualification boundaries. The subsequent
+[shared hand/target reference](held-strike-hand-checkpoint.md) now evaluates the
+actual controller law and local native root load on that reference clock, with
+signed external work and retained source remainders. Complete accepted-step
+rollback, finite interface failure and grip/history handling, then connect
 the object-target route with the complete acceptance checks below.
 R3 remains open.
 

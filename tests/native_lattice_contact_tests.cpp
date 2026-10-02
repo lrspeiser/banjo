@@ -2,6 +2,7 @@
 #include "material/MaterialCatalog.hpp"
 #include "material/MaterialCompiler.hpp"
 #include "matter/BoxLattice.hpp"
+#include "physics/GripPull.hpp"
 #include <cmath>
 #include <chrono>
 #include <iostream>
@@ -142,13 +143,17 @@ void preparedContactIsImmutableAndInvalidates() {
     rejects(reshaped,shape_plan);
 }
 void coupledMatchedTargets() {
-    for(auto integrator:{kBondXpbd,kBondVelocityVerlet}) {
+    for(auto configuration:{std::pair{kBondXpbd,false},std::pair{kBondVelocityVerlet,false},std::pair{kBondVelocityVerlet,true}}) {
+    const auto [integrator,held]=configuration;
     std::map<MaterialPreset,double> coarse_target_energy;
     for(double timestep:{dt,.5*dt})for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
         Tool tool(6);Target target(preset,true,timestep,integrator);auto backend=target.backend();
         const auto initial=totals(target.state,tool.world);double loss=0,reconcile=0,numerical=0,max_contact_work=0;
         Vec3 p_error{},l_error{},couple{};std::uint64_t contacts=0,native_steps=0;
         double native_step_energy=0,target_step_energy=0;
+        double hand_work=0,max_hand_force=0,max_hand_torque=0,max_joint_impulse=0,max_native_step_energy=0;
+        double max_native_joint_tension=0,max_native_joint_shear=0;
+        Vec3 hand_impulse{},hand_angular{};
         Vec3 native_step_p{},native_step_l{},target_step_p{},target_step_l{};double max_native_step_p=0,max_native_step_l=0;
         const unsigned count=timestep==dt?2048:4096;
         const auto started=std::chrono::steady_clock::now();
@@ -169,15 +174,40 @@ void coupledMatchedTargets() {
                     reconcile+=receipt.source.contact.reconciliation_loss_j;numerical+=receipt.source.numerical_energy_change_j;
                     p_error+=receipt.source.momentum_error_kg_m_s;l_error+=receipt.source.angular_momentum_error_kg_m2_s;
                     couple+=receipt.source.contact.geometry_couple_kg_m2_s;
+                    for (const auto &reaction:receipt.source.contact.contact_reactions)
+                        max_joint_impulse=std::max(max_joint_impulse,length(reaction.impulse_on_b_n_s));
                     max_contact_work=std::max(max_contact_work,std::abs(receipt.source.contact.work_residual_j));
                 }
             }
             const auto native_before=tool.world.mechanicalTotals();
+            const auto root=tool.world.mechanicalState(10);
+            const Vec3 grip_local{-.08,0,0},arm=root.motion.orientation_world.rotate(grip_local);
+            const Vec3 grip_velocity=root.motion.linear_velocity_m_s+cross(root.motion.angular_velocity_rad_s,arm);
+            GripPull hand{};
+            if (held) {
+                // Current actual fixed constituents and actual root feedback;
+                // one bounded local wrench, never distributed over the members.
+                const auto feedback=makeGripFeedback(root,{root,tool.world.mechanicalState(1)},grip_local);
+                hand=gripPull(feedback.held,feedback.grip_local,{-.24+6*step*timestep,0,0},{6,0,0},{},800,60,{},20);
+                tool.world.pushBodyAt(10,hand.force,hand.grip);tool.world.twistBody(10,hand.torque);tool.world.wake(10);
+                max_hand_force=std::max(max_hand_force,length(hand.force));max_hand_torque=std::max(max_hand_torque,length(hand.torque));
+            }
             tool.world.step(timestep);++native_steps;
             const auto native_after=tool.world.mechanicalTotals();
-            native_step_energy+=native_after.kinetic_energy_j-native_before.kinetic_energy_j;
-            const auto step_p=native_after.linear_momentum_kg_m_s-native_before.linear_momentum_kg_m_s;
-            const auto step_l=native_after.angular_momentum_kg_m2_s-native_before.angular_momentum_kg_m2_s;
+            const auto root_after=tool.world.mechanicalState(10);
+            const Vec3 velocity_after=root_after.motion.linear_velocity_m_s+
+                cross(root_after.motion.angular_velocity_rad_s,root_after.motion.orientation_world.rotate(grip_local));
+            const double work=dot(hand.force,.5*timestep*(grip_velocity+velocity_after))+
+                dot(hand.torque,.5*timestep*(root.motion.angular_velocity_rad_s+root_after.motion.angular_velocity_rad_s));
+            hand_work+=work;hand_impulse+=timestep*hand.force;
+            const Vec3 angular=timestep*(cross(hand.grip,hand.force)+hand.torque);hand_angular+=angular;
+            const double step_energy=native_after.kinetic_energy_j-native_before.kinetic_energy_j-work;
+            native_step_energy+=step_energy;max_native_step_energy=std::max(max_native_step_energy,std::abs(step_energy));
+            const auto load=tool.world.jointLoad(tool.fixing,{1,0,0});
+            max_native_joint_tension=std::max(max_native_joint_tension,load.tension_n);
+            max_native_joint_shear=std::max(max_native_joint_shear,load.shear_n);
+            const auto step_p=native_after.linear_momentum_kg_m_s-native_before.linear_momentum_kg_m_s-timestep*hand.force;
+            const auto step_l=native_after.angular_momentum_kg_m2_s-native_before.angular_momentum_kg_m2_s-angular;
             native_step_p+=step_p;native_step_l+=step_l;
             max_native_step_p=std::max(max_native_step_p,length(step_p));max_native_step_l=std::max(max_native_step_l,length(step_l));
             const auto target_before=target.download(*backend);const auto status_before=backend->status();
@@ -199,14 +229,14 @@ void coupledMatchedTargets() {
         require(status.contact.candidate_overflow==0&&status.node_contact.pair_overflow==0,"coupled fixture exceeded target contact capacity");
         require(status.max_tensile_stretch>0||status.max_compressive_strain>0||status.max_shear_strain>0,
             "tool contact never entered target constitutive sampling");
-        const Vec3 residual_p=final.linear_momentum_kg_m_s-initial.linear_momentum_kg_m_s-p_error;
-        const Vec3 residual_l=final.angular_momentum_kg_m2_s-initial.angular_momentum_kg_m2_s-l_error-couple;
+        const Vec3 residual_p=final.linear_momentum_kg_m_s-initial.linear_momentum_kg_m_s-p_error-hand_impulse;
+        const Vec3 residual_l=final.angular_momentum_kg_m2_s-initial.angular_momentum_kg_m2_s-l_error-couple-hand_angular;
         const double unallocated=final.mechanicalEnergy()-initial.mechanicalEnergy()+loss+reconcile+
-            status.removed_energy_j+status.plastic_work_j+status.damping_dissipated_j+status.plastic_return_numerical_loss_j-numerical;
+            status.removed_energy_j+status.plastic_work_j+status.damping_dissipated_j+status.plastic_return_numerical_loss_j-numerical-hand_work;
         require(std::isfinite(unallocated)&&std::isfinite(length(residual_p))&&std::isfinite(length(residual_l)),"coupled trajectory audit became nonfinite");
         near(final.mass_kg,initial.mass_kg,1e-12,"coupled experiment lost mass");
         near(unallocated,native_step_energy+target_step_energy,1e-10,"coupled unallocated energy attribution");
-        std::cout<<(integrator==kBondXpbd?"XPBD ":"Verlet ")<<materialPresetName(preset)<<": cells="<<target.state.node_count<<" h="<<cell<<" dt="<<timestep<<" elapsed="<<count*timestep
+        std::cout<<(held?"Held ":"")<<(integrator==kBondXpbd?"XPBD ":"Verlet ")<<materialPresetName(preset)<<": cells="<<target.state.node_count<<" h="<<cell<<" dt="<<timestep<<" elapsed="<<count*timestep
             <<" s; contacts="<<contacts<<" broken="<<status.broken_bonds<<" damage="<<status.max_damage
             <<" strain="<<status.max_tensile_stretch<<"; plastic="<<status.plastic_work_j<<" J; contact loss="<<loss<<" J; reconcile="<<reconcile
             <<" J; numerical="<<numerical<<" J; phase work="<<max_contact_work<<" J; p residual="<<length(residual_p)
@@ -216,16 +246,31 @@ void coupledMatchedTargets() {
             <<" J; native step="<<native_step_energy<<" J; target step="<<target_step_energy
             <<" J; native step p/L="<<length(native_step_p)<<"/"<<length(native_step_l)
             <<"; target step p/L="<<length(target_step_p)<<"/"<<length(target_step_l)
-            <<"; max native step p/L="<<max_native_step_p<<"/"<<max_native_step_l<<"\n";
+            <<"; max native step p/L="<<max_native_step_p<<"/"<<max_native_step_l
+            <<"; hand work="<<hand_work<<" J; max hand force/torque="<<max_hand_force<<"/"<<max_hand_torque
+            <<"; hand impulse="<<length(hand_impulse)<<"; max contact joint impulse="<<max_joint_impulse
+            <<"; max native force-step error="<<max_native_step_energy<<" J; native fixing tension/shear="
+            <<max_native_joint_tension<<"/"<<max_native_joint_shear<<" N\n";
         std::cout<<"  audited reference loop wall="<<wall<<" s; wall/sim="<<wall/(count*timestep)<<"\n";
         near(length(residual_p-native_step_p-target_step_p),0,1e-10,"combined momentum attribution");
         near(length(residual_l-native_step_l-target_step_l),0,1e-10,"combined angular attribution");
-        require(length(residual_p-native_step_p)<1e-9&&length(target_step_p)<1e-9&&max_native_step_p<1e-6&&max_native_step_l<1e-7&&
+        // Retain the unforced native step gates. The newly added finite-force
+        // experiment has the same declared SI float-transfer budgets as its
+        // contact phase; accumulated native errors remain unclosed and printed.
+        // No tolerance certifies overall hand/world conservation.
+        const double native_p_budget=held?budget.linear_impulse_n_s:1e-6;
+        const double native_l_budget=held?budget.angular_impulse_kg_m2_s:1e-7;
+        require(length(residual_p-native_step_p)<1e-9&&length(target_step_p)<1e-9&&max_native_step_p<native_p_budget&&max_native_step_l<native_l_budget&&
             max_contact_work<1e-12,"coupled transfer/native-step arithmetic bounds");
+        if (held) require(max_native_step_energy<budget.energy_j,"native forced-step energy budget");
         // Target angular and energy residuals remain measured, unclosed solver
         // behavior. No broadened angular/energy tolerance certifies conservation.
         if(preset==MaterialPreset::Glass)require(status.broken_bonds>0,"matched tool input no longer enters glass fracture");
         if(preset==MaterialPreset::Oak)require(status.broken_bonds==0,"oak comparison became a brittle substitute");
+        // A moving hand can absorb work when the grip recoils against its
+        // pull. Signed work must be retained, not forced to be positive.
+        if (held) require(std::isfinite(hand_work)&&std::abs(hand_work)>0&&max_hand_force>0&&max_hand_force<=800+1e-10&&max_hand_torque<=60+1e-10&&
+            max_joint_impulse>0&&tool.world.hasJoint(tool.fixing),"held reference lost bounded local hand or actual fixing");
         if(integrator==kBondVelocityVerlet) {
             require(length(target_step_l)<1e-9,"central-force target angular drift");
             near(target_step_energy,status.integration_numerical_energy_j,1e-10,"measured Verlet integration energy attribution");

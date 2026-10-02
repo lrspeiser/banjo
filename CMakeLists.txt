@@ -100,6 +100,7 @@ add_library(
     src/physics/SphereMaterialContact.cpp
     src/physics/PointRigidContact.cpp
     src/physics/FixedAssemblyContact.cpp
+    src/physics/GripPull.cpp
     src/fracture/ActivationPolicy.cpp
     src/fracture/FracturePreview.cpp
     src/fracture/RuptureCascade.cpp

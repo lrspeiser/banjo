@@ -25,6 +25,7 @@
 //    is lifted by the hand's strength or not at all.
 
 #include "fastlattice/LiveWorld.hpp"
+#include "physics/GripPull.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -47,6 +48,40 @@ constexpr double kDt = 1.0 / 240.0;
 constexpr double kGravity = 9.80665;
 constexpr double kStrength = 800.0;   // the hand's, unless told otherwise
 constexpr double kLead = 0.05;
+
+void sharedGripAnalyticalOracles() {
+    RigidMechanicalState body;body.mass_kg=2;
+    for (int i=0;i<3;++i) body.inertia_world_kg_m2.m[i][i]=1;
+    const auto mass=gripEffectiveMass(2,body.inertia_world_kg_m2,{.5,0,0});
+    require(std::abs(mass.m[0][0]-2)<1e-14&&std::abs(mass.m[1][1]-4.0/3)<1e-14&&std::abs(mass.m[2][2]-4.0/3)<1e-14,
+        "point effective mass does not match translation plus rotational response");
+    const auto pull=gripPull(body,{},{.01,0,0},{},{},800,60,{});
+    require(std::abs(pull.force.x-160)<1e-12&&length(pull.torque)==0,"centre grip spring force oracle");
+    const auto full=gripPull(body,{},{2,0,0},{},{},800,60,{});
+    require(std::abs(full.force.x-800)<1e-12,"hand force cap");
+    const Quat facing{std::cos(.05),0,0,std::sin(.05)};
+    const auto wrist=gripPull(body,{},{},{},facing,800,60,{});
+    require(std::abs(wrist.torque.z-60)<1e-12,"wrist torque cap");
+    const auto opposite=gripTurnBetween({},Quat{-facing.w,0,0,-facing.z});
+    require(length(opposite-Vec3{0,0,.1})<1e-14,"short rotation must not depend on quaternion sign");
+    const double a=std::sqrt(.5);body.motion.orientation_world={a,0,0,a};
+    const auto rotated=gripPull(body,{},{0,.01,0},{},body.motion.orientation_world,800,60,{});
+    require(length(rotated.force-Vec3{0,160,0})<1e-12,"rotated centre grip force oracle");
+    body.mass_kg=100;const auto heavy=gripPull(body,{},{},{},body.motion.orientation_world,800,60,{0,-9.81,0});
+    require(length(heavy.force-Vec3{0,800,0})<1e-12,"unliftable body exceeded the same finite hand");
+
+    body.mass_kg=2;body.motion={};body.motion.center_of_mass_world_m={-.5,0,0};
+    body.motion.linear_velocity_m_s={1,2,3};body.motion.angular_velocity_rad_s={0,0,4};
+    auto other=body;other.motion.center_of_mass_world_m={.5,0,0};other.motion.linear_velocity_m_s={100,100,100};
+    const auto feedback=makeGripFeedback(body,{body,other},{-.25,0,0});
+    require(feedback.held.mass_kg==4&&length(feedback.held.motion.center_of_mass_world_m)<1e-14&&
+        std::abs(feedback.held.inertia_world_kg_m2.m[0][0]-2)<1e-14&&std::abs(feedback.held.inertia_world_kg_m2.m[1][1]-3)<1e-14,
+        "aggregate grip mass and parallel-axis inertia oracle");
+    const Vec3 grip_velocity=feedback.held.motion.linear_velocity_m_s+
+        cross(feedback.held.motion.angular_velocity_rad_s,feedback.held.motion.orientation_world.rotate(feedback.grip_local));
+    require(length(grip_velocity-Vec3{1,1,3})<1e-14&&length(feedback.held.motion.angular_velocity_rad_s-Vec3{0,0,4})==0,
+        "aggregate feedback hid the actual root's grip motion");
+}
 
 const LiveBodyPose &named(const std::vector<LiveBodyPose> &poses, const std::string &name) {
     for (const LiveBodyPose &pose : poses)
@@ -483,6 +518,7 @@ int main() {
     // Every check runs and every failure is said: one that stops at the first
     // hides the rest.
     const std::vector<std::pair<const char *, std::function<void()>>> tests = {
+        {"shared grip effective mass, bounds and root-feedback oracles", sharedGripAnalyticalOracles},
         {"a stroke needs a hand that pulls", aStrokeNeedsAHandThatPulls},
         {"the same throw, light and heavy balls", lightAndHeavyBalls},
         {"a draw against a spring", drawingAgainstASpring},
