@@ -661,6 +661,10 @@ in a rope held against the hand, which is 1,600 N of pull less what friction und
 the block took. With the hand left where it was, the same rope read 798 N. The
 reading was right; the pull had doubled.
 
+### `int banjo_fix_section(banjo_world *world, const char *a, const char *b, const double at_m[3], const double axis[3], double holds_tension_n, double holds_shear_n, const double section_u[3], double section_u_m, double section_v_m)`
+
+Additive rectangular-section fixing API; the existing `banjo_joint` layout is unchanged. `section_u` is a world-space direction perpendicular to `axis`; section dimensions are positive metres, at most 100. The experimental normal-force limit includes bending through `|N| + 6|Mu|/v + 6|Mv|/u`, compared with `holds_tension_n`. Shear retains its existing limit. This is abrupt interface failure, with no torsion, fracture energy, fatigue, grain or adhesive calibration. Section history requires native snapshot v2; older binaries cannot restore it whole. See the [measured interface checkpoint](../rectangular-mount-reuse-checkpoint.md).
+
 ### `int banjo_fix(banjo_world *world, const char *a, const char *b, const double at_m[3], const double axis[3], double holds_tension_n, double holds_shear_n)`
 
 Two bodies held together as **one piece**: a peg, a bracket, a nail, a bolt, a

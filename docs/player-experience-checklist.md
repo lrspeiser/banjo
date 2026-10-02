@@ -20,6 +20,8 @@ Updated with the [paid mixed-tool checkpoint](paid-mixed-tool-checkpoint.md). Th
 
 ## Evidence to extend
 
+- R1 storage: [broken-rock receiving and whole reopening](material-build-storage-checkpoint.md) completes raw API storage/return only. Fresh-world processing/building, unassigned recovery and player storage guidance remain open.
+
 - R1: [recipe supplies](recipe-supply-checkpoint.md), [gathering](gathering-supply-checkpoint.md), [material previews](material-preview-checkpoint.md), [fresh workbench and paid opening progression](fresh-workbench-checkpoint.md).
 - Completed R2: [paid per-material Lab Make/use/restart](paid-mixed-tool-checkpoint.md), extending [draft fidelity](mixed-tool-draft-checkpoint.md) and [native fixed constituents](mixed-tool-native-checkpoint.md). Unsupported mixed articulated lattice groups and calibrated joint failure retain their own gates.
 - R2–R3: [selected-item remake](fabrication-remake-checkpoint.md), [funding and output use](fabrication-lab-funding-checkpoint.md), [actual condition](body-condition.md), [paid machine supplies](fabrication-assembly-goods-checkpoint.md).

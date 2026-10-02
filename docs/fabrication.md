@@ -113,8 +113,8 @@ that current `scene` and `session`. Unknown fields refuse.
 | `pause` | `fabrication_pause` | `job_id`, `revision`, `request_id`. Keeps the intermediate workpiece. |
 | `resume` | `fabrication_resume` | `job_id`, `revision`, `request_id`. Continues retained work. |
 | `recover` | `fabrication_recover` | `material`, `mass_kg` (0.000001..10000), `revision`, `request_id`. Moves available cold offcuts into same-material stock, with no work/energy refund. |
-| `retrieve_ground` | `fabrication_retrieve_ground` | `lot_id`, `sand_m3`, `soil_m3`, `revision`, `request_id`. Positive total bounded by `raw_inventory` and native carrying capacity. Saves the return receipt and native credit together; returns replacement `session`, `state`, `replayed`. |
-| `store_ground` | `fabrication_store_ground` | `sand_m3`, `soil_m3` (each 0..10000, sum positive and no greater than carried), `revision`, `request_id`. Atomically saves raw lots and native debit; returns new `session`, process `state`, and `replayed`. |
+| `retrieve_ground` | `fabrication_retrieve_ground` | `lot_id`, `sand_m3`, `soil_m3`, optional `rock_m3` (default zero), `revision`, `request_id`. Positive total bounded by `raw_inventory` and native carrying capacity. Saves the return receipt and native credit together; returns replacement `session`, `state`, `replayed`. |
+| `store_ground` | `fabrication_store_ground` | `sand_m3`, `soil_m3`, optional `rock_m3` (default zero; each 0..10000, sum positive and no greater than carried), `revision`, `request_id`. Atomically saves raw lots and native debit; returns new `session`, process `state`, and `replayed`. |
 | `connect_energy` | `fabrication_connect_energy` | Native `store` ID, current `store_hash`, `power_w`, `revision`, `request_id`. Starts one bounded charger interval; saves identity without spending energy. |
 | `fund_energy` | `fabrication_fund_energy` | Current `store_hash`, positive `joules` (0.000001..1e9), `revision`, `request_id`. Debits the connected native battery and credits the process atomically; returns replacement `session`, `state`, `replayed`. |
 | `fund_stock` | `fabrication_fund_stock` | Canonical `material`, `mass_kg` (0.000001..10000), `pool` (`personal` or explicit `shared`), current `rack_hash`, `revision`, `request_id`. Reserves real rack stock, then credits shared station stock once. Failed receiving saves retain visible escrow. |
@@ -464,6 +464,8 @@ World MCP 1.10.0 and platform MCP 1.13.1 expose `fabrication_recover`; native AB
 
 
 ## Stored excavated materials
+
+**Broken-rock extension, October 2:** HTTP/MCP raw storage and retrieval now accept optional `rock_m3`. Native ground v4/v5 is required for rock. Receiving lots retain native `rubble` form for rock alone and `mixed` for rock with sand/soil; sand/soil remain `granular`. Rock mass uses the existing native 2400 kg/m3 density, sand/soil 1600 kg/m3. Native whole reopening now validates rock exports minus returns plus all carried accounts against the excavation/cut ledger instead of refusing every nonzero rock export. Corrupt excess exports/returns still refuse. `ground_audit` includes a rock row with those same units and density. No substance conversion, usable build stock, physical container, thermal transport or new work/strength law follows from this storage extension. See [verification and remaining R1 work](material-build-storage-checkpoint.md).
 
 `state` additionally returns `carried_ground` with native sand/soil m3 and kg.
 The Raw materials panel can transfer the current carried quantities into saved

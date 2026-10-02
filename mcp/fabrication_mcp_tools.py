@@ -40,6 +40,9 @@ FIELDS = {
     "commit": {"job_id":TOKEN,"preview_id":TOKEN,"request_id":TOKEN},
     "wait": {"seconds":{"type":"integer","minimum":1,"maximum":10}},
 }
+for operation in ("store_ground", "retrieve_ground"):
+    FIELDS[operation]["rock_m3"] = {"type":"number", "minimum":0, "maximum":10000,
+                                  "description":"Optional broken-rock volume; defaults to zero."}
 DESCRIPTIONS = {
     "state": "Read finite stock, energy, workpieces, heat and ledger residuals without advancing time.",
     "configure": "Author the room's initial cold stock, finite isolated supply and declared process law once. Cannot refill, reset or change an existing station.",
@@ -48,8 +51,8 @@ DESCRIPTIONS = {
     "pause": "Interrupt a job while keeping its actual reserved workpiece, work and heat; no refund.",
     "resume": "Continue a paused workpiece from its retained work. Needs a free station; spent energy is not restored.",
     "recover": "Transfer measured same-material cold offcuts back to available stock. No new material or refunded energy; excludes installed parts, workpieces and mined ground. revision prevents shared spending; request_id makes retries safe.",
-    "retrieve_ground": "Atomically retrieve remaining sand/soil from one saved raw lot into native carrying, subject to the carrying limit. Read lot_id and remaining contents from fabrication_state raw_inventory. Returns a replacement session. Identical request_id retries do not spend twice. No conversion or thermal model is implied.",
-    "store_ground": "Atomically move measured carried sand and soil into saved raw lots. Read carried_ground with fabrication_state. Native debit, lots and retry receipt save together. Returns the replacement session; use it for later calls. Raw substances remain unprocessed with unmodeled thermal state, not glass or solid stock. No object is consumed.",
+    "retrieve_ground": "Atomically retrieve remaining sand, soil or broken rock from one saved raw lot into native carrying, subject to the carrying limit. Optional rock_m3 defaults to zero. Read lot_id and remaining contents from fabrication_state raw_inventory. Returns a replacement session. Identical request_id retries do not spend twice. No conversion or thermal model is implied.",
+    "store_ground": "Atomically move measured carried sand, soil and optional broken rock into saved raw lots. Optional rock_m3 defaults to zero. Read carried_ground with fabrication_state. Native debit, lots and retry receipt save together. Returns the replacement session; use it for later calls. Raw substances retain granular/rubble/mixed form and unmodeled thermal state; they are not finished build stock. No object is consumed.",
     "connect_energy": "Connect one in-world native battery to the declared lumped charger. Read its ID and store_hash from fabrication_state energy_sources. power_w cannot exceed source or station limits. Begins a new time window with zero credit; reconnecting discards unused time. Saves identity and request receipt without spending energy. Not an electrical circuit model.",
     "fund_energy": "Transfer positive joules from the connected native battery into finite fabrication energy, bounded by accepted native time since connection/last transfer and declared power. Read current store_hash, transfer_available_j and revision from fabrication_state. Battery debit and process credit save atomically; identical request retries do not debit twice. Returns replacement session. No wallet debit, current waveform or calibrated repair claim.",
     "fund_stock": "Transfer actual catalog material from your personal rack or explicitly selected shared pool into SHARED fabrication stock. Read exact mass, pool and rack_hash from fabrication_state stock_sources. Source debit and durable reservation commit together; receiving save failure leaves recoverable escrow, visible in stock_reservations. State/retry finishes that credit once. Initial authorization checks revision/hash; recovery retains the original request. Cold inventory reference is an approximation, not native-body reclamation or measured thermal transport.",
@@ -68,7 +71,7 @@ TOOLS = [{"name":"fabrication_open","description":
     "Keeps existing native and material state; never initializes stock automatically.",
     "inputSchema":obj({},[])}] + [
     {"name":"fabrication_"+op,"description":text,
-     "inputSchema":obj({**COMMON,**FIELDS[op]},list(COMMON)+list(FIELDS[op]))}
+     "inputSchema":obj({**COMMON,**FIELDS[op]},list(COMMON)+[k for k in FIELDS[op] if k!="rock_m3"])}
     for op,text in DESCRIPTIONS.items()]
 TOOLS += [
     {"name":"fabrication_qa_run","description":"Run the fixed native manufacturing, conservation, persistence and API/MCP regression in isolated temporary rooms; the live room is unchanged.","inputSchema":obj({},[])},

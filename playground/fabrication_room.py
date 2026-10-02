@@ -61,8 +61,8 @@ COMMAND_FIELDS = {
     "pause": {"job_id", "request_id", "revision"},
     "resume": {"job_id", "request_id", "revision"},
     "recover": {"material", "mass_kg", "request_id", "revision"},
-    "retrieve_ground": {"lot_id", "sand_m3", "soil_m3", "request_id", "revision"},
-    "store_ground": {"sand_m3", "soil_m3", "request_id", "revision"},
+    "retrieve_ground": {"lot_id", "sand_m3", "soil_m3", "rock_m3", "request_id", "revision"},
+    "store_ground": {"sand_m3", "soil_m3", "rock_m3", "request_id", "revision"},
     "connect_energy": {"store", "store_hash", "power_w", "request_id", "revision"},
     "fund_energy": {"store_hash", "joules", "request_id", "revision"},
     "fund_stock": {"material", "mass_kg", "pool", "rack_hash", "request_id", "revision"},
@@ -232,7 +232,7 @@ def _persist(app, room, saved, state):
 def request(app, operation, body):
     if operation not in COMMAND_FIELDS: raise ValueError("Unknown fabrication operation")
     fields = COMMAND_FIELDS[operation]
-    model.obj(body, COMMON|fields, COMMON|fields)
+    model.obj(body, COMMON|fields, (COMMON|fields)-{"rock_m3"})
     if operation in ("store_ground","retrieve_ground"): return transfer_ground(app,body,operation)
     if operation in ("connect_energy", "fund_energy"): return transfer_energy(app, body, operation)
     if operation in ("fund_stock", "fund_goods", "release_stock"): return transfer_stock(app, body, operation)
@@ -448,11 +448,13 @@ def transfer_ground(app,body,operation):
         if model.check_request(state,action):
             return {"state":model.report(state),"session":old.id,"replayed":True}
         install._source(room,old,body)
-        quantities={k:model.number(body[k],k,0,10000) for k in ("sand_m3","soil_m3")}
+        quantities={s+"_m3":model.number(body.get(s+"_m3",0),s+"_m3",0,10000) for s in model.GROUND_DENSITIES}
         if sum(quantities.values())<=0: raise ValueError("Choose a positive amount of carried ground")
         before=install._snapshot(live)
         ground=before.get("ground") or {}
         if ground.get("schema") not in ACCOUNTED: raise ValueError("Native runtime needs accounted bulk transfers")
+        if quantities["rock_m3"] and ground["schema"] not in ("banjo.ground-state.v4", "banjo.ground-state.v5"):
+            raise ValueError("Native runtime needs accounted broken-rock transfers")
         retrieving=operation=="retrieve_ground"
         actor=getattr(getattr(old,'_actor_local',None),'actor','')
         carried=ground.get('carriers',{}).get(actor,{}) if actor else ground['carried']

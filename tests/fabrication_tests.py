@@ -60,6 +60,45 @@ def mixed_machine():
     return product
 
 class ProcessModel(unittest.TestCase):
+    def test_ground_mcp_keeps_legacy_arguments_and_optional_bounded_rock(self):
+        from mcp.fabrication_mcp_tools import TOOLS
+        from circuit_api import validate
+        for operation in ('store_ground','retrieve_ground'):
+            schema=next(t['inputSchema'] for t in TOOLS if t['name']=='fabrication_'+operation)
+            body={'session':'native-session','scene':'fabrication','sand_m3':0.,'soil_m3':.001,
+                  'revision':0,'request_id':'legacy-ground-0001'}
+            if operation=='retrieve_ground':body['lot_id']='stored-ground-0001'
+            validate(body,schema,'arguments')
+            validate({**body,'rock_m3':.001},schema,'arguments')
+            self.assertNotIn('rock_m3',schema['required'])
+            for invalid in (-1.,True,10001.):
+                with self.assertRaises(ValueError):validate({**body,'rock_m3':invalid},schema,'arguments')
+
+    def test_broken_rock_and_mixed_lots_retain_density_form_and_partial_returns(self):
+        state=model.new(settings(),0.)
+        packet={"schema":"banjo.bulk-material.v1","source":"excavated_ground","form":"mixed",
+                "thermal_state":"unmodeled","contents":[
+                    {"substance":"sand","volume_m3":.01,"mass_kg":16.},
+                    {"substance":"rock","volume_m3":.02,"mass_kg":48.}]}
+        state,_=model.receive_bulk(state,{"request_id":"mixed-store-0001","revision":0},packet)
+        native={"ground":{"exported":{"sand_m3":.01,"rock_m3":.02},"returned":{}}}
+        model.validate_ground_stock(state,native)
+        state,_=model.return_bulk(state,{"request_id":"rock-return-0001","lot_id":"mixed-store-0001","revision":1,
+            "sand_m3":0.,"soil_m3":0.,"rock_m3":.005})
+        receipt=state['raw_returns']['rock-return-0001']['packet']
+        self.assertEqual('rubble',receipt['form']);self.assertEqual(12.,receipt['contents'][0]['mass_kg'])
+        remainder={v['substance']:v for v in model.raw_inventory(state)['mixed-store-0001']}
+        self.assertAlmostEqual(36.,remainder['rock']['mass_kg']);self.assertEqual(16.,remainder['sand']['mass_kg'])
+        native['ground']['returned']['rock_m3']=.005
+        model.validate_ground_stock(state,native)
+        bad=deepcopy(state);bad['raw_returns']['rock-return-0001']['packet']['contents'][0]['mass_kg']=8.
+        with self.assertRaisesRegex(ValueError,'mass'):model.raw_inventory(bad)
+        bad=deepcopy(packet);bad['form']='granular'
+        with self.assertRaisesRegex(ValueError,'form'):model.bulk_packet(bad)
+        with self.assertRaisesRegex(ValueError,'Insufficient'):
+            model.return_bulk(state,{'request_id':'rock-over-0001','lot_id':'mixed-store-0001','revision':2,
+                'sand_m3':0.,'soil_m3':0.,'rock_m3':.02})
+
     def test_material_vector_is_atomic_and_initial_battery_charge_is_reserved_not_heat(self):
         state=model.new(settings(stock_kg={'oak':3.,'iron':2.},energy_j=1000),0)
         quote={'candidate':candidate(),'material':'oak','stock_kg':3.,'product_kg':2.5,
@@ -534,6 +573,62 @@ class NativeFabrication(unittest.TestCase):
             room_api.request(self.app,"store_ground",{**request,"sand_m3":0})
         with self.assertRaisesRegex(ValueError,"Insufficient"):
             self.call("store_ground",sand_m3=.001,soil_m3=0,revision=state["revision"],request_id="store-ground-0002")
+
+    def test_actual_breaker_rock_storage_rollback_retry_return_and_whole_reopen(self):
+        import mine_loop_tests as mine
+        helper=mine.TheMineLoop('test_3b_a_held_breaker_credits_its_owner_during_other_player_and_clock_steps')
+        helper.app=self.app;self.addCleanup(helper.doCleanups)
+        native_open=helper.open
+        def open_source(spec):
+            self.room.spec=deepcopy(spec)
+            return native_open(spec)
+        helper.open=open_source
+        # Reuse the qualified 250 mm breaker experiment, including its explicit
+        # 100 kg test allowance. This qualifies storage, not fresh-world mining.
+        helper.heading('alice')
+        self.live=self.app.live=helper.live
+        self.live.session.send(op='release',actor='alice')
+        self.live.session.send(op='carry_limit',kg=80.)
+        before=workshop_install._snapshot(self.live)
+        volume=before['ground']['carriers']['alice']['rock_m3']
+        self.assertGreater(volume,0.)
+        original=deepcopy(self.room.fabrication_record)
+        request={**self.context(),'sand_m3':0.,'soil_m3':0.,'rock_m3':volume,
+                 'revision':original['revision'],'request_id':'broken-rock-store-0001'}
+        with self.live.as_actor('alice'),mock.patch.object(self.app.store,'save',side_effect=OSError('disk full')):
+            with self.assertRaises(OSError):room_api.request(self.app,'store_ground',request)
+        self.assertEqual(before,workshop_install._snapshot(self.live));self.assertEqual(original,self.room.fabrication_record)
+        with self.live.as_actor('bob'):
+            with self.assertRaisesRegex(ValueError,'Insufficient'):room_api.request(self.app,'store_ground',request)
+        with self.live.as_actor('alice'):
+            self.assertFalse(room_api.request(self.app,'store_ground',request)['replayed'])
+            self.assertTrue(room_api.request(self.app,'store_ground',request)['replayed'])
+        state=self.room.fabrication_record
+        lot=state['raw_lots'][request['request_id']]
+        self.assertEqual('rubble',lot['form']);self.assertAlmostEqual(volume*2400.,lot['contents'][0]['mass_kg'])
+        self.assertEqual(original['stock_kg'],state['stock_kg']);self.assertEqual(original['energy_j'],state['energy_j'])
+        saved=self.app.store.load('fabrication')
+        for account in ('exported','returned'):
+            corrupt=deepcopy(saved.world_record)
+            corrupt['ground'][account]['rock_m3']=volume+1.
+            isolated=live_session.Live()
+            try:
+                with self.assertRaisesRegex(live_session.LiveError,'exceed'):
+                    isolated.open(self.app,{'spec':saved.spec,'snapshot':corrupt})
+            finally:isolated.shutdown()
+        opened=self.live.open(self.app,{'spec':saved.spec,'snapshot':saved.world_record})
+        self.assertEqual('whole',opened['restored']['tier']);self.room=self.app.room=saved
+        with self.live.as_actor('alice'):
+            self.assertTrue(room_api.request(self.app,'store_ground',request)['replayed'])
+            self.call('retrieve_ground',lot_id=request['request_id'],sand_m3=0.,soil_m3=0.,rock_m3=volume,
+                revision=state['revision'],request_id='broken-rock-return-0001')
+        after=workshop_install._snapshot(self.live)
+        self.assertEqual(before['ground']['carriers'],after['ground']['carriers'])
+        self.assertEqual(before['ground']['carried'],after['ground']['carried'])
+        self.assertEqual('matched',self.call('state')['ground_audit']['status'])
+        saved=self.app.store.load('fabrication')
+        self.live.open(self.app,{'spec':saved.spec,'snapshot':saved.world_record})
+        self.assertEqual(after['ground'],workshop_install._snapshot(self.live)['ground'])
 
     def test_private_ground_staging_preserves_other_players_and_legacy_stock(self):
         self.excavate()

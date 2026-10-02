@@ -882,14 +882,14 @@ void Environment::restoreGroundState(const std::string &text) {
     const auto returned=d.contains("returned")?volumes(d.at("returned")):Volumes{};
     for (double v:{returned.rock_m3,returned.soil_m3,returned.sand_m3})
         if (!std::isfinite(v) || v<0) throw std::invalid_argument("invalid returned ground");
-    if (returned.rock_m3!=0 || returned.soil_m3>exported.soil_m3 || returned.sand_m3>exported.sand_m3)
+    if (returned.rock_m3>exported.rock_m3 || returned.soil_m3>exported.soil_m3 || returned.sand_m3>exported.sand_m3)
         throw std::invalid_argument("returned ground exceeds exports");
     for (double v:{exported.rock_m3,exported.soil_m3,exported.sand_m3})
         if (!std::isfinite(v) || v<0) throw std::invalid_argument("invalid exported ground");
-    if (exported.rock_m3!=0 || exported.soil_m3-returned.soil_m3+total_carried.soil_m3>s.ledger.dug.soil_m3+1e-9 ||
+    if ((!v4 && !v5 && exported.rock_m3!=0) || exported.soil_m3-returned.soil_m3+total_carried.soil_m3>s.ledger.dug.soil_m3+1e-9 ||
         exported.sand_m3-returned.sand_m3+total_carried.sand_m3>s.ledger.dug.sand_m3+1e-9)
         throw std::invalid_argument("exported and carried ground exceed excavation");
-    if (v5 && total_carried.rock_m3>s.ledger.dug.rock_m3+s.ledger.cut.rock_m3+1e-9)
+    if ((v4 || v5) && exported.rock_m3-returned.rock_m3+total_carried.rock_m3>s.ledger.dug.rock_m3+s.ledger.cut.rock_m3+1e-9)
         throw std::invalid_argument("carried rock exceeds excavation and breakage");
     for (double v:{carried.rock_m3,carried.soil_m3,carried.sand_m3})
         if (!std::isfinite(v) || v<0) throw std::invalid_argument("invalid carried ground");
