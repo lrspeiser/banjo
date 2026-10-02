@@ -6,9 +6,11 @@
 
 [Finite CPU external-load input](held-strike-load-checkpoint.md) is implemented
 and tested, with [wrist torque and named source accounts](held-strike-wrench-checkpoint.md).
-These are distributed load boundaries. Next preserve native striker inertia
-and finite fixing load paths, account for source reactions and integrate held
-assemblies, hand/joint reactions and elapsed time, then the object-target route
+The [finite rigid contact/native reaction primitive](held-strike-contact-checkpoint.md)
+retains full source inertia and measured recoil/spin, with explicit float error
+accounts. These are tested integration boundaries. Next connect complete native
+geometry witnesses and preserve finite fixing load paths, held assemblies,
+hand/joint reactions and accepted elapsed time, then the object-target route
 and complete acceptance checks below. R3 remains open.
 
 The current primary-use route only accepts a terrain target. Native fracture

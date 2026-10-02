@@ -2758,6 +2758,93 @@ PairImpulseAudit JoltWorld::applyPairImpulse(MatterBodyId a,MatterBodyId b,
         throw std::invalid_argument("pair impulse requires external contact ownership");
     return applyAuditedPairImpulses(a,b,{{point_a_m,point_b_m,impulse_on_a_n_s}},maximum_roundoff_energy_j);
 }
+PointContactKick JoltWorld::applyExternalPointContact(MatterBodyId proxy,MatterBodyId striker,
+    ActiveNodeState &point,Vec3 normal,double gap,double duration,
+    const PointRigidContactSettings &settings,const PointContactRoundoffBudget &budget) {
+    // External point state is not included in Jolt's trial recorder.
+    impl_->requireConfigurationMutable();
+    if(pairContactOwner(proxy,striker)!=PairContactOwner::External)
+        throw std::invalid_argument("point contact requires external pair ownership");
+    for(double limit:{budget.energy_j,budget.linear_impulse_n_s,budget.angular_impulse_kg_m2_s})
+        if(!std::isfinite(limit)||limit<0)throw std::invalid_argument("invalid point contact roundoff budget");
+    if(impl_->pins_.contains(striker))throw std::invalid_argument("point contact cannot bypass a world attachment");
+    {
+        JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(),impl_->bodies_.at(striker));
+        if(!lock.Succeeded())throw std::runtime_error("cannot lock point contact striker");
+        const auto &body=lock.GetBody();
+        if(!body.IsDynamic()||body.GetMotionProperties()->GetAllowedDOFs()!=JPH::EAllowedDOFs::All)
+            throw std::invalid_argument("point contact requires an unrestricted dynamic striker");
+    }
+    const auto before=mechanicalState(striker);
+    auto symmetric=before;
+    double tensor_scale=0;
+    for(const auto &row:before.inertia_world_kg_m2.m)for(double entry:row)
+        tensor_scale=std::max(tensor_scale,std::abs(entry));
+    for(unsigned i=0;i<3;++i)for(unsigned j=i+1;j<3;++j) {
+        const double a=before.inertia_world_kg_m2.m[i][j],b=before.inertia_world_kg_m2.m[j][i];
+        if(std::abs(a-b)>1e-6*tensor_scale)
+            throw std::invalid_argument("point contact runtime inertia skew exceeds float tolerance");
+        symmetric.inertia_world_kg_m2.m[i][j]=symmetric.inertia_world_kg_m2.m[j][i]=.5*(a+b);
+    }
+    PointContactKick out;
+    out.contact=evaluatePointRigidContact(point,symmetric,normal,gap,duration,settings);
+    out.delivered_rigid=before;
+    out.delivered_normal_speed_m_s=out.contact.relative_normal_after_m_s;
+    out.delivered_slip_m_s=out.contact.slip_after_m_s;
+    if(!out.contact.applied)return out;
+    const auto representable=[](Vec3 value) {
+        const double limit=std::numeric_limits<float>::max();
+        return std::isfinite(value.x)&&std::isfinite(value.y)&&std::isfinite(value.z)&&
+            std::abs(value.x)<=limit&&std::abs(value.y)<=limit&&std::abs(value.z)<=limit;
+    };
+    const auto &candidate=out.contact.rigid.motion;
+    if(!representable(candidate.linear_velocity_m_s)||!representable(candidate.angular_velocity_rad_s))
+        throw std::invalid_argument("point contact velocity is not representable");
+    const auto velocity=toJolt(candidate.linear_velocity_m_s),spin=toJolt(candidate.angular_velocity_rad_s);
+    {
+        JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(),impl_->bodies_.at(striker));
+        if(!lock.Succeeded())throw std::runtime_error("cannot lock point contact candidate");
+        const auto *motion=lock.GetBody().GetMotionProperties();
+        if(!std::isfinite(velocity.LengthSq())||!std::isfinite(spin.LengthSq())||
+            velocity.LengthSq()>motion->GetMaxLinearVelocity()*motion->GetMaxLinearVelocity()||
+            spin.LengthSq()>motion->GetMaxAngularVelocity()*motion->GetMaxAngularVelocity())
+            throw std::invalid_argument("point contact exceeds runtime velocity limits");
+    }
+    auto delivered=before;
+    delivered.motion.linear_velocity_m_s=fromJoltVector(velocity);
+    delivered.motion.angular_velocity_rad_s=fromJoltVector(spin);
+    const auto audit=[&](const RigidMechanicalState &state) {
+        out.delivered_rigid=state;
+        const Vec3 point_j=point.mass_kg*(out.contact.node_velocity_m_s-point.velocity_m_s);
+        const Vec3 source_j=before.mass_kg*(state.motion.linear_velocity_m_s-before.motion.linear_velocity_m_s);
+        out.momentum_error_kg_m_s=point_j+source_j;
+        out.angular_momentum_error_kg_m2_s=cross(point.position_world_m,point_j)+
+            cross(before.motion.center_of_mass_world_m,source_j)+before.inertia_world_kg_m2*
+            (state.motion.angular_velocity_rad_s-before.motion.angular_velocity_rad_s);
+        const double point_change=.5*point.mass_kg*
+            dot(out.contact.node_velocity_m_s-point.velocity_m_s,out.contact.node_velocity_m_s+point.velocity_m_s);
+        out.numerical_energy_change_j=point_change+measureRigidMechanics(state).kinetic_energy_j-
+            measureRigidMechanics(before).kinetic_energy_j-out.contact.impulse_work_j;
+        const Vec3 relative=out.contact.node_velocity_m_s-state.motion.linear_velocity_m_s-
+            cross(state.motion.angular_velocity_rad_s,point.position_world_m-state.motion.center_of_mass_world_m);
+        const Vec3 unit=normal/length(normal);
+        out.delivered_normal_speed_m_s=dot(relative,unit);
+        out.delivered_slip_m_s=length(relative-out.delivered_normal_speed_m_s*unit);
+    };
+    audit(delivered);
+    const auto finite=[](Vec3 value){return std::isfinite(value.x)&&std::isfinite(value.y)&&std::isfinite(value.z);};
+    if(!std::isfinite(out.numerical_energy_change_j)||!finite(out.momentum_error_kg_m_s)||
+        !finite(out.angular_momentum_error_kg_m2_s)||
+        std::abs(out.numerical_energy_change_j)>budget.energy_j||
+        length(out.momentum_error_kg_m_s)>budget.linear_impulse_n_s||
+        length(out.angular_momentum_error_kg_m2_s)>budget.angular_impulse_kg_m2_s)
+        throw std::invalid_argument("point contact exceeds runtime roundoff budget");
+    auto &bodies=impl_->physics_->GetBodyInterface();
+    bodies.SetLinearAndAngularVelocity(impl_->bodies_.at(striker),velocity,spin);
+    audit(mechanicalState(striker));
+    point.velocity_m_s=out.contact.node_velocity_m_s;
+    return out;
+}
 CohesiveTensionKick JoltWorld::applyCohesiveTensionKick(MatterBodyId a,MatterBodyId b,
     Vec3 local_a,Vec3 local_b,double rest,const CohesiveInterfaceLaw &law,
     const CohesiveInterfaceState &history,double duration,double budget) {

@@ -98,6 +98,7 @@ add_library(
     src/physics/MechanicalAccounting.cpp
     src/physics/RollingKinematics.cpp
     src/physics/SphereMaterialContact.cpp
+    src/physics/PointRigidContact.cpp
     src/fracture/ActivationPolicy.cpp
     src/fracture/FracturePreview.cpp
     src/fracture/RuptureCascade.cpp
@@ -963,6 +964,11 @@ if(BANJO_BUILD_TESTS)
     banjo_enable_warnings(banjo_conservative_contact_tests)
     add_test(NAME banjo_conservative_contact_tests COMMAND banjo_conservative_contact_tests)
 
+    add_executable(banjo_point_rigid_contact_tests tests/point_rigid_contact_tests.cpp)
+    target_link_libraries(banjo_point_rigid_contact_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_point_rigid_contact_tests)
+    add_test(NAME banjo_point_rigid_contact_tests COMMAND banjo_point_rigid_contact_tests)
+
     if(TARGET banjo_runtime)
         add_executable(banjo_spring_trial_tests tests/spring_trial_tests.cpp)
         target_link_libraries(banjo_spring_trial_tests PRIVATE banjo_runtime)
@@ -1021,6 +1027,11 @@ if(BANJO_BUILD_TESTS)
         target_link_libraries(banjo_pair_impulse_tests PRIVATE banjo_runtime)
         banjo_enable_warnings(banjo_pair_impulse_tests)
         add_test(NAME banjo_pair_impulse_tests COMMAND banjo_pair_impulse_tests)
+
+        add_executable(banjo_native_point_contact_tests tests/native_point_contact_tests.cpp)
+        target_link_libraries(banjo_native_point_contact_tests PRIVATE banjo_runtime)
+        banjo_enable_warnings(banjo_native_point_contact_tests)
+        add_test(NAME banjo_native_point_contact_tests COMMAND banjo_native_point_contact_tests)
 
     # Two wheels that turn together at a ratio: gears in mesh, a chain between
     # sprockets, and teeth that strip when too much goes through them.

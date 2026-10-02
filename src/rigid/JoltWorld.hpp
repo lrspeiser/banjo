@@ -13,6 +13,7 @@
 #include "physics/CohesiveInterface.hpp"
 #include "physics/CohesiveRigidPair.hpp"
 #include "physics/RigidAttachment.hpp"
+#include "physics/PointRigidContact.hpp"
 
 #include <memory>
 #include <optional>
@@ -98,6 +99,16 @@ struct PairImpulseAudit {
     MechanicalTotals before{}, after{};
     double impulse_work_j{}, numerical_energy_change_j{};
     Vec3 momentum_error_kg_m_s{}, applied_couple_kg_m2_s{}, angular_momentum_error_kg_m2_s{};
+};
+
+struct PointContactRoundoffBudget {
+    double energy_j{},linear_impulse_n_s{},angular_impulse_kg_m2_s{};
+};
+struct PointContactKick {
+    PointRigidContactResult contact; // Double candidate; measured runtime state is separate.
+    RigidMechanicalState delivered_rigid;
+    double numerical_energy_change_j{},delivered_normal_speed_m_s{},delivered_slip_m_s{};
+    Vec3 momentum_error_kg_m_s{},angular_momentum_error_kg_m2_s{};
 };
 struct CohesiveTensionKick {
     CohesiveInterfaceIncrement interface_increment;
@@ -382,6 +393,19 @@ public:
     // of impulse work and any noncentral couple. Host thread, between steps.
     [[nodiscard]] PairImpulseAudit applyPairImpulse(MatterBodyId a,MatterBodyId b,
         Vec3 point_a_m,Vec3 point_b_m,Vec3 impulse_on_a_n_s,double maximum_roundoff_energy_j);
+    // Instantaneous material-point / native rigid transfer. target_proxy names
+    // the target whose pair response the caller has taken over; its native
+    // motion is NOT updated. The caller owns the deforming target's complete
+    // contact/geometry response and accepted time, and must not also advance
+    // its proxy as a physical target. Normal points from striker to point.
+    // Preflights the actual float source velocity and tensor, speed limits and
+    // SI roundoff budgets before changing either the point or striker.
+    // Unrestricted dynamic striker only; pins/static/locked DOFs and trials
+    // refuse. No geometry search, hand/fixing solve, fracture or time advance.
+    // Active joints remain native, but their later reaction is not this kick.
+    [[nodiscard]] PointContactKick applyExternalPointContact(MatterBodyId target_proxy,
+        MatterBodyId striker,ActiveNodeState &point,Vec3 normal_world,double gap_m,double dt_s,
+        const PointRigidContactSettings &settings,const PointContactRoundoffBudget &budget);
     // Central tensile connector between body-local points; Jolt retains every
     // surface contact. Compression stiffness must be zero. Requires double
     // positions and Jolt pair ownership; material-activation deferral rejects.

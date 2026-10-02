@@ -1,5 +1,7 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Finite contact reaction, October 2:** [Full-tensor/native transfer boundary](held-strike-contact-checkpoint.md) retains finite source mass, axial inertia and angular recoil while exposing actual float numerical errors. It extends the existing normal/Coulomb response without assigning material damage. Native hand/fixing reactions, complete geometry admission and synchronized fracture time remain required before ordinary held strikes and damaged-tool reuse close R3. All five remaining player goals and full platform gates stay active.
+
 **Wrist and source accounting, October 2:** [Distributed CPU wrench input](held-strike-wrench-checkpoint.md) preserves force/moment and separate named work/reaction accounts without assigning material damage. It does not replace native finite-cell inertia, fixing load paths or local hand traction. Those and consistent native hand/fracture time remain required before ordinary held strikes and damaged-tool reuse can close R3; all remaining player/platform goals stay active.
 
 **Held-impact prerequisite, October 2:** [Finite CPU load boundary](held-strike-load-checkpoint.md) adds actual force/impulse/work input without replacing material laws or assigning damage. It does not yet couple a live hand/assembly into fracture or enable tool use on built objects. Source reactions, consistent elapsed time and the ordinary player journey remain R3 requirements; the full platform conservation and qualification gates remain.
