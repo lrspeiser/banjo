@@ -1,0 +1,43 @@
+{
+  "date": "2026-10-01",
+  "verification_base": "7f7492249c6fed532b00e24fe472bcf0a844bf5a",
+  "scope": "Skills guidance and route presentation; no native source, binary, material law, tolerance or learning-award change in this checkpoint",
+  "tests": {
+    "passed": 63,
+    "seconds": 29.723,
+    "command": "python -m unittest knowledge_tests workshop_tabs_tests ai_player_tests.AutonomousGuests.test_skill_and_market_guidance_resolve_world_equipment_and_input_shortages ai_player_tests.AutonomousGuests.test_skills_links_to_the_tool_without_awarding_progress_for_navigation ai_player_tests.AutonomousGuests.test_browser_dig_shows_personal_progress_achievement_fade_and_skills_completion workshop_navigation_tests.GameScreens.test_watch_batch_button_earns_personal_skill_and_skills_link_to_real_equipment -q",
+    "environment": "Windows, Python 3.13.5, Chrome; existing MSVC Release CPU native binaries; dt=1/240 s, generated cell=50 mm"
+  },
+  "checks": [
+    "completed Gathering lists only completed Field pick route",
+    "ready Gathering lists one route with shared primary control label and real Go to tool link",
+    "missing alternative does not block ready or learned skill",
+    "unavailable shaping explicitly cannot be unlocked by collecting supplies",
+    "design diagnostics closed by default",
+    "actual native digging, achievement fade, repeat/reload, private peer journal and no navigation awards retained",
+    "native copper batch learning and real machine navigation retained",
+    "no Runtime.exceptionThrown in browser journeys",
+    "direct cold Skills entry opens native World before equipment resolution"
+  ],
+  "screenshots": [
+    "build/player-learning/live-skills-complete.png",
+    "build/player-learning/tool-skills.png",
+    "build/workshop-navigation/world-aware-skills.png",
+    "build/resource-flow/skills-ready-preview.png",
+    "build/resource-flow/skills-unavailable-preview.png"
+  ],
+  "source_registration": {
+    "registered": 287,
+    "total": 287
+  },
+  "native_binary_sha256": {
+    "build\\agent-paid-machine\\Release\\banjo_live_world_run.exe": "6ce0e6d010d9ef23fd354c7f4d98a4eba93638c065f8f6979bdeefbaf13b9107",
+    "build\\agent-paid-machine\\Release\\banjo.dll": "198ab769e09fd915262402da85b54ede02973461bc6811a5b38e58ff2aa30ecb"
+  },
+  "preview": {
+    "url": "http://127.0.0.1:8770/world?world=950a391051364f92902abcf22202b2ad&workshop=1&tab=skills&technique=using-ground-tools",
+    "gathering_ready": "Gathering by hand\n\nUse a whole ground tool to remove measured dry soil or sand\n\nReady to learn \u00b7 Complete one route\n\nTO EARN IT\n\u25cb\nTake or equip Field pick. Aim at dry soil or sand and dig once. Use: Left mouse / J.\nGo to tool",
+    "rough_shaping": "Rough-shaping wood\n\nTaking wood off a piece of stock with a supported shaping process until it has a wanted outline\n\nNot available in this world yet\n\nTO EARN IT\n\u25cb\nMissing example: One-piece wooden pick; Making One-piece wooden pick is not available yet. You cannot unlock it by collecting supplies.\nRELATED DESIGNS\nOne-piece wooden pick \u00b7 Making not available yet",
+    "javascript_errors": []
+  }
+}

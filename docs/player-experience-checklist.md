@@ -23,6 +23,8 @@ Updated against published main `ea9dc5b`. This is the current working list: six 
 
 ## Working features covered by existing checkpoints
 
+**Skills clarity, October 1:** [Guidance checkpoint](skills-guidance-checkpoint.md) shows earned routes without missing alternatives and labels unavailable learning paths. Actual native dig/achievement/reload and machine navigation remain verified; broader progression stays R6.
+
 **Latest verified slice, October 1:** [Mixed-tool draft fidelity](mixed-tool-draft-checkpoint.md) retains iron/oak through edits, Save and reload; Make explains its unsupported native joint without spending. R2 stays open.
 
 **Navigation verified slice, October 1:** quiet autosave retries, faster walking/edge look, Esc Cursor/resume and water immersion/flow feedback. [Navigation/water evidence](navigation-water-checkpoint.md) confirms native object forces and actual player entry; player swimming remains a camera approximation, so R5 is still open.

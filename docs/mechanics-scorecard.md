@@ -1,5 +1,7 @@
 # Banjo mechanics scorecard
 
+**Skill guidance boundary, October 1:** [Host/presentation checkpoint](skills-guidance-checkpoint.md) passes 63 affected tests with real native digging, private learning/reload and machine batches. Native binaries, dt=1/240 s, 50 mm generated scenes, laws and tolerances are unchanged. This is guidance verification, not new forming or full-world conservation evidence.
+
 **Mixed-tool admission, October 1:** [Source-preserving checkpoint](mixed-tool-draft-checkpoint.md) removes host fitting substitutions; no new joint, solver or constitutive law. Fixed fabrication QA 69/69 retains glass/oak/iron mass/work, energy, thermal, native use and restart cases with unchanged conditions/tolerances. Unsupported fixed mixed lattice groups now retain their declared materials and refuse; R2 stays open.
 
 **Water/player review, October 1:** [Measured checkpoint](navigation-water-checkpoint.md) retains native shallow-water/body coupling; same-box oak/glass/iron hydrostatic oracles and existing native wood drift/iron sink pass. Full-volume lift 904.0896 N, pressure residual 0 N; local closed-basin drift 4.26326e-14 m³. Player entry/swim uses the camera approximation, with no native avatar/contact/fluid/cargo reactions. No solver, force law, dt or tolerance changes; R5 remains open.

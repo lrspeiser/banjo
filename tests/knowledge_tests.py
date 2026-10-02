@@ -712,6 +712,23 @@ class PersonalToolSourceReceipts(unittest.TestCase):
 
 
 class WorldLearningRouteBoundaries(unittest.TestCase):
+    def test_learned_skill_is_not_blocked_by_a_missing_alternative_after_tool_is_gone(self):
+        import learning_routes
+        registry=progression.Registry()
+        app=types.SimpleNamespace(room=types.SimpleNamespace(spec={}),
+            live=types.SimpleNamespace(session=types.SimpleNamespace(state={'bodies':[]})))
+        tree=[{'id':'using-ground-tools','known':True,'within_reach':False,'earned_by':[
+            {'done':True,'says':'Dig soil or sand with your Field pick once.','all_of':[
+                {'design':'field-pick','test':'loosens-soil','done':True}]},
+            {'done':False,'all_of':[{'design':'one-piece-wooden-pick','test':'loosens-soil','done':False}]}]}]
+        with mock.patch.object(learning_routes.machine_witness,'machines',return_value=[]):
+            learning_routes.resolve(app,registry,tree)
+        self.assertTrue(tree[0]['known'])
+        self.assertEqual([],tree[0]['world_missing'])
+        self.assertEqual('Dig soil or sand with your Field pick once.',tree[0]['earned_by'][0]['says'])
+        self.assertTrue(tree[0]['earned_by'][0]['world_ready'])
+        self.assertIn('Making One-piece wooden pick is not available yet',tree[0]['earned_by'][1]['says'])
+
     def test_one_ready_machine_is_enough_and_completed_conditions_do_not_require_new_gifts(self):
         import learning_routes
         registry=progression.Registry()

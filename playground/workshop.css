@@ -485,6 +485,9 @@ body.workshop-mode > :not(#design-workshop):not(#game-menu) { display:none!impor
 .ws-tree-state { margin-top:.4rem !important;font-weight:600;color:#c9d5e2; }
 .ws-tree-state.ok { color:#9ed4ad; }
 .ws-tree-state.reach { color:#e2b85c; }
+.ws-tech-status { font-size:.72rem;color:#a8b9cb; }
+.ws-tech.known .ws-tech-status { color:#9ed4ad; }
+.ws-tech.reach .ws-tech-status { color:#e2b85c; }
 .ws-tree-todo,.ws-tree-opens { list-style:none;margin:0;padding:0;display:grid;gap:.3rem; }
 .ws-tree-todo li { display:flex;gap:.45rem;font-size:.82rem;line-height:1.4;color:#c4d0dd; }
 .ws-tree-todo li.done { color:#9ed4ad; }

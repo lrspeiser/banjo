@@ -69,12 +69,18 @@ def resolve(app: Any, registry: Any, techniques: list[dict]) -> None:
                             if ground_use and not example['ground_at_m']: continue
                             ready.append({**example,'action':'tool/use' if ground_use else 'inspect',
                                 'label':'Gather dry ground' if ground_use else 'Study held tool',
-                                'instruction':('Take/equip; aim at the dry column; use the swing and lever.' if ground_use
+                                'instruction':(f'Take or equip {label}. Aim at dry soil or sand and dig once.' if ground_use
                                                else 'Take/equip this tool, then choose Study tool or Inspect.')})
                         locations.extend(ready)
                         if not ready: missing.append(f'No dry soil or sand surveyed near {label}')
                     else:
                         missing.append(f"Missing example: {label}")
+                        processes = [registry.processes[c['process']]
+                                     for r in (design.get('routes') or {}).get('any_of') or []
+                                     for c in r.get('all_of') or []
+                                     if c.get('process') in registry.processes]
+                        if processes and all(not p.get('supported') for p in processes):
+                            missing.append(f'Making {label} is not available yet. You cannot unlock it by collecting supplies.')
                 elif condition.get("demonstrated"):
                     recipe = (design.get("machine") or {}).get("recipe")
                     test = progression.batch_design(registry,recipe) if recipe else None
@@ -112,14 +118,24 @@ def resolve(app: Any, registry: Any, techniques: list[dict]) -> None:
         technique["graph_ready"] = technique.get("within_reach", False)
         technique["within_reach"] = technique["graph_ready"] and any(
             r["world_ready"] for r in technique.get("earned_by") or [])
-        technique["world_missing"] = list(dict.fromkeys(m for r in technique.get("earned_by") or []
-                                                         for m in r["world_missing"]))
+        # ANY route earns the skill. A missing alternative is not a blocker
+        # for an available route, and never revokes personal saved knowledge.
+        technique["world_missing"] = ([] if technique.get('known') or any(
+            r['world_ready'] for r in technique.get('earned_by') or []) else
+            list(dict.fromkeys(m for r in technique.get("earned_by") or []
+                               for m in r["world_missing"])))
         for opened in technique.get("opens") or []:
             design = registry.designs.get(opened["id"]) or {}
             recipe = (design.get("machine") or {}).get("recipe")
             sources = [m for m in equipment if m["recipe"] == recipe]
             opened["locations"] = [dict(l) for r in technique.get("earned_by") or []
                                    for l in r["locations"] if l.get("recipe") == recipe]
+            if not opened['locations']:
+                for source in sources:
+                    program = next((p for p in (app.room.spec.get('machines') or {}).get('programs') or []
+                                    if p['name'] == source['machine']), {})
+                    if program.get('body'):
+                        opened['locations'].append(dict(source, body=program['body'], tab='world'))
             unsupported = [registry.processes[c["process"]].get("name", c["process"])
                            for r in (design.get("routes") or {}).get("any_of") or []
                            for c in r.get("all_of") or [] if c.get("process") in registry.processes

@@ -1,4 +1,5 @@
 import { thumbnail, massLabel as kgSaid } from "/game_menu.js";
+import { keyOf } from "/interaction.js";
 // Workshop Mode: product design, physical matter, editable skins and isolated physics playback.
 import * as THREE from "/vendor/three.module.js";
 import { gameNavigation, refreshNavigation, showSaveStatus } from "/game_menu.js";
@@ -2255,9 +2256,9 @@ function treeAbout(t) {
   box.append(make("h3", {}, t.name));
   box.append(make("p", { class: "ws-note" }, t.describes || ""));
 
-  const state = t.known ? "You know this." : t.within_reach ? "You can earn this now."
+  const state = t.known ? "Learned ✓ · No further action needed" : t.within_reach ? "Ready to learn · Complete one route"
     : t.unmet?.length ? `First: ${t.needs.filter((n) => !n.known).map((n) => n.name).join(", ")}.`
-    : (t.world_missing || []).join(" · ") || "No supported learning action in this world.";
+    : "Not available in this world yet";
   box.append(make("p", { class: t.known ? "ws-tree-state ok" : t.within_reach
                                           ? "ws-tree-state reach" : "ws-tree-state" }, state));
 
@@ -2266,13 +2267,21 @@ function treeAbout(t) {
   if (t.earned_by && t.earned_by.length) {
     box.append(make("h4", {}, t.known ? "How it was earned" : "To earn it"));
     const list = make("ul", { class: "ws-tree-todo" });
-    for (const route of t.earned_by) {
+    const completed = t.earned_by.filter(r => r.done);
+    const available = t.earned_by.filter(r => !r.done && r.world_ready);
+    // Completed history contains only the route actually earned. Alternatives
+    // are optional ways to learn, never extra requirements for a known skill.
+    const routes = t.known ? completed : available.length ? available : t.earned_by;
+    for (const route of routes) {
       const li = make("li", { class: route.done ? "done" : "" });
       li.append(make("i", { class: "ws-tick", "aria-hidden": "true" },
                      route.done ? "\u2713" : "\u25cb"));
-      li.append(make("span", {}, route.says || route.id || ""));
+      const instructions = [...new Set((route.locations || []).map(l => l.instruction).filter(Boolean))];
+      li.append(make("span", {}, !route.done && route.world_ready && instructions.length
+        ? instructions.join(" ") + ((route.locations || []).some(l => l.action === "tool/use")
+          ? ` Use: ${keyOf("primary")}.` : "") : route.says || route.id || ""));
       const destinations = new Set();
-      for (const location of route.locations || []) {
+      for (const location of route.done ? [] : route.locations || []) {
         if (!location.body) continue;
         const key = `${location.tab || "world"}:${location.body}`;
         if (destinations.has(key)) continue;
@@ -2286,6 +2295,9 @@ function treeAbout(t) {
       list.append(li);
     }
     box.append(list);
+    if (t.known && !completed.length) {
+      box.append(make("p", {class:"ws-note"}, "Recorded in your personal skill history."));
+    }
   } else if (!t.known) {
     box.append(make("p", { class: "ws-note" },
                     "Nothing in the world demonstrates this yet: it has to be taught."));
@@ -2298,7 +2310,12 @@ function treeAbout(t) {
     for (const design of t.opens) {
       const li = make("li", {});
       if (design.availability) {
-        li.append(make("strong", {}, design.name), make("span", {}, ` · ${design.availability}`));
+        const availability = design.availability.startsWith("Process unavailable:")
+          ? "Making not available yet" : design.availability;
+        li.append(make("strong", {}, design.name), make("span", {}, ` · ${availability}`));
+        const location = design.locations?.find(l => l.body);
+        if (location) li.append(make("a", {class:"ws-link",
+          href:`/world?world=${encodeURIComponent(worldId)}&focus=${encodeURIComponent(location.body)}`}, " · Go to machine"));
         list.append(li);
         continue;
       }
@@ -2350,7 +2367,7 @@ function drawTree() {
     if (!row) continue;
     const column = make("div", { class: "ws-tree-rank" });
     column.append(make("p", { class: "ws-tree-rank-head" },
-                       depth === 0 ? "From the start" : `After ${depth}`));
+                       depth === 0 ? "Starting skills" : `Level ${depth + 1}`));
     for (const t of row) {
       const state = t.known ? "known" : t.within_reach ? "reach" : "locked";
       const card = make("button", {
@@ -2362,6 +2379,8 @@ function drawTree() {
       const opens = (t.opens || []).map((o) => o.name);
       card.append(make("span", { class: "ws-tech-opens" },
                        opens.length ? opens.join(", ") : t.practice || "Measured practice"));
+      card.append(make("span", {class:"ws-tech-status"}, t.known ? "Learned" : t.within_reach
+        ? "Ready to learn" : t.unmet?.length ? "Needs earlier skills" : "Unavailable here"));
       if (t.known) card.append(make("i", { class: "ws-tech-mark" }, "\u2713"));
       if (lit && !lit.has(t.id)) card.classList.add("dim");
       if (tree.picked === t.id) card.classList.add("on");
@@ -2424,8 +2443,11 @@ addEventListener("resize", () => {
 });
 
 async function showSkills() {
+  // Opening Skills directly must load saved native matter before resolving
+  // equipment. An unopened session is not evidence that the tool is absent.
+  if (worldId) await api("/api/world/open", {});
   const s = await api("/api/workshop/skills");
-  $("#ws-skills-count").textContent = s.of ? `${s.known} of ${s.of} skills. A skill is earned by what the engine measured your own hands, or your machines, doing \u2014 click one to see what it takes and what it makes.` : "The world has no skills to learn yet.";
+  $("#ws-skills-count").textContent = s.of ? `${s.known} / ${s.of} learned · Select a skill for its steps. Complete them in the World.` : "The world has no skills to learn yet.";
   tree.techniques = s.techniques || [];
   if (tree.picked && !techniqueById(tree.picked)) tree.picked = null;
   // Nothing picked: open on the one to do next -- the nearest rung that is

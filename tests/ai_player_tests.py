@@ -693,6 +693,7 @@ class AutonomousGuests(unittest.TestCase):
         tree = {t["id"]:t for t in skills["techniques"]}
         self.assertFalse(tree["rough-shaping-wood"]["within_reach"])
         self.assertIn("Missing example",tree["rough-shaping-wood"]["earned_by"][0]["says"])
+        self.assertIn("Making One-piece wooden pick is not available yet", tree["rough-shaping-wood"]["earned_by"][0]["says"])
         self.assertFalse(tree["burning-lime"]["within_reach"])
         self.assertIn("Missing equipment",tree["burning-lime"]["earned_by"][0]["says"])
         copper = tree["smelting-copper"]
@@ -701,6 +702,7 @@ class AutonomousGuests(unittest.TestCase):
         self.assertEqual("watch-machine",location["action"])
         self.assertEqual(3,len(location["at_m"]))
         self.assertTrue(tree['using-ground-tools']['within_reach'])
+        self.assertEqual([], tree['using-ground-tools']['world_missing'], 'an unavailable alternative must not block the Field pick route')
         tool_route=tree['using-ground-tools']['earned_by'][0]
         self.assertEqual({'tool/use'},{l['action'] for l in tool_route['locations']})
         self.assertTrue(all(l['body']=='field pick' for l in tool_route['locations']))
@@ -1064,7 +1066,12 @@ class AutonomousGuests(unittest.TestCase):
         box=page.evaluate('(()=>{const b=document.querySelector("#tool-skill .skill-link").getBoundingClientRect();return {x:b.x+b.width/2,y:b.y+b.height/2}})()')
         for kind in ('mousePressed','mouseReleased'):
             page.send('Input.dispatchMouseEvent',{'type':kind,**box,'button':'left','clickCount':1})
-        wait('new URLSearchParams(location.search).get("technique")==="using-ground-tools" && document.querySelector("#ws-tree-about .ws-tree-state")?.textContent==="You know this."')
+        wait('new URLSearchParams(location.search).get("technique")==="using-ground-tools" && document.querySelector("#ws-tree-about .ws-tree-state")?.textContent==="Learned ✓ · No further action needed"')
+        self.assertEqual(1,page.evaluate('document.querySelectorAll("#ws-tree-about .ws-tree-todo li").length'))
+        self.assertNotIn('Missing example',page.evaluate('document.querySelector("#ws-tree-about").innerText'))
+        self.assertNotIn('One-piece wooden pick',page.evaluate('document.querySelector("#ws-tree-about").innerText'))
+        self.assertFalse(page.evaluate('document.querySelector("#ws-skills-diagnostics").open'))
+        self.assertNotIn('shaped-from-angled-stock',page.evaluate('document.querySelector("#ws-pane-skills").innerText'))
         self.assertEqual(token,page.evaluate(f'localStorage.getItem("banjo.player.{world}")'))
         self.assertFalse([e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
         (output/'live-skills-complete.png').write_bytes(base64.b64decode(page.send('Page.captureScreenshot')['data']))
@@ -1075,7 +1082,11 @@ class AutonomousGuests(unittest.TestCase):
 
     def test_skills_links_to_the_tool_without_awarding_progress_for_navigation(self):
         if not qa_browser.CHROME.is_file(): self.skipTest('Chrome not installed')
-        world,owner,app=self.setup_world()
+        # Enter Skills before World has ever opened its native session.
+        world=self.post('/api/worlds',{'name':'Cold Skills entry'})['id']
+        owner=self.join(world,'Human');self.players={world:owner}
+        app=self.app.hub.get(world)
+        self.assertIsNone(app.live.session)
         chrome=qa_browser.Chrome(1280,800);self.addCleanup(chrome.close)
         page=chrome.page;page.send('Page.enable');page.send('Runtime.enable')
         def wait(expression):
@@ -1088,6 +1099,11 @@ class AutonomousGuests(unittest.TestCase):
             self.fail('Browser did not reach '+expression)
         page.send('Page.navigate',{'url':self.base+f'/world?world={world}&workshop=1&tab=skills&technique=using-ground-tools'})
         wait('!!document.querySelector("[data-technique=using-ground-tools]") && [...document.querySelectorAll(".ws-tree-todo a")].some(a=>a.textContent==="Go to tool")')
+        self.assertEqual(1,page.evaluate('document.querySelectorAll("#ws-tree-about .ws-tree-todo li").length'))
+        self.assertIn('Aim at dry soil or sand',page.evaluate('document.querySelector("#ws-tree-about").innerText'))
+        self.assertIn('dig once. Use: Left mouse / J.',page.evaluate('document.querySelector("#ws-tree-about").innerText'))
+        self.assertNotIn('Missing example',page.evaluate('document.querySelector("#ws-tree-about").innerText'))
+        self.assertIsNotNone(app.live.session, 'Skills must resolve loaded native equipment, not an empty session')
         viewer=page.evaluate('localStorage.getItem("banjo.player.'+world+'")')
         # Viewer identity can differ from the HTTP fixture's creator.
         ident=next(p['id'] for p in server.player_world.records(app).values() if p['token']==viewer)
