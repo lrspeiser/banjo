@@ -118,7 +118,7 @@ git diff --check
 New registered/compiled target: eight named cases pass, including refusal,
 cancellation, expiry, zero-load identity, CPU parity and signed-budget withdrawal.
 Existing lattice and plasticity regressions pass too: three CTest targets,
-8.70 s. Source registration 288/288. Final new-test build has no new warning.
+8.68 s on the final rerun. Source registration 288/288. Final new-test build has no new warning.
 No interactive input behavior changed or was newly qualified by this checkpoint.
 
 Next integrate the complete held assembly and bounded hand/joint forces with
@@ -128,5 +128,7 @@ damage/history, private inventory and paid reuse/restart. R3 remains open.
 
 ## Publication
 
-Pending verified publication; record the actual implementation revision after
-committing. This is source/test infrastructure, not deployed destruction gameplay.
+Implementation `0d36e5675907bd945569d509d32f91d432836955` is published on GitHub
+main. The recorded CPU tests were built from those exact implementation sources;
+the following documentation record changes no native code. This is source/test
+infrastructure, not deployed destruction gameplay. Preview 8770 remains on R2.
