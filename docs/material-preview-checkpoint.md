@@ -1,6 +1,6 @@
 # Material collection previews — October 1, 2026
 
-Verified against main base `3c0e9d08e14ef3b016967b5d33c2f7c8dab40a32` with the outgoing changes present. [Machine-readable evidence](evidence/material-preview-checkpoint.json) records source/binary hashes and a native receipt. Publication revision is recorded below after the verified push. Broader progression remains four verified requirements and ten partial.
+Verified against main base `3c0e9d08e14ef3b016967b5d33c2f7c8dab40a32` with the outgoing changes present. [Machine-readable evidence](evidence/material-preview-checkpoint.json) records source/binary hashes and a native receipt. Implementation **`f978d1af318263e2a26a527938957557ce5c3ea0`** is published on GitHub main; the refreshed local preview is http://127.0.0.1:8770/world. Broader progression remains four verified requirements and ten partial.
 
 ## Player flow
 

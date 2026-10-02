@@ -99,7 +99,7 @@
     "source_registration": 287
   },
   "preview_reopen": {
-    "url": "http://127.0.0.1:8770/world?world=efa05c7d7ae64689b687642a02500a9a&scene=new-game",
+    "url": "http://127.0.0.1:8770/world?world=57146d8dc0774c1299160a43db23f943&scene=new-game",
     "old_world_body_count": 10,
     "fresh_pick_cells": 22,
     "fresh_pick_design": true,
@@ -107,11 +107,15 @@
     "fresh_world_funded_make": true,
     "workbench_stock_kg": {},
     "workbench_energy_j": 0.0,
-    "mini_inventory": "Inventory\nOpen all \u2192\nField pick\nRight hand\nStow\nYour energy\n0 J\nSolar \u00b7 shared\n1,987,806.4 J\nSolar rate\n243 J/s",
+    "mini_inventory": "Inventory\nOpen all \u2192\nField pick\nRight hand\nStow\nYour energy\n0 J\nSolar \u00b7 shared\n1,987,791.2 J\nSolar rate\n242.6 J/s",
     "skill_progress": "0 / 1",
-    "skill_card": "Field pick\nSkills \u2197\nGathering by hand\nStep back\n0 / 1\n\nDig soil or sand with your Field pick once.",
+    "skill_card": "Field pick\nSkills \u2197\nGathering by hand\nReady\n0 / 1\n\nDig soil or sand with your Field pick once.",
     "legacy_tabs_removed": true,
-    "exception_count": 0
+    "exception_count": 0,
+    "material_thumbnails": true,
+    "ground_deposit_markers": 0,
+    "native_gather_preview": true
   },
-  "limits": "No new native law, loot grants or quantity guarantee. Soil/sand native receipts, rover ore ledgers and whole products remain distinct. No full-world conservation, material/fracture calibration or cross-GPU claims."
+  "limits": "No new native law, loot grants or quantity guarantee. Soil/sand native receipts, rover ore ledgers and whole products remain distinct. No full-world conservation, material/fracture calibration or cross-GPU claims.",
+  "published_implementation_revision": "f978d1af318263e2a26a527938957557ce5c3ea0"
 }
