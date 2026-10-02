@@ -58,6 +58,17 @@ def _held(lock) -> bool:
     return True
 
 
+class ConnectionGraphCache(unittest.TestCase):
+    def test_pose_deltas_keep_failed_connections_and_explicit_empty_clears_them(self):
+        session=live_session.Session.__new__(live_session.Session)
+        failed=[{'id':4,'a':'handle','b':'head','attached':False}]
+        session.state={'bodies':[{'name':'handle'}],'joints':failed}
+        for partial in (True,False):
+            session.state=session._whole({'bodies':[{'name':'handle'}],'partial':partial})
+            self.assertEqual(failed,session.state['joints'])
+        self.assertEqual([],session._whole({'bodies':[],'partial':True,'joints':[]})['joints'])
+
+
 class LiveSession(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

@@ -147,6 +147,8 @@ class RapidPlayer(unittest.TestCase):
             if(!String(url).includes('/api/world/tool/use'))return original.apply(this,arguments);
             const start=performance.now();quickMax=Math.max(quickMax,++quickActive);
             try{const r=await original.apply(this,arguments);const answer=await r.clone().json();
+              if(window.quickDelayOnce){window.quickDelayOnce=false;
+                await new Promise(resolve=>setTimeout(resolve,900));}
               quickUses.push({start,end:performance.now(),answer});return r;
             }finally{quickActive--}}
         })()''')
@@ -195,7 +197,7 @@ class RapidPlayer(unittest.TestCase):
         self.assertEqual(5,len(taps),'rapid explicit taps should not be lost')
         self.assertEqual(1,page.evaluate('quickMax'),'requests must be sequential')
         # Stop ends held repeat after the currently executing native use.
-        page.evaluate('window.quickUses=[]')
+        page.evaluate('window.quickUses=[];window.quickDelayOnce=true')
         key('keyDown','KeyJ','j');wait('quickActive===1')
         page.send('Input.dispatchMouseEvent',{'type':'mousePressed','x':300,'y':300,
             'button':'right','clickCount':1})

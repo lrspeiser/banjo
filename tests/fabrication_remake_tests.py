@@ -256,6 +256,13 @@ class NativeRemake(unittest.TestCase):
         self.live.act({'session':sid,'op':'step','dt':1/240,'n':120})
         damaged=self.live.session.send(op='condition',names=['field pick'])['condition']['bodies'][0]
         self.assertFalse(damaged['joints'][0]['attached'])
+        shown=inventory_room.shown(self.app)
+        source_id=next(e['id'] for e in shown['hands'].values() if e)
+        self.assertEqual('field pick',source_id)
+        stored=inventory_room.request(self.app,{'session':sid,'op':'stow','item':source_id,
+            'revision':shown['record']['revision'],'request':'broken-source-stow','person':person})
+        self.assertTrue(stored['ok'],stored)
+        self.assertEqual(['field pick'],stored['room']['parts'])
         design=mixed.pick('iron');plan=self.plan(source_id,design)
         for material,mass in model.materials(plan['quote'],'stock').items():
             self.call('fund_stock',**{k:v for k,v in self.request(mass,material,'broken-feed-'+material).items()
@@ -288,10 +295,7 @@ class NativeRemake(unittest.TestCase):
             self.assertEqual(next(b for b in original['bodies'] if b['name']==name),
                              next(b for b in after['bodies'] if b['name']==name))
         self.assertEqual(original['joints'],after['joints'][:len(original['joints'])])
-        root=result['root_body'];shown=inventory_room.shown(self.app)
-        dropped=inventory_room.request(self.app,{'session':self.live.session.id,'op':'drop','item':source_id,
-            'revision':shown['record']['revision'],'request':'broken-source-put-down','person':person})
-        self.assertTrue(dropped['ok'],dropped)
+        root=result['root_body']
         shown=inventory_room.shown(self.app)
         taken=inventory_room.request(self.app,{'session':self.live.session.id,'op':'take_up','item':root,
             'revision':shown['record']['revision'],'request':'replacement-take','person':person})
@@ -318,7 +322,9 @@ class NativeRemake(unittest.TestCase):
         model.advance(final_ledger,final_snapshot['t_s'])
         api._persist(self.app,self.room,final_snapshot,final_ledger)
         saved=self.app.store.load('fabrication')
-        self.live.open(self.app,{'spec':saved.spec,'snapshot':saved.world_record});self.room=self.app.room=saved
+        reopened=self.live.open(self.app,{'spec':saved.spec,'snapshot':saved.world_record});self.room=self.app.room=saved
+        kept=inventory_room.after_open(self.app,reopened)
+        self.assertEqual('field pick',kept['stowed'][0]['name'])
         self.assertTrue(api.request(self.app,'start_remake',{**request,'session':self.live.session.id})['replayed'])
         binding=self.room.fabrication_record['jobs'][ident]['remake_source']
         self.assertEqual(job['remake_source'],binding)
@@ -333,7 +339,8 @@ class NativeRemake(unittest.TestCase):
             'save_failure_rollback_and_retry':True,'whole_reopen_preserves_source_history':True,
             'dt_s':1/240,'cell_m':.04,
             'audit':audit,
-            'limits':'Explicit finite test rack/battery supplies; detached-part inventory reconciliation remains open.'}
+            'separated_handle_stored_and_reopened':True,
+            'limits':'Explicit finite test rack/battery and authored weak source; not a paid manufactured-source journey, held internal fracture or genuine repair.'}
         (ROOT/'build/resource-flow/broken-replacement-native.json').write_text(
             json.dumps(self.native_evidence,indent=2)+'\n',encoding='utf-8')
 

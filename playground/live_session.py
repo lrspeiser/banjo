@@ -580,6 +580,8 @@ class Session:
                 self.state = {**self.state,
                               "bodies": [b for b in self.state["bodies"]
                                          if b["name"] not in went]}
+        if "joints" in state and "bodies" not in state:
+            self.state = {**self.state, "joints": state["joints"]}
         # Anything the world waited on goes to the server's log, so a run that
         # stalls leaves a trace behind rather than only an impression.
         for wait in state.get("waits") or ():
@@ -625,6 +627,11 @@ class Session:
         them, so the last full picture is kept here and the changes folded in.
         What each elastic holds comes the same way: only the ones that changed.
         """
+        # The engine sends the connection graph only when it changes (or with
+        # geometry). Ordinary pose/step replies must not erase a known failure.
+        # An explicit empty list does clear the graph.
+        if "joints" not in reply and "joints" in self.state:
+            reply = {**reply, "joints": self.state["joints"]}
         if not reply.get("partial"):
             return reply
         bodies = {body["name"]: body for body in (self.state or {}).get("bodies", ())}

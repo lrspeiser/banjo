@@ -17,6 +17,19 @@ from mcp import workshop
 
 
 class ProductNames(unittest.TestCase):
+    def test_separated_product_keeps_component_name_without_whole_recipe_or_tool_claim(self):
+        receipt={'status':'installed','root_body':'head-id','root_bodies':['head-id','handle-id'],
+            'component_to_body':{'Head':'head-id','Handle':'handle-id'},'design_id':'pick-design',
+            'recipe':{'kind':'pick'},'presentation':{'label':'Field pick'}}
+        app=SimpleNamespace(room=SimpleNamespace(workshop_installs=[receipt],spec={'interactions':[
+            {'tool':'handle-id','parts':['handle-id','head-id'],'template':'swing-and-lever'}]}))
+        for name,component in [('head-id','Head'),('handle-id','Handle')]:
+            item={'name':name,'bodies':[name],'separated_from':'whole-pick'}
+            shown=product_labels.for_item(app,item)
+            self.assertEqual('Field pick · '+component,shown['label'])
+            self.assertIsNone(shown['recipe']);self.assertIsNone(shown['design_id'])
+            self.assertNotIn('Study / gather in World',shown['next_use'])
+
     def test_named_source_matches_geometry_not_client_design_id(self):
         with tempfile.TemporaryDirectory() as temp:
             app=SimpleNamespace(workshop_store=Path(temp))

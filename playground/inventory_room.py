@@ -72,7 +72,7 @@ def inventory_of(app: Any, player_id: str = "") -> inventory.Inventory:
 
 
 def _state(app: Any) -> dict[str, Any]:
-    session = app.live.session
+    session = getattr(getattr(app, "live", None), "session", None)
     return (session.state or {}) if session is not None else {}
 
 
@@ -81,6 +81,55 @@ def _hand_of(app: Any, player_id: str = "") -> dict[str, Any]:
     if player_id:
         return (state.get("player_hands") or {}).get(player_id) or {}
     return state.get("hand") or {}
+
+
+def items_of(app: Any) -> list[dict[str, Any]]:
+    """Physical connected components, including retained failed-joint history.
+
+    The authored graph is a fallback before a native graph has been received.
+    A native empty graph is authoritative too.
+    """
+    return inventory.items_of(app.room.spec, _state(app).get("joints"))
+
+
+def reconcile(app: Any) -> None:
+    """A separated held assembly owns only what the native grip still carries.
+
+    Rebind the retained component's bag slot/facing without moving bodies or
+    deleting accepted request answers. Released components remain in the world.
+    Stored assemblies cannot acquire new failures while native-parked; their
+    already reconciled component ids persist normally through reopening.
+    """
+    current = items_of(app)
+    by_body = {name: item for item in current for name in item["bodies"]}
+    authored = inventory.items_of(app.room.spec)
+    original = {item["id"]: item for item in authored}
+    players = list(player_world.records(app)) if getattr(app, "world_id", None) else [""]
+    for actor in players:
+        record = inventory_of(app, actor)
+        holding = str(_hand_of(app, actor).get("holding") or "")
+        with record.lock:
+            old_id = record.hands.get(record.dominant)
+            old = original.get(old_id)
+            if not old or not any(i.get("separated_from") == old_id for i in current):
+                continue
+            retained = by_body.get(holding) if holding in old["bodies"] else None
+            new_id = retained["id"] if retained else None
+            bindings = getattr(record, "_held_components", {})
+            names = tuple(retained["bodies"]) if retained else ()
+            if new_id == old_id and bindings.get(old_id) == names:
+                continue
+            record.hands[record.dominant] = new_id
+            slot = record.home.pop(old_id, None)
+            if slot is not None and new_id:
+                record.home[new_id] = slot
+            facing = record.facing.pop(old_id, None)
+            if facing is not None and new_id:
+                record.facing[new_id] = facing
+            if new_id:
+                bindings[new_id] = names
+            record._held_components = bindings
+            record.revision += 1
 
 
 def _body(app: Any, name: str | None) -> dict[str, Any] | None:
@@ -103,7 +152,7 @@ def item_holding(app: Any, part: str | None) -> dict[str, Any] | None:
     """The room's item a body is part of, or None."""
     if not part:
         return None
-    return next((i for i in inventory.items_of(app.room.spec) if part in i["bodies"]), None)
+    return next((i for i in items_of(app) if part in i["bodies"]), None)
 
 
 def _turned(q: list[float], v: list[float]) -> list[float]:
@@ -225,10 +274,11 @@ def shown(app: Any, player_id: str = "") -> dict[str, Any]:
     with what each thing is made of and its shape. An empty slot is None, so the
     page numbers the slots as the record does; a thing in a hand carries the slot
     kept for it (`slot`), which its number puts it back into."""
+    reconcile(app)
     record = inventory_of(app, player_id).record()
     spec = app.room.spec
     bodies = {str(b["name"]): b for b in spec.get("bodies") or [] if isinstance(b, dict) and b.get("name")}
-    items = {item["id"]: item for item in inventory.items_of(spec)}
+    items = {item["id"]: item for item in items_of(app)}
 
     def named(item: str | None, slot: int | None = None) -> dict[str, Any] | None:
         if not item:
@@ -283,7 +333,8 @@ def after_open(app: Any, opened: dict[str, Any] | None = None,
     session = app.live.session
     if session is None:
         return shown(app)
-    items = {item["id"]: item for item in inventory.items_of(app.room.spec)}
+    reconcile(app)
+    items = {item["id"]: item for item in items_of(app)}
     item_of_body = {name: item_id for item_id, item in items.items() for name in item["bodies"]}
     state = session.state or {}
     # What the engine's hand holds as the room opens: nothing in a room opened
@@ -359,7 +410,7 @@ def _after_open_players(app: Any, opened: dict[str, Any] | None,
         session = app.live.session
         if session is None:
             return shown(app, player_id or next(iter(players)))
-        items = {item["id"]: item for item in inventory.items_of(app.room.spec)}
+        items = {item["id"]: item for item in items_of(app)}
         # Worlds saved before per-player native hands kept one legacy hand and
         # its owner in the room record. Transfer that live hold once, instead
         # of filing the owner's item in a bag while the legacy hand keeps it.
@@ -384,6 +435,7 @@ def _after_open_players(app: Any, opened: dict[str, Any] | None,
                 if isinstance(target, list) and len(target) == 3:
                     app.live.act({"session": session.id, "op": "move", "actor": owner,
                                   "to": target})
+        reconcile(app)
         native_hands = (session.state or {}).get("player_hands") or {}
         restored = opened.get("restored") if isinstance(opened, dict) else None
         whole = isinstance(restored, dict) and restored.get("tier") in ("whole", "carried")
@@ -426,7 +478,8 @@ def _after_open_players(app: Any, opened: dict[str, Any] | None,
                 thing = items.get(item)
                 if thing and thing["name"] in present:
                     try:
-                        app.live.act({"session": session.id, "op": "park", "name": thing["name"]})
+                        app.live.act({"session": session.id, "op": "park", "name": thing["name"],
+                                      "actor": ident})
                         parked.update(thing["bodies"])
                     except Exception:
                         with record.lock:
@@ -476,8 +529,9 @@ def _request(app: Any, body: Any, player_id: str) -> dict[str, Any]:
     request_id = str(body.get("request") or "")
     if not request_id:
         raise ValueError("a change needs its own request id, so a retry is not done twice")
+    reconcile(app)
     record = inventory_of(app, player_id)
-    items = inventory.items_of(app.room.spec)
+    items = items_of(app)
     op = str(body.get("op") or "")
     asked = str(body.get("item") or "")
     thing = next((i for i in items if i["id"] == asked), None) or \

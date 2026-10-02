@@ -1,7 +1,7 @@
 """Contextual placement: one read-only resolver for previews and authored Use.
 
 What is placed is the part the hand grips. A thing of several parts comes with
-it on its own joints (inventory.items_of): its other parts are never taken for
+it on its own joints (inventory_room.items_of): its other parts are never taken for
 somewhere to put it or for the ground under it, and its weight is all of it."""
 from __future__ import annotations
 import math
@@ -96,17 +96,21 @@ HELD_IN_PLACE = ("fixing", "hinge", "slider")
 
 
 def own_parts(app, name):
-    """Every part of the thing a body is part of (inventory.items_of): the part
+    """Every part of the thing a body is part of (inventory_room.items_of): the part
     the hand grips, and whatever comes with it."""
-    thing = next((i for i in inventory.items_of(app.room.spec) if name in i["bodies"]), None)
+    import inventory_room
+    thing = next((i for i in inventory_room.items_of(app) if name in i["bodies"]), None)
     return set(thing["bodies"]) if thing else {name}
 
 
 def carried_shape(app, name):
     """The parts that go down with the gripped one, as they stand now: the
     gripped part first, then what is fixed, pinned or slid to it."""
-    joints = [j for j in app.room.spec.get("joints") or []
-              if isinstance(j, dict) and j.get("kind", "hinge") in HELD_IN_PLACE]
+    state = app.live.session.state or {}
+    graph = state.get("joints", app.room.spec.get("joints") or [])
+    joints = [j for j in graph
+              if isinstance(j, dict) and j.get("attached") is not False
+              and j.get("kind", "hinge") in HELD_IN_PLACE]
     names, todo = [name], [name]
     while todo:
         part = todo.pop()

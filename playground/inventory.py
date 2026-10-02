@@ -7,7 +7,8 @@ it; the chat and the API get the same answers. What happens to the thing itself
 unpark, and the hand), done by the room when a change is accepted here. Nothing
 here changes unless that part was done.
 
-Items are worked out from the room's spec each time, never kept twice:
+Items are worked out from the room's spec and current native connections,
+never kept twice (authoring callers without a native graph use declared joints):
 - every body of a join group is one piece, which the engine builds as one body
   named after its first part;
 - bodies joined to each other are one thing, so a stool's legs are not five
@@ -42,8 +43,8 @@ MAX_ANSWERS = 64
 SLOTS = 10
 
 
-def items_of(spec: dict[str, Any]) -> list[dict[str, Any]]:
-    """The room's things, as a person would count them.
+def items_of(spec: dict[str, Any], joints: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    """The room's things, following supplied native or declared connections.
 
     Each item is:
     - id: the smallest id of its bodies;
@@ -80,8 +81,8 @@ def items_of(spec: dict[str, Any]) -> list[dict[str, Any]]:
         if join:
             union(first_of_join.setdefault(join, str(body["name"])), str(body["name"]))
     jointed: set[str] = set()
-    for joint in spec.get("joints") or []:
-        if isinstance(joint, dict):
+    for joint in (spec.get("joints") or []) if joints is None else joints:
+        if isinstance(joint, dict) and joint.get("attached") is not False:
             a, b = str(joint.get("a", "")), str(joint.get("b", ""))
             union(a, b)
             jointed.update(n for n in (a, b) if n in parent)
@@ -96,6 +97,13 @@ def items_of(spec: dict[str, Any]) -> list[dict[str, Any]]:
         items.append({"id": ids[0] if ids else names[0], "name": names[0], "bodies": names,
                       "installed": any(bool(b.get("anchored")) for b in members),
                       "one_piece": len(pieces) == 1 and not (set(names) & jointed)})
+    if joints is not None:
+        authored = items_of(spec)
+        for item in items:
+            original = next((old for old in authored
+                             if set(item["bodies"]) < set(old["bodies"])), None)
+            if original:
+                item["separated_from"] = original["id"]
     return items
 
 
@@ -116,7 +124,9 @@ class Inventory:
 
     def __init__(self, record: dict[str, Any] | None = None) -> None:
         record = record if isinstance(record, dict) else {}
-        self.lock = threading.Lock()
+        # Manufacturing holds this record across review/publication and reads
+        # the reconciled inventory inside that transaction on the same thread.
+        self.lock = threading.RLock()
         self.revision = int(record.get("revision", 0) or 0)
         self.dominant = record.get("dominant") if record.get("dominant") in HANDS else "right"
         hands = record.get("hands") if isinstance(record.get("hands"), dict) else {}

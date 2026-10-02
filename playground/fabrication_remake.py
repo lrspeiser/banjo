@@ -9,7 +9,6 @@ import time
 import uuid
 
 from mcp import fabrication as model
-import inventory
 import inventory_room
 import workshop_install as install
 import workshop_library as library
@@ -39,7 +38,7 @@ def source(app, live, item_id):
     entries=list(shown['hands'].values())+shown['stowed']
     carried=next((e for e in entries if e and e['id']==item_id),None)
     if carried is None:raise ValueError('That item is no longer in your hands or bag')
-    item=next((i for i in inventory.items_of(app.room.spec) if i['id']==item_id),None)
+    item=next((i for i in inventory_room.items_of(app) if i['id']==item_id),None)
     if item is None:raise ValueError('The selected item has no current world geometry')
     names=sorted(set(item['bodies']))
     if not 1<=len(names)<=64:raise ValueError('Selected item exceeds the source body budget')
@@ -139,7 +138,9 @@ def start(app,body,*,making=False):
         if entry.get('kind','remake')!=kind:raise ValueError('Review the requested make or remake operation again')
         current=None
         if not making:
-            current=source(app,live,entry['source']['source_item'])
+            try:current=source(app,live,entry['source']['source_item'])
+            except ValueError as error:
+                raise ValueError('Selected item changed; review a new remake plan') from error
             if current['source_hash']!=entry['source']['source_hash']:
                 raise ValueError('Selected item changed; review a new remake plan')
         if model.digest(state['config'])!=entry['config_hash']:

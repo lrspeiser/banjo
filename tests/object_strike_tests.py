@@ -70,6 +70,12 @@ class NativeObjectStrikes(unittest.TestCase):
                 'settings':paid.settings(stock_kg={},energy_j=0),'request_id':'connection-config-0001'},world)
             shown=self.post('/api/world/inventory/shown',{'session':sid},world)
             held=next(e for e in shown['hands'].values() if e)
+            # Give the original assembly a remembered bag slot before damage.
+            for op, extra in (('stow',{}),('slot',{'slot':4}),('equip',{})):
+                shown=self.post('/api/world/inventory/shown',{'session':sid},world)
+                self.assertTrue(self.post('/api/world/inventory',{'session':sid,'op':op,
+                    'item':'field pick' if op=='equip' else held['id'],'revision':shown['record']['revision'],
+                    'request':'connection-'+op,'person':person,**extra},world)['ok'])
             request={**context,'source_item':held['id'],'candidate':paid.candidate()}
             try:reviewed=self.post('/api/world/fabrication/plan_remake',request,world)
             except urllib.error.HTTPError as error:self.fail(error.read().decode())
@@ -79,15 +85,31 @@ class NativeObjectStrikes(unittest.TestCase):
             self.post('/api/live/act',{'session':sid,'op':'stroke','path':[grip,end],
                 'speed_m_s':4,'accel_m_s2':80,'lead_m':.025,'give_up_s':.125},world)
             self.post('/api/live/act',{'session':sid,'op':'step','dt':1/240,'n':120},world)
-            damaged=self.post('/api/world/fabrication/plan_remake',request,world)
+            shown=self.post('/api/world/inventory/shown',{'session':sid},world)
+            retained=next(e for e in shown['hands'].values() if e)
+            self.assertEqual('field pick',retained['name'])
+            self.assertEqual(4,retained['slot'])
+            self.assertNotEqual(held['id'],retained['id'])
+            before_retry=app.live.snapshot()[0]
+            replay=self.post('/api/world/inventory',{'session':sid,'op':'take_up','item':'field pick',
+                'revision':0,'request':'fixture-take','person':person},world)
+            self.assertTrue(replay['ok'])
+            self.assertEqual(before_retry,app.live.snapshot()[0])
+            self.assertEqual(shown['record'],replay['shown']['record'])
+            self.assertEqual(.2688,round(ai.server.inventory_room.whole_kg(
+                app,ai.server.inventory_room.item_holding(app,'field pick')),4))
+            import placement
+            self.assertEqual({'field pick'},placement.own_parts(app,'field pick'))
+            self.assertEqual(['field pick'],[b['name'] for b in placement.carried_shape(app,'field pick')])
+            damaged_request={**request,'source_item':retained['id']}
+            damaged=self.post('/api/world/fabrication/plan_remake',damaged_request,world)
             self.assertNotEqual(reviewed['source']['source_hash'],damaged['source']['source_hash'])
             self.assertNotEqual(reviewed['source']['native_hash'],damaged['source']['native_hash'])
             rows=damaged['source']['condition']
-            self.assertEqual([1,1],[r['fraction'] for r in rows])
+            self.assertEqual([1],[r['fraction'] for r in rows])
             failure=rows[0]['joints'][0]
             self.assertFalse(failure['attached']);self.assertGreater(failure['parted_load_n'],60)
             self.assertEqual(60,failure['parted_capacity_n']);self.assertTrue(failure['parted_because'])
-            self.assertEqual(failure,rows[1]['joints'][0])
             before=deepcopy(app.room.fabrication_record)
             with self.assertRaises(urllib.error.HTTPError) as stale:
                 self.post('/api/world/fabrication/start_remake',{**context,'plan_id':reviewed['plan_id'],
@@ -96,15 +118,38 @@ class NativeObjectStrikes(unittest.TestCase):
             self.assertEqual(before,app.room.fabrication_record)
             carried=self.post('/api/workshop/inventory',{},world)['carried']
             self.assertEqual({r['name']:r for r in rows},{r['name']:r for r in carried[0]['condition']})
+            self.assertEqual(['field pick'],carried[0]['parts'])
+            self.assertEqual(.2688,round(carried[0]['kg'],4))
+            self.assertNotIn('Study / gather in World',carried[0]['next_use'])
             peer=self.join(world,'Connection peer')
             self.assertEqual([],self.post('/api/workshop/inventory',{},world,peer['token'])['carried'])
             with self.assertRaises(urllib.error.HTTPError):
-                self.post('/api/world/fabrication/plan_remake',request,world,peer['token'])
+                self.post('/api/world/fabrication/plan_remake',damaged_request,world,peer['token'])
+            peer_shown=self.post('/api/world/inventory/shown',{'session':sid},world,peer['token'])
+            refused=self.post('/api/world/inventory',{'session':sid,'op':'take','item':'field pick',
+                'revision':peer_shown['record']['revision'],'request':'peer-no-handle','person':person},world,peer['token'])
+            self.assertFalse(refused['ok'])
+            collected=self.post('/api/world/inventory',{'session':sid,'op':'take','item':'head',
+                'revision':peer_shown['record']['revision'],'request':'peer-takes-free-head','person':person},world,peer['token'])
+            self.assertTrue(collected['ok'],collected)
+            stowed=self.post('/api/world/inventory',{'session':sid,'op':'stow','item':retained['id'],
+                'revision':shown['record']['revision'],'request':'owner-stows-handle','person':person},world)
+            self.assertTrue(stowed['ok'],stowed)
+            self.assertEqual(retained['id'],stowed['record']['stowed'][4])
+            stored_rows=self.post('/api/workshop/inventory',{},world)['carried'][0]['condition']
+            self.assertEqual(rows[0]['joints'],stored_rows[0]['joints'])
+            native=app.live.snapshot()[0]
+            parked={b['name']:b['parked']['actor'] for b in native['bodies'] if b.get('parked')}
+            self.assertEqual({'head':peer['id'],'field pick':owner['id']},parked)
             self.assertTrue(ai.server.keep_world(app,'failed tool connection review checkpoint'))
             self.stop();self.start();self.post('/api/world/player/join',{'token':owner['token']},world)
             self.post('/api/world/open',{},world)
             reopened=self.post('/api/workshop/inventory',{},world)['carried']
-            self.assertEqual({r['name']:r for r in rows},{r['name']:r for r in reopened[0]['condition']})
+            self.assertEqual({r['name']:r for r in stored_rows},{r['name']:r for r in reopened[0]['condition']})
+            self.assertEqual('bag 5',reopened[0]['where'])
+            self.assertEqual(['field pick'],reopened[0]['parts'])
+            peer_carried=self.post('/api/workshop/inventory',{},world,peer['token'])['carried']
+            self.assertEqual(['head'],peer_carried[0]['parts'])
             evidence.append({'material':material,'failure':failure,'source_review_invalidated':True,
                 'private_restart_retained':True,'constituent_fractions':[r['fraction'] for r in rows]})
         if ai.qa_browser.CHROME.is_file():
@@ -123,7 +168,7 @@ class NativeObjectStrikes(unittest.TestCase):
             chrome.close()
         (ROOT/'build/resource-flow/connection-review-http.json').write_text(json.dumps({
             'dt_s':1/240,'cell_m':.02,'gravity_m_s2':[0,-9.81,0],'results':evidence,
-            'limits':'Authored weak tool connection; not wear, material fracture, paid replacement or separated-part inventory qualification.'},indent=2)+'\n',encoding='utf-8')
+            'limits':'Authored weak tool connection; separated-part slots/mass/ownership/restart qualify, not wear, material fracture or paid manufacture.'},indent=2)+'\n',encoding='utf-8')
 
     def test_native_http_strike_separates_declared_target_and_reopens(self):
         results=[]

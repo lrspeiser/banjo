@@ -52,7 +52,9 @@ def from_recipe(app,recipe):
 def for_item(app,thing):
     names=set(thing.get('bodies',[]))
     receipt=next((r for r in reversed(getattr(app.room,'workshop_installs',[]) or [])
-                  if r.get('status')=='installed' and r.get('root_body') in names),None)
+                  if r.get('status')=='installed' and names & (
+                      set(r.get('root_bodies',[])) | set((r.get('component_to_body') or {}).values())
+                      | {r.get('root_body')})),None)
     if receipt:
         presentation=deepcopy(receipt.get('presentation') or {})
         if not presentation:
@@ -64,8 +66,16 @@ def for_item(app,thing):
         profile=next((p for p in app.room.spec.get('interactions',[]) if p.get('tool') in names),None)
         presentation={'label':(profile.get('object') if profile else None) or thing.get('name') or 'Item',
                       'label_source':'world-name'}
+    if thing.get('separated_from'):
+        components = [component for component, body in (receipt.get('component_to_body') or {}).items()
+                      if body in names] if receipt else []
+        part = ', '.join(components) or str(thing.get('name') or 'Part')
+        label=presentation['label']
+        presentation.update(label=label+' · '+part if label!=part else label,
+                            separated=True, recipe=None, design_id=None)
     presentation['next_use']=['Hold / place in World','Open in Lab']
     if any(p.get('tool') in names and p.get('template')=='swing-and-lever'
+           and set(p.get('parts') or [p.get('tool')]) <= names
            for p in app.room.spec.get('interactions',[])):
         presentation['next_use']=['Study / gather in World','Open in Lab']
     return presentation
@@ -83,4 +93,10 @@ def body_labels(app):
         bodies=set(receipt.get('root_bodies',[])) | set((receipt.get('component_to_body') or {}).values())
         if receipt.get('root_body'):bodies.add(receipt['root_body'])
         labels.update({name:presentation['label'] for name in bodies})
+    if getattr(app, 'live', None) and app.live.session is not None:
+        import inventory_room
+        for thing in inventory_room.items_of(app):
+            if thing.get('separated_from'):
+                label = for_item(app, thing)['label']
+                labels.update({name:label for name in thing['bodies']})
     return labels

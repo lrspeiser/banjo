@@ -289,7 +289,9 @@ export function makeTools(ctx) {
     if (!use || !world.held || !world.held.pick) return;
     use.down = true;
     use.stop = false;
-    use.queued = Math.min(3, (use.queued || 0) + 1);
+    // Preserve short bursts while a native/network response is outstanding.
+    // Still bounded, sequential, and discarded immediately by Stop / Esc.
+    use.queued = Math.min(16, (use.queued || 0) + 1);
     if (use.mode === "tool-ready") schedule();
   }
   function release() { if (world.use) world.use.down = false; }

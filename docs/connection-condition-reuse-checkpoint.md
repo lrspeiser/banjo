@@ -1,5 +1,59 @@
 # Connection condition and paid replacement — October 2, 2026
 
+## Separated inventory follow-up
+
+Host items now follow the native attached-connection graph. Pose deltas keep
+that graph until an explicit update, including an empty graph, arrives. A
+separated held assembly rebinds to the component still in the native grip,
+preserving its remembered bag slot and facing and advancing the inventory
+revision. Accepted inventory replies remain cached so retries do not repeat
+physical actions. Authored join groups remain single native bodies; this does
+not infer new internal fracture fragments from names.
+
+Inventory parts/mass, remake source selection and placement use the same current
+components. The released component is available independently in the world.
+Separated products retain component labels, lose whole-design thumbnails and
+tool-purpose claims when required parts are absent, and open as the existing
+component draft in Lab. Multi-component partial Lab reconstruction still needs
+a complete draft adapter; the existing fallback opens one part.
+
+The matched glass/oak/iron HTTP cases now give the original tool bag slot 5,
+separate its 60 N fixing, retain the 0.2688 kg oak handle, let a peer collect the
+3.52576 kg iron head, refuse peer access to the handle, stow each component for
+its actual native owner and restart with the two private inventories intact.
+These are 20 mm, 1/240 s, normal-gravity authored fixtures. Their terrain-free
+native lane omits carrying accounts; the handle mass assertion uses actual
+native body mass rather than claiming a complete carrying-account reading.
+No material/contact law, strength capacity or physical tolerance changes.
+
+The 40 mm paid replacement case now stores the failed handle before Lab review,
+retains its failure through paid manufacturing/save failure/retry, picks up and
+uses the replacement, and reopens the original handle in its bag. Supplies and
+the original weak source remain explicit test fixtures. This does not complete
+the fresh-world paid manufactured-source journey, internal held damage or repair.
+
+The ordinary rapid-input regression exposed a three-pending-use queue that could
+drop a fifth tap while a response was slow. The shared client queue is now bounded
+at 16 pending explicit uses. A 900 ms delayed HTTP response verifies five taps
+complete once and sequentially; Stop and Esc cancel pending repeat. This changes
+input scheduling, not tool paths, forces, cadence or yields.
+
+Follow-up verification uses the unchanged `build/agent-object-strike` Windows
+x64 Release native runner/DLL: 66 Inventory/Lab/model/HTTP/Chrome checks pass in
+104.753 s. The 47 tool/placement/condition checks pass; the initial additional
+rapid-input failure is resolved by the queue change and all five rapid-tool
+checks pass in 17.013 s, including the delayed reply. The matched inventory
+case passes again in 5.246 s with exact native snapshot equality across an old
+pickup retry. Source registration remains 297/297, JavaScript syntax and diff
+checks pass, and 1,140 local links in the six changed docs validate. Native laws
+and binaries are unchanged; earlier compiled results remain historical evidence.
+
+Evidence: `build/resource-flow/separated-inventory-final.log`,
+`separated-controls-final.log` (retains the initial rapid-input failure),
+`separated-quick-final.log` (resolved), `separated-retry-final.log`, updated
+`connection-review-http.json` and `broken-replacement-native.json`.
+This follow-up is based on `526e23b` on main. Preview servers are unchanged.
+
 ## Implemented boundary
 
 Native `condition` readings now include each selected part's assembly joints:
@@ -93,10 +147,8 @@ server was restarted or binary overwritten.
 
 ## Remaining R3 work
 
-Host inventory still groups authored assemblies through failed joints. Item
-identity, displayed parts/mass, bag root and ownership must reconcile to actual
-separated groups; the native bag check does not close that host journey. The
-new test's original source is an authored weak fixture, not a previously paid
+Host inventory now separates native connection groups as described above. The
+test's original source is an authored weak fixture, not a previously paid
 manufactured product. Complete the fresh-world made-item damage → Lab review →
 paid result → collection/equip/use journey with correct detached ownership,
 peers, failure/retry and server restart. Integrate actual held source/target

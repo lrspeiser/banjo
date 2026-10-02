@@ -43,7 +43,6 @@ def carried(app: Any, player_id: str = "") -> list[dict[str, Any]]:
     """
     try:
         import inventory_room
-        from inventory import items_of
         room = getattr(app, "room", None)
         if room is None or not getattr(room, "spec", None):
             return []
@@ -74,12 +73,13 @@ def carried(app: Any, player_id: str = "") -> list[dict[str, Any]]:
                    "shape": str(first.get("shape") or entry.get("shape") or "box"),
                    "parts": list(entry.get("parts") or [name]),
                    "color_rgba": str(first.get("color_rgba") or ""),
-                   "design_id": made.get(name) or None}
+                    "design_id": (made.get(name) or None) if not entry.get('separated') else None,
+                    "separated": bool(entry.get('separated'))}
             out["bench_shape"] = _BENCH_SHAPE.get(out["shape"], "box")
             out["same_shape"] = out["bench_shape"] == out["shape"]
             if size:
                 out["size_mm"] = size
-            thing = next((i for i in items_of(spec) if i["id"] == entry.get("id")), None)
+            thing = next((i for i in inventory_room.items_of(app) if i["id"] == entry.get("id")), None)
             kg = inventory_room.whole_kg(app, thing) if thing else None
             out['mass_source']='Live native reading' if kg is not None else 'Unreported'
             # Pose replies omit parked bodies. Their saved native checkpoint

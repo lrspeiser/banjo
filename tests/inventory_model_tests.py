@@ -42,6 +42,16 @@ def item_named(items, name):
 
 class TheRoomsThingsAsAPersonCountsThem(unittest.TestCase):
 
+    def test_native_connections_release_only_the_separated_components(self):
+        graph=[{**j,'attached':False} for j in ROOM['joints']]
+        actual=inventory.items_of(ROOM,graph)
+        self.assertFalse(item_named(actual,'oak gate')['installed'])
+        self.assertTrue(item_named(actual,'gate post')['installed'])
+        self.assertEqual(['stool leg'],item_named(actual,'stool leg')['bodies'])
+        self.assertEqual('b-stool00001',item_named(actual,'stool leg')['separated_from'])
+        self.assertEqual(['pick haft','pick arm'],item_named(actual,'pick arm')['bodies'])
+        self.assertEqual(4,len(inventory.items_of(ROOM)))
+
     def test_a_join_group_is_one_item_named_after_its_first_part(self):
         items = inventory.items_of(ROOM)
         pick = item_named(items, "pick arm")
