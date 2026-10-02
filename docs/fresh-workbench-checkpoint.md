@@ -1,7 +1,10 @@
 # Ordinary fresh-world workbench
 
 October 1, 2026. Main based on `94a52ad`; verification used uncommitted changes.
-Publication and refreshed preview will be recorded after the outgoing checks.
+Implementation `b305129` is published on GitHub main. Refreshed own 8770
+preview reopens the existing 10-body legacy world without retrofitting its
+process. Fresh entry has an empty workbench, 22-cell pick geometry, two component
+thumbnails, native pickup and compact Inventory with zero JavaScript exceptions.
 
 ## Implemented
 

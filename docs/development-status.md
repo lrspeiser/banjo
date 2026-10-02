@@ -10,6 +10,9 @@ smelting. This is deterministic controller evidence with zero provider calls.
 Fixed fabrication QA remains 68/68; legacy worlds are not retrofitted.
 No native law change. Damaged-tool replacement/equip/use, broader generated
 routes and physical constituent incorporation remain; four verified, ten partial.
+Implementation `b305129` is published on main; refreshed 8770 preview passes
+legacy reopen, fresh empty workbench, component pictures and native pickup.
+
 
 **Canonical machine Use, October 1:** [Paid/browser checkpoint](canonical-machine-use-checkpoint.md)
 adds bounded native program/lamp switches and preserves template declarations

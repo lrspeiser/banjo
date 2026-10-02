@@ -240,5 +240,19 @@
     "verified": 4,
     "partial": 10,
     "active": true
+  },
+  "published_implementation_revision": "b3051290f69afb6a42c5a9c0e06132854120e7c8",
+  "own_preview": {
+    "url": "http://127.0.0.1:8770/world?world=5ccd82c99799465fab5e1bb24bc0879f&scene=new-game",
+    "old_world_body_count": 10,
+    "fresh_pick_cells": 22,
+    "fresh_pick_design": true,
+    "legacy_world_funded_make": false,
+    "fresh_world_funded_make": true,
+    "workbench_stock_kg": {},
+    "workbench_energy_j": 0.0,
+    "mini_inventory": "Inventory\nOpen all \u2192\nField pick\nRight hand\nStow\nYour energy\n0 J\nSolar \u00b7 shared\n1,987,852.1 J\nSolar rate\n244 J/s",
+    "legacy_tabs_removed": true,
+    "exception_count": 0
   }
 }

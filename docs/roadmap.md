@@ -8,6 +8,9 @@ supplies and native energy, including a paid work table. Next qualify an
 actually damaged tool through funded replacement, pickup, equip and native
 use in an ordinary fresh world; extend material-source and machine progression
 beyond these two chains. The fourteen gates stay four verified, ten partial.
+Implementation `b305129` is published on main; refreshed 8770 preview passes
+legacy reopen, fresh empty workbench, component pictures and native pickup.
+
 
 **Canonical machine operation, October 1:** [Configured Make/Use acceptance](canonical-machine-use-checkpoint.md)
 passes saved canonical rover funding, native placement, actual World Use and
