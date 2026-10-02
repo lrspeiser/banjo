@@ -118,6 +118,68 @@ unsigned peg(LiveWorld &world, double holds_tension_n = 0.0,
 
 // -----------------------------------------------------------------------------
 
+void rectangularBendingUsesActualReactionAndSurvivesRestart() {
+    for (const auto material : {MaterialPreset::Glass, MaterialPreset::Oak, MaterialPreset::Iron}) {
+        for (const double lever : {0.1,0.2}) {
+            auto request=wall();request.bodies[1].material=material;
+            request.bodies[1].center_m.x=0.15+lever;
+            auto world=LiveWorld::open(request);
+            const unsigned id=world->fix("wall","bracket",{0.15,2.0,0.0},{1,0,0},
+                1e6,1e6,0,{0,1,0},0.2,0.1);
+            require(id!=0,"rectangular section refused");
+            run(*world,120);
+            auto held=jointNumber(world->joints(),id);
+            const double mass=named(world->poses(),"bracket").mass_kg;
+            const double expected=mass*9.81*lever;
+            require(held.attached,"large rectangular section failed");
+            require(std::abs(std::abs(held.bending_v_n_m)-expected)<0.02*expected,
+                "fixing moment did not equal actual weight times lever arm");
+            require(std::abs(held.bending_u_n_m)<1e-3,"reaction leaked into perpendicular bending axis");
+            std::string why;auto saved=world->snapshot(why);
+            require(why.empty(),"section snapshot refused");
+            auto reopened=LiveWorld::open(request,saved);
+            require(reopened->restored().tier=="whole","section snapshot did not wholly reopen");
+            auto restored=jointNumber(reopened->joints(),id);
+            require(restored.section_u_m==.2 && restored.section_v_m==.1,"section dimensions lost on reopen");
+            run(*reopened,1);
+            restored=jointNumber(reopened->joints(),id);
+            if (std::abs(restored.bending_v_n_m-held.bending_v_n_m)>=0.02*expected)
+                std::cout<<"  restart moment before="<<held.bending_v_n_m<<" after="<<restored.bending_v_n_m<<"\n";
+            run(*reopened,119);
+            restored=jointNumber(reopened->joints(),id);
+            require(std::abs(std::abs(restored.bending_v_n_m)-expected)<0.02*expected,"section reaction did not recover after reopen");
+            // Same declared stress criterion in all three materials. Strength
+            // remains a declaration here; only actual density determines load.
+            auto weak=LiveWorld::open(request);
+            const unsigned weak_id=weak->fix("wall","bracket",{.15,2,0},{1,0,0},
+                0.5*6*expected/.2,1e6,0,{0,1,0},.2,.1);
+            run(*weak,1);
+            const auto gone=jointNumber(weak->joints(),weak_id);
+            require(!gone.attached && gone.parted_because.find("axial and bending")!=std::string::npos,
+                "bending-only overload did not part section");
+            require(named(weak->poses(),"bracket").mass_kg==mass,"opening interface changed mass");
+            require(gone.parted_load_n>gone.parted_capacity_n,"section failure receipt lost deciding loads");
+            auto swapped=LiveWorld::open(request);
+            const unsigned swapped_id=swapped->fix("wall","bracket",{.15,2,0},{1,0,0},
+                0.5*6*expected/.2,1e6,0,{0,0,1},.1,.2);
+            run(*swapped,1);
+            const auto swapped_gone=jointNumber(swapped->joints(),swapped_id);
+            require(!swapped_gone.attached && std::abs(swapped_gone.parted_load_n-gone.parted_load_n)<1e-9,
+                "swapping section axes changed normal stress failure");
+            auto failed_saved=weak->snapshot(why);
+            auto failed_reopen=LiveWorld::open(request,failed_saved);
+            require(jointNumber(failed_reopen->joints(),weak_id).parted_because==gone.parted_because,
+                "bending failure history lost on reopen");
+            const auto count=world->joints().size();
+            require(world->fix("wall","bracket",{.15,2,0},{1,0,0},1e6,1e6,0,{1,0,0},.2,.2)==0 &&
+                world->joints().size()==count,"invalid section mutated joints");
+            std::cout<<"  rectangular / "<<materialPresetName(material)<<" lever="<<lever
+                <<" mass="<<mass<<" measured moment="<<held.bending_v_n_m
+                <<" expected="<<expected<<" failed equivalent N="<<gone.parted_load_n<<"\n";
+        }
+    }
+}
+
 void aFixingHolds() {
     const auto world = LiveWorld::open(wall());
     const unsigned fixing = peg(*world);
@@ -629,6 +691,7 @@ void aHeldContactRefusesAnIncompleteFractureIsland() {
 
 int main() {
     try {
+        rectangularBendingUsesActualReactionAndSurvivesRestart();
         aHeldToolCanPartANativeFixing();
         aHeldContactRefusesAnIncompleteFractureIsland();
         std::cout << "[PASS] bounded held contact separates native fixings and retains state across restart\n";

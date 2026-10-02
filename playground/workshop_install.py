@@ -852,6 +852,14 @@ def _appended_joints(before, after, added, definitions, removed=frozenset()):
                 or joint.get('rechecks')!=0 or joint.get('parted_load_n')!=0.
                 or joint.get('parted_capacity_n')!=0.):
             raise ValueError('Staging changed new fixing condition')
+        if kind=='fixing':
+            for key in ('section_u_m','section_v_m'):
+                if joint.get(key,0.)!=definition.get(key,0.):
+                    raise ValueError('Staging changed the reviewed fixing section')
+            if definition.get('section_u_m'):
+                u=definition['section_u'];norm=math.sqrt(sum(v*v for v in u))
+                if not near(rotate(bodies[a]['pose']['q_wxyz'],joint['section_u_local_a']),[v/norm for v in u]):
+                    raise ValueError('Staging changed the reviewed fixing section frame')
 
 
 def _appended_tool_points(before, after, added, definitions, removed=frozenset()):
@@ -960,9 +968,12 @@ def _preserved(before: dict[str, Any], after: dict[str, Any], root: str | set[st
             continue
         if parts.get(tuple(part["bodies"])) != part:
             raise ValueError("Staging changed existing topology or material declarations")
-    exceptions = {"bodies", "parts", "fingerprint", "spec_digest", "next", "heat", "joints",
+    exceptions = {"bodies", "parts", "fingerprint", "spec_digest", "next", "heat", "joints", "format",
                   "material_geometry", "tool_points", *MACHINE_KEYS}
     _appended_joints(before, after, added, added_joints, removed_matter)
+    expected_format='banjo.world.v2' if any(j.get('section_u_m',0)>0 for j in after.get('joints',[])) else 'banjo.world.v1'
+    if before.get('format') not in ('banjo.world.v1','banjo.world.v2') or after.get('format')!=expected_format:
+        raise ValueError('Staging changed the required native world format')
     _appended_tool_points(before, after, added, added_tool_points, removed_matter)
     _appended_machines(before, after, added, removed_matter)
     for key in set(before) | set(after):
@@ -1177,7 +1188,8 @@ def fixed_lattice_plan(design, overrides, *, root, cell_m, position_m, floor_of)
             raise ValueError('Fixed constituents exceed the native box budget')
         pins=[{'kind':'fixing','a':mapping[c['components'][0]],'b':mapping[c['components'][1]],
             'at_mm':[1000*(c['at_m'][a]+shift[a]*h) for a in range(3)],'axis':c['axis'],
-            'holds_tension_n':c['holds_tension_n'],'holds_shear_n':c['holds_shear_n']}
+            'holds_tension_n':c['holds_tension_n'],'holds_shear_n':c['holds_shear_n'],
+            **{k:c[k] for k in ('section_u','section_u_m','section_v_m') if k in c}}
             for c in artifact['connections']]
         artifact.update(bodies=added, joints=fracture_lab.normalise_joints(pins,added),
                         component_to_body=mapping, canonical_matter=matter)

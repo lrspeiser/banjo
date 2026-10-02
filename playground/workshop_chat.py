@@ -163,6 +163,13 @@ Important behavior:
   mounts. Preserve each material. The sampled mount must touch and remain connected;
   Make reviews every material debit and finite work/energy. Declared mount limits
   are not adhesive, fatigue, bending or torsional-strength certification.
+  Filled rectangular sampled mounts use an experimental axial-plus-bending
+  normal-stress limit. The compiler derives the section and capacities from
+  occupied faces and weaker constituent strength; never invent a damage amount
+  or lower a capacity just to make a strike succeed. Thin mounts and long levers
+  need actual lifting/striking tests. Internal held-strike fracture, wear and
+  genuine repair are unavailable; paid remake creates a separate replacement
+  and retains the original item and failure history.
   Exact rigid or articulated tool points are unsupported. Check geometry and
   native admission after editing the named components, then test the real tool.
   Never substitute inspect or a cosmetic primary_use for a digging function.

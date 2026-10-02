@@ -1572,6 +1572,7 @@ class Live:
                         holds_tension_n=float(pin.get("holds_tension_n", 0.0)),
                         holds_shear_n=float(pin.get("holds_shear_n", 0.0)),
                         comes_off_n=float(pin.get("comes_off_n", 0.0)),
+                        **{k:pin[k] for k in ('section_u','section_u_m','section_v_m') if k in pin},
                         **_made_of(pin))
                 except Exception as error:
                     problems.append(f"{pin.get('b', '?')} would not fix to "
@@ -2342,7 +2343,9 @@ class Live:
             return session.send(op="fix", a=str(body.get("a", "")),
                                 b=str(body.get("b", "")), at=spot("at"), axis=axis,
                                 holds_tension_n=holds[0], holds_shear_n=holds[1],
-                                comes_off_n=comes_off, **_made_of(body))
+                                comes_off_n=comes_off,
+                                **{k:body[k] for k in ('section_u','section_u_m','section_v_m') if k in body},
+                                **_made_of(body))
         if op == "unhinge":
             return session.send(op="unhinge", joint=int(body.get("joint", 0)))
         if op == "joint_friction":

@@ -748,7 +748,16 @@ BANJO_API int banjo_reeve(banjo_world *world, const char *a, const char *b,
  * Returns the joint's id, always above zero, or a negative banjo_status. */
 BANJO_API int banjo_fix(banjo_world *world, const char *a, const char *b,
                         const double at_m[3], const double axis[3],
-                        double holds_tension_n, double holds_shear_n);
+              double holds_tension_n, double holds_shear_n);
+
+/* Additive API; banjo_joint layout is unchanged. Optional rectangular mount
+ * maximum normal stress: |N|/A + |Mu|/(A*v/6) + |Mv|/(A*u/6).
+ * u is perpendicular to axis; both dimensions are metres, positive <=100.
+ * This is an abrupt interface failure model, not fracture energy, torsion,
+ * fatigue, adhesive calibration or grain. Existing banjo_fix stays unchanged. */
+BANJO_API int banjo_fix_section(banjo_world *world, const char *a, const char *b,
+    const double at_m[3], const double axis[3], double holds_tension_n,
+    double holds_shear_n, const double section_u[3], double section_u_m, double section_v_m);
 
 /* A ONE-WAY fixing: b sits on a the way an arrow's nock sits on a bowstring, or
  * a sling's ring on its release pin. `axis` points the way b comes off a.
@@ -1828,7 +1837,8 @@ BANJO_API const char *banjo_environment_state(const banjo_world *world);
 
 /* ---- a world that is kept (ABI 22) ------------------------------------------
  *
- * The whole of a world as it stands, as JSON ("banjo.world.v1"), for opening
+ * The whole of a world as it stands, as JSON ("banjo.world.v1", or v2 when
+ * rectangular fixing sections require a newer engine), for opening
  * the same scene again after the program holding it has gone: every body by
  * its cells, where it is and how it moves or rests, the pieces things broke
  * into, dents, severed bonds and cuts, joints at the angles they had, edges,

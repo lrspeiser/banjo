@@ -721,6 +721,21 @@ int banjo_fix(banjo_world *world, const char *a, const char *b,
     });
 }
 
+int banjo_fix_section(banjo_world *world, const char *a, const char *b,
+    const double at_m[3], const double axis[3], double tension, double shear,
+    const double section_u[3], double u_m, double v_m) {
+    if (!world || !a || !b || !at_m || !axis || !section_u || !(u_m > 0.0) || !(v_m > 0.0)) {
+        setError("rectangular fixing needs world, endpoints and frames");
+        return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        const unsigned id = world->world->fix(a,b,readVec(at_m),readVec(axis),
+            tension,shear,0.0,readVec(section_u),u_m,v_m);
+        if (!id) { setError("invalid rectangular fixing section or endpoints"); return static_cast<int>(BANJO_BAD_ARGUMENT); }
+        return static_cast<int>(id);
+    });
+}
+
 int banjo_fix_one_way(banjo_world *world, const char *a, const char *b,
                       const double at_m[3], const double axis[3],
                       double comes_off_n, double holds_shear_n) {

@@ -633,6 +633,16 @@ def normalise_joints(joints: Any, bodies: list[dict[str, Any]]) -> list[dict[str
                       **made}
             if comes_off > 0.0:
                 fixing["comes_off_n"] = comes_off
+            if any(k in joint for k in ('section_u','section_u_m','section_v_m')):
+                u = joint.get('section_u')
+                if not isinstance(u,list) or len(u)!=3 or not holds_tension or comes_off:
+                    raise ValueError(f'joint {i}: rectangular section needs frame and positive tension capacity; cannot be one-way')
+                u = [_number(v,-1e6,1e6,f'joint {i} section_u') for v in u]
+                size = [_number(joint.get(k,0),0,100,f'joint {i} {k}') for k in ('section_u_m','section_v_m')]
+                reach=math.sqrt(sum(v*v for v in u)*sum(v*v for v in axis))
+                if not all(v>0 for v in size) or reach<=1e-9 or abs(sum(x*y for x,y in zip(u,axis))/reach)>1e-6:
+                    raise ValueError(f'joint {i}: invalid rectangular section dimensions or perpendicular frame')
+                fixing.update(section_u=u,section_u_m=size[0],section_v_m=size[1])
             out.append(fixing)
             continue
         if kind == "drum":

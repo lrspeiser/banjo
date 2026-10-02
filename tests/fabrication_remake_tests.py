@@ -319,7 +319,8 @@ class NativeRemake(unittest.TestCase):
         self.assertEqual([],failed['result']['target_connections_failed'])
         self.assertEqual([],failed['did']);self.assertFalse(failed['repeat'])
         failure=failed['result']['parted_joints'][0]
-        self.assertGreater(failure['parted_load_n'],275);self.assertEqual(275,failure['parted_capacity_n'])
+        self.assertIn('axial and bending',failure['parted_because'])
+        self.assertGreater(failure['parted_load_n'],2250);self.assertEqual(2250,failure['parted_capacity_n'])
         stored=inventory('stow',source,'paid-broken-source-stow')
         self.assertEqual([source],stored['room']['parts'])
         replacement=mixed.pick();replacement['parameters'].update(length_m=.4,arm_m=.16,section_m=.03)
@@ -352,6 +353,129 @@ class NativeRemake(unittest.TestCase):
         (ROOT/'build/resource-flow/paid-source-lift-replacement.json').write_text(json.dumps({
             'original':original,'failure':failed,'replacement':made,'used':used,'audit':audit,
             'limits':'5 mm finite-supply fixture; original fails while lifting, not from target contact. No fresh-world, internal fracture, wear or genuine repair qualification.'},indent=2),encoding='utf-8')
+
+    def test_paid_made_target_strike_separates_and_paid_replacement_retains_damage(self):
+        """Actual sampled catalog mount, paid target, ordinary Use, paid reuse.
+
+        Finite-rack 5 mm fixture; the other native actor supports the head.
+        This is not a fresh-map supply or private peer inventory qualification.
+        """
+        import workshop_fixed_assembly_tests as mixed
+        import tool_use
+        self.room.spec['cell_m']=.005
+        self.room.spec['bodies'][0].update(size_mm=[40,40,40],center_mm=[-3000,1500,0],anchored=True)
+        self.app.reply_listeners=[]
+        self.app.on_live_reply=lambda s,r:[f(s,r) for f in list(self.app.reply_listeners)]
+        self.live.open(self.app,{'spec':self.room.spec})
+        def paid(design,key,at,source=None):
+            plan=self.plan(source,design) if source else self.call('plan_make',candidate=design)
+            for material,mass in model.materials(plan['quote'],'stock').items():
+                api.request(self.app,'fund_stock',self.request(mass,material,key+'-feed-'+material))
+            reading=self.call('state');energy=reading['energy_sources'][0]
+            self.call('connect_energy',store=energy['id'],store_hash=energy['store_hash'],power_w=250,
+                revision=reading['state']['revision'],request_id=key+'-connect')
+            api.wait(self.app,{**self.context(),'seconds':math.ceil(plan['quote']['supply_required_j']/250)})
+            reading=self.call('state');energy=reading['energy_sources'][0]
+            self.call('fund_energy',store_hash=energy['store_hash'],joules=plan['quote']['supply_required_j'],
+                revision=reading['state']['revision'],request_id=key+'-energy')
+            plan=self.plan(source,design) if source else self.call('plan_make',candidate=design)
+            request={**self.context(),'plan_id':plan['plan_id'],'revision':plan['revision'],'request_id':key}
+            api.request(self.app,'start_remake' if source else 'start_make',request)
+            job=self.room.fabrication_record['jobs'][key]
+            api.wait(self.app,{**self.context(),'seconds':math.ceil(job['minimum_duration_s'])})
+            preview=api.preview(self.app,{**self.context(),'job_id':key,'position_m':at})
+            placement={**self.context(),'job_id':key,'preview_id':preview['preview_id'],'request_id':key+'-place'}
+            if source:
+                before=install._snapshot(self.live);ledger=deepcopy(self.room.fabrication_record)
+                inv=inventory_room.inventory_of(self.app).record()
+                with mock.patch.object(self.app.store,'save',side_effect=OSError('made target placement save failed')):
+                    with self.assertRaises(OSError):api.commit(self.app,placement)
+                self.assertEqual(before,install._snapshot(self.live));self.assertEqual(ledger,self.room.fabrication_record)
+                self.assertEqual(inv,inventory_room.inventory_of(self.app).record())
+            receipt=api.commit(self.app,placement)
+            before=install._snapshot(self.live);ledger=deepcopy(self.room.fabrication_record)
+            self.assertTrue(api.commit(self.app,placement)['replayed'])
+            self.assertEqual(before,install._snapshot(self.live));self.assertEqual(ledger,self.room.fabrication_record)
+            return receipt,request
+        sturdy=mixed.pick();sturdy['parameters'].update(length_m=.4,arm_m=.16,section_m=.04)
+        sturdy['parameters']['ground_tool']['point']['tip_local_m']=[0,0,-.08]
+        sturdy['parameters']['ground_tool']['grip']['position_local_m']=[-.16,0,0]
+        source,_=paid(sturdy,'strike-source',[-.9,1])
+        fragile=deepcopy(sturdy)
+        fragile['parameters']['ground_tool']['point'].update(tip_local_m=[0,0,-.06],width_m=.06,thickness_m=.06)
+        fragile['parameters']['ground_tool']['grip']['position_local_m']=[-.18,0,0]
+        fragile['component_overrides'].update(haft={'size_m':[.8,.005,.005],'center_m':[0,.0025,.0625]},
+            arm={'material':'iron','size_m':[.06,.06,.12],'center_m':[.4275,.03,0]})
+        target,_=paid(fragile,'strike-target',[.4,0])
+        head=target['component_to_body']['arm'];root=target['root_body']
+        grip=next(b['position_m'] for b in self.live.session.send(op='poses')['bodies'] if b['name']==head)
+        self.live.act({'session':self.live.session.id,'actor':'supporter','op':'wield','name':head,'grip':grip})
+        with self.live.as_actor('supporter'):
+            grip=self.live.session.send(op='poses')['hand']['grip_m'];high=[grip[0],grip[1]+1,grip[2]]
+            self.live.act({'session':self.live.session.id,'op':'stroke','path':[grip,high],
+                'speed_m_s':.3,'accel_m_s2':1,'lead_m':.025,'give_up_s':4,'let_go':False})
+        for _ in range(10):self.live.act({'session':self.live.session.id,'op':'step','dt':1/240,'n':120})
+        joint=next(j for j in self.live.session.send(op='joints')['joints'] if root in (j['a'],j['b']))
+        self.assertTrue(joint['attached']);self.assertEqual(2250,joint['holds_tension_n'])
+        person={'standing_m':[-.8,0,0],'eyes_m':[-.8,1.62,0],'facing':[1,0,0]}
+        def inventory(op,item,key):
+            shown=inventory_room.shown(self.app)
+            answer=inventory_room.request(self.app,{'session':self.live.session.id,'op':op,'item':item,
+                'revision':shown['record']['revision'],'request':key,'person':person})
+            self.assertTrue(answer['ok'],answer);return answer
+        def use(name):
+            at=next(b['position_m'] for b in self.live.session.send(op='poses')['bodies'] if b['name']==name)
+            direction=[at[i]-person['eyes_m'][i] for i in range(3)];norm=math.sqrt(sum(v*v for v in direction))
+            person['look_direction']=[v/norm for v in direction]
+            stop=threading.Event();errors=[]
+            def clock():
+                try:
+                    while not stop.is_set():
+                        self.live.act({'session':self.live.session.id,'op':'step','dt':1/240,'n':1});time.sleep(1/240)
+                except Exception as error:errors.append(str(error))
+            pump=threading.Thread(target=clock,daemon=True);pump.start()
+            try:return tool_use.run(self.app,{'session':self.live.session.id,'person':person,'target_name':name})
+            finally:stop.set();pump.join(5);self.assertEqual([],errors)
+        inventory('take_up',source['root_body'],'strike-source-take')
+        hit=use(root);self.assertNotIn('refused',hit,hit)
+        self.assertEqual('target-connection-failed',hit['result']['outcome'],hit)
+        self.assertTrue(hit['result']['impacts']);self.assertEqual([],hit['result']['tool_connections_failed'])
+        failure=next(j for j in hit['result']['parted_joints'] if j['id']==joint['id'])
+        self.assertIn('axial and bending',failure['parted_because'])
+        self.assertGreater(failure['parted_load_n'],failure['parted_capacity_n'])
+        masses={b['name']:b['mass_kg'] for b in self.live.session.send(op='poses')['bodies']}
+        self.assertAlmostEqual(target['mass_kg'],sum(masses[n] for n in target['component_to_body'].values()))
+        inventory('stow',source['root_body'],'strike-source-stow')
+        inventory('take_up',root,'strike-damaged-take')
+        stored=inventory('stow',root,'strike-damaged-stow')
+        self.assertEqual([root],stored['room']['parts'])
+        before=install._snapshot(self.live)
+        replacement_design=deepcopy(sturdy)
+        replacement_design['parameters']['section_m']=.03
+        replacement_design['parameters']['ground_tool']['grip']['position_local_m']=[-.17,0,0]
+        replacement,request=paid(replacement_design,'struck-replacement',[0,1],root)
+        after=install._snapshot(self.live)
+        self.assertEqual(next(j for j in before['joints'] if j['id']==joint['id']),
+            next(j for j in after['joints'] if j['id']==joint['id']))
+        inventory('take_up',replacement['root_body'],'struck-replacement-take')
+        reused=use(head);self.assertNotIn('refused',reused,reused)
+        self.assertTrue(reused['result']['impacts'],reused);self.assertTrue(reused['result']['working_point_connected'])
+        final=install._snapshot(self.live);ledger=deepcopy(self.room.fabrication_record);model.advance(ledger,final['t_s'])
+        api._persist(self.app,self.room,final,ledger)
+        saved=self.app.store.load('fabrication');opened=self.live.open(self.app,{'spec':saved.spec,'snapshot':saved.world_record})
+        self.room=self.app.room=saved;shown=inventory_room.after_open(self.app,opened)
+        self.assertIn(root,[i['id'] for i in shown['stowed']])
+        restored=next(j for j in self.live.session.send(op='joints')['joints'] if j['id']==joint['id'])
+        self.assertFalse(restored['attached']);self.assertEqual(failure['parted_because'],restored['parted_because'])
+        self.assertTrue(api.request(self.app,'start_remake',{**request,'session':self.live.session.id})['replayed'])
+        binding=self.room.fabrication_record['jobs']['struck-replacement']['remake_source']
+        self.assertTrue(any(j['id']==joint['id'] and not j['attached'] for row in binding['condition'] for j in row['joints']))
+        audit=model.audit(self.room.fabrication_record)
+        self.assertLess(abs(audit['energy_residual_j']),1e-7)
+        self.assertLess(max(abs(v) for v in audit['material_residual_kg'].values()),1e-12)
+        (ROOT/'build/resource-flow/paid-made-target-replacement.json').write_text(json.dumps({
+            'source':source,'target':target,'hit':hit,'replacement':replacement,'reused':reused,'audit':audit,
+            'limits':'5 mm finite rack; native actor supports the head. Not a fresh-map/private-peer journey, internal fracture, wear or genuine repair qualification.'},indent=2),encoding='utf-8')
 
     def test_failed_connection_paid_mixed_replacement_retains_original_and_works(self):
         import object_strike_tests as strikes

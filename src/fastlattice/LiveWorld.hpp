@@ -370,6 +370,10 @@ struct LiveJoint {
     // fail at different loads, so they are two numbers and not one.
     double tension_n_now{}, shear_n_now{};
     double holds_tension_n{}, holds_shear_n{};
+    // Optional rectangular interface, u perpendicular to the fixing axis.
+    // Maximum corner normal stress includes axial load and both bending axes.
+    Vec3 section_u_world{};
+    double section_u_m{}, section_v_m{}, bending_u_n_m{}, bending_v_n_m{};
     // Above zero, a ONE-WAY fixing: b sits on a the way an arrow's nock sits on
     // a string, pushed along the axis as hard as anything pushes it and held
     // the other way with no more than this. Its axis points the way b comes off.
@@ -1757,7 +1761,8 @@ public:
     unsigned fix(const std::string &a, const std::string &b,
                  const Vec3 &point_world_m, const Vec3 &axis_world,
                  double holds_tension_n = 0.0, double holds_shear_n = 0.0,
-                 double comes_off_n = 0.0);
+                 double comes_off_n = 0.0, const Vec3 &section_u_world = {},
+                 double section_u_m = 0.0, double section_v_m = 0.0);
 
     unsigned reeve(const std::string &a, const std::string &b,
                    const Vec3 &point_a_world_m, const Vec3 &point_b_world_m,
@@ -2270,7 +2275,7 @@ public:
 
     // ---- a world that is kept: a restart gives back the room as it stood ----
     //
-    // The whole of the world as it stands, as JSON ("banjo.world.v1"), for
+    // The whole world as JSON (v1, or v2 with rectangular fixing sections), for
     // opening the same scene again later -- after the process holding it has
     // gone. It carries every body by its cells (the scene's own node numbers)
     // and their offsets in its frame, where it is and how it moves, whether it

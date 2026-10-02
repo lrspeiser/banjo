@@ -745,6 +745,13 @@ nlohmann::json jointsOf(const LiveWorld &world) {
             said["shear_n"] = tidy(joint.shear_n_now);
             said["holds_tension_n"] = tidy(joint.holds_tension_n);
             said["holds_shear_n"] = tidy(joint.holds_shear_n);
+            if (joint.section_u_m > 0.0) {
+                said["section_u"] = vec(joint.section_u_world);
+                said["section_u_m"] = joint.section_u_m;
+                said["section_v_m"] = joint.section_v_m;
+                said["bending_u_n_m"] = tidy(joint.bending_u_n_m);
+                said["bending_v_n_m"] = tidy(joint.bending_v_n_m);
+            }
             // One-way: an arrow on a string. What it holds b with, along the
             // axis that points the way b comes off.
             if (joint.comes_off_n > 0.0) said["comes_off_n"] = tidy(joint.comes_off_n);
@@ -2222,7 +2229,9 @@ int main(int argc, char **argv) {
                         command.at("a").get<std::string>(),
                         command.at("b").get<std::string>(),
                         readVec(command, "at"), readVec(command, "axis"),
-                        tension, command.value("holds_shear_n", 0.0), comes_off);
+                        tension, command.value("holds_shear_n", 0.0), comes_off,
+                        command.contains("section_u") ? readVec(command,"section_u") : Vec3{},
+                        command.value("section_u_m",0.0), command.value("section_v_m",0.0));
                     if (peg == 0)
                         throw std::invalid_argument("those two cannot be fixed together");
                     if (!member.empty()) (void)world->setJointMember(peg, member);

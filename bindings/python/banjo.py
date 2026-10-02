@@ -1367,6 +1367,11 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
                               ctypes.c_double * 3, ctypes.c_double * 3,
                               ctypes.c_double, ctypes.c_double]
     lib.banjo_fix.restype = ctypes.c_int
+    if hasattr(lib,'banjo_fix_section'):
+        lib.banjo_fix_section.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_double,
+            ctypes.c_double, ctypes.POINTER(ctypes.c_double), ctypes.c_double, ctypes.c_double]
+        lib.banjo_fix_section.restype = ctypes.c_int
     lib.banjo_fix_one_way.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p,
                                       ctypes.c_double * 3, ctypes.c_double * 3,
                                       ctypes.c_double, ctypes.c_double]
@@ -1884,7 +1889,8 @@ class World:
 
     def fix(self, a: str, b: str, at_m: Any, axis: Any = (0.0, 1.0, 0.0),
             holds_tension_n: float = 0.0, holds_shear_n: float = 0.0,
-            member: str | None = None, comes_off_n: float = 0.0) -> int:
+            member: str | None = None, comes_off_n: float = 0.0,
+            section_u: Any = None, section_u_m: float = 0.0, section_v_m: float = 0.0) -> int:
         """Fix one named thing to another: a peg, a bracket, a catch, a bar.
 
         All six degrees of freedom are held, so the two move as one piece, and
@@ -1917,6 +1923,17 @@ class World:
         """
         where = (ctypes.c_double * 3)(*(float(v) for v in at_m))
         along = (ctypes.c_double * 3)(*(float(v) for v in axis))
+        if section_u is not None or section_u_m or section_v_m:
+            if not hasattr(self._lib,'banjo_fix_section'):
+                raise BanjoError('This native library does not support rectangular fixing sections; rebuild it')
+            if comes_off_n or section_u is None or not section_u_m or not section_v_m:
+                raise BanjoError("rectangular fixing needs two positive dimensions and a frame; cannot be one-way")
+            u = (ctypes.c_double * 3)(*(float(v) for v in section_u))
+            joint = self._check(self._lib.banjo_fix_section(self._alive(),a.encode("utf-8"),
+                b.encode("utf-8"),where,along,holds_tension_n,holds_shear_n,u,section_u_m,section_v_m),
+                f"fixing rectangular section {a!r} to {b!r}")
+            if member:self.joint_member(joint,member)
+            return joint
         if comes_off_n:
             if holds_tension_n:
                 raise BanjoError("a one-way fixing has no tension strength: what pulls it "

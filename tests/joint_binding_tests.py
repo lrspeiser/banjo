@@ -801,6 +801,30 @@ def a_fixing_tells_tension_from_shear() -> None:
         require(fell < 1.0, "the peg gave way but the bracket did not fall")
 
 
+def rectangular_sections_cross_the_additive_abi_and_keep_failure_history() -> None:
+    scene=bracket_on_a_wall()
+    with banjo.World(scene,cell_size_m=.05) as world:
+        for fields in ({'section_u':[1,0,0],'section_u_m':.2,'section_v_m':.1},
+                       {'section_u':[0,1,0],'section_u_m':0.,'section_v_m':.1}):
+            try:world.fix('wall','bracket',[.15,2,0],[1,0,0],100,1e6,**fields)
+            except banjo.BanjoError:pass
+            else:raise SystemExit('[FAIL] invalid section accepted through C ABI')
+            require(world.joints()==[], 'invalid section created a fixing')
+        joint=world.fix('wall','bracket',[.15,2,0],[1,0,0],100,1e6,
+            section_u=[0,1,0],section_u_m=.2,section_v_m=.1)
+        tick(world,1)
+        failed=next(j for j in world.joints() if j.id==joint)
+        require(not failed.attached and 'axial and bending' in failed.parted_because,'ABI section did not fail from bending')
+        saved=world.snapshot()
+    require(saved is not None,'ABI section snapshot refused')
+    require(saved['format']=='banjo.world.v2','section world can silently downgrade to an older engine')
+    with banjo.World(scene,cell_size_m=.05,snapshot=saved) as world:
+        restored=next(j for j in world.joints() if j.id==joint)
+        require(restored.parted_because==failed.parted_because,'ABI section failure history lost on restart')
+        row=next(j for j in world.snapshot()['joints'] if j['id']==joint)
+        require(row['section_u_m']==.2 and row['section_v_m']==.1,'ABI section dimensions lost on restart')
+
+
 def a_latch_changes_what_the_assembly_is() -> None:
     """A weld holds, and letting it go is what makes it a latch."""
     with banjo.World(bracket_on_a_wall(), cell_size_m=0.05) as world:
@@ -932,6 +956,8 @@ def a_spring_stores_what_a_known_load_does_to_it() -> None:
 def main() -> int:
     require(banjo.ABI_VERSION >= 12, "this test needs ABI 12 or later")
     for run, what in (
+        (rectangular_sections_cross_the_additive_abi_and_keep_failure_history,
+         "rectangular interface sections cross the unchanged joint ABI and retain failure history"),
         (a_gate_hung_through_the_abi_swings, "a gate hung through the ABI swings"),
         (limits_are_degrees, "limits are degrees and they hold"),
         (the_pin_is_body_local, "the pin is written down in the bodies' own frames"),

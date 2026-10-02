@@ -901,6 +901,8 @@ struct LiveWorld::Impl {
         // body's own frame -- so that tension and shear stay tension and shear
         // when the whole assembly is carried somewhere else or turned over.
         double holds_tension_n{}, holds_shear_n{};
+        Vec3 section_u_local_a{};
+        double section_u_m{}, section_v_m{};
         // A one-way fixing's hold along its axis (LiveWorld::fix). Zero is two-way.
         double comes_off_n{};
         // An elastic's declared model.
@@ -3441,6 +3443,9 @@ namespace {
 // What a saved world says it is. It carries the scene's cells under their own
 // numbers, so a document written by anything else is not read as one.
 constexpr const char *kWorldFormat = "banjo.world.v1";
+// Older engines must not report a whole restore while dropping a constitutive
+// interface law they cannot read. Worlds without sections retain v1.
+constexpr const char *kSectionWorldFormat = "banjo.world.v2";
 
 // A saved world that does not fit the scene it is being opened into.
 struct SavedWorldMismatch : std::runtime_error {
@@ -5483,6 +5488,18 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         joint.ratio = numberFrom(o.at("ratio"));
         joint.holds_tension_n = numberFrom(o.at("holds_tension_n"));
         joint.holds_shear_n = numberFrom(o.at("holds_shear_n"));
+        if (o.contains("section_u_local_a")) joint.section_u_local_a = vecFrom(o.at("section_u_local_a"));
+        joint.section_u_m = o.value("section_u_m", 0.0);
+        joint.section_v_m = o.value("section_v_m", 0.0);
+        if (joint.section_u_m != 0.0 || joint.section_v_m != 0.0) {
+            if (!(joint.section_u_m > 0.0 && joint.section_u_m <= 100.0) ||
+                !(joint.section_v_m > 0.0 && joint.section_v_m <= 100.0) ||
+                joint.kind != JoltWorld::JointKind::Fixing || o.value("comes_off_n",0.0) > 0.0 ||
+                !std::isfinite(length(joint.section_u_local_a)) ||
+                std::abs(length(joint.section_u_local_a)-1.0) > 1e-6 ||
+                std::abs(dot(joint.section_u_local_a, joint.axis_local_a)) > 1e-6)
+                throw std::invalid_argument("invalid saved rectangular fixing section");
+        }
         joint.comes_off_n = numberFrom(o.at("comes_off_n"));
         joint.rest_m = numberFrom(o.at("rest_m"));
         joint.stiffness_n_m = numberFrom(o.at("stiffness_n_m"));
@@ -6709,6 +6726,21 @@ void LiveWorld::partOverloadedLinks() {
                           .orientation_world.rotate(joint.axis_local_a)
                     : joint.axis_local_a;
             const JoltWorld::JointLoad load = impl_->world->jointLoad(joint.rigid, along);
+            // Rectangle section moduli are A*v/6 and A*u/6. Express
+            // maximum corner normal stress as an equivalent axial force;
+            // the existing tensile capacity is strength * area. No new
+            // impulse or velocity is applied when the interface opens.
+            double corner_n = load.tension_n;
+            if (joint.section_u_m > 0.0 && joint.section_v_m > 0.0 &&
+                found != impl_->index_of.end()) {
+                const Vec3 u = impl_->world->snapshot(impl_->body_of[found->second])
+                                   .orientation_world.rotate(joint.section_u_local_a);
+                const Vec3 v = cross(along, u);
+                corner_n += 6.0 * std::abs(dot(load.moment_n_m, u)) / joint.section_v_m +
+                            6.0 * std::abs(dot(load.moment_n_m, v)) / joint.section_u_m;
+            }
+            const bool bent = !one_way && joint.section_u_m > 0.0 &&
+                              corner_n > kNoLoadN && corner_n > joint.holds_tension_n;
             // One-way, what pulls it along its axis is its grip and never a
             // tension strength -- not even one a member's law would give it.
             const bool pulled_apart = !one_way && (rated || joint.holds_tension_n > 0.0) &&
@@ -6733,13 +6765,18 @@ void LiveWorld::partOverloadedLinks() {
                                    two.orientation_world.rotate(joint.point_local_b);
                 came_off = dot(there - here, along) > kThroatM;
             }
-            if (!pulled_apart && !sheared && !came_off) continue;
+            if (!pulled_apart && !sheared && !came_off && !bent) continue;
             if (came_off) {
                 what = "came off";
                 how = "came off along its axis";
                 carrying = std::max(0.0, -load.axial_n);
                 bar = joint.comes_off_n;
                 cold = joint.comes_off_n;
+            } else if (bent) {
+                carrying = corner_n;
+                bar = joint.holds_tension_n;
+                cold = joint.rated_tension_n;
+                how = "rectangular interface normal stress exceeded (axial and bending, equivalent normal force)";
             } else {
                 carrying = pulled_apart ? load.tension_n : load.shear_n;
                 bar = pulled_apart ? joint.holds_tension_n : joint.holds_shear_n;
@@ -7172,7 +7209,8 @@ unsigned LiveWorld::spring(const std::string &a, const std::string &b,
 unsigned LiveWorld::fix(const std::string &a, const std::string &b,
                         const Vec3 &point_world_m, const Vec3 &axis_world,
                         double holds_tension_n, double holds_shear_n,
-                        double comes_off_n) {
+                        double comes_off_n, const Vec3 &section_u_world,
+                        double section_u_m, double section_v_m) {
     const auto first = impl_->index_of.find(a);
     const auto second = impl_->index_of.find(b);
     if (first == impl_->index_of.end() || second == impl_->index_of.end()) return 0;
@@ -7185,6 +7223,15 @@ unsigned LiveWorld::fix(const std::string &a, const std::string &b,
     // One-way, it has no tension strength: what pulls it apart is comes_off_n.
     if (!(comes_off_n >= 0.0) || !std::isfinite(comes_off_n)) return 0;
     if (comes_off_n > 0.0 && holds_tension_n > 0.0) return 0;
+    const bool section = section_u_m != 0.0 || section_v_m != 0.0;
+    if (section && (!std::isfinite(holds_tension_n) || !std::isfinite(holds_shear_n) ||
+                    !(section_u_m > 0.0 && section_u_m <= 100.0) ||
+                    !(section_v_m > 0.0 && section_v_m <= 100.0) ||
+                    !(holds_tension_n > 0.0) || comes_off_n > 0.0 ||
+                    !std::isfinite(length(section_u_world)) ||
+                    !(length(section_u_world) > 1e-9) ||
+                    std::abs(dot(section_u_world, axis_world) /
+                             (length(section_u_world) * reach)) > 1e-6)) return 0;
 
     Impl::SceneJoint joint{};
     joint.id = impl_->next_joint++;
@@ -7203,6 +7250,12 @@ unsigned LiveWorld::fix(const std::string &a, const std::string &b,
                               .rotate(point_world_m - two.center_of_mass_world_m);
     joint.point_local_b_tie = joint.point_local_b;
     joint.axis_local_a = conjugateOf(one.orientation_world).rotate((1.0 / reach) * axis_world);
+    if (section) {
+        joint.section_u_local_a = conjugateOf(one.orientation_world).rotate(
+            (1.0 / length(section_u_world)) * section_u_world);
+        joint.section_u_m = section_u_m;
+        joint.section_v_m = section_v_m;
+    }
     joint.stand_off_a = impl_->standOff(first->second, joint.point_local_a);
     joint.stand_off_b = impl_->standOff(second->second, joint.point_local_b);
 
@@ -7301,6 +7354,8 @@ std::vector<LiveJoint> LiveWorld::joints() const {
         said.stiffness_n_m = joint.stiffness_n_m;
         said.damping_n_s_m = joint.damping_n_s_m;
         said.holds_tension_n = joint.holds_tension_n;
+        said.section_u_m = joint.section_u_m;
+        said.section_v_m = joint.section_v_m;
         said.holds_shear_n = joint.holds_shear_n;
         said.comes_off_n = joint.comes_off_n;
         said.breaks_at_n = joint.breaks_at_n;
@@ -7366,6 +7421,12 @@ std::vector<LiveJoint> LiveWorld::joints() const {
                     impl_->world->jointLoad(joint.rigid, along);
                 said.tension_n_now = carrying.tension_n;
                 said.shear_n_now = carrying.shear_n;
+                if (joint.section_u_m > 0.0 && found != impl_->index_of.end()) {
+                    said.section_u_world = impl_->world->snapshot(impl_->body_of[found->second])
+                                              .orientation_world.rotate(joint.section_u_local_a);
+                    said.bending_u_n_m = dot(carrying.moment_n_m, said.section_u_world);
+                    said.bending_v_n_m = dot(carrying.moment_n_m, cross(along, said.section_u_world));
+                }
                 // One number for a host that only wants "how hard is this
                 // working": whichever of the two is nearer its own limit.
                 said.tension_n = std::max(carrying.tension_n, carrying.shear_n);
@@ -7381,6 +7442,8 @@ std::vector<LiveJoint> LiveWorld::joints() const {
             said.point_world_m = at.center_of_mass_world_m +
                                  at.orientation_world.rotate(joint.point_local_a);
             said.axis_world = at.orientation_world.rotate(joint.axis_local_a);
+            if (joint.section_u_m > 0.0)
+                said.section_u_world = at.orientation_world.rotate(joint.section_u_local_a);
         }
         // What it is made of, what it could take cold, and what is left.
         if (joint.member_end >= 0) said.member = joint.member_end == 0 ? joint.a : joint.b;
@@ -12648,7 +12711,10 @@ std::size_t LiveWorld::reformFromCells(std::size_t which) {
         for (const Pinned &p : pinned) {
             jointPoint(*p.joint, p.end) = p.world - origin;
             if (p.end == 1) p.joint->point_local_b = p.world_b - origin;
-            if (p.end == 0) p.joint->axis_local_a = snap.orientation_world.rotate(p.joint->axis_local_a);
+            if (p.end == 0) {
+                p.joint->axis_local_a = snap.orientation_world.rotate(p.joint->axis_local_a);
+                p.joint->section_u_local_a = snap.orientation_world.rotate(p.joint->section_u_local_a);
+            }
             p.joint->rigid = 0;
         }
     } else {
@@ -13162,6 +13228,8 @@ std::string LiveWorld::conditionJson(const std::vector<std::string> &names) cons
             {"a",joint.a},{"b",joint.b},
             {"attached",joint.attached && (joint.rigid!=0 || I.setAside(joint))},
             {"holds_tension_n",joint.holds_tension_n},{"holds_shear_n",joint.holds_shear_n},
+            {"section_u_local_a",{joint.section_u_local_a.x,joint.section_u_local_a.y,joint.section_u_local_a.z}},
+            {"section_u_m",joint.section_u_m},{"section_v_m",joint.section_v_m},
             {"comes_off_n",joint.comes_off_n},{"breaks_at_n",joint.breaks_at_n},
             {"parted_because",joint.parted_because},{"parted_load_n",joint.parted_load_n},
             {"parted_capacity_n",joint.parted_capacity_n}};
@@ -15943,7 +16011,9 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
     }
 
     nlohmann::json doc;
-    doc["format"] = kWorldFormat;
+    doc["format"] = std::any_of(I.joints.begin(),I.joints.end(),[](const auto &j) {
+        return j.section_u_m > 0.0;
+    }) ? kSectionWorldFormat : kWorldFormat;
     doc["fingerprint"] = {{"nodes", I.fingerprint_nodes}, {"bonds", I.fingerprint_bonds}, {"hash", I.fingerprint_hash}};
     // And each authored part of it, and what lays every cell out, so that a
     // world carried into this scene once it has changed finds each thing's
@@ -16083,6 +16153,9 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                             {"ratio", savedNumber(j.ratio)},
                             {"holds_tension_n", savedNumber(j.holds_tension_n)},
                             {"holds_shear_n", savedNumber(j.holds_shear_n)},
+                            {"section_u_local_a", savedVec(j.section_u_local_a)},
+                            {"section_u_m", j.section_u_m},
+                            {"section_v_m", j.section_v_m},
                             {"comes_off_n", savedNumber(j.comes_off_n)},
                             {"rest_m", savedNumber(j.rest_m)},
                             {"stiffness_n_m", savedNumber(j.stiffness_n_m)},
@@ -16515,11 +16588,12 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
 }
 
 std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request, const std::string &snapshot) {
-    const bool exact_required = !request.precise_rigid_scene_json.empty() || snapshot.find("precise-rigid-v1") != std::string::npos;
+    const bool exact_required = !request.precise_rigid_scene_json.empty() || snapshot.find("precise-rigid-v1") != std::string::npos || snapshot.find(kSectionWorldFormat) != std::string::npos;
     Saved saved;
     try {
         saved.doc = nlohmann::json::parse(snapshot);
-        if (!saved.doc.is_object() || saved.doc.value("format", std::string{}) != kWorldFormat)
+        if (!saved.doc.is_object() || (saved.doc.value("format", std::string{}) != kWorldFormat &&
+                                     saved.doc.value("format", std::string{}) != kSectionWorldFormat))
             throw std::invalid_argument("it is not a saved world this engine reads");
     } catch (const std::exception &error) {
         if (exact_required) throw;
@@ -16548,11 +16622,12 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request, con
 
 std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request, const std::string &snapshot,
                                            const LiveCarry &carry) {
-    const bool exact_required = !request.precise_rigid_scene_json.empty() || snapshot.find("precise-rigid-v1") != std::string::npos;
+    const bool exact_required = !request.precise_rigid_scene_json.empty() || snapshot.find("precise-rigid-v1") != std::string::npos || snapshot.find(kSectionWorldFormat) != std::string::npos;
     Saved saved;
     try {
         saved.doc = nlohmann::json::parse(snapshot);
-        if (!saved.doc.is_object() || saved.doc.value("format", std::string{}) != kWorldFormat)
+        if (!saved.doc.is_object() || (saved.doc.value("format", std::string{}) != kWorldFormat &&
+                                     saved.doc.value("format", std::string{}) != kSectionWorldFormat))
             throw std::invalid_argument("it is not a saved world this engine reads");
     } catch (const std::exception &error) {
         if (exact_required) throw;

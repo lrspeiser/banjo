@@ -816,6 +816,9 @@ public:
         // +axis, away from a, and negative pulls it back towards a. tension_n
         // is its size.
         double axial_n{};
+        // Ordinary fixing's angular constraint impulse / accepted timestep,
+        // in world coordinates. This excludes the force's attachment lever arm.
+        Vec3 moment_n_m{};
     };
     [[nodiscard]] JointLoad jointLoad(unsigned joint, const Vec3 &axis_world) const;
     // What this link is carrying, in newtons. Zero when it is slack.

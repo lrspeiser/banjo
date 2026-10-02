@@ -2563,6 +2563,12 @@ JoltWorld::JointLoad JoltWorld::jointLoad(unsigned joint, const Vec3 &axis_world
     const JPH::Vec3 impulse =
         static_cast<JPH::FixedConstraint *>(found->second.constraint.GetPtr())
             ->GetTotalLambdaPosition();
+    const JPH::Vec3 angular =
+        static_cast<JPH::FixedConstraint *>(found->second.constraint.GetPtr())
+            ->GetTotalLambdaRotation();
+    out.moment_n_m = {static_cast<double>(angular.GetX()) / dt,
+                     static_cast<double>(angular.GetY()) / dt,
+                     static_cast<double>(angular.GetZ()) / dt};
     const Vec3 force{static_cast<double>(impulse.GetX()) / dt,
                      static_cast<double>(impulse.GetY()) / dt,
                      static_cast<double>(impulse.GetZ()) / dt};

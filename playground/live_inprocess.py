@@ -461,7 +461,10 @@ class InProcessSession:
                                   command.get("axis") or [0.0, 1.0, 0.0],
                                   float(command.get("holds_tension_n", 0.0)),
                                   float(command.get("holds_shear_n", 0.0)),
-                                  member=member or None)
+                                    member=member or None,
+                                    section_u=command.get('section_u'),
+                                    section_u_m=float(command.get('section_u_m',0)),
+                                    section_v_m=float(command.get('section_v_m',0)))
                 self.state = self._describe(extra={"joint": joint})
                 return self.state
             elif op == "member":

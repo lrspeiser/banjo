@@ -1,5 +1,18 @@
 # Workshop recipe contract
 
+## Sampled rectangular mount limits — October 2, 2026
+
+Newly reviewed filled rectangular fixed mounts compile their centroid, section
+dimensions and normal/shear capacities from occupied faces, weaker constituent
+strength and declared join efficiency. The native maximum normal-stress limit
+includes axial load and both bending directions; thin mounts and long levers
+need real handling/strike tests. This experimental interface law is not
+adhesive, compression, torsion, grain, fatigue or fracture-work certification.
+Other mount shapes remain force-only. Never author a guaranteed damage amount
+or reduce a capacity to force a desired result. Paid remake creates a separate
+replacement and retains the original and its failure history; genuine repair
+and wear are unavailable. [Measured boundary](rectangular-mount-reuse-checkpoint.md).
+
 ## Visual cards and Make feedback — September 30, 2026
 
 Recipes now show source thumbnails, mass-weighted material completion, named missing-supply bars, Build and Skill values, and compact declared-use badges. Full material quantities and compiler reasons are expandable. World process inputs/outputs/machines are under a separate fold; internal family names and default dimensions are not primary card content. Thumbnail reads do not select or replace the player's Lab item.

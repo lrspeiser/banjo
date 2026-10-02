@@ -37,6 +37,10 @@ class Mounts(unittest.TestCase):
             self.assertAlmostEqual(out['mass_kg'],sum(g['mass_kg'] for g in groups.values()))
             self.assertGreater(out['connections'][0]['holds_tension_n'],0)
             self.assertGreater(out['connections'][0]['holds_shear_n'],0)
+            mount=out['connections'][0]
+            self.assertEqual('rectangular-max-normal-stress-v1',mount['section_law'])
+            self.assertAlmostEqual(mount['area_m2'],mount['section_u_m']*mount['section_v_m'])
+            self.assertAlmostEqual(0,sum(x*y for x,y in zip(mount['axis'],mount['section_u'])))
             design,overrides=workshop_components.design_from_spec(pick(material))
             self.assertIsNone(workshop_material_support.fixed_lattice_blocker(design,overrides,cell_m=.04))
         # Two collinear constituents look like one box as a union, but the
@@ -177,10 +181,13 @@ class PaidFixed(unittest.TestCase):
         prior=paid.workshop_install._snapshot(self.live)
         definitions=plan['matter']['joints']
         points=[p for p in plan['spec']['tool_points'] if p['body'] in plan['root']]
-        for field in ('fixing','binding'):
+        for field in ('fixing','binding','section','section-frame','format'):
             bad=deepcopy(saved)
             if field=='fixing':bad['joints'][-1]['holds_shear_n']+=1
-            else:bad['tool_points'][-1]['grip_body']=bad['tool_points'][-1]['body']
+            elif field=='binding':bad['tool_points'][-1]['grip_body']=bad['tool_points'][-1]['body']
+            elif field=='section':bad['joints'][-1]['section_u_m']*=2
+            elif field=='section-frame':bad['joints'][-1]['section_u_local_a']=bad['joints'][-1]['axis_local_a']
+            else:bad['format']='banjo.world.v1'
             with self.subTest(field=field),self.assertRaises(ValueError):
                 paid.workshop_install._preserved(prior,bad,plan['root'],added_joints=definitions,added_tool_points=points)
 
