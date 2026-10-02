@@ -301,6 +301,203 @@ constexpr double kTipX = 0.38, kTipZ = 0.02;
 constexpr double kGripX = -0.36;
 constexpr double kPointLength = 0.2;
 
+Json splitPick(const std::string &head_material, double top = .4) {
+    return {{"terrain", ground(top, 0)}, {"bodies", {
+        box("handle", "oak", {.8,.04,.04}, {0,top+1.02,.02}),
+        box("head", head_material, {.04,.28,.04}, {.38,top+.86,.02})}}};
+}
+
+unsigned headPoint(LiveWorld &world, const std::string &grip_body = "handle", Vec3 grip = {-.36,1.42,.02}) {
+    return world.toolPoint("head", {.38,1.12,.02}, {0,-1,0}, .04,.04,30,.2,grip,grip_body);
+}
+
+void aSeparateHeadNeedsAnActualFixedHandle() {
+    auto world = open(splitPick("iron"));
+    std::string why;
+    const auto before = world->snapshot(why);
+    require(headPoint(*world) == 0, "nearby wood was mistaken for an attached handle");
+    require(world->snapshot(why) == before, "refused point changed the world");
+    require(world->hinge("handle", "head", {.38,1.4,.02}, {0,0,1}) != 0, "fixture hinge refused");
+    require(headPoint(*world) == 0, "a hinge was mistaken for a fixed tool");
+    world = open(splitPick("iron"));
+    require(world->fix("handle", "head", {.38,1.4,.02}, {0,1,0}, 0,1000,100) != 0, "fixture release refused");
+    require(headPoint(*world) == 0, "a one-way release was mistaken for a fixed handle");
+    world = open(splitPick("iron"));
+    require(world->fix("handle", "head", {.38,1.4,.02}, {0,1,0}, 5000,5000) != 0, "fixture fixing refused");
+    require(headPoint(*world,"absent") == 0, "an absent handle was admitted");
+    require(headPoint(*world,"handle", {3,1.42,.02}) == 0, "a grip off handle matter was admitted");
+    require(headPoint(*world) != 0, "actual fixed handle refused: " + world->toolPointRefusal());
+}
+
+void fixedMixedToolsRetainMaterialsMassAndOwnedWork() {
+    for (const auto &[material, density] : std::vector<std::pair<std::string,double>>{
+            {"glass",2500}, {"oak",700}, {"iron",7870}}) {
+        const auto scene = splitPick(material);
+        auto world = open(scene);
+        // Explicit finite fixture strengths, not a calibrated metal/wood joint law.
+        const auto joint = world->fix("handle", "head", {.38,1.4,.02}, {0,1,0}, 5000,5000);
+        require(joint != 0 && headPoint(*world) != 0, material + ": fixed tool refused");
+        const double head_mass = poseOf(*world,"head").mass_kg;
+        const double handle_mass = poseOf(*world,"handle").mass_kg;
+        near(head_mass, .04*.28*.04*density, 2e-6*head_mass, "head's own material mass");
+        near(handle_mass, .8*.04*.04*700, 2e-6*handle_mass, "wood handle's own mass");
+        require(world->toolPoints().front().material == material, "point material was homogenized");
+        world->selectHand("alice");
+        world->setCarryLimitKg(head_mass+handle_mass-.01);
+        require(!world->wield("handle", {-.36,1.42,.02}),"pickup ignored the head's native mass at the carry limit");
+        world->setCarryLimitKg(80);
+        require(world->wield("handle", {-.36,1.42,.02}), "could not wield through handle");
+        near(world->carriedObjectsKg(), head_mass+handle_mass, 2e-6*(head_mass+handle_mass), "whole fixed tool carrying mass");
+        near(world->heldObjectsKg(),head_mass+handle_mass,2e-6*(head_mass+handle_mass),"actual held mass excludes bag");
+        world->selectHand("bob");
+        require(!world->wield("head", {.38,1.26,.02}), "another player took a held tool's head");
+        world->selectHand("alice");
+        std::string why;
+        const auto saved = world->snapshot(why);
+        require(!saved.empty(), "fixed tool could not save: " + why);
+        TileImpactRequest request; request.cell_size_m=kCell;request.backend=BackendKind::CpuParallel;
+        request.bodies=readSceneJson(scene.dump());readSceneSettings(scene.dump(),request);
+        world=LiveWorld::open(request,saved);
+        require(world->restored().tier == "whole", "fixed tool did not reopen whole");
+        world->selectHand("alice");
+        require(world->held() == "handle" && world->toolPoints().front().grip_body == "handle" &&
+                world->toolPoints().front().grip_connected, "reopen lost fixed grip binding");
+        near(world->carriedObjectsKg(),head_mass+handle_mass,2e-6*(head_mass+handle_mass),"reopened tool mass");
+        const double energy_before=world->mechanicalEnergyJ();
+        // Match the ordinary contact gesture: bounded point-down readiness,
+        // 60 mm clearance, 80 mm bite, 40 mm working drag and withdrawal.
+        // The hand acts only on the handle; the fixing transmits actual load.
+        const Vec3 ready{-.44,.76,.02};
+        world->moveHeld(ready);
+        for (int i=0;i<480;++i) {
+            stepOnce(*world);
+            require(length(world->hand().force_n)<=world->handStrength()+1e-8,"fixed assembly exceeds hand force limit");
+        }
+        const Vec3 grip=world->hand().grip_m;
+        LiveStroke contact;contact.path_m={grip,grip+Vec3{0,-.14,0},grip+Vec3{-.04,-.14,0},grip+Vec3{-.04,0,0}};
+        contact.speed_m_s=4;contact.accel_m_s2=80;contact.lead_m=.025;contact.give_up_s=1;
+        const auto preview=world->previewStroke(contact,kDt,3);
+        require(!preview.why.empty() && preview.why.find("jointed native trial")!=std::string::npos,
+            "fixed assembly was passed through an unjointed free-body projection");
+        require(world->stroke(contact,why), material + ": handle contact refused: " + why);
+        (void)finishStroke(*world,480,120);
+        require(!world->groundWork().empty(),material + ": the separate head met no ground");
+        if (world->groundWork().front().open && world->toolPoints().front().grip_connected) {
+            LiveStrike pry;pry.lever=true;pry.shoulder_m={-.9,1.85,.02};pry.speed_m_s=1.2;pry.lever_deg=40;
+            require(world->strike(pry,why), material + ": handle lever refused: " + why);
+            (void)finishStroke(*world,960,30);
+            if (world->groundWork().front().open) {
+                LiveStroke up;const auto at=world->hand().grip_m;up.path_m={at,at+Vec3{0,.4,0}};
+                up.speed_m_s=.6;up.accel_m_s2=4;up.give_up_s=3;
+                require(world->stroke(up,why), "fixed tool pull refused: " + why);
+                (void)finishStroke(*world,960,30);
+            }
+        }
+        const auto work=world->groundWork().front();
+        require(work.tool == "handle", "native work is not associated with the held assembly root");
+        double collected=0,ground_work=0;
+        for (const auto &meeting : world->groundWork()) {
+            collected+=meeting.loosened.total();ground_work+=meeting.work_j;
+            if (meeting.loosened_kg>0) require(meeting.actor == "alice", "a subsequent contact credited another player");
+        }
+        const double unclosed=world->hand().work_j-(world->mechanicalEnergyJ()-energy_before)-ground_work;
+        require(std::isfinite(unclosed),"fixed tool energy accounting became non-finite");
+        std::printf("  fixed %s head / oak handle: %.9g + %.9g kg; hand work %.9g J; %s; actor %s; terrain residual %.12g m3; all ground work %.9g J; unclosed work - delta mechanical - ground work %.9g J\n",
+            material.c_str(),head_mass,handle_mass,world->hand().work_j,said(work).c_str(),work.actor.c_str(),
+            world->environment()->terrain().residual().total(),ground_work,unclosed);
+        require(work.actor == "alice", "head contact lost handle owner's account");
+        if (material == "iron") require(!work.open && work.loosened_kg > 0 && work.tool_whole,
+            "iron head / oak handle did not complete usable digging");
+        near(world->environment()->carried().total(),collected,1e-12,"all owned fixed-tool removal credits");
+        world->selectHand("bob");near(world->environment()->carriedKg(),0,0,"peer receives no fixed-tool ground");
+    }
+}
+
+void aDetachedHeadCannotBeUsedThroughItsOldHandle() {
+    auto world=open(splitPick("iron"));
+    const auto joint=world->fix("handle","head",{.38,1.4,.02},{0,1,0},5000,5000);
+    require(joint && headPoint(*world), "fixture fixing/point refused");
+    require(world->wield("handle",{-.36,1.42,.02}), "fixture handle refused");
+    world->unhinge(joint);
+    require(!world->toolPoints().front().grip_connected, "released fixing still reports a connected grip");
+    LiveStrike strike;strike.target_m={.3,.4,.02};strike.shoulder_m={-.9,1.85,.02};
+    std::string why;require(!world->strike(strike,why), "detached head operated through its old handle");
+    require(why.find("no longer fixed") != std::string::npos, "detached tool refusal lost its reason");
+    near(world->carriedObjectsKg(),poseOf(*world,"handle").mass_kg,2e-6,"detached head no longer adds held mass");
+}
+
+void fixedHorizontalToolsLiftWithoutASecondSeamResponse() {
+    for (const std::string material : {"glass","oak","iron"}) {
+        const Json scene={{"terrain",ground(.4,0)},{"bodies",{
+            box("handle","oak",{.8,.04,.04},{0,.42,1.22}),
+            box("head",material,{.04,.04,.28},{.38,.42,1.06})}}};
+        auto world=open(scene);
+        require(world->fix("handle","head",{.38,.42,1.2},{0,0,1},5000,5000)!=0,"horizontal fixing refused");
+        require(world->toolPoint("head",{.38,.42,.92},{0,0,-1},.04,.04,30,.2,{-.36,.42,1.22},"handle")!=0,
+            "horizontal point refused");
+        for (int i=0;i<240;++i) stepOnce(*world);
+        const auto point=world->toolPoints().front();
+        require(point.grip_connected && world->wield("handle",point.grip_m),"grounded tool lost its fixing");
+        const double before=world->mechanicalEnergyJ();
+        double peak_axial=0,peak_shear=0;
+        const auto advance=[&](int n) {
+            for (int i=0;i<n;++i) {
+                stepOnce(*world);
+                const auto joint=world->joints().front();
+                peak_axial=std::max(peak_axial,joint.tension_n_now);
+                peak_shear=std::max(peak_shear,joint.shear_n_now);
+                require(joint.attached,"ordinary horizontal lift broke the fixing: "+joint.parted_because);
+                require(length(world->hand().force_n)<=800+1e-8,"horizontal lift exceeded the hand bound");
+            }
+        };
+        world->moveHeld(point.grip_m+Vec3{0,.6,0});advance(48);
+        world->moveHeld({-.9,1.52,.02});advance(480);
+        world->aimHeld({std::sqrt(.5),-std::sqrt(.5),0,0});
+        world->moveHeld({-.44,1.36,.02});advance(480);
+        require(world->toolPoints().front().grip_connected,"turn lost separate grip");
+        const double unclosed=world->hand().work_j-(world->mechanicalEnergyJ()-before);
+        require(std::isfinite(unclosed),"lift energy account is non-finite");
+        std::printf("  horizontal %s / oak: peak axial %.9g N; shear %.9g N; hand work %.9g J; unclosed work - delta mechanical %.9g J\n",
+            material.c_str(),peak_axial,peak_shear,world->hand().work_j,unclosed);
+    }
+}
+
+void fixedToolsKeepPrivateBagOwnershipAndCarry() {
+    for (const std::string material : {"glass","oak","iron"}) {
+        const auto scene=splitPick(material);
+        auto world=open(scene);
+        require(world->fix("handle","head",{.38,1.4,.02},{0,1,0},5000,5000) && headPoint(*world),
+            "fixed bag fixture refused");
+        const double mass=poseOf(*world,"handle").mass_kg+poseOf(*world,"head").mass_kg;
+        world->selectHand("alice");
+        require(world->wield("handle",{-.36,1.42,.02}),"fixed bag fixture not wieldable");
+        std::string why;
+        require(world->park("handle",why),"fixed assembly could not be stowed: "+why);
+        require(world->parked("handle") && world->parked("head"),"only part of tool entered bag");
+        near(world->carriedObjectsKg(),mass,2e-6*mass,"bag counts both materials once");
+        const auto saved=world->snapshot(why);
+        require(!saved.empty(),"parked tool did not save: "+why);
+        TileImpactRequest request;request.cell_size_m=kCell;request.backend=BackendKind::CpuParallel;
+        request.bodies=readSceneJson(scene.dump());readSceneSettings(scene.dump(),request);
+        for (const bool carry : {false,true}) {
+            auto restored=carry?LiveWorld::open(request,saved,LiveWorld::carryAll(saved)):LiveWorld::open(request,saved);
+            restored->selectHand("bob");
+            near(restored->carriedObjectsKg(),0,0,"peer counts none of parked assembly");
+            require(!restored->unpark("head",{.38,1.26,.02},{},why),"peer took parked head alone");
+            restored->selectHand("alice");
+            near(restored->carriedObjectsKg(),mass,2e-6*mass,"restart retains private whole tool mass");
+            require(restored->unpark("handle",{0,1.42,.02},{},why),"owner cannot equip saved assembly: "+why);
+            require(!restored->parked("handle") && !restored->parked("head"),"head left behind in bag");
+            const auto points=restored->toolPoints();
+            require(points.size()==1 && points.front().grip_body=="handle" && points.front().grip_connected,
+                "bag restart lost native fixed point binding");
+            require(points.front().material==material,"bag restart homogenized head material");
+            require(restored->wield("handle",points.front().grip_m),"restored assembly cannot wield");
+            near(restored->carriedObjectsKg(),mass,2e-6*mass,"equipped assembly not counted once");
+        }
+    }
+}
+
 struct Swing {
     std::unique_ptr<LiveWorld> live;
     std::vector<LiveGroundWork> work;
@@ -784,6 +981,11 @@ int main() {
         {"lattice ground tools share exact equipment", latticeGroundToolsCanShareExactEquipment},
         {"players have separate ground and bag budgets",playersHaveSeparateGroundBudgets},
         {"tool meetings keep their owner during shared stepping",toolMeetingKeepsItsOwner},
+        {"a separate head needs an actual fixed handle",aSeparateHeadNeedsAnActualFixedHandle},
+        {"fixed mixed tools retain materials mass and owned work",fixedMixedToolsRetainMaterialsMassAndOwnedWork},
+        {"a detached head cannot be used through its old handle",aDetachedHeadCannotBeUsedThroughItsOldHandle},
+        {"fixed horizontal tools lift without a second seam response",fixedHorizontalToolsLiftWithoutASecondSeamResponse},
+        {"fixed tools keep private bag ownership and carry",fixedToolsKeepPrivateBagOwnershipAndCarry},
     };
     int failed = 0;
     for (const auto &[name, check] : checks) {

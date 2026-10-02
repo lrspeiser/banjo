@@ -161,6 +161,14 @@ class AToolsUseIsShapedByItsProfile(unittest.TestCase):
 
 
 class WhatAToolDoesWhereYouLook(unittest.TestCase):
+    def test_small_real_yields_are_not_displayed_as_zero_litres(self):
+        said=tool_use._said({'kind':'broke out','ground':'soil','depth_m':.02,
+            'loosened':{'soil_m3':.00005},'loosened_kg':.08},
+            interaction_profiles.tool_use(PICK),.08)
+        self.assertIn('50 mL',said)
+        self.assertIn('80 g',said)
+        self.assertNotIn('0.0 L',said)
+
     def resolve(self, at, **room):
         return tool_use.resolve(app_with(**room), {"person": PERSON, "at_m": at})
 
@@ -208,6 +216,16 @@ class WhatAToolDoesWhereYouLook(unittest.TestCase):
         self.assertIsNone(said["reason"])
         self.assertEqual(said["target"]["at_m"], [12.7, 0.6, -5.58], "set on the surveyed ground")
         self.assertEqual(said["target"]["ground"], "sand")
+
+    def test_detached_head_refuses_in_the_target_preview(self):
+        from unittest import mock
+        app=app_with()
+        with mock.patch.object(tool_use,'_native_point',return_value=None):
+            said=tool_use.resolve(app,{'person':PERSON,'at_m':IN_REACH})
+        self.assertFalse(said['enabled'])
+        self.assertEqual(said['ring']['state'],'no')
+        self.assertIn('no connected working point',said['reason'])
+        self.assertIn('Lab',said['reason'])
 
     def test_bare_rock_and_wet_ground_may_be_tried_and_the_ring_warns(self):
         for survey, why in (({"surface": "rock"}, "Bare rock"),

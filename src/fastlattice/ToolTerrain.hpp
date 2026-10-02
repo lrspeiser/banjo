@@ -58,6 +58,9 @@ struct ToolTerrainHost {
     // points are left as they are while it is away -- not finished, not
     // detached -- and work again when it comes back.
     std::function<bool(const std::string &)> parked;
+    // An attached six-degree fixing path; proximity, hinges and ropes cannot
+    // substitute for the fixed connection between a head and its handle.
+    std::function<bool(const std::string &, const std::string &)> fixed_connected;
 };
 
 class ToolTerrain {
@@ -66,7 +69,8 @@ public:
     // it cannot be one.
     unsigned declare(const ToolTerrainHost &host, const std::string &body, const Vec3 &tip_world_m,
                      const Vec3 &pointing_world, const terrain::ToolPointShape &shape,
-                     const Vec3 &grip_world_m, std::string &why);
+                     const Vec3 &grip_world_m, std::string &why,
+                     const std::string &grip_body = {});
     [[nodiscard]] std::vector<LiveToolPoint> points(const ToolTerrainHost &host) const;
     // Before the step's reversible trial, and outside it: bites made, set and
     // taken away, and the ground's contact with a point suspended or restored.
@@ -104,6 +108,7 @@ public:
         std::vector<std::uint32_t> frame_nodes;
         std::vector<Vec3> frame_offsets;
         bool attached{true};
+        std::string grip_body;
     };
     [[nodiscard]] std::vector<SavedPoint> saved() const;
     [[nodiscard]] unsigned nextId() const { return next_; }
@@ -127,6 +132,7 @@ private:
         std::vector<Vec3> frame_offsets;
         bool shaped{};
         bool attached{true};
+        std::string grip_body;
         // In the ground: the bite, where the point went in and along what.
         unsigned joint{};
         Vec3 entry{}, axis{}, across_x{}, across_z{};

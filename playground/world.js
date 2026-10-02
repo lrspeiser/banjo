@@ -4474,7 +4474,7 @@ function showInventory() {
     meter.dataset.full = String(full);
     meter.querySelector("b").textContent = full ? "Full · digging stopped" : "Ground materials";
     meter.querySelector("small").textContent = full ? "Sand / soil → point at clear ground → H to heap" :
-      [...world.stock].filter(([,v])=>v.kg>0).map(([what,v])=>`${what} ${v.kg.toFixed(1)} kg`).join(" · ") || "Empty";
+      [...world.stock].filter(([,v])=>v.kg>0).map(([what,v])=>`${what} ${massLabel(v.kg)}`).join(" · ") || "Empty";
     meter.querySelector("[data-tool-guide]").hidden = !!world.held?.pick;
     meter.querySelector("[data-movement]").textContent = movementMode === "fly" ? "Fly · Space ↑ · Shift + Space ↓" :
       wet ? `${wet.under>.5 ? "Swim" : "Wade"} · ${Math.round(wet.under*100)} cm immersed · Space ${wet.under>.5 ? "↑ / Shift ↓" : "jump"}` :
@@ -5613,8 +5613,11 @@ function detailsModel() {
     const entry = world.bodies.get(held.name);
     model.name = titled(heldName());
     const facts = [];
-    if (entry && entry.material) facts.push(entry.material);
-    if (entry && entry.mass) facts.push(grams(entry.mass));
+    const members=held.pick?.parts || [held.name];
+    const parts=[...new Set(members)].map(name=>world.bodies.get(name)).filter(Boolean);
+    const materials=[...new Set(parts.map(p=>p.material).filter(Boolean))];
+    if (materials.length) facts.push(materials.join(" + "));
+    if (entry?.mass) facts.push(grams(parts.reduce((kg,p)=>kg+(p.mass || 0),0)));
     const ours = recordHolds(held.name);
     facts.push(ours ? "in your right hand" : held.bow ? "its string in your hand" : "held by your hand");
     const inv = world.inventory;

@@ -1131,6 +1131,8 @@ struct LiveToolPoint {
     // and while it is set aside (LiveWorld::park), when the point is out of the
     // world with it.
     bool attached{true};
+    std::string grip_body; // empty preserves the original one-body contract
+    bool grip_connected{true}; // an attached native fixing path
 };
 
 // One meeting between a tool's point and the ground, from first touch until
@@ -2116,6 +2118,8 @@ public:
     // with no ground has nothing to dig and takes any limit.
     void setCarryLimitKg(double kg);
     [[nodiscard]] double carriedObjectsKg() const;
+    // Active fixed assembly held by the selected hand, excluding its bag.
+    [[nodiscard]] double heldObjectsKg() const;
     // Heap material up around a point; it settles to the slope it can hold.
     terrain::EditEffect deposit(double x, double z, double radius_m, double sand_m3, double soil_m3);
     [[nodiscard]] std::string withdrawGround(double sand_m3, double soil_m3, double rock_m3 = 0);
@@ -2182,13 +2186,16 @@ public:
     //   length_m       how much of the tool is point: the rest of it meets the
     //                  ground as a rigid surface, and stops there
     //   grip           where a hand holds it
+    //   grip_body      optional separate lattice handle, connected to the point
+    //                  by an attached ordinary 6DOF fixing path. Hinges, ropes
+    //                  and one-way releases are not fixed handles.
     //
     // From then on the body collides as its cells rather than its hull, so a
     // pick's crook is open. Returns the point's id, or 0 with the reason in
     // toolPointRefusal().
     unsigned toolPoint(const std::string &body, const Vec3 &tip_world_m, const Vec3 &pointing_world,
                        double width_m, double thickness_m, double angle_deg, double length_m,
-                       const Vec3 &grip_world_m);
+                       const Vec3 &grip_world_m, const std::string &grip_body = {});
     [[nodiscard]] const std::string &toolPointRefusal() const;
     [[nodiscard]] std::vector<LiveToolPoint> toolPoints() const;
     // A bounded tool action (LiveStrike) with the tool in the hand, which has

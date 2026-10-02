@@ -1134,7 +1134,7 @@ there.
           |  JSON lines over stdin/stdout                 |  ctypes
           v                                               v
  banjo_live_world_run  ---------------------->  the engine (C++23), also built as
- (the world's engine process)                    libbanjo with a C API, ABI 25
+ (the world's engine process)                    libbanjo with a C API, ABI 26
 ```
 
 - **The engine** is C++23. `LiveWorld`
@@ -1265,7 +1265,7 @@ green nightly run (the long-physics job has failed every night since
 at `build/win-joint-double`; docs that are current (`docs/` has 211 markdown
 files, most of them dated checkpoint notes, and several contradict the code); a
 release with tags and installable packages (the shared library is versioned
-4.0.0 while its ABI is 25); and CI on more than Ubuntu with GCC.
+4.0.0 while its ABI is 26); and CI on more than Ubuntu with GCC.
 
 **Before hosting it for other people.** Accounts instead of one shared password.
 A world per person — one server runs one world for everyone, a second tab takes
@@ -1314,7 +1314,7 @@ right.** Start with these:
 ### Repository layout
 
 ```text
-include/banjo/banjo.h      the C API (ABI 25)
+include/banjo/banjo.h      the C API (ABI 26)
 src/
   fastlattice/             LiveWorld (the running world), the cell lattice, fracture
                            admission, exact bodies, machine programs

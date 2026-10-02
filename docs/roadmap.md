@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Native mixed-tool gate, October 1:** [Fixed head/handle evidence](mixed-tool-native-checkpoint.md) qualifies authored per-material native pickup, digging, private bag and reopen with explicit finite fixings. Next implement reviewed allocation and funded mixed lattice installation, then run normal Lab edit → Save → paid Make → pickup/use with recovery. Keep R2 open and retain unsupported joint/material refusal.
+
 **Skills guidance gate, October 1:** [Verified presentation](skills-guidance-checkpoint.md) prevents an unavailable alternative from masquerading as a required step. Retain real native learning receipts; implement additional supported techniques and live model progression under R6.
 
 **Mixed-tool gate, October 1:** [Draft acceptance](mixed-tool-draft-checkpoint.md) passes material preservation, saved reload and no-spend refusal. Next implement native fixed mixed interfaces and complete normal paid pickup/use; do not replace requested constituents to satisfy single-material admission.

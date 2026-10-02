@@ -1,5 +1,7 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Native constituent tools, October 1:** [Fixed head/handle checkpoint](mixed-tool-native-checkpoint.md) connects authored per-material lattice bodies through explicit ordinary native fixings. The native hand, terrain and ownership accounts control use; Save/reopen retain the separate binding. This qualifies a native R2 prerequisite. Paid mixed lattice installation, calibrated interface failure and the full player fabrication journey remain open.
+
 **Skill guidance, October 1:** [Skills checkpoint](skills-guidance-checkpoint.md) distinguishes completed evidence, available alternative routes and unavailable manufacturing. It adds no skill, process or physics law; broader progression remains R6.
 
 **Mixed-tool source fidelity, October 1:** [Draft checkpoint](mixed-tool-draft-checkpoint.md) preserves requested constituent materials through edits, checks, Save and reload. Mixed fixed lattice joints refuse before an automatic material substitution. Shared model instructions explain Make versus Save; native mixed-tool construction/use remains R2. No native law change.

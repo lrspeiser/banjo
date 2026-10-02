@@ -356,7 +356,7 @@ def export_spec(entry: dict[str, Any], scene: dict[str, Any] | None = None,
     for profile in entry.get("interactions", []):
         try:
             interaction_profiles.check(profile, names, spec["joints"],
-                                       points={p["body"] for p in points})
+                                       points={p.get('grip_body') or p['body'] for p in points})
         except ValueError:
             continue
         uses.append(room_profile(profile))
@@ -471,7 +471,8 @@ def blade_spec(record: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
 
 def tool_point_spec(record: dict[str, Any]) -> dict[str, Any]:
     """An MCP tool point (where it is on its body as built, metres) as a room's (mm)."""
-    return {"body": record["body"], "tip_mm": _mm(record["tip_m"]),
+    return {**({"grip_body":record["grip_body"]} if record.get("grip_body") else {}),
+            "body": record["body"], "tip_mm": _mm(record["tip_m"]),
             "pointing": [round(float(v), 6) for v in record["pointing"]],
             "grip_mm": _mm(record["grip_m"]),
             "width_mm": round(float(record["width_m"]) * 1000.0, 3),
@@ -579,6 +580,7 @@ def open_room(spec: dict[str, Any], water_state: dict[str, Any] | None = None) -
         for point in validated.get("tool_points", []):
             banjo_mcp.HANDLERS["tool_point"]({
                 "world_id": world_id, "body": point["body"], "tip_m": _m(point["tip_mm"]),
+                **({"grip_body":point["grip_body"]} if point.get("grip_body") else {}),
                 "pointing": list(point["pointing"]), "grip_m": _m(point["grip_mm"]),
                 "width_m": point["width_mm"] / 1000.0,
                 "thickness_m": point["thickness_mm"] / 1000.0,

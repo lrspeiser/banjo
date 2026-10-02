@@ -1552,6 +1552,9 @@ def normalise_tool_points(points: Any, bodies: list[dict[str, Any]]) -> list[dic
         body = str(point.get("body", ""))
         if body not in named:
             raise ValueError(f"tool point {i} is on {body!r}, which is not in this room")
+        grip_body = point.get('grip_body', '')
+        if not isinstance(grip_body,str) or (grip_body and grip_body not in named):
+            raise ValueError(f"tool point {i} needs a named grip_body in this room")
 
         def place(key: str) -> list[float]:
             value = point.get(key)
@@ -1577,6 +1580,7 @@ def normalise_tool_points(points: Any, bodies: list[dict[str, Any]]) -> list[dic
             "length_mm": _number(point.get("length_mm", 150.0), 10.0, 1000.0,
                                  f"tool point {i} length_mm"),
         })
+        if grip_body: out[-1]['grip_body'] = grip_body
     return out
 
 
@@ -1809,7 +1813,7 @@ def normalise_interactions(profiles: Any, bodies: list[dict[str, Any]],
     if len(profiles) > 32:
         raise ValueError("a room may hold at most 32 interaction profiles")
     named = {str(body.get("name", "")) for body in bodies}
-    pointed = {str(p.get("body", "")) for p in (tool_points or [])}
+    pointed = {str(p.get("grip_body") or p.get("body", "")) for p in (tool_points or [])}
     out: list[dict[str, Any]] = []
     for i, profile in enumerate(profiles):
         checked = interaction_profiles.check(profile, named, joints, f"interaction {i}", pointed)

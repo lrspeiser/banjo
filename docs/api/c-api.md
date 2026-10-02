@@ -19,7 +19,7 @@ a log line: the day it was built and the floating-point profile it was compiled
 to ([One floating-point model](../floating-point-model.md)). Never parse it: the
 number to compare is `banjo_abi_version()`.
 
-Current ABI: **25**. 13 and 14 were two additions made side by side and then
+Current ABI: **26**. 13 and 14 were two additions made side by side and then
 merged, numbered apart so that one number never meant two headers; 15 to 18
 were added on top of both; 20 and 21 were two more made side by side -- 21 was
 numbered 19 on its branch and landed second, so no header was ever 19:
@@ -94,8 +94,13 @@ numbered 19 on its branch and landed second, so no header was ever 19:
   may spend that store. It changed no function or struct that was already there.
   See [Machine circuits](#machine-circuits) and the
   [complete machine API/MCP reference](machine-networks.md).
+- **26** adds `banjo_make_joined_tool_point` and appends `grip_body` and
+  `grip_connected` to `banjo_tool_point`. A lattice head can be held through a
+  separate lattice handle connected by active ordinary native fixings. Rebuild
+  callers against ABI 26; the Python binding checks the ABI before new symbols.
+  Legacy single-body world snapshots remain readable.
 
-A library at 25 has all of them, and none was ever 19. Nothing that was in 12
+A library at 26 has all of them, and none was ever 19. Nothing that was in 12
 changed, and nothing that was in 14 changed in 15. None of 16 to 25 changed a
 function that was already there, but structs grew at their ends --
 `banjo_joint`, `banjo_overload` and `banjo_energy` in 16, `banjo_body` and
@@ -1629,6 +1634,7 @@ not cover -- rock under a point harder than it, wet ground -- is reported as
 "not supported", never guessed. [docs/ground-work.md](../ground-work.md).
 
 ### `int banjo_make_tool_point(banjo_world *world, const char *body, const double tip_m[3], const double pointing[3], double width_m, double thickness_m, double angle_deg, double length_m, const double grip_m[3])`
+### `int banjo_make_joined_tool_point(banjo_world *world, const char *body, const char *grip_body, const double tip_m[3], const double pointing[3], double width_m, double thickness_m, double angle_deg, double length_m, const double grip_m[3])`
 ### `int banjo_tool_point_count(const banjo_world *world)`
 ### `int banjo_tool_points(const banjo_world *world, banjo_tool_point *out, int max)`
 
@@ -1637,7 +1643,18 @@ in the body's own frame from then on; returns the point's id. The tip has to be
 at the end of the body's matter and `pointing` has to run out of it there, and
 `grip_m` -- where a hand takes hold of it -- has to be on the body's matter too;
 refusals say which. From then on the body collides as its cells, so a pick's
-crook is open. `banjo_tool_point.in` is what the point is in right now
+crook is open. ABI 26 adds `banjo_make_joined_tool_point` for a point on one
+lattice body held through another. `grip_body` must be movable lattice matter
+connected by an attached ordinary 6DOF fixing path; hinges, ropes and one-way
+releases refuse. The grip must lie on the handle matter. The two bodies retain
+their own native materials and masses. `banjo_tool_point.grip_body` is empty for
+a one-body tool; `grip_connected` reports the current active fixing path (false
+while the members are parked). A detached path refuses a new strike through
+that handle. Snapshots preserve this binding. Declared fixing strengths are
+not calibrated interface or torque-failure laws. Clients must rebuild for ABI
+26 because these fields extend `banjo_tool_point`.
+
+`banjo_tool_point.in` is what the point is in right now
 ("soil", "sand", "loose soil" or "") and `depth_m` how far, along its axis.
 
 ### `int banjo_strike(banjo_world *world, const banjo_strike_request *request)`

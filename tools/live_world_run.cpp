@@ -945,7 +945,7 @@ std::string last_tool_points;
 
 nlohmann::json toolPointsOf(const LiveWorld &world) {
     nlohmann::json out = nlohmann::json::array();
-    for (const LiveToolPoint &p : world.toolPoints())
+    for (const LiveToolPoint &p : world.toolPoints()) {
         out.push_back({{"id", p.id},
                        {"body", p.body},
                        {"material", p.material},
@@ -962,6 +962,11 @@ nlohmann::json toolPointsOf(const LiveWorld &world) {
                        {"in", p.in},
                        {"depth_m", tidy(p.depth_m)},
                        {"attached", p.attached}});
+        if (!p.grip_body.empty()) {
+            out.back()["grip_body"] = p.grip_body;
+            out.back()["grip_connected"] = p.grip_connected;
+        }
+    }
     return out;
 }
 
@@ -1408,7 +1413,7 @@ constexpr double kWaterEveryS = 0.25;
 // broken out of a working, less what went back (terrain::Environment::carried).
 // Not rounded -- a heap of all of it is asked for with these very numbers, and a
 // heap bigger than what is carried is refused.
-nlohmann::json carriedJson(const banjo::terrain::Environment &env, double objects_kg) {
+nlohmann::json carriedJson(const banjo::terrain::Environment &env, double objects_kg, double held_objects_kg) {
     const banjo::terrain::Volumes &c = env.carried();
     nlohmann::json out{{"sand_m3", c.sand_m3}, {"soil_m3", c.soil_m3}, {"rock_m3", c.rock_m3},
                        {"sand_kg", c.sand_m3 * banjo::terrain::sandMaterial().density_kg_m3},
@@ -1417,6 +1422,7 @@ nlohmann::json carriedJson(const banjo::terrain::Environment &env, double object
     // How much of it a person can carry, where a host has said.
     out["actor"]=env.selectedCarrier();
     out["objects_kg"]=objects_kg;out["total_kg"]=objects_kg+env.carriedKg();
+    out["held_objects_kg"]=held_objects_kg;
     if (std::isfinite(env.carryLimitKg())) {
         out["limit_kg"] = env.carryLimitKg();
         out["available_kg"]=std::max(0.0,env.carryLimitKg()-objects_kg-env.carriedKg());
@@ -1559,14 +1565,14 @@ nlohmann::json beyondBlock(const banjo::terrain::Environment &env) {
     return beyond;
 }
 
-nlohmann::json terrainBlock(const banjo::terrain::Environment &env, const std::vector<float> &heights, double objects_kg) {
+nlohmann::json terrainBlock(const banjo::terrain::Environment &env, const std::vector<float> &heights, double objects_kg, double held_objects_kg) {
     const banjo::terrain::Grid &g = env.terrain().grid();
     const std::vector<std::uint8_t> ground = env.surfaces();
     const std::vector<std::uint8_t> runs = env.runsPacked();
     const banjo::terrain::Landscape &land = env.landscape();
     return {{"kind", land.kind},
             {"beyond", beyondBlock(env)},
-            {"carried", carriedJson(env, objects_kg)},
+            {"carried", carriedJson(env, objects_kg, held_objects_kg)},
             {"grid", {{"nx", g.nx}, {"nz", g.nz}, {"cell_m", g.dx}, {"x0_m", g.x0}, {"z0_m", g.z0}}},
             {"chunks", {env.terrain().chunksX(), env.terrain().chunksZ()}},
             {"heights_b64", banjo::terrain::encodeBase64(heights.data(), heights.size() * sizeof(float))},
@@ -1650,7 +1656,7 @@ nlohmann::json waterBlock(const banjo::terrain::Environment &env, double t) {
 void addEnvironment(LiveWorld &world, nlohmann::json &reply, bool whole) {
     const banjo::terrain::Environment *env = world.environment();
     if (env == nullptr) return;
-    reply["carried"]=carriedJson(*env, world.carriedObjectsKg());
+    reply["carried"]=carriedJson(*env, world.carriedObjectsKg(), world.heldObjectsKg());
     reply["player_carried"]=nlohmann::json::parse(world.playerCarriedGround());
     // The ground whole when a world opens; afterwards only the rectangle an
     // edit or a slump changed since the last reply, as the ground itself
@@ -1658,7 +1664,7 @@ void addEnvironment(LiveWorld &world, nlohmann::json &reply, bool whole) {
     // used to copy all of the valley's heights and compare them.
     const banjo::terrain::TerrainField::Rect changed = world.takeChangedGround();
     if (whole) {
-        reply["terrain"] = terrainBlock(*env, env->heights(), world.carriedObjectsKg());
+        reply["terrain"] = terrainBlock(*env, env->heights(), world.carriedObjectsKg(), world.heldObjectsKg());
     } else {
         const banjo::terrain::TerrainField &field = env->terrain();
         const banjo::terrain::Grid &g = field.grid();
@@ -2038,7 +2044,8 @@ int main(int argc, char **argv) {
                         readVec(command, "pointing"), command.value("width_m", 0.04),
                         command.value("thickness_m", 0.04), command.value("angle_deg", 30.0),
                         command.value("length_m", 0.15),
-                        command.contains("grip") ? readVec(command, "grip") : readVec(command, "tip"));
+                        command.contains("grip") ? readVec(command, "grip") : readVec(command, "tip"),
+                        command.value("grip_body", std::string{}));
                     if (id == 0)
                         throw std::invalid_argument("that body cannot take that point: " +
                                                     world->toolPointRefusal());
@@ -2059,7 +2066,7 @@ int main(int argc, char **argv) {
                     world->forgetGroundWork();
                     nlohmann::json answer{{"ok", true}, {"ground_work", std::move(list)}};
                     if (const banjo::terrain::Environment *env = world->environment(); env != nullptr)
-                        answer["carried"] = carriedJson(*env, world->carriedObjectsKg());
+                        answer["carried"] = carriedJson(*env, world->carriedObjectsKg(), world->heldObjectsKg());
                     std::cout << answer.dump() << std::endl;
                     continue;
                 } else if (op == "move") {
@@ -2097,7 +2104,7 @@ int main(int argc, char **argv) {
                     world->setCarryLimitKg(command.at("kg").get<double>());
                     nlohmann::json out{{"ok", true}};
                     if (const banjo::terrain::Environment *env = world->environment())
-                        out["carried"] = carriedJson(*env, world->carriedObjectsKg());
+                        out["carried"] = carriedJson(*env, world->carriedObjectsKg(), world->heldObjectsKg());
                     std::cout << out.dump() << std::endl;
                     continue;
                 } else if (op == "decline") {
@@ -2494,7 +2501,7 @@ int main(int argc, char **argv) {
                     reply["cells"] = chipped.effect.edit.cells.size();
                     if (!chipped.effect.edit.cells.empty()) {
                         reply["dug"] = dugJson(chipped.effect);
-                        reply["carried"] = carriedJson(*world->environment(), world->carriedObjectsKg());
+                        reply["carried"] = carriedJson(*world->environment(), world->carriedObjectsKg(), world->heldObjectsKg());
                     }
                 } else if (op == "lamp_switch") {
                     const unsigned id = command.at("lamp").get<unsigned>();
@@ -2726,7 +2733,7 @@ int main(int argc, char **argv) {
                                                       command.value("width_m", 1.0),
                                                       command.value("depth_m", 0.5),command.value("program",0u)));
                     // What came out is carried, and the reply says how much is.
-                    reply["carried"] = carriedJson(*world->environment(), world->carriedObjectsKg());
+                    reply["carried"] = carriedJson(*world->environment(), world->carriedObjectsKg(), world->heldObjectsKg());
                 } else if (op == "ground_return") {
                     const auto before = world->environment()->returned();
                     world->returnGround(command.value("sand_m3",0.0),command.value("soil_m3",0.0),
@@ -2737,12 +2744,12 @@ int main(int argc, char **argv) {
                     reply["ground_returned"] = {{"sand_m3", after.sand_m3-before.sand_m3},
                         {"soil_m3", after.soil_m3-before.soil_m3},
                         {"rock_m3", after.rock_m3-before.rock_m3}};
-                    reply["carried"] = carriedJson(*world->environment(), world->carriedObjectsKg());
+                    reply["carried"] = carriedJson(*world->environment(), world->carriedObjectsKg(), world->heldObjectsKg());
                 } else if (op == "ground_withdraw") {
                     reply["material_packet"] = nlohmann::json::parse(world->withdrawGround(
                         command.value("sand_m3",0.0),command.value("soil_m3",0.0),
                         command.value("rock_m3",0.0)));
-                    reply["carried"] = carriedJson(*world->environment(), world->carriedObjectsKg());
+                    reply["carried"] = carriedJson(*world->environment(), world->carriedObjectsKg(), world->heldObjectsKg());
                 } else if (op == "deposit") {
                     const auto at = readXZ(command, "at");
                     const double sand = command.value("sand_m3", 0.0);
@@ -2764,7 +2771,7 @@ int main(int argc, char **argv) {
                     }
                     reply["heaped"] = dugJson(world->deposit(at.first, at.second,
                                                              command.value("radius_m", 1.0), sand, soil));
-                    reply["carried"] = carriedJson(*world->environment(), world->carriedObjectsKg());
+                    reply["carried"] = carriedJson(*world->environment(), world->carriedObjectsKg(), world->heldObjectsKg());
                 } else if (op == "cut_block") {
                     // The ground loses the block now; the host adds it as a body
                     // in the scene it opens next.
@@ -2952,7 +2959,7 @@ int main(int argc, char **argv) {
                     reply["ground_work"] = std::move(list);
                     world->forgetGroundWork();
                     if (const banjo::terrain::Environment *env = world->environment(); env != nullptr)
-                        reply["carried"] = carriedJson(*env, world->carriedObjectsKg());
+                        reply["carried"] = carriedJson(*env, world->carriedObjectsKg(), world->heldObjectsKg());
                 }
                 nlohmann::json state = describe(*world, geometry,
                                                 !geometry && command.value("moved", false));

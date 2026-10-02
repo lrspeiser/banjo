@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 import fracture_lab
+import tool_gestures
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bindings" / "python"))
 
@@ -245,14 +246,21 @@ class InProcessSession:
 
     def _tool_points(self) -> list[dict[str, Any]]:
         """Every tool's point, as the line protocol spells them."""
-        return [{"id": p.id, "body": p.body, "material": p.material,
+        points = []
+        for p in self._world.tool_points():
+            body = self._world.body(p.body)
+            frame = tool_gestures.local_frame(p.tip_m, p.grip_m, p.pointing,
+                body.position_m, body.orientation_wxyz) if body else {}
+            points.append({**frame,
+                 **({"grip_body":p.grip_body,"grip_connected":p.grip_connected} if p.grip_body else {}),
+                 "id": p.id, "body": p.body, "material": p.material,
                  "tip": [self._number(v) for v in p.tip_m],
                  "pointing": [self._number(v) for v in p.pointing],
                  "grip": [self._number(v) for v in p.grip_m],
                  "width_m": self._number(p.width_m), "thickness_m": self._number(p.thickness_m),
                  "angle_deg": self._number(p.angle_deg), "length_m": self._number(p.length_m),
-                 "in": p.in_, "depth_m": self._number(p.depth_m), "attached": p.attached}
-                for p in self._world.tool_points()]
+                 "in": p.in_, "depth_m": self._number(p.depth_m), "attached": p.attached})
+        return points
 
     def _ground_work(self) -> list[dict[str, Any]]:
         """Every meeting of a point with the ground, as the line protocol spells it:
@@ -466,7 +474,8 @@ class InProcessSession:
                                          float(command.get("thickness_m", 0.04)),
                                          float(command.get("angle_deg", 30.0)),
                                          float(command.get("length_m", 0.15)),
-                                         command.get("grip") or command.get("tip"))
+                                         command.get("grip") or command.get("tip"),
+                                         grip_body=str(command.get("grip_body", "")))
                 self.state = self._describe(extra={"tool_point": point,
                                                    "tool_points": self._tool_points()})
                 return self.state

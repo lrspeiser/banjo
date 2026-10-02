@@ -1,5 +1,7 @@
 # Ground work: tools that dig
 
+**October 1 fixed-tool checkpoint:** [Separate head/handle evidence](mixed-tool-native-checkpoint.md) adds optional `grip_body` through active ordinary native fixings, preserving each material's mass and the head's local point frame. Native work follows the holder of the handle. Detached heads refuse, fixed assembly mass counts once, and free-body stroke projections refuse jointed tools. Fixed controller/seam assumptions and matched glass/oak/iron residuals are recorded there; paid Workshop Make remains unsupported.
+
 **October 1 ownership checkpoint:** [Private carrying evidence](private-ground-checkpoint.md)
 keeps ground-work-v1 and rock-work-v1. A bite captures its holder when it begins;
 closed breakout goes to that holder's native account even while another player

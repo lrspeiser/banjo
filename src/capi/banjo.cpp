@@ -1365,6 +1365,20 @@ int banjo_tool_point_count(const banjo_world *world) {
     });
 }
 
+int banjo_make_joined_tool_point(banjo_world *world, const char *body, const char *grip_body,
+    const double tip_m[3], const double pointing[3], double width_m, double thickness_m,
+    double angle_deg, double length_m, const double grip_m[3]) {
+    if (!world || !body || !grip_body || !*grip_body || !tip_m || !pointing || !grip_m) {
+        setError("no world, point body, grip body, or point"); return BANJO_BAD_ARGUMENT;
+    }
+    return guarded([&] {
+        const unsigned id = world->world->toolPoint(body, readVec(tip_m), readVec(pointing), width_m,
+            thickness_m, angle_deg, length_m, readVec(grip_m), grip_body);
+        if (!id) { setError(world->world->toolPointRefusal()); return static_cast<int>(BANJO_BAD_ARGUMENT); }
+        return static_cast<int>(id);
+    });
+}
+
 int banjo_tool_points(const banjo_world *world, banjo_tool_point *out, int max) {
     if (!world || (!out && max > 0) || max < 0) {
         setError("no world or nowhere to write"); return BANJO_BAD_ARGUMENT;
@@ -1389,6 +1403,8 @@ int banjo_tool_points(const banjo_world *world, banjo_tool_point *out, int max) 
             said.in = p.in.c_str();
             said.depth_m = p.depth_m;
             said.attached = p.attached ? 1 : 0;
+            said.grip_body = p.grip_body.c_str();
+            said.grip_connected = p.grip_connected ? 1 : 0;
         }
         return count;
     });

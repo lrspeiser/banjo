@@ -135,6 +135,78 @@ class TheTwoLanesDescribeTheSameWorld(unittest.TestCase):
         return (live_session.Session(ENGINE, dict(self.spec), self.runs),
                 live_inprocess.InProcessSession(dict(self.spec)))
 
+    def test_fixed_material_heads_use_the_handle_and_keep_their_native_frames(self):
+        import tool_gestures
+        for material, density in (('glass',2500), ('oak',700), ('iron',7870)):
+            with self.subTest(material=material):
+                self.spec = fracture_lab.validate({
+                    'algorithm':'lattice','cell_m':.04,
+                    'terrain':{'generate':{'kind':'flat','nx':48,'nz':48,'cell_m':.1,
+                        'soil_m':.4,'sand_m':0,'discharge_m3_s':0}},
+                    'bodies':[
+                        {'name':'handle','shape':'box','material':'oak',
+                         'size_mm':[800,40,40],'center_mm':[0,1420,20]},
+                        {'name':'head','shape':'box','material':material,
+                         'size_mm':[40,280,40],'center_mm':[380,1260,20]}]})
+                out, here = self.lanes()
+                try:
+                    for lane in (out, here):
+                        fixed = lane.send(op='fix',a='handle',b='head',at=[.38,1.4,.02],
+                            axis=[0,1,0],holds_tension_n=5000,holds_shear_n=5000)
+                        self.assertTrue(fixed.get('joint'),fixed)
+                        made = lane.send(op='tool_point',body='head',grip_body='handle',
+                            tip=[.38,1.12,.02],pointing=[0,-1,0],grip=[-.36,1.42,.02],
+                            width_m=.04,thickness_m=.04,angle_deg=30,length_m=.2)
+                        self.assertTrue(made.get('ok',True),made)
+                        point = lane.send(op='tool_points')['tool_points'][0]
+                        self.assertEqual((point['body'],point['grip_body'],point['material']),
+                            ('head','handle',material))
+                        self.assertTrue(point['attached'] and point['grip_connected'])
+                        frame = tool_gestures.local_frame(point['tip'],point['grip'],point['pointing'],
+                            [.38,1.26,.02],[1,0,0,0])
+                        for key in frame:
+                            for expected, actual in zip(frame[key],point[key]):
+                                self.assertAlmostEqual(expected,actual,delta=1e-6)
+                        mass = {b['name']:b['mass_kg'] for b in lane.state['bodies']}
+                        self.assertAlmostEqual(mass['head'],.04*.28*.04*density,delta=2e-6)
+                        self.assertAlmostEqual(mass['handle'],.8*.04*.04*700,delta=2e-6)
+                        lane.send(op='wield',name='handle',grip=[-.36,1.42,.02])
+                        lane.send(op='move',to=[-.44,.76,.02])
+                        run_to(lane,2.0,dt=1/240)
+                        grip=lane.state['hand']['grip_m']
+                        path=[grip,[grip[0],grip[1]-.14,grip[2]],
+                            [grip[0]-.04,grip[1]-.14,grip[2]],
+                            [grip[0]-.04,grip[1],grip[2]]]
+                        sent=lane.send(op='stroke',path=path,speed_m_s=4,accel_m_s2=80,
+                            lead_m=.025,give_up_s=1,let_go=False)
+                        self.assertTrue(sent.get('ok',True),sent)
+                        work=[]
+                        # The runner streams and consumes closed reports on each
+                        # step; the C lane exposes them via the lean read.
+                        def advance(until):
+                            while lane.state['t'] < until-1e-12:
+                                state=lane.send(op='step',dt=1/240,n=1)
+                                while state.get('breakable'):
+                                    state=lane.send(op='fracture',name=state['breakable'][0])
+                                reports=state.get('ground_work') or lane.send(op='ground_work')['ground_work']
+                                work.extend(w for w in reports if not w.get('open'))
+                        advance(3.5)
+                        if not work:
+                            # The native resistance may block the short return.
+                            # Test the same bounded withdrawal as public Use.
+                            grip=lane.state['hand']['grip_m']
+                            lane.send(op='stroke',path=[grip,[grip[0],grip[1]+.4,grip[2]]],
+                                speed_m_s=.6,accel_m_s2=4,lead_m=.05,give_up_s=3,let_go=False)
+                            advance(7.5)
+                        self.assertTrue(work, (type(lane).__name__, lane.state.get('hand')))
+                        self.assertTrue(all(w['tool']=='handle' for w in work),work)
+                        self.assertGreater(sum(w['loosened_kg'] for w in work),0)
+                        self.assertTrue(lane.send(op='tool_points')['tool_points'][0]['grip_connected'])
+                    # Contact threading may diverge; each lane must obey the same
+                    # material, identity, frame and real positive-work contract.
+                finally:
+                    out.close(); here.close()
+
     def test_they_agree_on_what_heat_has_left_of_a_peg(self):
         """docs/thermal-mechanics.md: the same heated oak peg, its fixing made of
         it and rated 800 N, gives the same "mechanics" block from both lanes --

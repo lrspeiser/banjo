@@ -150,7 +150,7 @@ extern "C" {
  * banjo_operate, banjo_control_count, banjo_controls). banjo_control is a new
  * struct. No struct or signature that was in 23 changed; banjo_drive_motor on a
  * motor with a controller tells the controller. */
-#define BANJO_ABI_VERSION 25
+#define BANJO_ABI_VERSION 26
 
 /* What a call reported. Anything below zero is a failure and leaves the world
  * unchanged; banjo_last_error() says what happened. */
@@ -1293,6 +1293,8 @@ typedef struct {
     const char *in;               /* what it is in: "soil", "sand", "loose soil", or "" */
     double depth_m;               /* how far in, along its own axis */
     int attached;                 /* 0 once the body carrying it has gone */
+    const char *grip_body;        /* ABI 26: empty for a one-body point */
+    int grip_connected;           /* attached ordinary fixing path to grip_body */
 } banjo_tool_point;
 
 /* One meeting between a point and the ground, from first touch until the point
@@ -1369,6 +1371,13 @@ typedef struct {
 BANJO_API int banjo_make_tool_point(banjo_world *world, const char *body, const double tip_m[3],
                                     const double pointing[3], double width_m, double thickness_m,
                                     double angle_deg, double length_m, const double grip_m[3]);
+/* ABI 26: a point on `body`, wielded through `grip_body`. Both must be movable
+ * lattice matter joined by an attached ordinary 6DOF fixing path. Hinges,
+ * ropes and one-way releases refuse. Each body retains its own material/mass.
+ * This does not certify the fixing strengths or support a mixed continuum. */
+BANJO_API int banjo_make_joined_tool_point(banjo_world *world, const char *body,
+    const char *grip_body, const double tip_m[3], const double pointing[3],
+    double width_m, double thickness_m, double angle_deg, double length_m, const double grip_m[3]);
 BANJO_API int banjo_tool_point_count(const banjo_world *world);
 /* Fills up to `max` and returns how many were written. Strings stay good until
  * the next call on this world. */

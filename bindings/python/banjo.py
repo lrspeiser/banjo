@@ -46,7 +46,8 @@ from typing import Any, Iterator
 # a thing is to turn (energy_store, motor, drive_motor, drum, inertia_about).
 # Checked for equality below, so this has to match exactly.
 # 25 adds stateful shared DC/thermal circuits.
-ABI_VERSION = 25
+# 26 adds fixed head/handle ground points and their grip connection metadata.
+ABI_VERSION = 26
 
 NOTHING, HELD, DENTED, BROKE = 0, 1, 2, 3
 OUTCOMES = {0: "nothing", 1: "held", 2: "dented", 3: "broke",
@@ -353,7 +354,8 @@ class _ToolPoint(ctypes.Structure):
                 ("length_m", ctypes.c_double),
                 ("in_", ctypes.c_char_p),
                 ("depth_m", ctypes.c_double),
-                ("attached", ctypes.c_int)]
+                ("attached", ctypes.c_int),
+                ("grip_body", ctypes.c_char_p), ("grip_connected", ctypes.c_int)]
 
 
 class _GroundWork(ctypes.Structure):
@@ -495,6 +497,8 @@ class ToolPoint:
     in_: str
     depth_m: float
     attached: bool
+    grip_body: str = ""
+    grip_connected: bool = True
 
 
 @dataclass(frozen=True)
@@ -1302,6 +1306,9 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
     lib = ctypes.CDLL(str(_find_library(path)))
 
     lib.banjo_abi_version.restype = ctypes.c_int
+    found = lib.banjo_abi_version()
+    if found != ABI_VERSION:
+        raise BanjoError(f"this binding speaks ABI {ABI_VERSION}; the library speaks {found}")
     lib.banjo_version_string.restype = ctypes.c_char_p
     lib.banjo_last_error.restype = ctypes.c_char_p
 
@@ -1550,6 +1557,10 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
                                           ctypes.c_double * 3, ctypes.c_double, ctypes.c_double,
                                           ctypes.c_double, ctypes.c_double, ctypes.c_double * 3]
     lib.banjo_make_tool_point.restype = ctypes.c_int
+    lib.banjo_make_joined_tool_point.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p,
+        ctypes.c_double * 3, ctypes.c_double * 3, ctypes.c_double, ctypes.c_double,
+        ctypes.c_double, ctypes.c_double, ctypes.c_double * 3]
+    lib.banjo_make_joined_tool_point.restype = ctypes.c_int
     lib.banjo_tool_point_count.argtypes = [ctypes.c_void_p]
     lib.banjo_tool_point_count.restype = ctypes.c_int
     lib.banjo_tool_points.argtypes = [ctypes.c_void_p, ctypes.POINTER(_ToolPoint), ctypes.c_int]
@@ -1593,9 +1604,6 @@ def library(path: str | os.PathLike[str] | None = None) -> ctypes.CDLL:
     lib.banjo_hand_torque.argtypes = [ctypes.c_void_p, ctypes.c_double]
     lib.banjo_hand_torque.restype = ctypes.c_int
 
-    found = lib.banjo_abi_version()
-    if found != ABI_VERSION:
-        raise BanjoError(f"this binding speaks ABI {ABI_VERSION}; the library speaks {found}")
     if path is None:
         _lib = lib
     return lib
@@ -2421,7 +2429,7 @@ class World:
     # -- tools that work the ground (docs/ground-work.md) --------------------
     def tool_point(self, body: str, tip_m: Any, pointing: Any, width_m: float = 0.04,
                    thickness_m: float = 0.04, angle_deg: float = 30.0, length_m: float = 0.15,
-                   grip_m: Any = None) -> int:
+                   grip_m: Any = None, grip_body: str = "") -> int:
         """Give a named body a point that can go into the ground. Returns its id.
 
         Everything is given where it is in the world RIGHT NOW and kept in the
@@ -2432,6 +2440,11 @@ class World:
         to the tip.
         """
         grip = tip_m if grip_m is None else grip_m
+        if grip_body:
+            return self._check(self._lib.banjo_make_joined_tool_point(self._alive(), body.encode('utf-8'),
+                grip_body.encode('utf-8'), _triple(tip_m), _triple(pointing), float(width_m),
+                float(thickness_m), float(angle_deg), float(length_m), _triple(grip)),
+                f"giving {body!r} a point held through {grip_body!r}")
         return self._check(
             self._lib.banjo_make_tool_point(self._alive(), body.encode("utf-8"), _triple(tip_m),
                                             _triple(pointing), float(width_m), float(thickness_m),
@@ -2453,7 +2466,8 @@ class World:
                           tip_m=tuple(p.tip_m), pointing=tuple(p.pointing), grip_m=tuple(p.grip_m),
                           width_m=p.width_m, thickness_m=p.thickness_m, angle_deg=p.angle_deg,
                           length_m=p.length_m, in_=text(p.in_), depth_m=p.depth_m,
-                          attached=bool(p.attached))
+                          attached=bool(p.attached), grip_body=text(p.grip_body),
+                          grip_connected=bool(p.grip_connected))
                 for p in out[:written]]
 
     def strike(self, target_m: Any = None, shoulder_m: Any = None, speed_m_s: float = 4.0,

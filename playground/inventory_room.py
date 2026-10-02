@@ -172,10 +172,8 @@ def use_point(app: Any, thing: dict[str, Any] | None, grip: list[float], held: s
 def _carried(app: Any, player_id: str = "") -> Any:
     """What the person carries, as the engine counts it -- with ALL of a thing of
     several parts in the hand, not only the part the hand grips. The engine
-    counts the one body its hand holds (LiveWorld carriedObjectsKg), so a mace
-    held by its handle read "1 of 80 kg" beside a hand saying 6.72 kg. Its own
-    budget at the moment of taking hold counts that one body too; that is the
-    engine's, and not changed here."""
+    counts active ordinary fixed assemblies. Other profile parts remain a host
+    carrying estimate; these are not added again when native mass includes them."""
     state = _state(app)
     carried = live_session.current_carried(app.live.session,player_id)
     held = str(_hand_of(app, player_id).get("holding") or "")
@@ -184,7 +182,8 @@ def _carried(app: Any, player_id: str = "") -> Any:
         # extra parts of a jointed held item beyond the native gripped body.
         thing = item_holding(app, held) if held else None
         own_kg = whole_kg(app, thing) if thing else 0.0
-        gripped = sum(float(b.get('mass_kg') or 0.0) for b in state.get('bodies') or [] if b.get('name')==held)
+        gripped = (float(carried['held_objects_kg']) if 'held_objects_kg' in carried else
+            sum(float(b.get('mass_kg') or 0.0) for b in state.get('bodies') or [] if b.get('name')==held))
         own_kg = float(carried.get('objects_kg') or 0.0) + max(0.,float(own_kg or 0.)-gripped)
         ground_kg = sum(float(carried.get(k) or 0.0) for k in ("sand_kg", "soil_kg", "rock_kg"))
         total = ground_kg + own_kg
@@ -195,8 +194,9 @@ def _carried(app: Any, player_id: str = "") -> Any:
     if not isinstance(carried, dict) or thing is None or len(thing["bodies"]) < 2:
         return carried
     whole = whole_kg(app, thing)
-    gripped = sum(float(b["mass_kg"]) for b in state.get("bodies") or []
-                  if b.get("name") == held and b.get("mass_kg") is not None)
+    gripped = (float(carried['held_objects_kg']) if 'held_objects_kg' in carried else
+        sum(float(b["mass_kg"]) for b in state.get("bodies") or []
+            if b.get("name") == held and b.get("mass_kg") is not None))
     if whole is None:
         return carried
     rest = max(0.0, whole - gripped)

@@ -71,12 +71,12 @@ export function makeTools(ctx) {
   // them, and otherwise from the world ones and how the body is turned now.
   function axesOf(point) {
     let pointing, tip, grip;
-    if (point.pointing_local && point.tip_local && point.grip_local) {
+    if (!point.grip_body && point.pointing_local && point.tip_local && point.grip_local) {
       pointing = new THREE.Vector3(...point.pointing_local);
       tip = new THREE.Vector3(...point.tip_local);
       grip = new THREE.Vector3(...point.grip_local);
     } else {
-      const entry = world.bodies.get(point.body);
+      const entry = world.bodies.get(point.grip_body || point.body);
       const back = entry ? entry.mesh.quaternion.clone().invert() : new THREE.Quaternion();
       pointing = new THREE.Vector3(...point.pointing).applyQuaternion(back);
       tip = new THREE.Vector3(...point.tip).applyQuaternion(back);
@@ -122,7 +122,8 @@ export function makeTools(ctx) {
   async function pointOf(profile) {
     try {
       const answer = await act("tool_points", {});
-      const point = (answer.tool_points || []).find((p) => p.body === profile.tool && p.attached) || null;
+      const point = (answer.tool_points || []).find((p) => (p.grip_body || p.body) === profile.tool
+        && p.attached && p.grip_connected !== false) || null;
       if (!point) lastAction(`${profile.object} has no point that can go into the ground any more.`, "refused");
       return point;
     } catch (error) {
@@ -168,9 +169,10 @@ export function makeTools(ctx) {
   }
 
   function hold(profile, point) {
-    const entry = world.bodies.get(profile.tool);
     world.held = { name: profile.tool, pick: profile, point, axes: axesOf(point), distance: 1 };
-    world.use = { mode: "tool-lifting", name: profile.object, kg: entry ? entry.mass : 0,
+    const kg = [...new Set(profile.parts || [profile.tool])]
+      .reduce((total, name) => total + (world.bodies.get(name)?.mass || 0), 0);
+    world.use = { mode: "tool-lifting", name: profile.object, kg,
                   result: "", detail: "", target: null, down: false, stop: false,
                   liftTo: [point.grip[0], point.grip[1] + LIFT_M, point.grip[2]],
                   since: performance.now() };

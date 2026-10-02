@@ -152,7 +152,7 @@ std::string mm(double metres) {
 unsigned ToolTerrain::declare(const ToolTerrainHost &host, const std::string &body,
                               const Vec3 &tip_world_m, const Vec3 &pointing_world,
                               const terrain::ToolPointShape &asked, const Vec3 &grip_world_m,
-                              std::string &why) {
+                              std::string &why, const std::string &grip_body) {
     why.clear();
     const auto refuse = [&why](const std::string &reason) {
         why = reason;
@@ -166,6 +166,13 @@ unsigned ToolTerrain::declare(const ToolTerrainHost &host, const std::string &bo
     if (!id || !host.world->contains(*id)) return refuse("there is nothing called that in the scene");
     if (host.anchored && host.anchored(body))
         return refuse("that is anchored scenery: nobody can swing it, so its point would never go anywhere");
+    const std::string grip_name = grip_body.empty() ? body : grip_body;
+    const auto grip_id = host.id_of(grip_name);
+    if (!grip_id || !host.world->contains(*grip_id) ||
+        (host.parked && host.parked(grip_name)) || (host.anchored && host.anchored(grip_name)))
+        return refuse("the grip body must be movable matter in the world");
+    if (grip_name != body && (!host.fixed_connected || !host.fixed_connected(body, grip_name)))
+        return refuse("the point and grip bodies need an attached fixing: a hinge, rope or nearby handle is not a fixed tool");
     if (!finite(tip_world_m) || !finite(pointing_world) || !finite(grip_world_m))
         return refuse("a point, the pointing or the grip is not a finite number");
     if (!(asked.width_m >= 0.002 && asked.width_m <= 0.5))
@@ -184,6 +191,7 @@ unsigned ToolTerrain::declare(const ToolTerrainHost &host, const std::string &bo
     Point made;
     made.id = next_;
     made.body = body;
+    if (grip_name != body) made.grip_body = grip_name;
     made.tip_local = inverse.rotate(tip_world_m - at.center_of_mass_world_m);
     made.pointing_local = normalized(inverse.rotate(a));
     made.grip_local = inverse.rotate(grip_world_m - at.center_of_mass_world_m);
@@ -207,7 +215,9 @@ unsigned ToolTerrain::declare(const ToolTerrainHost &host, const std::string &bo
     // made about a point the tool is not at, and its point meets no ground --
     // measured, the room's chat gave a pick's grip with its height and depth
     // swapped, 1.2 m above the haft, and its trial never reached the soil.
-    if (nearestCell(cells, made.grip_local) > 0.9 * cell)
+    const auto grip_pose = host.world->snapshot(*grip_id);
+    const Vec3 grip_own = qConj(grip_pose.orientation_world).rotate(grip_world_m - grip_pose.center_of_mass_world_m);
+    if (nearestCell(host.cells_of(grip_name), grip_own) > 0.9 * cell)
         return refuse("the grip is not on the body's matter: it has to be where a hand takes hold of it, on the body");
     // Which way its edge runs: square to the point and to the line from the
     // tip to the grip. For a pick that is across the swing, which is how a
@@ -235,6 +245,9 @@ std::vector<LiveToolPoint> ToolTerrain::points(const ToolTerrainHost &host) cons
         said.tip_local_m = p.tip_local;
         said.pointing_local = p.pointing_local;
         said.grip_local_m = p.grip_local;
+        said.grip_body = p.grip_body;
+        said.grip_connected = p.grip_body.empty() ||
+            (host.fixed_connected && host.fixed_connected(p.body, p.grip_body));
         said.width_m = p.shape.width_m;
         said.thickness_m = p.shape.thickness_m;
         said.angle_deg = p.shape.angle_deg;
@@ -262,7 +275,7 @@ std::vector<ToolTerrain::SavedPoint> ToolTerrain::saved() const {
     out.reserve(points_.size());
     for (const Point &p : points_)
         out.push_back({p.id, p.body, p.tip_local, p.pointing_local, p.grip_local, p.width_local, p.shape,
-                       p.body_id, p.frame_nodes, p.frame_offsets, p.attached});
+                       p.body_id, p.frame_nodes, p.frame_offsets, p.attached, p.grip_body});
     return out;
 }
 
@@ -273,6 +286,7 @@ void ToolTerrain::restore(const std::vector<SavedPoint> &points, unsigned next) 
         Point p;
         p.id = s.id;
         p.body = s.body;
+        p.grip_body = s.grip_body;
         p.tip_local = s.tip_local;
         p.pointing_local = s.pointing_local;
         p.grip_local = s.grip_local;
@@ -590,7 +604,7 @@ void ToolTerrain::meet(const ToolTerrainHost &host, Point &p, MatterBodyId id, c
     p.carrier = host.carrier_of ? host.carrier_of(p.body) : host.environment->selectedCarrier();
     opened.actor = p.carrier;
     opened.point = p.id;
-    opened.tool = p.body;
+    opened.tool = p.grip_body.empty() ? p.body : p.grip_body;
     opened.ground = in.name;
     opened.kind = "in the ground";
     opened.at_s = host.time_s;
@@ -773,6 +787,8 @@ double ToolTerrain::loosened(const ToolTerrainHost &host, const Point &p) const 
 void ToolTerrain::condition(const ToolTerrainHost &host, LiveGroundWork &r, const Point &p) const {
     const std::optional<MatterBodyId> id = host.id_of(p.body);
     r.tool_whole = id.has_value() && host.world->contains(*id);
+    if (!p.grip_body.empty()) r.tool_whole = r.tool_whole && host.fixed_connected &&
+        host.fixed_connected(p.body, p.grip_body);
     r.tool_dent_m = r.tool_whole ? host.dent_of(p.body) : 0.0;
 }
 
@@ -850,7 +866,7 @@ void ToolTerrain::note(const ToolTerrainHost &host, Point &p, const std::string 
     closeNote(host, p);
     LiveGroundWork said;
     said.point = p.id;
-    said.tool = p.body;
+    said.tool = p.grip_body.empty() ? p.body : p.grip_body;
     said.ground = ground;
     said.kind = kind;
     said.supported = supported;
@@ -881,7 +897,7 @@ std::optional<LiveStroke> ToolTerrain::plan(const ToolTerrainHost &host, const L
                                             std::string &why) const {
     const Point *p = nullptr;
     for (const Point &candidate : points_)
-        if (candidate.attached && candidate.body == held) {
+        if (candidate.attached && (candidate.grip_body.empty() ? candidate.body : candidate.grip_body) == held) {
             p = &candidate;
             break;
         }
@@ -901,7 +917,24 @@ std::optional<LiveStroke> ToolTerrain::plan(const ToolTerrainHost &host, const L
         why = "the tool is not in the world";
         return std::nullopt;
     }
+    if (!p->grip_body.empty() && (!host.fixed_connected || !host.fixed_connected(p->body, held))) {
+        why = "the point is no longer fixed to the held handle";
+        return std::nullopt;
+    }
+    const auto point_id = host.id_of(p->body);
+    if (!point_id || !host.world->contains(*point_id)) {
+        why = "the point body is not in the world";
+        return std::nullopt;
+    }
     const RigidSnapshot s = host.world->snapshot(*id);
+    const RigidSnapshot point_pose = host.world->snapshot(*point_id);
+    // Plan the hand's frame from the actual head/handle poses. This only builds
+    // actuator targets; the fixing/contact solver owns their later motion.
+    const Quat back = qConj(s.orientation_world);
+    const Vec3 tip_local = p->body == held ? p->tip_local : back.rotate(point_pose.center_of_mass_world_m +
+        point_pose.orientation_world.rotate(p->tip_local) - s.center_of_mass_world_m);
+    const Vec3 pointing_local = p->body == held ? p->pointing_local : back.rotate(point_pose.orientation_world.rotate(p->pointing_local));
+    const Vec3 width_local = p->body == held ? p->width_local : back.rotate(point_pose.orientation_world.rotate(p->width_local));
     const Vec3 up{0.0, 1.0, 0.0};
     const Vec3 g0 = s.center_of_mass_world_m + s.orientation_world.rotate(grip_local);
     const Quat r0 = s.orientation_world;
@@ -922,7 +955,7 @@ std::optional<LiveStroke> ToolTerrain::plan(const ToolTerrainHost &host, const L
         const Vec3 pivot = p->entry;
         Vec3 u = level(pivot - strike.shoulder_m);
         if (!(length(u) > 1e-3)) u = level(pivot - g0);
-        if (!(length(u) > 1e-3)) u = level(s.orientation_world.rotate(cross(p->pointing_local, p->width_local)));
+        if (!(length(u) > 1e-3)) u = level(s.orientation_world.rotate(cross(pointing_local, width_local)));
         u = normalized(u, Vec3{1.0, 0.0, 0.0});
         const Vec3 k = normalized(cross(up, u));
         const double turn = std::clamp(strike.lever_deg, 5.0, 80.0) * kPi / 180.0;
@@ -960,10 +993,10 @@ std::optional<LiveStroke> ToolTerrain::plan(const ToolTerrainHost &host, const L
     u = normalized(u);
     const Vec3 k = normalized(cross(up, u));   // turning about +k swings forward and down
     // The tool's own axes: its point, its edge, and the third square to both.
-    const Vec3 handle = grip_local - p->tip_local;
-    Vec3 z_local = cross(p->pointing_local, handle);
-    z_local = length(z_local) > 1e-6 ? normalized(z_local) : p->width_local;
-    const Vec3 y_local = p->pointing_local;
+    const Vec3 handle = grip_local - tip_local;
+    Vec3 z_local = cross(pointing_local, handle);
+    z_local = length(z_local) > 1e-6 ? normalized(z_local) : width_local;
+    const Vec3 y_local = pointing_local;
     const Vec3 x_local = cross(y_local, z_local);
     const double raise = std::clamp(strike.raise_deg, 0.0, 170.0) * kPi / 180.0;
     out.speed_m_s = std::clamp(strike.speed_m_s, 0.5, 20.0);
@@ -983,7 +1016,7 @@ std::optional<LiveStroke> ToolTerrain::plan(const ToolTerrainHost &host, const L
     const auto swingFor = [&](const Vec3 &into) {
         Planned plan;
         plan.r_hit = qFromBases(x_local, y_local, z_local, cross(into, k), into, k);
-        plan.g_hit = target - plan.r_hit.rotate(p->tip_local) + plan.r_hit.rotate(grip_local);
+        plan.g_hit = target - plan.r_hit.rotate(tip_local) + plan.r_hit.rotate(grip_local);
         Vec3 g_start = g0;
         Quat r_start = r0;
         if (raise > 0.0) {
@@ -1016,7 +1049,7 @@ std::optional<LiveStroke> ToolTerrain::plan(const ToolTerrainHost &host, const L
         }
         const std::size_t n = plan.path.size();
         const auto tipAt = [&](std::size_t i) {
-            return plan.path[i] + plan.facings[i].rotate(p->tip_local - grip_local);
+            return plan.path[i] + plan.facings[i].rotate(tip_local - grip_local);
         };
         plan.came = tipAt(n - 1) - tipAt(n - 2);
         return plan;

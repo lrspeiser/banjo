@@ -1,13 +1,13 @@
 # Remaining player goals — October 1, 2026
 
-Updated against published main `0eeb858`. This is the current working list: six remaining goals, consolidated from the owner's fourteen experience requests and the earlier AI/tech-tree playthrough request. Each goal describes unfinished work; existing implementations and evidence are linked so they can be extended.
+Updated with the [native mixed-tool checkpoint](mixed-tool-native-checkpoint.md), developed from published main `b9463f3`. This is the current working list: six remaining goals, consolidated from the owner's fourteen experience requests and the earlier AI/tech-tree playthrough request. Each goal describes unfinished work; existing implementations and evidence are linked so they can be extended.
 
 ## Remaining work
 
 | Goal | What remains | Completion check |
 |---|---|---|
 | **R1. Complete the material-to-build loop** | Connect supported raw sources, machine inputs, processing, private output collection and paid construction across built-in and saved designs. Resolve remaining ground-to-usable-stock, exhausted-input, broken-rock storage and earlier unassigned-load cases with truthful ownership and guidance. | In a fresh world, a player obtains the missing supplies through actual collection/processing, builds and uses the requested product, then reloads/restarts without lost or duplicated stock. |
-| **R2. Make mixed-material tools work** | Finish supported metal-head/wood-handle fabrication, constituent/interface handling and faithful tool geometry in Lab and World. Keep the exact requested design through Save, Make, pickup and use. | A supported iron-headed wooden pick can be modified, saved, funded, made and used through normal controls; unsupported connections explain their blocker. |
+| **R2. Make mixed-material tools work** | Native authored fixed heads/handles now retain material, mass, pickup/use and private restart. Finish reviewed material allocation and paid mixed lattice fabrication/installation. Keep the exact requested design through Lab edits, Save, funded Make and World use. | A supported iron-headed wooden pick can be modified, saved, funded, made and used through normal controls; unsupported connections explain their blocker. |
 | **R3. Finish damaged-tool repair and reuse** | Complete the ordinary fresh-world damaged-item → Lab → reviewed material/energy/work → collected/equipped/used result journey. Preserve the damaged source and history. Distinguish funded replacement from any genuinely supported repair; extend joint condition and durability only with native evidence. | Actually damage an owned tool, spend the declared finite supplies, then obtain and use the supported result. Failed saves, retries, another player and restart retain correct costs, ownership and original damage. |
 | **R4. Make rover work reliable on varied terrain** | Broaden mine/deliver/return routes, pit/shore/hill avoidance, turning and recovery beyond the two qualified maps. Make missing inputs, blocked routes and exhausted sources actionable. | Repeat real mining → delivery → processing on additional declared terrain/obstacle cases, including recovery and restart. No free ore, forced traction or pose reset. |
 | **R5. Give avatars and cargo physical consequences** | Give human and AI players native bodies, ground/object/player collisions, buoyancy/current/drag and the corresponding reactions. Add cargo mass/inertia, physical container/input handling and loading/unloading geometry. Incorporate declared processed constituents' mass/thermal/mechanical state and work into manufactured machines. | Compare dry-ground/water entry, current response, empty/loaded handling, collision/recovery and supported transfers with measured mass, force, work and state retention. Visible fill/packets continue to match the actual accounts. |
@@ -16,7 +16,7 @@ Updated against published main `0eeb858`. This is the current working list: six 
 ## Evidence to extend
 
 - R1: [recipe supplies](recipe-supply-checkpoint.md), [gathering](gathering-supply-checkpoint.md), [material previews](material-preview-checkpoint.md), [fresh workbench and paid opening progression](fresh-workbench-checkpoint.md).
-- R2: [mixed-tool draft fidelity and Make boundary](mixed-tool-draft-checkpoint.md).
+- R2: [mixed-tool draft fidelity and Make boundary](mixed-tool-draft-checkpoint.md), [native fixed constituents/use/restart](mixed-tool-native-checkpoint.md). Paid mixed Make stays open.
 - R2–R3: [selected-item remake](fabrication-remake-checkpoint.md), [funding and output use](fabrication-lab-funding-checkpoint.md), [actual condition](body-condition.md), [paid machine supplies](fabrication-assembly-goods-checkpoint.md).
 - R4–R5: [repeated hauling](rover-return-routing.md), [grade measurements](rover-grades.md), [private carrying](private-ground-checkpoint.md), [visible resource flow](resource-flow.md).
 - R6: [current AI review](ai-player-current-review.md), [fresh paid progression](fresh-workbench-checkpoint.md), [live-provider qualification boundary](ai-provider-verification.md).
@@ -39,7 +39,7 @@ Original requests map to the remaining goals: **1/14 → R1/R4/R5; 4/7/8 → R1;
 
 Core physics, calibration, publishing, production multiplayer/hosting and scaling continue in the [master plan](project-master-plan.md), [roadmap](roadmap.md) and [mechanics scorecard](mechanics-scorecard.md). Retain those requirements. Physical changes require matched glass/oak/iron experiments, actual conservation/work accounts and declared validity/tolerances. A visual, ledger or controller test does not certify an unimplemented law.
 
-This rewrite changes documentation only. It records previously measured behavior, adds no new simulation validation and does not change the Codex app's stored goal text or status.
+This working list records the linked checkpoints; it does not change the Codex app's stored goal text or status. The original reconciliation was documentation-only. Subsequent native verification is explicitly bounded in its linked checkpoint.
 
 ## Historical checkpoints
 

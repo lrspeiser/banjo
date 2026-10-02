@@ -381,7 +381,20 @@ call's answer carries `interactions_withdrawn`, each with the object and why.
 `describe_world` lists what is left under `things_a_person_uses`.
 
 A tool that digs is a `swing-and-lever`: its `parts` and its `tool`, the part
-with the `tool_point`, which the hand takes by the point's grip. It is refused
+the hand takes by the point's grip. `tool_point` normally puts both point and
+grip on that body. Optional `grip_body` names a separate lattice handle joined
+to the point body by attached ordinary native fixings. Declare the head and
+handle with their actual materials, make their finite fixings first, then
+declare `tool_point(body="head", grip_body="handle", ...)` and the profile with
+`tool="handle"` and both names in `parts`. Do not union different materials
+under one `join` label. Hinges, ropes and one-way releases are not fixed handles.
+The report exposes the head material, grip connection and full native assembly
+mass; losing the fixing prevents further use through that handle. Export,
+rebuild and duplication preserve the separate grip binding. This authored
+native path does not yet enable paid Workshop Make for mixed lattice tools;
+fixing strengths are explicit inputs, not calibrated material joint laws.
+
+It is refused
 if the tool has no point. Its trial, in a scratch world holding the tool and the
 ground with every edit made to it, takes the tool by its grip, holds it ready in
 front of a person standing 1.2 m back, swings it into the nearest level soil

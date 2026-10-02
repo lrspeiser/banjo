@@ -3310,7 +3310,7 @@ def _profile_checked(entry: dict[str, Any], profile: dict[str, Any]) -> dict[str
     """A profile held to the rules against what is built. Raises ValueError."""
     return interaction_profiles.check(profile, {b["name"] for b in entry["scene"]["bodies"]},
                                       _authored_joints(entry.get("joints", [])),
-                                      points={p.get("body") for p in
+                                      points={p.get("grip_body") or p.get("body") for p in
                                               entry["scene"].get("tool_points") or []})
 
 
@@ -3484,6 +3484,7 @@ def tool_interaction(args: dict[str, Any]) -> dict[str, Any]:
             f"{use['cadence_hz']:g} requested uses/s, "
             f"with an 800 N hand and a 60 N m wrist, the ground decides how far it goes in, "
             f"and the hand withdraws it after the working motion."
+            + (" This tool is never pried." if use['lever'] is None else "")
             + (" Holding the button keeps going; the right button stops it." if use["repeat"]
                else "")
             + " E puts it down.")
@@ -3634,6 +3635,27 @@ def _trial_targets(world: banjo.World, near: list[float]) -> dict[str, list[floa
     return found
 
 
+def _usable_tool_point(world: banjo.World, tool: str):
+    return next((p for p in world.tool_points()
+                 if (p.grip_body or p.body) == tool and p.attached and p.grip_connected), None)
+
+
+def _fixed_tool_bodies(world: banjo.World, root: str):
+    """Actual ordinary fixings, not authored proximity or a shared material name."""
+    names = {root}
+    edges = [j for j in world.joints() if j.attached and j.kind == 'fixing' and j.comes_off_n == 0]
+    while True:
+        added = {n for j in edges if j.a in names or j.b in names for n in (j.a, j.b)} - names
+        if not added:
+            break
+        names.update(added)
+    return [b for b in world.bodies() if b.name in names]
+
+
+def _tool_mass(world: banjo.World, root: str) -> float:
+    return sum(b.mass_kg for b in _fixed_tool_bodies(world, root))
+
+
 def _swing_and_pry(world: banjo.World, tool: str,
                    use: dict[str, Any] | None = None) -> dict[str, Any]:
     """The trial, measured off the engine: into soil and pried out, then onto
@@ -3658,7 +3680,7 @@ def _swing_and_pry(world: banjo.World, tool: str,
 
     # Standing, as a room has stood before anyone walks up to it.
     advance(0.5)
-    point = next((p for p in world.tool_points() if p.body == tool and p.attached), None)
+    point = _usable_tool_point(world, tool)
     body = world.body(tool)
     if point is None or body is None:
         return {"tried": False, "why": f"{tool} is not there to try"}
@@ -3667,7 +3689,7 @@ def _swing_and_pry(world: banjo.World, tool: str,
         return {"tried": False, "why": "there is no level soil or bare rock within 4 m of it to "
                                        "swing it at"}
     world.wield(tool, list(point.grip_m))
-    said: dict[str, Any] = {"tried": True, "tool": tool, "mass_kg": round(body.mass_kg, 3)}
+    said: dict[str, Any] = {"tried": True, "tool": tool, "mass_kg": round(_tool_mass(world, tool), 3)}
     for what in ("soil", "rock"):
         at = targets[what]
         if at is None:
@@ -3705,7 +3727,7 @@ def _swing_and_pry(world: banjo.World, tool: str,
                                                           for w in world.ground_work()]
         said[f"into_{what}"] = trial
     body = world.body(tool)
-    said["tool_whole"] = body is not None
+    said["tool_whole"] = body is not None and _usable_tool_point(world, tool) is not None
     said["what_broke"] = events or None
     said["simulated_s"] = round(passed, 2)
     return said
@@ -3718,19 +3740,19 @@ def _contact_trial(world, tool, use):
         nonlocal passed
         _step_answering(world,events);passed+=TRIAL_STEP_S
     for _ in range(120): step()
-    point=next((p for p in world.tool_points() if p.body==tool and p.attached),None)
+    point=_usable_tool_point(world, tool)
     body=world.body(tool)
     if not point or not body: return {'tried':False,'why':f'{tool} has no attached point'}
     frame=tool_gestures.local_frame(point.tip_m,point.grip_m,point.pointing,
                                     body.position_m,body.orientation_wxyz)
     targets=_trial_targets(world,list(point.grip_m))
     world.wield(tool,list(point.grip_m))
-    said={'tried':True,'tool':tool,'mass_kg':round(body.mass_kg,3),'gesture':'contact'}
+    said={'tried':True,'tool':tool,'mass_kg':round(_tool_mass(world, tool),3),'gesture':'contact'}
     for what,at in targets.items():
         if at is None:
             said[f'into_{what}']=f'no level {what} nearby';continue
         eyes=_shoulder_for(world,at,list(world.hand().grip_m))
-        point=next((p for p in world.tool_points() if p.body==tool and p.attached),None)
+        point=_usable_tool_point(world, tool)
         lift=tool_gestures.lift_path(list(world.hand().grip_m),point.tip_m,point.pointing,at) if point else None
         if lift:
             world.stroke(lift,2.0,tool_gestures.ACCEL_M_S2,tool_gestures.LEAD_M,False,2.0)
@@ -3741,7 +3763,7 @@ def _contact_trial(world, tool, use):
             world.aim_held(ready['hand_q']);world.move_held(high)
             for _ in range(480):
                 step()
-                point=next((p for p in world.tool_points() if p.body==tool and p.attached),None)
+                point=_usable_tool_point(world, tool)
                 if (point and point.pointing[1]<-.98 and
                     math.dist(point.tip_m,[at[0],at[1]+tool_gestures.CLEARANCE_M+.6,at[2]])<.035):break
             else:
@@ -3752,7 +3774,7 @@ def _contact_trial(world, tool, use):
         world.aim_held(ready['hand_q']);world.move_held(ready['hand'])
         for _ in range(480):
             step()
-            point=next((p for p in world.tool_points() if p.body==tool and p.attached),None)
+            point=_usable_tool_point(world, tool)
             if (point and point.pointing[1]<-.98 and
                 math.dist(point.tip_m,[at[0],at[1]+tool_gestures.CLEARANCE_M,at[2]])<.035): break
         else:
@@ -3766,7 +3788,8 @@ def _contact_trial(world, tool, use):
             'gesture':'contact','swung':records or 'its point met no ground'}
         trial['levered' if use['lever'] else 'drawn_out']=records
         said[f'into_{what}']=trial
-    said.update(tool_whole=world.body(tool) is not None,what_broke=events or None,simulated_s=round(passed,3))
+    said.update(tool_whole=_usable_tool_point(world, tool) is not None,
+        what_broke=events or None,simulated_s=round(passed,3))
     return said
 
 
@@ -3988,10 +4011,14 @@ def tool_duplicate(args: dict[str, Any]) -> dict[str, Any]:
     # copy's point is where the original's is on it. Where it is as built moves
     # with the copy.
     points = [dict(p, body=renamed[p["body"]],
+                   **({"grip_body": renamed[p["grip_body"]]} if p.get("grip_body") else {}),
                    tip_m=moved(p["tip_m"]), grip_m=moved(p["grip_m"]))
-              for p in was_scene.get("tool_points") or [] if p.get("body") in renamed]
+              for p in was_scene.get("tool_points") or [] if p.get("body") in renamed
+              and (not p.get("grip_body") or p["grip_body"] in renamed)]
+    separate_points = [p for p in points if p.get("grip_body")]
     if points:
-        scene["tool_points"] = list(was_scene.get("tool_points") or []) + points
+        # Separate heads are armed after their copied native fixings exist.
+        scene["tool_points"] = list(was_scene.get("tool_points") or []) + [p for p in points if not p.get("grip_body")]
     lost = _rebuild(entry, scene, world_id)
 
     made: list[dict[str, Any]] = []
@@ -4012,6 +4039,11 @@ def tool_duplicate(args: dict[str, Any]) -> dict[str, Any]:
             answer = HANDLERS[record["tool"]](call)
             made.append({"joint": answer["joint"], "tool": record["tool"],
                          "a": call["a"], "b": call["b"]})
+        if separate_points:
+            armed, dropped = _arm_tool_points(_live(entry), separate_points)
+            if dropped:
+                raise Refused("Copied tool connection refused: " + "; ".join(dropped))
+            entry["scene"] = dict(entry["scene"], tool_points=list(entry["scene"].get("tool_points") or []) + armed)
         # And the batteries in them and the motors on pins between them, each
         # motor told what its original was last told: a copied hoist winds. A
         # motor whose battery is not copied draws on the same one.
@@ -5599,7 +5631,7 @@ def _tool_point_record(entry: dict[str, Any], world: banjo.World,
     def built(local: list[float]) -> list[float]:
         return [round(c + r, 6) for c, r in zip(at, _qrot(facing, local))]
 
-    return {"body": point.body,
+    return {**({"grip_body":point.grip_body} if point.grip_body else {}), "body": point.body,
             "tip_local_m": [round(v, 6) for v in tip],
             "pointing_local": [round(v, 6) for v in pointing],
             "grip_local_m": [round(v, 6) for v in grip],
@@ -5624,7 +5656,7 @@ def _arm_tool_points(world: banjo.World,
                              _qrot(list(body.orientation_wxyz), record["pointing_local"]),
                              float(record["width_m"]), float(record["thickness_m"]),
                              float(record["angle_deg"]), float(record["length_m"]),
-                             _from_body(body, record["grip_local_m"]))
+                             _from_body(body, record["grip_local_m"]), grip_body=record.get('grip_body',''))
         except banjo.BanjoError as error:
             lost.append(f"the point on {record['body']}: {error}")
             continue
@@ -5633,7 +5665,8 @@ def _arm_tool_points(world: banjo.World,
 
 
 def _tool_point_said(point: banjo.ToolPoint) -> dict[str, Any]:
-    return {"id": point.id, "body": point.body, "material": point.material,
+    return {**({"grip_body":point.grip_body,"grip_connected":point.grip_connected} if point.grip_body else {}),
+            "id": point.id, "body": point.body, "material": point.material,
             "tip_m": [round(v, 4) for v in point.tip_m],
             "pointing": [round(v, 4) for v in point.pointing],
             "grip_m": [round(v, 4) for v in point.grip_m],
@@ -5736,6 +5769,7 @@ def tool_tool_point(args: dict[str, Any]) -> dict[str, Any]:
     world: banjo.World = _live(entry)
     asked = str(args.get("body", ""))
     name = _one_piece(entry, asked)
+    grip_body = _one_piece(entry,str(args['grip_body'])) if args.get('grip_body') else ''
     tip = _triple(args.get("tip_m"), "tip_m", -200.0, 200.0)
     pointing = _triple(args.get("pointing"), "pointing", -1e6, 1e6)
     grip = _triple(args.get("grip_m") or tip, "grip_m", -200.0, 200.0)
@@ -5768,7 +5802,7 @@ def tool_tool_point(args: dict[str, Any]) -> dict[str, Any]:
         _rebuild(entry, dict(entry["scene"], tool_points=others), world_id)
         world = _live(entry)
     try:
-        point_id = world.tool_point(name, tip, pointing, *sizes, grip)
+        point_id = world.tool_point(name, tip, pointing, *sizes, grip, grip_body=grip_body)
     except banjo.BanjoError as error:
         if had:
             _rebuild(entry, dict(entry["scene"], tool_points=others + had), world_id)
@@ -5796,15 +5830,19 @@ def tool_tool_point(args: dict[str, Any]) -> dict[str, Any]:
     if asked != name:
         answer["one_piece"] = (f"{asked} is built as one piece with everything joined with it, and "
                                f"the world calls that piece {name}: the point is on {name}")
-    body = world.body(name)
-    if body is not None:
+    root = point.grip_body or name
+    bodies = _fixed_tool_bodies(world, root)
+    mass = sum(b.mass_kg for b in bodies)
+    if mass > 0:
         # What a hand makes of it: the engine's own mass, and its weight's pull
         # about the grip with the haft held level -- which the wrist has to hold.
-        lever = math.dist(point.grip_m, body.position_m)
-        about = body.mass_kg * 9.80665 * lever
-        answer["mass_kg"] = round(body.mass_kg, 3)
+        centre = [sum(b.mass_kg*b.position_m[i] for b in bodies)/mass for i in range(3)]
+        about = mass * 9.80665 * math.dist(point.grip_m, centre)
+        answer["mass_kg"] = round(mass, 3)
         answer["its_weight_about_the_grip_n_m"] = round(about, 2)
-        if about > HAND_TORQUE_N_M or body.mass_kg >= HAND_LIFTS_KG:
+        if point.grip_body:
+            answer["constituent_mass_kg"] = {b.name: b.mass_kg for b in bodies}
+        if about > HAND_TORQUE_N_M or mass >= HAND_LIFTS_KG:
             answer["too_heavy_to_swing"] = (
                 f"held level by its grip its weight pulls {about:.0f} N m, and the hand's wrist "
                 f"holds {HAND_TORQUE_N_M:g} N m with {HAND_STRENGTH_N:g} N: a swing would droop "
@@ -5813,16 +5851,16 @@ def tool_tool_point(args: dict[str, Any]) -> dict[str, Any]:
     # carry the tool and nothing more -- and the room's chat, measured, gave a
     # pick its point, told the person they could swing it, and never declared
     # how. So the one step left is said as the call to make.
-    if not any(p.get("template") == "swing-and-lever" and p.get("tool") == name
+    if not any(p.get("template") == "swing-and-lever" and p.get("tool") == root
                for p in entry.get("interactions", [])):
         lead = next((b for b in entry["scene"]["bodies"] if b["name"] == name), None)
-        parts = ([b["name"] for b in entry["scene"]["bodies"]
+        parts = ([b.name for b in bodies] if point.grip_body else [b["name"] for b in entry["scene"]["bodies"]
                   if lead is not None and lead.get("join") and b.get("join") == lead["join"]]
                  or [name])
         answer["next"] = (f"A person cannot swing it yet: a point is not controls. Give them its "
                           f"controls now with interaction, object=\"<what it is called>\", "
                           f"template=\"swing-and-lever\", parts={json.dumps(parts)}, "
-                          f"tool={json.dumps(name)} -- its trial swings it into soil and onto "
+                          f"tool={json.dumps(root)} -- its trial swings it into soil and onto "
                           f"rock, and its numbers are what to tell them.")
     answer["note"] = (f"{name} has a point. Swung point first into soil it goes in as far as the "
                       f"soil's bearing resistance lets the swing's energy take it; pried, it "
@@ -5844,7 +5882,7 @@ def tool_strike(args: dict[str, Any]) -> dict[str, Any]:
     held = world.held
     if not held:
         raise Refused("nothing is held: take the tool by its grip with wield first")
-    point = next((p for p in world.tool_points() if p.body == held and p.attached), None)
+    point = _usable_tool_point(world, held)
     if point is None:
         raise Refused(f"{held} has no point that can go into the ground: give it one with "
                       f"tool_point")
@@ -7759,6 +7797,7 @@ TOOLS = [
                      "properties": {
          "world_id": {"type": "string"},
          "body": {"type": "string", "description": "The body that carries the point: the tool."},
+         "grip_body": {"type":"string", "description":"Optional separate lattice handle, joined to the point body by an attached ordinary 6DOF fixing. Each keeps its own material. Hinges, ropes and one-way releases refuse; declare finite fixing strengths explicitly."},
          "tip_m": dict(VECTOR, description="Where the tip is: at the very end of the body's "
                                            "matter, on the face the point comes out of."),
          "pointing": dict(VECTOR, description="The way the point goes in, out of the body at "

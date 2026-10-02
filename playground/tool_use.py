@@ -166,6 +166,9 @@ def resolve(app: Any, body: dict[str, Any]) -> dict[str, Any]:
     out['gather']=resource_previews.ground_tool(survey,use,float((point or {}).get('length_m',.2)))
     if point is None:
         out['gather'].update(materials=[],state='unavailable',label='No attached tool point')
+        ring['state']='no'
+        out['reason']='This tool has no connected working point. Open it in Lab to inspect the head and handle.'
+        return out
     if use['gesture']=='contact':
         if point and all(k in point for k in ('tip_local','grip_local','pointing_local')):
             out['ready']=tool_gestures.ready_pose(point,out['target']['at_m'],eyes)
@@ -315,11 +318,22 @@ def run(app: Any, body: dict[str, Any],
 
 def _native_point(app,tool):
     points=app.live.act({'session':app.live.session.id,'op':'tool_points'}).get('tool_points') or []
-    return next((p for p in points if p.get('body')==tool and p.get('attached',True)),None)
+    point = next((p for p in points if (p.get('grip_body') or p.get('body'))==tool and
+                  p.get('attached',True) and p.get('grip_connected',True)),None)
+    if point and point.get('body') != tool:
+        pose = next((b for b in app.live.session.state.get('bodies') or [] if b.get('name') == tool),None)
+        if pose:
+            point = {**point, **tool_gestures.local_frame(point['tip'],point['grip'],point['pointing'],
+                pose['position_m'],pose['orientation_wxyz'])}
+    return point
 
 
 def _contact(app,said,use,tool,eyes,heard,note):
     session=app.live.session
+    # Lifting/turning/lowering are part of this native attempt. A meeting can
+    # begin during readiness and close during the stroke; its entry timestamp
+    # must not be discarded by starting the receipt window after readiness.
+    since=float(session.state.get('t') or 0)
     ready=said.get('ready')
     if not ready:
         return {'action':said['label'],'refused':'This tool has no attached native point and grip frame','done':[]}
@@ -370,11 +384,16 @@ def _contact(app,said,use,tool,eyes,heard,note):
         'speed_m_s':use['swing']['speed_m_s'],'accel_m_s2':tool_gestures.ACCEL_M_S2,
         'lead_m':tool_gestures.LEAD_M,'give_up_s':1.0,'let_go':False})
     if note: note(app,started)
-    since=float(started.get('t') or 0)
     ended=_stroke(app)
     record=_closed(app,tool,since,heard,_latest(app,tool,since,heard))
+    done=[f'contact stroke: {ended}']
+    if record and record.get('open') and record.get('tool_whole',True):
+        grip=_grip(session)
+        if grip is not None:
+            done.append(f'withdrew the point: {_pull(app,grip)}')
+            record=_closed(app,tool,since,heard,_latest(app,tool,since,heard,record))
     carried=_carried(app);kg=sum(float(carried.get(k) or 0) for k in ('soil_kg','sand_kg'))
-    return {'action':said['label'],'did':[said['label']], 'done':[f'contact stroke: {ended}'],
+    return {'action':said['label'],'did':[said['label']], 'done':done,
             'said':_said(record,use,kg),'detail':_detail(record),'result':record,
             'carried':carried,'repeat':use['repeat'],'gesture':'contact'}
 
@@ -430,7 +449,7 @@ def _point_in(app: Any, tool: str) -> bool:
         points = (app.live.act({"session": app.live.session.id, "op": "tool_points"}) or {})
     except Exception:
         return False
-    point = next((p for p in points.get("tool_points") or [] if p.get("body") == tool), None)
+    point = next((p for p in points.get("tool_points") or [] if (p.get('grip_body') or p.get("body")) == tool), None)
     return bool(point and (point.get("in") or float(point.get("depth_m") or 0.0) > 0.005))
 
 
@@ -489,8 +508,11 @@ def _said(record: dict[str, Any] | None, use: dict[str, Any], carried_kg: float)
         # Said with the profile's own word, whatever it is: "dug", or the chat's
         # "broke up the soil".
         past = use["past"]
-        return (f"{past[:1].upper()}{past[1:]}: {litres:.1f} L of {ground} "
-                f"({float(record.get('loosened_kg') or 0.0):.1f} kg) came loose; the point went "
+        volume=f'{litres*1000:.0f} mL' if litres<.1 else f'{litres:.1f} L'
+        mass=float(record.get('loosened_kg') or 0.0)
+        weight=f'{mass*1000:.0f} g' if mass<1 else f'{mass:.1f} kg'
+        return (f"{past[:1].upper()}{past[1:]}: {volume} of {ground} "
+                f"({weight}) came loose; the point went "
                 f"{depth_cm:.0f} cm in."
                 + (f" You carry {carried_kg:.1f} kg of ground; H heaps it." if carried_kg > 0.05 else ""))
     if record.get("open"):

@@ -126,7 +126,7 @@ struct GripPull {
 [[nodiscard]] GripPull gripPull(const RigidMechanicalState &held, const Vec3 &grip_local,
                                 const Vec3 &wanted_at, const Vec3 &wanted_velocity,
                                 const Quat &wanted_facing, double strength_n,
-                                double torque_n_m, const Vec3 &gravity);
+                                double torque_n_m, const Vec3 &gravity, double bandwidth_rad_s = 100.0);
 
 // A stroke's path (LiveStroke): how far along it each of its points is.
 [[nodiscard]] std::vector<double> arcLengths(const std::vector<Vec3> &path) {
@@ -3299,11 +3299,17 @@ struct LiveWorld::Impl {
         if (holding == body) return selected_hand;
         for (const auto &[actor, hand] : hands)
             if (actor != selected_hand && hand.holding == body) return actor;
+        const auto members = jointedWith(body, true);
+        if (std::find(members.begin(), members.end(), holding) != members.end()) return selected_hand;
+        for (const auto &[actor, hand] : hands)
+            if (actor != selected_hand && std::find(members.begin(), members.end(), hand.holding) != members.end())
+                return actor;
         return {};
     }
     [[nodiscard]] bool heldByOther(std::size_t body) const {
+        const auto members = jointedWith(body, true);
         for (const auto &[player, hand] : hands)
-            if (player != selected_hand && hand.holding == body) return true;
+            if (player != selected_hand && std::find(members.begin(), members.end(), hand.holding) != members.end()) return true;
         return false;
     }
     [[nodiscard]] bool carriedByAny(std::size_t body) const {
@@ -3358,13 +3364,19 @@ struct LiveWorld::Impl {
     // the whole of a thing of parts on pins -- a cart and its two wheelsets --
     // by whichever part it is taken. What goes into the bag with it and comes
     // back out with it (LiveWorld::park, unpark).
-    [[nodiscard]] std::vector<std::size_t> jointedWith(std::size_t slot) const {
+    [[nodiscard]] std::vector<std::size_t> jointedWith(std::size_t slot, bool fixed_only = false) const {
+        if (slot >= described.size()) return {};
         std::vector<std::size_t> out{slot};
         for (std::size_t k = 0; k < out.size(); ++k) {
             const std::string &name = described[out[k]].name;
             for (const SceneJoint &joint : joints) {
                 if (!joint.attached || (joint.a != name && joint.b != name)) continue;
+                // A hand tool requires an active ordinary 6DOF fixing path.
+                // Hinges/ropes and one-way releases cannot carry a fixed grip.
+                if (fixed_only && (joint.kind != JoltWorld::JointKind::Fixing || joint.comes_off_n > 0 ||
+                                   !joint.rigid || !world->hasJoint(joint.rigid))) continue;
                 const auto other = index_of.find(joint.a == name ? joint.b : joint.a);
+                if (fixed_only && (!inWorld(out[k]) || other == index_of.end() || !inWorld(other->second))) continue;
                 if (other != index_of.end() && std::find(out.begin(), out.end(), other->second) == out.end())
                     out.push_back(other->second);
             }
@@ -3392,8 +3404,51 @@ struct LiveWorld::Impl {
         const auto found=hands.find(actor);
         const auto held=actor==selected_hand?holding:found==hands.end()?static_cast<std::size_t>(-1):found->second.holding;
         if (include_hand && held!=static_cast<std::size_t>(-1) && inWorld(held))
-            kg+=world->mechanicalState(body_of[held]).mass_kg;
+            for (const auto member : jointedWith(held, true))
+                if (inWorld(member)) kg+=world->mechanicalState(body_of[member]).mass_kg;
         return kg;
+    }
+    // Feedback for a fixed assembly uses its actual aggregate mechanics. The
+    // bounded hand still applies a single wrench at the root's real grip;
+    // native fixings transmit it and may fail. No member pose/velocity is set.
+    [[nodiscard]] std::pair<RigidMechanicalState,Vec3> gripMatter() const {
+        const auto root=world->mechanicalState(body_of[holding]);
+        const auto members=jointedWith(holding,true);
+        if (members.size()<2) return {root,grip_local};
+        std::vector<RigidMechanicalState> parts;
+        RigidMechanicalState aggregate=root;
+        aggregate.mass_kg=0;
+        Vec3 first{};
+        for (const auto member:members) if (inWorld(member)) {
+            const auto part=world->mechanicalState(body_of[member]);
+            if (!(part.mass_kg>0)) continue;
+            parts.push_back(part);
+            aggregate.mass_kg+=part.mass_kg;
+            first+=part.mass_kg*part.motion.center_of_mass_world_m;
+        }
+        if (!(aggregate.mass_kg>0)) return {root,grip_local};
+        aggregate.motion.center_of_mass_world_m=first/aggregate.mass_kg;
+        aggregate.inertia_world_kg_m2={};
+        for (const auto &part:parts) {
+            const Vec3 r=part.motion.center_of_mass_world_m-aggregate.motion.center_of_mass_world_m;
+            const double xyz[3]={r.x,r.y,r.z}, r2=lengthSquared(r);
+            for (int i=0;i<3;++i) for (int j=0;j<3;++j)
+                aggregate.inertia_world_kg_m2.m[i][j]+=part.inertia_world_kg_m2.m[i][j]+
+                    part.mass_kg*((i==j?r2:0)-xyz[i]*xyz[j]);
+        }
+        const Vec3 grip=root.motion.center_of_mass_world_m+root.motion.orientation_world.rotate(grip_local);
+        // Measure feedback at the actual gripped root. A momentum-averaged
+        // angular speed can hide relative root motion in a finite fixing.
+        // Aggregate inertia sizes the wrench; actual grip velocity damps it.
+        aggregate.motion.angular_velocity_rad_s=root.motion.angular_velocity_rad_s;
+        const Vec3 omega=root.motion.angular_velocity_rad_s;
+        const Vec3 actual_velocity=root.motion.linear_velocity_m_s+
+            cross(omega,root.motion.orientation_world.rotate(grip_local));
+        aggregate.motion.linear_velocity_m_s=actual_velocity-
+            cross(omega,grip-aggregate.motion.center_of_mass_world_m);
+        const auto q=root.motion.orientation_world;
+        const Vec3 local=Quat{q.w,-q.x,-q.y,-q.z}.rotate(grip-aggregate.motion.center_of_mass_world_m);
+        return {aggregate,local};
     }
     // The lattice this world's scene builds, in a few numbers (fingerprintOf):
     // a saved world carries them, and is only ever opened into the same cells.
@@ -4345,7 +4400,12 @@ void LiveWorld::Impl::settleJointedContacts() {
             continue;
         const auto a = index_of.find(joint.a), b = index_of.find(joint.b);
         if (a == index_of.end() || b == index_of.end()) continue;
-        if (!isPrecise(a->second) || !isPrecise(b->second)) continue;
+        // An ordinary fixed interface already constrains relative motion in
+        // all six degrees. Giving its touching lattice hulls a second contact
+        // response fights the fixing as soon as the assembly is lifted.
+        // Hinged/sliding lattice members still need their real contacts.
+        const bool ordinary_fixed=joint.kind==JoltWorld::JointKind::Fixing && !(joint.comes_off_n>0);
+        if (!ordinary_fixed && (!isPrecise(a->second) || !isPrecise(b->second))) continue;
         if (!inWorld(a->second) || !inWorld(b->second)) continue;
         const auto pair = std::minmax(body_of[a->second], body_of[b->second]);
         now.insert({pair.first, pair.second});
@@ -5410,6 +5470,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             ToolTerrain::SavedPoint point;
             point.id = p.at("id").get<unsigned>();
             point.body = p.at("body").get<std::string>();
+            point.grip_body = p.value("grip_body", std::string{});
             point.tip_local = vecFrom(p.at("tip_local"));
             point.pointing_local = vecFrom(p.at("pointing_local"));
             point.grip_local = vecFrom(p.at("grip_local"));
@@ -5424,6 +5485,10 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             point.attached = p.value("attached", true);
             if (carrying) {
                 if (!kept(asked.tool_points, point.id) || !back(point.body)) continue;
+                if (!point.grip_body.empty() && !back(point.grip_body)) {
+                    lost.push_back("the " + point.body + "'s point: its held handle was not carried");
+                    continue;
+                }
                 for (std::uint32_t &node : point.frame_nodes) node = plan.node(node);
                 if (std::find(point.frame_nodes.begin(), point.frame_nodes.end(), CarryPlan::none) !=
                     point.frame_nodes.end()) {
@@ -6338,14 +6403,18 @@ void LiveWorld::step(double dt_s) {
         if (!impl_->wielding || impl_->holding == static_cast<std::size_t>(-1)) return out;
         const MatterBodyId id = impl_->body_of[impl_->holding];
         if (!impl_->world->contains(id)) return out;
-        const RigidMechanicalState held = impl_->world->mechanicalState(id);
+        const auto [held, grip_local] = impl_->gripMatter();
         if (!(held.mass_kg > 0.0)) return out;
-        // The law itself is gripPull, which previewStroke integrates too: a
-        // preview of a throw and the throw must not disagree about the hand.
-        const GripPull pull = gripPull(held, impl_->grip_local, impl_->held_at,
+        // A finite fixing has solver compliance: the free body's 100 rad/s
+        // feedback excited relative head/handle motion. Use 20 rad/s for fixed
+        // groups, retaining the same force/torque limits and actual constraints.
+        // The free-body preview uses the unchanged single-body controller;
+        // jointed projections are explicitly refused below.
+        const GripPull pull = gripPull(held, grip_local, impl_->held_at,
                                        impl_->held_velocity, impl_->held_facing,
                                        impl_->hand_strength_n, impl_->hand_torque_n_m,
-                                       impl_->request.gravity_m_s2);
+                                       impl_->request.gravity_m_s2,
+                                       impl_->jointedWith(impl_->holding,true).size()>1 ? 20.0 : 100.0);
         out.on = true;
         out.id = id;
         out.force = pull.force;
@@ -8353,7 +8422,9 @@ bool LiveWorld::grab(const std::string &name) {
     // is somewhere else until it is brought back.
     if (!impl_->inWorld(found->second)) return false;
     if (impl_->environment && impl_->holding!=found->second) {
-        const double new_mass=impl_->world->mechanicalState(impl_->body_of[found->second]).mass_kg;
+        double new_mass=0;
+        for (const auto member:impl_->jointedWith(found->second,true))
+            if (impl_->inWorld(member)) new_mass+=impl_->world->mechanicalState(impl_->body_of[member]).mass_kg;
         if (impl_->carriedObjectsKg(false)+new_mass+impl_->environment->carriedKg()>
             impl_->environment->carryLimitKg()) return false;
     }
@@ -13135,6 +13206,9 @@ LiveWorld::Chipped LiveWorld::workRock(double x, double y, double z, double work
 }
 
 double LiveWorld::carriedObjectsKg() const { return impl_->carriedObjectsKg(); }
+double LiveWorld::heldObjectsKg() const {
+    return impl_->carriedObjectsKg()-impl_->carriedObjectsKg(false);
+}
 
 void LiveWorld::setCarryLimitKg(double kg) {
     if (impl_->environment) impl_->environment->setCarryLimitKg(kg);
@@ -13680,7 +13754,7 @@ namespace {
 [[nodiscard]] GripPull gripPull(const RigidMechanicalState &held, const Vec3 &grip_local,
                                 const Vec3 &wanted_at, const Vec3 &wanted_velocity,
                                 const Quat &wanted_facing, double strength_n,
-                                double torque_n_m, const Vec3 &gravity) {
+                                double torque_n_m, const Vec3 &gravity, double bandwidth_rad_s) {
     const RigidSnapshot &now = held.motion;
     const Vec3 arm = now.orientation_world.rotate(grip_local);
     const Vec3 grip = now.center_of_mass_world_m + arm;
@@ -13695,7 +13769,7 @@ namespace {
     // cutting nobody pushed it to do. The rate is 100 rad/s, a tenth of a
     // step per radian, unless full strength would then come sooner than
     // 50 mm off along the arm, where the grip has the whole mass.
-    constexpr double kFastest = 100.0;
+    const double kFastest = bandwidth_rad_s;
     constexpr double kDamping = 0.9;
     const double rate = std::min(kFastest, std::sqrt(strength_n / (0.05 * held.mass_kg)));
     const Mat3 feels = gripMassMatrix(held.mass_kg, held.inertia_world_kg_m2, arm);
@@ -13866,6 +13940,7 @@ std::string LiveWorld::playerCarriedGround() const {
         const double objects=I.carriedObjectsKgFor(actor), total=sand+soil+rock+objects;
         nlohmann::json reading={{"sand_m3",volume.sand_m3},{"soil_m3",volume.soil_m3},{"rock_m3",volume.rock_m3},
             {"sand_kg",sand},{"soil_kg",soil},{"rock_kg",rock},{"objects_kg",objects},{"total_kg",total}};
+        reading["held_objects_kg"]=objects-I.carriedObjectsKgFor(actor,false);
         const double limit=I.environment->carryLimitKg();
         if (std::isfinite(limit)) {
             reading["limit_kg"]=limit;reading["available_kg"]=std::max(0.0,limit-total);
@@ -13906,7 +13981,7 @@ void LiveWorld::beginHandStep(double dt_s) {
         bearing = dot(bearing, way) * way;
     }
     const double most = handAcceleration(I.hand_strength_n, I.hand_mass_kg,
-                                         I.world->mechanicalState(id).mass_kg, bearing);
+                                         I.wielding?I.gripMatter().first.mass_kg:I.world->mechanicalState(id).mass_kg, bearing);
     const StrokeHand next = advanceStrokeHand(s.asked, s.length_m, s.target_along_m,
                                               s.target_speed_m_s,
                                               alongNearest(s.asked.path_m, s.at_m, grip), most,
@@ -14089,6 +14164,10 @@ LiveStrokePreview LiveWorld::previewStroke(const LiveStroke &asked, double dt_s,
         return out;
     }
     RigidMechanicalState body = I.world->mechanicalState(id);
+    if (I.jointedWith(I.holding,true).size()>1) {
+        out.why="a fixed assembly needs a jointed native trial; the free-body stroke projection does not model it";
+        return out;
+    }
     if (!(body.mass_kg > 0.0)) {
         out.why = "it has no mass to move";
         return out;
@@ -15540,18 +15619,25 @@ ToolTerrainHost LiveWorld::toolHost() const {
         return found != impl_->index_of.end() && impl_->described[found->second].anchored;
     };
     host.parked = [this](const std::string &name) { return impl_->parked.count(name) != 0; };
+    host.fixed_connected = [this](const std::string &a, const std::string &b) {
+        const auto first = impl_->index_of.find(a), second = impl_->index_of.find(b);
+        if (first == impl_->index_of.end() || second == impl_->index_of.end() ||
+            !impl_->inWorld(first->second) || !impl_->inWorld(second->second)) return false;
+        const auto members = impl_->jointedWith(first->second, true);
+        return std::find(members.begin(), members.end(), second->second) != members.end();
+    };
     return host;
 }
 
 unsigned LiveWorld::toolPoint(const std::string &body, const Vec3 &tip_world_m, const Vec3 &pointing_world,
                               double width_m, double thickness_m, double angle_deg, double length_m,
-                              const Vec3 &grip_world_m) {
+                              const Vec3 &grip_world_m, const std::string &grip_body) {
     Impl &I = *impl_;
     if (I.precise_bodies.count(body))
         throw std::invalid_argument("toolPoint: " + body + " is an exact body; only a body made of cells can carry a ground tool point");
     const terrain::ToolPointShape shape{width_m, thickness_m, angle_deg, length_m};
     return I.tools.declare(toolHost(), body, tip_world_m, pointing_world, shape, grip_world_m,
-                           I.tool_point_refusal);
+                           I.tool_point_refusal, grip_body);
 }
 
 const std::string &LiveWorld::toolPointRefusal() const { return impl_->tool_point_refusal; }
@@ -16402,7 +16488,7 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
     doc["kerfs"] = std::move(kerfs);
 
     nlohmann::json points = nlohmann::json::array();
-    for (const ToolTerrain::SavedPoint &p : I.tools.saved())
+    for (const ToolTerrain::SavedPoint &p : I.tools.saved()) {
         points.push_back({{"id", p.id},
                           {"body", p.body},
                           {"tip_local", savedVec(p.tip_local)},
@@ -16417,6 +16503,8 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                           {"frame_nodes_b64", packedArray(p.frame_nodes)},
                           {"frame_offsets_b64", packedVecs(p.frame_offsets)},
                           {"attached", p.attached}});
+        if (!p.grip_body.empty()) points.back()["grip_body"] = p.grip_body;
+    }
     doc["tool_points"] = std::move(points);
 
     const auto saveHand = [&](const Impl::HandContext &hand) {

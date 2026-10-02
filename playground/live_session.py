@@ -1129,6 +1129,7 @@ class Live:
             try:
                 answer = session.send(
                     op="tool_point", body=str(point.get("body", "")),
+                    grip_body=str(point.get("grip_body", "")),
                     tip=[float(v) / 1000.0 for v in (point.get("tip_mm") or [])],
                     pointing=[float(v) for v in (point.get("pointing") or [0, -1, 0])],
                     width_m=float(point.get("width_mm", 40.0)) / 1000.0,
@@ -1843,6 +1844,7 @@ class Live:
             if not all(0.002 <= v <= 1.0 for v in sizes.values()) or not 5.0 <= angle <= 170.0:
                 raise LiveError("a point is 2 mm to 1 m across and long, at 5 to 170 degrees")
             return session.send(op="tool_point", body=str(body.get("body", "")), tip=tip,
+                                grip_body=str(body.get("grip_body", "")),
                                 pointing=_three(body.get("pointing"), "a point's pointing"),
                                 angle_deg=angle, grip=_three(body.get("grip") or tip, "a point's grip"),
                                 **sizes)

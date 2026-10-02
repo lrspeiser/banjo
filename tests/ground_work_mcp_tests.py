@@ -56,6 +56,54 @@ def trial_of(world_id: str, name: str) -> dict:
                 parts=["pick haft", "pick arm"], tool="pick haft")["trial"]
 
 
+class FixedMaterialTools(unittest.TestCase):
+    def tearDown(self):
+        for world_id in [w for w in banjo_mcp.WORLDS if w.startswith('room-')]:
+            room_world.close_room(world_id)
+
+    def test_separate_material_handles_survive_authoring_export_reopen_and_duplicate(self):
+        for material in ('glass','oak','iron'):
+            with self.subTest(material=material):
+                spec=world_room.clearing()
+                world_id=room_world.open_room(spec)
+                for part in [
+                    {'name':'handle','shape':'box','material':'oak',
+                     'size_m':[.8,.04,.04],'position_m':[0,1.42,.02]},
+                    {'name':'head','shape':'box','material':material,
+                     'size_m':[.04,.28,.04],'position_m':[.38,1.26,.02]}]:
+                    call('add_object',world_id=world_id,object=part)
+                point_args=dict(body='head',grip_body='handle',tip_m=[.38,1.12,.02],
+                    pointing=[0,-1,0],grip_m=[-.36,1.42,.02],length_m=.2)
+                with self.assertRaises(banjo_mcp.Refused):
+                    call('tool_point',world_id=world_id,**point_args)
+                call('fix',world_id=world_id,a='handle',b='head',at_m=[.38,1.4,.02],
+                    axis=[0,1,0],holds_tension_n=5000,holds_shear_n=5000)
+                result=call('tool_point',world_id=world_id,**point_args)
+                self.assertEqual((result['material'],result['grip_body']), (material,'handle'))
+                self.assertTrue(result['grip_connected'])
+                self.assertAlmostEqual(result['mass_kg'],sum(result['constituent_mass_kg'].values()),delta=.0005)
+                self.assertIn('tool="handle"',result['next'])
+                call('interaction',world_id=world_id,object='mixed pick',template='swing-and-lever',
+                    parts=['handle','head'],tool='handle',trial=False)
+                entry=banjo_mcp.WORLDS[world_id]
+                exported=room_world.export_spec(entry)
+                self.assertEqual(exported['tool_points'][0]['grip_body'],'handle')
+                again=room_world.open_room(exported)
+                reopened=banjo_mcp.WORLDS[again]
+                point=reopened['world'].tool_points()[0]
+                self.assertEqual((point.material,point.grip_body),(material,'handle'))
+                self.assertTrue(point.grip_connected)
+                self.assertEqual(reopened['interactions'][0]['tool'],'handle')
+                copied=call('duplicate',world_id=again,names=['handle','head'],
+                    offset_m=[0,0,1.2],prefix='copy',trial=False)
+                self.assertEqual(set(copied['copied']),{'copy handle','copy head'})
+                points={p.body:p for p in reopened['world'].tool_points()}
+                self.assertEqual(points['copy head'].grip_body,'copy handle')
+                self.assertTrue(points['copy head'].grip_connected)
+                self.assertEqual(points['copy head'].material,material)
+                self.assertEqual(points['head'].grip_body,'handle')
+
+
 class ToolsByRecipe(unittest.TestCase):
     """A tool by name, laid out exactly and tried. Asked in the page for a
     mattock, the room's chat twice laid one by hand that was not a tool (317,000

@@ -180,11 +180,36 @@ def a_lever_needs_a_point_in_the_ground() -> None:
             require(False, "a lever with the point in the air was accepted")
 
 
+def fixed_head_and_handle_are_reported_and_saved_through_the_public_binding() -> None:
+    for material in ('glass','oak','iron'):
+        scene=clearing(.4)
+        scene['bodies'][0]['name']='handle';scene['bodies'][0].pop('join')
+        scene['bodies'][1]['name']='head';scene['bodies'][1]['material']=material;scene['bodies'][1].pop('join')
+        with banjo.World(scene,cell_size_m=CELL_M) as world:
+            args=('head',(.38,1.12,.02),(0,-1,0))
+            try:world.tool_point(*args,length_m=.2,grip_m=(-.36,1.42,.02),grip_body='handle')
+            except banjo.BanjoError as error:require('fixing' in str(error),'unconnected grip lost its refusal')
+            else:require(False,'unconnected grip admitted through C ABI')
+            fixing=world.fix('handle','head',(.38,1.4,.02),(0,1,0),5000,5000)
+            point_id=world.tool_point(*args,length_m=.2,grip_m=(-.36,1.42,.02),grip_body='handle')
+            point=world.tool_points()[0]
+            require(point.id==point_id and point.material==material and point.grip_body=='handle' and point.grip_connected,
+                    'C ABI report lost the actual head material / grip body')
+            saved=world.snapshot()
+            with banjo.World(scene,cell_size_m=CELL_M,snapshot=saved) as restored:
+                point=restored.tool_points()[0]
+                require(point.grip_body=='handle' and point.grip_connected,'ABI reopen lost fixed grip')
+                restored.unhinge(fixing)
+                require(not restored.tool_points()[0].grip_connected,'released grip still connected through ABI')
+            print(f'  {material} head / oak handle: point {point_id}, fixed grip preserved through C ABI/reopen')
+
+
 if __name__ == "__main__":
     for check in (a_point_is_declared_and_reported_back,
                   a_swing_into_soil_goes_in_and_onto_rock_is_stopped,
                   a_pry_breaks_soil_out_and_it_is_carried,
-                  a_lever_needs_a_point_in_the_ground):
+                  a_lever_needs_a_point_in_the_ground,
+                  fixed_head_and_handle_are_reported_and_saved_through_the_public_binding):
         print(check.__name__.replace("_", " "))
         check()
         print("  ok")

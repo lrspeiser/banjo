@@ -68,6 +68,112 @@ class GameScreens(unittest.TestCase):
         out = ROOT / "build/workshop-navigation"; out.mkdir(parents=True, exist_ok=True)
         (out / name).write_bytes(base64.b64decode(self.page.send("Page.captureScreenshot")["data"]))
 
+    def test_authored_iron_head_and_wood_handle_pickup_dig_bag_and_reload(self):
+        import server
+        sys.path.insert(0,str(ROOT/'tools'))
+        import build_new_world
+        spec={
+            'algorithm':'lattice','cell_m':.04,
+            'terrain':{'generate':{'kind':'flat','nx':48,'nz':48,'cell_m':.1,
+                'soil_m':.4,'sand_m':0,'discharge_m3_s':0}},
+            'bodies':[
+                {'name':'handle','shape':'box','material':'oak',
+                 'size_mm':[800,40,40],'center_mm':[0,420,1220]},
+                {'name':'head','shape':'box','material':'iron',
+                 'size_mm':[40,40,280],'center_mm':[380,420,1060]}],
+            'joints':[{'kind':'fixing','a':'handle','b':'head','at_mm':[380,420,1200],
+                'axis':[0,0,1],'holds_tension_n':5000,'holds_shear_n':5000}],
+            'tool_points':[{'body':'head','grip_body':'handle','tip_mm':[380,420,920],
+                'pointing':[0,0,-1],'grip_mm':[-360,420,1220],
+                'width_mm':40,'thickness_mm':40,'angle_deg':30,'length_mm':200}],
+            'interactions':[{'object':'Mixed pick','template':'swing-and-lever',
+                'parts':['handle','head'],'tool':'handle'}]}
+        # Explicit authored QA tool, not a paid Make or free gameplay build.
+        with mock.patch.object(build_new_world,'compose',return_value=spec):
+            try:
+                world,owner,app=self.setup_world(legacy_process=True)
+            except guests.urllib.error.HTTPError as error:
+                self.fail(error.read().decode())
+        peer=self.join(world,'Peer')
+        page=self.browser(world,owner)
+        page.send('Page.navigate',{'url':self.base+f'/world?world={world}'})
+        def wait(expression,seconds=30):
+            until=time.monotonic()+seconds
+            while time.monotonic()<until:
+                if page.evaluate('Boolean('+expression+')'):return
+                app.clock._tick(.05)
+                time.sleep(.05)
+            self.fail('Mixed-tool browser did not reach '+expression+'; '+str(page.evaluate(
+                '({use:banjoRoom?.use(),held:banjoRoom?.held(),status:banjoRoom?.status()})'))+
+                '; joints: '+str(app.live.session.send(op='joints')))
+        def key(code,text):
+            for kind in ('keyDown','keyUp'):
+                page.send('Input.dispatchKeyEvent',{'type':kind,'code':code,'key':text,
+                    'windowsVirtualKeyCode':ord(text.upper())})
+        wait('!!window.banjoRoom?.ready() && document.querySelector("#panel-state").textContent==="Live."')
+        # Let the ground-resting authored assembly settle before aiming.
+        for _ in range(20):
+            app.clock._tick(.05)
+            time.sleep(.02)
+        self.assertTrue(app.live.session.send(op='tool_points')['tool_points'][0]['grip_connected'],
+            app.live.session.send(op='joints'))
+        page.evaluate('(()=>{const r=banjoRoom,p=r.world.bodies.get("handle").mesh.position;'
+            'r.standAt(-.9,r.groundAt(-.9,.02)+1.62,.02);r.lookAt(p.x,p.y,p.z)})()')
+        wait('["handle","head"].includes(banjoRoom.world.aim?.name)')
+        key('KeyE','e')
+        wait('banjoRoom.held()?.name==="handle" && banjoRoom.use().mode==="tool-ready"')
+        page.evaluate('banjoRoom.lookAt(.3,banjoRoom.groundAt(.3,.02),.02)')
+        wait('banjoRoom.use().target?.enabled && banjoRoom.use().target.ready && banjoRoom.use().target.target?.distance_m>=1.15')
+        key('KeyJ','j')
+        wait('banjoRoom.use().mode==="tool-ready" && !!banjoRoom.use().last?.result')
+        result=page.evaluate('banjoRoom.use().last.result')
+        self.assertGreater(result['loosened_kg'],0,result)
+        self.assertEqual(result['tool'],'handle')
+        points=app.live.act({'session':app.live.session.id,'op':'tool_points'})['tool_points']
+        self.assertEqual((points[0]['material'],points[0]['grip_body']),('iron','handle'))
+        self.assertTrue(points[0]['grip_connected'])
+        import inventory_room
+        self.assertAlmostEqual(inventory_room._carried(app,owner['id'])['objects_kg'],4.42176,places=5)
+        wait('document.querySelector("#details-facts").textContent.includes("iron") && document.querySelector("#details-facts").textContent.includes("4.42 kg")')
+        self.assertNotIn('soil 0.0 kg',page.evaluate('document.querySelector("#world-load-meter small").textContent'))
+        self.screenshot('mixed-tool-native-use.png')
+        key('KeyQ','q')
+        wait('!banjoRoom.held()')
+        snapshot=app.live.session.send(op='snapshot')['snapshot']
+        if isinstance(snapshot,str): snapshot=json.loads(snapshot)
+        self.assertEqual({'handle','head'},{b['name'] for b in snapshot['bodies'] if 'parked' in b})
+        page.send('Page.reload',{})
+        # Both authored bodies are now privately parked. This fixture has no
+        # other objects; roomReady's drawable-body guard is intentionally false.
+        wait('!!window.banjoRoom?.status().session && document.querySelector("#panel-state").textContent==="Live."')
+        accounts=app.live.session.state['player_carried']
+        self.assertGreater(accounts[owner['id']]['soil_kg'],0)
+        self.assertEqual(accounts.get(peer['id'],{}).get('soil_kg',0),0)
+        self.assertAlmostEqual(accounts[owner['id']]['objects_kg'],4.42176,places=5)
+        self.assertFalse([e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
+        # Exercise the saved server/native world, not only a page refresh.
+        page.send('Page.navigate',{'url':'about:blank'})
+        self.wait('location.href==="about:blank"')
+        self.stop();self.start();app=self.app.hub.get(world)
+        self.post('/api/world/open',{},world)
+        accounts=app.live.session.state['player_carried']
+        self.assertGreater(accounts[owner['id']]['soil_kg'],0)
+        self.assertEqual(accounts.get(peer['id'],{}).get('soil_kg',0),0)
+        self.assertAlmostEqual(accounts[owner['id']]['objects_kg'],4.42176,places=5)
+        parked_point=app.live.session.send(op='tool_points')['tool_points'][0]
+        self.assertEqual(parked_point['grip_body'],'handle')
+        self.assertFalse(parked_point['grip_connected'],'parked members are not actively wieldable')
+        self.navigate(world,'workshop=1&tab=inventory')
+        self.wait('document.querySelector("#ws-pane-inventory").textContent.toLowerCase().includes("mixed pick")')
+        self.screenshot('mixed-tool-native-bag-reload.png')
+        shown=self.post('/api/world/inventory/shown',{'session':app.live.session.id},world)
+        item=shown['stowed'][0]
+        equipped=self.post('/api/world/inventory',{'session':app.live.session.id,'request':'mixed-native-equip-after-restart',
+            'op':'equip','item':item['id'],'revision':shown['record']['revision'],
+            'person':{'standing_m':[-.9,.4,.02],'eyes_m':[-.9,2.02,.02],'facing':[1,0,0]}},world)
+        self.assertTrue(equipped['ok'],equipped)
+        self.assertTrue(app.live.session.send(op='tool_points')['tool_points'][0]['grip_connected'])
+
     def test_watch_batch_button_earns_personal_skill_and_skills_link_to_real_equipment(self):
         import machine_witness
         world, owner, app = self.setup_world(); self.browser(world,owner)
