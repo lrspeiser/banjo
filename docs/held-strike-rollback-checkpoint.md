@@ -141,4 +141,6 @@ trial/diagnostic cases passed separately. The publication gate uses `-LE long`
 and includes the newly registered native capacity entry. No stress test or its
 assertions was removed; the long network experiments remain a separate gate.
 
-Publication: verified checkpoint awaiting ordinary main push.
+Published implementation and original verification record: `a80be5c3eeb516504240899824d9e394498ee666`
+on GitHub main (ordinary fast-forward push). This documentation follow-up
+records publication only; it introduces no additional physical validation.
