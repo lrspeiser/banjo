@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Next player work, October 1:** Use the [six remaining goals](player-experience-checklist.md#remaining-work): complete supplies/builds, mixed-material tools, damaged-tool repair/use, dependable rover routes, physical avatar/cargo handling and broader human/AI progression. Completed interface slices are recorded with evidence; retain the platform acceptance gates below.
+
 **Material discovery gate, October 1:** [Crosshair/nearby thumbnails](material-preview-checkpoint.md) pass actual pickup, native sand digging, separate rover ore route and private output Collect. Ground circles/labels are removed. Next qualify additional harvesting, exposed ore and dismantling methods with their native receipts before advertising new raw drops. Four verified, ten partial.
 
 **Fast tool acceptance, October 1:** [Shared contact controls](quick-tools-checkpoint.md) pass actual held/tapped/stopped input, native repeated work, private learning recovery and LLM schema inheritance. Next qualify damaged paid tools, broader slopes and changing targets; additional tool families need their own supported native action contracts. Four verified, ten partial.

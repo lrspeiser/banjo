@@ -1,5 +1,7 @@
 # Banjo mechanics scorecard
 
+**Player goal reconciliation, October 1:** [Six remaining player goals](player-experience-checklist.md#remaining-work) retain mixed interfaces, damaged-tool reuse, broad rover terrain, native avatar/cargo reactions and constituent/process accounting as open work. This documentation update changes no mechanics status, solver, tolerance or physical validation.
+
 **Read-only collection previews, October 1:** [Host/UI checkpoint](material-preview-checkpoint.md) separates native soil/sand candidates from rover ore ledgers and whole-object pickup. Chrome confirms a positive native sand receipt and unchanged declared ore reserve; actual output collection credits only its collector. No material, solver, force, dt, tolerance or energy/momentum claim changes. Matched glass/oak/iron quick-contact regression remains retained; rock-work-v1 is not replaced. Additional raw harvesting methods remain unqualified.
 
 **Short contact controller, October 1:** [Measured checkpoint](quick-tools-checkpoint.md) changes hand targets and native own-held ray filtering without changing force/material/ground laws. Matched 40 mm glass/oak/iron at dt=1/240 s remove 0.0015119843/0.0007632074/0.0132831074 m³ soil at 13.392/8.682/50.417 J ground work; native tool mass is retained and local removal/carried-volume residuals are zero. Actual 50 mm Chrome use reaches 2.74 completions/s. This is bounded controller and local-account evidence, not stiffness/fracture calibration or full-world conservation. Damaged tools, slopes, wear and broader laws remain next.

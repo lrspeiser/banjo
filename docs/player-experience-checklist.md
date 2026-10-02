@@ -1,90 +1,42 @@
-# Player experience work — September 30, 2026
+# Remaining player goals — October 1, 2026
 
-[Live tool skill acceptance](live-tool-skills-checkpoint.md) adds contextual right-panel progress, direct gathering through a successful saved dig, fading achievement notices and exact Skills completion. Earlier personal digs reconcile on load; repeat/reload and peer isolation pass. The Field pick currently has no further tracked skill. All fourteen gates remain **four verified, ten partial**.
+Reviewed against published main `7ee92d0`. This is the current working list: six remaining goals, consolidated from the owner's fourteen experience requests and the earlier AI/tech-tree playthrough request. Each goal describes unfinished work; existing implementations and evidence are linked so they can be extended.
 
-[Ordinary workbench acceptance](fresh-workbench-checkpoint.md) adds paid Make
-on new maps, empty initial supplies, normal player guards/native chat, actual
-Chrome First Camp and two-player bag retention. The reference AI completes
-both available goal chains on both terrains from its own market stock and
-native solar energy. This is two learned techniques, not a full tech-tree run.
-Damaged-tool replacement/use and broader resource/route acceptance remain.
-All fourteen original gates stay **four verified, ten partial**.
+## Remaining work
 
-[Canonical machine Use](canonical-machine-use-checkpoint.md) passes configured
-saved-rover Recipes → paid Make → native World operation with battery draw,
-plus unwired-lamp, retry/clock-reset and mixed-controller validation checks.
-The component-thumbnail replacement remains verified. Ordinary fresh workbench,
-normal guards, full paid progression and damaged-tool use remain open.
-All fourteen original gates stay **four verified, ten partial**.
-
-[Paid exact machine admission](fabrication-machine-checkpoint.md) adds native
-material allocation, atomic multiple-material funding and separately funded
-initial battery charge. Saved-design Recipes/Lab mouse funding and actual AI
-construction pass alongside native use/rollback/restart. Ordinary finite
-workbench, full progression and damaged-tool-to-use remain next; all fourteen
-original gates remain **four verified, ten partial**.
-
-[Paid AI construction](fabrication-ai-build-checkpoint.md) uses the configured
-Lab job/funding APIs, retains pending requests across restarts and produces one
-owned native oak pick from actual collected stock/solar energy. Unsupported
-machines refuse without authoring fallback. Ordinary workbench, machine paid
-admission and full damaged-tool journey remain open: **four verified, ten partial**.
-
-[Finite starter solar output](fabrication-starter-power-checkpoint.md) now funds
-the actual configured Lab journey from the generated array battery, without an
-extra fixture source. Fresh arrays declare 10 kW; existing worlds retain their
-ratings. Ordinary workbench process, AI/machine manufacture and damaged-tool
-acceptance remain open. All fourteen gates stay **four verified, ten partial**.
-
-The owner's fourteen-point goal supersedes the earlier progression-only task.
-This is the current acceptance list, not a claim that all features are done.
-
-[Reviewed paid designs](fabrication-paid-design-checkpoint.md) extend configured
-Recipes/Lab Make to new and saved items without a carried source. Explicit
-funding, frozen owner binding, native installation and restart pass with
-glass/oak/iron and a Chrome saved pick. Ordinary finite starter capability and
-AI/machine migration remain open. Counts stay **four verified, ten partial**.
-
-The [Lab funding/use checkpoint](fabrication-lab-funding-checkpoint.md) adds
-reviewed personal/shared stock and native battery controls with lost-response
-recovery. The paid replacement can be picked up, bagged, equipped and used for
-actual native digging in its configured fixture; original and peer state are
-retained. Ordinary starter capability and damaged-tool acceptance remain open.
-Counts stay **four verified, ten partial**, with all fourteen original gates.
-
-The [selected Lab remake checkpoint](fabrication-remake-checkpoint.md) binds a
-current owned hands/bag item and frozen design to reviewed costs, paid work and
-separate native output with old damage retained. Native comparisons, a cut-source
-case and browser pause/reload/resume/placement pass. Ordinary starter supply,
-Lab funding and collect/equip/use remain open. Counts stay **four verified, ten
-partial**, with all fourteen original gates retained.
-
-The [real material funding checkpoint](fabrication-stock-checkpoint.md) connects
-collected player stock and native energy to new part admission, visible transfer
-recovery and retained old damage. Selected Lab remake/repair-to-use is still open;
-counts remain **four verified, ten partial**, with all fourteen gates retained.
-
-The [native energy checkpoint](fabrication-energy-checkpoint.md) supplies a
-tested battery-to-process transfer prerequisite for item 11. It does not yet
-repair a carried item from player stock. Counts remain **four verified, ten
-partial**, with all fourteen original requirements retained.
-
-| Item | Acceptance | Status |
+| Goal | What remains | Completion check |
 |---|---|---|
-| 1. Action clarity | Recorded dig/delivery/process packets, filling rover inventory, visible output, nearby personal pickup; failure/restart/race checks | Native/browser checkpoint verified; general generated routing remains a separate gate. See [resource flow](resource-flow.md). |
-| 2. Day/night | Moving sun/shadows; measured solar charge; dark night; lamp switches on and draws its battery | Verified native cycle and ordinary Chrome sun/shadow/charging/night/lamp/dawn journey. Store values/rates come from actual native counters; unwiring the lamp visibly darkens the scene. See [day/night evidence](daylight-player-checkpoint.md). Rendering/photometry approximations are explicit; saved worlds retain their sun. |
-| 3. Fresh start | Ordinary entry creates a new playable generated map with bootstrap equipment; samples remain in Debug | Chrome verifies two plain entries create different generated worlds. Explicit world/scene/QA links preserved. |
-| 4. Resource discovery | Deposits have readable visual cues; selection shows actual substance, quantity, reachable gathering action | Ledger extraction rings/labels implemented and present in Chrome; ground selection shows actual reserve/grade/rover action. Full selection usability review pending. These are extraction areas, not native ore-cell composition. |
-| 5. Gravity mode | Menu toggles exploration/gravity walking; ground support, falling, grounded jump and collision boundaries verified | Chrome verifies menu, falling, one grounded jump per press and fly altitude. Kinematic terrain controller: native physical avatar/body collision boundaries remain open. |
-| 6. Component inspection | Selected item shows actual subcomponents as thumbnails with names/materials in the right panel; item stays assembled and usable | [Verified replacement](component-thumbnails-checkpoint.md): connected rover parts, actual pick cells, decoded thumbnails, unchanged native/scene state and pickup/recovery. Explicit native-cell and ground inspection remain. |
-| 7. Recipe guidance | Select recipe → exact personal/shared shortages, acquisition routes, blocking skill/equipment | [Ordinary shortage→collect→paid Make](recipe-supply-checkpoint.md) and [recursive raw-source guidance](gathering-supply-checkpoint.md) verified, including empty hopper yield targets and cycle refusal. No invented Make skill gate. Process/output-to-build and broader saved-design shortage journeys remain. |
-| 8. Gathering loop | Reach/find/make tool, explain capacity/refusal, visible carried stock in World, explicit empty/store/use action | [Actual browser Find/E/J/F/full/H/resume](gathering-supply-checkpoint.md) and [private native carrying](private-ground-checkpoint.md) pass: personal capacity/bag mass, stroke ownership, two-player/server restart and staged storage. World/Inventory show actual ground stock. Earlier unassigned-load recovery, broken-rock empty/storage and usable build stock remain. |
-| 9. Workshop chat | Typing, sending and draft selection work; chat focus cannot be stolen by world key bindings | Native Chrome ordinary typing, submission, head edit and subsequent whole-item edit pass. Local failure cleanup and replacement textarea retain selection/disabled state. |
-| 10. Pick authoring | Whole pick appears in Lab; metal head modification has actual component geometry/material; Save and Make give actionable outcomes | Verified exact bootstrap source recovery includes head/handle. Explicit Recipe→Lab survives reload; head-only iron edit and Save pass. Supported oak Make debits stock and preserves existing machines. Mixed-material lattice joining remains unsupported: metal-head Make and visual shape improvement remain open. |
-| 11. Durability/repair | Integrity derives from actual recorded damage; supported repair requires matching material/energy and native restored/admitted geometry | Partial: [native condition readings](body-condition.md) show actual cuts, supported current thermal factors, unresolved/broken and unmodeled states in World/Inventory/carried Lab. [Selected-source paid remake](fabrication-remake-checkpoint.md) keeps the damaged original and admits a separate product. [Lab funding/use](fabrication-lab-funding-checkpoint.md) passes reviewed supplies, retries and actual output pickup/bag/equip/dig in a configured fixture. [Ordinary zero-supply workbench](fresh-workbench-checkpoint.md) and paid player/AI construction now pass. Damaged-tool-to-use, fatigue and joint health remain open; no healing or strength certificate. |
-| 12. Rover safety/recovery | Actual sensor readings visible; route/dig clearance avoids own support; ordinary recovery available with bounded forces/work | Ground/water probes, support-aware digging and nearby bounded recovery verified. Ordinary recovery stops the rover, preserves collected load and restores the personal grip on reload. Native actual-pit lift passes; extended drive/route/grade qualification remains open. |
-| 13. Water and hills | Gravity walking can leave water and climb ordinary hills; rover climbs measured grades without forced motion | Player river/hill and deep-pool controls pass. [Native stock-rover experiments](rover-grades.md) qualify a 12° generated oak-rover declaration with glass/oak/iron comparisons and native terrain climbs; sharp ground warnings remain. General generated routes, physical payload and native avatars remain open. |
-| 14. Output pickup and contained inputs | Output voxels fly into personal inventory on nearby walking; processor inputs stay in visible hoppers; rover delivery visibly fills them | Native/browser automatic output-only pickup and input bins implemented and verified. Fly leaves outputs untouched; server refuses auto-input pickup. Existing recorded dump/dock transfers retained; broad generated rover delivery and physical cargo/tipping remain open. |
+| **R1. Complete the material-to-build loop** | Connect supported raw sources, machine inputs, processing, private output collection and paid construction across built-in and saved designs. Resolve remaining ground-to-usable-stock, exhausted-input, broken-rock storage and earlier unassigned-load cases with truthful ownership and guidance. | In a fresh world, a player obtains the missing supplies through actual collection/processing, builds and uses the requested product, then reloads/restarts without lost or duplicated stock. |
+| **R2. Make mixed-material tools work** | Finish supported metal-head/wood-handle fabrication, constituent/interface handling and faithful tool geometry in Lab and World. Keep the exact requested design through Save, Make, pickup and use. | A supported iron-headed wooden pick can be modified, saved, funded, made and used through normal controls; unsupported connections explain their blocker. |
+| **R3. Finish damaged-tool repair and reuse** | Complete the ordinary fresh-world damaged-item → Lab → reviewed material/energy/work → collected/equipped/used result journey. Preserve the damaged source and history. Distinguish funded replacement from any genuinely supported repair; extend joint condition and durability only with native evidence. | Actually damage an owned tool, spend the declared finite supplies, then obtain and use the supported result. Failed saves, retries, another player and restart retain correct costs, ownership and original damage. |
+| **R4. Make rover work reliable on varied terrain** | Broaden mine/deliver/return routes, pit/shore/hill avoidance, turning and recovery beyond the two qualified maps. Make missing inputs, blocked routes and exhausted sources actionable. | Repeat real mining → delivery → processing on additional declared terrain/obstacle cases, including recovery and restart. No free ore, forced traction or pose reset. |
+| **R5. Give avatars and cargo physical consequences** | Add supported avatar/body collisions and reactions, cargo mass/inertia, physical container/input handling and loading/unloading geometry. Incorporate declared processed constituents' mass/thermal/mechanical state and work into manufactured machines. | Compare empty/loaded handling, collision/recovery and supported transfers with measured mass, force, work and state retention. Visible fill/packets continue to match the actual accounts. |
+| **R6. Qualify broader human and AI progression** | Connect further supported tech-tree routes beyond the two opening chains, validate LLM design/modify/test intents with the shared bounded APIs, and test an actual model-driven player's decisions and explanations. | Ordinary human and AI playthroughs use personal inventory/energy and real skill evidence, report meaningful blockers and survive restart. Record live-provider results separately from the deterministic reference controller. |
+
+## Evidence to extend
+
+- R1: [recipe supplies](recipe-supply-checkpoint.md), [gathering](gathering-supply-checkpoint.md), [material previews](material-preview-checkpoint.md), [fresh workbench and paid opening progression](fresh-workbench-checkpoint.md).
+- R2–R3: [selected-item remake](fabrication-remake-checkpoint.md), [funding and output use](fabrication-lab-funding-checkpoint.md), [actual condition](body-condition.md), [paid machine supplies](fabrication-assembly-goods-checkpoint.md).
+- R4–R5: [repeated hauling](rover-return-routing.md), [grade measurements](rover-grades.md), [private carrying](private-ground-checkpoint.md), [visible resource flow](resource-flow.md).
+- R6: [current AI review](ai-player-current-review.md), [fresh paid progression](fresh-workbench-checkpoint.md), [live-provider qualification boundary](ai-provider-verification.md).
+
+## Working features covered by existing checkpoints
+
+Fresh generated entry and the Menu; Walk/Fly, gravity/jump and measured river/hill escape; moving sun/shadows, solar charging and battery-powered night light; contextual material thumbnails and nearby Look; component thumbnails that keep items assembled; compact personal Inventory; recipe shortage guidance; tool discovery, fast repeated use, full-load feedback and heaping; direct skill progress/achievements; Workshop typing and whole-pick selection/head editing/Save; supported single-material paid Make; sensor readouts and bounded rover recovery; visible transfers, protected input hoppers and personal output collection.
+
+These are verified slices with their documented limits. Their remaining physical, supply or progression boundaries are assigned to R1–R6. The former **four verified / ten partial** tally is a historical checkpoint count, superseded for current work by this list. It is not a completion count for the whole platform.
+
+## Scope and verification
+
+Original requests map to the remaining goals: **1/14 → R1/R4/R5; 4/7/8 → R1; 10 → R2; 11 → R3/R5; 5/12/13 → R4/R5; broader AI/tech-tree requests → R6.** The completed portions of these requests and original 2/3/6/9 remain covered by their checkpoints.
+
+Core physics, calibration, publishing, production multiplayer/hosting and scaling continue in the [master plan](project-master-plan.md), [roadmap](roadmap.md) and [mechanics scorecard](mechanics-scorecard.md). Retain those requirements. Physical changes require matched glass/oak/iron experiments, actual conservation/work accounts and declared validity/tolerances. A visual, ledger or controller test does not certify an unimplemented law.
+
+This rewrite changes documentation only. It records previously measured behavior, adds no new simulation validation and does not change the Codex app's stored goal text or status.
+
+## Historical checkpoints
+
+The entries below retain the original measurements, scope and links. Dates, counts and “next” steps below describe their checkpoint; use R1–R6 above for current work.
 
 ## Day/night checkpoint — October 1
 
