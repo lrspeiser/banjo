@@ -39,5 +39,7 @@
     "gathering_ready": "Gathering by hand\n\nUse a whole ground tool to remove measured dry soil or sand\n\nReady to learn \u00b7 Complete one route\n\nTO EARN IT\n\u25cb\nTake or equip Field pick. Aim at dry soil or sand and dig once. Use: Left mouse / J.\nGo to tool",
     "rough_shaping": "Rough-shaping wood\n\nTaking wood off a piece of stock with a supported shaping process until it has a wanted outline\n\nNot available in this world yet\n\nTO EARN IT\n\u25cb\nMissing example: One-piece wooden pick; Making One-piece wooden pick is not available yet. You cannot unlock it by collecting supplies.\nRELATED DESIGNS\nOne-piece wooden pick \u00b7 Making not available yet",
     "javascript_errors": []
-  }
+  },
+  "published_implementation": "0eeb85884597c36f902c1e6d21b9553463aabbf7",
+  "branch": "main"
 }

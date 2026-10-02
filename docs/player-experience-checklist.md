@@ -1,6 +1,6 @@
 # Remaining player goals — October 1, 2026
 
-Updated against published main `ea9dc5b`. This is the current working list: six remaining goals, consolidated from the owner's fourteen experience requests and the earlier AI/tech-tree playthrough request. Each goal describes unfinished work; existing implementations and evidence are linked so they can be extended.
+Updated against published main `0eeb858`. This is the current working list: six remaining goals, consolidated from the owner's fourteen experience requests and the earlier AI/tech-tree playthrough request. Each goal describes unfinished work; existing implementations and evidence are linked so they can be extended.
 
 ## Remaining work
 

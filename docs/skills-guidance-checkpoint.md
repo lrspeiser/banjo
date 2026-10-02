@@ -1,5 +1,7 @@
 # Skills guidance checkpoint — October 1, 2026
 
+Implementation **`0eeb858` is published on GitHub main**. Refreshed local preview: `http://127.0.0.1:8770/world`. The separate native mixed-tool work remains unfinished and is not included in this checkpoint.
+
 ## Player-facing correction
 
 Gathering by hand is earned through **one** accepted tool-use route. A successful Field pick dig does not also require the One-piece wooden pick. Previously the page printed every alternative under "How it was earned" and placed an unrelated global manufacturing blocker immediately below it.

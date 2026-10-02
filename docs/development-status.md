@@ -1,6 +1,6 @@
 # Development status and handoff
 
-**Skills clarity, October 1:** [Verified guidance](skills-guidance-checkpoint.md) shows only completed routes for learned skills and actionable available routes for new skills. Missing alternatives no longer block the whole skill; design diagnostics are collapsed. 63 affected API/knowledge/Chrome checks pass. Native learning and physics are unchanged; broader progression remains R6.
+**Skills clarity, October 1:** [Verified guidance](skills-guidance-checkpoint.md) shows only completed routes for learned skills and actionable available routes for new skills. Missing alternatives no longer block the whole skill; design diagnostics are collapsed. 63 affected API/knowledge/Chrome checks pass. Implementation `0eeb858` is published on main; refreshed 8770 preview passes direct Skills entry and both ready/unavailable guidance. Native learning and physics are unchanged; broader progression remains R6.
 
 **Mixed-tool drafts, October 1:** [Verified checkpoint](mixed-tool-draft-checkpoint.md) removes automatic material substitution, adds component/material joint blockers and a compact Lab notice, and verifies real Chrome head edit → Save → reload → refused Make with unchanged source/supplies. Fixed QA 69/69 and Workshop regressions 98/98 pass. Implementation `ea9dc5b` is published on main; refreshed 8770 preview retains legacy/fresh entry. Native mixed fixed joints/use remain R2.
 
