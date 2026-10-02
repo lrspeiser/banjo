@@ -6,7 +6,7 @@ This is an opt-in numerical reference checkpoint for R3. It improves the
 [continuous target experiment](held-strike-target-checkpoint.md); ordinary
 held-tool clicks against made objects are still unimplemented. R1 and R3–R6
 remain open. The default XPBD path and running preview executables are unchanged.
-Implementation revision will be recorded after verified publication on main.
+Implementation `0b64d2e3d34296f356f3354f9e831c09fcebc2b5` is published on GitHub main.
 
 ## Numerical method and accounts
 
