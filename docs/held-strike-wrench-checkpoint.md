@@ -125,5 +125,8 @@ No item is removed from the five remaining player goals by this checkpoint.
 
 ## Publication
 
-Pending verified source publication. Record the implementation revision after
-commit; this is not a deployment of held-tool object destruction.
+Implementation `0ebba84cf15ab1c73fbd84eabdefed455faace19` is published on GitHub
+main. The recorded tests were built from those exact implementation sources;
+the following publication record changes documentation only. Preview 8770 was
+confirmed HTTP 200 with unchanged R2 runner/DLL hashes. This is not a deployment
+of held-tool object destruction.
