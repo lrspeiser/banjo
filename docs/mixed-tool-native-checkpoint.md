@@ -15,8 +15,15 @@ substituting a constituent. Complete reviewed native allocation, paid
 installation and the ordinary Lab → Save → funded Make → pickup/use journey
 next. This is not a model-provider playthrough or calibrated joint-strength law.
 
-Implementation was developed from published main `b9463f3`; the published
-implementation revision is recorded below after verification and push.
+Implementation **`2ffaa109e5bb2f209cfd6e5436c820a8f1dd12f7`** is published on
+GitHub main, developed from `b9463f3`. Native evidence above was built from
+that revision's source in `build/agent-paid-machine` (Release, lab disabled).
+
+The own preview at `http://127.0.0.1:8770` runs the rebuilt native binaries.
+The retained owned ten-body world reopens and reports its legacy tool point.
+Direct Skills entry displays the available Field pick route with design
+diagnostics collapsed; its screenshot was inspected. Existing user preview
+servers and worlds were retained.
 
 ## Native response
 

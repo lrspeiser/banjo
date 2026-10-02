@@ -1,6 +1,6 @@
 # Remaining player goals — October 1, 2026
 
-Updated with the [native mixed-tool checkpoint](mixed-tool-native-checkpoint.md), developed from published main `b9463f3`. This is the current working list: six remaining goals, consolidated from the owner's fourteen experience requests and the earlier AI/tech-tree playthrough request. Each goal describes unfinished work; existing implementations and evidence are linked so they can be extended.
+Updated with the [native mixed-tool checkpoint](mixed-tool-native-checkpoint.md), published on main at `2ffaa10`. This is the current working list: six remaining goals, consolidated from the owner's fourteen experience requests and the earlier AI/tech-tree playthrough request. Each goal describes unfinished work; existing implementations and evidence are linked so they can be extended.
 
 ## Remaining work
 
