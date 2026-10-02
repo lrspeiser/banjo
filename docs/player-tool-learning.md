@@ -2,11 +2,13 @@
 
 Source `2ee3ab7` builds on [starter-tool access](generated-starter-tool.md) and [personal machine witnessing](player-learning-checkpoint.md). The broader player progression goal remains active.
 
-## Player contract
+**October 1 update:** [Live progress and achievement checkpoint](live-tool-skills-checkpoint.md) supersedes the separate Study prerequisite below. Historical September 30 results remain recorded. Ordinary successful saved digging now earns gathering directly.
 
-Take or equip a ground tool, select **Study tool** (or Inspect), then aim at nearby dry soil/sand and use its swing/lever controls. Inspection records the held example; it does not certify its function. **Gathering by hand** requires both a study receipt and a passing native ground-use receipt. Merely navigating Skills, taking an item, watching from elsewhere or being the guest who advances the clock awards nothing.
+## Player contract (current)
 
-The graph adds a versioned `field-pick@1` construction and the `using-ground-tools` technique. It retains the earlier 40 mm wooden-pick definition and accepts a separately studied, demonstrated example of that design too. Geometry/material/point properties select a curated construction, not its display name. Other supported authored tools retain evidence under their own construction key; they are not silently promoted to the Field pick. The technique names no manufacturing process and does not enable unsupported wood shaping or change a material law. Workshop authoring remains ungated.
+Take or equip a ground tool, aim at nearby dry soil/sand and use its swing/lever controls. **Gathering by hand** requires a passing saved native ground-use receipt. **Study tool** (or Inspect) remains optional: inspection records the held example without certifying its function. Merely navigating Skills, taking an item, watching from elsewhere or being the guest who advances the clock awards nothing.
+
+The graph adds a versioned `field-pick@1` construction and the `using-ground-tools` technique. It retains the earlier 40 mm wooden-pick definition and accepts a demonstrated example of that design too. Geometry/material/point properties select a curated construction, not its display name. Other supported authored tools retain evidence under their own construction key; they are not silently promoted to the Field pick. The technique names no manufacturing process and does not enable unsupported wood shaping or change a material law. Workshop authoring remains ungated.
 
 Study reads an actual whole native snapshot of the tool in the authenticated guest's hand. Its attached point must share that body's identity, nodes and offsets, and all authored sampled matter must remain present. The scene's occupancy calculation covers joins, rotations, shapes and subtraction; it does not assume every authored shape fills its bounding box. Study retains a digest of that native matter/point frame. This is example inspection, not strength, manufacturing or fracture certification.
 
@@ -22,7 +24,7 @@ Installation/fabrication preserve the outbox; saves with pending physical histor
 
 ## World-aware guidance
 
-Skills and Market resolve actual available tools, ownership, bag locations and nearby native ground surveys. Another guest's carried tool is not offered as yours. A bagged tool links to Inventory; a world tool links to its selected World object. The study/use conditions are displayed separately, with one destination link per object. The Gathering card says **Gather soil / sand** instead of implying it opens an unimplemented product.
+Skills and Market resolve actual available tools, ownership, bag locations and nearby native ground surveys. Another guest's carried tool is not offered as yours. A bagged tool links to Inventory; a world tool links to its selected World object. Each route displays its conditions, with one destination link per object. World shows the current tool’s saved condition counts and completion notice. The Gathering card says **Gather soil / sand** instead of implying it opens an unimplemented product.
 
 Completed conditions no longer demand a replacement gift. Equivalent process machines are alternatives: one stocked machine can make a route ready even when another is empty. Input/nearby-ground availability remains a bounded readiness check. It does not prove avatar collision paths, occlusion, full machine power/thermal capacity, or the eventual outcome of a stroke.
 

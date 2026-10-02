@@ -28,6 +28,23 @@ import knowledge_tests
 
 
 class ControllerBoundaries(unittest.TestCase):
+    def test_older_personal_success_is_reconciled_on_load_without_awarding_a_peer(self):
+        with tempfile.TemporaryDirectory() as folder:
+            owner, peer = 'a'*32, 'b'*32
+            path=Path(folder)/'players'/owner/'journal.json'
+            journal=server.progression.Journal(path,owner=owner)
+            journal.add_evidence(server.progression.evidence_from(knowledge_tests.closed('broke out'),
+                session_id='old-native',spec=knowledge_tests.PICK_ROOM,registry=server.registry(),
+                at='2026-09-30T00:00:00Z'))
+            self.assertNotIn('using-ground-tools',journal.knows())
+            app=SimpleNamespace(world_id='c'*32,store=SimpleNamespace(folder=folder),journal_lock=threading.RLock())
+            recovered=server.journal_of(app,owner)
+            self.assertIn('using-ground-tools',recovered.knows())
+            self.assertEqual(set(),server.journal_of(app,peer).knows())
+            self.assertNotIn('study-example',recovered.standing_of('one-piece-wooden-pick')['demonstrated'])
+            saved=recovered.copy();app.player_journals.pop(owner)
+            self.assertEqual(saved,server.journal_of(app,owner).copy(),'reload must not award twice')
+
     def test_provider_view_omits_render_geometry_but_keeps_current_choices(self):
         state={'goals':{'chain_id':'new','title':'Goal','next_goal':'need','complete':False,
             'goals':[{'id':'need','requirement':{'kind':'energy-deposit'}}]},
@@ -529,16 +546,19 @@ class AutonomousGuests(unittest.TestCase):
             inventory('take_up'); inventory('stow'); inventory('equip')
             owned=self.post('/api/world/inventory/shown',{'session':session},world)
             self.assertTrue(any((h or {}).get('name')=='field pick' for h in owned['hands'].values()))
-            with mock.patch.object(app.store,'save',return_value=False):
-                studied=self.post('/api/world/action',{'session':session,'object':'field pick',
-                    'primary':True,'person':person},world)
-            self.assertNotIn('refused',studied,studied)
             journal=server.journal_of(app,owner['id'])
-            self.assertEqual({},journal.data['evidence'],'failed physical save must not publish study')
-            self.assertEqual(1,len(app.room.player_evidence_pending))
-            self.assertTrue(server.keep_world(app,'retry tool study physical save'))
-            self.assertTrue(journal.standing_of('field-pick').get('demonstrated',{}).get('study-example'),studied)
-            self.assertNotIn('using-ground-tools',journal.knows(),'inspection alone is not functional success')
+            if terrain_choice == 1:
+                with mock.patch.object(app.store,'save',return_value=False):
+                    studied=self.post('/api/world/action',{'session':session,'object':'field pick',
+                        'primary':True,'person':person},world)
+                self.assertNotIn('refused',studied,studied)
+                self.assertEqual({},journal.data['evidence'],'failed physical save must not publish study')
+                self.assertEqual(1,len(app.room.player_evidence_pending))
+                self.assertTrue(server.keep_world(app,'retry tool study physical save'))
+                self.assertTrue(journal.standing_of('field-pick').get('demonstrated',{}).get('study-example'),studied)
+                self.assertNotIn('using-ground-tools',journal.knows(),'inspection alone is not functional success')
+            else:
+                self.assertEqual({},journal.data['evidence'],'this player has never inspected the tool')
             # The normal player API starts the stroke; the world's normal
             # clock advances it. This does not mutate the source snapshot.
             results=[];errors=[]
@@ -576,6 +596,8 @@ class AutonomousGuests(unittest.TestCase):
             self.assertIn('using-ground-tools',journal.knows())
             self.assertNotIn('rough-shaping-wood',journal.knows(),'gathering cannot certify unsupported shaping')
             self.assertTrue(journal.standing_of('field-pick').get('demonstrated',{}).get('loosens-soil'))
+            if terrain_choice == 0:
+                self.assertNotIn('study-example',journal.standing_of('field-pick').get('demonstrated',{}))
             self.assertEqual({},server.journal_of(app,other['id']).data['evidence'])
             studied_again=self.post('/api/world/action',{'session':session,'object':'field pick',
                 'primary':True,'person':person},world)
@@ -680,7 +702,7 @@ class AutonomousGuests(unittest.TestCase):
         self.assertEqual(3,len(location["at_m"]))
         self.assertTrue(tree['using-ground-tools']['within_reach'])
         tool_route=tree['using-ground-tools']['earned_by'][0]
-        self.assertEqual({'inspect','tool/use'},{l['action'] for l in tool_route['locations']})
+        self.assertEqual({'tool/use'},{l['action'] for l in tool_route['locations']})
         self.assertTrue(all(l['body']=='field pick' for l in tool_route['locations']))
         self.assertEqual("using-ground-tools",self.post("/api/workshop/market",{},world)["guidance"]["skill"]["id"])
         # A shortage fixture removes input; it grants no stock or skill.
@@ -971,6 +993,85 @@ class AutonomousGuests(unittest.TestCase):
             'plan_after_purchase':plan,'supply_goal_after_purchase':guidance['supply_goal'],
             'wallet_j':380,'other_guest_wallet_j':0,
             'learned_by_navigation':[],'provider_calls':0},indent=2),encoding='utf-8')
+
+    def test_browser_dig_shows_personal_progress_achievement_fade_and_skills_completion(self):
+        if not qa_browser.CHROME.is_file():
+            if os.environ.get('BANJO_BROWSER_TESTS')=='required': self.fail('Chrome is required')
+            self.skipTest('Chrome not installed')
+        with mock.patch.object(server.secrets,'randbelow',side_effect=[0,1]):
+            world,owner,app=self.setup_world()
+        peer=self.join(world,'Peer')
+        chrome=qa_browser.Chrome(1280,800);self.addCleanup(chrome.close)
+        page=chrome.page;page.send('Page.enable');page.send('Runtime.enable')
+        def wait(expression,seconds=35,tick=False):
+            until=time.monotonic()+seconds
+            while time.monotonic()<until:
+                try:
+                    if page.evaluate('Boolean('+expression+')'): return
+                except (RuntimeError,TimeoutError): pass
+                if tick: app.clock._tick(.05)
+                time.sleep(.08)
+            self.fail('Browser did not reach '+expression+'; '+str(page.evaluate('({skill:document.querySelector("#tool-skill")?.innerText,status:banjoRoom.status(),aim:banjoRoom.world.aim})')))
+        def key(code,text):
+            for kind in ('keyDown','keyUp'):
+                page.send('Input.dispatchKeyEvent',{'type':kind,'code':code,'key':text,
+                    'windowsVirtualKeyCode':ord(text.upper())})
+        page.send('Page.navigate',{'url':self.base+f'/world?world={world}'})
+        wait('!!window.banjoRoom?.ready() && document.querySelector("#panel-state").textContent==="Live."')
+        actor=page.evaluate('banjoRoom.status().player_id')
+        token=page.evaluate(f'localStorage.getItem("banjo.player.{world}")')
+        page.evaluate('(()=>{const r=banjoRoom,p=r.world.bodies.get("field pick").mesh.position;'
+            'r.standAt(p.x,p.y+1.62,p.z+1.1);r.lookAt(p.x,p.y,p.z)})()')
+        wait('banjoRoom.world.aim?.name==="field pick"')
+        key('KeyE','e')
+        wait('banjoRoom.held()?.name==="field pick" && banjoRoom.use().mode==="tool-ready"')
+        page.evaluate('banjoRoom.standAt(-.9,banjoRoom.groundAt(-.9,.025)+1.62,.025)')
+        page.evaluate('banjoRoom.lookAt(.3,banjoRoom.groundAt(.3,.025),.025)')
+        wait('banjoRoom.use().target?.enabled && document.querySelector("#tool-skill output")?.textContent==="0 / 1"')
+        journal=server.journal_of(app,actor)
+        self.assertEqual({},journal.data['evidence'],'pickup and guidance must not earn a skill')
+        self.assertIn('Dig soil or sand',page.evaluate('document.querySelector("#tool-skill").innerText'))
+        self.assertTrue(page.evaluate('document.querySelector("#next-step").hidden'))
+        key('KeyJ','j')
+        wait('document.querySelector("#tool-skill").classList.contains("is-working")')
+        self.assertEqual('0 / 1',page.evaluate('document.querySelector("#tool-skill output").textContent'))
+        wait('!document.querySelector("#unlocked").hidden && document.querySelector("#unlocked-what").textContent==="New Achievement: Gathering by hand"',tick=True)
+        wait('document.querySelector("#tool-skill output").textContent==="1 / 1"')
+        self.assertIn('using-ground-tools',journal.knows())
+        self.assertNotIn('study-example',journal.standing_of('field-pick')['demonstrated'])
+        self.assertEqual(set(),server.journal_of(app,peer['id']).knows())
+        self.assertEqual(set(),server.journal_of(app,owner['id']).knows())
+        self.assertIn('No further skills for this tool yet',page.evaluate('document.querySelector("#tool-skill").innerText'))
+        wait('banjoRoom.use().mode==="tool-ready" && !!banjoRoom.use().last?.result',tick=True)
+        result=page.evaluate('banjoRoom.use().last.result')
+        self.assertGreater(result['loosened_kg'],0)
+        output=ROOT/'build/player-learning';output.mkdir(parents=True,exist_ok=True)
+        import base64
+        (output/'live-achievement.png').write_bytes(base64.b64decode(page.send('Page.captureScreenshot')['data']))
+        wait('document.querySelector("#unlocked").classList.contains("is-leaving")',seconds=8)
+        wait('document.querySelector("#unlocked").hidden',seconds=3)
+        # Guidance is live even when no new notebook revision arrives. A
+        # repeated stroke cannot award a second instance of the same skill.
+        wait('banjoRoom.use().mode==="tool-ready"')
+        key('KeyJ','j')
+        wait('banjoRoom.use().mode==="tool-working"')
+        wait('banjoRoom.use().mode==="tool-ready"',tick=True)
+        self.assertTrue(page.evaluate('document.querySelector("#unlocked").hidden'))
+        self.assertEqual(1,len(journal.data['techniques']))
+        page.send('Page.reload',{})
+        wait('banjoRoom?.ready() && document.querySelector("#tool-skill output")?.textContent==="1 / 1"')
+        self.assertTrue(page.evaluate('document.querySelector("#unlocked").hidden'),'reload must not replay achievement')
+        box=page.evaluate('(()=>{const b=document.querySelector("#tool-skill .skill-link").getBoundingClientRect();return {x:b.x+b.width/2,y:b.y+b.height/2}})()')
+        for kind in ('mousePressed','mouseReleased'):
+            page.send('Input.dispatchMouseEvent',{'type':kind,**box,'button':'left','clickCount':1})
+        wait('new URLSearchParams(location.search).get("technique")==="using-ground-tools" && document.querySelector("#ws-tree-about .ws-tree-state")?.textContent==="You know this."')
+        self.assertEqual(token,page.evaluate(f'localStorage.getItem("banjo.player.{world}")'))
+        self.assertFalse([e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
+        (output/'live-skills-complete.png').write_bytes(base64.b64decode(page.send('Page.captureScreenshot')['data']))
+        (output/'live-achievement.json').write_text(json.dumps({'terrain_seed':app.room.spec['terrain']['generate']['seed'],
+            'ground':result['ground'],'loosened_kg':result['loosened_kg'],'work_j':result['work_j'],
+            'skill':'using-ground-tools','explicit_inspection':False,'progress':'1 / 1',
+            'achievement_faded':True,'repeat_and_reload_no_replay':True,'peer_unchanged':True},indent=2)+'\n')
 
     def test_skills_links_to_the_tool_without_awarding_progress_for_navigation(self):
         if not qa_browser.CHROME.is_file(): self.skipTest('Chrome not installed')

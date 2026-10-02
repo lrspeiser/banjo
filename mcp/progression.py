@@ -752,6 +752,21 @@ def tech_tree(journal: Journal, registry: Registry) -> list[dict[str, Any]]:
     return out
 
 
+def skills_for_design(journal: Journal, registry: Registry, design: str) -> list[dict[str, Any]]:
+    """Personal progress for routes involving this construction, including known
+    skills. Selection is a read: only persisted journal conditions count."""
+    ident = design.split("@", 1)[0]
+    out = []
+    for row in tech_tree(journal, registry):
+        routes = [r for r in row["earned_by"]
+                  if any(n.get("design") == ident for n in r["all_of"])]
+        if not routes:
+            continue
+        row["earned_by"] = routes
+        out.append(row)
+    return out
+
+
 def route_to(journal: Journal, registry: Registry, design: str) -> dict[str, Any]:
     """What it would take to be able to make `design`, in the order it goes.
 

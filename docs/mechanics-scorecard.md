@@ -1,5 +1,7 @@
 # Banjo mechanics scorecard
 
+**Tool learning presentation, October 1:** [Measured host checkpoint](live-tool-skills-checkpoint.md) removes a separate inspection gate and reads only durable personal native evidence. Two generated terrains retain saved-source/journal restart checks; actual Chrome dig records 29.34719 kg sand / 53.13456 J ground work at dt=1/240 s, 50 mm scene. These are outcome measurements, not a conservation audit or new material calibration. No solver, law or tolerance change; failed/unsupported/broken/zero-yield work earns no gathering skill.
+
 **Default process boundary, October 1:** [Fresh-map evidence](fresh-workbench-checkpoint.md)
 adds only host declaration/routing/planning, with 500 W supply and 100 J/kg
 un-calibrated shaping input. Empty initial buffer/stock; native battery charge

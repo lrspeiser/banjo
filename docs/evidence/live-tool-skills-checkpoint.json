@@ -1,0 +1,240 @@
+{
+  "schema": "banjo.live-tool-skills-checkpoint.v1",
+  "source_base_revision": "3dd8f074282096ae872a0e6823eac41ea30e2a13",
+  "source_dirty_during_verification": true,
+  "environment": "Windows / Python 3.13 / MSVC 19.44 Release / Chrome E and J input",
+  "source_sha256": {
+    "mcp/progression.py": "6a0c055b97c0be8fba11852ab0982d4a4729dd37fd2a2c3f17637349f2049895",
+    "playground/server.py": "a29d53fbb09752cad716be133c72624bb10ab17b36fadc60b9db68972434aadd",
+    "playground/tools.js": "988780a14966bbe9e198280b8b933b113d5704b216c4615aa66eb8835b54ff16",
+    "playground/world.js": "2de515d81a588e360b512f1ff94be09d6748f10a4366ed7e2080283f7d9e6248",
+    "playground/world.css": "6c55c9d94aa140e329787b6ec5434fa96b8a2402d1e9bb5e38f08d7d637e842f",
+    "progression/techniques.json": "e898b61d4e653cc0108354553d1ac1be0b03b40fa26a72aa98022933b1664649",
+    "tests/ai_player_tests.py": "5fcb6bd055e5f01957b0f03b5c7bc664ceaa165fee496d72ddac07cd67977aae",
+    "tests/knowledge_tests.py": "0a6920a0278b423d40f48eb1ab2daa520e7dbf5855b2ec081f8ce18b8d2e3454"
+  },
+  "engine_sha256": "1cfcb766b24f942df1147f8e9ecd1c00d083105ff71a5bcb9d8da6b50c8d8db9",
+  "library_sha256": "ab9b2bd04c082863271592a3b9db2eee5fc2e3666024f3e4184aa71e2e482c8c",
+  "native_dt_s": 0.004166666666666667,
+  "scene_cell_m": 0.05,
+  "browser": {
+    "terrain_seed": 4,
+    "ground": "sand",
+    "loosened_kg": 29.34719,
+    "work_j": 53.13456,
+    "skill": "using-ground-tools",
+    "explicit_inspection": false,
+    "progress": "1 / 1",
+    "achievement_faded": true,
+    "repeat_and_reload_no_replay": true,
+    "peer_unchanged": true
+  },
+  "native_player_runs": [
+    {
+      "terrain_seed": 7,
+      "goods_seed": 851269742,
+      "ground": "sand",
+      "work_j": 31.45068,
+      "loosened": {
+        "sand_m3": 0.011441612461281152,
+        "soil_m3": 0.0
+      },
+      "other_guest_evidence": 0,
+      "provider_calls": 0,
+      "learned": [
+        "using-ground-tools"
+      ],
+      "evidence_count": 2,
+      "source_save_failure_awarded_nothing": true,
+      "journal_failure_recovered_on_restart": true,
+      "repeated_save_awarded_nothing_twice": true,
+      "native_dt_s": 0.004166666666666667,
+      "cell_m": 0.05,
+      "saved_t_s": 1.6999999999999953,
+      "evidence": [
+        {
+          "run": "01544e7ac4f2400a9919f75b9dbbecea:4a03056e0369497c8d9df911aeee371a:01544e7ac4f2400a9919f75b9dbbecea:4a03056e0369497c8d9df911aeee371a:study:field pick:8817ab9798411533bcb5534462b59d166c46290cacf50cae7d46eed952e154f4:c767917076302716874eb5279840053265ed352ddde07d4bba6e3733467df90b",
+          "at": "2026-10-02T00:37:27Z",
+          "design": "field-pick@1",
+          "object": "Field pick",
+          "tool": "field pick",
+          "source": "found-example",
+          "test": "study-example",
+          "passes": true,
+          "action": "inspect held tool",
+          "target": {
+            "object": "tool"
+          },
+          "result": {
+            "body_id": 1000,
+            "point_id": 1,
+            "matter_sha256": "8817ab9798411533bcb5534462b59d166c46290cacf50cae7d46eed952e154f4"
+          },
+          "models": [
+            "native occupied matter",
+            "component-frame point"
+          ],
+          "limitations": [
+            "Inspection is not manufacturing, strength or functional certification"
+          ],
+          "said": "Studied Field pick",
+          "claim": "demonstrated: inspected a whole held example",
+          "scope": "for this inspected construction (field-pick@1)",
+          "id": "ev-0ab62c0042"
+        },
+        {
+          "id": "ev-d1a5a2a697",
+          "run": "01544e7ac4f2400a9919f75b9dbbecea:4a03056e0369497c8d9df911aeee371a:d63337adaaf04baaa6cbb0926381c03d:1:0.71250:broke out",
+          "at": "2026-10-02T00:37:28Z",
+          "design": "field-pick@1",
+          "object": "Field pick",
+          "tool": "field pick",
+          "source": "found-example",
+          "test": "loosens-soil",
+          "passes": true,
+          "action": "swing then lever",
+          "target": {
+            "ground": "sand"
+          },
+          "result": {
+            "loosened_m3": 0.011441612461281152,
+            "loosened_kg": 18.30658,
+            "depth_m": 0.16457,
+            "work_j": 31.45068,
+            "closing_speed_m_s": 8.70351
+          },
+          "tool_condition": {
+            "after": {
+              "whole": true,
+              "dent_mm": 0.0
+            }
+          },
+          "models": [
+            "ground-work-v1"
+          ],
+          "limitations": [
+            "ground-work-v1 is declared, not calibrated against a real pick in real soil",
+            "no wet ground",
+            "no fracture of rock under a point",
+            "no wear"
+          ],
+          "said": "the Field pick went 165 mm into the sand at 8.7 m/s and broke out 11.4 L (18.3 kg); it stayed whole",
+          "claim": "demonstrated: loosens the tested sand",
+          "scope": "for this design revision (field-pick@1), this sand, swing then lever"
+        }
+      ]
+    },
+    {
+      "terrain_seed": 4,
+      "goods_seed": 1,
+      "ground": "sand",
+      "work_j": 60.73312,
+      "loosened": {
+        "sand_m3": 0.020205271675245787,
+        "soil_m3": 0.0
+      },
+      "other_guest_evidence": 0,
+      "provider_calls": 0,
+      "learned": [
+        "using-ground-tools"
+      ],
+      "evidence_count": 2,
+      "source_save_failure_awarded_nothing": true,
+      "journal_failure_recovered_on_restart": true,
+      "repeated_save_awarded_nothing_twice": true,
+      "native_dt_s": 0.004166666666666667,
+      "cell_m": 0.05,
+      "saved_t_s": 3.100000000000049,
+      "evidence": [
+        {
+          "id": "ev-b2b6de707e",
+          "run": "12891883ccda4ca28348d08c088df871:97b8b7e29b494ada94673dd4b0d01bfa:a72a87c8c1274be3910fb1245bd5ffdc:1:0.66667:broke out",
+          "at": "2026-10-02T00:37:33Z",
+          "design": "field-pick@1",
+          "object": "Field pick",
+          "tool": "field pick",
+          "source": "found-example",
+          "test": "loosens-soil",
+          "passes": true,
+          "action": "swing then lever",
+          "target": {
+            "ground": "sand"
+          },
+          "result": {
+            "loosened_m3": 0.020205271675245787,
+            "loosened_kg": 32.32843,
+            "depth_m": 0.18686,
+            "work_j": 60.73312,
+            "closing_speed_m_s": 8.60886
+          },
+          "tool_condition": {
+            "after": {
+              "whole": true,
+              "dent_mm": 0.0
+            }
+          },
+          "models": [
+            "ground-work-v1"
+          ],
+          "limitations": [
+            "ground-work-v1 is declared, not calibrated against a real pick in real soil",
+            "no wet ground",
+            "no fracture of rock under a point",
+            "no wear"
+          ],
+          "said": "the Field pick went 187 mm into the sand at 8.6 m/s and broke out 20.2 L (32.3 kg); it stayed whole",
+          "claim": "demonstrated: loosens the tested sand",
+          "scope": "for this design revision (field-pick@1), this sand, swing then lever"
+        },
+        {
+          "run": "12891883ccda4ca28348d08c088df871:97b8b7e29b494ada94673dd4b0d01bfa:12891883ccda4ca28348d08c088df871:97b8b7e29b494ada94673dd4b0d01bfa:study:field pick:73b16a9fd728516ff12b938051df5a592e4b245500e8b2bf9fffee733cfbb696:c767917076302716874eb5279840053265ed352ddde07d4bba6e3733467df90b",
+          "at": "2026-10-02T00:37:34Z",
+          "design": "field-pick@1",
+          "object": "Field pick",
+          "tool": "field pick",
+          "source": "found-example",
+          "test": "study-example",
+          "passes": true,
+          "action": "inspect held tool",
+          "target": {
+            "object": "tool"
+          },
+          "result": {
+            "body_id": 1000,
+            "point_id": 1,
+            "matter_sha256": "73b16a9fd728516ff12b938051df5a592e4b245500e8b2bf9fffee733cfbb696"
+          },
+          "models": [
+            "native occupied matter",
+            "component-frame point"
+          ],
+          "limitations": [
+            "Inspection is not manufacturing, strength or functional certification"
+          ],
+          "said": "Studied Field pick",
+          "claim": "demonstrated: inspected a whole held example",
+          "scope": "for this inspected construction (field-pick@1)",
+          "id": "ev-3acad6130f"
+        }
+      ]
+    }
+  ],
+  "checks": {
+    "knowledge": 48,
+    "tool_handling": 20,
+    "controller_boundaries": 9,
+    "api_docs": 12,
+    "native_two_map_journey": 1,
+    "browser_achievement": 1,
+    "browser_skills_navigation": 1,
+    "world_guidance": 1,
+    "first_camp": 4,
+    "registered_cpp": 287
+  },
+  "native_law_changed": false,
+  "new_conservation_certification": false,
+  "player_goal_status": {
+    "verified": 4,
+    "partial": 10
+  }
+}

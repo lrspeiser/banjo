@@ -91,6 +91,7 @@ body.head-under-water #stage { filter: brightness(.72) sepia(.45) hue-rotate(155
 #unlocked strong { display: block; color: var(--ok, #7ee08a); font-size: 14px; }
 #unlocked span { display: block; margin-top: 3px; color: var(--fg); font-size: 12px; }
 #unlocked[hidden] { display: none; }
+#unlocked.is-leaving { opacity: 0; transition: opacity .4s ease-out; }
 @keyframes unlocked-in { from { opacity: 0; transform: translate(-50%, -8px); }
                          to { opacity: 1; transform: translate(-50%, 0); } }
 
@@ -102,6 +103,28 @@ body.head-under-water #stage { filter: brightness(.72) sepia(.45) hue-rotate(155
 }
 #next-step b { color: var(--fg); font-weight: 600; }
 #next-step[hidden] { display: none; }
+
+#tool-skill { margin: 8px 12px; padding: 12px; border: 1px solid #36566a; border-radius: 10px; background: #10202c; }
+#tool-skill[hidden] { display: none; }
+#tool-skill header, #tool-skill .skill-read { display: flex; justify-content: space-between; gap: 12px; }
+#tool-skill header { color: var(--dim); font-size: 11px; }
+#tool-skill h3 { margin: 8px 0; font-size: 15px; }
+#tool-skill a { color: #8bcff6; }
+#tool-skill .skill-read { font-size: 12px; }
+#tool-skill output { white-space: nowrap; }
+#tool-skill progress { width: 100%; height: 9px; margin: 8px 0 0; accent-color: #70d391; }
+#tool-skill p { margin: 7px 0 0; font-size: 12px; color: var(--dim); }
+#tool-skill dl { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; font-size: 12px; margin: 8px 0 0; }
+#tool-skill dt { color: var(--dim); }
+#tool-skill dd { margin: 0; }
+#tool-skill.is-learned { border-color: #70d391; }
+#tool-skill.is-learned .skill-state { color: #70d391; }
+#tool-skill.is-working .skill-state { animation: skill-working 1s ease-in-out infinite alternate; }
+@keyframes skill-working { from { opacity: .45; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  #tool-skill.is-working .skill-state, #unlocked { animation: none; }
+  #unlocked.is-leaving { transition: none; }
+}
 
 /* Zoom: over the view, bottom left, out of the way of the hotbar in the
    middle and the panel on the right. It is the one control that is worth

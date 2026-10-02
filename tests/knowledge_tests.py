@@ -195,7 +195,8 @@ class TheNotebookKeepsOnePersonsResults(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.app = types.SimpleNamespace(store=room_store.RoomStore(self.tmp.name), journal=None)
+        self.app = types.SimpleNamespace(store=room_store.RoomStore(self.tmp.name), journal=None,
+                                        room=types.SimpleNamespace(spec=PICK_ROOM))
 
     def hear(self, records, session="s1", strikes=(3.1,)):
         # A strike began at 3.1 s of the world's clock; the records meet the
@@ -465,6 +466,50 @@ class ThereIsAWayToLearnSomething(unittest.TestCase):
         progression.earn(self.journal, self.registry, self.now)
         self.assertNotIn("rough-shaping-wood",
                          [r["technique"] for r in progression.what_is_next(self.journal, self.registry)])
+
+    def test_successful_dig_earns_gathering_without_a_separate_inspection(self):
+        record = progression.evidence_from(closed("broke out"), session_id="s1",
+            spec=PICK_ROOM, registry=self.registry, at=self.now)
+        self.journal.add_evidence(record)
+        self.assertIn("using-ground-tools", progression.earn(self.journal, self.registry, self.now))
+        shown = self.journal.standing_of("one-piece-wooden-pick")["demonstrated"]
+        self.assertNotIn("study-example", shown, "using a tool must not fabricate an inspection")
+        before = self.journal.copy()
+        self.assertEqual([], progression.earn(self.journal, self.registry, self.now))
+        self.assertEqual(before, self.journal.copy())
+
+    def test_no_progress_for_failed_unsupported_or_broken_digs(self):
+        for fields in ({"kind":"stopped"}, {"supported":False}, {"tool_whole":False},
+                       {"loosened":{"soil_m3":0,"sand_m3":0},"loosened_kg":0}):
+            with self.subTest(fields=fields):
+                journal = progression.Journal()
+                source = closed("broke out"); source.update(fields)
+                evidence = progression.evidence_from(source, session_id="s1", spec=PICK_ROOM,
+                    registry=self.registry, at=self.now)
+                if evidence: journal.add_evidence(evidence)
+                progression.earn(journal, self.registry, self.now)
+                self.assertNotIn("using-ground-tools", journal.knows())
+                skill = next(s for s in progression.skills_for_design(journal, self.registry,
+                    "one-piece-wooden-pick@1") if s["id"] == "using-ground-tools")
+                self.assertFalse(skill["earned_by"][0]["all_of"][0]["done"])
+
+    def test_contextual_progress_keeps_alternate_designs_and_next_skills_separate(self):
+        self.registry.techniques["next-pick-skill"] = {"id":"next-pick-skill","name":"Next pick skill",
+            "version":1,"prerequisites":{"all_of":["using-ground-tools"]},
+            "earned_by":{"any_of":[{"id":"two-steps","says":"Dig and study the tool",
+                "all_of":[{"design":"one-piece-wooden-pick","demonstrated":True,"test":"loosens-soil"},
+                          {"design":"one-piece-wooden-pick","demonstrated":True,"test":"study-example"}]}]}}
+        self.registry.check()
+        self.journal.add_evidence(progression.evidence_from(closed("broke out"), session_id="s1",
+            spec=PICK_ROOM, registry=self.registry, at=self.now))
+        progression.earn(self.journal, self.registry, self.now)
+        skills = progression.skills_for_design(self.journal, self.registry,"one-piece-wooden-pick@1")
+        gathering = next(s for s in skills if s["id"] == "using-ground-tools")
+        self.assertTrue(gathering["known"])
+        self.assertEqual(["used-found-pick"],[r["id"] for r in gathering["earned_by"]])
+        next_skill = next(s for s in skills if s["id"] == "next-pick-skill")
+        self.assertTrue(next_skill["within_reach"])
+        self.assertEqual([True,False],[n["done"] for n in next_skill["earned_by"][0]["all_of"]])
 
     def test_a_technique_whose_groundwork_is_missing_is_not_within_reach(self):
         """The graph is walked, not skipped: prerequisites first, however much

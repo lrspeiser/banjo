@@ -1974,7 +1974,9 @@ class Handler(BaseHTTPRequestHandler):
                 # and why not, and the ring the page draws. Asking does nothing.
                 _this_pages_room(self.app,body)
                 with (self.app.live.as_actor(player) if player else nullcontext()):
-                    return self.send(tool_use.resolve(self.app,body))
+                    answer=tool_use.resolve(self.app,body)
+                answer['learning']=tool_learning_view(self.app,answer.get('tool'))
+                return self.send(answer)
             if path=="/api/world/tool/use":
                 # And doing it: the whole of it, with the bounded hand, while
                 # the page keeps the room running (tool_use.run). The swing is
@@ -3532,6 +3534,9 @@ def journal_of(app, owner=None, *, shared=False):
                 if owner not in journals:
                     journals[owner] = progression.Journal(Path(app.store.folder) / "players" / owner / "journal.json", owner=owner)
                     progression.teach_the_start(journals[owner], registry(), time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+                    # Reconcile earlier saved successful digs with the current
+                    # graph. No native result or inspection is fabricated.
+                    progression.earn(journals[owner], registry(), time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
                 return journals[owner]
     journal=getattr(app,"journal",None)
     if journal is None:
@@ -3625,7 +3630,26 @@ def note_strike(app,answer):
 
 def knowledge_view(app):
     """The person's notebook as read_knowledge says it (GET /api/knowledge)."""
-    return progression.notebook(journal_of(app),registry())
+    book=progression.notebook(journal_of(app),registry())
+    book['tool_skills']=[tool_learning_view(app,p.get('tool'))
+                        for p in app.room.spec.get('interactions') or []
+                        if p.get('template')=='swing-and-lever']
+    return book
+
+
+def tool_learning_view(app, tool):
+    """Match authored construction for guidance; actual use still needs a
+    closed native result and its durable personal receipt to earn anything."""
+    profile=next((p for p in app.room.spec.get('interactions') or []
+                  if p.get('template')=='swing-and-lever' and p.get('tool')==tool),None)
+    if not profile: return None
+    graph=registry()
+    construction=progression.construction_of(app.room.spec,profile)
+    design=progression.design_of(graph,construction) or progression.own_design_key(construction)
+    journal=journal_of(app)
+    return {'tool':tool,'object':profile['object'],'parts':profile['parts'],'design':design,
+            'revision':journal.data['revision'],
+            'skills':progression.skills_for_design(journal,graph,design)}
 
 
 def with_notebook(app,answer,seen):

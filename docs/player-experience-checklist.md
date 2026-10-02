@@ -1,5 +1,7 @@
 # Player experience work — September 30, 2026
 
+[Live tool skill acceptance](live-tool-skills-checkpoint.md) adds contextual right-panel progress, direct gathering through a successful saved dig, fading achievement notices and exact Skills completion. Earlier personal digs reconcile on load; repeat/reload and peer isolation pass. The Field pick currently has no further tracked skill. All fourteen gates remain **four verified, ten partial**.
+
 [Ordinary workbench acceptance](fresh-workbench-checkpoint.md) adds paid Make
 on new maps, empty initial supplies, normal player guards/native chat, actual
 Chrome First Camp and two-player bag retention. The reference AI completes

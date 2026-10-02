@@ -1,5 +1,7 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Live tool learning, October 1:** [Skill progress checkpoint](live-tool-skills-checkpoint.md) makes successful saved digging earn gathering without a hidden Study step. The right panel shows contextual progress; achievements fade and Skills reflects completion. Earlier personal success is reconciled on load. No law change; later catalog routes and broader progression remain partial. Four verified, ten partial.
+
 **Ordinary workbench, October 1:** [Fresh-world paid progression](fresh-workbench-checkpoint.md)
 now declares a zero-stock, zero-energy workbench on new maps. Normal player
 controls and native chat remain available; Make spends reviewed supplies.

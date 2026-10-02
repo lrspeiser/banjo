@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Tool learning usability gate, October 1:** [Native/browser acceptance](live-tool-skills-checkpoint.md) passes gathering through ordinary use without prior Study, personal saved progress, fading achievements, exact Skills navigation and repeat/reload isolation. Contextual routes can advance; the current Field pick has no further tracked skill. Add supported later tool/process routes and complete broader paid/damaged-tool acceptance. Four verified, ten partial.
+
 **Ordinary paid Make gate, October 1:** [Fresh-map acceptance](fresh-workbench-checkpoint.md)
 passes empty workbench declaration, paired persistence, native player controls,
 Chrome Market/Recipes/Lab/World First Camp and separate player products/bags.

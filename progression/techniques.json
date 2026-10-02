@@ -8,10 +8,10 @@
       "describes":"Use a whole ground tool to remove measured dry soil or sand",
       "prerequisites":{"all_of":[]}, "learn_from":["experiment"], "processes":[],
       "earned_by":{"any_of":[
-        {"id":"used-field-pick","says":"Study a Field pick, then use it on dry soil or sand.",
-         "all_of":[{"design":"field-pick","demonstrated":true,"test":"study-example"},{"design":"field-pick","demonstrated":true,"test":"loosens-soil"}]},
-        {"id":"used-found-pick","says":"Study a wooden pick, then use it on dry soil or sand.",
-         "all_of":[{"design":"one-piece-wooden-pick","demonstrated":true,"test":"study-example"},{"design":"one-piece-wooden-pick","demonstrated":true,"test":"loosens-soil"}]}
+        {"id":"used-field-pick","says":"Dig soil or sand with your Field pick once.",
+         "all_of":[{"design":"field-pick","demonstrated":true,"test":"loosens-soil"}]},
+        {"id":"used-found-pick","says":"Dig soil or sand with your wooden pick once.",
+         "all_of":[{"design":"one-piece-wooden-pick","demonstrated":true,"test":"loosens-soil"}]}
       ]}
     },
     {

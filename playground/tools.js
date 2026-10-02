@@ -43,7 +43,7 @@ const RING = { ok: 0x4fbf6a, far: 0xf0b429, near: 0xf0b429, warn: 0xe0533d, no: 
 
 export function makeTools(ctx) {
   const { world, act, api, say, remember, showUse, camera, carryGround, scene, whereIAm,
-          lastAction, takeIntoHand, showHolding } = ctx;
+          lastAction, takeIntoHand, showHolding, showNotebook } = ctx;
 
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(0.11, 0.16, 40),
@@ -246,8 +246,12 @@ export function makeTools(ctx) {
       answer = await api("/api/world/tool/use", { session: world.session, person: whereIAm(),
                                                   at_m: world.groundAim || null });
     } catch (error) {
+      use.result = String(error.message || error);
       say("bad", String(error.message || error));
     }
+    // A finished stroke can carry a newer personal journal, even if the
+    // player has since put down the tool. Do not wait for another live step.
+    if (answer?.notebook) showNotebook(answer.notebook, true);
     if (world.held !== held) return;          // put down meanwhile
     use.last = answer;                        // each stroke and how it ended (done)
     if (answer && answer.refused) {

@@ -202,6 +202,7 @@ function remember(what) {
 // The notebook this page has shown (showNotebook): its revision, and the claims
 // in it already said.
 let notebookRevision = -1;
+let lastNotebook = null;
 const notebookSeen = new Set();
 
 async function act(op, extra) {
@@ -5783,6 +5784,7 @@ function detailsModel() {
 let detailsSaid = "";
 let lastDetails = { name: "", facts: "", rows: [], note: "", meter: null, last: null };
 function showDetails(now = false) {
+  showToolSkills();
   // What is pinned is about one thing and stays about it, but everything IN it
   // is live -- the battery empties while you watch. Rebuilt on the same beat.
   if (somethingIsPinned()) showPicked();
@@ -8489,7 +8491,8 @@ function rememberProfiles(spec) {
 // is and does it (tool_use.py), each stroke the engine's; tools.js holds the
 // tool ready, draws the ring and sends the click.
 const tools = makeTools({ world, act, api, say, remember, showUse, camera, carryGround, scene,
-                          whereIAm, lastAction, takeIntoHand, showHolding });
+                          whereIAm, lastAction, takeIntoHand, showHolding,
+                          showNotebook: (book) => showNotebook(book, notebookRevision >= 0) });
 
 function profileOf(name) {
   return world.profiles.find((p) => p.parts.includes(name)) || null;
@@ -10237,14 +10240,109 @@ function opensSays(rung, have) {
 // A card over the world, for a moment. Not the conversation: the conversation
 // is where the machines talk, and they talk far more than you learn.
 let unlockedFor = null;
-function unlocked(what, opens) {
+const achievementQueue = [];
+let currentAchievement = null;
+function unlocked(what, opens, technique) {
+  achievementQueue.push({ what, opens, technique });
+  if (!unlockedFor) showAchievement();
+}
+
+function showAchievement() {
   const box = $("unlocked");
-  if (!box) return;
+  const next = achievementQueue.shift();
+  if (!box || !next) { unlockedFor = null; currentAchievement = null; showToolSkills(); return; }
+  const { what, opens } = next;
+  currentAchievement = next.technique;
   $("unlocked-what").textContent = what;
   $("unlocked-opens").textContent = opens;
+  box.classList.remove("is-leaving");
   box.hidden = false;
-  clearTimeout(unlockedFor);
-  unlockedFor = setTimeout(() => { box.hidden = true; }, 9000);
+  unlockedFor = setTimeout(() => {
+    box.classList.add("is-leaving");
+    unlockedFor = setTimeout(() => {
+      box.hidden = true;
+      showAchievement();
+    }, 450);
+  }, 5000);
+}
+
+// Read the same personal conditions as Skills. A stroke animates the working
+// state, never an invented percentage; only saved evidence fills the meter.
+let toolSkillsSaid = "";
+function showToolSkills() {
+  let box = $("tool-skill");
+  const name = world.held?.name || picked.name || world.aim?.name;
+  const profile = tools.profileOf(name);
+  if (!profile) {
+    if (box) box.hidden = true;
+    toolSkillsSaid = "";
+    if (lastNotebook) showNextStep(lastNotebook);
+    return;
+  }
+  if ($("next-step")) $("next-step").hidden = true;
+  const saved = lastNotebook?.tool_skills?.find(s => s?.tool === profile.tool);
+  const target = world.held?.pick?.tool === profile.tool ? world.use.target?.learning : null;
+  const learning = target && (!saved || target.revision > saved.revision) ? target : saved;
+  const skills = learning?.skills || [];
+  const step = skills.find(s => s.known && s.id === currentAchievement)
+    || skills.find(s => !s.known && s.within_reach)
+    || skills.find(s => !s.known) || skills.find(s => s.known);
+  const route = step?.earned_by?.find(r => !r.done) || step?.earned_by?.[0];
+  const total = route?.all_of?.length || 0;
+  const done = step?.known ? total : (route?.all_of || []).filter(n => n.done).length;
+  const held = world.held?.pick?.tool === profile.tool;
+  const working = held && world.use.mode === "tool-working";
+  const pending = held && world.use.last?.learning_pending && !step?.known;
+  const status = step?.known ? "Learned ✓" : working ? "Digging…"
+    : pending ? "Saving progress…" : step?.unmet?.length ? "Skill needed"
+    : held && world.use.target?.enabled === false ? world.use.target.reason
+    : "Ready";
+  const next = skills.find(s => !s.known && s.id !== step?.id);
+  const model = { object: profile.object, id: step?.id, name: step?.name, known: step?.known,
+    status, total, done, working, task: step?.known ? "" : route?.says,
+    needs: step?.needs?.filter(n => !n.known).map(n => n.name).join(", "),
+    next: next?.name || (step?.known ? "No further skills for this tool yet" : ""),
+    opens: (step?.opens || []).map(o => o.name).join(", ") };
+  const said = JSON.stringify(model);
+  if (box && !box.hidden && said === toolSkillsSaid) return;
+  toolSkillsSaid = said;
+  if (!box) {
+    box = document.createElement("section");
+    box.id = "tool-skill";
+    box.setAttribute("aria-label", "Tool skill progress");
+    box.innerHTML = '<header><span class="skill-tool"></span><a class="skill-link">Skills ↗</a></header>'
+      + '<h3></h3><div class="skill-read"><span class="skill-state" role="status"></span><output></output></div>'
+      + '<progress max="1" value="0" aria-label="Completed skill steps"></progress>'
+      + '<p class="skill-task"></p><dl></dl><p class="skill-next"></p>';
+    $("details").before(box);
+  }
+  box.hidden = false;
+  box.dataset.technique = model.id || "";
+  box.classList.toggle("is-working", !!working);
+  box.classList.toggle("is-learned", !!model.known);
+  box.querySelector(".skill-tool").textContent = model.object;
+  const link = box.querySelector(".skill-link");
+  const destination = new URL(screenUrl("skills"), location.origin);
+  if (model.id) destination.searchParams.set("technique", model.id);
+  link.href = destination.pathname + destination.search;
+  box.querySelector("h3").textContent = model.name || (learning ? "No skill tracked for this design" : "Loading skill…");
+  box.querySelector(".skill-state").textContent = model.status;
+  box.querySelector("output").textContent = total ? `${done} / ${total}` : "";
+  const meter = box.querySelector("progress");
+  meter.hidden = !total;
+  meter.max = total || 1;
+  meter.value = done;
+  const task = box.querySelector(".skill-task");
+  task.textContent = model.task || "";
+  task.hidden = !model.task;
+  const facts = box.querySelector("dl");
+  facts.replaceChildren();
+  for (const [label, value] of [["Needs", model.needs], [model.known ? "Unlocked" : "Unlocks", model.opens]]) {
+    if (!value) continue;
+    const dt = document.createElement("dt"), dd = document.createElement("dd");
+    dt.textContent = label; dd.textContent = value; facts.append(dt, dd);
+  }
+  box.querySelector(".skill-next").textContent = model.next ? `Next: ${model.next}` : "";
 }
 
 // The nearest rung, under what you are looking at. One line, because the
@@ -10253,6 +10351,7 @@ function unlocked(what, opens) {
 function showNextStep(book) {
   const line = $("next-step");
   if (!line) return;
+  if (tools.profileOf(world.held?.name || picked.name || world.aim?.name)) { line.hidden = true; return; }
   const step = (book.next || []).find((n) => n.within_reach);
   if (!step) { line.hidden = true; return; }
   nextRung = step.technique || null;
@@ -10288,6 +10387,7 @@ $("next-step")?.addEventListener("click", () => {
 function showNotebook(book, fresh) {
   if (!book || typeof book.revision !== "number" || book.revision < notebookRevision) return;
   notebookRevision = book.revision;
+  lastNotebook = book;
   const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
   const rows = [];
   for (const design of book.designs || []) {
@@ -10311,7 +10411,8 @@ function showNotebook(book, fresh) {
       // cannot be conjugated into one. And what it OPENS is read off the
       // technique and not off `next`: the moment it is learned it leaves that
       // list, which is exactly when somebody wants to know what it was for.
-      unlocked(`Learned: ${t.name}`, opensSays(t, true) || "");
+      unlocked(`New Achievement: ${t.name}`, (t.opens_named || []).length
+        ? `Unlocked: ${t.opens_named.map(o => o.name).join(", ")}` : "Skill learned", t.id);
     }
     notebookSeen.add(`t:${t.id}`);
   }
@@ -10331,6 +10432,7 @@ function showNotebook(book, fresh) {
   }
   for (const n of book.not_modelled || []) rows.push(["noted", `Not modelled yet: ${n}.`]);
   showNextStep(book);
+  showToolSkills();
   $("notebook-list")?.replaceChildren(...rows.map(([kind, text]) => {
     const li = document.createElement("li");
     li.className = `nb-${kind}`;
