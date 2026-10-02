@@ -120,6 +120,15 @@ struct FixedPointContactKick {
     double numerical_energy_change_j{},delivered_normal_speed_m_s{},delivered_slip_m_s{};
     Vec3 momentum_error_kg_m_s{},angular_momentum_error_kg_m2_s{};
 };
+class PreparedFixedPointContact {
+public:
+    PreparedFixedPointContact() = default;
+    [[nodiscard]] const FixedPointContactKick &receipt() const;
+private:
+    friend class JoltWorld;
+    struct Data;
+    std::shared_ptr<const Data> data_;
+};
 struct PointShapeContact {
     double gap_m{}; // Positive separation, negative envelope penetration.
     Vec3 normal_world{}; // Native body toward envelope centre.
@@ -440,6 +449,17 @@ public:
     [[nodiscard]] FixedPointContactKick applyExternalFixedPointContact(MatterBodyId target_proxy,
         MatterBodyId striker,ActiveNodeState &point,Vec3 normal_world,double gap_m,double dt_s,
         const PointRigidContactSettings &settings,const PointContactRoundoffBudget &budget);
+    // Read-only preparation for a checked target-backend transfer, immediately
+    // between steps on one host thread. The immutable plan retains source/point,
+    // fixing anchors/IDs, native body/shape identity and native tick. Commit
+    // revalidates admission, speed/budgets and exact inputs before any write.
+    // A different world, changed point/source/shape/topology or elapsed tick
+    // refuses. No outcome cache, position correction or target time advance.
+    [[nodiscard]] PreparedFixedPointContact prepareExternalFixedPointContact(MatterBodyId target_proxy,
+        MatterBodyId striker,const ActiveNodeState &point,Vec3 normal_world,double gap_m,double dt_s,
+        const PointRigidContactSettings &settings,const PointContactRoundoffBudget &budget) const;
+    [[nodiscard]] FixedPointContactKick commitExternalFixedPointContact(
+        const PreparedFixedPointContact &prepared,ActiveNodeState &point);
     // Read-only native shape query for a material point's spherical contact
     // envelope. All native leaf witnesses within the separation limit, ordered
     // by leaf identity; no AABB substitution, closest-only truncation or pair

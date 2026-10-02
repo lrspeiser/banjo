@@ -14,9 +14,16 @@ loads. [Constrained fixed-source contact](held-strike-fixed-contact-checkpoint.m
 now uses the actual fixing anchors and full constituent effective inertia during
 the contact itself. Its joint impulse and reconciliation accounts remain separate
 from later native cached loads; failure/strength handling is not yet integrated.
-These are tested integration boundaries. Next synchronize the CPU target
-with actual native held assemblies, hand/joint reactions and accepted elapsed
-time, then the object-target route and complete acceptance checks below.
+The [continuous CPU target experiment](held-strike-target-checkpoint.md) now
+transfers contact into the existing target integration without resetting bond
+history, and advances a free ideal fixed source/target on the same substep clock.
+Glass fractures; oak stays intact; iron retains axial plastic flow. This exposes
+unclosed target-step energy/angular accounts, timestep-dependent glass topology
+and expensive reference execution. It does not yet integrate the native hand,
+finite fixing failure or transactional world clock. Resolve/measure the target
+kick/projection/reconstructed-velocity/failure accounts, retain those failures as
+qualification gates, then connect actual bounded native hand/joint reactions and
+the object-target route with the complete acceptance checks below.
 R3 remains open.
 
 The current primary-use route only accepts a terrain target. Native fracture

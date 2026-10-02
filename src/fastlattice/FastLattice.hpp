@@ -144,10 +144,16 @@ struct ExternalWrenchLedger {
     std::string source;
     ExternalLoadLedger load{};
 };
+struct ExternalPointTransferLedger {
+    std::uint64_t transfers{}; // Instantaneous transfers, not elapsed substeps.
+    Vec3 impulse_n_s{},angular_impulse_kg_m2_s{};
+    double work_j{}; // Signed target kinetic change, not total contact loss.
+};
 
 struct RunStatus {
     ExternalLoadLedger external_load{};
     std::vector<ExternalWrenchLedger> external_sources;
+    ExternalPointTransferLedger external_point_transfer{};
     std::uint64_t total_steps{};
     std::uint64_t first_failure_step{std::numeric_limits<std::uint64_t>::max()};
     std::uint64_t last_failure_step{std::numeric_limits<std::uint64_t>::max()};
@@ -234,6 +240,26 @@ public:
     virtual void setExternalWrenches(const std::vector<ExternalWrench> &wrenches, std::uint64_t substeps) {
         if (!wrenches.empty() || substeps != 0)
             throw std::invalid_argument("this lattice backend does not implement external wrenches");
+    }
+    // Serial double CPU reference only. Read a current schedule-order point,
+    // then validate/commit a velocity supplied by an audited external contact.
+    // Expected point must match current position/history/velocity/mass exactly.
+    // No pose, bond/history, cache, load, capture or elapsed-time reset. No spin
+    // DOF is introduced. Validation preflights the cumulative signed SI ledger.
+    // One host thread between run calls; do not mutate either backend between
+    // validation and commit. Other precision/backends explicitly refuse.
+    [[nodiscard]] virtual ActiveNodeState externalContactPoint(std::uint32_t) const {
+        throw std::invalid_argument("this lattice backend does not implement external point contact");
+    }
+    [[nodiscard]] virtual double externalContactTimestep() const {
+        throw std::invalid_argument("this lattice backend does not implement external point contact");
+    }
+    [[nodiscard]] virtual ExternalPointTransferLedger validateExternalPointVelocity(
+        std::uint32_t,const ActiveNodeState &,Vec3) const {
+        throw std::invalid_argument("this lattice backend does not implement external point contact");
+    }
+    virtual ExternalPointTransferLedger applyExternalPointVelocity(std::uint32_t,const ActiveNodeState &,Vec3) {
+        throw std::invalid_argument("this lattice backend does not implement external point contact");
     }
     // Continue from the current state; the status accumulates across calls.
     virtual RunStatus run(const RunControl &control) = 0;

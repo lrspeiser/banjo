@@ -263,6 +263,10 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
     target_compile_features(banjo_runtime PUBLIC cxx_std_23)
     banjo_enable_warnings(banjo_runtime)
 
+    add_library(banjo_lattice_native_contact src/fastlattice/NativeFixedContact.cpp)
+    target_link_libraries(banjo_lattice_native_contact PUBLIC banjo_runtime banjo_fastlattice)
+    banjo_enable_warnings(banjo_lattice_native_contact)
+
     # Structured creator input is parsed independently of the language model.
     set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
     set(JSON_Install OFF CACHE BOOL "" FORCE)
@@ -1038,6 +1042,10 @@ if(BANJO_BUILD_TESTS)
         target_link_libraries(banjo_native_point_contact_tests PRIVATE banjo_runtime)
         banjo_enable_warnings(banjo_native_point_contact_tests)
         add_test(NAME banjo_native_point_contact_tests COMMAND banjo_native_point_contact_tests)
+        add_executable(banjo_native_lattice_contact_tests tests/native_lattice_contact_tests.cpp)
+        target_link_libraries(banjo_native_lattice_contact_tests PRIVATE banjo_lattice_native_contact)
+        banjo_enable_warnings(banjo_native_lattice_contact_tests)
+        add_test(NAME banjo_native_lattice_contact_tests COMMAND banjo_native_lattice_contact_tests)
 
     # Two wheels that turn together at a ratio: gears in mesh, a chain between
     # sprockets, and teeth that strip when too much goes through them.

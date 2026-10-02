@@ -14,6 +14,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace banjo::fastlattice {
@@ -36,6 +37,7 @@ public:
         sphere_ = convertSphere<Real>(sphere);
         status_ = {};
         external_.reset(state.origin);
+        origin_=state.origin;
         dirty_start_ = true;
         contact_rebuild_ = true;
         status_.energy_audited = S_.audit_energy != 0;
@@ -48,6 +50,50 @@ public:
     }
     void setExternalWrenches(const std::vector<ExternalWrench> &wrenches, std::uint64_t substeps) override {
         external_.setWrenches(wrenches,substeps,L_);
+    }
+    [[nodiscard]] double externalContactTimestep() const override {
+        if constexpr(std::is_same_v<Real,double>) {
+        if(!L_.node_count||!std::isfinite(S_.dt)||S_.dt<=0)throw std::invalid_argument("external contact needs an uploaded finite timestep");
+        return S_.dt;
+        }else throw std::invalid_argument("external point contact requires serial double CPU");
+    }
+    [[nodiscard]] ActiveNodeState externalContactPoint(std::uint32_t i) const override {
+        if constexpr(std::is_same_v<Real,double>) {
+        (void)externalContactTimestep();
+        if(i>=L_.node_count||!std::isfinite(L_.mass[i])||L_.mass[i]<=0||!std::isfinite(L_.inv_mass[i])||L_.inv_mass[i]<=0)
+            throw std::invalid_argument("external contact needs a finite movable schedule node");
+        ActiveNodeState point;point.mass_kg=L_.mass[i];
+        point.position_world_m=origin_+Vec3{L_.x0[3*i]+L_.u[3*i],L_.x0[3*i+1]+L_.u[3*i+1],L_.x0[3*i+2]+L_.u[3*i+2]};
+        point.previous_position_world_m=origin_+Vec3{L_.x0[3*i]+L_.u_prev[3*i],L_.x0[3*i+1]+L_.u_prev[3*i+1],L_.x0[3*i+2]+L_.u_prev[3*i+2]};
+        point.velocity_m_s={L_.v[3*i],L_.v[3*i+1],L_.v[3*i+2]};
+        if(!finite(point.position_world_m)||!finite(point.previous_position_world_m)||!finite(point.velocity_m_s))
+            throw std::invalid_argument("external contact point is nonfinite");
+        return point;
+        }else throw std::invalid_argument("external point contact requires serial double CPU");
+    }
+    [[nodiscard]] ExternalPointTransferLedger validateExternalPointVelocity(std::uint32_t i,const ActiveNodeState &expected,Vec3 velocity) const override {
+        if constexpr(std::is_same_v<Real,double>) {
+        const auto current=externalContactPoint(i);
+        const auto equal=[](Vec3 a,Vec3 b){return a.x==b.x&&a.y==b.y&&a.z==b.z;};
+        if(!equal(expected.position_world_m,current.position_world_m)||!equal(expected.previous_position_world_m,current.previous_position_world_m)||
+            !equal(expected.velocity_m_s,current.velocity_m_s)||expected.mass_kg!=current.mass_kg||
+            !equal(expected.spin_angular_velocity_rad_s,{})||!finite(velocity))
+            throw std::invalid_argument("external point transfer has stale or invalid state");
+        ExternalPointTransferLedger out;out.transfers=1;
+        out.impulse_n_s=current.mass_kg*(velocity-current.velocity_m_s);
+        out.angular_impulse_kg_m2_s=cross(current.position_world_m,out.impulse_n_s);
+        out.work_j=.5*current.mass_kg*dot(velocity-current.velocity_m_s,velocity+current.velocity_m_s);
+        (void)combinedPointLedger(status_.external_point_transfer,out);
+        return out;
+        }else throw std::invalid_argument("external point contact requires serial double CPU");
+    }
+    ExternalPointTransferLedger applyExternalPointVelocity(std::uint32_t i,const ActiveNodeState &expected,Vec3 velocity) override {
+        if constexpr(std::is_same_v<Real,double>) {
+        const auto receipt=validateExternalPointVelocity(i,expected,velocity);
+        const auto total=combinedPointLedger(status_.external_point_transfer,receipt);
+        L_.v[3*i]=static_cast<Real>(velocity.x);L_.v[3*i+1]=static_cast<Real>(velocity.y);L_.v[3*i+2]=static_cast<Real>(velocity.z);
+        status_.external_point_transfer=total;return receipt;
+        }else throw std::invalid_argument("external point contact requires serial double CPU");
     }
 
     RunStatus run(const RunControl &control) override {
@@ -71,7 +117,7 @@ public:
                 status_.last_failure_step = step;
                 ++status_.failure_rounds;
             }
-            const double available = control.removable_energy_j + status_.external_load.work_j;
+            const double available = control.removable_energy_j + status_.external_load.work_j + status_.external_point_transfer.work_j;
             status_.exit_reason = control.removable_energy_j > 0 && available <= 0 ? 6 :
                 latticeExitReason(status_.total_steps, status_.broken_bonds,
                 status_.last_failure_step, control.quiet_steps, control.min_steps,
@@ -104,6 +150,17 @@ public:
     [[nodiscard]] std::vector<std::uint32_t> firstFailureBonds() const override { return first_failure_bonds_; }
 
 private:
+    static bool finite(Vec3 v) {return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z);}
+    static ExternalPointTransferLedger combinedPointLedger(const ExternalPointTransferLedger &a,const ExternalPointTransferLedger &b) {
+        if(a.transfers>std::numeric_limits<std::uint64_t>::max()-b.transfers)throw std::overflow_error("external point count overflow");
+        ExternalPointTransferLedger out;out.transfers=a.transfers+b.transfers;
+        out.impulse_n_s=a.impulse_n_s+b.impulse_n_s;out.angular_impulse_kg_m2_s=a.angular_impulse_kg_m2_s+b.angular_impulse_kg_m2_s;
+        out.work_j=a.work_j+b.work_j;
+        if(!finite(b.impulse_n_s)||!finite(b.angular_impulse_kg_m2_s)||!std::isfinite(b.work_j)||
+            !finite(out.impulse_n_s)||!finite(out.angular_impulse_kg_m2_s)||!std::isfinite(out.work_j))
+            throw std::overflow_error("external point transfer ledger overflow");
+        return out;
+    }
     template <typename Body>
     void sweep(std::uint32_t block, std::uint32_t boundary, Body &&body) {
         for (std::uint32_t c = 0; c < L_.color_count; ++c) {
@@ -258,6 +315,7 @@ private:
     SphereState<Real> sphere_{};
     RunStatus status_{};
     CpuExternalLoads<Real> external_;
+    Vec3 origin_{};
     // RunControl::energy_flat_fraction, held here because the substep that
     // accumulates removed energy does not see the control.
     double energy_flat_fraction_{1.0e-3};

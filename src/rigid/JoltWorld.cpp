@@ -1261,6 +1261,7 @@ public:
     };
     std::unordered_map<MatterBodyId, std::pair<double, std::vector<CellShape>>> cell_shapes_;
     std::atomic<std::uint64_t> tick_{0};
+    const std::shared_ptr<const int> contact_plan_identity_{std::make_shared<const int>(0)};
     ImpactCollector impact_collector_;
     JPH::BodyID floor_id_;
     std::unordered_map<MatterBodyId,JPH::Ref<JPH::Constraint>> pins_;
@@ -2845,9 +2846,27 @@ PointContactKick JoltWorld::applyExternalPointContact(MatterBodyId proxy,MatterB
     point.velocity_m_s=out.contact.node_velocity_m_s;
     return out;
 }
-FixedPointContactKick JoltWorld::applyExternalFixedPointContact(MatterBodyId proxy,MatterBodyId striker,
-    ActiveNodeState &point,Vec3 normal,double gap,double duration,
-    const PointRigidContactSettings &settings,const PointContactRoundoffBudget &budget) {
+struct PreparedFixedPointContact::Data {
+    std::shared_ptr<const int> identity;
+    std::uint64_t tick{};
+    MatterBodyId proxy{},striker{};
+    JPH::BodyID native_proxy;
+    std::vector<JPH::BodyID> native_bodies;
+    std::vector<JPH::RefConst<JPH::Shape>> shapes;
+    std::vector<RigidMechanicalState> before;
+    ActiveNodeState point;
+    Vec3 normal{};double gap{},duration{};
+    PointRigidContactSettings settings;
+    PointContactRoundoffBudget budget;
+    FixedPointContactKick receipt;
+};
+const FixedPointContactKick &PreparedFixedPointContact::receipt() const {
+    if(!data_)throw std::invalid_argument("empty prepared fixed contact");
+    return data_->receipt;
+}
+PreparedFixedPointContact JoltWorld::prepareExternalFixedPointContact(MatterBodyId proxy,MatterBodyId striker,
+    const ActiveNodeState &point,Vec3 normal,double gap,double duration,
+    const PointRigidContactSettings &settings,const PointContactRoundoffBudget &budget) const {
     impl_->requireConfigurationMutable();
     if(!contains(proxy)||!contains(striker)||proxy==striker)
         throw std::invalid_argument("fixed point contact needs distinct existing source and target proxy");
@@ -2917,8 +2936,21 @@ FixedPointContactKick JoltWorld::applyExternalFixedPointContact(MatterBodyId pro
     out.delivered_bodies=before;
     out.delivered_normal_speed_m_s=out.contact.modal_contact.relative_normal_after_m_s;
     out.delivered_slip_m_s=out.contact.modal_contact.slip_after_m_s;
-    if(!out.contact.modal_contact.applied)return out;
-    std::vector<JPH::Vec3> velocities,spins;
+    const auto finish=[&]() {
+        auto data=std::make_shared<PreparedFixedPointContact::Data>();
+        data->identity=impl_->contact_plan_identity_;data->tick=impl_->tick_.load(std::memory_order_relaxed);
+        data->proxy=proxy;data->striker=striker;data->native_proxy=impl_->bodies_.at(proxy);
+        data->before=before;data->point=point;data->normal=normal;data->gap=gap;data->duration=duration;
+        data->settings=settings;data->budget=budget;data->receipt=out;
+        for(auto id:out.body_ids) {
+            data->native_bodies.push_back(impl_->bodies_.at(id));
+            JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(),impl_->bodies_.at(id));
+            if(!lock.Succeeded())throw std::runtime_error("cannot lock prepared fixed contact shape");
+            data->shapes.emplace_back(lock.GetBody().GetShape());
+        }
+        PreparedFixedPointContact prepared;prepared.data_=std::move(data);return prepared;
+    };
+    if(!out.contact.modal_contact.applied)return finish();
     const auto representable=[](Vec3 v) {
         const double limit=std::numeric_limits<float>::max();
         return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z)&&
@@ -2936,7 +2968,6 @@ FixedPointContactKick JoltWorld::applyExternalFixedPointContact(MatterBodyId pro
             velocity.LengthSq()>motion->GetMaxLinearVelocity()*motion->GetMaxLinearVelocity()||
             spin.LengthSq()>motion->GetMaxAngularVelocity()*motion->GetMaxAngularVelocity())
             throw std::invalid_argument("fixed contact exceeds runtime velocity limits");
-        velocities.push_back(velocity);spins.push_back(spin);
         out.delivered_bodies[i].motion.linear_velocity_m_s=fromJoltVector(velocity);
         out.delivered_bodies[i].motion.angular_velocity_rad_s=fromJoltVector(spin);
     }
@@ -2969,13 +3000,51 @@ FixedPointContactKick JoltWorld::applyExternalFixedPointContact(MatterBodyId pro
         std::abs(out.numerical_energy_change_j)>budget.energy_j||length(out.momentum_error_kg_m_s)>budget.linear_impulse_n_s||
         length(out.angular_momentum_error_kg_m2_s)>budget.angular_impulse_kg_m2_s)
         throw std::invalid_argument("fixed contact exceeds runtime roundoff budget");
-    // Every member, constraint, speed and roundoff budget passed before the first write.
+    return finish();
+}
+FixedPointContactKick JoltWorld::commitExternalFixedPointContact(const PreparedFixedPointContact &prepared,ActiveNodeState &point) {
+    impl_->requireConfigurationMutable();
+    if(!prepared.data_||prepared.data_->identity!=impl_->contact_plan_identity_||
+        prepared.data_->tick!=impl_->tick_.load(std::memory_order_relaxed))
+        throw std::invalid_argument("prepared fixed contact belongs to another world or elapsed tick");
+    const auto equal=[](Vec3 a,Vec3 b){return a.x==b.x&&a.y==b.y&&a.z==b.z;};
+    const auto &saved=*prepared.data_;
+    if(!equal(point.position_world_m,saved.point.position_world_m)||!equal(point.previous_position_world_m,saved.point.previous_position_world_m)||
+        !equal(point.velocity_m_s,saved.point.velocity_m_s)||!equal(point.spin_angular_velocity_rad_s,saved.point.spin_angular_velocity_rad_s)||
+        point.mass_kg!=saved.point.mass_kg)
+        throw std::invalid_argument("prepared fixed contact target point changed");
+    // Recompute admission and numerical preflight against current native inputs.
+    const auto checked=prepareExternalFixedPointContact(saved.proxy,saved.striker,point,saved.normal,saved.gap,saved.duration,saved.settings,saved.budget);
+    const auto &now=*checked.data_;
+    if(saved.native_proxy!=now.native_proxy||saved.native_bodies!=now.native_bodies||
+        saved.receipt.body_ids!=now.receipt.body_ids||saved.receipt.joint_ids!=now.receipt.joint_ids)
+        throw std::invalid_argument("prepared fixed contact topology or proxy changed");
+    for(std::size_t i=0;i<saved.before.size();++i) {
+        const auto &a=saved.before[i],&b=now.before[i];const auto &qa=a.motion.orientation_world,&qb=b.motion.orientation_world;
+        if(saved.shapes[i].GetPtr()!=now.shapes[i].GetPtr()||a.mass_kg!=b.mass_kg||a.inertia_world_kg_m2.m!=b.inertia_world_kg_m2.m||
+            !equal(a.motion.center_of_mass_world_m,b.motion.center_of_mass_world_m)||!equal(a.motion.linear_velocity_m_s,b.motion.linear_velocity_m_s)||
+            !equal(a.motion.angular_velocity_rad_s,b.motion.angular_velocity_rad_s)||qa.w!=qb.w||qa.x!=qb.x||qa.y!=qb.y||qa.z!=qb.z)
+            throw std::invalid_argument("prepared fixed contact source motion, mass or shape changed");
+    }
+    for(std::size_t i=0;i<saved.receipt.links.size();++i) {
+        const auto &a=saved.receipt.links[i],&b=now.receipt.links[i];
+        if(a.a!=b.a||a.b!=b.b||!equal(a.point_a_world_m,b.point_a_world_m)||!equal(a.point_b_world_m,b.point_b_world_m))
+            throw std::invalid_argument("prepared fixed contact attachment changed");
+    }
+    auto out=now.receipt;
+    if(!out.contact.modal_contact.applied)return out;
     auto &bodies=impl_->physics_->GetBodyInterface();
     for(std::size_t i=0;i<out.body_ids.size();++i)
-        bodies.SetLinearAndAngularVelocity(impl_->bodies_.at(out.body_ids[i]),velocities[i],spins[i]);
+        bodies.SetLinearAndAngularVelocity(impl_->bodies_.at(out.body_ids[i]),toJolt(out.delivered_bodies[i].motion.linear_velocity_m_s),
+            toJolt(out.delivered_bodies[i].motion.angular_velocity_rad_s));
     for(std::size_t i=0;i<out.body_ids.size();++i)out.delivered_bodies[i]=mechanicalState(out.body_ids[i]);
-    audit();point.velocity_m_s=out.contact.modal_contact.node_velocity_m_s;
+    point.velocity_m_s=out.contact.modal_contact.node_velocity_m_s;
     return out;
+}
+FixedPointContactKick JoltWorld::applyExternalFixedPointContact(MatterBodyId proxy,MatterBodyId striker,
+    ActiveNodeState &point,Vec3 normal,double gap,double duration,
+    const PointRigidContactSettings &settings,const PointContactRoundoffBudget &budget) {
+    return commitExternalFixedPointContact(prepareExternalFixedPointContact(proxy,striker,point,normal,gap,duration,settings,budget),point);
 }
 CohesiveTensionKick JoltWorld::applyCohesiveTensionKick(MatterBodyId a,MatterBodyId b,
     Vec3 local_a,Vec3 local_b,double rest,const CohesiveInterfaceLaw &law,
