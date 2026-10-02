@@ -1,5 +1,7 @@
 # Banjo mechanics scorecard
 
+**Tool autosave host checkpoint, October 1:** [Measured save handling](tool-autosave-checkpoint.md) retains native incomplete-stroke/embedded-tool guards and complete checkpoint boundaries. Actual Chrome rapid use, private excavated stock restart and glass/oak/iron contact regression pass. No force, material law, dt, tolerance or conservation claim changes.
+
 **Player goal reconciliation, October 1:** [Six remaining player goals](player-experience-checklist.md#remaining-work) retain mixed interfaces, damaged-tool reuse, broad rover terrain, native avatar/cargo reactions and constituent/process accounting as open work. This documentation update changes no mechanics status, solver, tolerance or physical validation.
 
 **Read-only collection previews, October 1:** [Host/UI checkpoint](material-preview-checkpoint.md) separates native soil/sand candidates from rover ore ledgers and whole-object pickup. Chrome confirms a positive native sand receipt and unchanged declared ore reserve; actual output collection credits only its collector. No material, solver, force, dt, tolerance or energy/momentum claim changes. Matched glass/oak/iron quick-contact regression remains retained; rock-work-v1 is not replaced. Additional raw harvesting methods remain unqualified.

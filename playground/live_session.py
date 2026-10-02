@@ -1045,6 +1045,23 @@ class Live:
                 session.id = uuid.uuid4().hex
             return {"session": session.id, "spec": session.room_spec, **whole, "rejoined": True}
 
+    @staticmethod
+    def snapshot_deferred(reason: str) -> bool:
+        """Only native transient snapshot guards may queue an autosave retry.
+
+        Unknown refusals and transport/storage errors remain failures. Keep
+        this list aligned with LiveWorld::snapshot's in-flight state guards.
+        """
+        return reason in (
+            "a break is being worked out: the world is saved once it has come apart",
+            "something cut through is about to come apart",
+            "an edge is in a cut: the world is saved once it is clear",
+            "a hand is making a stroke: the world is saved once it is over",
+        ) or (reason.startswith("the ") and (
+            reason.endswith("'s point is in the ground: the world is saved once it is out") or
+            ("'s edge is in a cut in the " in reason and
+             reason.endswith(": the world is saved once it is clear"))))
+
     def snapshot(self) -> tuple[dict[str, Any] | None, str]:
         """The whole of the running world, for opening the room again after the
         server has gone (LiveWorld::snapshot), carrying the room's word for the

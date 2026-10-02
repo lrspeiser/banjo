@@ -1,5 +1,7 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Tool autosave boundary, October 1:** [Pending checkpoint retries](tool-autosave-checkpoint.md) distinguish normal in-flight tool work from persistence errors. Progress is durable only after the safe paired checkpoint; real failures stay visible. No platform or physics scope change.
+
 **Current player goals, October 1:** [Six remaining goals](player-experience-checklist.md#remaining-work) cover the complete supply/build loop, mixed-material tools, damaged-tool repair/use, rover reliability, physical avatar/cargo handling and broader human/AI progression. Existing verified UI and opening journeys are recorded below; the full platform scope remains in this plan.
 
 **Material discovery, October 1:** [Collection preview checkpoint](material-preview-checkpoint.md) replaces ground circles/labels with crosshair and nearby material thumbnails. Native soil/sand digging, rover ore extraction, whole-object pickup and actual output collection are distinct. LLM-authored ground tools share read-only candidates; no loot or law changes. Four verified, ten partial.

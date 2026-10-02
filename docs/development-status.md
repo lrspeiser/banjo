@@ -1,5 +1,7 @@
 # Development status and handoff
 
+**Tool autosave, October 1:** [Verified checkpoint](tool-autosave-checkpoint.md) queues known native in-flight guards as pending and retries promptly. Actual Chrome rapid tool use has no save warning; injected disk failure remains visible and private excavated stock survives restart. No native law change.
+
 **Current working list, October 1:** [Remaining player work](player-experience-checklist.md#remaining-work) consolidates unfinished portions into six goals. It supersedes the historical four-verified/ten-partial tally for current planning. Source review at published `7ee92d0`; documentation-only reconciliation, with no new physics validation.
 
 **Material collection clarity, October 1:** [Verified preview checkpoint](material-preview-checkpoint.md) removes ground markers and floating material labels. Thumbnails show the actual method and stock quantity; nearby Look only changes direction. Chrome verifies native sand in an ore area without ore credit and output Collect into private Inventory. Material preview six, goods 15, controls 20, quick tools five, MCP 24 and API docs 12 pass. Implementation `f978d1a` is published on main; refreshed 8770 preview passes legacy/fresh reopen. No native law change; broader requirements remain four verified, ten partial.

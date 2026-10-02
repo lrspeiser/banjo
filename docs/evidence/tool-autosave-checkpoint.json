@@ -1,0 +1,386 @@
+{
+  "schema": "banjo.tool-autosave-checkpoint.v1",
+  "source_base_revision": "11ab00ceb87de42afb6f6015a2513448140ca69e",
+  "source_dirty_during_verification": true,
+  "environment": "Windows / Python 3.13 / MSVC 19.44 Release / actual Chrome / CPU ABI 25",
+  "scene_cell_m": 0.05,
+  "native_dt_s": 0.004166666666666667,
+  "source_sha256": {
+    "playground/live_session.py": "52d0032e6de4b489906b35c2194fba8c6c1bc5d9017166fb1e2c65ccca5e7080",
+    "playground/server.py": "f6af720bf4a8cfac954156698a116bdac546ed69e94a9c21dec66077a2ab3dd8",
+    "tests/room_store_tests.py": "f39f49e8c0fe7b5584cf7c17ea58e0ceebaabedfde7d4ad9f7246bade467b49a",
+    "tests/quick_tool_tests.py": "825ad9050bc6e8d6012ca3251f1ee7e698856afe095ee91946edddc89472232a"
+  },
+  "engine_sha256": "6ce0e6d010d9ef23fd354c7f4d98a4eba93638c065f8f6979bdeefbaf13b9107",
+  "library_sha256": "198ab769e09fd915262402da85b54ede02973461bc6811a5b38e58ff2aa30ecb",
+  "browser": {
+    "completed_uses_per_s": 2.371916508572433,
+    "max_rotation_deg": 4.039338080994477,
+    "tool_use_save_warnings": [],
+    "disk_failure_warning_verified": true,
+    "restart_carried": {
+      "b273a0811766430192479b92e9630262": {
+        "rock_m3": 0.0,
+        "sand_m3": 0.01854035801520738,
+        "soil_m3": 0.0014321580226019206
+      },
+      "machine:rover": {
+        "rock_m3": 0.0,
+        "sand_m3": 0.0,
+        "soil_m3": 4.702055130714755e-06
+      }
+    },
+    "save_events": [
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 0.0,
+        "attempted_t_s": 0.0
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 0.0,
+        "attempted_t_s": 0.0
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 0.2708333333333336,
+        "attempted_t_s": 0.2708333333333336
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 1.033333333333331,
+        "attempted_t_s": 1.033333333333331
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 1.0666666666666642,
+        "attempted_t_s": 1.0666666666666642
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 1.1374999999999973,
+        "attempted_t_s": 1.1374999999999973
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 1.2416666666666636,
+        "attempted_t_s": 1.2416666666666636
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 1.3458333333333299,
+        "attempted_t_s": 1.3458333333333299
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 1.4499999999999962,
+        "attempted_t_s": 1.4499999999999962
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 1.5499999999999958,
+        "attempted_t_s": 1.5499999999999958
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 1.6541666666666621,
+        "attempted_t_s": 1.6541666666666621
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 1.7583333333333284,
+        "attempted_t_s": 1.7583333333333284
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 1.858333333333328,
+        "attempted_t_s": 1.858333333333328
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 1.9583333333333277,
+        "attempted_t_s": 1.9583333333333277
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 2.066666666666664,
+        "attempted_t_s": 2.066666666666664
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 2.170833333333336,
+        "attempted_t_s": 2.170833333333336
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 2.275000000000008,
+        "attempted_t_s": 2.275000000000008
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 2.3833333333333466,
+        "attempted_t_s": 2.3833333333333466
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 2.4833333333333516,
+        "attempted_t_s": 2.4833333333333516
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 2.5875000000000234,
+        "attempted_t_s": 2.5875000000000234
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 2.695833333333362,
+        "attempted_t_s": 2.695833333333362
+      },
+      {
+        "state": "pending",
+        "reason": "a hand is making a stroke: the world is saved once it is over",
+        "saved_t_s": 2.695833333333362,
+        "attempted_t_s": null
+      },
+      {
+        "state": "pending",
+        "reason": "a hand is making a stroke: the world is saved once it is over",
+        "saved_t_s": 2.695833333333362,
+        "attempted_t_s": null
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 3.6791666666667444,
+        "attempted_t_s": 3.6791666666667444
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 3.6791666666667444,
+        "attempted_t_s": 3.6791666666667444
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 4.06250000000009,
+        "attempted_t_s": 4.06250000000009
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 4.06250000000009,
+        "attempted_t_s": 4.06250000000009
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 4.483333333333399,
+        "attempted_t_s": 4.483333333333399
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 4.483333333333399,
+        "attempted_t_s": 4.483333333333399
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 4.9916666666667036,
+        "attempted_t_s": 4.9916666666667036
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 4.9916666666667036,
+        "attempted_t_s": 4.9916666666667036
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 5.433333333333345,
+        "attempted_t_s": 5.433333333333345
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 5.433333333333345,
+        "attempted_t_s": 5.433333333333345
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 5.845833333333322,
+        "attempted_t_s": 5.845833333333322
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 5.845833333333322,
+        "attempted_t_s": 5.845833333333322
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 6.262499999999965,
+        "attempted_t_s": 6.262499999999965
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 6.262499999999965,
+        "attempted_t_s": 6.262499999999965
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 6.6874999999999405,
+        "attempted_t_s": 6.6874999999999405
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 6.6874999999999405,
+        "attempted_t_s": 6.6874999999999405
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 7.087499999999918,
+        "attempted_t_s": 7.087499999999918
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 7.087499999999918,
+        "attempted_t_s": 7.087499999999918
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 7.512499999999894,
+        "attempted_t_s": 7.512499999999894
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 7.512499999999894,
+        "attempted_t_s": 7.512499999999894
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 7.933333333333203,
+        "attempted_t_s": 7.933333333333203
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 7.933333333333203,
+        "attempted_t_s": 7.933333333333203
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 8.349999999999847,
+        "attempted_t_s": 8.349999999999847
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 8.349999999999847,
+        "attempted_t_s": 8.349999999999847
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 8.758333333333157,
+        "attempted_t_s": 8.758333333333157
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 8.758333333333157,
+        "attempted_t_s": 8.758333333333157
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 9.158333333333134,
+        "attempted_t_s": 9.158333333333134
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 9.158333333333134,
+        "attempted_t_s": 9.158333333333134
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 9.562499999999778,
+        "attempted_t_s": 9.562499999999778
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 9.562499999999778,
+        "attempted_t_s": 9.562499999999778
+      },
+      {
+        "state": "failed",
+        "reason": "injected disk full",
+        "saved_t_s": 9.562499999999778,
+        "attempted_t_s": 10.374999999999732
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 10.487499999999725,
+        "attempted_t_s": 10.487499999999725
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 10.608333333333052,
+        "attempted_t_s": 10.608333333333052
+      },
+      {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 10.608333333333052,
+        "attempted_t_s": 10.608333333333052
+      }
+    ]
+  },
+  "checks": {
+    "room_store": 28,
+    "quick_tools": 5,
+    "two_terrain_learning_recovery": 1,
+    "source_registration": "287/287",
+    "world_goods": 15
+  },
+  "limits": "Expected native in-flight snapshot guards only; pending is not durable. Last complete checkpoint remains until safe save. No native solver/material law/tolerance changes; no full-world conservation or deployment scaling claim."
+}

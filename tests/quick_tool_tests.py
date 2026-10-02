@@ -104,6 +104,15 @@ class RapidPlayer(unittest.TestCase):
             self.skipTest('Chrome not installed')
         with mock.patch.object(ai.server.secrets,'randbelow',side_effect=[0,1]):
             ident,owner,app=self.setup_world()
+        save_events=[]
+        keep=ai.server.keep_world
+        def observed_keep(target,*args,**kwargs):
+            result=keep(target,*args,**kwargs)
+            if target is app:
+                save_events.append(dict(app.room.persistence))
+            return result
+        saving=mock.patch.object(ai.server,'keep_world',side_effect=observed_keep)
+        saving.start();self.addCleanup(saving.stop)
         chrome=qa_browser.Chrome(1280,800);self.addCleanup(chrome.close)
         page=chrome.page;page.send('Page.enable');page.send('Runtime.enable')
         def wait(expression,seconds=25):
@@ -130,6 +139,10 @@ class RapidPlayer(unittest.TestCase):
             'pickup and idle positioning must not excavate before Use')
         # Observe real HTTP replies, including refusals. Never synthesize work.
         page.evaluate('''(()=>{window.quickUses=[];window.quickActive=0;window.quickMax=0;
+          window.saveWarnings=[];
+          new MutationObserver(()=>{const b=document.querySelector('#world-save-status');
+            if(b && !b.hidden)saveWarnings.push(b.textContent)
+          }).observe(document.body,{subtree:true,childList:true,attributes:true});
           const original=window.fetch;window.fetch=async function(url,options){
             if(!String(url).includes('/api/world/tool/use'))return original.apply(this,arguments);
             const start=performance.now();quickMax=Math.max(quickMax,++quickActive);
@@ -138,6 +151,15 @@ class RapidPlayer(unittest.TestCase):
             }finally{quickActive--}}
         })()''')
         key('keyDown','KeyJ','j');key('keyUp','KeyJ','j')
+        wait('quickActive===1')
+        # Ask for a real native snapshot during the real tool movement. This
+        # must keep the previous disk checkpoint and queue a quiet retry.
+        deadline=time.monotonic()+2
+        while time.monotonic()<deadline:
+            if not ai.server.keep_world(app,'browser stroke boundary'):
+                break
+            time.sleep(.005)
+        self.assertEqual('pending',app.room.persistence['state'],save_events)
         wait('quickUses.length===1 && banjoRoom.use().mode==="tool-ready"')
         self.assertGreater(page.evaluate('quickUses[0].answer.result?.loosened_kg || 0'),0)
         first=page.evaluate('quickUses[0].answer')
@@ -181,11 +203,37 @@ class RapidPlayer(unittest.TestCase):
         key('keyUp','KeyJ','j');wait('quickActive===0')
         stopped=page.evaluate('quickUses.length');time.sleep(.6)
         self.assertEqual(stopped,page.evaluate('quickUses.length'))
+        wait('document.querySelector("#world-save-status")?.hidden')
+        self.assertEqual([],page.evaluate('saveWarnings'))
+        self.assertTrue(any(s['state']=='pending' for s in save_events),save_events)
+        self.assertFalse(any(s['state']=='failed' for s in save_events),save_events)
+        self.assertEqual('saved',app.room.persistence['state'])
         self.assertFalse([e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
+        # A genuine disk failure still reaches the same visible warning, then
+        # clears only when a complete paired checkpoint succeeds.
+        with mock.patch.object(app.store,'_save',side_effect=OSError('injected disk full')):
+            self.assertFalse(ai.server.keep_world(app,'browser storage failure'))
+            wait('document.querySelector("#world-save-status") && !document.querySelector("#world-save-status").hidden')
+            self.assertIn('injected disk full',page.evaluate('document.querySelector("#world-save-status").textContent'))
+        self.assertTrue(ai.server.keep_world(app,'browser storage recovery'))
+        wait('document.querySelector("#world-save-status").hidden')
+        chrome.close()
+        self.assertTrue(ai.server.keep_world(app,'rapid tool restart boundary'))
+        saved=app.store.read_record(app.room.scene)['world']
+        carried=saved['ground']['carriers']
+        self.assertGreater(sum(c.get('soil_m3',0)+c.get('sand_m3',0) for c in carried.values()),0)
+        self.stop();self.start()
+        reopened=self.post('/api/world/open',{},ident)
+        restored=self.app.hub.get(ident)
+        again=restored.live.snapshot()[0]['ground']['carriers']
+        self.assertEqual(carried,again,'actual excavated stock must survive server restart')
+        self.assertEqual(saved['tool_points'],restored.live.snapshot()[0]['tool_points'])
         OUT.mkdir(parents=True,exist_ok=True)
         (OUT/'quick-tool-browser.json').write_text(json.dumps({'held':held,'rapid_taps':taps,
             'completed_uses_per_s':rate,'max_rotation_deg':max(angles),'max_concurrent_requests':1,
-            'terrain_seed':app.room.spec['terrain']['generate']['seed']},indent=2)+'\n',encoding='utf-8')
+            'terrain_seed':app.room.spec['terrain']['generate']['seed'],
+            'save_events':save_events,'tool_use_save_warnings':[],
+            'disk_failure_warning_verified':True,'restart_carried':again},indent=2)+'\n',encoding='utf-8')
 
 
 if __name__=='__main__':unittest.main(verbosity=2)

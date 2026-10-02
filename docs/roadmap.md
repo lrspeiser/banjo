@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Tool save usability gate, October 1:** [Quiet retry checkpoint](tool-autosave-checkpoint.md) passes real stroke deferral, early safe retry, disk failure/recovery and private stock restart. Keep native snapshot restrictions and paired learning/stock durability for subsequent tool and paid-work flows.
+
 **Next player work, October 1:** Use the [six remaining goals](player-experience-checklist.md#remaining-work): complete supplies/builds, mixed-material tools, damaged-tool repair/use, dependable rover routes, physical avatar/cargo handling and broader human/AI progression. Completed interface slices are recorded with evidence; retain the platform acceptance gates below.
 
 **Material discovery gate, October 1:** [Crosshair/nearby thumbnails](material-preview-checkpoint.md) pass actual pickup, native sand digging, separate rover ore route and private output Collect. Ground circles/labels are removed. Next qualify additional harvesting, exposed ore and dismantling methods with their native receipts before advertising new raw drops. Four verified, ten partial.

@@ -403,6 +403,54 @@ class ARoomComesBackAsItStood(KeptRoomsTestCase):
             self.assertFalse(playground_server.keep_world(app, "a test"))
         self.assertEqual(json.loads((self.folder / "yard.json").read_text(encoding="utf-8"))["world"], kept)
 
+    def test_a_stroke_queues_a_checkpoint_and_retries_before_the_periodic_save(self):
+        app=self.start()
+        self.open(app,scene="yard")
+        kept=app.store.read_record("yard")["world"]
+        app.live.session.state["t"]=.1
+        reason="a hand is making a stroke: the world is saved once it is over"
+        with mock.patch.object(app.live,"snapshot",return_value=(None,reason)):
+            self.assertFalse(playground_server.keep_world(app,"tool in flight"))
+        self.assertEqual("pending",app.room.persistence["state"])
+        self.assertEqual(kept,app.store.read_record("yard")["world"])
+        saved=len(app.live.snapshots)
+        playground_server.keep_world_after(app,{"op":"step"},{"t":.2})
+        self.assertEqual(saved,len(app.live.snapshots),"retry must be throttled")
+        playground_server.keep_world_after(app,{"op":"step"},{"t":.7})
+        self.assertEqual(saved+1,len(app.live.snapshots),"retry must not wait five seconds")
+        self.assertEqual("saved",app.room.persistence["state"])
+        self.assertFalse(app.room.world_save_pending)
+
+    def test_transient_guards_do_not_clear_real_save_errors(self):
+        app=self.start()
+        self.open(app,scene="yard")
+        with mock.patch.object(app.live,"snapshot",return_value=(None,"engine connection lost")):
+            self.assertFalse(playground_server.keep_world(app))
+        self.assertEqual("failed",app.room.persistence["state"])
+        with mock.patch.object(app.live,"snapshot",return_value=(None,
+                "the field pick's point is in the ground: the world is saved once it is out")):
+            self.assertFalse(playground_server.keep_world(app))
+        self.assertEqual("engine connection lost",app.room.persistence["reason"])
+        self.assertTrue(app.room.world_save_pending)
+        with mock.patch.object(app.store,"save",side_effect=OSError("disk full")):
+            self.assertFalse(playground_server.keep_world(app))
+        self.assertTrue(playground_server.keep_world(app))
+        self.assertEqual("saved",app.room.persistence["state"])
+
+    def test_only_known_native_in_flight_guards_are_pending(self):
+        reasons=(
+            "a break is being worked out: the world is saved once it has come apart",
+            "something cut through is about to come apart",
+            "an edge is in a cut: the world is saved once it is clear",
+            "a hand is making a stroke: the world is saved once it is over",
+            "the spade's point is in the ground: the world is saved once it is out",
+            "the saw's edge is in a cut in the oak: the world is saved once it is clear")
+        for reason in reasons:
+            self.assertTrue(live_session.Live.snapshot_deferred(reason),reason)
+        for reason in ("no world is open","the world gave no snapshot","disk full",
+                       "a hand is making a stroke: unsupported state"):
+            self.assertFalse(live_session.Live.snapshot_deferred(reason),reason)
+
     def test_a_room_kept_before_its_world_was_opens_from_its_spec(self):
         self.folder.mkdir(parents=True)
         (self.folder / "yard.json").write_text(json.dumps(

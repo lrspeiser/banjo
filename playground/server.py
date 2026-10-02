@@ -2778,9 +2778,19 @@ def keep_world(app,why=""):
             getattr(app.live, "checkpoint", nullcontext)():
         saved,refused=snapshot()
         if saved is None:
-            room.persistence={"state":"failed","reason":str(refused)[:240],
-                              "saved_t_s":getattr(room,"world_saved_t",None),"attempted_t_s":None}
-            log.info("rooms: the running world was not saved (%s): %s; the last one saved is kept",why,refused)
+            deferred=live_session.Live.snapshot_deferred(str(refused))
+            room.world_save_pending=deferred
+            # A moving tool is an expected checkpoint boundary, not a failed
+            # disk write. Never clear an earlier genuine failure until saved.
+            previous=getattr(room,"persistence",{}) or {}
+            if not deferred or previous.get("state")!="failed":
+                room.persistence={"state":"pending" if deferred else "failed","reason":str(refused)[:240],
+                                  "saved_t_s":previous.get("saved_t_s",getattr(room,"world_saved_t",None)),
+                                  "attempted_t_s":None}
+            room.world_refused_t=float((getattr(app.live.session,"state",{}) or {}).get("t") or 0.0)
+            log.log(logging.DEBUG if deferred else logging.INFO,
+                    "rooms: checkpoint %s (%s): %s; the last one saved is kept",
+                    "waiting" if deferred else "failed",why,refused)
             return False
         gameplay_room.sync(app, {"t": float(saved.get("t_s") or 0.0)})
         fabrication_room.sync(app, {"t": float(saved.get("t_s") or 0.0)})
@@ -2792,6 +2802,7 @@ def keep_world(app,why=""):
         import world_goods
         world_goods.settle(app)
         room.world_saved_t=float(saved.get("t_s") or 0.0)
+        room.world_save_pending=False
         machine_witness.saved(app,journal_of,registry())
         if getattr(app,'world_id',None): player_learning.saved(app,journal_of,registry())
     return True
@@ -2808,7 +2819,8 @@ def keep_world_after(app,body,answer):
     due=bool(answer.get("finished"))
     if not due and body.get("op")=="step" and isinstance(t,(int,float)):
         # Either way round: a world opened again starts its clock over.
-        due=(abs(float(t)-float(getattr(room,"world_saved_t",-1.0e9)))>=KEEP_WORLD_EVERY_S
+        due=((getattr(room,"world_save_pending",False) or
+              abs(float(t)-float(getattr(room,"world_saved_t",-1.0e9)))>=KEEP_WORLD_EVERY_S)
              and abs(float(t)-float(getattr(room,"world_refused_t",-1.0e9)))>=KEEP_WORLD_RETRY_S)
     if not due: return
     if not keep_world(app,"a break was worked out" if answer.get("finished") else "the world moved on") \
