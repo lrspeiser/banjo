@@ -2,6 +2,8 @@
 
 October 2, 2026. This checkpoint tests the normal generated world through public HTTP actions. It does not complete R3's damage/reuse acceptance.
 
+Published test/instruction checkpoint: `cff3b9536b00e5af4dcb63460687a9e6ffae2846` on GitHub main.
+
 ## Scope
 
 `LabRemake.test_fresh_market_paid_pick_contacts_peer_product_and_server_restart_keeps_both` in [the fabrication tests](../tests/fabrication_remake_tests.py) starts a generated 50 mm world with its empty workbench. It banks actual solar-store energy, purchases finite Market lots into the player's private rack, funds measured material/energy requirements, waits for accepted native charging/processing time and places two paid products. It does not insert stock, alter the map, weaken a fixing, change the grid or grant free energy.
