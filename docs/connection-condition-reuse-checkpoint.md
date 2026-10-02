@@ -85,7 +85,11 @@ Ignored evidence under `build/resource-flow/`: `connection-condition-build.log`,
 `connection-condition-measurements.log`, `connection-condition-native-final.log`,
 `connection-condition-controls-final.log`, `connection-remake-final.log`,
 `connection-review-http.json` and `broken-replacement-native.json`.
-Published revision is recorded after the verified push.
+Published implementation: `5621c171baa7859432ea4347c266bf62320e1a5a` on GitHub main,
+based on `efaabbe3908cc114f9dc412470b4739f95f0b6c7`. The first push hit a
+transport reset; a fetch and ordinary HTTP/1.1 fast-forward push succeeded.
+The unchanged older preview runner/DLL/CLI hashes were rechecked; no preview
+server was restarted or binary overwritten.
 
 ## Remaining R3 work
 
