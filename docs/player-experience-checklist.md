@@ -1,5 +1,11 @@
 # Remaining player goals — October 2, 2026
 
+## Owner-directed handoff — October 2
+
+Stop the current R3 damage/reuse work at the published checkpoint: implementation `cff3b95`, publication record `0e6a205`, on GitHub main. R3 remains unfinished: normal-world target damage, held internal damage, genuine repair and wear are not qualified. Existing preview binaries were not refreshed by these checkpoints.
+
+**Next item: R1, complete the material-to-build loop.** Use one fresh-world player journey: collect a missing raw material, deliver/process it, collect the output into personal Inventory, spend the resulting supplies to build and use a product, then restart and confirm retained stock and ownership without duplication. Extend the existing R1 evidence below. This is the next work scope, not a new implementation or validation claim.
+
 Updated with the [paid mixed-tool checkpoint](paid-mixed-tool-checkpoint.md). This is the current working list: five remaining goals, R1 and R3–R6, consolidated from the owner's fourteen experience requests and the earlier AI/tech-tree playthrough request. R2's supported paid Lab/World journey is complete. Each remaining goal describes unfinished work; existing implementations and evidence are linked so they can be extended.
 
 ## Remaining work
