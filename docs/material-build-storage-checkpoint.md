@@ -1,5 +1,9 @@
 # Material-to-build storage checkpoint — October 2, 2026
 
+Published implementation: `0801d3f461333facafdadb2c97b2bd805e264dba` on GitHub main.
+The separate native binaries were rebuilt from this checkpoint's source changes;
+existing preview processes were not restarted.
+
 ## Implemented
 
 R1's broken-rock receiving gap is fixed. Native withdrawal already produced
