@@ -1,5 +1,9 @@
 # Rectangular mount damage and paid reuse — October 2, 2026
 
+Published code: `71fe9c39868e43c40c491991136f28223b2db650` on GitHub `main`.
+The eight-suite/48-test evidence below covers that code revision; this line is
+a subsequent documentation-only publication record.
+
 ## Implemented boundary
 
 Newly reviewed filled rectangular mounts use their sampled face centroid,
