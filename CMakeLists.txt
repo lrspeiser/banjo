@@ -1375,6 +1375,11 @@ if(BANJO_BUILD_TESTS)
             banjo_enable_warnings(banjo_lattice_plasticity_tests)
             add_test(NAME banjo_lattice_plasticity_tests COMMAND banjo_lattice_plasticity_tests)
 
+            add_executable(banjo_lattice_verlet_tests tests/lattice_verlet_tests.cpp)
+            target_link_libraries(banjo_lattice_verlet_tests PRIVATE banjo_fastlattice)
+            banjo_enable_warnings(banjo_lattice_verlet_tests)
+            add_test(NAME banjo_lattice_verlet_tests COMMAND banjo_lattice_verlet_tests)
+
             # Algorithm 3: the propagator premises and the exact parallel backend.
             add_executable(banjo_fracture_algo3_tests tests/fracture_algo3_tests.cpp)
             target_link_libraries(banjo_fracture_algo3_tests PRIVATE banjo_fastlattice_scene)

@@ -18,7 +18,7 @@ void near(double value,double expected,double bound,const char *why){if(!std::is
 struct Target {
     MaterialDefinition material;LatticeAsset asset;ActiveMatter matter;LatticeSchedule schedule;LatticeState state;
     StepSettings<double> settings{};
-    explicit Target(MaterialPreset preset,bool bonded=true,double timestep=dt):material(makeReferenceMaterial(preset,17)) {
+    explicit Target(MaterialPreset preset,bool bonded=true,double timestep=dt,std::uint8_t integrator=kBondXpbd):material(makeReferenceMaterial(preset,17)) {
         const auto compiled=withPlasticFlow(withStrengthDerivedFailure(compileElasticLatticeReference(material,cell,1),material),material);
         asset=generateBoxTileLattice({{.12,.12,.12},cell,1},compiled);
         matter.asset=&asset;matter.material=compiled;
@@ -31,6 +31,7 @@ struct Target {
         matter.bonds.resize(asset.bonds.size());if(!bonded)for(auto &b:matter.bonds){b.alive=false;b.damage=1;}
         schedule=buildLatticeSchedule(asset);state=buildLatticeState(matter,schedule,origin);
         settings.dt=timestep;settings.constraint_iterations=4;settings.audit_energy=1;
+        settings.bond_integrator=integrator;
         settings.plastic_yield_stretch=compiled.yield_stretch;settings.plastic_hardening=compiled.plastic_hardening_ratio;
     }
     std::unique_ptr<LatticeBackend> backend(Precision precision=Precision::Double) {
@@ -62,8 +63,8 @@ MechanicalTotals totals(const LatticeState &state,JoltWorld &world) {
     }
     return out;
 }
-void targetTransferPreservesHistoryAndAccounts() {
-    Target target(MaterialPreset::Oak,false);auto backend=target.backend();
+void targetTransferPreservesHistoryAndAccounts(std::uint8_t integrator) {
+    Target target(MaterialPreset::Oak,false,dt,integrator);auto backend=target.backend();
     std::vector<Vec3> forces(target.state.node_count,{.2,0,0});backend->setExternalForces(forces,3);
     backend->run({.max_steps=1,.capture_stride=1,.max_frames=3});
     const auto before=target.download(*backend);const auto old=backend->status();const auto point=backend->externalContactPoint(0);
@@ -141,9 +142,10 @@ void preparedContactIsImmutableAndInvalidates() {
     rejects(reshaped,shape_plan);
 }
 void coupledMatchedTargets() {
+    for(auto integrator:{kBondXpbd,kBondVelocityVerlet}) {
     std::map<MaterialPreset,double> coarse_target_energy;
     for(double timestep:{dt,.5*dt})for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
-        Tool tool(6);Target target(preset,true,timestep);auto backend=target.backend();
+        Tool tool(6);Target target(preset,true,timestep,integrator);auto backend=target.backend();
         const auto initial=totals(target.state,tool.world);double loss=0,reconcile=0,numerical=0,max_contact_work=0;
         Vec3 p_error{},l_error{},couple{};std::uint64_t contacts=0,native_steps=0;
         double native_step_energy=0,target_step_energy=0;
@@ -188,7 +190,8 @@ void coupledMatchedTargets() {
             target_step_energy+=latticeStateKineticEnergy(target_after)+latticeStateElasticEnergy(target_after)-
                 latticeStateKineticEnergy(target_before)-latticeStateElasticEnergy(target_before)+
                 status_after.removed_energy_j-status_before.removed_energy_j+status_after.plastic_work_j-status_before.plastic_work_j+
-                status_after.damping_dissipated_j-status_before.damping_dissipated_j;
+                status_after.damping_dissipated_j-status_before.damping_dissipated_j+
+                status_after.plastic_return_numerical_loss_j-status_before.plastic_return_numerical_loss_j;
         }
         const auto final_state=target.download(*backend);const auto final=totals(final_state,tool.world);const auto status=backend->status();
         const double wall=std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count();
@@ -199,15 +202,17 @@ void coupledMatchedTargets() {
         const Vec3 residual_p=final.linear_momentum_kg_m_s-initial.linear_momentum_kg_m_s-p_error;
         const Vec3 residual_l=final.angular_momentum_kg_m2_s-initial.angular_momentum_kg_m2_s-l_error-couple;
         const double unallocated=final.mechanicalEnergy()-initial.mechanicalEnergy()+loss+reconcile+
-            status.removed_energy_j+status.plastic_work_j+status.damping_dissipated_j-numerical;
+            status.removed_energy_j+status.plastic_work_j+status.damping_dissipated_j+status.plastic_return_numerical_loss_j-numerical;
         require(std::isfinite(unallocated)&&std::isfinite(length(residual_p))&&std::isfinite(length(residual_l)),"coupled trajectory audit became nonfinite");
         near(final.mass_kg,initial.mass_kg,1e-12,"coupled experiment lost mass");
         near(unallocated,native_step_energy+target_step_energy,1e-10,"coupled unallocated energy attribution");
-        std::cout<<materialPresetName(preset)<<": cells="<<target.state.node_count<<" h="<<cell<<" dt="<<timestep<<" elapsed="<<count*timestep
+        std::cout<<(integrator==kBondXpbd?"XPBD ":"Verlet ")<<materialPresetName(preset)<<": cells="<<target.state.node_count<<" h="<<cell<<" dt="<<timestep<<" elapsed="<<count*timestep
             <<" s; contacts="<<contacts<<" broken="<<status.broken_bonds<<" damage="<<status.max_damage
             <<" strain="<<status.max_tensile_stretch<<"; plastic="<<status.plastic_work_j<<" J; contact loss="<<loss<<" J; reconcile="<<reconcile
             <<" J; numerical="<<numerical<<" J; phase work="<<max_contact_work<<" J; p residual="<<length(residual_p)
             <<" N s; L residual="<<length(residual_l)<<" kg m2/s; unallocated energy="<<unallocated
+            <<" J; plastic return numerical="<<status.plastic_return_numerical_loss_j
+            <<" J; integrator measured="<<status.integration_numerical_energy_j
             <<" J; native step="<<native_step_energy<<" J; target step="<<target_step_energy
             <<" J; native step p/L="<<length(native_step_p)<<"/"<<length(native_step_l)
             <<"; target step p/L="<<length(target_step_p)<<"/"<<length(target_step_l)
@@ -221,11 +226,20 @@ void coupledMatchedTargets() {
         // behavior. No broadened angular/energy tolerance certifies conservation.
         if(preset==MaterialPreset::Glass)require(status.broken_bonds>0,"matched tool input no longer enters glass fracture");
         if(preset==MaterialPreset::Oak)require(status.broken_bonds==0,"oak comparison became a brittle substitute");
+        if(integrator==kBondVelocityVerlet) {
+            require(length(target_step_l)<1e-9,"central-force target angular drift");
+            near(target_step_energy,status.integration_numerical_energy_j,1e-10,"measured Verlet integration energy attribution");
+            // A bounded/convergent reference experiment, not certification of
+            // hand work, joint strength or complete world conservation.
+            require(std::abs(target_step_energy)<.001*initial.mechanicalEnergy(),"reference target integration error exceeds 0.1% of initial energy");
+        }
         if(timestep==dt)coarse_target_energy[preset]=target_step_energy;
-        else require(std::abs(target_step_energy)<std::abs(coarse_target_energy.at(preset)),"smaller matched timestep no longer reduces target energy defect");
+        else require(std::abs(target_step_energy)<(integrator==kBondVelocityVerlet?.27:1.0)*std::abs(coarse_target_energy.at(preset)),
+            "matched target energy refinement gate");
+    }
     }
 }
 }
-int main(){try{std::cout.precision(12);targetTransferPreservesHistoryAndAccounts();preparedContactIsImmutableAndInvalidates();coupledMatchedTargets();
+int main(){try{std::cout.precision(12);targetTransferPreservesHistoryAndAccounts(kBondXpbd);targetTransferPreservesHistoryAndAccounts(kBondVelocityVerlet);preparedContactIsImmutableAndInvalidates();coupledMatchedTargets();
     std::cout<<"[PASS] checked native/CPU contact transfer and continuous target integration\n";return 0;}
     catch(const std::exception &e){std::cerr<<"[FAIL] "<<e.what()<<'\n';return 1;}}

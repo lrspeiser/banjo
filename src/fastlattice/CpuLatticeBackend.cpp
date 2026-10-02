@@ -6,6 +6,7 @@
 #include "fastlattice/FastLattice.hpp"
 #include "fastlattice/LatticeWorking.hpp"
 #include "fastlattice/ExternalLoads.hpp"
+#include "fastlattice/VerletBonds.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -31,16 +32,39 @@ public:
 
     void upload(const LatticeState &state, const StepSettings<double> &settings,
                 const SphereState<double> &sphere) override {
-        working_ = WorkingLattice<Real>::fromState(state, schedule_);
+        if (settings.bond_integrator!=kBondXpbd&&settings.bond_integrator!=kBondVelocityVerlet)
+            throw std::invalid_argument("unknown bond integrator");
+        if (settings.bond_integrator==kBondVelocityVerlet) {
+            const auto nodes=static_cast<std::size_t>(state.node_count),bonds=static_cast<std::size_t>(state.bond_count);
+            if (state.x0.size()!=3*nodes||state.u.size()!=3*nodes||state.u_prev.size()!=3*nodes||state.v.size()!=3*nodes||
+                state.mass.size()!=nodes||state.inv_mass.size()!=nodes||state.alive.size()!=bonds||
+                state.bond_a.size()!=bonds||state.bond_b.size()!=bonds||state.compliance.size()!=bonds||
+                state.rest_length.size()!=bonds||state.rest_edge.size()!=3*bonds||state.plastic_extension.size()!=bonds||
+                state.plastic_strain.size()!=bonds)
+                throw std::invalid_argument("Verlet reference needs complete node/bond arrays");
+        }
+        auto staged=WorkingLattice<Real>::fromState(state,schedule_);
+        CpuExternalLoads<Real> staged_gravity;staged_gravity.reset(state.origin);
+        if (settings.bond_integrator==kBondVelocityVerlet) {
+            const auto arrays=staged.arrays();const auto converted=convertSettings<Real>(settings);
+            verlet::validate(arrays,converted);verlet::checkStep(arrays,converted);
+            if (!finite(state.origin)) throw std::invalid_argument("Verlet reference needs a finite world origin");
+            std::vector<Vec3> forces(arrays.node_count);
+            for (std::uint32_t i=0;i<arrays.node_count;++i) forces[i]=double(arrays.mass[i])*verlet::widen(converted.gravity);
+            staged_gravity.set(forces,std::numeric_limits<std::uint64_t>::max(),arrays);
+        }
+        working_ = std::move(staged);
         L_ = working_.arrays();
         S_ = convertSettings<Real>(settings);
         sphere_ = convertSphere<Real>(sphere);
         status_ = {};
+        status_.bond_integrator=S_.bond_integrator;
         external_.reset(state.origin);
+        gravity_=std::move(staged_gravity);
         origin_=state.origin;
         dirty_start_ = true;
         contact_rebuild_ = true;
-        status_.energy_audited = S_.audit_energy != 0;
+        status_.energy_audited = S_.audit_energy != 0 || S_.bond_integrator==kBondVelocityVerlet;
         frames_.clear();
         first_failure_bonds_.clear();
     }
@@ -117,7 +141,7 @@ public:
                 status_.last_failure_step = step;
                 ++status_.failure_rounds;
             }
-            const double available = control.removable_energy_j + status_.external_load.work_j + status_.external_point_transfer.work_j;
+            const double available = control.removable_energy_j + status_.external_load.work_j + status_.external_point_transfer.work_j + status_.gravity_load.work_j;
             status_.exit_reason = control.removable_energy_j > 0 && available <= 0 ? 6 :
                 latticeExitReason(status_.total_steps, status_.broken_bonds,
                 status_.last_failure_step, control.quiet_steps, control.min_steps,
@@ -184,6 +208,7 @@ private:
 
     // One substep; returns whether any bond failed.
     bool advance(std::uint64_t step) {
+        if (S_.bond_integrator==kBondVelocityVerlet) return advanceVerlet(step);
         const bool direct = S_.direct_arithmetic != 0;
         const std::uint32_t N = L_.node_count, B = L_.bond_count;
         (void)step;
@@ -263,13 +288,22 @@ private:
             nodeContactPass(L_, S_, status_.node_contact);
             mark(15);
         }
+        return finishStep(direct,N,B);
+    }
+
+    bool finishStep(bool direct,std::uint32_t N,std::uint32_t B) {
         for (std::uint32_t i = 0; i < N; ++i) nodeStrain(L_, i, direct, S_.plate_half_thickness, S_.plastic_yield_stretch);
         mark(11);
         bool any_failed = false;
         const bool first_failure_round = status_.broken_bonds == 0;
         for (std::uint32_t j = 0; j < B; ++j) {
             if (!L_.alive[j]) continue;
+            const Real old_plastic=L_.plastic_extension[j];
             const FailureOutcome out = bondEndSampleAndFailure(L_, S_, j, direct);
+            if (S_.bond_integrator==kBondVelocityVerlet) {
+                const double increment=std::abs(double(L_.plastic_extension[j]-old_plastic));
+                status_.plastic_return_numerical_loss_j+=.5*(1+double(S_.plastic_hardening))*increment*increment/double(L_.compliance[j]);
+            }
             status_.max_tensile_stretch = std::max(status_.max_tensile_stretch, out.peak_tensile);
             status_.max_compressive_strain = std::max(status_.max_compressive_strain, out.peak_compressive);
             status_.max_shear_strain = std::max(status_.max_shear_strain, out.peak_shear);
@@ -306,6 +340,44 @@ private:
         return any_failed;
     }
 
+    bool advanceVerlet(std::uint64_t step) {
+        (void)step;
+        const bool direct=S_.direct_arithmetic!=0;
+        const auto mechanical=[&](){return latticeKineticEnergy(L_)+latticeElasticEnergy(L_,direct);};
+        const auto losses=[&](){return status_.damping_dissipated_j+status_.removed_energy_j+
+            status_.plastic_work_j+status_.plastic_return_numerical_loss_j;};
+        const double before=mechanical(),loss_before=losses();
+        const double work_before=status_.external_load.work_j+status_.gravity_load.work_j;
+        phase_clock_=std::chrono::steady_clock::now();
+        if (dirty_start_) {
+            for (std::uint32_t i=0;i<L_.node_count;++i) nodeStrain(L_,i,direct,S_.plate_half_thickness,S_.plastic_yield_stretch);
+            mark(1);
+            for (std::uint32_t j=0;j<L_.bond_count;++j) if (L_.alive[j]) bondStartSample(L_,j,direct);
+            mark(2);dirty_start_=false;
+        }
+        // Two half kicks consume one load substep. All spring forces at a
+        // kick use the same positions; no position projection or v rebuild.
+        external_.kick(L_,Real(.5)*S_.dt,status_.external_load,&status_.external_sources,false);
+        gravity_.kick(L_,Real(.5)*S_.dt,status_.gravity_load,nullptr,false);mark(3);
+        verlet::kick(L_,S_,origin_,status_);mark(4);
+        verlet::drift(L_,S_.dt);mark(5);
+        verlet::kick(L_,S_,origin_,status_);mark(8);
+        external_.kick(L_,Real(.5)*S_.dt,status_.external_load,&status_.external_sources,true);
+        gravity_.kick(L_,Real(.5)*S_.dt,status_.gravity_load,nullptr,true);mark(10);
+        if (S_.damping_fraction>Real(0)) {
+            const double kinetic=latticeKineticEnergy(L_);
+            sweepAll([&](std::uint32_t j){bondDamp(L_,j,S_.damping_fraction,direct);});
+            status_.damping_dissipated_j+=kinetic-latticeKineticEnergy(L_);mark(9);
+        }
+        const bool failed=finishStep(direct,L_.node_count,L_.bond_count);
+        const double error=mechanical()-before+losses()-loss_before-
+            (status_.external_load.work_j+status_.gravity_load.work_j-work_before);
+        if (!std::isfinite(error)||!std::isfinite(status_.integration_numerical_energy_j+error))
+            throw std::overflow_error("Verlet measured integration energy overflow");
+        status_.integration_numerical_energy_j+=error;
+        return failed;
+    }
+
     std::chrono::steady_clock::time_point phase_clock_{};
 
     LatticeSchedule schedule_;
@@ -315,6 +387,7 @@ private:
     SphereState<Real> sphere_{};
     RunStatus status_{};
     CpuExternalLoads<Real> external_;
+    CpuExternalLoads<Real> gravity_;
     Vec3 origin_{};
     // RunControl::energy_flat_fraction, held here because the substep that
     // accumulates removed energy does not see the control.

@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Target numerical prerequisite, October 2:** [Explicit CPU reference](held-strike-integrator-checkpoint.md) reduces the coupled experiment's target integration error and angular drift using opt-in central-force velocity Verlet, retaining the existing material/failure laws and XPBD controls. Analytical and matched glass/oak/iron gates pass; explicit plastic-return numerical loss, native float drift, fracture topology convergence and reference performance remain visible. Next integrate bounded native hand work, finite joint strength and full-step rollback on the accepted clock, then connect crosshair object strikes and complete damage/paid reuse/restart. R3 remains open; five player goals remain.
+
 **Paid mixed-tool acceptance, October 2:** [Normal Lab/World evidence](paid-mixed-tool-checkpoint.md) completes R2's requested iron/oak Make and use journey with private restart and unchanged source. This supersedes the earlier native-only/draft gates below. Next finish R1 supply routes and R3 actual damage → paid reuse, including the missing ordinary tool/object strike path. R4–R6 remain active; retain unsupported interface refusal and the full platform gates.
 
 ### Next R3 prerequisite: ordinary tool strikes against built objects
@@ -21,8 +23,11 @@ Glass fractures; oak stays intact; iron retains axial plastic flow. This exposes
 unclosed target-step energy/angular accounts, timestep-dependent glass topology
 and expensive reference execution. It does not yet integrate the native hand,
 finite fixing failure or transactional world clock. Resolve/measure the target
-kick/projection/reconstructed-velocity/failure accounts, retain those failures as
-qualification gates, then connect actual bounded native hand/joint reactions and
+kick/projection/reconstructed-velocity/failure accounts; the subsequent
+[opt-in explicit target reference](held-strike-integrator-checkpoint.md) now
+qualifies bounded analytical and matched energy/angular refinement without
+replacing XPBD. Retain native float errors, explicit plastic-return loss and
+unconverged fracture topology as qualification boundaries, then connect actual bounded native hand/joint reactions and
 the object-target route with the complete acceptance checks below.
 R3 remains open.
 

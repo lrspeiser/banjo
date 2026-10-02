@@ -224,6 +224,7 @@ template <typename Real>
     out.dt = static_cast<Real>(s.dt);
     out.gravity = convertV3<Real>(s.gravity);
     out.constraint_iterations = s.constraint_iterations;
+    out.bond_integrator = s.bond_integrator;
     out.damping_fraction = static_cast<Real>(s.damping_fraction);
     out.sphere_enabled = s.sphere_enabled;
     out.direct_arithmetic = s.direct_arithmetic;

@@ -12,7 +12,13 @@ const char *precisionName(Precision precision) {
     return precision == Precision::Float ? "float" : "double";
 }
 
-const char *latticePhaseName(unsigned phase) {
+const char *latticePhaseName(unsigned phase, std::uint8_t integrator) {
+    static const char *const verlet[kPhaseCount] = {
+        "capture", "start_sample_nodes", "start_sample_bonds", "half_external_gravity",
+        "first_bond_kick", "drift", "unused_6", "unused_7", "second_bond_kick", "damping",
+        "half_external_gravity_end", "end_sample_nodes", "end_sample_bonds", "exit",
+        "unused_14", "unused_15"};
+    if (integrator == kBondVelocityVerlet) return phase < kPhaseCount ? verlet[phase] : "unknown";
     static const char *const names[kPhaseCount] = {
         "capture", "start_sample_nodes", "start_sample_bonds", "kick_classify", "contact_pass_1",
         "sweep_interior", "sweep_boundary", "support_project", "velocity_update", "damping",

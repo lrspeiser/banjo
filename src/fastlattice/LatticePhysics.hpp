@@ -242,11 +242,17 @@ inline void clearNodeContactAccumulators(NodeContactAccumulators &c) {
     return size - 1U;
 }
 
+constexpr std::uint8_t kBondXpbd = 0;
+constexpr std::uint8_t kBondVelocityVerlet = 1;
+
 template <typename Real>
 struct StepSettings {
     Real dt;
     V3<Real> gravity;
     std::uint32_t constraint_iterations;
+    // Explicit opt-in serial double CPU reference. Same axial elastic,
+    // plastic and failure laws; currently free nodes without internal contacts.
+    std::uint8_t bond_integrator;
     // 1 - exp(-bond_damping * dt); zero disables the radial damping sweep.
     Real damping_fraction;
     std::uint8_t sphere_enabled;

@@ -514,6 +514,8 @@ public:
 
     void upload(const LatticeState &state, const StepSettings<double> &settings,
                 const SphereState<double> &sphere) override {
+        if (settings.bond_integrator!=kBondXpbd)
+            throw std::invalid_argument("CUDA has no qualified alternative bond integrator");
         WorkingLattice<Real> w = WorkingLattice<Real>::fromState(state, schedule_);
         node_count_ = w.node_count;
         bond_count_ = w.bond_count;

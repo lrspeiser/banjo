@@ -70,7 +70,7 @@ public:
     }
 
     void kick(const LatticeArrays<Real> &lattice, Real dt, ExternalLoadLedger &ledger,
-              std::vector<ExternalWrenchLedger> *source_ledgers=nullptr) {
+              std::vector<ExternalWrenchLedger> *source_ledgers=nullptr, bool finish_step=true) {
         if (!remaining_) return;
         if (!(dt>0) || !std::isfinite(dt)) throw std::invalid_argument("external load needs a finite positive timestep");
         if (!wrenches_.empty()) {
@@ -78,7 +78,7 @@ public:
             nodes_=wrenchNodes(wrenches_,lattice);
         }
         ExternalLoadLedger change;
-        change.steps=1;change.elapsed_s=static_cast<double>(dt);
+        change.steps=finish_step?1:0;change.elapsed_s=static_cast<double>(dt);
         std::vector<ExternalLoadLedger> source_changes(wrenches_.size(),change);
         // Validate every kick and its ledger before changing any velocity.
         for (Node &node:nodes_) {
@@ -117,7 +117,7 @@ public:
         for (const Node &node:nodes_) store3(lattice.v,node.index,node.after);
         ledger=total;
         if (!wrenches_.empty()) *source_ledgers=std::move(source_totals);
-        --remaining_;
+        if (finish_step) --remaining_;
     }
 
 private:

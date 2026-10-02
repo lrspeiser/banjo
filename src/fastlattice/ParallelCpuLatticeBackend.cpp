@@ -176,6 +176,8 @@ public:
 
     void upload(const LatticeState &state, const StepSettings<double> &settings,
                 const SphereState<double> &sphere) override {
+        if (settings.bond_integrator!=kBondXpbd)
+            throw std::invalid_argument("parallel CPU has no qualified alternative bond integrator");
         working_ = WorkingLattice<Real>::fromState(state, schedule_);
         L_ = working_.arrays();
         S_ = convertSettings<Real>(settings);

@@ -117,7 +117,7 @@ struct RunControl {
 
 constexpr unsigned kPhaseCount = 16;
 // Names of the per-substep phases the backends attribute time to.
-[[nodiscard]] const char *latticePhaseName(unsigned phase);
+[[nodiscard]] const char *latticePhaseName(unsigned phase, std::uint8_t integrator = kBondXpbd);
 
 // CPU external-load phase only. World-space angular impulse is about the
 // world origin. The source must receive the opposite delivered impulse;
@@ -151,6 +151,12 @@ struct ExternalPointTransferLedger {
 };
 
 struct RunStatus {
+    std::uint8_t bond_integrator{};
+    // Verlet reference only: signed measured integration error, not heat or
+    // corrective work. Plastic return overshoot is separately accounted.
+    double integration_numerical_energy_j{}, plastic_return_numerical_loss_j{};
+    ExternalLoadLedger gravity_load{};
+    Vec3 bond_kick_roundoff_impulse_n_s{}, bond_kick_roundoff_angular_kg_m2_s{};
     ExternalLoadLedger external_load{};
     std::vector<ExternalWrenchLedger> external_sources;
     ExternalPointTransferLedger external_point_transfer{};
