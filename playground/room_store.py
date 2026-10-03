@@ -113,6 +113,10 @@ class RoomStore:
                     for ident, profile in players.items() if isinstance(profile, dict)}
                 record["hand_owner"] = getattr(room, "hand_owner", None)
         pending = getattr(room, "market_pending", None)
+        banks = getattr(room, "energy_banks", [])
+        import market
+        market.validate_banks(banks)
+        record["energy_banks"] = banks
         claims=getattr(room,'goods_claims',[])
         import world_goods
         world_goods.validate(claims,getattr(room,'player_records',{}))
@@ -269,6 +273,9 @@ class RoomStore:
         player_learning.validate_pending(room.player_evidence_pending,record.get("world"),room.player_records)
         room.player_learning_durable_ids = {r['evidence']['id'] for r in room.player_evidence_pending}
         room.market_pending = record.get("market_pending", [])
+        room.energy_banks = record.get("energy_banks", [])
+        import market
+        market.validate_banks(room.energy_banks)
         if not isinstance(room.market_pending, list):
             raise ValueError("Invalid market deposit record")
         for deposit in room.market_pending:

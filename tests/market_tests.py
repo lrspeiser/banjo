@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+from copy import deepcopy
+import os
 import sys
 import tempfile
 import threading
@@ -16,6 +18,158 @@ sys.path.insert(0, str(ROOT / "mcp"))
 import market  # noqa: E402
 import workshop_library  # noqa: E402
 import room_store  # noqa: E402
+import live_session
+import world_room
+import server
+import world_clock
+
+ENGINE = Path(os.environ['BANJO_LIVE_ENGINE']) if os.environ.get('BANJO_LIVE_ENGINE') else None
+
+
+@unittest.skipUnless(ENGINE and ENGINE.is_file(), 'BANJO_LIVE_ENGINE is required')
+class AutomaticSolarBank(unittest.TestCase):
+    """Actual solar/storage/draw counters, with explicit owned source fixtures."""
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.live = live_session.Live(); self.addCleanup(self.live.shutdown)
+        self.room = world_room.Room('tests-solar')
+        machines = self.room.spec['machines']
+        machines['motors'] = []; machines['controls'] = []; machines['programs'] = []
+        machines['stores'] = [dict(machines['stores'][0], capacity_j=1000., charge_j=300.)]
+        machines['stores'].append(dict(machines['stores'][0], name='second battery', charge_j=0.))
+        machines['panels'].append(dict(machines['panels'][0], name='second panel', store='second battery'))
+        root = Path(self.temp.name)
+        self.app = SimpleNamespace(room=self.room, live=self.live, live_holder='world', engine_path=ENGINE,
+            runs_path=root/'runs', store=room_store.RoomStore(root/'rooms'), world_lock=threading.Lock())
+        self.live.open(self.app, {'spec':self.room.spec})
+        stores = self.live.session.state['machines']['stores']
+        self.room.workshop_installs = [
+            {'owner_id':owner, 'resources_charged':True, 'component_to_body':{'battery':s['body']},
+             'recipe':{'kind':'custom-energy-device', 'component_overrides':{'@machines':{
+                'stores':[{'name':s['name'], 'in':'battery', 'bank_reserve_fraction':.05}]}}}}
+            for owner, s in zip(('alice','bob'), stores)]
+        self.assertTrue(server.keep_world(self.app, 'initial bank fixture'))
+
+    def balance(self, owner):
+        with workshop_library._connect(self.app) as db:
+            market._schema(db)
+            return market._balance(db, owner)
+
+    def step(self, seconds=1):
+        for _ in range(seconds*4):
+            self.live.act({'session':self.live.session.id,'op':'step','dt':1/240,'n':60})
+
+    def test_sunlight_auto_debit_private_credit_reserve_and_unattended_clock(self):
+        self.assertEqual(0,self.balance('alice')) # initial 300 J cannot mint income
+        self.assertEqual(0,self.balance('bob'))
+        before = deepcopy(self.room.world_record)
+        clock = world_clock.WorldClock(self.app, keep=server.keep_world)
+        self.assertTrue(clock._tick(.25))
+        self.assertGreater(self.balance('alice'),0)
+        self.assertEqual(0,self.balance('bob')) # filling 5% reserve first
+        for _ in range(10):self.assertTrue(clock._tick(.25))
+        self.assertGreater(self.balance('bob'),0)
+        saved = self.room.world_record
+        for owner, store in zip(('alice','bob'),saved['energy_stores']):
+            old = next(s for s in before['energy_stores'] if s['id']==store['id'])
+            sunlight = sum(p['collected_j'] for p in saved['solar_panels'] if p['store']==store['id'])
+            self.assertAlmostEqual(self.balance(owner),store['given_j']-old['given_j'],places=8)
+            self.assertLessEqual(self.balance(owner),sunlight+1e-8)
+            self.assertGreaterEqual(store['charge_j'],50.)
+            self.assertAlmostEqual(old['charge_j']+sunlight,store['charge_j']+self.balance(owner),places=7)
+        self.assertEqual(1,len(market.bank_sources(self.app,'alice')))
+        self.assertEqual(1,len(market.bank_sources(self.app,'bob')))
+        self.assertEqual([],market.bank_sources(self.app,'visitor'))
+        totals = [self.balance(o) for o in ('alice','bob')]
+        self.assertTrue(server.keep_world(self.app,'repeat without simulation'))
+        self.assertEqual(totals,[self.balance(o) for o in ('alice','bob')])
+        print('native solar bank:', {'wallets_j':totals, 'dt_s':1/240,
+            'energy_residual_j':max(abs(s['charge_j']+self.balance(o)-b['charge_j']-
+                sum(p['collected_j'] for p in saved['solar_panels'] if p['store']==s['id']))
+                for o,s,b in zip(('alice','bob'),saved['energy_stores'],before['energy_stores']))})
+
+    def test_failed_save_restart_discards_unsaved_debit_and_retry_credits_once(self):
+        self.step(2)
+        durable = self.app.store.load('tests-solar')
+        with mock.patch.object(self.app.store,'save',side_effect=OSError('disk full')):
+            self.assertFalse(server.keep_world(self.app,'failed bank save'))
+        self.assertEqual(0,self.balance('alice'))
+        self.assertTrue(self.room.market_pending)
+        self.live.open(self.app,{'spec':durable.spec,'snapshot':durable.world_record})
+        self.app.room=self.room=durable
+        self.assertTrue(server.keep_world(self.app,'restore unsaved bank'))
+        self.assertEqual(0,self.balance('alice'))
+        self.step(2)
+        with mock.patch.object(self.app.store,'save',side_effect=OSError('disk full')):
+            self.assertFalse(server.keep_world(self.app,'fail again'))
+        pending = deepcopy(self.room.market_pending)
+        self.assertTrue(server.keep_world(self.app,'retry bank save'))
+        self.assertEqual(sum(r['joules'] for r in pending if r['owner_id']=='alice'),self.balance('alice'))
+        balance = self.balance('alice')
+        self.assertTrue(server.keep_world(self.app,'retry unchanged'))
+        self.assertEqual(balance,self.balance('alice'))
+        durable=self.app.store.load('tests-solar')
+        self.live.open(self.app,{'spec':durable.spec,'snapshot':durable.world_record})
+        self.app.room=self.room=durable
+        self.assertTrue(server.keep_world(self.app,'restart settled bank'))
+        self.assertEqual(balance,self.balance('alice'))
+
+    def test_saved_draw_crash_before_sql_settlement_recovers_once(self):
+        self.step(2)
+        with mock.patch.object(market,'_settle',side_effect=OSError('crash after native save')):
+            with self.assertRaises(OSError):server.keep_world(self.app,'paired bank save')
+        durable=self.app.store.load('tests-solar')
+        self.assertTrue(durable.market_pending)
+        self.live.open(self.app,{'spec':durable.spec,'snapshot':durable.world_record})
+        self.app.room=self.room=durable
+        market._settle(self.app)
+        total=self.balance('alice');self.assertGreater(total,0)
+        market._settle(self.app)
+        self.assertEqual(total,self.balance('alice'))
+        self.assertTrue(server.keep_world(self.app,'no duplicate sunlight'))
+        self.assertEqual(total,self.balance('alice'))
+
+    def test_night_stops_income_and_missing_source_never_redirects_to_another_owner(self):
+        self.step(2);server.keep_world(self.app,'daytime')
+        self.live.session.send(op='sun',elevation_deg=0.,azimuth_deg=0.,irradiance_w_m2=0.)
+        self.step(1);server.keep_world(self.app,'night')
+        totals=[self.balance(o) for o in ('alice','bob')]
+        self.step(1);server.keep_world(self.app,'night again')
+        self.assertEqual(totals,[self.balance(o) for o in ('alice','bob')])
+        self.assertEqual(0,market.bank_sources(self.app,'alice')[0]['generation_w'])
+        wrong=deepcopy(self.room.energy_banks[0]);wrong['body']='removed array'
+        self.room.energy_banks=[wrong,self.room.energy_banks[1]]
+        self.assertEqual([],market.bank_sources(self.app,'alice'))
+
+    def test_older_paid_array_adopts_connector_but_unpaid_or_unassigned_source_does_not(self):
+        self.room.energy_banks=[]
+        legacy=self.room.workshop_installs[0]
+        legacy['recipe']['kind']='solar-array'
+        legacy['recipe']['component_overrides']['@machines']['stores'][0].pop('bank_reserve_fraction')
+        self.room.workshop_installs[1]['resources_charged']=False
+        market.connect_banks(self.room,self.room.world_record)
+        self.assertEqual(1,len(self.room.energy_banks));self.assertEqual('alice',self.room.energy_banks[0]['owner_id'])
+        self.assertEqual(.05,self.room.energy_banks[0]['reserve_fraction'])
+        self.room.workshop_installs=[] # bounded receipts can expire, bank binding remains
+        self.step(1);self.assertTrue(server.keep_world(self.app,'legacy array bank'))
+        self.assertGreater(self.balance('alice'),0);self.assertEqual(0,self.balance('bob'))
+
+    def test_corrupt_or_duplicate_bank_bindings_are_rejected(self):
+        for bad in ([self.room.energy_banks[0]]*2, [dict(self.room.energy_banks[0],reserve_fraction=.01)],
+                    [dict(self.room.energy_banks[0],exported_j=-1)], [dict(self.room.energy_banks[0],owner_id='')]):
+            with self.subTest(bad=bad),self.assertRaises(ValueError):market.validate_banks(bad)
+
+    def test_sunlight_spent_on_other_work_cannot_cash_out_initial_charge(self):
+        self.step(1)
+        snapshot,_=self.live.snapshot()
+        bank=self.room.energy_banks[0]
+        collected=sum(p['collected_j'] for p in snapshot['solar_panels'] if p['store']==bank['store_id'])
+        self.live.act({'session':self.live.session.id,'op':'draw','store':bank['store_id'],'joules':collected})
+        self.assertTrue(server.keep_world(self.app,'sunlight used for other work'))
+        self.assertEqual(0,self.balance('alice'))
+        self.step(1);self.assertTrue(server.keep_world(self.app,'new sunlight becomes income'))
+        self.assertGreater(self.balance('alice'),0)
+        self.assertLessEqual(self.balance('alice'),collected+1e-8)
 
 
 class MarketLedger(unittest.TestCase):

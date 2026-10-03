@@ -34,6 +34,56 @@ class NativeRemake(unittest.TestCase):
     source=funded.NativeStock.source
     request=funded.NativeStock.request
 
+    def test_paid_solar_array_binds_bank_connection_and_credits_after_install_restart(self):
+        import market, server
+        def wait(seconds):
+            while seconds:
+                step=min(10,seconds);api.wait(self.app,{**self.context(),'seconds':step});seconds-=step
+        library.set_rack(self.app,'oak',50.)
+        library.set_goods(self.app,'copper',1.)
+        library.set_goods(self.app,'copper wire',1.)
+        candidate={'kind':'solar-array','parameters':{'panels':1,'panel_w_m':.2,'panel_d_m':.2,
+            'frame_height_m':.2,'capacity_j':100.,'charge_j':0.}}
+        plan=self.call('plan_make',candidate=candidate)
+        for material,mass in model.materials(plan['quote'],'stock').items():
+            api.request(self.app,'fund_stock',self.request(mass,material,'solar-material-'+material))
+        for material,mass in plan['quote']['assembly_goods_kg'].items():
+            reading=self.call('state')
+            source=next(s for s in reading['goods_sources'] if s['material']==material and s['pool']=='personal')
+            self.call('fund_goods',material=material,mass_kg=mass,pool='personal',rack_hash=source['rack_hash'],
+                revision=reading['state']['revision'],request_id='solar-goods-'+material.replace(' ','-'))
+        reading=self.call('state');source=reading['energy_sources'][0]
+        self.call('connect_energy',store=source['id'],store_hash=source['store_hash'],power_w=250.,
+            revision=reading['state']['revision'],request_id='solar-energy-connect')
+        wait(max(1,math.ceil(plan['quote']['supply_required_j']/250.)))
+        reading=self.call('state');source=reading['energy_sources'][0]
+        self.call('fund_energy',store_hash=source['store_hash'],joules=plan['quote']['supply_required_j'],
+            revision=reading['state']['revision'],request_id='solar-energy-fund')
+        plan=self.call('plan_make',candidate=candidate)
+        started=self.call('start_make',plan_id=plan['plan_id'],revision=plan['revision'],request_id='solar-build')
+        job=started['state']['jobs']['solar-build']
+        wait(max(1,math.ceil(job['minimum_duration_s'])))
+        preview=api.preview(self.app,{**self.context(),'job_id':'solar-build','position_m':[0,1.]})
+        result=api.commit(self.app,{**self.context(),'job_id':'solar-build','preview_id':preview['preview_id'],'request_id':'solar-place'})
+        self.assertTrue(result['resources_charged'])
+        self.live.session.send(op='sun',elevation_deg=70.,azimuth_deg=0.,irradiance_w_m2=1000.)
+        self.assertTrue(server.keep_world(self.app,'installed paid solar'))
+        self.assertEqual(1,len(self.room.energy_banks))
+        owner=result['owner_id'];self.assertEqual(owner,self.room.energy_banks[0]['owner_id'])
+        for _ in range(40):
+            self.live.act({'session':self.live.session.id,'op':'step','dt':1/240,'n':60})
+        self.assertTrue(server.keep_world(self.app,'paid solar income'))
+        with library._connect(self.app) as db:
+            market._schema(db);total=market._balance(db,owner)
+        self.assertGreater(total,0)
+        self.assertEqual(total,market.bank_sources(self.app,owner)[0]['banked_j'])
+        saved=self.app.store.load('fabrication')
+        self.live.open(self.app,{'spec':saved.spec,'snapshot':saved.world_record});self.app.room=self.room=saved
+        self.assertTrue(server.keep_world(self.app,'paid array restart'))
+        with library._connect(self.app) as db:self.assertEqual(total,market._balance(db,owner))
+        self.assertEqual(1,len(self.room.energy_banks))
+        self.assertLess(abs(model.audit(self.room.fabrication_record)['energy_residual_j']),1e-7)
+
     def take_source(self,material):
         name='selected '+material
         self.room.spec['bodies'].append({'name':name,'shape':'box','material':material,

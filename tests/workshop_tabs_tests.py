@@ -25,6 +25,16 @@ def an_app(tmp: str) -> SimpleNamespace:
 
 
 class AddingSolar(unittest.TestCase):
+    def test_chat_authored_bank_connection_is_bounded_and_stays_host_metadata(self):
+        self.state.execute('add_power_part',{'kind':'store','name':'earning cell','in':'deck',
+            'capacity_j':1000,'charge_j':0,'bank_reserve_fraction':.1})
+        record=workshop_machines.of(self.state.design)
+        self.assertEqual(.1,record['stores'][0]['bank_reserve_fraction'])
+        exported=workshop_machines.installed(self.state.design,{'deck':'installed chassis'})
+        self.assertNotIn('bank_reserve_fraction',exported['stores'][0])
+        for fraction in (.049,-1,1.01,float('nan'),float('inf')):
+            with self.assertRaises(ValueError):workshop_machines.checked({'stores':[
+                {**record['stores'][0],'bank_reserve_fraction':fraction}]})
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -83,6 +93,9 @@ class AddingSolar(unittest.TestCase):
         solar=w.assemble('solar-array',parameters={'max_power_w':10000})
         self.assertEqual(10000,workshop_machines.of(solar)['stores'][0]['max_power_w'])
         self.assertEqual(0,workshop_machines.of(w.assemble('solar-array'))['stores'][0]['max_power_w'])
+        self.assertEqual(.05,workshop_machines.of(solar)['stores'][0]['bank_reserve_fraction'])
+        self.assertNotIn('bank_reserve_fraction',workshop_machines.installed(solar,
+            {p.name:'native array' for p in solar.parts})['stores'][0])
         # Older saved machine records had no rating field at all. Export
         # preserves that legacy unbounded declaration rather than minting one.
         self.state.design.lineage['component_overrides']['@machines']['stores'][0].pop('max_power_w')

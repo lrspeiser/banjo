@@ -1933,9 +1933,12 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
             # Installation replaces the live session and saves the whole room.
             # Keep every guest, their bag and pending paired energy draws too.
             for field in ("player_records", "player_inventories", "player_lock", "hand_owner",
-                          "market_pending", "ground_transfers", "machine_evidence_pending", "player_evidence_pending", "goods_claims", "goods_deliveries", "goods_durable_deliveries"):
+                          "market_pending", "energy_banks", "ground_transfers", "machine_evidence_pending", "player_evidence_pending", "goods_claims", "goods_deliveries", "goods_durable_deliveries"):
                 if hasattr(room, field):
                     setattr(record, field, getattr(room, field))
+            import market
+            record.energy_banks = deepcopy(getattr(room, "energy_banks", []))
+            market.connect_banks(record, saved)
             brains=getattr(app,"brains",None)
             record.machine_runtime=brains.runtime() if brains is not None else getattr(room,"machine_runtime",None)
             # The only fallible persistent write occurs BEFORE the live swap.
@@ -1951,6 +1954,7 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
         room.spec = plan["spec"]
         room.world_record = saved
         room.workshop_installs = kept
+        room.energy_banks = record.energy_banks
         room.fabrication_record = fabrication_state
         room.machine_runtime=record.machine_runtime
         room.persistence=getattr(record,"persistence",None)

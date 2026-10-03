@@ -596,6 +596,8 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                                       "description": "for a motor or control: the two components its pin joins"},
                             "store": {"type": "string", "description": "for a motor or panel: the store it uses"},
                             "capacity_j": {"type": "number"}, "charge_j": {"type": "number"},
+                            "bank_reserve_fraction": {"type":"number", "minimum":0.05, "maximum":1,
+                                "description":"Solar bank connection: automatically export newly collected solar energy above this battery reserve to the builder's wallet. Use 0.05 for a solar array; omit for mobile machines. Requires panels charging this store. Initial battery charge is never income."},
                             "voltage_v": {"type": "number"},
                             "max_power_w": {"type": "number", "minimum":0, "maximum":1e6,
                                 "description":"Battery output rating in watts. Zero is unbounded authoring output; a finite fabrication source needs a positive rating."},

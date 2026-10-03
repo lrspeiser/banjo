@@ -122,6 +122,8 @@ def checked(value: Any) -> dict[str, Any]:
         # Zero retains the native authoring convention of unbounded output.
         # It cannot qualify as a source for finite fabrication charging.
         "max_power_w": _output_rating(row.get("max_power_w")),
+        **({"bank_reserve_fraction": _number(row["bank_reserve_fraction"],
+             "bank_reserve_fraction", 0.05, 1.0)} if "bank_reserve_fraction" in row else {}),
     } for row in _rows(value.get("stores"), "stores")]
     for store in out["stores"]:
         if store["charge_j"] > store["capacity_j"]:
@@ -363,6 +365,9 @@ def described(design: Any) -> dict[str, Any]:
             if routine.get("hopper_kg"):
                 words += f" ({routine['hopper_kg']:g} kg hopper)"
         parts.append(words)
+    bank_count = sum("bank_reserve_fraction" in s for s in record.get("stores", []))
+    if bank_count:
+        parts.append(f"{bank_count} automatic solar bank connection{'s' if bank_count != 1 else ''}")
     return {**record, "says": ", ".join(parts) if parts else "nothing drives it"}
 
 def installed(design: Any, component_to_body: dict[str, str], frame: Any = None,

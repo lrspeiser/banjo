@@ -10,7 +10,9 @@ from __future__ import annotations
 import math
 import re
 import threading
+import uuid
 from typing import Any
+from contextlib import nullcontext
 
 import gameplay_room
 import workshop_library
@@ -206,6 +208,151 @@ def _settle(app: Any) -> None:
         _settle_locked(app)
 
 
+def validate_banks(banks: Any) -> None:
+    if not isinstance(banks, list):
+        raise ValueError("Invalid automatic bank connections")
+    seen = set()
+    for bank in banks:
+        if (not isinstance(bank, dict) or set(bank) != {"owner_id", "store_id", "store_name", "body",
+                "reserve_fraction", "exported_j", "panels"} or
+                any(not isinstance(bank[k], str) or not bank[k] for k in ("owner_id", "store_name", "body")) or
+                type(bank["store_id"]) is not int or bank["store_id"] <= 0 or
+                type(bank["exported_j"]) is not int or bank["exported_j"] < 0 or
+                type(bank["reserve_fraction"]) not in (int, float) or
+                not 0.05 <= bank["reserve_fraction"] <= 1 or
+                not isinstance(bank["panels"], list) or not bank["panels"]):
+            raise ValueError("Invalid automatic bank connection")
+        if bank["store_id"] in seen:
+            raise ValueError("A battery cannot credit two owners")
+        seen.add(bank["store_id"])
+        for panel in bank["panels"]:
+            if (not isinstance(panel, dict) or set(panel) != {"id", "name", "body"} or
+                    type(panel["id"]) is not int or panel["id"] <= 0 or
+                    any(not isinstance(panel[k], str) or not panel[k] for k in ("name", "body"))):
+                raise ValueError("Invalid automatic bank panel binding")
+
+
+def connect_banks(room: Any, saved: dict) -> None:
+    """Bind authored bank connections to actual installed stores and owners.
+
+    These bindings outlive the bounded install history. Native machines never
+    receive currency metadata. Older built-in arrays acquire the same default.
+    """
+    banks = getattr(room, "energy_banks", None)
+    if banks is None:
+        banks = room.energy_banks = []
+    for receipt in getattr(room, "workshop_installs", []) or []:
+        owner = receipt.get("owner_id")
+        if not owner or not receipt.get("resources_charged"):
+            continue
+        profiles = getattr(room, "player_records", {})
+        if profiles and owner not in profiles:
+            continue  # Historical anonymous stock is not a player's income.
+        recipe = receipt.get("recipe") or {}
+        machines = (recipe.get("component_overrides") or {}).get("@machines") or {}
+        stores = machines.get("stores") or []
+        if recipe.get("kind") == "solar-array" and not stores:
+            stores = [{"name":"array battery", "in":"battery", "bank_reserve_fraction":0.05}]
+        for declaration in stores:
+            reserve = declaration.get("bank_reserve_fraction")
+            if reserve is None:
+                # Existing built-in arrays predate the connector declaration.
+                if recipe.get("kind") != "solar-array":
+                    continue
+                reserve = 0.05
+            body = (receipt.get("component_to_body") or {}).get(declaration.get("in"))
+            if not body:
+                continue
+            candidates = [s for s in saved.get("energy_stores", []) if s.get("body") == body
+                          and (s.get("name") == declaration["name"] or
+                               s.get("name", "").startswith(declaration["name"] + " "))]
+            exact = [s for s in candidates if s["name"] == declaration["name"]]
+            candidates = exact or candidates
+            if len(candidates) != 1:
+                continue  # Ambiguous mapping cannot select somebody else's battery.
+            source = candidates[0]
+            if any(b["store_id"] == source["id"] for b in banks):
+                continue
+            panels = [p for p in saved.get("solar_panels", []) if p.get("store") == source["id"]]
+            if not panels:
+                continue
+            banks.append({"owner_id":owner, "store_id":source["id"], "store_name":source["name"],
+                          "body":body, "reserve_fraction":reserve, "exported_j":0,
+                          "panels":[{"id":p["id"], "name":p["name"], "body":p["body"]} for p in panels]})
+
+
+def bank_sources(app: Any, owner: str) -> list[dict]:
+    """Current source status; generation is not a promise of wallet income."""
+    with world_access.state_lock(app):
+        room = getattr(app, "room", None)
+        if not room or getattr(app, "live_holder", None) != "world" or not app.live.session:
+            return []
+        state = app.live.act({"session":app.live.session.id, "op":"poses"})
+        machines = state.get("machines") or {}
+        result = []
+        for bank in getattr(room, "energy_banks", []) or []:
+            if bank["owner_id"] != owner:
+                continue
+            source = next((s for s in machines.get("stores", []) if s["id"] == bank["store_id"]
+                           and s["name"] == bank["store_name"] and s["body"] == bank["body"]), None)
+            if not source:
+                continue
+            panels = _bank_panels(bank, machines.get("panels", []))
+            result.append({"name":source["name"], "stored_j":source["charge_j"],
+                           "reserve_j":source["capacity_j"]*bank["reserve_fraction"],
+                           "generation_w":sum(p.get("power_w", 0) for p in panels),
+                           "banked_j":bank["exported_j"]-sum(r['joules'] for r in getattr(room,'market_pending',[])
+                               if r['store_id']==bank['store_id'] and r['owner_id']==owner and
+                                  r['request_id'] not in getattr(room,'market_durable_pending',set())),
+                           "banking":"automatic"})
+        return result
+
+
+def _bank_panels(bank: dict, panels: list) -> list:
+    return [p for p in panels if p.get("store") == bank["store_id"] and
+            any(all(p.get(k) == binding[k] for k in ("id", "name", "body")) for binding in bank["panels"])]
+
+
+def prepare_auto_banks(app: Any, saved: dict) -> bool:
+    """Called only inside the world's checkpoint transaction, before saving.
+
+    Draw actual whole joules, limited by collected sunlight and spare charge.
+    Initial battery energy and robots' output cannot mint currency. Unsettled
+    draws remain paired with their pending receipts through save failures.
+    """
+    room = app.room
+    connect_banks(room, saved)
+    pending = getattr(room, "market_pending", None)
+    if pending is None:
+        pending = room.market_pending = []
+    changed = False
+    for bank in room.energy_banks:
+        if any(r["store_id"] == bank["store_id"] for r in pending):
+            continue
+        source = next((s for s in saved.get("energy_stores", []) if s["id"] == bank["store_id"]
+                       and s["name"] == bank["store_name"] and s["body"] == bank["body"]), None)
+        if not source:
+            continue
+        collected = math.fsum(p["collected_j"] for p in _bank_panels(bank, saved.get("solar_panels", [])))
+        # Give all other work first claim on harvested energy. Otherwise a
+        # machine could consume its sunlight and then cash out initial charge
+        # against that same historical harvest counter.
+        joules = math.floor(min(collected-source["given_j"],
+                                source["charge_j"]-source["capacity_j"]*bank["reserve_fraction"]))
+        if joules < 1:
+            continue
+        drawn = app.live.act({"session":app.live.session.id, "op":"draw", "store":source["id"], "joules":joules})
+        measured = drawn.get("store") or {}
+        if measured.get("id") != source["id"] or measured.get("given_j") is None or drawn.get("drawn") != joules:
+            raise ValueError("Automatic banking requires an exact native debit receipt")
+        pending.append({"request_id":"auto-"+uuid.uuid4().hex, "owner_id":bank["owner_id"],
+                        "joules":joules, "store_name":source["name"], "store_id":source["id"],
+                        "given_after_j":measured["given_j"]})
+        bank["exported_j"] += joules
+        changed = True
+    return changed
+
+
 def _settle_locked(app: Any) -> None:
     """Credit saved native draws exactly once, including after a crash/restart."""
     room = getattr(app, "room", None)
@@ -239,6 +386,15 @@ def _settle_locked(app: Any) -> None:
         room.market_durable_pending = durable
 
 
+def _deposit_saved(app: Any, request_id: str) -> bool:
+    if request_id in getattr(app.room, "market_durable_pending", set()):
+        return True
+    # A checkpoint can already have settled and cleaned its paired receipt.
+    with workshop_library._connect(app) as db:
+        _schema(db)
+        return db.execute("SELECT 1 FROM market_deposits WHERE request_id=?", (request_id,)).fetchone() is not None
+
+
 def _bank(app: Any, owner: str, body: dict[str, Any], keep_world: Any) -> None:
     request_id = body.get("request_id")
     joules = body.get("joules")
@@ -257,9 +413,9 @@ def _bank(app: Any, owner: str, body: dict[str, Any], keep_world: Any) -> None:
         if old:
             if old["owner_id"] != owner or old["joules"] != joules:
                 raise ValueError("This request id already names another deposit")
-            if request_id not in getattr(room, "market_durable_pending", set()):
+            if not _deposit_saved(app, request_id):
                 if (not keep_world(app, "retrying an energy bank save") or
-                        request_id not in getattr(room, "market_durable_pending", set())):
+                        not _deposit_saved(app, request_id)):
                     raise ValueError("The banked energy still awaits a durable world save")
             _settle(app)
             return
@@ -295,7 +451,7 @@ def _bank(app: Any, owner: str, body: dict[str, Any], keep_world: Any) -> None:
             # successful world checkpoint can settle them; a restart before
             # that checkpoint restores the old charge and discards the claim.
             raise ValueError("The banked energy awaits a durable world save; retry this request id")
-        if request_id not in getattr(room, "market_durable_pending", set()):
+        if not _deposit_saved(app, request_id):
             raise ValueError("The banked energy awaits a durable world save; retry this request id")
         _settle(app)
 
@@ -342,7 +498,11 @@ def request(app: Any, owner: str, body: Any, keep_world: Any) -> dict[str, Any]:
         raise ValueError("Expected a Market view, bank or buy request")
     if len(body) > 4:
         raise ValueError("Market request has too many fields")
-    with _lock:
+    # Consistent ordering with guidance and the unattended checkpoint thread.
+    # A bank first excludes installation; read-only views already in world
+    # access must not try to upgrade their reader gate to an exclusive one.
+    access = world_access.gate(app).enter(exclusive=True) if body.get('action') == 'bank' else nullcontext()
+    with access, world_access.state_lock(app), _lock:
         _settle(app)
         with workshop_library._connect(app) as db:
             _schema(db)
@@ -359,6 +519,7 @@ def request(app: Any, owner: str, body: Any, keep_world: Any) -> dict[str, Any]:
                 "SELECT item_id,price_j,created_at FROM market_orders WHERE owner_id=? "
                 "ORDER BY created_at DESC LIMIT 10", (owner,))]
         return {"schema": "banjo.market.v1", "balance_j": balance, "offers": offers,
+                "automatic_sources": bank_sources(app, owner),
                 "bankable": getattr(app, "live_holder", None) == "world" and app.live.session is not None,
                 "guidance": _guidance(app, offers, balance), "orders": history,
                 "pricing": "Base price rises by up to 75% as finite world stock is sold."}

@@ -2846,6 +2846,10 @@ def keep_world(app,why=""):
                     "rooms: checkpoint %s (%s): %s; the last one saved is kept",
                     "waiting" if deferred else "failed",why,refused)
             return False
+        if market.prepare_auto_banks(app, saved):
+            saved, refused = snapshot()
+            if saved is None:
+                raise ValueError("Automatic bank draw awaits its paired native checkpoint: " + str(refused))
         gameplay_room.sync(app, {"t": float(saved.get("t_s") or 0.0)})
         fabrication_room.sync(app, {"t": float(saved.get("t_s") or 0.0)})
         room.world_record=saved
@@ -2859,6 +2863,7 @@ def keep_world(app,why=""):
         room.world_save_pending=False
         machine_witness.saved(app,journal_of,registry())
         if getattr(app,'world_id',None): player_learning.saved(app,journal_of,registry())
+    market._settle(app)
     return True
 
 

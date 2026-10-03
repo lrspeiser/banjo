@@ -2106,11 +2106,12 @@ async function showInventoryEnergy() {
     if ($("#ws-pane-inventory").hidden) return;
     const m = meters.status === "fulfilled" ? meters.value.machines : null;
     const solar = m?.stores?.find(s => s.body === "solar farm");
-    const generation = (m?.panels || []).reduce((n,p) => n + (Number(p.power_w) || 0), 0);
+    const generation = (m?.panels || []).filter(p => solar && p.store === solar.id).reduce((n,p) => n + (Number(p.power_w) || 0), 0);
     const motorDraw = (m?.motors || []).reduce((n,p) => n + Math.max(0, Number(p.power_w) || 0), 0);
     $("#ws-inv-energy").replaceChildren(
       energyCard("⚡", "Your energy", [["Spendable", wallet.status === "fulfilled" ? energySaid(wallet.value.balance_j) : "Unavailable"],
-        ["Auto income", "0 J/s"], ["Collection", "Market → Bank"]]),
+        ["Auto bank", wallet.status === "fulfilled" ? `${wallet.value.automatic_sources?.length || 0} arrays` : "Unavailable"],
+        ["Solar input", wallet.status === "fulfilled" ? rateSaid((wallet.value.automatic_sources || []).reduce((n,s) => n+s.generation_w,0)) : "Unavailable"]]),
       energyCard("☀", "World solar · shared", [["Stored", solar ? energySaid(solar.charge_j) : m ? "No solar battery" : "Unavailable"],
         ["Generating now", m ? rateSaid(generation) : "Unavailable"], ["Banking", "Manual"]]),
       energyCard("⚙", "World machines · shared", [["Programs", m ? String((m.programs || []).length) : "Unavailable"],
@@ -2878,9 +2879,18 @@ async function showRecipes() {
   }
 }
 
+function showMarketEnergy(market) {
+  const sources = market.automatic_sources || [];
+  $("#ws-market-energy").replaceChildren(...(sources.length ? sources.map(s =>
+    energyCard("☀", s.name, [["Banking", "Automatic → Your energy"], ["Solar input", rateSaid(s.generation_w)],
+      ["Stored", energySaid(s.stored_j)], ["Reserve", energySaid(s.reserve_j)], ["Banked", energySaid(s.banked_j)]])) :
+    [energyCard("☀", "Your solar arrays", [["Auto bank", "Build a solar array"], ["Starter farm", "Shared · manual Bank"]]) ]));
+}
+
 async function showMarket() {
   const market = await api("/api/workshop/market", { action:"view" });
   $("#ws-market-balance").textContent = `${market.balance_j.toLocaleString()} J`;
+  showMarketEnergy(market);
   $("#ws-market-pricing").textContent = `${market.pricing} One lot restocks every 120 seconds of world time. ${market.guidance?.estimate_basis || ""}`;
   const next = market.guidance?.skill;
   const skill = $("#ws-market-next"); skill.replaceChildren();
@@ -2952,7 +2962,7 @@ async function showMarket() {
   const pendingKey = `banjo.pending-bank.${worldId || "local"}.${playerId}`;
   let pending = null;
   try { pending = JSON.parse(sessionStorage.getItem(pendingKey) || "null"); } catch {}
-  bank.textContent = pending ? `Retry bank ${pending.joules} J` : `Bank ${bankJ} J`;
+  bank.textContent = pending ? `Retry bank ${pending.joules} J` : `Bank ${bankJ} J · Shared farm`;
   bank.disabled = !market.bankable;
   bank.title = market.bankable ? `Draw ${bankJ} measured joules from the solar farm's battery` : "Open the world before banking energy";
   bank.onclick = () => guard(bank, async () => {
@@ -2971,7 +2981,7 @@ async function showMarket() {
       $("#ws-market-status").textContent = error.message || String(error);
     }
   }).then(() => {
-    bank.textContent = pending ? `Retry bank ${pending.joules} J` : `Bank ${bankJ} J`;
+    bank.textContent = pending ? `Retry bank ${pending.joules} J` : `Bank ${bankJ} J · Shared farm`;
   });
   fill("#ws-market-offers", market.offers.map((offer) => {
     const li = item(offer.name);
@@ -3006,6 +3016,15 @@ async function showMarket() {
     `${order.price_j} J · ${order.created_at}`)), "No purchases yet.");
   await showGoalGuide("market");
 }
+
+setInterval(() => {
+  if (!document.hidden && $("#ws-pane-market")?.hidden === false) {
+    api("/api/workshop/market", {action:"view"}).then(m => {
+      $("#ws-market-balance").textContent = `${m.balance_j.toLocaleString()} J`;
+      showMarketEnergy(m);
+    }).catch(() => {});
+  }
+}, 5000);
 
 // Opening the Workshop straight onto one rung of the tree: the world page's
 // "Next: ..." line links here, because that line IS the tech tree and saying

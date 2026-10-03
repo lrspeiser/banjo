@@ -24,7 +24,7 @@ but your history says no offered action, identify a planner/action-selection
 blocker; do not claim the game cannot bank energy or that you need to click UI.
 Autonomous play uses game APIs, and conversation does not change its decisions.
 Solar charges shared physical batteries; spendable wallets are personal and
-banking is manual. A visitor pressing Bank credits THEIR wallet, not yours.
+the shared starter farm banks manually. Owned solar arrays with bank connections automatically credit their builder. A visitor pressing Bank credits THEIR wallet, not yours.
 Never recommend visitor banking or purchases as a next step for your progress.
 Describe your own next goal or unresolved blocker instead. Refer questions about
 the visitor's own balance, supplies or goals to AI Guide. Unsupported mechanics
@@ -42,9 +42,12 @@ energy, Solar stored, Solar generation and Available to bank. Never expose JSON
 field names, IDs or code to the player. Give the cause and one clear next step.
 Inventory shows energy and rates; Market is where the player banks and buys.
 
-Energy rules: solar panels charge physical shared world batteries. The player's
-spendable wallet is separate. There is currently NO automatic currency income
-from panels, robots or machines. Market -> Bank transfers measured joules from
+Energy rules: solar panels charge physical batteries. The player's spendable
+wallet is separate. Owned solar arrays automatically bank newly collected solar
+energy above their battery reserve (at least 5%) into their builder's wallet at
+world checkpoints. Initial battery charge is not income. Read automatic_sources:
+Solar input is current generation, not guaranteed wallet income while filling a
+reserve or awaiting a save. Robots do not earn currency. Market -> Bank transfers measured joules from
 the shared solar farm battery into this player's wallet. It retains 5% of the
 battery capacity for machines; the normal Bank button requests 500 J. If the
 available amount is smaller, say so rather than promising a transfer. Buying
@@ -89,7 +92,8 @@ def snapshot(app, player, journal, registry, focus=None):
         wallet = market.request(app, player, {'action':'view'}, lambda *_:False)
         machines = native.get('machines') or {}
         solar = next((s for s in machines.get('stores', []) if s.get('body')=='solar farm'), None)
-        energy = {'automatic_wallet_income_j_s':0, 'banking':'manual, Market -> Bank',
+        energy = {'automatic_wallet_income_j_s':0 if not wallet.get('automatic_sources') else None,
+                  'automatic_sources':deepcopy(wallet.get('automatic_sources', [])), 'banking':'owned arrays automatic; shared farm manual, Market -> Bank',
                   'shared_solar_battery':deepcopy(solar),
                   'shared_solar_bankable_j':max(0, solar['charge_j']-.05*solar['capacity_j']) if solar else 0,
                   'panels':deepcopy(machines.get('panels', [])),
@@ -125,7 +129,7 @@ def answer(app, body, context):
         stored = f"{solar['charge_j']:,.1f} J" if solar else 'no solar battery'
         subject='My' if context.get('speaker') else 'Your'
         next_step=(('My progress: '+str(context['speaker'].get('message') or 'No recorded progress')+'. ')
-            if context.get('speaker') else 'Energy stays in the shared battery until you use Market → Bank. ')
+            if context.get('speaker') else 'Owned solar arrays bank automatically above their reserve; the shared starter farm uses Market → Bank. ')
         return {'reply':f"{subject} wallet: {context['wallet_j']:,.0f} J. Shared solar storage: {stored}. "
                 f"Generation: {context['energy']['generation_w']:,.1f} J/s. "
                 +next_step+'An OpenAI key is needed for conversational game help.', 'mode':'measured-fallback'}

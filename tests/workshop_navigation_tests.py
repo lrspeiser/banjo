@@ -88,6 +88,76 @@ class GameScreens(unittest.TestCase):
         self.assertFalse(self.page.evaluate('document.querySelector("#ws-component-chat-text").disabled'))
         self.screenshot('market-game-chat.png')
 
+    def test_owned_solar_array_paid_build_market_inventory_and_peer(self):
+        import math
+        import fabrication_stock_tests as funded
+        import server
+        world,owner,app=self.setup_world(legacy_process=True)
+        peer=self.join(world,'Solar peer')
+        def post(path,body):
+            try:return self.post(path,body,world)
+            except guests.urllib.error.HTTPError as error:self.fail(path+': '+error.read().decode())
+        def context():return {'scene':app.room.scene,'session':app.live.session.id}
+        def wait_sim(seconds):
+            while seconds:
+                n=min(10,seconds);post('/api/world/fabrication/wait',{**context(),'seconds':n});seconds-=n
+        # Explicit finite authored fixture supplies; manufacturing still pays
+        # actual material/assembly goods and native energy, with no free item.
+        pile=app.brains.goods.put(0,0,{'oak':40.,'glass':5.,'copper':.5,'copper wire':.1},named='solar build fixture')['onto']
+        floor=app.live.act({**context(),'op':'survey','at':[0,0]})['survey']['ground_m']
+        for index in range(3):
+            if not any(app.brains.goods.by_name(pile).get('holds',{}).values()):break
+            post('/api/world/goods/collect',{'session':app.live.session.id,'pile':pile,'request_id':f'solar-collect-{index}',
+                'person':{'eyes_m':[0,floor+1.62,0],'facing':[0,0,-1]}})
+        post('/api/world/fabrication/configure',{**context(),'settings':funded.settings(stock_kg={},energy_j=0),
+            'request_id':'solar-configure'})
+        candidate={'kind':'solar-array','parameters':{'panels':1,'panel_w_m':.2,'panel_d_m':.2,
+            'frame_height_m':.2,'capacity_j':100.,'charge_j':0.}}
+        plan=post('/api/world/fabrication/plan_make',{**context(),'candidate':candidate})
+        from mcp import fabrication
+        for goods, needs in ((False,fabrication.materials(plan['quote'],'stock')),(True,plan['quote']['assembly_goods_kg'])):
+            for material,mass in needs.items():
+                state=post('/api/world/fabrication/state',context())
+                source=next(s for s in state['goods_sources' if goods else 'stock_sources']
+                            if s['material']==material and s['pool']=='personal')
+                self.assertGreaterEqual(source['mass_kg']+1e-9,mass,material)
+                post('/api/world/fabrication/fund_goods' if goods else '/api/world/fabrication/fund_stock',
+                    {**context(),'material':material,'mass_kg':mass,'pool':'personal','rack_hash':source['rack_hash'],
+                     'revision':state['state']['revision'],'request_id':'solar-fund-'+material.replace(' ','-')})
+        state=post('/api/world/fabrication/state',context());source=next(s for s in state['energy_sources'] if s['max_power_w']>=250.)
+        post('/api/world/fabrication/connect_energy',{**context(),'store':source['id'],'store_hash':source['store_hash'],
+            'power_w':250.,'revision':state['state']['revision'],'request_id':'solar-connect'})
+        wait_sim(math.ceil(plan['quote']['supply_required_j']/250.))
+        state=post('/api/world/fabrication/state',context());source=next(s for s in state['energy_sources'] if s['connected'])
+        post('/api/world/fabrication/fund_energy',{**context(),'store_hash':source['store_hash'],
+            'joules':plan['quote']['supply_required_j'],'revision':state['state']['revision'],'request_id':'solar-energy'})
+        plan=post('/api/world/fabrication/plan_make',{**context(),'candidate':candidate})
+        started=post('/api/world/fabrication/start_make',{**context(),'plan_id':plan['plan_id'],'revision':plan['revision'],'request_id':'solar-build'})
+        wait_sim(math.ceil(started['state']['jobs']['solar-build']['minimum_duration_s']))
+        preview=post('/api/world/fabrication/preview',{**context(),'job_id':'solar-build','position_m':[-2,0]})
+        post('/api/world/fabrication/commit',{**context(),'job_id':'solar-build','preview_id':preview['preview_id'],'request_id':'solar-install'})
+        app.live.session.send(op='sun',day_s=600,noon_elevation_deg=70.,hour=12.,irradiance_w_m2=1000.)
+        app.live.act({'session':app.live.session.id,'op':'poses'})
+        for _ in range(40):app.clock._tick(.25)
+        wallet=post('/api/workshop/market',{'action':'view'})
+        self.assertGreater(wallet['balance_j'],0);self.assertEqual(1,len(wallet['automatic_sources']))
+        other=self.post('/api/workshop/market',{'action':'view'},world,peer['token'])
+        self.assertEqual(0,other['balance_j']);self.assertEqual([],other['automatic_sources'])
+        self.browser(world,owner);self.navigate(world,'workshop=1&tab=market')
+        self.wait('document.querySelector("#ws-market-energy")?.textContent.includes("Automatic")')
+        self.assertIn('Reserve',self.page.evaluate('document.querySelector("#ws-market-energy").textContent'))
+        self.screenshot('solar-auto-bank-market.png')
+        self.click('.game-tabs [data-screen="inventory"]')
+        self.wait('document.querySelector("#ws-inv-energy")?.textContent.includes("1 arrays")')
+        self.screenshot('solar-auto-bank-inventory.png')
+        self.assertEqual([], [e for e in self.page.events if e.get('method')=='Runtime.exceptionThrown'])
+        self.page.send('Page.navigate',{'url':'about:blank'});self.stop();self.start()
+        self.post('/api/world/player/join',{'token':owner['token']},world)
+        self.post('/api/world/open',{},world)
+        restored=self.post('/api/workshop/market',{'action':'view'},world)
+        self.assertEqual(wallet['balance_j'],restored['balance_j'])
+        self.assertEqual(1,len(restored['automatic_sources']))
+
     def test_authored_iron_head_and_wood_handle_pickup_dig_bag_and_reload(self):
         import server
         sys.path.insert(0,str(ROOT/'tools'))
@@ -391,11 +461,12 @@ class GameScreens(unittest.TestCase):
             return self.page.evaluate('[...document.querySelectorAll(".ws-energy-card")].map(c => ({title:c.querySelector("h4").textContent,values:Object.fromEntries([...c.querySelectorAll(".ws-recipe-value")].map(v=>[v.querySelector("span").textContent,v.querySelector("b").textContent]))}))')
         cards = displayed()
         self.assertEqual("200 J", cards[0]["values"]["Spendable"])
-        self.assertEqual("0 J/s", cards[0]["values"]["Auto income"])
+        self.assertEqual("0 arrays", cards[0]["values"]["Auto bank"])
+        self.assertEqual("0 J/s", cards[0]["values"]["Solar input"])
         solar = next(s for s in before["machines"]["stores"] if s["body"] == "solar farm")
         num = lambda text: float(text.split(" J")[0].replace(",", ""))
         self.assertAlmostEqual(solar["charge_j"], num(cards[1]["values"]["Stored"]), delta=.051)
-        self.assertAlmostEqual(sum(p["power_w"] for p in before["machines"]["panels"]), num(cards[1]["values"]["Generating now"]), delta=.051)
+        self.assertAlmostEqual(sum(p["power_w"] for p in before["machines"]["panels"] if p["store"]==solar["id"]), num(cards[1]["values"]["Generating now"]), delta=.051)
         self.assertEqual("Not metered", cards[2]["values"]["Goods rate"])
         self.assertEqual("0 J/s", cards[2]["values"]["Currency income"])
         self.assertFalse(self.page.evaluate('!!document.querySelector("#ws-pane-inventory [data-building-block], #ws-pane-inventory [data-lab-source], #ws-pane-inventory input")'))

@@ -34,7 +34,8 @@ class GuidanceContract(unittest.TestCase):
                                       {'message':'Why am I not collecting energy?'}, context)
         self.assertEqual('automatic wallet income (J/s) = 0. Use Market → Bank.',reply['reply'])
         self.assertEqual([],payloads[0]['tools']);self.assertFalse(payloads[0]['store'])
-        self.assertIn('NO automatic currency income',payloads[0]['input'][0]['content'])
+        self.assertIn('Owned solar arrays automatically bank',payloads[0]['input'][0]['content'])
+        self.assertIn('Initial battery charge is not income',payloads[0]['input'][0]['content'])
         sent=json.loads(payloads[0]['input'][-1]['content'])
         self.assertEqual(context,sent['server_observations'])
 

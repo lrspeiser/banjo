@@ -696,7 +696,7 @@ def _solar_array_overrides(values: dict[str, Any], parts: list[w.WirePart]) -> d
     machines = workshop_machines.checked({
         "stores": [{"name": "array battery", "in": "battery", "capacity_j": values["capacity_j"],
                     "charge_j": values["charge_j"], "voltage_v": 48.0,
-                    "max_power_w":values["max_power_w"]}],
+                    "max_power_w":values["max_power_w"], "bank_reserve_fraction":0.05}],
         "motors": [], "controls": [], "programs": [],
         # Every panel on the one store. That is the whole point of a farm:
         # capacity where it is wanted, not a panel per machine.
@@ -1022,7 +1022,8 @@ def install() -> None:
     existing["solar-array"] = w.Assembly(
         "solar-array", "make power for a whole yard",
         "A frame on four legs carrying a row of panels, with one battery under it that every panel charges "
-        "and anything nearby can draw on: the farm, as exact bodies, so a yard is not eight machines each "
+        "and automatically banks collected sunlight above its reserve into its builder's energy wallet. "
+        "Nearby machines can draw on the battery: the farm, as exact bodies, so a yard is not eight machines each "
         "carrying its own.",
         SOLAR_ARRAY_PARAMETERS, _build_solar_array, _solar_array_trials, _solar_array_overrides,
         uses={"primary_use":{"label":"Inspect power","steps":[{"do":"inspect"}]},
