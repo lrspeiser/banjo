@@ -25,7 +25,7 @@ import { makeTools } from "/tools.js";
 import { makeWorkbench } from "/workbench.js";
 import { gameNavigation, showSaveStatus, screenUrl, thumbnail, massLabel } from "/game_menu.js";
 import { conditionPanel } from "/body_condition.js";
-import { GROUND_APPEARANCE, materialAppearance, terrainCellAt, terrainTargetPath, exposedRunKind, toolTargetFeedback, toolTargetColor, collectedToolMaterials, columnTopData, walkColumnFaces, columnChunkIds, columnChunkBox } from "/material_appearance.js";
+import { GROUND_APPEARANCE, materialAppearance, terrainCellAt, terrainTargetPath, exposedRunKind, toolTargetFeedback, toolTargetColor, collectedToolMaterials, toolOutcomeFeedback, makeTargetHover, columnTopData, walkColumnFaces, columnChunkIds, columnChunkBox } from "/material_appearance.js";
 import { terrainMaterial } from "/terrain_material.js";
 import { renderPlayerGuidance } from "/player_guidance.js";
 import { constructionWrite, constructionControls } from "/construction_ui.js";
@@ -34,7 +34,8 @@ const $ = (id) => document.getElementById(id);
 const worldId = new URLSearchParams(location.search).get("world");
 const watchedId = new URLSearchParams(location.search).get("watch");
 const worldNavigation = gameNavigation("world");
-$("panel").querySelector("header").after(worldNavigation);
+const quickbar=document.createElement("nav");quickbar.id="world-quickbar";quickbar.setAttribute("aria-label","World controls");
+quickbar.append(worldNavigation);document.body.append(quickbar);
 for (const link of document.querySelectorAll("#panel header .workshop-entry:not(.debug-entry)")) link.remove();
 // Keep the target, next action and committed feedback ahead of conversation.
 // Full keyboard/help rows remain available without filling the default panel.
@@ -4714,7 +4715,11 @@ function showInventory() {
   inventorySaid=said; showHotbar(slots,hand);
   workshopTakesDrops();
   const products = $("mini-products"); products.replaceChildren();
-  const add = (thing,where,inHand) => {
+  let hands=$("hand-slots");
+  if(!hands){hands=document.createElement('section');hands.id='hand-slots';hands.setAttribute('aria-label','Your hands');
+    document.body.append(hands);}
+  hands.replaceChildren();
+  const add = (thing,where,inHand,parent=products) => {
     const row = document.createElement("article"); row.className="mini-product"; row.dataset.item=thing.id || thing.name;
     const picture=miniPicture(thing), label=document.createElement("strong"), position=document.createElement("small");
     label.textContent=bagName(thing); position.textContent=where;
@@ -4736,13 +4741,19 @@ function showInventory() {
       lab.href=url.pathname+url.search;lab.title=`Inspect or review a replacement for ${bagName(thing)}`;
       lab.addEventListener("click",e=>{e.stopPropagation();tools.stop();});actions.append(lab);
     }
-    row.append(actions);products.append(row);
+    if(inHand){row.dataset.hand=where.startsWith("Left")?"left":"right";row.tabIndex=0;}
+    row.append(actions);parent.append(row);
   };
-  for (const [side,thing] of Object.entries(inv?.hands || {})) if (thing) add(thing,`${titled(side)} hand`,true);
+  for(const side of ['right','left']) {
+    let thing=inv?.hands?.[side];
+    if(!thing && side===(inv?.hand_in_the_world || 'right') && held)
+      thing={name:held,label:heldName(),material:world.bodies.get(held)?.material};
+    if(thing)add(thing,`${titled(side)} hand`,true,hands);
+    else {const empty=document.createElement('div');empty.className='empty-hand';
+      empty.dataset.hand=side;empty.textContent=`${titled(side)} hand · Empty`;hands.append(empty);}
+  }
   slots.forEach((thing,i)=>{if(thing)add(thing,`Bag · ${slotKeySaid(i)}`,false);});
-  if (held && !Object.values(inv?.hands || {}).some(t=>t?.name===held || t?.parts?.includes(held)))
-    add({name:held,label:heldName(),material:world.bodies.get(held)?.material},"In hand",true);
-  if (!products.children.length) products.textContent="Hands & bag · Empty";
+  if (!products.children.length) products.textContent="Bag · Empty";
   const stock = $("mini-materials"); stock.replaceChildren();
   const resource = (material,kg,where) => {
     const button=document.createElement("a"); button.className="mini-resource";
@@ -6102,6 +6113,22 @@ function detailsModel() {
 // second, and at once when the hand's state changes (showUse). The crosshair's
 // ring fills with the meter.
 let materialPreviewSaid = "";
+const targetHover=makeTargetHover();
+function positionTargetPopover() {
+  const box=$("material-preview");if(!box)return;
+  if(cursorFree || world.placing || watchedId){box.hidden=true;targetHover(performance.now(),null);return;}
+  if(box.matches(':hover'))return;
+  const at=world.aim?.point_m || world.groundAim;
+  const key=world.resourceAim?.pile?.name || world.aim?.name ||
+    (at&&ground.grid ? `ground:${terrainCellAt(at[0],at[2],ground.grid)}` : null);
+  const bounds=canvas.getBoundingClientRect();
+  const x=cursor?bounds.left+cursor.px:0,y=cursor?bounds.top+cursor.py:0;
+  const visible=targetHover(performance.now(),!watchedId && !cursorFree && cursor && key && !world.placing ?
+    {key,x,y,eyes:camera.position.toArray()} : null);
+  box.hidden=!visible;
+  if(visible){box.style.left=`${Math.max(8,Math.min(innerWidth-box.offsetWidth-12,x+24))}px`;
+    box.style.top=`${Math.max(8,Math.min(innerHeight-box.offsetHeight-90,y+24))}px`;}
+}
 function targetContext(at,name=null) {
   if(name)return JSON.stringify([name,world.bodies.get(name)?.revision]);
   if(!at || !ground.grid)return null;
@@ -6162,7 +6189,8 @@ function showMaterialPreview() {
   let box=$("material-preview");
   if(!box) {
     box=document.createElement("section");box.id="material-preview";box.setAttribute("aria-label","Material preview");
-    $("next-step").before(box);
+    document.body.append(box);box.hidden=true;
+    box.addEventListener('pointerleave',()=>{cursor=null;markAt(null);targetHover(performance.now(),null);box.hidden=true;});
   }
   box.replaceChildren();
   const heading=document.createElement("h3");heading.textContent="Target";box.append(heading);
@@ -6246,14 +6274,22 @@ function showMaterialPreview() {
   }
 }
 let detailsSaid = "";
+let hudLast="",hudTimer=null;
 let lastDetails = { name: "", facts: "", rows: [], note: "", meter: null, last: null };
 function showDetails(now = false) {
   showMaterialPreview();
+  positionTargetPopover();
   showToolSkills();
   // What is pinned is about one thing and stays about it, but everything IN it
   // is live -- the battery empties while you watch. Rebuilt on the same beat.
   if (somethingIsPinned()) showPicked();
   const model = detailsModel();
+  if(model.last?.text && model.last.text!==hudLast) {
+    hudLast=model.last.text;
+    let toast=$('world-action-toast');
+    if(!toast){toast=document.createElement('output');toast.id='world-action-toast';toast.setAttribute('aria-live','polite');document.body.append(toast);}
+    toast.textContent=hudLast;toast.hidden=false;clearTimeout(hudTimer);hudTimer=setTimeout(()=>{toast.hidden=true;},2800);
+  }
   const useName = world.held?.name || world.aim?.name;
   if (!world.held?.pick && useName && (actionsFor(useName).length || !world.held)) {
     model.rows = model.rows.filter(([keys]) => !keys.includes(keyOf("primary")));
@@ -6819,11 +6855,14 @@ $("keys-list").replaceChildren(...controls().flatMap(([keysSaid, what]) => {
 // What they hold or look at, where they stand and which way they face go with
 // what they say (whereIAm), so "this" and "in front of me" mean something.
 function talk() {
+  document.body.classList.add("chat-open");foldPanel(false);
   setCursorFree(true);
   $("ask-text").focus();
 }
 // And Esc in the box goes back to the room without sending anything.
-$("ask-text").addEventListener("keydown", (e) => { if (e.key === "Escape") e.target.blur(); });
+$("ask-text").addEventListener("keydown", e=>{if(e.key==="Escape") {
+  e.stopPropagation();e.target.blur();foldPanel(true);setCursorFree(false);
+}});
 
 // The mouse wheel: how far out the hand holds what it holds -- pushed away, or
 // brought in. Only where the hand wants it: a heavy thing takes as long to get
@@ -6994,6 +7033,8 @@ canvas.addEventListener("pointermove", (e) => {
   if (cursorFree) return;
   cursor = cursorAt(e);
   groundTarget.visible=false; // an old ray's green square is not the new cursor target
+  if(world.held?.pick)$('crosshair').dataset.readiness='checking';
+  else delete $('crosshair').dataset.readiness;
   if (cursor) cursor.touch = e.pointerType !== "mouse";
   offerStick(e);
   markAt(cursor);
@@ -7005,7 +7046,10 @@ canvas.addEventListener("pointermove", (e) => {
 });
 // The mouse off the view: back to the middle, so nothing is aimed at a place
 // the mouse is no longer at.
-canvas.addEventListener("pointerleave", () => { cursor = null; markAt(null); });
+canvas.addEventListener("pointerleave", e => {
+  if(e.relatedTarget?.closest?.('#material-preview'))return;
+  cursor=null;markAt(null);positionTargetPopover();
+});
 
 // The ring rides the cursor. It is the same mark it always was -- it fills as
 // a wind-up fills and colours as something comes under it -- it is just no
@@ -7111,6 +7155,7 @@ function lookPush(v) {
 function lookFromCursor(dt) {
   // Dragging already turns the view, and a wind-up is aimed by hand.
   if (cursorFree || looking || !cursor || drag || typing(document.activeElement) || worldMenu.open) return;
+  if($('material-preview')?.matches(':hover'))return;
   // And a finger is not a cursor. It has no hover: the last place it touched
   // stays put once it lifts, so an edge push would turn the room for ever.
   // On a touch screen looking around IS the drag, which already works.
@@ -7262,6 +7307,7 @@ function offerStick(e) {
 // FOLDING THE PANEL AWAY. The room is what a small screen came for, so the
 // panel starts folded on one and is remembered either way.
 function foldPanel(away) {
+  if(away)document.body.classList.remove("chat-open");
   document.body.classList.toggle("panel-away", away);
   const fold = $("panel-fold"), show = $("panel-show");
   if (fold) fold.setAttribute("aria-expanded", String(!away));
@@ -7273,9 +7319,12 @@ function installPanelFold() {
   const fold = $("panel-fold"), show = $("panel-show");
   if (fold) fold.addEventListener("click", () => foldPanel(true));
   if (show) show.addEventListener("click", () => foldPanel(false));
-  let kept = null;
-  try { kept = localStorage.getItem("banjo.panel"); } catch { /* private */ }
-  foldPanel(kept ? kept === "away" : window.innerWidth <= 760);
+  foldPanel(true);
+  for(const [label,run] of [["Menu",()=>document.querySelector('[data-game-menu]').click()],
+    ["Details",()=>{document.body.classList.remove("chat-open");foldPanel(!document.body.classList.contains("panel-away"));setCursorFree(true);}],
+    ["Chat /",talk]]) {
+    const button=document.createElement("button");button.type="button";button.textContent=label;button.onclick=run;quickbar.append(button);
+  }
 }
 
 installStick();
@@ -7963,21 +8012,35 @@ const groundTargetGeometry=new THREE.BufferGeometry();
 groundTargetGeometry.setAttribute("position",new THREE.BufferAttribute(new Float32Array(27),3));
 const groundTarget=new THREE.Line(groundTargetGeometry,new THREE.LineBasicMaterial({color:0xe7eff5,depthWrite:false}));
 groundTarget.name="ground-target-cell";groundTarget.visible=false;groundTarget.renderOrder=4;scene.add(groundTarget);
+const groundTargetFillGeometry=new THREE.BufferGeometry();
+groundTargetFillGeometry.setAttribute('position',new THREE.BufferAttribute(new Float32Array(72),3));
+const groundTargetFill=new THREE.Mesh(groundTargetFillGeometry,new THREE.MeshBasicMaterial({color:0x62e595,
+  transparent:true,opacity:.34,depthWrite:false,side:THREE.DoubleSide}));
+groundTargetFill.renderOrder=3;groundTarget.add(groundTargetFill);
 function showGroundTarget() {
   const point=world.groundAim, g=ground.grid;
   const index=point&&g?terrainCellAt(point[0],point[2],g):-1;
   groundTarget.visible=index>=0 && !world.resourceAim && !world.aim && groundSeen(index)
     && camera.position.distanceTo(new THREE.Vector3(...point))<40
     && Math.abs(point[1]-groundAt(point[0],point[2]))<.05;
-  if(!groundTarget.visible)return;
+  if(!groundTarget.visible){delete $('crosshair').dataset.readiness;return;}
   const feedback=toolTargetFeedback({point,grid:g,tool:world.held?.pick ? world.use.name : null,
     target:world.use.target,eyes:camera.position.toArray(),surface:groundMadeOf(point),context:targetContext(point)});
-  groundTarget.material.color.setHex(toolTargetColor(world.use.mode==='tool-working' ?
-    {...feedback,ready:false,state:'working'} : feedback));
+  const shown=world.use.mode==='tool-working' ? {...feedback,ready:false,state:'working'} : feedback;
+  const color=toolTargetColor(shown);
+  groundTarget.material.color.setHex(color);groundTargetFill.material.color.setHex(shown.ready ? 0x18ff63 : color);
+  groundTargetFill.material.opacity=shown.ready ? .62 : .22;
+  $('crosshair').dataset.readiness=shown.state;
   const path=terrainTargetPath(point,g,groundAt);
   groundTargetGeometry.attributes.position.array.set(path);
+  groundTargetGeometry.setDrawRange(0,path.length/3);
   groundTargetGeometry.attributes.position.needsUpdate=true;
   groundTargetGeometry.computeBoundingSphere();
+  const count=path.length/3-1,center=[point[0],point[1]+.013,point[2]],triangles=[];
+  for(let i=0;i<count;i++)triangles.push(...center,...path.slice(3*i,3*i+3),...path.slice(3*i+3,3*i+6));
+  groundTargetFillGeometry.attributes.position.array.set(triangles);
+  groundTargetFillGeometry.setDrawRange(0,triangles.length/3);
+  groundTargetFillGeometry.attributes.position.needsUpdate=true;groundTargetFillGeometry.computeBoundingSphere();
 }
 async function aim() {
   // Asked while something is held too: it is held beside the view rather than
@@ -9134,7 +9197,33 @@ function rememberProfiles(spec) {
 // way whatever they are -- the server says what the tool does where the ring
 // is and does it (tool_use.py), each stroke the engine's; tools.js holds the
 // tool ready, draws the ring and sends the click.
-const tools = makeTools({ world, act, api, say, remember, showUse, camera, carryGround, scene, targetContext, aimVector,
+function showToolOutcome(answer,point) {
+  const effect=toolOutcomeFeedback(answer);if(!effect)return;
+  const position=new THREE.Vector3(...(effect.at || point)).project(camera);
+  if(position.z<-1 || position.z>1 || Math.abs(position.x)>1 || Math.abs(position.y)>1)return;
+  const box=canvas.getBoundingClientRect(),x=box.left+(position.x+1)*box.width/2,y=box.top+(1-position.y)*box.height/2;
+  const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const pulse=document.createElement('i');pulse.className='tool-contact-pulse';pulse.style.left=`${x}px`;pulse.style.top=`${y}px`;
+  document.body.append(pulse);pulse.animate([{opacity:1,transform:'translate(-50%,-50%) scale(.5)'},
+    {opacity:0,transform:`translate(-50%,-50%) scale(${reduced?1:2})`}],{duration:500}).finished.finally(()=>pulse.remove());
+  if(!effect.collected)return;
+  const tally=document.createElement('span');tally.className='tool-yield-label';
+  tally.textContent=`+${massLabel(effect.collected.kg)} ${effect.collected.materials.map(titled).join(' + ')}`;
+  tally.style.left=`${Math.min(innerWidth-180,x+20)}px`;tally.style.top=`${Math.max(16,y-45)}px`;
+  document.body.append(tally);tally.animate([{opacity:1},{opacity:1,offset:.7},{opacity:0}],{duration:1700}).finished.finally(()=>tally.remove());
+  const destination=$('world-load-meter')?.getBoundingClientRect();if(!destination || reduced)return;
+  for(const [i,material] of effect.packets.entries()) {
+    if(document.querySelectorAll('.tool-yield-packet').length>=48)break;
+    const packet=document.createElement('i');packet.className='tool-yield-packet';packet.dataset.material=material;
+    packet.style.background=`#${materialAppearance(material)?.color || 'e7eff5'}`;document.body.append(packet);
+    const spread=(i%4-1.5)*22;
+    packet.animate([{transform:`translate(${x}px,${y}px)`,opacity:1},
+      {transform:`translate(${x+spread}px,${y-60-Math.floor(i/4)*16}px)`,opacity:1,offset:.35},
+      {transform:`translate(${destination.left+destination.width/2}px,${destination.top+55}px) scale(.3)`,opacity:0}],
+      {duration:1250,delay:i*35,easing:'ease-out',fill:'both'}).finished.finally(()=>packet.remove());
+  }
+}
+const tools = makeTools({ world, act, api, say, remember, showUse, camera, carryGround, scene, targetContext, aimVector, showToolOutcome,
                           summarizeToolResult:answer=>{
                             const collected=collectedToolMaterials(answer);
                             return collected ? `Collected ${massLabel(collected.kg)} · ${collected.materials.map(titled).join(" + ")}` : answer.said;
@@ -10597,6 +10686,17 @@ function ghostOf(material) {
 
 // Only for as long as the frame is being drawn.
 function render() {
+  // The held tool is represented by Inventory/skill thumbnails in first person.
+  // Its native bodies still move/contact normally and remain visible to peers.
+  const hidden=[];
+  if(!watchedId && world.held?.pick) {
+    const names=new Set([world.held.name,...(world.held.pick.parts || [])]);
+    for(const name of names) {
+      const mesh=world.bodies.get(name)?.mesh;
+      if(mesh){hidden.push([mesh,mesh.visible]);mesh.visible=false;}
+    }
+    if(pickedBox && names.has(picked.name)){hidden.push([pickedBox,pickedBox.visible]);pickedBox.visible=false;}
+  }
   const inTheWay = heldInTheWay();
   world.seeThrough = !!inTheWay;
   const swapped = [];
@@ -10616,6 +10716,7 @@ function render() {
   const started=performance.now();
   try { renderer.render(scene, camera); }
   finally {
+    for(const [mesh,visible] of hidden)mesh.visible=visible;
     for (const [mesh, material] of swapped.reverse()) mesh.material = material;
     if(trace.renders.length<1024)trace.renders.push(performance.now()-started);
   }

@@ -2,7 +2,20 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
 import * as THREE from '../playground/vendor/three.module.js';
-import {GROUND_APPEARANCE,materialAppearance,terrainCellAt,terrainTargetPath,exposedRunKind,toolTargetFeedback,toolTargetColor,collectedToolMaterials,columnTopData,walkColumnFaces,columnChunkIds,columnChunkBox} from '../playground/material_appearance.js';
+import {GROUND_APPEARANCE,materialAppearance,terrainCellAt,terrainTargetPath,exposedRunKind,toolTargetFeedback,toolTargetColor,collectedToolMaterials,toolOutcomeFeedback, makeTargetHover,columnTopData,walkColumnFaces,columnChunkIds,columnChunkBox} from '../playground/material_appearance.js';
+
+test('outcome particles require native collection and pulses require actual contact',()=>{
+  const answer={result:{open:false,kind:'broke out',loosened_kg:1.5,
+    at_m:[1,0,2],loosened:{sand_m3:.001,soil_m3:0}}};
+  const effect=toolOutcomeFeedback(answer);
+  assert.deepEqual(effect.at,[1,0,2]);assert.equal(effect.collected.kg,1.5);
+  assert.equal(effect.packets.length,5);assert.ok(effect.packets.every(m=>m==='sand'));
+  assert.equal(toolOutcomeFeedback({...answer,refused:'Load full'}),null);
+  assert.equal(toolOutcomeFeedback({result:{...answer.result,open:true}}),null);
+  assert.equal(toolOutcomeFeedback({result:{schema:'banjo.object-strike.v1',impacts:[]}}),null);
+  assert.deepEqual(toolOutcomeFeedback({result:{schema:'banjo.object-strike.v1',impacts:[{}]}}).packets,[]);
+  assert.equal(toolOutcomeFeedback({result:{...answer.result,loosened_kg:10000}}).packets.length,12);
+});
 
 test('dig square is green only for a fresh ready observation; refusals are red',()=>{
   const point=[.25,0,.25],eyes=[0,1.62,0],grid={x0:0,z0:0,dx:.25,nx:3,nz:3};
@@ -271,4 +284,25 @@ test('palette edits and exploration updates retain sharp nearest-column lookup w
   assert.equal(grid.dx,.25);
   let disposed=false;texture.addEventListener('dispose',()=>disposed=true);surface.dispose();
   assert.ok(disposed);surface.material.dispose();
+});
+
+
+test('target dwell waits 1.5s; data refresh does not flicker; movement and leaving reset it',()=>{
+  const dwell=makeTargetHover(),sight={key:'sand:1',x:50,y:50,eyes:[0,1.62,0]};
+  assert.equal(dwell(0,sight),false);assert.equal(dwell(1499,sight),false);
+  assert.equal(dwell(1500,{...sight,readiness:'ready'}),true);
+  assert.equal(dwell(2000,{...sight,x:55}),true,'small pointer jitter is tolerated');
+  assert.equal(dwell(2100,{...sight,x:70}),false);
+  assert.equal(dwell(4000,{...sight,key:'other'}),false);
+  assert.equal(dwell(5600,{...sight,key:'other'}),true);
+  assert.equal(dwell(5700,{...sight,key:'other',eyes:[.1,1.62,0]}),false);
+  assert.equal(dwell(7000,null),false);assert.equal(dwell(9000,sight),false);
+});
+
+test('collection totals closed native meetings within a use rather than just the last one',()=>{
+  const first={open:false,kind:'broke out',loosened_kg:2,loosened:{sand_m3:.001}};
+  const second={...first,loosened_kg:1,loosened:{soil_m3:.001}};
+  assert.deepEqual(collectedToolMaterials({result:second,results:[first,second,{...first,open:true}]}),
+    {kg:3,materials:['sand','soil']});
+  assert.equal(collectedToolMaterials({results:[first],refused:'blocked'}),null);
 });

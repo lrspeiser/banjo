@@ -142,11 +142,42 @@ export function toolTargetColor(feedback) {
 // A collected amount comes from a closed native receipt, never a preview or
 // guessed per-material density. Keep the engine report available separately.
 export function collectedToolMaterials(answer) {
+  if(Array.isArray(answer?.results) && answer.results.length) {
+    if(answer.refused)return null;
+    const rows=answer.results.map(result=>collectedToolMaterials({result})).filter(Boolean);
+    return rows.length ? {kg:rows.reduce((sum,r)=>sum+r.kg,0),materials:[...new Set(rows.flatMap(r=>r.materials))]} : null;
+  }
   const receipt=answer?.result, kg=receipt?.loosened_kg;
   if(answer?.refused || !receipt || receipt.open!==false || receipt.kind!=="broke out"
     || !Number.isFinite(kg) || kg<=0)return null;
   const materials=["sand","soil"].filter(name=>Number(receipt.loosened?.[`${name}_m3`])>0);
   return materials.length ? {kg,materials} : null;
+}
+
+// Deliberate dwell, reset by a different target, pointer drift or camera move.
+// Refreshes of the same readiness data do not restart it.
+export function makeTargetHover(delayMs=1500) {
+  let anchor=null;
+  return (now,sight)=>{
+    if(!sight){anchor=null;return false;}
+    if(!anchor || sight.key!==anchor.key || Math.hypot(sight.x-anchor.x,sight.y-anchor.y)>12
+      || Math.hypot(...sight.eyes.map((v,i)=>v-anchor.eyes[i]))>.03)
+      anchor={...sight,eyes:sight.eyes.slice(),since:now};
+    return now-anchor.since>=delayMs;
+  };
+}
+
+// Small display packets describe confirmed collection; they are not simulated
+// debris, fragment bodies or an extra inventory transfer.
+export function toolOutcomeFeedback(answer) {
+  if(answer?.refused)return null;
+  const result=answer?.result,collected=collectedToolMaterials(answer);
+  const hit=!!collected || (result?.open===false && Number(result.work_j)>0)
+    || (result?.schema==='banjo.object-strike.v1' && result.impacts?.length>0);
+  if(!hit)return null;
+  const count=collected ? Math.min(12,Math.max(1,Math.ceil(collected.kg*3))) : 0;
+  return {at:result?.at_m || null,collected,
+    packets:Array.from({length:count},(_,i)=>collected.materials[i%collected.materials.length])};
 }
 
 // Nine vertices include the midpoint of each side: each side can cross two

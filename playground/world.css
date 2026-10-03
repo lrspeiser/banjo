@@ -764,6 +764,13 @@ body.moving-a-thing #panel .workshop-entry { border-style: dashed; }
 #mini-energy > div { display:flex; justify-content:space-between; gap:8px; }
 #mini-energy span, #mini-products small, #mini-materials small { color:var(--dim); }
 #mini-products { display:grid; gap:5px; }
+#hand-slots { padding:10px 14px; border-bottom:1px solid var(--edge); display:grid; gap:6px; flex:0 0 auto; }
+#hand-slots h3 {margin:0;font-size:12px;}
+#hand-slots .mini-product {border:1px solid var(--edge);border-radius:6px;padding:6px;grid-template-columns:46px minmax(0,1fr);}
+#hand-slots .mini-product-actions {grid-column:1/-1;}
+.empty-hand {color:var(--dim);font-size:11px;padding:4px 6px;border:1px solid var(--edge);border-radius:6px;}
+.tool-contact-pulse {position:fixed;pointer-events:none;width:22px;height:22px;border:2px solid #d4eddc;border-radius:50%;z-index:1001;}
+.tool-yield-packet {position:fixed;left:0;top:0;width:16px;height:16px;border:1px solid #ffffff70;box-shadow:1px 1px 0 #0008;pointer-events:none;z-index:1001;}
 .mini-product { display:grid; grid-template-columns:52px minmax(0,1fr) auto; gap:6px; align-items:center; }
 .mini-product img, .mini-product canvas { width:52px; height:40px; object-fit:contain; }
 .mini-product strong, .mini-product small { display:block; }
@@ -844,3 +851,35 @@ body.moving-a-thing #panel .workshop-entry { border-style: dashed; }
 .pk-input-guidance a { width: fit-content; padding: .4rem .7rem; border: 1px solid var(--edge); border-radius: .3rem; }
 #talk .chat-audience:not([hidden]) { display:flex; align-items:center; gap:8px; padding:8px 0; font-size:12px; color:var(--dim); }
 #chat-recipient { flex:1; min-width:0; background:#0a1013; color:var(--ink); border:1px solid var(--edge); border-radius:6px; padding:7px; font:inherit; }
+
+/* World HUD: deliberate popovers and optional right-hand chat/details. */
+#world-quickbar {position:fixed;bottom:10px;left:50%;transform:translateX(-50%);z-index:20;display:flex;align-items:center;gap:5px;max-width:calc(100vw - 24px);padding:5px 7px;background:#12202bf2;border:1px solid #526578;border-radius:10px;overflow-x:auto;}
+#world-quickbar .game-tabs {display:flex;flex-wrap:nowrap;gap:4px;margin:0;padding:0;border:0;}
+#world-quickbar a,#world-quickbar button {font-size:11px;white-space:nowrap;padding:6px 8px;}
+#hand-slots {position:fixed;inset:0;z-index:18;pointer-events:none;border:0;padding:0;display:block;}
+#hand-slots [data-hand] {position:absolute;bottom:74px;width:176px;background:#12202bf2;pointer-events:auto;user-select:none;}
+#hand-slots [data-hand="left"] {left:14px;}
+#hand-slots [data-hand="right"] {right:calc(var(--panel-w) + 14px);}
+#hand-slots .mini-product {grid-template-columns:46px minmax(0,1fr);padding:7px;}
+#hand-slots .mini-product-actions {display:none;}
+#hand-slots .mini-product:hover .mini-product-actions,#hand-slots .mini-product:focus-within .mini-product-actions {display:flex;}
+#material-preview {position:fixed;z-index:19;width:250px;max-height:55vh;overflow:auto;margin:0;box-shadow:0 8px 25px #0008;background:#12202bf5;}
+#material-preview[hidden] {display:none;}
+#material-preview > h3 {display:none;}
+#material-preview .target-facts {display:none;}
+#material-preview .target-action {font-weight:600;}
+#crosshair[data-readiness="ready"] {filter:drop-shadow(0 0 4px #38ff8c);color:#73ffa9;}
+#crosshair[data-readiness="ready"]::before,#crosshair[data-readiness="ready"]::after {background:#73ffa9;}
+.tool-yield-label {position:fixed;z-index:1002;background:#12202be8;color:#efffed;font-size:14px;font-weight:600;border:1px solid #83d99d;border-radius:7px;padding:6px 9px;pointer-events:none;}
+#talk {display:none;}
+body.chat-open #talk {display:flex;min-height:50vh;}
+body.chat-open #panel > section:not(#talk),body.chat-open #panel > details,body.chat-open #next-step,body.chat-open #details-last,body.chat-open #details-meter {display:none;}
+#panel-show {display:none;}
+body.panel-away #panel {visibility:hidden;}
+#panel .debug-entry {display:none;}
+#hotbar {bottom:58px;}
+@media(max-width:760px){#world-quickbar .game-tabs a {padding:6px;}#hand-slots [data-hand] {width:138px;bottom:68px;}#hand-slots .mini-product {grid-template-columns:34px minmax(0,1fr);gap:4px;}#hand-slots .mini-product img,#hand-slots .mini-product canvas {width:34px;height:30px;}#hand-slots .mini-product strong {font-size:11px;}#material-preview {width:220px;}}
+
+#world-action-toast {position:fixed;left:50%;bottom:112px;transform:translateX(-50%);max-width:70vw;padding:7px 12px;font-size:12px;background:#12202bf0;border:1px solid #526578;border-radius:7px;z-index:19;pointer-events:none;}
+#world-action-toast[hidden] {display:none;}
+body.chat-open #panel > :not(header):not(#talk) {display:none;}

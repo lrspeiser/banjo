@@ -1044,7 +1044,12 @@ and grip and preserve material/geometry/native admission; never add fabricated
 work, drops, skill awards, forced poses or arbitrary forces. Prefer defaults.
 label/past customize concise feedback; repeat false disables held repeat.
 pry false omits lateral motion and may loosen nothing. reach_m stays within
-0.3..2 m; swing.speed_m_s within 1..5 drives the bounded hand. Angular
+0.3..2 m (contact default 0.3..2; legacy swing default 1.15..2). Idle previews
+do not move the hand; only Use positions the working point. In first person,
+Left/right screen hand thumbnails represent held tools without a sweeping view mesh.
+Target details appear after a deliberate hover; the bottom bar opens Inventory,
+Recipes and other screens. Slash opens the optional right-hand chat.
+swing.speed_m_s within 1..5 drives the bounded hand. Angular
 swing/lever fields only affect gesture swing; select that legacy full-swing
 experiment only when explicitly requested. Hoe and mattock recipes still use
 the native point/ground law, not calibrated farming or an axe cutting law.

@@ -263,11 +263,16 @@ def run(app: Any, body: dict[str, Any],
     shoulder = [eyes[0], eyes[1] - SHOULDER_BELOW_EYES_M, eyes[2]]
     at = said["target"]["at_m"]
     heard: dict[Any, dict[str, Any]] = {}
+    progress_rows={}
 
     def listen(_session: Any, reply: Any) -> None:
         for record in (reply or {}).get("ground_work") or []:
             if isinstance(record, dict) and record.get("tool", tool) == tool:
                 heard[(record.get("point"), record.get("at_s"))] = record
+                if actor and record.get('open') is False:
+                    with use_lock:
+                        progress_rows[(record.get('point'),record.get('at_s'))]=record
+                        while len(progress_rows)>64:progress_rows.pop(next(iter(progress_rows)))
 
     listeners = getattr(app, "reply_listeners", None)
     use_lock=session.__dict__.setdefault('tool_use_lock',threading.Lock())
@@ -277,6 +282,7 @@ def run(app: Any, body: dict[str, Any],
             return {'action':label,'refused':'The hand is still busy with the last use.','done':[]}
         if actor: busy_players.add(actor)
         else: session.tool_busy=True
+        if actor:session.__dict__.setdefault('tool_feedback',{})[actor]=progress_rows
     if listeners is not None:
         listeners.append(listen)
     done: list[str] = []
@@ -353,8 +359,11 @@ def run(app: Any, body: dict[str, Any],
                     done.append(f"drew it out: the stroke {_pull(app, grip)}")
             record = _closed(app, tool, since, heard, record)
     finally:
-        if actor: busy_players.discard(actor)
-        else: session.tool_busy = False
+        with use_lock:
+            if actor:
+                busy_players.discard(actor)
+                session.tool_feedback.pop(actor,None)
+            else: session.tool_busy = False
         if listeners is not None and listen in listeners:
             listeners.remove(listen)
     carried = _carried(app)
@@ -363,6 +372,18 @@ def run(app: Any, body: dict[str, Any],
             "said": short if record is None and short else _said(record, use, kg),
             "detail": _detail(record), "result": record, "carried": carried,
             "repeat": use["repeat"]}
+
+
+def feedback(app,actor):
+    """Transient native receipts for this authenticated player's active use.
+    A clock reader may consume the original native packet before the browser.
+    Retain bounded display feedback; it grants neither inventory nor evidence.
+    """
+    session=app.live.session
+    if session is None:return []
+    with session.__dict__.setdefault('tool_use_lock',threading.Lock()):
+        if actor not in getattr(session,'tool_busy_players',set()):return []
+        return list((getattr(session,'tool_feedback',{}).get(actor) or {}).values())
 
 
 def _object_contact(app,said,use,tool,eyes,note):
@@ -433,7 +454,7 @@ def _object_contact(app,said,use,tool,eyes,note):
                 'detail':'Internal fracture from held strikes is not available yet.',
                 'result':result,'carried':_carried(app),
                 'repeat':bool(not refused and use['repeat'] and connected and impacts and complete),
-                'gesture':'object-contact'}
+                'gesture':'object-contact','rest_hand_m':_grip(session)}
         if refused: answer['refused']=refused
         return answer
     try:
@@ -604,7 +625,9 @@ def _contact(app,said,use,tool,eyes,heard,note):
     carried=_carried(app);kg=sum(float(carried.get(k) or 0) for k in ('soil_kg','sand_kg'))
     return {'action':said['label'],'did':[said['label']], 'done':done,
             'said':_said(record,use,kg),'detail':_detail(record),'result':record,
-            'carried':carried,'repeat':use['repeat'],'gesture':'contact'}
+            'carried':carried,'repeat':use['repeat'],'gesture':'contact','rest_hand_m':_grip(session),
+            'results':[r for r in heard.values() if r.get('open') is False
+                and float(r.get('at_s',since) or since)>=since-.05]}
 
 
 def _settle(app: Any, tool: str) -> bool:

@@ -101,7 +101,6 @@ export function makeTools(ctx) {
   // Held ready: the point straight down and the haft back towards the person,
   // in the plane they face.
   function readyPose() {
-    if (["contact", "object-contact"].includes(world.use.target?.gesture) && world.use.target.ready) return world.use.target.ready;
     const f = levelForward();
     const up = new THREE.Vector3(0, 1, 0);
     const k = new THREE.Vector3().crossVectors(up, f).normalize();
@@ -237,16 +236,19 @@ export function makeTools(ctx) {
     if (!held || !held.pick || use.mode !== "tool-ready") return;
     use.mode = "tool-working";
     use.startedAt = performance.now();
+    use.shownReceipts=new Set();
     use.result = "";
 
     showUse();
     let answer = null;
+    let struckAt=null;
     try {
       // Explicit taps retain their clicked ray even if the cursor moves while
       // another stroke finishes. Held repeats sample the current cursor ray.
       // Sidebar actions retain the displayed point, not the camera centre.
       const hit = input.at_m ? {hit:true,point_m:input.at_m,name:input.target_name}
         : await act("pick", {...input,max_m:40,past_held:true});
+      struckAt=hit.hit ? hit.point_m : null;
       answer = await api("/api/world/tool/use", { session: world.session, person: whereIAm(),
         at_m: hit.hit ? hit.point_m : null, target_name: hit.hit ? hit.name || null : null });
     } catch (error) {
@@ -273,13 +275,23 @@ export function makeTools(ctx) {
       remember(`${answer.action}: ${answer.said}`);
     }
     if (answer && answer.carried) carryGround(answer.carried);
+    if(answer && struckAt) {
+      const results=(answer.results?.length ? answer.results : answer.result?.point!=null ? [answer.result] : [])
+        .filter(r=>!use.shownReceipts.has(`${r.point}:${r.at_s}`));
+      if(results.length)ctx.showToolOutcome?.({...answer,results},struckAt);
+      else if(!answer.results?.length && !use.shownReceipts.size)ctx.showToolOutcome?.(answer,struckAt);
+    }
     if (answer?.result?.working_point_connected === false) {
       // A separated head ends this burst even if clicks were queued while the
       // native stroke ran. The retained grip part can still be inspected in Lab.
       use.stop = true; use.down = false; use.queued = 0; use.inputs=[];
       clearTimeout(use.timer); use.timer = null;
     }
-    if (["contact", "object-contact"].includes(answer?.gesture) && !answer.refused) use.positioned = true;
+    if (["contact", "object-contact"].includes(answer?.gesture) && !answer.refused) {
+      use.positioned = true;
+      use.rest=answer.rest_hand_m?.slice() || null;
+      use.restEyes=whereIAm().eyes_m.slice();
+    }
     use.mode = "tool-ready";
     askedAt = 0;                               // the ring asked for again at once
     showUse();
@@ -340,9 +352,13 @@ export function makeTools(ctx) {
       showUse();
     }
     if (use.mode !== "tool-ready") return { hand: null, hand_q: null };
-    if (!use.positioned && (use.target?.gesture || held.pick.use?.gesture || "contact") === "contact") {
-      // Carry above terrain in its pickup orientation. The server performs a
-      // safe lift/turn/lower on first Use; an abrupt idle turn can scrape soil.
+    if ((held.pick.use?.gesture || "contact") === "contact") {
+      if (use.positioned) {
+        const eyes=whereIAm().eyes_m;
+        return {hand:use.rest?.map((v,i)=>v+eyes[i]-use.restEyes[i]) || null,hand_q:null};
+      }
+      // Previewing a target must not move a tool there. Carry in a fixed place
+      // above terrain, preserving native orientation; only Use positions it.
       const eyes = whereIAm().eyes_m;
       return { hand: [eyes[0], eyes[1] - 0.5, eyes[2]], hand_q: null };
     }
@@ -352,6 +368,17 @@ export function makeTools(ctx) {
   // After every step: what the person carries.
   function follow(state) {
     if (state.carried) carryGround(state.carried);
+    const use=world.use;
+    if(use?.mode!=="tool-working" || !world.held?.pick)return;
+    const rows=[];
+    for(const r of [...(state.tool_outcomes || []),...(state.ground_work || [])]) {
+      const key=`${r.point}:${r.at_s}`;
+      if(r.open===false && r.tool===world.held.name && !use.shownReceipts.has(key)) {
+        use.shownReceipts.add(key);rows.push(r);
+      }
+    }
+    if(rows.length && rows.at(-1).at_m)
+      ctx.showToolOutcome?.({result:rows.at(-1),results:rows},rows.at(-1).at_m);
   }
 
   async function putDown(text) {

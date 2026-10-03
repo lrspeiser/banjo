@@ -159,6 +159,14 @@ class PlayerMaterials(unittest.TestCase):
         self.surface='columns'
         self.test_actual_tool_exposes_soil_and_private_storage_peer_restart_agree()
 
+    def test_close_contact_exposes_soil_and_private_storage_peer_restart_agree(self):
+        self.contact_distance=.45
+        self.test_actual_tool_exposes_soil_and_private_storage_peer_restart_agree()
+
+    def test_close_column_contact_exposes_soil_and_private_storage_peer_restart_agree(self):
+        self.surface='columns';self.contact_distance=.45
+        self.test_actual_tool_exposes_soil_and_private_storage_peer_restart_agree()
+
     def test_actual_tool_exposes_soil_and_private_storage_peer_restart_agree(self):
         import starter_goals_tests as camp
         with mock.patch.object(fixture.server.secrets,'randbelow',side_effect=[1,851269741]):
@@ -177,7 +185,7 @@ class PlayerMaterials(unittest.TestCase):
             'person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[1,0,0]}},world)
         built=camp.make_paid(self,world,token,first['recipe'],[-1.4,-.6],'layer-pick')
         self.assertTrue(built['resources_charged']);root=built['root_body']
-        sid=app.live.session.id;x,z=-.9,.025;target=[.3,.025]
+        sid=app.live.session.id;target=[.3,.025];x,z=target[0]-getattr(self,'contact_distance',1.2),.025
         floor=self.post('/api/live/act',{'session':sid,'op':'survey','at':[x,z]},world)['survey']['ground_m']
         person={'standing_m':[x,floor,z],'eyes_m':[x,floor+1.62,z],'facing':[1,0,0]}
         self.assertTrue(self.post('/api/world/inventory',{'session':sid,'op':'take_up','item':root,

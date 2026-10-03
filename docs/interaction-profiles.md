@@ -1,5 +1,7 @@
 # Interaction profiles
 
+**October 3:** [Generic tool HUD](tool-hud-checkpoint.md) keeps authored/native tools independent of tool-specific animations. Contact reach defaults to 0.3–2 m; explicit bounds and the legacy swing minimum are preserved. Screen-edge thumbnails and deliberate hover details show held tools and readiness; only confirmed native receipts animate collection.
+
 **October 1 material preview update:** [Read-only collection contract](material-preview-checkpoint.md) replaces ground target/deposit/landing rings with right-panel thumbnails and methods. Earlier ring measurements below are historical. Existing API `ring` metadata remains a reach/status object; new tools inherit native survey candidates without authored loot fields.
 
 **October 1:** [Fast shared ground-tool controls](quick-tools-checkpoint.md) supersede the historical default full swing described below. Existing profiles inherit contact strokes and 4 Hz requested cadence; new MCP and Lab designs share the schema. Explicit gesture swing retains the earlier experiment.

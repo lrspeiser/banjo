@@ -1724,6 +1724,14 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/material_preview_tests.py
             PlayerMaterials.test_column_surface_exposes_soil_and_private_storage_peer_restart_agree -v)
     set_tests_properties(banjo_column_material_layer_tests PROPERTIES TIMEOUT 180)
+    add_test(NAME banjo_close_material_layer_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/material_preview_tests.py
+            PlayerMaterials.test_close_contact_exposes_soil_and_private_storage_peer_restart_agree
+            PlayerMaterials.test_close_column_contact_exposes_soil_and_private_storage_peer_restart_agree -v)
+    set_tests_properties(banjo_close_material_layer_tests PROPERTIES TIMEOUT 180)
     add_test(NAME banjo_mine_loop_tests
         COMMAND ${CMAKE_COMMAND} -E env
             BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>

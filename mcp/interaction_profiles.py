@@ -43,7 +43,7 @@ TOOL_USE_DEFAULTS = {"label": "Dig here", "past": "dug",
                      "gesture": "contact", "cadence_hz": 4.0,
                      "swing": {"speed_m_s": 4.0, "raise_deg": 110.0},
                      "lever": {"speed_m_s": 1.2, "lever_deg": 40.0}, "pry": True,
-                     "reach_m": [1.15, 2.0], "repeat": True}
+                     "reach_m": [0.3, 2.0], "repeat": True}
 _USE_KEYS = set(TOOL_USE_DEFAULTS)
 # How fast the HAND moves along a swing; the point arrives two to three times
 # faster (a 4 m/s swing brings the pick's point down at 9.2 m/s). Measured in
@@ -99,7 +99,8 @@ def tool_use(profile: dict[str, Any] | None) -> dict[str, Any]:
            "swing": {**TOOL_USE_DEFAULTS["swing"], **(said.get("swing") or {})},
            "lever": (None if said.get("pry") is False
                      else {**TOOL_USE_DEFAULTS["lever"], **(said.get("lever") or {})}),
-           "reach_m": list(said.get("reach_m") or TOOL_USE_DEFAULTS["reach_m"]),
+           "reach_m": list(said.get("reach_m") or
+                ([1.15,2.0] if said.get('gesture')=='swing' else TOOL_USE_DEFAULTS["reach_m"])),
            "repeat": bool(said.get("repeat", TOOL_USE_DEFAULTS["repeat"]))}
     return out
 

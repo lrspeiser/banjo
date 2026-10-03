@@ -2235,6 +2235,7 @@ class Handler(BaseHTTPRequestHandler):
                 remember_ground(self.app,body,answer)
                 if player and requested_step:
                     app.terrain_view.attach(app.live,terrain_seen,answer)
+                    answer['tool_outcomes']=tool_use.feedback(app,player)
                 if isinstance(body,dict) and body.get("op")=="strike": note_strike(self.app,answer)
                 if player:
                     answer["players"] = player_world.visible(app)

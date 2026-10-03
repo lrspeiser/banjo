@@ -124,6 +124,18 @@ def app_with(profile=PICK, **room):
 
 
 class AToolsUseIsShapedByItsProfile(unittest.TestCase):
+    def test_transient_native_outcomes_are_private_and_only_visible_during_use(self):
+        a={'tool':'alice-tool','point':1,'at_s':2,'open':False}
+        b={'tool':'bob-tool','point':2,'at_s':2,'open':False}
+        session=SimpleNamespace(tool_busy_players={'alice','bob'},tool_feedback={
+            'alice':{(1,2):a},'bob':{(2,2):b}})
+        app=SimpleNamespace(live=SimpleNamespace(session=session))
+        self.assertEqual([a],tool_use.feedback(app,'alice'))
+        self.assertEqual([b],tool_use.feedback(app,'bob'))
+        self.assertEqual([],tool_use.feedback(app,'third'))
+        session.tool_busy_players.remove('alice')
+        self.assertEqual([],tool_use.feedback(app,'alice'))
+
     def checked(self, use, profile=PICK):
         return interaction_profiles.check(dict(profile, use=use), BODIES, [], points=["pick haft"])
 
@@ -133,7 +145,12 @@ class AToolsUseIsShapedByItsProfile(unittest.TestCase):
                           "gesture":"contact", "cadence_hz":4.0,
                           "swing": {"speed_m_s": 4.0, "raise_deg": 110.0},
                           "lever": {"speed_m_s": 1.2, "lever_deg": 40.0},
-                          "reach_m": [1.15, 2.0], "repeat": True})
+                          "reach_m": [0.3, 2.0], "repeat": True})
+
+    def test_contact_reach_defaults_preserve_explicit_limits_and_legacy_swing(self):
+        self.assertEqual([.3,2.],interaction_profiles.tool_use(PICK)['reach_m'])
+        self.assertEqual([1.15,2.],interaction_profiles.tool_use(dict(PICK,use={'gesture':'swing'}))['reach_m'])
+        self.assertEqual([.5,1.],interaction_profiles.tool_use(dict(PICK,use={'reach_m':[.5,1.]}))['reach_m'])
 
     def test_only_what_was_said_is_kept(self):
         out = self.checked({"label": "Break up the soil", "swing": {"raise_deg": 140}})
@@ -167,7 +184,7 @@ class WhatAToolDoesWhereYouLook(unittest.TestCase):
     def test_compact_feedback_uses_actual_readiness_without_promising_yield(self):
         cases=[(IN_REACH,{},'ready',True,'Dig here',['sand']),
                ([13, .6, -7.38],{},'blocked',False,'Move closer',[]),
-               ([13, .6, -4.7],{},'blocked',False,'Step back',[]),
+               ([13, .6, -4.48],{},'blocked',False,'Step back',[]),
                (IN_REACH,{'holding':None},'tool-needed',False,'Equip tool',[]),
                (IN_REACH,{'survey':{'water':{'depth_m':.1}}},'no-yield',False,'Find loose ground',[]),
                (IN_REACH,{'survey':{'surface':'rock'}},'no-yield',False,'Find loose ground',[])]
@@ -235,14 +252,12 @@ class WhatAToolDoesWhereYouLook(unittest.TestCase):
         far = self.resolve([13.0, 0.6, -7.38])
         self.assertEqual((far["enabled"], far["ring"]["state"]), (False, "far"))
         self.assertIn("3.0 m away: step closer", far["reason"])
-        near = self.resolve([13.0, 0.6, -4.7])
+        near = self.resolve([13.0, 0.6, -4.48])
         self.assertEqual((near["enabled"], near["ring"]["state"]), (False, "near"))
         self.assertIn("at your feet", near["reason"])
-        # A metre in front is in reach of the arm, and a swing there came down
-        # short one time in several: step back.
+        # Short-contact handling can work within the old full-swing dead zone.
         close = self.resolve([13.0, 0.6, -5.38])
-        self.assertEqual((close["enabled"], close["ring"]["state"]), (False, "near"))
-        self.assertIn("1.0 m in front of you, too close", close["reason"])
+        self.assertEqual((close["enabled"], close["ring"]["state"]), (True, "ok"))
 
     def test_in_reach_it_can_be_done_on_the_ground_as_it_is(self):
         said = self.resolve(IN_REACH)
@@ -395,7 +410,7 @@ class ObjectControls(unittest.TestCase):
         for hit,body in [({'hit':False},{}),({**self.hit,'name':'occluder'},{}),
                          (self.hit,{'target_name':['made item']}),
                          ({**self.hit,'point_m':[13,2.22,-7.88]},{}),
-                         ({**self.hit,'point_m':[13,2.22,-4.88]},{}),
+                         ({**self.hit,'point_m':[13,2.22,-4.48]},{}),
                          ({**self.hit,'point_m':[13,float('nan'),-5.88]}, {})]:
             with self.subTest(hit=hit,body=body),mock.patch.object(tool_use,'_native_point',return_value=self.point):
                 app=self.app(hit);self.assertFalse(self.resolve(app,**body)['enabled'])

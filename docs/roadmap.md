@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Tool HUD, October 3:** [Interaction checkpoint](tool-hud-checkpoint.md) closes the close-contact/held-mesh/clutter/dwell/collection-display slice with a shared authored-tool contract. Next: owner usability feedback, repair the stale full paid-table/process test fixture, and continue highlighted paid preparation and complete saved construction steps. Full supports/skills/customization acceptance remains open.
+
 **Clicked digging, October 3:** [Verified target prerequisite](cursor-dig-target-checkpoint.md) fixes camera-centre digging and queued/sidebar target loss, adds green/red/amber ground readiness and rejects stale hover rays. Fifty-one checks and ordinary collection/reach refusal pass. Next highlighted paid pad preparation and complete saved construction steps; full construction/support/skill/customization acceptance remains open.
 
 **Guide/lamp usability, October 3:** [Owner-observed repair checkpoint](construction-guide-usability-checkpoint.md) closes the unchanged-refresh flicker/request slice, adds Ask AI/F1 and explicit component/use inspection, restores verified starter lamp source and reseeds refused starter footprints. Twenty-six focused checks pass. Next paid ground preparation and complete saved steps, then functional supports/mounting and learned skills, then broader bounded customization. The full construction scope and human/model acceptance remain active.
