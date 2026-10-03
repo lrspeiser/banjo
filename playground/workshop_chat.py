@@ -56,6 +56,7 @@ PROGRESS_TTL_S = 900.0
 #: the code's word for it; nobody watching wants to read edit_components.
 DOING = {
     "inspect_design": "looking at the design",
+    "inspect_game_guidance": "checking your workbench and next action",
     "how_do_i_make_it": "working out what it would take",
     "inspect_component": "looking at that part",
     "inspect_physics": "measuring it",
@@ -148,6 +149,22 @@ run, or commit the outside live world. The user expects you to behave like a
 CAD/physics copilot, not a one-shot intent classifier.
 
 Important behavior:
+- For stock, energy, readiness and what-to-do-next questions in a named World,
+  use the authenticated player_guidance observations. They use the same exact
+  paid quote and next-action resolver as the game screens. Shape fit, library
+  BOM and wallet energy do not mean the workbench is funded. After changing
+  geometry/materials/machines, call inspect_game_guidance before making a new
+  readiness or cost claim. It observes the CURRENT isolated draft, never funds
+  stock, executes manufacture, changes the outside world or awards a skill.
+  draft_project is the candidate's exact funding review. If an owned workpiece
+  is pending, project and next_action instead describe that accepted job;
+  do not mistake its progress for the draft's cost or readiness.
+  Wireframe mass and library credits are authoring estimates. Manufacture
+  uses the exact occupied geometry at the reported cell_m (or admitted rigid
+  geometry). Subcell edits may leave the occupied bill unchanged; repeating
+  the same guidance read does not reconcile these different bases. In a named
+  World report the reviewed stock/energy and one next action concisely; do not
+  introduce library credits as the player's currency or dump internal keys.
 - define_ground_tool makes an existing fixed lattice design a ground tool.
   Name the point and grip components; positions are relative to each component's
   centre in its own rotated frame, in metres. The tip belongs on its actual end,
@@ -513,6 +530,9 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
         {"type": "function", "name": "inspect_design",
          "description": "Inspect the complete current Workshop candidate including every component's 3D centre, size, rotation and measured design metrics.",
          "parameters": {"type": "object", "additionalProperties": False, "properties": {}}},
+        {"type":"function","name":"inspect_game_guidance",
+         "description":"Read this player's actual funded workbench and next action for the current Lab draft. Recheck after editing. No stock, wallet, world, skill or build mutation.",
+         "parameters":{"type":"object","additionalProperties":False,"properties":{}}},
         {"type": "function", "name": "inspect_component",
          "description": "Inspect one named component, its 3D geometry, interfaces, physics tags, capabilities and touching components.",
          "parameters": {"type": "object", "additionalProperties": False,
@@ -1043,6 +1063,12 @@ class _State:
         raise ValueError("a power part is a store, a motor, a panel or a control")
 
     def execute(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
+        if tool=='inspect_game_guidance':
+            if args:raise ValueError('Guidance uses authenticated state, not model-supplied balances')
+            import player_guidance
+            guidance=player_guidance.for_design(self.app,self.current_spec())
+            return self.record(tool,{'summary':(guidance.get('next_action') or {}).get('label') or guidance.get('reason'),
+                                     'player_guidance':guidance})
         if tool == "save_design":
             import workshop_store
             from workshop_api_core import _store
@@ -1630,6 +1656,10 @@ def _model_turn(app: Any, state: _State, *, message: str, history: list[dict[str
     instructions = SYSTEM
     inputs: list[dict[str, Any]] = list(history)
     inputs.append({"role": "user", "content": _what_it_is_looking_at(state)})
+    if getattr(app,'world_id',None):
+        import player_guidance
+        inputs.append({'role':'user','content':json.dumps({'server_observations':{
+            'player_guidance':player_guidance.for_design(app,state.current_spec())}},allow_nan=False)})
     inputs.append({"role": "user", "content": message})
     tools = _tool_definitions(state.materials)
     payload: dict[str, Any] = {
@@ -1828,6 +1858,13 @@ def _fallback_turn(state: _State, message: str) -> str:
         target = role + "s" if role else ("the whole item" if selector.get("names") == [p.name for p in state.design.parts]
                                            else (state.selected_name or "selected component"))
         return f"Updated {target}: " + ", ".join(actions) + "."
+    if getattr(state.app,'world_id',None) and any(word in lower for word in
+        ('what next','missing','fund','ready','workbench','supplies')):
+        guidance=state.execute('inspect_game_guidance',{})['player_guidance']
+        reading=(guidance.get('draft_project') or {}).get('build_readiness') or guidance.get('build_readiness') or {}
+        action=guidance.get('next_action') or {}
+        return '. '.join(str(value) for value in (reading.get('status'),action.get('label'),
+            reading.get('reason'),*(action.get('blockers') or [])) if value)+'.'
     if any(word in lower for word in ("where", "position", "size", "physics", "mass", "balance", "support")):
         result = state.execute("inspect_physics" if any(w in lower for w in ("physics", "mass", "balance", "support")) else "inspect_design", {})
         return str(result["summary"])

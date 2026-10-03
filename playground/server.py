@@ -1588,11 +1588,17 @@ class Handler(BaseHTTPRequestHandler):
             # cost before anyone commits to waiting for it.
             if path=="/api/builder/preview": return self.send(builder.describe(body))
             # The Workshop bench (docs/workshop-mode.md, docs/workshop-next.md).
-            # Every one of these is pure computation over mcp/workshop.py: no
-            # engine, no room, no inventory. The page renders what they return
-            # and decides no geometry of its own.
+            # Geometry edits operate on an isolated proposal. Named-world
+            # design chat may inspect authenticated guidance; paid manufacture
+            # still uses the explicit fabrication routes.
             if path=="/api/workshop/open": return self.send(workshop_api.open_workshop(self.app,body))
-            if path=="/api/workshop/candidates": return self.send(workshop_api.candidates(self.app,body))
+            if path=="/api/workshop/candidates":
+                app=self.app
+                if getattr(app,'world_id',None):
+                    app.knowledge=lambda app=app: knowledge_view(app)
+                    app.registry=registry
+                    app.journal_now=lambda app=app: journal_of(app)
+                return self.send(workshop_api.candidates(app,body))
             if path=="/api/workshop/more": return self.send(workshop_api.more_like_this(self.app,body))
             if path=="/api/workshop/plan": return self.send(workshop_api.plan(self.app,body))
             if path=="/api/workshop/feedback": return self.send(workshop_api.remember(self.app,body))
@@ -1601,13 +1607,18 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/world/guidance':
                 import player_guidance
                 if not getattr(self.app,'world_id',None):raise ValueError('Join a named world for guidance')
-                if (not isinstance(body,dict) or set(body)-{'focus'} or
+                if (not isinstance(body,dict) or set(body)-{'focus','action','project'} or
                     'focus' in body and (not isinstance(body['focus'],str) or len(body['focus'])>160)):
                     raise ValueError('Guidance accepts an optional focused object, not player state')
+                action=body.get('action','view')
+                if action not in ('view','select-project','clear-project') or ('project' in body)!=(action=='select-project'):
+                    raise ValueError('Use a guidance view, project selection or return to goals')
                 app=self.app
                 app.knowledge=lambda app=app: knowledge_view(app)
                 app.registry=registry
                 app.journal_now=lambda app=app: journal_of(app)
+                if action=='select-project':player_guidance.set_project(app,player,body['project'])
+                elif action=='clear-project':player_guidance.clear_project(app,player)
                 return self.send(player_guidance.resolve(app,player,focus=body.get('focus')))
             if path=="/api/workshop/market":
                 app = self.app

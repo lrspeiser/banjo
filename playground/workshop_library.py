@@ -188,6 +188,13 @@ def _open_connection(app: Any) -> sqlite3.Connection:
             updated_at TEXT NOT NULL,
             PRIMARY KEY(owner_id, substance)
         );
+        CREATE TABLE IF NOT EXISTS player_guidance_projects (
+            world_id TEXT NOT NULL,
+            owner_id TEXT NOT NULL,
+            scene TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            PRIMARY KEY(world_id, owner_id, scene)
+        );
     """)
     who, now = owner_id(app), _now()
     for material, price in DEFAULT_PRICES.items():

@@ -14,6 +14,23 @@ class IndependentComponents(unittest.TestCase):
     def base(self):
         return {"kind": "table", "design_id": "table-a", "parameters": {}}
 
+    def test_tool_length_and_thickness_follow_local_long_axis_and_reopen_for_reference_materials(self):
+        for material in ('glass','oak','iron'):
+            spec={'kind':'field-pick','parameters':{'material':material}}
+            before,_=workshop_components.design_from_spec(spec)
+            for name,along in (('haft',0),('arm',2)):
+                old=next(p for p in before.parts if p.name==name)
+                for action in ('longer','thicker'):
+                    with self.subTest(material=material,part=name,action=action):
+                        edited,overrides,_=workshop_components.edit(spec,part_name=name,action=action,amount=.2)
+                        reopened,_=workshop_components.design_from_spec({**spec,'component_overrides':overrides})
+                        new=next(p for p in edited.parts if p.name==name)
+                        for axis in range(3):
+                            factor=1.2 if (axis==along)==(action=='longer') else 1.
+                            self.assertAlmostEqual(old.size_m[axis]*factor,new.size_m[axis])
+                        self.assertEqual(old.center_m,new.center_m)
+                        self.assertEqual(edited.parts,reopened.parts)
+
     def test_thinning_one_leg_changes_only_that_leg(self):
         before, _ = workshop_components.design_from_spec(self.base())
         old = {p.name: p.size_m for p in before.parts}

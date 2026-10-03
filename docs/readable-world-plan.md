@@ -96,7 +96,9 @@ journey is qualified.
    now connects World, Inventory, Goals, Skills, Recipes, Market and AI Guide
    snapshots, using exact paid quote readiness for the recommended project and
    Lab review. Owned work takes priority and recovers its accepted design.
-   Finish selected-project/editing-chat focus and broader source/processor/
+   [Selected-project/editing-chat focus](selected-project-guidance-checkpoint.md)
+   now retains private intent and exact current-draft funding observations.
+   Finish broader source/processor/
    empty-energy coverage; retain actual availability, ownership, skill evidence
    and native admission. A display name grants nothing.
 4. **Broader physical behavior:** complete [R4/R5](player-experience-checklist.md#remaining-work).

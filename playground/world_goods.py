@@ -54,6 +54,7 @@ def validate_raw_deliveries(state, claims):
 
 def _settle(app):
     room=getattr(app,'room',None)
+    if room is None:return  # A standalone authoring catalog has no room outbox.
     durable=getattr(room,'goods_durable_claims',set())
     for r in getattr(room,'goods_claims',[]) or []:
         if r['request_id'] not in durable: continue

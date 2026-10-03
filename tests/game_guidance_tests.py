@@ -107,6 +107,10 @@ class PrivateGuidance(unittest.TestCase):
         self.assertEqual('Fund materials',ready['build_readiness']['status'])
         self.assertFalse(ready['build_readiness']['ready_to_start'])
         self.assertEqual('get-tool-wood',self.post('/api/world/guidance',{},world,peer['token'])['goal']['id'])
+        focused=self.post('/api/world/guidance',{'action':'select-project','project':{
+            'name':'My first pick','candidate':ready['project']['candidate'],
+            'selection':{'source':'recipe','id':'Personal field pick'}}},world)
+        self.assertTrue(focused['project']['focused'])
         ctx={k:v for k,v in self.post('/api/world/workshop/context',{},world).items() if k in ('session','scene')}
         plan=self.post('/api/world/fabrication/plan_make',{**ctx,'candidate':ready['project']['candidate']},world)
         self.assertEqual(ready['build_readiness'],plan['build_readiness'])
@@ -157,12 +161,97 @@ class PrivateGuidance(unittest.TestCase):
         self.assertEqual('continue-build',pending['next_action']['verb'])
         self.assertEqual('guidance-own-workpiece',pending['next_action']['destination']['job'])
         self.assertFalse(pending['build_readiness']['ready_to_start'])
+        self.assertEqual(ready['project']['candidate'],pending['project']['candidate'])
+        self.assertEqual('workpiece',pending['project']['source'])
+        scope=fixture.server.workshop_library.REQUEST_OWNER.set(owner['id'])
+        try:self.assertIsNone(player_guidance.selected_project(app,owner['id'],app.room.fabrication_record))
+        finally:fixture.server.workshop_library.REQUEST_OWNER.reset(scope)
+        from copy import deepcopy
+        edited=deepcopy(ready['project']['candidate']);edited['parameters']['length_m']=1.
+        scope=fixture.server.workshop_library.REQUEST_OWNER.set(owner['id'])
+        try:during_work=player_guidance.for_design(app,edited)
+        finally:fixture.server.workshop_library.REQUEST_OWNER.reset(scope)
+        self.assertEqual('continue-build',during_work['next_action']['verb'])
+        self.assertEqual(edited,during_work['draft_project']['candidate'])
+        self.assertGreater(during_work['draft_project']['build_readiness']['energy_required_j'],
+            plan['quote']['supply_required_j'])
         self.assertNotIn('job',self.post('/api/world/guidance',{},world,peer['token'])['next_action']['destination'])
         self.post('/api/world/fabrication/wait',{**ctx,'seconds':1},world)
         finished=self.post('/api/world/guidance',{},world)
         self.assertEqual('Output ready',finished['build_readiness']['status'])
         self.assertEqual('Collect your finished workpiece',finished['next_action']['label'])
         print('shared guidance: private source, exact funding, seven chat screens; wall_s=',round(time.monotonic()-began,3))
+
+    def test_selected_project_is_private_durable_bounded_and_does_not_reserve_supplies(self):
+        from copy import deepcopy
+        world,owner,app=self.setup_world();peer=self.join(world,'Other player')
+        baseline=self.post('/api/world/guidance',{},world)
+        candidate=deepcopy(baseline['project']['candidate'])
+        candidate['parameters']['length_m']=1.
+        project={'name':'Longer personal pick','candidate':candidate,
+            'selection':{'source':'recipe','id':'Personal field pick'}}
+        before=deepcopy(app.room.fabrication_record)
+        focused=self.post('/api/world/guidance',{'action':'select-project','project':project},world)
+        self.assertTrue(focused['project']['focused'])
+        self.assertEqual(candidate,focused['project']['candidate'])
+        self.assertEqual(before,app.room.fabrication_record)
+        ctx={k:v for k,v in self.post('/api/world/workshop/context',{},world).items() if k in ('session','scene')}
+        plan=self.post('/api/world/fabrication/plan_make',{**ctx,'candidate':candidate},world)
+        self.assertEqual(plan['build_readiness'],focused['build_readiness'])
+        self.assertNotEqual(baseline['build_readiness']['energy_required_j'],focused['build_readiness']['energy_required_j'])
+        self.assertEqual(focused['build_readiness'],self.post('/api/workshop/market',{},world)['guidance']['plan']['build_readiness'])
+        self.assertFalse(self.post('/api/world/guidance',{},world,peer['token'])['project'].get('focused'))
+        for bad in ({**project,'wallet_j':999},
+                    {**project,'candidate':{**candidate,'ready_to_start':True}},
+                    {**project,'selection':{'source':'carried','id':'another-player-item'}},
+                    {**project,'candidate':{**candidate,'parameters':{'length_m':float('nan')}}},
+                    {**project,'candidate':{**candidate,'purpose':'x'*24577}}):
+            with self.subTest(bad_keys=list(bad)),self.assertRaises(urllib.error.HTTPError):
+                self.post('/api/world/guidance',{'action':'select-project','project':bad},world)
+        self.stop();self.start()
+        self.post('/api/world/player/join',{'token':owner['token']},world)
+        self.post('/api/world/open',{},world)
+        restored=self.post('/api/world/guidance',{},world)
+        self.assertEqual(candidate,restored['project']['candidate'])
+        self.assertEqual(focused['build_readiness'],restored['build_readiness'])
+        cleared=self.post('/api/world/guidance',{'action':'clear-project'},world)
+        self.assertFalse(cleared['project'].get('focused'))
+        self.assertEqual(baseline['project']['candidate'],cleared['project']['candidate'])
+        self.assertEqual(before,self.app.hub.get(world).room.fabrication_record)
+
+    def test_design_chat_observes_current_candidate_and_refreshes_after_bounded_edit(self):
+        from copy import deepcopy
+        world,owner,app=self.setup_world()
+        # First request is chat; its endpoint must initialize private knowledge.
+        app.api_key='mock-provider-only';app.model='mock-model'
+        observations=[];refreshed=[]
+        def provider(app,payload):
+            if not observations:
+                observations.extend(json.loads(row['content'])['server_observations']['player_guidance']
+                    for row in payload['input'] if row.get('role')=='user' and row.get('content','').startswith('{"server_observations"'))
+                return {'output':[{'type':'function_call','call_id':'edit','name':'set_parameter',
+                    'arguments':'{"name":"length_m","value":1.0}'},
+                    {'type':'function_call','call_id':'read','name':'inspect_game_guidance','arguments':'{}'},
+                    {'type':'function_call','call_id':'forged','name':'inspect_game_guidance','arguments':'{"balance_j":999}'}]}
+            outputs={row['call_id']:json.loads(row['output']) for row in payload['input'] if row.get('type')=='function_call_output'}
+            self.assertFalse(outputs['forged']['ok'])
+            refreshed.append(outputs['read']['player_guidance'])
+            return {'output':[{'type':'message','content':[{'type':'output_text','text':'Review the updated supplies in Lab.'}]}]}
+        before=deepcopy(app.room.fabrication_record)
+        request={'kind':'field-pick','design_id':'current-chat-pick','parameters':{},
+            'component_chat':{'part_name':'haft','message':'Make this longer and tell me what is missing'}}
+        with mock.patch.object(workshop_chat,'_call_model',side_effect=provider):
+            result=self.post('/api/workshop/candidates',request,world)
+        self.assertEqual('current-chat-pick',observations[0]['project']['candidate']['design_id'])
+        self.assertGreater(refreshed[0]['build_readiness']['energy_required_j'],observations[0]['build_readiness']['energy_required_j'])
+        self.assertEqual(1.,result['candidates'][0]['parameters']['length_m'])
+        self.assertEqual(before,app.room.fabrication_record)
+        self.assertFalse(self.post('/api/world/guidance',{},world)['project'].get('focused'),'Chat observations cannot replace the persisted selection')
+        app.api_key=''
+        request['component_chat']['message']='What next at the workbench?'
+        fallback=self.post('/api/workshop/candidates',request,world)['workshop_chat']
+        self.assertIn(observations[0]['build_readiness']['status'],fallback['reply'])
+        self.assertEqual(['inspect_game_guidance'],[t['tool'] for t in fallback['tool_trace']])
 
     def test_review_refresh_rejects_changed_process_and_expiry_without_funding_or_new_plans(self):
         from copy import deepcopy

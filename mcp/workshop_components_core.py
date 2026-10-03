@@ -112,6 +112,10 @@ def design_from_spec(spec: Any) -> tuple[WorkshopDesign, dict[str, dict[str, Any
 
 
 def _length_changed(part: WirePart, factor: float) -> tuple[list[float], list[float]]:
+    if part.role in {'handle','tool-head'}:
+        size=list(part.size_m);axis=max(range(3),key=lambda i:size[i])
+        size[axis]=max(0.005,min(20.,size[axis]*factor))
+        return size,list(part.center_m)
     old = float(part.size_m[1]); new = max(0.005, min(20.0, old * factor))
     size = [float(part.size_m[0]), new, float(part.size_m[2])]
     if part.role not in {"leg", "post"}: return size, list(part.center_m)
@@ -126,6 +130,11 @@ def _length_changed(part: WirePart, factor: float) -> tuple[list[float], list[fl
 
 def _thickness(part: WirePart, factor: float) -> list[float]:
     size = [float(v) for v in part.size_m]
+    if part.role in {'handle','tool-head'}:
+        along=max(range(3),key=lambda i:size[i])
+        for axis in range(3):
+            if axis!=along:size[axis]=max(0.003,min(10.,size[axis]*factor))
+        return size
     if part.role in STRUT_ROLES:
         size[0] = max(0.003, min(10.0, size[0] * factor)); size[2] = max(0.003, min(10.0, size[2] * factor)); return size
     axis = min(range(3), key=lambda i: size[i]); size[axis] = max(0.003, min(10.0, size[axis] * factor)); return size

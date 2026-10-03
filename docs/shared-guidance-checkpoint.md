@@ -129,10 +129,10 @@ and the complete guidance group passes.
 
 ## Remaining full-scope acceptance
 
-- Selected Lab project and editing/test conversations need shared focused
-  readiness/guidance; the current central result follows the active goal or
-  owned pending work. Empty-Lab/all-tab AI Guide integration is measured;
-  selected design conversation is still its separate bounded assistant.
+- The subsequent [selected project checkpoint](selected-project-guidance-checkpoint.md)
+  adds private durable focus and exact isolated-draft observations to design
+  chat. Broader custom/machine, source and provider-wait concurrency acceptance
+  remain; this earlier checkpoint's measurements are retained above.
 - Exact paid readiness covers the recommended project and reviewed Lab draft.
   Other recipe cards retain estimated BOM quantities and shape assessment.
   Broaden supported source/processor/recipe coverage and unavailable-source

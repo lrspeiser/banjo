@@ -161,14 +161,16 @@ Use the same bounded authoring and paid-build contracts as built-in recipes:
 
 An LLM can propose, modify and explain these records. Its words cannot create
 supplies, prove strength, unlock a technique or substitute for a simulation.
-Selected Lab edit/test conversations still need full integration with focused
-project guidance; AI Guide snapshots already receive the shared recommendation.
+Selected Lab conversations now receive the
+[focused draft guidance](selected-project-guidance-checkpoint.md), including
+fresh paid quotes after edits. Broader custom/machine and unavailable-source
+acceptance, full provider-wait concurrency and functional item tests remain.
 
 ## Ordered remaining work
 
 1. Finish material gathering/exposed-layer/reload/peer consistency and measure
    recognition/performance, using the readable cells already published.
-2. Finish human opening and selected-project guidance, including actual empty
+2. Finish human opening and broader selected-project acceptance, including actual empty
    inputs and unavailable sources across the supported recipe catalog.
 3. Qualify additional human/model-driven tech routes and LLM designs through
    ordinary paid actions, private inventories and restart.

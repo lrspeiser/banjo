@@ -10746,6 +10746,10 @@ async function showNextStep() {
   finally {guidanceBusy=false;}
 }
 setInterval(showNextStep,5000);
+addEventListener('banjo-guidance-clear',async()=>{
+  try {await api('/api/world/guidance',{action:'clear-project'});guidanceReadAt=-Infinity;await showNextStep();}
+  catch(error){lastAction(error.message || String(error),'refused');}
+});
 
 // What the person knows (docs/knowledge-and-progression.md): the notebook the
 // server keeps from what the engine measured their own tools doing. What was

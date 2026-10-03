@@ -5,11 +5,118 @@ tool strength, manufacturing skill, or a future machine batch.
 """
 from copy import deepcopy
 import math
+import json
 
 import ai_actions
 import starter_goals
 import workshop_library
 import workshop_tabs
+
+
+def validate_project(value):
+    """A bounded authoring proposal, never client-supplied game state."""
+    from mcp import workshop_components
+    if not isinstance(value,dict) or set(value)-{'name','candidate','selection'}:
+        raise ValueError('A project needs its name, bounded design and optional Lab selection')
+    name=value.get('name')
+    if not isinstance(name,str) or not 1<=len(name)<=160:
+        raise ValueError('Project name must be 1–160 characters')
+    candidate=value.get('candidate')
+    if not isinstance(candidate,dict) or set(candidate)-{'kind','parameters','component_overrides','design_id','purpose'}:
+        raise ValueError('Supply design inputs, not stock, price, skill or readiness claims')
+    try:encoded=json.dumps(value,allow_nan=False)
+    except (TypeError,ValueError) as error:raise ValueError('Project must contain finite JSON design inputs') from error
+    # Leave room for the action envelope within the existing 32 KiB HTTP limit.
+    if len(encoded.encode('utf-8'))>24*1024:raise ValueError('Project exceeds the 24 KiB authoring budget')
+    workshop_components.design_from_spec(candidate)
+    selection=value.get('selection')
+    if selection is not None and (not isinstance(selection,dict) or set(selection)!={'source','id'}
+        or selection['source'] not in ('carried','recipe','saved','library')
+        or not isinstance(selection['id'],str) or not 1<=len(selection['id'])<=160):
+        raise ValueError('Invalid Lab selection')
+    return deepcopy(value)
+
+
+def _project_key(app,owner):return (app.world_id,owner,app.room.scene)
+
+
+def clear_project(app,owner):
+    with workshop_library._connect(app) as db:
+        db.execute('DELETE FROM player_guidance_projects WHERE world_id=? AND owner_id=? AND scene=?',_project_key(app,owner))
+
+
+def set_project(app,owner,value):
+    import inventory_room
+    value=validate_project(value)
+    selection=value.get('selection') or {}
+    if selection.get('source')=='carried':
+        shown=inventory_room.shown(app,owner)
+        if not any(item and item['id']==selection['id'] for item in [*shown.get('stowed',[]),*shown.get('hands',{}).values()]):
+            raise ValueError('Select your own carried item in Inventory first')
+    # New work after selection completes the intent. Earlier copies do not
+    # prevent explicitly choosing the same design for another paid build.
+    value['prior_jobs']=list((getattr(app.room,'fabrication_record',None) or {}).get('jobs',{}))
+    with workshop_library._connect(app) as db:
+        db.execute('INSERT INTO player_guidance_projects VALUES (?,?,?,?) '
+            'ON CONFLICT(world_id,owner_id,scene) DO UPDATE SET payload_json=excluded.payload_json',
+            (*_project_key(app,owner),json.dumps(value,allow_nan=False)))
+
+
+def selected_project(app,owner,process):
+    from mcp.fabrication import digest
+    with workshop_library._connect(app) as db:
+        row=db.execute('SELECT payload_json FROM player_guidance_projects WHERE world_id=? AND owner_id=? AND scene=?',
+            _project_key(app,owner)).fetchone()
+    if row is None:return None
+    value=json.loads(row['payload_json'])
+    for ident,job in (process or {}).get('jobs',{}).items():
+        binding=job.get('make_source') or job.get('remake_source') or {}
+        if ident not in value.get('prior_jobs',[]) and binding.get('owner')==owner and digest(job['candidate'])==digest(value['candidate']):
+            clear_project(app,owner);return None
+    return validate_project({k:v for k,v in value.items() if k!='prior_jobs'})
+
+
+def _project_plan(app,value,offers,balance):
+    import market
+    from mcp import workshop_components
+    design,_=workshop_components.design_from_spec(value['candidate'])
+    stocks={r['material']:r for r in workshop_library.rack(app)['materials']}
+    goods={r['substance']:r for r in workshop_library.goods_rack(app)['goods']}
+    def line(name,kg,stock,kind):
+        held=stock.get(name,{})
+        return {kind:name,'kg':kg,'held_kg':held.get('mass_kg',0),
+            'personal_kg':held.get('personal_kg',0),'shared_kg':held.get('shared_kg',0)}
+    recipe={**value['candidate'],'name':value['name'],'source':'selected',
+        'materials':[line(r['material'],r['mass_kg'],stocks,'material') for r in workshop_library.bill_of_materials(app,design)['materials']],
+        'goods':[line(n,kg,goods,'substance') for n,kg in workshop_library.goods_needed(design).items()]}
+    plan=market._build_plan(recipe,offers,balance)
+    plan.update(candidate=deepcopy(value['candidate']),focused=True,selection=value.get('selection'))
+    return plan
+
+
+def _project_action(state,project,reading):
+    destination={'screen':'lab','selection':project.get('selection')}
+    status=reading['status']
+    if status=='Supplies missing':
+        shortage=next(line for line in reading['lines'] if line['short_kg']>1e-10)
+        supply_state={**state,'goals':{'next_goal':'project-supply','goals':[{'id':'project-supply',
+            'requirement':{'kind':'personal-stock','material':shortage['substance'],'minimum_kg':shortage['short_kg']}}]}}
+        actions=ai_actions.catalog(supply_state,{})
+        action=deepcopy(next(a for a in actions if a['id']==ai_actions.reference_pick(supply_state,actions)))
+        action['destination']=_destination(action,project)
+        action['status']='Blocked' if action['verb']=='wait' else 'Available'
+        return action
+    return {'verb':'review-project','label':status+' · '+project['name'],
+        'status':'Blocked' if status in ('Needs changes','Workbench missing','Workbench in use','Workpiece limit reached') else 'Available',
+        'destination':destination,'blockers':[reading['reason']] if reading.get('reason') else []}
+
+
+def for_design(app,candidate):
+    """Fresh authenticated observations for an isolated Lab chat candidate."""
+    if not getattr(app,'world_id',None):
+        return {'available':False,'reason':'Open a named World for actual workbench guidance'}
+    return resolve(app,workshop_library.rack_owner_id(app),project_override={
+        'name':str(candidate.get('purpose') or candidate['kind'])[:160],'candidate':candidate})
 
 
 def build_readiness(quote, state, stock_sources=(), goods_sources=()):
@@ -39,6 +146,8 @@ def build_readiness(quote, state, stock_sources=(), goods_sources=()):
         'lines':lines,'energy_required_j':quote['supply_required_j'],
         'station_energy_j':state['energy_j'],'fund_energy_j':energy,'occupied':busy,'workpiece_limit_reached':budget_full,
         'minimum_duration_s':quote['minimum_duration_s'],
+        'product_mass_kg':quote.get('product_kg'),'cell_m':quote.get('cell_m'),
+        'occupied_cells':quote.get('cells'),
         'skills_required':[],'placement_checked':False,'functional_test_required':True}
 
 
@@ -57,7 +166,7 @@ def _destination(action, project=None):
     return route
 
 
-def resolve(app, owner, *, offers=None, balance=None, focus=None):
+def resolve(app, owner, *, offers=None, balance=None, focus=None, project_override=None):
     """Call under the world's state lock; all personal reads bind to owner."""
     import market
     import player_world
@@ -76,7 +185,9 @@ def resolve(app, owner, *, offers=None, balance=None, focus=None):
             goals=starter_goals.view(app,owner,{'chain':'active'})
             book=workshop_tabs.recipes(app)
             skills=workshop_tabs.skills(app)['techniques']
-            project=market._recommend(book['templates'],offers,balance,goals)
+            process=deepcopy(getattr(app.room,'fabrication_record',None))
+            selected=validate_project(project_override) if project_override is not None else selected_project(app,owner,process)
+            project=_project_plan(app,selected,offers,balance) if selected else market._recommend(book['templates'],offers,balance,goals)
             row=next((g for g in goals['goals'] if g['id']==goals['next_goal']),None)
             state={'goals':goals,'skills':skills,'recipes':book['templates'],
                 'stockpiles':book['stockpiles'],'pose':deepcopy((player_world.records(app).get(owner) or {}).get('pose')),
@@ -84,13 +195,23 @@ def resolve(app, owner, *, offers=None, balance=None, focus=None):
                 'market':{'offers':offers,'balance_j':balance,'bankable':bool(native)},'balance_j':balance}
             memory={}
             reading=None
-            process=deepcopy(getattr(app.room,'fabrication_record',None))
             if project and process is not None and native:
                 fabrication.advance(process,native['t'])
                 try:
                     quote=fabrication_remake.minimum_quote(app,project['candidate'],process,session.spec['cell_m'])
                     reading=build_readiness(quote,process,fabrication_stock.sources(app),fabrication_stock.sources(app,'goods'))
                     project['build_readiness']=reading
+                    if selected:
+                        # Market estimates only what remains to purchase. Stock
+                        # already funded at this station must not be bought again.
+                        recipe={**project['candidate'],'name':project['name'],'source':'selected','materials':[],'goods':[]}
+                        for line in reading['lines']:
+                            recipe['materials' if line['kind']=='material' else 'goods'].append({
+                                'material' if line['kind']=='material' else 'substance':line['substance'],
+                                'kg':line['fund_kg'],'held_kg':line['personal_kg']+line['shared_kg'],
+                                'personal_kg':line['personal_kg'],'shared_kg':line['shared_kg']})
+                        project.update(market._build_plan(recipe,offers,balance))
+                        project['candidate']=deepcopy(selected['candidate'])
                 except ValueError as error:
                     reading={'schema':'banjo.build-readiness.v1','ready_to_start':False,
                         'status':'Needs changes','reason':str(error),'placement_checked':False}
@@ -104,9 +225,9 @@ def resolve(app, owner, *, offers=None, balance=None, focus=None):
             actions=ai_actions.catalog(state,memory)
             comparison=next((a for a in actions if a['verb']=='compare-recipes'),None)
             if comparison and project:
-                selected=next((r for r in comparison['comparison'] if r['candidate']==project['candidate']),None)
-                if selected:
-                    memory.update(comparison_signature=comparison['signature'],selected_recipe=selected['id'])
+                selected_recipe=next((r for r in comparison['comparison'] if r['candidate']==project['candidate']),None)
+                if selected_recipe:
+                    memory.update(comparison_signature=comparison['signature'],selected_recipe=selected_recipe['id'])
                     actions=ai_actions.catalog(state,memory)
             targets=[a['target'] for a in actions if a['verb']=='select-target']
             if targets:
@@ -116,9 +237,10 @@ def resolve(app, owner, *, offers=None, balance=None, focus=None):
                 actions=[a for a in ai_actions.catalog(state,memory) if a['verb']!='select-target']
             chosen=next((a for a in actions if a['id']==ai_actions.reference_pick(state,actions)),None)
             next_action=deepcopy(chosen) if chosen else None
+            if selected and reading:next_action=_project_action(state,project,reading)
             if next_action:
-                next_action['destination']=_destination(next_action,project)
-                next_action['status']='Blocked' if next_action['verb']=='wait' else 'Available'
+                next_action.setdefault('destination',_destination(next_action,project))
+                next_action.setdefault('status','Blocked' if next_action['verb']=='wait' else 'Available')
                 if next_action['verb']=='build' and reading:
                     next_action['label']=('Review '+project['name']+' in Lab' if reading.get('status')=='Needs changes' else
                                           reading['status']+' · '+project['name'])
@@ -139,12 +261,13 @@ def resolve(app, owner, *, offers=None, balance=None, focus=None):
                     next_action['label']=next_action['label'].replace(raw,label)
                 if next_action['verb']=='acquire' and (next_action.get('target') or {}).get('where')=='stowed':
                     next_action['label']+=' · World quick slot'
-            if goals['complete']:
+            if goals['complete'] and not selected:
                 next_action={'verb':'explore','label':'Choose another supported skill or design',
                     'status':'Available','destination':{'screen':'skills'}}
             own_jobs=[(ident,j) for ident,j in (process or {}).get('jobs',{}).items()
                 if ((j.get('make_source') or j.get('remake_source') or {}).get('owner')==owner
                     and j['status'] in ('running','paused','ready'))]
+            draft_project=deepcopy(project) if project_override is not None else None
             if own_jobs:
                 ident,job=own_jobs[-1]
                 reading={'schema':'banjo.build-readiness.v1','ready_to_start':False,
@@ -154,11 +277,20 @@ def resolve(app, owner, *, offers=None, balance=None, focus=None):
                     'label':{'running':'Watch your workpiece finish','paused':'Resume your workpiece',
                              'ready':'Collect your finished workpiece'}[job['status']],
                     'destination':{'screen':'lab','job':ident}}
+                # Pending work is the accepted candidate, not another shopping
+                # recommendation. No price or new funding is implied here.
+                project={'name':'Your workpiece','source':'workpiece','job_id':ident,
+                    'candidate':deepcopy(job['candidate']),'focused':False,'lines':[],
+                    'estimated_total_j':None,'affordable':False,'energy_gap_j':None,
+                    'declared_uses':[],'goal':None}
             if not native:
                 next_action={'verb':'open-world','label':'Open your saved World','status':'Available',
                     'destination':{'screen':'world'}}
-            return {'schema':'banjo.player-guidance.v1','observed_native_t_s':native.get('t'),
+            if project:project['build_readiness']=reading
+            result={'schema':'banjo.player-guidance.v1','observed_native_t_s':native.get('t'),
                 'chain_id':goals['chain_id'],'goal':({'id':row['id'],'title':row['title']} if row else None),
                 'next_action':next_action,'project':project,'build_readiness':reading,
                 'limits':'Snapshot only. Actions recheck stock, ownership, native admission and placement.'}
+            if project_override is not None:result['draft_project']=draft_project
+            return result
         finally:workshop_library.REQUEST_OWNER.reset(token)

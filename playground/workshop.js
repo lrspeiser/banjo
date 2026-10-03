@@ -4,7 +4,7 @@ import { keyOf } from "/interaction.js";
 import * as THREE from "/vendor/three.module.js";
 import { gameNavigation, refreshNavigation, showSaveStatus, screenUrl } from "/game_menu.js";
 import { conditionPanel } from "/body_condition.js";
-import { renderPlayerGuidance } from "/player_guidance.js";
+import { renderPlayerGuidance, guidanceUrl } from "/player_guidance.js";
 
 const $ = (q) => document.querySelector(q);
 const worldId = new URLSearchParams(location.search).get("world");
@@ -1598,7 +1598,8 @@ function installBench() {
   const designs = make("button", {type:"button", class:"ws-action"}, "Choose from Recipes");
   designs.onclick = () => showTab("recipes"); empty.append(designs); viewport.append(empty);
   const clear = make("button", {id:"ws-clear-lab", type:"button", class:"ws-action"}, "Clear Lab");
-  clear.onclick = () => { clearLab(); showTab("lab"); }; $(".ws-viewbar").append(clear);
+  clear.onclick = () => guard(clear,async()=>{if(worldId)await api('/api/world/guidance',{action:'clear-project'});
+    clearLab();showTab('lab');}); $(".ws-viewbar").append(clear);
   new MutationObserver(updateLabSelection).observe(chatHome, {childList:true, subtree:true});
   for (const name of ["inventory", "skills", "recipes", "market", "goals"]) { const pane = $(`#ws-pane-${name}`); if (pane) centre.append(pane); }
   installInventory();
@@ -2899,17 +2900,20 @@ async function showMarket() {
   renderPlayerGuidance($("#ws-market-next"),market.guidance?.player);
   const recommendation = $("#ws-market-recipe"); recommendation.replaceChildren();
   const plan = market.guidance?.plan;
-  if (plan) {
+  if (plan && market.guidance?.player?.next_action?.verb!=='continue-build') {
     recommendation.append(make("h3", {}, plan.name));
     const canvas = make("canvas", {width:"160",height:"112",role:"img","aria-label":`${plan.name} shape preview`});
     recommendation.append(canvas);
     const recipe = {...plan.candidate, name:plan.name, source:plan.source, saved_design_id:plan.saved_design_id};
     loadInventoryPicture(recommendation, {id:recipeKey(recipe),source:"recipe",recipe,
       version:JSON.stringify([recipe.parameters,recipe.component_overrides])});
-    recommendation.append(recipeValue("Goal", plan.goal?.title || "Optional build"));
+    recommendation.append(recipeValue("Goal", plan.focused ? 'Selected project' : plan.goal?.title || "Optional build"));
+    if(plan.build_readiness)recommendation.append(recipeValue('Workbench',plan.build_readiness.status));
     if (plan.goal?.before?.length) recommendation.append(recipeValue("First", plan.goal.before.join(" → ")));
-    recommendation.append(recipeValue("Build stock estimate", plan.estimated_total_j === null ? "Stock missing" : `${plan.estimated_total_j.toLocaleString()} J`),
-      recipeValue("Build budget", plan.affordable ? "Covered ✓" : plan.energy_gap_j !== null ? `Bank ${plan.energy_gap_j.toLocaleString()} J more` : "Restock / other source needed"));
+    recommendation.append(recipeValue("Stock to buy", plan.estimated_total_j === null ? "Stock missing" : `${plan.estimated_total_j.toLocaleString()} J`),
+      recipeValue("Wallet covers stock", plan.affordable ? "Covered ✓" : plan.energy_gap_j !== null ? `Bank ${plan.energy_gap_j.toLocaleString()} J more` : "Restock / other source needed"));
+    if(plan.build_readiness?.fund_energy_j!=null)recommendation.append(recipeValue('Workbench energy',
+      plan.build_readiness.fund_energy_j>1e-10 ? `${energySaid(plan.build_readiness.fund_energy_j)} to fund` : 'Covered ✓'));
     const lines = make("div", {class:"ws-market-needs"});
     for (const line of plan.lines) {
       const row = make("div", {class:`ws-market-gap ${line.gap_kg ? "short" : "covered"}`,"data-market-gap":line.substance});
@@ -2931,8 +2935,9 @@ async function showMarket() {
       recommendation.append(box);
     }
     recommendation.append(lines);
-    const open = make("button", {type:"button",class:"ws-action"}, "Open recipe");
+    const open = make("button", {type:"button",class:"ws-action"}, plan.focused ? 'Open project in Lab' : "Open recipe");
     open.onclick = () => {
+      if(plan.focused && plan.selection) {location.href=guidanceUrl({screen:'lab',selection:plan.selection},market.guidance.player);return;}
       const url = new URL(location.href); url.searchParams.delete("material");
       url.searchParams.set("tab","recipes"); url.searchParams.set("recipe",recipeKey(recipe));
       location.href = url.pathname + url.search;
@@ -2943,6 +2948,12 @@ async function showMarket() {
       recipeValue("Make uses now", `Personal ${kgSaid(line.debit_personal_kg)} → Shared ${kgSaid(line.debit_shared_kg)}`));
     if (plan.declared_uses?.length) details.append(recipeValue("Declared use", plan.declared_uses.join(" · ")));
     recommendation.append(details);
+  } else if (market.guidance?.player?.next_action?.verb==='continue-build') {
+    const player=market.guidance.player;
+    recommendation.append(recipeValue('Workpiece',player.build_readiness.status));
+    const open=make('button',{type:'button',class:'ws-action'},player.next_action.label);
+    open.onclick=()=>{location.href=guidanceUrl(player.next_action.destination,player);};
+    recommendation.append(open);
   } else {
     recommendation.append(recipeValue("Build", market.guidance?.recipe || "Choose a design in Recipes"));
     const open = make("button", {type:"button",class:"ws-action"}, "Open Recipes");
@@ -3218,7 +3229,12 @@ function showTab(name) {
   refreshPlayerGuidance();
 }
 
-let guidanceRequest=0, guidanceBusy=false, guidanceAgain=false;
+let guidanceRequest=0, guidanceBusy=false, guidanceAgain=false, guidanceSelectionSignature='';
+addEventListener('banjo-guidance-clear',async()=>{
+  try {await api('/api/world/guidance',{action:'clear-project'});await refreshPlayerGuidance();
+    if(new URLSearchParams(location.search).get('tab')==='market')await showMarket();}
+  catch(error){say(error.message || error,true);}
+});
 async function refreshPlayerGuidance() {
   if (!worldId) return;
   if (guidanceBusy) {guidanceAgain=true;return;}
@@ -3226,7 +3242,20 @@ async function refreshPlayerGuidance() {
   let root=$("#ws-player-guidance");
   if (!root) {root=make("section",{id:"ws-player-guidance"});$(".ws-left > .game-tabs").after(root);}
   const request=++guidanceRequest;
-  try {const data=await api("/api/world/guidance",{});if (request===guidanceRequest) renderPlayerGuidance(root,data);}
+  try {
+    let body={},newSignature=null;
+    if(new URLSearchParams(location.search).get('tab')==='lab' && bench.inventorySelection &&
+       !bench.inventorySelection.job_id && !remakePending() && chosen()) {
+      const {generation,...candidate}=candidateBody();
+      const project={name:bench.inventorySelection.name,candidate,
+        selection:{source:bench.inventorySelection.source,id:String(bench.inventorySelection.id)}};
+      const signature=JSON.stringify(project);
+      if(signature!==guidanceSelectionSignature) {body={action:'select-project',project};newSignature=signature;}
+    }
+    const data=await api('/api/world/guidance',body);
+    if(newSignature)guidanceSelectionSignature=newSignature;
+    if(request===guidanceRequest)renderPlayerGuidance(root,data);
+  }
   catch {if (request===guidanceRequest) renderPlayerGuidance(root,null);}
   finally {guidanceBusy=false;if (guidanceAgain) {guidanceAgain=false;refreshPlayerGuidance();}}
 }
@@ -4864,6 +4893,7 @@ function took(answer, keepPart = null) {
   if (answer.pricebook) bench.pricebook = answer.pricebook; if (answer.bench_tests) bench.benchTests = answer.bench_tests; if (answer.bench_presets) bench.benchPresets = answer.bench_presets;
   renderBenchCatalog(); show();
   remember(designState());
+  refreshPlayerGuidance();
   return true;
 }
 
