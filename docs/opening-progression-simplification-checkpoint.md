@@ -6,6 +6,9 @@ Python 3.13 and retained MSVC Release native binaries in
 catalog and its regressions. Native laws, material properties, geometry,
 manufacturing quotes, physics timestep and tolerances are unchanged.
 
+**Published:** implementation and verification `c0005c5` is on GitHub main.
+The isolated browser preview is port 8776; this is not a production deployment.
+
 ## Implemented behavior
 
 - The personal-tool chapter still requires finite wood, paid manufacture and
@@ -54,6 +57,7 @@ Tests run with BANJO_DECIDER=reflex and no live provider calls:
   complete. Screenshot is local `build/progression-branch-preview/goals.png`.
 - Total: 73 automated checks pass. Source registration passes 298/298,
   ten CMake files, zero exclusions. Viewer syntax and whitespace checks pass.
+  All 1,293 local links in the seven touched documentation files resolve.
 
 [Compact results](evidence/opening-progression-simplification.json) record the
 base revision, declared environment and real two-seed reference results.
