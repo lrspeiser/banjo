@@ -1,8 +1,8 @@
 # Shared processing and exhausted-input recovery — October 3, 2026
 
 Host/controller checkpoint based on fetched GitHub main
-`22ec10d7a232c0a7e1ec6b938faab7c9629e277b`. Publication and final test results
-are recorded below after verification. Native laws, resolution and binaries
+`22ec10d7a232c0a7e1ec6b938faab7c9629e277b`. Published implementation:
+**`73a52d7b616ef5f78f0f945ecb131ee16ee3927c`**, on GitHub main. Native laws, resolution and binaries
 are unchanged. Smooth remains default; optional material columns remain
 experimental. R3 remains owner-paused, and the full active scope remains open.
 
@@ -51,7 +51,11 @@ Melting glass. This is reference-controller play, with provider calls disabled.
 Proof screenshot is local and ignored:
 `build/column-terrain-preview/ai-glass-recovery.jpg`. It also shows the unresolved
 night readability and spectator panel limitations. Returning directly to the
-watch URL after server restart still requires Menu resume/opening first.
+watch URL after server restart still requires opening the World first (or Menu
+resume for a paused character). The latest-code full preview restart retains the
+completed character and its 2/10 journal while the human still has an empty bag
+and zero energy. This older preview continues to disclose legacy heat/contact
+restart limits; its visible milestone does not establish exact gas/contact replay.
 
 ## Verification
 
