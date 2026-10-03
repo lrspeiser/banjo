@@ -6,7 +6,7 @@ export function guidanceUrl(destination, data, current = location.href) {
   if (screen!=='world') {url.searchParams.set('workshop','1');url.searchParams.set('tab',screen);}
   if (data.chain_id) url.searchParams.set('goal-chain',data.chain_id);
   if (data.goal?.id) url.searchParams.set('guide',data.goal.id);
-  for (const key of ['focus','resource','job','ground']) if (destination[key]) url.searchParams.set(key,destination[key]);
+  for (const key of ['focus','resource','job','ground','place']) if (destination[key]) url.searchParams.set(key,destination[key]);
   if (destination.selection) {
     const key={carried:'carry',recipe:'recipe',saved:'design',library:'library'}[destination.selection.source];
     if (key) url.searchParams.set(key,destination.selection.id);
@@ -40,12 +40,15 @@ export function renderPlayerGuidance(root,data,api) {
   }
   if (data.project?.focused) {
     const button=document.createElement('button');button.type='button';button.className='ws-action';button.textContent='Follow goals';
+    button.dataset.guidanceClear='';
     button.onclick=()=>dispatchEvent(new CustomEvent('banjo-guidance-clear'));root.append(button);
   }
   if(api && new URL(location.href).searchParams.has('world')) {
     const area=document.createElement('div');area.className='player-guide-tip';root.append(area);
     const current=()=>root.isConnected && adviceTurns.get(root)===turn;
-    async function read(body={action:'request',event:'next-step'},polls=0) {
+    const project=data.construction_project?.project;
+    const event=project ? project.status==='Placed'?'milestone':project.status==='Site changed'?'blocked':'placement' : 'next-step';
+    async function read(body={action:'request',event},polls=0) {
       try {
         const advice=await api('/api/world/assist',body);
         if(!current())return;

@@ -255,6 +255,10 @@ def resolve(app, owner, *, offers=None, balance=None, focus=None, project_overri
             skills=workshop_tabs.skills(app)['techniques']
             process=deepcopy(getattr(app.room,'fabrication_record',None))
             selected=validate_project(project_override) if project_override is not None else selected_project(app,owner,process)
+            if not selected and native and getattr(app,'world_id',None):
+                import construction_projects
+                construction=construction_projects.guidance(app,owner)
+                if construction:return construction
             project=_project_plan(app,selected,offers,balance) if selected else market._recommend(book['templates'],offers,balance,goals)
             follow_up=False;use_light=None
             if goals['complete'] and not selected:

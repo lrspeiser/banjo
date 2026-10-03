@@ -5,6 +5,7 @@ import * as THREE from "/vendor/three.module.js";
 import { gameNavigation, refreshNavigation, showSaveStatus, screenUrl } from "/game_menu.js";
 import { conditionPanel } from "/body_condition.js";
 import { renderPlayerGuidance, guidanceUrl } from "/player_guidance.js";
+import { placementUrl } from "/construction_ui.js";
 
 const $ = (q) => document.querySelector(q);
 const worldId = new URLSearchParams(location.search).get("world");
@@ -1944,6 +1945,7 @@ async function showInventory() {
     card.append(conditionPanel(thing.condition));
     const lab = make("button", {type:"button",class:"ws-action"}, "Open in Lab");
     lab.onclick = () => guard(lab, () => openTheCarriedThing(thing.id)); card.append(lab);
+    if(worldId)card.append(make('a',{class:'ws-action',href:placementUrl(thing.id)},'Place → World'));
     const slot=make("select",{"aria-label":`Quick slot for ${thing.label || thing.name}`,"data-quick-item":thing.id});
     slot.append(make("option",{value:""},"Choose quick slot"));
     const current=slots.record.stowed.indexOf(String(thing.id));
@@ -1973,7 +1975,7 @@ async function showInventory() {
     return card;
   });
   $("#ws-inv-grid").replaceChildren(...carried);
-  $("#ws-inv-note").textContent = carried.length ? "Select → Lab" : "Empty · Pick up items in World";
+  $("#ws-inv-note").textContent = carried.length ? "Place → World · Edit → Lab" : "Empty · Pick up items in World";
   const load=inv.ground_load || {};
   const budget=energyCard("▦","Your load",[["Carried",kgSaid(load.total_kg)],["Capacity",kgSaid(load.limit_kg)]]);
   budget.append(make("a",{class:"ws-action",href:homeWorld(),title:"In World, press H to heap your carried sand and soil"},"Heap → World"));

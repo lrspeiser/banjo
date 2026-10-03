@@ -1437,7 +1437,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/blades.js":"blades.js","/interaction.js":"interaction.js","/tools.js":"tools.js","/workbench.js":"workbench.js",
                 "/cellmesh.js":"cellmesh.js","/surfaces.js":"surfaces.js",
                 "/material_appearance.js":"material_appearance.js","/terrain_material.js":"terrain_material.js",
-                "/player_guidance.js":"player_guidance.js",
+                "/player_guidance.js":"player_guidance.js","/construction_ui.js":"construction_ui.js",
                 "/debug":"debug.html","/debug.js":"debug.js","/debug.css":"debug.css",
                 "/vendor/three.module.js":"vendor/three.module.js","/vendor/three.core.js":"vendor/three.core.js"}
             if path not in allowed: return self.send({"error":"Not found"},404)
@@ -1640,7 +1640,10 @@ class Handler(BaseHTTPRequestHandler):
                 app.registry=registry
                 app.journal_now=lambda app=app: journal_of(app)
                 if action=='select-project':player_guidance.set_project(app,player,body['project'])
-                elif action=='clear-project':player_guidance.clear_project(app,player)
+                elif action=='clear-project':
+                    player_guidance.clear_project(app,player)
+                    import construction_projects
+                    construction_projects.clear(app,player)
                 return self.send(player_guidance.resolve(app,player,focus=body.get('focus')))
             if path=="/api/workshop/market":
                 app = self.app
@@ -2003,12 +2006,21 @@ class Handler(BaseHTTPRequestHandler):
                 _this_pages_room(self.app,body)
                 with (self.app.live.as_actor(player) if player else nullcontext()):
                     return self.send(placement.resolve(self.app,body))
+            if path=='/api/world/construction':
+                import construction_projects
+                answer=construction_projects.request(self.app,player,body)
+                if body.get('action')=='select':
+                    import player_guidance
+                    player_guidance.clear_project(self.app,player)
+                player_world.update_pose(self.app,player,body.get('person'))
+                return self.send(answer)
             if path=="/api/world/putdown":
                 # Putting a thing down is its own verb, not one of its uses.
                 # See put_it_down. Only on the room the page has open.
                 _this_pages_room(self.app,body)
                 with (self.app.live.as_actor(player) if player else nullcontext()):
                     answer=put_it_down(self.app,body,player)
+                if answer.get('ok'):keep_world(self.app,'the held item was placed')
                 return self.send(answer)
             if path=="/api/world/action":
                 # One of a thing's actions (offer_actions), run step by step --
@@ -3397,6 +3409,8 @@ def put_it_down(app,body,player_id=""):
                                    body.get("placement_target"),speed=speed,direct=True)
     settled=None
     if problem:
+        if body.get('placement_target') is not None:
+            return {'ok':False,'why':problem,'shown':inventory_room.shown(app,player_id)}
         # Nothing to snap to. A snap wants a flat, clear, three-cornered rest,
         # and in a valley of bumps and slopes a cart finds one almost nowhere --
         # so refusing here left a person carrying it about with no way to be rid

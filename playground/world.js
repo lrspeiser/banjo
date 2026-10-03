@@ -28,6 +28,7 @@ import { conditionPanel } from "/body_condition.js";
 import { GROUND_APPEARANCE, materialAppearance, terrainCellAt, terrainTargetPath, exposedRunKind, toolTargetFeedback, collectedToolMaterials, columnTopData, walkColumnFaces, columnChunkIds, columnChunkBox } from "/material_appearance.js";
 import { terrainMaterial } from "/terrain_material.js";
 import { renderPlayerGuidance } from "/player_guidance.js";
+import { constructionWrite, constructionControls } from "/construction_ui.js";
 
 const $ = (id) => document.getElementById(id);
 const worldId = new URLSearchParams(location.search).get("world");
@@ -4724,6 +4725,11 @@ function showInventory() {
       if (inHand && (world.held?.name===thing.name || thing.parts?.includes(world.held?.name))) toTheBag();
       else inventoryChange(inHand?"stow":"equip",thing.id || thing.name);});
     const actions=document.createElement("div");actions.className="mini-product-actions";actions.append(action);
+    if(!watchedId && worldId && thing.id) {
+      const place=document.createElement('button');place.type='button';place.textContent='Place';
+      place.onclick=e=>{e.stopPropagation();place.blur();void enterConstruction(thing.id).catch(error=>lastAction(error.message,'refused'));};
+      actions.append(place);
+    }
     if (!watchedId && thing.id) {
       const lab=document.createElement("a");lab.className="mini-product-lab";lab.textContent="Lab";
       const url=new URL(screenUrl("lab"),location.origin);url.searchParams.set("carry",thing.id);
@@ -6699,7 +6705,7 @@ function setCursorFree(free) {
     if (world.use.mode === "preparing") cancelWindUp();
     primaryUsed=false;
     stick.on=false;
-    if (world.placing && !world.placing.carrying) stopPlacing(true);
+    if (world.placing && !world.placing.carrying && !world.placing.project) stopPlacing(true);
     if (!riding.godMode && riding.name) letGoOfTheKeys();
     if (document.pointerLockElement) document.exitPointerLock?.();
   }
@@ -8360,6 +8366,7 @@ async function pickUp() {
 }
 
 async function dropIt(raw = false) {
+  if(!raw && world.placing?.project) {await placeConstruction();return;}
   if (!world.held) return;
   if(world.held.recovery) {
     const program=programsNow().find(p=>p.id===world.held.recovery);
@@ -8465,6 +8472,7 @@ async function letFly() {
 // Put it down: lowered by the same hand onto what is under it, and let go of
 // when it gets there. A carried thing is set down as it always was.
 async function putDown(placing = true) {
+  if(placing && world.placing?.project) {await placeConstruction();return;}
   // `placing` false lowers it onto what is under it and lets go there, without
   // going through a placement. Esc uses that: a placement can be refused for
   // want of a clear spot -- "no clear receiving point or ground in front" --
@@ -8547,6 +8555,88 @@ async function settleDown() {
 const ghostLook = (color) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4,
                                                             depthWrite: false });
 const GHOST_LOOK = { fits: ghostLook(0x9fe8b0), tips: ghostLook(0xf2c46b), no: ghostLook(0xf07a6a) };
+let constructionContext=null, constructionBusy=false;
+const constructionScope=()=>`${worldId}.${playerId}`;
+async function readConstruction() {
+  constructionContext=await api('/api/world/construction',{action:'view',person:whereIAm()});
+  return constructionContext;
+}
+async function enterConstruction(item=null) {
+  if(!worldId || watchedId || constructionBusy)return;
+  constructionBusy=true;
+  try {
+    await readConstruction();
+    if(item && constructionContext.project?.item!==item) {
+      await constructionWrite(api,constructionScope(),'select',{item},whereIAm());await readConstruction();
+    }
+    const project=constructionContext.project;if(!project)return;
+    tools.stop();
+    if(project.where==='stowed') {
+      const answer=await inventoryChange('equip',project.item);
+      if(!answer?.ok)throw Error(answer?.why || 'Could not hold this item');
+      await readConstruction();
+    }
+    if(world.held && constructionContext.project?.where && constructionContext.project.where!=='stowed') {
+      startPlacing(false);
+      if(world.placing) {
+        world.placing.project=true;
+        if(!constructionContext.project.target) {
+          const found=await constructionWrite(api,constructionScope(),'suggest',{},whereIAm());
+          if(found.site_found===false)lastAction(found.blocker,'refused');
+          await readConstruction();
+        }
+        await askWhere(world.placing);
+      }
+    }
+    guidanceReadAt=-Infinity;await showNextStep();
+  }finally {constructionBusy=false;}
+}
+async function findConstructionSite() {
+  if(constructionBusy)return;constructionBusy=true;
+  try {
+    const answer=await constructionWrite(api,constructionScope(),'suggest',{},whereIAm());
+    if(answer.site_found===false)lastAction(answer.blocker,'refused');
+    await readConstruction();
+    if(world.held && !world.placing)startPlacing(false);
+    if(world.placing) {world.placing.project=true;await askWhere(world.placing);}
+    guidanceReadAt=-Infinity;await showNextStep();
+  }finally {constructionBusy=false;}
+}
+async function closeConstruction() {
+  await constructionWrite(api,constructionScope(),'clear',{},whereIAm());
+  constructionContext=null;stopPlacing(true);guidanceReadAt=-Infinity;await showNextStep();
+}
+async function placeConstruction() {
+  if(constructionBusy || world.acting)return;
+  constructionBusy=true;world.acting=true;
+  const previousHeld=world.held,previousUse=world.use;
+  try {
+    await readConstruction();
+    const project=constructionContext.project;
+    if(project?.status!=='Place' || !project.site?.fits)throw Error(project?.blocker || 'Choose a supported spot first');
+    const person=whereIAm();tools.stop();stopPlacing(false);setHoldAside();
+    const answer=await api('/api/world/putdown',{session:world.session,object:project.body,
+      person,placement_target:project.site.target});
+    if(answer.shown)world.inventory=answer.shown;
+    if(!answer.ok)throw Error(answer.why || 'The item could not reach the highlighted spot');
+    leftTheHand(project.body);lastAction('Placed '+project.name);inventorySaid='';showInventory();
+  }catch(error) {
+    // A lost response may follow a real release. Read the actual native hand
+    // before restoring controls; never drop a still-held item as error recovery.
+    try {
+      const state=await act('poses');draw(state);
+      if(state.hand?.holding===previousHeld?.name) {
+        world.held=previousHeld;world.use=previousUse;showHolding(true);showUse();
+      }
+      if(state.inventory)world.inventory=state.inventory;
+    }catch { /* ordinary reads can recover after the connection returns */ }
+    lastAction(error.message || String(error),'refused');
+  }finally {
+    world.acting=false;constructionBusy=false;
+    await readConstruction();guidanceReadAt=-Infinity;await showNextStep();
+  }
+}
+addEventListener('banjo-construction-error',event=>lastAction(event.detail,'refused'));
 
 // Which way a thing faces about the vertical: its own x axis, laid flat.
 function headingOf(q) {
@@ -8564,15 +8654,15 @@ function startPlacing(automatic = false) {
   const held = world.held;
   const entry = held && world.bodies.get(held.name);
   if (!entry || world.placing) return;
-  const ghost = entry.mesh.clone();
-  ghost.traverse((part) => { if (part.isMesh) { part.material = GHOST_LOOK.fits; part.castShadow = false; } });
+  const ghost = new THREE.Group();
   ghost.renderOrder = 10;
   ghost.visible = false;
   scene.add(ghost);
   // What the wrist can turn is turned with the wheel; a thing carried in the
   // arms goes down the way it is held.
   world.placing = { name: held.name, ghost, yaw: headingOf(entry.mesh.quaternion), turnable: !!held.throwable,
-                    answer: null, asked: 0, busy: false, carrying: null, automatic };
+                    meshes:new Map(),answer: null, asked: 0, busy: false, carrying: null, automatic,
+                    project:!!constructionContext?.project?.where && constructionContext.project.where!=='stowed' };
   world.placeDismissed = null;
   if (!automatic) lastAction(`Look where ${titled(held.name)} should go${held.throwable ? " and turn it with the wheel" : ""};`
              + ` ${keyOf("interact")} puts it there, Esc keeps it in your hand.`);
@@ -8584,6 +8674,8 @@ function stopPlacing(said) {
   if (!p) return;
   world.placing = null;
   scene.remove(p.ghost);
+  if(p.footprint) {scene.remove(p.footprint);p.footprint.geometry.dispose();p.footprint.material.dispose();}
+  if(p.label) {scene.remove(p.label);p.label.material.map.dispose();p.label.material.dispose();}
   if (said) {
     world.placeDismissed = p.name;
     if (p.carrying) world.use.mode = p.carrying.was;
@@ -8593,6 +8685,7 @@ function stopPlacing(said) {
 }
 
 function placementRequest(p, expected = null) {
+  if(p.project && !expected)expected=constructionContext?.project?.target;
   return api("/api/world/placement", { session: world.session, name: p.name,
     person: whereIAm(), yaw_deg: p.yaw * 180 / Math.PI, ...(expected ? { expected } : {}) });
 }
@@ -8615,15 +8708,42 @@ function drawGhost(p) {
   // Said at once, not a frame later: the side view is drawn from world.carry,
   // which updateGuides would only set on the next frame.
   world.carry = placingNote();
-  if (!a || !a.at_m) { p.ghost.visible = false; showDetails(true); return; }
-  const f = a.facing || a.q;
-  p.ghost.position.set(a.at_m[0], a.at_m[1], a.at_m[2]);
-  p.ghost.quaternion.set(f[1], f[2], f[3], f[0]);
+  if (!a || !a.at_m) {p.ghost.visible=false;if(p.footprint)p.footprint.visible=false;if(p.label)p.label.visible=false;showDetails(true);return;}
+  const parts=a.parts || [{name:p.name,at_m:a.at_m,facing:a.facing || a.q}];
+  for(const mesh of p.meshes.values())mesh.visible=false;
+  for(const part of parts) {
+    const source=world.bodies.get(part.name);if(!source)continue;
+    let mesh=p.meshes.get(part.name);
+    if(!mesh) {mesh=source.mesh.clone();mesh.traverse(child=>{if(child.isMesh)child.castShadow=false;});p.meshes.set(part.name,mesh);p.ghost.add(mesh);}
+    const f=part.facing;mesh.position.set(...part.at_m);mesh.quaternion.set(f[1],f[2],f[3],f[0]);mesh.visible=true;
+  }
+  for(const [name,mesh] of p.meshes)if(!mesh.visible) {p.ghost.remove(mesh);p.meshes.delete(name);}
   const look = !a.fits ? GHOST_LOOK.no
     : a.supported_corners < 3 || a.may_fall_over ? GHOST_LOOK.tips : GHOST_LOOK.fits;
   p.ghost.traverse((part) => { if (part.isMesh) part.material = look; });
   p.ghost.visible = true;
+  if(p.project)drawConstructionFootprint(p);
   showDetails(true);
+}
+
+function drawConstructionFootprint(p) {
+  const box=new THREE.Box3().setFromObject(p.ghost),a=p.answer;
+  if(box.isEmpty())return;
+  const y=(a.target?.on?.[1] ?? box.min.y)+.025;
+  if(!p.footprint) {
+    p.footprint=new THREE.LineLoop(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:0xa9f2b2,depthTest:false}));
+    p.footprint.renderOrder=12;scene.add(p.footprint);
+    const canvas=document.createElement('canvas');canvas.width=256;canvas.height=64;
+    const ctx=canvas.getContext('2d');ctx.fillStyle='#10251fee';ctx.fillRect(0,0,256,64);
+    ctx.fillStyle='#eaffee';ctx.font='bold 25px sans-serif';ctx.textAlign='center';ctx.fillText('Place here',128,41);
+    p.label=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(canvas),depthTest:false}));
+    p.label.scale.set(.45,.1125,1);p.label.renderOrder=13;scene.add(p.label);
+  }
+  p.footprint.geometry.setFromPoints([new THREE.Vector3(box.min.x,y,box.min.z),new THREE.Vector3(box.max.x,y,box.min.z),
+    new THREE.Vector3(box.max.x,y,box.max.z),new THREE.Vector3(box.min.x,y,box.max.z)]);
+  p.footprint.material.color.set(a.fits?0xa9f2b2:0xf07a6a);
+  p.label.position.set((box.min.x+box.max.x)/2,box.max.y+.25,(box.min.z+box.max.z)/2);
+  p.label.visible=!!a.fits;p.footprint.visible=true;
 }
 
 // Said under what is held, in the side view: what the engine made of the spot.
@@ -8642,6 +8762,7 @@ function updatePlacing(now) {
     stopPlacing(false);
     return;
   }
+  if(p.project && cursorFree)return;
   if (p.carrying || p.confirming || p.busy || world.paused || now - p.asked < 200) return;
   p.asked = now;
   p.busy = true;
@@ -10950,13 +11071,26 @@ async function showNextStep() {
   if(root && chat && root.parentElement!==chat.parentElement)chat.before(root);
   if (!root || !worldId || !world.session || watchedId || guidanceBusy || performance.now()-guidanceReadAt<4500) return;
   guidanceBusy=true;guidanceReadAt=performance.now();
-  try {const data=await api("/api/world/guidance",{});renderPlayerGuidance(root,data,api);}
+  try {
+    const data=await api("/api/world/guidance",{});renderPlayerGuidance(root,data,api);
+    if(data.construction_project) {
+      constructionContext=data.construction_project;
+      constructionControls(root,constructionContext,{hold:()=>enterConstruction(constructionContext.project.item),
+        find:findConstructionSite,place:placeConstruction,cancel:closeConstruction,
+        inspect:()=>{const name=constructionContext.project.body,entry=world.bodies.get(name);
+          if(entry){const at=entry.mesh.getWorldPosition(new THREE.Vector3());window.banjoRoom.lookAt(...at.toArray());picked.name=name;picked.at=null;showPicked();}
+        }});
+      if(world.placing?.project && constructionContext.project?.site) {
+        world.placing.answer=constructionContext.project.site;drawGhost(world.placing);
+      }
+    }
+  }
   catch {renderPlayerGuidance(root,null);}
   finally {guidanceBusy=false;}
 }
 setInterval(showNextStep,5000);
 addEventListener('banjo-guidance-clear',async()=>{
-  try {await api('/api/world/guidance',{action:'clear-project'});guidanceReadAt=-Infinity;await showNextStep();}
+  try {await api('/api/world/guidance',{action:'clear-project'});constructionContext=null;stopPlacing(false);guidanceReadAt=-Infinity;await showNextStep();}
   catch(error){lastAction(error.message || String(error),'refused');}
 });
 
@@ -11699,6 +11833,10 @@ async function open({ again = false } = {}) {
   } finally {
     world.opening = false;
     if(world.session && !world.openError)void aim();
+    if(worldId && !watchedId && world.session && !world.openError) {
+      const item=new URLSearchParams(location.search).get('place');
+      void enterConstruction(item).catch(error=>lastAction(error.message || String(error),'refused'));
+    }
   }
 }
 

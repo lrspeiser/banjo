@@ -39,6 +39,9 @@ def observation(guidance):
         'project':{k:deepcopy(project[k]) for k in ('name','candidate','focused') if k in project},
         'next_action':deepcopy(guidance.get('next_action')),
         'readiness':{k:deepcopy(reading[k]) for k in ('status','ready_to_start','installation') if k in reading},
+        'construction':{k:deepcopy((guidance.get('construction_project') or {}).get('project',{}).get(k))
+            for k in ('name','status','steps','installation','blocker')}
+            if (guidance.get('construction_project') or {}).get('project') else None,
         'limits':guidance.get('limits')}
 
 

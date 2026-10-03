@@ -149,14 +149,14 @@ belongs in this checkpoint or Git.
    clearance/ports in the construction planner as those operations are built.
 2. Sites: matched settling and two-surface furnace journey pass; qualify a wider
    terrain/resource seed matrix and generated native acceptance before admission.
-3. Build mode: category exists; add Inventory → Place and one construction step
-   card around the existing ghost preview.
-4. Site suggestions: add one highlighted valid footprint, night visibility,
-   short blocker reason and another-site option.
+3. Build mode: category and [Inventory → Place](construction-placement-checkpoint.md)
+   now exist with one four-step placement card; expand to full construction steps.
+4. Site suggestions: highlighted checked footprint, night label, blocker and
+   another-site option now exist; qualify the wider terrain/site matrix.
 5. Preparation: highlight required ground cells and use ordinary paid tools,
    collected mass and native rechecks.
-6. Proactive AI: next-action changes work; add placement, repeated-failure and
-   construction milestone events and validate actual advice in those situations.
+6. Proactive AI: next-action, placement and observed-placement tips work;
+   add repeated-failure events and qualify the complete construction milestones.
 7. Routing: measure/tune latency and route routine design edits separately from
    complex redesigns. Provider stalls are isolated; p95 target remains open.
 8. Projects: save prepare/support/platform/mount/access/operate steps with
@@ -171,9 +171,9 @@ belongs in this checkpoint or Git.
     machine behavior and goals through paid use/reopening.
 12. Skills: evidence-based construction practice, reachable Learn paths,
     achievement/unlock presentation and no circular prerequisites.
-13. Shared writes: existing ordinary ownership/revision/retry gates remain;
-    extend them to projects, site preparation and mounting with two-player,
-    depletion, stale advice, lost-reply and restart tests.
+13. Shared writes: private selection/site intent now has exact revision/retry
+    receipts, peer privacy and restart checks; extend complete world mutation
+    receipts to preparation/mounting, depletion, stale advice and lost replies.
 14. Usability: conduct unaided human and AI ordinary-control construction runs;
     measure time, hesitation, wrong clicks and repeated refusals at each slice.
 

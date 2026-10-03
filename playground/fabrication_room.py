@@ -28,7 +28,7 @@ def opened(app, answer):
     room.fabrication_required=True
     return True
 
-PLAYER_ROUTES = {'/api/world/open','/api/world/ask','/api/world/action','/api/world/placement',
+PLAYER_ROUTES = {'/api/world/open','/api/world/ask','/api/world/action','/api/world/placement','/api/world/construction',
     '/api/world/putdown','/api/world/inventory','/api/world/inventory/shown',
     '/api/world/machine','/api/world/watch-machine','/api/world/tool','/api/world/tool/use',
     '/api/world/goods/collect','/api/world/goods/deliver','/api/world/process','/api/world/rover/talk','/api/world/rover/brain',

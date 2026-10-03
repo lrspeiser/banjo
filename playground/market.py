@@ -177,6 +177,7 @@ def _guidance(app: Any, offers: list[dict[str, Any]], balance: int) -> dict[str,
         import starter_goals
         goals=starter_goals.view(app,workshop_library.rack_owner_id(app),{'chain':'active'})
     chosen=unified['project'] if unified else _recommend(workshop_tabs.recipes(app)['templates'],offers,balance,goals)
+    if chosen and chosen.get('source')=='construction':chosen=None
     supply=None
     if goals and goals.get('unlocked',True):
         row=next((g for g in goals['goals'] if not g.get('complete') and not g.get('done') and

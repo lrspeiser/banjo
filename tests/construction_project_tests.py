@@ -1,0 +1,173 @@
+"""Ordinary owned Inventory/site/placement actions, peers, stale intent and restart."""
+from copy import deepcopy
+from contextlib import nullcontext
+import json
+import math
+from pathlib import Path
+import sys
+import threading
+import time
+import unittest
+from unittest import mock
+import urllib.error
+import urllib.request
+
+ROOT=Path(__file__).resolve().parents[1]
+sys.path[:0]=[str(ROOT/'playground'),str(ROOT/'tests'),str(ROOT)]
+import construction_projects as projects
+import ai_player_tests as fixture
+import placement_context_tests as preview_fixture
+import placement
+
+
+class Suggestions(unittest.TestCase):
+    def test_bounded_read_only_search_skips_previous_and_never_promises_tipping_spots(self):
+        live=preview_fixture.FakeLive()
+        app=type('App',(),{})()
+        app.live=live;app.room=type('Room',(),{'spec':{'interaction_points':[]}})()
+        live.as_actor=lambda owner:nullcontext()
+        before=deepcopy(live.session.state)
+        first,_=projects.suggest(app,'owner','item',preview_fixture.PERSON)
+        self.assertTrue(projects.usable(first))
+        another,_=projects.suggest(app,'owner','item',preview_fixture.PERSON,first['target'])
+        self.assertGreater(math.dist(first['target']['on'],another['target']['on']),.2)
+        self.assertEqual(before,live.session.state)
+        self.assertLessEqual(len(live.calls),20)
+        for changed in ({'may_fall_over':True},{'supported_corners':2},{'fits':False}):
+            self.assertFalse(projects.usable({**first,**changed}))
+        with mock.patch.object(projects,'_native',return_value={'fits':False,'why':'Too steep'}):
+            answer,reason=projects.suggest(app,'owner','item',preview_fixture.PERSON)
+        self.assertIsNone(answer);self.assertEqual('Too steep',reason)
+
+
+@unittest.skipUnless(fixture.hub.RUNNER.is_file() and fixture.hub.ENGINE.is_file(),'native world engine not built')
+class PlacementJourney(unittest.TestCase):
+    setUp=fixture.AutonomousGuests.setUp
+    tearDown=fixture.AutonomousGuests.tearDown
+    start=fixture.AutonomousGuests.start
+    stop=fixture.AutonomousGuests.stop
+    get=fixture.AutonomousGuests.get
+    post=fixture.AutonomousGuests.post
+    join=fixture.AutonomousGuests.join
+    setup_world=fixture.AutonomousGuests.setup_world
+
+    def write(self,world,action,**fields):
+        view=self.post('/api/world/construction',{},world)
+        return self.post('/api/world/construction',{'action':action,'revision':view['revision'],
+            'request_id':action+'-'+str(view['revision']),**fields},world)
+
+    def take_lamp(self,world,app,*,stow=False):
+        import inventory_room
+        sid=app.live.session.id
+        body=next(b for b in app.live.session.state['bodies'] if b['name']=='camp light')
+        x,_,z=body['position_m'];x-=.75
+        y=self.post('/api/live/act',{'session':sid,'op':'survey','at':[x,z]},world)['survey']['ground_m']
+        person={'standing_m':[x,y,z],'eyes_m':[x,y+1.62,z],'facing':[1,0,0]}
+        thing=inventory_room.item_holding(app,'camp light')
+        reply=self.post('/api/world/inventory',{'session':sid,'request':'take-light',
+            'op':'take' if stow else 'take_up','item':thing['id'],'person':person},world)
+        self.assertTrue(reply['ok'],reply)
+        return thing['id'],person
+
+    def test_private_selection_exact_retries_stale_revision_and_full_restart(self):
+        world,owner,app=self.setup_world();peer=self.join(world,'Builder B')
+        item,person=self.take_lamp(world,app,stow=True)
+        before=self.post('/api/world/inventory/shown',{'session':app.live.session.id},world)
+        select={'action':'select','item':item,'revision':0,'request_id':'lost-select'}
+        accepted=self.post('/api/world/construction',select,world)
+        self.assertEqual(accepted,self.post('/api/world/construction',{**select,'person':person},world))
+        self.assertEqual(before,self.post('/api/world/inventory/shown',{'session':app.live.session.id},world))
+        view=self.post('/api/world/construction',{},world)
+        self.assertEqual('Equip',view['project']['status'])
+        self.assertIsNone(self.post('/api/world/construction',{},world,peer['token'])['project'])
+        for bad in ({**select,'request_id':'other','revision':0},
+                    {**select,'item':'not-mine'},
+                    {**select,'owner':owner['id']},
+                    {**select,'target':{'on':[0,0,0]}}):
+            with self.assertRaises(urllib.error.HTTPError):self.post('/api/world/construction',bad,world)
+        with self.assertRaises(urllib.error.HTTPError):self.post('/api/world/construction',select,world,peer['token'])
+        human=self.post('/api/world/guidance',{},world)
+        observed=app.ai_players._observe({**owner,'ai':{'memory':{}}},'')
+        self.assertEqual(human['construction_project'],observed['construction_project'])
+        self.assertIsNone(human['goal']);self.assertEqual(item,human['next_action']['destination']['place'])
+        with urllib.request.urlopen(self.base+'/construction_ui.js',timeout=5) as static:
+            self.assertIn('export function constructionControls',static.read().decode())
+        self.stop();self.start();self.players={world:owner}
+        self.post('/api/world/player/join',{'token':owner['token']},world)
+        self.post('/api/world/open',{},world)
+        restored=self.post('/api/world/construction',{},world)
+        self.assertEqual(view['project'],restored['project']);self.assertEqual(view['revision'],restored['revision'])
+        self.assertEqual(accepted,self.post('/api/world/construction',select,world))
+        cleared=self.write(world,'clear')
+        self.assertIsNone(cleared['project']);self.assertIsNone(self.post('/api/world/construction',{},world)['project'])
+
+    def test_native_site_another_location_movement_and_explicit_refusal_keep_the_item(self):
+        world,owner,app=self.setup_world();item,person=self.take_lamp(world,app)
+        self.write(world,'select',item=item)
+        source=deepcopy(app.live.session.state)
+        first=self.write(world,'suggest',person=person)
+        self.assertTrue(first['project']['target'],first)
+        # Preview reads do not step or reposition the world.
+        self.assertEqual(source,app.live.session.state)
+        project=self.post('/api/world/construction',{'person':person},world)['project']
+        self.assertEqual('Place',project['status']);self.assertTrue(project['site']['fits'])
+        another=self.write(world,'suggest',person=person)
+        self.assertGreater(math.dist(first['project']['target']['on'],another['project']['target']['on']),.2)
+        away=deepcopy(person);away['standing_m'][0]-=6;away['eyes_m'][0]-=6
+        changed=self.post('/api/world/construction',{'person':away},world)
+        self.assertEqual('Site changed',changed['project']['status'])
+        self.assertIn('reach',changed['project']['blocker'])
+        target=another['project']['target'];sid=app.live.session.id
+        with mock.patch.object(placement,'execute',return_value=('', 'the destination became occupied')), \
+             mock.patch.object(fixture.server,'run_action',side_effect=AssertionError('Must not silently drop elsewhere')):
+            refused=self.post('/api/world/putdown',{'session':sid,'object':'camp light',
+                'person':person,'placement_target':target},world)
+        self.assertFalse(refused['ok']);self.assertIn('occupied',refused['why'])
+        self.assertEqual('camp light',app.live.session.state['player_hands'][owner['id']]['holding'])
+
+    def test_native_place_and_resume_on_both_surfaces(self):
+        reports=[]
+        for surface in ('smooth','columns'):
+            world,owner,app=self.setup_world(surface=surface);item,person=self.take_lamp(world,app)
+            self.write(world,'select',item=item)
+            found=self.write(world,'suggest',person=person)
+            self.assertTrue(found['project']['target'],found)
+            ready=self.post('/api/world/construction',{'person':person},world)['project']
+            sid=app.live.session.id;stop=threading.Event();errors=[]
+            def tick():
+                try:
+                    while not stop.is_set():
+                        self.post('/api/live/act',{'session':sid,'op':'step','dt':1/240,'n':8},world)
+                        stop.wait(.01)
+                except Exception as error:errors.append(str(error))
+            worker=threading.Thread(target=tick);worker.start()
+            began=time.monotonic()
+            try:
+                done=self.post('/api/world/putdown',{'session':sid,'object':'camp light',
+                    'person':person,'placement_target':ready['site']['target']},world)
+            finally:stop.set();worker.join(5)
+            self.assertFalse(errors);self.assertTrue(done['ok'],done)
+            placed=self.post('/api/world/construction',{'person':person},world)
+            self.assertEqual('Placed',placed['project']['status'])
+            self.assertEqual(['done','done','done','current'],[s['status'] for s in placed['project']['steps']])
+            self.assertFalse(app.live.session.state['player_hands'][owner['id']]['holding'])
+            self.assertTrue(fixture.server.keep_world(app,'placement test checkpoint'))
+            reports.append({'surface':surface,'world':world,'owner':owner,'project':placed,
+                'native_body':deepcopy(next(b for b in app.live.session.state['bodies'] if b['name']=='camp light')),
+                'wall_s':round(time.monotonic()-began,3)})
+        self.stop();self.start();self.players={r['world']:r['owner'] for r in reports}
+        for r in reports:
+            self.post('/api/world/player/join',{'token':r['owner']['token']},r['world'])
+            self.post('/api/world/open',{},r['world'])
+            resumed=self.post('/api/world/construction',{},r['world'])
+            self.assertEqual(r['project']['project'],resumed['project'])
+            self.assertEqual(r['project']['revision'],resumed['revision'])
+            app=self.app.hub.get(r['world'])
+            native=next(b for b in app.live.session.state['bodies'] if b['name']=='camp light')
+            self.assertEqual(r['native_body'],native)
+        report=ROOT/'build'/'construction'/'placement-journey.json';report.parent.mkdir(parents=True,exist_ok=True)
+        # Do not write private player tokens even to the ignored report.
+        report.write_text(json.dumps([{k:v for k,v in r.items() if k!='owner'} for r in reports],indent=2),encoding='utf-8')
+
+
+if __name__=='__main__':unittest.main()

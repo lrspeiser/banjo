@@ -214,6 +214,7 @@ class Manager:
                 'stockpiles':book.get('stockpiles',[]),
                 'native':opened,'pose':deepcopy(profile.get('pose')),'fabrication':funding,
                 'construction_readiness':deepcopy(((market.get('guidance') or {}).get('player') or {}).get('build_readiness')),
+                'construction_project':deepcopy(((market.get('guidance') or {}).get('player') or {}).get('construction_project')),
                 'processing_readiness':deepcopy(((market.get('guidance') or {}).get('player') or {}).get('processing_readiness'))}
 
     def _run(self,profile,stop,cookie):
