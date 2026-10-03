@@ -98,6 +98,12 @@ audit and additional supported processing alternatives. The reference AI
 completes two opening chains on two terrains; that is not completion of the
 whole ten-technique catalog or qualification of model-driven play.
 
+The [reachable gathering checkpoint](reachable-ground-guidance-checkpoint.md)
+also fixes a smaller source of friction: recommending ground at the player's
+feet, then requiring a backstep. Guidance now prefers an exposed dry column
+inside the held tool's actual reach. Ordinary browser gathering completes the
+skill and retains the material thumbnail/quantity through Inventory reload.
+
 ## 3. One next action, fewer competing instructions
 
 World, Inventory, Goals, Skills, Recipes, Market and AI Guide should agree on

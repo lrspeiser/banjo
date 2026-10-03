@@ -712,6 +712,72 @@ class PersonalToolSourceReceipts(unittest.TestCase):
 
 
 class WorldLearningRouteBoundaries(unittest.TestCase):
+    def test_held_ground_target_uses_player_pose_and_declared_reach(self):
+        import learning_routes
+        queried=[]
+        def survey(request):
+            queried.append(request)
+            x,z=request['at']
+            return {'survey':{'on_the_ground':True,'x_m':x,'z_m':z,'ground_m':3,
+                'surface':'sand','sand_m':.4,'soil_m':1,'water':{'depth_m':0}}}
+        app=types.SimpleNamespace(live=types.SimpleNamespace(
+            session=types.SimpleNamespace(id='native'),act=survey))
+        for reach in ([1.15,2.0],[.4,.8]):
+            with self.subTest(reach=reach):
+                target=learning_routes._dry_ground(app,[99,0,99],
+                    {'reach_m':reach,'lever':{}},
+                    {'eyes_m':[4,4.62,7],'facing':[1,0,0]})
+                self.assertAlmostEqual(4+sum(reach)/2,target[0])
+                self.assertEqual(3,target[1]);self.assertAlmostEqual(7,target[2])
+        self.assertEqual(2,len(queried))
+        self.assertTrue(all(r['op']=='survey' and r['session']=='native' for r in queried))
+
+    def test_ground_guidance_skips_inaccessible_surfaces_and_is_bounded(self):
+        import learning_routes
+        queried=[]
+        def survey(request):
+            queried.append(request)
+            x,z=request['at']
+            # The first reachable ring is unavailable: buried soil under rock,
+            # wet sand, and off-grid columns do not authorize gathering.
+            n=len(queried)
+            return {'survey':{'on_the_ground':n%3!=0,'x_m':x,'z_m':z,'ground_m':0,
+                'surface':'sand' if n%3 else 'soil','sand_m':.2,'soil_m':1,
+                'water':{'depth_m':.1 if n%3==1 else 0}}} if n!=2 else {
+                'survey':{'on_the_ground':True,'x_m':x,'z_m':z,'ground_m':0,
+                    'surface':'rock','soil_m':1,'water':{'depth_m':0}}}
+        app=types.SimpleNamespace(live=types.SimpleNamespace(
+            session=types.SimpleNamespace(id='native'),act=survey))
+        use={'reach_m':[1.15,2.0],'lever':{}}
+        pose={'eyes_m':[0,1.62,0],'facing':[0,0,1]}
+        target=learning_routes._dry_ground(app,[0,0,0],use,pose)
+        self.assertEqual(5,len(queried));self.assertIsNotNone(target)
+        self.assertAlmostEqual(1.575,(target[0]**2+target[2]**2)**.5)
+        for surface in ('rock','clay'):
+            queried.clear()
+            def unavailable(request):
+                queried.append(request)
+                x,z=request['at']
+                return {'survey':{'on_the_ground':True,'x_m':x,'z_m':z,'ground_m':0,
+                    'surface':surface,'soil_m':1,'water':{'depth_m':0}}}
+            app.live.act=unavailable
+            self.assertIsNone(learning_routes._dry_ground(app,[0,0,0],use,pose))
+            self.assertEqual(24,len(queried))
+
+    def test_ground_guidance_retains_approach_when_only_far_column_is_available(self):
+        import learning_routes
+        queried=[]
+        def survey(request):
+            queried.append(request)
+            x,z=request['at']
+            return {'survey':{'on_the_ground':True,'x_m':x,'z_m':z,'ground_m':0,
+                'surface':'sand' if len(queried)>16 else 'clay','sand_m':.2,'soil_m':1}}
+        app=types.SimpleNamespace(live=types.SimpleNamespace(
+            session=types.SimpleNamespace(id='native'),act=survey))
+        target=learning_routes._dry_ground(app,[0,0,0],
+            {'reach_m':[1.15,2.0],'lever':{}},{'eyes_m':[0,1.62,0],'facing':[0,0,1]})
+        self.assertEqual(17,len(queried));self.assertEqual([0,0,3.],target)
+
     def test_learned_skill_is_not_blocked_by_a_missing_alternative_after_tool_is_gone(self):
         import learning_routes
         registry=progression.Registry()

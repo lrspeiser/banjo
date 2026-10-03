@@ -122,11 +122,20 @@ class PlayerJourney(unittest.TestCase):
                 picked=self.post('/api/world/inventory',{'session':sid,'op':'take_up','item':root,
                     'request':f'equip-{index}','person':person},world,token)
                 self.assertTrue(picked['ok'],picked)
+                # Follow the shared guide's actual native column, rather than
+                # prescribing a convenient test target near the held body.
+                guided=goals()['goals'][2]['target']['ground_at_m']
+                distance=((guided[0]-x)**2+(guided[2]-z)**2)**.5
+                self.assertGreaterEqual(distance,1.15);self.assertLessEqual(distance,2.)
+                next_action=self.post('/api/world/guidance',{},world,token)['next_action']
+                self.assertEqual('use-tool',next_action['verb'])
+                self.assertEqual(guided,next_action['at_m'])
+                person['look_direction']=[guided[0]-x,guided[1]-floor-1.62,guided[2]-z]
                 # Native work runs through the same request/clock as the page.
                 replies=[];errors=[]
                 def use():
                     try:replies.append(self.post('/api/world/tool/use',{'session':sid,'person':person,
-                        'at_m':[x+1.2,target,z]},world,token))
+                        'at_m':guided},world,token))
                     except Exception as exc:errors.append(exc)
                 worker=threading.Thread(target=use,daemon=True);worker.start();deadline=time.monotonic()+25
                 while worker.is_alive() and time.monotonic()<deadline:

@@ -2033,6 +2033,7 @@ class Handler(BaseHTTPRequestHandler):
                 # (tool_use.resolve): its action, whether it can be done there
                 # and why not, and the ring the page draws. Asking does nothing.
                 _this_pages_room(self.app,body)
+                player_world.update_pose(self.app,player,body.get('person'))
                 with (self.app.live.as_actor(player) if player else nullcontext()):
                     answer=tool_use.resolve(self.app,body)
                 answer['learning']=tool_learning_view(self.app,answer.get('tool'))
@@ -2042,6 +2043,7 @@ class Handler(BaseHTTPRequestHandler):
                 # the page keeps the room running (tool_use.run). The swing is
                 # the person's, so what it does is credited to their notebook.
                 _this_pages_room(self.app,body)
+                player_world.update_pose(self.app,player,body.get('person'))
                 player_learning.require_capacity(self.app)
                 with (self.app.live.as_actor(player) if player else nullcontext()):
                     answer=tool_use.run(self.app,body,note=note_strike)
@@ -2064,6 +2066,7 @@ class Handler(BaseHTTPRequestHandler):
                 # open, and kept with the room when it is done.
                 app=self.app
                 _this_pages_room(app,body)
+                player_world.update_pose(app,player,body.get('person'))
                 answer=inventory_room.request(app,body,player)
                 # Inventory and native state are one checkpoint. When the
                 # native world cannot yet save, keep its visible failure and

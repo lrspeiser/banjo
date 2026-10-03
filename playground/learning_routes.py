@@ -7,22 +7,43 @@ are evidence that equipment exists in this world.
 from __future__ import annotations
 
 from typing import Any
-from mcp import progression, interaction_profiles
+import math
+from mcp import progression, interaction_profiles, resource_previews
 import machine_witness
 import workshop_library
 import inventory_room
 import player_world
 
 
-def _dry_ground(app, at):
+def _dry_ground(app, at, use=None, pose=None):
     """Nearby native columns, not an invented usable resource or path proof."""
     if not at or not getattr(app.live,'session',None): return None
-    for dx,dz in ((0,0),(1,0),(-1,0),(0,1),(0,-1)):
+    offsets=[(0,0),(1,0),(-1,0),(0,1),(0,-1)]
+    if use and pose and pose.get('eyes_m'):
+        at=pose['eyes_m']
+        least,most=use['reach_m']
+        face=pose.get('facing') or [0,0,1]
+        heading=math.atan2(face[0],face[2])
+        # Prefer a target already inside this tool's real reach, in front of
+        # the player's current pose. The carried body's centre can be at the
+        # feet and is not where the person should be told to dig.
+        offsets=[(radius*math.sin(heading+angle),radius*math.cos(heading+angle))
+                 for radius in ((least+most)/2,least+(most-least)/4,most+1.)
+                 for angle in (0,math.pi/4,-math.pi/4,math.pi/2,-math.pi/2,
+                               3*math.pi/4,-3*math.pi/4,math.pi)]
+    for dx,dz in offsets:
         survey=app.live.act({'session':app.live.session.id,'op':'survey','at':[at[0]+dx,at[2]+dz]}).get('survey') or {}
         if (survey.get('on_the_ground') and (survey.get('water') or {}).get('depth_m',0)<=.005
-            and sum(float(survey.get(k,0)) for k in ('soil_m','sand_m','loose_soil_m'))>=.01):
+            and sum(float(survey.get(k,0)) for k in ('soil_m','sand_m','loose_soil_m'))>=.01
+            and (not use or resource_previews.ground_tool(survey,use)['materials'])):
             return [survey['x_m'],survey['ground_m'],survey['z_m']]
     return None
+
+
+def _tool_ground(app,owner,where,at,profile):
+    use=interaction_profiles.tool_use(profile)
+    pose=((player_world.records(app).get(owner) or {}).get('pose') or {}) if where in ('right','left','stowed') else None
+    return _dry_ground(app,at,use,pose)
 
 
 def tool_location(app, owner, name):
@@ -40,7 +61,7 @@ def tool_location(app, owner, name):
     at=(native.get('position_m') if where!='stowed' else None) or (
         (player_world.records(app).get(owner) or {}).get('pose') or {}).get('eyes_m')
     if at is None:return None
-    return {'body':name,'where':where,'at_m':at,'ground_at_m':_dry_ground(app,at),
+    return {'body':name,'where':where,'at_m':at,'ground_at_m':_tool_ground(app,owner,where,at,profile),
             'reach_m':interaction_profiles.tool_use(profile)['reach_m']}
 
 
@@ -68,7 +89,7 @@ def resolve(app: Any, registry: Any, techniques: list[dict]) -> None:
             at=(body or {}).get('position_m') or ((player_world.records(app).get(owner) or {}).get('pose') or {}).get('eyes_m')
             examples.setdefault(design.split('@')[0],[]).append({'body':profile['tool'],
                 'at_m':at, 'where':where,'tab':'inventory' if in_bag else 'world',
-                'ground_at_m':_dry_ground(app,at),
+                'ground_at_m':_tool_ground(app,owner,where,at,profile),
                 'reach_m':interaction_profiles.tool_use(profile)['reach_m']})
     for technique in techniques:
         for route in technique.get("earned_by") or []:

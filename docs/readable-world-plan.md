@@ -3,6 +3,14 @@
 Published implementation: `59f4efe` on GitHub main. This publication record
 does not close the full active scope.
 
+The [reachable-ground guidance checkpoint](reachable-ground-guidance-checkpoint.md)
+removes the at-feet gathering recommendation and stale Inventory-action pose.
+Current-source HTTP/native openings follow the same reachable ground target
+as shared guidance for both owners on both terrains, then retain paid evidence
+through restart. Ordinary browser gathering shows sand/skill/Inventory/Goals
+agreement and reload. Exposed-layer/peer and complete fresh human acceptance
+remain open.
+
 The subsequent [close-arrival/recovery checkpoint](rover-close-arrival-checkpoint.md)
 resolves the retained ordered-port and packing-Q failures and preserves real
 three-load hauling/restart on both generated maps. Broader R4 route families
