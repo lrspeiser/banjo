@@ -544,6 +544,9 @@ class Routine:
                     moving=(float(program.get('speed_m_s') or 0)>.05 or
                             abs(float(program.get('turning_deg_s') or 0))>3.)
                     if frame.issued.get('reverse_stopping'):
+                        if asked is None or asked.get('doing')!='waiting':
+                            tools.hold_still(ctx,tools.Call('hold_still',{'for_s':0},by))
+                            return frame.issued
                         if moving:return None
                         frame.issued=None;asked=None
                     else:
@@ -561,6 +564,14 @@ class Routine:
                 if frame.issued is None:
                     pass  # a completed retreat replans this same requested place
                 elif frame.issued.get('blocked_route'):
+                    # Power-off/recovery clears the native ask. The saved
+                    # refusal is not an active brake: on power-up the native
+                    # reflex can drive while this frame waits for zero speed.
+                    # Reassert a lost hold, then observe actual braking. Keep
+                    # the failed route/load/step and any explicit retry latch.
+                    if asked is None or asked.get('doing')!='waiting':
+                        tools.hold_still(ctx,tools.Call('hold_still',{'for_s':0},by))
+                        return frame.issued
                     if frame.issued.get('drive_failed'):return None  # resume/recovery can retry; never dig here
                     if float(ctx.t)-frame.issued_t<3. or float(program.get('speed_m_s') or 0)>.05 or abs(float(program.get('turning_deg_s') or 0))>3.:return None
                     frame.issued=None;asked=None

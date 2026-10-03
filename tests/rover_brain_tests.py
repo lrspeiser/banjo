@@ -986,6 +986,28 @@ class InTheDigRoom(unittest.TestCase):
         reply = reply or self.live.session.send(op="step", dt=DT, n=1)
         return next(p for p in reply["machines"]["programs"] if p["name"] == "rover")
 
+    def test_retained_route_refusal_reasserts_native_brakes_after_power_cycle(self):
+        self.live.act({'session':self.session_id,'op':'poses'})
+        brain=self.brains.of('rover');program=brain.before
+        # Declared controller-history fixture, not a grant of mined goods or
+        # an assertion that this dry test room contains the retained shore.
+        brain.routine.frame.issued={'did':'go_to blocked: retained refusal',
+            'blocked_route':True,'navigation':{'blocked':'retained refusal'}}
+        brain.routine.frame.issued_t=0
+        saved=deepcopy(brain.routine.record())
+        for seq,power in ((1,False),(2,True)):
+            self.live.act({'session':self.session_id,'op':'run','program':program['id'],
+                           'sender':'retained-route-test','seq':seq,'power':power})
+        native=self.live.act({'session':self.session_id,'op':'poses'})
+        p=next(p for p in native['machines']['programs'] if p['name']=='rover')
+        self.assertIsNone(p.get('asked'),'Native power-off cleared the old brake')
+        body={'session':self.session_id,'op':'step','dt':DT,'n':48}
+        self.brains.before(self.app,body)
+        answer=self.live.act(body)
+        p=next(p for p in answer['machines']['programs'] if p['name']=='rover')
+        self.assertEqual('waiting',p['asked']['doing']);self.assertEqual('routine',p['asked']['by'])
+        self.assertFalse(p['asked']['by_person']);self.assertEqual(saved,brain.routine.record())
+
     def run_as_the_page_does(self, seconds, until=None):
         # At the page's own step, 1/240 s: at 1/120 the caster sinks and the
         # rover crawls (tools/build_rover_room.py).
@@ -1049,6 +1071,25 @@ class InTheDigRoom(unittest.TestCase):
 
 
 class LocalNavigation(unittest.TestCase):
+    def test_lost_retreat_stop_reasserts_brakes_and_retains_restore_until_actual_rest(self):
+        ctx=self.context();declaration={'kind':'custom','hopper_kg':20,
+            'steps':[{'do':'go_to','args':{'point':[4,0]},'until':'arrived'}]}
+        r=machine_routine.Routine('rover',declaration);ctx.routine=r
+        r.load_in(0,0,3,{'copper ore':3})
+        r.frame.issued={'did':'braking after retreat','reverse_stopping':True,
+            'navigation':{'reverse':True,'from_m':[0,0],'travel_m':.5,'heading_deg':0,
+                          'target':[0,-.5],'final':False}}
+        saved=deepcopy(r.record());restored=machine_routine.Routine('rover',declaration)
+        restored.restore(saved);ctx.routine=restored
+        ctx.program.update(asked=None,speed_m_s=.3,doing='going forward');ctx.t=4
+        restored.tick(ctx)
+        self.assertEqual('waiting',self.commands[-1]['doing']);self.assertEqual(saved,restored.record())
+        ctx.program['asked']={'by':'routine','doing':'waiting'};count=len(self.commands)
+        restored.tick(ctx);self.assertEqual(count,len(self.commands))
+        ctx.program['speed_m_s']=0;restored.tick(ctx)
+        self.assertEqual('approaching',self.commands[-1]['doing'])
+        self.assertEqual(0,restored.frame.step);self.assertEqual(3,restored.kg)
+
     def test_named_working_skips_a_refused_high_point_for_supported_fresh_ground(self):
         fixture=TheSensesAndTheTools();base=fixture.engine();checks=[]
         def ask(**command):
@@ -1280,6 +1321,38 @@ class LocalNavigation(unittest.TestCase):
         self.assertEqual(.4,self.commands[-1]['near_m'])
         restored=machine_routine.Routine('rover',declaration);restored.restore(r.record())
         self.assertEqual(r.record(),restored.record())
+
+    def test_lost_blocked_brake_is_reasserted_before_replanning_or_latched_retry(self):
+        declaration={'kind':'custom','hopper_kg':20,
+            'steps':[{'do':'go_to','args':{'point':[4,0]},'until':'arrived'},
+                     {'do':'dig','until':'load_full','repeat':True}]}
+        for latched in (False,True):
+            with self.subTest(latched=latched):
+                ctx=self.context();r=machine_routine.Routine('rover',declaration);ctx.routine=r
+                r.load_in(0,0,3,{'copper ore':3});load=deepcopy(r.load_reading())
+                refused={'did':'go_to blocked: dry route unavailable','blocked_route':True,
+                    'navigation':{'blocked':'dry route unavailable'}}
+                if latched:refused['drive_failed']=True
+                r.frame.issued=deepcopy(refused);r.frame.issued_t=0
+                # Native power-off removed the ask; restored host history
+                # alone cannot brake a moving, freshly powered program.
+                ctx.t=4;ctx.program.update(asked=None,doing='going forward',speed_m_s=.3)
+                before=deepcopy(r.record());did=r.tick(ctx)
+                self.assertEqual(refused,did);self.assertEqual(before,r.record())
+                self.assertEqual('waiting',self.commands[-1]['doing'])
+                self.assertEqual(0,self.commands[-1]['for_s'])
+                self.assertFalse(any(c['op'] in ('dig','draw','ground_withdraw') for c in self.commands))
+                ctx.program['asked']={'by':'routine','doing':'waiting'}
+                count=len(self.commands);ctx.t=5;r.tick(ctx)
+                self.assertEqual(count,len(self.commands),'Active brake waits for actual rest')
+                ctx.program['speed_m_s']=0;ctx.t=6;r.tick(ctx)
+                if latched:
+                    self.assertEqual(count,len(self.commands),'Explicit retry latch remains')
+                    self.assertEqual(refused,r.frame.issued)
+                else:
+                    self.assertEqual('approaching',self.commands[-1]['doing'])
+                    self.assertNotIn('blocked_route',r.frame.issued)
+                self.assertEqual(0,r.frame.step);self.assertEqual(load,r.load_reading())
 
     def test_partial_native_update_keeps_static_geometry_and_actual_removals(self):
         brains=rover_brain.Brains(lambda:None);brains.spec={'terrain':{'generate':'flat'}}

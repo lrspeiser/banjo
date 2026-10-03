@@ -20,6 +20,48 @@ class RepeatedHauling(unittest.TestCase):
     join=fixture.GeneratedRovers.join
     setup_world=fixture.GeneratedRovers.setup_world
 
+    def test_five_actual_loads_on_retained_world_seed_and_exact_restart(self):
+        # The ordinary browser's seed/layout, without its later player edits.
+        # This tests sustained mining/receiving, not the edited shore failure.
+        with mock.patch.object(fixture.server.secrets,'randbelow',side_effect=[0,813489048]):
+            world,owner,app=self.setup_world()
+        # Explicit milestone checkpoints avoid measuring JSON disk writes as
+        # solver cost. Native source/receiving transfers keep their paired saves.
+        app.clock.keep=None
+        program=next(p for p in app.live.session.state['machines']['programs'] if p['kind']=='roam')
+        brain=app.brains.of(program['name']);routine=brain.routine
+        processor=next(b.routine for b in app.brains.brains.values()
+                       if b.routine and b.routine.recipe=='smelt copper')
+        times=[];last=0
+        for step in range(2200):
+            app.clock._tick(.2)
+            if routine.trips>last:
+                times.append((step+1)*.2);last=routine.trips
+            if routine.trips>=5:break
+        self.assertEqual(5,routine.trips,routine.summary())
+        receipts=[e for e in app.brains.goods.activities
+                  if e['kind']=='dump' and e['machine']==program['name']]
+        self.assertEqual(5,len(receipts))
+        self.assertAlmostEqual(200.,routine.delivered_kg,places=8)
+        self.assertTrue(routine.load_reading()['empty'])
+        for receipt in receipts:
+            self.assertEqual({'pile':processor.intake},receipt['to'])
+            self.assertEqual(12.,receipt['goods_kg']['copper ore'])
+        self.assertTrue(any(e['kind']=='output' and e['machine']!='rover'
+                            and e['goods_kg'].get('copper',0)>0 for e in app.brains.goods.activities),
+                        'Receiving must feed an actual paid native processing batch')
+        self.assertTrue(fixture.server.keep_world(app,'five-load native acceptance'))
+        saved=deepcopy(routine.record());goods=deepcopy(app.brains.goods.block)
+        self.stop();self.start();self.post('/api/world/open',{},world)
+        restored=self.app.hub.get(world)
+        self.assertEqual(saved,restored.brains.of(program['name']).routine.record())
+        self.assertEqual(goods,restored.brains.goods.block)
+        out=fixture.ROOT/'build/resource-flow';out.mkdir(parents=True,exist_ok=True)
+        (out/'retained-seed-five-loads.json').write_text(json.dumps({
+            'terrain_seed':4,'goods_seed':813489049,'native_dt_s':1/240,
+            'delivery_times_s':times,'delivered_kg':routine.delivered_kg,'copper_ore_kg':60.,
+            'restart_exact':True,'automatic_tick_save':False},indent=2))
+
     def test_three_real_receiving_loads_on_both_maps_and_complete_routine_restore(self):
         reports=[]
         for seed in (0,1):
