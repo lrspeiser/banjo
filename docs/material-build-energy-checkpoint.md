@@ -1,5 +1,9 @@
 # Exact energy receipts and material-to-build acceptance — October 2, 2026
 
+Published implementation: `fa84f146ee8d5ed24b389ae92ec8bcb2029c9055` on GitHub main.
+The separate runner was rebuilt from these source changes; preview servers
+were not restarted.
+
 ## Implemented
 
 The native runner now reports energy-store declarations and counters at their
