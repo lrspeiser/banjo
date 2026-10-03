@@ -1145,20 +1145,47 @@ class LabRemake(unittest.TestCase):
             wait('!document.querySelector("#ws-remake-step") || !document.querySelector("#ws-remake-step").disabled')
             end=time.monotonic()+10
             while time.monotonic()<end and app.room.fabrication_record['jobs'][next(iter(app.room.fabrication_record['jobs']))]['work_j']<=previous:time.sleep(.01)
-        click('#ws-remake-place')
-        wait('document.querySelector("#ws-remake a")?.textContent==="Collect in World"')
+        # Lose the first collection acknowledgement after the native operation
+        # saved. Reload and retry must collect the same output exactly once.
+        p.evaluate('''window.collectionRequests=[];const collectFetch=window.fetch;
+            window.fetch=async function(url,init){const r=await collectFetch.apply(this,arguments);
+            if(String(url).endsWith('/api/world/inventory') && JSON.parse(init.body).op==='take') {
+                collectionRequests.push(JSON.parse(init.body));
+                if(collectionRequests.length===1)throw Error('Lost collection acknowledgement');
+            }return r};''')
+        click('#ws-remake-collect')
+        wait('document.querySelector("#ws-notice").textContent.includes("Lost collection acknowledgement")')
         ident=next(iter(app.room.fabrication_record['jobs']))
         job=app.room.fabrication_record['jobs'][ident];root=job['root_body']
         self.assertEqual({'oak','iron'},set(job['product_materials_kg']))
         self.assertEqual(original,next(b for b in install._snapshot(app.live)['bodies'] if b['name']=='field pick'))
-        p.send('Page.navigate',{'url':p.evaluate('document.querySelector("#ws-remake a").href')})
+        taken=self.post('/api/world/inventory/shown',{'session':app.live.session.id},world)
+        self.assertEqual(1,sum(item.get('name')==root or root in item.get('parts',[]) for item in taken['stowed'] if item),taken['stowed'])
+        output=next(item for item in taken['stowed'] if item and (item.get('name')==root or root in item.get('parts',[])))
+        request=p.evaluate('collectionRequests[0]')
+        p.send('Page.navigate',{'url':saved_url})
+        wait('document.querySelector("#workshop-stage")?.visibleGeometry?.()?.meshes>0')
+        wait('document.querySelector("#ws-remake-review")');click('#ws-remake-review')
+        wait('document.querySelector("#ws-remake-collect")?.textContent==="Retry Inventory save"')
+        p.evaluate('window.retryCollection=[];const retryFetch=window.fetch;window.fetch=async function(url,init){if(String(url).endsWith("/api/world/inventory"))retryCollection.push(JSON.parse(init.body));return retryFetch.apply(this,arguments)}')
+        click('#ws-remake-collect')
+        selector=f'[data-quick-item="{output["id"]}"]'
+        wait('document.querySelector("#ws-pane-inventory")?.hidden===false && document.querySelector(%s)'%json.dumps(selector))
+        self.assertEqual(request['request'],p.evaluate('retryCollection[0].request'))
+        self.assertEqual(taken['record'],self.post('/api/world/inventory/shown',{'session':app.live.session.id},world)['record'])
+        self.assertEqual(1,len(app.room.fabrication_record['jobs']))
+        p.evaluate('(()=>{const e=document.querySelector(%s);e.value="9";e.dispatchEvent(new Event("change",{bubbles:true}))})()'%json.dumps(selector))
+        wait('document.querySelector(%s)?.value==="9" && !document.querySelector(%s).disabled'%(json.dumps(selector),json.dumps(selector)))
+        shown=self.post('/api/world/inventory/shown',{'session':app.live.session.id},world)
+        self.assertEqual(output['id'],shown['record']['stowed'][9])
+        click('.game-tabs [data-screen="world"]')
         wait('window.banjoRoom?.ready()')
+        wait('document.querySelector("#mini-materials")?.textContent.includes("Iron") && document.querySelector("#mini-materials").textContent.includes("Oak")')
         def key(code):
             for event in ('keyDown','keyUp'):p.send('Input.dispatchKeyEvent',{'type':event,'code':code,'key':code[-1].lower()})
-        p.evaluate('''(()=>{const at=banjoRoom.world.bodies.get(%s).mesh.position;
-            banjoRoom.standAt(at.x-.8,banjoRoom.groundAt(at.x,at.z)+1.62,at.z);
-            banjoRoom.lookAt(at.x,at.y,at.z);document.activeElement.blur();banjoRoom.resume();})()'''%json.dumps(root))
-        wait('banjoRoom.world.aim?.name===%s'%json.dumps(root));key('KeyE')
+        wait('document.querySelector("#hotbar .slot:nth-child(10) button img")')
+        self.assertEqual('0',p.evaluate('document.querySelector("#hotbar .slot:nth-child(10) b").textContent'))
+        click('#hotbar .slot:nth-child(10) button')
         wait('banjoRoom.held()?.name===%s && banjoRoom.use().mode==="tool-ready"'%json.dumps(root))
         # Work nearby after pickup. Teleporting the camera across the map
         # while holding a physical tool injects an unrelated carry transient.
@@ -1195,7 +1222,7 @@ class LabRemake(unittest.TestCase):
         reopened=self.post('/api/world/open',{},world);app=self.app.hub.get(world)
         p.send('Page.navigate',{'url':self.base+f'/world?world={world}'})
         wait('window.banjoRoom?.ready() && '+in_bag)
-        key('Digit2')
+        key('Digit0')
         wait('banjoRoom.held()?.name===%s && banjoRoom.use().mode==="tool-ready"'%json.dumps(root))
         point=self.post('/api/live/act',{'session':reopened['session'],'op':'tool_points'},world)['tool_points'][-1]
         self.assertEqual(root,point['grip_body']);self.assertTrue(point['attached']);self.assertTrue(point['grip_connected'])

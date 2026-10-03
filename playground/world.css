@@ -167,7 +167,8 @@ body.head-under-water #stage { filter: brightness(.72) sepia(.45) hue-rotate(155
   background: rgb(8 12 14 / .72); border: 1px solid var(--edge); backdrop-filter: blur(4px);
   pointer-events: auto;
 }
-.slot b { position: absolute; left: 5px; top: 2px; font-size: 10px; font-weight: 650; color: var(--dim); }
+.slot b { position: absolute; left: 4px; top: 3px; min-width:16px;text-align:center;border-radius:3px;
+  background:rgb(8 12 14 / .85);font-size:13px;font-weight:700;color:var(--fg); }
 /* What it is made of, by the colour the room draws that material with, and
    round for a ball. */
 .slot i {
@@ -175,6 +176,10 @@ body.head-under-water #stage { filter: brightness(.72) sepia(.45) hue-rotate(155
   border-radius: 3px; background: var(--c, #9aa6ae);
 }
 .slot i.sphere { border-radius: 50%; }
+.slot button {width:100%;height:100%;padding:0;background:transparent;color:inherit;border:0;cursor:pointer;border-radius:6px;}
+.slot button:focus-visible {outline:2px solid var(--warm);}
+.slot button img,.slot button canvas {position:absolute;left:50%;top:7px;transform:translateX(-50%);width:38px;height:30px;object-fit:contain;pointer-events:none;}
+.slot b {z-index:1;pointer-events:none;}
 .slot span {
   position: absolute; left: 3px; right: 3px; bottom: 3px; text-align: center;
   font-size: 9.5px; line-height: 1.15; overflow: hidden;

@@ -652,6 +652,11 @@ body.workshop-mode .ws-chat-suggestions { flex:none;max-height:24vh;overflow:aut
 .ws-recipe-filter [aria-pressed=true] { background:var(--ink);color:var(--panel); }
 #ws-pane-recipes [hidden] { display:none!important; }
 .ws-left #ws-lab-components { flex:none;margin:0;padding:.65rem .8rem;border-bottom:1px solid var(--edge); }
+#ws-lab-draft {flex:none;padding:.65rem .8rem;border-bottom:1px solid var(--edge);}
+#ws-lab-draft[hidden] {display:none;}
+#ws-lab-draft h2 {margin:0 0 .4rem;font-size:.8rem;}
+#ws-lab-draft small {display:block;color:var(--dim);font-size:.75rem;margin-top:.4rem;}
+#ws-lab-draft .ws-row {flex-wrap:wrap;}
 #ws-lab-components[hidden] { display:none; }
 #ws-lab-components h2 { margin:0 0 .4rem;font-size:.8rem; }
 .ws-lab-component-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.4rem;max-height:180px;overflow:auto; }

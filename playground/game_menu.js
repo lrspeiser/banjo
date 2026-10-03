@@ -226,7 +226,7 @@ export const SCREENS = [["world", "World"], ["inventory", "Inventory"], ["lab", 
 
 export function screenUrl(screen) {
   const current = new URLSearchParams(location.search), query = new URLSearchParams();
-  for (const key of ["world", "scene", "carry", "design", "library"]) if (current.get(key)) query.set(key, current.get(key));
+  for (const key of ["world", "scene", "carry", "design", "library", "recipe"]) if (current.get(key)) query.set(key, current.get(key));
   if (screen !== "world") { query.set("workshop", "1"); query.set("tab", screen); }
   return `/world${query.size ? "?" + query : ""}`;
 }

@@ -25,9 +25,9 @@ export const BINDINGS = {
   secondary: { label: "Right mouse", button: 2 },
   next:      { label: "Tab", keys: ["Tab"] },
   stow:      { label: "Q", keys: ["KeyQ"] },
-  slots:     { label: "1–9", keys: ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6",
-                                    "Digit7", "Digit8", "Digit9", "Numpad1", "Numpad2", "Numpad3",
-                                    "Numpad4", "Numpad5", "Numpad6", "Numpad7", "Numpad8", "Numpad9"] },
+  slots:     { label: "1–9, 0", keys: ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6",
+                                    "Digit7", "Digit8", "Digit9", "Digit0", "Numpad1", "Numpad2", "Numpad3",
+                                    "Numpad4", "Numpad5", "Numpad6", "Numpad7", "Numpad8", "Numpad9", "Numpad0"] },
   up:        { label: "Space", keys: ["Space"] },
   // Space with Shift held: the way a game's flying camera goes down.
   down:      { label: "Shift+Space", keys: ["Space"], shift: true },

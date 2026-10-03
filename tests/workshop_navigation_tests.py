@@ -46,7 +46,7 @@ class GameScreens(unittest.TestCase):
                 if self.page.evaluate(expression): return
             except (RuntimeError, TimeoutError): pass
             time.sleep(.1)
-        self.fail("Browser did not reach " + expression + "; " + str(self.page.evaluate('document.querySelector("#ws-notice")?.textContent')))
+        self.fail("Browser did not reach " + expression + "; " + str(self.page.evaluate('({notice:document.querySelector("#ws-notice")?.textContent,url:location.href,stage:document.querySelector("#workshop-stage")?.dataset,name:document.querySelector("#ws-name")?.textContent,draft:document.querySelector("#ws-lab-draft")?.textContent})')) + '; ' + str([e for e in self.page.events if e.get('method')=='Runtime.exceptionThrown']))
 
     def navigate(self, world, query):
         self.page.send("Page.navigate", {"url":self.base + f"/world?world={world}&" + query})
@@ -447,8 +447,26 @@ class GameScreens(unittest.TestCase):
         self.click(f'[data-lab-source="saved"][data-item="{saved}"]')
         self.wait('document.querySelector("#workshop-stage").visibleGeometry()?.meshes > 0')
         self.assertEqual(saved, self.page.evaluate('new URLSearchParams(location.search).get("design")'))
+        # Add a real component. A World round trip and reload must retain the
+        # unsaved draft without installing it or spending any supplies.
+        top=next(part for part in candidate['parts'] if part['name']=='top')
+        at=[top['center_m'][0]+.1,top['center_m'][1]+top['size_m'][1]/2,top['center_m'][2]]
+        self.page.evaluate('''(()=>{const select=document.querySelector('#ws-build-what');
+            select.value='family:post';select.dispatchEvent(new Event('change',{bubbles:true}));
+            document.querySelector('#ws-build-length').value='.3';
+            document.querySelector('#ws-build-place').click();})()''')
+        point=self.page.evaluate('document.querySelector("#workshop-stage").pagePointOf(%s)'%json.dumps(at))
+        for event in ('mousePressed','mouseReleased'):
+            self.page.send('Input.dispatchMouseEvent',{'type':event,'x':point[0],'y':point[1],'button':'left','clickCount':1})
+        self.wait('document.querySelector("#ws-build-adjust")?.hidden===false')
+        self.page.evaluate('document.querySelector("#ws-build-add").click()')
+        count=len(candidate['parts'])+1
+        self.wait(f'document.querySelector("#ws-part-count").textContent==="{count}"')
+        self.wait('document.querySelector("#ws-lab-draft").textContent.includes("Draft saved in this browser")')
+        self.assertFalse(app.room.workshop_installs)
+        self.assertFalse(app.room.fabrication_record['jobs'])
         self.screenshot("selected.png")
-        self.click('.game-tabs [data-screen="world"]')
+        self.click('.ws-bar-link')
         self.wait('!!window.banjoRoom?.status().ready')
         self.assertEqual(owner["id"], self.page.evaluate('window.banjoRoom.status().player_id'))
         self.assertEqual(7, self.page.evaluate('document.querySelectorAll(".game-tabs [data-screen]").length'))
@@ -456,7 +474,16 @@ class GameScreens(unittest.TestCase):
         self.wait('document.querySelector("#ws-pane-skills")?.hidden === false && !!document.querySelector("#ws-tree button")')
         self.click('.game-tabs [data-screen="lab"]')
         self.wait('document.querySelector("#workshop-stage").visibleGeometry()?.meshes > 0')
-        self.page.send("Page.reload"); self.wait('document.querySelector("#workshop-stage")?.visibleGeometry()?.meshes > 0')
+        self.wait(f'document.querySelector("#ws-part-count").textContent==="{count}"')
+        self.assertIn('Draft restored',self.page.evaluate('document.querySelector("#ws-lab-draft").textContent'))
+        self.page.send("Page.reload"); self.wait(f'document.querySelector("#ws-part-count")?.textContent==="{count}"')
+        self.click('#ws-draft-save')
+        self.wait('document.querySelector("#ws-lab-draft").textContent.includes("Saved to Recipes")')
+        selected=self.page.evaluate('new URLSearchParams(location.search).get("design")')
+        stored=self.post('/api/workshop/open',{'saved_design_id':selected},world)
+        self.assertEqual(count,len(stored['candidates'][0]['parts']))
+        self.assertFalse(app.room.workshop_installs)
+        self.assertFalse(self.page.evaluate('Object.keys(localStorage).some(k=>k.startsWith("banjo.lab-draft."))'))
         self.click("#ws-clear-lab"); self.assert_empty()
         self.page.send("Page.reload"); self.assert_empty()
         self.assertFalse([e for e in self.page.events if e.get("method") == "Runtime.exceptionThrown"])
@@ -598,6 +625,13 @@ class GameScreens(unittest.TestCase):
         self.assertEqual(str(carried["id"]), self.page.evaluate('new URLSearchParams(location.search).get("carry")'))
         self.assertEqual("5", self.page.evaluate('document.querySelector("#ws-part-count").textContent'))
         self.assertEqual("2.509 kg", self.page.evaluate('document.querySelector("#ws-mass").textContent'))
+        self.click('#ws-lab-components [data-component]')
+        component=self.page.evaluate('document.querySelector("#ws-component-info").dataset.component')
+        self.page.evaluate('(()=>{const e=document.querySelector("#ws-part-material");e.value="iron";e.dispatchEvent(new Event("change",{bubbles:true}))})()')
+        self.wait('document.querySelector("#ws-lab-draft").textContent.includes("Draft saved in this browser")')
+        self.page.send('Page.reload')
+        self.wait('document.querySelector("#ws-lab-draft")?.textContent.includes("Draft restored")')
+        self.assertIn('iron',self.page.evaluate(f'document.querySelector("[data-component={component}]").textContent'))
         self.click("#ws-clear-lab"); self.assert_empty()
         after = self.post("/api/world/inventory/shown", {"session":built["session"]}, world)["record"]
         self.assertEqual(before, after)

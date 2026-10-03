@@ -4496,6 +4496,7 @@ function slotColour(material) {
 // Background reads never advance the simulation or collect/bank anything.
 let miniStock = null, miniWallet = null, miniReading = false;
 const miniPictures = new Map();
+const miniPictureRequests = new Set();
 let miniRenderer = null;
 function meshPicture(mesh) {
   miniRenderer ||= new THREE.WebGLRenderer({alpha:true,antialias:true});
@@ -4528,6 +4529,32 @@ function miniPicture(thing) {
   }
   let picture = miniPictures.get(key) || [...miniPictures].reverse().find(([k])=>k.startsWith(`${thing.name}:`))?.[1];
   if (!picture && !entry) { try { picture=sessionStorage.getItem(savedKey); } catch { /* optional cache */ } }
+  const stored=miniStock?.carried?.find(item=>item.id===thing.id);
+  const recipe=thing.recipe || stored?.recipe;
+  if(!picture && !entry && (recipe || stored?.size_mm) && !miniPictureRequests.has(savedKey)) {
+    // A parked item may never have been drawn in this browser. Render its
+    // recorded source recipe rather than inventing a box-shaped tool icon.
+    miniPictureRequests.add(savedKey);
+    const source=recipe ? api('/api/workshop/candidates',{...recipe,sweeps:{}})
+      : Promise.resolve({candidates:[{parts:[{size_m:stored.size_mm.map(mm=>mm/1000),
+          center_m:[0,0,0],shape:stored.shape || stored.bench_shape || 'box',material:stored.material}]}]});
+    source.then(answer=>{
+      const preview=new THREE.Group();
+      for(const part of answer.candidates?.[0]?.parts || []) {
+        const [x,y,z]=part.size_m;
+        const geometry=part.shape==='sphere' ? new THREE.SphereGeometry(x/2,16,12)
+          : part.shape==='cylinder' ? new THREE.CylinderGeometry(x/2,x/2,y,16) : new THREE.BoxGeometry(x,y,z);
+        const mesh=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color:slotColour(part.material)}));
+        mesh.position.set(...part.center_m);mesh.rotation.set(...(part.rotation_deg || [0,0,0]).map(THREE.MathUtils.degToRad));preview.add(mesh);
+      }
+      if(!preview.children.length)return;
+      try {
+        const image=meshPicture(preview);miniPictures.set(key,image);
+        try {sessionStorage.setItem(savedKey,image);}catch { /* optional cache */ }
+        inventorySaid='';showInventory();
+      }finally {for(const mesh of preview.children){mesh.geometry.dispose();mesh.material.dispose();}}
+    }).catch(()=>{ /* use the shared material icon if source preview fails */ });
+  }
   if (!picture) return thumbnail({...thing,color_rgba:slotColour(thing.material).slice(1)});
   const image = document.createElement("img"); image.src=picture; image.alt=bagName(thing); return image;
 }
@@ -4536,7 +4563,7 @@ async function readMiniInventory() {
   miniReading = true;
   const session = world.session;
   try {
-    const [stock,wallet] = await Promise.allSettled([api("/api/workshop/inventory"),api("/api/workshop/market",{action:"view"})]);
+    const [stock,wallet] = await Promise.allSettled([api("/api/workshop/inventory",{}),api("/api/workshop/market",{action:"view"})]);
     if (session !== world.session) return;
     miniStock = stock.status==="fulfilled" ? stock.value : null;
     miniWallet = wallet.status==="fulfilled" ? wallet.value : null;
@@ -4562,7 +4589,7 @@ function showInventory() {
   const materials = [...(miniStock?.materials || []),...(miniStock?.goods || [])].filter(r=>r.mass_kg>0);
   const ground = [...world.stock].filter(([,v])=>v.kg>0);
   const held = watchedId ? hand?.name : world.held?.name;
-  const said = JSON.stringify([inv,held,materials,ground,movementMode,wet,world.carryLimitKg]);
+  const said = JSON.stringify([inv,held,materials,ground,miniStock?.carried,movementMode,wet,world.carryLimitKg]);
   if (said === inventorySaid) return;
   inventorySaid=said; showHotbar(slots,hand);
   workshopTakesDrops();
@@ -4734,12 +4761,12 @@ function showHotbar(slots, hand) {
     number.textContent = slotKeySaid(i);
     li.append(number);
     if (thing) {
-      const swatch = document.createElement("i");
-      swatch.style.setProperty("--c", slotColour(thing.material));
-      if (thing.shape === "sphere") swatch.className = "sphere";
+      const picture = miniPicture(thing);
       const name = document.createElement("span");
       name.textContent = bagName(thing);
-      li.append(swatch, name);
+      const use=document.createElement("button");use.type="button";
+      use.setAttribute("aria-label",`${i===home ? "Stow" : "Equip"} ${bagName(thing)} · Key ${slotKeySaid(i)}`);
+      use.append(picture,name);use.onclick=()=>fromSlot(i);li.append(use);
       li.title = `${slotKeySaid(i)}: ${bagName(thing)}${i === home ? ", in your hand" : ""}`;
     } else {
       li.title = `Slot ${slotKeySaid(i)}: drag a thing from your bag here`;
@@ -6528,7 +6555,7 @@ addEventListener("keydown", (e) => {
   if (isKey("interact", e.code)) intend(doChoice);
   if (isKey("next", e.code)) nextChoice();
   if (isKey("stow", e.code)) toTheBag();
-  if (isKey("slots", e.code)) fromSlot(Number(e.code.slice(-1)) - 1);
+  if (isKey("slots", e.code)) fromSlot((Number(e.code.slice(-1)) + 9) % 10);
   // Turning what is held: the keys are read every frame while they are down
   // (turnFromKeys); U stands it on end. On something the wrist cannot turn,
   // the first press says why.

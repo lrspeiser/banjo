@@ -2,7 +2,7 @@ import { thumbnail, massLabel as kgSaid } from "/game_menu.js";
 import { keyOf } from "/interaction.js";
 // Workshop Mode: product design, physical matter, editable skins and isolated physics playback.
 import * as THREE from "/vendor/three.module.js";
-import { gameNavigation, refreshNavigation, showSaveStatus } from "/game_menu.js";
+import { gameNavigation, refreshNavigation, showSaveStatus, screenUrl } from "/game_menu.js";
 import { conditionPanel } from "/body_condition.js";
 
 const $ = (q) => document.querySelector(q);
@@ -11,7 +11,7 @@ const worldHeaders = worldId ? { "X-Banjo-World": worldId } : {};
 const backToWorld = (scene) => worldId
   ? `/world?world=${worldId}&scene=new-game`
   : `/world?scene=${encodeURIComponent(scene)}&hold=1`;
-const homeWorld = () => worldId ? backToWorld("new-game") : "/world";
+const homeWorld = () => screenUrl("world");
 let token = "";
 let designAssistantConnected = false;
 let playerReady = null;
@@ -1074,6 +1074,7 @@ async function checkValidity(button) {
     if (answer.candidate) {
       bench.candidates = [answer.candidate]; bench.selected = 0; bench.revision++;
       invalidateMatter(); invalidateInstallation(); show();
+      persistLabDraft();
     }
     const ready = answer.recipe_readiness;
     const blocker = !ready?.workshop?.as_drawn ? ready?.workshop?.reason
@@ -1105,6 +1106,7 @@ async function makeIt(button, {candidate: suppliedCandidate = null, sourceAnswer
       if(sourceAnswer) {
         clearLab();bench.inventorySelection=selection;
         if(!took(sourceAnswer))throw Error("Design changed; open it in the Lab again");
+        labDraft.base=recipeSignature(candidateBody());renderLabDraft();
       }
       showTab("lab");updateLabSelection();await reviewRemake(true);
       status("Review supplies and work in the Lab",false);
@@ -1297,9 +1299,9 @@ function installBench() {
   const status = make("p", { id:"ws-make-status", role:"status", "aria-live":"polite" });
   const checkButton = make("button", { id:"ws-check", type:"button", class:"ws-action" }, "Check it");
   checkButton.onclick = () => checkValidity(checkButton);
-  const madeButton = make("button", { id:"ws-make", type:"button", class:"ws-action primary" }, "Make it");
+  const madeButton = make("button", { id:"ws-make", type:"button", class:"ws-action primary" }, "Build a new item");
   madeButton.onclick = () => makeIt(madeButton);
-  const saveButton = make("button", {id:"ws-quick-save", type:"button", class:"ws-action"}, "Save design");
+  const saveButton = make("button", {id:"ws-quick-save", type:"button", class:"ws-action"}, "Save to Recipes");
   saveButton.onclick = () => $("#ws-save-design").click();
   const notice = $("#ws-notice");
   top.replaceChildren(keep);
@@ -1927,6 +1929,11 @@ async function sendInventoryGround(operation, material, volume, lot) {
 }
 async function showInventory() {
   const inv = await api("/api/workshop/inventory");
+  let slots={record:{stowed:[]},hands:{}};
+  if(inv.carried?.length) {
+    const ctx=await api("/api/world/workshop/context",{});
+    slots=await api("/api/world/inventory/shown",{session:ctx.session});
+  }
   const carried = (inv.carried || []).map(thing => {
     const card = make("article", {class:"ws-product-card", "data-product":thing.id});
     const tile = invTile(thing, {quantity:thing.kg != null ? kgSaid(thing.kg) : "Mass unavailable", where:thing.where,
@@ -1935,6 +1942,19 @@ async function showInventory() {
     card.append(conditionPanel(thing.condition));
     const lab = make("button", {type:"button",class:"ws-action"}, "Open in Lab");
     lab.onclick = () => guard(lab, () => openTheCarriedThing(thing.id)); card.append(lab);
+    const slot=make("select",{"aria-label":`Quick slot for ${thing.label || thing.name}`,"data-quick-item":thing.id});
+    slot.append(make("option",{value:""},"Choose quick slot"));
+    const current=slots.record.stowed.indexOf(String(thing.id));
+    const held=Object.values(slots.hands || {}).find(item=>item?.id===thing.id);
+    for(let i=0;i<10;i++) {
+      const option=make("option",{value:String(i)},`Key ${(i+1)%10}`);
+      option.selected=i===(current>=0 ? current : held?.slot);slot.append(option);
+    }
+    slot.onchange=()=>guard(slot,async()=>{
+      if(slot.value==="")return;
+      await assignInventorySlot(thing.id,Number(slot.value));await showInventory();
+    });
+    const slotLabel=make("label",{class:"ws-field"},"Quick slot");slotLabel.append(slot);card.append(slotLabel);
     const debug = make("details", {class:"ws-product-debug"}); debug.append(make("summary", {}, "Details"),
       recipeValue("Item id", String(thing.id)), recipeValue("Native body", thing.name));
     if (thing.design_id) debug.append(recipeValue("Design id", thing.design_id));
@@ -2831,7 +2851,7 @@ async function showRecipes() {
       clearLab();
       const answer = await recipeSource(t);
       bench.inventorySelection = {id:recipeKey(t), name:t.name, source:"recipe"};
-      if (took(answer)) { $("#ws-archetype").value = answer.kind; showTab("lab"); }
+      if (await openLabDraft(answer)) { $("#ws-archetype").value = answer.kind; showTab("lab"); }
     });
     row.append(inspect);
     if (t.saved_design_id) row.append(inventoryDesignButton(t.saved_design_id, "saved"));
@@ -3023,11 +3043,11 @@ async function openTheCarriedThing(id) {
       if (revision !== bench.revision) return;
       const answer = await api("/api/workshop/candidates", {...source.recipe, sweeps:{}});
       if (revision !== bench.revision) return;
-      if (took(answer)) { $("#ws-archetype").value = answer.kind; return; }
+      if (await openLabDraft(answer)) { $("#ws-archetype").value = answer.kind; return; }
     }
     const answer = await api("/api/workshop/candidates", carriedDesign(thing));
     if (revision !== bench.revision) return;
-    if (took(answer)) {
+    if (await openLabDraft(answer)) {
       $("#ws-archetype").value = "custom";
       say(`${thing.label || thing.name} is on the bench: one part, ${thing.material}.`);
     }
@@ -3057,7 +3077,7 @@ async function openInventoryDesign(id, source) {
     if (revision !== bench.revision) return;
     bench.inventorySelection = {id, source, name:answer.library_item?.name || answer.candidates[0]?.label || "Saved design"};
     bench.openedLibraryItem = source === "library" ? id : null;
-    if (took(answer)) { $("#ws-archetype").value = answer.kind; showTab("lab"); }
+    if (await openLabDraft(answer)) { $("#ws-archetype").value = answer.kind; showTab("lab"); }
   } catch (error) {
     if (revision !== bench.revision) return;
     clearLab(); showTab("lab"); say(`That saved design could not be opened: ${error.message || error}`, true);
@@ -3193,6 +3213,7 @@ function showTab(name) {
   }
   window.history.replaceState(null, "", url);
   refreshNavigation(name);
+  $(".ws-bar-link").href=homeWorld();
   $("#ws-screen-status").textContent = name === "lab" && bench.inventorySelection ? bench.inventorySelection.name : name[0].toUpperCase() + name.slice(1);
   for (const button of document.querySelectorAll(".ws-tabs button")) button.setAttribute("aria-selected", String(button.dataset.tab === name));
   const viewport = $(".ws-viewport"); if (viewport) viewport.hidden = name !== "lab";
@@ -3267,6 +3288,27 @@ function refreshRemakeSupplies(plan,reading) {
   const goods=plan.quote.assembly_goods_kg || {},heldGoods=reading.state.goods_stock_kg || {};
   plan.missing_goods_kg=Object.fromEntries(Object.entries(goods).map(([n,kg])=>[n,Math.max(0,kg-(heldGoods[n] || 0))]));
   plan.goods_sources=(reading.goods_sources || []).filter(s=>s.material in goods);
+}
+
+async function assignInventorySlot(item,slot) {
+  const ctx=await api("/api/world/workshop/context",{});
+  for(const op of ["stow","slot"]) {
+    const key=`banjo.inventory-slot.${worldId || "local"}.${playerId}.${item}.${slot}.${op}`;
+    let request;
+    try {request=JSON.parse(sessionStorage.getItem(key) || "null");}catch {}
+    if(!request) {
+      const shown=await api("/api/world/inventory/shown",{session:ctx.session});
+      if(op==="stow" && !Object.values(shown.hands || {}).some(thing=>thing?.id===item))continue;
+      if(op==="slot" && shown.record.stowed[slot]===item)continue;
+      request={session:ctx.session,op,item,slot,revision:shown.record.revision,request:crypto.randomUUID()};
+      sessionStorage.setItem(key,JSON.stringify(request));
+    }
+    request.session=ctx.session;
+    const answer=await api("/api/world/inventory",request);
+    if(!answer.ok) {sessionStorage.removeItem(key);throw Error(answer.why);}
+    if(["failed","pending"].includes(answer.persistence?.state))throw Error("Slot save pending · Choose the slot again to retry");
+    sessionStorage.removeItem(key);
+  }
 }
 function missingRemakeGoods(plan) {return Object.values(plan.missing_goods_kg || {}).some(kg=>kg>1e-10);}
 function renderRemakeFunding(root,button,plan) {
@@ -3373,10 +3415,17 @@ function renderRemake() {
           job_id:remakePending()?.request_id,revision:reading.state.revision,request_id:crypto.randomUUID()});await reviewRemake();});
     } else if(job.status==="running") {
       button("ws-remake-step","Run 1 s",waitRemakeSecond);
-    } else if(job.status==="ready")button("ws-remake-place","Place in World",placeRemake);
+    } else if(job.status==="ready") {
+      button("ws-remake-collect","Add to Inventory",()=>placeRemake({toInventory:true}));
+      button("ws-remake-place","Place in World",placeRemake);
+    }
     else if(job.status==="installed") {
+      if(remake.carried && !sessionStorage.getItem(remakeKey()+".collect")) {
+        remakeRow(root,"Output","In your Inventory");
+        button("ws-remake-inventory","Open Inventory",()=>showTab("inventory"));
+      }else button("ws-remake-collect",sessionStorage.getItem(remakeKey()+".collect") ? "Retry Inventory save" : "Add to Inventory",collectRemake);
       const url=new URL(homeWorld(),location.href);url.searchParams.set("focus",job.root_body);
-      root.append(make("a",{class:"ws-action",href:url.pathname+url.search},"Collect in World"));
+      if(!remake.carried)root.append(make("a",{class:"ws-action",href:url.pathname+url.search},"Collect in World"));
       button("ws-remake-another","Review another "+kind,async()=>{sessionStorage.removeItem(remakeKey());sessionStorage.removeItem(remakeKey()+".install");await reviewRemake();});
     }
     button("ws-remake-review","Refresh",reviewRemake);return;
@@ -3416,7 +3465,15 @@ async function reviewRemake(force=false) {
   const pending=remakePending(),job=pending && reading.state?.jobs?.[pending.request_id];
   const previous=remake.selection===`${selected.id}:${revision}` ? remake.plan : null;
   remake.selection=`${selected.id}:${revision}`;
-  if(job) {remake.job=job;remake.plan=null;renderRemake();return;}
+  if(job) {
+    remake.job=job;remake.plan=null;remake.carried=false;
+    if(job.status==="installed") {
+      const shown=await api("/api/world/inventory/shown",{session:ctx.session});
+      if(selected!==bench.inventorySelection || revision!==bench.revision)return;
+      remake.carried=[...(shown.stowed || []),...Object.values(shown.hands || {})].some(item=>isJobOutput(item,job));
+    }
+    renderRemake();return;
+  }
   let plan;
   // Supply refreshes retain the reviewed draft; a charging loop must not fill
   // the bounded server plan cache. Renew before its five-minute expiry, or on
@@ -3440,13 +3497,36 @@ async function reviewRemake(force=false) {
     remakeRow($("#ws-remake"),"Request","Awaiting confirmation · Original reviewed design");
   }
 }
-async function placeRemake() {
+function isJobOutput(item,job) {return item && (item.id===job.root_body || item.name===job.root_body || item.parts?.includes(job.root_body));}
+async function collectRemake() {
+  const job=remake.job;
+  if(job?.status!=="installed" || !job.root_body)throw Error("Finish this build first");
+  const ctx=await api("/api/world/workshop/context",{}),key=remakeKey()+".collect";
+  let request;
+  try {request=JSON.parse(sessionStorage.getItem(key) || "null");}catch {}
+  if(!request) {
+    const shown=await api("/api/world/inventory/shown",{session:ctx.session});
+    if([...(shown.stowed || []),...Object.values(shown.hands || {})].some(item=>isJobOutput(item,job))) {
+      await reviewRemake();showTab("inventory");return;
+    }
+    request={session:ctx.session,op:"take",item:job.root_body,revision:shown.record.revision,request:crypto.randomUUID()};
+    sessionStorage.setItem(key,JSON.stringify(request));
+  }
+  // Installation and collection are separate saved native operations. Keep the
+  // exact collection request on failure; never fabricate twice.
+  request.session=ctx.session;
+  const answer=await api("/api/world/inventory",request);
+  if(!answer.ok) {sessionStorage.removeItem(key);throw Error(answer.why || "This item must stay in World");}
+  if(["failed","pending"].includes(answer.persistence?.state))throw Error("Inventory save pending · Retry Add to Inventory");
+  sessionStorage.removeItem(key);await reviewRemake();showTab("inventory");
+}
+async function placeRemake({toInventory=false}={}) {
   const pending=remakePending();if(!pending)throw Error("Review this remake first");
   const ctx=await api("/api/world/workshop/context",{});
   const key=remakeKey()+".install";let request;
   try {request=JSON.parse(sessionStorage.getItem(key) || "null");}catch{}
   if(request) {
-    try {await api("/api/world/fabrication/commit",request);await reviewRemake();return;}
+    try {await api("/api/world/fabrication/commit",request);await reviewRemake();if(toInventory)await collectRemake();return;}
     catch(err) {if(!/preview expired|preview belongs|source world changed|changed after preview/i.test(String(err.message)))throw err;sessionStorage.removeItem(key);request=null;}
   }
   let preview,refused;
@@ -3459,12 +3539,78 @@ async function placeRemake() {
   request={session:ctx.session,scene:ctx.scene,
     job_id:pending.request_id,preview_id:preview.preview_id,request_id:crypto.randomUUID()};
   sessionStorage.setItem(key,JSON.stringify(request));
-  await api("/api/world/fabrication/commit",request);await reviewRemake();
+  await api("/api/world/fabrication/commit",request);await reviewRemake();if(toInventory)await collectRemake();
 }
 setInterval(()=>{
   if(!document.hidden && !$("#ws-remake")?.hidden && remake.job?.status==="running" && !remake.busy)
     reviewRemake().catch(()=>{});
 },2000);
+// A draft is a private browser copy of the authored recipe, never a native
+// item or a fabrication receipt. Authenticate and load its source before
+// restoring it, and recompile through the same bounded authoring API as edits.
+const labDraft = {base:null, status:"", restoring:false};
+function labDraftKey() {
+  const source=bench.inventorySelection;
+  return source ? `banjo.lab-draft.${worldId || "local"}.${playerId || "local"}.${source.source}.${source.id}` : null;
+}
+function recipeSignature(recipe) {
+  const canonical=value=>Array.isArray(value) ? value.map(canonical)
+    : value && typeof value==="object" ? Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])) : value;
+  const {generation,...design}=recipe;
+  return JSON.stringify(canonical(design));
+}
+function persistLabDraft() {
+  const key=labDraftKey();
+  if(!key || !labDraft.base || !chosen() || labDraft.restoring)return;
+  try {
+    if(recipeSignature(candidateBody())===labDraft.base) {
+      localStorage.removeItem(key);labDraft.status="Original design";
+    }else {
+      localStorage.setItem(key,JSON.stringify({schema:1,base:labDraft.base,recipe:candidateBody(),at:Date.now()}));
+      labDraft.status="Draft saved in this browser";
+    }
+  }catch {labDraft.status="Draft not saved · Save to Recipes before leaving";}
+  renderLabDraft();
+}
+async function openLabDraft(answer) {
+  if(!took(answer))return false;
+  labDraft.base=recipeSignature(candidateBody());labDraft.status="Original design";
+  const key=labDraftKey(),revision=bench.revision;
+  let saved;
+  try {saved=JSON.parse(localStorage.getItem(key) || "null");}catch {labDraft.status="Draft unavailable · Browser storage";}
+  if(saved?.schema===1 && saved.recipe) {
+    if(saved.base!==labDraft.base)labDraft.status="Source changed · Previous draft not applied";
+    else {
+      labDraft.restoring=true;
+      try {
+        const restored=await api("/api/workshop/candidates",{...saved.recipe,sweeps:{}});
+        if(revision!==bench.revision || key!==labDraftKey())return false;
+        if(!took(restored))return false;
+        labDraft.status="Draft restored from this browser";
+      }catch {labDraft.status="Could not restore draft · Original shown";}
+      finally {labDraft.restoring=false;}
+    }
+  }
+  renderLabDraft();return true;
+}
+function renderLabDraft() {
+  let root=$("#ws-lab-draft");
+  if(!root) {
+    root=make("section",{id:"ws-lab-draft","aria-label":"Lab draft"});
+    $(".ws-left > .game-tabs").after(root);
+  }
+  root.hidden=!bench.inventorySelection || !chosen() || $(".ws-viewport")?.hidden;
+  if(root.hidden)return;
+  root.replaceChildren(make("h2",{},"Design → World"));
+  remakeRow(root,"Design",labDraft.status || "Original design");
+  if(bench.inventorySelection.source==="carried")remakeRow(root,"Your item","Unchanged · In Inventory");
+  const actions=make("div",{class:"ws-row"});
+  const save=make("button",{id:"ws-draft-save",type:"button",class:"ws-action"},"Save to Recipes");
+  save.onclick=()=>$("#ws-save-design").click();
+  const build=make("button",{id:"ws-draft-build",type:"button",class:"ws-action primary"},"Build a new item");
+  build.onclick=()=>makeIt(build);actions.append(save,build);root.append(actions);
+  root.append(make("small",{},"Save keeps the design. Build uses supplies, then Add to Inventory or Place in World."));
+}
 function updateLabSelection() {
   const selected = Boolean(bench.inventorySelection && chosen());
   let condition=$("#ws-carried-condition");
@@ -3497,6 +3643,7 @@ function updateLabSelection() {
   if (intro && intro.textContent !== text) intro.textContent = text;
   labWasSelected = selected;
   renderLabComponents();
+  renderLabDraft();
 }
 
 // Visible identification uses authored components and machine bindings for
@@ -3599,6 +3746,7 @@ async function refreshPhysicalConditions() {
 setInterval(()=>refreshPhysicalConditions().catch(()=>{}),5000);
 
 function clearLab() {
+  labDraft.base=null;labDraft.status="";labDraft.restoring=false;
   bench.inventorySelection = null; bench.candidates = []; bench.selectedPart = null;
   bench.libraryInspection = null; bench.isolated = null; bench.revision++; candidateRequest++;
   clearPlayback(); clearGroup(); clearGhost(); balance.visible = false; support.visible = false;
@@ -4665,6 +4813,7 @@ function remember(next) {
   history.now = next;
   history.future.length = 0;
   renderHistory();
+  persistLabDraft();
 }
 
 function stepHistory(way) {
@@ -4680,6 +4829,7 @@ function stepHistory(way) {
     show();
   } finally { history.restoring = false; }
   renderHistory();
+  persistLabDraft();
 }
 
 function renderHistory() {
@@ -5031,6 +5181,7 @@ $("#ws-materialize").onclick = (event) => guard(event.currentTarget, async () =>
   $("#ws-plan").hidden = false; $("#ws-plan").textContent = JSON.stringify({mechanical_model: chosen().mechanical_model, rigid:bench.rigid, matter: bench.matter, measured: currentMeasurements()}, null, 2);
 });
 $("#ws-save-design").onclick = (event) => guard(event.currentTarget, async () => {
+  const draftKey=labDraftKey();
   const candidate = chosen(), label = $("#ws-save-name").value.trim() || candidate.label || candidate.design_id;
   const answer = await api("/api/workshop/feedback", { ...candidateBody(), save_design:true, label, library_item_id:bench.openedLibraryItem || null,
     world_revision:bench.session && bench.session.world_revision !== "unopened-world" ? bench.session.world_revision : null });
@@ -5044,7 +5195,12 @@ $("#ws-save-design").onclick = (event) => guard(event.currentTarget, async () =>
     for (const key of ["carry", "library", "recipe"]) url.searchParams.delete(key);
     url.searchParams.set("design", answer.design.design_id);
     window.history.replaceState(null, "", url); refreshNavigation(url.searchParams.get("tab") || "lab");
+    $(".ws-bar-link").href=homeWorld();
     $("#ws-screen-status").textContent = label;
+  }
+  if(saved) {
+    try {if(draftKey)localStorage.removeItem(draftKey);}catch { /* server save succeeded */ }
+    labDraft.base=recipeSignature(candidateBody());labDraft.status="Saved to Recipes";renderLabDraft();
   }
 });
 $("#ws-save-feedback").onclick = (event) => guard(event.currentTarget, async () => {
@@ -5097,7 +5253,7 @@ async function start() {
     if (recipe) {
       bench.inventorySelection = {id:wantRecipe, name:recipe.name, source:"recipe"};
       const source = await recipeSource(recipe);
-      if (took(source)) picker.value = source.kind;
+      if (await openLabDraft(source)) picker.value = source.kind;
     } else say("That recipe is no longer available. Select another recipe.", true);
   }
   if (wantTechnique && (!wantTab || wantTab === "skills")) openTheTreeAt(wantTechnique);
