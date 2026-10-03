@@ -1,3 +1,5 @@
+import {materialAppearance, samplePattern} from "./material_appearance.js";
+
 // World links are bearer links. A browser remembers only worlds it created or
 // joined; the server never publishes an index of other people's worlds.
 const params = new URLSearchParams(location.search);
@@ -294,7 +296,8 @@ export function thumbnail(thing) {
   canvas.setAttribute("aria-label", `${thing.label || thing.name}, ${thing.material || "item"}`);
   const pen = canvas.getContext("2d");
   if (!pen) return canvas;
-  const hex = /^[0-9a-f]{6,8}$/i.test(thing.color_rgba || "") ? thing.color_rgba.slice(0,6) : "9aa7b4";
+  const appearance=materialAppearance(thing.material);
+  const hex = appearance?.color || (/^[0-9a-f]{6,8}$/i.test(thing.color_rgba || "") ? thing.color_rgba.slice(0,6) : "9aa7b4");
   const dark = amount => {
     const n = parseInt(hex,16), mix = c => Math.max(0,Math.min(255,Math.round(c*amount)));
     return `rgb(${mix((n>>16)&255)},${mix((n>>8)&255)},${mix(n&255)})`;
@@ -307,6 +310,9 @@ export function thumbnail(thing) {
       pen.fillStyle=i%3 ? face : dark(.65);
       pen.beginPath(); pen.moveTo(x,y-6);pen.lineTo(x+6,y-2);
       pen.lineTo(x+4,y+4);pen.lineTo(x-3,y+3);pen.closePath();pen.fill();
+      if(appearance) {
+        pen.save();pen.clip();samplePattern(pen,appearance,x-3,y-6,9,10);pen.restore();
+      }
     }
   } else if (thing.shape === "sphere" || thing.shape === "capsule") {
     const light = pen.createRadialGradient(18,17,2,24,24,16);
@@ -317,7 +323,9 @@ export function thumbnail(thing) {
     pen.beginPath(); pen.ellipse(24,m+5,16,5,0,0,Math.PI*2); pen.fill(); pen.fillStyle=dark(.5);
     pen.beginPath(); pen.ellipse(24,35,16,5,0,0,Math.PI*2); pen.fill();
   } else {
-    pen.fillStyle=face; pen.fillRect(m,15,25,25); pen.fillStyle=dark(1.25);
+    pen.fillStyle=face; pen.fillRect(m,15,25,25);
+    if(appearance)samplePattern(pen,appearance,m,15,25,25);
+    pen.fillStyle=dark(1.25);
     pen.beginPath(); pen.moveTo(8,15); pen.lineTo(15,8); pen.lineTo(40,8); pen.lineTo(33,15); pen.closePath(); pen.fill();
     pen.fillStyle=dark(.6); pen.beginPath(); pen.moveTo(33,15); pen.lineTo(40,8);
     pen.lineTo(40,33); pen.lineTo(33,40); pen.closePath(); pen.fill();

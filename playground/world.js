@@ -25,6 +25,8 @@ import { makeTools } from "/tools.js";
 import { makeWorkbench } from "/workbench.js";
 import { gameNavigation, showSaveStatus, screenUrl, thumbnail, massLabel } from "/game_menu.js";
 import { conditionPanel } from "/body_condition.js";
+import { GROUND_APPEARANCE, materialAppearance, terrainCellAt, terrainTargetPath, exposedRunKind } from "/material_appearance.js";
+import { terrainMaterial } from "/terrain_material.js";
 
 const $ = (id) => document.getElementById(id);
 const worldId = new URLSearchParams(location.search).get("world");
@@ -864,14 +866,7 @@ scene.add(floor);
 // eased from one to the next -- a picture of the water moving, never a second
 // opinion about where it is. The foam on the river is carried by the engine's
 // own velocity field: it decorates the flow and cannot contradict it.
-const GROUND_COLOURS = [new THREE.Color(0x7b776f),   // rock
-                        new THREE.Color(0x6b4f32),   // soil
-                        new THREE.Color(0xc9ad7c),   // sand
-                        new THREE.Color(0x8a6b4a),   // loose soil: soil that was dug
-                        new THREE.Color(0x8d8274),   // weathered rock: paler, rotted
-                        new THREE.Color(0x5d6b6e),   // clay: the grey-green weak bed
-                        new THREE.Color(0x4e6b54),   // ore: the green of a fresh copper vein
-                        new THREE.Color(0xa8622c)];  // oxidised ore: the rust a vein shows
+const GROUND_COLOURS = GROUND_APPEARANCE.map(row=>new THREE.Color(`#${row.color}`));
 const WATER_SHALLOW = new THREE.Color(0x58a7ad), WATER_DEEP = new THREE.Color(0x163f63);
 // Ground nobody has been near yet (machine_sight): drawn, because the lie of the
 // land is the shape of the room and hiding it would leave holes in the world, but
@@ -891,7 +886,7 @@ const ground = {
   // keeps it. Null until the server sends one, and then every cell is drawn
   // either as its surface or as unknown.
   seen: null, seenGrid: null,
-  mesh: null, water: null, foam: null,
+  mesh: null, materialCells: null, water: null, foam: null,
   was: null, next: null, arrived: 0, flow: null, flowBox: [0, 0, 0, 0], last: null,
   beyond: [],   // sheets of water standing beyond the edges: see drawBeyond
 };
@@ -932,6 +927,7 @@ function waterAt(x, z) {
 }
 
 function clearGround() {
+  ground.materialCells?.dispose(); ground.materialCells=null;
   for (const key of ["mesh", "water", "foam", "faces"]) {
     const thing = ground[key];
     if (!thing) continue;
@@ -967,14 +963,18 @@ function groundSeen(index) {
   return ground.seen[j * s.nx + i] !== 0;
 }
 
-function paintGround(colours, index) {
+function groundKind(index) {
   // What the TOP of the column is made of, from the runs: a vein that reaches
   // the surface is a stain on the hillside you can see from across the valley,
   // and it cannot be if the ground is painted from three surface kinds. The
   // engine's own `surfaces` is the fallback, and what the physics still uses.
   const runs = ground.runs;
-  const kind = runs && runs.count[index] > 0
+  return runs && runs.count[index] > 0
     ? runs.kind[index * runs.stride + runs.count[index] - 1] : ground.surfaces[index];
+}
+
+function paintGround(colours, index) {
+  const kind=groundKind(index);
   const c = groundSeen(index) ? (GROUND_COLOURS[kind] || GROUND_COLOURS[1]) : GROUND_UNSEEN;
   colours[3 * index] = c.r; colours[3 * index + 1] = c.g; colours[3 * index + 2] = c.b;
 }
@@ -1253,7 +1253,9 @@ function repaintSeen() {
   if (!ground.mesh || !ground.grid) return;
   const col = ground.mesh.geometry.attributes.color;
   const count = ground.grid.nx * ground.grid.nz;
-  for (let k = 0; k < count; ++k) paintGround(col.array, k);
+  for (let k = 0; k < count; ++k) {
+    paintGround(col.array, k); ground.materialCells?.update(k);
+  }
   col.needsUpdate = true;
   // The faces of a step are coloured by what has been seen too.
   ground.facesStale = true;
@@ -1296,8 +1298,8 @@ function drawTerrain(block) {
   geometry.setAttribute("color", new THREE.BufferAttribute(colours, 3));
   geometry.setIndex(new THREE.BufferAttribute(indices, 1));
   geometry.computeVertexNormals();
-  ground.mesh = new THREE.Mesh(geometry, dress(new THREE.MeshStandardMaterial({
-    vertexColors: true, roughness: 0.96, metalness: 0.0 }), "ground"));
+  ground.materialCells=terrainMaterial(ground.grid,colours,groundKind,groundSeen);
+  ground.mesh = new THREE.Mesh(geometry, ground.materialCells.material);
   // The ground catches what the room drops on it, and casts too: a valley
   // whose own hills throw no shade at a low sun is a valley with no shape.
   ground.mesh.castShadow = true;
@@ -1363,10 +1365,12 @@ function patchTerrain(changed) {
       if (patched) patchRuns(k, patched, j * ni + i);
       pos.array[3 * k + 1] = ground.heights[k];
       paintGround(col.array, k);
+      ground.materialCells.update(k);
     }
   pos.needsUpdate = true;
   col.needsUpdate = true;
   ground.mesh.geometry.computeVertexNormals();
+  ground.mesh.geometry.computeBoundingSphere();
   // The step a dig leaves is what the faces are drawn on, so they are stood up
   // again -- once for the frame, however many changes arrive in it.
   ground.facesStale = true;
@@ -3376,6 +3380,8 @@ function followGoods(goods, reset = false) {
 
 const SUBSTANCE_TINT = new Map();
 function substanceColour(what) {
+  const appearance=materialAppearance(what);
+  if(appearance)return `#${appearance.color}`;
   const resource={"copper":"#b97647","copper wire":"#db994b","copper ore":"#858c65",
                   "sand and soil":"#96764c","slag":"#666a70"}[what];
   if(resource)return resource;
@@ -4484,6 +4490,8 @@ function bagName(thing) {
 
 // A thing's colour in its slot: the colour the room draws its material with.
 function slotColour(material) {
+  const appearance=materialAppearance(material);
+  if(appearance)return `#${appearance.color}`;
   const seen = MATERIAL_LOOK[material];
   if(seen)return `#${seen.color.toString(16).padStart(6,"0")}`;
   const raw={soil:"#8b6445",sand:"#d5bd80",rock:"#818085","iron ore":"#8f7363"}[material];
@@ -4668,7 +4676,7 @@ toolGuide.querySelector("button").addEventListener("click", (e) => {
   const profile = (world.tools || []).find(p => world.bodies.has(p.tool));
   if (!profile) { lastAction("No gathering tool on the ground · equip one in Inventory or make one in Recipes.", "refused"); return; }
   const entry = world.bodies.get(profile.tool), at = entry.mesh.position;
-  camera.lookAt(at);
+  window.banjoRoom.lookAt(at.x,at.y,at.z);
   picked.name = profile.tool; picked.at = null; picked.resource = null; showPicked();
   lastAction(`${titled(profile.object)} · ${camera.position.distanceTo(at).toFixed(1)} m away · walk close and press E to take up.`);
 });
@@ -4780,12 +4788,10 @@ function showHotbar(slots, hand) {
 // surface -- as the label says it. Null off the ground, or in a room without.
 function groundMadeOf(at) {
   if (!Array.isArray(at) || !ground.grid || !ground.surfaces) return null;
-  const g = ground.grid;
-  const i = Math.round((at[0] - g.x0) / g.dx), j = Math.round((at[2] - g.z0) / g.dx);
-  if (i < 0 || j < 0 || i >= g.nx) return null;
-  const runs = ground.runs, c = j * g.nx + i;
-  const kind = runs && runs.count[c] > 0 ? runs.kind[c * runs.stride + runs.count[c] - 1]
-                                         : ground.surfaces[c];
+  const c=terrainCellAt(at[0],at[2],ground.grid);
+  if(c<0)return null;
+  const kind=Math.abs(at[1]-groundAt(at[0],at[2]))<.05 ? groundKind(c)
+    : exposedRunKind(ground.runs,c,at[1],ground.surfaces[c]);
   return RUN_NAMES[kind] || null;
 }
 
@@ -7742,11 +7748,28 @@ function turnKeyPressed() {
 // time: the answer is worth about a millisecond and the view moves faster than
 // that, so the newest question wins and the rest are dropped.
 let aimBusy = false;
+let aimFailure = null;
+const groundTargetGeometry=new THREE.BufferGeometry();
+groundTargetGeometry.setAttribute("position",new THREE.BufferAttribute(new Float32Array(27),3));
+const groundTarget=new THREE.Line(groundTargetGeometry,new THREE.LineBasicMaterial({color:0xe7eff5,depthWrite:false}));
+groundTarget.name="ground-target-cell";groundTarget.visible=false;groundTarget.renderOrder=4;scene.add(groundTarget);
+function showGroundTarget() {
+  const point=world.groundAim, g=ground.grid;
+  const index=point&&g?terrainCellAt(point[0],point[2],g):-1;
+  groundTarget.visible=index>=0 && !world.resourceAim && !world.aim && groundSeen(index)
+    && camera.position.distanceTo(new THREE.Vector3(...point))<5
+    && Math.abs(point[1]-groundAt(point[0],point[2]))<.05;
+  if(!groundTarget.visible)return;
+  const path=terrainTargetPath(point,g,groundAt);
+  groundTargetGeometry.attributes.position.array.set(path);
+  groundTargetGeometry.attributes.position.needsUpdate=true;
+  groundTargetGeometry.computeBoundingSphere();
+}
 async function aim() {
   // Asked while something is held too: it is held beside the view rather than
   // in front of it, so the crosshair is on something else -- and "put it on
   // that" has to know what that is. The label stays down while holding.
-  if (!world.session || aimBusy) return;
+  if (watchedId || !world.session || aimBusy) return;
   aimBusy = true;
   try {
     const from = camera.position;
@@ -7760,8 +7783,17 @@ async function aim() {
     world.groundAim = found.hit && !found.name ? found.point_m : null;
     const hitDistance=found.hit && found.point_m ? from.distanceTo(new THREE.Vector3(...found.point_m)) : 40;
     world.resourceAim=resourceVisuals.pick(from,dir,hitDistance+.02);
+    showGroundTarget();
+    // Aim can change while the held item's use state is identical. Refresh
+    // the deduplicated preview here, rather than waiting for another action.
+    showDetails();
     if (!world.held) showLabel(world.aim);
-  } catch { /* the next frame asks again */ } finally { aimBusy = false; }
+    aimFailure=null;
+  } catch(error) {
+    const reason=String(error.message || error);
+    if(reason!==aimFailure) { noteError(`Aim: ${reason}`); console.warn(`World aim: ${reason}`); }
+    aimFailure=reason; // the next frame asks again; report a repeated fault once
+  } finally { aimBusy = false; }
 }
 
 // The name of what the crosshair is on, just under it, and nothing else (the
@@ -11464,6 +11496,7 @@ async function open({ again = false } = {}) {
     noteError(`could not open the room: ${world.openError}`);
   } finally {
     world.opening = false;
+    if(world.session && !world.openError)void aim();
   }
 }
 
@@ -11487,6 +11520,7 @@ window.banjoRoom = {
     yaw = Math.atan2(-to.x, -to.z);
     pitch = Math.atan2(to.y, Math.hypot(to.x, to.z));
     camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, "YXZ"));
+    void aim();
   },
   standAt(x, y, z) { camera.position.set(x, y, z); },
   // WHICH KEYS THE ROOM THINKS ARE DOWN. A key stuck here is a camera that
