@@ -162,8 +162,13 @@ def ground_of(terrain: dict) -> dict:
     grid = terrain["grid"]
     raw = base64.b64decode(terrain["heights_b64"], validate=True)
     heights = struct.unpack("<" + "f" * (len(raw) // 4), raw)
+    baseline = None
+    if terrain.get("baseline_b64"):
+        raw_baseline = base64.b64decode(terrain["baseline_b64"], validate=True)
+        baseline = struct.unpack("<" + "f" * (len(raw_baseline) // 4), raw_baseline)
+        if len(baseline) != len(heights): raise ValueError("Terrain baseline does not match its grid")
     return {"surface":terrain.get('surface','smooth'),"nx": int(grid["nx"]), "nz": int(grid["nz"]), "cell": float(grid["cell_m"]),
-            "x0": float(grid["x0_m"]), "z0": float(grid["z0_m"]), "h": heights, "wet": set()}
+            "x0": float(grid["x0_m"]), "z0": float(grid["z0_m"]), "h": heights, "baseline":baseline, "wet": set()}
 
 
 def wet_of(water: dict) -> set[tuple[int, int]]:
@@ -194,6 +199,10 @@ def surface_at(ground: dict, x: float, z: float) -> float:
     """The ground as Jolt holds it, not the nearest sample to it: each square of
     the heightfield is two flat triangles split along its (i,j)-(i+1,j+1)
     diagonal (HeightFieldShape.cpp), so between samples it is a plane."""
+    if ground.get('surface')=='cuts':
+        base={**ground,'surface':'smooth','h':ground['baseline']}
+        i=math.floor((x-ground['x0'])/ground['cell']+.5);j=math.floor((z-ground['z0'])/ground['cell']+.5)
+        return surface_at(base,x,z)+(_sample(ground,i,j)-_sample(base,i,j))
     if ground.get('surface')=='columns':
         return _sample(ground,math.floor((x-ground['x0'])/ground['cell']+.5),
                              math.floor((z-ground['z0'])/ground['cell']+.5))

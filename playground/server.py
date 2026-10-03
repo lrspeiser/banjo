@@ -1219,7 +1219,7 @@ class WorldHub:
             return self._create(name,surface)
 
     def _create(self, name, surface='smooth'):
-        if surface not in ('smooth','columns'):raise ValueError('Terrain must be smooth or material cells')
+        if surface not in ('smooth','cuts','columns'):raise ValueError('Terrain must be smooth, sharp cuts or material cells')
         if name is None: name = "New world"
         if not isinstance(name, str) or not 1 <= len(name.strip()) <= 80:
             raise ValueError("World name must be 1 to 80 characters")
@@ -1440,7 +1440,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/workshop.js":"workshop.js","/workshop.css":"workshop.css",
                 "/blades.js":"blades.js","/interaction.js":"interaction.js","/tools.js":"tools.js","/workbench.js":"workbench.js",
                 "/cellmesh.js":"cellmesh.js","/surfaces.js":"surfaces.js",
-                "/material_appearance.js":"material_appearance.js","/terrain_material.js":"terrain_material.js",
+                "/material_appearance.js":"material_appearance.js","/terrain_material.js":"terrain_material.js","/cut_surface.js":"cut_surface.js",
                 "/player_guidance.js":"player_guidance.js","/construction_ui.js":"construction_ui.js",
                 "/debug":"debug.html","/debug.js":"debug.js","/debug.css":"debug.css",
                 "/vendor/three.module.js":"vendor/three.module.js","/vendor/three.core.js":"vendor/three.core.js"}

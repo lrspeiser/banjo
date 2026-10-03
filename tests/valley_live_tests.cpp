@@ -1029,21 +1029,66 @@ void columnSurfaceHasNativeTopsWallsVoidsAndRestart() {
     std::cout<<"    tops/walls <=2e-6 m; valley voids <=1e-4 m; seam update, native reopen, ledger <=1e-8 m3\n";
 }
 
+void cutSurfaceHasNativeWallsSlopesAndRestart() {
+    Json scene={{"bodies",{box("marker","iron",{.08,.08,.08},{20,20,20},true)}},
+        {"terrain",{{"surface","cuts"},{"generate",{{"kind","flat"},{"nx",64},{"nz",16},
+        {"cell_m",.25},{"soil_m",.4},{"sand_m",0}}}}}};
+    auto world=open(scene);const auto &field=world->environment()->terrain();const auto &g=field.grid();
+    const double x=g.xOf(30),z=g.zOf(5),h=field.height(g.at(30,5));
+    if(field.cutSurface()) {
+        const auto edge=world->pick({g.x0-.1,h+1,z},{0,-1,0},2);
+        require(edge.hit,"native cuts include the complete boundary column footprint");
+        near(edge.point_world_m.y,field.heightAt(g.x0-.1,z),1e-4,"native edge agrees with cut field");
+    }
+    world->dig(x,z,x,z,.1,.2);
+    for(double dx:{-.1,.0,.1,.13}) {
+        const auto hit=world->pick({x+dx,h+1,z},{0,-1,0},2);
+        require(hit.hit && hit.name.empty(),"native cut top hit");
+        near(hit.point_world_m.y,field.heightAt(x+dx,z),1e-4,"cut top agrees across sharp boundary");
+    }
+    auto wall=world->pick({x,h-.1,z},{1,0,0},1);
+    require(wall.hit && wall.name.empty(),"native cut wall hit");near(wall.distance_m,.125,1e-4,"wall follows half-cell seam");
+    world->dig(g.xOf(31),z,g.xOf(31),z,.1,.2);
+    wall=world->pick({x,h-.1,z},{1,0,0},1);near(wall.distance_m,.375,1e-4,"neighbor seam edit removes old wall");
+    std::string why;const auto saved=world->snapshot(why);require(!saved.empty(),why);auto again=open(scene,saved);
+    require(again->restored().tier=="whole","cut geometry reopens whole");
+    near(again->pick({x,h-.1,z},{1,0,0},1).distance_m,wall.distance_m,0,"sharp wall reopens exactly");
+    auto corrupt=Json::parse(world->environment()->groundStateJson());corrupt["baseline"]="";
+    bool refused=false;try{(void)terrain::Environment::fromScene(scene.dump(),corrupt.dump());}
+    catch(const std::invalid_argument &){refused=true;}require(refused,"corrupt cut baseline refuses continuation");
+    for(double v:{field.residual().rock_m3,field.residual().soil_m3,field.residual().sand_m3})near(v,0,1e-8,"native cut material ledger");
+    Valley valley;scene=valley.scene(Json::array());scene["terrain"]["surface"]="cuts";world=open(scene);
+    const auto &hill=world->environment()->terrain();const auto &hg=hill.grid();
+    for(int i:{20,60,90})for(int j:{15,40,70}) {
+        const double px=hg.xOf(i)+.07,pz=hg.zOf(j)+.08,y=hill.heightAt(px,pz);
+        const auto hit=world->pick({px,y+1,pz},{0,-1,0},2);require(hit.hit,"original valley remains a native surface");
+        near(hit.point_world_m.y,y,1e-4,"generated sloping triangle agrees with native ray");
+    }
+    std::cout<<"    cut walls/slopes <=1e-4 m; seam/reopen exact; material residual <=1e-8 m3\n";
+}
+
 void columnSurfaceSupportsGlassOakAndIron() {
+  for(const std::string surface:{"columns","cuts"}) {
     for(const auto &[material,density]:std::vector<std::pair<std::string,double>>{{"glass",2500},{"oak",700},{"iron",7870}}) {
         Json scene={{"bodies",{box("marker","iron",{.08,.08,.08},{20,20,20},true)}},
-            {"terrain",{{"surface","columns"},{"generate",{{"kind","flat"},{"nx",32},{"nz",16},
+            {"terrain",{{"surface",surface},{"generate",{{"kind","flat"},{"nx",32},{"nz",16},
             {"cell_m",.25},{"soil_m",.4},{"sand_m",0}}}}}};
-        auto probe=open(scene);const double bed=probe->environment()->terrain().heightAt(0,0);probe.reset();
-        scene["precise_rigid_bodies"]={{{"name","block"},{"material",material},{"position_m",{0,bed+.09,0}},
+        auto probe=open(scene);const auto &g=probe->environment()->terrain().grid();
+        const double x=g.xOf(8),z=g.zOf(6);
+        double bed=probe->environment()->terrain().heightAt(x,z);probe.reset();
+        const double depth=surface=="cuts"?.2:0;
+        scene["precise_rigid_bodies"]={{{"name","block"},{"material",material},{"position_m",{x,bed-depth+.09,z}},
             {"parts",{{{"shape","box"},{"dimensions_m",{.12,.12,.12}},{"center_local_m",{0,0,0}}}}}}};
-        auto world=open(scene);world->step(kDt);near(poseOf(*world,"block").velocity_m_s.y,-9.81*kDt,1e-6,"free gravity before support");
+        auto world=open(scene);
+        if(depth>0){world->dig(x,z,x,z,.1,depth);bed=world->environment()->terrain().heightAt(x,z);}
+        world->step(kDt);near(poseOf(*world,"block").velocity_m_s.y,-9.81*kDt,1e-6,"free gravity before support");
         run(*world,1.0);const auto pose=poseOf(*world,"block");
         require(pose.position_m.y>=bed+.06-.021,"native column supports actual material block");
         require(pose.position_m.y<bed+.16,"declared passive support does not launch block upward");
-        std::cout<<"    column "<<material<<" mass="<<density*.12*.12*.12<<" kg; clearance="<<pose.position_m.y-.06-bed
+        std::cout<<"    "<<surface<<" "<<material<<" mass="<<density*.12*.12*.12<<" kg; clearance="<<pose.position_m.y-.06-bed
                  <<" m; vy="<<pose.velocity_m_s.y<<" m/s; dt="<<kDt<<" s\n";
     }
+  }
 }
 
 int main(int argc, char **argv) {
@@ -1056,6 +1101,7 @@ int main(int argc, char **argv) {
     setenv("BANJO_TERRAIN_CACHE", cache.string().c_str(), 1);
 #endif
     const std::vector<std::pair<std::string_view, std::function<void()>>> tests{
+        {"cut surface has native walls slopes and restart",cutSurfaceHasNativeWallsSlopesAndRestart},
         {"column surface has native tops walls voids and restart",columnSurfaceHasNativeTopsWallsVoidsAndRestart},
         {"column surface supports glass oak and iron",columnSurfaceSupportsGlassOakAndIron},
         {"native players have separate accepted actuator accounts",nativePlayersHaveSeparateAcceptedActuatorAccounts},

@@ -2163,8 +2163,8 @@ def normalise_terrain(terrain: Any) -> dict[str, Any]:
         raise ValueError(f"terrain.generate must be one of {list(TERRAIN_KINDS)}, not {kind!r}")
     out["generate"] = generate
     if 'surface' in terrain:
-        if terrain['surface'] not in ('smooth', 'columns'):
-            raise ValueError('terrain.surface must be smooth or columns')
+        if terrain['surface'] not in ('smooth', 'cuts', 'columns'):
+            raise ValueError('terrain.surface must be smooth, cuts or columns')
         out['surface'] = terrain['surface']
     edits = terrain.get("edits") or []
     if not isinstance(edits, list) or len(edits) > 400:

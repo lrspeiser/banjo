@@ -31,8 +31,45 @@ test('dig square is green only for a fresh ready observation; refusals are red',
   assert.equal(toolTargetColor({ready:false,state:'checking'}),0xe7bf65);
 });
 import {terrainMaterial} from '../playground/terrain_material.js';
+import {baselineHeightAt,cutHeightAt,walkCutSurface,cutWallBands,cutRimSegments} from '../playground/cut_surface.js';
 
-for(const surface of ['smooth','columns'])test(surface+' full-terrain catchup reuses the mesh and streams variable runs once',()=>{
+test('smooth hills and local cuts retain exact depth, volume and chunk seam ownership',()=>{
+  const g={nx:65,nz:5,dx:.25,x0:0,z0:0};
+  const base=Float32Array.from({length:g.nx*g.nz},(_,k)=>.2*(k%g.nx)*g.dx+.1*Math.floor(k/g.nx)*g.dx);
+  const heights=base.slice(),c=2*g.nx+31,x=31*g.dx,z=2*g.dx;
+  const before=[];walkCutSurface(g,base,heights,f=>before.push(f));
+  assert.equal(before.filter(f=>!f.top).length,0,'no untouched hill steps');
+  heights[c]-=.2;
+  assert.ok(Math.abs(cutHeightAt(g,base,heights,x+.1,z)-baselineHeightAt(g,base,x+.1,z)+.2)<1e-7);
+  assert.equal(cutHeightAt(g,base,heights,x+.13,z),baselineHeightAt(g,base,x+.13,z),'neighbor unchanged');
+  const all=[];walkCutSurface(g,base,heights,f=>all.push(f));
+  assert.equal(all.filter(f=>!f.top).length,16,'four walls, two halves, two triangles');
+  assert.equal(before.flatMap(f=>cutRimSegments(g,base,base,f)).length,0,'no natural hill outlines');
+  for(const f of all.filter(f=>!f.top)) {
+    const edges=cutRimSegments(g,base,heights,f);
+    assert.equal(edges.length,4,'two physical edges; no diagonal');
+    for(const p of edges)assert.ok(f.points.includes(p),'outline adds no depth or detached edges');
+  }
+  const chunks=[];for(let i=0;i<g.nx;i+=32)walkCutSurface(g,base,heights,f=>chunks.push(f),[i,0,32,g.nz]);
+  const ordered=faces=>faces.map(f=>JSON.stringify(f)).sort();assert.deepEqual(ordered(chunks),ordered(all));
+  const area=faces=>faces.filter(f=>f.top).reduce((s,{points:[a,b,c]})=>s+Math.abs((b[0]-a[0])*(c[2]-a[2])-(b[2]-a[2])*(c[0]-a[0]))/2,0);
+  assert.equal(area(all),g.nx*g.nz*g.dx*g.dx,'complete column area without overlap');
+  const volume=faces=>faces.filter(f=>f.top).reduce((s,{points:[a,b,c]})=>s+Math.abs((b[0]-a[0])*(c[2]-a[2])-(b[2]-a[2])*(c[0]-a[0]))/2*(a[1]+b[1]+c[1])/3,0);
+  assert.ok(Math.abs(volume(before)-volume(all)-g.dx*g.dx*.2)<1e-8,'rendered cut equals volume removed');
+});
+
+test('cut walls expose actual bands and target stays inside selected sharp cell',()=>{
+  const face={column:0,points:[[0,0,0],[0,1,0],[0,1,1]]};
+  const runs={count:[2],stride:2,top:[.5,1],kind:[1,2]},bands=[];
+  cutWallBands(face,runs,-1,(kind,points)=>bands.push({kind,points}));
+  assert.deepEqual([...new Set(bands.map(f=>f.kind))],[1,2]);
+  for(const f of bands)assert.ok(f.points.every(p=>f.kind===1?p[1]<=.5:p[1]>=.5));
+  const g={nx:4,nz:4,dx:.25,x0:0,z0:0,surface:'cuts'},base=new Float32Array(16),h=base.slice();h[5]=-.2;
+  const path=terrainTargetPath([.25,-.2,.25],g,(x,z)=>cutHeightAt(g,base,h,x,z));
+  for(let k=1;k<path.length;k+=3)assert.ok(Math.abs(path[k]+.188)<1e-7,'target follows cut floor, not rim');
+});
+
+for(const surface of ['smooth','columns','cuts'])test(surface+' full-terrain catchup reuses the mesh and streams variable runs once',()=>{
   const source=readFileSync(new URL('../playground/world.js',import.meta.url),'utf8');
   const part=(start,end)=>source.slice(source.indexOf('function '+start),source.indexOf('function '+end));
   const code=part('markColumnFaces','buildColumnFaces')+part('decodeRuns','runsRoom')+part('patchRuns','standingOn')+
@@ -61,7 +98,7 @@ for(const surface of ['smooth','columns'])test(surface+' full-terrain catchup re
     runs_b64:Buffer.from(raw).toString('base64')};
   const mesh=ground.mesh,water=ground.water,seen=ground.seen;
   refreshTerrain(block);
-  assert.equal(rebuilt,0);assert.equal(paints,6);assert.equal(normals,surface==='columns'?0:1);
+  assert.equal(rebuilt,0);assert.equal(paints,6);assert.equal(normals,surface==='smooth'?1:0);
   assert.equal(ground.mesh,mesh);assert.equal(ground.water,water);assert.equal(ground.seen,seen);
   assert.deepEqual([...ground.heights],[1,2,3,4,5,6]);assert.equal(ground.runs.count[3],5);
   for(let c=0;c<6;c++)for(let v=0;v<vertices;v++)
@@ -130,22 +167,25 @@ test('render chunks preserve every face and material across cut and void seams',
   assert.deepEqual([...columnChunkIds(g,[31,12,1,1],0)],[0],'exploration repaints only the owning chunk');
 });
 
-test('shipped chunk renderer replaces edited neighbors, keeps distant meshes and disposes replaced geometry',()=>{
+for(const surface of ['columns','cuts'])test(surface+' shipped chunk renderer replaces edited neighbors, keeps distant meshes and disposes replaced geometry',()=>{
   const source=readFileSync(new URL('../playground/world.js',import.meta.url),'utf8');
   const code=source.slice(source.indexOf('function markColumnFaces'),source.indexOf('function buildFaces'));
-  const g={nx:65,nz:34,dx:.25,x0:0,z0:0,surface:'columns'},H=new Float32Array(g.nx*g.nz);
+  const g={nx:65,nz:34,dx:.25,x0:0,z0:0,surface},H=new Float32Array(g.nx*g.nz);
   const runs={stride:1,count:new Uint8Array(H.length).fill(1),kind:new Uint8Array(H.length),top:new Float32Array(H.length)};
-  for(let c=0;c<H.length;c++)H[c]=runs.top[c]=1+c%5*.1;
-  const ground={grid:g,runs,heights:H,floor:0,faceChunks:new Map(),dirtyFaceChunks:new Set(),faceMaterial:null};
+  for(let c=0;c<H.length;c++)H[c]=runs.top[c]=1;
+  const ground={grid:g,runs,heights:H,baseline:H.slice(),materialCells:{material:new THREE.MeshStandardMaterial()},floor:0,faceChunks:new Map(),dirtyFaceChunks:new Set(),faceMaterial:null};
   const scene=new THREE.Scene(),trace={terrain:[]};
-  const {markColumnFaces,buildColumnFaces}=new Function('ground','scene','trace','THREE','dress','groundSeen',
-    'GROUND_COLOURS','GROUND_UNSEEN','walkColumnFaces','columnChunkIds','columnChunkBox',code+
-    '\nreturn {markColumnFaces,buildColumnFaces};')(ground,scene,trace,THREE,x=>x,()=>true,
-      [new THREE.Color('#8996a6')],new THREE.Color('#2b2f36'),walkColumnFaces,columnChunkIds,columnChunkBox);
-  markColumnFaces([0,0,g.nx,g.nz],0);buildColumnFaces();
+  const {markColumnFaces,buildColumnFaces,buildCutFaces}=new Function('ground','scene','trace','THREE','dress','groundSeen',
+    'GROUND_COLOURS','GROUND_UNSEEN','walkColumnFaces','columnChunkIds','columnChunkBox',
+    'baselineHeightAt','walkCutSurface','cutWallBands','cutRimSegments',code+
+    '\nreturn {markColumnFaces,buildColumnFaces,buildCutFaces};')(ground,scene,trace,THREE,x=>x,()=>true,
+      [new THREE.Color('#8996a6')],new THREE.Color('#2b2f36'),walkColumnFaces,columnChunkIds,columnChunkBox,
+      baselineHeightAt,walkCutSurface,cutWallBands,cutRimSegments);
+  const build=surface==='cuts'?buildCutFaces:buildColumnFaces;
+  markColumnFaces([0,0,g.nx,g.nz],0);build();
   assert.equal(ground.faceChunks.size,6);const before=new Map(ground.faceChunks);
   const disposed=[];for(const [id,mesh] of before)mesh.geometry.addEventListener('dispose',()=>disposed.push(id));
-  const c=12*g.nx+31;H[c]=.2;markColumnFaces([31,12,1,1]);buildColumnFaces();
+  const c=12*g.nx+31;H[c]=.2;markColumnFaces([31,12,1,1]);build();
   assert.deepEqual(disposed,[0,1]);
   for(const id of [2,3,4,5])assert.equal(ground.faceChunks.get(id),before.get(id));
   assert.equal(scene.children.length,6,'replacement does not retain stale meshes');
@@ -154,7 +194,7 @@ test('shipped chunk renderer replaces edited neighbors, keeps distant meshes and
   assert.equal(ray.intersectObjects(rays)[0].distance,.125,'new seam wall is present');
   assert.equal(trace.terrain[1].chunks,2);
   assert.ok(trace.terrain[1].vertices<trace.terrain[0].vertices);
-  for(const mesh of ground.faceChunks.values())mesh.geometry.dispose();ground.faceMaterial.dispose();
+  for(const mesh of ground.faceChunks.values())mesh.geometry.dispose();ground.faceMaterial.dispose();ground.materialCells.material.dispose();
 });
 
 test('shipped exploration repaints changed cells even when the known count stays constant',()=>{

@@ -113,6 +113,8 @@ void TerrainField::restore(const State &s) {
     // allocations. The saved rock floor is not recomputed from the cut surface.
     TerrainField candidate(grid_, s.beds, s.soil, s.sand, s.loose, s.moisture);
     candidate.column_surface_ = column_surface_;
+    candidate.cut_surface_ = cut_surface_;
+    candidate.baseline_ = baseline_;
     candidate.floor_ = s.floor;
     candidate.ledger_ = s.ledger;
     const auto residual = candidate.residual();
@@ -225,6 +227,8 @@ TerrainField::TerrainField(Grid grid, Beds beds, std::vector<double> soil_m,
     floor_ = lowest_rock - kEarthDepthM;
     chunks_x_ = std::max(1, (grid_.nx - 2) / kChunkCells + 1);
     chunks_z_ = std::max(1, (grid_.nz - 2) / kChunkCells + 1);
+    baseline_.resize(n);
+    for (std::size_t c=0;c<n;++c) baseline_[c]=static_cast<float>(height(c));
     resetLedger();
 }
 
@@ -275,13 +279,19 @@ void TerrainField::takeRockDownTo(std::size_t c, double bottom, Volumes &took) {
 }
 
 std::optional<std::size_t> TerrainField::cellAt(double x, double z) const {
-    const long i = column_surface_ ? static_cast<long>(std::floor((x-grid_.x0)/grid_.dx+.5)) : std::lround((x - grid_.x0) / grid_.dx);
-    const long j = column_surface_ ? static_cast<long>(std::floor((z-grid_.z0)/grid_.dx+.5)) : std::lround((z - grid_.z0) / grid_.dx);
+    const long i = (column_surface_ || cut_surface_) ? static_cast<long>(std::floor((x-grid_.x0)/grid_.dx+.5)) : std::lround((x - grid_.x0) / grid_.dx);
+    const long j = (column_surface_ || cut_surface_) ? static_cast<long>(std::floor((z-grid_.z0)/grid_.dx+.5)) : std::lround((z - grid_.z0) / grid_.dx);
     if (i < 0 || j < 0 || i >= grid_.nx || j >= grid_.nz) return std::nullopt;
     return grid_.at(static_cast<int>(i), static_cast<int>(j));
 }
 
 double TerrainField::heightAt(double x, double z) const {
+    if (cut_surface_) {
+        const int i=std::clamp(static_cast<int>(std::floor((x-grid_.x0)/grid_.dx+.5)),0,grid_.nx-1);
+        const int j=std::clamp(static_cast<int>(std::floor((z-grid_.z0)/grid_.dx+.5)),0,grid_.nz-1);
+        const auto c=grid_.at(i,j);
+        return baselineHeightAt(x,z)+(height(c)-baseline_[c]);
+    }
     if (column_surface_) {
         const int i=std::clamp(static_cast<int>(std::floor((x-grid_.x0)/grid_.dx+.5)),0,grid_.nx-1);
         const int j=std::clamp(static_cast<int>(std::floor((z-grid_.z0)/grid_.dx+.5)),0,grid_.nz-1);
@@ -299,6 +309,16 @@ double TerrainField::heightAt(double x, double z) const {
     // this height is placed on the surface it will actually touch.
     if (u >= v) return h00 + u * (h10 - h00) + v * (h11 - h10);
     return h00 + v * (h01 - h00) + u * (h11 - h01);
+}
+
+double TerrainField::baselineHeightAt(double x, double z) const {
+    const double fx=std::clamp((x-grid_.x0)/grid_.dx,0.0,grid_.nx-1.0);
+    const double fz=std::clamp((z-grid_.z0)/grid_.dx,0.0,grid_.nz-1.0);
+    const int i=std::min(grid_.nx-2,static_cast<int>(fx)),j=std::min(grid_.nz-2,static_cast<int>(fz));
+    const double u=fx-i,v=fz-j;
+    const double a=baseline_[grid_.at(i,j)],b=baseline_[grid_.at(i+1,j)];
+    const double c=baseline_[grid_.at(i,j+1)],d=baseline_[grid_.at(i+1,j+1)];
+    return u>=v ? a+u*(b-a)+v*(d-b) : a+v*(c-a)+u*(d-c);
 }
 
 double TerrainField::slopeDeg(std::size_t c) const {
@@ -338,7 +358,7 @@ void TerrainField::touched(std::size_t c) {
     for (const int x : {cx, cx2})
         for (const int z : {cz, cz2})
             if (x >= 0 && z >= 0) dirty_chunks_.insert(z * chunks_x_ + x);
-    if(column_surface_)for(const auto [di,dj]:{std::pair{-1,0},std::pair{1,0},std::pair{0,-1},std::pair{0,1}}) {
+    if(column_surface_ || cut_surface_)for(const auto [di,dj]:{std::pair{-1,0},std::pair{1,0},std::pair{0,-1},std::pair{0,1}}) {
         const int x=i+di,z=j+dj;
         if(x>=0 && z>=0 && x<grid_.nx && z<grid_.nz)
             dirty_chunks_.insert(std::min(z/kChunkCells,chunks_z_-1)*chunks_x_+std::min(x/kChunkCells,chunks_x_-1));

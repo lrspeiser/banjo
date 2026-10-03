@@ -27,6 +27,7 @@ import { gameNavigation, showSaveStatus, screenUrl, thumbnail, massLabel } from 
 import { conditionPanel } from "/body_condition.js";
 import { GROUND_APPEARANCE, materialAppearance, terrainCellAt, terrainTargetPath, exposedRunKind, toolTargetFeedback, toolTargetColor, collectedToolMaterials, toolOutcomeFeedback, makeTargetHover, columnTopData, walkColumnFaces, columnChunkIds, columnChunkBox } from "/material_appearance.js";
 import { terrainMaterial } from "/terrain_material.js";
+import { baselineHeightAt, cutHeightAt, walkCutSurface, cutWallBands, cutRimSegments } from "/cut_surface.js";
 import { renderPlayerGuidance } from "/player_guidance.js";
 import { constructionWrite, constructionControls } from "/construction_ui.js";
 
@@ -887,6 +888,7 @@ const GROUND_UNSEEN = new THREE.Color(0x2b2f36);
 const FOAM_COUNT = 700;
 const WATER_EASE_MS = 260;
 const ground = {
+  baseline:null,
   grid: null, heights: null, surfaces: null, view: null, colors:null,
   // What every column is MADE of, all the way down, as the engine sends it: the
   // runs, held the way the engine holds them -- where each column's runs start,
@@ -914,6 +916,7 @@ function bytesOf(b64) {
 function groundAt(x, z) {
   const g = ground.grid;
   if (!g) return 0;
+  if(g.surface==="cuts")return cutHeightAt(g,ground.baseline,ground.heights,x,z);
   if(g.surface==="columns") {
     const i=clamp(Math.floor((x-g.x0)/g.dx+.5),0,g.nx-1),j=clamp(Math.floor((z-g.z0)/g.dx+.5),0,g.nz-1);
     return ground.heights[j*g.nx+i];
@@ -1142,9 +1145,57 @@ const FACE_STEP_M = 0.35;
 const FACE_BAND_M = 0.01;      // thinner than this is not a band anyone can see
 
 function markColumnFaces(box,halo=1) {
-  if(ground.grid?.surface==="columns")
+  if(["columns","cuts"].includes(ground.grid?.surface))
     for(const id of columnChunkIds(ground.grid,box,halo))ground.dirtyFaceChunks.add(id);
   ground.facesStale=true;
+}
+
+function buildCutFaces() {
+  const started=performance.now(),g=ground.grid;
+  const ids=[...ground.dirtyFaceChunks];ground.dirtyFaceChunks.clear();
+  if(!ground.faceMaterial)ground.faceMaterial=dress(new THREE.MeshStandardMaterial({
+    vertexColors:true,roughness:.97,metalness:0,side:THREE.DoubleSide}),"ground");
+  let vertices=0;
+  for(const id of ids) {
+    const was=ground.faceChunks.get(id);
+    if(was){scene.remove(was);was.geometry.dispose();ground.faceChunks.delete(id);}
+    const top=[],walls=[],colors=[],rim=[];
+    walkCutSurface(g,ground.baseline,ground.heights,face=>{
+      if(face.top){top.push(...face.points.flat());return;}
+      if(groundSeen(face.column))rim.push(...cutRimSegments(g,ground.baseline,ground.heights,face).flat());
+      cutWallBands(face,ground.runs,ground.floor,(kind,points)=>{
+        const color=groundSeen(face.column)?(GROUND_COLOURS[kind] || GROUND_COLOURS[0]):GROUND_UNSEEN;
+        walls.push(...points.flat());for(let k=0;k<3;k++)colors.push(color.r,color.g,color.b);
+      });
+    },columnChunkBox(g,id));
+    if(!top.length)continue;
+    const geometry=new THREE.BufferGeometry(),positions=new Float32Array([...top,...walls]);
+    geometry.setAttribute("position",new THREE.BufferAttribute(positions,3));
+    geometry.setAttribute("color",new THREE.BufferAttribute(new Float32Array([...top.map(()=>1),...colors]),3));
+    geometry.addGroup(0,top.length/3,0);geometry.addGroup(top.length/3,walls.length/3,1);
+    geometry.computeVertexNormals();geometry.computeBoundingSphere();
+    // Keep natural hillside lighting smooth, with hard normals on cut walls.
+    const normals=geometry.attributes.normal.array,e=g.dx/2;
+    for(let k=0;k<top.length;k+=3) {
+      const x=positions[k],z=positions[k+2];
+      const nx=(baselineHeightAt(g,ground.baseline,x-e,z)-baselineHeightAt(g,ground.baseline,x+e,z))/(2*e);
+      const nz=(baselineHeightAt(g,ground.baseline,x,z-e)-baselineHeightAt(g,ground.baseline,x,z+e))/(2*e);
+      const size=Math.hypot(nx,1,nz);normals.set([nx/size,1/size,nz/size],k);
+    }
+    const mesh=new THREE.Mesh(geometry,[ground.materialCells.material,ground.faceMaterial]);
+    if(rim.length) {
+      const edgeGeometry=new THREE.BufferGeometry();
+      edgeGeometry.setAttribute("position",new THREE.BufferAttribute(new Float32Array(rim),3));
+      const edgeMaterial=new THREE.LineBasicMaterial({color:0x493321,transparent:true,opacity:.8,depthWrite:false});
+      const edges=new THREE.LineSegments(edgeGeometry,edgeMaterial);
+      edges.raycast=()=>{};edges.renderOrder=3;mesh.add(edges);
+      geometry.addEventListener("dispose",()=>{edgeGeometry.dispose();edgeMaterial.dispose();});
+    }
+    mesh.castShadow=mesh.receiveShadow=true;ground.faceChunks.set(id,mesh);scene.add(mesh);
+    vertices+=positions.length/3;
+  }
+  if(trace.terrain.length<32)trace.terrain.push({surface:"cuts",chunks:ids.length,
+    vertices,build_ms:+(performance.now()-started).toFixed(3)});
 }
 
 function buildColumnFaces() {
@@ -1181,6 +1232,7 @@ function buildFaces() {
     if(ground.runs && ground.heights)buildColumnFaces();
     return;
   }
+  if(ground.grid?.surface==="cuts")buildCutFaces();
   if (ground.faces) {
     scene.remove(ground.faces);
     ground.faces.geometry.dispose();
@@ -1201,6 +1253,7 @@ function buildFaces() {
   // The step between two columns, split at the runs of the taller one: what the
   // drop actually cuts through.
   const step = (a, b, along) => {
+    if(g.surface==="cuts")return; // exact cut walls are in the chunk meshes
     const ha = H[a], hb = H[b];
     if (!(Math.abs(ha - hb) > FACE_STEP_M)) return;
     const high = ha > hb ? a : b, lo = Math.min(ha, hb), hi = Math.max(ha, hb);
@@ -1316,7 +1369,7 @@ function repaintSeen(was=null,previous=null) {
     const width=ground.grid.surface==="columns"?12:3;
     col.addUpdateRange?.(width*k,width);
     ground.materialCells?.update(k);
-    if(ground.grid.surface==="columns")markColumnFaces([k%ground.grid.nx,Math.floor(k/ground.grid.nx),1,1],0);
+    if(["columns","cuts"].includes(ground.grid.surface))markColumnFaces([k%ground.grid.nx,Math.floor(k/ground.grid.nx),1,1],0);
   }
   if(!changed)return;
   col.needsUpdate = true;
@@ -1329,6 +1382,7 @@ function drawTerrain(block) {
   const { nx, nz, cell_m: dx, x0_m: x0, z0_m: z0 } = block.grid;
   ground.grid = { nx, nz, dx, x0, z0, surface:block.surface || "smooth" };
   ground.heights = new Float32Array(bytesOf(block.heights_b64).buffer);
+  ground.baseline=block.baseline_b64 ? new Float32Array(bytesOf(block.baseline_b64).buffer) : null;
   ground.surfaces = bytesOf(block.ground_b64);
   // The runs come over as millimetres above the ground's own floor, which is the
   // level the water block is measured from as well.
@@ -1366,6 +1420,7 @@ function drawTerrain(block) {
   geometry.computeVertexNormals();
   ground.materialCells=terrainMaterial(ground.grid,colours,groundKind,groundSeen);
   ground.mesh = new THREE.Mesh(geometry, ground.materialCells.material);
+  ground.mesh.visible=ground.grid.surface!=="cuts"; // cut tops/walls are chunk-owned
   // The ground catches what the room drops on it, and casts too: a valley
   // whose own hills throw no shade at a low sun is a valley with no shape.
   ground.mesh.castShadow = true;
@@ -1458,7 +1513,7 @@ function patchTerrain(changed) {
   if(heightChanged)pos.needsUpdate = true;
   col.needsUpdate = true;
   if(heightChanged) {
-    if(g.surface!=="columns")ground.mesh.geometry.computeVertexNormals();
+    if(g.surface==="smooth")ground.mesh.geometry.computeVertexNormals();
     ground.mesh.geometry.computeBoundingSphere();
   }
   // The step a dig leaves is what the faces are drawn on, so they are stood up

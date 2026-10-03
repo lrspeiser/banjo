@@ -633,8 +633,28 @@ void columnSurfaceOwnsExactBoundsWithoutChangingVolumes() {
     near(field.heightAt(-.874,-2),1,0,"restored height remains flat in its column");
 }
 
+void cutsPreserveOriginalSlopesAndExactLocalDepth() {
+    Grid g{8,8,.25,0,0};std::vector<double> rock(g.cells()),soil(g.cells(),.4),sand(g.cells(),0);
+    for(int j=0;j<g.nz;j++)for(int i=0;i<g.nx;i++)rock[g.at(i,j)]=.2*g.xOf(i)+.1*g.zOf(j);
+    TerrainField field(g,rock,soil,sand);field.setCutSurface(true);
+    require(field.cellAt(-g.dx/2,0)==g.at(0,0),"negative half boundary belongs to first cut cell");
+    const auto baseline=field.baseline();const double x=g.xOf(3),z=g.zOf(3);
+    for(double dx:{-.1,.0,.1})for(double dz:{-.1,.0,.1})
+        near(field.heightAt(x+dx,z+dz),field.baselineHeightAt(x+dx,z+dz),1e-7,"uncut hill retains slope");
+    (void)field.dig(x,z,x,z,.1,.2);
+    near(field.heightAt(x+.1,z)-field.baselineHeightAt(x+.1,z),-.2,1e-7,"whole cut cell has exact depth");
+    near(field.heightAt(x+.13,z)-field.baselineHeightAt(x+.13,z),0,1e-7,"neighbor is not interpolated into hole");
+    const double before=field.heightAt(x+.1,z);
+    TerrainField restored(g,rock,soil,sand);restored.setCutSurface(true);restored.restore(field.state());
+    require(restored.baseline()==baseline,"restore retains original generated baseline");
+    near(restored.heightAt(x+.1,z),before,0,"restore preserves cut geometry exactly");
+    for(double v:{field.residual().rock_m3,field.residual().soil_m3,field.residual().sand_m3})
+        near(v,0,1e-10,"cut geometry retains material ledger");
+}
+
 int main() {
     const std::vector<std::pair<std::string_view, std::function<void()>>> tests{
+        {"cuts preserve original slopes and exact local depth",cutsPreserveOriginalSlopesAndExactLocalDepth},
         {"column surface owns exact bounds without changing volumes",columnSurfaceOwnsExactBoundsWithoutChangingVolumes},
         {"unsettled state resumes exactly", unsettledStateResumesExactly},
         {"invalid continuation is atomic", invalidContinuationIsAtomic},

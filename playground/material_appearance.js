@@ -192,9 +192,13 @@ export function terrainTargetPath(point, grid, heightAt) {
     .flatMap(([i,j])=>[x+i*half,point[1]+.012,z+j*half]);
   return [[-1,-1],[0,-1],[1,-1],[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1]]
     .flatMap(([i,j])=>{
-      const px=Math.max(grid.x0,Math.min(grid.x0+(grid.nx-1)*grid.dx,x+i*half));
-      const pz=Math.max(grid.z0,Math.min(grid.z0+(grid.nz-1)*grid.dx,z+j*half));
-      return [px,heightAt(px,pz)+.012,pz];
+      const px=grid.surface==="cuts" ? x+i*half : Math.max(grid.x0,Math.min(grid.x0+(grid.nx-1)*grid.dx,x+i*half));
+      const pz=grid.surface==="cuts" ? z+j*half : Math.max(grid.z0,Math.min(grid.z0+(grid.nz-1)*grid.dx,z+j*half));
+      // Stay just inside the selected cell at a discontinuous cut boundary.
+      const inset=grid.surface==="cuts" ? grid.dx*1e-5 : 0;
+      const hx=px===x ? px : px+Math.sign(x-px)*inset;
+      const hz=pz===z ? pz : pz+Math.sign(z-pz)*inset;
+      return [px,heightAt(hx,hz)+.012,pz];
     });
 }
 

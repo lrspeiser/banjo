@@ -1601,13 +1601,15 @@ nlohmann::json terrainBlock(const banjo::terrain::Environment &env, const std::v
     const std::vector<std::uint8_t> runs = env.runsPacked();
     const banjo::terrain::Landscape &land = env.landscape();
     return {{"kind", land.kind},
-            {"surface",env.terrain().columnSurface()?"columns":"smooth"},
+            {"surface",env.terrain().surfaceGeometry()},
             {"beyond", beyondBlock(env)},
             {"carried", carriedJson(env, objects_kg, held_objects_kg)},
             {"grid", {{"nx", g.nx}, {"nz", g.nz}, {"cell_m", g.dx}, {"x0_m", g.x0}, {"z0_m", g.z0}}},
             {"chunks", {env.terrain().chunksX(), env.terrain().chunksZ()}},
             {"heights_b64", banjo::terrain::encodeBase64(heights.data(), heights.size() * sizeof(float))},
             {"ground_b64", banjo::terrain::encodeBase64(ground.data(), ground.size())},
+            {"baseline_b64", env.terrain().cutSurface() ? nlohmann::json(banjo::terrain::encodeBase64(
+                env.terrain().baseline().data(),env.terrain().baseline().size()*sizeof(float))) : nlohmann::json(nullptr)},
             // What each column is made of all the way down, so the page can draw
             // a cut face in the materials it cuts. Heights in it are millimetres
             // above the ground's floor, which the water block also measures from.

@@ -242,6 +242,13 @@ public:
     // layered columns; this changes the surface contacted, not their contents.
     void setColumnSurface(bool enabled) { column_surface_ = enabled; }
     [[nodiscard]] bool columnSurface() const { return column_surface_; }
+    void setCutSurface(bool enabled) { cut_surface_ = enabled; }
+    [[nodiscard]] bool cutSurface() const { return cut_surface_; }
+    [[nodiscard]] const char *surfaceGeometry() const { return column_surface_ ? "columns" : cut_surface_ ? "cuts" : "smooth"; }
+    // Generated triangular landscape plus a cell-local displacement. Changes
+    // retain their exact height instead of influencing the adjacent hillside.
+    [[nodiscard]] const std::vector<float> &baseline() const { return baseline_; }
+    [[nodiscard]] double baselineHeightAt(double x, double z) const;
     [[nodiscard]] double height(std::size_t c) const {
         return rockTop(c) + soil_[c] + sand_[c] + loose_[c];
     }
@@ -414,6 +421,8 @@ private:
 
     Grid grid_;
     bool column_surface_{};
+    bool cut_surface_{};
+    std::vector<float> baseline_;
     Beds beds_;
     std::size_t workings_{};     // how many columns hold one, so a world with
                                  // none pays nothing for them

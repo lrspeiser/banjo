@@ -297,6 +297,7 @@ private:
     void stepNetwork(double dt_s);
     std::vector<float> chunkHeights(int chunk) const;
     std::vector<std::array<Vec3,3>> columnTriangles(int chunk) const;
+    std::vector<std::array<Vec3,3>> cutTriangles(int chunk) const;
     // The two extra colliders a chunk with a working needs, and whether it has
     // one at all (docs/earth-and-mining-plan.md, stage 3).
     [[nodiscard]] std::vector<float> workingFloor(int chunk) const;

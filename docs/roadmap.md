@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Sharp excavation, October 3:** [Native/view comparison](sharp-excavation-checkpoint.md) adds an opt-in smooth-hills/sharp-cuts terrain mode. Original sloping triangles receive cell-local measured height changes, with matching native walls, target and placement sampling, saved baseline checks and chunk updates. Paid gathering/private storage/peer/restart, analytical geometry and same-condition glass/oak/iron cut-bed support pass. Terrain volumes, tool work and settling laws remain unchanged; timed erosion is design-only. Existing worlds keep their saved modes; migration, night/human recognition, openings, full-load cost and wider construction/R4/R5 remain open; R3 stays paused.
+
 **Tool HUD, October 3:** [Interaction checkpoint](tool-hud-checkpoint.md) closes the close-contact/held-mesh/clutter/dwell/collection-display slice with a shared authored-tool contract. Next: owner usability feedback, repair the stale full paid-table/process test fixture, and continue highlighted paid preparation and complete saved construction steps. Full supports/skills/customization acceptance remains open.
 
 **Clicked digging, October 3:** [Verified target prerequisite](cursor-dig-target-checkpoint.md) fixes camera-centre digging and queued/sidebar target loss, adds green/red/amber ground readiness and rejects stale hover rays. Fifty-one checks and ordinary collection/reach refusal pass. Next highlighted paid pad preparation and complete saved construction steps; full construction/support/skill/customization acceptance remains open.

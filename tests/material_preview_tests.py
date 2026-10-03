@@ -159,6 +159,10 @@ class PlayerMaterials(unittest.TestCase):
         self.surface='columns'
         self.test_actual_tool_exposes_soil_and_private_storage_peer_restart_agree()
 
+    def test_cut_surface_exposes_soil_and_private_storage_peer_restart_agree(self):
+        self.surface='cuts';self.contact_distance=.45
+        self.test_actual_tool_exposes_soil_and_private_storage_peer_restart_agree()
+
     def test_close_contact_exposes_soil_and_private_storage_peer_restart_agree(self):
         self.contact_distance=.45
         self.test_actual_tool_exposes_soil_and_private_storage_peer_restart_agree()
