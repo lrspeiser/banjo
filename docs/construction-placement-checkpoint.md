@@ -2,7 +2,9 @@
 
 October 3, 2026. Based on published main `f14c346`, following the
 [foundation and guidance checkpoint](construction-guidance-checkpoint.md).
-Implementation publication is recorded below after the verified main push.
+Verified implementation published to GitHub main as
+`de19d60c` (October 3, 2026). Publication evidence includes the 47 focused
+checks, source registration and 1,267 valid local documentation targets.
 The full 14-item construction goal remains active and unfinished.
 
 ## Implemented
