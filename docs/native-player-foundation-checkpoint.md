@@ -6,6 +6,9 @@ and save contract, **not playable native walking or swimming**. The browser's
 human camera and AI waypoint movement still use the existing reported poses.
 The full active scope and R5 remain open; R3 remains owner-paused.
 
+Implementation **`8d417b89bd4f40d675243757ec39af34d2e84bc7`** is published
+on GitHub main. Preview servers continue to use their existing binaries.
+
 [Machine-readable evidence](evidence/native-player-foundation-checkpoint.json)
 records the source/binary hashes, declared conditions and focused checks.
 

@@ -92,5 +92,6 @@
     "physical cargo",
     "full momentum/energy closure",
     "cross-platform/GPU determinism"
-  ]
+  ],
+  "implementation_revision": "8d417b89bd4f40d675243757ec39af34d2e84bc7"
 }
