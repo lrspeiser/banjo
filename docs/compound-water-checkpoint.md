@@ -1,8 +1,8 @@
 # Exact compound objects in native water — October 3, 2026
 
 Implemented and measured on Windows 11 x64, MSVC 19.44.35228, CPU reference,
-against main base `c22a226`. Publication revision will be recorded after the
-outgoing checks pass. [Machine-readable evidence](evidence/compound-water-checkpoint.json)
+against main base `c22a226`. Implementation **`483d92b0762ebe222021bb19884ff5994b714a7c`**
+is published on GitHub main. [Machine-readable evidence](evidence/compound-water-checkpoint.json)
 records source/binary hashes and the six baseline/fixed cases. This advances the water portion of R5; it does not close
 native player bodies, physical cargo or the broader active goal.
 
