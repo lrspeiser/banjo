@@ -1,5 +1,8 @@
 # Readable world and useful progression — October 3, 2026
 
+Published implementation: `59f4efe` on GitHub main. This publication record
+does not close the full active scope.
+
 Owner scope: material readability; an opening useful product with a complete
 supply path and no purchase-only requirement; one next action/readiness model
 across all game screens and chat; reliable hauling, physical avatar water
