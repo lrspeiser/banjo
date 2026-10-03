@@ -25,7 +25,7 @@ import { makeTools } from "/tools.js";
 import { makeWorkbench } from "/workbench.js";
 import { gameNavigation, showSaveStatus, screenUrl, thumbnail, massLabel } from "/game_menu.js";
 import { conditionPanel } from "/body_condition.js";
-import { GROUND_APPEARANCE, materialAppearance, terrainCellAt, terrainTargetPath, exposedRunKind, toolTargetFeedback, collectedToolMaterials, columnTopData, walkColumnFaces } from "/material_appearance.js";
+import { GROUND_APPEARANCE, materialAppearance, terrainCellAt, terrainTargetPath, exposedRunKind, toolTargetFeedback, collectedToolMaterials, columnTopData, walkColumnFaces, columnChunkIds, columnChunkBox } from "/material_appearance.js";
 import { terrainMaterial } from "/terrain_material.js";
 import { renderPlayerGuidance } from "/player_guidance.js";
 
@@ -891,6 +891,7 @@ const ground = {
   // what each run is, and the height it reaches. This is what a cut face is
   // drawn from (buildFaces).
   runs: null, floor: 0, faces: null, facesStale: false,
+  faceChunks:new Map(), dirtyFaceChunks:new Set(), faceMaterial:null,
   // What has been seen: a coarse grid of its own, a byte a cell, as the server
   // keeps it. Null until the server sends one, and then every cell is drawn
   // either as its surface or as unknown.
@@ -941,6 +942,9 @@ function waterAt(x, z) {
 
 function clearGround() {
   ground.materialCells?.dispose(); ground.materialCells=null;
+  for(const mesh of ground.faceChunks.values()){scene.remove(mesh);mesh.geometry.dispose();}
+  ground.faceChunks.clear();ground.dirtyFaceChunks.clear();
+  ground.faceMaterial?.dispose();ground.faceMaterial=null;ground.facesStale=false;
   for (const key of ["mesh", "water", "foam", "faces"]) {
     const thing = ground[key];
     if (!thing) continue;
@@ -966,14 +970,13 @@ function clearGround() {
 
 // Whether this ground has been seen. Without a record everything has: a room
 // with no sight block is one nothing keeps fog for.
-function groundSeen(index) {
-  if (!ground.seen || !ground.seenGrid || !ground.grid) return true;
+function groundSeen(index, seen=ground.seen, s=ground.seenGrid) {
+  if (!seen || !s || !ground.grid) return true;
   const { nx, dx, x0, z0 } = ground.grid;
   const x = x0 + (index % nx) * dx, z = z0 + Math.floor(index / nx) * dx;
-  const s = ground.seenGrid;
   const i = Math.floor((x - s.x0_m) / s.cell_m), j = Math.floor((z - s.z0_m) / s.cell_m);
   if (i < 0 || j < 0 || i >= s.nx || j >= s.nz) return true;
-  return ground.seen[j * s.nx + i] !== 0;
+  return seen[j * s.nx + i] !== 0;
 }
 
 function groundKind(index) {
@@ -1136,34 +1139,56 @@ function coverOver(x, y, z) {
 const FACE_STEP_M = 0.35;
 const FACE_BAND_M = 0.01;      // thinner than this is not a band anyone can see
 
+function markColumnFaces(box,halo=1) {
+  if(ground.grid?.surface==="columns")
+    for(const id of columnChunkIds(ground.grid,box,halo))ground.dirtyFaceChunks.add(id);
+  ground.facesStale=true;
+}
+
+function buildColumnFaces() {
+  const started=performance.now(),g=ground.grid,runs=ground.runs;
+  const ids=[...ground.dirtyFaceChunks];ground.dirtyFaceChunks.clear();
+  let vertices=0;
+  if(!ground.faceMaterial)ground.faceMaterial=dress(new THREE.MeshStandardMaterial({
+    vertexColors:true,roughness:.97,metalness:0,side:THREE.DoubleSide}),"ground");
+  for(const id of ids) {
+    const was=ground.faceChunks.get(id);
+    if(was){scene.remove(was);was.geometry.dispose();ground.faceChunks.delete(id);}
+    const points=[],colours=[];
+    walkColumnFaces(g,ground.heights,runs,ground.floor,face=>{
+      if(face.top)return;
+      const color=groundSeen(face.column) ? (GROUND_COLOURS[face.kind] || GROUND_COLOURS[0]) : GROUND_UNSEEN;
+      for(const index of [0,1,2,0,2,3]){points.push(...face.points[index]);colours.push(color.r,color.g,color.b);}
+    },columnChunkBox(g,id));
+    if(!points.length)continue;
+    vertices+=points.length/3;
+    const geometry=new THREE.BufferGeometry();
+    geometry.setAttribute("position",new THREE.BufferAttribute(new Float32Array(points),3));
+    geometry.setAttribute("color",new THREE.BufferAttribute(new Float32Array(colours),3));
+    geometry.computeVertexNormals();geometry.computeBoundingSphere();
+    const mesh=new THREE.Mesh(geometry,ground.faceMaterial);mesh.receiveShadow=true;
+    ground.faceChunks.set(id,mesh);scene.add(mesh);
+  }
+  if(trace.terrain.length<32)trace.terrain.push({surface:"columns",chunks:ids.length,
+    vertices,build_ms:+(performance.now()-started).toFixed(3)});
+}
+
 function buildFaces() {
   ground.facesStale = false;
+  if(ground.grid?.surface==="columns") {
+    if(ground.runs && ground.heights)buildColumnFaces();
+    return;
+  }
   if (ground.faces) {
     scene.remove(ground.faces);
     ground.faces.geometry.dispose();
+    ground.faces.material.dispose();
     ground.faces = null;
   }
   const g = ground.grid, runs = ground.runs;
   if (!g || !runs || !ground.heights) return;
   const H = ground.heights, half = g.dx / 2;
   const points = [], colours = [];
-  if(g.surface==="columns") {
-    walkColumnFaces(g,H,runs,ground.floor,face=>{
-      if(face.top)return; // flat tops have the shared material-cell shader
-      const color=groundSeen(face.column) ? (GROUND_COLOURS[face.kind] || GROUND_COLOURS[0]) : GROUND_UNSEEN;
-      for(const index of [0,1,2,0,2,3]) {points.push(...face.points[index]);colours.push(color.r,color.g,color.b);}
-    });
-    if(points.length) {
-      const geometry=new THREE.BufferGeometry();
-      geometry.setAttribute("position",new THREE.BufferAttribute(new Float32Array(points),3));
-      geometry.setAttribute("color",new THREE.BufferAttribute(new Float32Array(colours),3));
-      geometry.computeVertexNormals();
-      ground.faces=new THREE.Mesh(geometry,dress(new THREE.MeshStandardMaterial({
-        vertexColors:true,roughness:.97,metalness:0,side:THREE.DoubleSide}),"ground"));
-      ground.faces.receiveShadow=true;scene.add(ground.faces);
-    }
-    return;
-  }
   // One band: a vertical quad from `lo` to `hi` in the plane the two columns
   // meet in, across the width of a cell.
   const band = (x0, z0, x1, z1, lo, hi, colour) => {
@@ -1264,31 +1289,37 @@ function buildFaces() {
 // is what makes a machine's going about visibly uncover the room.
 function showSeen(block) {
   if (!block || !block.seen_b64) return;
-  const was = ground.seen ? ground.seen.length : 0;
+  const was=ground.seen,previous=ground.seenGrid;
   const known = block.known_cells || 0;
-  const same = ground.seenGrid && ground.seenGrid.known === known && was === (block.cells || 0);
   ground.seen = bytesOf(block.seen_b64);
   ground.seenGrid = { nx: block.nx, nz: block.nz, cell_m: block.cell_m,
                       x0_m: block.x0_m, z0_m: block.z0_m, known };
-  if (!same) repaintSeen();
+  repaintSeen(was,previous);
 }
 
 // Every cell's colour again, after the edge of what is known has moved. Only the
 // colours: the ground's shape has not changed, so the heights and the normals
 // stand.
 
-function repaintSeen() {
+function repaintSeen(was=null,previous=null) {
   if (!ground.mesh || !ground.grid) return;
   const col = ground.mesh.geometry.attributes.color;
   const count = ground.grid.nx * ground.grid.nz;
+  let changed=false;
   for (let k = 0; k < count; ++k) {
+    if(was && previous && groundSeen(k,was,previous)===groundSeen(k))continue;
+    changed=true;
     paintGround(ground.colors,k);
     if(ground.grid.surface==="columns")for(let v=0;v<4;v++)col.array.set(ground.colors.subarray(3*k,3*k+3),12*k+3*v);
+    const width=ground.grid.surface==="columns"?12:3;
+    col.addUpdateRange?.(width*k,width);
     ground.materialCells?.update(k);
+    if(ground.grid.surface==="columns")markColumnFaces([k%ground.grid.nx,Math.floor(k/ground.grid.nx),1,1],0);
   }
+  if(!changed)return;
   col.needsUpdate = true;
   // The faces of a step are coloured by what has been seen too.
-  ground.facesStale = true;
+  if(ground.grid.surface!=="columns")ground.facesStale=true;
 }
 
 function drawTerrain(block) {
@@ -1339,7 +1370,7 @@ function drawTerrain(block) {
   ground.mesh.receiveShadow = true;
   scene.add(ground.mesh);
   // And the faces of every step in it, in the materials the step cuts through.
-  ground.facesStale = true;
+  markColumnFaces([0,0,nx,nz],0);
 
   // The water: the same points, lifted to the surface where there is water
   // and tucked under the ground where there is none.
@@ -1390,27 +1421,47 @@ function patchTerrain(changed) {
   const patched = changed.runs_b64 ? bytesOf(changed.runs_b64) : null;
   const g = ground.grid;
   const pos = ground.mesh.geometry.attributes.position, col = ground.mesh.geometry.attributes.color;
-  let runAt=0;
+  let runAt=0,modified=false,heightChanged=false;
   for (let j = 0; j < nj; ++j)
     for (let i = 0; i < ni; ++i) {
       const k = (j0 + j) * g.nx + (i0 + i);
+      const heightDiff=ground.heights[k]!==heights[j*ni+i];
+      let different=heightDiff || ground.surfaces[k]!==surfaces[j*ni+i];
+      if(patched && ground.runs) {
+        const runs=ground.runs,n=patched[runAt];
+        different ||= n!==runs.count[k];
+        for(let v=0;v<n && !different;v++) {
+          const at=runAt+1+3*v;
+          different=runs.kind[k*runs.stride+v]!==patched[at] ||
+            runs.top[k*runs.stride+v]!==Math.fround(ground.floor+(patched[at+1]|patched[at+2]<<8)/1000);
+        }
+      }
       ground.heights[k] = heights[j * ni + i];
       ground.surfaces[k] = surfaces[j * ni + i];
       if (patched) runAt=patchRuns(k, patched, runAt);
+      if(!different)continue;
+      modified=true;heightChanged ||= heightDiff;
       paintGround(ground.colors,k);
       if(g.surface==="columns")for(let v=0;v<4;v++) {
         pos.array[12*k+3*v+1]=ground.heights[k];
         col.array.set(ground.colors.subarray(3*k,3*k+3),12*k+3*v);
       } else pos.array[3*k+1]=ground.heights[k];
+      const width=g.surface==="columns"?12:3;
+      if(heightDiff)pos.addUpdateRange?.(width*k,width);
+      col.addUpdateRange?.(width*k,width);
       ground.materialCells.update(k);
+      markColumnFaces([i0+i,j0+j,1,1]);
     }
-  pos.needsUpdate = true;
+  if(!modified)return;
+  if(heightChanged)pos.needsUpdate = true;
   col.needsUpdate = true;
-  ground.mesh.geometry.computeVertexNormals();
-  ground.mesh.geometry.computeBoundingSphere();
+  if(heightChanged) {
+    if(g.surface!=="columns")ground.mesh.geometry.computeVertexNormals();
+    ground.mesh.geometry.computeBoundingSphere();
+  }
   // The step a dig leaves is what the faces are drawn on, so they are stood up
   // again -- once for the frame, however many changes arrive in it.
-  ground.facesStale = true;
+  // markColumnFaces already queued the changed columns and their neighbors.
 }
 
 function refreshTerrain(block) {
@@ -6456,6 +6507,8 @@ const SLOW_FRAME_MS = 60;        // a frame worth naming individually
 const KEEP_SLOW = 12;            // at most this many named per report
 
 const trace = {
+  terrain: [],         // bounded CPU construction measurements, not GPU timings
+  renders: [],         // CPU submission time, including uploads/draws, not GPU elapsed time
   frames: [],          // frame intervals since the last report
   slow: [],            // the individual bad ones, with what was happening
   ticks: [],           // round trip of each step
@@ -6532,6 +6585,7 @@ async function sendTrace(why) {
       && !trace.breaks.length && !trace.slow.length) return;
   const frames = trace.frames.slice().sort((a, b) => a - b);
   const ticks = trace.ticks.slice().sort((a, b) => a - b);
+  const renders=trace.renders.slice().sort((a,b)=>a-b);
   const report = {
     why,
     // Whether anybody was looking. A browser throttles a tab it is not showing
@@ -6548,6 +6602,10 @@ async function sendTrace(why) {
     fps: +(frames.length / wall_s).toFixed(1),
     frame_ms: { median: quantile(frames, 0.5), p95: quantile(frames, 0.95),
                 worst: frames.length ? +frames[frames.length - 1].toFixed(1) : null },
+    render_cpu_ms:{median:quantile(renders,.5),p95:quantile(renders,.95),
+      worst:renders.length?+renders.at(-1).toFixed(3):null},
+    draw_calls:renderer.info.render.calls,rendered_triangles:renderer.info.render.triangles,
+    geometries:renderer.info.memory.geometries,
     // Copied, not handed over. These two were passed by reference and then
     // emptied a few lines below, before the request was serialised -- so every
     // report went out with no slow frames and no breaks in it, which is exactly
@@ -6559,12 +6617,15 @@ async function sendTrace(why) {
       ? +(trace.bytes.reduce((a, b) => a + b, 0) / trace.bytes.length / 1024).toFixed(2) : null,
     worst_reply_kb: trace.bytes.length ? +(Math.max(...trace.bytes) / 1024).toFixed(0) : null,
     breaks: trace.breaks.slice(),
+    terrain_builds:trace.terrain.slice(),
     objects: world.bodies.size,
     ...(trace.link.times ? { lost_link: { ...trace.link } } : {}),
   };
   const link = trace.link;
   trace.frames.length = 0; trace.slow.length = 0; trace.ticks.length = 0;
   trace.bytes.length = 0; trace.breaks.length = 0;
+  trace.terrain.length=0;
+  trace.renders.length=0;
   trace.link = { times: 0, longest_ms: 0, why: "", gave_up: false };
   trace.startedWall = now;
   trace.startedWorld = world.clock;
@@ -6608,6 +6669,8 @@ function traceNewWorld(t) {
   world.lastTick = 0;   // its first step is one step, not a catch-up across the change
   trace.frames.length = 0; trace.slow.length = 0; trace.ticks.length = 0;
   trace.bytes.length = 0; trace.breaks.length = 0;
+  trace.terrain.length=0;
+  trace.renders.length=0;
   trace.awaiting.clear();
   trace.startedWall = performance.now();
   trace.startedWorld = world.clock;
@@ -10417,8 +10480,12 @@ function render() {
     if (own.emissive) {skin.emissive.copy(own.emissive);skin.emissiveIntensity=own.emissiveIntensity;}
     skin.opacity=own.opacity*(1-.86*r.amount);mesh.material=skin;
   }
+  const started=performance.now();
   try { renderer.render(scene, camera); }
-  finally { for (const [mesh, material] of swapped.reverse()) mesh.material = material; }
+  finally {
+    for (const [mesh, material] of swapped.reverse()) mesh.material = material;
+    if(trace.renders.length<1024)trace.renders.push(performance.now()-started);
+  }
 }
 
 // ---------------------------------------------------------------------------

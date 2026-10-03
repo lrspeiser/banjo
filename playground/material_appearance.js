@@ -41,9 +41,28 @@ export function columnTopData(grid, heights, colors) {
 // Boundary of the layered-column union, including voids. Heights are native
 // float32; packed internal layer boundaries retain their declared 1 mm wire
 // precision. Material bands subdivide faces without inventing solid volumes.
-export function walkColumnFaces(grid, heights, runs, floor, visit) {
-  const intervals=new Array(grid.nx*grid.nz);
-  for(let c=0;c<intervals.length;c++) {
+export function columnChunkBox(grid,id,size=32) {
+  const across=Math.ceil(grid.nx/size),i0=id%across*size,j0=Math.floor(id/across)*size;
+  return [i0,j0,Math.min(size,grid.nx-i0),Math.min(size,grid.nz-j0)];
+}
+
+// Geometry depends on the edited column and its immediate neighbors. Color
+// changes need only their own chunks. Rendering chunk size is independent of
+// the native collider's chunk ownership and does not change material cells.
+export function columnChunkIds(grid,box=[0,0,grid.nx,grid.nz],halo=1,size=32) {
+  const [i,j,ni,nj]=box,ids=new Set();if(ni<=0 || nj<=0)return ids;
+  const across=Math.ceil(grid.nx/size);
+  for(let z=Math.floor(Math.max(0,j-halo)/size);z<=Math.floor(Math.min(grid.nz-1,j+nj-1+halo)/size);z++)
+    for(let x=Math.floor(Math.max(0,i-halo)/size);x<=Math.floor(Math.min(grid.nx-1,i+ni-1+halo)/size);x++)
+      ids.add(z*across+x);
+  return ids;
+}
+
+export function walkColumnFaces(grid, heights, runs, floor, visit, box=[0,0,grid.nx,grid.nz]) {
+  const intervals=new Map();
+  const solid=(i,j)=>{
+    if(i<0 || j<0 || i>=grid.nx || j>=grid.nz)return [];
+    const c=j*grid.nx+i;if(intervals.has(c))return intervals.get(c);
     const out=[];let lo=floor;
     for(let k=0;k<runs.count[c];k++) {
       const n=c*runs.stride+k,hi=k===runs.count[c]-1 ? heights[c] : Math.min(heights[c],runs.top[n]);
@@ -53,18 +72,19 @@ export function walkColumnFaces(grid, heights, runs, floor, visit) {
       }
       lo=hi;if(lo>=heights[c])break;
     }
-    intervals[c]=out;
-  }
+    intervals.set(c,out);return out;
+  };
   const quad=(column,points,y,top=false,reverse=false)=>visit({column,points:reverse ?
     [points[0],points[3],points[2],points[1]] : points,kind:exposedRunKind(runs,column,y,0),top});
-  for(let j=0;j<grid.nz;j++)for(let i=0;i<grid.nx;i++) {
-    const c=j*grid.nx+i,own=intervals[c],x=grid.x0+(i-.5)*grid.dx,z=grid.z0+(j-.5)*grid.dx,d=grid.dx;
+  const [i0,j0,ni,nj]=box;
+  for(let j=j0;j<j0+nj;j++)for(let i=i0;i<i0+ni;i++) {
+    const c=j*grid.nx+i,own=solid(i,j),x=grid.x0+(i-.5)*grid.dx,z=grid.z0+(j-.5)*grid.dx,d=grid.dx;
     for(const [lo,hi] of own) {
       quad(c,[[x,hi,z],[x,hi,z+d],[x+d,hi,z+d],[x+d,hi,z]],hi-.001,Math.abs(hi-heights[c])<1e-7);
       if(lo>floor+1e-7)quad(c,[[x,lo,z],[x,lo,z+d],[x+d,lo,z+d],[x+d,lo,z]],lo+.001,false,true);
     }
     for(const [di,dj] of [[-1,0],[1,0],[0,-1],[0,1]]) {
-      const a=i+di,b=j+dj,neighbor=a>=0 && b>=0 && a<grid.nx && b<grid.nz ? intervals[b*grid.nx+a] : [];
+      const neighbor=solid(i+di,j+dj);
       const wall=(lo,hi)=>{
         if(hi-lo<=1e-7)return;
         let from=lo;

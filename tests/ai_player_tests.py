@@ -243,6 +243,38 @@ class AutonomousGuests(unittest.TestCase):
         app.ai_players.cadence_s = .02
         return world, owner, app
 
+    def test_character_join_checkpoints_advancing_world_before_profile_save(self):
+        for surface in ('smooth','columns'):
+            world,owner,app=self.setup_world(surface=surface)
+            # A watched page advances between periodic native checkpoints.
+            # The unattended clock saves every tick and cannot reproduce this.
+            self.post('/api/live/act',{'session':app.live.session.id,
+                'op':'step','dt':1/240,'n':12},world)
+            self.assertNotEqual(app.room.fabrication_record['time_s'],app.room.world_record['t_s'])
+            before=set(app.room.player_records)
+            with self.assertRaisesRegex(ValueError,'The player could not be saved'):
+                server.player_world.join(app,name='Uncheckpointed guest')
+            self.assertEqual(before,set(app.room.player_records))
+            self.assertIn('same time',app.room.persistence['reason'])
+            # Isolate joining from subsequent autonomous actions; the real
+            # HTTP/native checkpoint and disk publication are still exercised.
+            with mock.patch.object(type(app.ai_players),'_run',return_value=None):
+                bot=self.post('/api/world/ai',{'action':'start','mode':'reference','name':'Joining explorer'},world)
+            kept=app.store.load(app.room.scene)
+            self.assertIn(bot['id'],kept.player_records)
+            self.assertEqual(owner['id'],kept.player_records[bot['id']]['ai']['controller'])
+            self.assertEqual(kept.fabrication_record['time_s'],kept.world_record['t_s'])
+            self.assertEqual(surface,kept.world_record['ground']['surface'])
+
+    def test_character_join_refuses_unsaved_world_without_creating_guest(self):
+        world,owner,app=self.setup_world();before=set(app.room.player_records)
+        self.assertTrue(app.clock._tick(.2))
+        with mock.patch.object(app.ai_players,'keep',return_value=False):
+            with self.assertRaises(urllib.error.HTTPError) as failed:
+                self.post('/api/world/ai',{'action':'start','mode':'reference'},world)
+        self.assertIn('current world could not be saved',failed.exception.read().decode())
+        self.assertEqual(before,set(app.room.player_records));self.assertEqual({},app.ai_players.workers)
+
     def test_fresh_workbench_is_empty_paired_durable_and_initial_save_can_retry(self):
         from copy import deepcopy
         world=self.post('/api/worlds',{'name':'Empty paid workbench'})['id']
@@ -350,7 +382,7 @@ class AutonomousGuests(unittest.TestCase):
         self.assertEqual(25.,personal['mass_kg'])
         shared=[s for s in initial['stock_sources'] if s['pool']=='shared']
         human_stock=self.post('/api/world/fabrication/state',common,world)['stock_sources']
-        lost={'fund_stock','fund_energy','start_make','commit','before-commit'};phases=[];requests=[]
+        lost={'fund_stock','fund_energy','start_make','commit','before-commit'};phases=[];requests=[];advancing_meters=[]
         stop=threading.Event();ident='ai-paid-first-job'
         action={'verb':'build','recipe':{'candidate':candidate}}
         # The first decision reviews and cannot spend or create a native body.
@@ -366,6 +398,18 @@ class AutonomousGuests(unittest.TestCase):
             manager=app.ai_players;post=manager._post
             def observed(p,path,body,cookie):
                 op=path.rsplit('/',1)[-1]
+                if op in ('connect_energy','fund_energy'):
+                    # Reproduce a watched page advancing after the source read,
+                    # before the real receiver validates/debits it. Sunlight
+                    # changes counters while identity/rating stay the same.
+                    scope={'session':app.live.session.id,'scene':app.room.scene}
+                    before=post(p,'/api/world/fabrication/state',scope,cookie)['energy_sources']
+                    post(p,'/api/live/act',{'session':app.live.session.id,'op':'step','dt':1/240,'n':12},cookie)
+                    after=post(p,'/api/world/fabrication/state',scope,cookie)['energy_sources']
+                    ident=body.get('store') or app.room.fabrication_record['energy_connection']['store']
+                    prior=next(s for s in before if s['id']==ident);current=next(s for s in after if s['id']==ident)
+                    self.assertEqual(prior['store_binding_hash'],current['store_binding_hash'])
+                    if prior['store_hash']!=current['store_hash']:advancing_meters.append(op)
                 if op=='commit' and 'before-commit' in lost:
                     lost.remove('before-commit');raise ValueError('Injected interrupted before commit')
                 result=post(p,path,body,cookie);requests.append((path,deepcopy(body)))
@@ -397,6 +441,7 @@ class AutonomousGuests(unittest.TestCase):
             if result['phase']=='installed':break
         else:self.fail('Paid AI build did not finish: '+str(phases))
         self.assertFalse(lost);self.assertNotIn('fabrication_build',profile['ai']['memory'])
+        self.assertIn('fund_energy',advancing_meters,'the real native meter must advance before funding')
         self.assertEqual(1,len(app.room.fabrication_record['jobs']))
         job=app.room.fabrication_record['jobs'][ident]
         self.assertEqual('installed',job['status']);self.assertEqual(guest['id'],job['make_source']['owner'])
@@ -415,6 +460,7 @@ class AutonomousGuests(unittest.TestCase):
         self.assertEqual(set(),server.journal_of(app,guest['id']).knows(),'Manufacture cannot invent a learned technique')
         out=ROOT/'build/ai-player';out.mkdir(parents=True,exist_ok=True)
         report={'phases':phases,'job_id':ident,'mass_kg':job['product_kg'],'work_j':job['required_j'],
+            'advancing_native_meter_operations':sorted(set(advancing_meters)),
             'native_dt_s':1/240,'cell_m':.05,'lost_writes_replayed':['fund_stock','fund_energy','start_make','commit'],
             'interrupted_preview_refreshed':True,
             'own_stock_spent_kg':job['stock_kg'],'source_power_w':10000,'shared_rack_unchanged':True,
@@ -723,10 +769,16 @@ class AutonomousGuests(unittest.TestCase):
         self.fail("Character never reached a terminal state: "+json.dumps(view['character']))
 
     def test_reference_explorer_completes_goal_chains_on_both_generated_terrains(self):
+        self.reference_goal_chains('smooth')
+
+    def test_reference_explorer_completes_goal_chains_on_both_column_terrains(self):
+        self.reference_goal_chains('columns')
+
+    def reference_goal_chains(self,surface):
         reports=[]
         for terrain_choice,goods_seed in ((1,851269742),(0,1)):
             with mock.patch.object(server.secrets,'randbelow',side_effect=[terrain_choice,goods_seed-1]):
-                world,owner,app=self.setup_world()
+                world,owner,app=self.setup_world(surface=surface)
             began=time.monotonic()
             bot=self.post('/api/world/ai',{'action':'start','mode':'reference','name':'Seed explorer'},world)
             final=self.wait_character(world,bot['id'],seconds=300)
@@ -742,7 +794,7 @@ class AutonomousGuests(unittest.TestCase):
                              'compare-recipes','build','collect'}<=actions,actions)
             self.assertEqual('saved',app.room.persistence['state'])
             evidence=list(journal.data['evidence'].values())
-            reports.append({'terrain_seed':(4,7)[terrain_choice],'goods_seed':goods_seed,
+            reports.append({'surface':surface,'terrain_seed':(4,7)[terrain_choice],'goods_seed':goods_seed,
                 'controller':'reference','provider_calls':0,'world':world,'character':bot['id'],
                 'wall_s':round(time.monotonic()-began,3),'native_t_s':app.live.session.state['t'],
                 'decisions':final['character']['decisions'],'goal_chain':goals['chain_id'],
@@ -767,7 +819,8 @@ class AutonomousGuests(unittest.TestCase):
                          'stock_kg':j['stock_kg'],'work_j':j['required_j']} for j in process['jobs'].values()],
                 'audit':totals,'funding':'Own collected stock; native generated solar battery; no shared rack debit.'}
         output=ROOT/'build/ai-player';output.mkdir(parents=True,exist_ok=True)
-        (output/'explorer-acceptance.json').write_text(json.dumps(reports,indent=2,allow_nan=False),encoding='utf-8')
+        filename='explorer-acceptance.json' if surface=='smooth' else 'column-explorer-acceptance.json'
+        (output/filename).write_text(json.dumps(reports,indent=2,allow_nan=False),encoding='utf-8')
         print('\n    reference explorer: '+json.dumps([{k:r[k] for k in ('terrain_seed','goods_seed','decisions','wall_s','native_t_s','known')} for r in reports]))
 
     def test_reference_explorer_reports_empty_market_shelves_on_both_terrains(self):

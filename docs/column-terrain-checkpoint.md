@@ -109,7 +109,10 @@ should be tested at day/night and walking distance before paying that cost.
 
 ## Next acceptance
 
-1. Rebuild only changed/explored chunks; measure real browser frame/upload costs.
+1. [Sparse render follow-up](column-rendering-checkpoint.md) now preserves exact
+   faces and rebuilds only affected chunks, with measured CPU construction,
+   render submission and browser frames. GPU elapsed/upload cost and full-load
+   qualification remain open.
 2. Compare material recognition and gathering at walking distance, dusk/night,
    across both generated terrain seeds, with human and model players.
 3. Qualify rover hauling, native body traversal/contact and shoreline/water on

@@ -101,11 +101,18 @@ class Manager:
                     count = sum(bool(p.get("ai")) for p in player_world.records(self.app).values())
                 if count >= MAX_AGENTS:
                     raise ValueError("This world supports four AI characters")
-                joined = player_world.join(self.app, name=body.get("name") or "Banjo explorer")
-                profile = player_world.records(self.app)[joined["id"]]
-                profile["ai"] = {"controller": owner, "mode": mode, "status": "paused", "decisions": 0,
-                                 "history": [], "memory": {}, "message": "Ready to play the available goal chains"}
-                self._save(profile)
+                # Joining publishes host accounts beside the last native save.
+                # Checkpoint the advancing world first, as human joining does,
+                # and exclude clock/receiving changes until the profile is saved.
+                with world_access.gate(self.app).enter(exclusive=True), world_access.state_lock(self.app):
+                    if self.app.live.session and self.app.live_holder == "world":
+                        if not self.keep(self.app,"before joining an AI character"):
+                            raise ValueError("The current world could not be saved; retry starting after saving recovers")
+                    joined = player_world.join(self.app, name=body.get("name") or "Banjo explorer")
+                    profile = player_world.records(self.app)[joined["id"]]
+                    profile["ai"] = {"controller": owner, "mode": mode, "status": "paused", "decisions": 0,
+                                     "history": [], "memory": {}, "message": "Ready to play the available goal chains"}
+                    self._save(profile)
             old = self.workers.get(profile["id"])
             if action == "pause":
                 if old: old[1].set()
@@ -365,14 +372,18 @@ class Manager:
             sources=[s for s in funding['energy_sources'] if s['max_power_w']>0 and s['charge_j']>0]
             source=next((s for s in sources if s['connected']),None) or next(iter(sources),None)
             if source is None:raise ValueError('No charged battery with a finite output rating is available')
+            # Bind identity/rating while sunlight and other loads change meters.
+            # The receiving adapter still checks current charge/power under its
+            # world lock; pending writes retain their exact retry arguments.
+            source_hash=source.get('store_binding_hash') or source['store_hash']
             if not source['connected']:
-                return write('connect_energy',{'store':source['id'],'store_hash':source['store_hash'],
+                return write('connect_energy',{'store':source['id'],'store_hash':source_hash,
                     'power_w':min(source['max_power_w'],state['config']['power_w']),'revision':state['revision']})
             amount=min(needed,source['transfer_available_j'])
             if amount<.000001:
                 self._post(profile,'/api/world/fabrication/wait',{**common,'seconds':1},cookie)
                 return {'phase':'charging','job_id':pending['job_id']}
-            return write('fund_energy',{'store_hash':source['store_hash'],'joules':amount,'revision':state['revision']})
+            return write('fund_energy',{'store_hash':source_hash,'joules':amount,'revision':state['revision']})
         if any(j['status']=='running' for j in state['jobs'].values()):
             raise ValueError('The workbench is occupied; retain the reviewed build')
         pending['request']={'op':'start_make','body':{**common,'plan_id':plan['plan_id'],

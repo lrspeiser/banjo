@@ -1589,6 +1589,16 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/ai_player_tests.py -v)
     set_tests_properties(banjo_ai_player_tests PROPERTIES TIMEOUT 900)
+    add_test(NAME banjo_ai_column_opening_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/ai_player_tests.py
+            AutonomousGuests.test_character_join_checkpoints_advancing_world_before_profile_save
+            AutonomousGuests.test_character_join_refuses_unsaved_world_without_creating_guest
+            AutonomousGuests.test_ai_paid_make_uses_own_collected_stock_solar_and_recovers_lost_writes_on_restart
+            AutonomousGuests.test_reference_explorer_completes_goal_chains_on_both_column_terrains -v)
+    set_tests_properties(banjo_ai_column_opening_tests PROPERTIES TIMEOUT 720)
     add_test(NAME banjo_goal_chains_tests
         COMMAND ${CMAKE_COMMAND} -E env
             BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>

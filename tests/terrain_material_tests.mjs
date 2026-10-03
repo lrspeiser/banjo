@@ -2,26 +2,27 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
 import * as THREE from '../playground/vendor/three.module.js';
-import {GROUND_APPEARANCE,materialAppearance,terrainCellAt,terrainTargetPath,exposedRunKind,toolTargetFeedback,collectedToolMaterials,columnTopData,walkColumnFaces} from '../playground/material_appearance.js';
+import {GROUND_APPEARANCE,materialAppearance,terrainCellAt,terrainTargetPath,exposedRunKind,toolTargetFeedback,collectedToolMaterials,columnTopData,walkColumnFaces,columnChunkIds,columnChunkBox} from '../playground/material_appearance.js';
 import {terrainMaterial} from '../playground/terrain_material.js';
 
 for(const surface of ['smooth','columns'])test(surface+' full-terrain catchup reuses the mesh and streams variable runs once',()=>{
   const source=readFileSync(new URL('../playground/world.js',import.meta.url),'utf8');
   const part=(start,end)=>source.slice(source.indexOf('function '+start),source.indexOf('function '+end));
-  const code=part('decodeRuns','runsRoom')+part('patchRuns','standingOn')+
+  const code=part('markColumnFaces','buildColumnFaces')+part('decodeRuns','runsRoom')+part('patchRuns','standingOn')+
     part('patchTerrain','extendShore');
   let rebuilt=0,paints=0,normals=0;
   const vertices=surface==='columns'?4:1;
   const ground={grid:{nx:3,nz:2,dx:.25,x0:0,z0:0,surface},floor:-3,
     runs:{stride:4,count:new Uint8Array(6),kind:new Uint8Array(24),top:new Float32Array(24)},
     heights:new Float32Array(6),surfaces:new Uint8Array(6),water:{identity:'keep water'},
+    dirtyFaceChunks:new Set(),
     seen:new Uint8Array([1,0,1,1,1,1]),materialCells:{update:()=>paints++},mesh:{geometry:{
       attributes:{position:{array:new Float32Array(18*vertices)},color:{array:new Float32Array(18*vertices)}},
       computeVertexNormals:()=>normals++,computeBoundingSphere:()=>{}}}};
   ground.colors=surface==='columns'?new Float32Array(18):ground.mesh.geometry.attributes.color.array;
   const bytesOf=x=>new Uint8Array(Buffer.from(x,'base64'));
-  const {refreshTerrain}=new Function('ground','bytesOf','paintGround','drawTerrain',code+
-    '\nreturn {refreshTerrain};')(ground,bytesOf,()=>{},()=>rebuilt++);
+  const {refreshTerrain}=new Function('ground','bytesOf','paintGround','drawTerrain','columnChunkIds',code+
+    '\nreturn {refreshTerrain};')(ground,bytesOf,()=>{},()=>rebuilt++,columnChunkIds);
   const heights=Buffer.from(new Float32Array([1,2,3,4,5,6]).buffer).toString('base64');
   const raw=[];
   for(let c=0;c<6;c++) {
@@ -33,13 +34,16 @@ for(const surface of ['smooth','columns'])test(surface+' full-terrain catchup re
     runs_b64:Buffer.from(raw).toString('base64')};
   const mesh=ground.mesh,water=ground.water,seen=ground.seen;
   refreshTerrain(block);
-  assert.equal(rebuilt,0);assert.equal(paints,6);assert.equal(normals,1);
+  assert.equal(rebuilt,0);assert.equal(paints,6);assert.equal(normals,surface==='columns'?0:1);
   assert.equal(ground.mesh,mesh);assert.equal(ground.water,water);assert.equal(ground.seen,seen);
   assert.deepEqual([...ground.heights],[1,2,3,4,5,6]);assert.equal(ground.runs.count[3],5);
   for(let c=0;c<6;c++)for(let v=0;v<vertices;v++)
     assert.equal(ground.mesh.geometry.attributes.position.array[3*(c*vertices+v)+1],c+1);
   for(let c=0;c<6;c++)assert.equal(ground.runs.kind[c*ground.runs.stride+ground.runs.count[c]-1],c%2?1:2);
   assert.equal(ground.facesStale,true);
+  ground.facesStale=false;ground.dirtyFaceChunks.clear();refreshTerrain(block);
+  assert.equal(ground.facesStale,false,'unchanged catchup does not rebuild faces');
+  assert.equal(paints,6,'unchanged catchup does not repaint the palette');
   refreshTerrain({...block,grid:{...block.grid,cell_m:.5}});assert.equal(rebuilt,1);
   refreshTerrain({...block,surface:surface==='smooth'?'columns':'smooth'});assert.equal(rebuilt,2);
 });
@@ -83,6 +87,72 @@ test('column cut faces keep voids open, preserve material bands and their union 
   }
   const wall=new THREE.Raycaster(new THREE.Vector3(.25,.5,0),new THREE.Vector3(1,0,0)).intersectObject(mesh)[0];
   assert.equal(wall.distance,.125,'void stops where the neighboring solid starts');
+});
+
+test('render chunks preserve every face and material across cut and void seams',()=>{
+  const g={nx:65,nz:34,dx:.25,x0:-8,z0:-4},H=new Float32Array(g.nx*g.nz);
+  const runs={stride:3,count:new Uint8Array(H.length).fill(1),kind:new Uint8Array(3*H.length),top:new Float32Array(3*H.length)};
+  for(let c=0;c<H.length;c++){H[c]=1+(c%g.nx%5)*.1;runs.top[3*c]=H[c];runs.kind[3*c]=c%3;}
+  for(const i of [31,32]) {const c=12*g.nx+i;runs.count[c]=3;runs.kind.set([0,8,1],3*c);runs.top.set([.3,.6,H[c]],3*c);}
+  const full=[],chunks=[];walkColumnFaces(g,H,runs,0,f=>full.push(JSON.stringify(f)));
+  for(const id of columnChunkIds(g))walkColumnFaces(g,H,runs,0,f=>chunks.push(JSON.stringify(f)),columnChunkBox(g,id));
+  assert.deepEqual(chunks.sort(),full.sort(),'chunking adds no artificial edge wall, missing face or changed kind');
+  assert.deepEqual([...columnChunkIds(g,[31,12,1,1])],[0,1]);
+  assert.deepEqual([...columnChunkIds(g,[31,31,1,1])],[0,1,3,4]);
+  assert.deepEqual([...columnChunkIds(g,[64,33,1,1])],[4,5]);
+  assert.deepEqual([...columnChunkIds(g,[31,12,1,1],0)],[0],'exploration repaints only the owning chunk');
+});
+
+test('shipped chunk renderer replaces edited neighbors, keeps distant meshes and disposes replaced geometry',()=>{
+  const source=readFileSync(new URL('../playground/world.js',import.meta.url),'utf8');
+  const code=source.slice(source.indexOf('function markColumnFaces'),source.indexOf('function buildFaces'));
+  const g={nx:65,nz:34,dx:.25,x0:0,z0:0,surface:'columns'},H=new Float32Array(g.nx*g.nz);
+  const runs={stride:1,count:new Uint8Array(H.length).fill(1),kind:new Uint8Array(H.length),top:new Float32Array(H.length)};
+  for(let c=0;c<H.length;c++)H[c]=runs.top[c]=1+c%5*.1;
+  const ground={grid:g,runs,heights:H,floor:0,faceChunks:new Map(),dirtyFaceChunks:new Set(),faceMaterial:null};
+  const scene=new THREE.Scene(),trace={terrain:[]};
+  const {markColumnFaces,buildColumnFaces}=new Function('ground','scene','trace','THREE','dress','groundSeen',
+    'GROUND_COLOURS','GROUND_UNSEEN','walkColumnFaces','columnChunkIds','columnChunkBox',code+
+    '\nreturn {markColumnFaces,buildColumnFaces};')(ground,scene,trace,THREE,x=>x,()=>true,
+      [new THREE.Color('#8996a6')],new THREE.Color('#2b2f36'),walkColumnFaces,columnChunkIds,columnChunkBox);
+  markColumnFaces([0,0,g.nx,g.nz],0);buildColumnFaces();
+  assert.equal(ground.faceChunks.size,6);const before=new Map(ground.faceChunks);
+  const disposed=[];for(const [id,mesh] of before)mesh.geometry.addEventListener('dispose',()=>disposed.push(id));
+  const c=12*g.nx+31;H[c]=.2;markColumnFaces([31,12,1,1]);buildColumnFaces();
+  assert.deepEqual(disposed,[0,1]);
+  for(const id of [2,3,4,5])assert.equal(ground.faceChunks.get(id),before.get(id));
+  assert.equal(scene.children.length,6,'replacement does not retain stale meshes');
+  const rays=[];for(const mesh of ground.faceChunks.values()){mesh.updateMatrixWorld();rays.push(mesh);}
+  const ray=new THREE.Raycaster(new THREE.Vector3(31*.25,.5,12*.25),new THREE.Vector3(1,0,0));
+  assert.equal(ray.intersectObjects(rays)[0].distance,.125,'new seam wall is present');
+  assert.equal(trace.terrain[1].chunks,2);
+  assert.ok(trace.terrain[1].vertices<trace.terrain[0].vertices);
+  for(const mesh of ground.faceChunks.values())mesh.geometry.dispose();ground.faceMaterial.dispose();
+});
+
+test('shipped exploration repaints changed cells even when the known count stays constant',()=>{
+  const source=readFileSync(new URL('../playground/world.js',import.meta.url),'utf8');
+  const part=(start,end)=>source.slice(source.indexOf('function '+start),source.indexOf('function '+end));
+  const g={nx:65,nz:34,dx:.25,x0:0,z0:0,surface:'columns'},count=g.nx*g.nz;
+  const seen=new Uint8Array(count).fill(1),colors=new Float32Array(3*count),attribute=new THREE.BufferAttribute(new Float32Array(12*count),3);
+  const sight={nx:g.nx,nz:g.nz,cell_m:.25,x0_m:0,z0_m:0,known:count};
+  const painted=[];
+  const ground={grid:g,seen,seenGrid:sight,colors,surfaces:new Uint8Array(count).fill(1),runs:null,
+    mesh:{geometry:{attributes:{color:attribute}}},materialCells:{update:k=>painted.push(k)},dirtyFaceChunks:new Set()};
+  const code=part('groundSeen','groundKind')+part('groundKind','decodeRuns')+
+    part('markColumnFaces','buildColumnFaces')+part('showSeen','drawTerrain');
+  const {showSeen}=new Function('ground','bytesOf','GROUND_COLOURS','GROUND_UNSEEN','columnChunkIds',code+
+    '\nreturn {showSeen};')(ground,x=>Uint8Array.from(Buffer.from(x,'base64')),
+      [new THREE.Color('#8996a6'),new THREE.Color('#875132')],new THREE.Color('#2b2f36'),columnChunkIds);
+  const first=seen.slice(),a=12*g.nx+31,b=a+1;first[a]=0;
+  const block={...sight,known_cells:count-1,cells:count,seen_b64:Buffer.from(first).toString('base64')};
+  showSeen(block);assert.deepEqual(painted,[a]);assert.deepEqual([...ground.dirtyFaceChunks],[0]);
+  ground.dirtyFaceChunks.clear();painted.length=0;const second=seen.slice();second[b]=0;
+  showSeen({...block,seen_b64:Buffer.from(second).toString('base64')});
+  assert.deepEqual(painted,[a,b]);assert.deepEqual([...ground.dirtyFaceChunks],[0,1]);
+  const version=attribute.version;ground.dirtyFaceChunks.clear();painted.length=0;
+  showSeen({...block,seen_b64:Buffer.from(second).toString('base64')});
+  assert.equal(attribute.version,version);assert.deepEqual(painted,[]);assert.equal(ground.dirtyFaceChunks.size,0);
 });
 
 test('visible material identities remain distinct and samples resolve native ore names',()=>{

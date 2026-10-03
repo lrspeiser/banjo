@@ -1,5 +1,13 @@
 # Readable world and useful progression — October 3, 2026
 
+Current follow-up: [sparse material-column rendering and character recovery](column-rendering-checkpoint.md).
+Local edits now retain distant meshes with exact seam/void equality, and fresh
+reference openings pass on both column maps. Ordinary watched play exposed and
+repaired profile-save and live-meter funding races; after restart the same
+character finishes its table but then lacks furnace input. Recognition at night,
+exhausted-input recovery, compact solar/full supply coverage and native
+traversal/water/cargo remain active. This is a measured slice, not full completion.
+
 Latest implementation checkpoint: `3544fd2` on GitHub main. This publication record
 does not close the full active scope.
 
