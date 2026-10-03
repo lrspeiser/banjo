@@ -171,6 +171,36 @@ class NativeEnergy(unittest.TestCase):
         self.connect("charger-connect-0002")
         self.assertEqual(self.source()["transfer_available_j"], 0)
 
+    def test_live_store_binding_preserves_current_limits_exact_debit_and_retry(self):
+        source=self.source(); binding=source['store_binding_hash']
+        self.live.session.send(op='draw',store=source['id'],joules=1.)
+        self.call('connect_energy',store=source['id'],store_hash=binding,power_w=250.,
+            revision=self.room.fabrication_record['revision'],request_id='binding-connect-0001')
+        self.step(2)
+        self.live.session.send(op='draw',store=source['id'],joules=1.)
+        request={**self.context(),'store_hash':binding,'joules':500.,
+            'revision':self.room.fabrication_record['revision'],'request_id':'binding-fund-0001'}
+        before=workshop_install._snapshot(self.live)
+        api.request(self.app,'fund_energy',request)
+        after=workshop_install._snapshot(self.live)
+        self.assertAlmostEqual(before['energy_stores'][0]['charge_j']-after['energy_stores'][0]['charge_j'],500.)
+        self.assertEqual(self.room.fabrication_record['energy_j'],500.)
+        self.assertTrue(api.request(self.app,'fund_energy',request)['replayed'])
+        self.assertEqual(after,workshop_install._snapshot(self.live))
+        self.assertEqual(model.audit(self.room.fabrication_record)['native_transfer_residual_j'],0.)
+        for field,value in [('capacity_j',4001.),('body','other'),('max_power_w',301.),('voltage_v',25.),('name','other'),('id',2)]:
+            altered={**source,field:value}
+            self.assertNotEqual(binding,model.energy_source_binding(altered))
+            with self.assertRaisesRegex(ValueError,'source changed'):
+                self.call('fund_energy',store_hash=model.energy_source_binding(altered),joules=1.,
+                    revision=self.room.fabrication_record['revision'],request_id='binding-altered-'+field)
+            self.assertEqual(after,workshop_install._snapshot(self.live))
+        for joules,why in [(4000.,'Insufficient'),(1.,'power limit')]:
+            rejected={**self.context(),'store_hash':binding,'joules':joules,
+                'revision':self.room.fabrication_record['revision'],'request_id':f'binding-reject-{int(joules)}'}
+            with self.assertRaisesRegex(ValueError,why):api.request(self.app,'fund_energy',rejected)
+            self.assertEqual(after,workshop_install._snapshot(self.live))
+
     def test_process_state_stays_readable_when_native_transfer_snapshot_is_unavailable(self):
         before = deepcopy(self.room.fabrication_record)
         with mock.patch.object(self.live, "snapshot", return_value=(None, "native stroke in progress")):

@@ -3283,12 +3283,13 @@ async function fundRemake(op,choice={}) {
     } else {
       const source=reading.energy_sources.find(s=>s.id===choice.store);
       if(!source || source.max_power_w<=0)throw Error("Battery is unavailable; review current supplies");
-      if(op==="connect_energy")Object.assign(fields,{store:source.id,store_hash:source.store_hash,
+      const sourceHash=source.store_binding_hash || source.store_hash;
+      if(op==="connect_energy")Object.assign(fields,{store:source.id,store_hash:sourceHash,
         power_w:Math.min(source.max_power_w,reading.state.config.power_w)});
       else {
         if(!source.connected || source.transfer_available_j+1e-8<choice.joules)
           throw Error("Battery charging interval changed; review current supplies");
-        Object.assign(fields,{store_hash:source.store_hash,joules:choice.joules});
+        Object.assign(fields,{store_hash:sourceHash,joules:choice.joules});
       }
     }
     request={session:ctx.session,scene:ctx.scene,...fields,revision:reading.state.revision,request_id:crypto.randomUUID()};
@@ -3332,6 +3333,82 @@ async function assignInventorySlot(item,slot) {
   }
 }
 function missingRemakeGoods(plan) {return Object.values(plan.missing_goods_kg || {}).some(kg=>kg>1e-10);}
+function nextRemakeFunding(plan,supply,store) {
+  if(!plan?.available || !supply?.configured)return {blocked:"Review an available workbench first"};
+  if(plan.occupied)return {blocked:"Workbench in use"};
+  if(plan.build_readiness?.status==="Workpiece limit reached")return {blocked:"Collect an existing workpiece first"};
+  const transfers=[];
+  for(const [op,gaps,sources] of [
+    ["fund_stock",plan.missing_materials_kg || {},plan.stock_sources || []],
+    ["fund_goods",plan.missing_goods_kg || {},plan.goods_sources || []]]) {
+    for(const [material,gap] of Object.entries(gaps)) {
+      if(gap<=1e-10)continue;
+      const available=sources.filter(s=>s.material===material && s.mass_kg>1e-10)
+        .sort((a,b)=>Number(a.pool!=="personal")-Number(b.pool!=="personal"));
+      if(available.reduce((sum,s)=>sum+s.mass_kg,0)+1e-10<gap)
+        return {blocked:`Find ${titleCase(material)} supplies first`};
+      const source=available[0];
+      transfers.push({op,choice:{material,pool:source.pool,mass_kg:Math.min(gap,source.mass_kg)}});
+    }
+  }
+  const needed=plan.missing_energy_j;
+  const sources=(supply.energy_sources || []).filter(s=>s.max_power_w>0);
+  const source=sources.find(s=>s.id===store) || sources.find(s=>s.connected) || sources[0];
+  // Check the whole current supply path before debiting any stock. Later
+  // operations re-read balances and keep the existing durable request IDs.
+  if(needed>1e-10 && (!source || source.charge_j+1e-8<needed))
+    return {blocked:source ? "Battery low · Collect more solar energy" : "Choose an available battery"};
+  if(transfers.length)return transfers[0];
+  if(needed<=1e-10)return {done:true};
+  if(!source.connected)return {op:"connect_energy",choice:{store:source.id}};
+  if(source.transfer_available_j+1e-8<needed)return {wait:true};
+  return {op:"fund_energy",choice:{store:source.id,joules:needed}};
+}
+function remakeSupplyPools(plan) {
+  const pools=new Set();
+  for(const [gaps,sources] of [[plan.missing_materials_kg || {},plan.stock_sources || []],
+                            [plan.missing_goods_kg || {},plan.goods_sources || []]])
+    for(const [material,gap] of Object.entries(gaps)) {
+      let left=gap;
+      for(const source of sources.filter(s=>s.material===material && s.mass_kg>0)
+          .sort((a,b)=>Number(a.pool!=="personal")-Number(b.pool!=="personal"))) {
+        if(left<=1e-10)break;pools.add(source.pool);left-=Math.min(left,source.mass_kg);
+      }
+    }
+  return pools.has("shared") ? (pools.has("personal") ? "Your + shared stock" : "Shared stock")
+    : pools.has("personal") ? "Your stock" : "Energy only";
+}
+async function prepareRemakeSupplies() {
+  const selected=bench.inventorySelection,revision=bench.revision;
+  let waits=0,sourceRefreshes=0;
+  const transfer=async(op,choice)=>{
+    try {await fundRemake(op,choice);}
+    catch(err) {
+      // The server rejects this meter hash before any debit. fundRemake has
+      // removed the rejected request; refresh instead of replaying it. Keep
+      // all uncertain receiving/acknowledgement failures pending and visible.
+      if(/^Native source changed;/.test(err.message) && !fundingPending(op) && sourceRefreshes++<3)return;
+      throw err;
+    }
+  };
+  for(let step=0;step<32;step++) {
+    if(selected!==bench.inventorySelection || revision!==bench.revision)throw Error("Design changed; review it again");
+    const pending=REMAKE_FUNDING.find(op=>fundingPending(op));
+    if(pending) {await transfer(pending);continue;}
+    await reviewRemake();
+    if(selected!==bench.inventorySelection || revision!==bench.revision)throw Error("Design changed; review it again");
+    if(remake.job)throw Error("Your workpiece already exists · Collect or review it");
+    const next=nextRemakeFunding(remake.plan,remake.supply,remake.store);
+    if(next.blocked)throw Error(next.blocked);
+    if(next.done)return;
+    if(next.wait) {
+      if(waits++>=5)return; // Continue later; never invent charger time or energy.
+      await waitRemakeSecond();
+    } else await transfer(next.op,next.choice);
+  }
+  // A large design can need more bounded transfers. A later click continues
+  // from actual station balances, never repeats an already acknowledged debit.
+}
 function renderRemakeFunding(root,button,plan) {
   const supply=remake.supply;
   const pending=REMAKE_FUNDING.filter(op=>fundingPending(op));
@@ -3456,9 +3533,15 @@ function renderRemake() {
   remakeRow(root,"Workbench energy",`${energySaid(plan.station_energy_j)} / ${energySaid(quote.supply_required_j)}`);
   if(plan.occupied)remakeRow(root,"Workbench","In use");
   const fundingPendingNow=REMAKE_FUNDING.some(op=>fundingPending(op));
-  const funding=make("details",{id:"ws-remake-supplies"});funding.open=fundingPendingNow || plan.missing_stock_kg>1e-10 || plan.missing_energy_j>1e-10;
-  funding.open ||= missingRemakeGoods(plan);
-  funding.append(make("summary",{},"Fund workbench"));root.append(funding);
+  const preparation=nextRemakeFunding(plan,remake.supply,remake.store);
+  if(!preparation.done || fundingPendingNow) {
+    remakeRow(root,"Supplies",remakeSupplyPools(plan));
+    const prepare=button("ws-remake-prepare",fundingPendingNow ? "Retry supplies" : preparation.wait ? "Continue charging" : "Prepare supplies",prepareRemakeSupplies);
+    prepare.disabled=remake.busy || (!fundingPendingNow && !!preparation.blocked);
+    if(preparation.blocked)remakeRow(root,"Needed",preparation.blocked);
+  }
+  const funding=make("details",{id:"ws-remake-supplies"});funding.open=fundingPendingNow || !!preparation.blocked;
+  funding.append(make("summary",{},"Supply details"));root.append(funding);
   const supplyButton=(id,label,fn)=>{const b=button(id,label,fn);funding.append(b);return b;};
   renderRemakeFunding(funding,supplyButton,plan);
   remakeRow(root,'Status',plan.build_readiness?.status || 'Review required');

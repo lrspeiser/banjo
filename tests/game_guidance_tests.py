@@ -16,6 +16,28 @@ import player_guidance
 
 
 class GuidanceContract(unittest.TestCase):
+    def test_owned_paid_carried_surface_is_placed_instead_of_built_again(self):
+        from copy import deepcopy
+        requirement={'kind':'funded-box-surface','minimum_area_m2':.1}
+        candidate={'kind':'bench','parameters':{'width_m':.48,'depth_m':.32,'height_m':.5,
+            'top_thickness_m':.04,'top_profile':'square','leg_section_m':.04,'leg_style':'straight',
+            'splay_deg':0,'leg_inset_m':.05,'material':'oak','aprons':0,'stretchers':0},
+            'component_overrides':{part:{'mechanics':{'model':'rigid'}} for part in ['top','leg-1','leg-2','leg-3','leg-4']}}
+        process={'jobs':{'paid':{'candidate':candidate,'status':'installed',
+            'root_body':'made-table','make_source':{'owner':'me'}}}}
+        item={'id':'made-table','name':'My table','parts':['made-table']}
+        inventory={'record':{'stowed':[None,item['id']]},'stowed':[item],'hands':{}}
+        action=player_guidance._carried_surface_action('me',requirement,process,inventory)
+        self.assertEqual('place-product',action['verb']);self.assertIn('Key 2',action['label'])
+        self.assertIsNone(player_guidance._carried_surface_action('peer',requirement,process,inventory))
+        self.assertIsNone(player_guidance._carried_surface_action('me',requirement,process,{}))
+        running=deepcopy(process);running['jobs']['paid']['status']='running'
+        self.assertIsNone(player_guidance._carried_surface_action('me',requirement,running,inventory))
+        held={'hands':{'right':item},'stowed':[]}
+        self.assertIn('Place held My table',player_guidance._carried_surface_action('me',requirement,process,held)['label'])
+        too_large={**requirement,'minimum_area_m2':1000.}
+        self.assertIsNone(player_guidance._carried_surface_action('me',too_large,process,inventory))
+
     def test_ground_use_destination_keeps_the_surveyed_column_instead_of_aiming_at_held_tool(self):
         target={'body':'my pick','ground_at_m':[2.,.5,-3.],'where':'right'}
         for verb in ('move','use-tool'):
@@ -107,12 +129,14 @@ class PrivateGuidance(unittest.TestCase):
         self.assertEqual('Fund materials',ready['build_readiness']['status'])
         self.assertFalse(ready['build_readiness']['ready_to_start'])
         self.assertEqual('get-tool-wood',self.post('/api/world/guidance',{},world,peer['token'])['goal']['id'])
+        authored={**ready['project']['candidate'],'design_id':'field-pick-g0-v1','purpose':'Field pick'}
         focused=self.post('/api/world/guidance',{'action':'select-project','project':{
-            'name':'My first pick','candidate':ready['project']['candidate'],
+            'name':'My first pick','candidate':authored,
             'selection':{'source':'recipe','id':'Personal field pick'}}},world)
         self.assertTrue(focused['project']['focused'])
         ctx={k:v for k,v in self.post('/api/world/workshop/context',{},world).items() if k in ('session','scene')}
-        plan=self.post('/api/world/fabrication/plan_make',{**ctx,'candidate':ready['project']['candidate']},world)
+        browser_candidate={**authored,'generation':0}
+        plan=self.post('/api/world/fabrication/plan_make',{**ctx,'candidate':browser_candidate},world)
         self.assertEqual(ready['build_readiness'],plan['build_readiness'])
         for line in plan['build_readiness']['lines']:
             state=self.post('/api/world/fabrication/state',ctx,world)
@@ -161,7 +185,7 @@ class PrivateGuidance(unittest.TestCase):
         self.assertEqual('continue-build',pending['next_action']['verb'])
         self.assertEqual('guidance-own-workpiece',pending['next_action']['destination']['job'])
         self.assertFalse(pending['build_readiness']['ready_to_start'])
-        self.assertEqual(ready['project']['candidate'],pending['project']['candidate'])
+        self.assertEqual(browser_candidate,pending['project']['candidate'])
         self.assertEqual('workpiece',pending['project']['source'])
         scope=fixture.server.workshop_library.REQUEST_OWNER.set(owner['id'])
         try:self.assertIsNone(player_guidance.selected_project(app,owner['id'],app.room.fabrication_record))

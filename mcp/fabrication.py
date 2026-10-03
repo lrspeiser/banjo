@@ -373,6 +373,16 @@ def energy_packet(packet):
     return packet
 
 
+def energy_source_binding(meter):
+    """Bind a store's identity/rating while its live charge counters advance.
+
+    This is not permission to spend the displayed balance: the adapter must
+    check current charge and shared power allowance under the world lock.
+    """
+    return 'binding:' + digest({k: meter[k] for k in
+        ('id', 'name', 'body', 'capacity_j', 'voltage_v', 'max_power_w')})
+
+
 def receive_energy(state, body, packet):
     """Trusted adapter only; receiving credit and native debit save together."""
     if check_request(state, body): return deepcopy(state), True
@@ -383,7 +393,7 @@ def receive_energy(state, body, packet):
         "power_w": packet["power_w"], "since_s": packet["started_s"], "given_j": packet["given_started_j"]}
     if connection != expected or abs(packet["time_s"]-state["time_s"]) > 1e-8:
         raise ValueError("Energy transfer does not match the current charger interval")
-    if body.get("op") != "fund_energy" or body.get("joules") != packet["joules"] or body.get("store_hash") != digest(packet["before"]):
+    if body.get("op") != "fund_energy" or body.get("joules") != packet["joules"] or body.get("store_hash") not in (digest(packet["before"]), energy_source_binding(packet["before"])):
         raise ValueError("Energy transfer does not match its requested debit")
     out = deepcopy(state)
     out.setdefault("energy_imports", {})[body["request_id"]] = deepcopy(packet)

@@ -71,7 +71,12 @@ def selected_project(app,owner,process):
     value=json.loads(row['payload_json'])
     for ident,job in (process or {}).get('jobs',{}).items():
         binding=job.get('make_source') or job.get('remake_source') or {}
-        if ident not in value.get('prior_jobs',[]) and binding.get('owner')==owner and digest(job['candidate'])==digest(value['candidate']):
+        # The browser's generation counter identifies a preview take, not a
+        # physical design input. It is present in paid quotes/jobs but omitted
+        # from the persisted guidance selection. Keep exact design fields and
+        # owner/job boundaries while comparing the same authored candidate.
+        authored={k:v for k,v in job['candidate'].items() if k!='generation'}
+        if ident not in value.get('prior_jobs',[]) and binding.get('owner')==owner and digest(authored)==digest(value['candidate']):
             clear_project(app,owner);return None
     return validate_project({k:v for k,v in value.items() if k!='prior_jobs'})
 
@@ -106,7 +111,8 @@ def _project_action(state,project,reading):
         action['destination']=_destination(action,project)
         action['status']='Blocked' if action['verb']=='wait' else 'Available'
         return action
-    return {'verb':'review-project','label':status+' · '+project['name'],
+    label='Prepare supplies' if status in ('Fund materials','Fund energy') else status
+    return {'verb':'review-project','label':label+' · '+project['name'],
         'status':'Blocked' if status in ('Needs changes','Workbench missing','Workbench in use','Workpiece limit reached') else 'Available',
         'destination':destination,'blockers':[reading['reason']] if reading.get('reason') else []}
 
@@ -164,6 +170,28 @@ def _destination(action, project=None):
         route={'screen':'recipes','recipe':project['name']} if project else {'screen':'recipes'}
     elif verb=='wait':route={'screen':'goals'}
     return route
+
+
+def _carried_surface_action(owner, requirement, process, inventory):
+    """Suggest placing an owned paid surface; placement still earns the goal."""
+    if (requirement or {}).get('kind')!='funded-box-surface':return None
+    slots=(inventory.get('record') or {}).get('stowed',[])
+    for job in (process or {}).get('jobs',{}).values():
+        binding=job.get('make_source') or job.get('remake_source') or {}
+        if binding.get('owner')!=owner or job.get('status')!='installed':continue
+        if not ai_actions.fits_requirement(job['candidate'],requirement):continue
+        root=job.get('root_body')
+        for where,item in [*inventory.get('hands',{}).items(),*[('stowed',i) for i in inventory.get('stowed',[])]]:
+            if not item or not root or root not in [item['id'],*item.get('parts',[])]:continue
+            name=item.get('name') or root
+            if where=='stowed':
+                slot=slots.index(item['id']) if item['id'] in slots else None
+                key=f'Key {(slot+1)%10}' if slot is not None else 'World quick slot'
+                label=f'Equip {name} · {key}, then place it in World'
+            else:label=f'Place held {name} · E'
+            return {'verb':'place-product','label':label,'status':'Available',
+                'destination':{'screen':'world','focus':item['id']}}
+    return None
 
 
 def resolve(app, owner, *, offers=None, balance=None, focus=None, project_override=None):
@@ -238,12 +266,17 @@ def resolve(app, owner, *, offers=None, balance=None, focus=None, project_overri
             chosen=next((a for a in actions if a['id']==ai_actions.reference_pick(state,actions)),None)
             next_action=deepcopy(chosen) if chosen else None
             if selected and reading:next_action=_project_action(state,project,reading)
+            elif row and (row.get('requirement') or {}).get('kind')=='funded-box-surface':
+                import inventory_room
+                placement=_carried_surface_action(owner,row['requirement'],process,inventory_room.shown(app,owner))
+                if placement:next_action=placement;project=None;reading=None
             if next_action:
                 next_action.setdefault('destination',_destination(next_action,project))
                 next_action.setdefault('status','Blocked' if next_action['verb']=='wait' else 'Available')
                 if next_action['verb']=='build' and reading:
+                    label='Prepare supplies' if reading['status'] in ('Fund materials','Fund energy') else reading['status']
                     next_action['label']=('Review '+project['name']+' in Lab' if reading.get('status')=='Needs changes' else
-                                          reading['status']+' · '+project['name'])
+                                          label+' · '+project['name'])
                     next_action['destination']={'screen':'recipes','recipe':project['name']}
                     if reading.get('reason'):next_action['blockers']=[reading['reason']]
                     if reading.get('status') in ('Needs changes','Workbench missing','Open World'):

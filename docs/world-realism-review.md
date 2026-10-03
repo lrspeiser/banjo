@@ -4,6 +4,14 @@ October 3, 2026. Review of the current repository and ordinary player flows.
 This is a product recommendation, with implementation evidence identified
 below. It does not certify new physical laws or close the active owner scope.
 
+**Ordinary player evidence:** the [opening/supply walkthrough](opening-human-supplies-checkpoint.md)
+reaches collected wood, a paid useful pick, actual sand gathering and learned
+skill, then a paid work table, with process restart retention. It exposed extra
+funding clicks, stale selected-design advice and a live-battery race; this
+checkpoint simplifies those boundaries. Processing still stops at confusing
+machine/skill advice in the observed fresh world. The opening alone does not
+qualify the entire tech tree or physical tabletop receiving.
+
 **Subsequent measured progress:** the [exposed-layer/peer checkpoint](exposed-layer-peer-checkpoint.md)
 verifies actual sand → soil excavation, private storage/restart and an observer's
 material/color/thumbnail updates without reload. It records frame timing and
@@ -99,7 +107,7 @@ new concept per chapter. Every required recipe needs an obtainable source,
 working processor, funded construction route and useful implemented action.
 An unavailable alternative must not block a supported route to the same skill.
 
-**Still needed:** human opening acceptance from loose wood, a broader supply
+**Still needed:** later human processing acceptance, a broader supply
 audit and additional supported processing alternatives. The reference AI
 completes two opening chains on two terrains; that is not completion of the
 whole ten-technique catalog or qualification of model-driven play.
@@ -183,7 +191,7 @@ acceptance, full provider-wait concurrency and functional item tests remain.
 
 1. Finish material gathering/exposed-layer/reload/peer consistency and measure
    recognition/performance, using the readable cells already published.
-2. Finish human opening and broader selected-project acceptance, including actual empty
+2. Extend the observed human tool/table opening and selected-project acceptance, including actual empty
    inputs and unavailable sources across the supported recipe catalog.
 3. Qualify additional human/model-driven tech routes and LLM designs through
    ordinary paid actions, private inventories and restart.

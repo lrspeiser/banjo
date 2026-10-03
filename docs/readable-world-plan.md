@@ -3,6 +3,15 @@
 Published implementation: `59f4efe` on GitHub main. This publication record
 does not close the full active scope.
 
+The [ordinary opening/supply checkpoint](opening-human-supplies-checkpoint.md)
+now observes a fresh browser wood → paid pick → numbered equip → native sand
+stroke → learned skill → paid work table journey, with full process restarts.
+Prepare supplies hides the manual transfer sequence while preserving real
+stock, battery charge and durable retry. Live source identity/rating binding
+removes the clock race without relaxing current charge or shared power limits.
+Wider processing/custom/live-model acceptance and all broader physical gates
+remain active; a legacy tabletop receiving regression remains unqualified.
+
 The [exposed-layer/peer checkpoint](exposed-layer-peer-checkpoint.md) qualifies
 actual sand → soil excavation, private Store/full restart and an ordinary
 observer's changing terrain/Soil thumbnail without reload. Independent
@@ -111,7 +120,8 @@ journey is qualified.
    Actual finite wood collection, paid 50 mm tool admission, ordinary pickup/use
    and restart pass for two players on two terrains; exhausted sources stay
    blocked. The reference AI completes this and the workshop chain on both.
-   Qualify the human journey and broader supply coverage, including supported
+   The linked ordinary browser opening now reaches the tool and work table.
+   Qualify later human processing and broader supply coverage, including supported
    processing alternatives and LLM-created products; retain private evidence.
 3. **Unified guidance:** one authenticated server result resolves readiness and
    the next supported action. The [shared guidance checkpoint](shared-guidance-checkpoint.md)

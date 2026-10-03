@@ -5590,6 +5590,20 @@ function showPicked() {
       }
     }
 
+    // Declared uses remain available while a tool's primary input digs. The
+    // same bounded action endpoint handles current and newly authored items.
+    const itemName=picked.name,uses=actionsFor(itemName);
+    if(uses.length) {
+      const actions=document.createElement("div");actions.className="ws-row";
+      actions.setAttribute("aria-label","Item actions");
+      uses.forEach((use,index)=>{
+        const button=document.createElement("button");button.type="button";
+        button.className="pk-reveal";button.textContent=use.label;
+        button.disabled=!!watchedId || world.acting || world.asking || world.paused;
+        button.onclick=()=>runAction(itemName,index);actions.append(button);
+      });
+      rows.push(actions);
+    }
     const keys = keysForPicked(picked.name);
     if (keys.length) rows.push(keyRows(keys));
   } else {

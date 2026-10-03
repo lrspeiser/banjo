@@ -374,7 +374,8 @@ def energy_sources(state, snapshot, scene):
         window = max(0., snapshot["t_s"]-connection["since_s"]) if connected else 0.
         limit = min(window*connection["power_w"], max(0., window*meter["max_power_w"]
             -(meter["given_j"]-connection["given_j"]))) if connected else 0.
-        rows.append({**deepcopy(meter), "store_hash": model.digest(meter), "connected": connected,
+        rows.append({**deepcopy(meter), "store_hash": model.digest(meter),
+            "store_binding_hash": model.energy_source_binding(meter), "connected": connected,
             "elapsed_s": window, "transfer_available_j": min(meter["charge_j"], limit)})
     return rows
 
@@ -397,7 +398,7 @@ def transfer_energy(app, body, operation):
             raise ValueError("Connect a positive native energy store ID first")
         source = next((m for m in before.get("energy_stores", []) if m["id"] == ident), None)
         if source is None: raise ValueError("Native energy source is missing")
-        if body["store_hash"] != model.digest(source):
+        if body["store_hash"] not in (model.digest(source), model.energy_source_binding(source)):
             raise ValueError("Native source changed; read energy_sources before spending")
         owned = {b["name"] for b in before.get("bodies", []) if b.get("parked")}
         for hand in (before.get("player_hands") or {}).values():
