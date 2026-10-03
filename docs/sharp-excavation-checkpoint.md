@@ -1,6 +1,9 @@
 # Smooth hills with sharp excavation — October 3, 2026
 
 Implemented experimental comparison on main base `416e8676`, Windows x64.
+Published implementation: `a14248d56cba029af7264bb9576c141138e7489c`
+on GitHub main, October 3, 2026. The focused verification below applies to
+that revision; this publication note adds no physical validation.
 Select **Menu → New game → Ground → Smooth hills · sharp cuts · preview**.
 Existing saved smooth/column worlds keep their declared geometry. This is a new
 native and browser terrain mode (`terrain.surface: cuts`), not a cosmetic pit.
