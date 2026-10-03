@@ -1,6 +1,6 @@
 # Gathered sand to glass and a usable lamp — October 2, 2026
 
-Implementation publication is recorded below after the fast-forward push.
+Published implementation: `dc70c036db0192e814683f15dcdf8a2f8a49173e` on GitHub main.
 
 ## Implemented
 
