@@ -143,6 +143,7 @@ class PrivateGround(unittest.TestCase):
         return world,alice,bob,app,request,program,intake,person,selection
 
     def test_stored_sand_glass_input_native_energy_private_output_and_restart(self):
+        import machine_witness
         world,alice,bob,app,stored,program,intake,person,selection=self.glass_input_fixture()
         def call(path,body,token=None):
             try:return self.post(path,body,world,token)
@@ -184,6 +185,8 @@ class PrivateGround(unittest.TestCase):
         self.stop();self.start();call('/api/world/open',{})
         app=self.app.hub.get(world);intake=app.brains.goods.by_name(intake['name'])
         self.assertEqual('melt glass',app.brains.of(program['name']).routine.recipe)
+        source=next(m for m in machine_witness.machines(app) if m['machine']==program['name'])
+        self.assertEqual('melt glass',source['recipe'])
         extra['session']=app.live.session.id
         self.assertTrue(call('/api/world/goods/deliver',extra)['repeated'])
         self.assertEqual(7,intake['holds']['sand'])
@@ -194,11 +197,27 @@ class PrivateGround(unittest.TestCase):
         meters=deepcopy(app.live.session.state['machines']['stores'])
         call('/api/world/machine',{'session':app.live.session.id,'program':program['id'],'power':True,
             'sender':'glass-input-fixture','seq':2})
-        for _ in range(600):
+        at=source['at_m'];view={'eyes_m':[at[0],at[1]+1.2,at[2]+2],
+            'facing':[0,0,-1],'look_direction':[0,-1.2,-2]}
+        watched=call('/api/world/watch-machine',{'session':app.live.session.id,
+            'machine':source['machine'],'person':view})
+        self.assertEqual('melt glass',watched['recipe'])
+        for tick in range(600):
+            if tick%30==0:
+                call('/api/live/act',{'session':app.live.session.id,'op':'step','dt':1/240,'n':1,'person':view})
             app.clock._tick(.2)
             output=app.brains.goods.by_name(output['name'])
             if output.get('holds',{}).get('glass',0)>=7*.85-1e-6:break
         self.assertAlmostEqual(5.95,output.get('holds',{}).get('glass',0),places=5)
+        journal=flow.server.journal_of(app,alice['id'])
+        evidence=[v for v in journal.data['evidence'].values() if v.get('source')=='watched']
+        self.assertEqual(1,len(evidence))
+        self.assertEqual('glass-furnace',evidence[0]['design'].split('@')[0])
+        self.assertGreater(evidence[0]['result']['made_kg'],0)
+        self.assertGreater(evidence[0]['result']['drawn_j'],0)
+        self.assertNotIn('smelting-copper',journal.knows())
+        self.assertNotIn('melting-glass',journal.knows(),'Existing prerequisite still requires copper; observation is distinct from mastery')
+        self.assertEqual({},flow.server.journal_of(app,bob['id']).data['evidence'])
         self.assertNotIn('sand',intake['holds'])
         self.assertEqual(before,intake['holds'],'Unselected copper remains in the same hopper')
         app.live.act({'session':app.live.session.id,'op':'poses'})
@@ -225,6 +244,62 @@ class PrivateGround(unittest.TestCase):
             'stored_sand_kg':initial,'delivered_sand_kg':7,'remaining_sand_kg':initial-7,
             'glass_kg':5.95,'declared_process_j':5600,'native_store_draw_j':drawn,
             'restart':'whole','build_use':'not yet qualified'},indent=2))
+
+        recovered=flow.server.journal_of(app,alice['id'])
+        self.assertEqual({v['id'] for v in evidence},set(recovered.data['evidence']))
+        self.assertEqual({},flow.server.journal_of(app,bob['id']).data['evidence'])
+        self.assertEqual('melt glass',next(m for m in machine_witness.machines(app)
+            if m['machine']==program['name'])['recipe'])
+
+    def test_processing_guidance_selects_owned_sand_and_shares_current_input_facts(self):
+        import starter_goals
+        world,alice,bob,app,stored,program,intake,person,selection=self.glass_input_fixture()
+        # Remove the initially supplied copper to exercise the actual empty-
+        # intake boundary. No material or completion evidence is granted.
+        intake['holds'].clear()
+        empty=self.join(world,'Empty observer')
+        goals={'chain_id':'observed-process-guidance','complete':False,'next_goal':'batch',
+            'goals':[{'id':'batch','title':'Learn from a working machine',
+                      'requirement':{'kind':'personal-batch'}}]}
+        with mock.patch.object(starter_goals,'view',return_value=goals):
+            own=self.post('/api/world/guidance',{},world)
+            other=self.post('/api/world/guidance',{},world,empty['token'])
+            self.assertEqual('melt glass',own['processing_readiness']['recipe'])
+            self.assertGreater(own['processing_readiness']['available_batch_kg'],0)
+            # Analytical preview boundary: a sub-batch input is completely
+            # consumed by convert(copy), but its source facts must stay intact.
+            # This mock supplies observations only; it grants no game material.
+            import world_goods
+            original=world_goods.input_readiness
+            before=deepcopy(app.room.fabrication_record)
+            def partial(*args,**kwargs):
+                facts=original(*args,**kwargs)
+                for line in facts['inputs']:
+                    line.update(hopper_kg=0,mass_kg=0,carried_kg=0,
+                        stored_personal_kg=.5 if line['substance']=='sand' else 0)
+                return facts
+            with mock.patch.object(world_goods,'input_readiness',side_effect=partial):
+                small=self.post('/api/world/guidance',{},world)
+            self.assertEqual(.5,small['processing_readiness']['available_batch_kg'])
+            self.assertEqual([],small['processing_readiness']['missing'])
+            self.assertEqual(before,app.room.fabrication_record)
+            self.assertEqual('select-process',own['next_action']['verb'])
+            self.assertEqual('Choose melt glass',own['next_action']['label'])
+            self.assertEqual(0,other['processing_readiness']['available_batch_kg'])
+            self.assertFalse(any(r['stored_personal_kg'] for r in other['processing_readiness']['inputs']))
+            self.post('/api/world/process',selection,world)
+            current=self.post('/api/world/guidance',{},world)
+            self.assertEqual('Load sand into '+intake['name'],current['next_action']['label'])
+            delivered=self.post('/api/world/goods/deliver',{'session':app.live.session.id,
+                'action':'view','pile':intake['name']},world)
+            menu=self.post('/api/world/process',{'session':app.live.session.id,
+                'program':program['id'],'action':'view'},world)
+            self.assertEqual(delivered['inputs'],current['processing_readiness']['inputs'])
+            self.assertEqual({k:v for k,v in delivered.items() if k!='persistence'},menu['input_readiness'])
+            market=self.post('/api/workshop/market',{},world)
+            self.assertEqual(current['next_action'],market['guidance']['player']['next_action'])
+            self.assertEqual(current['processing_readiness'],market['guidance']['player']['processing_readiness'])
+            self.assertEqual({},flow.server.journal_of(app,alice['id']).data['evidence'])
 
     def test_browser_selects_glass_and_retries_stored_input_after_reload(self):
         if not flow.qa_browser.CHROME.is_file():self.skipTest('Chrome not installed')

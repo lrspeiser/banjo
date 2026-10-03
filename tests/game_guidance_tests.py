@@ -319,8 +319,9 @@ class PrivateGuidance(unittest.TestCase):
                          'requirement':{'kind':'personal-batch','technique':'smelting-copper'}}]}
         with mock.patch.object(starter_goals,'view',return_value=goals):
             reading=self.post('/api/world/guidance',{},world)
-        self.assertEqual('wait',reading['next_action']['verb'])
-        self.assertEqual('Blocked',reading['next_action']['status'])
+        self.assertEqual('process-input',reading['next_action']['verb'])
+        self.assertEqual('Available',reading['next_action']['status'])
+        self.assertEqual('smelt copper',reading['processing_readiness']['recipe'])
         self.assertTrue(any('intake needs' in b for b in reading['next_action']['blockers']))
         self.assertNotIn('job',reading['next_action']['destination'])
 

@@ -208,6 +208,42 @@ def delivery(app, owner, body, keep):
         return _delivery(app,owner,body,keep)
 
 
+def input_readiness(app,owner,pile,accepted):
+    """Shared current input facts for Inventory and process guidance; no delivery."""
+    room=app.room
+    with workshop_library._connect(app) as db:
+        choices=[{'substance':s,'mass_kg':_personal_meter(db,owner,s)[2]} for s in sorted(accepted)]
+    from mcp import fabrication
+    state=getattr(room,'fabrication_record',None) or {}
+    import inventory_room
+    carried=inventory_room._carried(app,owner)
+    stored=[]
+    for lot,items in fabrication.raw_inventory(state).items():
+        owned=state.get('raw_lot_ownership',{}).get(lot,{}).get('owner','')
+        if owned and owned!=owner:continue
+        stored.extend({'lot_id':lot,**v,'pool':'personal' if owned else 'shared'}
+            for v in items if v['substance'] in accepted and v['mass_kg']>=.000001)
+    for row in choices:
+        substance=row['substance']
+        row['hopper_kg']=float((pile.get('holds') or {}).get(substance,0))
+        row['stored_kg']=sum(r['mass_kg'] for r in stored if r['substance']==substance)
+        row['stored_personal_kg']=sum(r['mass_kg'] for r in stored
+            if r['substance']==substance and r['pool']=='personal')
+        row['carried_kg']=float(carried.get(substance+'_kg',0)) if substance in fabrication.GROUND_DENSITIES else 0.
+        row['sources']=[{'name':d['name'],'at_m':d['at_m'],
+            'left_kg':app.brains.goods.reserve_kg(d)}
+            for d in app.brains.goods.deposits if d['substance']==substance]
+        row['next']=('processing' if row['hopper_kg']>=.000001 else
+            'load_stored' if row['stored_kg']>=.000001 else
+            'load_inventory' if row['mass_kg']>=.000001 else
+            'store_ground' if row['carried_kg']>=.000001 else
+            'gather_ground' if substance in fabrication.GROUND_DENSITIES else
+            'mine_source' if any(d['left_kg']>0 for d in row['sources']) else
+            'source_exhausted' if row['sources'] else 'find_supply')
+    return {'pile':pile['name'],'inputs':choices,'stored':stored,'raw_revision':state.get('revision'),
+            'pending':pending_deliveries(app,owner)}
+
+
 def _delivery(app, owner, body, keep):
     action=body.get('action','deliver')
     if action not in ('view','deliver','release'):raise ValueError('Unknown material delivery action')
@@ -219,35 +255,7 @@ def _delivery(app, owner, body, keep):
     validate(claims,player_world.records(app))
     if action=='view':
         pile,accepted=_delivery_inputs(app,body.get('pile'))
-        with workshop_library._connect(app) as db:
-            choices=[{'substance':s,'mass_kg':_personal_meter(db,owner,s)[2]} for s in sorted(accepted)]
-        from mcp import fabrication
-        state=getattr(room,'fabrication_record',None) or {}
-        import inventory_room
-        carried=inventory_room._carried(app,owner)
-        stored=[]
-        for lot,items in fabrication.raw_inventory(state).items():
-            owned=state.get('raw_lot_ownership',{}).get(lot,{}).get('owner','')
-            if owned and owned!=owner:continue
-            stored.extend({'lot_id':lot,**v,'pool':'personal' if owned else 'shared'}
-                for v in items if v['substance'] in accepted and v['mass_kg']>=.000001)
-        for row in choices:
-            substance=row['substance']
-            row['hopper_kg']=float((pile.get('holds') or {}).get(substance,0))
-            row['stored_kg']=sum(r['mass_kg'] for r in stored if r['substance']==substance)
-            row['carried_kg']=float(carried.get(substance+'_kg',0)) if substance in fabrication.GROUND_DENSITIES else 0.
-            row['sources']=[{'name':d['name'],'at_m':d['at_m'],
-                'left_kg':app.brains.goods.reserve_kg(d)}
-                for d in app.brains.goods.deposits if d['substance']==substance]
-            row['next']=('processing' if row['hopper_kg']>=.000001 else
-                'load_stored' if row['stored_kg']>=.000001 else
-                'load_inventory' if row['mass_kg']>=.000001 else
-                'store_ground' if row['carried_kg']>=.000001 else
-                'gather_ground' if substance in fabrication.GROUND_DENSITIES else
-                'mine_source' if any(d['left_kg']>0 for d in row['sources']) else
-                'source_exhausted' if row['sources'] else 'find_supply')
-        return {'pile':pile['name'],'inputs':choices,'stored':stored,'raw_revision':state.get('revision'),
-                'pending':pending_deliveries(app,owner)}
+        return input_readiness(app,owner,pile,accepted)
     request=body.get('request_id')
     if not isinstance(request,str) or not REQUEST.fullmatch(request):raise ValueError('Delivery needs a request id')
     with workshop_library._connect(app) as db:

@@ -265,7 +265,14 @@ def resolve(app, owner, *, offers=None, balance=None, focus=None, project_overri
                 actions=[a for a in ai_actions.catalog(state,memory) if a['verb']!='select-target']
             chosen=next((a for a in actions if a['id']==ai_actions.reference_pick(state,actions)),None)
             next_action=deepcopy(chosen) if chosen else None
+            processing=None
             if selected and reading:next_action=_project_action(state,project,reading)
+            elif row and (row.get('requirement') or {}).get('kind')=='personal-batch':
+                import process_guidance
+                options=process_guidance.choices(app,owner,(row.get('requirement') or {}).get('technique'))
+                if options:
+                    processing=options[0];next_action=deepcopy(processing['next_action'])
+                    project=None;reading=None
             elif row and (row.get('requirement') or {}).get('kind')=='funded-box-surface':
                 import inventory_room
                 placement=_carried_surface_action(owner,row['requirement'],process,inventory_room.shown(app,owner))
@@ -323,6 +330,7 @@ def resolve(app, owner, *, offers=None, balance=None, focus=None, project_overri
             result={'schema':'banjo.player-guidance.v1','observed_native_t_s':native.get('t'),
                 'chain_id':goals['chain_id'],'goal':({'id':row['id'],'title':row['title']} if row else None),
                 'next_action':next_action,'project':project,'build_readiness':reading,
+                'processing_readiness':processing,
                 'limits':'Snapshot only. Actions recheck stock, ownership, native admission and placement.'}
             if project_override is not None:result['draft_project']=draft_project
             return result

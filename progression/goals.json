@@ -140,11 +140,11 @@
           },
           "guide": {
             "where": "World",
-            "screen": "skills",
+            "screen": "world",
             "steps": [
-              "In Skills, choose a machine with a supported batch and inputs available.",
-              "Move near it, face it, turn it on and choose Watch next batch. Stay until an actual saved batch is recorded.",
-              "An empty intake needs supplies. Watching alone cannot finish this step."
+              "Follow Your next action to a compatible machine and its available supplies.",
+              "Stop it before changing recipe. Store carried ground materials in Inventory, then load the selected machine input.",
+              "Use Power / Watch batch, turn it on and watch while nearby and facing it. Only an actual saved batch completes this goal."
             ]
           }
         }

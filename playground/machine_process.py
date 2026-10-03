@@ -22,6 +22,11 @@ def request(app,owner,body):
     if not choices:raise ValueError('This machine has no compatible processing recipes')
     result={'program':program['id'],'recipe':routine.recipe,'power':bool(program.get('power')),
         'choices':deepcopy(choices),'input':routine.intake,'output':routine.output}
+    import world_goods
+    intake=app.brains.goods.by_name(routine.intake)
+    current=app.brains.goods.recipe(routine.recipe)
+    if intake is not None and current:
+        result['input_readiness']=world_goods.input_readiness(app,owner,intake,set(current['in']))
     if routine.chamber:
         reading=app.live.act({'session':app.live.session.id,'op':'thermo'}).get('thermo') or {}
         region=next((r for r in reading.get('regions',[]) if r.get('name')==routine.chamber),None)
@@ -51,4 +56,7 @@ def request(app,owner,body):
         routine.recipe=previous;raise
     brain.changed=True;app.brains._sent.clear()
     if save_error is not None:raise save_error
+    selected=app.brains.goods.recipe(recipe)
+    if intake is not None and selected:
+        result['input_readiness']=world_goods.input_readiness(app,owner,intake,set(selected['in']))
     return {**result,'recipe':recipe,'repeated':False}

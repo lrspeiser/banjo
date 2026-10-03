@@ -20,6 +20,13 @@ material/color/thumbnail updates without reload. It records frame timing and
 the full-geometry packet cost. Night recognition and wider hardware/multiplayer
 load acceptance remain open; the recommendations below keep their stated scope.
 
+**Subsequent processing checkpoint:** [Live recipe/input guidance](processing-guidance-checkpoint.md)
+repairs the consistency risk described below and continues the ordinary
+opening through a saved glass batch and chapter completion. Night visibility
+is still poor, and output-collection guidance remains an observed usability
+gap. The earlier findings below retain their reviewed baseline; the checkpoint
+separates the implemented fixes from the remaining recommendations.
+
 ## Recommendation
 
 Use clearly colored, patterned ground cells with sharp material boundaries.
@@ -412,9 +419,9 @@ neither substitutes for the other.
 |---|---|---|
 | Material recognition | First-time players identify the supported opening materials at working and walking distance without labels; test daylight, dusk and color-vision variants | Not measured; define sample size and error/time threshold before testing |
 | Terrain experiment | Same seed/camera/actions compare sharp smooth cells, matching stepped geometry and finer sampling; record frame/native step time, memory, save/reload and collision agreement | Comparison still needed |
-| Opening usability | Fresh player reaches a working tool and useful processed product through ordinary controls, no grants/teleports/mandatory purchases; record clicks, time, wrong turns and refusals | Tool/table observed; useful processing continuation not qualified |
+| Opening usability | Fresh player reaches a working tool and useful processed product through ordinary controls, no grants/teleports/mandatory purchases; record clicks, time, wrong turns and refusals | Tool/table and ordinary glass batch/chapter observed; ordinary output collection/use and first-time usability remain open |
 | Supply graph | Every recommended built-in or LLM recipe traces each required input to an obtainable source/processor and handles depletion/power loss explicitly | Broader catalog remains open |
-| Guidance agreement | World, Inventory, Recipes, Skills, Goals, Market and chat report the same current blocker/destination, including recipe changes and pending work | Shared result exists; alternate process and broader adverse cases remain |
+| Guidance agreement | World, Inventory, Recipes, Skills, Goals, Market and chat report the same current blocker/destination, including recipe changes and pending work | Shared result and alternate live-process input/evidence pass; broader adverse cases remain |
 | Multiplayer | Two fresh owners in one world progress independently, contend honestly for shared resources and retain private items/evidence through restart | Some private/peer cases pass; full supply contention/load still needed |
 | AI player | Same authenticated actions, paid materials, native results and restart gates as a human; distinguish reflex/controller from actual model-driven play | Reference openings exist; full live-model progression unqualified |
 | Physical response | Declared matched experiments with reaction/work/mass/momentum/energy accounts; compare glass, oak and iron for material claims | Existing boundaries only; native avatar/water/cargo and wider hauling remain open |

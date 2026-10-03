@@ -3635,22 +3635,30 @@ const resourceVisuals = goodsVisuals({scene,camera,groundAt,
     return answer;
   }});
 
-const deliveryMenus=new Map(),deliveryBusy=new Set(),processMenus=new Map();
+const deliveryMenus=new Map(),deliveryBusy=new Set(),processMenus=new Map(),processChoices=new Map();
 function processRecipePanel(program) {
   const pane=document.createElement('section');pane.dataset.processRecipe=program.id;
-  const menu=processMenus.get(program.id);
+  const heldMenu=processMenus.get(program.id);
+  const menu=heldMenu?.session===world.session?heldMenu:null;
   const refresh=async()=>{
-    processMenus.set(program.id,await api('/api/world/process',{session:world.session,program:program.id,action:'view'}));
+    const session=world.session;
+    const result=await api('/api/world/process',{session,program:program.id,action:'view'});
+    if(session!==world.session)return;
+    processMenus.set(program.id,{...result,session});
     showPicked();
   };
   const button=document.createElement('button');button.type='button';
   button.textContent=menu?'Refresh recipes':'Choose recipe';
   button.onclick=()=>refresh().catch(e=>lastAction(e.message));pane.append(button);
+  const operate=document.createElement('button');operate.type='button';operate.textContent='Power / Watch batch';
+  operate.onclick=()=>openMachinePanel(program);pane.append(operate);
   if(!menu)return pane;
   const select=document.createElement('select');select.setAttribute('aria-label','Processing recipe');
+  const draft=processChoices.get(program.id);
+  const selected=draft?.session===world.session && draft.expected_recipe===menu.recipe?draft.recipe:menu.recipe;
   for(const recipe of menu.choices) {
     const option=document.createElement('option');option.value=recipe.name;option.textContent=titled(recipe.name);
-    option.selected=recipe.name===menu.recipe;select.append(option);
+    option.selected=recipe.name===selected;select.append(option);
   }
   pane.append(select);
   const values=document.createElement('div');pane.append(values);
@@ -3662,7 +3670,9 @@ function processRecipePanel(program) {
         ['Heating',`${menu.element_w || 0} W · additional energy`]]:[]),
       ['Output',Object.entries(recipe.out).map(([s,kg])=>`${massLabel(kg)} ${titled(s)}`).join(' · ')]]));
   };
-  select.onchange=describe;describe();
+  select.onchange=()=>{
+    processChoices.set(program.id,{session:world.session,expected_recipe:menu.recipe,recipe:select.value});describe();
+  };describe();
   const apply=document.createElement('button');apply.type='button';apply.textContent=program.power?'Stop machine to change':'Use recipe';
   apply.disabled=program.power;apply.dataset.selectProcessRecipe=program.id;
   apply.onclick=async()=>{
@@ -3670,7 +3680,8 @@ function processRecipePanel(program) {
     try {
       const result=await api('/api/world/process',{session:world.session,program:program.id,action:'select',
         recipe:select.value,expected_recipe:menu.recipe,person:whereIAm()});
-      processMenus.set(program.id,result);deliveryMenus.delete(result.input);
+      processChoices.delete(program.id);
+      processMenus.set(program.id,{...result,session:world.session});deliveryMenus.delete(result.input);
       lastAction(`Recipe → ${titled(result.recipe)}`);
     } catch(e) {lastAction(e.message);}
     finally {await refresh();}
@@ -10782,6 +10793,8 @@ function showToolSkills() {
 let guidanceBusy=false, guidanceReadAt=-Infinity;
 async function showNextStep() {
   const root=$("next-step");
+  const chat=$("talk");
+  if(root && chat && root.parentElement!==chat.parentElement)chat.before(root);
   if (!root || !worldId || !world.session || watchedId || guidanceBusy || performance.now()-guidanceReadAt<4500) return;
   guidanceBusy=true;guidanceReadAt=performance.now();
   try {const data=await api("/api/world/guidance",{});renderPlayerGuidance(root,data);}

@@ -31,7 +31,12 @@ def machines(app: Any) -> list[dict]:
     for p in (app.room.spec.get("machines") or {}).get("programs") or []:
         live = native.get(p["name"])
         routine = p.get("routine") or {}
-        recipe = routine.get("recipe") if routine.get("kind") == "process" else None
+        brain = (getattr(getattr(app, "brains", None), "brains", {}) or {}).get(p["name"])
+        if brain is not None:
+            current = brain.routine
+            recipe = current.recipe if current is not None and current.kind == "process" else None
+        else:
+            recipe = routine.get("recipe") if routine.get("kind") == "process" else None
         if live is None or not recipe:
             continue
         parts = live.get("parts") or [p.get("body")]
