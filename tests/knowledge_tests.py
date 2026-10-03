@@ -600,6 +600,26 @@ class ARecipeYouWatchedIsARecipeYouKnow(unittest.TestCase):
         said = [e["said"] for d in book["designs"] for e in d["evidence"]]
         self.assertIn("Copper smelter worked 5.00 kg of copper ore into 1.50 kg of copper", said)
 
+    def test_glass_experiment_earns_its_own_branch_and_recovers_older_evidence_once(self):
+        self.assertEqual([], progression.earn(self.journal, self.registry, self.now))
+        self.assertEqual([], self.registry.techniques['melting-glass']['prerequisites']['all_of'])
+        evidence = progression.evidence_from_batch('melt glass', {'glass':.85}, {'sand':1.},
+            session_id='older-glass', at=self.now, batch=1)
+        self.assertIsNotNone(evidence)
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'journal.json'
+            older=progression.Journal(path)
+            older.add_evidence(evidence)
+            self.assertEqual(set(),older.knows())
+            restored=progression.Journal(path)
+            self.assertEqual(['melting-glass'],progression.earn(restored,self.registry,self.now))
+            self.assertNotIn('smelting-copper',restored.knows())
+            learned=restored.copy()
+            reopened=progression.Journal(path)
+            self.assertEqual([],progression.earn(reopened,self.registry,self.now))
+            self.assertEqual(learned,reopened.copy())
+            self.assertEqual([],progression.earn(progression.Journal(),self.registry,self.now))
+
     def test_the_mill_is_a_rung_above_the_smelter(self):
         """You cannot draw wire out of copper you cannot make, so the graph is
         walked: watching a mill first teaches nothing until smelting is in."""

@@ -734,11 +734,11 @@ class AutonomousGuests(unittest.TestCase):
             goals=final['goals']; journal=server.journal_of(app,bot['id'])
             known=journal.knows()
             self.assertIn('using-ground-tools',known)
-            self.assertIn('smelting-copper',known)
+            self.assertTrue({'smelting-copper','melting-glass'} & known,known)
             self.assertEqual(set(),server.journal_of(app,owner['id']).knows())
             self.assertTrue(all(e['mode']=='reference' and not e['model'] for e in final['character']['history']))
             actions={e['action'] for e in app.room.player_records[bot['id']]['ai']['history']}
-            self.assertTrue({'move','select-target','inspect','acquire','use-tool','watch-batch',
+            self.assertTrue({'move','select-target','acquire','use-tool','watch-batch',
                              'compare-recipes','build','collect'}<=actions,actions)
             self.assertEqual('saved',app.room.persistence['state'])
             evidence=list(journal.data['evidence'].values())

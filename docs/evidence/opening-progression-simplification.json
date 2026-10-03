@@ -1,0 +1,153 @@
+{
+  "base_revision": "ebc2726",
+  "environment": {
+    "os": "Windows 11",
+    "python": "3.13",
+    "native_build": "build/agent-native-water/Release",
+    "decider": "reference",
+    "provider_calls": 0
+  },
+  "tests": {
+    "knowledge": {
+      "checks": 53,
+      "seconds": 0.157
+    },
+    "goal_boundaries_and_two_owner_opening": {
+      "checks": 5,
+      "seconds": 29.901
+    },
+    "shared_guidance": {
+      "checks": 11,
+      "seconds": 20.422
+    },
+    "native_processing": {
+      "checks": 3,
+      "seconds": 82.3
+    },
+    "reference_two_terrain_opening": {
+      "checks": 1,
+      "seconds": 188.741
+    }
+  },
+  "reference_cases": [
+    {
+      "terrain_seed": 7,
+      "goods_seed": 851269742,
+      "wall_s": 112.939,
+      "native_t_s": 40.462500000005235,
+      "decisions": 32,
+      "known": [
+        "smelting-copper",
+        "using-ground-tools"
+      ],
+      "goals_complete": true,
+      "paid_make": {
+        "default_workbench": true,
+        "initial_stock_kg": {},
+        "initial_energy_j": 0,
+        "jobs": [
+          {
+            "status": "installed",
+            "owner": "37bc4853e6de46f59b5e84d00b3da787",
+            "product_kg": 1.9250000000000005,
+            "stock_kg": 1.9250000000000005,
+            "work_j": 192.50000000000006
+          },
+          {
+            "status": "installed",
+            "owner": "37bc4853e6de46f59b5e84d00b3da787",
+            "product_kg": 6.361599999999999,
+            "stock_kg": 6.361599999999999,
+            "work_j": 636.16
+          }
+        ],
+        "audit": {
+          "material_residual_kg": {
+            "oak": 0.0
+          },
+          "assembly_goods_received_kg": {},
+          "assembly_goods_reserved_or_transferred_kg": {},
+          "assembly_goods_residual_kg": {},
+          "rack_material_received_kg": {
+            "oak": 8.2866
+          },
+          "native_energy_received_j": 828.6600000000001,
+          "reserved_output_energy_j": 0,
+          "transferred_output_energy_j": 0,
+          "native_transfer_residual_j": -8.384404281969182e-11,
+          "native_meter_residual_j": 3.467448550509289e-12,
+          "energy_residual_j": -3.97015753605956e-13,
+          "work_residual_j": -1.1368683772161603e-13,
+          "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+        },
+        "funding": "Own collected stock; native generated solar battery; no shared rack debit."
+      }
+    },
+    {
+      "terrain_seed": 4,
+      "goods_seed": 1,
+      "wall_s": 73.815,
+      "native_t_s": 22.06249999999907,
+      "decisions": 30,
+      "known": [
+        "smelting-copper",
+        "using-ground-tools"
+      ],
+      "goals_complete": true,
+      "paid_make": {
+        "default_workbench": true,
+        "initial_stock_kg": {},
+        "initial_energy_j": 0,
+        "jobs": [
+          {
+            "status": "installed",
+            "owner": "efdf030b04864310b49e6ef6e329c51f",
+            "product_kg": 1.9250000000000005,
+            "stock_kg": 1.9250000000000005,
+            "work_j": 192.50000000000006
+          },
+          {
+            "status": "installed",
+            "owner": "efdf030b04864310b49e6ef6e329c51f",
+            "product_kg": 6.361599999999999,
+            "stock_kg": 6.361599999999999,
+            "work_j": 636.16
+          }
+        ],
+        "audit": {
+          "material_residual_kg": {
+            "oak": 0.0
+          },
+          "assembly_goods_received_kg": {},
+          "assembly_goods_reserved_or_transferred_kg": {},
+          "assembly_goods_residual_kg": {},
+          "rack_material_received_kg": {
+            "oak": 8.2866
+          },
+          "native_energy_received_j": 828.6600000000001,
+          "reserved_output_energy_j": 0,
+          "transferred_output_energy_j": 0,
+          "native_transfer_residual_j": -8.384404281969182e-11,
+          "native_meter_residual_j": 3.467448550509289e-12,
+          "energy_residual_j": 1.6586731987899839e-13,
+          "work_residual_j": -1.1368683772161603e-13,
+          "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+        },
+        "funding": "Own collected stock; native generated solar battery; no shared rack debit."
+      }
+    }
+  ],
+  "browser": {
+    "port": 8776,
+    "world": "a6ce9c85e2d34ef2864e3b9739cbf682",
+    "steps": [
+      "build-surface",
+      "observe-process"
+    ],
+    "later_chapter": true,
+    "active_action": "Get wood for your tool",
+    "completed_goals": 0
+  },
+  "physics_changes": false,
+  "full_goal_complete": false
+}

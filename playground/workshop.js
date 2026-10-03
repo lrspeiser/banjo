@@ -3160,12 +3160,13 @@ async function showGoals() {
   $("#ws-goals-progress").textContent = goals.complete ? `${firstCamp ? "First camp" : goals.title} complete. Your progress is saved.`
     : `${goals.title} · ${goals.goals.filter(g=>g.complete).length} / ${goals.goals.length} complete`;
   $("#ws-goals-next").textContent = goals.complete ? goals.follow_up
+    : goals.unlocked === false ? "Later chapter · Follow Your next action to finish the opening first."
     : firstCamp ? "Earn energy → buy wood → make a stool → carry it. Do each step in the game; this checklist updates automatically."
     : goals.goals.map(g=>g.title).join(" → ");
   const limits = $("#ws-goals-limits"); limits.replaceChildren();
   const details=make("details", {}); details.append(make("summary", {}, "About this goal"), make("p", {}, goals.limits)); limits.append(details);
   for (const [index, goal] of goals.goals.entries()) {
-    const guide=goal.guide || GOAL_GUIDES[goal.id], current=goals.next_goal===goal.id;
+    const guide=goal.guide || GOAL_GUIDES[goal.id], current=goals.unlocked!==false && goals.next_goal===goal.id;
     const li=item(goal.title, "", goal.complete ? "enough" : current ? "ws-goal-current" : "ws-goal-later");
     li.dataset.goal=goal.id; li.dataset.complete=String(goal.complete);
     const state=make("div", {class:"ws-goal-state"});

@@ -74,7 +74,8 @@ class Predicates(unittest.TestCase):
                     with self.assertRaises(ValueError):goal_chains.definitions()
                 goal_chains.definitions.cache_clear()
         finally:goal_chains.definitions.cache_clear()
-        self.assertEqual(4,len(goal_chains.definitions()['first-workshop-v1']['steps']))
+        self.assertEqual(['build-surface','observe-process'],
+                         [s['id'] for s in goal_chains.definitions()['first-workshop-v1']['steps']])
         self.assertEqual(3,len(goal_chains.definitions()['first-tool-v1']['steps']))
 
 
@@ -87,6 +88,38 @@ class PlayerJourney(unittest.TestCase):
     get=hub.NamedWorlds.get
     post=hub.NamedWorlds.post
     join=hub.NamedWorlds.join
+
+    def test_retired_opening_checks_preserve_older_partial_progress_and_restart(self):
+        world=self.post('/api/worlds',{'name':'Retained chapter history'})['id']
+        owner=self.join(world,'Returning player');peer=self.join(world,'Other player')
+        self.players={world:owner};self.post('/api/world/open',{},world)
+        app=self.app.hub.get(world)
+        def goals(player=None):
+            return self.post('/api/workshop/goals',{'chain':'first-workshop-v1'},world,player)
+        initial=goals()
+        self.assertEqual(['build-surface','observe-process'],[g['id'] for g in initial['goals']])
+        self.assertFalse(any(g['complete'] for g in initial['goals']))
+        # Historical receipt fixture only: old completed steps are never erased
+        # or turned into a new batch, skill, inventory item or Market purchase.
+        records=[(owner['id'],'first-workshop-v1',step,json.dumps({'legacy':step}),
+                  '2026-10-02T00:00:00Z') for step in ('study-tool','gather-ground','build-surface')]
+        with server.workshop_library._connect(app) as db:
+            db.executemany('INSERT INTO starter_goal_progress VALUES (?,?,?,?,?)',records)
+        updated=goals()
+        self.assertEqual('observe-process',updated['next_goal'])
+        self.assertFalse(updated['complete'])
+        self.assertEqual({'legacy':'build-surface'},updated['goals'][0]['evidence'])
+        self.assertEqual(initial['balance_j'],updated['balance_j'])
+        self.assertFalse(any(g['complete'] for g in goals(peer['token'])['goals']))
+        self.assertEqual(set(),server.journal_of(app,owner['id']).knows())
+        with server.workshop_library._connect(app) as db:
+            retained=[tuple(row) for row in db.execute(
+                'SELECT * FROM starter_goal_progress WHERE owner_id=? AND chain_id=? ORDER BY goal_id',
+                (owner['id'],'first-workshop-v1'))]
+        self.assertEqual(sorted(records,key=lambda row:row[2]),retained)
+        self.stop();self.start();self.post('/api/world/open',{},world)
+        self.assertEqual(updated['goals'],goals()['goals'])
+        self.assertEqual('observe-process',goals()['next_goal'])
 
     def test_personal_tool_opening_collects_builds_uses_and_restarts_for_two_players(self):
         reports=[]
@@ -208,7 +241,7 @@ class PlayerJourney(unittest.TestCase):
             first=camp.play_first_camp(self,world,owner['token'])
             self.assertTrue(first['complete'])
             def goals(player=None):return self.post('/api/workshop/goals',{'chain':'first-workshop-v1'},world,player)
-            before=goals();self.assertEqual('study-tool',before['next_goal'])
+            before=goals();self.assertEqual('build-surface',before['next_goal'])
             self.assertEqual(before['goals'],goals()['goals'],'viewing cannot award progress')
             self.assertTrue(before['unlocked'])
             session=before['session']
@@ -224,7 +257,7 @@ class PlayerJourney(unittest.TestCase):
             inventory('take_up','field pick')
             studied=self.post('/api/world/action',{'session':session,'object':'field pick','primary':True,'person':person},world)
             self.assertNotIn('refused',studied,studied)
-            self.assertEqual('gather-ground',goals()['next_goal'])
+            self.assertEqual('build-surface',goals()['next_goal'],'Study is optional and does not create a work surface')
             replies=[];errors=[]
             def use():
                 try:replies.append(self.post('/api/world/tool/use',{'session':session,'person':person,'at_m':[.3,ground,.025]},world))
@@ -330,7 +363,7 @@ class PlayerJourney(unittest.TestCase):
         page.evaluate(f'localStorage.setItem("banjo.player.{world}",{json.dumps(owner["token"])})')
         url=self.base+f'/world?world={world}&workshop=1&tab=goals&goal-chain=first-workshop-v1'
         page.send('Page.navigate',{'url':url})
-        wait('!!document.querySelector("[data-goal-go=study-tool]")')
+        wait('!!document.querySelector("[data-goal-go=build-surface]")')
         before=self.post('/api/workshop/goals',{'chain':'first-workshop-v1'},world)
         self.assertEqual(0,page.evaluate('document.querySelectorAll("[data-goal-action],[data-goal-bank]").length'))
         page.evaluate('document.querySelector("[data-goal-go=build-surface]").click()')
@@ -339,11 +372,11 @@ class PlayerJourney(unittest.TestCase):
         after=self.post('/api/workshop/goals',{'chain':'first-workshop-v1'},world)
         self.assertEqual(before['goals'],after['goals'])
         self.assertEqual(before['balance_j'],after['balance_j'])
-        page.send('Page.navigate',{'url':url});wait('!!document.querySelector("[data-goal-go=study-tool]")')
-        page.evaluate('document.querySelector("[data-goal-go=study-tool]").click()')
-        wait('location.search.includes("tab=skills") && !!document.querySelector("#ws-pane-skills .ws-link")')
+        page.send('Page.navigate',{'url':url});wait('!!document.querySelector("[data-goal-go=observe-process]")')
+        page.evaluate('document.querySelector("[data-goal-go=observe-process]").click()')
+        wait('!location.search.includes("workshop=1") && !!document.querySelector("#next-step")')
         self.assertEqual(before['goals'],self.post('/api/workshop/goals',{'chain':'first-workshop-v1'},world)['goals'])
-        page.send('Page.navigate',{'url':url});wait('!!document.querySelector("[data-goal-go=study-tool]")')
+        page.send('Page.navigate',{'url':url});wait('!!document.querySelector("[data-goal-go=build-surface]")')
         import base64
         output=ROOT/'build/goal-chains';output.mkdir(parents=True,exist_ok=True)
         (output/'checklist.png').write_bytes(base64.b64decode(page.send('Page.captureScreenshot')['data']))

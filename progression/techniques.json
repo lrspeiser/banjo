@@ -240,13 +240,11 @@
     },
     {
       "id": "melting-glass",
-      "version": 1,
+      "version": 2,
       "name": "Melting glass",
       "describes": "Melting sand into glass in a furnace that holds its heat",
       "prerequisites": {
-        "all_of": [
-          "smelting-copper"
-        ]
+        "all_of": []
       },
       "learn_from": [
         "lesson",

@@ -216,7 +216,7 @@ class PrivateGround(unittest.TestCase):
         self.assertGreater(evidence[0]['result']['made_kg'],0)
         self.assertGreater(evidence[0]['result']['drawn_j'],0)
         self.assertNotIn('smelting-copper',journal.knows())
-        self.assertNotIn('melting-glass',journal.knows(),'Existing prerequisite still requires copper; observation is distinct from mastery')
+        self.assertIn('melting-glass',journal.knows(),'A saved glass experiment earns its own skill without an unrelated copper gate')
         self.assertEqual({},flow.server.journal_of(app,bob['id']).data['evidence'])
         import process_guidance
         action=process_guidance.output_action(app,alice['id'])

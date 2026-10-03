@@ -1,5 +1,7 @@
 # World realism without a difficult opening
 
+**Opening progression, October 3:** [Independent glass learning and shorter chapters](opening-progression-simplification-checkpoint.md) removes repeated Study/Gather checks from the second chapter and the copper prerequisite for glass, preserving saved experiment requirements and older private progress. Later chapter browsing defers to shared active guidance. Native laws and binaries are unchanged; wider material, supply, human/model and R4/R5 gates remain open, R3 remains paused.
+
 October 3, 2026. Expanded review against published main `0ba1032`, current
 source contracts and the ordinary test world on port 8774. The owner's port
 8771 was not restarted or changed for this review.
