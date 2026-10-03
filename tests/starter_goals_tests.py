@@ -74,7 +74,7 @@ def play_first_camp(client, world, player):
     """An agent reads server evidence, then executes only normal player APIs."""
     trace = []
     for _ in range(32):
-        goals = client.post("/api/workshop/goals", {}, world, player)
+        goals = client.post("/api/workshop/goals", {"chain":starter_goals.CHAIN}, world, player)
         step = goals["next_goal"]
         if step is None:
             return {"complete": True, "trace": trace, "goals": goals}
@@ -130,7 +130,7 @@ class StarterGoals(unittest.TestCase):
         oak = next(r for r in rack["materials"] if r["material"] == "oak")
         self.assertAlmostEqual(.4912, oak["personal_kg"])
         self.assertAlmostEqual(12.4, oak["shared_kg"])
-        bob_view = self.post("/api/workshop/goals", {}, world, bob["token"])
+        bob_view = self.post("/api/workshop/goals", {"chain":starter_goals.CHAIN}, world, bob["token"])
         self.assertEqual("bank-solar", bob_view["next_goal"])
         self.assertTrue(all(not g["complete"] for g in bob_view["goals"]))
         second = play_first_camp(self, world, bob["token"])
@@ -193,7 +193,7 @@ class StarterGoals(unittest.TestCase):
         for player in (alice, bob):
             self.post("/api/world/player/join", {"token": player["token"]}, world)
             self.post("/api/world/open", {}, world, player["token"])
-            restored = self.post("/api/workshop/goals", {}, world, player["token"])
+            restored = self.post("/api/workshop/goals", {"chain":starter_goals.CHAIN}, world, player["token"])
             self.assertTrue(restored["complete"])
             bag = self.post("/api/world/inventory/shown", {"session": restored["session"]}, world, player["token"])
             self.assertIn(restored["camp_body"], bag["record"]["stowed"])
@@ -219,7 +219,7 @@ class StarterGoals(unittest.TestCase):
             self.post('/api/workshop/market',{'action':'buy','item_id':oak['id'],'quoted_price_j':oak['price_j'],
                 'request_id':f'wrong-stool-oak-{index}'},world)
         make_paid(self,world,alice['token'],candidate,[3,0],'wrong-stool-geometry')
-        self.assertFalse(self.post("/api/workshop/goals", {}, world)["goals"][2]["complete"])
+        self.assertFalse(self.post("/api/workshop/goals", {"chain":starter_goals.CHAIN}, world)["goals"][2]["complete"])
 
     def test_browser_completes_goals_in_market_recipes_and_world(self):
         if not qa_browser.CHROME.is_file():
@@ -252,15 +252,17 @@ class StarterGoals(unittest.TestCase):
         self.assertIn('Ask about energy',page.evaluate('document.querySelector("#ask-text").placeholder'))
         player=page.evaluate(f'localStorage.getItem("banjo.player.{world}")')
         click('.game-tabs [data-screen="goals"]')
+        wait_for('!!document.querySelector("[data-goal=get-tool-wood]")')
+        click('[aria-label="Goal chapters"] button:last-child')
         wait_for('!!document.querySelector("[data-goal-go=bank-solar]")')
         self.assertEqual(0, page.evaluate('document.querySelectorAll("[data-goal-action],[data-goal-bank]").length'))
         self.assertIn("In Market", page.evaluate('document.querySelector("[data-goal=bank-solar] .ws-goal-how").textContent'))
         self.assertTrue(page.evaluate('document.querySelector("[data-goal=bank-solar] details").open'))
         screenshot("guide.png")
-        before=self.post("/api/workshop/goals", {}, world, player)
+        before=self.post("/api/workshop/goals", {"chain":starter_goals.CHAIN}, world, player)
         click('[data-goal-go="bank-solar"]')
         wait_for('document.querySelector("#ws-market-bank")?.textContent === "Bank 500 J · Shared farm"')
-        navigated=self.post("/api/workshop/goals", {}, world, player)
+        navigated=self.post("/api/workshop/goals", {"chain":starter_goals.CHAIN}, world, player)
         self.assertEqual(before["balance_j"], navigated["balance_j"])
         self.assertEqual(before["goals"], navigated["goals"], "A Goals link completed a goal")
         click('#ws-market-bank')
@@ -316,7 +318,7 @@ class StarterGoals(unittest.TestCase):
         screenshot("packed-in-world.png")
         click('.game-tabs [data-screen="goals"]')
         wait_for('document.querySelector("#ws-goals-progress")?.textContent.includes("First camp complete")')
-        self.assertTrue(self.post("/api/workshop/goals", {}, world, player)["complete"])
+        self.assertTrue(self.post("/api/workshop/goals", {"chain":starter_goals.CHAIN}, world, player)["complete"])
         page.send("Page.reload")
         wait_for('document.querySelector("#ws-goals-progress")?.textContent.includes("First camp complete")')
         self.assertEqual(0, page.evaluate('document.querySelectorAll("[data-goal-action],[data-goal-bank]").length'))
@@ -338,10 +340,10 @@ class StarterGoals(unittest.TestCase):
                 runs_path=Path(temp) / "runs")
             shown = {"record": {"stowed": [body], "hands": {}, "revision": 1}}
             with mock.patch.object(starter_goals.inventory_room, "shown", return_value=shown):
-                self.assertFalse(starter_goals.view(app, "alice", {})["goals"][3]["complete"])
+                self.assertFalse(starter_goals.view(app, "alice", {"chain":starter_goals.CHAIN})["goals"][3]["complete"])
                 room.player_records["alice"]["inventory"] = shown["record"]
                 store.save(room)
-                self.assertTrue(starter_goals.view(app, "alice", {})["goals"][3]["complete"])
+                self.assertTrue(starter_goals.view(app, "alice", {"chain":starter_goals.CHAIN})["goals"][3]["complete"])
 
 
 if __name__ == "__main__": unittest.main()

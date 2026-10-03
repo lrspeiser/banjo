@@ -84,13 +84,13 @@ journey is qualified.
 1. **Material readability:** qualify exposed layers and stock/crosshair/Inventory
    consistency through actual gathering and reload. Check day/night readability
    and performance on declared hardware; retain geometry/collider agreement.
-2. **Opening progression:** replace the required banking/oak-purchase/stool
-   sequence with a useful personal product. A personal gathering tool is the
-   first candidate using the existing paid tool lane and reachable timber.
-   Choose its final geometry from actual build/use evidence. Recognize supported
-   gathering, processing and buying routes; preserve earlier completed goals
-   and private evidence. Prove finite supply/work, ordinary pickup/use and restart
-   for two players, including exhausted starter supplies.
+2. **Opening progression:** the [personal tool checkpoint](opening-tool-checkpoint.md)
+   replaces the required banking/oak-purchase/stool sequence for new players.
+   Actual finite wood collection, paid 50 mm tool admission, ordinary pickup/use
+   and restart pass for two players on two terrains; exhausted sources stay
+   blocked. The reference AI completes this and the workshop chain on both.
+   Qualify the human journey and broader supply coverage, including supported
+   processing alternatives and LLM-created products; retain private evidence.
 3. **Unified guidance:** one authenticated server result resolves readiness and
    the next supported action. World, Inventory, Goals, Skills, Recipes, Market
    and chat consume it. Selected projects/tools can focus the result; the

@@ -729,7 +729,7 @@ class AutonomousGuests(unittest.TestCase):
                 world,owner,app=self.setup_world()
             began=time.monotonic()
             bot=self.post('/api/world/ai',{'action':'start','mode':'reference','name':'Seed explorer'},world)
-            final=self.wait_character(world,bot['id'])
+            final=self.wait_character(world,bot['id'],seconds=300)
             self.assertEqual('complete',final['character']['status'],final['character'])
             goals=final['goals']; journal=server.journal_of(app,bot['id'])
             known=journal.knows()
@@ -739,7 +739,7 @@ class AutonomousGuests(unittest.TestCase):
             self.assertTrue(all(e['mode']=='reference' and not e['model'] for e in final['character']['history']))
             actions={e['action'] for e in app.room.player_records[bot['id']]['ai']['history']}
             self.assertTrue({'move','select-target','inspect','acquire','use-tool','watch-batch',
-                             'compare-recipes','build','pack'}<=actions,actions)
+                             'compare-recipes','build','collect'}<=actions,actions)
             self.assertEqual('saved',app.room.persistence['state'])
             evidence=list(journal.data['evidence'].values())
             reports.append({'terrain_seed':(4,7)[terrain_choice],'goods_seed':goods_seed,
@@ -765,7 +765,7 @@ class AutonomousGuests(unittest.TestCase):
             reports[-1]['paid_make']={'default_workbench':True,'initial_stock_kg':{},'initial_energy_j':0,
                 'jobs':[{'status':j['status'],'owner':j['make_source']['owner'],'product_kg':j['product_kg'],
                          'stock_kg':j['stock_kg'],'work_j':j['required_j']} for j in process['jobs'].values()],
-                'audit':totals,'funding':'Own market purchases; native generated solar battery; no shared rack debit.'}
+                'audit':totals,'funding':'Own collected stock; native generated solar battery; no shared rack debit.'}
         output=ROOT/'build/ai-player';output.mkdir(parents=True,exist_ok=True)
         (output/'explorer-acceptance.json').write_text(json.dumps(reports,indent=2,allow_nan=False),encoding='utf-8')
         print('\n    reference explorer: '+json.dumps([{k:r[k] for k in ('terrain_seed','goods_seed','decisions','wall_s','native_t_s','known')} for r in reports]))
@@ -774,18 +774,19 @@ class AutonomousGuests(unittest.TestCase):
         for terrain_choice,goods_seed in ((1,851269742),(0,1)):
             with mock.patch.object(server.secrets,'randbelow',side_effect=[terrain_choice,goods_seed-1]):
                 world,owner,app=self.setup_world()
-            # Explicit scarcity fixture: removes trader stock only. No player
+            # Explicit scarcity fixture: removes loose wood and trader stock. No player
             # supplies, knowledge, goals or native outcomes are granted.
             self.post('/api/workshop/market',{},world)
             with server.workshop_library._connect(app) as db:
                 db.execute("UPDATE market_stock SET remaining=0 WHERE item_id='oak-stock'")
+            for pile in app.brains.goods.stockpiles: pile.get('holds',{}).pop('oak',None)
             bot=self.post('/api/world/ai',{'action':'start','mode':'reference'},world)
             final=self.wait_character(world,bot['id'])
             self.assertEqual('blocked',final['character']['status'])
             self.assertIn('no oak lot in stock',final['character']['message'])
             self.assertFalse(final['goals']['complete'])
             self.assertEqual(set(),server.journal_of(app,bot['id']).knows())
-            self.assertEqual(['bank','wait'],[e['action'] for e in final['character']['history']])
+            self.assertEqual(['wait'],[e['action'] for e in final['character']['history']])
 
 
     def test_model_selected_actions_complete_real_goals_with_separate_bag_and_tech_tree(self):
@@ -802,18 +803,19 @@ class AutonomousGuests(unittest.TestCase):
         app.api_key = "test-only-key"
         app.ai_players.decider_factory = FakeModel
         bot = self.post("/api/world/ai", {"action": "start", "mode": "openai", "name": "AI explorer"}, world)
-        final = self.wait_character(world, bot["id"])
+        final = self.wait_character(world, bot["id"], seconds=300)
         self.assertEqual("complete", final["character"]["status"], final["character"])
         self.assertTrue(final["goals"]["complete"])
         self.assertGreater(len(calls),10)
-        self.assertEqual({'first-camp-v1','first-workshop-v1'},{s['goals']['chain_id'] for s in calls})
+        self.assertEqual({'first-tool-v1','first-workshop-v1'},{s['goals']['chain_id'] for s in calls})
         self.assertIn("inventory", calls[0])
         self.assertIn("tech_tree", calls[0])
         self.assertTrue(all(e["mode"] == "openai" and e["result"] == "committed" for e in final["character"]["history"]))
         self.assertTrue(all(isinstance(v,(float,int)) for v in final['character']['pose']['eyes_m']))
         self.assertIn('using-ground-tools',{s['id'] for s in final['skills'] if s['known']})
         self.assertGreaterEqual(sum(s['known'] for s in final['skills']),2)
-        self.assertIn(final["goals"]["camp_body"], final["state"]["inventory"]["record"]["stowed"])
+        bag=final['state']['inventory']['record']
+        self.assertIn(final['goals']['product_body'],[*bag['stowed'],*bag['hands'].values()])
         human = self.post("/api/world/inventory/shown", {"session": final["state"]["session"]}, world)
         self.assertEqual([], human["record"]["stowed"])
         self.assertEqual(0, self.post("/api/workshop/market", {}, world)["balance_j"])
@@ -834,7 +836,8 @@ class AutonomousGuests(unittest.TestCase):
         self.post("/api/world/open", {}, world)
         restored = self.post("/api/world/ai", {"action": "watch", "id": bot["id"]}, world)
         self.assertTrue(restored["goals"]["complete"])
-        self.assertIn(restored["goals"]["camp_body"], restored["state"]["inventory"]["record"]["stowed"])
+        bag=restored['state']['inventory']['record']
+        self.assertIn(restored['goals']['product_body'],[*bag['stowed'],*bag['hands'].values()])
         self.assertTrue(next(s for s in restored["skills"] if s["id"] == "rough-shaping-wood")["known"])
 
     def test_pause_during_model_call_executes_no_choice_and_foreign_guest_cannot_control(self):
@@ -966,11 +969,11 @@ class AutonomousGuests(unittest.TestCase):
                 except (RuntimeError,TimeoutError):pass
                 time.sleep(.15)
             self.fail('Browser did not reach '+expression)
-        page.send('Page.navigate',{'url':self.base+f'/world?world={world}&workshop=1&tab=market&guide=stock-oak'})
-        wait('document.querySelector("#ws-market-recipe h3")?.textContent === "Camp stool" && document.querySelectorAll("#ws-market-offers li").length === 6')
+        page.send('Page.navigate',{'url':self.base+f'/world?world={world}&workshop=1&tab=market'})
+        wait('document.querySelector("#ws-market-recipe h3")?.textContent === "Personal field pick" && document.querySelectorAll("#ws-market-offers li").length === 6')
         self.assertIn('Build stock estimate',page.evaluate('document.querySelector("#ws-market-recipe").textContent'))
         self.assertIn('Covered',page.evaluate('document.querySelector("[data-market-gap=oak]").textContent'))
-        self.assertIn('6/6 lots',page.evaluate('document.querySelector("[data-market-supply-goal]").textContent'))
+        self.assertEqual(0,page.evaluate('document.querySelectorAll("[data-market-supply-goal]").length'))
         self.assertFalse(page.evaluate('document.querySelector("#ws-market-recipe details").open'))
         visitor_token=page.evaluate('localStorage.getItem("banjo.player.'+world+'")')
         visitor=next(p['id'] for p in server.player_world.records(app).values() if p['token']==visitor_token)
@@ -979,7 +982,7 @@ class AutonomousGuests(unittest.TestCase):
         page.evaluate('document.querySelector("#ws-market-bank").click()')
         wait('document.querySelector("#ws-market-balance").textContent === "500 J"')
         page.evaluate('document.querySelector("[data-market-item=oak-stock] button").click()')
-        wait('document.querySelector("#ws-market-balance").textContent === "380 J" && document.querySelector("[data-market-supply-goal]").textContent.includes("5/5 lots")')
+        wait('document.querySelector("#ws-market-balance").textContent === "380 J"')
         guidance=self.post('/api/workshop/market',{},world,visitor_token)['guidance']
         plan=guidance['plan']
         self.assertAlmostEqual(.5,plan['lines'][0]['personal_kg'])
@@ -988,7 +991,7 @@ class AutonomousGuests(unittest.TestCase):
         import base64
         (output/'market.png').write_bytes(base64.b64decode(page.send('Page.captureScreenshot')['data']))
         page.evaluate('[...document.querySelectorAll("#ws-market-recipe button")].find(b=>b.textContent==="Open recipe").click()')
-        wait('new URLSearchParams(location.search).get("tab")==="recipes" && [...document.querySelectorAll("[data-recipe]")].some(c=>c.dataset.recipe === "stool:Camp stool" && c.classList.contains("ws-goal-target"))')
+        wait('new URLSearchParams(location.search).get("tab")==="recipes" && [...document.querySelectorAll("[data-recipe]")].some(c=>c.dataset.recipe === "field-pick:Personal field pick" && c.classList.contains("ws-goal-target"))')
         self.assertEqual(set(),server.journal_of(app,visitor).knows())
         self.assertFalse([e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
         (output/'receipt.json').write_text(json.dumps({'world_seed':self.app.hub.metadata(world)['terrain_seed'],

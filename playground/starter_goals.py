@@ -17,6 +17,7 @@ from mcp import workshop, workshop_rigid
 
 SCHEMA = "banjo.starter-goals.v1"
 CHAIN = "first-camp-v1"
+OPENING_CHAIN = "first-tool-v1"
 STEPS = (
     ("bank-solar", "Collect your first energy", "Bank 500 J from the shared solar array.", 500, "J"),
     ("stock-oak", "Gather building supplies", "Buy six oak lots: 3 kg for your own stock.", 3, "kg"),
@@ -67,21 +68,25 @@ def view(app: Any, owner: str, body: Any) -> dict[str, Any]:
     if not getattr(app, "world_id", None) or not owner:
         raise ValueError("Create or join a named game to begin your first camp")
     import goal_chains
-    selected=body.get('chain',CHAIN)
+    selected=body.get('chain','active')
     if selected not in (CHAIN,'active',*goal_chains.definitions()):
         raise ValueError('Unknown goal chain')
     if selected != CHAIN:
-        camp=view(app,owner,{})
+        camp=view(app,owner,{'chain':CHAIN})
         if selected=='active':
-            if not camp['complete']: return camp
             result=None
             for ident in goal_chains.definitions():
+                # Retain the old completed camp as an opening qualification.
+                # Its achievements stay available; nobody must buy it again.
+                if ident==OPENING_CHAIN and camp['complete']: continue
                 result=goal_chains.view(app,owner,ident)
                 if not result['complete']: break
         else:
             result=goal_chains.view(app,owner,selected)
         result.update(balance_j=camp['balance_j'],camp_body=camp['camp_body'],
-                      unlocked=goal_chains.completed(app,owner,goal_chains.definitions()[result['chain_id']]['after']),
+                      unlocked=(not goal_chains.definitions()[result['chain_id']]['after'] or
+                        goal_chains.completed(app,owner,goal_chains.definitions()[result['chain_id']]['after']) or
+                        (result['chain_id']=='first-workshop-v1' and camp['complete'])),
                       chains=camp['chains'])
         return result
     import json
@@ -149,8 +154,8 @@ def view(app: Any, owner: str, body: Any) -> dict[str, Any]:
             "balance_j": balance, "recipe": recipe(), "recipe_mass_kg": _recipe()[2],
             "camp_body": standing.get("root_body") if standing else None,
             "session": session.id if session and app.live_holder == "world" else None,
-            "chains": [{'id':CHAIN,'title':'Make your first camp'},
-                       *[{'id':c['id'],'title':c['title']} for c in goal_chains.definitions().values()]],
+            "chains": [*[{'id':c['id'],'title':c['title']} for c in goal_chains.definitions().values()],
+                       {'id':CHAIN,'title':'First camp (earlier goals)'}],
             "next_chain": next(iter(goal_chains.definitions())) if next_goal is None else None,
             "unlocked": True,
             "follow_up": "Next: study and use a tool, make a work surface, and learn from a working machine.",

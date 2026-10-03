@@ -151,7 +151,7 @@ def _recommend(recipes: list[dict], offers: list[dict], balance: int, goals: dic
             for row in goals['goals']:
                 if row.get('complete') or row.get('done'):continue
                 req=row.get('requirement') or {}
-                if req.get('kind') in ('admitted-recipe','funded-box-surface') and ai_actions.fits_requirement(recipe,req):
+                if req.get('kind') in ('admitted-recipe','funded-box-surface','funded-ground-tool') and ai_actions.fits_requirement(recipe,req):
                     plan['goal']={'id':row['id'],'title':row['title'],'chain_id':goals['chain_id'],
                                   'before':list(preceding)}
                     break

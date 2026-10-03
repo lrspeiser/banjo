@@ -195,13 +195,16 @@ class Manager:
         skills=self._post(profile,'/api/workshop/skills',{},cookie)['techniques']
         inventory=self._post(profile,'/api/world/inventory/shown',{'session':opened['session']},cookie)
         req=ai_actions.requirement_of(goals) or {}
-        recipes=(self._post(profile,'/api/workshop/recipes',{},cookie)['templates']
-                 if req.get('kind') in ('admitted-recipe','funded-box-surface','personal-test') else [])
+        book=(self._post(profile,'/api/workshop/recipes',{},cookie)
+              if req.get('kind') in ('admitted-recipe','funded-box-surface','personal-test',
+                                    'personal-stock','funded-ground-tool','own-tool-test')
+                 or profile['ai'].get('memory',{}).get('fabrication_build') else {})
         funding=(self._post(profile,'/api/world/fabrication/state',
                  {'session':opened['session'],'scene':opened['scene']},cookie)
                  if profile['ai'].get('memory',{}).get('fabrication_build') else None)
         return {'goals':goals,'next_goal':goals['next_goal'],'market':market,'balance_j':market['balance_j'],
-                'skills':skills,'tech_tree':skills,'inventory':inventory,'recipes':recipes,
+                'skills':skills,'tech_tree':skills,'inventory':inventory,'recipes':book.get('templates',[]),
+                'stockpiles':book.get('stockpiles',[]),
                 'native':opened,'pose':deepcopy(profile.get('pose')),'fabrication':funding}
 
     def _run(self,profile,stop,cookie):
@@ -400,6 +403,11 @@ class Manager:
             reply=self._post(profile,'/api/workshop/market',{'action':'buy','item_id':action['item'],
                 'quoted_price_j':action['quoted_price_j'],'request_id':ident},cookie)
             return {'balance_j':reply['balance_j'],'paid_j':action['quoted_price_j'],'item':action['item']}
+        if verb=='collect':
+            at=action['at_m']
+            reply=self._post(profile,'/api/world/goods/collect',{'session':sid,'pile':action['pile'],
+                'request_id':ident,'person':self._person(profile,cookie,at)},cookie)
+            return {'pile':action['pile'],'collected':reply['collected']}
         if verb in ('build','continue-build'):
             source=self._post(profile,'/api/world/workshop/context',{},cookie)
             common={k:source[k] for k in ('session','scene')}
@@ -469,9 +477,17 @@ class Manager:
             reply=self._post(profile,'/api/world/watch-machine',{'session':sid,'machine':target['machine'],'person':person},cookie)
             memory['watching']=target['machine'];self._save(profile,memory=memory)
             if verb=='observe':
-                for _ in range(4):
+                # Twenty half-second observation intervals, plus API time. Reconsider
+                # early when a durable goal changes, rather than paying for a
+                # model decision every second of an unchanged heating phase.
+                began_t=state['native']['t']
+                for index in range(20):
                     if stop.is_set():break
                     self._post(profile,'/api/live/act',{'session':sid,'op':'step','dt':1/240,'n':120,'person':person},cookie)
+                    if index%4==3:
+                        goals=self._post(profile,'/api/workshop/goals',{'chain':'active'},cookie)
+                        if (goals['chain_id'],goals['next_goal']) != (state['goals']['chain_id'],state['goals']['next_goal']):
+                            return {**reply,'goal_changed':True,'observed_from_t_s':began_t}
                     stop.wait(.5)
             return reply
         raise ValueError('No implemented execution for this offered action')

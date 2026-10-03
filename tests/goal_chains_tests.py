@@ -19,6 +19,26 @@ import world_hub_tests as hub
 
 
 class Predicates(unittest.TestCase):
+    def test_own_tool_requires_paid_owner_admission_and_positive_use_of_that_body(self):
+        from types import SimpleNamespace
+        tool={'status':'installed','owner_id':'alice','resources_charged':True,
+              'engine_grid_verified':True,'root_body':'made-tool','request_id':'paid','matter_physics_hash':'hash'}
+        saved={'spec':{'bodies':[{'name':'made-tool'}],
+                      'interactions':[{'template':'swing-and-lever','tool':'made-tool','parts':['made-tool']}]},
+               'world':{'bodies':[{'name':'made-tool'}]},'workshop_installs':[tool]}
+        e={'id':'ev','run':'world:alice:actual','passes':True,'source':'found-example','test':'loosens-soil',
+           'tool':'made-tool','result':{'loosened_m3':.001},'tool_condition':{'after':{'whole':True}}}
+        journal=lambda event:SimpleNamespace(copy=lambda:{'evidence':{'ev':event}})
+        predicate={'kind':'own-tool-test'}
+        result=goal_chains.evaluate(predicate,journal(e),saved,'alice','world',None)
+        self.assertEqual('paid',result['request_id'])
+        for edit in ({'tool':'field pick'},{'run':'world:bob:actual'},{'passes':False},
+                     {'result':{'loosened_m3':0}},{'tool_condition':{'after':{'whole':False}}}):
+            self.assertIsNone(goal_chains.evaluate(predicate,journal({**e,**edit}),saved,'alice','world',None))
+        for edit in ({'owner_id':'bob'},{'resources_charged':False},{'engine_grid_verified':False}):
+            bad=deepcopy(saved);bad['workshop_installs'][0].update(edit)
+            self.assertIsNone(goal_chains.evaluate(predicate,journal(e),bad,'alice','world',None))
+
     def test_surface_annotation_without_actual_matching_box_face_is_not_evidence(self):
         saved={'spec':{'precise_rigid_bodies':[{'name':'built','parts':[{
             'dimensions_m':[.5,.04,.4],'center_local_m':[0,0,0]}]}],
@@ -54,7 +74,8 @@ class Predicates(unittest.TestCase):
                     with self.assertRaises(ValueError):goal_chains.definitions()
                 goal_chains.definitions.cache_clear()
         finally:goal_chains.definitions.cache_clear()
-        self.assertEqual(4,len(next(iter(goal_chains.definitions().values()))['steps']))
+        self.assertEqual(4,len(goal_chains.definitions()['first-workshop-v1']['steps']))
+        self.assertEqual(3,len(goal_chains.definitions()['first-tool-v1']['steps']))
 
 
 @unittest.skipUnless(hub.RUNNER.is_file() and hub.ENGINE.is_file(),'native engine required')
@@ -66,6 +87,105 @@ class PlayerJourney(unittest.TestCase):
     get=hub.NamedWorlds.get
     post=hub.NamedWorlds.post
     join=hub.NamedWorlds.join
+
+    def test_personal_tool_opening_collects_builds_uses_and_restarts_for_two_players(self):
+        reports=[]
+        for terrain_choice,goods_seed in ((1,851269742),(0,1)):
+            with mock.patch.object(server.secrets,'randbelow',side_effect=[terrain_choice,goods_seed-1]):
+                world=self.post('/api/worlds',{'name':'Gather and make'})['id']
+            alice=self.join(world,'Alice');bob=self.join(world,'Bob');self.players={world:alice}
+            self.post('/api/world/open',{},world);app=self.app.hub.get(world)
+            wood_before=sum(p.get('holds',{}).get('oak',0) for p in app.brains.goods.stockpiles)
+            results=[]
+            for index,player in enumerate((alice,bob)):
+                token=player['token']
+                def goals():return self.post('/api/workshop/goals',{},world,token)
+                first=goals();self.assertEqual('first-tool-v1',first['chain_id'])
+                self.assertEqual('get-tool-wood',first['next_goal'])
+                sid=first['session'];guide=first['goals'][0]['guide']
+                pile=app.brains.goods.by_name(guide['resource']);at=pile['at_m']
+                floor=self.post('/api/live/act',{'session':sid,'op':'survey','at':at},world,token)['survey']['ground_m']
+                collected=self.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],
+                    'request_id':f'collect-{index}','person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[1,0,0]}},world,token)
+                self.assertGreaterEqual(collected['collected']['oak'],2)
+                ready=goals();self.assertEqual('make-own-tool',ready['next_goal'])
+                built=camp.make_paid(self,world,token,ready['recipe'],[-1.4,-.6+index*1.2],f'opening-made-{index}')
+                self.assertTrue(built['engine_grid_verified']);self.assertTrue(built['resources_charged'])
+                ready=goals();self.assertEqual('use-own-tool',ready['next_goal'])
+                sid=ready['session'];root=ready['product_body']
+                native=next(b for b in app.live.session.state['bodies'] if b['name']==root)
+                x,z=-.9,.025
+                floor=self.post('/api/live/act',{'session':sid,'op':'survey','at':[x,z]},world,token)['survey']['ground_m']
+                target=self.post('/api/live/act',{'session':sid,'op':'survey','at':[x+1.2,z]},world,token)['survey']['ground_m']
+                person={'standing_m':[x,floor,z],'eyes_m':[x,floor+1.62,z],'facing':[1,0,0],
+                    'look_direction':[1.2,target-floor-1.62,0]}
+                picked=self.post('/api/world/inventory',{'session':sid,'op':'take_up','item':root,
+                    'request':f'equip-{index}','person':person},world,token)
+                self.assertTrue(picked['ok'],picked)
+                # Native work runs through the same request/clock as the page.
+                replies=[];errors=[]
+                def use():
+                    try:replies.append(self.post('/api/world/tool/use',{'session':sid,'person':person,
+                        'at_m':[x+1.2,target,z]},world,token))
+                    except Exception as exc:errors.append(exc)
+                worker=threading.Thread(target=use,daemon=True);worker.start();deadline=time.monotonic()+25
+                while worker.is_alive() and time.monotonic()<deadline:
+                    app.clock._tick(.05);time.sleep(.015)
+                worker.join(1);self.assertFalse(worker.is_alive());self.assertEqual([],errors)
+                self.assertNotIn('refused',replies[0],replies[0])
+                self.assertGreater(replies[0]['result']['loosened_kg'],0,replies[0])
+                finished=self.post('/api/workshop/goals',{'chain':'first-tool-v1'},world,token)
+                self.assertTrue(finished['complete'],finished)
+                self.assertEqual(root,finished['goals'][2]['evidence']['body'])
+                # The active checklist moves on; the old purchase checklist does not gate it.
+                self.assertEqual('first-workshop-v1',goals()['chain_id'])
+                legacy=self.post('/api/workshop/goals',{'chain':'first-camp-v1'},world,token)
+                self.assertFalse(any(g['complete'] for g in legacy['goals']))
+                self.post('/api/world/inventory',{'session':sid,'op':'stow','item':root,
+                    'request':f'pack-{index}','person':person},world,token)
+                results.append((player,finished))
+            self.assertNotEqual(results[0][1]['product_body'],results[1][1]['product_body'])
+            self.stop();self.start()
+            self.post('/api/world/open',{},world)
+            for player,finished in results:
+                restored=self.post('/api/workshop/goals',{'chain':'first-tool-v1'},world,player['token'])
+                self.assertEqual([(g['id'],g['complete'],g['evidence']) for g in finished['goals']],
+                    [(g['id'],g['complete'],g['evidence']) for g in restored['goals']])
+                inv=self.post('/api/workshop/inventory',{},world,player['token'])
+                self.assertTrue(any(i['name']==finished['product_body'] and i['label']=='Personal field pick' for i in inv['carried']))
+                self.assertAlmostEqual(23.075,next(m['personal_kg'] for m in inv['materials'] if m['material']=='oak'))
+            app=self.app.hub.get(world)
+            self.assertAlmostEqual(50,wood_before-sum(p.get('holds',{}).get('oak',0) for p in app.brains.goods.stockpiles))
+            with server.workshop_library._connect(app) as db:
+                self.assertEqual(0,db.execute('SELECT COUNT(*) FROM market_orders').fetchone()[0])
+                self.assertEqual(0,db.execute('SELECT COUNT(*) FROM market_deposits').fetchone()[0])
+            reports.append({'terrain_seed':7 if terrain_choice else 4,'goods_seed':goods_seed,
+                'players':2,'cell_m':.05,'dt_s':1/240,'provider_calls':0,
+                'market_orders':0,'wallet_deposits':0,'results':[r[1] for r in results],
+                'restart_retained':True})
+        output=ROOT/'build/opening-tools';output.mkdir(parents=True,exist_ok=True)
+        (output/'acceptance.json').write_text(json.dumps(reports,indent=2),encoding='utf-8')
+
+    def test_empty_loose_wood_and_market_produce_a_real_blocker_without_awards(self):
+        world=self.post('/api/worlds',{'name':'Finite exhausted wood'})['id']
+        owner=self.join(world,'Late arrival');self.players={world:owner}
+        self.post('/api/world/open',{},world);app=self.app.hub.get(world)
+        # Explicit depleted-source fixture: removes supply, grants no material.
+        for pile in app.brains.goods.stockpiles: pile.get('holds',{}).pop('oak',None)
+        self.post('/api/workshop/market',{},world)
+        with server.workshop_library._connect(app) as db:
+            db.execute("UPDATE market_stock SET remaining=0 WHERE item_id='oak-stock'")
+        goals=self.post('/api/workshop/goals',{},world)
+        self.assertEqual('get-tool-wood',goals['next_goal'])
+        self.assertFalse(any(g['complete'] for g in goals['goals']))
+        self.assertEqual('market',goals['goals'][0]['guide']['screen'])
+        self.assertNotIn('resource',goals['goals'][0]['guide'])
+        import ai_actions
+        market=self.post('/api/workshop/market',{},world)
+        book=self.post('/api/workshop/recipes',{},world)
+        offered=ai_actions.catalog({'goals':goals,'market':market,'stockpiles':book['stockpiles']}, {})
+        self.assertEqual(['wait'],[a['verb'] for a in offered])
+        self.assertIn('no oak lot in stock',offered[0]['blockers'][0])
 
     def test_camp_tool_surface_and_supported_batch_on_two_seeds_without_grants(self):
         reports=[]
@@ -104,7 +224,7 @@ class PlayerJourney(unittest.TestCase):
             while worker.is_alive() and time.monotonic()<deadline:
                 app.clock._tick(.05);time.sleep(.015)
             worker.join(1);self.assertFalse(worker.is_alive());self.assertEqual([],errors)
-            self.assertGreater(replies[0]['result']['loosened_kg'],0)
+            self.assertGreater(replies[0]['result']['loosened_kg'],0,replies[0])
             gathered=goals();self.assertEqual('build-surface',gathered['next_goal'])
             self.assertIn('using-ground-tools',server.journal_of(app,owner['id']).knows())
             inventory('stow','field pick')

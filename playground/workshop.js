@@ -2732,6 +2732,8 @@ function recipeUses(t) {
     if (use.includes("drives itself")) uses.add("Drive");
     if (use.includes("flies")) uses.add("Fly");
     if (use.includes("digs at")) uses.add("Dig");
+    if (use.includes("gathers dry soil or sand")) uses.add("Gather soil / sand");
+    if (use.includes("study its construction")) uses.add("Study");
     if (use.includes("hauls goods")) uses.add("Haul");
     if (use.includes("works the recipe")) uses.add("Process");
     if (use.includes("charges its battery")) uses.add("Solar charging");
@@ -2765,11 +2767,11 @@ async function showRecipes() {
   fill("#ws-recipes-templates", r.templates.map(t => {
     const ready = Boolean(t.readiness?.ready_as_drawn);
     const short = t.enough ? 0 : Math.max(1, Math.round((t.short_share || 0) * 100));
-    const li = item(t.source === "saved" || ["Camp stool", "Work table"].includes(t.name) ? t.name : titleCase(t.name), "",
+    const li = item(t.source === "saved" || ["Personal field pick", "Camp stool", "Work table"].includes(t.name) ? t.name : titleCase(t.name), "",
       !t.enough ? "short" : ready ? "enough" : "blocked");
     li.dataset.recipe = recipeKey(t);
     li.dataset.materials = JSON.stringify([...(t.materials || []), ...(t.goods || [])].map(r => r.material || r.substance));
-    const guidedRecipe = {"build-camp":"Camp stool", "build-surface":"Work table"}[new URLSearchParams(location.search).get("guide")];
+    const guidedRecipe = {"build-camp":"Camp stool", "build-surface":"Work table", "make-own-tool":"Personal field pick"}[new URLSearchParams(location.search).get("guide")];
     if (t.name === guidedRecipe) li.classList.add("ws-goal-target");
     const canvas = make("canvas", {width:"160", height:"112", role:"img", "aria-label":`${t.name} shape preview`});
     li.querySelector("strong").before(canvas);
@@ -3120,48 +3122,19 @@ function goToGoalScreen(id, screen) {
   window.history.replaceState(null, "", url); showTab(screen);
 }
 async function showGoalGuide(screen) {
-  const params = new URLSearchParams(location.search), id = params.get("guide");
-  if (params.get("goal-chain") && params.get("goal-chain") !== "first-camp-v1") {
-    const pane=$(`#ws-pane-${screen}`);
-    let box=pane.querySelector(".ws-goal-guide");
-    if (!box) {box=make("section", {class:"ws-goal-guide", hidden:""}); pane.prepend(box);}
-    box.replaceChildren(); box.hidden=true;
-    if (!id) return;
-    const goals=await api("/api/workshop/goals", {chain:params.get("goal-chain")});
-    const goal=goals.goals.find(g=>g.id===id), guide=goal?.guide;
-    if (!guide || guide.screen!==screen) return;
-    box.hidden=false;
-    box.append(make("strong", {}, goal.title), make("p", {}, goal.complete ? "Complete ✓" : guide.steps[0]));
-    const next=make("button", {type:"button", class:"ws-action"}, "View checklist");
-    next.onclick=()=>showTab("goals"); box.append(next); return;
-  }
-  const guide = GOAL_GUIDES[id];
-  const pane = $(`#ws-pane-${screen}`);
-  let box = pane.querySelector(".ws-goal-guide");
-  if (!box) { box=make("section", {class:"ws-goal-guide", hidden:""}); pane.prepend(box); }
-  box.replaceChildren(); box.hidden = !guide || guide.screen !== screen;
-  if (box.hidden) return;
-  box.append(make("strong", {}, "First camp"));
-  let goals;
-  try { goals = await api("/api/workshop/goals", {}); }
-  catch {
-    box.append(make("p", {}, "Progress unavailable. Open Goals to check again."));
-    const retry=make("button", {type:"button", class:"ws-action"}, "View checklist"); retry.onclick=()=>showTab("goals"); box.append(retry);
-    return;
-  }
-  const current = goals.goals.find(g=>g.id===goals.next_goal);
-  const text = goals.complete ? "First camp complete. You can explore other designs."
-    : screen === "market" ? (goals.goals.find(g=>g.id==="stock-oak").complete
-    ? "Supplies collected. Continue to Recipes to make your Camp stool."
-    : `Bank energy, then buy six Oak stock lots. Bought: ${goals.goals.find(g=>g.id==="stock-oak").value} / 3 kg.`)
-    : current?.id === "carry-camp" ? "Stool made. Choose View in World on its card, then press Q to pack it."
-    : "Choose Make on Camp stool. Then View in World to find and pack it.";
-  box.append(make("p", {}, text));
-  const next = make("button", {type:"button", class:"ws-action"}, "View checklist"); next.onclick=()=>showTab("goals"); box.append(next);
-  if (screen === "market" && current?.id === "build-camp") {
-    const recipes=make("button", {type:"button", class:"ws-action primary"}, "Find Camp stool");
-    recipes.onclick=()=>goToGoalScreen("build-camp", "recipes"); box.append(recipes);
-  }
+  const params=new URLSearchParams(location.search), id=params.get("guide");
+  const pane=$(`#ws-pane-${screen}`);
+  let box=pane.querySelector(".ws-goal-guide");
+  if (!box) {box=make("section", {class:"ws-goal-guide", hidden:""}); pane.prepend(box);}
+  box.replaceChildren(); box.hidden=true;
+  if (!id) return;
+  const goals=await api("/api/workshop/goals", {chain:params.get("goal-chain") || "active"});
+  const goal=goals.goals.find(g=>g.id===id), guide=goal?.guide || GOAL_GUIDES[id];
+  if (!goal || !guide || guide.screen!==screen) return;
+  box.hidden=false;
+  box.append(make("strong", {}, goal.title), make("p", {}, goal.complete ? "Complete ✓" : guide.steps[0]));
+  const next=make("button", {type:"button", class:"ws-action"}, "View checklist");
+  next.onclick=()=>showTab("goals"); box.append(next);
 }
 async function showGoals() {
   const root = $("#ws-goals-list"), status = $("#ws-goals-status");
@@ -3169,11 +3142,13 @@ async function showGoals() {
   if (!worldId) {
     root.replaceChildren(item("Start your first camp", "Use Menu to create or join a game.")); return;
   }
-  const selected = new URLSearchParams(location.search).get("goal-chain") || "first-camp-v1";
+  const selected = new URLSearchParams(location.search).get("goal-chain") || "active";
   const goals = await api("/api/workshop/goals", {chain:selected});
   root.replaceChildren();
   $("#ws-pane-goals h2").textContent = goals.title;
   const firstCamp=goals.chain_id === "first-camp-v1";
+  const chainUrl=new URL(location.href); chainUrl.searchParams.set("goal-chain",goals.chain_id);
+  window.history.replaceState(null,"",chainUrl);
   const chapters=make("li", {class:"ws-inventory-actions", "aria-label":"Goal chapters"});
   for (const chain of goals.chains || []) {
     const button=make("button", {type:"button", class:"ws-action", "aria-pressed":String(chain.id===goals.chain_id)}, chain.title);
@@ -3185,7 +3160,7 @@ async function showGoals() {
     : `${goals.title} · ${goals.goals.filter(g=>g.complete).length} / ${goals.goals.length} complete`;
   $("#ws-goals-next").textContent = goals.complete ? goals.follow_up
     : firstCamp ? "Earn energy → buy wood → make a stool → carry it. Do each step in the game; this checklist updates automatically."
-    : "Study → gather → make a surface → watch a process. Use the normal game controls; saved receipts complete each step.";
+    : goals.goals.map(g=>g.title).join(" → ");
   const limits = $("#ws-goals-limits"); limits.replaceChildren();
   const details=make("details", {}); details.append(make("summary", {}, "About this goal"), make("p", {}, goals.limits)); limits.append(details);
   for (const [index, goal] of goals.goals.entries()) {
@@ -3203,9 +3178,11 @@ async function showGoals() {
       const steps=make("ol", {}); for (const step of guide.steps) steps.append(make("li", {}, step)); how.append(steps); li.append(how);
       let link;
       if (guide.screen === "world") {
-        link=make("a", {href:goalWorldLink(goals.camp_body), class:"ws-action primary", "data-goal-go":goal.id}, "Find my stool in World");
-        if (!goals.camp_body) {
-          li.append(make("p", {class:"ws-note"}, "Stool missing? Make another Camp stool in Recipes, then carry it."));
+        const url=new URL(goalWorldLink(guide.body || (firstCamp ? goals.camp_body : null)),location.origin);
+        if (guide.resource) url.searchParams.set("resource",guide.resource);
+        link=make("a", {href:url.pathname+url.search, class:"ws-action primary", "data-goal-go":goal.id},
+          guide.resource ? `Find ${guide.resource} in World` : guide.body ? "Find my tool in World" : "Open World");
+        if (firstCamp && !goals.camp_body) {
           link=make("button", {type:"button", class:"ws-action", "data-goal-go":goal.id}, "Open Recipes"); link.onclick=()=>goToGoalScreen("build-camp", "recipes");
         }
       } else if (goal.id === "bank-solar" && !goals.session) {

@@ -191,7 +191,7 @@ def inventory(app: Any, player_id: str = "") -> dict[str, Any]:
             "stored_ground":stored_ground}
 
 
-def _can_do(record: dict[str, Any], made: w.Assembly) -> list[str]:
+def _can_do(record: dict[str, Any], made: w.Assembly, design=None) -> list[str]:
     """Declared use from a template's program and routine, not a test result."""
     out: list[str] = []
     for program in record.get("programs") or []:
@@ -211,6 +211,10 @@ def _can_do(record: dict[str, Any], made: w.Assembly) -> list[str]:
             out.append(f"sees water with {len(program['sensors'])} eyes")
     if record.get("panels"):
         out.append("charges its battery from the sun")
+    if design is not None:
+        from mcp import workshop_tools
+        if workshop_tools.frame(design) is not None:
+            out.extend(['gathers dry soil or sand','study its construction'])
     if not out:
         out.append(made.purpose)
     return out
@@ -249,7 +253,7 @@ def recipes(app: Any) -> dict[str, Any]:
                           "materials": materials, "goods": goods,
                           "enough": all(m["enough"] for m in materials) and all(g["enough"] for g in goods),
                           **_shortfall(materials, goods),
-                          "can_do": _can_do(record, made),
+                          "can_do": _can_do(record, made, design),
                           "machines": workshop_machines.described(design)["says"] if record else None,
                           "readiness": workshop_recipe.assess(design, overrides, world_cell_m=world_cell_m)})
 

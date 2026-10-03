@@ -25,6 +25,25 @@ def _dry_ground(app, at):
     return None
 
 
+def tool_location(app, owner, name):
+    """Current ordinary tool action, independent of whether its skill is known."""
+    session=getattr(app.live,'session',None)
+    if session is None:return None
+    profile=next((p for p in app.room.spec.get('interactions',[]) if
+                  p.get('template')=='swing-and-lever' and p.get('tool')==name),None)
+    thing=inventory_room.item_holding(app,name)
+    if profile is None or thing is None:return None
+    where=inventory_room.inventory_of(app,owner).where(thing['id'])
+    if any(ident!=owner and inventory_room.inventory_of(app,ident).where(thing['id'])!='world'
+           for ident in player_world.records(app)):return None
+    native=next((b for b in (session.state or {}).get('bodies',[]) if b['name']==name),{})
+    at=(native.get('position_m') if where!='stowed' else None) or (
+        (player_world.records(app).get(owner) or {}).get('pose') or {}).get('eyes_m')
+    if at is None:return None
+    return {'body':name,'where':where,'at_m':at,'ground_at_m':_dry_ground(app,at),
+            'reach_m':interaction_profiles.tool_use(profile)['reach_m']}
+
+
 def resolve(app: Any, registry: Any, techniques: list[dict]) -> None:
     session = getattr(getattr(app, "live", None), "session", None)
     state = (getattr(session, "state", None) or {})

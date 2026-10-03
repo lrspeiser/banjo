@@ -1,22 +1,154 @@
 {
   "format": "banjo.goal-chains.v1",
-  "chains": [{
-    "id": "first-workshop-v1", "title": "Put your camp to work",
-    "after": "first-camp-v1",
-    "limits": "Tool use measures dry soil or sand. A work surface receives items; it does not unlock shaping. Machine batches use the declared recipe ledger, not simulated chemistry.",
-    "steps": [
-      {"id": "study-tool", "title": "Study a gathering tool", "unit": "study", "target": 1,
-       "predicate": {"kind": "personal-test", "test": "study-example", "source": "found-example"},
-       "guide": {"where": "World / Inventory", "screen": "skills", "steps": ["In Skills, follow Go to tool. Pick it up with E, or equip it from your bag.", "Choose Study tool / Inspect. The saved study goes in your own journal."]}},
-      {"id": "gather-ground", "title": "Gather measured soil or sand", "unit": "trial", "target": 1,
-       "predicate": {"kind": "personal-test", "test": "loosens-soil", "source": "found-example", "positive": "loosened_m3", "technique": "using-ground-tools"},
-       "guide": {"where": "World", "screen": "skills", "steps": ["Equip your gathering tool. Find dry soil or sand near the tool location shown in Skills.", "Aim at the ground and use the tool. A supported removal above zero earns Gathering by hand."]}},
-      {"id": "build-surface", "title": "Build a work surface", "unit": "build", "target": 1,
-       "predicate": {"kind": "funded-box-surface", "minimum_area_m2": 0.1},
-       "guide": {"where": "Recipes", "screen": "recipes", "recipe": "Work table", "steps": ["Find Work table in Recipes, or make another supported surface of at least 0.1 m².", "Check supplies, then Make. The new table receives items with Place; it does not perform shaping."]}},
-      {"id": "observe-process", "title": "Learn from a working machine", "unit": "batch", "target": 1,
-       "predicate": {"kind": "personal-batch"},
-       "guide": {"where": "World", "screen": "skills", "steps": ["In Skills, choose a machine with a supported batch and inputs available.", "Move near it, face it, turn it on and choose Watch next batch. Stay until an actual saved batch is recorded.", "An empty intake needs supplies. Watching alone cannot finish this step."]}}
-    ]
-  }]
+  "chains": [
+    {
+      "id": "first-tool-v1",
+      "title": "Make your own gathering tool",
+      "after": "",
+      "limits": "Collect loose wood or use existing stock; buying is optional. Making spends wood and metered battery energy. Successful use measures dry soil or sand, not rock mining, wear or strength.",
+      "steps": [
+        {
+          "id": "get-tool-wood",
+          "title": "Get wood for your tool",
+          "unit": "supply",
+          "target": 1,
+          "predicate": {
+            "kind": "personal-stock",
+            "material": "oak",
+            "minimum_kg": 1.925
+          },
+          "guide": {
+            "where": "World",
+            "screen": "world",
+            "steps": [
+              "Find a loose oak pile shown in Recipes \u2192 Personal field pick \u2192 Oak \u2192 Find in World.",
+              "Walk within 2 m and collect. Inventory shows your wood. Existing stock or optional Market purchases work too."
+            ]
+          }
+        },
+        {
+          "id": "make-own-tool",
+          "title": "Make your personal field pick",
+          "unit": "build",
+          "target": 1,
+          "predicate": {
+            "kind": "funded-ground-tool"
+          },
+          "guide": {
+            "where": "Recipes",
+            "screen": "recipes",
+            "recipe": "Personal field pick",
+            "steps": [
+              "Choose Personal field pick in Recipes. Check Oak and Build status, then Make.",
+              "Fund the wood and workbench energy from available stock and a battery. No wallet deposit is required.",
+              "Finish the work and place it in the World, or put the finished item in Inventory."
+            ]
+          }
+        },
+        {
+          "id": "use-own-tool",
+          "title": "Gather with your own tool",
+          "unit": "trial",
+          "target": 1,
+          "predicate": {
+            "kind": "own-tool-test"
+          },
+          "guide": {
+            "where": "World",
+            "screen": "world",
+            "steps": [
+              "Find your made tool and press E to equip it, or select its Inventory slot.",
+              "Aim at nearby dry soil or sand. The material thumbnail shows the target. Click or press J to use the tool.",
+              "A successful removal with your own made tool completes this goal and earns Gathering by hand."
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "first-workshop-v1",
+      "title": "Put your camp to work",
+      "after": "first-tool-v1",
+      "limits": "Tool use measures dry soil or sand. A work surface receives items; it does not unlock shaping. Machine batches use the declared recipe ledger, not simulated chemistry.",
+      "steps": [
+        {
+          "id": "study-tool",
+          "title": "Study a gathering tool",
+          "unit": "study",
+          "target": 1,
+          "predicate": {
+            "kind": "personal-test",
+            "test": "study-example",
+            "source": "found-example"
+          },
+          "guide": {
+            "where": "World / Inventory",
+            "screen": "skills",
+            "steps": [
+              "In Skills, follow Go to tool. Pick it up with E, or equip it from your bag.",
+              "Choose Study tool / Inspect. The saved study goes in your own journal."
+            ]
+          }
+        },
+        {
+          "id": "gather-ground",
+          "title": "Gather measured soil or sand",
+          "unit": "trial",
+          "target": 1,
+          "predicate": {
+            "kind": "personal-test",
+            "test": "loosens-soil",
+            "source": "found-example",
+            "positive": "loosened_m3",
+            "technique": "using-ground-tools"
+          },
+          "guide": {
+            "where": "World",
+            "screen": "skills",
+            "steps": [
+              "Equip your gathering tool. Find dry soil or sand near the tool location shown in Skills.",
+              "Aim at the ground and use the tool. A supported removal above zero earns Gathering by hand."
+            ]
+          }
+        },
+        {
+          "id": "build-surface",
+          "title": "Build a work surface",
+          "unit": "build",
+          "target": 1,
+          "predicate": {
+            "kind": "funded-box-surface",
+            "minimum_area_m2": 0.1
+          },
+          "guide": {
+            "where": "Recipes",
+            "screen": "recipes",
+            "recipe": "Work table",
+            "steps": [
+              "Find Work table in Recipes, or make another supported surface of at least 0.1 m\u00b2.",
+              "Check supplies, then Make. The new table receives items with Place; it does not perform shaping."
+            ]
+          }
+        },
+        {
+          "id": "observe-process",
+          "title": "Learn from a working machine",
+          "unit": "batch",
+          "target": 1,
+          "predicate": {
+            "kind": "personal-batch"
+          },
+          "guide": {
+            "where": "World",
+            "screen": "skills",
+            "steps": [
+              "In Skills, choose a machine with a supported batch and inputs available.",
+              "Move near it, face it, turn it on and choose Watch next batch. Stay until an actual saved batch is recorded.",
+              "An empty intake needs supplies. Watching alone cannot finish this step."
+            ]
+          }
+        }
+      ]
+    }
+  ]
 }

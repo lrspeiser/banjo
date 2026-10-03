@@ -23,10 +23,10 @@ def fits_requirement(recipe,requirement):
     if recipe.get('problem'):return False
     if requirement['kind']=='admitted-recipe':
         return candidate(recipe)==candidate(requirement['candidate'])
-    if requirement['kind'] not in ('funded-box-surface','ground-tool'):return False
+    if requirement['kind'] not in ('funded-box-surface','ground-tool','funded-ground-tool'):return False
     try:
         design,overrides=workshop_components.design_from_spec(candidate(recipe))
-        if requirement['kind']=='ground-tool':return workshop_tools.frame(design) is not None
+        if requirement['kind'] in ('ground-tool','funded-ground-tool'):return workshop_tools.frame(design) is not None
         workshop_rigid.compile_rigid(design,overrides)
         # The compiler checks exact axis-aligned boxes. Native commit and the
         # goal's saved physical-face predicate are still required afterwards.
@@ -91,6 +91,14 @@ def catalog(state,memory):
         for gap in missing:
             if gap.get('short_kg',0)<=0:continue
             name=gap['what']
+            piles=[p for p in state.get('stockpiles',[]) if not p.get('rack') and p['holds_kg'].get(name,0)>0]
+            if piles:
+                pile=min(piles,key=lambda p:_distance(state.get('pose'),[p['at_m'][0],0,p['at_m'][1]]))
+                at=[pile['at_m'][0],0,pile['at_m'][1]]
+                if _distance(state.get('pose'),at)>2:
+                    offer('move',f"Approach {pile['name']} for {name}",aim=at,stand_off_m=1.2)
+                else:offer('collect',f"Collect nearby {name} from {pile['name']}",pile=pile['name'],at_m=at)
+                continue
             lot=next((o for o in state['market']['offers'] if o['substance']==name),None)
             if not lot or lot['remaining']<=0:
                 blockers.append(f'Market has no {name} lot in stock');continue
@@ -143,7 +151,7 @@ def catalog(state,memory):
         # Keep a selected ground column fixed while taking/moving the tool.
         if kind=='tool' and selected.get('ground_at_m'):target={**target,'ground_at_m':selected['ground_at_m']}
         if kind=='tool':
-            desired=target.get('ground_at_m') if req.get('test')=='loosens-soil' else target['at_m']
+            desired=target.get('ground_at_m') if req.get('test')=='loosens-soil' or req.get('kind')=='own-tool-test' else target['at_m']
             where=target.get('where','world')
             if where not in ('right','left'):
                 if where=='world' and _distance(state['pose'],target['at_m'])>2:
@@ -175,14 +183,23 @@ def catalog(state,memory):
         else:blockers.append('Open the world before banking')
     elif kind=='stock-purchase':
         supplies([{'what':req['substance'],'short_kg':req['remaining_kg']}])
+    elif kind=='personal-stock':
+        supplies([{'what':req['material'],'short_kg':req['minimum_kg']}])
+    elif kind=='funded-ground-tool':
+        building({'kind':'ground-tool'})
     elif kind in ('admitted-recipe','funded-box-surface'):
         building(req)
     elif kind=='bag-product':
         body=next((b for b in state['native'].get('bodies',[]) if b['name']==req.get('body')),None)
         if body:target_actions({'body':body['name'],'at_m':body['position_m']},'product')
         else:blockers.append('Your goal product is absent; rebuild it through Recipes')
+    elif kind=='own-tool-test':
+        row=next((g for g in state['goals']['goals'] if g['id']==state['goals']['next_goal']),{})
+        if row.get('target'):target_actions(row['target'],'tool')
+        else:blockers.append('Your made tool has no available native action; check Inventory or rebuild through Recipes')
     elif kind in ('personal-test','personal-batch'):
-        targets={}
+        row=next((g for g in state['goals']['goals'] if g['id']==state['goals']['next_goal']),{})
+        targets={(t['body'],t.get('machine')):t for t in row.get('targets',[])}
         for skill in state.get('skills',[]):
             if skill.get('known'):continue
             if req.get('technique') and skill['id']!=req['technique']:continue
@@ -208,7 +225,7 @@ def catalog(state,memory):
 def reference_pick(state,actions):
     # A deterministic capability policy, not a tutorial step-id script. Model
     # mode sees the same offers, requirements, comparisons and observed state.
-    for verb in ('buy','bank','compare-recipes','select-recipe','acquire','inspect','use-tool',
+    for verb in ('collect','buy','bank','compare-recipes','select-recipe','acquire','inspect','use-tool',
                  'continue-build','build','pack','power-on','watch-batch','observe','move','select-target','wait'):
         chosen=next((a for a in actions if a['verb']==verb),None)
         if chosen:return chosen['id']

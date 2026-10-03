@@ -13,7 +13,8 @@ def named_sources():
     """Shared named variants used by Recipes and product presentation."""
     import starter_goals
     import goal_chains
-    return [('Camp stool',starter_goals.recipe()),('Work table',goal_chains.work_table_recipe())]
+    return [('Personal field pick',goal_chains.first_tool_recipe()),
+            ('Camp stool',starter_goals.recipe()),('Work table',goal_chains.work_table_recipe())]
 
 
 def source_key(recipe):
