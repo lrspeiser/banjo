@@ -2132,7 +2132,7 @@ function showDesignSources(inv, templates) {
   const records = [...saved.map(d => ({id:d.design_id, source:"saved", name:d.label || titleCase(d.kind), kind:d.kind, version:d.revision})),
     ...(inv.designs || []).filter(d => !saved.some(s => s.design_id === d.payload?.design_id && s.label === d.name))
       .map(d => ({id:d.item_id, source:"library", name:d.name, kind:d.payload?.kind, version:d.version}))];
-  for (const category of ["Furniture", "Structures", "Machines", "Other designs"]) {
+  for (const category of ["Furniture", "Construction", "Machines", "Other designs"]) {
     const matching = records.filter(d => designCategory(d.kind) === category);
     if (!matching.length) continue;
     const group = inventoryGroup(category);
@@ -2162,7 +2162,7 @@ function showDesignSources(inv, templates) {
 
 const titleCase = name => String(name || "Design").replaceAll("-", " ").replace(/\b\w/g, c => c.toUpperCase());
 const designCategory = kind => ["table", "stool", "bench", "chair", "shelf-unit"].includes(kind) ? "Furniture"
-  : ["frame", "shelter", "bridge"].includes(kind) ? "Structures"
+  : ["foundation-pad", "frame", "shelter", "bridge"].includes(kind) ? "Construction"
   : ["cart", "rover", "drone", "kettle", "processor", "breaker"].includes(kind) ? "Machines" : "Other designs";
 
 function screenSection(pane, title, id, cls = "ws-inv-grid") {
@@ -2606,6 +2606,7 @@ function installRecipes() {
     make("div", {id:"ws-recipe-filter", class:"ws-recipe-filter", role:"group", "aria-label":"Filter recipes by material"}),
     make("p", {id:"ws-recipe-filter-status", class:"ws-note", role:"status"}),
     make("h3", {id:"ws-rec-build-title"}, "Build recipes"), make("ul", {id:"ws-recipes-templates", class:"ws-list ws-recipe-grid"}));
+  screenSection(pane,"Construction","ws-rec-construction","ws-list ws-recipe-grid");
   screenSection(pane, "Saved designs", "ws-rec-saved", "ws-design-groups");
   screenSection(pane, "Saved parts", "ws-rec-components", "ws-design-grid").id = "ws-rec-components-section";
   const blocks = screenSection(pane, "Building blocks", "ws-rec-blocks", "ws-design-groups");
@@ -2658,6 +2659,8 @@ function applyRecipeMaterialFilter() {
     group.hidden = ![...group.querySelectorAll("[data-recipe], [data-recipe-source]")].some(c => !c.hidden);
   const built = [...$("#ws-recipes-templates").querySelectorAll("[data-recipe]")].some(c => !c.hidden);
   $("#ws-rec-build-title").hidden = !built;
+  const construction=$("#ws-rec-construction");
+  construction.closest(".ws-inventory-section").hidden=![...construction.querySelectorAll("[data-recipe]")].some(c=>!c.hidden);
   $("#ws-rec-saved").closest(".ws-inventory-section").hidden = Boolean(selected) && ![...$("#ws-rec-saved").querySelectorAll("[data-recipe], [data-recipe-source]")].some(c => !c.hidden);
   $("#ws-rec-components-section").hidden = Boolean(selected) || !$("#ws-rec-components").childElementCount;
   $("#ws-rec-blocks-section").hidden = Boolean(selected);
@@ -2866,6 +2869,11 @@ async function showRecipes() {
     }
     li.append(row); return li;
   }), "No recipes.");
+  const construction=$("#ws-rec-construction");construction.replaceChildren();
+  for(const t of r.templates.filter(t=>t.source!=="saved" && designCategory(t.kind)==="Construction")) {
+    const card=[...$("#ws-recipes-templates").children].find(c=>c.dataset.recipe===recipeKey(t));
+    if(card)construction.append(card);
+  }
   showDesignSources(inv, r.templates);
   fill("#ws-recipes-room", r.room_recipes.map(x => {
     const li = item(x.name);
@@ -2897,7 +2905,7 @@ async function showMarket() {
   $("#ws-market-balance").textContent = `${market.balance_j.toLocaleString()} J`;
   showMarketEnergy(market);
   $("#ws-market-pricing").textContent = `${market.pricing} One lot restocks every 120 seconds of world time. ${market.guidance?.estimate_basis || ""}`;
-  renderPlayerGuidance($("#ws-market-next"),market.guidance?.player);
+  renderPlayerGuidance($("#ws-market-next"),market.guidance?.player,api);
   const recommendation = $("#ws-market-recipe"); recommendation.replaceChildren();
   const plan = market.guidance?.plan;
   if (plan && market.guidance?.player?.next_action?.verb!=='continue-build') {
@@ -3255,7 +3263,7 @@ async function refreshPlayerGuidance() {
     }
     const data=await api('/api/world/guidance',body);
     if(newSignature)guidanceSelectionSignature=newSignature;
-    if(request===guidanceRequest)renderPlayerGuidance(root,data);
+    if(request===guidanceRequest)renderPlayerGuidance(root,data,api);
   }
   catch {if (request===guidanceRequest) renderPlayerGuidance(root,null);}
   finally {guidanceBusy=false;if (guidanceAgain) {guidanceAgain=false;refreshPlayerGuidance();}}
@@ -5333,6 +5341,9 @@ stage.visibleGeometry = () => {
 };
 
 async function start() {
+  // Every direct game tab needs the saved native world for paid readiness;
+  // opening Recipes after a server restart must not show the sandbox cost.
+  if(worldId)await api('/api/world/open',{});
   const params = new URLSearchParams(location.search);
   const wantSaved = params.get("design"), wantLibrary = params.get("library"), wantRecipe = params.get("recipe"), wantJob=params.get('job');
   // ?tab=skills&technique=burning-lime opens the tree on that rung. The

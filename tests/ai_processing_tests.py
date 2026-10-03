@@ -39,7 +39,7 @@ class SharedProcessing(unittest.TestCase):
     storage_fixture=ground_fixture.PrivateGround.storage_fixture
     raw_request=ground_fixture.PrivateGround.raw_request
 
-    def test_depleted_input_uses_own_ground_or_reports_actual_machine_port_refusal(self):
+    def test_depleted_input_uses_own_ground_on_stable_generated_foundations(self):
         reports=[]
         for surface in ('smooth','columns'):
             print('\n  Starting shared processing on '+surface,flush=True)
@@ -100,12 +100,9 @@ class SharedProcessing(unittest.TestCase):
                         continue
                     if 'melting-glass' in fixture.server.journal_of(app,owner['id']).knows():break
                 else:self.fail('Shared processing did not produce a saved glass experiment: '+str(phases))
-            if surface=='smooth':
-                self.assertIsNone(port_refusal);self.assertFalse(lost);self.assertEqual(2,len(retained))
-                self.assertTrue({'power-off','select-process','store-ground','process-input','continue-process','watch-batch','observe'}<=set(phases),phases)
-            else:
-                self.assertIsNotNone(port_refusal,'This generated column-map processor loses its physical intake/output reach')
-                self.assertEqual('Blocked',port_refusal['status'])
+            self.assertIsNone(port_refusal,'Generated foundations must keep both ports reachable')
+            self.assertFalse(lost);self.assertEqual(2,len(retained))
+            self.assertTrue({'power-off','select-process','store-ground','process-input','continue-process','watch-batch','observe'}<=set(phases),phases)
             self.assertNotIn('process_request',profile['ai']['memory'])
             process=app.room.fabrication_record
             self.assertLessEqual(len(process.get('raw_lots',{})),1);self.assertLessEqual(len(process.get('raw_input_deliveries',{})),1)
@@ -113,15 +110,8 @@ class SharedProcessing(unittest.TestCase):
             delivered_kg=sum(c['mass_kg'] for d in deliveries for c in d['packet']['contents'])
             self.assertTrue(all(d['owner']==owner['id'] for d in deliveries));self.assertLessEqual(delivered_kg,routine.batch_kg)
             evidence=[e for e in fixture.server.journal_of(app,owner['id']).data['evidence'].values() if e.get('source')=='watched']
-            if surface=='smooth':
-                self.assertEqual(1,len(process['raw_lots']));self.assertEqual(1,len(deliveries))
-                self.assertTrue(any(e['passes'] and e['result']['made'].get('glass',0)>0 for e in evidence))
-            else:
-                self.assertEqual([],evidence)
-                own=self.post('/api/workshop/inventory',{},world)
-                conserved=own['ground_load']['sand_kg']+sum(r['mass_kg'] for r in own['stored_ground'] if r['substance']=='sand')
-                conserved+=app.brains.goods.by_name(routine.intake)['holds'].get('sand',0)
-                self.assertAlmostEqual(account['sand_kg'],conserved,places=5)
+            self.assertEqual(1,len(process['raw_lots']));self.assertEqual(1,len(deliveries))
+            self.assertTrue(any(e['passes'] and e['result']['made'].get('glass',0)>0 for e in evidence))
             self.assertEqual(set(),fixture.server.journal_of(app,peer['id']).knows())
             other=self.post('/api/workshop/inventory',{},world,peer['token'])
             self.assertAlmostEqual(peer_account['total_kg'],other['ground_load']['total_kg'],places=5)
@@ -145,6 +135,13 @@ class SharedProcessing(unittest.TestCase):
         actions=ai_actions.catalog(state,memory)
         self.assertEqual(['continue-process'],[a['verb'] for a in actions])
         self.assertEqual(actions[0]['id'],ai_actions.reference_pick(state,actions))
+
+    def test_displaced_machine_still_reports_physical_port_blocker(self):
+        row={'machine':'furnace','body':'furnace-body','at_m':[13.7,.85,2.98],
+             'recipe':'melt glass','pending_inputs':[],'ports_in_reach':False}
+        action=process_guidance._next(row)
+        self.assertEqual('wait',action['verb']);self.assertEqual('Blocked',action['status'])
+        self.assertIn('actual position',action['blockers'][0])
 
     def test_fractional_raw_input_uses_bounded_micrograms_without_overdrawing(self):
         mass=.30848000000000003

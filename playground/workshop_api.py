@@ -22,6 +22,8 @@ def _decorate(answer: dict[str, Any], source: dict[str, Any] | None = None) -> d
             continue
         try:
             design, overrides = workshop_components.design_from_spec(candidate)
+            from mcp import workshop_placement
+            candidate['installation'] = workshop_placement.for_design(design)
             candidate["skin"] = workshop_visual.skin_document(design, overrides)
             candidate["buildability"] = workshop_buildability.design_feedback(design, overrides)
             models = workshop_rigid.requested_models(design, overrides)

@@ -125,7 +125,7 @@ def for_design(app,candidate):
         'name':str(candidate.get('purpose') or candidate['kind'])[:160],'candidate':candidate})
 
 
-def build_readiness(quote, state, stock_sources=(), goods_sources=()):
+def build_readiness(quote, state, stock_sources=(), goods_sources=(), *, candidate=None):
     """The same station gates as paid Make, using its exact reviewed quote."""
     from mcp.fabrication import MAX_JOBS
     required=quote.get('stock_materials_kg') or {quote['material']:quote['stock_kg']}
@@ -147,7 +147,7 @@ def build_readiness(quote, state, stock_sources=(), goods_sources=()):
     status=('Supplies missing' if short else 'Fund materials' if unfunded else
             'Fund energy' if energy>1e-10 else 'Workbench in use' if busy else
             'Workpiece limit reached' if budget_full else 'Ready to make')
-    return {'schema':'banjo.build-readiness.v1','basis':'reviewed native manufacture quote',
+    result={'schema':'banjo.build-readiness.v1','basis':'reviewed native manufacture quote',
         'status':status,'ready_to_start':not (unfunded or energy>1e-10 or busy or budget_full),
         'lines':lines,'energy_required_j':quote['supply_required_j'],
         'station_energy_j':state['energy_j'],'fund_energy_j':energy,'occupied':busy,'workpiece_limit_reached':budget_full,
@@ -155,6 +155,12 @@ def build_readiness(quote, state, stock_sources=(), goods_sources=()):
         'product_mass_kg':quote.get('product_kg'),'cell_m':quote.get('cell_m'),
         'occupied_cells':quote.get('cells'),
         'skills_required':[],'placement_checked':False,'functional_test_required':True}
+    candidate=candidate if candidate is not None else quote.get('candidate')
+    if candidate is not None:
+        from mcp import workshop_components,workshop_placement
+        design,_=workshop_components.design_from_spec(candidate)
+        result['installation']=workshop_placement.for_design(design)
+    return result
 
 
 def _destination(action, project=None):
@@ -279,7 +285,8 @@ def resolve(app, owner, *, offers=None, balance=None, focus=None, project_overri
                 fabrication.advance(process,native['t'])
                 try:
                     quote=fabrication_remake.minimum_quote(app,project['candidate'],process,session.spec['cell_m'])
-                    reading=build_readiness(quote,process,fabrication_stock.sources(app),fabrication_stock.sources(app,'goods'))
+                    reading=build_readiness(quote,process,fabrication_stock.sources(app),fabrication_stock.sources(app,'goods'),
+                        candidate=project['candidate'])
                     project['build_readiness']=reading
                     if selected:
                         # Market estimates only what remains to purchase. Stock

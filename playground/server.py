@@ -60,6 +60,7 @@ import workshop_api
 import workshop_library
 import market
 import game_guidance
+import proactive_guidance
 import player_messages
 import starter_goals
 import ai_player
@@ -1247,7 +1248,8 @@ class WorldHub:
                 continue
         else:
             raise ValueError("Could not generate a reachable resource map; try again")
-        spec = new_game.compose(ground, generated, terrain_seed)
+        installations=[]
+        spec = new_game.compose(ground, generated, terrain_seed,installations=installations)
         validated = fracture_lab.validate(spec)
         # Admission must reach the native engine, not stop at Python schema.
         with tempfile.TemporaryDirectory() as temp:
@@ -1258,6 +1260,7 @@ class WorldHub:
             folder = self._folder(world_id)
             room = world_room.Room("new-game")
             room.spec = spec
+            room.workshop_installs = installations
             store = room_store.RoomStore(folder / "rooms")
             if not store.save(room): raise ValueError("The new world could not be saved")
             proof = generated["proof"]
@@ -1278,6 +1281,7 @@ class WorldHub:
     def shutdown(self):
         for app in list(self.apps.values()):
             if getattr(app, "ai_players", None) is not None: app.ai_players.shutdown()
+            if getattr(app, "proactive_guide", None) is not None: app.proactive_guide.shutdown()
             try: keep_world(app, "the server stopped")
             except Exception: log.exception("world %s could not be saved", app.world_id)
             app.clock.stop()
@@ -1514,6 +1518,22 @@ class Handler(BaseHTTPRequestHandler):
         player = player_world.require(self.app, self.headers.get("X-Banjo-Player")) \
             if getattr(self.app, "world_id", None) and (
                 path.startswith(("/api/world/", "/api/live/")) or path=="/api/workshop/inventory") else ""
+        if path == '/api/world/assist':
+            if not getattr(self.app,'world_id',None):raise ValueError('Join a named world for guidance')
+            proactive_guidance.validate(body)
+            app=self.app
+            import player_guidance
+            with world_access.gate(app).enter(), world_access.state_lock(app):
+                app.knowledge=lambda app=app: knowledge_view(app)
+                app.registry=registry
+                app.journal_now=lambda app=app: journal_of(app)
+                context=player_guidance.resolve(app,player)
+            with player_world.lock_of(app):
+                if getattr(app,'proactive_guide',None) is None:
+                    app.proactive_guide=proactive_guidance.Manager(app)
+            # A provider worker never holds world access; responses are polled
+            # against a newly authenticated decision before being displayed.
+            return self.send(app.proactive_guide.handle(player,body,context))
         if path == '/api/world/help':
             if not getattr(self.app, 'world_id', None): raise ValueError('Join a named world for game help')
             game_guidance.validate(body)

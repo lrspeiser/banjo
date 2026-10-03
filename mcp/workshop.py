@@ -1121,6 +1121,7 @@ class WorkshopDesign:
 
     def wireframe(self) -> dict[str, Any]:
         self.validate()
+        from mcp import workshop_placement
         return {
             "schema": WORKSHOP_SCHEMA,
             "representation": "wireframe",
@@ -1146,6 +1147,7 @@ class WorkshopDesign:
             "measured": self.measure(),
             "tests": deepcopy(self.tests),
             "notes": list(self.notes),
+            "installation": workshop_placement.for_design(self),
         }
 
     def measure(self) -> dict[str, Any]:

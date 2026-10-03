@@ -963,10 +963,51 @@ def _build_kettle(library: w.ComponentLibrary, values: dict[str, Any]) -> list[w
     return parts
 
 
+FOUNDATION_PARAMETERS = (
+    w.Parameter('width_m','m',.4,.4,3.), w.Parameter('depth_m','m',.4,.4,3.),
+    w.Parameter('thickness_m','m',.05,.05,.3), w.Parameter('footing_section_m','m',.1,.1,.4),
+    w.Parameter('material','','concrete',choices=('concrete','oak','iron','glass')),
+    *(w.Parameter(f'footing_{i}_m','m',.05,.05,1.5) for i in range(1,5)),
+)
+
+
+def _build_foundation(library,values):
+    width,depth,thickness = values['width_m'],values['depth_m'],values['thickness_m']
+    section,material = values['footing_section_m'],values['material']
+    if section*2>min(width,depth): raise ValueError('Footings need space within the platform')
+    parts=[w.WirePart(name='platform',role='top',family='surface',shape='box',material=material,
+        size_m=(width,thickness,depth),center_m=(0,-thickness/2,0))]
+    for i,(sx,sz) in enumerate(((1,1),(-1,1),(1,-1),(-1,-1)),1):
+        length=values[f'footing_{i}_m']
+        parts.append(w.WirePart(name=f'footing-{i}',role='post',family='post',shape='box',material=material,
+            size_m=(section,length,section),center_m=(sx*(width-section)/2,-thickness-length/2,
+                                                       sz*(depth-section)/2)))
+    return parts
+
+
+def _foundation_overrides(values,parts):
+    from . import workshop_construction,workshop_placement
+    return {**{p.name:{'mechanics':{'model':'rigid'}} for p in parts},
+        workshop_construction.CONSTRUCTION_KEY:{'schema':workshop_construction.CONSTRUCTION_SCHEMA,
+            'joints_authored':True,'added':[],'removed':[],
+            'joints':[{'id':f'footing-{i}','kind':'fixed','a':'platform','b':f'footing-{i}',
+                       'method':'bonded'} for i in range(1,5)]},
+        workshop_placement.KEY:{'schema':workshop_placement.SCHEMA,
+            'support_components':[f'footing-{i}' for i in range(1,5)],'upright':True,
+            'clearance_m':.15,'ports':[],'skills':[]}}
+
+
 def install() -> None:
     global _INSTALLED
     if _INSTALLED: return
     existing = {assembly.name: assembly for assembly in w.ASSEMBLIES}
+    existing['foundation-pad'] = w.Assembly('foundation-pad','support a level building surface',
+        'A level platform on four individually sized footings. Free native rigid geometry; '
+        'settling must be checked. Rigid connections have no internal or attachment failure model.',
+        FOUNDATION_PARAMETERS,_build_foundation,lambda values:[],_foundation_overrides,
+        uses={'primary_use':{'label':'Inspect foundation','steps':[{'do':'inspect'}]},
+              'primary_use_component':'platform',
+              'interaction_point_components':{'deck':'platform','grip':'platform','use':'platform'}})
     old_cart = existing.get("cart")
     if old_cart is not None:
         existing["cart"] = w.Assembly(
@@ -1062,6 +1103,7 @@ def install() -> None:
     if "breaker" not in seen: ordered.append(existing["breaker"])
     if "solar-array" not in seen: ordered.append(existing["solar-array"])
     if "electric-furnace" not in seen: ordered.append(existing["electric-furnace"])
+    if 'foundation-pad' not in seen: ordered.append(existing['foundation-pad'])
     w.ASSEMBLIES = tuple(ordered)
     w._BY_NAME = {assembly.name: assembly for assembly in w.ASSEMBLIES}
     _INSTALLED = True

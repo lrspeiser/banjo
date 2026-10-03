@@ -15,6 +15,7 @@ from mcp.workshop import WorkshopDesign, WirePart, _component_counts, assemble
 from mcp import workshop_construction
 from mcp.workshop_construction import CONSTRUCTION_KEY
 from mcp.workshop_machines import MACHINES_KEY
+from mcp.workshop_placement import KEY as PLACEMENT_KEY
 
 OVERRIDE_SCHEMA = "banjo.workshop-component-overrides.v1"
 STRUT_ROLES = {"leg", "post", "beam", "brace", "apron", "stretcher", "axle", "handle"}
@@ -36,6 +37,10 @@ def checked_overrides(value: Any) -> dict[str, dict[str, Any]]:
         raise ValueError("component_overrides must be an object with at most 250 parts")
     out: dict[str, dict[str, Any]] = {}
     for name, patch in value.items():
+        if name == PLACEMENT_KEY:
+            from mcp import workshop_placement
+            out[name] = workshop_placement.checked(patch)
+            continue
         if name == CONSTRUCTION_KEY:
             # Parts put in, parts taken off and declared joints travel with the
             # per-part edits, so every path that carries one carries the other.
@@ -82,7 +87,7 @@ def _changed(part: WirePart, patch: dict[str, Any]) -> WirePart:
 def apply_overrides(design: WorkshopDesign, overrides: Any) -> WorkshopDesign:
     patches = checked_overrides(overrides)
     built = workshop_construction.apply(design.parts, patches.get(CONSTRUCTION_KEY) or {})
-    known = {part.name for part in built}; missing = sorted(set(patches) - known - {CONSTRUCTION_KEY, MACHINES_KEY})
+    known = {part.name for part in built}; missing = sorted(set(patches) - known - {CONSTRUCTION_KEY, MACHINES_KEY, PLACEMENT_KEY})
     if missing: raise ValueError("component override names part(s) not in this design: " + ", ".join(missing))
     parts = [_changed(part, patches.get(part.name, {})) for part in built]
     lineage = {**deepcopy(design.lineage), "component_overrides": deepcopy(patches)}
@@ -92,6 +97,8 @@ def apply_overrides(design: WorkshopDesign, overrides: Any) -> WorkshopDesign:
         tests=deepcopy(design.tests), notes=list(design.notes), kind=design.kind).validate()
     from mcp import workshop_tools
     workshop_tools.frame(result)
+    from mcp import workshop_placement
+    workshop_placement.for_design(result)
     return result
 
 

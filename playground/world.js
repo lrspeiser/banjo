@@ -10950,7 +10950,7 @@ async function showNextStep() {
   if(root && chat && root.parentElement!==chat.parentElement)chat.before(root);
   if (!root || !worldId || !world.session || watchedId || guidanceBusy || performance.now()-guidanceReadAt<4500) return;
   guidanceBusy=true;guidanceReadAt=performance.now();
-  try {const data=await api("/api/world/guidance",{});renderPlayerGuidance(root,data);}
+  try {const data=await api("/api/world/guidance",{});renderPlayerGuidance(root,data,api);}
   catch {renderPlayerGuidance(root,null);}
   finally {guidanceBusy=false;}
 }

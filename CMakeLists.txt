@@ -1683,6 +1683,17 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/ai_processing_tests.py -v)
     set_tests_properties(banjo_ai_processing_tests PROPERTIES TIMEOUT 600)
+    add_test(NAME banjo_construction_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/construction_tests.py -v)
+    set_tests_properties(banjo_construction_tests PROPERTIES TIMEOUT 180)
+    add_test(NAME banjo_proactive_guidance_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/proactive_guidance_tests.py -v)
+    set_tests_properties(banjo_proactive_guidance_tests PROPERTIES TIMEOUT 180)
     add_test(NAME banjo_material_delivery_tests
         COMMAND ${CMAKE_COMMAND} -E env
             BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>

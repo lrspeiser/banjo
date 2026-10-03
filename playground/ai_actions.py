@@ -72,6 +72,7 @@ def model_view(state,actions,history):
                      'stowed':deepcopy((inv.get('record') or {}).get('stowed',[]))},
         'action_catalog':deepcopy(actions),
         'processing_readiness':deepcopy(state.get('processing_readiness')),
+        'construction_readiness':deepcopy(state.get('construction_readiness')),
         'recent_actions':[{k:deepcopy(row.get(k)) for k in ('action','label','result','receipt')}
                           for row in history[-4:]]}
 

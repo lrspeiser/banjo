@@ -57,6 +57,7 @@ PROGRESS_TTL_S = 900.0
 DOING = {
     "inspect_design": "looking at the design",
     "inspect_game_guidance": "checking your workbench and next action",
+    "define_installation": "planning its supports and access",
     "how_do_i_make_it": "working out what it would take",
     "inspect_component": "looking at that part",
     "inspect_physics": "measuring it",
@@ -149,6 +150,13 @@ run, or commit the outside live world. The user expects you to behave like a
 CAD/physics copilot, not a one-shot intent classifier.
 
 Important behavior:
+- define_installation records bounded site requirements on the current design:
+  support component names, upright orientation, clearance in metres, input/output
+  or access ports and required technique ids. Use actual components and inspect
+  the result after geometry edits. These declarations are shared with Recipes,
+  player and AI guidance. They grant no stock, knowledge, anchoring, guaranteed
+  stability or physical strength. A foundation-pad has four individually sized
+  footings and a platform; its free rigid joints currently have no failure law.
 - For stock, energy, readiness and what-to-do-next questions in a named World,
   use the authenticated player_guidance observations. They use the same exact
   paid quote and next-action resolver as the game screens. Shape fit, library
@@ -496,6 +504,16 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
         },
     }
     return [
+        {"type":"function","name":"define_installation",
+         "description":"Declare the current draft's installation requirements; native placement and operation remain required.",
+         "parameters":{"type":"object","additionalProperties":False,
+            "required":['support_components','upright','clearance_m','ports','skills'],
+            "properties":{'support_components':{'type':'array','maxItems':32,'items':{'type':'string'}},
+                'upright':{'type':'boolean'},'clearance_m':{'type':'number','minimum':0,'maximum':3},
+                'ports':{'type':'array','maxItems':16,'items':{'type':'object','additionalProperties':False,
+                    'required':['component','kind'],'properties':{'component':{'type':'string'},
+                        'kind':{'type':'string','enum':['input','output','power','access']}}}},
+                'skills':{'type':'array','maxItems':32,'items':{'type':'string'}}}}},
         {"type": "function", "name": "define_ground_tool",
          "description": "Declare the physical ground point and grip on existing fixed lattice components. Component-local SI frames, not world coordinates. The native engine must admit the sampled tip; no prescribed dig result or strength certification.",
          "parameters": workshop_tools.AUTHORING_SCHEMA},
@@ -1063,6 +1081,14 @@ class _State:
         raise ValueError("a power part is a store, a motor, a panel or a control")
 
     def execute(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
+        if tool=='define_installation':
+            from mcp import workshop_placement
+            updated=deepcopy(self.overrides)
+            updated[workshop_placement.KEY]=workshop_placement.checked(args)
+            self.design,self.overrides=workshop_components.design_from_spec({**self.current_spec(),
+                'component_overrides':updated})
+            return self.record(tool,{'summary':'Updated installation requirements',
+                'installation':workshop_placement.for_design(self.design)})
         if tool=='inspect_game_guidance':
             if args:raise ValueError('Guidance uses authenticated state, not model-supplied balances')
             import player_guidance
@@ -1588,12 +1614,12 @@ def _journal_for(app: Any):
     return progression.Journal(None)
 
 
-def _call_model(app: Any, payload: dict[str, Any]) -> dict[str, Any]:
+def _call_model(app: Any, payload: dict[str, Any], *, timeout_s: float = 60) -> dict[str, Any]:
     req = request.Request("https://api.openai.com/v1/responses",
         data=json.dumps(payload, allow_nan=False).encode(), method="POST",
         headers={"Authorization": "Bearer " + app.api_key, "Content-Type": "application/json"})
     try:
-        with request.urlopen(req, timeout=60) as response:
+        with request.urlopen(req, timeout=timeout_s) as response:
             raw = response.read(512 * 1024 + 1)
     except error.HTTPError as exc:
         # Say WHY. Discarding the body left "Workshop chat failed (HTTP 400)"

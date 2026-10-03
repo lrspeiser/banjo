@@ -674,3 +674,8 @@ body.workshop-mode .ws-chat-suggestions { flex:none;max-height:24vh;overflow:aut
 .player-guidance { display:grid;gap:.35rem;padding:.55rem;margin:.45rem 0;border:1px solid var(--edge);border-radius:.45rem;font-size:.75rem; }
 .player-guidance p { margin:0;color:var(--dim); }
 .player-guidance a { white-space:normal;line-height:1.3;overflow-wrap:anywhere; }
+.player-guide-tip:empty { display:none; }
+.player-guide-tip { display:flex;flex-wrap:wrap;gap:.3rem;padding-top:.35rem;border-top:1px solid var(--edge); }
+.player-guide-tip p { flex-basis:100%;line-height:1.4; }
+.player-guide-tip small { flex-basis:100%;font-weight:600; }
+.player-guide-tip .ws-action { font-size:.7rem;padding:.25rem .4rem; }

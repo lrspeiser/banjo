@@ -245,10 +245,12 @@ def recipes(app: Any) -> dict[str, Any]:
             line['debit_personal_kg']=min(line['kg'],line['personal_kg'])
             line['debit_shared_kg']=min(max(0.,line['kg']-line['debit_personal_kg']),line['shared_kg'])
         record = workshop_machines.of(design)
+        from mcp import workshop_placement
         templates.append({"name": name, "purpose": design.purpose, "about": made.about,
                           "source": source, "saved_design_id": saved_design_id,
                           "kind": design.kind, "parameters": dict(design.parameters),
                           "component_overrides": overrides,
+                          "installation":workshop_placement.for_design(design),
                           "parts": len(design.parts), "families": sorted({p.family for p in design.parts if p.family}),
                           "materials": materials, "goods": goods,
                           "enough": all(m["enough"] for m in materials) and all(g["enough"] for g in goods),

@@ -22,6 +22,7 @@ Everything else in the game is built from what those two bring in.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import math
 import os
@@ -84,6 +85,7 @@ def built_from() -> dict:
     made = {"rover": "rover", "solar farm": "solar-array", "field pick": "field-pick"}
     for works in seed.WORKS:
         made[works.machine] = "processor"
+        if works.stands: made[works.machine+' foundation'] = 'foundation-pad'
     return made
 
 
@@ -93,7 +95,7 @@ def built_from() -> dict:
 SEED = 1
 
 
-def compose(ground: dict, world: dict, terrain_seed: int | None = None) -> dict:
+def compose(ground: dict, world: dict, terrain_seed: int | None = None, *, installations=None) -> dict:
     """The valley, the generated goods, and the two machines standing in it.
 
     The rover room's own composer is used for the rover, because it knows how
@@ -242,7 +244,7 @@ def compose(ground: dict, world: dict, terrain_seed: int | None = None) -> dict:
             ground, name, at,
             {"kind": "process", "recipe": works.recipe, "intake": intake_name,
              "output": output_name, "batch_kg": 5.0}, reserved=_standing_footprints(spec)+hauling,
-            service_regions=[(heaps[n]['at_m'], machine_goods.REACH_M +
+            installations=installations, service_regions=[(heaps[n]['at_m'], machine_goods.REACH_M +
                               float(heaps[n].get('radius_m',1.))) for n in (intake_name,output_name)])
         # Its names kept apart from every other machine's, as the install gate
         # keeps them: eight processors all call their battery "battery", and
@@ -399,6 +401,8 @@ def _placement(ground, artifact, preferred, reserved, service_regions):
         if any(math.hypot(root[0]-p[0],root[2]-p[1])>reach-.2 for p,reach in service_regions):
             continue
         occupied=rigid_assembly.footprint(flat)
+        if service_regions:
+            occupied=[(low,[v-.1 for v in lo],[v+.1 for v in hi]) for low,lo,hi in occupied]
         if any(lo[0]<ground['x0'] or lo[1]<ground['z0'] or
                hi[0]>ground['x0']+(ground['nx']-1)*ground['cell'] or
                hi[1]>ground['z0']+(ground['nz']-1)*ground['cell'] for _,lo,hi in occupied):
@@ -415,7 +419,7 @@ def _placement(ground, artifact, preferred, reserved, service_regions):
 
 def a_built_thing(ground: dict, kind: str, name: str, at: tuple[float, float],
                   parameters: dict | None = None, *, reserved=None,
-                  service_regions=()) -> tuple[list[dict], list[dict], Any, Any]:
+                  service_regions=(), installations=None) -> tuple[list[dict], list[dict], Any, Any]:
     """Any Workshop kind, stood on the ground where it goes.
 
     THE SAME PATH A PERSON'S BUILD TAKES: assemble the design, compile it to
@@ -435,16 +439,59 @@ def a_built_thing(ground: dict, kind: str, name: str, at: tuple[float, float],
     flat = rigid_assembly.placed(artifact, [x, 0.0, z], 0.0, 0.0)
     lift = max(grounds.ground_under(ground, lo, hi) - low
                for low, lo, hi in rigid_assembly.footprint(flat))
+    foundation=[]
+    if service_regions:
+        foundation,lift = _foundation_for(ground,flat,name,installations=installations)
     stood = rigid_assembly.placed(artifact, [x, lift, z], 0.0, 0.0)
     origin = [x, lift, z]
     frame = (lambda p: [float(p[k]) + origin[k] for k in range(3)],
              lambda d: [float(v) for v in d])
     made = workshop_machines.installed(design, artifact["component_to_body"], frame, {})
-    return rigid_assembly.scene_bodies(stood), rigid_assembly.scene_joints(stood), made, design
+    if installations is not None:
+        installations.append({'status':'installed','design_id':design.design_id,'root_body':name,
+            'component_to_body':dict(artifact['component_to_body']),'recipe':candidate,
+            'presentation':{'label':name,'label_source':'generated-purpose'},
+            'source':'Generated starter geometry'})
+    return foundation+rigid_assembly.scene_bodies(stood), rigid_assembly.scene_joints(stood), made, design
+
+
+def _foundation_for(ground,flat,name,*,installations=None):
+    """A free, buildable platform with feet sized to actual terrain samples.
+
+    The machine remains free on the platform. All mass/contact comes from the
+    native compounds; no pose locking or friction override is applied. Exact
+    rigid fixed joints currently have no failure law. This is starter geometry,
+    not soil bearing/cement curing or a support-removal certification.
+    """
+    occupied=rigid_assembly.footprint(flat)
+    lo=[min(row[1][a] for row in occupied)-.10 for a in range(2)]
+    hi=[max(row[2][a] for row in occupied)+.10 for a in range(2)]
+    width,depth=hi[0]-lo[0],hi[1]-lo[1]
+    x,z=(lo[0]+hi[0])/2,(lo[1]+hi[1])/2
+    section,thickness=.2,.1
+    top=grounds.ground_under(ground,lo,hi)+thickness+.06
+    parameters={'width_m':width,'depth_m':depth,'thickness_m':thickness,
+                'footing_section_m':section,'material':'concrete'}
+    for i,(sx,sz) in enumerate(((1,1),(-1,1),(1,-1),(-1,-1)),1):
+        fx,fz=x+sx*(width-section)/2,z+sz*(depth-section)/2
+        floor=grounds.ground_under(ground,(fx-section/2,fz-section/2),(fx+section/2,fz+section/2))
+        parameters[f'footing_{i}_m']=top-thickness-floor
+    design,overrides=workshop_components.design_from_spec({'kind':'foundation-pad',
+        'design_id':name+' foundation','parameters':parameters})
+    artifact=rigid_assembly.compile_design(design,overrides,root=name+' foundation')
+    stood=rigid_assembly.placed(artifact,[x,top,z],0.,0.)
+    if installations is not None:
+        installations.append({'status':'installed','design_id':design.design_id,'root_body':name+' foundation',
+            'component_to_body':dict(artifact['component_to_body']),
+            'presentation':{'label':name+' foundation','label_source':'generated-purpose'},
+            'recipe':{'kind':'foundation-pad','design_id':design.design_id,'parameters':parameters,
+                      'component_overrides':deepcopy(overrides)},'source':'Generated starter geometry'})
+    lowest=min(row[0] for row in occupied)
+    return rigid_assembly.scene_bodies(stood),top-lowest
 
 
 def a_works(ground: dict, name: str, at: tuple[float, float],
-            routine: dict, *, reserved=None, service_regions=()) -> tuple[list[dict], list[dict], dict]:
+            routine: dict, *, reserved=None, service_regions=(), installations=None) -> tuple[list[dict], list[dict], dict]:
     """The machine that works this recipe, stood on the ground where it goes.
 
     WHICH MACHINE IS THE RECIPE'S TO SAY. A recipe with a temperature needs
@@ -467,7 +514,7 @@ def a_works(ground: dict, name: str, at: tuple[float, float],
     needs_c = ws.CHAIN_BY_NAME[recipe].needs_c if recipe in ws.CHAIN_BY_NAME else 0.0
     kind = "electric-furnace" if needs_c > 0.0 else "processor"
     bodies, pins, made, _ = a_built_thing(ground, kind, name, at, {"recipe": recipe},
-                                      reserved=reserved,service_regions=service_regions)
+                                      reserved=reserved,service_regions=service_regions,installations=installations)
     for program in made.get("programs") or []:
         program["routine"] = dict(routine)
     return bodies, pins, made

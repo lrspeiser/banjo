@@ -213,6 +213,7 @@ class Manager:
                 'skills':skills,'tech_tree':skills,'inventory':inventory,'recipes':book.get('templates',[]),
                 'stockpiles':book.get('stockpiles',[]),
                 'native':opened,'pose':deepcopy(profile.get('pose')),'fabrication':funding,
+                'construction_readiness':deepcopy(((market.get('guidance') or {}).get('player') or {}).get('build_readiness')),
                 'processing_readiness':deepcopy(((market.get('guidance') or {}).get('player') or {}).get('processing_readiness'))}
 
     def _run(self,profile,stop,cookie):
