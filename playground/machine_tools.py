@@ -269,7 +269,7 @@ def go_to(ctx: senses.Context, call: Call) -> dict[str, Any]:
         out.update(did=f'backing away to replan the route to {name}',target=aim,place_at=point,navigation=navigation)
         return out
     out = _behave(ctx, call, "approaching", float(call.args.get("for_s", 60.0)), aim,
-                  near_m=machine_navigation.WAYPOINT_NEAR_M if navigation else None)
+                  near_m=navigation.get('near_m',machine_navigation.WAYPOINT_NEAR_M) if navigation else None)
     out["did"] = (f"following a local route to {name}" if navigation else
                   f"asked to go to {name}, and stand {stand:.1f} m off it" if stand > 0.0
                   else f"asked to go to {name}, and stop a metre off")

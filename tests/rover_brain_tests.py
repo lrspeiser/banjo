@@ -1113,6 +1113,30 @@ class LocalNavigation(unittest.TestCase):
         self.assertNotIn('blocked',route);self.assertTrue(route['final'])
         self.assertGreater(math.hypot(*route['target']),nav.WAYPOINT_NEAR_M)
 
+    def test_close_receiving_leg_reserves_native_stopping_room_and_preserves_solid_clearance(self):
+        import machine_navigation as nav
+        box={'name':'receiver','position_m':[0,.5,3.3],'dimensions_m':[.6,1,.6],
+             'orientation_wxyz':[1,0,0,0]}
+        ctx=self.context(obstacles=[box]);before=deepcopy(ctx.bodies)
+        route=nav.waypoint(ctx,[0,3.],(0,1.))
+        self.assertTrue(route['final'],route)
+        # Any native stop inside the requested radius lies in the receiving
+        # region; the transit .4 m + half-grid allowance cannot claim this.
+        self.assertLessEqual(math.hypot(route['target'][0],route['target'][1]-3.)+route['near_m'],1.+1e-12)
+        self.assertGreaterEqual(3.-route['target'][1],route['radius_m'])
+        self.assertEqual(before,ctx.bodies)
+        self.assertTrue(all(c['op']=='survey' for c in self.commands))
+        self.assertLessEqual(route['surveys'],nav.MAX_SURVEYS)
+        machine_tools.go_to(ctx,machine_tools.Call('go_to',{'point':[0,3.]},'routine'))
+        self.assertEqual(route['near_m'],self.commands[-1]['near_m'])
+
+    def test_close_destination_inside_a_solid_does_not_report_final_arrival(self):
+        import machine_navigation as nav
+        box={'name':'wall','position_m':[0,.5,3.],'dimensions_m':[4,1,4],
+             'orientation_wxyz':[1,0,0,0]}
+        route=nav.waypoint(self.context(obstacles=[box]),[0,3.],(0,1.))
+        self.assertFalse(route.get('final'),route)
+
     def test_dry_drop_within_probe_reach_is_predicted_before_the_occupied_footprint(self):
         import machine_navigation as nav
         def ground(x,z):

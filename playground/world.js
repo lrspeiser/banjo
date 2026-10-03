@@ -4855,6 +4855,14 @@ const picked = { name: null, at: null, resource: null, box: null };
   box.setAttribute("aria-label", "What you clicked");
   box.setAttribute("aria-live", "polite");
   details.parentNode.insertBefore(box, details);
+  // An action result belongs to the whole player interaction. Keeping it
+  // inside the look-at card hid refusals whenever an item was selected.
+  const last=document.getElementById("details-last");
+  if (last) {
+    last.setAttribute("role","status");
+    last.setAttribute("aria-live","polite");
+    details.parentNode.insertBefore(last,box);
+  }
 })();
 
 // The box drawn round what is pinned. One set of lines, reused: it is moved
@@ -6552,7 +6560,13 @@ addEventListener("keydown", (e) => {
   if (e.code === "Escape") {
     e.preventDefault(); setCursorFree(!cursorFree); return;
   }
-  if (cursorFree) return;
+  if (cursorFree) {
+    // Packing the held item is the same Inventory action as its Stow button.
+    // It needs no navigation or aim; recovery/busy guards still say why it
+    // cannot be packed. Empty-hand world targeting stays in Explore mode.
+    if (isKey("stow",e.code) && world.held) { e.preventDefault(); toTheBag(); }
+    return;
+  }
   keys.add(e.code);
 
   // The one control language (interaction.js): E does what the side view marks

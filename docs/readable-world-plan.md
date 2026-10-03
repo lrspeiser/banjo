@@ -3,6 +3,12 @@
 Published implementation: `59f4efe` on GitHub main. This publication record
 does not close the full active scope.
 
+The subsequent [close-arrival/recovery checkpoint](rover-close-arrival-checkpoint.md)
+resolves the retained ordered-port and packing-Q failures and preserves real
+three-load hauling/restart on both generated maps. Broader R4 route families
+and R5 native avatars/water/cargo remain open, alongside the material, supply
+and human/model acceptance described below.
+
 Owner scope: material readability; an opening useful product with a complete
 supply path and no purchase-only requirement; one next action/readiness model
 across all game screens and chat; reliable hauling, physical avatar water

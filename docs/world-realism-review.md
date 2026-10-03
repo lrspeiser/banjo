@@ -132,7 +132,8 @@ Prioritize mechanics the player can predict and observe:
 1. **Reliable collection and processing:** finite sources, visible transfers,
    compatible inputs and collectible private outputs.
 2. **Hauling:** machines negotiate declared slopes/obstacles and recover
-   without teleports or invented traction. Reproduce the known rover failures.
+   through native motion. The [close-arrival/recovery checkpoint](rover-close-arrival-checkpoint.md)
+   resolves the two retained failures; additional terrain families remain.
 3. **Water:** avatars and objects have native contact, buoyancy, drag/current
    and reactions. The existing camera swimming approximation is insufficient.
 4. **Cargo:** carried loads change actual mass/inertia and handling, with
@@ -174,7 +175,7 @@ acceptance, full provider-wait concurrency and functional item tests remain.
    inputs and unavailable sources across the supported recipe catalog.
 3. Qualify additional human/model-driven tech routes and LLM designs through
    ordinary paid actions, private inventories and restart.
-4. Resolve hauling failures, then native avatars/water and physical cargo under
+4. Broaden the qualified hauling routes, then native avatars/water and physical cargo under
    the [R4/R5 acceptance gates](player-experience-checklist.md#remaining-work).
 
 The full active scope remains material readability, useful opening progression,

@@ -19,6 +19,9 @@ STOP_MARGIN_M = .65
 # loop on generated map 0; retain the 6 m horizon and bound the expanded search.
 MAX_SURVEYS = 4096
 WAYPOINT_NEAR_M = .4
+# A close destination needs a smaller motor arrival allowance than a through
+# waypoint. This is a request to the native brakes, never a pose correction.
+FINAL_NEAR_M = .1
 
 
 def shape_points(body, cell_m):
@@ -55,6 +58,7 @@ def bounds(body, cell_m):
 def waypoint(ctx, target, arrival=(0.,0.)):
     """One safe visible waypoint, or an explicit blocked result. No global map."""
     at=ctx.at();mine=set(ctx.program.get('parts') or [])|{ctx.program.get('body')}
+    close_arrival=0 < arrival[1] <= 1. and arrival[0] == 0.
     own=[p for b in ctx.bodies or [] if b.get('name') in mine for p in shape_points(b,ctx.cell_m)]
     if not own:return None
     radius=max(math.hypot(p[0]-at[0],p[2]-at[1]) for p in own)
@@ -107,6 +111,11 @@ def waypoint(ctx, target, arrival=(0.,0.)):
             # actual assembled footprint is clear. Let the first leg leave
             # that margin; do not ignore the physical radius or an obstacle.
             pad=STOP_MARGIN_M*min(1.,math.hypot(x-at[0],z-at[1])/1.5)
+            if close_arrival:
+                # A transit stopping margin must not exclude the receiving
+                # region itself. Taper that allowance at a close destination;
+                # the actual occupied radius and native hazard guards remain.
+                pad=min(pad,STOP_MARGIN_M*max(0.,math.hypot(x-target[0],z-target[1])-arrival[1])/1.5)
             for lo,hi in obstacles:
                 dx=max(lo[0]-x,0,x-hi[0]);dz=max(lo[2]-z,0,z-hi[2])
                 if math.hypot(dx,dz)<radius+pad:
@@ -227,6 +236,21 @@ def waypoint(ctx, target, arrival=(0.,0.)):
             chosen=candidate;break
     destination=list(point(chosen))
     final=remaining(chosen)<=CELL_M/2
+    near=WAYPOINT_NEAR_M
+    if final and close_arrival:
+        # Grid acceptance is not arrival. Stopping .4 m before a grid point
+        # already .25 m outside the receiving region caused endless replans.
+        # Survey the extended leg to a point inside the region with enough
+        # room for the native motor's arrival radius. If it cannot fit, retain
+        # the surveyed frontier and do not report final arrival.
+        dx,dz=destination[0]-target[0],destination[1]-target[1]
+        distance=math.hypot(dx,dz)
+        reach=max(0.,arrival[1]-FINAL_NEAR_M)
+        endpoint=[target[0]+dx*reach/distance,target[1]+dz*reach/distance] if distance>reach else destination
+        node=((endpoint[0]-at[0])/CELL_M,(endpoint[1]-at[1])/CELL_M)
+        if leg_clear(start,node,initial_heading,math.atan2(node[0],node[1])):
+            destination=endpoint;near=FINAL_NEAR_M
+        else:final=False
     if final and arrival==(0.,0.):destination=list(target)
-    return {'target':destination,'final':final,'radius_m':radius,'surveys':queries,
+    return {'target':destination,'final':final,'near_m':near,'radius_m':radius,'surveys':queries,
             'path':[list(point(n)) for n in path[:64]]}

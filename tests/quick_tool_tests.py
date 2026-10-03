@@ -4,6 +4,8 @@ import json
 import math
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import time
 import threading
 import unittest
@@ -16,6 +18,38 @@ from mcp import workshop_tools
 
 ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/'build/player-learning'
+
+
+class KeyboardInventory(unittest.TestCase):
+    def test_cursor_mode_packs_only_the_held_item_and_retains_input_and_recovery_guards(self):
+        node=shutil.which('node')
+        if not node:self.skipTest('Node required for keyboard contract')
+        source=(ROOT/'playground/world.js').read_text(encoding='utf-8')
+        start=source.index('addEventListener("keydown", (e) => {')
+        end=source.index('addEventListener("keyup"',start)
+        # Exercise the shipped event listener with DOM/key state. Native
+        # holding/recovery remains covered through the HTTP + browser journey.
+        script='''const assert=require('node:assert/strict');
+          const vm=require('node:vm');let listener;let packed=0;let prevented=0;
+          class Field{};class Area{};
+          const state={cursorFree:true,world:{held:{recovery:true}},
+            HTMLInputElement:Field,HTMLTextAreaElement:Area,typing:t=>t instanceof Field || t instanceof Area,
+            $:()=>({open:false}),isKey:(a,c)=>a==='stow'&&c==='KeyQ',
+            addEventListener:(name,fn)=>{if(name==='keydown')listener=fn;},
+            toTheBag:()=>packed++,keys:new Set(),setCursorFree:()=>{},talk:()=>{}};
+          vm.runInNewContext(SOURCE,state);
+          const key=(code='KeyQ',extra={})=>listener({target:{},key:'q',code,
+            preventDefault:()=>prevented++,...extra});
+          key();assert.equal(packed,1);assert.equal(prevented,1);
+          assert.equal(state.keys.size,0,'packing does not begin walking');
+          for(const extra of [{target:new Field()},{ctrlKey:true},{altKey:true},{metaKey:true},{repeat:true}])key('KeyQ',extra);
+          assert.equal(packed,1,'text/browser/repeated keys never pack');
+          key('KeyW');assert.equal(state.keys.size,0);
+          state.world.held=null;key();assert.equal(packed,1,'cursor mode never packs a stale aim');
+          state.world.held={name:'personal tool'};key();assert.equal(packed,2);
+        '''.replace('SOURCE',json.dumps(source[start:end]))
+        result=subprocess.run([node,'-e',script],capture_output=True,text=True)
+        self.assertEqual(0,result.returncode,result.stderr)
 
 
 class Authoring(unittest.TestCase):

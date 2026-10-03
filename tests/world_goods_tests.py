@@ -178,6 +178,8 @@ class GoodsJourney(unittest.TestCase):
         wait('!!document.querySelector("#picked [data-recovery-action=start]")')
         click('#picked [data-recovery-action=start]')
         wait('banjoRoom.world.held?.recovery')
+        self.assertTrue(page.evaluate('banjoRoom.controls().cursorFree'),
+                        'Clicking recovery safely leaves the player in Cursor mode')
         self.assertFalse(page.evaluate('banjoRoom.world.held.guide || false'))
         initial=page.evaluate('banjoRoom.world.held.hand.grip_m')
         page.evaluate('(()=>{const p=banjoRoom.camera.position;banjoRoom.lookAt(p.x,p.y+1,p.z-.3);banjoRoom.resume();})()')
@@ -186,6 +188,8 @@ class GoodsJourney(unittest.TestCase):
         page.send('Input.dispatchKeyEvent',{'type':'keyDown','code':'KeyQ','key':'q'})
         page.send('Input.dispatchKeyEvent',{'type':'keyUp','code':'KeyQ','key':'q'})
         wait('document.querySelector("#details-last-text").textContent.includes("Release the rover before packing")')
+        self.assertTrue(page.evaluate('document.querySelector("#details-last").checkVisibility()'),
+                        'The selected component card must not hide the refusal')
         self.assertTrue(page.evaluate('!!banjoRoom.world.held?.recovery'))
         page.evaluate('banjoRoom.hold()')
         wait('!banjoRoom.world.busy')
