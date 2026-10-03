@@ -1,6 +1,6 @@
 # Readable world and useful progression — October 3, 2026
 
-Published implementation: `59f4efe` on GitHub main. This publication record
+Latest implementation checkpoint: `3544fd2` on GitHub main. This publication record
 does not close the full active scope.
 
 The [ordinary opening/supply checkpoint](opening-human-supplies-checkpoint.md)

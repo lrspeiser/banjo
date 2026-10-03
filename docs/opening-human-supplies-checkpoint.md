@@ -1,6 +1,9 @@
 # Ordinary opening and simpler supplies — October 3, 2026
 
-Verification base: `33c377e` plus this outgoing checkpoint, Windows,
+Published implementation: `3544fd2` on GitHub main. The full active scope
+remains unfinished; this record identifies the verified slice.
+
+Verification base: `33c377e` plus this checkpoint, Windows,
 Python 3.13, Node 22.18.0, existing MSVC Release binaries under
 `build/agent-object-strike/Release`. Publication is recorded separately.
 Native sources, binaries, laws and physics tolerances are unchanged. The
