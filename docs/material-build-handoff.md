@@ -1,5 +1,7 @@
 # Material-to-build handoff — October 2, 2026
 
+Subsequent [exact energy/build acceptance](material-build-energy-checkpoint.md) establishes and fixes the rounding cause and completes this test journey. The failures below remain the historical handoff evidence. R1 is still unfinished.
+
 The owner requested stopping at the current checkpoint and publishing to main.
 The verified implementation is `0801d3f461333facafdadb2c97b2bd805e264dba`,
 with publication record `2422ce4`, both already on GitHub main.

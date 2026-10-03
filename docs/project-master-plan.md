@@ -1,5 +1,7 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**R1 energy/build progress, October 2:** [Exact meters and fresh-world acceptance](material-build-energy-checkpoint.md) fix solar-bank save refusal caused by rounded native energy readings. Actual rover mining/delivery → processed private copper → saved lamp funding/Make/Use → complete server restart now passes, with finite trader restocking, exact battery retention and no duplicate credit. R1 remains open for player input delivery, ground-to-usable-stock, exhausted-input guidance and legacy unassigned-load recovery; no material law or preview change.
+
 **Owner-directed R1 handoff, October 2:** [Current checkpoint and failed acceptance](material-build-handoff.md) stop at the verified rock-storage implementation `0801d3f` on GitHub main. The draft fresh-world journey reached private copper funding but failed a later solar-bank durable save; final build/use/restart remain unqualified. Next fix that receipt/snapshot mismatch and resume R1. The draft is preserved locally, R3 remains paused, and previews are unchanged.
 
 **R1 storage progress, October 2:** [Broken-rock checkpoint](material-build-storage-checkpoint.md) retains native rubble/mixed state and rock density through paid-room raw storage/retrieval, rollback/retry and whole reopen. This corrects receiving/restore accounts without adding a material law, finished stock or physical container. The complete ordinary material-to-build journey and unassigned recovery remain open; R3 remains paused and previews unchanged.

@@ -609,6 +609,188 @@ class LabRemake(unittest.TestCase):
         if getattr(self,'chrome',None):self.chrome.close()
         flow.GoodsJourney.tearDown(self)
 
+    def test_fractional_native_meter_bank_failed_save_retry_peer_and_server_restart(self):
+        world,owner,app=self.setup_world()
+        peer=self.join(world,'Other trader')
+        source=next(s for s in app.live.session.state['machines']['stores'] if s['body']=='solar farm')
+        # A real external energy draw, with the clock stopped by this fixture.
+        # Its old rounded receipt was 4 microjoules ahead of the native snapshot.
+        app.live.act({'session':app.live.session.id,'op':'draw','store':source['id'],'joules':.000006})
+        before=install._snapshot(app.live)
+        bank={'action':'bank','joules':500,'request_id':'fractional-meter-bank'}
+        with mock.patch.object(app.store,'save',side_effect=OSError('disk full')):
+            with self.assertRaises(urllib.error.HTTPError) as error:
+                self.post('/api/workshop/market',bank,world)
+            self.assertIn('durable world save',error.exception.read().decode('utf-8'))
+        self.assertEqual(0,self.post('/api/workshop/market',{'action':'view'},world)['balance_j'])
+        after=install._snapshot(app.live)
+        meter=next(s for s in after['energy_stores'] if s['id']==source['id'])
+        old=next(s for s in before['energy_stores'] if s['id']==source['id'])
+        self.assertEqual(old['charge_j']-500.,meter['charge_j'])
+        self.assertEqual(500.000006,meter['given_j'])
+        for _ in range(2):
+            self.assertEqual(500,self.post('/api/workshop/market',bank,world)['balance_j'])
+        self.assertEqual(0,self.post('/api/workshop/market',{'action':'view'},world,peer['token'])['balance_j'])
+        self.assertEqual(after,install._snapshot(app.live))
+        self.stop();self.start()
+        self.post('/api/world/player/join',{'token':owner['token']},world)
+        self.post('/api/world/open',{},world)
+        reopened=self.app.hub.get(world)
+        self.assertEqual(meter,next(s for s in install._snapshot(reopened.live)['energy_stores'] if s['id']==source['id']))
+        self.assertEqual(500,self.post('/api/workshop/market',bank,world)['balance_j'])
+
+    def test_fresh_mined_processed_personal_copper_funds_saved_lamp_use_and_server_restart(self):
+        """Real rover supply, private output, saved design and finite manufacture.
+
+        Copper is the existing assembly-supply ledger; its constituent native
+        mass/thermal law remains unmodeled. This is the supported R1 journey.
+        """
+        with mock.patch.object(flow.server.secrets,'randbelow',side_effect=[0,851269740]):
+            world,owner,app=self.setup_world()
+        peer=self.join(world,'Other crafter')
+        def post(path,body,token=None):
+            try:return self.post(path,body,world,token)
+            except urllib.error.HTTPError as exc:
+                self.fail(path+': '+exc.read().decode('utf-8'))
+        def context():return {'session':app.live.session.id,'scene':app.room.scene}
+        def exact_copper(player):
+            with library._connect(app) as db:
+                row=db.execute("SELECT mass_kg FROM workshop_goods_rack WHERE owner_id=? AND substance='copper'",
+                               (player['id'],)).fetchone()
+            return float(row['mass_kg']) if row else 0.
+        self.assertEqual({},app.room.fabrication_record['stock_kg'])
+        self.assertEqual(0.,app.room.fabrication_record['energy_j'])
+        program=next(p for p in app.live.session.state['machines']['programs'] if p['kind']=='roam')
+        rover=app.brains.of(program['name']).routine
+        processor=next(b.routine for b in app.brains.brains.values() if b.routine and b.routine.recipe=='smelt copper')
+        intake=app.brains.goods.by_name(processor.intake)
+        output=app.brains.goods.by_name(processor.output)
+        starter=intake['holds'].get('copper ore',0.)
+        for _ in range(1500):
+            app.clock._tick(.2)
+            if rover.trips:break
+        self.assertGreater(rover.trips,0,rover.summary())
+        delivered=next(e for e in app.brains.goods.activities if e['kind']=='dump' and e['machine']==program['name'])
+        mined=delivered['goods_kg']['copper ore'];self.assertGreater(mined,0.)
+        self.assertEqual({'pile':processor.intake},delivered['to'])
+        self.assertTrue(any(e['kind']=='dig' and e['machine']==program['name'] for e in app.brains.goods.activities))
+        post('/api/world/machine',{'session':app.live.session.id,'program':program['id'],
+            'power':False,'sender':'material-build-acceptance','seq':1})
+        expected=(starter+mined)*.3
+        for _ in range(800):
+            app.clock._tick(.2)
+            if abs(output['holds'].get('copper',0.)-expected)<1e-6:break
+        copper=output['holds'].get('copper',0.)
+        self.assertAlmostEqual(expected,copper,delta=1e-6)
+        self.assertLess(intake['holds'].get('copper ore',0.),1e-8)
+        self.assertEqual(0.,exact_copper(owner));self.assertEqual(0.,exact_copper(peer))
+        x,z=output['at_m']
+        ground=app.live.act({'session':app.live.session.id,'op':'survey','at':[x,z]})['survey']['ground_m']
+        collection={'session':app.live.session.id,'pile':output['name'],'request_id':'material-build-copper',
+                    'person':{'eyes_m':[x,ground+1.62,z],'facing':[0,0,-1]}}
+        self.assertEqual(copper,post('/api/world/goods/collect',collection)['collected']['copper'])
+        self.assertEqual(copper,exact_copper(owner));self.assertEqual(0.,exact_copper(peer))
+        from mcp import workshop_components
+        _,overrides=workshop_components.design_from_spec({'kind':'mine-lamp'})
+        overrides['@machines']={
+                'stores':[{'name':'camp battery','in':'foot','capacity_j':1000.,'charge_j':500.,
+                           'voltage_v':24.,'max_power_w':25.}],
+                'lamps':[{'name':'camp light','on':'globe','store':'camp battery','watts':10.,'on_at_first':False}]}
+        candidate={'kind':'mine-lamp','design_id':'processed-copper-lamp','parameters':{},'component_overrides':overrides}
+        saved=post('/api/workshop/library',{'action':'save_design','name':'Copper camp lamp',**candidate})['library_item']
+        loaded=post('/api/workshop/library',{'action':'load','item_id':saved['item_id']})
+        candidate=loaded['library_item']['payload']
+        plan=post('/api/world/fabrication/plan_make',{**context(),'candidate':candidate})
+        self.assertEqual({'copper':.5},plan['quote']['assembly_goods_kg'])
+        self.assertEqual(.5,plan['missing_goods_kg']['copper'])
+        state=post('/api/world/fabrication/state',context())
+        source=next(s for s in state['goods_sources'] if s['material']=='copper' and s['pool']=='personal')
+        transfer={**context(),'material':'copper','mass_kg':.5,'pool':'personal','rack_hash':source['rack_hash'],
+                  'revision':state['state']['revision'],'request_id':'material-build-fund-copper'}
+        post('/api/world/fabrication/fund_goods',transfer)
+        post('/api/world/fabrication/fund_goods',transfer)
+        self.assertEqual(copper-.5,exact_copper(owner));self.assertEqual(0.,exact_copper(peer))
+        bank=0;restock_wait_s=0
+        for material,mass in model.materials(plan['quote'],'stock').items():
+            market=post('/api/workshop/market',{'action':'view'})
+            offer=next(o for o in market['offers'] if o['substance']==material)
+            for index in range(math.ceil(mass/offer['mass_kg'])):
+                offer=next(o for o in market['offers'] if o['substance']==material)
+                for _ in range(13):
+                    if offer['remaining']>0:break
+                    post('/api/world/fabrication/wait',{**context(),'seconds':10})
+                    restock_wait_s+=10
+                    market=post('/api/workshop/market',{'action':'view'})
+                    offer=next(o for o in market['offers'] if o['substance']==material)
+                self.assertGreater(offer['remaining'],0,'The finite trader must restock through accepted world time')
+                while market['balance_j']<offer['price_j']:
+                    market=post('/api/workshop/market',{'action':'bank','joules':500,
+                        'request_id':'material-build-bank-'+str(bank)});bank+=1
+                market=post('/api/workshop/market',{'action':'buy','item_id':offer['id'],
+                    'quoted_price_j':offer['price_j'],'request_id':f'material-build-buy-{material}-{index}'})
+            state=post('/api/world/fabrication/state',context())
+            source=next(s for s in state['stock_sources'] if s['material']==material and s['pool']=='personal')
+            post('/api/world/fabrication/fund_stock',{**context(),'material':material,'mass_kg':mass,
+                'pool':'personal','rack_hash':source['rack_hash'],'revision':state['state']['revision'],
+                'request_id':'material-build-stock-'+material})
+        state=post('/api/world/fabrication/state',context())
+        source=next(s for s in state['energy_sources'] if s['max_power_w']>=500.)
+        post('/api/world/fabrication/connect_energy',{**context(),'store':source['id'],'store_hash':source['store_hash'],
+            'power_w':500.,'revision':state['state']['revision'],'request_id':'material-build-connect'})
+        remaining=math.ceil(plan['quote']['supply_required_j']/500.)
+        while remaining:
+            seconds=min(10,remaining);post('/api/world/fabrication/wait',{**context(),'seconds':seconds});remaining-=seconds
+        state=post('/api/world/fabrication/state',context())
+        source=next(s for s in state['energy_sources'] if s['connected'])
+        post('/api/world/fabrication/fund_energy',{**context(),'store_hash':source['store_hash'],
+            'joules':plan['quote']['supply_required_j'],'revision':state['state']['revision'],'request_id':'material-build-energy'})
+        plan=post('/api/world/fabrication/plan_make',{**context(),'candidate':candidate})
+        self.assertEqual(0.,plan['missing_goods_kg']['copper'])
+        started=post('/api/world/fabrication/start_make',{**context(),'plan_id':plan['plan_id'],
+            'revision':plan['revision'],'request_id':'material-build-lamp'})
+        remaining=math.ceil(started['state']['jobs']['material-build-lamp']['minimum_duration_s'])
+        while remaining:
+            seconds=min(10,remaining);post('/api/world/fabrication/wait',{**context(),'seconds':seconds});remaining-=seconds
+        preview=post('/api/world/fabrication/preview',{**context(),'job_id':'material-build-lamp','position_m':[-2.,0.]})
+        commit={**context(),'job_id':'material-build-lamp','preview_id':preview['preview_id'],'request_id':'material-build-place'}
+        made=post('/api/world/fabrication/commit',commit)
+        self.assertTrue(post('/api/world/fabrication/commit',commit)['replayed'])
+        self.assertEqual('installed',made['status'])
+        root=made['root_body'];roots=set(made['root_bodies'])
+        app.live.act({'session':app.live.session.id,'op':'poses'})
+        pose=next(b for b in app.live.session.state['bodies'] if b['name']==root)['position_m']
+        person={'eyes_m':[pose[0],pose[1]+1.,pose[2]+1.],
+                'standing_m':[pose[0],pose[1],pose[2]+1.],'facing':[0,0,-1]}
+        used=post('/api/world/action',{**context(),'object':root,'primary':True,'person':person})
+        self.assertNotIn('refused',used,used)
+        for _ in range(10):app.clock._tick(.2)
+        native=install._snapshot(app.live)
+        battery=next(s for s in native['energy_stores'] if s['body'] in roots)
+        lamp=next(l for l in app.live.session.state['machines']['lamps'] if l['body'] in roots)
+        self.assertTrue(lamp['lit']);self.assertGreater(battery['given_j'],0.)
+        self.assertAlmostEqual(500.,battery['charge_j']+battery['given_j'],places=7)
+        ledger=deepcopy(app.room.fabrication_record);audit=model.audit(ledger)
+        self.assertLess(abs(audit['assembly_goods_residual_kg']['copper']),1e-9)
+        self.assertTrue(flow.server.keep_world(app,'complete material-to-build journey'))
+        wallet=post('/api/workshop/market',{'action':'view'})
+        self.stop();self.start()
+        post('/api/world/player/join',{'token':owner['token']})
+        post('/api/world/open',{})
+        app=self.app.hub.get(world)
+        self.assertEqual(ledger,app.room.fabrication_record)
+        self.assertEqual(copper-.5,exact_copper(owner));self.assertEqual(0.,exact_copper(peer))
+        self.assertEqual(wallet,post('/api/workshop/market',{'action':'view'}))
+        post('/api/world/goods/collect',{**collection,'session':app.live.session.id})
+        post('/api/world/fabrication/fund_goods',transfer)
+        self.assertEqual(copper-.5,exact_copper(owner))
+        reopened=install._snapshot(app.live)
+        self.assertEqual(battery,next(s for s in reopened['energy_stores'] if s['id']==battery['id']))
+        self.assertEqual(candidate,post('/api/workshop/library',{'action':'load','item_id':saved['item_id']})['library_item']['payload'])
+        out=ROOT/'build/resource-flow';out.mkdir(parents=True,exist_ok=True)
+        (out/'material-build-lamp.json').write_text(json.dumps({'starter_ore_kg':starter,'mined_ore_kg':mined,
+            'processed_copper_kg':copper,'assembly_copper_kg':.5,'product':made,'audit':audit,
+            'battery':battery,'trader_restock_wait_s':restock_wait_s,'restart_no_duplicate':True},indent=2),encoding='utf-8')
+
     def test_fresh_market_paid_pick_contacts_peer_product_and_server_restart_keeps_both(self):
         """Default 50 mm world and public supplies, without authored weak fixings.
 

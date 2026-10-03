@@ -157,6 +157,18 @@ class NativeStock(unittest.TestCase):
         for material in ('glass','oak','iron'):library.set_rack(self.app,material,10.)
 
     def context(self):return {'scene':self.room.scene,'session':self.live.session.id}
+
+    def test_energy_draw_and_pose_meters_match_authoritative_snapshot_without_rounding(self):
+        store=self.live.session.state['machines']['stores'][0]['id']
+        for joules in (.000006,500.,99.123456789):
+            drawn=self.live.act({'session':self.live.session.id,'op':'draw','store':store,'joules':joules})['store']
+            saved=next(s for s in workshop_install._snapshot(self.live)['energy_stores'] if s['id']==store)
+            pose=self.live.act({'session':self.live.session.id,'op':'poses'})
+            shown=next(s for s in pose['machines']['stores'] if s['id']==store)
+            for field in ('capacity_j','charge_j','given_j','taken_j','short_j'):
+                self.assertEqual(saved[field],drawn[field],field)
+                self.assertEqual(saved[field],shown[field],field)
+
     def call(self,operation,**body):return api.request(self.app,operation,{**self.context(),**body})
     def source(self,material='oak',pool='personal'):
         return next(r for r in stock.sources(self.app) if r['material']==material and r['pool']==pool)

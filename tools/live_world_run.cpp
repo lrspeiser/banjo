@@ -641,17 +641,19 @@ nlohmann::json machinesOf(const LiveWorld &world) {
     nlohmann::json out{{"stores", nlohmann::json::array()}, {"motors", nlohmann::json::array()},
                        {"ropes", std::move(ropes)}, {"controls", nlohmann::json::array()}};
     for (const LiveControl &c : controls) out["controls"].push_back(controlOf(c, motors, joints, world));
+    // These meters back durable energy-transfer receipts and reserve checks.
+    // Position/display rounding must not change their authoritative values.
     for (const LiveEnergyStore &s : stores)
         out["stores"].push_back({{"id", s.id},
                                  {"name", s.name},
                                  {"body", s.body},
-                                 {"capacity_j", tidy(s.capacity_j)},
-                                 {"charge_j", tidy(s.charge_j)},
-                                 {"voltage_v", tidy(s.voltage_v)},
-                                 {"max_power_w", tidy(s.max_power_w)},
-                                 {"given_j", tidy(s.given_j)},
-                                 {"taken_j", tidy(s.taken_j)},
-                                 {"short_j", tidy(s.short_j)}});
+                                 {"capacity_j", s.capacity_j},
+                                 {"charge_j", s.charge_j},
+                                 {"voltage_v", s.voltage_v},
+                                 {"max_power_w", s.max_power_w},
+                                 {"given_j", s.given_j},
+                                 {"taken_j", s.taken_j},
+                                 {"short_j", s.short_j}});
     for (const LiveMotor &m : motors) {
         // The two things its pin joins, by name: a step's joints travel only
         // when their set changes, and a host looking for the motor that turns
