@@ -4,7 +4,8 @@ October 3, 2026. Host controller checkpoint against GitHub main `d8eb072`,
 Windows / Python 3.13 / existing MSVC Release engines under
 `build/agent-object-strike/Release`. No C++, native binaries, material law,
 traction, terrain resolution, grip strength or solver tolerance changes.
-Publication is recorded after verification and push.
+**Published:** implementation/tests `ae8c46f` are on GitHub main. No separate
+production deployment was performed; the owner's port 8771 preview is unchanged.
 
 ## Defect and change
 
