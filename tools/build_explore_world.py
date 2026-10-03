@@ -132,7 +132,7 @@ BLOCK_NOTE = {
 # The ground
 # --------------------------------------------------------------------------
 
-def read_ground(engine: Path, terrain_seed: int | None = None) -> dict:
+def read_ground(engine: Path, terrain_seed: int | None = None, *, surface: str = 'smooth') -> dict:
     """Open a bare valley and read its heightfield, so everything after this
     knows where the ground actually is -- and where the water is on it.
 
@@ -142,7 +142,7 @@ def read_ground(engine: Path, terrain_seed: int | None = None) -> dict:
     bench in it, their legs in the water."""
     spec = fracture_lab.validate({
         "algorithm": "lattice", "cell_m": CELL_M, "duration_s": 1.0,
-        "terrain": {"generate": "valley" if terrain_seed is None else
+        "terrain": {"surface":surface,"generate": "valley" if terrain_seed is None else
                     {"kind": "valley", "seed": terrain_seed}}, "water": dict(WATER),
         "bodies": [{"name": "sounding", "shape": "box", "material": "oak",
                     "size_mm": [100, 100, 100], "center_mm": [0, 8000, 0]}]})
@@ -162,7 +162,7 @@ def ground_of(terrain: dict) -> dict:
     grid = terrain["grid"]
     raw = base64.b64decode(terrain["heights_b64"], validate=True)
     heights = struct.unpack("<" + "f" * (len(raw) // 4), raw)
-    return {"nx": int(grid["nx"]), "nz": int(grid["nz"]), "cell": float(grid["cell_m"]),
+    return {"surface":terrain.get('surface','smooth'),"nx": int(grid["nx"]), "nz": int(grid["nz"]), "cell": float(grid["cell_m"]),
             "x0": float(grid["x0_m"]), "z0": float(grid["z0_m"]), "h": heights, "wet": set()}
 
 
@@ -194,6 +194,9 @@ def surface_at(ground: dict, x: float, z: float) -> float:
     """The ground as Jolt holds it, not the nearest sample to it: each square of
     the heightfield is two flat triangles split along its (i,j)-(i+1,j+1)
     diagonal (HeightFieldShape.cpp), so between samples it is a plane."""
+    if ground.get('surface')=='columns':
+        return _sample(ground,math.floor((x-ground['x0'])/ground['cell']+.5),
+                             math.floor((z-ground['z0'])/ground['cell']+.5))
     u, v = (x - ground["x0"]) / ground["cell"], (z - ground["z0"]) / ground["cell"]
     i, j = math.floor(u), math.floor(v)
     fx, fz = u - i, v - j

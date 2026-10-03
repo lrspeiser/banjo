@@ -240,6 +240,11 @@ public:
     void replaceGroundPatch(unsigned patch, const std::vector<float> &heights,
                             double max_error_m = 0.002);
     [[nodiscard]] std::size_t groundPatchCount() const;
+    // Static, outward-facing material-column tops/walls. Same ground identity
+    // and contact law as height-field patches. Replace only between trials.
+    unsigned addGroundTriangles(const std::vector<std::array<Vec3,3>> &triangles,
+                                const MaterialDefinition &material);
+    void replaceGroundTriangles(unsigned patch,const std::vector<std::array<Vec3,3>> &triangles);
     // A patch of ROOF: the underside of the rock over a working, which a body
     // inside it meets from below. The same height field, on a body turned half
     // a turn about X so its surface faces down -- so the rows run backwards and

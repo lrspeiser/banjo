@@ -37,6 +37,7 @@
 #include "water/WaterCoupling.hpp"
 
 #include <limits>
+#include <array>
 #include <map>
 #include <memory>
 #include <optional>
@@ -295,6 +296,7 @@ private:
     // goes on over the same stride on its own clock.
     void stepNetwork(double dt_s);
     std::vector<float> chunkHeights(int chunk) const;
+    std::vector<std::array<Vec3,3>> columnTriangles(int chunk) const;
     // The two extra colliders a chunk with a working needs, and whether it has
     // one at all (docs/earth-and-mining-plan.md, stage 3).
     [[nodiscard]] std::vector<float> workingFloor(int chunk) const;

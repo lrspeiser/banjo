@@ -1601,6 +1601,7 @@ nlohmann::json terrainBlock(const banjo::terrain::Environment &env, const std::v
     const std::vector<std::uint8_t> runs = env.runsPacked();
     const banjo::terrain::Landscape &land = env.landscape();
     return {{"kind", land.kind},
+            {"surface",env.terrain().columnSurface()?"columns":"smooth"},
             {"beyond", beyondBlock(env)},
             {"carried", carriedJson(env, objects_kg, held_objects_kg)},
             {"grid", {{"nx", g.nx}, {"nz", g.nz}, {"cell_m", g.dx}, {"x0_m", g.x0}, {"z0_m", g.z0}}},

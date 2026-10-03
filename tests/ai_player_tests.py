@@ -231,11 +231,11 @@ class AutonomousGuests(unittest.TestCase):
         self.doCleanups()
         self.stop(); self.temp.cleanup()
 
-    def setup_world(self,legacy_process=False):
+    def setup_world(self,legacy_process=False,*,surface='smooth'):
         # Explicit v1-world fixture for tests that author a process themselves.
         with (mock.patch.object(server.fabrication_room,'starter_settings',return_value=None)
               if legacy_process else nullcontext()):
-            world = self.post("/api/worlds", {"name": "AI camp"})["id"]
+            world = self.post("/api/worlds", {"name": "AI camp",'surface':surface})["id"]
         owner = self.join(world, "Human"); self.players = {world: owner}
         self.post("/api/world/open", {}, world)
         self.post("/api/world/ai", {"action": "list"}, world)

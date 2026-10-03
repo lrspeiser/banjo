@@ -119,6 +119,7 @@ def compose(ground: dict, world: dict, terrain_seed: int | None = None) -> dict:
     rover_room.POST_AT = _clear_of(ground, rack, 2.5, away_from=middle)
     rover_room.TERRAIN = {"generate": "valley" if terrain_seed is None else
                           {"kind": "valley", "seed": terrain_seed}}
+    if ground.get('surface')=='columns':rover_room.TERRAIN['surface']='columns'
     try:
         here=rover_room.ROVER_AT
         yaw=math.atan2(vein['at_m'][0]-here[0],vein['at_m'][1]-here[1])

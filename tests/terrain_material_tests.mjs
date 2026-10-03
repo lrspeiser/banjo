@@ -2,21 +2,23 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
 import * as THREE from '../playground/vendor/three.module.js';
-import {GROUND_APPEARANCE,materialAppearance,terrainCellAt,terrainTargetPath,exposedRunKind,toolTargetFeedback,collectedToolMaterials} from '../playground/material_appearance.js';
+import {GROUND_APPEARANCE,materialAppearance,terrainCellAt,terrainTargetPath,exposedRunKind,toolTargetFeedback,collectedToolMaterials,columnTopData,walkColumnFaces} from '../playground/material_appearance.js';
 import {terrainMaterial} from '../playground/terrain_material.js';
 
-test('shipped full-terrain catchup reuses the mesh and streams variable runs once',()=>{
+for(const surface of ['smooth','columns'])test(surface+' full-terrain catchup reuses the mesh and streams variable runs once',()=>{
   const source=readFileSync(new URL('../playground/world.js',import.meta.url),'utf8');
   const part=(start,end)=>source.slice(source.indexOf('function '+start),source.indexOf('function '+end));
   const code=part('decodeRuns','runsRoom')+part('patchRuns','standingOn')+
     part('patchTerrain','extendShore');
   let rebuilt=0,paints=0,normals=0;
-  const ground={grid:{nx:3,nz:2,dx:.25,x0:0,z0:0},floor:-3,
+  const vertices=surface==='columns'?4:1;
+  const ground={grid:{nx:3,nz:2,dx:.25,x0:0,z0:0,surface},floor:-3,
     runs:{stride:4,count:new Uint8Array(6),kind:new Uint8Array(24),top:new Float32Array(24)},
     heights:new Float32Array(6),surfaces:new Uint8Array(6),water:{identity:'keep water'},
     seen:new Uint8Array([1,0,1,1,1,1]),materialCells:{update:()=>paints++},mesh:{geometry:{
-      attributes:{position:{array:new Float32Array(18)},color:{array:new Float32Array(18)}},
+      attributes:{position:{array:new Float32Array(18*vertices)},color:{array:new Float32Array(18*vertices)}},
       computeVertexNormals:()=>normals++,computeBoundingSphere:()=>{}}}};
+  ground.colors=surface==='columns'?new Float32Array(18):ground.mesh.geometry.attributes.color.array;
   const bytesOf=x=>new Uint8Array(Buffer.from(x,'base64'));
   const {refreshTerrain}=new Function('ground','bytesOf','paintGround','drawTerrain',code+
     '\nreturn {refreshTerrain};')(ground,bytesOf,()=>{},()=>rebuilt++);
@@ -26,7 +28,7 @@ test('shipped full-terrain catchup reuses the mesh and streams variable runs onc
     const n=c===3?5:2;raw.push(n);
     for(let k=0;k<n;k++)raw.push(k===n-1?(c%2?1:2):0,100+k*20,0);
   }
-  const block={grid:{nx:3,nz:2,cell_m:.25,x0_m:0,z0_m:0},floor_m:-3,
+  const block={surface,grid:{nx:3,nz:2,cell_m:.25,x0_m:0,z0_m:0},floor_m:-3,
     heights_b64:heights,ground_b64:Buffer.from([2,1,2,1,2,1]).toString('base64'),
     runs_b64:Buffer.from(raw).toString('base64')};
   const mesh=ground.mesh,water=ground.water,seen=ground.seen;
@@ -34,9 +36,53 @@ test('shipped full-terrain catchup reuses the mesh and streams variable runs onc
   assert.equal(rebuilt,0);assert.equal(paints,6);assert.equal(normals,1);
   assert.equal(ground.mesh,mesh);assert.equal(ground.water,water);assert.equal(ground.seen,seen);
   assert.deepEqual([...ground.heights],[1,2,3,4,5,6]);assert.equal(ground.runs.count[3],5);
+  for(let c=0;c<6;c++)for(let v=0;v<vertices;v++)
+    assert.equal(ground.mesh.geometry.attributes.position.array[3*(c*vertices+v)+1],c+1);
   for(let c=0;c<6;c++)assert.equal(ground.runs.kind[c*ground.runs.stride+ground.runs.count[c]-1],c%2?1:2);
   assert.equal(ground.facesStale,true);
   refreshTerrain({...block,grid:{...block.grid,cell_m:.5}});assert.equal(rebuilt,1);
+  refreshTerrain({...block,surface:surface==='smooth'?'columns':'smooth'});assert.equal(rebuilt,2);
+});
+
+test('material columns have flat tops with outward winding and true cell bounds',()=>{
+  const grid={nx:3,nz:2,dx:.25,x0:-1,z0:-2,surface:'columns'},H=new Float32Array([1,2,3,4,5,6]);
+  const colors=new Float32Array(18).fill(.5),data=columnTopData(grid,H,colors);
+  const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.BufferAttribute(data.positions,3));
+  geometry.setIndex(new THREE.BufferAttribute(data.indices,1));geometry.computeVertexNormals();
+  const mesh=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial());mesh.updateMatrixWorld();
+  for(let c=0;c<6;c++) {
+    const x=grid.x0+c%3*.25,z=grid.z0+Math.floor(c/3)*.25;
+    for(const off of [-.1,0,.1]) {
+      const ray=new THREE.Raycaster(new THREE.Vector3(x+off,10,z),new THREE.Vector3(0,-1,0));
+      assert.equal(ray.intersectObject(mesh)[0].point.y,H[c]);
+    }
+  }
+  const path=terrainTargetPath([-1,1,-2],grid,()=>999);
+  assert.deepEqual(path.slice(0,3),[-1.125,1.012,-2.125]);
+});
+
+test('column cut faces keep voids open, preserve material bands and their union volume',()=>{
+  const grid={nx:3,nz:2,dx:.25,x0:0,z0:0},H=new Float32Array(6).fill(1);
+  const runs={stride:3,count:new Uint8Array(6).fill(1),kind:new Uint8Array(18),top:new Float32Array(18)};
+  for(let c=0;c<6;c++)runs.top[3*c]=1;
+  runs.count[1]=3;runs.kind.set([0,8,1],3);runs.top.set([.4,.6,1],3);
+  const faces=[];walkColumnFaces(grid,H,runs,0,face=>faces.push(face));
+  assert.equal(faces.filter(f=>f.top).length,6);assert.ok(faces.some(f=>!f.top && f.kind===1));
+  const pos=[];let volume=0;
+  for(const face of faces)for(const tri of [[0,1,2],[0,2,3]]) {
+    const [a,b,c]=tri.map(i=>new THREE.Vector3(...face.points[i]));
+    volume+=a.dot(b.clone().cross(c))/6;
+    pos.push(...a.toArray(),...b.toArray(),...c.toArray());
+  }
+  assert.ok(Math.abs(volume-(6*.25*.25-.2*.25*.25))<1e-8);
+  const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.BufferAttribute(new Float32Array(pos),3));
+  const mesh=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial());mesh.updateMatrixWorld();
+  for(const [direction,y] of [[-1,.4],[1,.6]]) {
+    const ray=new THREE.Raycaster(new THREE.Vector3(.25,.5,0),new THREE.Vector3(0,direction,0));
+    assert.ok(Math.abs(ray.intersectObject(mesh)[0].point.y-y)<1e-7);
+  }
+  const wall=new THREE.Raycaster(new THREE.Vector3(.25,.5,0),new THREE.Vector3(1,0,0)).intersectObject(mesh)[0];
+  assert.equal(wall.distance,.125,'void stops where the neighboring solid starts');
 });
 
 test('visible material identities remain distinct and samples resolve native ore names',()=>{

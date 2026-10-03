@@ -2153,15 +2153,19 @@ def normalise_terrain(terrain: Any) -> dict[str, Any]:
         return {}
     if not isinstance(terrain, dict):
         raise ValueError("terrain must be an object: {\"generate\": ..., \"edits\": [...]}")
-    unknown = set(terrain) - {"generate", "edits"}
+    unknown = set(terrain) - {"generate", "edits", "surface"}
     if unknown:
-        raise ValueError(f"terrain cannot say {sorted(unknown)}: it holds generate and edits")
+        raise ValueError(f"terrain cannot say {sorted(unknown)}: it holds generate, edits and surface")
     out: dict[str, Any] = {}
     generate = terrain.get("generate", "valley")
     kind = generate if isinstance(generate, str) else (generate or {}).get("kind", "valley")
     if kind not in TERRAIN_KINDS:
         raise ValueError(f"terrain.generate must be one of {list(TERRAIN_KINDS)}, not {kind!r}")
     out["generate"] = generate
+    if 'surface' in terrain:
+        if terrain['surface'] not in ('smooth', 'columns'):
+            raise ValueError('terrain.surface must be smooth or columns')
+        out['surface'] = terrain['surface']
     edits = terrain.get("edits") or []
     if not isinstance(edits, list) or len(edits) > 400:
         raise ValueError("terrain.edits is a list of at most 400")

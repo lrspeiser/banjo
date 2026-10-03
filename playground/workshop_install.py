@@ -475,6 +475,7 @@ def _terrain_state(old):
     # The collision grid, materials and carried excavated stock are physical
     # state too; rendering/view and generation timings are not.
     state = {key: deepcopy(ground[key]) for key in ("grid", "heights_b64", "ground_b64", "carried")}
+    state['surface']=ground.get('surface','smooth')
     ledger = old.send(op="environment").get("environment", {}).get("ground")
     if not isinstance(ledger, dict):
         raise ValueError("Native engine did not return terrain material accounting")

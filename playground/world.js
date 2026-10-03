@@ -25,7 +25,7 @@ import { makeTools } from "/tools.js";
 import { makeWorkbench } from "/workbench.js";
 import { gameNavigation, showSaveStatus, screenUrl, thumbnail, massLabel } from "/game_menu.js";
 import { conditionPanel } from "/body_condition.js";
-import { GROUND_APPEARANCE, materialAppearance, terrainCellAt, terrainTargetPath, exposedRunKind, toolTargetFeedback, collectedToolMaterials } from "/material_appearance.js";
+import { GROUND_APPEARANCE, materialAppearance, terrainCellAt, terrainTargetPath, exposedRunKind, toolTargetFeedback, collectedToolMaterials, columnTopData, walkColumnFaces } from "/material_appearance.js";
 import { terrainMaterial } from "/terrain_material.js";
 import { renderPlayerGuidance } from "/player_guidance.js";
 
@@ -885,7 +885,7 @@ const GROUND_UNSEEN = new THREE.Color(0x2b2f36);
 const FOAM_COUNT = 700;
 const WATER_EASE_MS = 260;
 const ground = {
-  grid: null, heights: null, surfaces: null, view: null,
+  grid: null, heights: null, surfaces: null, view: null, colors:null,
   // What every column is MADE of, all the way down, as the engine sends it: the
   // runs, held the way the engine holds them -- where each column's runs start,
   // what each run is, and the height it reaches. This is what a cut face is
@@ -911,6 +911,10 @@ function bytesOf(b64) {
 function groundAt(x, z) {
   const g = ground.grid;
   if (!g) return 0;
+  if(g.surface==="columns") {
+    const i=clamp(Math.floor((x-g.x0)/g.dx+.5),0,g.nx-1),j=clamp(Math.floor((z-g.z0)/g.dx+.5),0,g.nz-1);
+    return ground.heights[j*g.nx+i];
+  }
   const fx = clamp((x - g.x0) / g.dx, 0, g.nx - 1), fz = clamp((z - g.z0) / g.dx, 0, g.nz - 1);
   const i = Math.min(g.nx - 2, Math.floor(fx)), j = Math.min(g.nz - 2, Math.floor(fz));
   const u = fx - i, v = fz - j, H = ground.heights, n = g.nx;
@@ -1143,6 +1147,23 @@ function buildFaces() {
   if (!g || !runs || !ground.heights) return;
   const H = ground.heights, half = g.dx / 2;
   const points = [], colours = [];
+  if(g.surface==="columns") {
+    walkColumnFaces(g,H,runs,ground.floor,face=>{
+      if(face.top)return; // flat tops have the shared material-cell shader
+      const color=groundSeen(face.column) ? (GROUND_COLOURS[face.kind] || GROUND_COLOURS[0]) : GROUND_UNSEEN;
+      for(const index of [0,1,2,0,2,3]) {points.push(...face.points[index]);colours.push(color.r,color.g,color.b);}
+    });
+    if(points.length) {
+      const geometry=new THREE.BufferGeometry();
+      geometry.setAttribute("position",new THREE.BufferAttribute(new Float32Array(points),3));
+      geometry.setAttribute("color",new THREE.BufferAttribute(new Float32Array(colours),3));
+      geometry.computeVertexNormals();
+      ground.faces=new THREE.Mesh(geometry,dress(new THREE.MeshStandardMaterial({
+        vertexColors:true,roughness:.97,metalness:0,side:THREE.DoubleSide}),"ground"));
+      ground.faces.receiveShadow=true;scene.add(ground.faces);
+    }
+    return;
+  }
   // One band: a vertical quad from `lo` to `hi` in the plane the two columns
   // meet in, across the width of a cell.
   const band = (x0, z0, x1, z1, lo, hi, colour) => {
@@ -1261,7 +1282,9 @@ function repaintSeen() {
   const col = ground.mesh.geometry.attributes.color;
   const count = ground.grid.nx * ground.grid.nz;
   for (let k = 0; k < count; ++k) {
-    paintGround(col.array, k); ground.materialCells?.update(k);
+    paintGround(ground.colors,k);
+    if(ground.grid.surface==="columns")for(let v=0;v<4;v++)col.array.set(ground.colors.subarray(3*k,3*k+3),12*k+3*v);
+    ground.materialCells?.update(k);
   }
   col.needsUpdate = true;
   // The faces of a step are coloured by what has been seen too.
@@ -1271,7 +1294,7 @@ function repaintSeen() {
 function drawTerrain(block) {
   clearGround();
   const { nx, nz, cell_m: dx, x0_m: x0, z0_m: z0 } = block.grid;
-  ground.grid = { nx, nz, dx, x0, z0 };
+  ground.grid = { nx, nz, dx, x0, z0, surface:block.surface || "smooth" };
   ground.heights = new Float32Array(bytesOf(block.heights_b64).buffer);
   ground.surfaces = bytesOf(block.ground_b64);
   // The runs come over as millimetres above the ground's own floor, which is the
@@ -1301,9 +1324,12 @@ function drawTerrain(block) {
       indices[n++] = a; indices[n++] = d; indices[n++] = b;
     }
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute("color", new THREE.BufferAttribute(colours, 3));
-  geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+  const top=ground.grid.surface==="columns" ? columnTopData(ground.grid,ground.heights,colours) :
+    {positions,colors:colours,indices};
+  ground.colors=colours;
+  geometry.setAttribute("position", new THREE.BufferAttribute(top.positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(top.colors, 3));
+  geometry.setIndex(new THREE.BufferAttribute(top.indices, 1));
   geometry.computeVertexNormals();
   ground.materialCells=terrainMaterial(ground.grid,colours,groundKind,groundSeen);
   ground.mesh = new THREE.Mesh(geometry, ground.materialCells.material);
@@ -1371,8 +1397,11 @@ function patchTerrain(changed) {
       ground.heights[k] = heights[j * ni + i];
       ground.surfaces[k] = surfaces[j * ni + i];
       if (patched) runAt=patchRuns(k, patched, runAt);
-      pos.array[3 * k + 1] = ground.heights[k];
-      paintGround(col.array, k);
+      paintGround(ground.colors,k);
+      if(g.surface==="columns")for(let v=0;v<4;v++) {
+        pos.array[12*k+3*v+1]=ground.heights[k];
+        col.array.set(ground.colors.subarray(3*k,3*k+3),12*k+3*v);
+      } else pos.array[3*k+1]=ground.heights[k];
       ground.materialCells.update(k);
     }
   pos.needsUpdate = true;
@@ -1387,7 +1416,7 @@ function patchTerrain(changed) {
 function refreshTerrain(block) {
   const g=ground.grid, b=block.grid;
   if (!ground.mesh || !g || g.nx!==b.nx || g.nz!==b.nz || g.dx!==b.cell_m
-      || g.x0!==b.x0_m || g.z0!==b.z0_m || ground.floor!==Number(block.floor_m)) {
+      || g.x0!==b.x0_m || g.z0!==b.z0_m || g.surface!==(block.surface || "smooth") || ground.floor!==Number(block.floor_m)) {
     drawTerrain(block);return;
   }
   // Reuse meshes, water and visibility when a peer catches up. A full native

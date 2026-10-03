@@ -26,6 +26,71 @@ export function terrainCellAt(x, z, grid) {
   return i>=0 && j>=0 && i<grid.nx && j<grid.nz ? j*grid.nx+i : -1;
 }
 
+export function columnTopData(grid, heights, colors) {
+  const count=grid.nx*grid.nz,positions=new Float32Array(12*count),paint=new Float32Array(12*count);
+  const indices=new Uint32Array(6*count),half=grid.dx/2;
+  for(let c=0;c<count;c++) {
+    const x=grid.x0+(c%grid.nx)*grid.dx,z=grid.z0+Math.floor(c/grid.nx)*grid.dx,y=heights[c];
+    positions.set([x-half,y,z-half,x-half,y,z+half,x+half,y,z+half,x+half,y,z-half],12*c);
+    for(let v=0;v<4;v++)paint.set(colors.subarray(3*c,3*c+3),12*c+3*v);
+    indices.set([4*c,4*c+1,4*c+2,4*c,4*c+2,4*c+3],6*c);
+  }
+  return {positions,colors:paint,indices};
+}
+
+// Boundary of the layered-column union, including voids. Heights are native
+// float32; packed internal layer boundaries retain their declared 1 mm wire
+// precision. Material bands subdivide faces without inventing solid volumes.
+export function walkColumnFaces(grid, heights, runs, floor, visit) {
+  const intervals=new Array(grid.nx*grid.nz);
+  for(let c=0;c<intervals.length;c++) {
+    const out=[];let lo=floor;
+    for(let k=0;k<runs.count[c];k++) {
+      const n=c*runs.stride+k,hi=k===runs.count[c]-1 ? heights[c] : Math.min(heights[c],runs.top[n]);
+      if(runs.kind[n]!==8 && hi-lo>1e-7) {
+        if(out.length && Math.abs(out.at(-1)[1]-lo)<1e-7)out.at(-1)[1]=hi;
+        else out.push([lo,hi]);
+      }
+      lo=hi;if(lo>=heights[c])break;
+    }
+    intervals[c]=out;
+  }
+  const quad=(column,points,y,top=false,reverse=false)=>visit({column,points:reverse ?
+    [points[0],points[3],points[2],points[1]] : points,kind:exposedRunKind(runs,column,y,0),top});
+  for(let j=0;j<grid.nz;j++)for(let i=0;i<grid.nx;i++) {
+    const c=j*grid.nx+i,own=intervals[c],x=grid.x0+(i-.5)*grid.dx,z=grid.z0+(j-.5)*grid.dx,d=grid.dx;
+    for(const [lo,hi] of own) {
+      quad(c,[[x,hi,z],[x,hi,z+d],[x+d,hi,z+d],[x+d,hi,z]],hi-.001,Math.abs(hi-heights[c])<1e-7);
+      if(lo>floor+1e-7)quad(c,[[x,lo,z],[x,lo,z+d],[x+d,lo,z+d],[x+d,lo,z]],lo+.001,false,true);
+    }
+    for(const [di,dj] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+      const a=i+di,b=j+dj,neighbor=a>=0 && b>=0 && a<grid.nx && b<grid.nz ? intervals[b*grid.nx+a] : [];
+      const wall=(lo,hi)=>{
+        if(hi-lo<=1e-7)return;
+        let from=lo;
+        for(let k=0;k<runs.count[c];k++) {
+          const n=c*runs.stride+k,to=k===runs.count[c]-1 ? hi : Math.min(hi,runs.top[n]);
+          if(to-from>1e-7 && runs.kind[n]!==8) {
+            const at=di ? x+(di>0?d:0) : z+(dj>0?d:0);
+            const points=di ? [[at,from,z],[at,to,z],[at,to,z+d],[at,from,z+d]] :
+              [[x,from,at],[x+d,from,at],[x+d,to,at],[x,to,at]];
+            quad(c,points,(from+to)/2,false,di<0 || dj<0);
+          }
+          from=Math.max(from,to);if(from>=hi)break;
+        }
+      };
+      for(const [lo,hi] of own) {
+        let from=lo;
+        for(const [nlo,nhi] of neighbor) {
+          if(nhi<=from || nlo>=hi)continue;
+          wall(from,Math.min(hi,nlo));from=Math.max(from,Math.min(hi,nhi));
+        }
+        wall(from,hi);
+      }
+    }
+  }
+}
+
 // A readiness observation belongs to one sight point and observer pose. Adjacent
 // cells can contain different materials even when less than 35 cm apart.
 export function toolTargetFeedback({point, grid, tool, target, eyes, name=null, surface=null, context=null}) {
@@ -64,6 +129,8 @@ export function terrainTargetPath(point, grid, heightAt) {
   if(index<0)return null;
   const x=grid.x0+(index%grid.nx)*grid.dx, z=grid.z0+Math.floor(index/grid.nx)*grid.dx;
   const half=grid.dx/2;
+  if(grid.surface==="columns")return [[-1,-1],[1,-1],[1,1],[-1,1],[-1,-1]]
+    .flatMap(([i,j])=>[x+i*half,point[1]+.012,z+j*half]);
   return [[-1,-1],[0,-1],[1,-1],[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1]]
     .flatMap(([i,j])=>{
       const px=Math.max(grid.x0,Math.min(grid.x0+(grid.nx-1)*grid.dx,x+i*half));

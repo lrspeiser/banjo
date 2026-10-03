@@ -238,6 +238,10 @@ public:
                  std::vector<double> loose_soil_m, std::vector<float> moisture);
 
     [[nodiscard]] const Grid &grid() const { return grid_; }
+    // Declared surface geometry. Material volumes/laws still use the same
+    // layered columns; this changes the surface contacted, not their contents.
+    void setColumnSurface(bool enabled) { column_surface_ = enabled; }
+    [[nodiscard]] bool columnSurface() const { return column_surface_; }
     [[nodiscard]] double height(std::size_t c) const {
         return rockTop(c) + soil_[c] + sand_[c] + loose_[c];
     }
@@ -409,6 +413,7 @@ private:
     void takeRockDownTo(std::size_t c, double bottom, Volumes &took);
 
     Grid grid_;
+    bool column_surface_{};
     Beds beds_;
     std::size_t workings_{};     // how many columns hold one, so a world with
                                  // none pays nothing for them

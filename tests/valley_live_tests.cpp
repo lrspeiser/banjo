@@ -989,6 +989,63 @@ void nativePlayerInputsAreBoundedAndCannotTeleport() {
     refuses([&]{world->spawnNativePlayer("overflow",{-1,2,0});});require(world->nativePlayers().size()==32,"capacity preserves actors");
 }
 
+void columnSurfaceHasNativeTopsWallsVoidsAndRestart() {
+    Json scene={{"bodies",{box("marker","iron",{.08,.08,.08},{20,20,20},true)}},
+        {"terrain",{{"surface","columns"},{"generate",{{"kind","flat"},{"nx",64},{"nz",16},
+        {"cell_m",.25},{"soil_m",.4},{"sand_m",0}}}}}};
+    auto world=open(scene);const auto &field=world->environment()->terrain();const auto &g=field.grid();
+    const double x=g.xOf(30),z=g.zOf(5),h=field.height(g.at(30,5));
+    world->dig(x,z,x,z,.1,.2);
+    for(int i=29;i<33;i++)for(double off:{-.1,.0,.1}) {
+        const double px=g.xOf(i)+off;const auto hit=world->pick({px,h+1,z},{0,-1,0},2);
+        require(hit.hit && hit.name.empty(),"ray meets actual column top");
+        near(hit.point_world_m.y,field.height(g.at(i,5)),2e-6,"column top agrees away from sample center");
+    }
+    auto wall=world->pick({x,h-.1,z},{1,0,0},1);
+    require(wall.hit && wall.name.empty(),"vertical ledge is native collision");
+    near(wall.distance_m,.125,2e-6,"wall at exact half-column boundary across chunk seam");
+    world->dig(g.xOf(31),z,g.xOf(31),z,.1,.2);
+    wall=world->pick({x,h-.1,z},{1,0,0},1);
+    near(wall.distance_m,.375,2e-6,"editing seam neighbor removes old wall and retains next");
+    // A generated valley reserves layered beds for workings; the one-bed flat
+    // fixture deliberately cannot hold a tunnel. Use the actual adit face.
+    Valley valley;const Face face=findTheFace(valley);scene=valley.scene(Json::array());
+    scene["terrain"]["surface"]="columns";world=open(scene);
+    const double mid=(face.working.floor_m+face.working.roof_m)/2;
+    world->breakOut(face.x,face.z,face.working.floor_m,face.working.roof_m);
+    const auto floor=world->pick({face.x,mid,face.z},{0,-1,0},5),roof=world->pick({face.x,mid,face.z},{0,1,0},5);
+    require(floor.hit && roof.hit,"working remains a void with solid floor and roof");
+    // Jolt compresses mesh vertices across the entire chunk's vertical extent.
+    // Bound valley ray error to 0.1 mm, below the 1 mm packed-run precision.
+    near(floor.point_world_m.y,face.working.floor_m,1e-4,"native void floor");near(roof.point_world_m.y,face.working.roof_m,1e-4,"native void roof");
+    const auto residual=world->environment()->terrain().residual();for(double value:{residual.rock_m3,residual.soil_m3,residual.sand_m3})
+        near(value,0,1e-8,"column geometry does not alter material ledger");
+    std::string why;const auto saved=world->snapshot(why);require(!saved.empty(),why);auto again=open(scene,saved);
+    require(again->restored().tier=="whole","column geometry restores whole native state");
+    near(again->pick({face.x,mid,face.z},{0,1,0},5).point_world_m.y,roof.point_world_m.y,0,"roof survives native reopen");
+    scene["terrain"]["surface"]="smooth";bool refused=false;
+    try{(void)terrain::Environment::fromScene(scene.dump(),world->environment()->groundStateJson());}
+    catch(const std::invalid_argument &){refused=true;}require(refused,"save cannot reinterpret column collider as slope");
+    std::cout<<"    tops/walls <=2e-6 m; valley voids <=1e-4 m; seam update, native reopen, ledger <=1e-8 m3\n";
+}
+
+void columnSurfaceSupportsGlassOakAndIron() {
+    for(const auto &[material,density]:std::vector<std::pair<std::string,double>>{{"glass",2500},{"oak",700},{"iron",7870}}) {
+        Json scene={{"bodies",{box("marker","iron",{.08,.08,.08},{20,20,20},true)}},
+            {"terrain",{{"surface","columns"},{"generate",{{"kind","flat"},{"nx",32},{"nz",16},
+            {"cell_m",.25},{"soil_m",.4},{"sand_m",0}}}}}};
+        auto probe=open(scene);const double bed=probe->environment()->terrain().heightAt(0,0);probe.reset();
+        scene["precise_rigid_bodies"]={{{"name","block"},{"material",material},{"position_m",{0,bed+.09,0}},
+            {"parts",{{{"shape","box"},{"dimensions_m",{.12,.12,.12}},{"center_local_m",{0,0,0}}}}}}};
+        auto world=open(scene);world->step(kDt);near(poseOf(*world,"block").velocity_m_s.y,-9.81*kDt,1e-6,"free gravity before support");
+        run(*world,1.0);const auto pose=poseOf(*world,"block");
+        require(pose.position_m.y>=bed+.06-.021,"native column supports actual material block");
+        require(pose.position_m.y<bed+.16,"declared passive support does not launch block upward");
+        std::cout<<"    column "<<material<<" mass="<<density*.12*.12*.12<<" kg; clearance="<<pose.position_m.y-.06-bed
+                 <<" m; vy="<<pose.velocity_m_s.y<<" m/s; dt="<<kDt<<" s\n";
+    }
+}
+
 int main(int argc, char **argv) {
     namespace fs = std::filesystem;
     // A valley of this test's own, generated once and read back after.
@@ -999,6 +1056,8 @@ int main(int argc, char **argv) {
     setenv("BANJO_TERRAIN_CACHE", cache.string().c_str(), 1);
 #endif
     const std::vector<std::pair<std::string_view, std::function<void()>>> tests{
+        {"column surface has native tops walls voids and restart",columnSurfaceHasNativeTopsWallsVoidsAndRestart},
+        {"column surface supports glass oak and iron",columnSurfaceSupportsGlassOakAndIron},
         {"native players have separate accepted actuator accounts",nativePlayersHaveSeparateAcceptedActuatorAccounts},
         {"native players collide without pose assignments",nativePlayersCollideWithoutPoseAssignments},
         {"native player strikers are not the ground",nativePlayerStrikersAreNotTheGround},

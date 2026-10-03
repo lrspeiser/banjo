@@ -255,7 +255,9 @@ std::unique_ptr<Environment> Environment::fromScene(const std::string &scene_jso
     const Json water = document.value("water", Json::object());
     if (!terrain.is_object()) throw std::invalid_argument("terrain is an object");
     if (!water.is_object()) throw std::invalid_argument("water is an object");
-    onlyKeys(terrain, {"generate", "edits"}, "terrain");
+    onlyKeys(terrain, {"generate", "edits", "surface"}, "terrain");
+    const auto surface=terrain.value("surface",std::string("smooth"));
+    if(surface!="smooth" && surface!="columns")throw std::invalid_argument("terrain.surface is smooth or columns");
     onlyKeys(water, {"discharge_m3_s", "rivers", "state", "watershed"}, "water");
     Landscape land = landscapeFrom(terrain);
     // Regions beyond the edges (docs/watershed.md): the river network -- the
@@ -430,6 +432,7 @@ std::unique_ptr<Environment> Environment::fromScene(const std::string &scene_jso
         network->resetLedger();
     }
     auto environment = std::make_unique<Environment>(std::move(land));
+    environment->terrain_->setColumnSurface(surface=="columns");
     environment->network_ = std::move(network);
     for (auto &join : joins) {
         join.first.connection = environment->water_->addConnection(join.second);
@@ -643,6 +646,73 @@ std::vector<float> Environment::chunkHeights(int chunk) const {
     return heights;
 }
 
+// Boundary of the union of actual layered columns. Saved float32 collider
+// heights bound the tops; void floors/roofs and exposed walls stay open. Each
+// column owns its outward faces, so chunks share neither a wall nor a top.
+std::vector<std::array<Vec3,3>> Environment::columnTriangles(int chunk) const {
+    const Grid &g=terrain_->grid();
+    using Interval=std::pair<double,double>;
+    const auto height=[&](int i,int j) {
+        const int cx=std::min(i/TerrainField::kChunkCells,terrain_->chunksX()-1);
+        const int cz=std::min(j/TerrainField::kChunkCells,terrain_->chunksZ()-1);
+        return double(collider_heights_[cz*terrain_->chunksX()+cx][
+            (j-cz*TerrainField::kChunkCells)*(TerrainField::kChunkCells+1)+i-cx*TerrainField::kChunkCells]);
+    };
+    const auto solids=[&](int i,int j) {
+        std::vector<Interval> out;
+        if(i<0 || j<0 || i>=g.nx || j>=g.nz)return out;
+        Run runs[TerrainField::kRunsMost];const int count=terrain_->runsOf(g.at(i,j),runs);
+        const double top=height(i,j);double lo=terrain_->floor();
+        for(int k=0;k<count;++k) {
+            const double hi=k==count-1 ? top : std::min(top,runs[k].top_m);
+            if(!isVoid(runs[k].kind) && hi-lo>1e-7) {
+                if(!out.empty() && std::abs(out.back().second-lo)<1e-7)out.back().second=hi;
+                else out.emplace_back(lo,hi);
+            }
+            lo=hi;if(lo>=top)break;
+        }
+        return out;
+    };
+    std::vector<std::array<Vec3,3>> out;
+    const auto quad=[&](Vec3 a,Vec3 b,Vec3 c,Vec3 d,bool reverse=false) {
+        if(reverse){out.push_back({a,c,b});out.push_back({a,d,c});}
+        else {out.push_back({a,b,c});out.push_back({a,c,d});}
+    };
+    const int cx=chunk%terrain_->chunksX(),cz=chunk/terrain_->chunksX();
+    const int i0=cx*TerrainField::kChunkCells,j0=cz*TerrainField::kChunkCells;
+    const int i1=cx+1==terrain_->chunksX()?g.nx:i0+TerrainField::kChunkCells;
+    const int j1=cz+1==terrain_->chunksZ()?g.nz:j0+TerrainField::kChunkCells;
+    for(int j=j0;j<j1;++j)for(int i=i0;i<i1;++i) {
+        const auto own=solids(i,j);const double x=g.xOf(i)-g.dx/2,z=g.zOf(j)-g.dx/2;
+        for(const auto &[lo,hi]:own) {
+            quad({x,hi,z},{x,hi,z+g.dx},{x+g.dx,hi,z+g.dx},{x+g.dx,hi,z});
+            if(lo>terrain_->floor()+1e-7)
+                quad({x,lo,z},{x,lo,z+g.dx},{x+g.dx,lo,z+g.dx},{x+g.dx,lo,z},true);
+        }
+        for(int side=0;side<4;++side) {
+            const int di=side==0?-1:side==1?1:0,dj=side==2?-1:side==3?1:0;
+            const auto neighbor=solids(i+di,j+dj);
+            for(const auto &[lo,hi]:own) {
+                double from=lo;
+                const auto wall=[&](double a,double b) {
+                    if(b-a<=1e-7)return;
+                    if(di) {const double at=x+(di>0?g.dx:0);
+                        quad({at,a,z},{at,b,z},{at,b,z+g.dx},{at,a,z+g.dx},di<0);
+                    } else {const double at=z+(dj>0?g.dx:0);
+                        quad({x,a,at},{x+g.dx,a,at},{x+g.dx,b,at},{x,b,at},dj<0);
+                    }
+                };
+                for(const auto &[nlo,nhi]:neighbor) {
+                    if(nhi<=from || nlo>=hi)continue;
+                    wall(from,std::min(hi,nlo));from=std::max(from,std::min(hi,nhi));
+                }
+                wall(from,hi);
+            }
+        }
+    }
+    return out;
+}
+
 // The floor of a chunk's workings, and the underside of their roof, for the two
 // extra colliders a chunk with a hole in it needs. Nothing where there is no
 // working: a non-finite height is a hole in a patch, which is most of any of
@@ -688,6 +758,7 @@ std::vector<float> Environment::workingRoof(int chunk, double hang_from_m) const
 // can appear where there was none: a body added between steps is what the rigid
 // world allows, and what it forbids is only a change inside a trial.
 void Environment::syncWorkingPatches(JoltWorld &world, int chunk) {
+    if(terrain_->columnSurface())return; // floors/roofs/walls are already in the column mesh
     const Grid &g = landscape_.grid;
     const bool has = chunkHasWorkings(chunk);
     const auto found = working_patches_.find(chunk);
@@ -739,7 +810,8 @@ std::string Environment::groundStateJson() const {
     accounts.erase("");
     Json actors = Json::object();
     for (const auto &[actor, volume] : accounts) actors[actor] = volumesJson(volume);
-    return Json{{"schema","banjo.ground-state.v5"},{"exported",volumesJson(exported_)},{"returned",volumesJson(returned_)},
+    return Json{{"schema","banjo.ground-state.v5"},{"surface",terrain_->columnSurface()?"columns":"smooth"},
+        {"exported",volumesJson(exported_)},{"returned",volumesJson(returned_)},
         {"grid",{s.grid.nx,s.grid.nz,s.grid.dx,s.grid.x0,s.grid.z0}},
         {"beds",{{"start",packed(s.beds.start)},{"count",packed(s.beds.count)},
                  {"kind",packed(s.beds.kind)},{"top",packed(s.beds.top)}}},
@@ -762,9 +834,11 @@ void Environment::restoreGroundState(const std::string &text) {
     const std::initializer_list<const char *> keys={"schema","exported","returned","grid","rock","beds","soil","sand","loose","moisture",
         "floor","ledger","frontier","dirty_chunks","changed","checked_total","frontier_peak","carried",
         "carriers","carry_limit_kg","time_s","ground_behind_s","water_behind_s","since_rebuild_s","commits",
-        "pending_chunks","pending_wake","colliders"};
+        "pending_chunks","pending_wake","colliders","surface"};
     if (!d.is_object()) throw std::invalid_argument("ground state must be an object");
     onlyKeys(d,keys,"ground state");
+    if(d.value("surface",std::string("smooth"))!=(terrain_->columnSurface()?"columns":"smooth"))
+        throw std::invalid_argument("saved terrain surface differs from declared collider geometry");
     const std::string schema=d.value("schema","");
     const bool v5=schema=="banjo.ground-state.v5";
     if (!v5 && d.contains("carriers")) throw std::invalid_argument("ground carriers require v5 state");
@@ -772,7 +846,7 @@ void Environment::restoreGroundState(const std::string &text) {
     for (const char *key:keys) if (!d.contains(key) && !((std::string(key)=="exported" && schema=="banjo.ground-state.v1") ||
         (std::string(key)=="returned" && schema!="banjo.ground-state.v3" && !v4) ||
         (std::string(key)=="rock" && v4) || (std::string(key)=="beds" && !v4) ||
-        (std::string(key)=="carriers" && !v5)))
+        (std::string(key)=="carriers" && !v5) || std::string(key)=="surface"))
         throw std::invalid_argument(std::string("missing ground state ")+key);
     const auto integer=[](const Json &v,std::uint64_t maximum) {
         if (!v.is_number_integer() || (!v.is_number_unsigned() && v.get<std::int64_t>()<0) ||
@@ -939,7 +1013,8 @@ void Environment::attach(JoltWorld &world) {
     }
     for (int chunk = 0; chunk < static_cast<int>(stats_.chunks); ++chunk) {
         const int cx = chunk % terrain_->chunksX(), cz = chunk / terrain_->chunksX();
-        patch_of_chunk_[static_cast<std::size_t>(chunk)] = world.addGroundPatch(
+        patch_of_chunk_[static_cast<std::size_t>(chunk)] = terrain_->columnSurface() ?
+            world.addGroundTriangles(columnTriangles(chunk),contact) : world.addGroundPatch(
             collider_heights_[static_cast<std::size_t>(chunk)], TerrainField::kChunkCells + 1, g.dx,
             g.x0 + cx * TerrainField::kChunkCells * g.dx, g.z0 + cz * TerrainField::kChunkCells * g.dx,
             contact);
@@ -950,7 +1025,7 @@ void Environment::attach(JoltWorld &world) {
     // A chunk with a working in it gets two more patches: the floor somebody
     // stands on inside it, and the roof over their head. Both are mostly holes,
     // and a world nobody has dug under has neither.
-    if (terrain_->hasWorkings()) {
+    if (!terrain_->columnSurface() && terrain_->hasWorkings()) {
         for (int chunk = 0; chunk < static_cast<int>(stats_.chunks); ++chunk)
             syncWorkingPatches(world, chunk);
     }
@@ -996,12 +1071,13 @@ void Environment::rebuildChunks(JoltWorld &world, const std::set<int> &chunks, E
     const Clock::time_point t0 = Clock::now();
     const Grid &g = landscape_.grid;
     unsigned woken = 0;
+    // Populate all saved heights before making shared chunk-edge walls.
+    for(const int chunk:chunks)collider_heights_[static_cast<std::size_t>(chunk)]=chunkHeights(chunk);
     for (const int chunk : chunks) {
         const unsigned patch = patch_of_chunk_[static_cast<std::size_t>(chunk)];
         if (patch == 0) continue;
-        auto heights = chunkHeights(chunk);
-        world.replaceGroundPatch(patch, heights);
-        collider_heights_[static_cast<std::size_t>(chunk)] = std::move(heights);
+        if(terrain_->columnSurface())world.replaceGroundTriangles(patch,columnTriangles(chunk));
+        else world.replaceGroundPatch(patch,collider_heights_[static_cast<std::size_t>(chunk)]);
         ++stats_.chunks_rebuilt;
     }
     // Whatever the changed ground was holding up: wake it, and let the solver
@@ -1523,6 +1599,7 @@ std::string Environment::reportJson(bool full) const {
     }
     Json report = {
         {"kind", landscape_.kind},
+        {"surface",terrain_->columnSurface()?"columns":"smooth"},
         {"grid", {{"nx", g.nx}, {"nz", g.nz}, {"cell_m", g.dx}, {"x0_m", g.x0}, {"z0_m", g.z0},
                   {"size_m", {(g.nx - 1) * g.dx, (g.nz - 1) * g.dx}},
                   {"chunks", {terrain_->chunksX(), terrain_->chunksZ()}},

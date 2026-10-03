@@ -8,7 +8,7 @@ Make terrain visibly editable through colored cells, readable material patches a
 
 Prototype stepped terrain at the existing **25 cm spacing** before reducing voxel size. Smaller cells add detail, but recognition depends on material contrast, patch size, lighting and truthful interactions. Realism should come from consistent consequences: excavation removes actual material, processing consumes it, useful products work, sunlight provides energy, and supported bodies respond to forces.
 
-This is a design review. Proposed geometry, balance, controls and acceptance targets below are not newly implemented or validated behavior.
+This is a design review. Proposed balance, controls and acceptance targets below are not newly implemented or validated behavior. The subsequent [material-column comparison](column-terrain-checkpoint.md) now implements optional 25 cm stepped terrain with matching native collision, void preservation and real tool/private storage/peer/restart evidence. Smooth remains default; movement, hauling, night recognition and frame costs still need qualification. On one map the column mesh has roughly four times the smooth top triangle count, while its material packet stays essentially unchanged.
 
 ## 1. What makes Banjo feel harder
 

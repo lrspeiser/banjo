@@ -155,10 +155,15 @@ class PlayerMaterials(unittest.TestCase):
     setUp,start,stop,tearDown,setup_world=(fixture.AutonomousGuests.setUp,fixture.AutonomousGuests.start,
         fixture.AutonomousGuests.stop,fixture.AutonomousGuests.tearDown,fixture.AutonomousGuests.setup_world)
 
+    def test_column_surface_exposes_soil_and_private_storage_peer_restart_agree(self):
+        self.surface='columns'
+        self.test_actual_tool_exposes_soil_and_private_storage_peer_restart_agree()
+
     def test_actual_tool_exposes_soil_and_private_storage_peer_restart_agree(self):
         import starter_goals_tests as camp
         with mock.patch.object(fixture.server.secrets,'randbelow',side_effect=[1,851269741]):
-            world,owner,app=self.setup_world()
+            world,owner,app=self.setup_world(surface=getattr(self,'surface','smooth'))
+        self.assertEqual(getattr(self,'surface','smooth'),app.room.spec['terrain'].get('surface','smooth'))
         peer=self.join(world,'Layer observer');token=owner['token']
         sid=app.live.session.id
         # Isolate pick extraction from the independently running ore rover.
@@ -183,6 +188,7 @@ class PlayerMaterials(unittest.TestCase):
         before=survey();self.assertEqual('sand',before['runs'][-1]['material'])
         frame=self.post('/api/live/act',{'session':sid,'op':'step','dt':1/240,'n':1},world,peer['token'])
         peer_version=frame.get('terrain_version')
+        self.assertEqual(getattr(self,'surface','smooth'),frame['terrain']['surface'])
         reserves=deepcopy(app.brains.goods.holders()['deposits'])
         reports=[];stored=[];saw_film=False;totals={'sand':0.,'soil':0.}
         for n in range(40):
@@ -257,6 +263,7 @@ class PlayerMaterials(unittest.TestCase):
             self.assertAlmostEqual(total,received,delta=5e-5)
         self.assertTrue(fixture.server.keep_world(app,'save real exposed-layer acceptance'))
         self.stop();self.start();self.post('/api/world/open',{},world);app=self.app.hub.get(world);sid=app.live.session.id
+        self.assertEqual(getattr(self,'surface','smooth'),app.room.spec['terrain'].get('surface','smooth'))
         self.assertEqual(final,survey());self.assertEqual(final,survey(peer['token']))
         self.assertEqual(own['stored_ground'],inventory()['stored_ground'])
         self.assertEqual(other['stored_ground'],inventory(peer['token'])['stored_ground'])
@@ -265,7 +272,9 @@ class PlayerMaterials(unittest.TestCase):
         for key in ('heights_b64','ground_b64','runs_b64'):
             self.assertTrue(peer_frame['terrain'][key]==reopened['terrain'][key],key+' changed across restart')
         output=ROOT/'build/material-readability';output.mkdir(parents=True,exist_ok=True)
-        (output/'layer-acceptance.json').write_text(json.dumps({'terrain_seed':7,'terrain_cell_m':.25,
+        suffix='-columns' if getattr(self,'surface','smooth')=='columns' else ''
+        (output/f'layer-acceptance{suffix}.json').write_text(json.dumps({'terrain_seed':7,'terrain_cell_m':.25,
+            'surface':getattr(self,'surface','smooth'),
             'manufacture_cell_m':.05,'dt_s':1/240,'strokes':reports,'stored':own['stored_ground'],
             'final':final,'restart_retained':True,'peer_credited_kg':0,'ore_reserve_unchanged':True},indent=2),encoding='utf-8')
 

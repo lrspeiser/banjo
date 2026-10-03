@@ -1374,6 +1374,23 @@ public:
 };
 
 namespace {
+JPH::RefConst<JPH::Shape> groundTriangleShape(const std::vector<std::array<Vec3,3>> &triangles) {
+    if(triangles.empty() || triangles.size()>65536)
+        throw std::invalid_argument("ground mesh requires 1..65536 triangles per patch");
+    JPH::TriangleList mesh;
+    for(const auto &t:triangles) {
+        for(const auto &v:t) if(!std::isfinite(v.x)||!std::isfinite(v.y)||!std::isfinite(v.z)||length(v)>10000)
+            throw std::invalid_argument("ground vertex exceeds finite 10000 m bounds");
+        if(length(cross(t[1]-t[0],t[2]-t[0]))<1e-10)
+            throw std::invalid_argument("degenerate ground triangle");
+        mesh.emplace_back(JPH::Float3(float(t[0].x),float(t[0].y),float(t[0].z)),
+            JPH::Float3(float(t[1].x),float(t[1].y),float(t[1].z)),
+            JPH::Float3(float(t[2].x),float(t[2].y),float(t[2].z)));
+    }
+    const auto made=JPH::MeshShapeSettings(mesh).Create();
+    if(made.HasError())throw std::runtime_error("Jolt ground mesh: "+std::string(made.GetError().c_str()));
+    return made.Get();
+}
 // A patch of ground as a Jolt height field: absolute heights, holes where a
 // height is not finite, compressed to within `max_error`.
 JPH::RefConst<JPH::Shape> groundShape(const std::vector<float> &heights, unsigned count,
@@ -3447,6 +3464,31 @@ unsigned JoltWorld::addGroundPatch(const std::vector<float> &heights, unsigned c
     impl_->ground_.push_back({id, count, spacing_m, origin_x_m, origin_z_m});
     impl_->contact_states_[kGroundPatchMatterId] = {contact, 0.0, 0.0, false};
     return static_cast<unsigned>(impl_->ground_.size());
+}
+
+unsigned JoltWorld::addGroundTriangles(const std::vector<std::array<Vec3,3>> &triangles,
+                                      const MaterialDefinition &material) {
+    impl_->requireConfigurationMutable();
+    const auto shape=groundTriangleShape(triangles);
+    const auto contact=compileContactMaterial(material);
+    JPH::BodyCreationSettings settings(shape.GetPtr(),JPH::RVec3::sZero(),JPH::Quat::sIdentity(),
+                                       JPH::EMotionType::Static,Layers::kNonMoving);
+    settings.mFriction=float(contact.dynamic_friction);settings.mRestitution=float(contact.restitution);
+    settings.mUserData=kGroundPatchMatterId;
+    const auto id=impl_->physics_->GetBodyInterface().CreateAndAddBody(settings,JPH::EActivation::DontActivate);
+    if(id.IsInvalid())throw std::runtime_error("Jolt could not create ground mesh");
+    impl_->ground_.push_back({id,0,0,0,0});
+    impl_->contact_states_[kGroundPatchMatterId]={contact,0,0,false};
+    return unsigned(impl_->ground_.size());
+}
+
+void JoltWorld::replaceGroundTriangles(unsigned patch,const std::vector<std::array<Vec3,3>> &triangles) {
+    impl_->requireConfigurationMutable();
+    if(patch==0 || patch>impl_->ground_.size() || impl_->ground_[patch-1].count!=0)
+        throw std::invalid_argument("there is no such ground mesh patch");
+    const auto shape=groundTriangleShape(triangles);
+    impl_->physics_->GetBodyInterface().SetShape(impl_->ground_[patch-1].body,shape.GetPtr(),false,
+                                                 JPH::EActivation::DontActivate);
 }
 
 void JoltWorld::replaceGroundPatch(unsigned patch, const std::vector<float> &heights, double max_error_m) {

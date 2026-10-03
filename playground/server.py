@@ -1211,13 +1211,14 @@ class WorldHub:
             self.apps[world_id] = app
             return app
 
-    def create(self, name=None):
+    def create(self, name=None, surface='smooth'):
         # The builder temporarily lends positions and terrain to the rover
         # composer, so two generations must not overlap.
         with self.lock:
-            return self._create(name)
+            return self._create(name,surface)
 
-    def _create(self, name):
+    def _create(self, name, surface='smooth'):
+        if surface not in ('smooth','columns'):raise ValueError('Terrain must be smooth or material cells')
         if name is None: name = "New world"
         if not isinstance(name, str) or not 1 <= len(name.strip()) <= 80:
             raise ValueError("World name must be 1 to 80 characters")
@@ -1235,7 +1236,7 @@ class WorldHub:
         # Many arbitrary valley seeds do not; world_seed refuses them. The
         # resource positions still vary for every game.
         terrain_seed = (4, 7)[secrets.randbelow(2)]
-        ground = grounds.read_ground(self.base.engine_path, terrain_seed)
+        ground = grounds.read_ground(self.base.engine_path, terrain_seed,surface=surface)
         for _ in range(6):
             goods_seed = secrets.randbelow(2**31 - 1) + 1
             try:
@@ -1263,7 +1264,7 @@ class WorldHub:
             meta = {"format": "banjo.world.v1", "id": world_id, "name": name,
                     "created_unix_s": time.time(), "terrain_seed": terrain_seed,
                     "goods_seed": proof["seed"], "reachability": proof,
-                    "arrival_xz":list(new_game.ARRIVE_AT)}
+                    "arrival_xz":list(new_game.ARRIVE_AT),"terrain_surface":surface}
             declaration=fabrication_room.starter_settings()
             if declaration is not None:meta['workbench']=declaration
             path = folder / "manifest.json"
@@ -1483,9 +1484,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def _dispatch_POST(self,path,body):
         if path == "/api/worlds":
-            if not isinstance(body, dict) or set(body) - {"name"}:
+            if not isinstance(body, dict) or set(body) - {"name","surface"}:
                 raise ValueError("Expected a world name")
-            return self.send(self.server.app.hub.create(body.get("name")), 201)
+            return self.send(self.server.app.hub.create(body.get("name"),body.get('surface','smooth')), 201)
         if path == "/api/world/player/join":
             if not isinstance(body, dict) or set(body) - {"token", "name"}:
                 raise ValueError("Expected a player token and optional name")

@@ -619,8 +619,23 @@ void rockComesOutAChipAtATime() {
               << "that paid for it, not before\n";
 }
 
+void columnSurfaceOwnsExactBoundsWithoutChangingVolumes() {
+    Grid g{4,4,.25,-1,-2};std::vector<double> soil(16,.5);soil[1]=1;
+    TerrainField field(g,std::vector<double>(16,0),soil,std::vector<double>(16,0));
+    const auto before=field.volumes();field.setColumnSurface(true);
+    near(field.heightAt(-.876,-2),.5,0,"flat material top before half-cell boundary");
+    near(field.heightAt(-.874,-2),1,0,"next actual top after boundary");
+    require(field.cellAt(-1.125,-2)==g.at(0,0),"negative outer half boundary belongs to first column");
+    require(!field.cellAt(-1.126,-2),"outside actual columns is not a survey cell");
+    near(field.volumes().total(),before.total(),0,"geometry selection does not create matter");
+    field.restore(field.state());
+    require(field.columnSurface(),"continuation preserves declared surface geometry");
+    near(field.heightAt(-.874,-2),1,0,"restored height remains flat in its column");
+}
+
 int main() {
     const std::vector<std::pair<std::string_view, std::function<void()>>> tests{
+        {"column surface owns exact bounds without changing volumes",columnSurfaceOwnsExactBoundsWithoutChangingVolumes},
         {"unsettled state resumes exactly", unsettledStateResumesExactly},
         {"invalid continuation is atomic", invalidContinuationIsAtomic},
         {"digging is accounted by material", diggingIsAccountedByMaterial},
