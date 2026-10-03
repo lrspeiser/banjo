@@ -1893,6 +1893,43 @@ function invTile(thing, { quantity = null, where = "", onOpen = null } = {}) {
   return tile;
 }
 
+function groundTransferKey() {return `banjo.ground-transfer.${worldId || "local"}.${playerId}`;}
+function pendingGroundTransfer() {
+  try {return JSON.parse(sessionStorage.getItem(groundTransferKey()) || "null");} catch {return null;}
+}
+let inventoryGroundBusy=false;
+async function transferInventoryGround(operation, material, volume, lot = null) {
+  if(inventoryGroundBusy)return;
+  inventoryGroundBusy=true;
+  for(const b of document.querySelectorAll('[data-ground-action], [data-ground-retry]'))b.disabled=true;
+  try {await sendInventoryGround(operation,material,volume,lot);}
+  finally {inventoryGroundBusy=false;await showInventory();}
+}
+async function sendInventoryGround(operation, material, volume, lot) {
+  const key=groundTransferKey();
+  let pending=pendingGroundTransfer();
+  if(pending && (pending.operation!==operation || pending.material!==material || pending.lot!==lot))
+    throw Error("Retry your pending material transfer first");
+  const context=await api("/api/world/workshop/context",{});
+  if(!pending) {
+    const reading=await api("/api/world/fabrication/state",{scene:context.scene,session:context.session});
+    if(!reading.configured)throw Error("This world needs a workbench for raw storage");
+    const request={scene:context.scene,session:context.session,revision:reading.state.revision,
+      request_id:crypto.randomUUID(),sand_m3:0,soil_m3:0,rock_m3:0,[`${material}_m3`]:volume,
+      ...(lot?{lot_id:lot}: {})};
+    pending={operation,material,lot,request};sessionStorage.setItem(key,JSON.stringify(pending));
+  }
+  try {
+    await api(`/api/world/fabrication/${operation}`,{...pending.request,session:context.session});
+    sessionStorage.removeItem(key);
+  } catch(err) {
+    // These refusals precede the atomic receiving save. Uncertain saves keep
+    // the exact request id/quantities for replay, even if the card disappears.
+    if(/Fabrication revision changed|source world changed|source room changed|Insufficient carried ground|Insufficient raw material|carrying capacity|belongs to another player/i.test(err.message))
+      sessionStorage.removeItem(key);
+    throw err;
+  }
+}
 async function showInventory() {
   const inv = await api("/api/workshop/inventory");
   const carried = (inv.carried || []).map(thing => {
@@ -1925,14 +1962,45 @@ async function showInventory() {
   budget.append(make("a",{class:"ws-action",href:homeWorld(),title:"In World, press H to heap your carried sand and soil"},"Heap → World"));
   const groundCards=(account,where) => ["sand","soil","rock"].filter(s => Number(account?.[`${s}_kg`])>.0005)
     .map(s => {
-      const card=invTile({name:s,label:s==="rock"?"Broken rock":titleCase(s),material:s,shape:"box",color_rgba:MATERIAL_LOOK[s]},
-        {quantity:kgSaid(account[`${s}_kg`]),where,onOpen:()=>openMaterialRecipes(s)});
-      card.dataset.groundLoad=s; return card;
+      const card=make("article",{class:"ws-product-card","data-ground-load":s});
+      card.append(invTile({name:s,label:s==="rock"?"Broken rock":titleCase(s),material:s,shape:"box",color_rgba:MATERIAL_LOOK[s]},
+        {quantity:kgSaid(account[`${s}_kg`]),where,onOpen:()=>openMaterialRecipes(s)}));
+      const op=where==="You"?"store_ground":"recover_ground";
+      const action=make("button",{type:"button",class:"ws-action","data-ground-action":op},op==="store_ground"?"Store":"Recover to storage");
+      action.disabled=Boolean(pendingGroundTransfer());
+      action.onclick=()=>guard(action,()=>transferInventoryGround(op,s,account[`${s}_m3`]));
+      card.append(action);return card;
     });
   $("#ws-inv-ground").replaceChildren(budget,...groundCards(load,"You"));
   const unassigned=groundCards(inv.unassigned_ground,"Unassigned");
   $("#ws-inv-unassigned").replaceChildren(...unassigned);
   $("#ws-inv-unassigned").parentElement.hidden=unassigned.length===0;
+  const stored=(inv.stored_ground || []).map(row=>{
+    const s=row.substance, personal=row.pool==="personal";
+    const card=make("article",{class:"ws-product-card","data-ground-lot":row.lot_id,"data-ground-material":s});
+    card.append(invTile({name:s,label:s==="rock"?"Broken rock":titleCase(s),material:s,shape:"box",color_rgba:MATERIAL_LOOK[s]},
+      {quantity:kgSaid(row.mass_kg),where:personal?(row.recovered?"You · recovered":"You") : "Shared · original owner unknown",
+       onOpen:()=>openMaterialRecipes(s)}));
+    const density=row.mass_kg/row.volume_m3;
+    const volume=Math.min(row.volume_m3,5/density,Math.max(0,Number(load.available_kg)||0)/density);
+    const action=make("button",{type:"button",class:"ws-action","data-ground-action":"retrieve_ground"},
+      volume>1e-12?`Retrieve ${kgSaid(volume*density)}`:"Bag full");
+    action.disabled=volume<=1e-12 || Boolean(pendingGroundTransfer());
+    action.onclick=()=>guard(action,()=>transferInventoryGround("retrieve_ground",s,volume,row.lot_id));
+    card.append(action);return card;
+  });
+  $("#ws-inv-stored-ground").replaceChildren(...stored);
+  $("#ws-inv-stored-empty").hidden=stored.length>0;
+  const pending=pendingGroundTransfer();
+  const pendingBox=$("#ws-inv-ground-pending");pendingBox.replaceChildren();pendingBox.parentElement.hidden=!pending;
+  if(pending) {
+    const card=make("article",{class:"ws-product-card"});
+    card.append(recipeValue("Material",titleCase(pending.material)),recipeValue("Transfer",{
+      store_ground:"Store",retrieve_ground:"Retrieve",recover_ground:"Recover"}[pending.operation]));
+    const retry=make("button",{type:"button",class:"ws-action","data-ground-retry":"true"},"Retry transfer");
+    retry.onclick=()=>guard(retry,()=>transferInventoryGround(pending.operation,pending.material,
+      pending.request[`${pending.material}_m3`],pending.lot));card.append(retry);pendingBox.append(card);
+  }
   const stock = (inv.materials || []).filter(r => r.mass_kg > 0).map(r => resourceTile(r,"box"));
   $("#ws-inv-stock").replaceChildren(...stock);
   $("#ws-inv-stock-empty").hidden = stock.length > 0;
@@ -2096,6 +2164,9 @@ function installInventory() {
   carried.append(make("p", {id:"ws-inv-note", class:"ws-note"}));
   screenSection(pane,"Ground load","ws-inv-ground");
   screenSection(pane,"World load · unassigned","ws-inv-unassigned");
+  const stored=screenSection(pane,"Stored ground","ws-inv-stored-ground");
+  stored.append(make("p",{id:"ws-inv-stored-empty",class:"ws-note"},"Empty · Store your ground load"));
+  screenSection(pane,"Material transfer pending","ws-inv-ground-pending").hidden=true;
   const stock = screenSection(pane, "Raw materials", "ws-inv-stock");
   stock.append(make("p", {id:"ws-inv-stock-empty", class:"ws-note"}, "Empty · Market → Supplies"));
   const goods = screenSection(pane, "Processed goods", "ws-inv-goods");

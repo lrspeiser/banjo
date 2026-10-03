@@ -27,6 +27,7 @@ FIELDS = {
     "recover": {"material":{"type":"string"},"mass_kg":{"type":"number","minimum":.000001,"maximum":10000},"request_id":TOKEN,"revision":REVISION},
     "retrieve_ground": {"lot_id":TOKEN,"sand_m3":{"type":"number","minimum":0,"maximum":10000},"soil_m3":{"type":"number","minimum":0,"maximum":10000},"request_id":TOKEN,"revision":REVISION},
     "store_ground": {"sand_m3":{"type":"number","minimum":0,"maximum":10000},"soil_m3":{"type":"number","minimum":0,"maximum":10000},"request_id":TOKEN,"revision":REVISION},
+    "recover_ground": {"sand_m3":{"type":"number","minimum":0,"maximum":10000},"soil_m3":{"type":"number","minimum":0,"maximum":10000},"request_id":TOKEN,"revision":REVISION},
     "connect_energy": {"store":{"type":"integer","minimum":1,"maximum":4294967295},"store_hash":{"type":"string","minLength":64,"maxLength":64},"power_w":{"type":"number","minimum":.001,"maximum":1e6},"request_id":TOKEN,"revision":REVISION},
     "fund_energy": {"store_hash":{"type":"string","minLength":64,"maxLength":64},"joules":{"type":"number","minimum":.000001,"maximum":1e9},"request_id":TOKEN,"revision":REVISION},
     "fund_stock": {"material":{"type":"string"},"mass_kg":{"type":"number","minimum":.000001,"maximum":10000},"pool":{"type":"string","enum":["personal","shared"]},"rack_hash":{"type":"string","minLength":64,"maxLength":64},"request_id":TOKEN,"revision":REVISION},
@@ -40,10 +41,11 @@ FIELDS = {
     "commit": {"job_id":TOKEN,"preview_id":TOKEN,"request_id":TOKEN},
     "wait": {"seconds":{"type":"integer","minimum":1,"maximum":10}},
 }
-for operation in ("store_ground", "retrieve_ground"):
+for operation in ("store_ground", "retrieve_ground", "recover_ground"):
     FIELDS[operation]["rock_m3"] = {"type":"number", "minimum":0, "maximum":10000,
                                   "description":"Optional broken-rock volume; defaults to zero."}
 DESCRIPTIONS = {
+    "recover_ground": "Explicitly claim measured older unassigned world-carried sand, soil or optional broken rock into your personal raw storage. Requires an authenticated player. Does not touch any other player's load; provenance retains the unassigned source. Native source debit, receiving lot, owner and retry receipt save together. Use current revision and a stable request_id. Returns a replacement session. No conversion into finished build stock.",
     "state": "Read finite stock, energy, workpieces, heat and ledger residuals without advancing time.",
     "configure": "Author the room's initial cold stock, finite isolated supply and declared process law once. Cannot refill, reset or change an existing station.",
     "quote": "Measure supported lattice matter or exact rigid assemblies/machines; calculate required material allocation, offcuts, declared work and initial battery charge. Does not spend anything; candidate must include primary_use. Exact machine quotes require the updated native material allocation export.",
@@ -51,7 +53,7 @@ DESCRIPTIONS = {
     "pause": "Interrupt a job while keeping its actual reserved workpiece, work and heat; no refund.",
     "resume": "Continue a paused workpiece from its retained work. Needs a free station; spent energy is not restored.",
     "recover": "Transfer measured same-material cold offcuts back to available stock. No new material or refunded energy; excludes installed parts, workpieces and mined ground. revision prevents shared spending; request_id makes retries safe.",
-    "retrieve_ground": "Atomically retrieve remaining sand, soil or broken rock from one saved raw lot into native carrying, subject to the carrying limit. Optional rock_m3 defaults to zero. Read lot_id and remaining contents from fabrication_state raw_inventory. Returns a replacement session. Identical request_id retries do not spend twice. No conversion or thermal model is implied.",
+    "retrieve_ground": "Atomically retrieve remaining sand, soil or broken rock from your saved raw lot into your native carrying account, subject to the carrying limit. Legacy lots without a recorded owner remain explicitly shared. Another player's private lots and retry receipts refuse. Optional rock_m3 defaults to zero. Read lot_id and remaining contents from fabrication_state raw_inventory. Returns a replacement session. Identical request_id retries do not spend twice. No conversion or thermal model is implied.",
     "store_ground": "Atomically move measured carried sand, soil and optional broken rock into saved raw lots. Optional rock_m3 defaults to zero. Read carried_ground with fabrication_state. Native debit, lots and retry receipt save together. Returns the replacement session; use it for later calls. Raw substances retain granular/rubble/mixed form and unmodeled thermal state; they are not finished build stock. No object is consumed.",
     "connect_energy": "Connect one in-world native battery to the declared lumped charger. Read its ID and store_hash from fabrication_state energy_sources. power_w cannot exceed source or station limits. Begins a new time window with zero credit; reconnecting discards unused time. Saves identity and request receipt without spending energy. Not an electrical circuit model.",
     "fund_energy": "Transfer positive joules from the connected native battery into finite fabrication energy, bounded by accepted native time since connection/last transfer and declared power. Read current store_hash, transfer_available_j and revision from fabrication_state. Battery debit and process credit save atomically; identical request retries do not debit twice. Returns replacement session. No wallet debit, current waveform or calibrated repair claim.",

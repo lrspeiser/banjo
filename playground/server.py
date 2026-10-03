@@ -1533,7 +1533,9 @@ class Handler(BaseHTTPRequestHandler):
                     if operation == "preview": answer = fabrication_room.preview(self.app,body)
                     elif operation == "commit": answer = fabrication_room.commit(self.app,body)
                     elif operation == "wait": answer = fabrication_room.wait(self.app,body)
-                    else: answer = fabrication_room.request(self.app,operation,body)
+                    else:
+                        with self.app.live.as_actor(player) if operation in ("state", "store_ground", "retrieve_ground", "recover_ground") else nullcontext():
+                            answer = fabrication_room.request(self.app,operation,body)
                 except OSError as exc:
                     return self.send({"error":"Fabrication save was not acknowledged. Read state before retrying: "+str(exc)},503)
                 return self.send(answer)

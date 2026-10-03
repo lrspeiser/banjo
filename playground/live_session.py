@@ -734,6 +734,8 @@ class Live:
             yield
         finally:
             session._actor_local.actor = previous
+            if self.session is not None and self.session is not session:
+                self.session._actor_local.actor = previous
 
     def open(self, app: Any, body: Any, *, carry_from: Any = None) -> dict[str, Any]:
         if not isinstance(body, dict):

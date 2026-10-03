@@ -63,7 +63,7 @@ class ProcessModel(unittest.TestCase):
     def test_ground_mcp_keeps_legacy_arguments_and_optional_bounded_rock(self):
         from mcp.fabrication_mcp_tools import TOOLS
         from circuit_api import validate
-        for operation in ('store_ground','retrieve_ground'):
+        for operation in ('store_ground','retrieve_ground','recover_ground'):
             schema=next(t['inputSchema'] for t in TOOLS if t['name']=='fabrication_'+operation)
             body={'session':'native-session','scene':'fabrication','sand_m3':0.,'soil_m3':.001,
                   'revision':0,'request_id':'legacy-ground-0001'}

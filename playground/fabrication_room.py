@@ -63,6 +63,7 @@ COMMAND_FIELDS = {
     "recover": {"material", "mass_kg", "request_id", "revision"},
     "retrieve_ground": {"lot_id", "sand_m3", "soil_m3", "rock_m3", "request_id", "revision"},
     "store_ground": {"sand_m3", "soil_m3", "rock_m3", "request_id", "revision"},
+    "recover_ground": {"sand_m3", "soil_m3", "rock_m3", "request_id", "revision"},
     "connect_energy": {"store", "store_hash", "power_w", "request_id", "revision"},
     "fund_energy": {"store_hash", "joules", "request_id", "revision"},
     "fund_stock": {"material", "mass_kg", "pool", "rack_hash", "request_id", "revision"},
@@ -205,7 +206,7 @@ def cost_quote(quote,state,*,minimum=False):
         supply_required_j=required/state['config']['efficiency']+quote.get('output_energy_j',0.))
     return quote
 
-def _persist(app, room, saved, state):
+def _persist(app, room, saved, state, *, recover_ack=False):
     model.validate_energy_sources(state, saved, room.scene)
     stock.validate(app, room.scene, state)
     record = SimpleNamespace(scene=room.scene, spec=room.spec, chat=deepcopy(room.chat),
@@ -218,8 +219,21 @@ def _persist(app, room, saved, state):
         if hasattr(room,field): setattr(record,field,getattr(room,field))
     brains=getattr(app,"brains",None)
     record.machine_runtime=brains.runtime() if brains is not None else getattr(room,"machine_runtime",None)
-    if not getattr(app, "store", None) or not app.store.save(record):
-        raise ValueError("Fabrication requires a complete durable room save")
+    save_error=None
+    try:
+        if not getattr(app, "store", None) or not app.store.save(record):
+            raise ValueError("Fabrication requires a complete durable room save")
+    except OSError as exc:
+        if not recover_ack: raise
+        # An atomic replacement can succeed before the caller loses its ack.
+        # Only exact receiving/native evidence admits the staged world. Keeping
+        # the old live world here would let shutdown overwrite the durable debit.
+        try: durable=app.store.read_record(room.scene)
+        except (OSError, ValueError): raise exc
+        if (durable.get('world')!=saved or durable.get('fabrication')!=state
+                or durable.get('spec')!=room.spec): raise
+        save_error=exc
+        record.persistence={'state':'saved','reason':'','saved_t_s':saved['t_s'],'attempted_t_s':saved['t_s']}
     room.fabrication_record = state
     room.world_record = saved
     room.world_saved_t = saved["t_s"]
@@ -228,12 +242,13 @@ def _persist(app, room, saved, state):
     for field in ("market_durable_pending", "goods_durable_claims", "goods_durable_deliveries", "player_learning_durable_ids"):
         if hasattr(record, field): setattr(room, field, deepcopy(getattr(record, field)))
     if brains is not None: brains.rebind(room.spec)
+    return save_error
 
 def request(app, operation, body):
     if operation not in COMMAND_FIELDS: raise ValueError("Unknown fabrication operation")
     fields = COMMAND_FIELDS[operation]
     model.obj(body, COMMON|fields, (COMMON|fields)-{"rock_m3"})
-    if operation in ("store_ground","retrieve_ground"): return transfer_ground(app,body,operation)
+    if operation in ("store_ground","retrieve_ground","recover_ground"): return transfer_ground(app,body,operation)
     if operation in ("connect_energy", "fund_energy"): return transfer_energy(app, body, operation)
     if operation in ("fund_stock", "fund_goods", "release_stock"): return transfer_stock(app, body, operation)
     if operation in ("plan_remake", "start_remake", "plan_make", "start_make"):
@@ -445,6 +460,20 @@ def transfer_ground(app,body,operation):
         state=deepcopy(_state(room));model.advance(state,old.state["t"])
         stock.validate(app, room.scene, state)
         action={k:v for k,v in body.items() if k not in COMMON};action["op"]=operation
+        actor=getattr(getattr(old,'_actor_local',None),'actor','')
+        retrieving=operation=="retrieve_ground"
+        recovering=operation=="recover_ground"
+        if recovering and not actor: raise ValueError("Join as a player to recover unassigned ground")
+        # Authorize before replay: a known receipt must never cross owners.
+        if retrieving:
+            owner=state.get('raw_lot_ownership',{}).get(body['lot_id'],{}).get('owner','')
+            if owner and owner!=actor: raise ValueError("This raw material belongs to another player")
+            if body['request_id'] in state.get('raw_returns',{}):
+                if state.get('raw_return_owners',{}).get(body['request_id'],'')!=actor:
+                    raise ValueError("This raw return belongs to another player")
+        elif body['request_id'] in state.get('raw_lots',{}):
+            if state.get('raw_lot_ownership',{}).get(body['request_id'],{}).get('owner','')!=actor:
+                raise ValueError("This raw transfer belongs to another player")
         if model.check_request(state,action):
             return {"state":model.report(state),"session":old.id,"replayed":True}
         install._source(room,old,body)
@@ -455,9 +484,8 @@ def transfer_ground(app,body,operation):
         if ground.get("schema") not in ACCOUNTED: raise ValueError("Native runtime needs accounted bulk transfers")
         if quantities["rock_m3"] and ground["schema"] not in ("banjo.ground-state.v4", "banjo.ground-state.v5"):
             raise ValueError("Native runtime needs accounted broken-rock transfers")
-        retrieving=operation=="retrieve_ground"
-        actor=getattr(getattr(old,'_actor_local',None),'actor','')
-        carried=ground.get('carriers',{}).get(actor,{}) if actor else ground['carried']
+        source_actor='' if recovering else actor
+        carried=ground.get('carriers',{}).get(source_actor,{}) if source_actor else ground['carried']
         if retrieving and ground["schema"] not in RETURNS: raise ValueError("Native runtime needs accounted returns")
         model.validate_ground_stock(state,before,getattr(room,"ground_transfers",None))
         if retrieving:
@@ -471,22 +499,27 @@ def transfer_ground(app,body,operation):
                 {"spec":deepcopy(room.spec),"snapshot":before})
             if opened.get("restored",{}).get("tier")!="whole": raise ValueError("Native world did not restore whole")
             install._preserved(before,install._snapshot(staged),set())
-            reply=staged.session.send(op="ground_return" if retrieving else "ground_withdraw",actor=actor,**quantities)
+            reply=staged.session.send(op="ground_return" if retrieving else "ground_withdraw",actor=source_actor,**quantities)
             saved=install._snapshot(staged)
             expected=deepcopy(before)
-            target=expected['ground'].setdefault('carriers',{}).setdefault(actor,{'rock_m3':0.,'soil_m3':0.,'sand_m3':0.}) if actor else expected['ground']['carried']
+            target=expected['ground'].setdefault('carriers',{}).setdefault(source_actor,{'rock_m3':0.,'soil_m3':0.,'sand_m3':0.}) if source_actor else expected['ground']['carried']
             for key,amount in quantities.items():
                 target[key]+=amount if retrieving else -amount
                 expected["ground"]["returned" if retrieving else "exported"][key]+=amount
             install._preserved(expected,saved,set())
             if not retrieving: state,_=model.receive_bulk(state,action,reply["material_packet"])
+            if retrieving: state.setdefault('raw_return_owners',{})[body['request_id']]=actor
+            else: state.setdefault('raw_lot_ownership',{})[body['request_id']]={'owner':actor,'source_actor':source_actor}
+            model.validate_state(state)
             model.validate_ground_stock(state,saved,getattr(room,"ground_transfers",None))
-            _persist(app,room,saved,state)
+            save_error=_persist(app,room,saved,state,recover_ack=True)
             live.session=staged.session;staged.session=None
+            live.session._actor_local.actor=actor
             live.session.on_reply=getattr(app,"on_live_reply",None)
             install._preview_cache(app).clear()
             try:old.close()
             except Exception:logging.getLogger("banjo").exception("Retired material source did not close")
+            if save_error is not None: raise save_error
             return {"state":model.report(state),"session":live.session.id,"replayed":False}
         finally:staged.shutdown()
 

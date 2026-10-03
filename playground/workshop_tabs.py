@@ -169,13 +169,25 @@ def inventory(app: Any, player_id: str = "") -> dict[str, Any]:
     import fabrication_stock
     reservations = fabrication_stock.pending(app, room.scene) if room is not None else []
     import world_goods
+    from mcp import fabrication
+    raw = getattr(room, 'fabrication_record', None) or {}
+    stored_ground=[]
+    for lot, contents in fabrication.raw_inventory(raw).items():
+        provenance=raw.get('raw_lot_ownership',{}).get(lot,{})
+        owner=provenance.get('owner','')
+        if owner and owner!=player_id: continue
+        for item in contents:
+            if item['mass_kg'] <= 1e-9: continue
+            stored_ground.append({**item, 'lot_id':lot, 'pool':'personal' if owner else 'shared',
+                'recovered':bool(owner and not provenance.get('source_actor'))})
     return {"materials": rack.get("materials", []), "goods": goods.get("goods", []),
             "fabrication_reservations": reservations,
             "delivery_reservations": world_goods.pending_deliveries(app,player_id),
             "components": [i for i in items if i.get("item_type") == "component"],
             "designs": [i for i in items if i.get("item_type") == "assembly"],
             "families": families, "in_world": in_world, "saved": saved,
-            "carried": carried(app, player_id),"ground_load":ground_load,"unassigned_ground":unassigned}
+            "carried": carried(app, player_id),"ground_load":ground_load,"unassigned_ground":unassigned,
+            "stored_ground":stored_ground}
 
 
 def _can_do(record: dict[str, Any], made: w.Assembly) -> list[str]:

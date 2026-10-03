@@ -140,6 +140,18 @@ def validate_state(state):
         token(ident,"lot_id");bulk_packet(packet)
         if ident not in state["receipts"]: raise ValueError("Raw material lot has no receipt")
     raw_inventory(state)  # Validate return receipts and remaining quantities.
+    for field, records in (("raw_lot_ownership", lots), ("raw_return_owners", state.get("raw_returns", {}))):
+        owners = state.get(field, {})
+        if not isinstance(owners, dict) or len(owners) > 4096:
+            raise ValueError("Invalid raw material ownership")
+        for ident, owner in owners.items():
+            if ident not in records: raise ValueError("Raw owner has no material receipt")
+            if field == "raw_lot_ownership":
+                obj(owner, {"owner", "source_actor"}, {"owner", "source_actor"})
+                values = owner.values()
+            else: values = [owner]
+            if any(not isinstance(v, str) or len(v) > 128 for v in values):
+                raise ValueError("Invalid raw material owner")
     if config(state["config"]) != state["config"]: raise ValueError("Invalid saved configuration")
     for key in ("time_s", "energy_j", "station_heat_j", "ambient_j", "spent_j"):
         number(state[key], key, 0, 1e12)
