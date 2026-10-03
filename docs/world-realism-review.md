@@ -1,471 +1,219 @@
-# World realism without a difficult opening
+# A realistic world that is easy to read and play
 
-**Opening progression, October 3:** [Independent glass learning and shorter chapters](opening-progression-simplification-checkpoint.md) removes repeated Study/Gather checks from the second chapter and the copper prerequisite for glass, preserving saved experiment requirements and older private progress. Later chapter browsing defers to shared active guidance. Native laws and binaries are unchanged; wider material, supply, human/model and R4/R5 gates remain open, R3 remains paused.
-
-October 3, 2026. Expanded review against published main `0ba1032`, current
-source contracts and the ordinary test world on port 8774. The owner's port
-8771 was not restarted or changed for this review.
-This is a product recommendation, with implementation evidence identified
-below. It does not certify new physical laws or close the active owner scope.
-
-**Ordinary player evidence:** the [opening/supply walkthrough](opening-human-supplies-checkpoint.md)
-reaches collected wood, a paid useful pick, actual sand gathering and learned
-skill, then a paid work table, with process restart retention. It exposed extra
-funding clicks, stale selected-design advice and a live-battery race; this
-checkpoint simplifies those boundaries. Processing still stops at confusing
-machine/skill advice in the observed fresh world. The opening alone does not
-qualify the entire tech tree or physical tabletop receiving.
-
-**Subsequent measured progress:** the [exposed-layer/peer checkpoint](exposed-layer-peer-checkpoint.md)
-verifies actual sand → soil excavation, private storage/restart and an observer's
-material/color/thumbnail updates without reload. It records frame timing and
-the full-geometry packet cost. Night recognition and wider hardware/multiplayer
-load acceptance remain open; the recommendations below keep their stated scope.
-
-**Subsequent processing checkpoint:** [Live recipe/input guidance](processing-guidance-checkpoint.md)
-repairs the consistency risk described below and continues the ordinary
-opening through a saved glass batch and chapter completion. Night visibility
-is still poor, and output-collection guidance remains an observed usability
-gap. The earlier findings below retain their reviewed baseline; the checkpoint
-separates the implemented fixes from the remaining recommendations.
-
-**Useful-output continuation:** the [Camp light checkpoint](camp-light-opening-checkpoint.md)
-now directs actual watched output collection and carries this same ordinary
-opening through a paid battery light, placement, native use and complete server
-restart without purchases. This supplies one practical reward for processed
-glass. World item names still expose internal IDs; general night recognition,
-the full supply graph and broader R4/R5 physics remain open.
+Reviewed October 3, 2026 against GitHub main `f73c59b0d486ffbdba9db38abbb4ec7b596c2abe` after fetching origin. Source review, existing checkpoint evidence, and ordinary browser observation of the isolated port 8776 preview inform this recommendation. The owner's port 8771 tab displayed Opening the room during inspection; its current gameplay could not be assessed. Existing worlds and servers were not restarted for this review.
 
 ## Recommendation
 
-Use clearly colored, patterned ground cells with sharp material boundaries.
-Keep the shape of products recognizable and assembled. Give the player one
-useful first tool, a nearby supply route, and one next action. Introduce the
-machinery and deeper physics as each becomes useful.
+Make terrain visibly editable through colored cells, readable material patches and exposed layers. Keep tools and machines recognizable as assembled products. Make early progress a short sequence of useful outcomes, with one action and one understandable obstacle at a time.
 
-The recommended visual direction is **a readable material landscape with
-recognizable assembled products**. Make the terrain visibly editable through
-cells and exposed layers. Keep the lamp looking like a lamp and the rover like
-a rover. A realistic world can have a deliberately simple visual language.
-Its realism should come from consistent consequences: removed ground stays
-removed, materials reach the inventory, machines consume actual inputs,
-sunlight adds actual energy, and bodies respond to supported forces.
+Prototype stepped terrain at the existing **25 cm spacing** before reducing voxel size. Smaller cells add detail, but recognition depends on material contrast, patch size, lighting and truthful interactions. Realism should come from consistent consequences: excavation removes actual material, processing consumes it, useful products work, sunlight provides energy, and supported bodies respond to forces.
 
-## What currently makes the game feel difficult
+This is a design review. Proposed geometry, balance, controls and acceptance targets below are not newly implemented or validated behavior.
 
-These findings concern the reviewed source and isolated test journey; they
-are not a claim that every older preview server has the latest checkpoint.
+## 1. What makes Banjo feel harder
 
-| Friction | Current evidence | Recommended change |
+Minecraft's official first-day guide proceeds from collected wood to a crafting table and wooden tools, then stone tools and useful lighting. My inference is that the useful pattern for Banjo is a short, repeatable collection/build/use loop with visible upgrades. That inference is a product judgment, not a measured comparison of first-time players. [Official first-day guide](https://www.minecraft.net/en-us/article/how-survive-your-first-day).
+
+Banjo currently adds several layers to that loop:
+
+| Friction | Current evidence | Adjustment |
 |---|---|---|
-| Seeing a material does not explain collecting it | Ground colors describe native material, but the ordinary field pick only gathers supported dry soil/sand; nearby mineral deposits can require a mining rover | Target card must show material, actual yield kind and one supported action or a specific tool requirement |
-| A successful dig is several steps from a useful product | Gathered sand is a carried raw load, then requires storage, compatible machine input, heat/work, output collection and paid manufacture | Present one continuous supply path and contextual actions; retain those real transfers underneath |
-| The second chapter exposes too many unrelated gates | After the observed pick/table journey, Skills shows 1/10 learned; the furnace needs copper ore while shared guidance leads with a wire prerequisite | Choose a supported, obtainable next batch before recommending a distant technique; separate the actual shortage from later prerequisites |
-| Availability labels contradict useful equipment | The selected copper skill says unavailable while its related smelter says equipment present | Distinguish Needs input, Needs power, Needs skill and No compatible machine |
-| Some prerequisites are not an obvious physical dependency | `melting-glass` requires `smelting-copper` in the technique catalog | Review each edge: retain a true supply/capability dependency; justify a teaching dependency explicitly or make it an optional recommendation |
-| Some opening tasks repeat demonstrated behavior | First-tool gathers with the owned pick, then first-workshop asks for studying/gathering again | Existing personal evidence should satisfy repeated checks; a separate Study task should reveal a new useful capability |
-| A work table can feel like a checklist prop | The goal credits an owned unparked surface before placement; a retained tabletop receiving trial is still unqualified | Teach placing and using a surface only after its actual receiving action passes; avoid making it the mandatory first reward in the meantime |
-| Controls compete for attention | World chat appears before the target/action area; the next-action card may be below the fold | Put the targeted material and primary action first, then compact inventory/goal; collapse chat when unused |
-| Administrative state is exposed as gameplay | Players must understand private stock, carried raw loads, workbench stock, stored charge and wallet credit | Show what is usable here and the next transfer; expose locations and exact accounts on expansion |
+| Ground can look like a continuous surface | The shader gives material cells sharp colors, while the native height-field surface remains triangular | Compare visible steps and layered cuts at the current spacing |
+| A visible resource does not imply the held tool can gather it | The ordinary field pick gathers dry soil/sand; ore routes require the mining rover | Before an action, show actual yield and compatible tool; keep these consistent with the simulation |
+| There are many transfers before a reward | Carried ground, private storage, machine input, processing output and paid construction are separate accounts | Offer contextual loading/collection and a reviewed supply preparation action; preserve all actual transfers underneath |
+| The opening can emphasize prerequisites over benefits | The current second chapter still requires a work surface before a watched batch | Make the next goal a useful result; require a table when a working operation needs it |
+| A new player sees much of the catalog immediately | The observed Skills page shows 0/10 learned, mostly unavailable; Recipes mixes starter furniture and advanced machines | Default to achievable next projects; keep the full catalog available |
+| Shape, supplies and function are easy to conflate | Recipes shows Materials 100%, Shape Fits, and declared uses; exact power/work review follows | Separate supply availability, build readiness and verified useful behavior |
+| Early scale can jump sharply | The observed solar-array recipe asks for 200 kg copper, 81 kg glass and 164.84 kg oak | Design a smaller, lower-output starter collector with a complete supply path |
+| Darkness hides distinctions | In the observed night view, the lit sand is legible but surrounding resources are difficult to distinguish | Ensure the starting area can be read at dusk/night and provide an obtainable light early |
 
-The processing observation includes a concrete mixed message: **Learn from a
-working machine** → **Stop and report current blockers; never invent supplies
-or success** → **Drawing wire first needs: smelting-copper**. That is an agent
-instruction shown to a human. A human-facing result should instead name the
-actual machine shortage and a reachable supply route. The furnace detail
-correctly reports that its copper intake is empty; choosing a usable alternative
-must still check current recipe, chamber, inputs, energy and saved observation.
+The current prototype is easier to test than to learn unaided. A passing automated journey proves a route exists under its declared conditions; it does not prove someone knows which action to take.
 
-The repository also has a consistency risk to resolve before qualifying that
-alternative: `machine_process.py` changes the live routine recipe, while
-`machine_witness.machines()` currently resolves the recipe from the original
-program declaration. A real alternate batch must bind to its actual live
-recipe and durable evidence. This review identifies the issue; it does not
-claim that it has been repaired or that merely changing the recipe earns a skill.
+### Current progress that should be retained
 
-The simplicity the owner describes in Minecraft comes from recognizing a
-resource, predicting an action and getting useful feedback. Banjo currently
-asks people to learn several systems together: material identification,
-gathering permissions, private stock, machine inputs, battery energy, currency,
-workbench funding, installation grids and skills. Better terrain alone cannot
-remove those dependencies. Both the presentation and opening need work.
+- The [personal tool route](opening-human-supplies-checkpoint.md) has ordinary browser evidence for finite wood, paid manufacture, numbered equip and actual sand gathering.
+- [Processing guidance](processing-guidance-checkpoint.md) binds machine input, recipe and saved observation to the real live process.
+- The [Camp light route](camp-light-opening-checkpoint.md) continues through collected processed output, paid construction, placement/use and full restart without purchases.
+- [Progression simplification](opening-progression-simplification-checkpoint.md), published in `c0005c5`, removes repeated Study/Gather goals from chapter two and removes the copper prerequisite for learning glass. An actual saved glass experiment is still required.
+- [Exposed-layer delivery](exposed-layer-peer-checkpoint.md) verifies sand removal exposing soil, matching peer geometry/material feedback, private storage and restart.
 
-## 1. Finding materials
+Remaining issues therefore include readability, interaction effort, recipe scale and complete supply coverage. The earlier glass prerequisite and live-recipe mismatch are repaired within those checkpoints; they should not be listed as current defects.
 
-Smoothed terrain and product skins can obscure the underlying material cells.
-The visible surface, target thumbnail and collection result must agree.
-An exposed sand cell should look like sand, show the sand sample, and report
-the actual sand quantity gathered. Once excavation exposes soil, all three
-should change together. Buried resources must remain unknown until exposed
-or discovered by an implemented observation mechanism.
+## 2. Terrain: visible voxels, readable patches
 
-Recommended presentation:
+### Three independent choices
 
-| Surface | What the player sees | Interaction feedback |
+1. **Appearance:** color, pattern, lighting, face shading and local cell outlines.
+2. **Geometry:** smooth slopes versus stepped, volumetric faces and exposed layers.
+3. **Resolution:** horizontal terrain spacing and any vertical discretization. Manufactured-item lattice resolution is a separate setting.
+
+Today terrain uses layered material runs under a height field, with 25 cm default columns. Coloring a surface cell does not make it a separate rigid cube or a fully cubic terrain volume. Switching to solid voxel terrain is a larger geometry/collision/storage change than changing the shader.
+
+### Recommended visual contract
+
+| Material | Walking-distance identity | Working-distance identity |
 |---|---|---|
-| Soil | Dark, coarse pattern | Soil thumbnail and available gathering action |
-| Sand | Light, fine pattern | Sand thumbnail; newly exposed layer after digging |
-| Clay | Distinct warm color and pattern | Clay sample and supported collection route |
-| Rock | Gray, angular pattern | Rock sample and required supported equipment |
-| Ore | Distinct mineral flecks and pattern | Actual ore sample and mining route |
-| Water | Clearly separate surface and shore | Depth/current readings and measured response |
+| Soil | Dark brown coherent patch | Coarse mottling and visible cut face |
+| Sand | Pale gold patch, distinct brightness | Fine speckles, clean layer edge |
+| Clay | Distinct warm/purple hue | Bands and smoother dense pattern |
+| Rock | Cool gray mass | Angular fracture pattern |
+| Ore-bearing rock | Host rock with distinctive inclusions | Recognizable mineral pattern and actual compatible gathering action |
+| Water | Clear shore and separate surface | Depth/current and supported interaction |
 
-Color should be reinforced by pattern and silhouette, including at night.
-Use a small local cell outline at the crosshair, without restoring the old
-floating circles and labels. Clicking a product should show component
-thumbnails while keeping the assembly usable. Advanced inspection may reveal
-its cells, connections and declared laws.
+Use color **and pattern**. Minecraft itself documents distinct ore patterns for people who have difficulty reading colors. [Official accessibility guidance](https://www.minecraft.net/en-us/accessibility).
 
-**Current implementation:** the [material checkpoint](readable-world-plan.md)
-uses nearest-cell colors and patterns on the existing terrain triangles.
-It keeps collider agreement and the default generated terrain's 25 cm columns.
-It is not a switch to cubic collision steps. Native collection permissions
-are unchanged: a field pick gathers supported dry soil/sand; an ore color
-does not make that tool an ore miner.
+Resources should form recognizable patches at walking distance. Making every tiny cell a different material produces visual noise. Near the crosshair, show a restrained outline and one sample thumbnail. Cutting should expose the next actual layer and update its identity immediately. Unknown buried resources stay unknown until exposed or discovered through a supported observation.
 
-### Should we use smaller voxels?
+Keep products assembled. Selecting a lamp or rover shows component thumbnails in the right panel; an optional brief inspection overlay can reveal materials without leaving the object exploded. Object skins should preserve silhouette and material cues at useful contact points.
 
-First improve the readability of the existing cells. Smaller cells can make
-the environment more detailed but also make each material harder to recognize
-at walking distance. Terrain columns and manufactured-item lattice resolution
-are separate settings; changing one does not fix the other.
+### Terrain alternatives
 
-For the same dense three-dimensional extent, halving cell length gives eight
-times as many cells. A two-dimensional column grid gives four times as many
-columns. Sparse runs, adaptive geometry, contacts and solver iterations make
-actual memory/frame/physics costs depend on the implementation. These ratios
-are geometric estimates, not measured Banjo performance predictions.
-
-Recommended next comparison: identical seeded worlds with current material
-cells, stepped render geometry on the same sampling, and finer sampling.
-Measure recognition at walking distance, excavation/layer agreement,
-day/night readability, frame time, native step time, memory and reload size.
-Keep simulation and rendering independent and report any collider mismatch.
-
-### Visual alternatives and the recommended experiment
-
-| Option | Benefit | Tradeoff | Decision |
+| Option | Main benefit | Main cost/risk | Recommendation |
 |---|---|---|---|
-| Smooth terrain, sharp material cells | Natural slopes, inexpensive presentation change, current collider agreement | Editable depth is less obvious; a grid texture alone can still feel like painted ground | Keep as the current baseline |
-| Visibly stepped terrain at the current 25 cm sampling | Shows removed volumes and material layers; stronger excavation cues | More exposed faces and harder movement at steps; requires matching native contact behavior | Prototype and compare before choosing as default |
-| Finer terrain sampling, for example 12.5 cm | More detailed cuts and smaller material features | More storage/work; distant cells become harder to distinguish | Measure only after the baseline and stepped comparison |
-| Coarse cubic terrain everywhere | Strongest simple block identity | Coarser cuts, shorelines and placements may conflict with Banjo's intended physical scale | Useful comparison, not the initial recommendation |
+| Existing smooth geometry with sharp material cells | Lowest implementation risk; current collider agreement | Can resemble painted ground | Baseline for comparison |
+| Stepped terrain at 25 cm | Makes excavated volumes and layers obvious | More faces; stepping, wheel contact, shores and placement need matching collision | First prototype |
+| Stepped terrain at 12.5 cm | More detailed excavation and silhouettes | More columns/geometry; smaller cells are less legible at distance | Compare after the 25 cm prototype |
+| Large blocks everywhere | Strong resource identity and simple construction | Coarse shores and cuts; less suitable for Banjo's small products | Optional comparison |
 
-Start with current-sized cells, clearly colored faces and exposed vertical
-layers. Compare the stepped version on the same seed, camera, lighting and
-resource placement. If a stepped visual mesh disagrees with the collider,
-label it a presentation experiment and do not ship it as the normal terrain.
-Do not add invisible stairs or silently alter contact tolerances to hide the
-mismatch. Stepped collision geometry changes are separate physics work.
+My preferred direction is **25 cm material cells and clearly exposed layer faces**, with stepped terrain tested before becoming the default. Keep broad geological shapes coherent. Reduce distant visual detail through chunk meshes and level of detail while preserving the authoritative material data and nearby collision agreement.
 
-Use material identity at two scales:
+### Cost of smaller cells
 
-- **Walking distance:** a coherent patch of sand, clay or mineral-bearing rock
-  that is recognizable without a label. Tiny checkerboard mixtures should be
-  uncommon in the opening area. Resource distribution changes need their own
-  generator tests and finite material accounting.
-- **Working distance:** local cell boundaries, an exposed-layer face and a
-  matching material sample. Show the real mixture when a stroke crosses layers;
-  do not promise a pure material from a mixed native removal.
+For an unchanged physical extent:
 
-Suggested palette direction: sand pale gold/speckled, soil dark brown/mottled,
-clay a warm distinct hue with bands, rock cool gray/fractured, and ore a host
-rock containing distinctive inclusions. These are art directions, not material
-laws or mining permissions. Preserve pattern and lightness contrast for
-color-vision differences; validate dusk/night rather than relying on hue alone.
-Water needs a separate shoreline silhouette and visible surface. Object skins
-must not conceal whether the selected thing can be picked up, dismantled or
-used through an implemented action.
+| Cell edge | Cells across a metre | Relative horizontal column count | Relative dense 3D cell count |
+|---|---:|---:|---:|
+| 50 cm | 2 | 0.25x | 0.125x |
+| 25 cm | 4 | 1x | 1x |
+| 12.5 cm | 8 | 4x | 8x |
 
-Suggested target card:
+These are geometric ratios, not measured frame-time, cloud-cost or RAM predictions. Banjo's layered columns do not store every vertical cube independently. Contacts, run counts, water resolution, changed-region packets and mesh construction have different costs.
 
-| Field | Example |
-|---|---|
-| Thumbnail / material | Sand |
-| Action | Gather with field pick |
-| Result | Actual sand received, after the native action |
-| Inventory feedback | +1.55 kg, only for the observed saved receipt |
-| Unavailable action | Copper ore · Needs mining rover |
+A 12.5 cm experiment must retain the same world size, physical deposits and supply amounts. Leaving the grid dimensions unchanged would shrink the map and invalidate the comparison. If renderer detail changes without physics resolution, label that boundary explicitly. A player must not see a solid ledge that their body or rover falls through.
 
-The example quantity is from the observed first dig, not a fixed yield per
-click. Before digging, show supported material/action and capacity, not a
-fabricated guaranteed result. Do not restore the old floating circles/labels
-or display unobserved buried ore as if the player can already see it.
+## 3. Simplify the first fifteen minutes
 
-## 2. A shorter opening
+Organize progression around useful improvements:
 
-The first goal should produce something the player immediately uses. Banking
-currency and buying a stool teach several administrative steps before the
-player understands the world.
+```mermaid
+flowchart LR
+  A[Nearby wood] --> B[Own gathering tool]
+  B --> C[Gather sand]
+  C --> D[Process and collect glass]
+  D --> E[Make and use a light]
+  E --> F[Build a small solar collector]
+  F --> G[Choose an automation project]
+```
 
-The published [personal tool opening](opening-tool-checkpoint.md) is:
+This is a proposed teaching path. The light also needs copper, oak and paid energy; each must have an explicit obtainable route. The solar step needs a newly reviewed starter design. The diagram does not imply that sand alone makes a working electrical item.
 
-1. Collect nearby finite wood into personal supplies.
-2. Make a personal field pick with actual stock and workbench energy.
-3. Equip it and successfully gather dry soil or sand.
-
-Market purchases and wallet deposits are optional. Physical energy still pays
-for manufacture; this distinction must be visible. The player should see a
-compact requirement, the exact gap and one action to resolve it. Detailed
-kilogram/joule accounting belongs in an expandable build review.
-
-Continue with a useful worktable and a supported processing batch, then a
-product that makes gathering, lighting or power more convenient. Introduce one
-new concept per chapter. Every required recipe needs an obtainable source,
-working processor, funded construction route and useful implemented action.
-An unavailable alternative must not block a supported route to the same skill.
-
-### Make the opening a short chain of useful outcomes
-
-The existing tool opening is a good foundation. The next chapters should be
-organized around improvements the player wants, with a supply path that has
-already passed an ordinary playthrough:
-
-| Chapter | Player action | Immediate payoff | Qualification needed |
+| Stage | Teach | Visible reward | Current boundary |
 |---|---|---|---|
-| Gather | Collect finite nearby wood, make/equip pick, dig supported sand/soil | Own working tool, visible terrain edit and material in Inventory | Tool opening observed; broader generation/readability still needed |
-| Process | Store the gathered sand, choose a compatible furnace process, load it, run and collect | First useful processed material | Supported native sand-to-glass fixture exists; ordinary opening guidance/evidence still needs qualification |
-| Use | Make and use a small supported product, such as a working light | Something visibly improves the camp | Retain the complete item supply quote and actual light/action test; glass alone does not imply a lamp's other components exist |
-| Power | Add an obtainable solar design and see collected sunlight bank to its builder | Visible income and less waiting for supported builds | Automatic banking exists; qualify each array's material/component/build path |
-| Automate | Give a rover one reachable source-to-machine delivery | Less manual hauling and a visibly filling input | Some routes pass; expand shore/obstacle/recovery acceptance before requiring it |
+| Gather | Collect, make, equip, use | Own tool; altered ground; inventory increases | Published route exists |
+| Process | Load compatible input, power, collect output | First usable glass | Published route exists; simplify transfers and waiting feedback |
+| Use | Build and place a useful item | Light visibly improves the camp | Paid Camp light route exists |
+| Power | Collection, storage, surplus banking | Measured income and longer operating time | Auto-banking exists; starter design/supply balance still needs qualification |
+| Automate | Source, destination and one order | Rover input fills; product becomes collectible | Some hauling routes pass; broader route/physical cargo gates remain |
 
-This is a proposed chapter structure, not five already qualified chapters.
-Do not make a light mandatory unless its complete material, electrical,
-energy and native installation path is available on the generated map. A
-simple useful alternative is preferable to a pretty reward with hidden gates.
-Likewise, do not make a work table mandatory until it provides a reliable
-receiving or other implemented action that the player needs.
+### Specific progression changes
 
-Teach one new concept per chapter. Studying a tool belongs in an optional
-inspection lesson unless it changes what the player can actually do. A player
-who already performed a supported operation should see that evidence without
-another artificial checkpoint. Skills should explain the earned ability and
-next useful action; they should not be a page of absent machines.
+- **Make the mandatory work table earn its place.** Current goal evaluation can credit the surface before placement. Keep it optional until its required operation has a reliable, qualified receiving/use path, or explicitly teach that operation before requiring it.
+- **Offer a small solar collector before the industrial array.** Change actual geometry, area, capacity and output ratings together. Do not reduce consumed mass while retaining a full-sized product. The observed 200 kg copper array belongs later in the progression.
+- **Default Recipes to Useful now and Next projects.** Group tools, lighting, power, processing, transport and furniture. Keep saved designs and parts accessible. Put invalid/experimental designs in a clearly labeled design section.
+- **Separate the starter and catalog variants.** Personal field pick/Field Pick and Work table/Table coexist. Show one recommended starter with other variants grouped beneath it.
+- **Teach skills through successful use.** After a committed action, show earned progress and a short unlock notification, then the next useful ability. Optional Study should add information rather than repeat a completed goal.
+- **Review remaining prerequisite edges individually.** Copper to wire has an evident material route; copper knowledge to iron is a teaching choice that needs justification. Do not remove edges automatically or expose unsupported processes as obtainable unlocks.
+- **Make Market an optional shortcut.** A new player should have an achievable gather/process route. Energy prices can support choices; prices cannot repair a missing source or nonfunctional recipe.
 
-### Guarantee an achievable start, then preserve player freedom
+### A valid starter area
 
-For newly generated worlds, validate a bounded starter supply graph:
+Generate finite nearby wood, a reachable dry gathering patch, sufficient physical energy and an accessible processor for the chosen opening. Ensure all inputs of the first useful product are obtainable. Check the actual path, capacities, processing time and power demand, not just a graph of material names.
 
-1. An accessible finite wood source and a supported dry gathering target.
-2. Enough actual initial or collectible solar energy for the first build,
-   without a mandatory Market purchase or wallet deposit.
-3. A reachable compatible processor and obtainable inputs for the chosen
-   next chapter; account for other machines consuming shared stock/energy.
-4. A supported useful output with all its required materials, goods and
-   installation checks, not just its headline ingredient.
-5. A viable route after interruption, depleted shared sources or another
-   player taking the same resource. Reserve per-player supplies only through
-   explicit ownership mechanics, or provide finite alternative sources.
+For multiplayer, account for shared depletion and machine contention. Clearly identify personal possessions versus shared stores. Provide finite alternatives, deliberate starting allocations or a supported renewable route; do not secretly refill resources. Sunlight renews energy, while current timber and ore supplies remain finite. Energy growth alone does not make every material supply sustainable.
 
-A generator may place a finite starter cache and machine deliberately. That
-is a world-generation design choice, not evidence that tree cutting or machine
-construction exists. Show where supplies come from. For already depleted
-worlds, explain the actual alternative, renewable source or exhausted state;
-do not silently refill ore or invent inventory to keep the tutorial moving.
+## 4. Fewer decisions, truthful feedback
 
-The larger tech tree should branch. Copper/wire/electric mechanisms, glass/
-lighting, and clay/ceramic construction can be meaningful different pursuits
-where their complete capabilities exist. A prerequisite should represent
-necessary knowledge or a real supply/capability dependency. A mechanically
-unnecessary copper gate before a working glass experiment deserves review.
-The final edge change needs progression tests and preservation of existing
-players' evidence; this review changes no prerequisites.
+Aim for **see resource → act → see result → use result**.
 
-**Still needed:** later human processing acceptance, a broader supply
-audit and additional supported processing alternatives. The reference AI
-completes two opening chains on two terrains; that is not completion of the
-whole ten-technique catalog or qualification of model-driven play.
-
-The [reachable gathering checkpoint](reachable-ground-guidance-checkpoint.md)
-also fixes a smaller source of friction: recommending ground at the player's
-feet, then requiring a backstep. Guidance now prefers an exposed dry column
-inside the held tool's actual reach. Ordinary browser gathering completes the
-skill and retains the material thumbnail/quantity through Inventory reload.
-
-## 3. One next action, fewer competing instructions
-
-World, Inventory, Goals, Skills, Recipes, Market and AI Guide should agree on
-the active goal, exact missing requirement and destination. Goals explain
-the sequence; the action happens where it belongs. The player should not have
-to discover which page's recommendation is authoritative.
-
-The [shared guidance checkpoint](shared-guidance-checkpoint.md) implements
-an authenticated next-action result and exact reviewed workbench readiness.
-Recipe geometry is labeled **Shape fits**, rather than implying that a
-workbench has supplies. Pending owned work takes priority over starting again.
-
-Default information:
-
-- World: targeted material/product, supported action, tool progress and next action.
-- Inventory: product thumbnails, quantities, stored energy and measured rates.
-- Recipes: thumbnail, uses, material gap, skill gate and build review.
-- Lab: selected design, parts, exact funding/build status and test result.
-- Goals: current objective, a short sequence and the next destination.
-- Skills: demonstrated evidence, useful unlock and one achievable route.
-- Market: wallet, supported offers, actual shortages and optional alternatives.
-
-Source registration, raw IDs, grid budgets, solver caveats and save-format
-limitations should be available in diagnostics. A specific refusal should
-explain its actionable cause in ordinary terms. Repeated technical startup
-notices and unavailable mass readings still deserve cleanup.
-
-### Make each action resolve the nearest real obstacle
-
-An unavailable recipe should offer one specific route, for example **Sand
-1.55 / 2 kg → Gather more**, **Input empty → Load your stored sand**, or
-**Power needed → Connect battery**. The numbers must come from current
-authenticated state and the exact recipe; these are UI examples, not new
-fixed recipe amounts. Next-action readiness should consider obtainable input,
-compatible processor, actual private/shared ownership, current charge and
-supported skill evidence together.
-
-Keep Goals explanatory. It should link to the place where a player acts;
-pressing a goal button must not create products or grant mastery. Market is
-an optional shortcut or exchange, with the gather/process alternative visible.
-Recipes holds building blocks and saved designs. Inventory holds products,
-raw supplies and energy. Lab edits only the explicitly selected design/item;
-saving a design, manufacturing a product and placing it remain distinct.
-
-The World sidebar priority should be: target thumbnail and action, compact
-held/bag inventory, current goal/progress, then expandable chat. Chat can say
-"Your furnace has no sand loaded; you have sand in your bag" using the same
-facts as the UI. Its answers should distinguish a physical power store from
-spendable banked energy, and explain the actually observed bottleneck rather
-than speculate about sunlight or mastery.
-
-## Realism and complexity budget
-
-The useful question for each new mechanic is whether the player can predict
-its result, see that result and use it to make a decision.
-
-| Mechanic | Player-facing consequence worth keeping | Detail to keep behind inspection |
+| Screen | Default contents | Expand for detail |
 |---|---|---|
-| Finite materials | Excavation changes the world; gathered mass reaches the right owner | Run indices, exact receipt IDs and residuals |
-| Material differences | Supported tools work differently; compatible processes produce distinct useful goods | Constitutive inputs, calibration and unsupported laws |
-| Power | Solar collection, storage, visible machine demand and automatic bank income | Solver meters, accounting records and wiring diagnostics |
-| Temperature | Machine cold/heating/working states; supported process readiness | Thermal field arrays and detailed coefficients |
-| Capacity and hauling | Full hopper, real transfer, route obstruction and recovery | Controller horizons, port guards and raw native readings |
-| Water and cargo | Bodies sink/float/drift where supported; loads change handling | Buoyancy/drag parameters, reactions and conservation audit |
-| Skills | Demonstrated ability and useful unlock | Evidence provenance and unsupported alternative designs |
+| World | Target thumbnail, compatible action, brief result, compact inventory, next goal | Components and physical analysis |
+| Inventory | Product thumbnails, material quantities, usable energy and actual income rate | Storage locations and transfer history |
+| Recipes | Thumbnail, useful function, supplies, actual blocker, primary action | Geometry, complete quote and skill evidence |
+| Lab | Explicitly selected item/design, component thumbnails, Save / Make / Test | Dimensions, laws and diagnostics |
+| Goals | Current benefit, a short sequence and links to the proper screen | Later chapters and evidence |
+| Skills | Current practice, earned ability and useful next unlock | Full tree and provenance |
+| Market | Relevant shortage, price and gather/process alternative | All offers and price history |
 
-Do not introduce hunger, dozens of ore grades, mandatory manual bookkeeping,
-repetitive study clicks or a separate crafting interface for every machine
-while the supported opening is still hard to finish. Fewer well-observed
-mechanics can feel more realistic than many declared features with unclear
-actions.
+In the observed World layout, chat sits above target details. Put target/action first, then current progress and inventory; keep chat available in a compact expandable area. Keep the common screen navigation.
 
-Keep interaction feedback brief and interruptible. A fast tool input should
-not wait for a long cosmetic spin. Show the saved material transfer and actual
-container fill. Cosmetic transfer particles, if used, represent a committed
-receipt and do not create fragments, add impulses or certify fracture. A
-refused action should show its cause immediately; it must not animate successful
-collection. Machine input/output motion must match the actual amounts and
-destination, including private output collection.
+The observed Recipes view labels the personal pick Materials 100% while the next action says Get wood. This is not proof of a balance bug: visible supplies can include shared stock while the goal requires personal stock. It is a presentation ambiguity to resolve. Use **Available nearby** and **Ready to make**, distinguish ownership when it matters, and derive the primary action from the exact reviewed quote.
 
-## 4. Realism that makes a useful difference
+Four observed catalog recipes have disabled Make buttons because of shape/adapter problems: chair, shelf unit, cart and kettle. Buying their missing materials would not solve those refusals. They should not compete with the starter recipes as apparently achievable goals.
 
-Prioritize mechanics the player can predict and observe:
+The Camp light's observed Uses list says Carry / Place despite the existing qualified light action. Prefer compact capability labels derived from supported behavior, such as Light and Battery, with declared versus tested status available on expansion. A solar panel-shaped block or solid hopper block should remain clearly marked as a shape until the necessary behavior/container walls are authored and admitted.
 
-1. **Reliable collection and processing:** finite sources, visible transfers,
-   compatible inputs and collectible private outputs.
-2. **Hauling:** machines negotiate declared slopes/obstacles and recover
-   through native motion. The [close-arrival/recovery checkpoint](rover-close-arrival-checkpoint.md)
-   resolves the two retained failures; additional terrain families remain.
-3. **Water:** avatars and objects have native contact, buoyancy, drag/current
-   and reactions. The existing camera swimming approximation is insufficient.
-4. **Cargo:** carried loads change actual mass/inertia and handling, with
-   physical receiving geometry and conserved transfers.
-5. **Damage and repair:** preserve supported connection failure and original
-   condition. Keep replacement distinct from genuine repair. Wear, fatigue
-   and blunting must not be claimed until implemented and qualified.
+### Controls and feedback
 
-Expose these effects through handling, sound, short progress cues and compact
-values. Do not make the player enter constitutive parameters to perform an
-ordinary action. Glass, oak and iron must retain their declared differences
-under matched experiments; visual resemblance is not material realism.
+- Tool inputs should remain responsive; use short contact/audio cues and committed material/count feedback rather than long cosmetic spins.
+- Show machine input, Heating / Working / Waiting state, estimated progress when available, and collectible output. A completed batch and a player's collection are distinct events.
+- Use one contextual Load input action from owned stock when the player is near a compatible machine. Let the server execute the same authenticated transfers and durable receipts.
+- Explain one actual refusal: Wrong tool, Out of reach, Bag full, Input empty, Power low, Needs skill, or Design needs changes. Advanced diagnostics remain expandable.
+- Preserve units and real quantities, using consistent rounded display. Exact kilograms/joules remain authoritative; an invented item count must not replace measured mass.
 
-## 5. LLM-created designs
+## 5. Realism worth prioritizing
 
-Use the same bounded authoring and paid-build contracts as built-in recipes:
-
-- Name the intended use and required supported action.
-- Declare unit-bearing components/materials, joints, grips and machine bindings.
-- Preserve dimensions; assess both Lab and actual installation resolution.
-- Derive the material/goods/energy quote from admitted geometry and process.
-- Trace every missing input to a supported source or report the exact blocker.
-- Test the intended function through ordinary native interaction.
-- Save the design separately from manufacturing the player's physical item.
-- Reuse the same inventory, ownership, skill evidence and recovery routes.
-
-An LLM can propose, modify and explain these records. Its words cannot create
-supplies, prove strength, unlock a technique or substitute for a simulation.
-Selected Lab conversations now receive the
-[focused draft guidance](selected-project-guidance-checkpoint.md), including
-fresh paid quotes after edits. Broader custom/machine and unavailable-source
-acceptance, full provider-wait concurrency and functional item tests remain.
-
-## Ordered remaining work
-
-1. Finish material gathering/exposed-layer/reload/peer consistency and measure
-   recognition/performance, using the readable cells already published.
-2. Extend the observed human tool/table opening and selected-project acceptance, including actual empty
-   inputs and unavailable sources across the supported recipe catalog.
-3. Qualify additional human/model-driven tech routes and LLM designs through
-   ordinary paid actions, private inventories and restart.
-4. Broaden the qualified hauling routes, then native avatars/water and physical cargo under
-   the [R4/R5 acceptance gates](player-experience-checklist.md#remaining-work).
-
-The full active scope remains material readability, useful opening progression,
-shared guidance and broader physical behavior. This review does not resume the
-owner-paused R3 repair effort or declare the platform complete.
-
-## Acceptance plan for this recommendation
-
-Separate usability qualification from physical validation. Both matter, and
-neither substitutes for the other.
-
-| Check | Proposed gate | Status |
+| Priority | Consequence the player can understand | Qualification boundary |
 |---|---|---|
-| Material recognition | First-time players identify the supported opening materials at working and walking distance without labels; test daylight, dusk and color-vision variants | Not measured; define sample size and error/time threshold before testing |
-| Terrain experiment | Same seed/camera/actions compare sharp smooth cells, matching stepped geometry and finer sampling; record frame/native step time, memory, save/reload and collision agreement | Comparison still needed |
-| Opening usability | Fresh player reaches a working tool and useful processed product through ordinary controls, no grants/teleports/mandatory purchases; record clicks, time, wrong turns and refusals | Tool/table and ordinary glass batch/chapter observed; ordinary output collection/use and first-time usability remain open |
-| Supply graph | Every recommended built-in or LLM recipe traces each required input to an obtainable source/processor and handles depletion/power loss explicitly | Broader catalog remains open |
-| Guidance agreement | World, Inventory, Recipes, Skills, Goals, Market and chat report the same current blocker/destination, including recipe changes and pending work | Shared result and alternate live-process input/evidence pass; broader adverse cases remain |
-| Multiplayer | Two fresh owners in one world progress independently, contend honestly for shared resources and retain private items/evidence through restart | Some private/peer cases pass; full supply contention/load still needed |
-| AI player | Same authenticated actions, paid materials, native results and restart gates as a human; distinguish reflex/controller from actual model-driven play | Reference openings exist; full live-model progression unqualified |
-| Physical response | Declared matched experiments with reaction/work/mass/momentum/energy accounts; compare glass, oak and iron for material claims | Existing boundaries only; native avatar/water/cargo and wider hauling remain open |
+| Collection/processing | Material removed here becomes useful stock there | Layer, ownership, capacity, receipt and restart checks |
+| Power | Panels collect, machines consume, surplus banks | Actual source/store/work meters; no duplicate credit |
+| Hauling | Slope, obstruction and load affect the route | Broader native route/recovery tests; physical cargo remains open |
+| Water | Bodies sink, float and drift predictably | Exact compound water has matched glass/oak/iron evidence; human/AI movement is still a camera approximation |
+| Damage | A real fixing can fail and retain condition | Supported connection failure is bounded; wear/fatigue and broad repair are not qualified; R3 remains owner-paused |
 
-Suggested usability targets for a playtest are a useful first tool within five
-minutes and a clearly useful next product within fifteen, without external
-instructions. Those are proposed product targets, not observed timing results
-or a reason to shorten physical process time by inventing energy. Record where
-waiting is caused by real energy/process limits and where it is caused by UI,
-walking, save latency or an unavailable supply.
+Introduce these consequences through normal play before asking players to understand their equations. Avoid adding hunger, many ore grades or additional mandatory bookkeeping while the basic supply loop remains difficult.
 
-Prioritize the actual processing dead end first, then material recognition
-and the matched terrain experiment. Add deeper native water/cargo behavior
-in qualified increments after the core gather → process → make → use loop is
-legible. R3 repair stays owner-paused. This documentation update publishes no
-terrain geometry, progression law, process fix or new physics validation.
+Physical truth needs its own tests: full reactions/work, mass, momentum and energy; timestep/resolution; glass/oak/iron comparisons for general material claims. Visual effects and passing local ledgers are not full-pipeline conservation. Cosmetic transfer particles may represent saved transfers, but must not create authoritative fragments or add forces.
 
-## Review sources and publication scope
+## 6. LLM-created items and guidance
 
-- [Material appearance catalog](../playground/material_appearance.js) and
-  [terrain shader](../playground/terrain_material.js): current cells, patterns,
-  samples and triangle-based surface.
-- [Goal chapters](../progression/goals.json),
-  [techniques/prerequisites](../progression/techniques.json) and
-  [goal evaluation](../playground/goal_chains.py): current sequence and evidence.
-- [Shared guidance](../playground/player_guidance.py),
-  [process selection](../playground/machine_process.py) and
-  [machine witness](../playground/machine_witness.py): current readiness and
-  the live-recipe/declaration consistency issue above.
-- The linked opening, exposed-layer, sand/glass and hauling checkpoints provide
-  their exact experiment conditions, passing checks and retained failures.
+Use the same authoring and readiness contract as built-in items:
 
-Only this review and documentation pointers are part of this publication.
-An in-progress input-readiness extraction in `playground/world_goods.py` is
-left outside the documentation commit. It has no newly qualified behavior.
-Validation for the review: local link targets, changed-file scope, whitespace
-and the mandatory source-registration guard. No new physical experiment or
-full tech-tree completion is claimed.
+1. State the intended useful action.
+2. Choose supported components, laws, joints, grips and machine bindings with units.
+3. Preserve intended dimensions and validate Lab plus world installation geometry.
+4. Derive all materials, goods, energy and skill requirements from the admitted design.
+5. Trace shortages to obtainable sources and actual processors; report any missing capability.
+6. Run the intended function through the ordinary simulation/action path.
+7. Save the design separately from manufacturing and placing the player's item.
+8. Retain ownership, condition, evidence and restart behavior.
+
+For example: Build a button-operated pottery wheel should produce a supported turning assembly, control, power source and functional spin test, or a concrete capability refusal. Adding a wheel-shaped cylinder and saying it works is insufficient.
+
+AI Guide should explain the exact same blocker as the visible UI. AI Actions should propose a bounded action and expose its actual result. Chat should help a player understand choices; the normal loop should remain usable without chat. Model-generated narration never grants materials, skills or physical validation.
+
+## 7. Ordered work and acceptance
+
+1. **Resolve starter presentation friction:** target before chat, consistent readiness/ownership labels, one recommended variant, useful capability badges and separate experimental designs.
+2. **Run the terrain comparison:** current smooth cells versus matching 25 cm stepped geometry, then 12.5 cm with the same physical extent/resources. Record day/night recognition, cuts, collision agreement, performance and saves.
+3. **Simplify the useful opening:** reduce navigation/transfers, make the table optional or useful, qualify the complete light route without outside instructions, and author a compact starter collector.
+4. **Audit the complete supply graph:** every promoted recipe, including LLM designs, must have sources, compatible processing, sufficient power, meaningful function and depletion recovery.
+5. **Broaden physical qualification:** hauling routes, native human/AI bodies, water response and physical cargo. Keep the paused repair scope separate.
+
+### Proposed acceptance targets
+
+These are proposed gates, not measurements. Fix the protocol before implementation evaluation.
+
+- Test with 8–12 people unfamiliar with Banjo. Aim for at least 80% correct opening-material recognition within three seconds across controlled day/dusk views; also test patterns without hue cues.
+- Aim for an unaided useful first tool within five minutes and a useful processed product within fifteen. Record wrong turns, actions, screens, refusals and energy/process waiting separately.
+- Replay two distinct generated terrains and depleted/interrupted scenarios with two independent players. Use ordinary authenticated controls and retain private accounts/evidence through full restart.
+- Use the same gather/build/use requirements for AI and human players. Label scripted/reflex results separately from actual model-driven play; no hidden grants or teleports.
+- Benchmark identical routes and actions: frame-time percentiles, native step time, memory, mesh counts, packet bytes, save/load time and concurrent players. Select a representative machine and an explicit target frame/step budget before accepting a finer grid. No unmeasured claim of an eightfold runtime cost.
+
+## Evidence and scope
+
+Source anchors: [material catalog](../playground/material_appearance.js), [terrain shader](../playground/terrain_material.js), [World interactions](../playground/world.js), [terrain parameters](../src/terrain/TerrainGenerator.hpp), [goals](../progression/goals.json), [techniques](../progression/techniques.json), [generator supply graph](../playground/world_seed.py), [shared guidance](../playground/player_guidance.py) and [recipe UI](../playground/workshop.js).
+
+Ordinary browser inspection reused fresh preview world `a6ce9c85e2d34ef2864e3b9739cbf682` on port 8776. It observed World, Recipes and Skills without collecting, making, buying or granting anything. Screenshots are local, ignored files under `build/realism-review-current/`: `world-night.png`, `recipes.png` and `skills.png`. Earlier linked checkpoints contain the simulation experiments and exact test conditions; no new simulation or complete tech-tree run was executed for this review.
+
+This update changes documentation only. Validate changed-file scope, local links, whitespace and the mandatory source-registration guard. The review does not close remaining implementation/usability/physics work or resume R3.
