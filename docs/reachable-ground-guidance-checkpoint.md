@@ -1,5 +1,7 @@
 # Reachable gathering guidance — October 3, 2026
 
+Published implementation: `19c2110` on GitHub main.
+
 Verification base: `9636cfa` on GitHub main plus the outgoing host changes.
 This is a guidance and ordinary gathering checkpoint. Native sources, material
 laws and MSVC Release binaries are unchanged.
