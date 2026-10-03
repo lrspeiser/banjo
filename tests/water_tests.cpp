@@ -9,6 +9,7 @@
 // world.
 #include "water/ShallowWater.hpp"
 #include "water/WaterCoupling.hpp"
+#include "water/CompoundWaterSurface.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -763,10 +764,95 @@ void aDamBacksUpToTheConnectionAndTheReservoirFills() {
          "every cubic metre accounted between the reservoir, the river and the mouth");
 }
 
+void compoundsUseTheirClosedUnionAndReturnDragOnce() {
+    using namespace banjo;
+    using namespace banjo::water;
+    ShallowWater water=stillWater(2.0);
+    WaterCoupling coupling;
+    std::vector<Reaction> reactions;
+    std::vector<CompoundWaterPart> parts{
+        {{PrimitiveKind::Box,.06,{.4,.4,.4}},{-.1,0,0},{}},
+        {{PrimitiveKind::Box,.06,{.4,.4,.4}},{.1,0,0},{}}};
+    BodyInWater body;
+    body.name="compound"; body.shape=BodyInWater::Shape::Compound;
+    body.parts_local=&parts; body.com_m={4,1,3}; body.dimensions_m={.6,.4,.4};
+    const double volume=.6*.4*.4;
+    for (const auto &[name,density] : std::vector<std::pair<std::string,double>>{{"glass",2500},{"oak",700},{"iron",7870}}) {
+        body.density_kg_m3=density; body.volume_m3=volume; body.mass_kg=density*volume;
+        const auto force=coupling.forces(water,{body},reactions);
+        require(force.size()==1,"one union has one fluid force");
+        near(force[0].pressure_n.y,1000*9.81*volume,1e-8,"overlapping parts displace their union once");
+        near(length(force[0].torque_n_m),0,1e-8,"symmetric union has no pressure couple");
+        std::cout<<"    "<<name<<": mass "<<body.mass_kg<<" kg, pressure "<<force[0].pressure_n.y
+                 <<" N, pressure residual "<<force[0].pressure_n.y-1000*9.81*volume<<" N\n";
+    }
+    // Coplanar duplicate outer faces have one owner, not double buoyancy.
+    parts[1]=parts[0]; body.com_m={4,1,3};
+    near(coupling.forces(water,{body},reactions)[0].pressure_n.y,1000*9.81*.4*.4*.4,1e-8,"duplicate parts have one exterior");
+    // Touching interfaces are removed even at a different face subdivision.
+    parts[0].center_local_m={-.2,0,0}; parts[1].center_local_m={.2,0,0};
+    near(coupling.forces(water,{body},reactions)[0].pressure_n.y,1000*9.81*.8*.4*.4,1e-8,"touching boxes are a closed union");
+    body.com_m.y=2;
+    near(coupling.forces(water,{body},reactions)[0].pressure_n.y,1000*9.81*.8*.2*.4,1e-8,"partly immersed union receives its displaced-water weight");
+    body.com_m.y=1;
+    // Force acts through the volume centroid, which need not be the mass COM.
+    for (auto &p:parts) p.center_local_m.x+=.15;
+    near(coupling.forces(water,{body},reactions)[0].torque_n_m.z,.15*1000*9.81*.8*.4*.4,1e-8,"off-centre buoyancy supplies its actual moment");
+    for (auto &p:parts) p.center_local_m.x-=.15;
+    // Current drag is relative to the surface point, with exactly one reaction.
+    for (std::size_t c=0;c<water.grid().cells();++c) water.setDischarge(c,water.depth(c),0);
+    auto force=coupling.forces(water,{body},reactions);
+    Vec3 returned{}; for (const auto &r:reactions) returned+=Vec3{r.fx_n,0,r.fz_n};
+    near(returned.x,force[0].drag_n.x,1e-9,"all compound horizontal drag is returned once");
+    near(returned.z,force[0].drag_n.z,1e-9,"lateral reaction closes");
+    require(force[0].drag_n.x>0,"current pushes the compound");
+    body.velocity_m_s={1,0,0};
+    near(length(coupling.forces(water,{body},reactions)[0].drag_n),0,1e-10,"no drag at the current velocity");
+    // Fully submerged cylinders preserve declared volume under rotation.
+    parts={{{PrimitiveKind::Cylinder,.06,{.3,.5,.3}},{},{std::cos(.37),std::sin(.37),0,0}}};
+    body.velocity_m_s={}; const double cylinder=3.14159265358979323846*.15*.15*.5;
+    force=coupling.forces(water,{body},reactions);
+    near(force[0].pressure_n.y,1000*9.81*cylinder,1e-8,"faceted cylinder preserves its exact displaced volume");
+    // Reusing a name and a vector allocation cannot alias different geometry.
+    const auto key=compoundWaterKey(parts);
+    parts[0].geometry.dimensions_m.y+=.0000001;
+    require(key!=compoundWaterKey(parts),"submicron geometry invalidates the surface key");
+    force=coupling.forces(water,{body},reactions);
+    near(force[0].pressure_n.y,1000*9.81*cylinder*(.5000001/.5),1e-8,"changed geometry gets its own surface");
+}
+
+void compoundObstaclesPreserveGapsAndInvalidateGeometry() {
+    using namespace banjo;
+    using namespace banjo::water;
+    ShallowWater water=stillWater(2);
+    WaterCoupling coupling;
+    std::vector<CompoundWaterPart> parts{
+        {{PrimitiveKind::Box,.06,{.4,.2,.4}},{0,.1,0},{}},
+        {{PrimitiveKind::Box,.06,{.4,.2,.4}},{0,1,0},{}}};
+    BodyInWater body; body.name="raised deck"; body.body_id=77;
+    body.shape=BodyInWater::Shape::Compound; body.parts_local=&parts;
+    body.com_m={4,0,3}; body.density_kg_m3=2400;
+    const auto column=water.grid().at(16,12);
+    auto tops=coupling.obstacleTops(water,{body});
+    near(tops[column],.2,1e-10,"gap above a base is not sealed by its bounding box");
+    auto changes=coupling.obstacleChanges(water,{body}); water.setObstacleTops(changes);
+    parts[0].geometry.dimensions_m.y=.4; parts[0].center_local_m.y=.2;
+    changes=coupling.obstacleChanges(water,{body}); water.setObstacleTops(changes);
+    near(water.obstacles()[column],.4,1e-10,"same allocation with new geometry invalidates obstacle footprint");
+    parts[1].center_local_m.y=.5;
+    changes=coupling.obstacleChanges(water,{body}); water.setObstacleTops(changes);
+    near(water.obstacles()[column],.6,1e-10,"touching stacked spans seal only their connected column");
+    body.held=true;
+    changes=coupling.obstacleChanges(water,{body}); water.setObstacleTops(changes);
+    require(!std::isfinite(water.obstacles()[column]),"held union leaves no obstacle");
+}
+
 } // namespace
 
 int main() {
     const std::vector<std::pair<std::string_view, std::function<void()>>> tests{
+        {"compounds use their closed union and return drag once", compoundsUseTheirClosedUnionAndReturnDragOnce},
+        {"compound obstacles preserve gaps and invalidate geometry", compoundObstaclesPreserveGapsAndInvalidateGeometry},
         {"a lake at rest stays exactly at rest", aLakeAtRestStaysExactlyAtRest},
         {"a closed basin conserves water", aClosedBasinConservesWater},
         {"a flood front advances over dry ground", aFloodFrontAdvancesOverDryGround},

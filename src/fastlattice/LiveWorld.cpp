@@ -818,6 +818,7 @@ struct LiveWorld::Impl {
     // A broken piece's cells in its own frame, for the water to press on,
     // kept by name while its cell count stays the same.
     std::unordered_map<std::string, std::pair<std::size_t, std::vector<Vec3>>> water_cells_of;
+    std::unordered_map<std::string, std::vector<water::CompoundWaterPart>> water_parts_of;
     // The turn a whole box or ball carries INSIDE its collision shape, which its
     // rigid pose does not: rotation_deg as rotationQuaternion builds it. The
     // water has to press on the box that is there -- and everything said about
@@ -13049,7 +13050,17 @@ std::vector<water::BodyInWater> LiveWorld::waterBodies() {
         b.cell_m = cell;
         b.dimensions_m = pose.dimensions_m;
         const std::size_t cells = i < impl_->nodes_of.size() ? impl_->nodes_of[i].size() : 0;
-        if (pose.shape == "sphere") {
+        if (const auto precise=impl_->precise_bodies.find(pose.name); precise!=impl_->precise_bodies.end()) {
+            const auto &body=precise->second;
+            auto [cached,fresh]=impl_->water_parts_of.try_emplace(pose.name);
+            if (fresh) for (const auto &part : body.parts)
+                cached->second.push_back({part.geometry,part.center_local_m,part.rotation_local});
+            b.shape=water::BodyInWater::Shape::Compound;
+            b.parts_local=&cached->second;
+            b.volume_m3=body.volume_m3;
+            b.mass_kg=body.mass_kg;
+            b.density_kg_m3=body.mass_kg/body.volume_m3;
+        } else if (pose.shape == "sphere") {
             b.shape = water::BodyInWater::Shape::Sphere;
             b.volume_m3 = kPi / 6.0 * pose.dimensions_m.x * pose.dimensions_m.x * pose.dimensions_m.x;
         } else if (pose.shape == "box") {

@@ -393,7 +393,7 @@ if(BANJO_BUILD_HEADLESS)
     # lakes as columns of water on it, run where they are changing rather than
     # everywhere they exist (docs/terrain-and-water.md). The water solver owns
     # no bodies; the environment is where it meets the rigid world.
-    add_library(banjo_water src/water/ShallowWater.cpp src/water/WaterCoupling.cpp src/water/RiverNetwork.cpp)
+    add_library(banjo_water src/water/ShallowWater.cpp src/water/WaterCoupling.cpp src/water/CompoundWaterSurface.cpp src/water/RiverNetwork.cpp)
     target_link_libraries(banjo_water PUBLIC banjo_core)
     banjo_enable_warnings(banjo_water)
     if(BANJO_BUILD_TESTS)

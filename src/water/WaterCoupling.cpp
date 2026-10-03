@@ -1,4 +1,5 @@
 #include "water/WaterCoupling.hpp"
+#include "water/CompoundWaterSurface.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -122,11 +123,36 @@ std::pair<double, Vec3> areaAndCentroid(const Vec3 *p, int n) {
     return {length(area_vector), weighted / total};
 }
 
+// Hydrostatic pressure is linear in y. Its force uses the area centroid, but
+// its moment uses the pressure centroid: integrating p*y requires the second
+// moment, not applying the mean pressure at the geometric centroid. Triangle
+// barycentric moments integrate this exactly for every clipped planar face.
+Vec3 pressureCentroid(const Vec3 *p, int n, double level, Vec3 fallback) {
+    Vec3 weighted{};
+    double weight=0;
+    for (int k=1;k+1<n;++k) {
+        const Vec3 a=p[0],b=p[k],c=p[k+1];
+        const double area=.5*length(cross(b-a,c-a));
+        const Vec3 sum=a+b+c;
+        const Vec3 first=(area/3)*sum;
+        const Vec3 mixed=(area/12)*(sum*sum.y+a*a.y+b*b.y+c*c.y);
+        weighted+=level*first-mixed;
+        weight+=level*area-first.y;
+    }
+    return weight>1e-24 ? weighted/weight : fallback;
+}
+
 // The body's extent from its centre, for a cheap first look.
 double reachOf(const BodyInWater &b) {
     switch (b.shape) {
     case BodyInWater::Shape::Sphere: return 0.5 * b.dimensions_m.x;
     case BodyInWater::Shape::Box: return 0.5 * length(b.dimensions_m);
+    case BodyInWater::Shape::Compound: {
+        double far=0;
+        if (b.parts_local) for (const auto &p : *b.parts_local)
+            far=std::max(far,length(p.center_local_m)+.5*length(p.geometry.dimensions_m));
+        return far;
+    }
     case BodyInWater::Shape::Cells: {
         double far = 0.0;
         if (b.cells_local_m)
@@ -202,6 +228,18 @@ void boxOf(const BodyInWater &b, double reach, const Grid &g, int &i0, int &i1, 
 // already under it there.
 void addTop(const BodyInWater &b, const ShallowWater &water, int i, int j, double seal_gap_m, double &top) {
     const Grid &g = water.grid();
+    if (b.shape == BodyInWater::Shape::Compound) {
+        // Only connected spans seal a column. A raised deck on legs must not
+        // fill the space under it merely because its bounding box touches bed.
+        const double ground=water.terrain(g.at(i,j));
+        double under=std::isfinite(top)?std::max(ground,top):ground;
+        for (const auto &[low,high] : compoundVerticalSpans(b,g.xOf(i),g.zOf(j))) {
+            if (low>under+seal_gap_m || high<=ground+.01) continue;
+            under=std::max(under,high);
+            top=std::max(top,high);
+        }
+        return;
+    }
     const auto span = verticalSpan(b, g.xOf(i), g.zOf(j));
     if (!span) return;
     const double ground = water.terrain(g.at(i, j));
@@ -221,6 +259,13 @@ bool WaterCoupling::isObstacle(const BodyInWater &body, double water_density) {
 }
 
 const std::vector<WaterCoupling::Patch> &WaterCoupling::patchesOf(const BodyInWater &b) {
+    if (b.shape == BodyInWater::Shape::Compound) {
+        if (!b.parts_local) throw std::invalid_argument("compound water body has no geometry");
+        const std::string key="compound|"+compoundWaterKey(*b.parts_local);
+        const auto found=patches_.find(key);
+        if (found!=patches_.end()) return found->second;
+        return patches_.emplace(key,compoundWaterSurface(*b.parts_local,settings_.patch_m)).first->second;
+    }
     char key[256];
     std::snprintf(key, sizeof key, "%d|%.6f|%.6f|%.6f|%zu|%.6f|%s", static_cast<int>(b.shape),
                   b.dimensions_m.x, b.dimensions_m.y, b.dimensions_m.z,
@@ -385,7 +430,8 @@ std::vector<BodyForce> WaterCoupling::forces(const ShallowWater &water,
             drag += (0.5 * rho * settings_.skin_coefficient * length(along) * area) * along;
             const Vec3 total = pressure + drag;
             f.force_n += total;
-            f.torque_n_m += cross(at - b.com_m, total);
+            f.torque_n_m += cross(pressureCentroid(clipped,m,s.eta,at)-b.com_m,pressure)
+                + cross(at-b.com_m,drag);
             f.pressure_n += pressure;
             f.drag_n += drag;
             f.submerged_m3 += (at.y - s.eta) * n.y * area;
@@ -453,12 +499,13 @@ std::vector<std::pair<std::size_t, double>> WaterCoupling::obstacleChanges(
         if (f.seen == pass_) { duplicate = true; break; }
         const bool obstacle = isObstacle(b, density);
         const std::size_t count = b.cells_local_m ? b.cells_local_m->size() : 0;
+        const std::string geometry=b.parts_local?compoundWaterKey(*b.parts_local):std::string{};
         if (f.known && f.obstacle == obstacle && f.com.x == b.com_m.x && f.com.y == b.com_m.y &&
             f.com.z == b.com_m.z && f.orientation.w == b.orientation.w && f.orientation.x == b.orientation.x &&
             f.orientation.y == b.orientation.y && f.orientation.z == b.orientation.z &&
             f.dimensions.x == b.dimensions_m.x && f.dimensions.y == b.dimensions_m.y &&
             f.dimensions.z == b.dimensions_m.z && f.shape == b.shape && f.cells == b.cells_local_m &&
-            f.cell_count == count && f.cell_m == b.cell_m) {
+            f.cell_count == count && f.cell_m == b.cell_m && f.compound_geometry == geometry) {
             f.seen = pass_;
             continue;
         }
@@ -472,6 +519,7 @@ std::vector<std::pair<std::size_t, double>> WaterCoupling::obstacleChanges(
         f.cells = b.cells_local_m;
         f.cell_count = count;
         f.cell_m = b.cell_m;
+        f.compound_geometry = geometry;
         f.reach = reachOf(b);
         boxOf(b, f.reach, g, f.i0, f.i1, f.j0, f.j1);
         f.seen = pass_;

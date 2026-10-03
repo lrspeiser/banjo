@@ -4,10 +4,12 @@
 //
 // PRESSURE. Every body is a closed surface of small planar patches (a box's six
 // faces cut into squares, a ball as a fine polyhedron of its own volume, a
-// broken piece as the exposed faces of its cells). Each patch is clipped at the
+// broken piece as the exposed faces of its cells; an exact compound as the
+// closed union of its boxes and volume-matched faceted cylinders). Each patch is clipped at the
 // local water surface and the hydrostatic pressure rho g (eta - y) is
 // integrated over what is under it -- exactly, because pressure is linear over
-// a flat patch -- and pushed along the patch's inward normal. Summed over a
+// a flat patch -- and pushed along the patch's inward normal. Its moment uses
+// the pressure-weighted centroid, not the geometric centroid. Summed over a
 // closed body in still water that is Archimedes, rho g V_displaced, upward,
 // through the centre of buoyancy; nothing says "this floats". An oak log
 // (700 kg/m^3) comes to rest with 70% of itself under water because that is
@@ -37,6 +39,7 @@
 // water has to rise over them. A gap under a block smaller than the grid can
 // represent is treated as sealed; a larger one lets water under.
 #include "core/Math.hpp"
+#include "core/RigidPrimitive.hpp"
 #include "water/ShallowWater.hpp"
 
 #include <cstddef>
@@ -47,17 +50,25 @@
 
 namespace banjo::water {
 
+struct CompoundWaterPart {
+    RigidPrimitive geometry;
+    Vec3 center_local_m;
+    Quat rotation_local;
+};
+
 // A body as the water sees it: shape, where it is, how it moves.
 struct BodyInWater {
     std::size_t index{};              // the host's own index, handed back
     std::uint64_t body_id{};          // the rigid world's id for it
     std::string name;
     double volume_m3{};               // its matter, for its weight
-    enum class Shape { Box, Sphere, Cells } shape{Shape::Box};
+    enum class Shape { Box, Sphere, Cells, Compound } shape{Shape::Box};
     Vec3 dimensions_m{};              // a box's extents; a ball's diameter in x
     // For Cells: the centres of its cells in the body's frame, from its centre
     // of mass, each a cube of cell_m.
     const std::vector<Vec3> *cells_local_m{};
+    // Immutable during a force/commit pair. Geometry, not the drawing's box.
+    const std::vector<CompoundWaterPart> *parts_local{};
     double cell_m{};
     Vec3 com_m{};
     Quat orientation{};
@@ -149,6 +160,7 @@ private:
         const std::vector<Vec3> *cells{};
         std::size_t cell_count{};
         double cell_m{};
+        std::string compound_geometry;
         double reach{};
         int i0{0}, i1{-1}, j0{0}, j1{-1};
         std::uint64_t seen{};

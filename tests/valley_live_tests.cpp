@@ -71,14 +71,14 @@ Json ball(const std::string &name, const std::string &material, double diameter,
             {"dimensions_m", {diameter, diameter, diameter}}, {"center_m", {at.x, at.y, at.z}}};
 }
 
-std::unique_ptr<LiveWorld> open(const Json &scene) {
+std::unique_ptr<LiveWorld> open(const Json &scene, const std::string &saved = {}) {
     const std::string text = scene.dump();
     TileImpactRequest request;
     request.cell_size_m = kCell;
     request.backend = BackendKind::CpuParallel;
     request.bodies = readSceneJson(text);
     readSceneSettings(text, request);
-    return LiveWorld::open(request);
+    return saved.empty() ? LiveWorld::open(request) : LiveWorld::open(request,saved);
 }
 
 // Step for `seconds` of world time, answering every break by running it.
@@ -794,6 +794,47 @@ void brokenRockIsCarriedAndWeighs() {
         require(std::abs(r) < 1.0e-9, "the ledger closes after a face is worked by hand");
 }
 
+void exactCompoundsHaveNativeWaterForcesAndRetainTheirState() {
+    constexpr double volume=.6*.2*.2;
+    for (const auto &[material,density] : std::vector<std::pair<std::string,double>>{{"glass",2500},{"oak",700},{"iron",7870}}) {
+        const Json scene={{"plasticity",true},
+            {"bodies",{box("marker","concrete",{.08,.08,.08},{-7,10,-5},true)}},
+            {"precise_rigid_bodies",{{{"name","compound"},{"material",material},{"position_m",{0,.6,0}},
+                {"parts",{{{"shape","box"},{"dimensions_m",{.4,.2,.2}},{"center_local_m",{-.1,0,0}}},
+                          {{"shape","box"},{"dimensions_m",{.4,.2,.2}},{"center_local_m",{.1,0,0}}}}}}}},
+            {"terrain",{{"generate",{{"kind","basin"},{"nx",64},{"nz",48},{"lake_level_m",1.0}}}}}};
+        auto world=open(scene);
+        world->step(kDt);
+        require(!world->steppedBack(),"first native compound water step accepted");
+        const auto report=Json::parse(world->environment()->reportJson());
+        const auto &rows=report.at("water").at("bodies_in_water");
+        require(rows.size()==1 && rows[0].at("name")=="compound","exact object reaches native water adapter");
+        near(rows[0].at("buoyancy_n").get<double>(),1000*9.81*volume,1e-5,"native closed-union buoyancy");
+        near(rows[0].at("weight_n").get<double>(),density*9.81*volume,1e-5,"native material-derived weight");
+        const auto first=poseOf(*world,"compound");
+        const double expected=(1000/density-1)*9.81*kDt;
+        near(first.velocity_m_s.y,expected,1e-5,"first native velocity follows pressure and weight, not a float label");
+        run(*world,2);
+        const auto after=poseOf(*world,"compound");
+        if (material=="oak") require(after.position_m.y>.9,"oak compound rises to the surface");
+        else require(after.position_m.y<.4,"dense compound sinks to the actual basin bed");
+        const auto &water=*world->environment()->water();
+        near(water.residual(),0,1e-10*water.volume(),"live compound retains the water volume ledger");
+        std::string why;
+        const std::string saved=world->snapshot(why);
+        require(!saved.empty(),"whole compound water snapshot available");
+        auto again=open(scene,saved);
+        require(again->restored().tier=="whole","compound water snapshot restores whole");
+        const auto restored=poseOf(*again,"compound");
+        near(length(restored.position_m-after.position_m),0,1e-12,"actual native position retained");
+        near(length(restored.velocity_m_s-after.velocity_m_s),0,1e-12,"actual native velocity retained");
+        near(again->environment()->water()->volume(),water.volume(),1e-12,"actual fluid state retained");
+        std::cout<<"    exact "<<material<<": "<<density*volume<<" kg; first vy "<<first.velocity_m_s.y
+                 <<" m/s, force/weight residual "<<first.velocity_m_s.y-expected
+                 <<" m/s; at 2 s y="<<after.position_m.y<<" m, water residual="<<water.residual()<<" m^3\n";
+    }
+}
+
 int main(int argc, char **argv) {
     namespace fs = std::filesystem;
     // A valley of this test's own, generated once and read back after.
@@ -804,6 +845,7 @@ int main(int argc, char **argv) {
     setenv("BANJO_TERRAIN_CACHE", cache.string().c_str(), 1);
 #endif
     const std::vector<std::pair<std::string_view, std::function<void()>>> tests{
+        {"exact compounds have native water forces and retain their state",exactCompoundsHaveNativeWaterForcesAndRetainTheirState},
         {"a closed basin conserves water with a log in it", aClosedBasinConservesWaterWithALogInIt},
         {"a lake at rest stays at rest", aLakeAtRestStaysAtRest},
         {"a dam of loose blocks raises the river", aDamOfLooseBlocksRaisesTheRiver},

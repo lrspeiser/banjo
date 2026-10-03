@@ -1,0 +1,1153 @@
+{
+  "format": "banjo.compound-water-checkpoint.v1",
+  "date": "2026-10-03",
+  "base_commit": "c22a226d58e16cc1ddfdd6d23831d7078d282978",
+  "environment": {
+    "os": "Windows 11 x64",
+    "compiler": "MSVC 19.44.35228",
+    "backend": "CPU",
+    "rigid_dt_s": 0.004166666666666667,
+    "lattice_cell_m": 0.04,
+    "fluid_cell_m": 0.25,
+    "fluid_stride_s": 0.016666666666666666,
+    "pressure_pa_per_m": 9810
+  },
+  "experiment": {
+    "native_union_volume_m3": 0.024,
+    "parts": [
+      {
+        "shape": "box",
+        "dimensions_m": [
+          0.4,
+          0.2,
+          0.2
+        ],
+        "center_local_m": [
+          -0.1,
+          0,
+          0
+        ]
+      },
+      {
+        "shape": "box",
+        "dimensions_m": [
+          0.4,
+          0.2,
+          0.2
+        ],
+        "center_local_m": [
+          0.1,
+          0,
+          0
+        ]
+      }
+    ],
+    "initial_com_m": [
+      0,
+      0.6,
+      0
+    ],
+    "initial_velocity_m_s": [
+      0,
+      0,
+      0
+    ],
+    "basin_grid": [
+      64,
+      48
+    ],
+    "water_level_m": 1
+  },
+  "measurements": {
+    "baseline": {
+      "binary_sha256": "860b165230c7042c8144876bb398615d192db04cfd0b750e42efade39fd9ef94",
+      "cases": [
+        {
+          "material": "glass",
+          "first_pose": {
+            "anchored": false,
+            "color_rgba": "9fd3ffff",
+            "dent_at_m": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "dent_mm": 0.0,
+            "dimensions_m": [
+              0.6,
+              0.2,
+              0.2
+            ],
+            "held": false,
+            "internal_failure_supported": false,
+            "mass_kg": 60.0,
+            "material": "glass",
+            "mechanical_model": "precise-rigid-v1",
+            "name": "compound",
+            "orientation_wxyz": [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "position_m": [
+              0.0,
+              0.59983,
+              0.0
+            ],
+            "revision": 0,
+            "rigid_parts_local": [
+              {
+                "center_local_m": [
+                  -0.1,
+                  1.8973538018472625e-20,
+                  0.0
+                ],
+                "dimensions_m": [
+                  0.4,
+                  0.2,
+                  0.2
+                ],
+                "material": "glass",
+                "rotation_wxyz": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "shape": "box"
+              },
+              {
+                "center_local_m": [
+                  0.1,
+                  1.8973538018472625e-20,
+                  0.0
+                ],
+                "dimensions_m": [
+                  0.4,
+                  0.2,
+                  0.2
+                ],
+                "material": "glass",
+                "rotation_wxyz": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "shape": "box"
+              }
+            ],
+            "shape": "compound",
+            "velocity_m_s": [
+              0.0,
+              -0.04088,
+              0.0
+            ]
+          },
+          "water_force": [],
+          "after_2s_pose": {
+            "anchored": false,
+            "color_rgba": "9fd3ffff",
+            "dent_at_m": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "dent_mm": 0.0,
+            "dimensions_m": [
+              0.6,
+              0.2,
+              0.2
+            ],
+            "held": false,
+            "internal_failure_supported": false,
+            "mass_kg": 60.0,
+            "material": "glass",
+            "mechanical_model": "precise-rigid-v1",
+            "name": "compound",
+            "orientation_wxyz": [
+              0.99958,
+              0.00805,
+              0.00016,
+              0.0279
+            ],
+            "position_m": [
+              -0.00615,
+              0.30368,
+              0.00474
+            ],
+            "revision": 0,
+            "rigid_parts_local": [
+              {
+                "center_local_m": [
+                  -0.1,
+                  1.8973538018472625e-20,
+                  0.0
+                ],
+                "dimensions_m": [
+                  0.4,
+                  0.2,
+                  0.2
+                ],
+                "material": "glass",
+                "rotation_wxyz": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "shape": "box"
+              },
+              {
+                "center_local_m": [
+                  0.1,
+                  1.8973538018472625e-20,
+                  0.0
+                ],
+                "dimensions_m": [
+                  0.4,
+                  0.2,
+                  0.2
+                ],
+                "material": "glass",
+                "rotation_wxyz": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "shape": "box"
+              }
+            ],
+            "shape": "compound",
+            "velocity_m_s": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "wall_s_2s": 0.029393699951469898,
+          "fluid": 0.0,
+          "restored_tier": "whole",
+          "snapshot_exact": true
+        },
+        {
+          "material": "oak",
+          "first_pose": {
+            "anchored": false,
+            "color_rgba": "9fd3ffff",
+            "dent_at_m": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "dent_mm": 0.0,
+            "dimensions_m": [
+              0.6,
+              0.2,
+              0.2
+            ],
+            "held": false,
+            "internal_failure_supported": false,
+            "mass_kg": 16.8,
+            "material": "oak",
+            "mechanical_model": "precise-rigid-v1",
+            "name": "compound",
+            "orientation_wxyz": [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "position_m": [
+              -0.0,
+              0.59983,
+              0.0
+            ],
+            "revision": 0,
+            "rigid_parts_local": [
+              {
+                "center_local_m": [
+                  -0.1,
+                  1.0487074585063686e-20,
+                  -1.8578255976462823e-18
+                ],
+                "dimensions_m": [
+                  0.4,
+                  0.2,
+                  0.2
+                ],
+                "material": "oak",
+                "rotation_wxyz": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "shape": "box"
+              },
+              {
+                "center_local_m": [
+                  0.1,
+                  1.0487074585063686e-20,
+                  -1.8578255976462823e-18
+                ],
+                "dimensions_m": [
+                  0.4,
+                  0.2,
+                  0.2
+                ],
+                "material": "oak",
+                "rotation_wxyz": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "shape": "box"
+              }
+            ],
+            "shape": "compound",
+            "velocity_m_s": [
+              0.0,
+              -0.04088,
+              0.0
+            ]
+          },
+          "water_force": [],
+          "after_2s_pose": {
+            "anchored": false,
+            "color_rgba": "9fd3ffff",
+            "dent_at_m": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "dent_mm": 0.0,
+            "dimensions_m": [
+              0.6,
+              0.2,
+              0.2
+            ],
+            "held": false,
+            "internal_failure_supported": false,
+            "mass_kg": 16.8,
+            "material": "oak",
+            "mechanical_model": "precise-rigid-v1",
+            "name": "compound",
+            "orientation_wxyz": [
+              0.99958,
+              0.00816,
+              -0.00017,
+              0.0279
+            ],
+            "position_m": [
+              -0.00491,
+              0.30378,
+              0.0079
+            ],
+            "revision": 0,
+            "rigid_parts_local": [
+              {
+                "center_local_m": [
+                  -0.1,
+                  1.0487074585063686e-20,
+                  -1.8578255976462823e-18
+                ],
+                "dimensions_m": [
+                  0.4,
+                  0.2,
+                  0.2
+                ],
+                "material": "oak",
+                "rotation_wxyz": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "shape": "box"
+              },
+              {
+                "center_local_m": [
+                  0.1,
+                  1.0487074585063686e-20,
+                  -1.8578255976462823e-18
+                ],
+                "dimensions_m": [
+                  0.4,
+                  0.2,
+                  0.2
+                ],
+                "material": "oak",
+                "rotation_wxyz": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "shape": "box"
+              }
+            ],
+            "shape": "compound",
+            "velocity_m_s": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "wall_s_2s": 0.03023499995470047,
+          "fluid": 0.0,
+          "restored_tier": "whole",
+          "snapshot_exact": true
+        },
+        {
+          "material": "iron",
+          "first_pose": {
+            "anchored": false,
+            "color_rgba": "9fd3ffff",
+            "dent_at_m": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "dent_mm": 0.0,
+            "dimensions_m": [
+              0.6,
+              0.2,
+              0.2
+            ],
+            "held": false,
+            "internal_failure_supported": false,
+            "mass_kg": 188.88,
+            "material": "iron",
+            "mechanical_model": "precise-rigid-v1",
+            "name": "compound",
+            "orientation_wxyz": [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "position_m": [
+              -0.0,
+              0.59983,
+              0.0
+            ],
+            "revision": 0,
+            "rigid_parts_local": [
+              {
+                "center_local_m": [
+                  -0.1,
+                  -3.547995355850838e-18,
+                  -2.870081989848599e-22
+                ],
+                "dimensions_m": [
+                  0.4,
+                  0.2,
+                  0.2
+                ],
+                "material": "iron",
+                "rotation_wxyz": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "shape": "box"
+              },
+              {
+                "center_local_m": [
+                  0.1,
+                  -3.547995355850838e-18,
+                  -2.870081989848599e-22
+                ],
+                "dimensions_m": [
+                  0.4,
+                  0.2,
+                  0.2
+                ],
+                "material": "iron",
+                "rotation_wxyz": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "shape": "box"
+              }
+            ],
+            "shape": "compound",
+            "velocity_m_s": [
+              0.0,
+              -0.04088,
+              0.0
+            ]
+          },
+          "water_force": [],
+          "after_2s_pose": {
+            "anchored": false,
+            "color_rgba": "9fd3ffff",
+            "dent_at_m": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "dent_mm": 0.0,
+            "dimensions_m": [
+              0.6,
+              0.2,
+              0.2
+            ],
+            "held": false,
+            "internal_failure_supported": false,
+            "mass_kg": 188.88,
+            "material": "iron",
+            "mechanical_model": "precise-rigid-v1",
+            "name": "compound",
+            "orientation_wxyz": [
+              0.99959,
+              0.0065,
+              0.00192,
+              0.0279
+            ],
+            "position_m": [
+              -0.00619,
+              0.30401,
+              0.01359
+            ],
+            "revision": 0,
+            "rigid_parts_local": [
+              {
+                "center_local_m": [
+                  -0.1,
+                  -3.547995355850838e-18,
+                  -2.870081989848599e-22
+                ],
+                "dimensions_m": [
+                  0.4,
+                  0.2,
+                  0.2
+                ],
+                "material": "iron",
+                "rotation_wxyz": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "shape": "box"
+              },
+              {
+                "center_local_m": [
+                  0.1,
+                  -3.547995355850838e-18,
+                  -2.870081989848599e-22
+                ],
+                "dimensions_m": [
+                  0.4,
+                  0.2,
+                  0.2
+                ],
+                "material": "iron",
+                "rotation_wxyz": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "shape": "box"
+              }
+            ],
+            "shape": "compound",
+            "velocity_m_s": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "wall_s_2s": 0.025131399976089597,
+          "fluid": 0.0,
+          "restored_tier": "whole",
+          "snapshot_exact": true
+        }
+      ]
+    },
+    "fixed": {
+      "binary_sha256": "f881f1b255bd3e6aae96590ac847c7cb49e8367b3d20c5a2064e98ec7eab4924",
+      "cases": [
+        {
+          "material": "glass",
+          "first_pose": {
+            "anchored": false,
+            "color_rgba": "9fd3ffff",
+            "dent_at_m": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "dent_mm": 0.0,
+            "dimensions_m": [
+              0.6,
+              0.2,
+              0.2
+            ],
+            "held": false,
+            "internal_failure_supported": false,
+            "mass_kg": 60.0,
+            "material": "glass",
+            "mechanical_model": "precise-rigid-v1",
+            "name": "compound",
+            "orientation_wxyz": [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "position_m": [
+              0.0,
+              0.5999,
+              -0.0
+            ],
+            "revision": 0,
+            "rigid_parts_local": [
+              {
+                "center_local_m": [
+                  -0.1,
+                  1.8973538018472625e-20,
+                  0.0
+                ],
+                "dimensions_m": [
+                  0.4,
+                  0.2,
+                  0.2
+                ],
+                "material": "glass",
+                "rotation_wxyz": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "shape": "box"
+              },
+              {
+                "center_local_m": [
+                  0.1,
+                  1.8973538018472625e-20,
+                  0.0
+                ],
+                "dimensions_m": [
+                  0.4,
+                  0.2,
+                  0.2
+                ],
+                "material": "glass",
+                "rotation_wxyz": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "shape": "box"
+              }
+            ],
+            "shape": "compound",
+            "velocity_m_s": [
+              -0.0,
+              -0.02453,
+              -0.0
+            ]
+          },
+          "water_force": [
+            {
+              "buoyancy_n": 235.44,
+              "floats": false,
+              "lift_share": 0.39999999999950026,
+              "name": "compound",
+              "submerged_m3": 0.023999999999999994,
+              "weight_n": 588.6000000007353
+            }
+          ],
+          "after_2s_pose": {
+            "anchored": false,
+            "color_rgba": "9fd3ffff",
+            "dent_at_m": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "dent_mm": 0.0,
+            "dimensions_m": [
+              0.6,
+              0.2,
+              0.2
+            ],
+            "held": false,
+            "internal_failure_supported": false,
+            "mass_kg": 60.0,
+            "material": "glass",
+            "mechanical_model": "precise-rigid-v1",
+            "name": "compound",
+            "orientation_wxyz": [
+              0.9996,
+              0.01534,
+              0.00017,
+              0.02395
+            ],
+            "position_m": [
+              -0.0042,
+              0.30449,
+              -0.00011
+            ],
+            "revision": 0,
+            "rigid_parts_local": [
+              {
+                "center_local_m": [
+                  -0.1,
+                  1.8973538018472625e-20,
+                  0.0
+                ],
+                "dimensions_m": [
+                  0.4,
+                  0.2,
+                  0.2
+                ],
+                "material": "glass",
+                "rotation_wxyz": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "shape": "box"
+              },
+              {
+                "center_local_m": [
+                  0.1,
+                  1.8973538018472625e-20,
+                  0.0
+                ],
+                "dimensions_m": [
+                  0.4,
+                  0.2,
+                  0.2
+                ],
+                "material": "glass",
+                "rotation_wxyz": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "shape": "box"
+              }
+            ],
+            "shape": "compound",
+            "velocity_m_s": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "wall_s_2s": 0.07406739983707666,
+          "fluid": 1.0658141036401503e-14,
+          "restored_tier": "whole",
+          "snapshot_exact": true
+        },
+        {
+          "material": "oak",
+          "first_pose": {
+            "anchored": false,
+            "color_rgba": "9fd3ffff",
+            "dent_at_m": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "dent_mm": 0.0,
+            "dimensions_m": [
+              0.6,
+              0.2,
+              0.2
+            ],
+            "held": false,
+            "internal_failure_supported": false,
+            "mass_kg": 16.8,
+            "material": "oak",
+            "mechanical_model": "precise-rigid-v1",
+            "name": "compound",
+            "orientation_wxyz": [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "position_m": [
+              -0.0,
+              0.60007,
+              0.0
+            ],
+            "revision": 0,
+            "rigid_parts_local": [
+              {
+                "center_local_m": [
+                  -0.1,
+                  1.0487074585063686e-20,
+                  -1.8578255976462823e-18
+                ],
+                "dimensions_m": [
+                  0.4,
+                  0.2,
+                  0.2
+                ],
+                "material": "oak",
+                "rotation_wxyz": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "shape": "box"
+              },
+              {
+                "center_local_m": [
+                  0.1,
+                  1.0487074585063686e-20,
+                  -1.8578255976462823e-18
+                ],
+                "dimensions_m": [
+                  0.4,
+                  0.2,
+                  0.2
+                ],
+                "material": "oak",
+                "rotation_wxyz": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "shape": "box"
+              }
+            ],
+            "shape": "compound",
+            "velocity_m_s": [
+              -0.0,
+              0.01752,
+              -0.0
+            ]
+          },
+          "water_force": [
+            {
+              "buoyancy_n": 235.44,
+              "floats": true,
+              "lift_share": 1.428571428572851,
+              "name": "compound",
+              "submerged_m3": 0.023999999999999994,
+              "weight_n": 164.80799999983589
+            }
+          ],
+          "after_2s_pose": {
+            "anchored": false,
+            "color_rgba": "9fd3ffff",
+            "dent_at_m": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "dent_mm": 0.0,
+            "dimensions_m": [
+              0.6,
+              0.2,
+              0.2
+            ],
+            "held": false,
+            "internal_failure_supported": false,
+            "mass_kg": 16.8,
+            "material": "oak",
+            "mechanical_model": "precise-rigid-v1",
+            "name": "compound",
+            "orientation_wxyz": [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "position_m": [
+              -0.0,
+              0.93705,
+              0.0
+            ],
+            "revision": 0,
+            "rigid_parts_local": [
+              {
+                "center_local_m": [
+                  -0.1,
+                  1.0487074585063686e-20,
+                  -1.8578255976462823e-18
+                ],
+                "dimensions_m": [
+                  0.4,
+                  0.2,
+                  0.2
+                ],
+                "material": "oak",
+                "rotation_wxyz": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "shape": "box"
+              },
+              {
+                "center_local_m": [
+                  0.1,
+                  1.0487074585063686e-20,
+                  -1.8578255976462823e-18
+                ],
+                "dimensions_m": [
+                  0.4,
+                  0.2,
+                  0.2
+                ],
+                "material": "oak",
+                "rotation_wxyz": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "shape": "box"
+              }
+            ],
+            "shape": "compound",
+            "velocity_m_s": [
+              -0.0,
+              0.4262,
+              0.0
+            ]
+          },
+          "wall_s_2s": 0.06550980010069907,
+          "fluid": 0.0,
+          "restored_tier": "whole",
+          "snapshot_exact": true
+        },
+        {
+          "material": "iron",
+          "first_pose": {
+            "anchored": false,
+            "color_rgba": "9fd3ffff",
+            "dent_at_m": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "dent_mm": 0.0,
+            "dimensions_m": [
+              0.6,
+              0.2,
+              0.2
+            ],
+            "held": false,
+            "internal_failure_supported": false,
+            "mass_kg": 188.88,
+            "material": "iron",
+            "mechanical_model": "precise-rigid-v1",
+            "name": "compound",
+            "orientation_wxyz": [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "position_m": [
+              -0.0,
+              0.59985,
+              -0.0
+            ],
+            "revision": 0,
+            "rigid_parts_local": [
+              {
+                "center_local_m": [
+                  -0.1,
+                  -3.547995355850838e-18,
+                  -2.870081989848599e-22
+                ],
+                "dimensions_m": [
+                  0.4,
+                  0.2,
+                  0.2
+                ],
+                "material": "iron",
+                "rotation_wxyz": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "shape": "box"
+              },
+              {
+                "center_local_m": [
+                  0.1,
+                  -3.547995355850838e-18,
+                  -2.870081989848599e-22
+                ],
+                "dimensions_m": [
+                  0.4,
+                  0.2,
+                  0.2
+                ],
+                "material": "iron",
+                "rotation_wxyz": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "shape": "box"
+              }
+            ],
+            "shape": "compound",
+            "velocity_m_s": [
+              -0.0,
+              -0.03568,
+              -0.0
+            ]
+          },
+          "water_force": [
+            {
+              "buoyancy_n": 235.44,
+              "floats": false,
+              "lift_share": 0.12706480304952036,
+              "name": "compound",
+              "submerged_m3": 0.023999999999999994,
+              "weight_n": 1852.912800000509
+            }
+          ],
+          "after_2s_pose": {
+            "anchored": false,
+            "color_rgba": "9fd3ffff",
+            "dent_at_m": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "dent_mm": 0.0,
+            "dimensions_m": [
+              0.6,
+              0.2,
+              0.2
+            ],
+            "held": false,
+            "internal_failure_supported": false,
+            "mass_kg": 188.88,
+            "material": "iron",
+            "mechanical_model": "precise-rigid-v1",
+            "name": "compound",
+            "orientation_wxyz": [
+              0.99959,
+              -0.00314,
+              -0.00043,
+              0.0285
+            ],
+            "position_m": [
+              -0.00469,
+              0.30363,
+              -0.00219
+            ],
+            "revision": 0,
+            "rigid_parts_local": [
+              {
+                "center_local_m": [
+                  -0.1,
+                  -3.547995355850838e-18,
+                  -2.870081989848599e-22
+                ],
+                "dimensions_m": [
+                  0.4,
+                  0.2,
+                  0.2
+                ],
+                "material": "iron",
+                "rotation_wxyz": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "shape": "box"
+              },
+              {
+                "center_local_m": [
+                  0.1,
+                  -3.547995355850838e-18,
+                  -2.870081989848599e-22
+                ],
+                "dimensions_m": [
+                  0.4,
+                  0.2,
+                  0.2
+                ],
+                "material": "iron",
+                "rotation_wxyz": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "shape": "box"
+              }
+            ],
+            "shape": "compound",
+            "velocity_m_s": [
+              -0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "wall_s_2s": 0.07426810008473694,
+          "fluid": -6.394884621840902e-14,
+          "restored_tier": "whole",
+          "snapshot_exact": true
+        }
+      ]
+    }
+  },
+  "first_velocity_oracle_residual_m_s": {
+    "glass": -1.64509e-09,
+    "oak": 3.83598e-09,
+    "iron": -2.90938e-09
+  },
+  "checks": {
+    "water": 21,
+    "environment_ffi": 15,
+    "live_valley": 15,
+    "precise_rigid_live": 36,
+    "generated_rover_repeat": 2,
+    "hauling_ctest_s": 272.89,
+    "hauling_timeout_s": 300,
+    "registration": {
+      "registered": 298,
+      "sources": 298,
+      "cmake_files": 10,
+      "exclusions": 0
+    }
+  },
+  "boundaries": [
+    "No native avatar or physical cargo qualification",
+    "Untracked bed hydrostatic reaction and no full energy/momentum closure",
+    "Declared current drag coefficients; curved-overlap convergence remains open",
+    "Browser scene is authored diagnostic geometry, not a paid human or AI opening"
+  ],
+  "source_sha256": {
+    "src/water/CompoundWaterSurface.cpp": "dad94efe6c4700a7e8cf829fe4c583e94d043e6d2da3f61aa8467cb86a8c4d21",
+    "src/water/WaterCoupling.cpp": "5577c6e51d7e17b6d2bb2a242873d0561b11974b97d6a55139b81826922e3e4d",
+    "src/fastlattice/LiveWorld.cpp": "c5167085926e413c774452bafd956fcd6b273bcd589e72b452c161fd42e24a46",
+    "tests/water_tests.cpp": "4d7ca351050bf5cfa56b75446ff22ffc79a3ad6f5068b1e33927b18003845f76",
+    "tests/valley_live_tests.cpp": "382b435f731b1582593eedbc8998335146db3a41a8d3fd4d029afd5f47f42289"
+  }
+}
