@@ -1,7 +1,7 @@
 # Selected projects and design-chat guidance
 
-October 3, 2026. Verification base: published `2312c77`, plus the outgoing
-host, authoring and UI changes. Publication revision is recorded in Git history.
+October 3, 2026. Published implementation: `79b3b41` on GitHub main.
+Verification base: published `2312c77`, plus the host, authoring and UI changes.
 Full owner scope remains active.
 
 ## Implemented
@@ -106,8 +106,8 @@ restores from this browser. No provider reply is treated as manufacture,
 functional use or skill evidence. Only the owned 8773 preview was restarted;
 the user's 8771 process remains running.
 Follow goals updates both Market guidance panels. Evidence is ignored under
-`build/shared-guidance/market-selected.png`; browser JavaScript error capture
-is recorded separately from the injected failure logs in headless tests.
+`build/shared-guidance/market-selected.png`; captured browser JavaScript errors
+are zero. Injected failure logs in headless tests are separate evidence.
 
 ## Remaining acceptance
 
