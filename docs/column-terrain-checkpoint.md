@@ -3,7 +3,9 @@
 Implemented/experimental on main base `04d39af`, Windows x64. This is an optional
 25 cm terrain geometry comparison with matching native collision. It does not
 qualify the complete readable-world/progression/physical-behavior goal. R3 remains
-owner-paused. Publication revision is recorded below after verification.
+owner-paused. Implementation **`0d2a7de310e233adc4bda7a76009d5ea0613ffca`** is
+published on GitHub main. The matched isolated preview is
+`http://127.0.0.1:8778/world?world=0cc7621ee0de49f9948239e3ee81b960`.
 
 ## Behavior and architecture
 
