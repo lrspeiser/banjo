@@ -1471,6 +1471,7 @@ class LabRemake(unittest.TestCase):
         floor=app.live.act({'session':sid,'op':'survey','at':at})['survey']['ground_m']
         self.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],'request_id':'remake-collect-oak',
             'person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[0,0,-1]}},world)
+        personal_oak_before=flow.GoodsJourney.personal(self,app,owner)['oak']
         person=self.take_pick(world,app);sid=app.live.session.id
         shown=self.post('/api/world/inventory/shown',{'session':sid},world)
         self.post('/api/world/inventory',{'session':sid,'op':'stow','item':'field pick',
@@ -1506,7 +1507,7 @@ class LabRemake(unittest.TestCase):
         p.evaluate('document.querySelector("#ws-remake-review").click()')
         wait('document.querySelector("#ws-remake-stock-personal")')
         self.assertTrue(p.evaluate('document.querySelector("#ws-remake-start").disabled'))
-        self.assertTrue(p.evaluate('document.querySelector(".ws-left > .game-tabs").getBoundingClientRect().bottom <= document.querySelector("#ws-remake").getBoundingClientRect().top'))
+        self.assertTrue(p.evaluate('document.querySelector(".game-rail-header").getBoundingClientRect().bottom <= document.querySelector("#ws-remake").getBoundingClientRect().top'))
         fund_shots=ROOT/'build/resource-flow';fund_shots.mkdir(parents=True,exist_ok=True)
         wait('document.querySelector("#workshop-stage")?.visibleGeometry?.()?.meshes>0')
         p.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))',await_promise=True)
@@ -1520,7 +1521,7 @@ class LabRemake(unittest.TestCase):
         p.evaluate('document.querySelector("#ws-remake-stock-personal").click()')
         wait('document.body.textContent.includes("Injected lost transfer acknowledgement")')
         self.assertEqual(1,len(app.room.fabrication_record['stock_imports']))
-        self.assertAlmostEqual(25.-plan['quote']['stock_kg'],flow.GoodsJourney.personal(self,app,owner)['oak'],places=6)
+        self.assertAlmostEqual(personal_oak_before-plan['quote']['stock_kg'],flow.GoodsJourney.personal(self,app,owner)['oak'],places=6)
         p.send('Page.navigate',{'url':url})
         wait('document.querySelector("#ws-remake-review") && !document.querySelector("#ws-remake").hidden')
         p.evaluate('document.querySelector("#ws-remake-review").click()')
@@ -1628,11 +1629,9 @@ class LabRemake(unittest.TestCase):
             'generated_solar_source':solar['name'],'generated_source_power_w':solar['max_power_w']}
         self.assertEqual([], [e for e in p.events if e.get('method')=='Runtime.exceptionThrown'])
         context['session']=app.live.session.id
-        more=self.post('/api/world/goods/collect',{'session':context['session'],'pile':pile['name'],'request_id':'remake-more-oak',
-            'person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[0,0,-1]}},world)
-        self.assertEqual({'oak':25.},more['collected'])
+        # Whole-pile collection already supplied the later saved-design make.
         mass=app.room.fabrication_record['jobs'][ident]['stock_kg']
-        self.assertAlmostEqual(50.-mass,flow.GoodsJourney.personal(self,app,owner)['oak'],places=6)
+        self.assertAlmostEqual(personal_oak_before-mass,flow.GoodsJourney.personal(self,app,owner)['oak'],places=6)
 
         # Save the actual recovered recipe, then use Recipes Make. This must
         # open the reviewed paid flow without a physical carried source.

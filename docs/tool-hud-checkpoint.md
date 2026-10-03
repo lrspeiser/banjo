@@ -52,6 +52,36 @@ constitutive laws, resistance, conservation tolerances and resolution are unchan
 
 ## Verification
 
+### Shared navigation and phone layout, October 3
+
+World and all six Workshop screens now share the bottom navigation position,
+screen order, active selection, Menu and Chat access. Workshop switches retain
+the current world and Lab draft through the existing local tab handler. The
+right rail opens on demand at widths up to 900 px; desktop retains its initial
+open rail and allows closing it. Chat `/` and Esc work without intercepting menu
+Esc or typing `/` into a message. Navigation targets are at least 44 px high.
+Small widths wrap; content has reserved bottom space, including safe-area
+insets. The 320 px Workshop layout reserves a third row. World zoom and hand
+controls clear the navigation on phone layouts. No forced orientation lock.
+
+Ordinary Cua verification uses the separate retained test world above at
+844×390 landscape, 390×844 portrait and 320×568. All seven screen destinations,
+active selection/world continuity, Menu and mobile Chat opening/closing were
+checked. Landscape content ends above the navigation and has no document
+horizontal overflow. The smallest portrait check exposed insufficient reserved
+space; it was corrected and rechecked. Screenshots are ignored local artifacts
+`build/construction-preview/navigation-landscape.png` and `navigation-portrait.png`.
+These are desktop browser viewport checks, not physical iOS/Android device or
+complete touch movement qualification.
+
+Three focused registered suites pass 34 checks; the affected full paid Lab
+remake/saved-design journey also passes (42.24 s). Its layout assertion now
+checks the rail heading rather than the relocated navigation. Two stale 25 kg
+pickup assumptions were updated to the actual measured whole-pile inventory
+balance; debit/retry/peer/source-preservation assertions remain. Syntax,
+whitespace and 298/298 source-registration checks pass. Native binaries,
+constitutive laws and tolerances are unchanged.
+
 Upper-right placement repair: Windows browser verification in the separate
 `bd899fb4d1aa4e029bb88b6ace0194ab` world shows Sand details clear of the cursor
 and successful expansion of Nearby materials. The owner world is unchanged.

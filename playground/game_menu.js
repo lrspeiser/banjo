@@ -235,7 +235,7 @@ export function screenUrl(screen) {
 
 export function gameNavigation(active, onSelect = null) {
   const nav = document.createElement("nav");
-  nav.className = "game-tabs ws-tabs"; nav.setAttribute("aria-label", "Game screens");
+  nav.className = "game-tabs ws-tabs game-bottom-tabs"; nav.setAttribute("aria-label", "Game screens");
   if (onSelect) nav.setAttribute("role", "tablist");
   for (const [name, label] of SCREENS) {
     const local = onSelect && name !== "world";

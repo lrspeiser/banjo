@@ -1475,7 +1475,6 @@ function installBench() {
   const rightKeep = [...right.children];
   const railHeader = make("header", {class:"game-rail-header"});
   railHeader.append(make("h1", {}, "Banjo"),
-    make("button", {type:"button", "data-game-menu":"", "aria-label":"Game menu"}, "Menu"),
     make("span", {id:"ws-screen-status"}, "Inventory"));
   left.classList.add("game-rail");
   left.replaceChildren(railHeader, chatHome);
@@ -1572,9 +1571,8 @@ function installBench() {
   if (rackBox) rackBox.hidden = false;
   renderRackStrip();
 
-  // The tabs over the object: Lab is the object with its bar; Inventory,
-  // Skills and Recipes are read when opened (workshop_tabs). Chat and shared
-  // navigation stay in the right rail; ws-left is its legacy DOM class.
+  // All screens share the bottom navigation. The rail remains the DOM home
+  // for guidance and chat; it becomes an optional overlay on small screens.
   const centre = make("div", { id:"ws-centre" });
   viewport.parentElement.insertBefore(centre, viewport);
   const tabs = gameNavigation(WORKSHOP_OPENS_ON, showTab);
@@ -1582,6 +1580,25 @@ function installBench() {
   // screen you go into when you switch out of the world". Coming out of the
   // room, what you have is the question; the Lab is where you go next.
   railHeader.after(tabs);
+  const chatInitiallyOpen=matchMedia("(min-width:901px)").matches;
+  document.body.classList.toggle("ws-chat-open",chatInitiallyOpen);
+  const chatToggle=make("button",{type:"button","aria-expanded":String(chatInitiallyOpen),"aria-controls":"ws-chat-home"},"Chat /");
+  function openChat(open) {
+    document.body.classList.toggle("ws-chat-open",open);
+    chatToggle.setAttribute("aria-expanded",String(open));
+    if(open) $("#ws-component-chat-text")?.focus();
+    else chatToggle.focus();
+  }
+  chatToggle.onclick=()=>openChat(!document.body.classList.contains("ws-chat-open"));
+  tabs.append(make("button",{type:"button","data-game-menu":""},"Menu"),chatToggle);
+  addEventListener("keydown",event=>{
+    if(event.key==="Escape" && document.body.classList.contains("ws-chat-open") && !document.querySelector("#game-menu")?.open) {
+      event.preventDefault();openChat(false);return;
+    }
+    if(event.key!=="/" || event.target?.closest?.("input,textarea,select,[contenteditable=true]") ||
+       document.querySelector("#game-menu")?.open)return;
+    event.preventDefault();openChat(true);
+  });
   // The takes: little pictures of the thing. The first is the clean one --
   // the design as it is, untouched by any run -- and every run adds one
   // beside it, so a test never replaces the thing and the runs stay to be

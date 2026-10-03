@@ -679,3 +679,44 @@ body.workshop-mode .ws-chat-suggestions { flex:none;max-height:24vh;overflow:aut
 .player-guide-tip p { flex-basis:100%;line-height:1.4; }
 .player-guide-tip small { flex-basis:100%;font-weight:600; }
 .player-guide-tip .ws-action { font-size:.7rem;padding:.25rem .4rem; }
+
+/* One persistent navigation position across World and every Workshop screen. */
+:root { --game-nav-space:76px; }
+#world-quickbar { display:contents; }
+.game-tabs.game-bottom-tabs,#world-quickbar .game-tabs.game-bottom-tabs {
+  position:fixed;left:50%;bottom:calc(10px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
+  z-index:30;display:flex;flex-wrap:nowrap;align-items:center;justify-content:center;gap:4px;
+  width:max-content;max-width:calc(100vw - 24px);margin:0;padding:5px 7px;
+  background:#12202bf2;border:1px solid #526578;border-radius:10px;overflow-x:auto;visibility:visible;
+}
+.game-tabs.game-bottom-tabs a,.game-tabs.game-bottom-tabs button {
+  flex:none;display:flex;align-items:center;justify-content:center;box-sizing:border-box;
+  min-height:44px;min-width:44px;margin:0;padding:6px 9px;font-size:12px;font-weight:500;letter-spacing:normal;text-transform:none;white-space:nowrap;
+}
+.game-bottom-tabs :focus-visible { outline:2px solid #a7d7ed;outline-offset:-2px; }
+body.workshop-mode #design-workshop { bottom:calc(var(--game-nav-space) + env(safe-area-inset-bottom,0px));min-height:0; }
+body.workshop-mode:not(.ws-chat-open) .ws-grid { grid-template-columns:minmax(0,1fr)!important; }
+body.workshop-mode:not(.ws-chat-open) .ws-left { position:fixed;inset:0 0 calc(var(--game-nav-space) + env(safe-area-inset-bottom,0px)) auto;width:var(--panel-w);visibility:hidden; }
+body.workshop-mode .ws-left > .game-bottom-tabs { visibility:visible; }
+#hand-slots [data-hand],#hand-slots [data-hand="left"],#hand-slots [data-hand="right"] { bottom:calc(var(--game-nav-space) + 14px + env(safe-area-inset-bottom,0px)); }
+#hotbar { bottom:calc(var(--game-nav-space) + env(safe-area-inset-bottom,0px)); }
+#world-action-toast { bottom:calc(var(--game-nav-space) + 56px + env(safe-area-inset-bottom,0px)); }
+@media(max-width:900px) {
+  #zoom { bottom:calc(var(--game-nav-space) + 52px + env(safe-area-inset-bottom,0px)); }
+  body.workshop-mode { overflow:hidden; }
+  body.workshop-mode #design-workshop { position:fixed;inset:0 0 calc(var(--game-nav-space) + env(safe-area-inset-bottom,0px));height:auto; }
+  body.workshop-mode .ws-grid { grid-template-columns:minmax(0,1fr)!important;overflow:hidden; }
+  body.workshop-mode .ws-viewport { height:auto;min-height:0; }
+  body.workshop-mode .ws-left { position:fixed;inset:10px 12px calc(var(--game-nav-space) + env(safe-area-inset-bottom,0px)) auto;width:min(360px,calc(100vw - 24px));z-index:25;visibility:hidden;box-shadow:0 8px 25px #0008; }
+  body.workshop-mode.ws-chat-open .ws-left { visibility:visible; }
+  body.workshop-mode .ws-left > .game-bottom-tabs { visibility:visible; }
+  body.workshop-mode .ws-viewbar { flex-wrap:wrap; }
+}
+@media(max-width:600px) {
+  :root { --game-nav-space:116px; }
+  .game-tabs.game-bottom-tabs,#world-quickbar .game-tabs.game-bottom-tabs { width:calc(100vw - 24px);box-sizing:border-box;flex-wrap:wrap; }
+  body.workshop-mode .ws-tabpane { padding:.65rem; }
+}
+@media(max-width:360px) {
+  body.workshop-mode { --game-nav-space:164px; }
+}

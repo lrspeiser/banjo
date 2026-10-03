@@ -1,5 +1,7 @@
 # Banjo roadmap and acceptance gates
 
+**Completed October 3 — shared screen navigation:** All game screens use persistent bottom navigation with reserved content space and reachable Menu/Chat. [Phone layout evidence](tool-hud-checkpoint.md#shared-navigation-and-phone-layout-october-3) covers portrait/landscape browser viewports and all destinations, plus focused and paid Lab regression checks. Physical phone/touch movement acceptance remains a separate gate.
+
 **Completed October 3 — hover details placement:** The delayed target card now stays in the upper right alongside the optional right rail. [UI evidence](tool-hud-checkpoint.md#verification) includes 28 focused checks and ordinary browser confirmation; hover timing/actions and native behavior are unchanged.
 
 **Automatic excavation piles, October 3:** [Verified gathering checkpoint](automatic-excavation-piles-checkpoint.md) sends actual actor-owned native tool output to nearby separate material piles, with deliberate whole-pile pickup into private raw Inventory and no gameplay storage weight ceiling. Earlier carried loads recover at the next dig site; failed placement retains them. Native export packets, paired saves, retries/peers/restart, three surface journeys and AI processing/guidance pass 95 focused checks. Native laws/binaries are unchanged; pile pictures are ledger visuals, not calibrated physical heaps. Human/night/wet-edge acceptance, long-lived receipt archival and broader construction/R4/R5 remain open; R3 stays paused.

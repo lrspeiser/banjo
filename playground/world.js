@@ -7400,7 +7400,7 @@ function installPanelFold() {
   for(const [label,run] of [["Menu",()=>document.querySelector('[data-game-menu]').click()],
     ["Details",()=>{document.body.classList.remove("chat-open");foldPanel(!document.body.classList.contains("panel-away"));setCursorFree(true);}],
     ["Chat /",talk]]) {
-    const button=document.createElement("button");button.type="button";button.textContent=label;button.onclick=run;quickbar.append(button);
+    const button=document.createElement("button");button.type="button";button.textContent=label;button.onclick=run;worldNavigation.append(button);
   }
 }
 
