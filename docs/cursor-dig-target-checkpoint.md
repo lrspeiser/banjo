@@ -65,4 +65,6 @@ The user's world and inventory were not touched. Local screenshot artifacts:
 Next: highlighted paid pad preparation and full saved construction steps, then
 functional supports/mounting and learned skills. Wider terrain/night/usability
 acceptance and the two-second model p95 remain open; separately paused R3 stays
-paused. Publication revision is recorded after publishing.
+paused. Implementation and verification are published on GitHub main as
+`a68a082f`. Port 8779 serves the updated assets; existing browser pages need a
+refresh to load them. The native backend/build is unchanged.
