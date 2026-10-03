@@ -3,6 +3,8 @@
 October 3, 2026. Published implementation: `0c18d18` on GitHub main.
 Verification base: published `560aa03`, plus the outgoing host/UI changes.
 Full owner scope remains active.
+The subsequent World initial-refresh fix is recorded in Git history: guidance
+is requested when native opening completes, with later refreshes throttled.
 
 ## Implemented
 

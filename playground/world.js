@@ -10736,7 +10736,7 @@ function showToolSkills() {
 }
 
 // The same authenticated next action is shown in every game screen and chat.
-let guidanceBusy=false, guidanceReadAt=0;
+let guidanceBusy=false, guidanceReadAt=-Infinity;
 async function showNextStep() {
   const root=$("next-step");
   if (!root || !worldId || !world.session || watchedId || guidanceBusy || performance.now()-guidanceReadAt<4500) return;
@@ -11427,6 +11427,7 @@ async function open({ again = false } = {}) {
     // clock and the wall from now -- not from the page load, nor the last room.
     traceNewWorld(data.t);
     $("panel-state").textContent = "Live.";
+    void showNextStep();
     $("chat").replaceChildren();
     // The conversation so far in this room, as the server keeps it -- across a
     // reload, and across the server starting again (room_store) -- so the panel
