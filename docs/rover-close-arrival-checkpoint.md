@@ -1,7 +1,8 @@
 # Rover close arrival and visible recovery feedback
 
-October 3, 2026. Verification base: published `2170449`, plus this host/UI
-checkpoint. The full material, opening, guidance and physical-behavior scope
+October 3, 2026. Published implementation: `7dcdcfe` on GitHub main.
+Verification base: published `2170449`, plus this host/UI checkpoint.
+The full material, opening, guidance and physical-behavior scope
 remains active. No native source, binary, material law or solver tolerance was
 changed.
 
