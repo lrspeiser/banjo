@@ -1656,6 +1656,18 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/private_ground_tests.py -v)
     set_tests_properties(banjo_private_ground_tests PROPERTIES TIMEOUT 180)
+    add_test(NAME banjo_material_delivery_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/material_preview_tests.py Candidates TerrainDelivery -v)
+    add_test(NAME banjo_material_layer_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/material_preview_tests.py
+            PlayerMaterials.test_actual_tool_exposes_soil_and_private_storage_peer_restart_agree -v)
+    set_tests_properties(banjo_material_delivery_tests banjo_material_layer_tests PROPERTIES TIMEOUT 180)
     add_test(NAME banjo_mine_loop_tests
         COMMAND ${CMAKE_COMMAND} -E env
             BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>

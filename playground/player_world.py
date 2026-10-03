@@ -6,6 +6,8 @@ or a claim that client-reported walking is a physical body in the solver.
 """
 from __future__ import annotations
 
+from copy import deepcopy
+
 import math
 import re
 import secrets
@@ -18,6 +20,58 @@ TOKEN = re.compile(r"[0-9a-f]{64}", re.ASCII)
 ACTIVE_S = 12.0
 MAX_PROFILES = 32
 COLORS = ("#e6a14b", "#66b8b2", "#ae91d0", "#dc7891", "#8caf6b", "#78a4d8")
+
+
+class TerrainView:
+    """One bounded native geometry snapshot, acknowledged separately by each view.
+
+    Native dirty rectangles are consumed by *any* reply, including a tool or
+    clock. Invalidation hears every reply. Geometry is read lazily after a
+    change, shared by viewers, and contains no private carried account.
+    """
+    def __init__(self):
+        self.lock=threading.RLock()
+        self.session=None;self.revision=0;self.geometry=None
+
+    def reset(self, session):
+        if self.session!=session:
+            self.session=session;self.revision=0;self.geometry=None
+
+    def observe(self, session, reply):
+        if not reply.get('terrain_changed') and not reply.get('terrain'):return
+        with self.lock:
+            self.reset(session.id)
+            if (not reply.get('terrain_changed') and self.geometry is not None
+                    and {k:v for k,v in reply['terrain'].items() if k!='carried'}==self.geometry):
+                return
+            self.revision+=1;self.geometry=None
+
+    @staticmethod
+    def validate(seen):
+        if seen is not None and (not isinstance(seen,dict) or set(seen)!={'session','revision'}
+                or not isinstance(seen['session'],str) or len(seen['session'])>100
+                or type(seen['revision']) is not int or not 0<=seen['revision']<=2**53-1):
+            raise ValueError('Terrain acknowledgement requires a session and nonnegative revision')
+
+    def attach(self, live, seen, answer):
+        # Native listeners run under the Live/Session locks, then acquire ours.
+        # Keep that order while capturing too; otherwise a clock reply and a
+        # viewer waiting for geometry can deadlock each other.
+        with live.checkpoint(), self.lock:
+            session=live.session
+            self.reset(session.id)
+            stamp={'session':self.session,'revision':self.revision}
+            if seen!=stamp:
+                if self.geometry is None:
+                    # The ordinary native read also invalidates through observe.
+                    # The reentrant lock excludes a delayed listener overwriting
+                    # this snapshot. Later mutations invalidate it again.
+                    block=live.act({'session':session.id,'op':'terrain'})['terrain']
+                    self.geometry={k:deepcopy(v) for k,v in block.items() if k!='carried'}
+                stamp={'session':self.session,'revision':self.revision}
+                answer['terrain']=deepcopy(self.geometry)
+                answer.pop('terrain_changed',None)
+            answer['terrain_version']=stamp
 
 
 def lock_of(app: Any) -> threading.RLock:

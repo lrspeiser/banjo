@@ -213,7 +213,8 @@ async function act(op, extra) {
   // notebook whenever the server's is newer -- after a swing the engine
   // measured, an action, or the chat -- and only then.
   const answer = await api("/api/live/act", Object.assign(
-    { session: world.session, op, notebook_seen: notebookRevision }, extra || {}));
+      { session: world.session, op, notebook_seen: notebookRevision,
+        ...(op==="step" && worldId ? {terrain_seen:world.terrainVersion || null} : {}) }, extra || {}));
   if (answer && answer.notebook) showNotebook(answer.notebook, notebookRevision >= 0);
   return answer;
 }
@@ -1024,14 +1025,12 @@ function takeRuns(block, cells) {
 }
 
 // One column of a changed rectangle into the runs the page holds. `raw` is the
-// rectangle's own packing and `nth` which column of it this is.
-function patchRuns(c, raw, nth) {
+// rectangle's own packing; the cursor advances once per column.
+function patchRuns(c, raw, at) {
   const runs = ground.runs;
   if (!runs) return;
-  let at = 0;
-  for (let k = 0; k < nth; ++k) at += 1 + 3 * raw[at];
   if (raw[at] > runs.stride) growRuns(raw[at]);
-  decodeRuns(raw, at, ground.runs, c, ground.runs.stride);
+  return decodeRuns(raw, at, ground.runs, c, ground.runs.stride);
 }
 
 function growRuns(needed) {
@@ -1358,12 +1357,13 @@ function patchTerrain(changed) {
   const patched = changed.runs_b64 ? bytesOf(changed.runs_b64) : null;
   const g = ground.grid;
   const pos = ground.mesh.geometry.attributes.position, col = ground.mesh.geometry.attributes.color;
+  let runAt=0;
   for (let j = 0; j < nj; ++j)
     for (let i = 0; i < ni; ++i) {
       const k = (j0 + j) * g.nx + (i0 + i);
       ground.heights[k] = heights[j * ni + i];
       ground.surfaces[k] = surfaces[j * ni + i];
-      if (patched) patchRuns(k, patched, j * ni + i);
+      if (patched) runAt=patchRuns(k, patched, runAt);
       pos.array[3 * k + 1] = ground.heights[k];
       paintGround(col.array, k);
       ground.materialCells.update(k);
@@ -1375,6 +1375,18 @@ function patchTerrain(changed) {
   // The step a dig leaves is what the faces are drawn on, so they are stood up
   // again -- once for the frame, however many changes arrive in it.
   ground.facesStale = true;
+}
+
+function refreshTerrain(block) {
+  const g=ground.grid, b=block.grid;
+  if (!ground.mesh || !g || g.nx!==b.nx || g.nz!==b.nz || g.dx!==b.cell_m
+      || g.x0!==b.x0_m || g.z0!==b.z0_m || ground.floor!==Number(block.floor_m)) {
+    drawTerrain(block);return;
+  }
+  // Reuse meshes, water and visibility when a peer catches up. A full native
+  // geometry packet is still one linear patch, not a scene replacement.
+  patchTerrain({box:[0,0,b.nx,b.nz],heights_b64:block.heights_b64,
+    ground_b64:block.ground_b64,runs_b64:block.runs_b64});
 }
 
 // A surface for every point: the level where there is water, and where there
@@ -9992,8 +10004,11 @@ async function tick() {
     drawStrength(state.mechanics);
     drawHeat(state.heat);
     narrateCuts(state.cuts, say, remember);
-    if (state.terrain) drawTerrain(state.terrain);
+    if (state.terrain) refreshTerrain(state.terrain);
     if (state.terrain_changed) patchTerrain(state.terrain_changed);
+    // Acknowledge only after geometry is applied. A lost response or another
+    // player's edit asks for current native terrain again on the next step.
+    if (state.terrain_version) world.terrainVersion=state.terrain_version;
     // What has been seen of the room, which grows as machines get about it.
     if (state.sight) showSeen(state.sight);
     if (state.water) drawWater(state.water);
@@ -11333,6 +11348,7 @@ async function open({ again = false } = {}) {
       ? (watchedView = await api("/api/world/ai", { action:"watch", id:watchedId, full:true })).state
       : await api("/api/world/open", qa !== null ? { qa } : { scene: $("scene").value, ...(again ? { again } : {}) });
     world.session = data.session;
+    world.terrainVersion = null;
     miniStock = null; miniWallet = null; inventorySaid = "";
     expedition.update(data.gameplay);
     // What the person has, with the bag's things already set aside by the server.

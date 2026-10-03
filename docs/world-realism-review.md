@@ -4,6 +4,12 @@ October 3, 2026. Review of the current repository and ordinary player flows.
 This is a product recommendation, with implementation evidence identified
 below. It does not certify new physical laws or close the active owner scope.
 
+**Subsequent measured progress:** the [exposed-layer/peer checkpoint](exposed-layer-peer-checkpoint.md)
+verifies actual sand → soil excavation, private storage/restart and an observer's
+material/color/thumbnail updates without reload. It records frame timing and
+the full-geometry packet cost. Night recognition and wider hardware/multiplayer
+load acceptance remain open; the recommendations below keep their stated scope.
+
 ## Recommendation
 
 Use clearly colored, patterned ground cells with sharp material boundaries.

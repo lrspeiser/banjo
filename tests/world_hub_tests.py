@@ -280,10 +280,12 @@ class NamedWorlds(unittest.TestCase):
         self.assertTrue(before["bankable"])
         self.assertTrue(before["guidance"]["skill"])
         before_plan=before['guidance']['plan']
-        self.assertEqual('build-camp',before_plan['goal']['id'])
-        self.assertEqual('Camp stool',before_plan['name'])
+        self.assertEqual('make-own-tool',before_plan['goal']['id'])
+        self.assertEqual('Personal field pick',before_plan['name'])
         self.assertEqual(0,before_plan['lines'][0]['lots']) # Shared rack already funds this geometry.
-        self.assertEqual(6,before['guidance']['supply_goal']['lines'][0]['lots'])
+        self.assertIsNone(before['guidance']['supply_goal']) # Buying stock is optional in the new opening.
+        self.assertEqual('get-tool-wood',before['guidance']['player']['goal']['id'])
+        self.assertEqual('move',before['guidance']['player']['next_action']['verb'])
         self.assertIsNotNone(before_plan['estimated_total_j'])
         bob_before = self.post("/api/workshop/inventory", {}, ident, bob["token"])
         alice_before = self.post("/api/workshop/inventory", {}, ident, alice["token"])
@@ -301,13 +303,11 @@ class NamedWorlds(unittest.TestCase):
         after_plan=bought['guidance']['plan']
         self.assertAlmostEqual(.5,after_plan['lines'][0]['personal_kg'])
         self.assertEqual(0,after_plan['estimated_total_j'])
-        self.assertEqual(before['guidance']['supply_goal']['estimated_total_j']-oak['price_j'],
-                         bought['guidance']['supply_goal']['estimated_total_j'])
-        self.assertEqual(5,bought['guidance']['supply_goal']['lines'][0]['lots'])
+        self.assertIsNone(bought['guidance']['supply_goal'])
         bob_plan=self.post('/api/workshop/market',{},ident,bob['token'])['guidance']['plan']
         self.assertEqual(0,bob_plan['lines'][0]['personal_kg'])
         self.assertEqual(0,bob_plan['lines'][0]['lots'])
-        self.assertEqual(6,self.post('/api/workshop/market',{},ident,bob['token'])['guidance']['supply_goal']['lines'][0]['lots'])
+        self.assertIsNone(self.post('/api/workshop/market',{},ident,bob['token'])['guidance']['supply_goal'])
         self.assertGreater(next(o for o in bought["offers"] if o["id"] == "oak-stock")["price_j"],
                            oak["price_j"])
         alice_after = self.post("/api/workshop/inventory", {}, ident, alice["token"])

@@ -3,13 +3,20 @@
 Published implementation: `59f4efe` on GitHub main. This publication record
 does not close the full active scope.
 
+The [exposed-layer/peer checkpoint](exposed-layer-peer-checkpoint.md) qualifies
+actual sand → soil excavation, private Store/full restart and an ordinary
+observer's changing terrain/Soil thumbnail without reload. Independent
+geometry acknowledgements repair changes consumed by tool/clock replies;
+matching-grid catchup preserves the mesh and exploration state. Night
+recognition, broader hardware/load acceptance and the full progression/
+physics scope below remain open.
+
 The [reachable-ground guidance checkpoint](reachable-ground-guidance-checkpoint.md)
 removes the at-feet gathering recommendation and stale Inventory-action pose.
 Current-source HTTP/native openings follow the same reachable ground target
 as shared guidance for both owners on both terrains, then retain paid evidence
 through restart. Ordinary browser gathering shows sand/skill/Inventory/Goals
-agreement and reload. Exposed-layer/peer and complete fresh human acceptance
-remain open.
+agreement and reload. Complete fresh human acceptance remains open.
 
 The subsequent [close-arrival/recovery checkpoint](rover-close-arrival-checkpoint.md)
 resolves the retained ordered-port and packing-Q failures and preserves real
@@ -95,9 +102,10 @@ journey is qualified.
 
 ## Remaining acceptance for the full owner scope
 
-1. **Material readability:** qualify exposed layers and stock/crosshair/Inventory
-   consistency through actual gathering and reload. Check day/night readability
-   and performance on declared hardware; retain geometry/collider agreement.
+1. **Material readability:** sand/soil layers, private storage, peer geometry
+   and full restart now pass the linked checkpoint. Extend recognition to
+   day/night play and broader hardware/load conditions; compare finer/stepped
+   presentation with measured geometry/collider agreement and cost.
 2. **Opening progression:** the [personal tool checkpoint](opening-tool-checkpoint.md)
    replaces the required banking/oak-purchase/stool sequence for new players.
    Actual finite wood collection, paid 50 mm tool admission, ordinary pickup/use
@@ -116,7 +124,8 @@ journey is qualified.
    empty-energy coverage; retain actual availability, ownership, skill evidence
    and native admission. A display name grants nothing.
 4. **Broader physical behavior:** complete [R4/R5](player-experience-checklist.md#remaining-work).
-   Reproduce and fix the existing rover failures before expanding terrain cases.
+   The retained close-arrival and packing-Q failures are resolved by the linked
+   rover checkpoint. Expand pits, shores, grades, obstacles and recovery cases.
    Human and AI avatars need native ground/object/player contact and water
    buoyancy/current/drag with reactions. Cargo must contribute actual mass and
    inertia, including physical handling and retained private transfers.

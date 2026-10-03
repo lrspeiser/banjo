@@ -278,6 +278,7 @@ class Playground:
         # will; a live world is a running physics engine with a scene resident
         # in it, so there is one at a time and opening another closes the first.
         self.live = live_session.Live()
+        self.terrain_view = player_world.TerrainView()
         # Which page opened it: "world" (the room on /world, and the chat
         # opening it again) or "lab" (the lab page's stage), for /api/status.
         self.live_holder = None
@@ -2115,6 +2116,9 @@ class Handler(BaseHTTPRequestHandler):
                 # The notebook revision the page has shown: the answer carries
                 # the notebook when the server's is newer (with_notebook).
                 if not isinstance(body,dict): raise ValueError("Expected a live action object")
+                requested_step=body.get('op')=='step'
+                terrain_seen=body.pop('terrain_seen',None)
+                player_world.TerrainView.validate(terrain_seen)
                 seen=body.pop("notebook_seen",None)
                 app=self.app
                 if fabrication_room.active(app) and body.get('op')=='behave' and body.get('doing') not in ('','waiting'):
@@ -2192,6 +2196,8 @@ class Handler(BaseHTTPRequestHandler):
                 gameplay_room.sync(self.app, answer)
                 fabrication_room.sync(self.app, answer)
                 remember_ground(self.app,body,answer)
+                if player and requested_step:
+                    app.terrain_view.attach(app.live,terrain_seen,answer)
                 if isinstance(body,dict) and body.get("op")=="strike": note_strike(self.app,answer)
                 if player:
                     answer["players"] = player_world.visible(app)
@@ -3665,6 +3671,8 @@ def heard(app,session,reply):
     """Every reply of the person's live room: to their notebook (hear), and to
     whoever listens for a while (app.reply_listeners, a tool's use). A listener
     that fails is logged and never stops the room."""
+    view=getattr(app,'terrain_view',None)
+    if view is not None and session is app.live.session:view.observe(session,reply)
     hear(app,session,reply)
     for listener in list(getattr(app,"reply_listeners",None) or ()):
         try: listener(session,reply)

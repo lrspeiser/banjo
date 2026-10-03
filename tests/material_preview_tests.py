@@ -1,12 +1,17 @@
 """Material candidates and actual player collection agree; inspection grants nothing."""
 from copy import deepcopy
+from contextlib import contextmanager, nullcontext
 import base64
 import json
+import math
 import os
 from pathlib import Path
 import sys
+import struct
+import threading
 import time
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -18,6 +23,83 @@ import qa_browser
 import tool_use
 import tool_use_tests as controls
 import world_goods_tests as goods
+import player_world
+
+
+class TerrainDelivery(unittest.TestCase):
+    def test_independent_acknowledgements_retry_and_private_accounts(self):
+        view=player_world.TerrainView();reads=[]
+        live=SimpleNamespace(session=SimpleNamespace(id='native-1'),checkpoint=nullcontext)
+        def read(request):
+            reads.append(request)
+            reply={'terrain':{'grid':{'nx':2},'runs_b64':'native runs','carried':{'sand_kg':12}}}
+            view.observe(live.session,reply)
+            return reply
+        live.act=read
+        first={};view.attach(live,None,first)
+        self.assertNotIn('carried',first['terrain']);self.assertEqual(1,len(reads))
+        first['terrain']['grid']['nx']=999
+        retry={};view.attach(live,None,retry)
+        self.assertEqual(2,retry['terrain']['grid']['nx']);self.assertEqual(1,len(reads))
+        quiet={};view.attach(live,retry['terrain_version'],quiet)
+        self.assertNotIn('terrain',quiet)
+        view.observe(live.session,{'terrain':{**view.geometry,'carried':{'soil_kg':99}}})
+        still_quiet={};view.attach(live,retry['terrain_version'],still_quiet)
+        self.assertNotIn('terrain',still_quiet,'An unchanged full read or private load must not repaint terrain')
+        # Another caller/clock consumed the changed rectangle. Both viewers
+        # must independently catch up, without a growing history or user map.
+        view.observe(live.session,{'terrain_changed':{'box':[0,0,1,1]}})
+        a={};view.attach(live,retry['terrain_version'],a)
+        b={};view.attach(live,retry['terrain_version'],b)
+        self.assertEqual(a,b);self.assertEqual(2,len(reads))
+        self.assertNotIn('carried',b['terrain'])
+        live.session=SimpleNamespace(id='native-2')
+        changed={};view.attach(live,b['terrain_version'],changed)
+        self.assertEqual('native-2',changed['terrain_version']['session']);self.assertEqual(3,len(reads))
+
+    def test_pose_replies_do_not_invalidate_and_client_cursors_have_no_state_authority(self):
+        view=player_world.TerrainView();session=SimpleNamespace(id='s')
+        view.observe(session,{'terrain_changed':{'box':[0,0,1,1]}})
+        stamp=(view.session,view.revision)
+        view.observe(session,{'bodies':[],'carried':{'sand_kg':4}})
+        self.assertEqual(stamp,(view.session,view.revision))
+        for bad in ({'session':'s','revision':True},{'session':'s','revision':-1},
+                    {'session':'s','revision':2**53},{'session':'s','revision':0,'stock':5},'s'):
+            with self.subTest(bad=bad),self.assertRaises(ValueError):view.validate(bad)
+        view.validate(None);view.validate({'session':'s','revision':0})
+
+    def test_capture_and_native_reply_keep_the_same_lock_order(self):
+        view=player_world.TerrainView();native=threading.RLock()
+        held=threading.Event();attempt=threading.Event();listen=threading.Event()
+        replied=threading.Event();captured=threading.Event();errors=[]
+        session=SimpleNamespace(id='concurrent-native')
+        @contextmanager
+        def checkpoint():
+            attempt.set()
+            with native:yield
+        def read(request):
+            attempt.set()
+            with native:
+                reply={'terrain':{'grid':{'nx':2},'runs_b64':'latest'}}
+                view.observe(session,reply)
+                return reply
+        live=SimpleNamespace(session=session,checkpoint=checkpoint,act=read)
+        def native_reply():
+            with native:
+                held.set();listen.wait(2)
+                view.observe(session,{'terrain_changed':{'box':[0,0,1,1]}})
+                replied.set()
+        answer={}
+        def capture():
+            try:view.attach(live,None,answer);captured.set()
+            except Exception as exc:errors.append(exc)
+        sender=threading.Thread(target=native_reply,daemon=True)
+        viewer=threading.Thread(target=capture,daemon=True)
+        sender.start();self.assertTrue(held.wait(2));viewer.start()
+        self.assertTrue(attempt.wait(2));listen.set()
+        self.assertTrue(replied.wait(2),'A native listener must not wait behind a blocked capture')
+        self.assertTrue(captured.wait(2));sender.join(1);viewer.join(1)
+        self.assertEqual([],errors);self.assertEqual('latest',answer['terrain']['runs_b64'])
 
 
 class Candidates(unittest.TestCase):
@@ -42,6 +124,19 @@ class Candidates(unittest.TestCase):
         self.assertEqual(['sand','soil'],resource_previews.ground_tool(survey,use,.2)['materials'])
         self.assertEqual(['sand'],resource_previews.ground_tool({**survey,'sand_m':.5},use,.2)['materials'])
 
+    def test_thin_film_and_loose_mixture_follow_actual_runs_not_coarse_contact_kind(self):
+        use=interaction_profiles.tool_use(controls.PICK)
+        film={'on_the_ground':True,'surface':'soil','sand_m':.005,'soil_m':1,
+              'runs':[{'material':'soil'},{'material':'sand'}]}
+        self.assertEqual(['sand','soil'],resource_previews.ground_tool(film,use)['materials'])
+        # Loose sand/soil is one proportional native mixture, not ordered beds.
+        mixed={**film,'surface':'sand','sand_m':.15,'loose_soil_m':.25,
+               'runs':[{'material':'soil'},{'material':'loose soil'}]}
+        self.assertEqual(['soil','sand'],resource_previews.ground_tool(mixed,use)['materials'])
+        for material in ('rock','clay','ore','oxidised ore'):
+            buried={**film,'runs':[{'material':'soil'},{'material':material}]}
+            self.assertEqual([],resource_previews.ground_tool(buried,use)['materials'])
+
     def test_custom_tools_share_readonly_preview_without_receipts_or_inventory_changes(self):
         app=controls.app_with()
         app.room.spec['interactions'][0]['object']='LLM custom spade'
@@ -59,6 +154,117 @@ class PlayerMaterials(unittest.TestCase):
     get,post,join=fixture.AutonomousGuests.get,fixture.AutonomousGuests.post,fixture.AutonomousGuests.join
     setUp,start,stop,tearDown,setup_world=(fixture.AutonomousGuests.setUp,fixture.AutonomousGuests.start,
         fixture.AutonomousGuests.stop,fixture.AutonomousGuests.tearDown,fixture.AutonomousGuests.setup_world)
+
+    def test_actual_tool_exposes_soil_and_private_storage_peer_restart_agree(self):
+        import starter_goals_tests as camp
+        with mock.patch.object(fixture.server.secrets,'randbelow',side_effect=[1,851269741]):
+            world,owner,app=self.setup_world()
+        peer=self.join(world,'Layer observer');token=owner['token']
+        sid=app.live.session.id
+        # Isolate pick extraction from the independently running ore rover.
+        for program in app.live.session.state['machines']['programs']:
+            self.post('/api/world/machine',{'session':sid,'program':program['id'],'power':False,
+                'sender':'layer-comparison','seq':1},world)
+        first=self.post('/api/workshop/goals',{},world)
+        pile=app.brains.goods.by_name(first['goals'][0]['guide']['resource']);at=pile['at_m']
+        floor=self.post('/api/live/act',{'session':sid,'op':'survey','at':at},world)['survey']['ground_m']
+        self.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],'request_id':'layer-wood',
+            'person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[1,0,0]}},world)
+        built=camp.make_paid(self,world,token,first['recipe'],[-1.4,-.6],'layer-pick')
+        self.assertTrue(built['resources_charged']);root=built['root_body']
+        sid=app.live.session.id;x,z=-.9,.025;target=[.3,.025]
+        floor=self.post('/api/live/act',{'session':sid,'op':'survey','at':[x,z]},world)['survey']['ground_m']
+        person={'standing_m':[x,floor,z],'eyes_m':[x,floor+1.62,z],'facing':[1,0,0]}
+        self.assertTrue(self.post('/api/world/inventory',{'session':sid,'op':'take_up','item':root,
+            'request':'layer-equip','person':person},world)['ok'])
+        def survey(player=None):
+            return self.post('/api/live/act',{'session':sid,'op':'survey','at':target},world,player)['survey']
+        def inventory(player=None):return self.post('/api/workshop/inventory',{},world,player)
+        before=survey();self.assertEqual('sand',before['runs'][-1]['material'])
+        frame=self.post('/api/live/act',{'session':sid,'op':'step','dt':1/240,'n':1},world,peer['token'])
+        peer_version=frame.get('terrain_version')
+        reserves=deepcopy(app.brains.goods.holders()['deposits'])
+        reports=[];stored=[];saw_film=False;totals={'sand':0.,'soil':0.}
+        for n in range(40):
+            current=survey();self.assertEqual(current,survey(peer['token']))
+            point=[target[0],current['ground_m'],target[1]]
+            person['look_direction']=[point[0]-x,point[1]-floor-1.62,point[2]-z]
+            preview=self.post('/api/world/tool',{'session':sid,'person':person,'at_m':point},world)
+            self.assertTrue(preview['enabled'],preview)
+            candidates=preview['gather']['materials']
+            if current['surface']=='soil' and current['runs'][-1]['material']=='sand':
+                saw_film=True;self.assertIn('sand',candidates)
+            if current['runs'][-1]['material']=='soil':
+                self.assertEqual(['soil'],candidates)
+            load=inventory()['ground_load'];replies=[];errors=[]
+            def use():
+                try:replies.append(self.post('/api/world/tool/use',{'session':sid,'person':person,'at_m':point},world))
+                except Exception as exc:errors.append(exc)
+            worker=threading.Thread(target=use,daemon=True);worker.start();deadline=time.monotonic()+25
+            while worker.is_alive() and time.monotonic()<deadline:
+                app.clock._tick(.05);time.sleep(.015)
+            worker.join(1);self.assertFalse(worker.is_alive());self.assertEqual([],errors)
+            result=replies[0]['result'];self.assertGreater(result['loosened_kg'],0,replies[0])
+            after=inventory()['ground_load']
+            delta={s:after[s+'_kg']-load[s+'_kg'] for s in totals}
+            for s,kg in delta.items():
+                if kg>1e-6:self.assertIn(s,candidates)
+                totals[s]+=kg
+            self.assertAlmostEqual(result['loosened_kg'],sum(delta.values()),delta=5e-5)
+            peer_frame=self.post('/api/live/act',{'session':sid,'op':'step','dt':1/240,'n':1,
+                'terrain_seen':peer_version},world,peer['token'])
+            self.assertTrue('terrain' in peer_frame,'A peer must receive ground changes consumed by tool/clock replies')
+            peer_version=peer_frame['terrain_version']
+            block=peer_frame['terrain'];grid=block['grid']
+            column=(math.floor((target[1]-grid['z0_m'])/grid['cell_m']+.5)*grid['nx']
+                    +math.floor((target[0]-grid['x0_m'])/grid['cell_m']+.5))
+            raw=base64.b64decode(block['runs_b64']);cursor=0
+            for _ in range(column):cursor+=1+3*raw[cursor]
+            top_kind=raw[cursor+1+3*(raw[cursor]-1)]
+            exposed=survey()['runs'][-1]['material']
+            self.assertEqual({'sand':2,'soil':1}[exposed],top_kind)
+            center=[grid['x0_m']+(column%grid['nx'])*grid['cell_m'],
+                    grid['z0_m']+(column//grid['nx'])*grid['cell_m']]
+            measured=self.post('/api/live/act',{'session':sid,'op':'survey','at':center},world)['survey']['ground_m']
+            height=struct.unpack_from('<f',base64.b64decode(block['heights_b64']),4*column)[0]
+            self.assertAlmostEqual(measured,height,delta=1e-6)
+            self.assertEqual(0,block.get('carried',{}).get('total_kg',0),
+                'The shared geometry response can include only this peer\'s own carried load')
+            self.assertEqual(0,inventory(peer['token'])['ground_load']['total_kg'])
+            reports.append({'before':current,'candidates':candidates,'result':result,'collected_kg':delta,
+                'peer_top_kind':top_kind,'peer_column_height_m':height,
+                'peer_geometry_bytes':len(json.dumps(block,separators=(',',':')).encode())})
+            if after['total_kg']>55 or current['runs'][-1]['material']=='soil':
+                request={'session':sid,'scene':app.room.scene,'request_id':f'layer-store-{n}',
+                    'revision':app.room.fabrication_record['revision'],
+                    **{s+'_m3':after[s+'_m3'] for s in totals}}
+                stored.append(self.post('/api/world/fabrication/store_ground',request,world))
+                sid=stored[-1]['session']
+                self.assertEqual(sid,app.live.session.id)
+            print(f'layer stroke {n+1}: {current["surface"]}, sand={current["sand_m"]:.6f} m, {delta}',flush=True)
+            if current['runs'][-1]['material']=='soil':break
+        else:self.fail('Actual repeated tool work did not expose soil within 40 strokes')
+        self.assertTrue(saw_film,'The run/coarse-contact boundary must actually be crossed')
+        final=survey();own=inventory();other=inventory(peer['token'])
+        self.assertEqual('soil',final['runs'][-1]['material'])
+        self.assertEqual([],other['stored_ground']);self.assertEqual(0,other['ground_load']['total_kg'])
+        self.assertEqual(reserves,app.brains.goods.holders()['deposits'],'Pick work must not consume ledger ore')
+        for s,total in totals.items():
+            received=sum(lot['mass_kg'] for lot in own['stored_ground'] if lot['substance']==s)
+            self.assertAlmostEqual(total,received,delta=5e-5)
+        self.assertTrue(fixture.server.keep_world(app,'save real exposed-layer acceptance'))
+        self.stop();self.start();self.post('/api/world/open',{},world);app=self.app.hub.get(world);sid=app.live.session.id
+        self.assertEqual(final,survey());self.assertEqual(final,survey(peer['token']))
+        self.assertEqual(own['stored_ground'],inventory()['stored_ground'])
+        self.assertEqual(other['stored_ground'],inventory(peer['token'])['stored_ground'])
+        reopened=self.post('/api/live/act',{'session':sid,'op':'step','dt':1/240,'n':1,
+            'terrain_seen':peer_version},world,peer['token'])
+        for key in ('heights_b64','ground_b64','runs_b64'):
+            self.assertTrue(peer_frame['terrain'][key]==reopened['terrain'][key],key+' changed across restart')
+        output=ROOT/'build/material-readability';output.mkdir(parents=True,exist_ok=True)
+        (output/'layer-acceptance.json').write_text(json.dumps({'terrain_seed':7,'terrain_cell_m':.25,
+            'manufacture_cell_m':.05,'dt_s':1/240,'strokes':reports,'stored':own['stored_ground'],
+            'final':final,'restart_retained':True,'peer_credited_kg':0,'ore_reserve_unchanged':True},indent=2),encoding='utf-8')
 
     def test_output_thumbnail_collect_button_credits_only_actual_personal_goods(self):
         if not qa_browser.CHROME.is_file():
