@@ -227,7 +227,8 @@ class PlayerMaterials(unittest.TestCase):
             worker.join(1);self.assertFalse(worker.is_alive());self.assertEqual([],errors)
             result=replies[0]['result'];self.assertGreater(result['loosened_kg'],0,replies[0])
             after=inventory()['ground_load']
-            delta={s:after[s+'_kg']-load[s+'_kg'] for s in totals}
+            self.assertEqual(0,sum(after[s+'_kg'] for s in totals),'Output goes to piles, not a filling hand load')
+            delta={s:sum(p['kg'] for p in replies[0].get('excavation_piles',[]) if p['material']==s) for s in totals}
             for s,kg in delta.items():
                 if kg>1e-6:self.assertIn(s,candidates)
                 totals[s]+=kg
@@ -255,13 +256,15 @@ class PlayerMaterials(unittest.TestCase):
             reports.append({'before':current,'candidates':candidates,'result':result,'collected_kg':delta,
                 'peer_top_kind':top_kind,'peer_column_height_m':height,
                 'peer_geometry_bytes':len(json.dumps(block,separators=(',',':')).encode())})
-            if after['total_kg']>55 or current['runs'][-1]['material']=='soil':
-                request={'session':sid,'scene':app.room.scene,'request_id':f'layer-store-{n}',
-                    'revision':app.room.fabrication_record['revision'],
-                    **{s+'_m3':after[s+'_m3'] for s in totals}}
-                stored.append(self.post('/api/world/fabrication/store_ground',request,world))
-                sid=stored[-1]['session']
-                self.assertEqual(sid,app.live.session.id)
+            if sum(totals.values())>55 or current['runs'][-1]['material']=='soil':
+                for pile in app.brains.goods.stockpiles:
+                    if not pile.get('excavated') or not pile['holds']:continue
+                    at=pile['at_m'];h=self.post('/api/live/act',{'session':sid,'op':'survey','at':at},world)['survey']['ground_m']
+                    request={'session':sid,'pile':pile['name'],'request_id':f'layer-collect-{n}-{pile["excavated"]}',
+                        'person':{'eyes_m':[at[0],h+1.62,at[1]],'facing':[1,0,0]}}
+                    stored.append(self.post('/api/world/goods/collect',request,world))
+                    repeated=self.post('/api/world/goods/collect',request,world)
+                    self.assertTrue(repeated['repeated'])
             print(f'layer stroke {n+1}: {current["surface"]}, sand={current["sand_m"]:.6f} m, {delta}',flush=True)
             if current['runs'][-1]['material']=='soil':break
         else:self.fail('Actual repeated tool work did not expose soil within 40 strokes')
@@ -271,13 +274,14 @@ class PlayerMaterials(unittest.TestCase):
         self.assertEqual([],other['stored_ground']);self.assertEqual(0,other['ground_load']['total_kg'])
         self.assertEqual(reserves,app.brains.goods.holders()['deposits'],'Pick work must not consume ledger ore')
         for s,total in totals.items():
-            received=sum(lot['mass_kg'] for lot in own['stored_ground'] if lot['substance']==s)
+            received=self.personal(app,owner).get(s,0)
             self.assertAlmostEqual(total,received,delta=5e-5)
         self.assertTrue(fixture.server.keep_world(app,'save real exposed-layer acceptance'))
         self.stop();self.start();self.post('/api/world/open',{},world);app=self.app.hub.get(world);sid=app.live.session.id
         self.assertEqual(getattr(self,'surface','smooth'),app.room.spec['terrain'].get('surface','smooth'))
         self.assertEqual(final,survey());self.assertEqual(final,survey(peer['token']))
         self.assertEqual(own['stored_ground'],inventory()['stored_ground'])
+        for s,total in totals.items():self.assertAlmostEqual(total,self.personal(app,owner).get(s,0),delta=5e-5)
         self.assertEqual(other['stored_ground'],inventory(peer['token'])['stored_ground'])
         reopened=self.post('/api/live/act',{'session':sid,'op':'step','dt':1/240,'n':1,
             'terrain_seen':peer_version},world,peer['token'])
@@ -383,7 +387,9 @@ class PlayerMaterials(unittest.TestCase):
         self.assertGreater(receipt['loosened_kg'],0)
         self.assertIn(receipt['ground'],materials)
         carried=page.evaluate('banjoRoom.use().last.carried')
-        self.assertAlmostEqual(receipt['loosened_kg'],sum(carried.get(k,0) for k in ('soil_kg','sand_kg')),delta=5e-6)
+        self.assertEqual(0,sum(carried.get(k,0) for k in ('soil_kg','sand_kg')))
+        piles=page.evaluate('banjoRoom.use().last.excavation_piles')
+        self.assertAlmostEqual(receipt['loosened_kg'],sum(p['kg'] for p in piles),delta=5e-6)
         self.assertEqual(reserve,app.brains.goods.reserve_kg(deposit),'A pick use must not award the rover ledger ore')
         self.assertFalse([e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
         out=ROOT/'build/resource-flow';out.mkdir(parents=True,exist_ok=True)

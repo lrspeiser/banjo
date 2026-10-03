@@ -47,7 +47,7 @@ class ReceivingLedger(unittest.TestCase):
             fabrication.validate_ground_stock(state,native)
         self.assertAlmostEqual(.0023456789,ledger.totals(book)["holders"]["machine:a"]["soil_m3"],places=15)
 
-    def test_duplicate_corrupt_density_and_unsupported_rock_are_refused(self):
+    def test_duplicate_corrupt_density_and_wrong_quantities_are_refused(self):
         book=withdraw(None,"machine:a",.01,"a")
         with self.assertRaisesRegex(ValueError,"already"):
             ledger.prepare(book,"machine:a","withdraw",{"soil_m3":.01},"a")
@@ -56,8 +56,20 @@ class ReceivingLedger(unittest.TestCase):
                       lambda b:b["receipts"][0]["quantities"].update(soil_m3=.02)):
             bad=deepcopy(book); alter(bad)
             with self.assertRaises(ValueError): ledger.totals(bad)
-        with self.assertRaisesRegex(ValueError,"rock"):
-            ledger.prepare(None,"machine:a","withdraw",{"rock_m3":.01},"rock")
+        prepared=ledger.prepare(None,"machine:a","withdraw",{"rock_m3":.01},"rock")
+        rock=packet(.01);rock['form']='rubble';rock['contents'][0].update(substance='rock',mass_kg=.01*fabrication.GROUND_DENSITIES['rock'])
+        book=ledger.accept(prepared,'machine:a','withdraw','rock',{'material_packet':rock})
+        self.assertEqual(.01,ledger.totals(book)['exported']['rock_m3'])
+
+    def test_many_pile_transfers_compact_exact_totals_without_filling_inventory(self):
+        book=None
+        for i in range(300):
+            prepared=ledger.prepare(book,'excavation:soil pile','withdraw',{'soil_m3':.01},str(i))
+            book=ledger.accumulate(prepared,'excavation:soil pile',str(i),{'material_packet':packet(.01)})
+        self.assertEqual(1,len(book['receipts']))
+        self.assertAlmostEqual(3,ledger.totals(book)['exported']['soil_m3'],places=12)
+        native={'ground':{'exported':{'soil_m3':3},'returned':{}}}
+        fabrication.validate_ground_stock({},native,book)
 
 
 class RuntimeAndSave(unittest.TestCase):

@@ -123,8 +123,10 @@ def _resolve(app: Any, body: dict[str, Any]) -> dict[str, Any]:
     if body.get('target_name') is not None:
         return _resolve_object(app,body,profile,use,out)
     carried = _carried(app)
+    import world_goods
+    piles = world_goods.auto_piles_enabled(app) and any(float(carried.get(s+'_m3') or 0)>0 for s in ('sand','soil','rock'))
     if (float(carried.get("limit_kg") or 0.0) > 0
-            and float(carried.get("available_kg", 1.0)) <= 0.0005):
+            and float(carried.get("available_kg", 1.0)) <= 0.0005 and not piles):
         out["reason"] = "Load full · digging stopped. Point at clear ground and press H to heap carried sand or soil."
         out["carried"] = carried
         return out

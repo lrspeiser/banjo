@@ -50,6 +50,13 @@ shape fit or stock in Inventory does not mean the workbench is funded. Wallet
 energy cannot directly fund manufacture. If the question concerns another
 mechanic, answer it from the measured observations and preserve that distinction.
 Inventory shows energy and rates; Market is where the player banks and buys.
+Digging sends actual measured ground output to nearby separate material piles.
+Click a pile within 2 m to collect the whole pile into personal raw materials;
+Inventory material storage has no gameplay weight limit. Do not ask players
+to stop digging to heap manually. If no nearby dry pile location is available,
+the material stays carried for recovery. Piles are shared goods ledger visuals,
+not calibrated physical heaps. Custom tools use this same gathering flow;
+authoring a tool does not grant a material yield or a missing native law.
 
 Energy rules: solar panels charge physical batteries. The player's spendable
 wallet is separate. Owned solar arrays automatically bank newly collected solar
@@ -117,11 +124,15 @@ def snapshot(app, player, journal, registry, focus=None):
         from mcp import progression
         learned = progression.tech_tree(journal, registry)
         selected=next((b for b in native.get('bodies',[]) if b.get('name')==focus), None)
+        pile_goods=getattr(getattr(app,'brains',None),'goods',None)
         return {'world':app.world_id, 'observed_native_t_s':native.get('t'),
                 'wallet_j':wallet['balance_j'], 'banking_available':wallet['bankable'],
                 'energy':energy, 'inventory':shown,
                 'materials':workshop_library.rack(app)['materials'],
                 'goods':workshop_library.goods_rack(app)['goods'],
+                'gathering':{'output':'nearby single-material piles','collection_reach_m':2,
+                    'inventory_weight_limit':None,'piles':deepcopy([
+                        p for p in (pile_goods.holders()['stockpiles'] if pile_goods else []) if p.get('excavated')][:30])},
                 'market':{'guidance':wallet['guidance'], 'offers':wallet['offers']},
                 'player_guidance':deepcopy(wallet['guidance'].get('player')),
                 'focused_object':deepcopy(selected),

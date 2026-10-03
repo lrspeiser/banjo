@@ -119,7 +119,7 @@ class RoomStore:
         record["energy_banks"] = banks
         claims=getattr(room,'goods_claims',[])
         import world_goods
-        world_goods.validate(claims,getattr(room,'player_records',{}))
+        world_goods.validate(claims,getattr(room,'player_records',{}),collection=True)
         record['goods_claims']=claims
         deliveries=getattr(room,'goods_deliveries',[])
         world_goods.validate(deliveries,getattr(room,'player_records',{}))
@@ -259,7 +259,7 @@ class RoomStore:
         room.player_records = record["players"] if isinstance(record.get("players"), dict) else {}
         import world_goods
         room.goods_claims=record.get('goods_claims',[])
-        world_goods.validate(room.goods_claims,room.player_records)
+        world_goods.validate(room.goods_claims,room.player_records,collection=True)
         room.goods_durable_claims={r['request_id'] for r in room.goods_claims}
         room.goods_deliveries=record.get('goods_deliveries',[])
         world_goods.validate(room.goods_deliveries,room.player_records)

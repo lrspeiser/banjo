@@ -56,9 +56,10 @@ def totals(book=None):
                 raise ValueError("Ground receiver needs an excavated native packet")
             actual = dict.fromkeys(KEYS, 0.0)
             for item in packet["contents"]:
-                if item["substance"] not in ("sand","soil"):
+                from .fabrication import GROUND_DENSITIES
+                if item["substance"] not in GROUND_DENSITIES:
                     raise ValueError("Unsupported excavated substance")
-                if not math.isclose(item["mass_kg"], item["volume_m3"] * 1600,
+                if not math.isclose(item["mass_kg"], item["volume_m3"] * GROUND_DENSITIES[item["substance"]],
                                     rel_tol=1e-12, abs_tol=1e-10):
                     raise ValueError("Ground transfer mass does not match native volume")
                 actual[item["substance"] + "_m3"] += item["volume_m3"]
@@ -84,8 +85,6 @@ def prepare(book, holder, op, amounts, ident):
     """Validate before touching the native source; no history can be discarded."""
     state = totals(book)
     amounts = quantities(amounts)
-    if amounts["rock_m3"]:
-        raise ValueError("Native bulk packets do not yet support excavated rock")
     if not isinstance(ident, str) or not 1 <= len(ident) <= 128:
         raise ValueError("Invalid ground transfer id")
     if not isinstance(holder, str) or not 1 <= len(holder) <= 256:
@@ -108,7 +107,8 @@ def accept(prepared, holder, op, ident, reply):
         bulk_packet(packet)
         amounts = dict.fromkeys(KEYS, 0.0)
         for item in packet["contents"]:
-            if item["substance"] not in ("sand","soil"): raise ValueError("Unsupported excavated substance")
+            from .fabrication import GROUND_DENSITIES
+            if item["substance"] not in GROUND_DENSITIES: raise ValueError("Unsupported excavated substance")
             amounts[item["substance"] + "_m3"] += item["volume_m3"]
     else:
         packet, amounts = None, dict(reply["ground_returned"])
@@ -116,3 +116,25 @@ def accept(prepared, holder, op, ident, reply):
                                 "packet": packet, "quantities": amounts})
     totals(prepared)
     return prepared
+
+
+def accumulate(prepared, holder, ident, reply):
+    """Keep exact native totals for repeated single-material pile receipts.
+
+    Each compacted row stays within the existing 100 m³ receipt bound. This
+    stores source quantities, never a predicted yield or a terrain animation.
+    """
+    out = accept(prepared, holder, 'withdraw', ident, reply)
+    newest = out['receipts'][-1]
+    for old in out['receipts'][:-1]:
+        if (old['holder'] == holder and old['op'] == 'withdraw'
+            and len(old['packet']['contents']) == len(newest['packet']['contents']) == 1
+            and old['packet']['contents'][0]['substance'] == newest['packet']['contents'][0]['substance']
+            and all(old['quantities'][k] + newest['quantities'][k] <= 100 for k in KEYS)):
+            for key in KEYS: old['quantities'][key] += newest['quantities'][key]
+            for key in ('volume_m3', 'mass_kg'):
+                old['packet']['contents'][0][key] += newest['packet']['contents'][0][key]
+            out['receipts'].pop()
+            break
+    totals(out)
+    return out

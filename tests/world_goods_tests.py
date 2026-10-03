@@ -27,6 +27,56 @@ class GoodsJourney(unittest.TestCase):
     stop=fixture.AutonomousGuests.stop
     get=fixture.AutonomousGuests.get
     post=fixture.AutonomousGuests.post
+
+    def test_older_owned_ground_moves_to_separate_piles_and_bulk_collection_is_durable(self):
+        import live_session
+        from mcp import ground_transfers, fabrication
+        world,owner,app,_,_,_=self.batch(process=False)
+        peer=self.join(world,'Other gatherer');sid=app.live.session.id
+        def native(op,**args):return app.live.act({'session':sid,'op':op,**args})
+        target=[.3,.025]
+        with app.live.as_actor(owner['id']):
+            native('dig',**{'from':target,'width_m':1.,'depth_m':.3})
+            original=live_session.current_carried(app.live.session)
+            self.assertGreater(original['sand_kg']+original['soil_kg'],70)
+            floor=native('survey',at=target)['survey']['ground_m']
+            body={'at_m':[target[0],floor,target[1]],'person':{'eyes_m':[target[0]-1.2,floor+1.62,target[1]]}}
+            first=world_goods.heap_excavation(app,body)
+            self.assertTrue(first)
+            self.assertEqual([],world_goods.heap_excavation(app,body),'Retry cannot duplicate source output')
+            native('dig',**{'from':target,'width_m':1.,'depth_m':.3})
+            second=world_goods.heap_excavation(app,body)
+            self.assertTrue(second)
+            self.assertEqual(0,live_session.current_carried(app.live.session)['sand_kg'])
+        piles=[p for p in app.brains.goods.stockpiles if p.get('excavated')]
+        self.assertEqual(len(piles),len({p['excavated'] for p in piles}))
+        self.assertGreater(sum(sum(p['holds'].values()) for p in piles),80)
+        self.assertEqual(0,live_session.current_carried(app.live.session,peer['id'])['sand_kg'])
+        self.assertTrue(server.keep_world(app,'save automatic pile receiver'))
+        saved=app.room.world_record
+        fabrication.validate_ground_stock(app.room.fabrication_record or {},saved,app.room.ground_transfers)
+        self.assertEqual(len(piles),len(app.room.ground_transfers['receipts']),'Repeated source receipts compact per material')
+        self.stop();self.start();self.post('/api/world/open',{},world);app=self.app.hub.get(world);sid=app.live.session.id
+        self.assertEqual(piles,[p for p in app.brains.goods.stockpiles if p.get('excavated')])
+        received={}
+        for pile in piles:
+            at=pile['at_m'];floor=app.live.act({'session':sid,'op':'survey','at':at})['survey']['ground_m']
+            request={'session':sid,'pile':pile['name'],'request_id':'bulk-'+pile['excavated'],
+                'person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[1,0,0]}}
+            initial=deepcopy(pile['holds'])
+            balance_before=self.personal(app,owner)
+            with mock.patch.object(server,'keep_world',return_value=False):
+                with self.assertRaises(urllib.error.HTTPError):self.post('/api/world/goods/collect',request,world)
+            self.assertEqual(balance_before,self.personal(app,owner),'Failed save cannot credit unsaved stock')
+            self.assertEqual(initial,self.post('/api/world/goods/collect',request,world)['collected'])
+            self.assertTrue(self.post('/api/world/goods/collect',request,world)['repeated'])
+            received.update(initial)
+        self.assertEqual(set(received),set(self.personal(app,owner)))
+        for s,kg in received.items():self.assertAlmostEqual(kg,self.personal(app,owner)[s],delta=5e-5)
+        self.assertEqual({},self.personal(app,peer))
+        self.stop();self.start();self.post('/api/world/open',{},world);app=self.app.hub.get(world)
+        for s,kg in received.items():self.assertAlmostEqual(kg,self.personal(app,owner)[s],delta=5e-5)
+        self.assertTrue(all(not p['holds'] for p in app.brains.goods.stockpiles if p.get('excavated')))
     join=fixture.AutonomousGuests.join
     setup_world=fixture.AutonomousGuests.setup_world
 
@@ -712,9 +762,9 @@ class GoodsJourney(unittest.TestCase):
         initial=pile['holds']['oak']
         answer=self.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],
             'request_id':'collect-oak','person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[0,0,-1]}},world)
-        self.assertEqual({'oak':25.0},answer['collected'])
-        self.assertAlmostEqual(initial-25,pile['holds']['oak'],places=6)
-        self.assertEqual({'oak':25.0},self.personal(app,owner))
+        self.assertEqual({'oak':initial},answer['collected'])
+        self.assertEqual({},pile['holds'])
+        self.assertEqual({'oak':initial},self.personal(app,owner))
         token=workshop_library.REQUEST_OWNER.set(owner['id'])
         try:
             oak=next(r for r in workshop_library.rack(app)['materials'] if r['material']=='oak')

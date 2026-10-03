@@ -1977,8 +1977,7 @@ async function showInventory() {
   $("#ws-inv-grid").replaceChildren(...carried);
   $("#ws-inv-note").textContent = carried.length ? "Place → World · Edit → Lab" : "Empty · Pick up items in World";
   const load=inv.ground_load || {};
-  const budget=energyCard("▦","Your load",[["Carried",kgSaid(load.total_kg)],["Capacity",kgSaid(load.limit_kg)]]);
-  budget.append(make("a",{class:"ws-action",href:homeWorld(),title:"In World, press H to heap your carried sand and soil"},"Heap → World"));
+  const budget=energyCard("▦","Material storage",[["Inventory","No weight limit"],["Digging","Nearby material piles"]]);
   const groundCards=(account,where) => ["sand","soil","rock"].filter(s => Number(account?.[`${s}_kg`])>.0005)
     .map(s => {
       const card=make("article",{class:"ws-product-card","data-ground-load":s});
@@ -2020,10 +2019,11 @@ async function showInventory() {
     retry.onclick=()=>guard(retry,()=>transferInventoryGround(pending.operation,pending.material,
       pending.request[`${pending.material}_m3`],pending.lot));card.append(retry);pendingBox.append(card);
   }
-  const stock = (inv.materials || []).filter(r => r.mass_kg > 0).map(r => resourceTile(r,"box"));
+  const groundGoods=(inv.goods || []).filter(r=>['sand','soil','rock'].includes(r.substance));
+  const stock = [...(inv.materials || []),...groundGoods].filter(r => r.mass_kg > 0).map(r => resourceTile(r,"box"));
   $("#ws-inv-stock").replaceChildren(...stock);
   $("#ws-inv-stock-empty").hidden = stock.length > 0;
-  const goods = (inv.goods || []).filter(r => r.mass_kg > 0).map(r => resourceTile(r,"sphere"));
+  const goods = (inv.goods || []).filter(r => r.mass_kg > 0 && !['sand','soil','rock'].includes(r.substance)).map(r => resourceTile(r,"sphere"));
   $("#ws-inv-goods").replaceChildren(...goods);
   $("#ws-inv-goods-empty").hidden = goods.length > 0;
   const reserved = (inv.fabrication_reservations || []).map(row => {

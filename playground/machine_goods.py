@@ -285,7 +285,7 @@ class Goods:
             "stockpiles": [{"name": s.get("name"), "at_m": _xz(s["at_m"]),
                             "holds_kg": {k: round(float(v), 3) for k, v in (s.get("holds") or {}).items()
                                          if float(v) > 0.0},
-                            "rack": bool(s.get("rack"))}
+                            "rack": bool(s.get("rack")), "excavated": s.get("excavated")}
                            for s in self.stockpiles],
             "deposits": [{"name": d.get("name"), "at_m": _xz(d["at_m"]),
                           "substance": d.get("substance"),
@@ -369,6 +369,10 @@ def checked(given: Any) -> dict[str, Any]:
                 "holds": masses(s.get("holds") or {}, f"stockpile {n!r} holds")}
         if s.get("rack"):
             made["rack"] = True
+        if s.get('excavated') is not None:
+            if s['excavated'] not in ('sand','soil','rock') or made.get('rack') or set(made['holds']) - {s['excavated']}:
+                raise ValueError('An excavation pile holds one measured ground material')
+            made['excavated'] = s['excavated']
         out["stockpiles"].append(made)
     for i, r in enumerate(given.get("recipes") or []):
         if not isinstance(r, dict):

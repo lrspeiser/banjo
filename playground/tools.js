@@ -258,6 +258,7 @@ export function makeTools(ctx) {
     // A finished stroke can carry a newer personal journal, even if the
     // player has since put down the tool. Do not wait for another live step.
     if (answer?.notebook) showNotebook(answer.notebook, true);
+    if (answer?.goods) ctx.followGoods?.(answer.goods);
     if (answer?.inventory) {
       world.inventory = answer.inventory;
       showInventory?.();

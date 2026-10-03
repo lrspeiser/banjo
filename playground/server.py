@@ -2084,7 +2084,21 @@ class Handler(BaseHTTPRequestHandler):
                 player_world.update_pose(self.app,player,body.get('person'))
                 player_learning.require_capacity(self.app)
                 with (self.app.live.as_actor(player) if player else nullcontext()):
+                    import world_goods
+                    # Recover earlier carried loads at the current dig site,
+                    # then empty the measured output after the native stroke.
+                    piles=world_goods.heap_excavation(self.app,body)
                     answer=tool_use.run(self.app,body,note=note_strike)
+                    piles+=world_goods.heap_excavation(self.app,body)
+                    if piles:
+                        answer['excavation_piles']=piles
+                        answer['goods']=self.app.brains.goods.holders()
+                        answer['carried']=live_session.current_carried(self.app.live.session)
+                        answer['said']=' · '.join(f"{p['material'].title()} · {p['kg']:.1f} kg → nearby pile" for p in piles)
+                    carried=live_session.current_carried(self.app.live.session)
+                    if world_goods.auto_piles_enabled(self.app) and any(float(carried.get(s+'_m3') or 0)>0 for s in ('sand','soil','rock')) and not body.get('target_name'):
+                        answer['excavation_blocked']=True
+                        answer['said']=(answer.get('said') or '')+' No clear dry pile spot here. Move a few steps to keep digging; the remaining material is retained.'
                 # Reconcile native separation before saving the paired world
                 # and return the current hand/bag even after refused readiness.
                 answer['inventory']=inventory_room.shown(self.app,player)

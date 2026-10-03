@@ -7,6 +7,29 @@ const source=(await readFile(new URL('../playground/tools.js',import.meta.url),'
   .replace('"/vendor/three.module.js"',JSON.stringify(new URL('../playground/vendor/three.module.js',import.meta.url).href));
 const {makeTools}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
 
+test('pile clicks precede tool use and recheck exact-ray occlusion and reach',async()=>{
+  const full=await readFile(new URL('../playground/world.js',import.meta.url),'utf8');
+  const code=full.slice(full.indexOf('canvas.addEventListener("pointerdown", (e) => {'),full.indexOf('canvas.addEventListener("pointermove", (e) => {'));
+  for(const mode of ['clear','occluded','far','input']) {
+    let callback, collected=0, strokes=0;const requests=[],messages=[];
+    const camera=new THREE.PerspectiveCamera();camera.position.set(0,1.62,0);
+    const direction=new THREE.Vector3(1,-1,0).normalize();
+    const pile={name:'soil pile',at_m:mode==='far'?[3,0]:[1,0]};
+    const visual={pick:()=>({pile,distance:1.8,role:mode==='input'?'input':'stock'}),collectPile:async()=>{collected++;}};
+    const install=new Function('canvas','camera','aimVector','resourceVisuals','act','THREE','pressPrimary','lastAction',
+      'let cursorFree=false,resumeClick=false,primaryUsed=false,cursor,drag;const watchedId=null,world={held:{pick:{}}},looking=false;'+
+      'const cursorAt=e=>({px:e.clientX,py:e.clientY}),markAt=()=>{},offerStick=()=>{},setCursorFree=()=>{};'+code);
+    install({addEventListener:(_,fn)=>{callback=fn;},setPointerCapture(){}},camera,()=>direction.clone(),visual,
+      async(op,args)=>{requests.push(args);return mode==='occluded'?{hit:true,point_m:[.1,1.52,0]}:{hit:false};},THREE,
+      ()=>{strokes++;return true;},message=>messages.push(message));
+    callback({button:0,clientX:100,clientY:200});await new Promise(setImmediate);
+    assert.equal(collected,mode==='clear'?1:0);
+    assert.equal(strokes,mode==='input'?1:0,'collectible pile clicks never swing the held tool');
+    if(mode!=='input')assert.deepEqual(requests[0].dir,direction.toArray(),'native check uses the click ray');
+    if(mode==='far')assert.match(messages[0],/within 2 m/);
+  }
+});
+
 test('idle contact hand ignores hover targets before and after use',()=>{
   const camera=new THREE.PerspectiveCamera();camera.position.set(0,1.62,0);
   const world={held:{pick:{}},use:{mode:'tool-ready',target:{gesture:'contact',ready:{hand:[1,-1,-1]}}}};

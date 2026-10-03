@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import uuid
 from copy import deepcopy
 import workshop_library
 import player_world
@@ -17,9 +18,71 @@ REQUEST = re.compile(r'[A-Za-z0-9_-]{1,96}')
 REACH_M = 2.0
 MAX_CLAIMS = 2048
 MAX_DELIVERY_KG = 25.
+MAX_COLLECTION_KG = 1e9  # Storage is a personal ledger, not a hand load.
 
 
-def validate(claims, players):
+def auto_piles_enabled(app):
+    return bool(getattr(app,'world_id',None) and getattr(getattr(app,'brains',None),'goods',None)
+                and getattr(getattr(app,'live',None),'session',None))
+
+
+def heap_excavation(app, body):
+    """Move actual actor-owned native output to nearby single-material piles.
+
+    These are receiving ledger piles, like machine outputs, not new physical
+    terrain heaps. Save the native debit and host receiver in one checkpoint.
+    The source account makes retry/recovery naturally empty after withdrawal.
+    """
+    if not auto_piles_enabled(app) or body.get('target_name'): return []
+    at=body.get('at_m')
+    if not isinstance(at,(list,tuple)) or len(at)!=3 or any(type(v) not in (int,float) or not math.isfinite(v) for v in at): return []
+    import live_session
+    from mcp import ground_transfers
+    with world_access.state_lock(app):
+        session=app.live.session; goods=app.brains.goods
+        carried=live_session.current_carried(session)
+        materials=[s for s in ('sand','soil','rock') if float(carried.get(s+'_m3') or 0)>0]
+        if not materials:return []
+        # Perpendicular to the player's approach, outside the selected cell.
+        eyes=(body.get('person') or {}).get('eyes_m')
+        if not isinstance(eyes,list) or len(eyes)!=3 or math.hypot(eyes[0]-at[0],eyes[2]-at[2])>2.3:return []
+        vx,vz=at[0]-eyes[0],at[2]-eyes[2]; length=math.hypot(vx,vz) or 1
+        side=(-vz/length,vx/length) if math.hypot(vx,vz)>0 else (0,1)
+        moved=[]
+        for substance in materials:
+            pile=next((p for p in goods.stockpiles if p.get('excavated')==substance
+                and math.hypot(p['at_m'][0]-at[0],p['at_m'][1]-at[2])<=2),None)
+            if pile is None:
+                # Keep distinct material piles apart. Try the other side if
+                # a candidate is outside the map or underwater.
+                candidate=None
+                for radius,angle in ((r,a) for r in (1.1,1.7,2.2) for a in (0,math.pi,math.pi/4,-math.pi/4,3*math.pi/4,-3*math.pi/4,math.pi/2,-math.pi/2)):
+                    sx=side[0]*math.cos(angle)-side[1]*math.sin(angle)
+                    sz=side[0]*math.sin(angle)+side[1]*math.cos(angle)
+                    point=[at[0]+sx*radius,at[2]+sz*radius]
+                    if any(math.hypot(point[0]-p['at_m'][0],point[1]-p['at_m'][1])<.65 for p in goods.stockpiles):continue
+                    survey=app.live.act({'session':session.id,'op':'survey','at':point}).get('survey') or {}
+                    if survey.get('on_the_ground') and float((survey.get('water') or {}).get('depth_m',0))<=.01:
+                        candidate=point;break
+                if candidate is None:continue  # Retain source stock; never discard it.
+                pile={'name':f'{substance} pile '+uuid.uuid4().hex[:12],
+                      'at_m':candidate,'radius_m':.45,'holds':{},'excavated':substance}
+            quantities={s+'_m3':float(carried.get(s+'_m3') or 0) if s==substance else 0. for s in ('sand','soil','rock')}
+            ident=uuid.uuid4().hex; holder='excavation:'+pile['name']
+            prepared=ground_transfers.prepare(getattr(app.room,'ground_transfers',None),holder,'withdraw',quantities,ident)
+            reply=app.live.act({'session':session.id,'op':'ground_withdraw',**quantities})
+            received=ground_transfers.accumulate(prepared,holder,ident,reply)
+            kg=sum(v['mass_kg'] for v in reply['material_packet']['contents'])
+            if pile not in goods.stockpiles:goods.stockpiles.append(pile);goods._kept()
+            pile['holds'][substance]=float(pile['holds'].get(substance,0))+kg
+            app.room.ground_transfers=received
+            goods.activity('excavate',{substance:kg},{'point_m':list(at)},
+                           {'pile':pile['name']},'player')
+            moved.append({'pile':pile['name'],'material':substance,'kg':kg,'at_m':list(pile['at_m'])})
+        return moved
+
+
+def validate(claims, players, *, collection=False):
     if not isinstance(claims, list) or len(claims)>MAX_CLAIMS:
         raise ValueError('Invalid goods collection claims')
     ids=set()
@@ -31,7 +94,7 @@ def validate(claims, players):
             or any(not isinstance(k,str) or not k or isinstance(v,bool)
                    or not isinstance(v,(int,float)) or not math.isfinite(v) or v<=0
                    for k,v in r['goods'].items())
-            or sum(r['goods'].values())>25.000001):
+            or sum(r['goods'].values())>(MAX_COLLECTION_KG if collection else MAX_DELIVERY_KG)+.000001):
             raise ValueError('Invalid goods collection claim')
         ids.add(r['request_id'])
 
@@ -101,7 +164,7 @@ def collect(app,owner,body,keep):
     room=app.room
     claims=getattr(room,'goods_claims',None)
     if claims is None: claims=room.goods_claims=[]
-    validate(claims,player_world.records(app))
+    validate(claims,player_world.records(app),collection=True)
     old=next((r for r in claims if r['request_id']==request),None)
     if old:
         if old['owner']!=owner or old['pile']!=name:
@@ -127,7 +190,7 @@ def collect(app,owner,body,keep):
         raise ValueError('Stand beside the output on the ground to collect it')
     saved,refused=app.live.snapshot()
     if saved is None: raise ValueError('The world must be saveable before collection: '+str(refused))
-    taken=goods.take(*pile['at_m'],25,named=name)['took']
+    taken=goods.take(*pile['at_m'],MAX_COLLECTION_KG,named=name)['took']
     if not taken: raise ValueError('This output pile is empty')
     claim={'request_id':request,'owner':owner,'pile':name,'goods':taken}
     claims.append(claim)
@@ -235,10 +298,14 @@ def input_readiness(app,owner,pile,accepted):
         row['sources']=[{'name':d['name'],'at_m':d['at_m'],
             'left_kg':app.brains.goods.reserve_kg(d)}
             for d in app.brains.goods.deposits if d['substance']==substance]
+        row['piles']=[{'name':p['name'],'at_m':p['at_m'],'mass_kg':p['holds'][substance]}
+            for p in app.brains.goods.stockpiles if p.get('excavated')==substance and p['holds'].get(substance,0)>0]
+        row['pile_kg']=sum(p['mass_kg'] for p in row['piles'])
         row['next']=('processing' if row['hopper_kg']>=.000001 else
             'load_stored' if row['stored_kg']>=.000001 else
             'load_inventory' if row['mass_kg']>=.000001 else
             'store_ground' if row['carried_kg']>=.000001 else
+            'collect_pile' if row['pile_kg']>=.000001 else
             'gather_ground' if substance in fabrication.GROUND_DENSITIES else
             'mine_source' if any(d['left_kg']>0 for d in row['sources']) else
             'source_exhausted' if row['sources'] else 'find_supply')

@@ -81,7 +81,7 @@ def choices(app, owner, technique=None):
         store=stores.get(program.get('store'))
         for recipe in recipes:
             inputs=[deepcopy(quantities[s]) for s in recipe['in']]
-            own={r['substance']:r['hopper_kg']+r['mass_kg']+r['stored_personal_kg']+r['carried_kg'] for r in inputs}
+            own={r['substance']:r['hopper_kg']+r['mass_kg']+r['stored_personal_kg']+r['carried_kg']+r.get('pile_kg',0) for r in inputs}
             hopper=goods.convert(recipe['name'],dict(intake.get('holds') or {}),routine.batch_kg)
             available=goods.convert(recipe['name'],dict(own),routine.batch_kg)
             missing=[r['substance'] for r in inputs if own[r['substance']]<1e-6]
@@ -159,6 +159,10 @@ def _next(row,pose=None):
         if item['carried_kg']>=1e-6:
             return answer('Store '+name+' · Inventory',verb='store-ground',destination={'screen':'inventory'},
                 quantities={name+'_m3':item['carried_m3']},revision=row['raw_revision'])
+        if item.get('piles'):
+            pile=item['piles'][0]
+            return answer('Collect '+name+' · nearby pile',verb='collect',pile=pile['name'],
+                at_m=list(pile['at_m']),destination={'screen':'world','resource':pile['name']})
     if row['power_blocked']:
         return answer('Check power for '+row['machine'],verb='wait',status='Blocked',
             blockers=['Its measured battery cannot fund the next heating/work step'])

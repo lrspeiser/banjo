@@ -3668,10 +3668,15 @@ function goodsVisuals({scene,camera,groundAt,body,ports,colour,collect,readonly}
       }
       let n=0;
       for(const [what,kg] of slots) {
-        const count=Math.min(16,Math.max(1,Math.ceil(Math.sqrt(kg)*3)));
+        const count=p.excavated ? Math.min(30,Math.max(21,20+Math.ceil(Math.cbrt(kg)*4))) : Math.min(16,Math.max(1,Math.ceil(Math.sqrt(kg)*3)));
         const mesh=new THREE.InstancedMesh(cube,material(what),count);
         for(let i=0;i<count;i++,n++) {
-          matrix.position.set((n%5-2)*.16,.075+Math.floor(n/25)*.15,(Math.floor(n/5)%5-2)*.16);
+          if(p.excavated) {
+            const layer=i<16 ? 0 : i<25 ? 1 : i<29 ? 2 : 3, width=4-layer, cell=i-[0,16,25,29][layer];
+            matrix.scale.setScalar(1.4);
+            matrix.position.set((cell%width-(width-1)/2)*.19,.1+layer*.19,(Math.floor(cell/width)-(width-1)/2)*.19);
+          } else matrix.position.set((n%5-2)*.16,.075+Math.floor(n/25)*.15,(Math.floor(n/5)%5-2)*.16);
+          if(!p.excavated)matrix.scale.setScalar(1);
           matrix.updateMatrix();mesh.setMatrixAt(i,matrix.matrix);
         }
         group.add(mesh);
@@ -3731,8 +3736,8 @@ function goodsVisuals({scene,camera,groundAt,body,ports,colour,collect,readonly}
       .filter(p=>p.d<=2).sort((a,b)=>a.d-b.d)[0];
     pickup.hidden=!nearest || readonly();
     if(!busy && nearest && now>failureUntil) {
-      const kg=Math.min(25,Object.values(nearest.holds_kg).reduce((a,v)=>a+v,0));
-      pickup.textContent=retry ? `Retry collection · ${retry.pile}` : `Collect ${heldSaid(kg)} · ${nearest.name} → Your inventory`;
+      const kg=Object.values(nearest.holds_kg).reduce((a,v)=>a+v,0);
+      pickup.textContent=retry ? `Retry collection` : `Collect ${nearest.excavated ? titled(nearest.excavated) : nearest.name} · ${heldSaid(kg)}`;
     }
     pickup.dataset.pile=nearest?.name||"";
     if(nearest && storage(nearest.name)==="output" && nearest.d<=1.6 && !readonly() && !busy &&
@@ -4828,13 +4833,14 @@ function showInventory() {
   if (meter) {
     const limit = world.carryLimitKg, mass = carriedKg();
     meter.hidden = !world.session || !!watchedId;
-    meter.querySelector("output").textContent = `${mass.toFixed(1)} / ${(limit || 0).toFixed(0)} kg`;
+    meter.querySelector("output").textContent = worldId ? "Raw storage · No weight limit" : `${mass.toFixed(1)} / ${(limit || 0).toFixed(0)} kg`;
+    meter.querySelector("progress").hidden=!!worldId;
     meter.querySelector("progress").max = limit || 1;
     meter.querySelector("progress").value = mass;
     const full = limit>0 && mass>=limit-.05;
     meter.dataset.full = String(full);
-    meter.querySelector("b").textContent = full ? "Full · digging stopped" : "Ground materials";
-    meter.querySelector("small").textContent = full ? "Sand / soil → point at clear ground → H to heap" :
+    meter.querySelector("b").textContent = worldId ? "Dig → Pile → Inventory" : full ? "Full · digging stopped" : "Ground materials";
+    meter.querySelector("small").textContent = worldId ? "Click a nearby material pile to collect it" : full ? "Sand / soil → point at clear ground → H to heap" :
       [...world.stock].filter(([,v])=>v.kg>0).map(([what,v])=>`${what} ${massLabel(v.kg)}`).join(" · ") || "Empty";
     meter.querySelector("[data-tool-guide]").hidden = !!world.held?.pick;
     meter.querySelector("[data-movement]").textContent = movementMode === "fly" ? "Fly · Space ↑ · Shift + Space ↓" :
@@ -5682,7 +5688,7 @@ function showPicked() {
     const pile = world.goods?.stockpiles?.find(p=>p.name===picked.resource);
     const deposit = world.goods?.deposits?.find(p=>p.name===picked.resource);
     const source = pile || deposit;
-    rows.push(pickedTitle(titled(picked.resource), pile ? "Material pile" : "Extraction area"));
+    rows.push(pickedTitle(pile?.excavated ? `${titled(pile.excavated)} pile` : titled(picked.resource), pile ? "Material pile" : "Extraction area"));
     if (source) {
       const distance = Math.hypot(camera.position.x-source.at_m[0],camera.position.z-source.at_m[1]);
       const values = [["Distance",`${distance.toFixed(1)} m`]];
@@ -7075,6 +7081,24 @@ canvas.addEventListener("pointerdown", (e) => {
   // pointerup whichever button made it.
   if (e.button !== 0) return;
   if (e.altKey) return;          // inspect while carrying, without primary Use
+  const from=camera.position.clone(),dir=aimVector();
+  const pileHit=!watchedId && resourceVisuals.pick(from,dir,4);
+  if(pileHit && pileHit.role!=="input") {
+    // A pile click has priority over the equipped tool. Recheck native
+    // occlusion with this exact ray, then use the ordinary receiving route.
+    resumeClick=true;primaryUsed=false;
+    void (async()=>{
+      try {
+        const hit=await act('pick',{from:from.toArray(),dir:dir.toArray(),max_m:4,past_held:true});
+        if(hit.hit && from.distanceTo(new THREE.Vector3(...hit.point_m))+.02<pileHit.distance)return;
+        if(Math.hypot(camera.position.x-pileHit.pile.at_m[0],camera.position.z-pileHit.pile.at_m[1])>2) {
+          lastAction('Walk within 2 m to collect this pile','refused');return;
+        }
+        await resourceVisuals.collectPile(pileHit.pile.name);
+      } catch(error){lastAction(error.message,'refused');}
+    })();
+    return;
+  }
   // Primary held with something throwable in the hand winds it up. Looking
   // still works while it does -- that is how a throw is aimed.
   if (looking || world.held) primaryUsed = pressPrimary();
@@ -9263,10 +9287,10 @@ function showToolOutcome(answer,point) {
     {opacity:0,transform:`translate(-50%,-50%) scale(${reduced?1:2})`}],{duration:500}).finished.finally(()=>pulse.remove());
   if(!effect.collected)return;
   const tally=document.createElement('span');tally.className='tool-yield-label';
-  tally.textContent=`+${massLabel(effect.collected.kg)} ${effect.collected.materials.map(titled).join(' + ')}`;
+  tally.textContent=`${worldId ? 'Dug ' : '+'}${massLabel(effect.collected.kg)} ${effect.collected.materials.map(titled).join(' + ')}${worldId ? ' → pile' : ''}`;
   tally.style.left=`${Math.min(innerWidth-180,x+20)}px`;tally.style.top=`${Math.max(16,y-45)}px`;
   document.body.append(tally);tally.animate([{opacity:1},{opacity:1,offset:.7},{opacity:0}],{duration:1700}).finished.finally(()=>tally.remove());
-  const destination=$('world-load-meter')?.getBoundingClientRect();if(!destination || reduced)return;
+  const destination=$('world-load-meter')?.getBoundingClientRect();if(!destination || reduced || worldId)return;
   for(const [i,material] of effect.packets.entries()) {
     if(document.querySelectorAll('.tool-yield-packet').length>=48)break;
     const packet=document.createElement('i');packet.className='tool-yield-packet';packet.dataset.material=material;
@@ -9278,10 +9302,10 @@ function showToolOutcome(answer,point) {
       {duration:1250,delay:i*35,easing:'ease-out',fill:'both'}).finished.finally(()=>packet.remove());
   }
 }
-const tools = makeTools({ world, act, api, say, remember, showUse, camera, carryGround, scene, targetContext, aimVector, showToolOutcome,
+const tools = makeTools({ world, act, api, say, remember, showUse, camera, carryGround, scene, targetContext, aimVector, showToolOutcome, followGoods,
                           summarizeToolResult:answer=>{
                             const collected=collectedToolMaterials(answer);
-                            return collected ? `Collected ${massLabel(collected.kg)} · ${collected.materials.map(titled).join(" + ")}` : answer.said;
+                            return collected ? `${answer.excavation_piles?.length ? 'Dug' : 'Collected'} ${massLabel(collected.kg)} · ${collected.materials.map(titled).join(" + ")}${answer.excavation_piles?.length ? ' → nearby pile' : ''}` : answer.said;
                           },
                           whereIAm, lastAction, takeIntoHand, showHolding,
                           showInventory,
