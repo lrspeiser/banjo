@@ -16,6 +16,7 @@ import world_access
 REQUEST = re.compile(r'[A-Za-z0-9_-]{1,96}')
 REACH_M = 2.0
 MAX_CLAIMS = 2048
+MAX_DELIVERY_KG = 25.
 
 
 def validate(claims, players):
@@ -230,6 +231,7 @@ def input_readiness(app,owner,pile,accepted):
         row['stored_personal_kg']=sum(r['mass_kg'] for r in stored
             if r['substance']==substance and r['pool']=='personal')
         row['carried_kg']=float(carried.get(substance+'_kg',0)) if substance in fabrication.GROUND_DENSITIES else 0.
+        row['carried_m3']=float(carried.get(substance+'_m3',0)) if substance in fabrication.GROUND_DENSITIES else 0.
         row['sources']=[{'name':d['name'],'at_m':d['at_m'],
             'left_kg':app.brains.goods.reserve_kg(d)}
             for d in app.brains.goods.deposits if d['substance']==substance]
@@ -284,7 +286,7 @@ def _delivery(app, owner, body, keep):
         return {'released':True,'repeated':current=='released'}
     substance=body.get('substance'); mass=body.get('mass_kg')
     if (not isinstance(substance,str) or isinstance(mass,bool) or not isinstance(mass,(int,float))
-            or not math.isfinite(mass) or not .000001<=mass<=25
+            or not math.isfinite(mass) or not .000001<=mass<=MAX_DELIVERY_KG
             or abs(mass*1e6-round(mass*1e6))>1e-6):
         raise ValueError('Deliver 0.000001 to 25 kg in whole micrograms')
     packet={substance:round(float(mass),6)}

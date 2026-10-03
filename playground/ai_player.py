@@ -212,7 +212,8 @@ class Manager:
         return {'goals':goals,'next_goal':goals['next_goal'],'market':market,'balance_j':market['balance_j'],
                 'skills':skills,'tech_tree':skills,'inventory':inventory,'recipes':book.get('templates',[]),
                 'stockpiles':book.get('stockpiles',[]),
-                'native':opened,'pose':deepcopy(profile.get('pose')),'fabrication':funding}
+                'native':opened,'pose':deepcopy(profile.get('pose')),'fabrication':funding,
+                'processing_readiness':deepcopy(((market.get('guidance') or {}).get('player') or {}).get('processing_readiness'))}
 
     def _run(self,profile,stop,cookie):
         try:
@@ -226,7 +227,8 @@ class Manager:
                     'n':1,'person':self._person(profile,cookie,eyes=spawn)},cookie)
             while not stop.is_set():
                 state=self._observe(profile,cookie);goals=state['goals']
-                if goals['complete'] and not profile['ai'].get('memory',{}).get('fabrication_build'):
+                if goals['complete'] and not any(profile['ai'].get('memory',{}).get(k)
+                    for k in ('fabrication_build','process_request')):
                     self._save(profile,status='complete',message='All currently declared goal chains complete; see the separate personal tech tree')
                     return
                 if profile['ai']['decisions']>=MAX_DECISIONS:
@@ -242,6 +244,9 @@ class Manager:
                         'and personally watch supported batches. An action receipt is not automatically goal or skill success. '
                         'Continue a pending reviewed build through funding, native work and placement; '
                         'a charging or work phase is not a finished product. '
+                        'Processing readiness uses the same private supplies and next action as player guidance. '
+                        'Stop/select the recipe, store your own carried ground, load owned lots, power the machine '
+                        'and watch its actual saved batch. Retry retained processing writes unchanged before new transfers. '
                         'Never invent supplies, completion, physical laws or evidence. Stop only for a real blocker.',
                         'criteria':{a['id']:a['label'] for a in actions}}}
                     decision=self.decider_factory().ask(ai_actions.model_view(state,actions,profile['ai']['history']),questions)['next']
@@ -394,6 +399,25 @@ class Manager:
     def _execute(self,profile,stop,cookie,action,state,ident):
         verb=action['verb'];memory=deepcopy(profile['ai'].get('memory',{}));sid=state['native']['session']
         target=action.get('target') or {}
+        if verb=='continue-process':return self._processing_write(profile,cookie)
+        if verb=='store-ground':
+            return self._processing_write(profile,cookie,'/api/world/fabrication/store_ground',
+                {'session':sid,'scene':self.app.room.scene,'request_id':ident,
+                 'revision':action['revision'],'sand_m3':0.,'soil_m3':0.,'rock_m3':0.,
+                 **action['quantities']})
+        if verb=='process-input':
+            if action.get('operation')!='deliver-input':raise ValueError('This input route requires rover delivery before processing')
+            return self._processing_write(profile,cookie,'/api/world/goods/deliver',
+                {'session':sid,'person':self._person(profile,cookie,target['at_m']),
+                 'request_id':ident,**action['transfer']})
+        if verb=='select-process':
+            native=self._post(profile,'/api/live/act',{'session':sid,'op':'poses'},cookie)
+            program=next((p for p in (native.get('machines') or {}).get('programs',[])
+                if p.get('name')==target['machine']),None)
+            if program is None:raise ValueError('The selected machine is no longer present')
+            return self._processing_write(profile,cookie,'/api/world/process',
+                {'session':sid,'program':program['id'],'action':'select','recipe':action['recipe'],
+                 'expected_recipe':action['expected_recipe'],'person':self._person(profile,cookie,target['at_m'])})
         if verb=='compare-recipes':
             memory.update(comparison_signature=action['signature'],comparison=action['comparison'])
             self._save(profile,memory=memory)
@@ -471,7 +495,7 @@ class Manager:
             reply=replies[0]
             if reply.get('refused'):raise ValueError(reply['refused'])
             return {'result':reply.get('result'),'said':reply.get('said'),'learning_pending':reply.get('learning_pending',False)}
-        if verb=='power-on':
+        if verb in ('power-on','power-off'):
             # Learning targets use names; the native command takes the current
             # numeric program id. Resolve it just before acting, as the page
             # does. A fresh request sender keeps the native count small.
@@ -479,7 +503,7 @@ class Manager:
             program=next((p for p in (native.get('machines') or {}).get('programs',[])
                           if p.get('name')==target['machine']),None)
             if program is None:raise ValueError('The selected machine is no longer present')
-            reply=self._post(profile,'/api/world/machine',{'session':sid,'program':program['id'],'power':True,
+            reply=self._post(profile,'/api/world/machine',{'session':sid,'program':program['id'],'power':verb=='power-on',
                 'sender':ident,'seq':1},cookie)
             if reply.get('operated')!='applied':raise ValueError('Machine did not accept the power command')
             return reply
@@ -502,6 +526,37 @@ class Manager:
                     stop.wait(.5)
             return reply
         raise ValueError('No implemented execution for this offered action')
+
+    def _processing_write(self,profile,cookie,path=None,body=None):
+        """Retain exact source/quantity arguments before ordinary authenticated writes.
+
+        Unknown/lost acknowledgements stop with this request retained. Explicit
+        pre-transfer stale-view refusals refresh; they do not authorize a debit.
+        """
+        memory=deepcopy(profile['ai'].get('memory',{}))
+        pending=memory.get('process_request')
+        if pending is None:
+            if path is None:raise ValueError('No retained processing request to retry')
+            pending={'path':path,'body':deepcopy(body)};memory['process_request']=pending
+            self._save(profile,memory=memory)
+        # A reopened world has a new transport session. Keep the persisted
+        # source, quantities, revision and receipt id; only bind the request
+        # to this same authenticated world's current connection. Ordinary
+        # delivery/selection guards still authorize and deduplicate it.
+        call=deepcopy(pending['body'])
+        if pending['path'] in ('/api/world/goods/deliver','/api/world/process'):
+            call['session']=self.app.live.session.id
+        try:reply=self._post(profile,pending['path'],call,cookie)
+        except ValueError as exc:
+            if any(s in str(exc).lower() for s in ('revision changed','source world changed',
+                'machine recipe changed','this machine input does not accept','stand within','stand beside',
+                'deliver 0.000001 to 25 kg in whole micrograms')):
+                memory.pop('process_request');self._save(profile,memory=memory)
+                return {'phase':'refresh','reason':str(exc)}
+            raise
+        memory.pop('process_request');memory.pop('watching',None);self._save(profile,memory=memory)
+        return {'phase':pending['path'].rsplit('/',1)[-1],
+            **{k:deepcopy(reply[k]) for k in ('session','delivered','pile','recipe','replayed','repeated') if k in reply}}
 
     def shutdown(self) -> None:
         for _, stop in self.workers.values(): stop.set()

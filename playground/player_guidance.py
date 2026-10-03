@@ -267,6 +267,12 @@ def resolve(app, owner, *, offers=None, balance=None, focus=None, project_overri
                 'stockpiles':book['stockpiles'],'pose':deepcopy((player_world.records(app).get(owner) or {}).get('pose')),
                 'native':{'session':session.id if session else None,**native},
                 'market':{'offers':offers,'balance_j':balance,'bankable':bool(native)},'balance_j':balance}
+            processing=None
+            if row and (row.get('requirement') or {}).get('kind')=='personal-batch':
+                import process_guidance
+                options=process_guidance.choices(app,owner,(row.get('requirement') or {}).get('technique'))
+                processing=options[0] if options else None
+                state['processing_readiness']=processing
             memory={}
             reading=None
             if project and process is not None and native:
@@ -311,13 +317,10 @@ def resolve(app, owner, *, offers=None, balance=None, focus=None, project_overri
                 actions=[a for a in ai_actions.catalog(state,memory) if a['verb']!='select-target']
             chosen=next((a for a in actions if a['id']==ai_actions.reference_pick(state,actions)),None)
             next_action=deepcopy(chosen) if chosen else None
-            processing=None
             if selected and reading:next_action=_project_action(state,project,reading)
             elif row and (row.get('requirement') or {}).get('kind')=='personal-batch':
-                import process_guidance
-                options=process_guidance.choices(app,owner,(row.get('requirement') or {}).get('technique'))
-                if options:
-                    processing=options[0];next_action=deepcopy(processing['next_action'])
+                if processing:
+                    next_action=deepcopy(processing['next_action'])
                     project=None;reading=None
             elif row and (row.get('requirement') or {}).get('kind')=='funded-box-surface':
                 import inventory_room

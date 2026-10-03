@@ -71,6 +71,7 @@ def model_view(state,actions,history):
                               for side,hand in inv.get('hands',{}).items()},
                      'stowed':deepcopy((inv.get('record') or {}).get('stowed',[]))},
         'action_catalog':deepcopy(actions),
+        'processing_readiness':deepcopy(state.get('processing_readiness')),
         'recent_actions':[{k:deepcopy(row.get(k)) for k in ('action','label','result','receipt')}
                           for row in history[-4:]]}
 
@@ -87,6 +88,9 @@ def catalog(state,memory):
     def offer(verb,label,**args):
         ident=verb if not args else verb+':'+key(args)
         actions.append({'id':ident,'verb':verb,'label':label,**deepcopy(args)})
+    if memory.get('process_request'):
+        offer('continue-process','Retry the retained processing request before transferring more material')
+        return actions
     def supplies(missing):
         for gap in missing:
             if gap.get('short_kg',0)<=0:continue
@@ -167,13 +171,6 @@ def catalog(state,memory):
                           aim=desired,stand_off_m=(least+most)/2)
                 else:offer('use-tool','Use the held tool on surveyed dry soil or sand',target=target,at_m=desired)
             else:blockers.append('No dry soil or sand surveyed near this tool')
-        elif kind=='machine':
-            if target.get('needs'):blockers.append(f"{target['machine']} intake needs: {', '.join(target['needs'])}")
-            elif _distance(state['pose'],target['at_m'])>3:
-                offer('move',f"Approach {target['machine']}",target=target,aim=target['at_m'],stand_off_m=2)
-            elif not target['power']:offer('power-on',f"Turn on {target['machine']}",target=target)
-            elif memory.get('watching')!=target['machine']:offer('watch-batch',f"Watch the next saved batch from {target['machine']}",target=target)
-            else:offer('observe',f"Stay near and face {target['machine']} while its batch works",target=target)
         elif kind=='product':
             if _distance(state['pose'],target['at_m'])>2:
                 offer('move','Approach your built product',target=target,aim=target['at_m'],stand_off_m=1.2)
@@ -198,7 +195,18 @@ def catalog(state,memory):
         row=next((g for g in state['goals']['goals'] if g['id']==state['goals']['next_goal']),{})
         if row.get('target'):target_actions(row['target'],'tool')
         else:blockers.append('Your made tool has no available native action; check Inventory or rebuild through Recipes')
-    elif kind in ('personal-test','personal-batch'):
+    elif kind=='personal-batch':
+        reading=state.get('processing_readiness')
+        if reading:
+            action=deepcopy(reading['next_action'])
+            if action.get('operation')=='find-source':
+                # A source location is not a completed rover mining/delivery
+                # operation. Retain the single observed shortage honestly.
+                action.update(verb='wait',status='Blocked',label=action['label']+' · needs rover input delivery')
+            verb,label=action.pop('verb'),action.pop('label')
+            offer(verb,label,**action)
+        else:blockers.append('No present machine offers a supported batch for this goal')
+    elif kind=='personal-test':
         row=next((g for g in state['goals']['goals'] if g['id']==state['goals']['next_goal']),{})
         targets={(t['body'],t.get('machine')):t for t in row.get('targets',[])}
         for skill in state.get('skills',[]):
@@ -209,15 +217,15 @@ def catalog(state,memory):
                 continue
             for route in skill.get('earned_by',[]):
                 for target in route.get('locations',[]):
-                    wanted=('inspect' if req.get('test')=='study-example' else 'tool/use') if kind=='personal-test' else 'watch-machine'
+                    wanted='inspect' if req.get('test')=='study-example' else 'tool/use'
                     if target.get('action')==wanted:
                         targets[(target['body'],target.get('machine'))]=target
         if not targets:
             blockers.extend(m for s in state.get('skills',[]) for m in s.get('world_missing',[]) if
                 not req.get('technique') or s['id']==req['technique'])
             blockers.append('No present-world target offers the required supported action')
-            if kind=='personal-test':building({'kind':'ground-tool'})
-        for target in list(targets.values())[:8]:target_actions(target,'tool' if kind=='personal-test' else 'machine')
+            building({'kind':'ground-tool'})
+        for target in list(targets.values())[:8]:target_actions(target,'tool')
     else:blockers.append('No implemented planner capability for this goal requirement')
     offer('wait','Stop and report current blockers; never invent supplies or success',blockers=list(dict.fromkeys(blockers)))
     return actions
@@ -226,8 +234,9 @@ def catalog(state,memory):
 def reference_pick(state,actions):
     # A deterministic capability policy, not a tutorial step-id script. Model
     # mode sees the same offers, requirements, comparisons and observed state.
-    for verb in ('collect','buy','bank','compare-recipes','select-recipe','acquire','inspect','use-tool',
-                 'continue-build','build','pack','power-on','watch-batch','observe','move','select-target','wait'):
+    for verb in ('continue-process','collect','buy','bank','compare-recipes','select-recipe','acquire','inspect','use-tool',
+                 'continue-build','build','pack','power-off','select-process','store-ground','process-input',
+                 'power-on','watch-batch','observe','move','select-target','wait'):
         chosen=next((a for a in actions if a['verb']==verb),None)
         if chosen:return chosen['id']
     raise ValueError('The observed catalog has no stop action')

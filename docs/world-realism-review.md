@@ -12,6 +12,25 @@ This is a design review. Proposed balance, controls and acceptance targets below
 
 ## 1. What makes Banjo feel harder
 
+### Follow-up evidence
+
+The [shared processing recovery checkpoint](ai-processing-recovery-checkpoint.md)
+now uses the same private input/recipe facts for AI decisions as player guidance.
+The watched reference character recovered the exhausted copper intake through
+its own gathered sand and earned Melting glass. It finishes the current declared
+chapters at 2/10 techniques; a useful light is still not that chapter's ending.
+The browser also exposed and repaired a fractional input-format refusal. Night
+readability remains visibly weak. This reinforces the recommendation to make
+the opening end at a usable product and simplify contextual loading; passing
+the current chapter predicates is not the same as an intuitive useful opening.
+
+The fixed stepped-map regression also exposed a furnace tipping/sliding beyond
+its pile reach. Guidance now identifies that obstruction; stable processor
+sites/foundations remain unqualified on that map. Keep material columns optional
+until the same ordinary processing/hauling paths work. Preserve actual poses
+and material locations when diagnosing this; forcing a body still or moving
+its supplies invisibly would conceal a gameplay failure.
+
 Minecraft's official first-day guide proceeds from collected wood to a crafting table and wooden tools, then stone tools and useful lighting. My inference is that the useful pattern for Banjo is a short, repeatable collection/build/use loop with visible upgrades. That inference is a product judgment, not a measured comparison of first-time players. [Official first-day guide](https://www.minecraft.net/en-us/article/how-survive-your-first-day).
 
 Banjo currently adds several layers to that loop:

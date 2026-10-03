@@ -26,9 +26,9 @@ class PrivateGround(unittest.TestCase):
     join=flow.GoodsJourney.join
     setup_world=flow.GoodsJourney.setup_world
 
-    def storage_fixture(self):
+    def storage_fixture(self,*,surface='smooth'):
         with mock.patch.object(flow.server.secrets,'randbelow',side_effect=[0,851269740]):
-            world,alice,app=self.setup_world()
+            world,alice,app=self.setup_world(surface=surface)
         bob=self.join(world,'Other gatherer')
         def dig(x,z,player=None):
             return self.post('/api/live/act',{'session':app.live.session.id,'op':'dig',
