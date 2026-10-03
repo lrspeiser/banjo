@@ -194,6 +194,40 @@ def _carried_surface_action(owner, requirement, process, inventory):
     return None
 
 
+def _camp_light(app,owner,native):
+    """Actual owned paid variant and its current use; display names award nothing."""
+    import goal_chains
+    import product_labels
+    import inventory_room
+    candidate=goal_chains.camp_light_recipe()
+    key=product_labels.source_key(candidate)
+    for receipt in reversed(getattr(app.room,'workshop_installs',[]) or []):
+        if (receipt.get('status')!='installed' or receipt.get('owner_id')!=owner
+            or not receipt.get('resources_charged') or not receipt.get('native_precise_geometry_verified')):continue
+        try:matched=product_labels.source_key(receipt.get('recipe') or {})==key
+        except (ValueError,KeyError,TypeError):matched=False
+        if not matched:continue
+        roots=set(receipt.get('root_bodies') or [receipt.get('root_body')])
+        shown=inventory_room.shown(app,owner)
+        for item in shown.get('stowed',[]):
+            if item['id'] in roots:
+                return candidate,{'verb':'place-product','label':'Equip Camp light from your quick slot, then place it',
+                    'status':'Available','destination':{'screen':'world','focus':item['id']}},True
+        held=next((item for item in shown.get('hands',{}).values() if item and item['id'] in roots),None)
+        if held:
+            return candidate,{'verb':'place-product','label':'Place held Camp light · E',
+                'status':'Available','destination':{'screen':'world','focus':held['id']}},True
+        lamp=next((l for l in (native.get('machines') or {}).get('lamps',[]) if l['body'] in roots),None)
+        if lamp and not lamp.get('lit'):
+            store=next((s for s in (native.get('machines') or {}).get('stores',[]) if s['id']==lamp.get('store')),None)
+            empty=store is None or store['charge_j']<=0
+            return candidate,{'verb':'use-product','label':('Recharge' if empty else 'Switch on')+' Camp light · World',
+                'status':'Blocked' if empty else 'Available','destination':{'screen':'world','focus':receipt['root_body']},
+                'blockers':['Battery empty; connect an actual power source'] if empty else []},True
+        return candidate,None,True
+    return candidate,None,False
+
+
 def resolve(app, owner, *, offers=None, balance=None, focus=None, project_override=None):
     """Call under the world's state lock; all personal reads bind to owner."""
     import market
@@ -216,6 +250,18 @@ def resolve(app, owner, *, offers=None, balance=None, focus=None, project_overri
             process=deepcopy(getattr(app.room,'fabrication_record',None))
             selected=validate_project(project_override) if project_override is not None else selected_project(app,owner,process)
             project=_project_plan(app,selected,offers,balance) if selected else market._recommend(book['templates'],offers,balance,goals)
+            follow_up=False;use_light=None
+            if goals['complete'] and not selected:
+                from mcp import workshop_components
+                candidate,use_light,already=_camp_light(app,owner,native)
+                design,_=workshop_components.design_from_spec(candidate)
+                glass=next((r for r in workshop_library.rack(app)['materials'] if r['material']=='glass'),{})
+                needed=next(r['mass_kg'] for r in workshop_library.bill_of_materials(app,design)['materials'] if r['material']=='glass')
+                owned_glass=glass.get('personal_kg',0)+((process or {}).get('stock_kg') or {}).get('glass',0)
+                if not already and owned_glass+1e-9>=needed:
+                    project=_project_plan(app,{'name':'Camp light','candidate':candidate,
+                        'selection':{'source':'recipe','id':'mine-lamp:Camp light'}},offers,balance)
+                    project['focused']=False;follow_up=True
             row=next((g for g in goals['goals'] if g['id']==goals['next_goal']),None)
             state={'goals':goals,'skills':skills,'recipes':book['templates'],
                 'stockpiles':book['stockpiles'],'pose':deepcopy((player_world.records(app).get(owner) or {}).get('pose')),
@@ -302,8 +348,12 @@ def resolve(app, owner, *, offers=None, balance=None, focus=None, project_overri
                 if next_action['verb']=='acquire' and (next_action.get('target') or {}).get('where')=='stowed':
                     next_action['label']+=' · World quick slot'
             if goals['complete'] and not selected:
-                next_action={'verb':'explore','label':'Choose another supported skill or design',
-                    'status':'Available','destination':{'screen':'skills'}}
+                import process_guidance
+                output=process_guidance.output_action(app,owner)
+                next_action=use_light or output or (_project_action(state,project,reading) if follow_up and reading else
+                    {'verb':'explore','label':'Choose another supported skill or design',
+                     'status':'Available','destination':{'screen':'skills'}})
+                if output or use_light:project=None;reading=None
             own_jobs=[(ident,j) for ident,j in (process or {}).get('jobs',{}).items()
                 if ((j.get('make_source') or j.get('remake_source') or {}).get('owner')==owner
                     and j['status'] in ('running','paused','ready'))]

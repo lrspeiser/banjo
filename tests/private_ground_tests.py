@@ -218,6 +218,11 @@ class PrivateGround(unittest.TestCase):
         self.assertNotIn('smelting-copper',journal.knows())
         self.assertNotIn('melting-glass',journal.knows(),'Existing prerequisite still requires copper; observation is distinct from mastery')
         self.assertEqual({},flow.server.journal_of(app,bob['id']).data['evidence'])
+        import process_guidance
+        action=process_guidance.output_action(app,alice['id'])
+        self.assertEqual('collect-output',action['verb'])
+        self.assertEqual(output['name'],action['destination']['resource'])
+        self.assertIsNone(process_guidance.output_action(app,bob['id']))
         self.assertNotIn('sand',intake['holds'])
         self.assertEqual(before,intake['holds'],'Unselected copper remains in the same hopper')
         app.live.act({'session':app.live.session.id,'op':'poses'})
@@ -234,6 +239,7 @@ class PrivateGround(unittest.TestCase):
             inventory=call('/api/workshop/inventory',{},token)
             return next(r['personal_kg'] for r in inventory['materials'] if r['material']=='glass')
         self.assertAlmostEqual(5.95,glass(),places=5);self.assertEqual(0,glass(bob['token']))
+        self.assertIsNone(process_guidance.output_action(app,alice['id']))
         self.stop();self.start();call('/api/world/open',{})
         app=self.app.hub.get(world)
         extra['session']=pickup['session']=app.live.session.id
@@ -250,6 +256,130 @@ class PrivateGround(unittest.TestCase):
         self.assertEqual({},flow.server.journal_of(app,bob['id']).data['evidence'])
         self.assertEqual('melt glass',next(m for m in machine_witness.machines(app)
             if m['machine']==program['name'])['recipe'])
+
+    def test_camp_light_from_processed_outputs_is_paid_used_and_retained_without_market(self):
+        import math
+        import goal_chains
+        import workshop_library
+        import workshop_install
+        import machine_witness
+        import starter_goals
+        from mcp import fabrication
+        world,alice,bob,app,stored,program,intake,person,selection=self.glass_input_fixture()
+        def call(path,body,token=None):
+            try:return self.post(path,body,world,token)
+            except urllib.error.HTTPError as error:
+                error.add_note(error.read().decode());raise
+        def context():return {'session':app.live.session.id,'scene':app.room.scene}
+        # Actual finite starter ore, then privately stored native sand. No
+        # inventory, process heat or completion evidence is granted here.
+        output=app.brains.goods.by_name(app.brains.of(program['name']).routine.output)
+        for recipe,substance in [('smelt copper','copper'),('melt glass','glass')]:
+            if recipe=='melt glass':
+                call('/api/world/process',{**selection,'recipe':recipe})
+                call('/api/world/goods/deliver',{'session':app.live.session.id,'pile':intake['name'],
+                    'substance':'sand','mass_kg':1.55,'request_id':'camp-light-sand','lot_id':stored['request_id'],
+                    'revision':app.room.fabrication_record['revision'],'person':person})
+            call('/api/world/machine',{'session':app.live.session.id,'program':program['id'],
+                'power':True,'sender':'camp-light-fixture','seq':1 if recipe=='smelt copper' else 3})
+            view=None
+            if recipe=='melt glass':
+                source=next(s for s in machine_witness.machines(app) if s['machine']==program['name'])
+                at=source['at_m'];view={'eyes_m':[at[0],at[1]+1.2,at[2]+2],
+                    'facing':[0,0,-1],'look_direction':[0,-1.2,-2]}
+                call('/api/world/watch-machine',{'session':app.live.session.id,'machine':program['name'],'person':view})
+            for tick in range(600):
+                if view and tick%30==0:
+                    call('/api/live/act',{'session':app.live.session.id,'op':'step','dt':1/240,'n':1,'person':view})
+                app.clock._tick(.2)
+                if output.get('holds',{}).get(substance,0)>.9:break
+            self.assertGreater(output.get('holds',{}).get(substance,0),.9)
+            call('/api/world/machine',{'session':app.live.session.id,'program':program['id'],
+                'power':False,'sender':'camp-light-fixture','seq':2 if recipe=='smelt copper' else 4})
+            # Conversion is committed at batch start; its declared occupied
+            # duration must still elapse before selecting another process.
+            frame=app.brains.of(program['name']).routine.frame
+            while app.live.session.state['t']<frame.issued_t+(frame.issued or {}).get('took_s',0):
+                app.clock._tick(.2)
+        at=output['at_m'];floor=app.live.act({'session':app.live.session.id,'op':'survey','at':at})['survey']['ground_m']
+        pickup={'session':app.live.session.id,'pile':output['name'],'request_id':'camp-light-output',
+            'person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[0,0,-1]}}
+        # A completed chapter is a read-only recommendation fixture here,
+        # not an awarded tool/table goal. Actual watched evidence is required.
+        complete={'chain_id':'test-use-output','complete':True,'next_goal':None,'goals':[]}
+        with mock.patch.object(starter_goals,'view',return_value=complete):
+            guide=call('/api/world/guidance',{})
+            self.assertEqual('collect-output',guide['next_action']['verb'])
+        collected=call('/api/world/goods/collect',pickup)['collected']
+        self.assertGreater(collected['glass'],.8574);self.assertGreater(collected['copper'],.5)
+        with mock.patch.object(starter_goals,'view',return_value=complete):
+            guide=call('/api/world/guidance',{})
+            self.assertEqual('Camp light',guide['project']['name'])
+            self.assertEqual('Fund materials',guide['build_readiness']['status'])
+            self.assertNotEqual('Camp light',(call('/api/world/guidance',{},bob['token']).get('project') or {}).get('name'))
+        candidate=goal_chains.camp_light_recipe()
+        plan=call('/api/world/fabrication/plan_make',{**context(),'candidate':candidate})
+        self.assertEqual({'copper':.5},plan['quote']['assembly_goods_kg'])
+        self.assertGreaterEqual(plan['quote']['supply_required_j'],3000)
+        for key,endpoint,pool_name in [('stock_materials_kg','fund_stock','stock_sources'),
+                                        ('assembly_goods_kg','fund_goods','goods_sources')]:
+            for material,kg in plan['quote'][key].items():
+                funding=call('/api/world/fabrication/state',context())
+                source=next(s for s in funding[pool_name] if s['material']==material and s['mass_kg']>=kg)
+                call('/api/world/fabrication/'+endpoint,{**context(),'material':material,'mass_kg':kg,
+                    'pool':source['pool'],'rack_hash':source['rack_hash'],'revision':funding['state']['revision'],
+                    'request_id':'camp-light-'+endpoint+'-'+material})
+        funding=call('/api/world/fabrication/state',context())
+        source=next(s for s in funding['energy_sources'] if s['body']=='solar farm')
+        call('/api/world/fabrication/connect_energy',{**context(),'store':source['id'],
+            'store_hash':source['store_hash'],'power_w':500.,'revision':funding['state']['revision'],
+            'request_id':'camp-light-connect'})
+        call('/api/world/fabrication/wait',{**context(),'seconds':10})
+        funding=call('/api/world/fabrication/state',context())
+        source=next(s for s in funding['energy_sources'] if s['connected'])
+        call('/api/world/fabrication/fund_energy',{**context(),'store_hash':source['store_hash'],
+            'joules':plan['quote']['supply_required_j'],'revision':funding['state']['revision'],
+            'request_id':'camp-light-energy'})
+        plan=call('/api/world/fabrication/plan_make',{**context(),'candidate':candidate})
+        started=call('/api/world/fabrication/start_make',{**context(),'plan_id':plan['plan_id'],
+            'revision':plan['revision'],'request_id':'camp-light-make'})
+        call('/api/world/fabrication/wait',{**context(),'seconds':min(10,math.ceil(plan['quote']['minimum_duration_s']))})
+        preview=call('/api/world/fabrication/preview',{**context(),'job_id':'camp-light-make','position_m':[-2.,0.]})
+        placed=call('/api/world/fabrication/commit',{**context(),'job_id':'camp-light-make',
+            'preview_id':preview['preview_id'],'request_id':'camp-light-place'})
+        self.assertTrue(placed['resources_charged']);self.assertTrue(placed['native_precise_geometry_verified'])
+        root=placed['root_body'];roots=set(placed['root_bodies'])
+        with mock.patch.object(starter_goals,'view',return_value=complete):
+            self.assertEqual('use-product',call('/api/world/guidance',{})['next_action']['verb'])
+        app.live.act({'session':app.live.session.id,'op':'poses'})
+        pose=next(b for b in app.live.session.state['bodies'] if b['name']==root)['position_m']
+        call('/api/world/action',{**context(),'object':root,'primary':True,'person':{
+            'eyes_m':[pose[0],pose[1]+1.,pose[2]+1.],'standing_m':[pose[0],pose[1],pose[2]+1.],
+            'facing':[0,0,-1]}})
+        for _ in range(10):app.clock._tick(.2)
+        native=workshop_install._snapshot(app.live)
+        battery=next(s for s in native['energy_stores'] if s['body'] in roots)
+        lamp=next(l for l in app.live.session.state['machines']['lamps'] if l['body'] in roots)
+        self.assertTrue(lamp['lit']);self.assertGreater(battery['given_j'],0)
+        self.assertAlmostEqual(3000,battery['charge_j']+battery['given_j'],places=7)
+        audit=fabrication.audit(app.room.fabrication_record)
+        self.assertLess(abs(audit['assembly_goods_residual_kg']['copper']),1e-9)
+        call('/api/workshop/market',{'action':'view'})
+        with workshop_library._connect(app) as db:
+            self.assertEqual(0,db.execute('SELECT COUNT(*) FROM market_orders').fetchone()[0])
+            self.assertEqual(0,db.execute('SELECT COUNT(*) FROM market_deposits').fetchone()[0])
+        self.assertTrue(flow.server.keep_world(app,'retain paid camp light'))
+        ledger=deepcopy(app.room.fabrication_record)
+        self.stop();self.start();call('/api/world/open',{});app=self.app.hub.get(world)
+        self.assertEqual(ledger,app.room.fabrication_record)
+        restored=workshop_install._snapshot(app.live)
+        self.assertEqual(battery,next(s for s in restored['energy_stores'] if s['body'] in roots))
+        peer=call('/api/workshop/inventory',{},bob['token'])
+        self.assertEqual(0,next(r['personal_kg'] for r in peer['materials'] if r['material']=='glass'))
+        proof={'glass_input_kg':1.55,'collected':collected,'quote':plan['quote'],
+            'lamp':lamp,'battery':battery,'audit':audit,'market_orders':0,'wallet_deposits':0,
+            'restart':'whole','native_dt_s':1/240,'materials':'oak and glass geometry; copper assembly ledger'}
+        (ROOT/'build/resource-flow/camp-light.json').write_text(json.dumps(proof,indent=2))
 
     def test_processing_guidance_selects_owned_sand_and_shares_current_input_facts(self):
         import starter_goals

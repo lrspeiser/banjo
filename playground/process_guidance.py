@@ -12,6 +12,35 @@ import world_goods
 from mcp import progression
 
 
+def output_action(app,owner):
+    """Locate remaining shared output of an actually observed personal batch.
+
+    Observation reserves no goods. Collection still competes for the current
+    pile and rechecks ordinary distance/ownership/durable-save gates.
+    """
+    goods=getattr(getattr(app,'brains',None),'goods',None)
+    if goods is None:return None
+    evidence=app.journal_for(owner).copy().get('evidence',{})
+    for event in reversed(list(evidence.values())):
+        if (event.get('passes') is not True or event.get('source')!='watched'
+            or not event.get('run','').startswith(app.world_id+':')
+            or (event.get('observer') or {}).get('player')!=owner
+            or 'machine_goods recipe ledger' not in event.get('models',[])):continue
+        brain=app.brains.brains.get(event.get('machine'))
+        routine=brain.routine if brain else None
+        pile=goods.by_name(routine.output) if routine else None
+        if pile is None or pile.get('rack'):continue
+        remaining={s:min(kg,float((pile.get('holds') or {}).get(s,0)))
+            for s,kg in ((event.get('result') or {}).get('made') or {}).items()
+            if kg>0 and float((pile.get('holds') or {}).get(s,0))>=1e-6}
+        if remaining:
+            return {'verb':'collect-output','label':'Collect available '+', '.join(remaining)+' · '+pile['name'],
+                'status':'Available','destination':{'screen':'world','resource':pile['name']},
+                'pile':pile['name'],'available_kg':remaining,
+                'blockers':[],'limits':'Shared output, not reserved by observation. Get within 2 m to collect.'}
+    return None
+
+
 def choices(app, owner, technique=None):
     session=getattr(getattr(app,'live',None),'session',None)
     goods=getattr(getattr(app,'brains',None),'goods',None)

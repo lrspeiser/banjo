@@ -99,6 +99,21 @@ def first_tool_recipe():
             'parameters':dict(design.parameters),'component_overrides':{}}
 
 
+def camp_light_recipe():
+    """Small useful variant; its output charge is included in paid manufacture."""
+    from mcp import workshop_components
+    source={'kind':'mine-lamp','design_id':'starter-camp-light','parameters':{
+        'globe_m':.07,'bracket_m':.08,'foot_m':.16,'material':'oak',
+        'watts':5.,'efficacy_lm_w':120.}}
+    design,overrides=workshop_components.design_from_spec(source)
+    overrides['@machines']={
+        'stores':[{'name':'camp battery','in':'foot','capacity_j':3500.,
+                   'charge_j':3000.,'voltage_v':24.,'max_power_w':20.}],
+        'lamps':[{'name':'camp light','on':'globe','store':'camp battery',
+                  'watts':5.,'efficacy_lm_w':120.,'on_at_first':False}]}
+    return {**source,'parameters':dict(design.parameters),'component_overrides':overrides}
+
+
 def funded_tools(saved, owner):
     """Saved paid native admission plus an actual installed ground-tool profile.
 

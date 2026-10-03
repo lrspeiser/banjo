@@ -1664,7 +1664,8 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/private_ground_tests.py
             PrivateGround.test_processing_guidance_selects_owned_sand_and_shares_current_input_facts
-            PrivateGround.test_stored_sand_glass_input_native_energy_private_output_and_restart -v)
+            PrivateGround.test_stored_sand_glass_input_native_energy_private_output_and_restart
+            PrivateGround.test_camp_light_from_processed_outputs_is_paid_used_and_retained_without_market -v)
     set_tests_properties(banjo_process_guidance_tests PROPERTIES TIMEOUT 180)
     add_test(NAME banjo_material_delivery_tests
         COMMAND ${CMAKE_COMMAND} -E env

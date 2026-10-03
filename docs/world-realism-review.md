@@ -27,6 +27,13 @@ is still poor, and output-collection guidance remains an observed usability
 gap. The earlier findings below retain their reviewed baseline; the checkpoint
 separates the implemented fixes from the remaining recommendations.
 
+**Useful-output continuation:** the [Camp light checkpoint](camp-light-opening-checkpoint.md)
+now directs actual watched output collection and carries this same ordinary
+opening through a paid battery light, placement, native use and complete server
+restart without purchases. This supplies one practical reward for processed
+glass. World item names still expose internal IDs; general night recognition,
+the full supply graph and broader R4/R5 physics remain open.
+
 ## Recommendation
 
 Use clearly colored, patterned ground cells with sharp material boundaries.

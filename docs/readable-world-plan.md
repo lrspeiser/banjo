@@ -3,6 +3,12 @@
 Latest implementation checkpoint: `3544fd2` on GitHub main. This publication record
 does not close the full active scope.
 
+The [Camp light/output checkpoint](camp-light-opening-checkpoint.md) continues
+the ordinary opening through watched output collection, a paid useful battery
+light, placement/use and full server restart without purchases. Initial charge
+is paid; this qualifies one complete route and its private guidance, not all
+catalog supply graphs, unaided night recognition or physical cargo receiving.
+
 The [ordinary opening/supply checkpoint](opening-human-supplies-checkpoint.md)
 now observes a fresh browser wood → paid pick → numbered equip → native sand
 stroke → learned skill → paid work table journey, with full process restarts.

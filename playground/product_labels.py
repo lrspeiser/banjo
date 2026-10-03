@@ -14,7 +14,8 @@ def named_sources():
     import starter_goals
     import goal_chains
     return [('Personal field pick',goal_chains.first_tool_recipe()),
-            ('Camp stool',starter_goals.recipe()),('Work table',goal_chains.work_table_recipe())]
+            ('Camp stool',starter_goals.recipe()),('Work table',goal_chains.work_table_recipe()),
+            ('Camp light',goal_chains.camp_light_recipe())]
 
 
 def source_key(recipe):
