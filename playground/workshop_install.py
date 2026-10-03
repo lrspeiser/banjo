@@ -215,6 +215,26 @@ def made_here(app: Any) -> list[dict[str, Any]]:
     # two-part bootstrap source, after verifying its occupied boxes and tool
     # declaration against the same compiler. Never infer a recipe from a name.
     spec = getattr(room, "spec", {}) or {}
+    # Recover the old starter fitting by exact compiler geometry, including
+    # every material, dimension and local transform. A matching name is never
+    # evidence, and modified/nonmatching geometry receives no template source.
+    if spec.get('precise_rigid_bodies'):
+        design = w.assemble('mine-lamp', design_id='mine-lamp')
+        candidate = recipe_of(design, design.lineage.get('component_overrides', {}))
+        artifact = rigid_assembly.compile_design(design, candidate['component_overrides'], root='recovered')
+        if len(artifact['bodies']) == 1:
+            def compound(b):
+                return sorted((p.get('shape','box'),p.get('material',b['material']),
+                    tuple(round(float(v),9) for v in p['dimensions_m']),
+                    tuple(round(float(v),9) for v in p['center_local_m']),
+                    tuple(round(float(v),9) for v in p.get('rotation_wxyz',[1,0,0,0])))
+                    for p in b.get('parts',[]))
+            expected = compound(artifact['bodies'][0])
+            for body in spec['precise_rigid_bodies']:
+                if (not any(body['name'] in row['bodies'] for row in rows)
+                        and compound(body) == expected):
+                    rows.append({'design_id':'mine-lamp','bodies':[body['name']],
+                        'recipe':deepcopy(candidate),'source':'Verified legacy compound geometry'})
     if not any("field pick" in r["bodies"] for r in rows):
         bodies = [b for b in spec.get("bodies", []) if b.get("join") == "field pick"]
         if bodies:

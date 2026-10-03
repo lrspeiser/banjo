@@ -1243,13 +1243,17 @@ class WorldHub:
             try:
                 generated = world_seed.new_world(ground, goods_seed,
                                                  start_xz=new_game.ARRIVE_AT)
+                # Graph reachability does not guarantee room for native
+                # machine footprints beside their heaps. Reseed failed sites
+                # before publishing any world, retaining the same native gates.
+                installations=[]
+                spec = new_game.compose(ground, generated, terrain_seed,installations=installations)
                 break
-            except ValueError:
+            except ValueError as error:
+                last_problem=str(error)
                 continue
         else:
-            raise ValueError("Could not generate a reachable resource map; try again")
-        installations=[]
-        spec = new_game.compose(ground, generated, terrain_seed,installations=installations)
+            raise ValueError("Could not generate reachable resources and clear starter sites: "+last_problem)
         validated = fracture_lab.validate(spec)
         # Admission must reach the native engine, not stop at Python schema.
         with tempfile.TemporaryDirectory() as temp:

@@ -47,7 +47,11 @@ class PlacementJourney(unittest.TestCase):
     start=fixture.AutonomousGuests.start
     stop=fixture.AutonomousGuests.stop
     get=fixture.AutonomousGuests.get
-    post=fixture.AutonomousGuests.post
+    def post(self,*args,**kwargs):
+        try:return fixture.AutonomousGuests.post(self,*args,**kwargs)
+        except urllib.error.HTTPError as error:
+            error.msg+=': '+error.read().decode('utf-8')
+            raise
     join=fixture.AutonomousGuests.join
     setup_world=fixture.AutonomousGuests.setup_world
 
@@ -150,6 +154,17 @@ class PlacementJourney(unittest.TestCase):
             placed=self.post('/api/world/construction',{'person':person},world)
             self.assertEqual('Placed',placed['project']['status'])
             self.assertEqual(['done','done','done','current'],[s['status'] for s in placed['project']['steps']])
+            self.assertEqual('View components and use',placed['project']['steps'][-1]['label'])
+            use=placed['project']['operation']
+            self.assertEqual('Automatic at night',use['mode'])
+            self.assertIn('switches on at night',use['instruction'])
+            with self.assertRaises(urllib.error.HTTPError):
+                away=deepcopy(person);away['eyes_m'][0]-=20;away['standing_m'][0]-=20
+                self.write(world,'inspect',person=away)
+            inspected=self.write(world,'inspect',person=person)
+            self.assertTrue(inspected['project']['inspected'])
+            placed=self.post('/api/world/construction',{'person':person},world)
+            self.assertEqual('done',placed['project']['steps'][-1]['status'])
             self.assertFalse(app.live.session.state['player_hands'][owner['id']]['holding'])
             self.assertTrue(fixture.server.keep_world(app,'placement test checkpoint'))
             reports.append({'surface':surface,'world':world,'owner':owner,'project':placed,
@@ -168,6 +183,54 @@ class PlacementJourney(unittest.TestCase):
         report=ROOT/'build'/'construction'/'placement-journey.json';report.parent.mkdir(parents=True,exist_ok=True)
         # Do not write private player tokens even to the ignored report.
         report.write_text(json.dumps([{k:v for k,v in r.items() if k!='owner'} for r in reports],indent=2),encoding='utf-8')
+
+    def test_legacy_lamp_reopens_exact_components_without_inventing_source_for_a_changed_body(self):
+        import workshop_install
+        from mcp import workshop_components
+        world,owner,app=self.setup_world()
+        item,person=self.take_lamp(world,app,stow=True)
+        # Simulate the owner's older world, created before lamp provenance was
+        # retained. The physical declaration and native state are unchanged.
+        app.room.workshop_installs=[r for r in app.room.workshop_installs if r.get('root_body')!='camp light']
+        before=deepcopy(app.live.session.state)
+        inv=self.post('/api/workshop/inventory',{},world)
+        carried=next(t for t in inv['carried'] if t['id']==item)
+        self.assertEqual('mine-lamp',carried['design_id'])
+        source=self.post('/api/world/workshop/what_made',{'body':'camp light'},world)
+        design,_=workshop_components.design_from_spec(source['recipe'])
+        self.assertEqual(['foot','globe bracket','globe'],[p.name for p in design.parts])
+        self.assertEqual(['iron','iron','glass'],[p.material for p in design.parts])
+        reopened=self.post('/api/workshop/candidates',{**source['recipe'],'sweeps':{}},world)
+        self.assertEqual('mine-lamp',reopened['kind'])
+        self.assertEqual(before,app.live.session.state)
+        # Renaming the body still recovers geometry; changing one dimension
+        # cannot pass by retaining the old name.
+        physical=next(b for b in app.room.spec['precise_rigid_bodies'] if b['name']=='camp light')
+        original=deepcopy(physical)
+        physical['name']='renamed fitting'
+        self.assertTrue(any('renamed fitting' in r['bodies'] for r in workshop_install.made_here(app)))
+        physical['name']='camp light';physical['parts'][0]['dimensions_m'][0]*=1.1
+        self.assertFalse(any('camp light' in r['bodies'] for r in workshop_install.made_here(app)))
+        physical.clear();physical.update(original)
+
+    def test_generation_reseeds_declined_starter_sites_before_saving_a_world(self):
+        sys.path.insert(0,str(ROOT/'tools'))
+        import build_new_world
+        original=build_new_world.compose
+        attempts=[]
+        def first_declined(*args,**kwargs):
+            attempts.append(args[1]['proof']['seed'])
+            if len(attempts)==1:raise ValueError('No dry placement keeps smelter clear')
+            return original(*args,**kwargs)
+        with mock.patch.object(build_new_world,'compose',side_effect=first_declined):
+            created=self.post('/api/worlds',{'name':'Checked sites','surface':'columns'})
+        self.assertGreaterEqual(len(attempts),2);self.assertLessEqual(len(attempts),6)
+        self.assertNotEqual(attempts[0],created['goods_seed'])
+        worlds_before=set(self.app.hub.folder.iterdir())
+        with mock.patch.object(build_new_world,'compose',side_effect=ValueError('No dry placement')) as compose:
+            with self.assertRaises(urllib.error.HTTPError):self.post('/api/worlds',{'name':'Must not be saved'})
+        self.assertLessEqual(compose.call_count,6);self.assertGreater(compose.call_count,0)
+        self.assertEqual(worlds_before,set(self.app.hub.folder.iterdir()))
 
 
 if __name__=='__main__':unittest.main()

@@ -11077,8 +11077,11 @@ async function showNextStep() {
       constructionContext=data.construction_project;
       constructionControls(root,constructionContext,{hold:()=>enterConstruction(constructionContext.project.item),
         find:findConstructionSite,place:placeConstruction,cancel:closeConstruction,
-        inspect:()=>{const name=constructionContext.project.body,entry=world.bodies.get(name);
-          if(entry){const at=entry.mesh.getWorldPosition(new THREE.Vector3());window.banjoRoom.lookAt(...at.toArray());picked.name=name;picked.at=null;showPicked();}
+        inspect:async()=>{const name=constructionContext.project.body,entry=world.bodies.get(name);
+          if(!entry)throw Error('Open World and walk closer to your placed item');
+          await constructionWrite(api,constructionScope(),'inspect',{},whereIAm());
+          const at=entry.mesh.getWorldPosition(new THREE.Vector3());window.banjoRoom.lookAt(...at.toArray());picked.name=name;picked.at=null;showPicked();
+          guidanceReadAt=-Infinity;await showNextStep();
         }});
       if(world.placing?.project && constructionContext.project?.site) {
         world.placing.answer=constructionContext.project.site;drawGhost(world.placing);

@@ -294,7 +294,8 @@ def compose(ground: dict, world: dict, terrain_seed: int | None = None, *, insta
     # determine its light; the host controller only switches at dusk/dawn.
     lamp_at = _clear_of(ground, ARRIVE_AT, 2.5)
     light_bodies, light_pins, light_made, _ = a_built_thing(
-        ground, "mine-lamp", "camp light", lamp_at, reserved=_standing_footprints(spec)+hauling)
+        ground, "mine-lamp", "camp light", lamp_at, reserved=_standing_footprints(spec)+hauling,
+        installations=installations)
     light_made = workshop_install._named_apart(workshop_install.standing_names(spec), light_made)
     for lamp in light_made.get("lamps", []):
         lamp["store"] = the_grid

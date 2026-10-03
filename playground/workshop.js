@@ -3077,6 +3077,7 @@ async function openTheCarriedThing(id) {
       if (revision !== bench.revision) return;
       if (await openLabDraft(answer)) { $("#ws-archetype").value = answer.kind; return; }
     }
+    if(thing.lab_problem)throw Error(thing.lab_problem);
     const answer = await api("/api/workshop/candidates", carriedDesign(thing));
     if (revision !== bench.revision) return;
     if (await openLabDraft(answer)) {

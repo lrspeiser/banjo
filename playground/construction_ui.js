@@ -20,7 +20,7 @@ export async function constructionWrite(api,scope,action,fields={},person=null) 
     const answer=await api('/api/world/construction',{...pending,...(person?{person}: {})});
     sessionStorage.removeItem(key);return answer;
   }catch(error) {
-    if(/Construction revision changed|Select your own item|Hold your selected item|Invalid construction|Open World to check/i.test(error.message))
+    if(/Construction revision changed|Select your own item|Hold your selected item|Invalid construction|Open World to check|Walk closer to view|Place your selected item/i.test(error.message))
       sessionStorage.removeItem(key);
     throw error;
   }
@@ -48,8 +48,18 @@ export function constructionControls(root,context,{hold,find,place,inspect,cance
   };
   if(project.status==='Equip')button(project.next_label,hold);
   else if(project.status==='Place')button('Place here',place);
-  else if(project.status==='Placed')button('Inspect placed item',inspect);
+  else if(project.status==='Placed')button(project.inspected?'View item':'View components and use',inspect);
   else if(project.status!=='Unavailable')button('Find a supported spot',find);
   if(project.status==='Place')button('Another location',find);
   button('Close build guide',cancel);root.insertBefore(actions,root.querySelector('.player-guide-tip'));
+  if(project.status==='Placed' && project.operation) {
+    const use=document.createElement('div');use.className='construction-use';
+    const facts=document.createElement('dl');
+    for(const [name,value] of [['Mode',project.operation.mode],['Light',project.operation.status],['Power',project.operation.power]]) {
+      const label=document.createElement('dt'),reading=document.createElement('dd');
+      label.textContent=name;reading.textContent=value;facts.append(label,reading);
+    }
+    const note=document.createElement('p');note.textContent=project.operation.instruction;
+    use.append(facts,note);root.insertBefore(use,root.querySelector('.player-guide-tip'));
+  }
 }

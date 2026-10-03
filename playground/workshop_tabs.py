@@ -78,6 +78,8 @@ def carried(app: Any, player_id: str = "") -> list[dict[str, Any]]:
                     "separated": bool(entry.get('separated'))}
             out["bench_shape"] = _BENCH_SHAPE.get(out["shape"], "box")
             out["same_shape"] = out["bench_shape"] == out["shape"]
+            if first.get('parts') and not out['design_id']:
+                out['lab_problem']='This compound has no retained editable recipe. Its World geometry is unchanged.'
             if size:
                 out["size_mm"] = size
             thing = next((i for i in inventory_room.items_of(app) if i["id"] == entry.get("id")), None)

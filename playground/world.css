@@ -776,6 +776,10 @@ body.moving-a-thing #panel .workshop-entry { border-style: dashed; }
 .construction-steps [data-status="done"] {color:#a9e2b7;}
 .construction-actions {display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
 .construction-actions button {font-size:12px;}
+.construction-use dl {display:grid;grid-template-columns:auto 1fr;gap:3px 10px;margin:8px 0;font-size:12px;}
+.construction-use dt {color:var(--dim);}
+.construction-use dd {margin:0;}
+.construction-use p {font-size:12px;}
 #mini-materials { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; margin-top:8px; }
 .mini-resource { display:grid; grid-template-columns:30px minmax(0,1fr); align-items:center; padding:5px; border:1px solid var(--edge); border-radius:6px; user-select:none; }
 .mini-resource canvas { width:28px; height:28px; grid-row:span 3; }

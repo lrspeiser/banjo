@@ -1,6 +1,8 @@
 """Guide latency/isolation, stale advice, private persistence and real HTTP."""
 from copy import deepcopy
 import json
+import shutil
+import subprocess
 from pathlib import Path
 import sys
 import tempfile
@@ -24,6 +26,12 @@ STEP={'chain_id':'first','goal':{'id':'tool','title':'Make a tool'},
 
 
 class Guide(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('node'), 'Node is needed for the guide renderer regression')
+    def test_renderer_preserves_tip_during_refresh_and_rejects_stale_preference_replies(self):
+        result=subprocess.run([shutil.which('node'),str(ROOT/'tests/player_guidance_ui.mjs')],
+            capture_output=True,text=True,timeout=10)
+        self.assertEqual(0,result.returncode,result.stdout+result.stderr)
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory()
         self.app=SimpleNamespace(world_id='world',workshop_store=Path(self.temp.name),api_key='test')
@@ -82,6 +90,28 @@ class Guide(unittest.TestCase):
         failed.handle('alice',{},STEP);self.wait_done(failed)
         reply=failed.handle('alice',{},STEP)
         self.assertEqual('fallback',reply['status']);self.assertNotIn('private',json.dumps(reply))
+
+    def test_status_reads_do_not_call_provider_and_manual_help_preserves_quiet_preferences(self):
+        calls=[]
+        def provider(app,context):
+            calls.append(context)
+            return {'text':'Use the Lab to make your pick.','model':'fixture','usage':{}}
+        manager=guide.Manager(self.app,provider);self.addCleanup(manager.shutdown)
+        for n in range(30):
+            current={**STEP,'observed_native_t_s':n}
+            self.assertEqual('fallback',manager.handle('alice',{'action':'status'},current)['status'])
+        self.assertEqual([],calls)
+        manager.handle('alice',{'action':'settings','enabled':False},STEP)
+        first=manager.handle('alice',{'action':'request','event':'asked'},STEP)
+        self.wait_done(manager)
+        ready=manager.handle('alice',{'action':'status','event':'asked','key':first['key']},STEP)
+        self.assertEqual('ready',ready['status']);self.assertFalse(ready['enabled'])
+        self.assertEqual(1,len(calls))
+        self.assertEqual('quiet',manager.handle('alice',{'action':'status'},STEP)['status'])
+        manager.handle('bob',{'action':'dismiss','key':first['key']},STEP)
+        manager.handle('bob',{'action':'request','event':'asked'},STEP);self.wait_done(manager)
+        self.assertEqual('ready',manager.handle('bob',{'action':'status','event':'asked'},STEP)['status'])
+        self.assertEqual('dismissed',manager.handle('bob',{'action':'status'},STEP)['status'])
 
     def test_model_has_bounded_read_only_schema_timeout_and_actual_observation(self):
         context=guide.observation(STEP)

@@ -17,9 +17,31 @@ export function guidanceUrl(destination, data, current = location.href) {
 }
 
 const adviceTurns=new WeakMap();
+let activeGuideRoot=null;
+addEventListener('keydown',event=>{
+  if(event.key!=='F1' || event.repeat)return;
+  const turn=activeGuideRoot?.isConnected && adviceTurns.get(activeGuideRoot);
+  if(!turn?.ask)return;
+  event.preventDefault();turn.ask.onclick();
+});
+function adviceContext(data) {
+  const project=data.project || {},reading=data.build_readiness || {};
+  const construction=data.construction_project?.project;
+  // Match advice-bearing facts, excluding live clock, pose and meter updates.
+  return JSON.stringify([data.next_action,project.focused ? null : data.goal?.id,
+    project.name,project.candidate,project.focused,
+    reading.status,reading.ready_to_start,reading.installation,
+    construction && ['name','status','steps','installation','blocker'].map(k=>construction[k]),
+    construction?.operation && ['mode','status','power','instruction'].map(k=>construction.operation[k]),data.limits]);
+}
 export function renderPlayerGuidance(root,data,api) {
-  const prior=adviceTurns.get(root);if(prior?.timer)clearTimeout(prior.timer);
-  const turn={};adviceTurns.set(root,turn);
+  const prior=adviceTurns.get(root);
+  const context=data?.next_action ? adviceContext(data) : null;
+  const same=prior?.context===context;
+  if(!same && prior?.timer)clearTimeout(prior.timer);
+  const turn=same ? prior : {context,request:0,seenEvents:prior?.seenEvents || new Set()};
+  adviceTurns.set(root,turn);
+  activeGuideRoot=root;
   root.replaceChildren(); root.hidden=false;
   root.setAttribute('aria-label','Your next action');root.classList.add('player-guidance');
   root.setAttribute('role','region');
@@ -44,21 +66,35 @@ export function renderPlayerGuidance(root,data,api) {
     button.onclick=()=>dispatchEvent(new CustomEvent('banjo-guidance-clear'));root.append(button);
   }
   if(api && new URL(location.href).searchParams.has('world')) {
-    const area=document.createElement('div');area.className='player-guide-tip';root.append(area);
+    // Reattach the same tip node synchronously during ordinary card refreshes.
+    // Its contents stay visible while the new read is in flight.
+    const area=turn.area || document.createElement('div');turn.area=area;
+    area.className='player-guide-tip';root.append(area);
     const current=()=>root.isConnected && adviceTurns.get(root)===turn;
     const project=data.construction_project?.project;
     const event=project ? project.status==='Placed'?'milestone':project.status==='Site changed'?'blocked':'placement' : 'next-step';
     async function read(body={action:'request',event},polls=0) {
+      if(turn.timer) {clearTimeout(turn.timer);turn.timer=null;}
+      const request=++turn.request;
       try {
         const advice=await api('/api/world/assist',body);
-        if(!current())return;
+        if(!current() || request!==turn.request)return;
         // A response can describe a newer step than this rendered card. Leave
         // it for the next ordinary refresh instead of combining stale views.
         if(JSON.stringify(advice.next_action)!==JSON.stringify(data.next_action))return;
-        area.replaceChildren();
+        if(turn.key && turn.key!==advice.key) {area.replaceChildren();turn.paint=null;}
+        turn.key=advice.key;
         if(advice.status==='pending' && polls<16) {
-          turn.timer=setTimeout(()=>read({action:'status',key:advice.key},polls+1),500);return;
+          turn.timer=setTimeout(()=>read({action:'status',key:advice.key,
+            ...(body.event==='asked'?{event:'asked'}:{})},polls+1),500);return;
         }
+        // Temporary provider/network states do not erase valid advice for the
+        // same observed task. Explicit preferences do; they also cancel polls.
+        if(!['ready','quiet','dismissed'].includes(advice.status))return;
+        if(turn.timer) {clearTimeout(turn.timer);turn.timer=null;}
+        const paint=JSON.stringify([advice.key,advice.status,advice.text,advice.enabled]);
+        if(turn.paint===paint)return;
+        turn.paint=paint;area.replaceChildren();
         if(advice.status==='ready') {
           const label=document.createElement('small');label.textContent='AI Guide';area.append(label);
           const tip=document.createElement('p');tip.textContent=advice.text;area.append(tip);
@@ -75,6 +111,20 @@ export function renderPlayerGuidance(root,data,api) {
         }
       } catch { /* The verified action remains usable without the provider. */ }
     }
-    read();
+    const ask=turn.ask || document.createElement('button');turn.ask=ask;
+    ask.type='button';ask.className='ws-action';ask.textContent='Ask AI · F1';
+    ask.onclick=()=>read({action:'request',event:'asked'});root.append(ask);
+    // Refreshing this card is a read, not a reason to call a model. Automatic
+    // construction tips fire once per item/phase; ordinary exploration uses
+    // an explicit click or F1. Status reads never launch provider work.
+    if(!same) {
+      const phase=project && `${project.item}:${project.status}`;
+      const automatic=phase && !turn.seenEvents.has(phase);
+      if(automatic) {
+        turn.seenEvents.add(phase);
+        if(turn.seenEvents.size>64)turn.seenEvents.delete(turn.seenEvents.values().next().value);
+      }
+      read({action:automatic?'request':'status',event});
+    }
   }
 }

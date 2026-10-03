@@ -124,8 +124,26 @@ def _same_site(a, b):
                 math.dist(a['on'], b['on']) < .2)
 
 
-def view(app, owner, *, person=None):
-    record = selected(app, owner)
+def operation(app, body):
+    """Current native use and declared controller mode; no operation certificate."""
+    native = (app.live.session.state or {}).get('machines') or {}
+    lamp = next((row for row in native.get('lamps',[]) if row.get('body')==body), None)
+    if not lamp:
+        return None
+    declared = next((row for row in (app.room.spec.get('machines') or {}).get('lamps',[])
+                     if row.get('body')==body), {})
+    store = next((row for row in native.get('stores',[]) if row.get('id')==lamp.get('store')), {})
+    automatic = bool(declared.get('auto_night'))
+    return {'kind':'light','mode':'Automatic at night' if automatic else 'Manual switch',
+        'status':'On' if lamp.get('lit') else 'Off',
+        'power':store.get('name') or 'No connected battery',
+        'drawn_w':lamp.get('drawn_w',0),'lumens':lamp.get('lumens',0),
+        'instruction':('Leave it in World; it switches on at night and off in daylight.' if automatic
+            else 'Select the light in World, then use Switch light on.')}
+
+
+def view(app, owner, *, person=None, _record=None):
+    record = _record if _record is not None else selected(app, owner)
     project = record['project']
     out = {'schema': SCHEMA, 'revision': record['revision'], 'project': None}
     if not project:
@@ -166,15 +184,16 @@ def view(app, owner, *, person=None):
         body = bodies.get(project['body'])
         at = project.get('at_m')
         if not peer and body and not body.get('parked') and at and math.dist(body['position_m'], at) < .15:
-            project.update(status='Placed', next_label='Inspect placed item',
-                blocker='Placement observed. Settling, access and operation still need checks.')
+            project.update(status='Placed', next_label='View components and use',
+                blocker=None, operation=operation(app, project['body']))
         else:
             project.update(next_label='Open Inventory', blocker='This item is no longer in your hands or bag.')
     project['steps'] = [
         {'id': 'hold', 'label': 'Hold item', 'status': 'current' if project['status']=='Equip' else 'done' if where or project['status']=='Placed' else 'blocked'},
         {'id': 'site', 'label': 'Choose supported spot', 'status': 'done' if project['status'] in ('Place','Placed') else 'current' if where and where!='stowed' else 'pending'},
         {'id': 'place', 'label': 'Place item', 'status': 'done' if project['status']=='Placed' else 'current' if project['status']=='Place' else 'pending'},
-        {'id': 'inspect', 'label': 'Check settling and access', 'status': 'current' if project['status']=='Placed' else 'pending'},
+        {'id': 'inspect', 'label': 'View components and use', 'status': 'done' if project['status']=='Placed' and project.get('inspected')
+            else 'current' if project['status']=='Placed' else 'pending'},
     ]
     out['project'] = project
     return out
@@ -184,7 +203,7 @@ def request(app, owner, body):
     if not isinstance(body, dict) or set(body)-{'action','item','revision','request_id','person'}:
         raise ValueError('Construction accepts a selected item and action, not supplied game state')
     action = body.get('action', 'view')
-    if action not in ('view','select','clear','suggest'):
+    if action not in ('view','select','clear','suggest','inspect'):
         raise ValueError('Unknown construction action')
     if action=='view':
         if set(body)-{'action','person'}:
@@ -214,6 +233,17 @@ def request(app, owner, body):
             raise ValueError('Construction revision changed; refresh your next step')
         if action=='clear':
             record['project'] = None
+        elif action=='inspect':
+            current=view(app,owner,person=body.get('person'),_record=record)['project']
+            if not current or current['status']!='Placed':
+                raise ValueError('Place your selected item before opening its use guide')
+            person=_person(app,owner,body.get('person'))
+            at=record['project'].get('at_m')
+            if not person or math.dist(person['eyes_m'],at)>placement.REACH_M:
+                raise ValueError('Walk closer to view the placed item')
+            # This acknowledges opening inspection. It does not award a skill,
+            # certify settling/strength or claim the machine operated.
+            record['project']['inspected']=True
         elif action=='select':
             where, thing = _owned(app, owner, body['item'])
             if not thing:
@@ -233,7 +263,7 @@ def request(app, owner, body):
             if not answer:
                 return {'schema':SCHEMA,'revision':revision,'project':deepcopy(project),
                     'site_found':False,'blocker':blocker}
-            project.update(body=moving,target=answer['target'], at_m=answer['at_m'])
+            project.update(body=moving,target=answer['target'], at_m=answer['at_m'],inspected=False)
         record['revision'] += 1
         answer = {'schema':SCHEMA,'revision':record['revision'],'project':deepcopy(record['project'])}
         record['receipts'][ident] = {'fingerprint':fingerprint,'answer':answer}
