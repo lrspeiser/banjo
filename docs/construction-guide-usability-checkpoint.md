@@ -74,7 +74,8 @@ Hide/Quiet controls. Screenshots are local build artifacts:
 `build/construction-preview/lamp-lab-fixed.png` and `lamp-guide-fixed.png`.
 The owner's existing world, carried item and browser draft were not modified
 by this separate-world journey. The preview is running the repaired source.
-Publication revision is recorded below after publishing.
+Implementation and verification were published to GitHub main as `622df9da`.
+The preview on port 8779 uses this repaired source and unchanged native build.
 These are focused host/UI checks, not unaided human acceptance, full model
 construction execution or broader generated-site physics qualification. The
 earlier glass/oak/iron/concrete comparison and all of its unsupported-law limits
