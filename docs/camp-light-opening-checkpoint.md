@@ -5,8 +5,9 @@ Python 3.13 and the existing MSVC Release executables/library under
 `build/agent-object-strike/Release`. Native binaries, terrain resolution,
 material laws, goal predicates and skill prerequisites are unchanged.
 
-Publication is recorded below after the verified checkpoint is pushed. The
-isolated test server is port 8774; the owner's 8771 preview is unchanged.
+**Published:** implementation/test checkpoint `b58e3a6` is on GitHub main.
+The isolated test server is port 8774; the owner's 8771 preview is unchanged.
+No separate production deployment was performed.
 
 ## Implemented
 
