@@ -1,8 +1,8 @@
 # Shared player guidance and paid build readiness
 
-October 3, 2026. Verification base: published `560aa03`, plus this outgoing
-host/UI checkpoint. The published implementation revision is recorded below
-after the verified push. Full owner scope remains active.
+October 3, 2026. Published implementation: `0c18d18` on GitHub main.
+Verification base: published `560aa03`, plus the outgoing host/UI changes.
+Full owner scope remains active.
 
 ## Implemented
 
