@@ -5,6 +5,9 @@ use the same flow for existing and LLM-authored ground tools:
 
 **Dig → nearby material pile → click → personal Inventory.**
 
+Published implementation: `5af65746e756cb1fbdd2965a8b2aefcd01ff68c7`
+on GitHub main, October 3, 2026. Verification below applies to that revision.
+
 ## Interaction and source contract
 
 - A completed ordinary native tool action exports actual actor-owned sand,
@@ -109,6 +112,13 @@ ground**, with separate sand/soil piles. Browser rendering shows those shared
 piles and the new raw-storage labels; isolated reported camera positioning
 is a viewing fixture, not evidence of native avatar traversal. Screenshots
 and local saves are ignored build artifacts.
+Ordinary authenticated pile collection then puts 1.41 kg sand and 53.96 kg
+soil in the isolated human player's private Inventory. Browser inspection
+confirms both raw-material thumbnails and amounts. Screenshot:
+`build/construction-preview/collected-material-inventory.png`. This pickup
+was through the receiving API; browser direct-click reach/occlusion behavior
+is covered separately by the shipped-handler test, not claimed as a manually
+completed human walking journey.
 
 Remaining acceptance: unaided human digging/pickup on both map families,
 crowded/wet-edge fallback recognition, night readability and long-lived receipt
