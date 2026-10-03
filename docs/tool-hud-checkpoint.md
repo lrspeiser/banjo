@@ -103,3 +103,11 @@ and hand/card placement with the owner before expanding this HUD to more surface
 All six registered suites pass, 62 checks, 80.57 s total. Registration passes
 298/298 with no omissions. All 2,050 local documentation links resolve. JS syntax and Python compilation pass. The broader
 goal-suite failure above is not included in this passing total.
+
+## Published checkpoint
+
+Implementation and verification were committed and pushed by ordinary fast-forward
+to GitHub main as `dcd94baee43c1a08b85377c033b3fb3daf7b42cc`. The matching
+8779 preview is running from this checkout; screenshots remain local build
+artifacts and no credentials or local world saves were committed. This subsequent
+publication note changes documentation only.
