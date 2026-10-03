@@ -6,6 +6,36 @@ Host/controller checkpoint based on fetched GitHub main
 are unchanged. Smooth remains default; optional material columns remain
 experimental. R3 remains owner-paused, and the full active scope remains open.
 
+## Owner-directed wrap and final retest
+
+The owner requested wrapping up and testing on October 3. Development stops at
+published main `61c7d4dcaba0644a9327ec028e299001841a3de6`; the broader goal remains
+paused and unfinished. This final handoff changes documentation only.
+
+All 26 affected checks pass again on that exact revision in the Windows
+environment recorded below:
+
+- Registered `banjo_ai_processing_tests`: three checks, **125.36 s**. Smooth
+  processing delivers 5 kg of private sand and learns glass in 110.548 s;
+  the column case reports the actual port obstruction in 11.038 s with zero
+  delivery. Lost replies, peer refusal and full restart retention pass.
+- Registered `banjo_process_guidance_tests`: three checks, **82.20 s**, including
+  private stored input, native glass processing and paid Camp light retention.
+- Shared guidance and controller boundaries: **20 checks, 21.825 s**, all pass
+  in this run, including the previously transient private-project setup case.
+- Source registration **298/298**, Python syntax, whitespace and **1,269 local
+  documentation links** pass. No native source, binary or tolerance changed.
+
+The retained 8778 app is running. A final browser inspection shows the reference
+character complete for the two declared chapters with **2/10 techniques**;
+this does not establish full tech-tree completion. The preview's prior restart
+and spectator limitations described below remain.
+
+Next work should qualify stable generated processors and reachable physical
+ports on stepped terrain before expanding that opening. Night material
+recognition, the useful light/compact solar progression, ore delivery and native
+avatar/cargo integration remain in the list below. R3 remains separately paused.
+
 ## Change
 
 The autonomous character now consumes the same private processing readiness
