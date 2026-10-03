@@ -252,6 +252,7 @@ class Routine:
     def record(self):
         """Exact load and execution state; display summaries deliberately round."""
         return {"schema":"banjo.machine-runtime.v1", "declaration":self.declaration_digest,
+                **({'process_recipe':self.recipe} if self.kind=='process' else {}),
                 **{k:deepcopy(getattr(self,k)) for k in
                    ("sand_m3","soil_m3","kg","goods","made_kg","batches","delivered_kg",
                     "trips","watching","paused_by","seq","next_order")},
@@ -260,10 +261,14 @@ class Routine:
 
     def restore(self, record):
         # Validate the entire candidate before changing any running state.
+        if self.kind=='process' and isinstance(record,dict) and 'process_recipe' not in record:
+            record={**record,'process_recipe':self.recipe}  # Earlier v1 keeps its declared recipe.
         if not isinstance(record,dict) or set(record)!=set(self.record()):
             raise ValueError("Invalid machine runtime record")
         if record["schema"]!="banjo.machine-runtime.v1" or record["declaration"]!=self.declaration_digest:
             raise ValueError("Machine runtime requires its original routine declaration")
+        if self.kind=='process' and (not isinstance(record['process_recipe'],str) or not 1<=len(record['process_recipe'])<=128):
+            raise ValueError('Invalid selected process recipe')
         def number(v, integer=False):
             if type(v) not in ((int,) if integer else (int,float)) or not math.isfinite(v) or not 0<=v<=1e15:
                 raise ValueError("Invalid machine runtime quantity")
@@ -310,6 +315,7 @@ class Routine:
         self.frames=rebuilt
         self.notes=deque(record["notes"],maxlen=NOTES_KEPT)
         self.finished=deque(record["finished"],maxlen=8)
+        if self.kind=='process':self.recipe=record['process_recipe']
 
     # ---- the hopper ------------------------------------------------------------
     def carries(self) -> bool:
@@ -670,7 +676,24 @@ def validate_runtime(spec, runtime):
     names={p.get("name") for p in ((spec or {}).get("machines") or {}).get("programs",[]) if isinstance(p,dict)}
     for name,record in runtime.items():
         if name not in names: raise ValueError("Machine runtime has no matching program")
-        Routine(name,declared_for(spec,name)).restore(record)
+        routine=Routine(name,declared_for(spec,name));original=routine.recipe;routine.restore(record)
+        if routine.kind=='process' and routine.recipe!=original:
+            if routine.recipe not in {r['name'] for r in process_options(spec,routine)}:
+                raise ValueError('Selected recipe is incompatible with this machine')
+
+
+def process_options(spec,routine):
+    """Existing declared recipes admitted by this machine's actual chamber."""
+    if routine.kind!='process':return []
+    regions=((spec or {}).get('thermo') or {}).get('gas_regions') or []
+    region=next((r for r in regions if r.get('name')==routine.chamber),None)
+    ceiling=None
+    if region is not None and routine.element_w:
+        conductance=float(region.get('wall_conductance_w_k',0))
+        ambient=((spec.get('thermo') or {}).get('ambient') or {}).get('temperature_k',293.15)
+        ceiling=float(ambient)-273.15+routine.element_w/conductance if conductance>0 else math.inf
+    return [r for r in ((spec or {}).get('goods') or {}).get('recipes',[])
+        if not float(r.get('needs_c',0)) or (ceiling is not None and ceiling>=float(r['needs_c']))]
 
 
 def declared_for(spec: dict[str, Any] | None, name: str) -> dict[str, Any] | None:

@@ -457,8 +457,16 @@ def raw_inventory(state):
                  for ident, packet in state.get("raw_lots", {}).items()}
     returns=state.get("raw_returns", {})
     if not isinstance(returns,dict) or len(returns)>4096: raise ValueError("Invalid raw material returns")
-    for ident,record in returns.items():
-        token(ident);obj(record,{"lot_id","packet"},{"lot_id","packet"})
+    deliveries=state.get("raw_input_deliveries",{})
+    if not isinstance(deliveries,dict) or len(deliveries)>4096: raise ValueError("Invalid raw input deliveries")
+    for ident,record,delivery in [(i,r,False) for i,r in returns.items()]+[(i,r,True) for i,r in deliveries.items()]:
+        fields={"lot_id","packet"}|({"owner","pile"} if delivery else set())
+        token(ident);obj(record,fields,fields)
+        if delivery:
+            if any(not isinstance(record[k],str) or not 1<=len(record[k])<=160 for k in ("owner","pile")):
+                raise ValueError("Invalid raw input destination")
+            owner=state.get('raw_lot_ownership',{}).get(record['lot_id'],{}).get('owner','')
+            if owner and owner!=record['owner']: raise ValueError("Raw input delivery changed its owner")
         if ident not in state["receipts"]: raise ValueError("Raw return has no receipt")
         lot=record["lot_id"];token(lot,"lot_id")
         if lot not in remaining: raise ValueError("Raw return has no source lot")
@@ -474,6 +482,27 @@ def raw_inventory(state):
                 raise ValueError("Raw return mass does not match native volume")
             have["volume_m3"]-=item["volume_m3"];have["mass_kg"]-=item["mass_kg"]
     return {ident:list(contents.values()) for ident,contents in remaining.items()}
+
+
+def deliver_raw_input(state, body, owner):
+    """Trusted paired input transaction; no conversion or native return."""
+    if check_request(state,body): return deepcopy(state),True
+    lot=token(body['lot_id'],'lot_id');substance=body['substance']
+    if substance not in GROUND_DENSITIES: raise ValueError('Unsupported raw input substance')
+    mass=number(body['mass_kg'],'mass_kg',.000001,25)
+    item=next((v for v in raw_inventory(state).get(lot,[]) if v['substance']==substance),None)
+    if item is None or mass>item['mass_kg']: raise ValueError('Not enough stored '+substance)
+    if state['raw_lots'][lot]['source']!='excavated_ground': raise ValueError('Choose excavated raw storage')
+    volume=item['volume_m3'] if mass==item['mass_kg'] else mass/GROUND_DENSITIES[substance]
+    contents=[{'substance':substance,'mass_kg':mass,'volume_m3':volume}]
+    out=deepcopy(state)
+    out.setdefault('raw_input_deliveries',{})[body['request_id']]={
+        'lot_id':lot,'owner':owner,'pile':body['pile'],'packet':{
+            'schema':'banjo.bulk-material.v1','source':'excavated_ground','form':_bulk_form(contents),
+            'thermal_state':'unmodeled','contents':contents}}
+    out['receipts'][body['request_id']]=digest(body);out['revision']+=1
+    validate_state(out)
+    return out,False
 
 
 def return_bulk(state,body):

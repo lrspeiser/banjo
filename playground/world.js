@@ -3616,7 +3616,50 @@ const resourceVisuals = goodsVisuals({scene,camera,groundAt,
     return answer;
   }});
 
-const deliveryMenus=new Map(),deliveryBusy=new Set();
+const deliveryMenus=new Map(),deliveryBusy=new Set(),processMenus=new Map();
+function processRecipePanel(program) {
+  const pane=document.createElement('section');pane.dataset.processRecipe=program.id;
+  const menu=processMenus.get(program.id);
+  const refresh=async()=>{
+    processMenus.set(program.id,await api('/api/world/process',{session:world.session,program:program.id,action:'view'}));
+    showPicked();
+  };
+  const button=document.createElement('button');button.type='button';
+  button.textContent=menu?'Refresh recipes':'Choose recipe';
+  button.onclick=()=>refresh().catch(e=>lastAction(e.message));pane.append(button);
+  if(!menu)return pane;
+  const select=document.createElement('select');select.setAttribute('aria-label','Processing recipe');
+  for(const recipe of menu.choices) {
+    const option=document.createElement('option');option.value=recipe.name;option.textContent=titled(recipe.name);
+    option.selected=recipe.name===menu.recipe;select.append(option);
+  }
+  pane.append(select);
+  const values=document.createElement('div');pane.append(values);
+  const describe=()=>{
+    const recipe=menu.choices.find(r=>r.name===select.value);
+    values.replaceChildren(inspectionValues([['Work',`${recipe.work_j_per_kg} J/kg`],
+      ['Heat',recipe.needs_c>0?`≥ ${recipe.needs_c} °C`:'Cold process'],
+      ...(recipe.needs_c>0?[['Chamber',menu.temperature_c!=null?`${Math.round(menu.temperature_c)} °C`:'Unknown'],
+        ['Heating',`${menu.element_w || 0} W · additional energy`]]:[]),
+      ['Output',Object.entries(recipe.out).map(([s,kg])=>`${massLabel(kg)} ${titled(s)}`).join(' · ')]]));
+  };
+  select.onchange=describe;describe();
+  const apply=document.createElement('button');apply.type='button';apply.textContent=program.power?'Stop machine to change':'Use recipe';
+  apply.disabled=program.power;apply.dataset.selectProcessRecipe=program.id;
+  apply.onclick=async()=>{
+    apply.disabled=true;
+    try {
+      const result=await api('/api/world/process',{session:world.session,program:program.id,action:'select',
+        recipe:select.value,expected_recipe:menu.recipe,person:whereIAm()});
+      processMenus.set(program.id,result);deliveryMenus.delete(result.input);
+      lastAction(`Recipe → ${titled(result.recipe)}`);
+    } catch(e) {lastAction(e.message);}
+    finally {await refresh();}
+  };
+  pane.append(apply);return pane;
+}
+const rawInputPendingKey=()=>`banjo.raw-input.${worldId}.${playerId}`;
+function rawInputPending() {try{return JSON.parse(sessionStorage.getItem(rawInputPendingKey()) || 'null');}catch{return null;}}
 function inputDeliveryPanel(name) {
   const pile=world.goods?.stockpiles?.find(p=>p.name===name);
   if(!pile || watchedId || !worldId)return document.createElement('span');
@@ -3633,11 +3676,18 @@ function inputDeliveryPanel(name) {
   }
   async function change(body) {
     deliveryBusy.add(name);showPicked();
+    const raw=body.lot_id!=null;
+    if(raw)sessionStorage.setItem(rawInputPendingKey(),JSON.stringify(body));
     try {
       const answer=await api('/api/world/goods/deliver',{session:world.session,...body,person:whereIAm()});
+      if(raw)sessionStorage.removeItem(rawInputPendingKey());
       if(answer.goods)followGoods(answer.goods);
       lastAction(answer.released?'Returned to Inventory':`${Object.entries(answer.delivered).map(([s,kg])=>`${heldSaid(kg)} ${titled(s)}`).join(' · ')} → Input`);
-    } catch(error) { lastAction(error.message || String(error)); }
+    } catch(error) {
+      if(raw && /revision changed|not enough stored|belongs to another player|does not accept|within 2 m|beside the input/i.test(error.message))
+        sessionStorage.removeItem(rawInputPendingKey());
+      lastAction(error.message || String(error));
+    }
     finally {
       deliveryBusy.delete(name);
       try {await refresh();}catch(error){lastAction(error.message || String(error));showPicked();}
@@ -3659,9 +3709,39 @@ function inputDeliveryPanel(name) {
     item.append(thumbnail({name:titled(row.substance),material:row.substance,shape:'box',color_rgba:slotColour(row.substance).slice(1)}));
     const label=document.createElement('span');label.textContent=titled(row.substance);
     const value=document.createElement('b');value.textContent=massLabel(row.mass_kg);item.append(label,value);pane.append(item);
+    pane.append(inspectionValues([['In hopper',massLabel(row.hopper_kg || 0)],['Stored',massLabel(row.stored_kg || 0)]]));
+    if(row.mass_kg<=0 && !row.stored_kg && !row.hopper_kg) {
+      const guidance=document.createElement('div');guidance.className='pk-input-guidance';guidance.dataset.inputGuidance=row.substance;
+      const text=document.createElement('small');
+      text.textContent=({gather_ground:'Dig → Inventory · Store → Load here',store_ground:'Inventory · Store → Load here',
+        mine_source:'Mining rover → collect output → Load here',
+        source_exhausted:'Source exhausted · find another source or trade',
+        find_supply:'Find supply · Recipes shows available routes'}[row.next] || 'Load from storage below');
+      guidance.append(text);
+      const groundRoute=['gather_ground','store_ground'].includes(row.next);
+      const link=document.createElement('a');link.textContent=groundRoute?'Inventory':'Supply · Recipes';
+      const url=new URL(screenUrl(groundRoute?'inventory':'recipes'),location.origin);
+      if(!groundRoute)url.searchParams.set('material',row.substance);
+      link.href=url.pathname+url.search;guidance.append(link);pane.append(guidance);
+      for(const source of row.sources || [])pane.append(inspectionValues([[titled(source.name),source.left_kg>0?massLabel(source.left_kg):'Exhausted']]));
+    }
     const amount=Math.min(5,Math.floor(row.mass_kg*1e6)/1e6);
     const b=button(amount>0?`Load ${massLabel(amount)}`:'Inventory empty',()=>change({pile:name,substance:row.substance,mass_kg:amount,request_id:crypto.randomUUID()}),amount<=0 || distance>2);
     b.dataset.deliverSubstance=row.substance;
+  }
+  const pendingRaw=rawInputPending();
+  if(pendingRaw) {
+    const b=button(pendingRaw.pile===name?'Retry stored input':'Pending input · return to its machine',()=>change(pendingRaw),pendingRaw.pile!==name);
+    b.dataset.retryRawInput='true';
+  } else for(const row of menu.stored || []) {
+    const item=document.createElement('div');item.className='mini-resource';
+    item.append(thumbnail({name:titled(row.substance),material:row.substance,shape:'box',color_rgba:slotColour(row.substance).slice(1)}));
+    const label=document.createElement('span');label.textContent=`${titled(row.substance)} · ${row.pool==='personal'?'Stored':'Shared storage'}`;
+    const value=document.createElement('b');value.textContent=massLabel(row.mass_kg);item.append(label,value);pane.append(item);
+    const amount=Math.min(5,Math.floor(row.mass_kg*1e6)/1e6);
+    const b=button(`Load stored ${massLabel(amount)}`,()=>change({pile:name,substance:row.substance,mass_kg:amount,
+      lot_id:row.lot_id,revision:menu.raw_revision,request_id:crypto.randomUUID()}),amount<=0 || distance>2);
+    b.dataset.deliverRawLot=row.lot_id;
   }
   for(const pending of menu.pending.filter(p=>p.pile===name)) {
     pane.append(inspectionValues([['Reserved',Object.entries(pending.goods).map(([s,kg])=>`${massLabel(kg)} ${titled(s)}`).join(' · ')]]));
@@ -5413,6 +5493,7 @@ function showPicked() {
     if (program) {
       const intake=world.brains.get(program.name)?.routine?.making?.intake;
       if(intake)rows.push(inputDeliveryPanel(intake));
+      if(world.brains.get(program.name)?.routine?.kind==='process' && !watchedId)rows.push(processRecipePanel(program));
       const doing = document.createElement("p");
       doing.className = "pk-doing";
       doing.textContent = program.power ? (program.why || program.doing || "running")
@@ -5876,9 +5957,9 @@ function showMaterialPreview() {
         gather?.label || "Cannot dig here" : "Move closer";
       add(surface,titled(surface),water?.depth>.005 ? "Under water" : "Surface",action,"surface");
     }
-    for(const d of world.goods?.deposits||[])if(d.left_kg>0 &&
+    for(const d of world.goods?.deposits||[])if(
       Math.hypot(point[0]-d.at_m[0],point[2]-d.at_m[1])<=d.radius_m)
-      add(d.substance,titled(d.substance),"Mining rover","View source","ore");
+      add(d.substance,titled(d.substance),d.left_kg>0?"Mining rover":"Source exhausted",d.left_kg>0?"View source":"Find another source","ore");
   }
   const sources=[...(world.goods?.deposits||[]).filter(d=>d.left_kg>0).map(d=>({...d,method:"Mining rover",material:d.substance})),
     ...(world.goods?.stockpiles||[]).filter(p=>!p.rack && Object.values(p.holds_kg).some(v=>v>0)).map(p=>

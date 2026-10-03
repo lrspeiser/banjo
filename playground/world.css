@@ -815,3 +815,5 @@ body.moving-a-thing #panel .workshop-entry { border-style: dashed; }
 #world-load-meter nav[hidden] { display:none; }
 #cursor-mode { grid-column:1/-1; font-size:.75rem; padding:.3rem .5rem; }
 #cursor-mode[aria-pressed="true"] { border-color:#a7d7ed; color:#d7f2ff; }
+.pk-input-guidance { display: grid; gap: .5rem; margin: .4rem 0 .6rem; }
+.pk-input-guidance a { width: fit-content; padding: .4rem .7rem; border: 1px solid var(--edge); border-radius: .3rem; }

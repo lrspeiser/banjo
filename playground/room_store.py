@@ -119,6 +119,7 @@ class RoomStore:
         record['goods_claims']=claims
         deliveries=getattr(room,'goods_deliveries',[])
         world_goods.validate(deliveries,getattr(room,'player_records',{}))
+        world_goods.validate_raw_deliveries(getattr(room,'fabrication_record',None),deliveries)
         record['goods_deliveries']=deliveries
         if isinstance(pending, list):
             world_for_market = getattr(room, "world_record", None)
@@ -258,6 +259,7 @@ class RoomStore:
         room.goods_durable_claims={r['request_id'] for r in room.goods_claims}
         room.goods_deliveries=record.get('goods_deliveries',[])
         world_goods.validate(room.goods_deliveries,room.player_records)
+        world_goods.validate_raw_deliveries(room.fabrication_record,room.goods_deliveries)
         room.goods_durable_deliveries={r['request_id'] for r in room.goods_deliveries}
         room.machine_evidence_pending = record.get("machine_evidence_pending", [])
         import machine_witness

@@ -64,6 +64,7 @@ class PrivateGround(unittest.TestCase):
         self.assertTrue(call('store_ground',request)['replayed'])
         self.assertEqual(0,inv()['ground_load']['total_kg'])
         self.assertAlmostEqual(b['total_kg'],inv(bob['token'])['ground_load']['total_kg'],places=5)
+
         self.assertAlmostEqual(legacy['total_kg'],inv()['unassigned_ground']['total_kg'],places=5)
         self.assertEqual([],inv(bob['token'])['stored_ground'])
         with self.assertRaises(urllib.error.HTTPError):call('store_ground',request,bob['token'])
@@ -123,6 +124,210 @@ class PrivateGround(unittest.TestCase):
         self.assertAlmostEqual(legacy['total_kg'],inv()['ground_load']['total_kg'],places=5)
         self.assertAlmostEqual(b['total_kg'],inv(bob['token'])['ground_load']['total_kg'],places=5)
 
+    def glass_input_fixture(self):
+        world,alice,bob,app,a,b,legacy=self.storage_fixture()
+        request=self.raw_request(app,'glass-input-source-0001',a)
+        self.post('/api/world/fabrication/store_ground',request,world)
+        sid=app.live.session.id
+        program=next(p for p in app.live.session.state['machines']['programs']
+            if app.brains.of(p['name']).routine and app.brains.of(p['name']).routine.recipe=='smelt copper')
+        for p in app.live.session.state['machines']['programs']:
+            self.post('/api/world/machine',{'session':sid,'program':p['id'],'power':False,
+                'sender':'glass-input-fixture','seq':1},world)
+        routine=app.brains.of(program['name']).routine
+        intake=app.brains.goods.by_name(routine.intake)
+        floor=app.live.act({'session':sid,'op':'survey','at':intake['at_m']})['survey']['ground_m']
+        person={'eyes_m':[intake['at_m'][0],floor+1.62,intake['at_m'][1]],'facing':[0,0,-1]}
+        selection={'session':sid,'program':program['id'],'action':'select','recipe':'melt glass',
+            'expected_recipe':routine.recipe,'person':person}
+        return world,alice,bob,app,request,program,intake,person,selection
+
+    def test_stored_sand_glass_input_native_energy_private_output_and_restart(self):
+        world,alice,bob,app,stored,program,intake,person,selection=self.glass_input_fixture()
+        def call(path,body,token=None):
+            try:return self.post(path,body,world,token)
+            except urllib.error.HTTPError as exc:
+                exc.add_note(exc.read().decode());raise
+        def delivery(ident,mass=5):return {'session':app.live.session.id,'pile':intake['name'],
+            'substance':'sand','mass_kg':mass,'request_id':ident,'lot_id':stored['request_id'],
+            'revision':app.room.fabrication_record['revision'],'person':person}
+        original=app.brains.of(program['name']).routine.recipe
+        with mock.patch.object(app.store,'save',side_effect=OSError('disk full')):
+            with self.assertRaises(urllib.error.HTTPError):call('/api/world/process',selection)
+        self.assertEqual(original,app.brains.of(program['name']).routine.recipe)
+        selected=call('/api/world/process',selection)
+        self.assertEqual('melt glass',selected['recipe'])
+        self.assertTrue(call('/api/world/process',selection)['repeated'])
+        menu=call('/api/world/goods/deliver',{'session':app.live.session.id,'action':'view','pile':intake['name']})
+        sand=next(r for r in menu['stored'] if r['substance']=='sand')
+        self.assertGreaterEqual(sand['mass_kg'],7)
+        initial=sand['mass_kg'];before=deepcopy(intake['holds'])
+        request=delivery('sand-delivery-paid-0001')
+        with self.assertRaises(urllib.error.HTTPError):call('/api/world/goods/deliver',request,bob['token'])
+        with mock.patch.object(app.store,'save',side_effect=OSError('disk full')):
+            with self.assertRaises(urllib.error.HTTPError) as failed:call('/api/world/goods/deliver',request)
+            self.assertEqual(503,failed.exception.code)
+        self.assertEqual(before,intake['holds'])
+        self.assertNotIn(request['request_id'],app.room.fabrication_record.get('raw_input_deliveries',{}))
+        call('/api/world/goods/deliver',request)
+        self.assertTrue(call('/api/world/goods/deliver',request)['repeated'])
+        self.assertEqual(5,intake['holds']['sand'])
+        with self.assertRaises(urllib.error.HTTPError):call('/api/world/goods/deliver',request,bob['token'])
+        # Lost acknowledgement preserves the receiving world through a normal
+        # shutdown; its retry cannot debit another 2 kg from the raw lot.
+        extra=delivery('sand-delivery-lost-ack-0001',2)
+        save=app.store.save
+        def lost(record):self.assertTrue(save(record));raise OSError('acknowledgement lost')
+        with mock.patch.object(app.store,'save',side_effect=lost):
+            with self.assertRaises(urllib.error.HTTPError):call('/api/world/goods/deliver',extra)
+        self.assertEqual(7,intake['holds']['sand'])
+        self.stop();self.start();call('/api/world/open',{})
+        app=self.app.hub.get(world);intake=app.brains.goods.by_name(intake['name'])
+        self.assertEqual('melt glass',app.brains.of(program['name']).routine.recipe)
+        extra['session']=app.live.session.id
+        self.assertTrue(call('/api/world/goods/deliver',extra)['repeated'])
+        self.assertEqual(7,intake['holds']['sand'])
+        from mcp import fabrication
+        remaining=next(v for v in fabrication.raw_inventory(app.room.fabrication_record)[stored['request_id']] if v['substance']=='sand')
+        self.assertAlmostEqual(initial-7,remaining['mass_kg'],places=6)
+        output=app.brains.goods.by_name(app.brains.of(program['name']).routine.output)
+        meters=deepcopy(app.live.session.state['machines']['stores'])
+        call('/api/world/machine',{'session':app.live.session.id,'program':program['id'],'power':True,
+            'sender':'glass-input-fixture','seq':2})
+        for _ in range(600):
+            app.clock._tick(.2)
+            output=app.brains.goods.by_name(output['name'])
+            if output.get('holds',{}).get('glass',0)>=7*.85-1e-6:break
+        self.assertAlmostEqual(5.95,output.get('holds',{}).get('glass',0),places=5)
+        self.assertNotIn('sand',intake['holds'])
+        self.assertEqual(before,intake['holds'],'Unselected copper remains in the same hopper')
+        app.live.act({'session':app.live.session.id,'op':'poses'})
+        drawn=sum(s['given_j'] for s in app.live.session.state['machines']['stores'])-sum(s['given_j'] for s in meters)
+        self.assertGreater(drawn,7*800,'The native battery pays for heating as well as process work')
+        call('/api/world/machine',{'session':app.live.session.id,'program':program['id'],'power':False,
+            'sender':'glass-input-fixture','seq':3})
+        at=output['at_m'];floor=app.live.act({'session':app.live.session.id,'op':'survey','at':at})['survey']['ground_m']
+        pickup={'session':app.live.session.id,'pile':output['name'],'request_id':'glass-private-output-0001',
+            'person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[0,0,-1]}}
+        call('/api/world/goods/collect',pickup)
+        self.assertTrue(call('/api/world/goods/collect',pickup)['repeated'])
+        def glass(token=None):
+            inventory=call('/api/workshop/inventory',{},token)
+            return next(r['personal_kg'] for r in inventory['materials'] if r['material']=='glass')
+        self.assertAlmostEqual(5.95,glass(),places=5);self.assertEqual(0,glass(bob['token']))
+        self.stop();self.start();call('/api/world/open',{})
+        app=self.app.hub.get(world)
+        extra['session']=pickup['session']=app.live.session.id
+        self.assertTrue(call('/api/world/goods/deliver',extra)['repeated'])
+        self.assertTrue(call('/api/world/goods/collect',pickup)['repeated'])
+        self.assertAlmostEqual(5.95,glass(),places=5);self.assertEqual(0,glass(bob['token']))
+        (ROOT/'build/resource-flow/stored-sand-glass.json').write_text(json.dumps({
+            'stored_sand_kg':initial,'delivered_sand_kg':7,'remaining_sand_kg':initial-7,
+            'glass_kg':5.95,'declared_process_j':5600,'native_store_draw_j':drawn,
+            'restart':'whole','build_use':'not yet qualified'},indent=2))
+
+    def test_browser_selects_glass_and_retries_stored_input_after_reload(self):
+        if not flow.qa_browser.CHROME.is_file():self.skipTest('Chrome not installed')
+        world,alice,bob,app,stored,program,intake,person,selection=self.glass_input_fixture()
+        chrome=flow.qa_browser.Chrome(1280,900);self.addCleanup(chrome.close)
+        p=chrome.page;p.send('Page.enable');p.send('Runtime.enable')
+        p.send('Page.addScriptToEvaluateOnNewDocument',{'source':
+            'localStorage.setItem('+json.dumps('banjo.player.'+world)+','+json.dumps(alice['token'])+');'})
+        def wait(expr):
+            deadline=time.monotonic()+35
+            while time.monotonic()<deadline:
+                if p.evaluate('Boolean('+expr+')'):return
+                time.sleep(.1)
+            self.fail(expr+'; '+str(p.evaluate('document.querySelector("#picked")?.textContent')))
+        def click(selector):
+            spot=p.evaluate('(()=>{const b=document.querySelector('+json.dumps(selector)+');b.scrollIntoView({block:"center"});const r=b.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()')
+            for kind in ('mousePressed','mouseReleased'):
+                p.send('Input.dispatchMouseEvent',{'type':kind,'button':'left','clickCount':1,**spot})
+        def select_machine():
+            wait('window.banjoRoom?.ready()')
+            p.evaluate('banjoRoom.standAt('+','.join(map(str,person['eyes_m']))+');banjoRoom.pick('+json.dumps(program['body'])+');')
+            wait('document.querySelector("[data-process-recipe] button")')
+        p.send('Page.navigate',{'url':self.base+f'/world?world={world}&hold=1'})
+        select_machine();click('[data-process-recipe] button')
+        wait('document.querySelector("[data-process-recipe] select")')
+        p.evaluate('(()=>{const s=document.querySelector("[data-process-recipe] select");s.value="melt glass";s.dispatchEvent(new Event("change"));})()')
+        click('[data-select-process-recipe]')
+        wait('document.querySelector("#details-last-text")?.textContent.includes("Recipe →")')
+        self.assertEqual('melt glass',app.brains.of(program['name']).routine.recipe)
+        click('[data-input-delivery] button')
+        wait('document.querySelector("[data-deliver-raw-lot]")')
+        before=deepcopy(intake['holds'])
+        with mock.patch.object(app.store,'save',side_effect=OSError('disk full')):
+            click('[data-deliver-raw-lot]')
+            wait('document.querySelector("[data-retry-raw-input]")')
+        self.assertEqual(before,intake['holds'])
+        p.send('Page.reload',{});select_machine();click('[data-input-delivery] button')
+        wait('document.querySelector("[data-retry-raw-input]")')
+        click('[data-retry-raw-input]')
+        wait('!document.querySelector("[data-retry-raw-input]") && document.querySelector("#details-last-text")?.textContent.includes("→ Input")')
+        self.assertEqual(5,app.brains.goods.by_name(intake['name'])['holds']['sand'])
+        self.assertEqual([],[e for e in p.events if e.get('method')=='Runtime.exceptionThrown'])
+        (ROOT/'build/resource-flow/stored-sand-input.png').write_bytes(
+            base64.b64decode(p.send('Page.captureScreenshot',{'format':'png'})['data']))
+        p.send('Page.addScriptToEvaluateOnNewDocument',{'source':
+            'localStorage.setItem('+json.dumps('banjo.player.'+world)+','+json.dumps(bob['token'])+');'})
+        # Finish the loaded batch before looking at the empty input as a
+        # peer. Collection remains separately covered by the native journey.
+        self.post('/api/world/machine',{'session':app.live.session.id,'program':program['id'],
+            'power':True,'sender':'browser-guidance','seq':1},world)
+        output=app.brains.goods.by_name(app.brains.of(program['name']).routine.output)
+        for _ in range(600):
+            app.clock._tick(.2)
+            if output.get('holds',{}).get('glass',0)>=4.25-1e-6:break
+        self.assertAlmostEqual(4.25,output.get('holds',{}).get('glass',0),places=5)
+        p.send('Page.reload',{});select_machine();click('[data-input-delivery] button')
+        wait('document.querySelector("[data-input-guidance=sand]")')
+        self.assertIn('Inventory · Store → Load here',p.evaluate('document.querySelector("[data-input-guidance=sand]").textContent'))
+        self.assertFalse(p.evaluate('Boolean(document.querySelector("[data-deliver-raw-lot]"))'))
+        (ROOT/'build/resource-flow/empty-sand-input.png').write_bytes(
+            base64.b64decode(p.send('Page.captureScreenshot',{'format':'png'})['data']))
+
+    def test_empty_input_exhausted_source_and_current_recipe_guidance(self):
+        world,alice,bob,app,stored,program,intake,person,selection=self.glass_input_fixture()
+        def view(token=None):return self.post('/api/world/goods/deliver',
+            {'session':app.live.session.id,'action':'view','pile':intake['name']},world,token)
+        self.assertEqual('processing',view(bob['token'])['inputs'][0]['next'])
+        self.post('/api/world/goods/collect',{'session':app.live.session.id,'pile':intake['name'],
+            'request_id':'guidance-input-withdraw','person':person},world)
+        self.assertEqual('load_inventory',view()['inputs'][0]['next'])
+        self.assertEqual('mine_source',view(bob['token'])['inputs'][0]['next'])
+        # Explicit exhausted-ledger fixture; no additional ore or yield is granted.
+        for d in app.brains.goods.deposits:
+            if d['substance']=='copper ore':d['taken_kg']=d['reserve_kg']
+        exhausted=view(bob['token'])['inputs'][0]
+        self.assertEqual('source_exhausted',exhausted['next'])
+        self.assertTrue(all(d['left_kg']==0 for d in exhausted['sources']))
+        self.post('/api/world/process',selection,world)
+        self.assertEqual('load_stored',view()['inputs'][0]['next'])
+        row=view(bob['token'])['inputs'][0]
+        self.assertEqual('store_ground',row['next']);self.assertGreater(row['carried_kg'],0)
+        # An authenticated new gatherer has no carried or stored material.
+        newcomer=self.join(world,'New gatherer')
+        self.assertEqual('gather_ground',view(newcomer['token'])['inputs'][0]['next'])
+        catalog=self.post('/api/workshop/recipes',{},world)
+        glass=next(r for r in catalog['room_recipes'] if r['name']=='melt glass')
+        copper=next(r for r in catalog['room_recipes'] if r['name']=='smelt copper')
+        self.assertIn(program['name'],glass['worked_by']);self.assertNotIn(program['name'],copper['worked_by'])
+        self.assertEqual('smelt copper',next(p for p in app.room.spec['machines']['programs']
+            if p['name']==program['name'])['routine']['recipe'])
+        from copy import deepcopy
+        import machine_routine, world_goods
+        record=deepcopy(app.brains.runtime())
+        original=machine_routine.Routine(program['name'],machine_routine.declared_for(app.room.spec,program['name'])).record()
+        original.pop('process_recipe')
+        record[program['name']]=original
+        machine_routine.validate_runtime(app.room.spec,record) # Old v1 retains the original recipe.
+        record[program['name']]['process_recipe']='invented free output'
+        with self.assertRaises(ValueError):machine_routine.validate_runtime(app.room.spec,record)
+        # A saved source debit cannot survive without its paired receiving claim.
+        state=deepcopy(app.room.fabrication_record)
+        state['raw_input_deliveries']={'orphan':{}}
+        with self.assertRaises(ValueError):world_goods.validate_raw_deliveries(state,app.room.goods_deliveries)
     def test_browser_store_retrieve_recovery_and_pending_retry(self):
         if not flow.qa_browser.CHROME.is_file():self.skipTest('Chrome not installed')
         world,alice,bob,app,a,b,legacy=self.storage_fixture()

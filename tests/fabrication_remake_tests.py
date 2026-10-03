@@ -640,6 +640,12 @@ class LabRemake(unittest.TestCase):
         self.assertEqual(500,self.post('/api/workshop/market',bank,world)['balance_j'])
 
     def test_fresh_mined_processed_personal_copper_funds_saved_lamp_use_and_server_restart(self):
+        self.material_build_journey()
+
+    def test_gathered_sand_processed_glass_funds_saved_lamp_use_and_server_restart(self):
+        self.material_build_journey(gathered_sand=True)
+
+    def material_build_journey(self,gathered_sand=False):
         """Real rover supply, private output, saved design and finite manufacture.
 
         Copper is the existing assembly-supply ledger; its constituent native
@@ -657,6 +663,11 @@ class LabRemake(unittest.TestCase):
             with library._connect(app) as db:
                 row=db.execute("SELECT mass_kg FROM workshop_goods_rack WHERE owner_id=? AND substance='copper'",
                                (player['id'],)).fetchone()
+            return float(row['mass_kg']) if row else 0.
+        def exact_material(player,material):
+            with library._connect(app) as db:
+                row=db.execute('SELECT mass_kg FROM workshop_material_rack WHERE owner_id=? AND material=?',
+                    (player['id'],material)).fetchone()
             return float(row['mass_kg']) if row else 0.
         self.assertEqual({},app.room.fabrication_record['stock_kg'])
         self.assertEqual(0.,app.room.fabrication_record['energy_j'])
@@ -703,6 +714,72 @@ class LabRemake(unittest.TestCase):
                     'person':{'eyes_m':[x,ground+1.62,z],'facing':[0,0,-1]}}
         self.assertEqual(copper,post('/api/world/goods/collect',collection)['collected']['copper'])
         self.assertEqual(copper,exact_copper(owner));self.assertEqual(0.,exact_copper(peer))
+        sand_proof=None
+        if gathered_sand:
+            # Use the real Field pick and shared clock; terrain edits or a
+            # granted bag balance cannot qualify this player journey.
+            person=condition_flow.BodyCondition.take_pick(self,world,app)
+            target=[-1.,0.]
+            ground=app.live.act({**context(),'op':'survey','at':target})['survey']['ground_m']
+            floor=app.live.act({**context(),'op':'survey','at':[-2.2,0.]})['survey']['ground_m']
+            person={'standing_m':[-2.2,floor,0.],'eyes_m':[-2.2,floor+1.62,0.],
+                'facing':[1,0,0],'look_direction':[1.2,ground-floor-1.62,0.]}
+            replies=[]
+            def inventory():return post('/api/workshop/inventory',{})
+            for attempt in range(50):
+                if inventory()['ground_load']['sand_kg']>=4.32/.85+.00001:break
+                answer=[];errors=[]
+                def use():
+                    try:answer.append(post('/api/world/tool/use',{**context(),'person':person,'at_m':[-1.,ground,0.]}))
+                    except BaseException as exc:errors.append(exc)
+                worker=threading.Thread(target=use,daemon=True);worker.start()
+                deadline=time.monotonic()+25
+                while worker.is_alive() and time.monotonic()<deadline:
+                    app.clock._tick(.05);time.sleep(.015)
+                worker.join(1);self.assertFalse(worker.is_alive());self.assertEqual([],errors)
+                replies.extend(answer)
+            load=inventory()['ground_load'];sand=load['sand_kg']
+            self.assertGreaterEqual(sand,4.32/.85)
+            self.assertTrue(any((a.get('result') or {}).get('loosened_kg',0)>0 for a in replies))
+            shown=post('/api/world/inventory/shown',context())
+            post('/api/world/inventory',{**context(),'op':'stow','item':'field pick',
+                'request':'glass-journey-stow','revision':shown['record']['revision'],'person':person})
+            state=post('/api/world/fabrication/state',context())
+            raw={**context(),'request_id':'glass-journey-store','revision':state['state']['revision'],
+                **{s+'_m3':load.get(s+'_m3',0) for s in ('sand','soil','rock')}}
+            post('/api/world/fabrication/store_ground',raw)
+            machine=next(p for p in app.live.session.state['machines']['programs'] if p['name']==processor.name)
+            post('/api/world/machine',{'session':app.live.session.id,'program':machine['id'],
+                'power':False,'sender':'glass-journey','seq':1})
+            # A produced batch still owns its declared duration while stopped.
+            issued=processor.frame.issued or {}
+            while app.live.session.state['t']<processor.frame.issued_t+issued.get('took_s',0)+.1:
+                app.clock._tick(.2)
+            post('/api/world/process',{'session':app.live.session.id,'program':machine['id'],
+                'action':'select','recipe':'melt glass','expected_recipe':processor.recipe,'person':input_person})
+            intake=app.brains.goods.by_name(processor.intake);output=app.brains.goods.by_name(processor.output)
+            state=post('/api/world/fabrication/state',context())
+            sand_mass=math.floor(sand*1e6)/1e6
+            sand_input={'session':app.live.session.id,'pile':intake['name'],'substance':'sand','mass_kg':sand_mass,
+                'lot_id':raw['request_id'],'revision':state['state']['revision'],
+                'request_id':'glass-journey-input','person':input_person}
+            post('/api/world/goods/deliver',sand_input)
+            before=sum(s['given_j'] for s in app.live.session.state['machines']['stores'])
+            post('/api/world/machine',{'session':app.live.session.id,'program':machine['id'],
+                'power':True,'sender':'glass-journey','seq':2})
+            for _ in range(700):
+                app.clock._tick(.2)
+                output=app.brains.goods.by_name(output['name'])
+                if output.get('holds',{}).get('glass',0)>=sand_mass*.85-1e-6:break
+            glass=output.get('holds',{}).get('glass',0);self.assertAlmostEqual(sand_mass*.85,glass,delta=1e-6)
+            draw=sum(s['given_j'] for s in app.live.session.state['machines']['stores'])-before
+            self.assertGreater(draw,sand_mass*800)
+            post('/api/world/machine',{'session':app.live.session.id,'program':machine['id'],
+                'power':False,'sender':'glass-journey','seq':3})
+            glass_pickup={**collection,'session':app.live.session.id,'request_id':'glass-journey-output'}
+            self.assertEqual(glass,post('/api/world/goods/collect',glass_pickup)['collected']['glass'])
+            sand_proof={'gathered_sand_kg':sand,'delivered_sand_kg':sand_mass,'glass_kg':glass,
+                'native_process_draw_j':draw,'native_work_receipts':len(replies)}
         from mcp import workshop_components
         _,overrides=workshop_components.design_from_spec({'kind':'mine-lamp'})
         overrides['@machines']={
@@ -727,7 +804,7 @@ class LabRemake(unittest.TestCase):
         for material,mass in model.materials(plan['quote'],'stock').items():
             market=post('/api/workshop/market',{'action':'view'})
             offer=next(o for o in market['offers'] if o['substance']==material)
-            for index in range(math.ceil(mass/offer['mass_kg'])):
+            for index in range(0 if gathered_sand and material=='glass' else math.ceil(mass/offer['mass_kg'])):
                 offer=next(o for o in market['offers'] if o['substance']==material)
                 for _ in range(13):
                     if offer['remaining']>0:break
@@ -797,12 +874,21 @@ class LabRemake(unittest.TestCase):
         post('/api/world/fabrication/fund_goods',transfer)
         self.assertEqual(copper-.5,exact_copper(owner))
         post('/api/world/goods/deliver',{**delivery,'session':app.live.session.id})
-        self.assertEqual({},app.brains.goods.by_name(intake['name'])['holds'])
+        self.assertLess(sum(app.brains.goods.by_name(intake['name'])['holds'].values()),1e-6)
+        if gathered_sand:
+            post('/api/world/goods/deliver',{**sand_input,'session':app.live.session.id})
+            post('/api/world/goods/collect',{**glass_pickup,'session':app.live.session.id})
+            # Inventory deliberately rounds display values. Audit the exact
+            # durable account, rather than widening a physical tolerance.
+            self.assertAlmostEqual(glass-model.materials(plan['quote'],'stock')['glass'],
+                exact_material(owner,'glass'),delta=1e-9)
+            self.assertEqual(0,exact_material(peer,'glass'))
+            self.assertEqual(native['ground'],install._snapshot(app.live)['ground'])
         reopened=install._snapshot(app.live)
         self.assertEqual(battery,next(s for s in reopened['energy_stores'] if s['id']==battery['id']))
         self.assertEqual(candidate,post('/api/workshop/library',{'action':'load','item_id':saved['item_id']})['library_item']['payload'])
         out=ROOT/'build/resource-flow';out.mkdir(parents=True,exist_ok=True)
-        (out/'material-build-lamp.json').write_text(json.dumps({'starter_ore_kg':starter,'mined_ore_kg':mined,
+        (out/('gathered-sand-build-lamp.json' if gathered_sand else 'material-build-lamp.json')).write_text(json.dumps({'sand_route':sand_proof,'starter_ore_kg':starter,'mined_ore_kg':mined,
             'processed_copper_kg':copper,'assembly_copper_kg':.5,'product':made,'audit':audit,
             'battery':battery,'trader_restock_wait_s':restock_wait_s,'restart_no_duplicate':True},indent=2),encoding='utf-8')
 

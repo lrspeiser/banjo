@@ -16,6 +16,7 @@ read beside it and spend nothing.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 import workshop_library
@@ -277,6 +278,14 @@ def recipes(app: Any) -> dict[str, Any]:
             templates.append({"name": saved.get("label") or saved["design_id"],
                               "source": "saved", "problem": str(failed)[:160]})
     room = getattr(getattr(app, "room", None), "spec", None) or {}
+    # Mutable process choices live in machine runtime, separate from the
+    # original declarations used to validate saved execution history.
+    room=deepcopy(room)
+    brains=getattr(getattr(app,'brains',None),'brains',{})
+    for program in (room.get('machines') or {}).get('programs',[]):
+        brain=brains.get(program.get('name'))
+        if brain is not None and brain.routine is not None and brain.routine.kind=='process':
+            program['routine']['recipe']=brain.routine.recipe
     block = room.get("goods") if isinstance(room, dict) else None
     room_recipes = []
     if isinstance(block, dict):

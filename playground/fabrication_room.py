@@ -31,7 +31,7 @@ def opened(app, answer):
 PLAYER_ROUTES = {'/api/world/open','/api/world/ask','/api/world/action','/api/world/placement',
     '/api/world/putdown','/api/world/inventory','/api/world/inventory/shown',
     '/api/world/machine','/api/world/watch-machine','/api/world/tool','/api/world/tool/use',
-    '/api/world/goods/collect','/api/world/goods/deliver','/api/world/rover/talk','/api/world/rover/brain',
+    '/api/world/goods/collect','/api/world/goods/deliver','/api/world/process','/api/world/rover/talk','/api/world/rover/brain',
     '/api/world/workshop/context','/api/world/workshop/what_made'}
 PLAYER_NATIVE_OPS = {'step','poses','wield','grab','hand','move','release','stroke',
     'preview_stroke','preview_flight','joints','mechanics','thermo','pick','place_check',
@@ -231,7 +231,8 @@ def _persist(app, room, saved, state, *, recover_ack=False):
         try: durable=app.store.read_record(room.scene)
         except (OSError, ValueError): raise exc
         if (durable.get('world')!=saved or durable.get('fabrication')!=state
-                or durable.get('spec')!=room.spec): raise
+                or durable.get('spec')!=room.spec or durable.get('machine_runtime')!=record.machine_runtime
+                or durable.get('goods_deliveries',[])!=getattr(record,'goods_deliveries',[])): raise
         save_error=exc
         record.persistence={'state':'saved','reason':'','saved_t_s':saved['t_s'],'attempted_t_s':saved['t_s']}
     room.fabrication_record = state
