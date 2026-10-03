@@ -324,6 +324,37 @@ class NativePreciseInstallation(unittest.TestCase):
         return {'scene':'yard','session':p['session'],'preview_id':p['preview_id'],'request_id':key}
     def commit(self,p,key='rigid-install-1'):return install.commit(self.app,self.request(p,key))
 
+    def test_native_player_diagnostic_protocol_and_whole_process_restart(self):
+        session = self.live.session
+        for actor, x in (('human', -10), ('ai', 10)):
+            reply = session.send(op='player-spawn', actor=actor, feet_m=[x, 3, 10])
+            self.assertEqual(70, reply['native_players'][actor]['mass_kg'])
+        session.send(op='player-actuator', actor='human', force_n=[140, 0, 0],
+                     torque_n_m=[0, 0, 0], duration_s=.05)
+        reply = session.send(op='step', dt=1/240, n=4)
+        players = reply['native_players']
+        self.assertGreater(players['human']['velocity_m_s'][0], 0)
+        self.assertEqual(0, players['ai']['velocity_m_s'][0])
+        self.assertAlmostEqual(140*4/240, players['human']['actuator_impulse_n_s'][0])
+        with self.assertRaises(live_session.LiveError):
+            session.send(op='player-spawn', actor='human', feet_m=[0, 3, 0])
+        self.assertEqual(players, session.send(op='poses')['native_players'])
+        saved = self.snap()
+        self.assertEqual(2, len(saved['native_players']))
+        self.live.shutdown()
+        opened = self.live.open(self.app, {'spec': self.room.spec, 'snapshot': saved})
+        self.assertEqual('whole', opened['restored']['tier'])
+        restored = opened['native_players']
+        for actor in ('human', 'ai'):
+            for key in ('body_id', 'position_m', 'orientation_wxyz', 'velocity_m_s',
+                        'angular_velocity_rad_s', 'actuator_work_j', 'actuator_impulse_n_s',
+                        'actuator_angular_impulse_kg_m2_s'):
+                self.assertEqual(players[actor][key], restored[actor][key], key)
+            self.assertEqual(0, restored[actor]['actuator_remaining_s'])
+        after = self.live.session.send(op='step', dt=1/240, n=4)['native_players']
+        self.assertEqual(restored['human']['actuator_work_j'], after['human']['actuator_work_j'])
+        self.assertEqual(restored['human']['actuator_impulse_n_s'], after['human']['actuator_impulse_n_s'])
+
     def test_three_material_installation_uses_actual_native_mass_and_exact_shapes(self):
         for i,material in enumerate(('glass','oak','iron')):
             before=self.snap();old=self.live.session;record=self.room.inventory.record()

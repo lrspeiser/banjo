@@ -18,6 +18,8 @@
 // their own; this is the two of them where the person will see them.
 #include "fastlattice/LiveWorld.hpp"
 #include "fastlattice/TileImpactScene.hpp"
+#include "core/RigidPrimitive.hpp"
+#include "material/MaterialCompiler.hpp"
 #include "terrain/Environment.hpp"
 #include "terrain/GroundWork.hpp"
 #include "thermo/ThermoWorld.hpp"
@@ -71,13 +73,14 @@ Json ball(const std::string &name, const std::string &material, double diameter,
             {"dimensions_m", {diameter, diameter, diameter}}, {"center_m", {at.x, at.y, at.z}}};
 }
 
-std::unique_ptr<LiveWorld> open(const Json &scene, const std::string &saved = {}) {
+std::unique_ptr<LiveWorld> open(const Json &scene, const std::string &saved = {}, Vec3 gravity = {0,-9.81,0}) {
     const std::string text = scene.dump();
     TileImpactRequest request;
     request.cell_size_m = kCell;
     request.backend = BackendKind::CpuParallel;
     request.bodies = readSceneJson(text);
     readSceneSettings(text, request);
+    request.gravity_m_s2 = gravity;
     return saved.empty() ? LiveWorld::open(request) : LiveWorld::open(request,saved);
 }
 
@@ -835,6 +838,157 @@ void exactCompoundsHaveNativeWaterForcesAndRetainTheirState() {
     }
 }
 
+LiveNativePlayer nativePlayerOf(const LiveWorld &world, const std::string &actor) {
+    for (const auto &player : world.nativePlayers()) if (player.actor == actor) return player;
+    throw std::runtime_error("native player missing: " + actor);
+}
+Json nativePlayerScene() {
+    Json scene={{"bodies",{box("marker","concrete",{.08,.08,.08},{40,10,40},true)}}};
+    return scene;
+}
+void nativePlayersHaveSeparateAcceptedActuatorAccounts() {
+    auto world=open(nativePlayerScene(),{},{});
+    world->spawnNativePlayer("human",{-2,2,0});world->spawnNativePlayer("ai",{2,2,0});
+    world->setNativePlayerActuator("human",{280,0,0},{},.25);
+    world->setNativePlayerActuator("ai",{-140,0,0},{},.25);
+    run(*world,.25);
+    const auto human=nativePlayerOf(*world,"human"),ai=nativePlayerOf(*world,"ai");
+    near(human.state.linear_velocity_m_s.x,1,2e-6,"actual 70 kg native mass");
+    near(ai.state.linear_velocity_m_s.x,-.5,2e-6,"independent second actor input");
+    near(human.actuator_impulse_n_s.x,70,1e-10,"human source impulse");
+    near(ai.actuator_impulse_n_s.x,-35,1e-10,"AI source impulse");
+    const double ke=.5*70*lengthSquared(human.state.linear_velocity_m_s);
+    near(human.actuator_work_j,ke,8e-5,"isolated external work versus native kinetic change");
+    near(ai.actuator_work_j,.5*70*lengthSquared(ai.state.linear_velocity_m_s),2e-5,"second actor external work");
+    run(*world,.25);const auto after=nativePlayerOf(*world,"human");
+    near(after.state.linear_velocity_m_s.x,human.state.linear_velocity_m_s.x,1e-12,"expiry does not assign velocity");
+    near(after.actuator_work_j,human.actuator_work_j,1e-12,"expired input does no new work");
+    require(after.actuator_remaining_s==0,"deadman expires");
+    std::cout<<"    P residual="<<70*human.state.linear_velocity_m_s.x-70<<" Ns; work residual="<<human.actuator_work_j-ke<<" J\n";
+    auto spin=open(nativePlayerScene(),{},{});spin->spawnNativePlayer("spin",{0,2,0});
+    spin->setNativePlayerActuator("spin",{},{0,10,0},.25);run(*spin,.25);
+    const auto turned=nativePlayerOf(*spin,"spin");const double inertia=.5*70*.12*.12;
+    near(inertia*turned.state.angular_velocity_rad_s.y,2.5,1e-5,"native axial inertia");
+    const double rotational_ke=.5*inertia*lengthSquared(turned.state.angular_velocity_rad_s);
+    near(turned.actuator_work_j,rotational_ke,5e-5,"isolated torque work");
+    near(turned.actuator_angular_impulse_kg_m2_s.y,2.5,1e-12,"external angular source ledger");
+    require(std::abs(turned.state.orientation_world.y)>.1,"orientation evolves freely");
+    std::cout<<"    L residual="<<inertia*turned.state.angular_velocity_rad_s.y-2.5<<" kg m2/s; torque work residual="<<turned.actuator_work_j-rotational_ke<<" J\n";
+}
+void nativePlayersCollideWithoutPoseAssignments() {
+    auto world=open(nativePlayerScene(),{},{});world->spawnNativePlayer("left",{-.8,2,0});world->spawnNativePlayer("right",{.8,2,0});
+    world->setNativePlayerActuator("left",{560,0,0},{},.25);world->setNativePlayerActuator("right",{-560,0,0},{},.25);
+    run(*world,.25);
+    require(nativePlayerOf(*world,"left").state.linear_velocity_m_s.x>1.9 && nativePlayerOf(*world,"right").state.linear_velocity_m_s.x< -1.9,"actors approach before contact");
+    run(*world,.75);const auto left=nativePlayerOf(*world,"left"),right=nativePlayerOf(*world,"right");
+    require(left.state.center_of_mass_world_m.x<right.state.center_of_mass_world_m.x-.2,"native cylinders cannot pass through each other");
+    // The current pair law derives restitution from the declared contact
+    // damping, even when the individual material restitution is zero.
+    const double restitution=coefficientOfRestitutionFromDamping(.05);
+    require(left.state.linear_velocity_m_s.x<0 && right.state.linear_velocity_m_s.x>0,"native contact reverses approach");
+    const auto kinetic=[](const LiveNativePlayer &player) {
+        const auto q=player.state.orientation_world;
+        const Vec3 omega=Quat{q.w,-q.x,-q.y,-q.z}.rotate(player.state.angular_velocity_rad_s);
+        RigidPrimitive cylinder;cylinder.kind=PrimitiveKind::Cylinder;cylinder.dimensions_m=player.dimensions_m;
+        return .5*70*lengthSquared(player.state.linear_velocity_m_s)+.5*dot(omega,cylinder.inertia(70)*omega);
+    };
+    const double outgoing_ke=kinetic(left)+kinetic(right);
+    require(outgoing_ke<=280+1e-3,"isolated contact cannot create total kinetic energy");
+    std::cout<<"    pair restitution="<<restitution<<"; outgoing vx="<<left.state.linear_velocity_m_s.x<<", "<<right.state.linear_velocity_m_s.x<<" m/s; KE="<<outgoing_ke<<" of 280 J\n";
+    near(length(70*(left.state.linear_velocity_m_s+right.state.linear_velocity_m_s)),0,1e-3,"symmetric isolated contact momentum");
+}
+void nativePlayerStrikersAreNotTheGround() {
+    for(const std::string material:{"glass","oak","iron"}) {
+        Json scene={{"bodies",{box("target",material,{.08,.2,.2},{0,2.85,0})}}};
+        auto world=open(scene,{},{});world->spawnNativePlayer("actor",{-.171,2,0});
+        std::string why;auto saved=Json::parse(world->snapshot(why));
+        saved["native_players"][0]["pose"]["v_m_s"]={500,0,0};
+        auto striking=open(scene,saved.dump(),{});
+        bool seen=false;
+        for(int i=0;i<12;++i) {
+            striking->step(1e-5);
+            for(const auto &impact:striking->impacts(0))if(impact.struck=="target" && impact.by=="native-player:actor") {
+                if(!seen)std::cout<<"    actor struck "<<material<<": speed="<<impact.closing_speed_m_s<<"; break threshold="<<impact.threshold_speed_m_s<<"; energy="<<impact.energy_j<<"; declined="<<impact.declined<<"\n";
+                seen=true;
+                if(impact.would_break || impact.would_dent)
+                    require(!impact.declined.empty(),"unsupported actor fracture is explicitly declined");
+            }
+            require(!striking->steppedBack(),"unsupported actor fracture keeps native contact instead of a fake ground run");
+        }
+        require(seen,"actor contact is attributed to the actual striker");
+    }
+}
+void nativePlayersUseTerrainAndWater() {
+    Json scene=nativePlayerScene();scene["terrain"]={{"generate",{{"kind","basin"},{"nx",64},{"nz",48},{"lake_level_m",3.0}}}};
+    auto wet=open(scene);wet->spawnNativePlayer("swimmer",{0,.4,0});wet->step(kDt);
+    require(!wet->steppedBack(),"submerged player step accepted");
+    const auto report=Json::parse(wet->environment()->reportJson());const auto &rows=report.at("water").at("bodies_in_water");
+    require(rows.size()==1 && rows[0].at("name")=="native-player:swimmer","actual closed player fluid surfaces");
+    const auto swimmer=nativePlayerOf(*wet,"swimmer");const double lift=1000*9.81*swimmer.volume_m3;
+    near(rows[0].at("buoyancy_n").get<double>(),lift,2e-4,"displaced volume hydrostatic oracle");
+    near(rows[0].at("weight_n").get<double>(),70*9.81,1e-9,"actual player weight");
+    near(swimmer.state.linear_velocity_m_s.y,(lift/70-9.81)*kDt,1e-7,"native buoyant acceleration");
+    run(*wet,1);require(nativePlayerOf(*wet,"swimmer").state.center_of_mass_world_m.y>swimmer.state.center_of_mass_world_m.y+.1,"water moves actor without camera correction");
+    near(wet->environment()->water()->residual(),0,1e-10*wet->environment()->water()->volume(),"water volume with actor");
+    scene["terrain"]["generate"]["lake_level_m"]=0.0;auto dry=open(scene);dry->spawnNativePlayer("fall",{0,3,0});dry->step(kDt);
+    near(nativePlayerOf(*dry,"fall").state.linear_velocity_m_s.y,-9.81*kDt,1e-8,"native gravity");
+    bool contacted=false;
+    for(int i=0;i<360;++i) {
+        dry->step(kDt);
+        const auto falling=nativePlayerOf(*dry,"fall");
+        if(falling.state.linear_velocity_m_s.y>1)contacted=true;
+        RigidPrimitive cylinder;cylinder.kind=PrimitiveKind::Cylinder;cylinder.dimensions_m=falling.dimensions_m;
+        const auto pos=falling.state.center_of_mass_world_m;
+        const double bed=dry->environment()->terrain().heightAt(pos.x,pos.z);
+        require(pos.y-cylinder.extent({0,1,0},falling.state.orientation_world)>=bed-.035,"native actor cannot fall through terrain");
+    }
+    require(contacted,"native terrain contact returns a falling actor upward");
+    const auto resting=nativePlayerOf(*dry,"fall");RigidPrimitive shape;shape.kind=PrimitiveKind::Cylinder;shape.dimensions_m=resting.dimensions_m;
+    const auto p=resting.state.center_of_mass_world_m;const double bed=dry->environment()->terrain().heightAt(p.x,p.z);
+    const double bottom=p.y-shape.extent({0,1,0},resting.state.orientation_world);
+    std::cout<<"    avatar volume="<<swimmer.volume_m3<<" m3; lift="<<lift<<" N; first vy="<<swimmer.state.linear_velocity_m_s.y<<" m/s; terrain clearance="<<bottom-bed<<" m\n";
+    require(bottom>=bed-.035,"actual terrain contact rather than camera height");
+}
+void nativePlayersPersistAndRejectInvalidState() {
+    const auto scene=nativePlayerScene();auto world=open(scene,{},{});
+    world->spawnNativePlayer("z-owner",{-2,2,0});world->spawnNativePlayer("a-peer",{2,2,0});
+    world->setNativePlayerActuator("z-owner",{280,0,0},{},.25);run(*world,.1);std::string why;const auto saved=world->snapshot(why);
+    require(!saved.empty(),"native actor snapshot: "+why);auto again=open(scene,saved,{});require(again->restored().tier=="whole","matching whole restore");
+    for(const auto &before:world->nativePlayers()) {
+        const auto after=nativePlayerOf(*again,before.actor);require(before.body_id==after.body_id,"IDs retained independently of actor sort");
+        near(length(after.state.center_of_mass_world_m-before.state.center_of_mass_world_m),0,1e-12,"native COM survives");
+        near(length(after.state.linear_velocity_m_s-before.state.linear_velocity_m_s),0,1e-12,"native velocity survives");
+        near(after.actuator_work_j,before.actuator_work_j,0,"source work survives");
+        near(length(after.actuator_impulse_n_s-before.actuator_impulse_n_s),0,0,"source impulse survives");
+        require(after.actuator_remaining_s==0,"controls clear on reopen");
+    }
+    const auto before=nativePlayerOf(*again,"z-owner");run(*again,.1);
+    near(nativePlayerOf(*again,"z-owner").actuator_work_j,before.actuator_work_j,0,"old input cannot replay work");
+    const Json baseline=Json::parse(saved);
+    for(int fault=0;fault<8;++fault) {
+        auto broken=baseline;auto &rows=broken["native_players"];
+        if(fault==0)rows.push_back(rows[0]);if(fault==1)rows[0]["mass_kg"]=1;
+        if(fault==2)rows[0]["dimensions_m"]={.24,2,.24};if(fault==3)rows[0]["body_id"]=rows[1]["body_id"];
+        if(fault==4)rows[0]["pose"]["q_wxyz"]={0,0,0,0};if(fault==5)rows[0]["actuator_work_j"]="nan";
+        if(fault==6)rows[0]["body_id"]=900000000.5;
+        if(fault==7)rows[0]["model"]="different-avatar";
+        bool refused=false;try{(void)open(scene,broken.dump(),{});}catch(const std::exception &){refused=true;}
+        require(refused,"invalid native actor state fell back to fresh world");
+    }
+    auto legacy=baseline;legacy.erase("native_players");require(open(scene,legacy.dump(),{})->nativePlayers().empty(),"older snapshot has no native actors");
+}
+void nativePlayerInputsAreBoundedAndCannotTeleport() {
+    auto world=open(nativePlayerScene(),{},{});world->spawnNativePlayer("owner",{0,2,0});const auto before=nativePlayerOf(*world,"owner");
+    const auto refuses=[&](const std::function<void()> &action){bool refused=false;try{action();}catch(const std::invalid_argument &){refused=true;}require(refused,"invalid command admitted");};
+    refuses([&]{world->spawnNativePlayer("owner",{9,2,0});});refuses([&]{world->spawnNativePlayer("",{0,2,0});});
+    refuses([&]{world->setNativePlayerActuator("other",{},{},.1);});refuses([&]{world->setNativePlayerActuator("owner",{601,0,0},{},.1);});
+    refuses([&]{world->setNativePlayerActuator("owner",{},{0,121,0},.1);});refuses([&]{world->setNativePlayerActuator("owner",{},{},.251);});
+    refuses([&]{world->setNativePlayerActuator("owner",{},{},std::numeric_limits<double>::quiet_NaN());});
+    near(length(nativePlayerOf(*world,"owner").state.center_of_mass_world_m-before.state.center_of_mass_world_m),0,0,"refused commands preserve pose");
+    for(int i=1;i<32;++i)world->spawnNativePlayer("peer-"+std::to_string(i),{double(i),2,0});
+    refuses([&]{world->spawnNativePlayer("overflow",{-1,2,0});});require(world->nativePlayers().size()==32,"capacity preserves actors");
+}
+
 int main(int argc, char **argv) {
     namespace fs = std::filesystem;
     // A valley of this test's own, generated once and read back after.
@@ -845,6 +999,12 @@ int main(int argc, char **argv) {
     setenv("BANJO_TERRAIN_CACHE", cache.string().c_str(), 1);
 #endif
     const std::vector<std::pair<std::string_view, std::function<void()>>> tests{
+        {"native players have separate accepted actuator accounts",nativePlayersHaveSeparateAcceptedActuatorAccounts},
+        {"native players collide without pose assignments",nativePlayersCollideWithoutPoseAssignments},
+        {"native player strikers are not the ground",nativePlayerStrikersAreNotTheGround},
+        {"native players use terrain and water",nativePlayersUseTerrainAndWater},
+        {"native players persist and reject invalid state",nativePlayersPersistAndRejectInvalidState},
+        {"native player inputs are bounded and cannot teleport",nativePlayerInputsAreBoundedAndCannotTeleport},
         {"exact compounds have native water forces and retain their state",exactCompoundsHaveNativeWaterForcesAndRetainTheirState},
         {"a closed basin conserves water with a log in it", aClosedBasinConservesWaterWithALogInIt},
         {"a lake at rest stays at rest", aLakeAtRestStaysAtRest},

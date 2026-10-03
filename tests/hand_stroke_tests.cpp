@@ -519,6 +519,19 @@ void aGateTooHeavyToLiftStillSwings() {
 }
 
 void refusedStepsRestoreEveryPlayersHand() {
+    const auto samePlayer=[](const LiveNativePlayer &a,const LiveNativePlayer &b) {
+        const auto &x=a.state,&y=b.state;
+        require(a.actor==b.actor && a.body_id==b.body_id &&
+            length(x.center_of_mass_world_m-y.center_of_mass_world_m)==0 &&
+            length(x.linear_velocity_m_s-y.linear_velocity_m_s)==0 &&
+            length(x.angular_velocity_rad_s-y.angular_velocity_rad_s)==0 &&
+            x.orientation_world.w==y.orientation_world.w && x.orientation_world.x==y.orientation_world.x &&
+            x.orientation_world.y==y.orientation_world.y && x.orientation_world.z==y.orientation_world.z &&
+            a.actuator_remaining_s==b.actuator_remaining_s && a.actuator_work_j==b.actuator_work_j &&
+            length(a.actuator_impulse_n_s-b.actuator_impulse_n_s)==0 &&
+            length(a.actuator_angular_impulse_kg_m2_s-b.actuator_angular_impulse_kg_m2_s)==0,
+            "refused/retried step changed native player physical/input accounts");
+    };
     const auto sameHand=[](const LiveHand &a,const LiveHand &b) {
         require(a.holding==b.holding&&a.mode==b.mode&&length(a.target_m-b.target_m)==0&&
             length(a.grip_m-b.grip_m)==0&&length(a.grip_velocity_m_s-b.grip_velocity_m_s)==0&&
@@ -543,6 +556,10 @@ void refusedStepsRestoreEveryPlayersHand() {
         auto live=LiveWorld::open(request),control=LiveWorld::open(request);
         for (auto *world:{live.get(),control.get()}) {
             world->foreseeCollisions(0);
+            world->spawnNativePlayer("left",{-2,1,3});
+            world->spawnNativePlayer("right",{2,1,3});
+            world->setNativePlayerActuator("left",{20,0,0},{},.25);
+            world->setNativePlayerActuator("right",{-20,0,0},{},.25);
             for (auto actor:{std::string("left"),std::string("right")}) {
                 world->selectHand(actor);const bool left=actor=="left";
                 const Vec3 start{left?-1.0:1.0,1.5,1};
@@ -561,10 +578,13 @@ void refusedStepsRestoreEveryPlayersHand() {
         for (unsigned step=0;step<24&&!refused;++step) {
             std::map<std::string,LiveHand> before;
             for (auto actor:{std::string("left"),std::string("right")}) {live->selectHand(actor);before[actor]=live->hand();}
+            const auto players_before=live->nativePlayers();
             const double time=live->time_s();live->step(kDt);
             refused=live->steppedBack();
             if (refused) {
                 require(live->time_s()==time,"refused player step advanced world time");
+                const auto after=live->nativePlayers();
+                for(std::size_t i=0;i<after.size();++i)samePlayer(players_before[i],after[i]);
                 for (auto actor:{std::string("left"),std::string("right")}) {live->selectHand(actor);sameHand(before.at(actor),live->hand());}
                 const auto waiting=live->breakable();require(!waiting.empty(),"refused fixture has no real material admission");
                 for (const auto &name:waiting) {live->declineBreak(name);control->declineBreak(name);}
@@ -572,6 +592,8 @@ void refusedStepsRestoreEveryPlayersHand() {
             }
             control->step(kDt);require(!control->steppedBack(),"never-rejected control refused the selected collision");
             require(live->time_s()==control->time_s(),"retry/control accepted clocks diverged");
+            const auto actual_players=live->nativePlayers(),control_players=control->nativePlayers();
+            for(std::size_t i=0;i<actual_players.size();++i)samePlayer(actual_players[i],control_players[i]);
             for (auto actor:{std::string("left"),std::string("right")}) {
                 live->selectHand(actor);control->selectHand(actor);sameHand(live->hand(),control->hand());
                 for (const std::string suffix:mode=="fixed"?std::vector<std::string>{" tool"," handle"}:std::vector<std::string>{" tool"}) {
@@ -584,11 +606,16 @@ void refusedStepsRestoreEveryPlayersHand() {
         }
         require(refused,"two-player hand rollback fixture never refused a collision");
         const auto before_error=live->playerHands();const double accepted_time=live->time_s();bool threw=false;
+        const auto players_before_error=live->nativePlayers();
         try {live->step(std::numeric_limits<double>::max());}catch (const std::invalid_argument &) {threw=true;}
         require(threw&&live->time_s()==accepted_time,"unrepresentable native step was accepted or advanced time");
+        const auto players_after_error=live->nativePlayers();
+        for(std::size_t i=0;i<players_after_error.size();++i)samePlayer(players_before_error[i],players_after_error[i]);
         for (const std::string actor:{"left","right"}) {live->selectHand(actor);sameHand(before_error.at(actor),live->hand());}
         live->step(kDt);control->step(kDt);
         require(!live->steppedBack()&&!control->steppedBack()&&live->time_s()==control->time_s(),"exception recovery failed to accept one step");
+        const auto recovered_players=live->nativePlayers(),expected_players=control->nativePlayers();
+        for(std::size_t i=0;i<recovered_players.size();++i)samePlayer(recovered_players[i],expected_players[i]);
         for (const std::string actor:{"left","right"}) {
             live->selectHand(actor);control->selectHand(actor);sameHand(live->hand(),control->hand());live->cancelStroke();control->cancelStroke();
         }

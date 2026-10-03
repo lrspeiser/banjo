@@ -1,5 +1,7 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Native actor foundation, October 3 (experimental):** [Body/save checkpoint](native-player-foundation-checkpoint.md) adds separate free rigid proxies, native contact/water response, bounded external diagnostic actuators and strict restart/rollback accounting. The proxy is not calibrated anatomy; external wrenches are not foot/swim propulsion. Human camera and AI waypoint movement remain unchanged. R5 still requires supported locomotion, authenticated host/hand integration, physical cargo and full accounting; R3 remains paused.
+
 **Current product review, October 3:** [Readable world and easier progression](world-realism-review.md) reviews main `f73c59b` and the isolated 8776 World/Recipes/Skills screens. It recommends a matching 25 cm stepped-terrain comparison, clear starter readiness, useful opening rewards and a smaller solar entry point. This is documentation only; smaller terrain, new starter recipes and native player/cargo physics remain proposals or open work. R3 remains paused.
 
 **Opening progression, October 3:** [Independent glass learning and shorter chapters](opening-progression-simplification-checkpoint.md) removes repeated Study/Gather checks from the second chapter and the copper prerequisite for glass, preserving saved experiment requirements and older private progress. Later chapter browsing defers to shared active guidance. Native laws and binaries are unchanged; wider material, supply, human/model and R4/R5 gates remain open, R3 remains paused.

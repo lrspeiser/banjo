@@ -40,6 +40,21 @@
 
 namespace banjo::fastlattice {
 namespace {
+constexpr MatterBodyId kNativePlayerFirstId = 900000000;
+constexpr std::size_t kNativePlayerLimit = 32;
+constexpr double kNativePlayerMassKg = 70.0;
+constexpr double kNativePlayerContactModulusPa = 1e6;
+constexpr double kNativePlayerContactDampingRatio = 0.05;
+constexpr const char *kNativePlayerModel = "rigid-avatar-cylinder-v1";
+RigidPrimitive nativePlayerGeometry() {
+    RigidPrimitive shape;
+    shape.kind = PrimitiveKind::Cylinder;
+    shape.dimensions_m = {0.24, 1.7, 0.24};
+    return shape;
+}
+bool finitePlayerVec(Vec3 v) {
+    return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+}
 // A machine may work while a different player or the clock steps the world.
 // Select only its receiving account; the active hand and solver stay unchanged.
 struct GroundCarrierScope {
@@ -3250,6 +3265,62 @@ struct LiveWorld::Impl {
     };
     std::map<std::string, HandContext> hands;
     std::string selected_hand;
+    struct NativePlayer {
+        MatterBodyId id{};
+        std::vector<water::CompoundWaterPart> fluid_parts;
+        Vec3 force_n{}, torque_n_m{};
+        double remaining_s{}, work_j{};
+        Vec3 impulse_n_s{}, angular_impulse_kg_m2_s{};
+    };
+    std::map<std::string, NativePlayer> native_players;
+    void addNativePlayer(const std::string &actor, MatterBodyId id, const RigidSnapshot &state) {
+        if (actor.empty() || actor.size() > 128 ||
+            std::any_of(actor.begin(), actor.end(), [](unsigned char c) { return c < 32; }))
+            throw std::invalid_argument("native player needs a bounded stable actor identity");
+        if (native_players.contains(actor)) throw std::invalid_argument("native player already exists");
+        if (native_players.size() >= kNativePlayerLimit || body_of.size() + native_players.size() + 9 > 2000)
+            throw std::invalid_argument("native player body capacity reached");
+        if (id < kNativePlayerFirstId || id >= kNativePlayerFirstId + kNativePlayerLimit || world->contains(id))
+            throw std::invalid_argument("native player body identity is unavailable");
+        const Quat &q = state.orientation_world;
+        if (!finitePlayerVec(state.center_of_mass_world_m) || length(state.center_of_mass_world_m) > 1e6 ||
+            !finitePlayerVec(state.linear_velocity_m_s) || length(state.linear_velocity_m_s) > 1e4 ||
+            !finitePlayerVec(state.angular_velocity_rad_s) || length(state.angular_velocity_rad_s) > 1e4 ||
+            !std::isfinite(q.w) || !std::isfinite(q.x) || !std::isfinite(q.y) || !std::isfinite(q.z) ||
+            std::abs(q.w*q.w + q.x*q.x + q.y*q.y + q.z*q.z - 1.0) > 1e-5)
+            throw std::invalid_argument("native player physical state is invalid");
+        const auto geometry = nativePlayerGeometry();
+        MaterialDefinition material;
+        material.name = kNativePlayerModel;
+        material.model = MaterialModel::RigidOnly;
+        material.density_kg_m3 = kNativePlayerMassKg / geometry.volume();
+        // Declared proxy contact metadata required by the existing compiler.
+        // This rigid body has no internal tissue/deformation or damage model.
+        material.young_modulus_pa = kNativePlayerContactModulusPa;
+        material.poisson_ratio = 0.3;
+        material.friction = 0.6;
+        material.restitution = 0.0;
+        // Existing pair contact derives restitution from this damping ratio;
+        // zero individual restitution does not make the pair inelastic.
+        material.contact_damping_ratio = kNativePlayerContactDampingRatio;
+        RigidCompoundDescription body;
+        body.body_id = id;
+        body.parts.push_back({geometry, {}, {}, std::nullopt});
+        body.material = material;
+        body.state = state;
+        body.mass_kg = kNativePlayerMassKg;
+        body.inertia_local_kg_m2 = geometry.inertia(kNativePlayerMassKg);
+        NativePlayer player;
+        player.id = id;
+        player.fluid_parts.push_back({geometry, {}, {}});
+        native_players.emplace(actor, std::move(player));
+        try { world->addCompound(body); }
+        catch (...) {
+            if (world->contains(id)) world->removeAndDestroy(id);
+            native_players.erase(actor);
+            throw;
+        }
+    }
     [[nodiscard]] HandContext handContext() const {
         return {holding, held_at, held_velocity, grip_local, hand_force, held_facing,
                 hand_strength_n, hand_torque_n_m, hand_mass_kg, wielding, stroke,
@@ -5313,6 +5384,8 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     }
     if (saved == nullptr) return live;
     if (carrying && !plan.exact) {
+        if (saved->doc.contains("native_players"))
+            throw SavedWorldMismatch("native players need an exact world/carry restore; their physical state cannot be discarded");
         // Nothing can be carried exactly -- the saved world does not say what
         // its things were, or the room lays its cells out another way now --
         // so the room opens as it is, with each whole thing the change did not
@@ -6157,6 +6230,33 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         said.not_kept.insert(said.not_kept.begin(), said.not_carried.begin(), said.not_carried.end());
         said.woken = std::move(woken);
     }
+    if (doc.contains("native_players")) {
+        const auto &players = doc.at("native_players");
+        if (!players.is_array() || players.size() > kNativePlayerLimit)
+            throw std::invalid_argument("saved native players exceed their array/capacity contract");
+        for (const auto &row : players) {
+            if (row.at("model") != kNativePlayerModel || numberFrom(row.at("mass_kg")) != kNativePlayerMassKg ||
+                length(vecFrom(row.at("dimensions_m")) - nativePlayerGeometry().dimensions_m) != 0)
+                throw std::invalid_argument("saved native player model/geometry/mass changed");
+            const double work = numberFrom(row.at("actuator_work_j"));
+            const Vec3 impulse = vecFrom(row.at("actuator_impulse_n_s"));
+            const Vec3 angular = vecFrom(row.at("actuator_angular_impulse_kg_m2_s"));
+            if (!std::isfinite(work) || !finitePlayerVec(impulse) || !finitePlayerVec(angular))
+                throw std::invalid_argument("saved native player actuator account is invalid");
+            const std::string actor = row.at("actor").get<std::string>();
+            if (!row.at("body_id").is_number_integer())
+                throw std::invalid_argument("saved native player body identity must be an integer");
+            const auto id = row.at("body_id").get<std::uint64_t>();
+            if (id < kNativePlayerFirstId || id >= kNativePlayerFirstId + kNativePlayerLimit)
+                throw std::invalid_argument("saved native player body identity is invalid");
+            impl.addNativePlayer(actor, static_cast<MatterBodyId>(id), rigidFrom(row.at("pose")));
+            auto &player = impl.native_players.at(actor);
+            player.work_j = work;
+            player.impulse_n_s = impulse;
+            player.angular_impulse_kg_m2_s = angular;
+            if (!row.at("awake").get<bool>()) impl.world->sleep(player.id);
+        }
+    }
     impl.restored = std::move(said);
     return live;
 }
@@ -6226,16 +6326,26 @@ bool LiveWorld::judgeStep() {
             const double ground_impedance =
                 on_terrain ? impl_->environment->contactImpedanceAt(event.contact_point_world_m)
                            : impl_->ground_impedance;
+            const MatterBodyId other_id = event.body_a == impl_->body_of[struck]
+                                              ? event.body_b : event.body_a;
+            const auto player_striker = std::find_if(
+                impl_->native_players.begin(), impl_->native_players.end(),
+                [other_id](const auto &entry) { return entry.second.id == other_id; });
+            const bool struck_by_player = player_striker != impl_->native_players.end();
             const double other_impedance = both && other != struck
                                                ? impl_->impedance_of[other]
-                                               : ground_impedance;
+                                               : struck_by_player
+                                                     ? acousticImpedance(kNativePlayerMassKg / nativePlayerGeometry().volume(), kNativePlayerContactModulusPa)
+                                                     : ground_impedance;
             const RefractureAdmission admission = admitRefracture(
                 impl_->limits_of[struck], other_impedance,
                 event.closing_speed_m_s, event.available_normal_energy_j);
             LiveImpact impact{};
             impact.struck = impl_->described[struck].name;
             impact.by = both && other != struck ? impl_->described[other].name
-                                                : std::string("the ground");
+                                                : struck_by_player
+                                                      ? "native-player:" + player_striker->first
+                                                      : std::string("the ground");
             impact.closing_speed_m_s = event.closing_speed_m_s;
             impact.threshold_speed_m_s = admission.threshold_speed_m_s;
             impact.energy_j = event.available_normal_energy_j;
@@ -6251,7 +6361,7 @@ bool LiveWorld::judgeStep() {
             // the blow is judged against its real material, and when it would
             // need the run it is declined -- said, not hidden -- and the
             // contact stays Jolt's.
-            const bool rigid_striker = both && other != struck && impl_->isPrecise(other);
+            const bool rigid_striker = struck_by_player || (both && other != struck && impl_->isPrecise(other));
             const bool held_contact = held_groups.count(struck) || (both && held_groups.count(other));
             if (rigid_striker && admission.worthRunning())
                 impact.declined = "struck by an exact rigid body, which the lattice run cannot hold yet";
@@ -6449,6 +6559,41 @@ void LiveWorld::step(double dt_s) {
         }
     };
 
+    struct PlayerPush {
+        std::string actor;
+        MatterBodyId id{};
+        RigidSnapshot before;
+        Vec3 force{}, torque{};
+    };
+    std::vector<PlayerPush> player_pushes;
+    for (const auto &[actor, player] : impl_->native_players) {
+        const double fraction = std::min(player.remaining_s, dt_s) / dt_s;
+        player_pushes.push_back({actor, player.id, impl_->world->snapshot(player.id),
+                                 fraction * player.force_n, fraction * player.torque_n_m});
+    }
+    const auto pushPlayers = [&]() {
+        for (const auto &push : player_pushes) {
+            if (lengthSquared(push.force) == 0 && lengthSquared(push.torque) == 0) continue;
+            impl_->world->pushBody(push.id, push.force);
+            impl_->world->twistBody(push.id, push.torque);
+            impl_->world->wake(push.id);
+        }
+    };
+    const auto settlePlayers = [&]() {
+        // No player input/account is mutated in a trial. Rejection restores
+        // its native body and leaves this duration/work available for retry.
+        for (const auto &push : player_pushes) {
+            auto &player = impl_->native_players.at(push.actor);
+            const auto after = impl_->world->snapshot(push.id);
+            player.work_j += dt_s * (dot(push.force, (push.before.linear_velocity_m_s + after.linear_velocity_m_s) / 2) +
+                                    dot(push.torque, (push.before.angular_velocity_rad_s + after.angular_velocity_rad_s) / 2));
+            player.impulse_n_s += dt_s * push.force;
+            const Vec3 mean_com = (push.before.center_of_mass_world_m + after.center_of_mass_world_m) / 2;
+            player.angular_impulse_kg_m2_s += dt_s * (push.torque + cross(mean_com, push.force));
+            player.remaining_s = std::max(0.0, player.remaining_s - dt_s);
+        }
+    };
+
     // A step that would break something is taken back.
 
     //
@@ -6539,12 +6684,13 @@ void LiveWorld::step(double dt_s) {
     if (!impl_->controls.empty()) impl_->prepareControls(dt_s);
     if (!impl_->motors.empty()) impl_->prepareMotors(dt_s);
     if (!impl_->circuits.empty()) impl_->prepareCircuits(dt_s);
-    if (impl_->body_of.size() + 8 <= 2000) {
+    if (impl_->body_of.size() + impl_->native_players.size() + 8 <= 2000) {
         bool committed = false;
         try {
             committed = impl_->world->runReversibleTrial([&]() {
                 pushGas();
                 pushHand();
+                pushPlayers();
                 pushWater();
                 impl_->pushCircuits();
                 impl_->world->step(dt_s);
@@ -6584,6 +6730,7 @@ void LiveWorld::step(double dt_s) {
             return;
         }
         actor_step_kept = true;
+        settlePlayers();
         impl_->time_s += dt_s;
         impl_->advanceSun();
         impl_->rememberJointAngles(*impl_->world);
@@ -6626,10 +6773,12 @@ void LiveWorld::step(double dt_s) {
     }
     pushGas();
     pushHand();
+    pushPlayers();
     pushWater();
     impl_->pushCircuits();
     impl_->world->step(dt_s);
     actor_step_kept = true;
+    settlePlayers();
     holdStill();
     holdPending();
     (void)judgeStep();
@@ -13028,7 +13177,7 @@ std::string LiveWorld::materialsJson() {
 std::vector<water::BodyInWater> LiveWorld::waterBodies() {
     constexpr double kPi = 3.14159265358979323846;
     std::vector<water::BodyInWater> out;
-    out.reserve(impl_->described.size());
+    out.reserve(impl_->described.size() + impl_->native_players.size());
     const double cell = impl_->request.cell_size_m;
     for (std::size_t i = 0; i < impl_->described.size(); ++i) {
         const MatterBodyId id = impl_->body_of[i];
@@ -13090,6 +13239,26 @@ std::vector<water::BodyInWater> LiveWorld::waterBodies() {
             b.volume_m3 = static_cast<double>(cells) * cell * cell * cell;
         }
         b.mass_kg = b.density_kg_m3 * b.volume_m3;
+        out.push_back(std::move(b));
+    }
+    for (const auto &[actor, player] : impl_->native_players) {
+        const auto snap = impl_->world->snapshot(player.id);
+        water::BodyInWater b;
+        b.index = out.size();
+        b.body_id = player.id;
+        b.name = "native-player:" + actor;
+        b.com_m = snap.center_of_mass_world_m;
+        b.orientation = snap.orientation_world;
+        b.velocity_m_s = snap.linear_velocity_m_s;
+        b.angular_velocity_rad_s = snap.angular_velocity_rad_s;
+        b.awake = impl_->world->isAwake(player.id);
+        b.cell_m = cell;
+        b.dimensions_m = nativePlayerGeometry().dimensions_m;
+        b.shape = water::BodyInWater::Shape::Compound;
+        b.parts_local = &player.fluid_parts;
+        b.volume_m3 = nativePlayerGeometry().volume();
+        b.mass_kg = kNativePlayerMassKg;
+        b.density_kg_m3 = b.mass_kg / b.volume_m3;
         out.push_back(std::move(b));
     }
     return out;
@@ -13899,6 +14068,49 @@ LiveHand LiveWorld::hand() const {
 
 void LiveWorld::selectHand(const std::string &player) {
     impl_->selectHand(player);
+}
+
+void LiveWorld::spawnNativePlayer(const std::string &actor, const Vec3 &feet_world_m) {
+    if (!finitePlayerVec(feet_world_m) || std::abs(feet_world_m.x) > 100 ||
+        std::abs(feet_world_m.z) > 100 || feet_world_m.y < -10 || feet_world_m.y > 80)
+        throw std::invalid_argument("native player spawn is outside the supported world bounds");
+    MatterBodyId id = kNativePlayerFirstId;
+    while (id < kNativePlayerFirstId + kNativePlayerLimit && impl_->world->contains(id)) ++id;
+    RigidSnapshot state;
+    state.center_of_mass_world_m = feet_world_m + Vec3{0, 0.85, 0};
+    impl_->addNativePlayer(actor, id, state);
+}
+
+std::vector<LiveNativePlayer> LiveWorld::nativePlayers() const {
+    std::vector<LiveNativePlayer> out;
+    out.reserve(impl_->native_players.size());
+    for (const auto &[actor, player] : impl_->native_players) {
+        LiveNativePlayer reading;
+        reading.actor = actor;
+        reading.body_id = player.id;
+        reading.state = impl_->world->snapshot(player.id);
+        reading.volume_m3 = nativePlayerGeometry().volume();
+        reading.actuator_remaining_s = player.remaining_s;
+        reading.actuator_work_j = player.work_j;
+        reading.actuator_impulse_n_s = player.impulse_n_s;
+        reading.actuator_angular_impulse_kg_m2_s = player.angular_impulse_kg_m2_s;
+        out.push_back(std::move(reading));
+    }
+    return out;
+}
+
+void LiveWorld::setNativePlayerActuator(const std::string &actor, const Vec3 &force_n,
+                                       const Vec3 &torque_n_m, double duration_s) {
+    const auto found = impl_->native_players.find(actor);
+    if (found == impl_->native_players.end()) throw std::invalid_argument("native player does not exist");
+    if (!finitePlayerVec(force_n) || length(force_n) > 600 ||
+        !finitePlayerVec(torque_n_m) || length(torque_n_m) > 120 ||
+        !std::isfinite(duration_s) || duration_s < 0 || duration_s > 0.25)
+        throw std::invalid_argument("player external actuator exceeds 600 N, 120 Nm or 0.25 s bounds");
+    auto &player = found->second;
+    player.force_n = force_n;
+    player.torque_n_m = torque_n_m;
+    player.remaining_s = duration_s;
 }
 
 std::map<std::string, LiveHand> LiveWorld::playerHands() {
@@ -16047,6 +16259,20 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
     doc["foresee_horizon_s"] = savedNumber(I.foresee_horizon_s);
     doc["next"] = {{"body", I.next_body_id}, {"joint", I.next_joint}, {"blade", I.next_blade},
                    {"point", I.tools.nextId()}};
+    if (!I.native_players.empty()) {
+        auto players = nlohmann::json::array();
+        for (const auto &[actor, player] : I.native_players)
+            players.push_back({{"actor", actor}, {"body_id", player.id}, {"model", kNativePlayerModel},
+                {"mass_kg", savedNumber(kNativePlayerMassKg)},
+                {"dimensions_m", savedVec(nativePlayerGeometry().dimensions_m)},
+                {"pose", savedRigid(I.world->snapshot(player.id))}, {"awake", I.world->isAwake(player.id)},
+                {"actuator_work_j", savedNumber(player.work_j)},
+                {"actuator_impulse_n_s", savedVec(player.impulse_n_s)},
+                {"actuator_angular_impulse_kg_m2_s", savedVec(player.angular_impulse_kg_m2_s)}});
+        // Transient input is deliberately absent: a disconnected/reopened
+        // actor retains its body and accounts without an old held command.
+        doc["native_players"] = std::move(players);
+    }
 
     // Every body: what it is, its cells and where they sit in its frame, and
     // where it is and how it moves -- or where it was put away.
@@ -16599,7 +16825,7 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
 }
 
 std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request, const std::string &snapshot) {
-    const bool exact_required = !request.precise_rigid_scene_json.empty() || snapshot.find("precise-rigid-v1") != std::string::npos || snapshot.find(kSectionWorldFormat) != std::string::npos;
+    const bool exact_required = !request.precise_rigid_scene_json.empty() || snapshot.find("precise-rigid-v1") != std::string::npos || snapshot.find(kSectionWorldFormat) != std::string::npos || snapshot.find("native_players") != std::string::npos;
     Saved saved;
     try {
         saved.doc = nlohmann::json::parse(snapshot);
@@ -16633,7 +16859,7 @@ std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request, con
 
 std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request, const std::string &snapshot,
                                            const LiveCarry &carry) {
-    const bool exact_required = !request.precise_rigid_scene_json.empty() || snapshot.find("precise-rigid-v1") != std::string::npos || snapshot.find(kSectionWorldFormat) != std::string::npos;
+    const bool exact_required = !request.precise_rigid_scene_json.empty() || snapshot.find("precise-rigid-v1") != std::string::npos || snapshot.find(kSectionWorldFormat) != std::string::npos || snapshot.find("native_players") != std::string::npos;
     Saved saved;
     try {
         saved.doc = nlohmann::json::parse(snapshot);

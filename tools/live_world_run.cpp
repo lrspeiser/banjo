@@ -10,6 +10,10 @@
 //        {"op":"grab","name":"ball"}  {"op":"move","to":[0,1.2,0]}  {"op":"release"}
 //        {"op":"step","n":4,"hand":[0,1.2,0]}   move the hand, then step
 //        {"op":"fracture","name":"pane"}   {"op":"poses"}   {"op":"quit"}
+//        {"op":"player-spawn","actor":"diagnostic","feet_m":[0,2,0]}
+//        {"op":"player-actuator","actor":"diagnostic","force_n":[20,0,0],
+//         "torque_n_m":[0,0,0],"duration_s":0.25}   external test actuator;
+//                                            no locomotion reaction/controller
 //        {"op":"fracture","name":"pane","wait":false}
 //        {"op":"step","dt":0.008,"n":4,"moved":true}   only what changed
 //        {"op":"collect","at":[0,1.6,0],"radius_m":1.2,"except":"shard 3"}
@@ -1261,6 +1265,23 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
     for (const auto &[player, own] : world.playerHands())
         player_hands[player] = handJson(own);
     if (!player_hands.empty()) state["player_hands"] = std::move(player_hands);
+    auto native_players = nlohmann::json::object();
+    // Native actor state and source accounts may feed later authoritative
+    // controllers. Keep their precision; render-only body vectors use vec().
+    const auto player_vector = [](const Vec3 &v) { return nlohmann::json::array({v.x, v.y, v.z}); };
+    for (const auto &player : world.nativePlayers()) {
+        const auto &p = player.state;
+        native_players[player.actor] = {{"body_id", player.body_id}, {"model", "rigid-avatar-cylinder-v1"},
+            {"dimensions_m", player_vector(player.dimensions_m)}, {"mass_kg", player.mass_kg}, {"volume_m3", player.volume_m3},
+            {"position_m", player_vector(p.center_of_mass_world_m)},
+            {"orientation_wxyz", {p.orientation_world.w, p.orientation_world.x, p.orientation_world.y, p.orientation_world.z}},
+            {"velocity_m_s", player_vector(p.linear_velocity_m_s)}, {"angular_velocity_rad_s", player_vector(p.angular_velocity_rad_s)},
+            {"actuator_remaining_s", player.actuator_remaining_s}, {"actuator_work_j", player.actuator_work_j},
+            {"actuator_impulse_n_s", player_vector(player.actuator_impulse_n_s)},
+            {"actuator_angular_impulse_kg_m2_s", player_vector(player.actuator_angular_impulse_kg_m2_s)},
+            {"actuator_source", "external; locomotion reactions not supplied"}};
+    }
+    state["native_players"] = std::move(native_players);
     // Every moment the world waited, or was spared waiting, since the last
     // reply carried them. Drained here rather than accumulated, so a host
     // reading each reply sees each one exactly once.
@@ -1813,7 +1834,12 @@ int main(int argc, char **argv) {
                 // Set by whatever produced new bodies this line, so the
                 // reply carries their shape as well as their place.
                 bool made_bodies = false;
-                if (op == "step") {
+                if (op == "player-spawn") {
+                    world->spawnNativePlayer(command.value("actor", std::string{}), readVec(command, "feet_m"));
+                } else if (op == "player-actuator") {
+                    world->setNativePlayerActuator(command.value("actor", std::string{}),
+                        readVec(command, "force_n"), readVec(command, "torque_n_m"), command.at("duration_s").get<double>());
+                } else if (op == "step") {
                     const double dt = command.value("dt", 1.0 / 60.0);
                     // Where the hand is, if the caller is carrying something.
                     //

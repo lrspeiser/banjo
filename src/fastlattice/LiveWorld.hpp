@@ -17,6 +17,19 @@ namespace banjo::fastlattice {
 
 struct ToolTerrainHost;
 
+// A declared rigid avatar proxy, separate from editable products and hands.
+// Its free native body owns collision and fluid response. Actuator inputs are
+// explicitly external wrenches, not a claim of foot-powered locomotion.
+struct LiveNativePlayer {
+    std::string actor;
+    MatterBodyId body_id{};
+    RigidSnapshot state;
+    Vec3 dimensions_m{0.24, 1.7, 0.24};
+    double mass_kg{70.0}, volume_m3{};
+    double actuator_remaining_s{}, actuator_work_j{};
+    Vec3 actuator_impulse_n_s{}, actuator_angular_impulse_kg_m2_s{};
+};
+
 // Where one object is, under the name the request gave it.
 struct LiveBodyPose {
     std::string name;
@@ -2248,6 +2261,15 @@ public:
     // the original single-user hand. Selection changes no body pose or time.
     void selectHand(const std::string &player);
     [[nodiscard]] std::map<std::string, LiveHand> playerHands();
+    // One body per stable actor, at most 32. Spawn is one-time admission; it
+    // cannot teleport an existing player. Feet are the initial cylinder base.
+    void spawnNativePlayer(const std::string &actor, const Vec3 &feet_world_m);
+    [[nodiscard]] std::vector<LiveNativePlayer> nativePlayers() const;
+    // Bounded external force/torque, expiring after at most 0.25 native seconds.
+    // Only accepted steps spend the duration and retain impulse/work. Inputs
+    // stop on whole reopen; physical state and cumulative accounts survive.
+    void setNativePlayerActuator(const std::string &actor, const Vec3 &force_n,
+                                 const Vec3 &torque_n_m, double duration_s);
     [[nodiscard]] std::string playerCarriedGround() const;
     // Previews, for aiming. Neither changes the world, and both are bounded:
     // at most ten seconds of flight, and a stroke at most its own give_up_s.

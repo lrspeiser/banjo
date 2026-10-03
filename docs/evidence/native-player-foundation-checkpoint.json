@@ -1,0 +1,96 @@
+{
+  "checkpoint": "native-player-foundation",
+  "recorded_utc": "2026-10-03T12:29:06.091341+00:00",
+  "base_revision": "4101c2b5b06cfb8408b1ed00e8e8e3628147bb6e",
+  "scope": "Experimental free native rigid proxy and external diagnostic actuator; browser human/AI movement unchanged; R5 open; R3 paused.",
+  "environment": {
+    "platform": "Windows-11-10.0.26200-SP0",
+    "compiler": "MSVC 19.44.35228",
+    "configuration": "Release",
+    "generator": "Visual Studio 17 2022",
+    "backend": "CPU reference",
+    "lab": false
+  },
+  "sources": {
+    "src/fastlattice/LiveWorld.cpp": {
+      "working_copy_sha256": "c230ecf8f6cc49a99dbbb475e6a0bd1a10a5532736c6acad5c7190fd5d27d202",
+      "git_blob_oid": "5f31c941b8f7a566afb4b92de6fbcb33f1b94ff9"
+    },
+    "src/fastlattice/LiveWorld.hpp": {
+      "working_copy_sha256": "cce8e924ed6861524cbef41076c2b2b28bddbe5bf2e92f16ff419476cb82daad",
+      "git_blob_oid": "caa21cdff4e6b64d6f122f98e5b033c24e7b4e2e"
+    },
+    "tools/live_world_run.cpp": {
+      "working_copy_sha256": "77ac21b64eaed1891139ebc73ddb687c21ec8f8e8b95c2068c295de05459dca6",
+      "git_blob_oid": "aa1eabb9c7b9595f1046b267fe05649b587b77b8"
+    },
+    "tests/valley_live_tests.cpp": {
+      "working_copy_sha256": "2bf15536f191503503b06c4b84f8438c1ad439f480d72a20bdfd4f887a87c92a",
+      "git_blob_oid": "8846ade2ec82738b6730b8385d22c061b4170368"
+    },
+    "tests/hand_stroke_tests.cpp": {
+      "working_copy_sha256": "ec72296da84d73a6d65d1f27c79ef733e7f1aa0e509f5378cfb2d80dac38c691",
+      "git_blob_oid": "697f570ba5a4fb8d1baa01811347ccd257e3668c"
+    },
+    "tests/precise_rigid_live_tests.py": {
+      "working_copy_sha256": "f052ca2a096444dd2dd6c617326b2d78434e8aa3853e38332bf48c12118b39ef",
+      "git_blob_oid": "691f3d89962868a368f5dc490136fa48ce0161c2"
+    }
+  },
+  "binaries": {
+    "build/agent-native-avatar/Release/banjo_live_world_run.exe": "3aefb222048d721c75b13b17862563ec0fea9dc38872024ec5a88b7eeef60a15",
+    "build/agent-native-avatar/Release/banjo.dll": "f0c80049284d129c60d21258fc9e0526740ebd12c9e7d2dd46f6c4540f52dfa2"
+  },
+  "focused_ctest": {
+    "passed": 5,
+    "failed": 0,
+    "checks": 103,
+    "cases": {
+      "valley": 21,
+      "hand": 9,
+      "water": 21,
+      "environment_ffi": 15,
+      "precise_protocol": 37
+    },
+    "last_test_log_sha256": "7f18dfe755fd7025771957a1f0322a55f26c3ac94c1e83dc0f954105a5e97feb"
+  },
+  "source_registration": {
+    "sources": 298,
+    "registered": 298,
+    "cmake_files": 10,
+    "exclusions": 0
+  },
+  "conditions": {
+    "proxy_mass_kg": 70,
+    "dimensions_m": [
+      0.24,
+      1.7,
+      0.24
+    ],
+    "contact_modulus_pa": 1000000.0,
+    "contact_damping_ratio": 0.05,
+    "rigid_dt_s": 0.004166666666666667,
+    "lattice_cell_m": 0.04,
+    "basin_column_m": 0.25
+  },
+  "measurements": {
+    "force_momentum_residual_n_s": -2.08616e-05,
+    "force_work_residual_j": 2.06334e-05,
+    "torque_momentum_residual_kg_m2_s": -1.36566e-06,
+    "torque_work_residual_j": 5.06095e-06,
+    "pair_outgoing_total_ke_j": 175.236,
+    "pair_initial_total_ke_j": 280,
+    "initial_submerged_buoyancy_n": 754.45,
+    "initial_submerged_weight_n": 686.7,
+    "initial_submerged_vy_m_s": 0.00403272
+  },
+  "unsupported": [
+    "grounded locomotion and upright controller",
+    "swimming propulsion/fluid reaction",
+    "authenticated host authority and browser movement/render integration",
+    "C API actor bindings",
+    "physical cargo",
+    "full momentum/energy closure",
+    "cross-platform/GPU determinism"
+  ]
+}
