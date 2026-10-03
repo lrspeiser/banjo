@@ -1,5 +1,8 @@
 # Useful first tool — October 3, 2026
 
+Published implementation: `f15cd75` on GitHub `main`. This record identifies
+the verified opening checkpoint; the full readable-world goal remains active.
+
 ## Implemented checkpoint
 
 New players now start with **collect wood → make a personal field pick →
@@ -39,9 +42,8 @@ machine temperatures and successful outcomes are not supplied by the planner.
 ## Verification
 
 Windows, Python 3.13, Node 22.18.0 and existing MSVC Release native binaries in
-`build/agent-object-strike/Release`. Source base `fd733c6`; the implementation
-revision is recorded in Git history and the publication note below this file's
-linked status entries. Native source, material laws and solver tolerances are
+`build/agent-object-strike/Release`. Source base `fd733c6`; implementation
+revision `f15cd75`. Native source, material laws and solver tolerances are
 unchanged.
 
 Set `BANJO_LIVE_ENGINE`, `BANJO_LIBRARY` and `BANJO_BUILD_DIR` to that Release
