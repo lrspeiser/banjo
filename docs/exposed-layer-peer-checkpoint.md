@@ -1,8 +1,10 @@
 # Exposed layers and peer terrain delivery — October 3, 2026
 
+Published implementation: `4ca32d1` on GitHub main.
+
 Verification base: `302c662` on GitHub main plus the outgoing host, viewer and
 test changes. Native sources, material laws and MSVC Release binaries are
-unchanged. Publication is recorded after the verified implementation commit.
+unchanged. This published checkpoint does not close the full active scope.
 
 ## Problems and changes
 
