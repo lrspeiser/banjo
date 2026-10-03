@@ -1,5 +1,9 @@
 # Personal material delivery to machine inputs — October 2, 2026
 
+Published implementation: `210dc93b188db1b404d981f677750d9c6e9a5a0f` on GitHub main.
+Host/UI changes use the existing separate native build; preview servers were
+not restarted.
+
 ## Implemented
 
 Select a processing machine in World, stand within 2 m of its input hopper and
