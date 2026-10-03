@@ -5,6 +5,10 @@ Windows, Python 3.13, existing MSVC Release native executables in
 `build/agent-object-strike/Release`. Native binaries, material laws, terrain
 resolution and completion predicates are unchanged.
 
+**Published:** implementation/test checkpoint `55f3e69` is on GitHub main.
+The isolated 8774 server uses this implementation; the owner's 8771 preview
+was not restarted. No separate production deployment was performed.
+
 ## Implemented
 
 - Processing goals choose a compatible curated process from current private
