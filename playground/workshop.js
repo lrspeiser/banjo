@@ -1596,11 +1596,6 @@ function installBench() {
   designs.onclick = () => showTab("recipes"); empty.append(designs); viewport.append(empty);
   const clear = make("button", {id:"ws-clear-lab", type:"button", class:"ws-action"}, "Clear Lab");
   clear.onclick = () => { clearLab(); showTab("lab"); }; $(".ws-viewbar").append(clear);
-  chatForm?.addEventListener("submit", (event) => {
-    if (bench.inventorySelection) return;
-    event.preventDefault(); event.stopImmediatePropagation();
-    say("Choose a product in Inventory or a design in Recipes first.", true);
-  }, true);
   new MutationObserver(updateLabSelection).observe(chatHome, {childList:true, subtree:true});
   for (const name of ["inventory", "skills", "recipes", "market", "goals"]) { const pane = $(`#ws-pane-${name}`); if (pane) centre.append(pane); }
   installInventory();
@@ -3488,13 +3483,17 @@ function updateLabSelection() {
   $("#design-workshop").classList.toggle("lab-empty", !selected);
   const empty = $("#ws-empty"); if (empty) empty.hidden = selected;
   const input = $("#ws-component-chat-text"), send = $("#ws-component-chat button[type=submit]");
-  if (input && !selected) { input.disabled = true; input.placeholder = "Choose from Inventory or Recipes first"; }
-  else if (input && $("#ws-component-chat")?.dataset.busy !== "true") { input.disabled = false; input.placeholder = "Ask about this item or describe a change"; }
-  if (send && !selected) send.disabled = true;
-  else if (send && $("#ws-component-chat")?.dataset.busy !== "true") send.disabled = false;
+  const gameHelp = gameChatMode();
+  const form = $("#ws-component-chat"), chatScope = gameHelp ? "game" : "design";
+  if (form && form.dataset.chatScope !== chatScope) {
+    form.dataset.chatScope = chatScope;
+    dispatchEvent(new CustomEvent("banjo-chat-context"));
+  }
+  if (input && $("#ws-component-chat")?.dataset.busy !== "true") { input.disabled = false; input.placeholder = gameHelp ? "Ask about energy, supplies or your next step" : "Ask about this item or describe a change"; }
+  if (send && $("#ws-component-chat")?.dataset.busy !== "true") send.disabled = false;
   const intro = $(".ws-chat-intro");
-  const text = selected ? "Discuss, modify or test your selected item. Lab changes leave your carried item or saved version unchanged until you explicitly make or save them."
-    : "Choose a product in Inventory or a design in Recipes to open the Lab.";
+  const text = gameHelp ? "Ask about your world, energy, inventory or next goal."
+    : "Discuss, modify or test your selected item. Lab changes leave your carried item or saved version unchanged until you explicitly make or save them.";
   if (intro && intro.textContent !== text) intro.textContent = text;
   labWasSelected = selected;
 }
@@ -3623,7 +3622,17 @@ function watchTheTurn(turn) {
   return { stop: () => { stopped = true; } };
 }
 
+function gameChatMode() {
+  return new URLSearchParams(location.search).get('tab') !== 'lab' || !bench.inventorySelection;
+}
 async function chatEdit() {
+  if (gameChatMode()) {
+    const input = $("#ws-component-chat-text"), message = input.value.trim();
+    if (!message) return;
+    await api('/api/world/help', {message, screen:new URLSearchParams(location.search).get('tab') || 'inventory'});
+    input.value = '';
+    return;
+  }
   if (!chosen()) throw new Error("Choose an item from Inventory or Recipes first.");
   if (!bench.selectedPart) bench.selectedPart = chosen().parts[0]?.name;
   if (!bench.selectedPart) throw new Error("This design has no components to edit.");

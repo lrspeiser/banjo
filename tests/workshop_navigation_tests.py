@@ -62,11 +62,31 @@ class GameScreens(unittest.TestCase):
         self.wait('document.querySelector("#workshop-stage").dataset.showing === "empty"')
         self.assertIsNone(self.page.evaluate('document.querySelector("#workshop-stage").visibleGeometry()'))
         self.assertTrue(self.page.evaluate('document.querySelector("#ws-empty").offsetParent !== null'))
-        self.assertTrue(self.page.evaluate('document.querySelector("#ws-component-chat-text").disabled'))
+        self.assertFalse(self.page.evaluate('document.querySelector("#ws-component-chat-text").disabled'))
 
     def screenshot(self, name):
         out = ROOT / "build/workshop-navigation"; out.mkdir(parents=True, exist_ok=True)
         (out / name).write_bytes(base64.b64decode(self.page.send("Page.captureScreenshot")["data"]))
+
+    def test_market_chat_reads_game_state_without_a_lab_selection(self):
+        import workshop_chat
+        world,owner,app=self.setup_world();app.api_key='test-key'
+        self.browser(world,owner)
+        self.navigate(world,'workshop=1&tab=market')
+        self.wait('!document.querySelector("#ws-component-chat-text").disabled')
+        seen=[]
+        def provider(app,payload):
+            seen.append(json.loads(payload['input'][-1]['content']))
+            return {'status':'completed','output':[{'content':[{'type':'output_text',
+                'text':'Your wallet is 0 J. Shared solar charge is separate. Use Market → Bank.'}]}]}
+        with mock.patch.object(workshop_chat,'_call_model',side_effect=provider):
+            self.page.evaluate('document.querySelector("#ws-component-chat-text").value="Why am I not collecting energy?";document.querySelector("#ws-component-chat").requestSubmit()')
+            self.wait('document.querySelector("#ws-chat-log").textContent.includes("Shared solar charge is separate")')
+        self.assertEqual('market',seen[0]['screen'])
+        self.assertEqual(0,seen[0]['server_observations']['wallet_j'])
+        self.assertTrue(self.page.evaluate('document.querySelector("#design-workshop").classList.contains("lab-empty")'))
+        self.assertFalse(self.page.evaluate('document.querySelector("#ws-component-chat-text").disabled'))
+        self.screenshot('market-game-chat.png')
 
     def test_authored_iron_head_and_wood_handle_pickup_dig_bag_and_reload(self):
         import server

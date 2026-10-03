@@ -59,6 +59,7 @@ import access_gate
 import workshop_api
 import workshop_library
 import market
+import game_guidance
 import starter_goals
 import ai_player
 import workshop_install
@@ -1508,6 +1509,11 @@ class Handler(BaseHTTPRequestHandler):
         player = player_world.require(self.app, self.headers.get("X-Banjo-Player")) \
             if getattr(self.app, "world_id", None) and (
                 path.startswith(("/api/world/", "/api/live/")) or path=="/api/workshop/inventory") else ""
+        if path == '/api/world/help':
+            if not getattr(self.app, 'world_id', None): raise ValueError('Join a named world for game help')
+            game_guidance.validate(body)
+            context = game_guidance.snapshot(self.app, player, journal_of(self.app, player), registry())
+            return self.send({'game_chat':game_guidance.answer(self.app, body, context)})
         if getattr(self.app, "world_id", None) and path == "/api/live/open":
             raise ValueError("The shared world cannot be replaced by a laboratory scene")
         world_call = path.startswith(("/api/world/", "/api/live/")) and not path.startswith(("/api/world/workshop/", "/api/world/fabrication/"))
