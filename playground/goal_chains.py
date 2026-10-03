@@ -246,7 +246,11 @@ def view(app,owner,ident):
             eye=pose.get('eyes_m') or [0,1.62,3]
             available=[p for p in piles if not p.get('rack') and p['holds_kg'].get(material,0)>0]
             available.sort(key=lambda p:math.hypot(p['at_m'][0]-eye[0],p['at_m'][1]-eye[2]))
-            if available:
+            if not getattr(app.live,'session',None) or app.live_holder!='world':
+                row['guide'].update(screen='world',where='World')
+                row['guide']['steps']=['Open your saved World to read its current loose wood supplies.',
+                    'Then follow the measured material source shown by your next action.']
+            elif available:
                 row['guide'].update(resource=available[0]['name'],available_kg=available[0]['holds_kg'][material])
                 row['guide']['steps'][0]=f"Find {available[0]['name']} in World; it contains {available[0]['holds_kg'][material]:g} kg {material}."
             else:

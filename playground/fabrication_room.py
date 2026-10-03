@@ -32,7 +32,7 @@ PLAYER_ROUTES = {'/api/world/open','/api/world/ask','/api/world/action','/api/wo
     '/api/world/putdown','/api/world/inventory','/api/world/inventory/shown',
     '/api/world/machine','/api/world/watch-machine','/api/world/tool','/api/world/tool/use',
     '/api/world/goods/collect','/api/world/goods/deliver','/api/world/process','/api/world/rover/talk','/api/world/rover/brain',
-    '/api/world/workshop/context','/api/world/workshop/what_made'}
+    '/api/world/workshop/context','/api/world/workshop/what_made','/api/world/guidance'}
 PLAYER_NATIVE_OPS = {'step','poses','wield','grab','hand','move','release','stroke',
     'preview_stroke','preview_flight','joints','mechanics','thermo','pick','place_check',
     'survey','structure','condition','environment','environment_state','terrain','materials',
@@ -73,6 +73,7 @@ COMMAND_FIELDS = {
     "start_remake": {"plan_id", "revision", "request_id"},
     "plan_make": {"candidate"},
     "start_make": {"plan_id", "revision", "request_id"},
+    "review_plan": {"plan_id"},
 }
 
 def active(app):
@@ -252,6 +253,9 @@ def request(app, operation, body):
     if operation in ("store_ground","retrieve_ground","recover_ground"): return transfer_ground(app,body,operation)
     if operation in ("connect_energy", "fund_energy"): return transfer_energy(app, body, operation)
     if operation in ("fund_stock", "fund_goods", "release_stock"): return transfer_stock(app, body, operation)
+    if operation=='review_plan':
+        import fabrication_remake
+        return fabrication_remake.refresh(app,body)
     if operation in ("plan_remake", "start_remake", "plan_make", "start_make"):
         import fabrication_remake
         function=fabrication_remake.plan if operation.startswith("plan_") else fabrication_remake.start

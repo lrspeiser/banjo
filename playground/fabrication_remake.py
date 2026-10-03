@@ -72,6 +72,13 @@ def require_owner(app,job):
         raise ValueError('Only the player who started this '+('remake' if job.get('remake_source') else 'make')+' may control or place it')
 
 
+def minimum_quote(app,candidate,state,cell_m):
+    """One read-only exact cost calculation for guidance and funded reviews."""
+    import fabrication_room as api
+    preliminary=api.compile_quote(candidate,10000.,cell_m,state,app=app)
+    return api.cost_quote(preliminary,state,minimum=True)
+
+
 def plan(app,body,*,making=False):
     import fabrication_room as api
     with install._world(app) as (room,live,old),api.LOCK:
@@ -90,29 +97,55 @@ def plan(app,body,*,making=False):
         fabrication_stock.validate(app,room.scene,state)
         # Derive the minimum feed from native occupied geometry. Do not use the
         # recipe BOM or charge for whatever rounded number the page displays.
-        preliminary=api.compile_quote(body['candidate'],10000.,old.spec['cell_m'],state,app=app)
-        quote=api.cost_quote(preliminary,state,minimum=True)
+        quote=minimum_quote(app,body['candidate'],state,old.spec['cell_m'])
         (model.make_source if making else model.remake_source)(binding)
         ident=uuid.uuid4().hex;cache=_cache(app)
         if len(cache)>=MAX_PLANS:raise ValueError('Too many fabrication plans; wait for old plans to expire')
         cache[ident]={'expires':time.monotonic()+LIFETIME_S,'scene':room.scene,'kind':kind,
             'source':binding,'quote':quote,'config_hash':model.digest(state['config'])}
-        sources=fabrication_stock.sources(app)
-        required=model.materials(quote,'stock')
-        missing={m:max(0.,kg-state['stock_kg'].get(m,0.)) for m,kg in required.items()}
-        available=sum(min(kg,state['stock_kg'].get(m,0.)) for m,kg in required.items())
-        goods = quote.get('assembly_goods_kg', {})
-        missing_goods = {n:max(0., kg-state.get('goods_stock_kg', {}).get(n,0.)) for n,kg in goods.items()}
-        return {'schema':'banjo.'+kind+'-plan.v1','plan_id':ident,'session':old.id,'scene':room.scene,
-            'available':True,'source':deepcopy(binding),'quote':quote,'revision':state['revision'],
-            'station_stock_kg':available,'station_energy_j':state['energy_j'],
-            'missing_stock_kg':sum(missing.values()),'missing_materials_kg':missing,
-            'missing_energy_j':max(0.,quote['supply_required_j']-state['energy_j']),
-            'stock_sources':[r for r in sources if r['material'] in required],
-            'missing_goods_kg':missing_goods,
-            'goods_sources':[r for r in fabrication_stock.sources(app,'goods') if r['material'] in goods],
-            'occupied':any(j['status']=='running' for j in state['jobs'].values()),
-            'changes_world':False,'original_retained':not making}
+        return _describe(app,room,old,kind,binding,ident,quote,state,making)
+
+
+def _describe(app,room,old,kind,binding,ident,quote,state,making):
+    import fabrication_stock
+    sources=fabrication_stock.sources(app)
+    required=model.materials(quote,'stock')
+    missing={m:max(0.,kg-state['stock_kg'].get(m,0.)) for m,kg in required.items()}
+    available=sum(min(kg,state['stock_kg'].get(m,0.)) for m,kg in required.items())
+    goods = quote.get('assembly_goods_kg', {})
+    missing_goods = {n:max(0., kg-state.get('goods_stock_kg', {}).get(n,0.)) for n,kg in goods.items()}
+    from player_guidance import build_readiness
+    readiness=build_readiness(quote,state,sources,fabrication_stock.sources(app,'goods'))
+    return {'schema':'banjo.'+kind+'-plan.v1','plan_id':ident,'session':old.id,'scene':room.scene,
+        'available':True,'source':deepcopy(binding),'quote':quote,'revision':state['revision'],
+        'station_stock_kg':available,'station_energy_j':state['energy_j'],
+        'missing_stock_kg':sum(missing.values()),'missing_materials_kg':missing,
+        'missing_energy_j':max(0.,quote['supply_required_j']-state['energy_j']),
+        'stock_sources':[r for r in sources if r['material'] in required],
+        'missing_goods_kg':missing_goods,
+        'goods_sources':[r for r in fabrication_stock.sources(app,'goods') if r['material'] in goods],
+        'occupied':any(j['status']=='running' for j in state['jobs'].values()),
+        'build_readiness':readiness,'changes_world':False,'original_retained':not making}
+
+
+def refresh(app,body):
+    import fabrication_room as api
+    import fabrication_stock
+    model.token(body['plan_id'],'plan_id')
+    with install._world(app) as (room,live,old),api.LOCK:
+        install._source(room,old,body)
+        entry=_cache(app).get(body['plan_id'])
+        if entry is None:raise ValueError('Make plan expired; review the design again')
+        if entry['scene']!=room.scene or entry['source']['owner']!=_owner(app):
+            raise ValueError('This plan belongs to another world or player')
+        state=deepcopy(api._state(room));model.advance(state,old.state['t'])
+        fabrication_stock.validate(app,room.scene,state)
+        if model.digest(state['config'])!=entry['config_hash']:
+            raise ValueError('Workbench process changed; review the design again')
+        kind=entry['kind']
+        if kind=='remake' and source(app,live,entry['source']['source_item'])['source_hash']!=entry['source']['source_hash']:
+            raise ValueError('Selected item changed; review a new remake plan')
+        return _describe(app,room,old,kind,entry['source'],body['plan_id'],entry['quote'],state,kind=='make')
 
 
 def start(app,body,*,making=False):

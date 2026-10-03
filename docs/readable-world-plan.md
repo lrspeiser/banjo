@@ -92,10 +92,13 @@ journey is qualified.
    Qualify the human journey and broader supply coverage, including supported
    processing alternatives and LLM-created products; retain private evidence.
 3. **Unified guidance:** one authenticated server result resolves readiness and
-   the next supported action. World, Inventory, Goals, Skills, Recipes, Market
-   and chat consume it. Selected projects/tools can focus the result; the
-   recommendation must retain actual source availability, machine inputs,
-   ownership, skill evidence and build admission. A display name grants nothing.
+   the next supported action. The [shared guidance checkpoint](shared-guidance-checkpoint.md)
+   now connects World, Inventory, Goals, Skills, Recipes, Market and AI Guide
+   snapshots, using exact paid quote readiness for the recommended project and
+   Lab review. Owned work takes priority and recovers its accepted design.
+   Finish selected-project/editing-chat focus and broader source/processor/
+   empty-energy coverage; retain actual availability, ownership, skill evidence
+   and native admission. A display name grants nothing.
 4. **Broader physical behavior:** complete [R4/R5](player-experience-checklist.md#remaining-work).
    Reproduce and fix the existing rover failures before expanding terrain cases.
    Human and AI avatars need native ground/object/player contact and water

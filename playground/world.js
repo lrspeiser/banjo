@@ -27,6 +27,7 @@ import { gameNavigation, showSaveStatus, screenUrl, thumbnail, massLabel } from 
 import { conditionPanel } from "/body_condition.js";
 import { GROUND_APPEARANCE, materialAppearance, terrainCellAt, terrainTargetPath, exposedRunKind } from "/material_appearance.js";
 import { terrainMaterial } from "/terrain_material.js";
+import { renderPlayerGuidance } from "/player_guidance.js";
 
 const $ = (id) => document.getElementById(id);
 const worldId = new URLSearchParams(location.search).get("world");
@@ -10668,7 +10669,6 @@ function showToolSkills() {
     if (lastNotebook) showNextStep(lastNotebook);
     return;
   }
-  if ($("next-step")) $("next-step").hidden = true;
   const saved = lastNotebook?.tool_skills?.find(s => s?.tool === profile.tool);
   const target = world.held?.pick?.tool === profile.tool ? world.use.target?.learning : null;
   const learning = target && (!saved || target.revision > saved.revision) ? target : saved;
@@ -10735,38 +10735,17 @@ function showToolSkills() {
   box.querySelector(".skill-next").textContent = model.next ? `Next: ${model.next}` : "";
 }
 
-// The nearest rung, under what you are looking at. One line, because the
-// whole ladder is still in Notes and the owner has said there are too many
-// panes; clicking it opens that tab.
-function showNextStep(book) {
-  const line = $("next-step");
-  if (!line) return;
-  if (tools.profileOf(world.held?.name || picked.name || world.aim?.name)) { line.hidden = true; return; }
-  const step = (book.next || []).find((n) => n.within_reach);
-  if (!step) { line.hidden = true; return; }
-  nextRung = step.technique || null;
-  const way = (step.earned_by || []).find((e) => !e.done) || (step.earned_by || [])[0];
-  const opens = opensSays(step);
-  line.replaceChildren();
-  const b = document.createElement("b");
-  b.textContent = `Next: ${step.name}.`;
-  line.append(b, document.createTextNode(` ${way && way.says ? way.says : ""}${opens ? " " + opens : ""}`));
-  line.hidden = false;
+// The same authenticated next action is shown in every game screen and chat.
+let guidanceBusy=false, guidanceReadAt=0;
+async function showNextStep() {
+  const root=$("next-step");
+  if (!root || !worldId || !world.session || watchedId || guidanceBusy || performance.now()-guidanceReadAt<4500) return;
+  guidanceBusy=true;guidanceReadAt=performance.now();
+  try {const data=await api("/api/world/guidance",{});renderPlayerGuidance(root,data);}
+  catch {renderPlayerGuidance(root,null);}
+  finally {guidanceBusy=false;}
 }
-
-// IT IS THE TECH TREE, so it opens the tech tree. The owner, seeing the line:
-// "why does it say 'Next: Burning Lime' is that the tech tree? if so link it
-// to the tech tree." It used to open the Notes tab, which lists what you know
-// -- near the right thing and not it. The Workshop's Skills tab is the tree,
-// and ?technique= opens it on this rung with its path lit.
-let nextRung = null;
-$("next-step")?.addEventListener("click", () => {
-  const url = new URL("/world", location.origin);
-  url.searchParams.set("workshop", "1");
-  url.searchParams.set("tab", "skills");
-  if (nextRung) url.searchParams.set("technique", nextRung);
-  location.href = url.toString();
-});
+setInterval(showNextStep,5000);
 
 // What the person knows (docs/knowledge-and-progression.md): the notebook the
 // server keeps from what the engine measured their own tools doing. What was
@@ -11434,6 +11413,14 @@ async function open({ again = false } = {}) {
         window.banjoRoom.lookAt(x,groundAt(x,z)+.15,z);
         picked.resource = resourceName; picked.name = null; picked.at = null; showPicked();
       } else lastAction("This material source is no longer available.", "refused");
+    }
+    const groundFocus=!watchedId && new URLSearchParams(location.search).get('ground');
+    if (groundFocus) {
+      const coordinates=groundFocus.split(',').map(Number);
+      if (ground.grid && coordinates.length===2 && coordinates.every(Number.isFinite)
+          && terrainCellAt(coordinates[0],coordinates[1],ground.grid)>=0) {
+        window.banjoRoom.lookAt(coordinates[0],groundAt(...coordinates),coordinates[1]);
+      }
     }
     world.framesSinceOpen = 0;
     // Drawn and ready to step: the frame report starts here, with this world's

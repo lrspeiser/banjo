@@ -168,13 +168,15 @@ def _recommend(recipes: list[dict], offers: list[dict], balance: int, goals: dic
 
 def _guidance(app: Any, offers: list[dict[str, Any]], balance: int) -> dict[str, Any]:
     import workshop_tabs
+    import player_guidance
+    unified=player_guidance.resolve(app,workshop_library.rack_owner_id(app),offers=offers,balance=balance) if getattr(app,'world_id',None) else None
     skills = workshop_tabs.skills(app)
     next_skill = next((t for t in skills["techniques"] if t["within_reach"]), None)
     goals=None
     if getattr(app,'world_id',None):
         import starter_goals
         goals=starter_goals.view(app,workshop_library.rack_owner_id(app),{'chain':'active'})
-    chosen=_recommend(workshop_tabs.recipes(app)['templates'],offers,balance,goals)
+    chosen=unified['project'] if unified else _recommend(workshop_tabs.recipes(app)['templates'],offers,balance,goals)
     supply=None
     if goals and goals.get('unlocked',True):
         row=next((g for g in goals['goals'] if not g.get('complete') and not g.get('done') and
@@ -188,7 +190,7 @@ def _guidance(app: Any, offers: list[dict[str, Any]], balance: int) -> dict[str,
     gap=next((line for line in highlighted['lines'] if line['status']=='buy'),None) if highlighted else None
     unknown=[t for t in skills['techniques'] if not t['known']]
     blocked=unknown[0] if unknown and not next_skill else None
-    return {"skill": ({"id": next_skill["id"], "name": next_skill["name"],
+    return {'player':unified,"skill": ({"id": next_skill["id"], "name": next_skill["name"],
                         "route": next((r["says"] for r in next_skill["earned_by"]
                                        if r.get("world_ready",True)), ""),
                         "locations": [l for r in next_skill['earned_by'] if r.get('world_ready')
@@ -493,7 +495,7 @@ def _buy(app: Any, owner: str, body: dict[str, Any]) -> None:
                    (request_id, owner, item_id, price, workshop_library._now()))
 
 
-def request(app: Any, owner: str, body: Any, keep_world: Any) -> dict[str, Any]:
+def request(app: Any, owner: str, body: Any, keep_world: Any, *, include_guidance=True) -> dict[str, Any]:
     if not isinstance(body, dict) or body.get("action", "view") not in ("view", "bank", "buy"):
         raise ValueError("Expected a Market view, bank or buy request")
     if len(body) > 4:
@@ -521,5 +523,5 @@ def request(app: Any, owner: str, body: Any, keep_world: Any) -> dict[str, Any]:
         return {"schema": "banjo.market.v1", "balance_j": balance, "offers": offers,
                 "automatic_sources": bank_sources(app, owner),
                 "bankable": getattr(app, "live_holder", None) == "world" and app.live.session is not None,
-                "guidance": _guidance(app, offers, balance), "orders": history,
+                "guidance": _guidance(app, offers, balance) if include_guidance else None, "orders": history,
                 "pricing": "Base price rises by up to 75% as finite world stock is sold."}

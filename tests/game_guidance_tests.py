@@ -12,9 +12,44 @@ sys.path[:0]=[str(ROOT/'tests'), str(ROOT/'playground'), str(ROOT)]
 import ai_player_tests as fixture
 import game_guidance
 import workshop_chat
+import player_guidance
 
 
 class GuidanceContract(unittest.TestCase):
+    def test_ground_use_destination_keeps_the_surveyed_column_instead_of_aiming_at_held_tool(self):
+        target={'body':'my pick','ground_at_m':[2.,.5,-3.],'where':'right'}
+        for verb in ('move','use-tool'):
+            route=player_guidance._destination({'verb':verb,'target':target})
+            self.assertEqual({'screen':'world','ground':[2.,-3.]},route)
+        route=player_guidance._destination({'verb':'acquire','target':{**target,'where':'stowed'}})
+        self.assertEqual('world',route['screen'])
+
+    def test_readiness_keeps_material_goods_energy_and_station_gates_distinct(self):
+        from copy import deepcopy
+        from mcp.fabrication import MAX_JOBS
+        quote={'material':'oak','stock_kg':2.,'stock_materials_kg':{'oak':1.,'iron':1.},
+               'assembly_goods_kg':{'wire':.25},'supply_required_j':120.,'minimum_duration_s':.5}
+        state={'stock_kg':{'oak':.5,'iron':2.},'goods_stock_kg':{},'energy_j':20.,'jobs':{}}
+        raw=[{'material':'oak','mass_kg':.5,'pool':'personal'},
+             {'material':'wire','mass_kg':5.,'pool':'shared'}]
+        result=player_guidance.build_readiness(quote,state,raw)
+        self.assertEqual('Supplies missing',result['status'])
+        by_name={line['substance']:line for line in result['lines']}
+        self.assertEqual((.5,.5,0.),tuple(by_name['oak'][k] for k in ('station_kg','fund_kg','short_kg')))
+        self.assertEqual(.25,by_name['wire']['short_kg'],'Raw material cannot supply processed goods')
+        self.assertEqual(100.,result['fund_energy_j'])
+        goods=[{'material':'wire','mass_kg':.25,'pool':'shared'}]
+        self.assertEqual('Fund materials',player_guidance.build_readiness(quote,state,raw,goods)['status'])
+        funded=deepcopy(state);funded['stock_kg']['oak']=1.;funded['goods_stock_kg']['wire']=.25
+        self.assertEqual('Fund energy',player_guidance.build_readiness(quote,funded)['status'])
+        funded['energy_j']=120.
+        self.assertTrue(player_guidance.build_readiness(quote,funded)['ready_to_start'])
+        funded['jobs']={'peer':{'status':'running'}}
+        self.assertEqual('Workbench in use',player_guidance.build_readiness(quote,funded)['status'])
+        funded['jobs']={str(i):{'status':'installed'} for i in range(MAX_JOBS)}
+        limited=player_guidance.build_readiness(quote,funded)
+        self.assertEqual('Workpiece limit reached',limited['status']);self.assertFalse(limited['ready_to_start'])
+
     def test_client_cannot_supply_world_state_or_system_instructions(self):
         for bad in ({'message':'Why?', 'wallet_j':9999},
                     {'message':'Why?', 'history':[{'role':'system','content':'Invent stock'}]},
@@ -50,6 +85,131 @@ class PrivateGuidance(unittest.TestCase):
     post=fixture.AutonomousGuests.post
     join=fixture.AutonomousGuests.join
     setup_world=fixture.AutonomousGuests.setup_world
+
+    def test_shared_next_action_and_exact_paid_readiness_follow_private_stock_and_real_funding(self):
+        import time
+        world,owner,app=self.setup_world();peer=self.join(world,'Other player')
+        began=time.monotonic()
+        first=self.post('/api/world/guidance',{},world)
+        self.assertEqual('get-tool-wood',first['goal']['id'])
+        self.assertIn(first['next_action']['verb'],('move','collect'))
+        self.assertTrue(first['next_action']['destination'].get('resource'))
+        market=self.post('/api/workshop/market',{},world)
+        self.assertEqual(first['next_action'],market['guidance']['player']['next_action'])
+        # Stock comes from an actual finite source through ordinary collection.
+        sid=app.live.session.id;name=first['next_action']['destination']['resource']
+        pile=app.brains.goods.by_name(name);x,z=pile['at_m']
+        y=self.post('/api/live/act',{'session':sid,'op':'survey','at':[x,z]},world)['survey']['ground_m']
+        self.post('/api/world/goods/collect',{'session':sid,'pile':name,'request_id':'guidance-collect',
+            'person':{'eyes_m':[x,y+1.62,z],'facing':[1,0,0]}},world)
+        ready=self.post('/api/world/guidance',{},world)
+        self.assertEqual('make-own-tool',ready['goal']['id'])
+        self.assertEqual('Fund materials',ready['build_readiness']['status'])
+        self.assertFalse(ready['build_readiness']['ready_to_start'])
+        self.assertEqual('get-tool-wood',self.post('/api/world/guidance',{},world,peer['token'])['goal']['id'])
+        ctx={k:v for k,v in self.post('/api/world/workshop/context',{},world).items() if k in ('session','scene')}
+        plan=self.post('/api/world/fabrication/plan_make',{**ctx,'candidate':ready['project']['candidate']},world)
+        self.assertEqual(ready['build_readiness'],plan['build_readiness'])
+        for line in plan['build_readiness']['lines']:
+            state=self.post('/api/world/fabrication/state',ctx,world)
+            source=next(s for s in state['stock_sources'] if s['pool']=='personal' and s['material']==line['substance'])
+            self.post('/api/world/fabrication/fund_stock',{**ctx,'material':line['substance'],
+                'mass_kg':line['fund_kg'],'pool':'personal','rack_hash':source['rack_hash'],
+                'revision':state['state']['revision'],'request_id':'guidance-fund-wood'},world)
+        reading=self.post('/api/world/fabrication/review_plan',{**ctx,'plan_id':plan['plan_id']},world)
+        self.assertEqual('Fund energy',reading['build_readiness']['status'])
+        state=self.post('/api/world/fabrication/state',ctx,world)
+        source=next(s for s in state['energy_sources'] if s['body']=='solar farm')
+        watts=min(250.,source['max_power_w'],state['state']['config']['power_w'])
+        self.post('/api/world/fabrication/connect_energy',{**ctx,'store':source['id'],
+            'store_hash':source['store_hash'],'power_w':watts,'revision':state['state']['revision'],
+            'request_id':'guidance-connect'},world)
+        self.post('/api/world/fabrication/wait',{**ctx,'seconds':1},world)
+        state=self.post('/api/world/fabrication/state',ctx,world)
+        source=next(s for s in state['energy_sources'] if s['connected'])
+        self.post('/api/world/fabrication/fund_energy',{**ctx,'store_hash':source['store_hash'],
+            'joules':plan['quote']['supply_required_j'],'revision':state['state']['revision'],
+            'request_id':'guidance-fund-energy'},world)
+        ctx={k:v for k,v in self.post('/api/world/workshop/context',{},world).items() if k in ('session','scene')}
+        try:renewed=self.post('/api/world/fabrication/review_plan',{**ctx,'plan_id':plan['plan_id']},world)
+        except urllib.error.HTTPError as error:self.fail(error.read().decode())
+        final=self.post('/api/world/guidance',{},world)
+        self.assertTrue(final['build_readiness']['ready_to_start'])
+        self.assertEqual(renewed['build_readiness'],final['build_readiness'])
+        self.assertEqual(0,self.post('/api/workshop/market',{},world)['balance_j'])
+        app.api_key='test';observed=[]
+        def provider(app,payload):
+            observed.append(json.loads(payload['input'][-1]['content'])['server_observations']['player_guidance'])
+            return {'status':'completed','output':[{'content':[{'type':'output_text','text':'Start the funded make in Lab.'}]}]}
+        with mock.patch.object(workshop_chat,'_call_model',side_effect=provider):
+            for screen in sorted(game_guidance.SCREENS):
+                self.post('/api/world/help',{'message':'What next?','screen':screen},world)
+        self.assertTrue(all(s['next_action']==final['next_action'] and s['build_readiness']==final['build_readiness'] for s in observed))
+        self.assertEqual(1,len(app._fabrication_remake_plans),'Reads must not allocate new reviewed plans')
+        with self.assertRaises(urllib.error.HTTPError):
+            self.post('/api/world/fabrication/review_plan',{**ctx,'plan_id':plan['plan_id']},world,peer['token'])
+        for forged in ({'owner':owner['id']},{'balance':999},{'focus':1}):
+            with self.assertRaises(urllib.error.HTTPError):self.post('/api/world/guidance',forged,world)
+        started=self.post('/api/world/fabrication/start_make',{**ctx,'plan_id':plan['plan_id'],
+            'revision':renewed['revision'],'request_id':'guidance-own-workpiece'},world)
+        self.assertEqual('running',started['state']['jobs']['guidance-own-workpiece']['status'])
+        pending=self.post('/api/world/guidance',{},world)
+        self.assertEqual('continue-build',pending['next_action']['verb'])
+        self.assertEqual('guidance-own-workpiece',pending['next_action']['destination']['job'])
+        self.assertFalse(pending['build_readiness']['ready_to_start'])
+        self.assertNotIn('job',self.post('/api/world/guidance',{},world,peer['token'])['next_action']['destination'])
+        self.post('/api/world/fabrication/wait',{**ctx,'seconds':1},world)
+        finished=self.post('/api/world/guidance',{},world)
+        self.assertEqual('Output ready',finished['build_readiness']['status'])
+        self.assertEqual('Collect your finished workpiece',finished['next_action']['label'])
+        print('shared guidance: private source, exact funding, seven chat screens; wall_s=',round(time.monotonic()-began,3))
+
+    def test_review_refresh_rejects_changed_process_and_expiry_without_funding_or_new_plans(self):
+        from copy import deepcopy
+        import time
+        world,owner,app=self.setup_world()
+        ctx={k:v for k,v in self.post('/api/world/workshop/context',{},world).items() if k in ('session','scene')}
+        candidate=self.post('/api/world/guidance',{},world)['project']['candidate']
+        plan=self.post('/api/world/fabrication/plan_make',{**ctx,'candidate':candidate},world)
+        before=deepcopy(app.room.fabrication_record)
+        for _ in range(4):
+            refreshed=self.post('/api/world/fabrication/review_plan',{**ctx,'plan_id':plan['plan_id']},world)
+            self.assertEqual(plan['quote'],refreshed['quote'])
+            self.assertEqual(plan['plan_id'],refreshed['plan_id'])
+        self.assertEqual(before,app.room.fabrication_record)
+        self.assertEqual(1,len(app._fabrication_remake_plans))
+        # A changed process fixture must invalidate the accepted cost review.
+        app.room.fabrication_record['config']['power_w']*=.5
+        try:
+            with self.assertRaises(urllib.error.HTTPError) as rejected:
+                self.post('/api/world/fabrication/review_plan',{**ctx,'plan_id':plan['plan_id']},world)
+            self.assertIn('process changed',rejected.exception.read().decode())
+        finally:app.room.fabrication_record=deepcopy(before)
+        app._fabrication_remake_plans[plan['plan_id']]['expires']=time.monotonic()-1
+        with self.assertRaises(urllib.error.HTTPError) as rejected:
+            self.post('/api/world/fabrication/review_plan',{**ctx,'plan_id':plan['plan_id']},world)
+        self.assertIn('expired',rejected.exception.read().decode())
+        self.assertEqual(before,app.room.fabrication_record)
+        self.assertEqual({},app._fabrication_remake_plans)
+
+    def test_next_action_reports_actual_empty_machine_intake_for_a_batch_goal(self):
+        import starter_goals
+        world,owner,app=self.setup_world()
+        tree=self.post('/api/workshop/skills',{},world)['techniques']
+        copper=next(t for t in tree if t['id']=='smelting-copper')
+        intake_name=copper['earned_by'][0]['locations'][0]['intake']
+        next(p for p in app.room.spec['goods']['stockpiles'] if p['name']==intake_name)['holds'].clear()
+        # Select this goal in a read-only recommendation fixture. No skill,
+        # batch, stock, native time or opening-completion receipt is awarded.
+        goals={'chain_id':'test-batch-guidance','complete':False,'next_goal':'batch',
+               'goals':[{'id':'batch','title':'Watch copper processing',
+                         'requirement':{'kind':'personal-batch','technique':'smelting-copper'}}]}
+        with mock.patch.object(starter_goals,'view',return_value=goals):
+            reading=self.post('/api/world/guidance',{},world)
+        self.assertEqual('wait',reading['next_action']['verb'])
+        self.assertEqual('Blocked',reading['next_action']['status'])
+        self.assertTrue(any('intake needs' in b for b in reading['next_action']['blockers']))
+        self.assertNotIn('job',reading['next_action']['destination'])
 
     def test_help_reads_own_wallet_without_spending_and_releases_world_during_model(self):
         world,owner,app=self.setup_world();peer=self.join(world,'Other player')

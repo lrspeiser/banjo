@@ -96,7 +96,7 @@ def catalog(state,memory):
                 pile=min(piles,key=lambda p:_distance(state.get('pose'),[p['at_m'][0],0,p['at_m'][1]]))
                 at=[pile['at_m'][0],0,pile['at_m'][1]]
                 if _distance(state.get('pose'),at)>2:
-                    offer('move',f"Approach {pile['name']} for {name}",aim=at,stand_off_m=1.2)
+                    offer('move',f"Approach {pile['name']} for {name}",aim=at,stand_off_m=1.2,pile=pile['name'])
                 else:offer('collect',f"Collect nearby {name} from {pile['name']}",pile=pile['name'],at_m=at)
                 continue
             lot=next((o for o in state['market']['offers'] if o['substance']==name),None)
@@ -162,7 +162,8 @@ def catalog(state,memory):
                 distance=_distance(state['pose'],desired)
                 least,most=target['reach_m']
                 if not least<=distance<=most:
-                    offer('move','Stand within swing reach of the surveyed dry column',target=target,
+                    offer('move','Step back from the surveyed dry column' if distance<least else
+                          'Walk closer to the surveyed dry column',target=target,
                           aim=desired,stand_off_m=(least+most)/2)
                 else:offer('use-tool','Use the held tool on surveyed dry soil or sand',target=target,at_m=desired)
             else:blockers.append('No dry soil or sand surveyed near this tool')

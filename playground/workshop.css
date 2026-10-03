@@ -670,3 +670,7 @@ body.workshop-mode .ws-chat-suggestions { flex:none;max-height:24vh;overflow:aut
 #ws-component-info dt { color:var(--dim); }
 #ws-component-info dd { margin:0;overflow-wrap:anywhere; }
 #ws-component-info .ws-action { padding:.25rem .4rem;font-size:.72rem; }
+
+.player-guidance { display:grid;gap:.35rem;padding:.55rem;margin:.45rem 0;border:1px solid var(--edge);border-radius:.45rem;font-size:.75rem; }
+.player-guidance p { margin:0;color:var(--dim); }
+.player-guidance a { white-space:normal;line-height:1.3;overflow-wrap:anywhere; }

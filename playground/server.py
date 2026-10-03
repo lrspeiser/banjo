@@ -1431,6 +1431,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/blades.js":"blades.js","/interaction.js":"interaction.js","/tools.js":"tools.js","/workbench.js":"workbench.js",
                 "/cellmesh.js":"cellmesh.js","/surfaces.js":"surfaces.js",
                 "/material_appearance.js":"material_appearance.js","/terrain_material.js":"terrain_material.js",
+                "/player_guidance.js":"player_guidance.js",
                 "/debug":"debug.html","/debug.js":"debug.js","/debug.css":"debug.css",
                 "/vendor/three.module.js":"vendor/three.module.js","/vendor/three.core.js":"vendor/three.core.js"}
             if path not in allowed: return self.send({"error":"Not found"},404)
@@ -1597,6 +1598,17 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/workshop/feedback": return self.send(workshop_api.remember(self.app,body))
             if path=="/api/workshop/remembered": return self.send(workshop_api.remembered(self.app,body))
             if path=="/api/workshop/library": return self.send(workshop_api.library(self.app,body))
+            if path=='/api/world/guidance':
+                import player_guidance
+                if not getattr(self.app,'world_id',None):raise ValueError('Join a named world for guidance')
+                if (not isinstance(body,dict) or set(body)-{'focus'} or
+                    'focus' in body and (not isinstance(body['focus'],str) or len(body['focus'])>160)):
+                    raise ValueError('Guidance accepts an optional focused object, not player state')
+                app=self.app
+                app.knowledge=lambda app=app: knowledge_view(app)
+                app.registry=registry
+                app.journal_now=lambda app=app: journal_of(app)
+                return self.send(player_guidance.resolve(app,player,focus=body.get('focus')))
             if path=="/api/workshop/market":
                 app = self.app
                 app.knowledge = lambda app=app: knowledge_view(app)

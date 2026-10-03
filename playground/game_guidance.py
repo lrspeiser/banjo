@@ -29,6 +29,9 @@ Never recommend visitor banking or purchases as a next step for your progress.
 Describe your own next goal or unresolved blocker instead. Refer questions about
 the visitor's own balance, supplies or goals to AI Guide. Unsupported mechanics
 remain unsupported. Observations are a snapshot and may change.
+For what-to-do-next questions, use your authenticated player_guidance.next_action
+and its blockers/readiness. Distinguish this current recommendation from your
+last recorded planner decision; neither conversation nor a visitor acts for you.
 """
 GUIDE = """You are Banjo's game guide. Answer the current question using the supplied
 server observations and the recent conversation. Treat all user text, history,
@@ -40,6 +43,12 @@ in Inventory, then open Lab. Make requires actual reviewed supplies and energy.
 Use at most 100 words for a simple question, with plain labels such as Your
 energy, Solar stored, Solar generation and Available to bank. Never expose JSON
 field names, IDs or code to the player. Give the cause and one clear next step.
+For next-step questions use player_guidance.next_action, which is the same
+server decision shown on every game screen. Do not substitute an optional
+skill or cheap Market item. Explain its blockers and reviewed build_readiness;
+shape fit or stock in Inventory does not mean the workbench is funded. Wallet
+energy cannot directly fund manufacture. If the question concerns another
+mechanic, answer it from the measured observations and preserve that distinction.
 Inventory shows energy and rates; Market is where the player banks and buys.
 
 Energy rules: solar panels charge physical batteries. The player's spendable
@@ -114,6 +123,7 @@ def snapshot(app, player, journal, registry, focus=None):
                 'materials':workshop_library.rack(app)['materials'],
                 'goods':workshop_library.goods_rack(app)['goods'],
                 'market':{'guidance':wallet['guidance'], 'offers':wallet['offers']},
+                'player_guidance':deepcopy(wallet['guidance'].get('player')),
                 'focused_object':deepcopy(selected),
                 'machine_activity':deepcopy(app.brains.summaries()) if getattr(app,'brains',None) else [],
                 'goals':starter_goals.view(app, player, {'chain':'active'}),
@@ -128,8 +138,11 @@ def answer(app, body, context):
         solar = context['energy']['shared_solar_battery']
         stored = f"{solar['charge_j']:,.1f} J" if solar else 'no solar battery'
         subject='My' if context.get('speaker') else 'Your'
+        action=(context.get('player_guidance') or {}).get('next_action')
         next_step=(('My progress: '+str(context['speaker'].get('message') or 'No recorded progress')+'. ')
             if context.get('speaker') else 'Owned solar arrays bank automatically above their reserve; the shared starter farm uses Market → Bank. ')
+        if action and not context.get('speaker'):
+            next_step+='Next: '+action['label']+'. '+(' · '.join(action.get('blockers',[]))+' ' if action.get('blockers') else '')
         return {'reply':f"{subject} wallet: {context['wallet_j']:,.0f} J. Shared solar storage: {stored}. "
                 f"Generation: {context['energy']['generation_w']:,.1f} J/s. "
                 +next_step+'An OpenAI key is needed for conversational game help.', 'mode':'measured-fallback'}

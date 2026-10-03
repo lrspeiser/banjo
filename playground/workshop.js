@@ -4,6 +4,7 @@ import { keyOf } from "/interaction.js";
 import * as THREE from "/vendor/three.module.js";
 import { gameNavigation, refreshNavigation, showSaveStatus, screenUrl } from "/game_menu.js";
 import { conditionPanel } from "/body_condition.js";
+import { renderPlayerGuidance } from "/player_guidance.js";
 
 const $ = (q) => document.querySelector(q);
 const worldId = new URLSearchParams(location.search).get("world");
@@ -2772,7 +2773,8 @@ async function showRecipes() {
     li.dataset.recipe = recipeKey(t);
     li.dataset.materials = JSON.stringify([...(t.materials || []), ...(t.goods || [])].map(r => r.material || r.substance));
     const guidedRecipe = {"build-camp":"Camp stool", "build-surface":"Work table", "make-own-tool":"Personal field pick"}[new URLSearchParams(location.search).get("guide")];
-    if (t.name === guidedRecipe) li.classList.add("ws-goal-target");
+    const selectedRecipe=new URLSearchParams(location.search).get('recipe');
+    if (selectedRecipe ? recipeKey(t)===selectedRecipe : t.name===guidedRecipe) li.classList.add("ws-goal-target");
     const canvas = make("canvas", {width:"160", height:"112", role:"img", "aria-label":`${t.name} shape preview`});
     li.querySelector("strong").before(canvas);
     if (t.problem) {
@@ -2810,7 +2812,7 @@ async function showRecipes() {
       : !readiness.world ? "Open a world to check placement."
       : !readiness.world.as_drawn ? readiness.world.reason : "Fits both grids. Placement is checked when you Make.";
     all.append(make("p", {}, fit));
-    li.append(recipeValue("Build", ready ? "Ready" : !readiness.world ? "World required" : "Needs changes", "ws-recipe-readiness"));
+    li.append(recipeValue("Shape", ready ? "Fits" : !readiness.world ? "World required" : "Needs changes", "ws-recipe-readiness"));
     // Current Workshop authoring has no technique gate. Do not infer a
     // requirement from an item's name or a progression hint.
     li.append(recipeValue("Skill", "None required", "ws-recipe-skill"));
@@ -2894,19 +2896,7 @@ async function showMarket() {
   $("#ws-market-balance").textContent = `${market.balance_j.toLocaleString()} J`;
   showMarketEnergy(market);
   $("#ws-market-pricing").textContent = `${market.pricing} One lot restocks every 120 seconds of world time. ${market.guidance?.estimate_basis || ""}`;
-  const next = market.guidance?.skill;
-  const skill = $("#ws-market-next"); skill.replaceChildren();
-  if (next) {
-    skill.append(recipeValue("Next skill", next.name));
-    const location = next.locations?.[0];
-    if (location) skill.append(recipeValue("Where", location.machine || location.body), recipeValue("Action", location.label));
-    const open = make("button", {type:"button", class:"ws-action"}, "Open skill");
-    open.onclick = () => { tree.picked = next.id; showTab("skills"); }; skill.append(open);
-  } else {
-    const blocked = market.guidance?.skill_blocked;
-    skill.append(recipeValue("Next skill", blocked?.name || "All catalog skills learned"));
-    if (blocked) skill.append(recipeValue("Needs", [...blocked.prerequisites, ...blocked.world_missing].join(" · ") || "No supported learning action"));
-  }
+  renderPlayerGuidance($("#ws-market-next"),market.guidance?.player);
   const recommendation = $("#ws-market-recipe"); recommendation.replaceChildren();
   const plan = market.guidance?.plan;
   if (plan) {
@@ -3204,8 +3194,11 @@ function showTab(name) {
   const url = new URL(location.href); url.searchParams.set("tab", name);
   for (const key of ["carry", "design", "library", "recipe"]) url.searchParams.delete(key);
   if (bench.inventorySelection) {
-    const key = {carried:"carry", saved:"design", library:"library", recipe:"recipe"}[bench.inventorySelection.source];
-    if (key) url.searchParams.set(key, bench.inventorySelection.id);
+    if (bench.inventorySelection.job_id) url.searchParams.set('job',bench.inventorySelection.job_id);
+    else {
+      const key = {carried:"carry", saved:"design", library:"library", recipe:"recipe"}[bench.inventorySelection.source];
+      if (key) url.searchParams.set(key, bench.inventorySelection.id);
+    }
   }
   window.history.replaceState(null, "", url);
   refreshNavigation(name);
@@ -3222,7 +3215,22 @@ function showTab(name) {
   const loader = { inventory: showInventory, skills: showSkills, recipes: showRecipes, market: showMarket, goals: showGoals }[name];
   if (loader) guard(null, loader);
   updateLabSelection();
+  refreshPlayerGuidance();
 }
+
+let guidanceRequest=0, guidanceBusy=false, guidanceAgain=false;
+async function refreshPlayerGuidance() {
+  if (!worldId) return;
+  if (guidanceBusy) {guidanceAgain=true;return;}
+  guidanceBusy=true;
+  let root=$("#ws-player-guidance");
+  if (!root) {root=make("section",{id:"ws-player-guidance"});$(".ws-left > .game-tabs").after(root);}
+  const request=++guidanceRequest;
+  try {const data=await api("/api/world/guidance",{});if (request===guidanceRequest) renderPlayerGuidance(root,data);}
+  catch {if (request===guidanceRequest) renderPlayerGuidance(root,null);}
+  finally {guidanceBusy=false;if (guidanceAgain) {guidanceAgain=false;refreshPlayerGuidance();}}
+}
+setInterval(()=>{if (!document.hidden) refreshPlayerGuidance();},5000);
 
 let labWasSelected = false;
 const remake = {plan:null,job:null,selection:null,busy:false,supply:null,store:null};
@@ -3273,18 +3281,6 @@ async function waitRemakeSecond() {
   await api("/api/world/fabrication/wait",{session:ctx.session,scene:ctx.scene,seconds:1});await reviewRemake();
 }
 function remakeMaterials(quote) {return quote.stock_materials_kg || {[quote.material]:quote.stock_kg};}
-function refreshRemakeSupplies(plan,reading) {
-  const required=remakeMaterials(plan.quote),stock=reading.state.stock_kg;
-  plan.missing_materials_kg=Object.fromEntries(Object.entries(required).map(([m,kg])=>[m,Math.max(0,kg-(stock[m] || 0))]));
-  plan.missing_stock_kg=Object.values(plan.missing_materials_kg).reduce((a,b)=>a+b,0);
-  plan.station_stock_kg=Object.entries(required).reduce((sum,[m,kg])=>sum+Math.min(kg,stock[m] || 0),0);
-  plan.station_energy_j=reading.state.energy_j;
-  plan.missing_energy_j=Math.max(0,plan.quote.supply_required_j-plan.station_energy_j);
-  plan.stock_sources=reading.stock_sources.filter(s=>s.material in required);
-  const goods=plan.quote.assembly_goods_kg || {},heldGoods=reading.state.goods_stock_kg || {};
-  plan.missing_goods_kg=Object.fromEntries(Object.entries(goods).map(([n,kg])=>[n,Math.max(0,kg-(heldGoods[n] || 0))]));
-  plan.goods_sources=(reading.goods_sources || []).filter(s=>s.material in goods);
-}
 
 async function assignInventorySlot(item,slot) {
   const ctx=await api("/api/world/workshop/context",{});
@@ -3422,7 +3418,8 @@ function renderRemake() {
       }else button("ws-remake-collect",sessionStorage.getItem(remakeKey()+".collect") ? "Retry Inventory save" : "Add to Inventory",collectRemake);
       const url=new URL(homeWorld(),location.href);url.searchParams.set("focus",job.root_body);
       if(!remake.carried)root.append(make("a",{class:"ws-action",href:url.pathname+url.search},"Collect in World"));
-      button("ws-remake-another","Review another "+kind,async()=>{sessionStorage.removeItem(remakeKey());sessionStorage.removeItem(remakeKey()+".install");await reviewRemake();});
+      button("ws-remake-another","Review another "+kind,async()=>{sessionStorage.removeItem(remakeKey());sessionStorage.removeItem(remakeKey()+".install");
+        const url=new URL(location.href);url.searchParams.delete('job');window.history.replaceState(null,'',url);await reviewRemake();});
     }
     button("ws-remake-review","Refresh",reviewRemake);return;
   }
@@ -3435,6 +3432,7 @@ function renderRemake() {
   funding.append(make("summary",{},"Fund workbench"));root.append(funding);
   const supplyButton=(id,label,fn)=>{const b=button(id,label,fn);funding.append(b);return b;};
   renderRemakeFunding(funding,supplyButton,plan);
+  remakeRow(root,'Status',plan.build_readiness?.status || 'Review required');
   const begin=button("ws-remake-start","Start "+kind,async()=>{
     if(remake.selection!==`${bench.inventorySelection?.id}:${bench.revision}`)throw Error("Design changed; review it again");
     let pending=remakePending();
@@ -3447,7 +3445,7 @@ function renderRemake() {
     catch(err) {if(/plan expired|Selected item changed|revision changed|process changed/i.test(String(err.message)))sessionStorage.removeItem(remakeKey());throw err;}
     remake.job=result.state.jobs[result.job_id];remake.plan=null;renderRemake();
   });
-  begin.disabled=remake.busy || fundingPendingNow || plan.missing_stock_kg>1e-10 || missingRemakeGoods(plan) || plan.missing_energy_j>1e-10 || plan.occupied;
+  begin.disabled=remake.busy || fundingPendingNow || !plan.build_readiness?.ready_to_start;
   button("ws-remake-review","Review again",()=>reviewRemake(true));
 }
 async function reviewRemake(force=false) {
@@ -3475,19 +3473,16 @@ async function reviewRemake(force=false) {
   // the bounded server plan cache. Renew before its five-minute expiry, or on
   // explicit review. Native source/draft guards still run at Start.
   if(!force && previous?.available && !pending && performance.now()-previous.reviewed_ms<240000 && reading.state) {
-    plan={...previous,session:ctx.session,scene:ctx.scene,revision:reading.state.revision,
-      occupied:Object.values(reading.state.jobs).some(j=>j.status==="running")};
+    plan=await api("/api/world/fabrication/review_plan",{session:ctx.session,scene:ctx.scene,plan_id:previous.plan_id});
+    plan.reviewed_ms=previous.reviewed_ms;
   } else {
     plan=await api("/api/world/fabrication/plan_"+kind,{session:ctx.session,scene:ctx.scene,
       ...(kind==="remake" ? {source_item:String(selected.id)} : {}),candidate:candidateBody()});
     plan.reviewed_ms=performance.now();
   }
   if(selected!==bench.inventorySelection || revision!==bench.revision)return;
-  if(pending?.reviewed_quote && plan.available) {
-    plan.quote=pending.reviewed_quote;
-  }
-  if(plan.available && reading.state)refreshRemakeSupplies(plan,reading);
   remake.plan=plan;remake.job=null;renderRemake();
+  refreshPlayerGuidance();
   if(pending && plan.available) {
     $("#ws-remake-start").textContent="Retry reviewed "+kind;
     remakeRow($("#ws-remake"),"Request","Awaiting confirmation · Original reviewed design");
@@ -3612,14 +3607,14 @@ function updateLabSelection() {
   let condition=$("#ws-carried-condition");
   if(!condition) {condition=make("div",{id:"ws-carried-condition"});$(".ws-left > .game-tabs").after(condition);}
   const source=bench.inventorySelection;
-  condition.hidden=!(selected && source?.source === "carried");
+  condition.hidden=!(selected && source?.source === "carried") || Boolean($('.ws-viewport')?.hidden);
   if(!condition.hidden && condition.dataset.item !== String(source.id)) {
     condition.replaceChildren(conditionPanel(source.condition,{label:"Carried item"}));condition.dataset.item=String(source.id);
   }
   if(condition.hidden) delete condition.dataset.item;
   let remakePanel=$("#ws-remake");
   if(!remakePanel) {remakePanel=make("section",{id:"ws-remake"});condition.after(remakePanel);renderRemake();}
-  remakePanel.hidden=!selected;
+  remakePanel.hidden=!selected || Boolean($('.ws-viewport')?.hidden);
   const selection=`${source?.id}:${bench.revision}`;
   if(remake.selection!==selection) {remake.plan=null;remake.job=null;remake.selection=selection;renderRemake();}
   $("#design-workshop").classList.toggle("lab-empty", !selected);
@@ -3741,7 +3736,8 @@ async function refreshPhysicalConditions() {
 }
 setInterval(()=>refreshPhysicalConditions().catch(()=>{}),5000);
 
-function clearLab() {
+function clearLab(keepJob=false) {
+  if (!keepJob) {const clearedUrl=new URL(location.href);clearedUrl.searchParams.delete('job');window.history.replaceState(null,'',clearedUrl);}
   labDraft.base=null;labDraft.status="";labDraft.restoring=false;
   bench.inventorySelection = null; bench.candidates = []; bench.selectedPart = null;
   bench.libraryInspection = null; bench.isolated = null; bench.revision++; candidateRequest++;
@@ -5224,7 +5220,7 @@ stage.visibleGeometry = () => {
 
 async function start() {
   const params = new URLSearchParams(location.search);
-  const wantSaved = params.get("design"), wantLibrary = params.get("library"), wantRecipe = params.get("recipe");
+  const wantSaved = params.get("design"), wantLibrary = params.get("library"), wantRecipe = params.get("recipe"), wantJob=params.get('job');
   // ?tab=skills&technique=burning-lime opens the tree on that rung. The
   // world page's "Next: ..." line uses it.
   const wantTab = (params.get("tab") || "").trim();
@@ -5240,8 +5236,25 @@ async function start() {
   for (const made of answer.assemblies) { const option = make("option", { value:made.assembly }, made.assembly.replace("-", " ")); option.title = made.about; picker.append(option); }
   picker.value = answer.kind; renderProductCatalog();
   bench.families = answer.families || []; savedDesigns(answer.saved_designs || []); bench.personalLibrary = answer.personal_library || [];
-  bench.pricebook = answer.pricebook || null; bench.rack = answer.rack || null; bench.benchTests = answer.bench_tests || []; bench.benchPresets = answer.bench_presets || []; bench.session = answer.session || null; renderUserLibrary(); renderRack(); renderBuildChoices(); clearLab();
-  if (wantCarried) await openTheCarriedThing(wantCarried);
+  bench.pricebook = answer.pricebook || null; bench.rack = answer.rack || null; bench.benchTests = answer.bench_tests || []; bench.benchPresets = answer.bench_presets || []; bench.session = answer.session || null; renderUserLibrary(); renderRack(); renderBuildChoices(); clearLab(Boolean(wantJob));
+  if (wantJob) {
+    const ctx=await api('/api/world/workshop/context',{});
+    const reading=await api('/api/world/fabrication/state',{session:ctx.session,scene:ctx.scene});
+    const job=reading.state?.jobs?.[wantJob], binding=job?.make_source || job?.remake_source;
+    if (!job || binding?.owner!==playerId) throw Error('That workpiece is unavailable or belongs to another player');
+    // Show the accepted workpiece, including custom geometry and machine
+    // bindings. A browser-local edit must not replace its paid design.
+    const source=await api('/api/workshop/candidates',{...job.candidate,sweeps:{}});
+    bench.inventorySelection={id:job.remake_source?.source_item || 'workpiece:'+wantJob,
+      name:'Your workpiece',source:job.remake_source ? 'carried' : 'recipe',job_id:wantJob};
+    if (took(source)) {
+      labDraft.base=recipeSignature(candidateBody());labDraft.status='Accepted workpiece';renderLabDraft();
+      picker.value=source.kind;
+      sessionStorage.setItem(remakeKey(),JSON.stringify({session:ctx.session,scene:ctx.scene,request_id:wantJob,reviewed_quote:job}));
+      await reviewRemake();
+    }
+  }
+  else if (wantCarried) await openTheCarriedThing(wantCarried);
   else if (wantSaved || wantLibrary) await openInventoryDesign(wantSaved || wantLibrary, wantSaved ? "saved" : "library");
   else if (wantRecipe) {
     const recipes = await api("/api/workshop/recipes", {});
@@ -5253,7 +5266,7 @@ async function start() {
     } else say("That recipe is no longer available. Select another recipe.", true);
   }
   if (wantTechnique && (!wantTab || wantTab === "skills")) openTheTreeAt(wantTechnique);
-  else showTab(wantTab || (wantCarried || wantSaved || wantLibrary || wantRecipe ? "lab" : WORKSHOP_OPENS_ON));
+  else showTab(wantTab || (wantJob || wantCarried || wantSaved || wantLibrary || wantRecipe ? "lab" : WORKSHOP_OPENS_ON));
   try {
     const remembered = await api("/api/workshop/remembered", {}); $("#ws-feedback-count").textContent = remembered.kept ? `${remembered.kept} feedback records kept` : "";
     bench.personalLibrary = remembered.personal_library || bench.personalLibrary; bench.pricebook = remembered.pricebook || bench.pricebook; bench.benchPresets = remembered.bench_presets || bench.benchPresets;
