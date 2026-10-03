@@ -1,7 +1,8 @@
 # Sparse terrain rendering and character joining — October 3, 2026
 
 Implementation checkpoint on Windows x64, based on published GitHub main
-`bbcd23369c523eb715a739e74849cf97999cd133`. Publication revision follows verification.
+`bbcd23369c523eb715a739e74849cf97999cd133`. Published implementation:
+**`edf82515d9b154ed111f1d1277af6f7c32877717`**, on GitHub main.
 The optional material-column terrain remains experimental; smooth remains the
 default. R3 remains owner-paused. The broader readability, useful opening,
 shared guidance and R4/R5 physical acceptance remain active.

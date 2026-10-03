@@ -8,7 +8,7 @@ character finishes its table but then lacks furnace input. Recognition at night,
 exhausted-input recovery, compact solar/full supply coverage and native
 traversal/water/cargo remain active. This is a measured slice, not full completion.
 
-Latest implementation checkpoint: `3544fd2` on GitHub main. This publication record
+Latest implementation checkpoint: `edf8251` on GitHub main. This publication record
 does not close the full active scope.
 
 The [Camp light/output checkpoint](camp-light-opening-checkpoint.md) continues
