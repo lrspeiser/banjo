@@ -25,7 +25,7 @@ import { makeTools } from "/tools.js";
 import { makeWorkbench } from "/workbench.js";
 import { gameNavigation, showSaveStatus, screenUrl, thumbnail, massLabel } from "/game_menu.js";
 import { conditionPanel } from "/body_condition.js";
-import { GROUND_APPEARANCE, materialAppearance, terrainCellAt, terrainTargetPath, exposedRunKind } from "/material_appearance.js";
+import { GROUND_APPEARANCE, materialAppearance, terrainCellAt, terrainTargetPath, exposedRunKind, toolTargetFeedback, collectedToolMaterials } from "/material_appearance.js";
 import { terrainMaterial } from "/terrain_material.js";
 import { renderPlayerGuidance } from "/player_guidance.js";
 
@@ -35,6 +35,13 @@ const watchedId = new URLSearchParams(location.search).get("watch");
 const worldNavigation = gameNavigation("world");
 $("panel").querySelector("header").after(worldNavigation);
 for (const link of document.querySelectorAll("#panel header .workshop-entry:not(.debug-entry)")) link.remove();
+// Keep the target, next action and committed feedback ahead of conversation.
+// Full keyboard/help rows remain available without filling the default panel.
+const interactionControls=document.createElement("details");
+interactionControls.id="interaction-controls";
+const controlsTitle=document.createElement("summary");controlsTitle.textContent="Controls & details";
+$("details").before(interactionControls);interactionControls.append(controlsTitle,$("details"));
+$("talk").before($("next-step"),$("details-meter"),$("details-last"),$("machine-panel"),interactionControls);
 let watchedView = null;
 let watchedAt = 0;
 if (worldId) {
@@ -4877,14 +4884,14 @@ const picked = { name: null, at: null, resource: null, box: null };
   box.hidden = true;
   box.setAttribute("aria-label", "What you clicked");
   box.setAttribute("aria-live", "polite");
-  details.parentNode.insertBefore(box, details);
+  $("interaction-controls").before(box);
   // An action result belongs to the whole player interaction. Keeping it
   // inside the look-at card hid refusals whenever an item was selected.
   const last=document.getElementById("details-last");
   if (last) {
     last.setAttribute("role","status");
     last.setAttribute("aria-live","polite");
-    details.parentNode.insertBefore(last,box);
+    box.before(last);
   }
 })();
 
@@ -5511,10 +5518,12 @@ function showPicked() {
     box.hidden = true;
     box.replaceChildren();
     if (details) details.hidden = false;
+    $("interaction-controls").hidden=false;
     return;
   }
   box.hidden = false;
   if (details) details.hidden = true;     // one card about one thing, not two
+  $("interaction-controls").hidden=true;
   const rows = [];
 
   if (picked.resource) {
@@ -5667,9 +5676,9 @@ function showPicked() {
 // What the last thing the person did came to -- "Ball left your hand at 7.2
 // m/s" -- or why it could not be done. Said in the details, not the chat: the
 // chat is the conversation with the room.
-function lastAction(text, tone = "did") {
+function lastAction(text, tone = "did", detail = "") {
   if (!text) return;
-  world.last = { text: sentence(text), tone };
+  world.last = { text: sentence(text), tone, detail };
   showDetails(true);
 }
 
@@ -6007,12 +6016,27 @@ function detailsModel() {
 // second, and at once when the hand's state changes (showUse). The crosshair's
 // ring fills with the meter.
 let materialPreviewSaid = "";
+function targetContext(at,name=null) {
+  if(name)return JSON.stringify([name,world.bodies.get(name)?.revision]);
+  if(!at || !ground.grid)return null;
+  const c=terrainCellAt(at[0],at[2],ground.grid);
+  if(c<0)return null;
+  const runs=[];
+  for(let n=0;n<(ground.runs?.count[c] || 0);n++) {
+    const i=c*ground.runs.stride+n;runs.push(ground.runs.kind[i],ground.runs.top[i]);
+  }
+  return JSON.stringify([ground.grid.x0,ground.grid.z0,ground.grid.dx,c,ground.heights[c],ground.surfaces[c],runs]);
+}
 function showMaterialPreview() {
   const point=world.groundAim, pileHit=world.resourceAim;
   const target=world.use.target;
-  const gather=target?.gather;
-  const fresh=point && target?.target?.at_m &&
-    Math.hypot(point[0]-target.target.at_m[0],point[2]-target.target.at_m[2])<.35;
+  const heldTool=world.held?.pick ? world.use.name || target?.object || "Ground tool" : null;
+  let feedback=toolTargetFeedback({point:world.aim?.point_m || point,grid:ground.grid,
+    tool:heldTool,target,eyes:camera.position.toArray(),name:world.aim?.name || null,
+    surface:point ? groundMadeOf(point) : null,
+    context:targetContext(world.aim?.point_m || point,world.aim?.name || null)});
+  if(heldTool && world.use.mode!=="tool-ready")
+    feedback={...feedback,ready:false,state:"working",action:"Using tool",materials:[],screen:null};
   const rows=[], nearby=[];
   const add=(material,label,value,action=null,kind="material")=>rows.push({material,label,value,action,kind});
   if(pileHit) {
@@ -6022,19 +6046,17 @@ function showMaterialPreview() {
       add(material,titled(material),massLabel(kg),action,"pile");
   } else if(world.aim?.name) {
     const name=world.aim.name, entry=world.bodies.get(name), profile=tools.profileOf(name)||profileOf(name);
-    const strike=world.held?.pick && target?.target?.kind==="object" && target.target.name===name;
     if(entry)rows.push({name,material:entry.material,revision:entry.revision,label:titled(profile?.object||name),value:"Whole item",
-      action:strike ? target.enabled ? "J / click · Strike" : target.reason : world.held ? "Hands occupied" : entry.anchored ? "Fixed" : onAJoint(name) ? "Attached" :
+      action:heldTool ? null : world.held ? "Hands occupied" : entry.anchored ? "Fixed" : onAJoint(name) ? "Attached" :
         world.aim.point_m && camera.position.distanceTo(new THREE.Vector3(...world.aim.point_m))>2.5 ? "Walk closer" : "E · Pick up",kind:"product"});
   } else if(point) {
     const surface=groundMadeOf(point), water=waterAt(point[0],point[2]);
-    if(world.held?.pick && fresh && gather?.materials?.length) {
-      for(const material of gather.materials)add(material,titled(material),"Possible material","J / click · Dig","dig");
-    } else if(surface) {
-      const action=!world.held?.pick ? "Equip tool" : target?.carried?.available_kg<=.0005 ? "Load full" : fresh ?
-        target.enabled===false ? ({far:"Move closer",near:"Step back"}[target.ring?.state] || "Cannot dig here") :
-        gather?.label || "Cannot dig here" : "Move closer";
-      add(surface,titled(surface),water?.depth>.005 ? "Under water" : "Surface",action,"surface");
+    if(surface) {
+      add(surface,titled(surface),water?.depth>.005 ? "Under water" : "Surface",null,"surface");
+      for(const material of feedback.materials) {
+        if(material===surface)rows[rows.length-1].value="Possible yield";
+        else add(material,titled(material),"Possible yield",null,"dig");
+      }
     }
     for(const d of world.goods?.deposits||[])if(
       Math.hypot(point[0]-d.at_m[0],point[2]-d.at_m[1])<=d.radius_m)
@@ -6045,17 +6067,19 @@ function showMaterialPreview() {
       ({...p,method:"Material pile",material:Object.keys(p.holds_kg).find(k=>p.holds_kg[k]>0)}))];
   sources.map(s=>({...s,d:Math.round(Math.hypot(camera.position.x-s.at_m[0],camera.position.z-s.at_m[1]))}))
     .sort((a,b)=>a.d-b.d).slice(0,3).forEach(s=>nearby.push(s));
-  const model={rows,nearby:nearby.map(s=>[s.name,s.material,s.method,s.d]),readonly:!!watchedId};
+  const toolPreview=!pileHit && (point || world.aim?.name && heldTool);
+  const model={rows,feedback:toolPreview ? feedback : null,
+    nearby:nearby.map(s=>[s.name,s.material,s.method,s.d]),readonly:!!watchedId};
   const said=JSON.stringify(model);
   if(said===materialPreviewSaid)return;
   materialPreviewSaid=said;
   let box=$("material-preview");
   if(!box) {
     box=document.createElement("section");box.id="material-preview";box.setAttribute("aria-label","Material preview");
-    $("details").before(box);
+    $("next-step").before(box);
   }
   box.replaceChildren();
-  const heading=document.createElement("h3");heading.textContent="At crosshair";box.append(heading);
+  const heading=document.createElement("h3");heading.textContent="Target";box.append(heading);
   function materialRow(row,parent,onAction=null) {
     const item=document.createElement("article");item.className="material-card";
     item.dataset.material=row.material||"";item.dataset.method=row.kind||"source";
@@ -6101,9 +6125,31 @@ function showMaterialPreview() {
     row.action==="Collect" ? ()=>{void resourceVisuals.collectPile(pileHit.pile.name);} :
     row.action==="Equip tool" ? ()=>{location.href=screenUrl("inventory");} :
     row.kind==="ore" ? ()=>openSource(row.material) : null);
+  if(toolPreview) {
+    box.dataset.readiness=feedback.state;
+    const facts=document.createElement("dl");facts.className="target-facts";
+    for(const [label,value] of [["Tool",feedback.tool || "None equipped"],
+      ["Yield",feedback.materials.length ? feedback.materials.map(titled).join(" · ") :
+        ({checking:"Checking", "tool-needed":"Not checked",blocked:"Not ready",working:"In progress"}[feedback.state] || "None")]]) {
+      const term=document.createElement("dt"),answer=document.createElement("dd");
+      term.textContent=label;answer.textContent=value;facts.append(term,answer);
+    }
+    box.append(facts);
+    const action=document.createElement(feedback.ready || feedback.screen ? "button" : "p");
+    action.className="target-action";action.textContent=feedback.ready ? `J / click · ${feedback.action}` : feedback.action;
+    if(action.tagName==="BUTTON") {
+      action.type="button";action.disabled=!!watchedId;
+      action.onclick=()=>{if(feedback.screen)location.href=screenUrl(feedback.screen);else {tools.press();tools.release();}};
+    }
+    box.append(action);
+    if(feedback.reason) {
+      const explanation=document.createElement("details"),title=document.createElement("summary"),reason=document.createElement("p");
+      title.textContent="Why?";reason.textContent=feedback.reason;explanation.append(title,reason);box.append(explanation);
+    }
+  } else delete box.dataset.readiness;
   if(!rows.length){const empty=document.createElement("small");empty.textContent="Aim at ground, an item or machine output";box.append(empty);}
   if(nearby.length) {
-    const more=document.createElement("details"),title=document.createElement("summary");title.textContent="Nearby materials";more.open=true;more.append(title);
+    const more=document.createElement("details"),title=document.createElement("summary");title.textContent="Nearby materials";more.append(title);
     for(const s of nearby)materialRow({material:s.material,label:titled(s.material),value:`${s.method} · ${s.d} m`,action:"Look"},more,
       ()=>{const at=resourceVisuals.lookAtPile(s.name) || new THREE.Vector3(s.at_m[0],groundAt(...s.at_m)+.015,s.at_m[1]);
         window.banjoRoom.lookAt(at.x,at.y,at.z);});
@@ -6157,6 +6203,13 @@ function showDetails(now = false) {
   $("details-last").hidden = !model.last;
   $("details-last").classList.toggle("refused", !!model.last && model.last.tone === "refused");
   $("details-last-text").textContent = model.last ? model.last.text : "";
+  let report=$("last-report");
+  if(!report) {
+    report=document.createElement("details");report.id="last-report";
+    const title=document.createElement("summary"),text=document.createElement("p");
+    title.textContent="Action details";report.append(title,text);$("details-last").after(report);
+  }
+  report.hidden=!model.last?.detail;report.querySelector("p").textContent=model.last?.detail || "";
   const cross = $("crosshair");
   cross.classList.toggle("metering", !!meter);
   if (meter) cross.style.setProperty("--fill", String(Math.max(0, Math.min(1, meter.fraction))));
@@ -8856,7 +8909,11 @@ function rememberProfiles(spec) {
 // way whatever they are -- the server says what the tool does where the ring
 // is and does it (tool_use.py), each stroke the engine's; tools.js holds the
 // tool ready, draws the ring and sends the click.
-const tools = makeTools({ world, act, api, say, remember, showUse, camera, carryGround, scene,
+const tools = makeTools({ world, act, api, say, remember, showUse, camera, carryGround, scene, targetContext,
+                          summarizeToolResult:answer=>{
+                            const collected=collectedToolMaterials(answer);
+                            return collected ? `Collected ${massLabel(collected.kg)} · ${collected.materials.map(titled).join(" + ")}` : answer.said;
+                          },
                           whereIAm, lastAction, takeIntoHand, showHolding,
                           showInventory,
                           showNotebook: (book) => showNotebook(book, notebookRevision >= 0) });
@@ -10758,7 +10815,7 @@ function showToolSkills() {
       + '<h3></h3><div class="skill-read"><span class="skill-state" role="status"></span><output></output></div>'
       + '<progress max="1" value="0" aria-label="Completed skill steps"></progress>'
       + '<p class="skill-task"></p><dl></dl><p class="skill-next"></p>';
-    $("details").before(box);
+    $("interaction-controls").before(box);
   }
   box.hidden = false;
   box.dataset.technique = model.id || "";

@@ -192,6 +192,9 @@ class PlayerMaterials(unittest.TestCase):
             preview=self.post('/api/world/tool',{'session':sid,'person':person,'at_m':point},world)
             self.assertTrue(preview['enabled'],preview)
             candidates=preview['gather']['materials']
+            self.assertTrue(preview['feedback']['ready'],preview['feedback'])
+            self.assertEqual(candidates,preview['feedback']['materials'])
+            self.assertEqual(current['runs'][-1]['material'],preview['target']['material'])
             if current['surface']=='soil' and current['runs'][-1]['material']=='sand':
                 saw_film=True;self.assertIn('sand',candidates)
             if current['runs'][-1]['material']=='soil':

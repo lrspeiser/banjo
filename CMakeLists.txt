@@ -1672,6 +1672,9 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
             BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/material_preview_tests.py Candidates TerrainDelivery -v)
+    add_test(NAME banjo_tool_use_tests
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/tool_use_tests.py -v)
+    set_tests_properties(banjo_tool_use_tests PROPERTIES TIMEOUT 120)
     add_test(NAME banjo_material_layer_tests
         COMMAND ${CMAKE_COMMAND} -E env
             BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>

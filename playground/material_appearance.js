@@ -26,6 +26,36 @@ export function terrainCellAt(x, z, grid) {
   return i>=0 && j>=0 && i<grid.nx && j<grid.nz ? j*grid.nx+i : -1;
 }
 
+// A readiness observation belongs to one sight point and observer pose. Adjacent
+// cells can contain different materials even when less than 35 cm apart.
+export function toolTargetFeedback({point, grid, tool, target, eyes, name=null, surface=null, context=null}) {
+  const pending={tool:tool || null,ready:false,state:tool ? "checking" : "tool-needed",
+    action:tool ? "Checking target" : "Equip tool",screen:tool ? null : "inventory",
+    materials:[],reason:null};
+  if(!tool)return pending;
+  const at=target?.observed_at_m, observed=target?.observed_from_m;
+  if(!point || !at || !observed || !eyes || (target.observed_name || null)!==name)return pending;
+  if((target.observed_context ?? null)!==context)return pending;
+  if(!name && grid) {
+    const cell=terrainCellAt(point[0],point[2],grid);
+    if(cell<0 || cell!==terrainCellAt(at[0],at[2],grid))return pending;
+    if(surface && target.target?.material && surface!==target.target.material)return pending;
+  }
+  if(Math.hypot(...point.map((v,i)=>v-at[i]))>.03
+    || Math.hypot(...eyes.map((v,i)=>v-observed[i]))>.03)return pending;
+  return target.feedback || pending;
+}
+
+// A collected amount comes from a closed native receipt, never a preview or
+// guessed per-material density. Keep the engine report available separately.
+export function collectedToolMaterials(answer) {
+  const receipt=answer?.result, kg=receipt?.loosened_kg;
+  if(answer?.refused || !receipt || receipt.open!==false || receipt.kind!=="broke out"
+    || !Number.isFinite(kg) || kg<=0)return null;
+  const materials=["sand","soil"].filter(name=>Number(receipt.loosened?.[`${name}_m3`])>0);
+  return materials.length ? {kg,materials} : null;
+}
+
 // Nine vertices include the midpoint of each side: each side can cross two
 // of the collider's triangles. The marker follows the surface, never a flat
 // invented tile or an excavation promise.

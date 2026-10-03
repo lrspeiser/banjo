@@ -1,0 +1,90 @@
+{
+  "date": "2026-10-03",
+  "base_revision": "63e41bd7284e7a1e649e62793465d9023fed89a7",
+  "scope": "Material target/readiness presentation; no native law or geometry change",
+  "environment": {
+    "os": "Windows x64",
+    "compiler": "MSVC 19.44.35228",
+    "generator": "Visual Studio 17 2022",
+    "configuration": "Release",
+    "reference": "CPU",
+    "lab": false,
+    "build": "build/agent-native-avatar"
+  },
+  "source_sha256": {
+    "CMakeLists.txt": "85cbef9458dc52a98ad5bfc6d7aee7aa1e001904a5ee3baf4d34e2f99f0ef0dc",
+    "mcp/resource_previews.py": "14b3e1c1e564d59af6bc9c5e53e31e69e68d776ccb3d6222916af474aa694782",
+    "playground/material_appearance.js": "5a7b94c67f2ed8bcef5b2061ca40103929fb04dfb99d7812eb94be3e81d99bcf",
+    "playground/tool_use.py": "9424471a0f9c0c4e872721173224951dca4075cfb582aa66fbbdef4bfb3b4822",
+    "playground/tools.js": "85a552cd7728548222ea7c7d6ce2c12aa9b7dc9e52bbca6819fa6eea1f20a871",
+    "playground/world.css": "57e3e7bba6f9647470b8324e2abd3584dab9ac3476c3c99bc4c1505ca372111a",
+    "playground/world.js": "cdc23094863b20b51619cf9efd68fb84ea203d4c93788a02cc4960233ec8f672",
+    "tests/material_preview_tests.py": "d1759022a7ca7e55172e37e30ddb49515e8151d1bc3c457dbb0ea5767a68a976",
+    "tests/terrain_material_tests.mjs": "2310284de632e768f86113a7bad14ffce15a714bf9b45e795e078e2c6583ee19",
+    "tests/tool_use_tests.py": "bee3bf14ad73608ee6895ec43da964d5249263010f18cc1bea4c19e66591e606"
+  },
+  "native_binary": {
+    "path": "build/agent-native-avatar/Release/banjo_live_world_run.exe",
+    "sha256": "3aefb222048d721c75b13b17862563ec0fea9dc38872024ec5a88b7eeef60a15",
+    "implementation_revision": "8d417b89bd4f40d675243757ec39af34d2e84bc7"
+  },
+  "checks": {
+    "source_registration": {
+      "registered": 298,
+      "total": 298,
+      "exclusions": 0
+    },
+    "ctest": {
+      "suite_count": 4,
+      "check_count": 51,
+      "failed": 0,
+      "wall_seconds": 23.94,
+      "suites": {
+        "banjo_terrain_material_tests": 9,
+        "banjo_material_delivery_tests": 8,
+        "banjo_tool_use_tests": 33,
+        "banjo_material_layer_tests": 1
+      },
+      "log_path": "build/agent-native-avatar/Testing/Temporary/LastTest.log",
+      "log_sha256": "3cd3bc3c1582e1000c1a53966c243ec01506988d365ffb71a821c0ad06f6b8ed"
+    },
+    "node_syntax": [
+      "playground/world.js",
+      "playground/tools.js"
+    ],
+    "whitespace": "git diff --check passed",
+    "native_receipt_delta_tolerance_kg": 5e-05
+  },
+  "browser": {
+    "url": "http://127.0.0.1:8777/world?world=afa3ec3ff70c47ed87f5ff9641a8dfee&scene=new-game",
+    "world": "afa3ec3ff70c47ed87f5ff9641a8dfee",
+    "provider_configuration": "Explicitly overridden before playground creation; reflex decider",
+    "javascript_errors": [],
+    "observed_native_sand_receipts_kg": [
+      2.12474,
+      18.43902
+    ],
+    "displayed_sand_balance_kg": 20.56,
+    "distant_target_native_distance_m": 10.5,
+    "distant_target_action": "Move closer; no Dig button",
+    "skill": "Gathering by hand Learned 1/1",
+    "screenshots": {
+      "build/material-target-preview/ready.jpg": "4411bb04253b6ae2df202bff2a34ef8a2202a1c68bb7c699df3a8515341d5ca6",
+      "build/material-target-preview/collected.jpg": "e8f7ea7c2bb16b9004fed9735a7f57743a33f6e1f4f7ba30498bdaa3a6621047",
+      "build/material-target-preview/out-of-reach.jpg": "bb7e8d60d61f0015927fdf9b7a79fce9d8fb4feed327dbaa4f57efe63ef86a5f"
+    },
+    "limits": [
+      "Used existing starter Field pick, not personally manufactured tool",
+      "Browser reload and independent complete-process-restart test are distinct",
+      "Not a performance, tool-strength or full-conservation measurement"
+    ]
+  },
+  "remaining": [
+    "Matching-collider stepped terrain comparison and night recognition",
+    "Complete useful opening and supply coverage",
+    "Full every-tab/chat readiness audit",
+    "Playable native locomotion, authenticated human/AI binding and physical cargo",
+    "Broader hauling and complete accounting"
+  ],
+  "r3": "owner-paused"
+}

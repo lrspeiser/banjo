@@ -186,29 +186,38 @@ export function makeTools(ctx) {
   // Each frame while a tool is held ready: what the server says it does where
   // the crosshair meets the ground, and possible materials there. Asking never does
   // anything to the room.
-  let asking = false, askedAt = 0, askedFor = null, askedName = null;
+  let asking = false, askedAt = 0, askedFor = null, askedName = null, askedEyes = null, askedContext = null;
   function followAim() {
     const held = world.held, use = world.use;
     if (!held || !held.pick) { return; }
     if (use.mode !== "tool-ready" || asking) return;
     const name = world.aim?.name || null;
     const at = name ? world.aim.point_m : world.groundAim;
+    const person=whereIAm(), eyes=person.eyes_m;
+    const context=ctx.targetContext?.(at,name) ?? null;
     const now = performance.now();
     const moved = name !== askedName || (!askedFor) !== (!at)
-      || (at && askedFor && Math.hypot(...at.map((v, i) => v - askedFor[i])) > 0.03);
+      || (at && askedFor && Math.hypot(...at.map((v, i) => v - askedFor[i])) > 0.03)
+      || !askedEyes || Math.hypot(...eyes.map((v,i)=>v-askedEyes[i]))>.03
+      || context!==askedContext;
     if (now - askedAt < ASK_EVERY_MS || (!moved && now - askedAt < 1500)) return;
     asking = true;
     askedAt = now;
     askedFor = at ? at.slice() : null;
     askedName = name;
-    api("/api/world/tool", { session: world.session, person: whereIAm(), at_m: at || null, target_name: name })
+    askedEyes=eyes.slice();
+    askedContext=context;
+    api("/api/world/tool", { session: world.session, person, at_m: at || null, target_name: name })
       .then((answer) => {
         if (world.held !== held) return;
         const currentName = world.aim?.name || null;
         const currentAt = currentName ? world.aim.point_m : world.groundAim;
         if (currentName !== name || (!currentAt) !== (!at)
-          || (currentAt && at && Math.hypot(...currentAt.map((v, i) => v - at[i])) > 0.03)) return;
-        use.target = answer;
+          || (currentAt && at && Math.hypot(...currentAt.map((v, i) => v - at[i])) > 0.03)
+          || Math.hypot(...whereIAm().eyes_m.map((v,i)=>v-eyes[i]))>.03
+          || (ctx.targetContext?.(currentAt,currentName) ?? null)!==context) return;
+        use.target = {...answer,observed_from_m:eyes.slice(),observed_at_m:at?.slice() || null,
+          observed_name:name,observed_context:context};
         showUse();
       })
       .catch(() => { /* the next frame asks again */ })
@@ -256,7 +265,8 @@ export function makeTools(ctx) {
     } else if (answer) {
       use.result = answer.said;
       use.detail = answer.detail || "";
-      lastAction(answer.said + (answer.detail ? ` ${answer.detail}` : ""));
+      const brief=ctx.summarizeToolResult?.(answer) || answer.said;
+      lastAction(brief,"did",[brief!==answer.said ? answer.said : "",answer.detail].filter(Boolean).join(" "));
       remember(`${answer.action}: ${answer.said}`);
     }
     if (answer && answer.carried) carryGround(answer.carried);

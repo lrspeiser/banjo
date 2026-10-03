@@ -36,3 +36,42 @@ def ground_tool(survey, use, point_length_m=.2):
         materials.append('soil')
     out.update(materials=materials,state='possible',label='Dig')
     return out
+
+
+def tool_feedback(result):
+    """Present the readiness used by run(); candidates never grant materials.
+
+    Built-in and authored tools, chat and the panel share this decision.
+    Native contact may be enabled without a supported gathering yield.
+    """
+    gather = result.get('gather') or {}
+    ring = result.get('ring') or {}
+    target = result.get('target') or {}
+    out = {'tool': result.get('object'), 'ready': False, 'state': 'blocked',
+           'action': 'Unavailable', 'screen': None, 'materials': [],
+           'reason': result.get('reason')}
+    if not result.get('object'):
+        out.update(state='tool-needed', action='Equip tool', screen='inventory')
+    elif target.get('kind') == 'object':
+        out.update(ready=bool(result.get('enabled')),
+                   state='ready' if result.get('enabled') else 'blocked',
+                   action=result.get('label', 'Strike') if result.get('enabled') else 'Cannot strike')
+    elif (result.get('carried') or {}).get('available_kg', 1) <= .0005:
+        out.update(action='Free load space', screen='inventory')
+    elif ring.get('state') == 'far':
+        out['action'] = 'Move closer'
+    elif ring.get('state') == 'near':
+        out['action'] = 'Step back'
+    elif gather.get('label') == 'No attached tool point':
+        out.update(action='Inspect tool', screen='inventory')
+    elif not target:
+        out['action'] = 'Aim at ground'
+    elif not result.get('enabled'):
+        pass
+    elif gather.get('state') == 'possible' and gather.get('materials'):
+        out.update(ready=True, state='ready', action=result.get('label') or 'Dig',
+                   materials=list(gather['materials']), reason=None)
+    else:
+        out.update(state='no-yield', action='Find loose ground',
+                   reason=gather.get('label') or out['reason'])
+    return out

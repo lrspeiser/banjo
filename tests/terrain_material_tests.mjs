@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
 import * as THREE from '../playground/vendor/three.module.js';
-import {GROUND_APPEARANCE,materialAppearance,terrainCellAt,terrainTargetPath,exposedRunKind} from '../playground/material_appearance.js';
+import {GROUND_APPEARANCE,materialAppearance,terrainCellAt,terrainTargetPath,exposedRunKind,toolTargetFeedback,collectedToolMaterials} from '../playground/material_appearance.js';
 import {terrainMaterial} from '../playground/terrain_material.js';
 
 test('shipped full-terrain catchup reuses the mesh and streams variable runs once',()=>{
@@ -50,6 +50,46 @@ test('visible material identities remain distinct and samples resolve native ore
   }
   assert.equal(new Set([0,1,2,5,6].map(i=>GROUND_APPEARANCE[i].pattern)).size,5,
     'color is reinforced by a different pattern for each primary ground material');
+});
+
+test('tool feedback cannot follow a neighboring cell, changed layer or moved observer',()=>{
+  const grid={x0:0,z0:0,dx:.25,nx:3,nz:3}, point=[.124,1,.25],eyes=[0,2,0];
+  const feedback={tool:'Custom spade',ready:true,state:'ready',action:'Loosen',materials:['sand']};
+  const target={feedback,observed_at_m:point,observed_from_m:eyes,observed_name:null,
+    target:{material:'sand'}};
+  const model={grid,point,eyes,tool:'Custom spade',target,surface:'sand'};
+  assert.equal(toolTargetFeedback(model),feedback);
+  for(const change of [{point:[.126,1,.25]},{point:[.124,.96,.25]},
+    {eyes:[0,2,.04]},{surface:'soil'},{context:'changed run depths'},
+    {target:{...target,observed_from_m:null}}]) {
+    const next=toolTargetFeedback({...model,...change});
+    assert.equal(next.ready,false);assert.equal(next.state,'checking');assert.deepEqual(next.materials,[]);
+  }
+  const full={...target,target:null,feedback:{...feedback,ready:false,state:'blocked',action:'Free load space',materials:[]}};
+  assert.equal(toolTargetFeedback({...model,target:full}).action,'Free load space',
+    'early native load refusal still belongs to its observed sight point');
+  const absent=toolTargetFeedback({...model,tool:null});
+  assert.equal(absent.action,'Equip tool');assert.equal(absent.screen,'inventory');assert.equal(absent.ready,false);
+});
+
+test('object readiness belongs to the observed object and preserves the server refusal',()=>{
+  const point=[0,1,0],eyes=[0,2,0];
+  const feedback={tool:'Custom pick',ready:false,state:'blocked',action:'Cannot strike',materials:[],reason:'Out of reach'};
+  const target={feedback,observed_at_m:point,observed_from_m:eyes,observed_name:'lamp'};
+  const model={point,eyes,tool:'Custom pick',target,name:'lamp'};
+  assert.equal(toolTargetFeedback(model),feedback);
+  assert.equal(toolTargetFeedback({...model,name:'rover'}).state,'checking');
+});
+
+test('collection feedback requires a closed native receipt and retains its actual measured mass',()=>{
+  const result={kind:'broke out',open:false,loosened_kg:.08,loosened:{soil_m3:.00005}};
+  assert.deepEqual(collectedToolMaterials({result}),{kg:.08,materials:['soil']});
+  assert.deepEqual(collectedToolMaterials({result:{...result,loosened:{soil_m3:.00005,sand_m3:.0001}}}),
+    {kg:.08,materials:['sand','soil']},'display never recalculates mass from guessed densities');
+  for(const change of [{open:true},{kind:'met no ground'},{loosened_kg:0},{loosened_kg:NaN},{loosened:{}}])
+    assert.equal(collectedToolMaterials({result:{...result,...change}}),null);
+  assert.equal(collectedToolMaterials({result,refused:'Load full'}),null);
+  assert.equal(collectedToolMaterials({gather:{materials:['sand'],kg:10}}),null);
 });
 
 test('column boundaries agree at negative coordinates and reject both outer axes',()=>{

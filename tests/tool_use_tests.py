@@ -18,6 +18,8 @@ in" when the pry had broken out 5 L.
 """
 from __future__ import annotations
 
+from copy import deepcopy
+
 import sys
 import threading
 import time
@@ -162,6 +164,38 @@ class AToolsUseIsShapedByItsProfile(unittest.TestCase):
 
 
 class WhatAToolDoesWhereYouLook(unittest.TestCase):
+    def test_compact_feedback_uses_actual_readiness_without_promising_yield(self):
+        cases=[(IN_REACH,{},'ready',True,'Dig here',['sand']),
+               ([13, .6, -7.38],{},'blocked',False,'Move closer',[]),
+               ([13, .6, -4.7],{},'blocked',False,'Step back',[]),
+               (IN_REACH,{'holding':None},'tool-needed',False,'Equip tool',[]),
+               (IN_REACH,{'survey':{'water':{'depth_m':.1}}},'no-yield',False,'Find loose ground',[]),
+               (IN_REACH,{'survey':{'surface':'rock'}},'no-yield',False,'Find loose ground',[])]
+        for at,room,state,ready,action,materials in cases:
+            with self.subTest(action=action,room=room):
+                app=app_with(**room);before=deepcopy(app.live.session.state)
+                answer=tool_use.resolve(app,{'person':PERSON,'at_m':at})
+                feedback=answer['feedback']
+                self.assertEqual((state,ready,action,materials),
+                    (feedback['state'],feedback['ready'],feedback['action'],feedback['materials']))
+                self.assertEqual(before,app.live.session.state)
+                self.assertFalse(set(app.live.asked)&{'stroke','strike','dig'})
+
+    def test_compact_feedback_covers_full_load_detached_and_authored_tools(self):
+        from unittest import mock
+        app=app_with();app.live.session.state['carried']={'limit_kg':80,'available_kg':0}
+        answer=tool_use.resolve(app,{'person':PERSON,'at_m':IN_REACH})['feedback']
+        self.assertEqual(('Free load space','inventory',False),(answer['action'],answer['screen'],answer['ready']))
+        app=app_with()
+        with mock.patch.object(tool_use,'_native_point',return_value=None):
+            answer=tool_use.resolve(app,{'person':PERSON,'at_m':IN_REACH})['feedback']
+        self.assertEqual(('Inspect tool','inventory',[]),(answer['action'],answer['screen'],answer['materials']))
+        app.room.spec['interactions'][0]['object']='Authored spade'
+        answer=tool_use.resolve(app,{'person':PERSON,'at_m':IN_REACH})
+        self.assertEqual('Authored spade',answer['feedback']['tool'])
+        self.assertEqual(['sand'],answer['feedback']['materials'])
+        self.assertEqual('sand',answer['target']['material'])
+
     def test_small_real_yields_are_not_displayed_as_zero_litres(self):
         said=tool_use._said({'kind':'broke out','ground':'soil','depth_m':.02,
             'loosened':{'soil_m3':.00005},'loosened_kg':.08},

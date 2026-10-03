@@ -92,6 +92,12 @@ def profile_held(app: Any) -> dict[str, Any] | None:
 
 
 def resolve(app: Any, body: dict[str, Any]) -> dict[str, Any]:
+    result = _resolve(app, body)
+    result['feedback'] = resource_previews.tool_feedback(result)
+    return result
+
+
+def _resolve(app: Any, body: dict[str, Any]) -> dict[str, Any]:
     """What the tool in the person's hand does where they look.
 
     `body` is what the page sends: `person` (where they are, as for the chat)
@@ -166,6 +172,8 @@ def resolve(app: Any, body: dict[str, Any]) -> dict[str, Any]:
                 else (water or 0.0))
     surface = str(survey.get("surface") or "ground")
     out["target"]["ground"] = surface
+    runs = survey.get('runs') or []
+    out['target']['material'] = runs[-1]['material'] if runs else surface
     point=_native_point(app,profile['tool'])
     out['gather']=resource_previews.ground_tool(survey,use,float((point or {}).get('length_m',.2)))
     if point is None:
