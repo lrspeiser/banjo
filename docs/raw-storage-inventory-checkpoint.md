@@ -1,5 +1,7 @@
 # Inventory raw storage and unassigned recovery — October 2, 2026
 
+Published implementation: `d1744e9b6496d2523eb071825639da77ea25c5be` on GitHub main.
+
 ## Implemented
 
 Inventory shows carried sand, soil and broken rock as thumbnail/quantity cards.
