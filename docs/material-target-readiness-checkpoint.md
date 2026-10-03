@@ -6,6 +6,10 @@ It does not change native terrain geometry, resolution, material laws or tool
 strength. The complete readable-world/progression/physical-behavior goal remains
 active; R3 remains owner-paused.
 
+Implementation **`13de170d8b90429d053da23b6bb6ece02437b290`** is published
+on GitHub main. The matched local 8777 preview serves this implementation;
+the older user preview processes have not been restarted.
+
 ## Changed behavior
 
 - World places **Target**, the next action, the committed action result and held
