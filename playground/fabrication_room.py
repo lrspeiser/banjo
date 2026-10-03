@@ -31,7 +31,7 @@ def opened(app, answer):
 PLAYER_ROUTES = {'/api/world/open','/api/world/ask','/api/world/action','/api/world/placement',
     '/api/world/putdown','/api/world/inventory','/api/world/inventory/shown',
     '/api/world/machine','/api/world/watch-machine','/api/world/tool','/api/world/tool/use',
-    '/api/world/goods/collect','/api/world/rover/talk','/api/world/rover/brain',
+    '/api/world/goods/collect','/api/world/goods/deliver','/api/world/rover/talk','/api/world/rover/brain',
     '/api/world/workshop/context','/api/world/workshop/what_made'}
 PLAYER_NATIVE_OPS = {'step','poses','wield','grab','hand','move','release','stroke',
     'preview_stroke','preview_flight','joints','mechanics','thermo','pick','place_check',
@@ -214,7 +214,7 @@ def _persist(app, room, saved, state):
         gameplay_record=deepcopy(getattr(room,"gameplay_record",None)),
         fabrication_record=state,
         world_upgrades=deepcopy(getattr(room, "world_upgrades", {})))
-    for field in ("player_records","player_inventories","player_lock","hand_owner","market_pending","ground_transfers","machine_evidence_pending","player_evidence_pending","goods_claims"):
+    for field in ("player_records","player_inventories","player_lock","hand_owner","market_pending","ground_transfers","machine_evidence_pending","player_evidence_pending","goods_claims","goods_deliveries","goods_durable_deliveries"):
         if hasattr(room,field): setattr(record,field,getattr(room,field))
     brains=getattr(app,"brains",None)
     record.machine_runtime=brains.runtime() if brains is not None else getattr(room,"machine_runtime",None)
@@ -225,7 +225,7 @@ def _persist(app, room, saved, state):
     room.world_saved_t = saved["t_s"]
     room.machine_runtime=record.machine_runtime
     room.persistence=getattr(record,"persistence",None)
-    for field in ("market_durable_pending", "goods_durable_claims", "player_learning_durable_ids"):
+    for field in ("market_durable_pending", "goods_durable_claims", "goods_durable_deliveries", "player_learning_durable_ids"):
         if hasattr(record, field): setattr(room, field, deepcopy(getattr(record, field)))
     if brains is not None: brains.rebind(room.spec)
 

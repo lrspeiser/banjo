@@ -1967,6 +1967,26 @@ async function showInventory() {
   });
   $("#ws-inv-reserved").replaceChildren(...reserved);
   $("#ws-inv-reserved").parentElement.hidden=reserved.length===0;
+  const deliveries=(inv.delivery_reservations || []).map(row=>{
+    const card=make('article',{class:'ws-product-card','data-delivery-reservation':row.request_id});
+    for(const [material,kg] of Object.entries(row.goods))card.append(invTile({name:material,label:titleCase(material),material,shape:'box',color_rgba:MATERIAL_LOOK[material]},
+      {quantity:kgSaid(kg),where:row.pile,onOpen:()=>openMaterialRecipes(material)}));
+    const actions=make('div',{class:'ws-inventory-actions'});
+    for(const [label,action] of [['Finish delivery','deliver'],['Return to Inventory','release']]) {
+      if(action==='release' && row.received)continue;
+      const b=make('button',{type:'button',class:'ws-action'},label);
+      b.onclick=()=>guard(b,async()=>{
+        const context=await api('/api/world/workshop/context',{});
+        const [substance,mass_kg]=Object.entries(row.goods)[0];
+        await api('/api/world/goods/deliver',{session:context.session,action,request_id:row.request_id,
+          ...(action==='deliver'?{pile:row.pile,substance,mass_kg}: {})});
+        await showInventory();
+      });actions.append(b);
+    }
+    card.append(actions);return card;
+  });
+  $('#ws-inv-deliveries').replaceChildren(...deliveries);
+  $('#ws-inv-deliveries').parentElement.hidden=deliveries.length===0;
   await showInventoryEnergy();
 }
 function resourceTile(row, shape) {
@@ -2082,6 +2102,7 @@ function installInventory() {
   goods.append(make("p", {id:"ws-inv-goods-empty", class:"ws-note"}, "Empty"));
   const reserved=screenSection(pane,"Reserved for fabrication","ws-inv-reserved");
   reserved.hidden=true;
+  screenSection(pane,'Reserved for machine inputs','ws-inv-deliveries').hidden=true;
 }
 
 function inventoryGroup(name) {

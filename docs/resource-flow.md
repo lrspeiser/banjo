@@ -1,5 +1,7 @@
 # Visible resource flow — September 30, 2026
 
+**R1 player input delivery, October 2:** [Verified input checkpoint](material-input-delivery-checkpoint.md) adds recipe-derived Inventory → hopper loading with private SQL escrow, paired receiving saves, retry/return recovery and stationary-machine controller selection. Chrome, failure/peer/restart and the complete rover → personal input → processed copper → saved lamp → Make/Use/restart journey pass. R1 remains open for raw-storage UI, ground-to-usable-stock, exhausted-input guidance and unassigned-load recovery; no native law or preview change.
+
 **October 1 presentation update:** [Material thumbnails](material-preview-checkpoint.md) replace ground circles and floating source labels. At crosshair shows possible soil/sand, separate rover ore, whole products and actual output stock. Nearby Look changes camera direction; output Collect uses the existing personal durable collector.
 
 ## Implemented player loop

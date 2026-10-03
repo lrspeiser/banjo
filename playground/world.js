@@ -2592,7 +2592,7 @@ const isProgram = (m) => !!m && typeof m.doing === "string";
 // load (the runner's `parts`) -- and a program's machine, whose wheels it
 // works: that machine is offered as its program, not wheel by wheel.
 function machinesOfPart(name) {
-  const programs = programsNow().filter((p) => (p.parts || []).includes(name));
+  const programs = programsNow().filter((p) => p.body===name || (p.parts || []).includes(name));
   const worked = new Set(programsNow().flatMap((p) => [p.left, p.right, ...(p.rotors || [])]));
   return [...programs, ...controlsNow().filter((c) => !worked.has(c.id) && (c.parts || []).includes(name))];
 }
@@ -3615,6 +3615,62 @@ const resourceVisuals = goodsVisuals({scene,camera,groundAt,
     lastAction(`+ ${Object.entries(answer.collected).map(([what,kg])=>`${heldSaid(kg)} ${what}`).join(' · ')} → Inventory`);
     return answer;
   }});
+
+const deliveryMenus=new Map(),deliveryBusy=new Set();
+function inputDeliveryPanel(name) {
+  const pile=world.goods?.stockpiles?.find(p=>p.name===name);
+  if(!pile || watchedId || !worldId)return document.createElement('span');
+  const pane=document.createElement('section');pane.dataset.inputDelivery=name;
+  const distance=Math.hypot(camera.position.x-pile.at_m[0],camera.position.z-pile.at_m[1]);
+  pane.append(inspectionValues([['Input',titled(name)],['Distance',`${distance.toFixed(1)} m`]]));
+  const button=(label,run,disabled=false)=>{
+    const b=document.createElement('button');b.type='button';b.textContent=label;
+    b.disabled=disabled || deliveryBusy.has(name);b.onclick=run;pane.append(b);return b;
+  };
+  async function refresh() {
+    deliveryMenus.set(name,await api('/api/world/goods/deliver',{session:world.session,action:'view',pile:name}));
+    showPicked();
+  }
+  async function change(body) {
+    deliveryBusy.add(name);showPicked();
+    try {
+      const answer=await api('/api/world/goods/deliver',{session:world.session,...body,person:whereIAm()});
+      if(answer.goods)followGoods(answer.goods);
+      lastAction(answer.released?'Returned to Inventory':`${Object.entries(answer.delivered).map(([s,kg])=>`${heldSaid(kg)} ${titled(s)}`).join(' · ')} → Input`);
+    } catch(error) { lastAction(error.message || String(error)); }
+    finally {
+      deliveryBusy.delete(name);
+      try {await refresh();}catch(error){lastAction(error.message || String(error));showPicked();}
+      void readMiniInventory();
+    }
+  }
+  const menu=deliveryMenus.get(name);
+  if(!menu) {
+    button('Load from Inventory',async()=>{
+      try {await refresh();}catch(error){lastAction(error.message || String(error));}
+    },distance>2);
+    return pane;
+  }
+  button('Refresh Inventory',async()=>{
+    try {await refresh();}catch(error){lastAction(error.message || String(error));}
+  });
+  for(const row of menu.inputs) {
+    const item=document.createElement('div');item.className='mini-resource';
+    item.append(thumbnail({name:titled(row.substance),material:row.substance,shape:'box',color_rgba:slotColour(row.substance).slice(1)}));
+    const label=document.createElement('span');label.textContent=titled(row.substance);
+    const value=document.createElement('b');value.textContent=massLabel(row.mass_kg);item.append(label,value);pane.append(item);
+    const amount=Math.min(5,Math.floor(row.mass_kg*1e6)/1e6);
+    const b=button(amount>0?`Load ${massLabel(amount)}`:'Inventory empty',()=>change({pile:name,substance:row.substance,mass_kg:amount,request_id:crypto.randomUUID()}),amount<=0 || distance>2);
+    b.dataset.deliverSubstance=row.substance;
+  }
+  for(const pending of menu.pending.filter(p=>p.pile===name)) {
+    pane.append(inspectionValues([['Reserved',Object.entries(pending.goods).map(([s,kg])=>`${massLabel(kg)} ${titled(s)}`).join(' · ')]]));
+    const [substance,mass_kg]=Object.entries(pending.goods)[0];
+    button('Finish delivery',()=>change({pile:name,substance,mass_kg,request_id:pending.request_id}));
+    if(!pending.received)button('Return to Inventory',()=>change({action:'release',request_id:pending.request_id}));
+  }
+  return pane;
+}
 
 // What a container on that body holds, said in the fewest words that are
 // still true: "holding 18.0 kg of sand, 20 C", or "empty". Temperature only
@@ -5327,9 +5383,10 @@ function showPicked() {
       if (pile) {
         for (const [substance,kg] of Object.entries(pile.holds_kg || {})) values.push([titled(substance),heldSaid(kg)]);
         if (!Object.keys(pile.holds_kg || {}).length) values.push(["Stock","Empty"]);
-        const inputs = (world.machines?.programs || []).filter(p=>p.routine?.intake===pile.name).map(p=>p.name);
+        const inputs = [...world.brains.values()].filter(p=>p.routine?.making?.intake===pile.name).map(p=>p.name);
         if (inputs.length) values.push(["Feeds",inputs.join(" · ")]);
-        values.push(["Collect",pile.rack ? "Already shared stock" : distance>2 ? "Walk within 2 m · Collect nearby pile" : "Collect nearby pile"]);
+        values.push([inputs.length?'Load':'Collect',inputs.length?'Inventory → Input':pile.rack ? "Already shared stock" : distance>2 ? "Walk within 2 m · Collect nearby pile" : "Collect nearby pile"]);
+        if(inputs.length)rows.push(inputDeliveryPanel(pile.name));
       } else values.push(["Material",titled(deposit.substance)], ["Reserve",heldSaid(deposit.left_kg)],
         ["Equipment","Mining rover"], ["Route","Dig → deliver to intake → process"]);
       rows.push(inspectionValues(values));
@@ -5354,6 +5411,8 @@ function showPicked() {
     }
 
     if (program) {
+      const intake=world.brains.get(program.name)?.routine?.making?.intake;
+      if(intake)rows.push(inputDeliveryPanel(intake));
       const doing = document.createElement("p");
       doing.className = "pk-doing";
       doing.textContent = program.power ? (program.why || program.doing || "running")

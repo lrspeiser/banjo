@@ -168,8 +168,10 @@ def inventory(app: Any, player_id: str = "") -> dict[str, Any]:
         saved = []
     import fabrication_stock
     reservations = fabrication_stock.pending(app, room.scene) if room is not None else []
+    import world_goods
     return {"materials": rack.get("materials", []), "goods": goods.get("goods", []),
             "fabrication_reservations": reservations,
+            "delivery_reservations": world_goods.pending_deliveries(app,player_id),
             "components": [i for i in items if i.get("item_type") == "component"],
             "designs": [i for i in items if i.get("item_type") == "assembly"],
             "families": families, "in_world": in_world, "saved": saved,

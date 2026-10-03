@@ -717,5 +717,136 @@ class GoodsJourney(unittest.TestCase):
             self.assertEqual(12.4,oak['shared_kg'])
         finally:workshop_library.REQUEST_OWNER.reset(token)
 
+    def delivery_fixture(self):
+        world,owner,app,source,output,_=self.batch(process=False)
+        program=next(p for p in app.live.session.state['machines']['programs'] if p['kind']=='roam')
+        self.post('/api/world/machine',{'session':app.live.session.id,'program':program['id'],
+                  'power':False,'sender':'delivery-test','seq':1},world)
+        intake=app.brains.goods.by_name(app.brains.of(source['machine']).routine.intake)
+        x,z=intake['at_m']
+        floor=app.live.act({'session':app.live.session.id,'op':'survey','at':[x,z]})['survey']['ground_m']
+        person={'eyes_m':[x,floor+1.62,z],'facing':[0,0,-1]}
+        collected=self.post('/api/world/goods/collect',{'session':app.live.session.id,'pile':intake['name'],
+                            'person':person,'request_id':'finite-input-stock'},world)['collected']
+        self.assertGreater(collected['copper ore'],5)
+        self.assertEqual({},intake['holds'])
+        request={'session':app.live.session.id,'pile':intake['name'],'person':person,
+                 'request_id':'personal-input','substance':'copper ore','mass_kg':5.}
+        return world,owner,app,source,intake,output,collected,request
+
+    def test_personal_input_delivery_failed_save_retry_processing_peer_and_restart(self):
+        world,owner,app,source,intake,output,initial,request=self.delivery_fixture()
+        peer=self.join(world,'Other loader')
+        for invalid in ({'mass_kg':25.},{'mass_kg':True},{'mass_kg':.0000001},{'substance':'copper'},
+                        {'pile':output['name']},{'person':{'eyes_m':[99,1.62,99],'facing':[0,0,-1]}}):
+            with self.assertRaises(urllib.error.HTTPError):
+                self.post('/api/world/goods/deliver',{**request,**invalid},world)
+            self.assertEqual({},intake['holds']);self.assertEqual(initial,self.personal(app,owner))
+        with self.assertRaises(urllib.error.HTTPError):self.post('/api/world/goods/deliver',request,world,peer['token'])
+        with mock.patch.object(app.store,'save',side_effect=OSError('disk full')):
+            with self.assertRaises(urllib.error.HTTPError):self.post('/api/world/goods/deliver',request,world)
+        self.assertEqual({'copper ore':5.},intake['holds'])
+        self.assertEqual(initial['copper ore']-5,self.personal(app,owner)['copper ore'])
+        self.assertTrue(world_goods.pending_deliveries(app,owner['id'])[0]['received'])
+        release={'session':app.live.session.id,'action':'release','request_id':request['request_id']}
+        with self.assertRaises(urllib.error.HTTPError):self.post('/api/world/goods/deliver',release,world)
+        for _ in range(2):self.assertTrue(self.post('/api/world/goods/deliver',request,world)['repeated'])
+        self.assertEqual({'copper ore':5.},intake['holds'])
+        self.assertEqual([],world_goods.pending_deliveries(app,owner['id']))
+        with self.assertRaises(urllib.error.HTTPError):self.post('/api/world/goods/deliver',request,world,peer['token'])
+        self.process_batch(app,output)
+        self.assertEqual({},intake['holds']);self.assertEqual({'copper':1.5},output['holds'])
+        x,z=output['at_m'];floor=app.live.act({'session':app.live.session.id,'op':'survey','at':[x,z]})['survey']['ground_m']
+        pickup={'session':app.live.session.id,'pile':output['name'],'request_id':'delivered-copper-output',
+                'person':{'eyes_m':[x,floor+1.62,z],'facing':[0,0,-1]}}
+        self.post('/api/world/goods/collect',pickup,world)
+        remaining={'copper ore':initial['copper ore']-5,'copper':1.5}
+        self.assertEqual(remaining,self.personal(app,owner));self.assertEqual({},self.personal(app,peer))
+        self.stop();self.start();self.post('/api/world/open',{},world)
+        app=self.app.hub.get(world);request['session']=app.live.session.id
+        self.assertTrue(self.post('/api/world/goods/deliver',request,world)['repeated'])
+        self.assertEqual({},app.brains.goods.by_name(intake['name'])['holds'])
+        self.assertEqual(remaining,self.personal(app,owner));self.assertEqual({},self.personal(app,peer))
+
+    def test_input_source_reservation_restart_return_and_lost_save_ack(self):
+        world,owner,app,source,intake,output,initial,request=self.delivery_fixture()
+        put=app.brains.goods.put
+        def lost_receiving_ack(*args,**kwargs):
+            put(*args,**kwargs);raise OSError('receiving write unavailable after mutation')
+        with mock.patch.object(app.brains.goods,'put',side_effect=lost_receiving_ack):
+            with self.assertRaises(urllib.error.HTTPError):self.post('/api/world/goods/deliver',request,world)
+        self.assertEqual({},intake['holds'])
+        self.assertEqual(initial['copper ore']-5,self.personal(app,owner)['copper ore'])
+        self.stop();self.start();self.post('/api/world/open',{},world)
+        app=self.app.hub.get(world)
+        pending=world_goods.pending_deliveries(app,owner['id']);self.assertEqual(1,len(pending))
+        self.assertFalse(pending[0]['received'])
+        release={'session':app.live.session.id,'action':'release','request_id':request['request_id']}
+        for _ in range(2):self.assertTrue(self.post('/api/world/goods/deliver',release,world)['released'])
+        self.assertEqual(initial,self.personal(app,owner))
+        request.update(session=app.live.session.id,request_id='delivery-lost-ack')
+        save=app.store.save
+        def lost_ack(room):save(room);raise OSError('saved but acknowledgement lost')
+        with mock.patch.object(app.store,'save',side_effect=lost_ack):
+            with self.assertRaises(urllib.error.HTTPError):self.post('/api/world/goods/deliver',request,world)
+        self.assertIn(request['request_id'],app.room.goods_durable_deliveries)
+        self.stop();self.start();self.post('/api/world/open',{},world)
+        app=self.app.hub.get(world);request['session']=app.live.session.id
+        self.assertTrue(self.post('/api/world/goods/deliver',request,world)['repeated'])
+        self.assertEqual({'copper ore':5.},app.brains.goods.by_name(intake['name'])['holds'])
+        self.assertEqual(initial['copper ore']-5,self.personal(app,owner)['copper ore'])
+        self.assertEqual([],world_goods.pending_deliveries(app,owner['id']))
+        with self.assertRaises(urllib.error.HTTPError):
+            self.post('/api/world/goods/deliver',{**release,'session':app.live.session.id,'request_id':request['request_id']},world)
+
+    def test_browser_loads_personal_ore_into_selected_machine_input(self):
+        if not qa_browser.CHROME.is_file():self.skipTest('Chrome not installed')
+        world,owner,app,source,intake,output,initial,request=self.delivery_fixture()
+        chrome=qa_browser.Chrome(1280,800);self.addCleanup(chrome.close)
+        page=chrome.page;page.send('Page.enable');page.send('Runtime.enable')
+        page.send('Page.addScriptToEvaluateOnNewDocument',{'source':
+            'localStorage.setItem('+json.dumps('banjo.player.'+world)+','+json.dumps(owner['token'])+');'})
+        def wait(expression):
+            deadline=time.monotonic()+35
+            while time.monotonic()<deadline:
+                if page.evaluate('Boolean('+expression+')'):return
+                time.sleep(.1)
+            self.fail(expression+'; '+str(page.evaluate('({picked:document.querySelector("#picked")?.textContent,programs:banjoRoom.world.machines?.programs,goods:banjoRoom.world.goods,position:banjoRoom.camera.position.toArray(),errors:document.querySelector("#panel-state")?.textContent})')))
+        def click(selector):
+            spot=page.evaluate('(()=>{const b=document.querySelector('+json.dumps(selector)+');b.scrollIntoView({block:"center"});const r=b.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()')
+            for kind in ('mousePressed','mouseReleased'):
+                page.send('Input.dispatchMouseEvent',{'type':kind,'button':'left','clickCount':1,**spot})
+        page.send('Page.navigate',{'url':self.base+f'/world?world={world}&hold=1'})
+        wait('window.banjoRoom?.ready()')
+        eyes=request['person']['eyes_m']
+        program=next(p for p in app.live.session.state['machines']['programs'] if p['name']==source['machine'])
+        page.evaluate('banjoRoom.standAt('+','.join(map(str,eyes))+');banjoRoom.pick('+json.dumps(program['body'])+');')
+        wait('document.querySelector("[data-input-delivery] button:not(:disabled)")')
+        click('[data-input-delivery] button')
+        wait('document.querySelector("[data-deliver-substance=\\"copper ore\\"]:not(:disabled)")')
+        click('[data-deliver-substance="copper ore"]')
+        wait('document.querySelector("#details-last-text")?.textContent.includes("→ Input")')
+        self.assertEqual({'copper ore':5.},app.brains.goods.by_name(intake['name'])['holds'])
+        self.assertEqual(initial['copper ore']-5,self.personal(app,owner)['copper ore'])
+        self.assertEqual([],[e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
+        import base64
+        out=ROOT/'build/resource-flow';out.mkdir(parents=True,exist_ok=True)
+        (out/'personal-input-delivery.png').write_bytes(base64.b64decode(page.send('Page.captureScreenshot',{'format':'png'})['data']))
+        put=app.brains.goods.put
+        def unavailable(*args,**kwargs):put(*args,**kwargs);raise OSError('receiving acknowledgement lost')
+        with mock.patch.object(app.brains.goods,'put',side_effect=unavailable):
+            with self.assertRaises(urllib.error.HTTPError):
+                self.post('/api/world/goods/deliver',{**request,'session':app.live.session.id,
+                          'request_id':'browser-reserved-input'},world)
+        self.assertEqual(initial['copper ore']-10,self.personal(app,owner)['copper ore'])
+        page.send('Page.navigate',{'url':self.base+f'/world?world={world}&workshop=1&tab=inventory'})
+        wait('document.querySelector("[data-delivery-reservation=browser-reserved-input]")')
+        self.assertIn('5 kg',page.evaluate('document.querySelector("[data-delivery-reservation=browser-reserved-input]").textContent'))
+        click('[data-delivery-reservation=browser-reserved-input] .ws-inventory-actions button:last-child')
+        wait('!document.querySelector("[data-delivery-reservation=browser-reserved-input]")')
+        self.assertEqual(initial['copper ore']-5,self.personal(app,owner)['copper ore'])
+        self.assertEqual({'copper ore':5.},app.brains.goods.by_name(intake['name'])['holds'])
+        self.assertEqual([],[e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
+
 
 if __name__=='__main__':unittest.main()

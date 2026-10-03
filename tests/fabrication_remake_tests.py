@@ -676,6 +676,19 @@ class LabRemake(unittest.TestCase):
         self.assertTrue(any(e['kind']=='dig' and e['machine']==program['name'] for e in app.brains.goods.activities))
         post('/api/world/machine',{'session':app.live.session.id,'program':program['id'],
             'power':False,'sender':'material-build-acceptance','seq':1})
+        # Move finite raw ore from the receiving heap through this player's
+        # Inventory, then deliver it back through the ordinary input contract.
+        # The initial/mined total is unchanged; no stock is injected.
+        ix,iz=intake['at_m']
+        floor=app.live.act({'session':app.live.session.id,'op':'survey','at':[ix,iz]})['survey']['ground_m']
+        input_person={'eyes_m':[ix,floor+1.62,iz],'facing':[0,0,-1]}
+        raw=post('/api/world/goods/collect',{'session':app.live.session.id,'pile':intake['name'],
+                 'person':input_person,'request_id':'material-build-raw-pickup'})['collected']
+        self.assertGreater(raw['copper ore'],0.)
+        delivery={'session':app.live.session.id,'pile':intake['name'],'person':input_person,
+                  'request_id':'material-build-input','substance':'copper ore','mass_kg':raw['copper ore']}
+        post('/api/world/goods/deliver',delivery)
+        self.assertTrue(post('/api/world/goods/deliver',delivery)['repeated'])
         expected=(starter+mined)*.3
         for _ in range(800):
             app.clock._tick(.2)
@@ -783,6 +796,8 @@ class LabRemake(unittest.TestCase):
         post('/api/world/goods/collect',{**collection,'session':app.live.session.id})
         post('/api/world/fabrication/fund_goods',transfer)
         self.assertEqual(copper-.5,exact_copper(owner))
+        post('/api/world/goods/deliver',{**delivery,'session':app.live.session.id})
+        self.assertEqual({},app.brains.goods.by_name(intake['name'])['holds'])
         reopened=install._snapshot(app.live)
         self.assertEqual(battery,next(s for s in reopened['energy_stores'] if s['id']==battery['id']))
         self.assertEqual(candidate,post('/api/workshop/library',{'action':'load','item_id':saved['item_id']})['library_item']['payload'])

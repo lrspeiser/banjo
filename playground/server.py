@@ -1520,7 +1520,7 @@ class Handler(BaseHTTPRequestHandler):
         waits_for_steps = path in {"/api/world/action", "/api/world/tool/use", "/api/world/putdown", "/api/world/ask"}
         # Normal world calls share access; explicit installation is exclusive.
         # Keep ordinary requests concurrent and perform authentication first.
-        with (world_access.gate(self.app).enter(exclusive=path in ("/api/world/open", "/api/live/open")) if world_call else nullcontext()), \
+        with (world_access.gate(self.app).enter(exclusive=path in ("/api/world/open", "/api/live/open", "/api/world/goods/deliver")) if world_call else nullcontext()), \
              (world_access.state_lock(self.app) if world_call and not waits_for_steps else nullcontext()), \
              (gameplay_room.LOCK if world_call and not waits_for_steps and (gameplay_room.active(self.app)
                  or fabrication_room.active(self.app)
@@ -2028,6 +2028,14 @@ class Handler(BaseHTTPRequestHandler):
                 try: answer=world_goods.collect(self.app,player,body,keep_world)
                 except OSError as exc:
                     return self.send({'error':'Collection save failed; retry the same request. '+str(exc)},503)
+                return self.send(answer)
+            if path=="/api/world/goods/deliver":
+                import world_goods
+                _this_pages_room(self.app,body)
+                player_world.update_pose(self.app,player,body.get('person'))
+                try: answer=world_goods.delivery(self.app,player,body,keep_world)
+                except OSError as exc:
+                    return self.send({'error':'Delivery save failed; retry the same request. '+str(exc)},503)
                 return self.send(answer)
             if path=="/api/live/open":
                 if (gameplay_room.active(self.app) or fabrication_room.active(self.app)) and not keep_world(self.app, "opening laboratory"):

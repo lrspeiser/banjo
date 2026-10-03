@@ -117,6 +117,9 @@ class RoomStore:
         import world_goods
         world_goods.validate(claims,getattr(room,'player_records',{}))
         record['goods_claims']=claims
+        deliveries=getattr(room,'goods_deliveries',[])
+        world_goods.validate(deliveries,getattr(room,'player_records',{}))
+        record['goods_deliveries']=deliveries
         if isinstance(pending, list):
             world_for_market = getattr(room, "world_record", None)
             if pending and not isinstance(world_for_market, dict):
@@ -191,6 +194,7 @@ class RoomStore:
                                            if isinstance(r, dict)}
             room.player_learning_durable_ids = {r['evidence']['id'] for r in record.get('player_evidence_pending',[])}
             room.goods_durable_claims={r['request_id'] for r in record['goods_claims']}
+            room.goods_durable_deliveries={r['request_id'] for r in record['goods_deliveries']}
         return True
 
     def load(self, scene: str) -> Any:
@@ -252,6 +256,9 @@ class RoomStore:
         room.goods_claims=record.get('goods_claims',[])
         world_goods.validate(room.goods_claims,room.player_records)
         room.goods_durable_claims={r['request_id'] for r in room.goods_claims}
+        room.goods_deliveries=record.get('goods_deliveries',[])
+        world_goods.validate(room.goods_deliveries,room.player_records)
+        room.goods_durable_deliveries={r['request_id'] for r in room.goods_deliveries}
         room.machine_evidence_pending = record.get("machine_evidence_pending", [])
         import machine_witness
         machine_witness.validate_pending(room.machine_evidence_pending,room.machine_runtime,room.player_records)
@@ -343,6 +350,7 @@ def funded(room: Any) -> bool:
             or bool(getattr(room,"machine_runtime",None))
             or bool(getattr(room,"machine_evidence_pending",None))
             or bool(getattr(room,"player_evidence_pending",None))
+            or bool(getattr(room,"goods_deliveries",None))
             or bool((getattr(room,"ground_transfers",None) or {}).get("receipts")))
 
 

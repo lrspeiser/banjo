@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from copy import deepcopy
 import workshop_library
 import player_world
 import world_access
@@ -71,6 +72,7 @@ def _settle(app):
         if goods is not None and isinstance(eyes,list) and len(eyes)==3:
             goods.activity('collect',r['goods'],{'pile':r['pile']},
                            {'player':r['owner'],'point_m':[eyes[0],eyes[1]-.3,eyes[2]]},'player')
+    _settle_deliveries(app)
 
 
 def collect(app,owner,body,keep):
@@ -119,3 +121,170 @@ def collect(app,owner,body,keep):
         raise ValueError('Collection awaits a world save; retry the same request')
     settle(app)
     return {'collected':taken,'pile':name,'repeated':False,'goods':goods.holders()}
+
+
+def _delivery_schema(db):
+    db.execute('CREATE TABLE IF NOT EXISTS world_goods_deliveries '
+               '(scene TEXT NOT NULL, request_id TEXT NOT NULL, owner TEXT NOT NULL, '
+               'pile TEXT NOT NULL, goods TEXT NOT NULL, '
+               "status TEXT NOT NULL CHECK(status IN ('reserved','applied','released')), "
+               'PRIMARY KEY(scene,request_id))')
+
+
+def pending_deliveries(app, owner):
+    room=getattr(app,'room',None)
+    if room is None:return []
+    received={r['request_id'] for r in (getattr(room,'goods_deliveries',[]) or [])}
+    with workshop_library._connect(app) as db:
+        _delivery_schema(db)
+        return [{'request_id':r['request_id'],'pile':r['pile'],'goods':json.loads(r['goods']),
+                 'received':r['request_id'] in received}
+                for r in db.execute("SELECT * FROM world_goods_deliveries WHERE scene=? AND owner=? AND status='reserved'",
+                                    (room.scene,owner))]
+
+
+def _settle_deliveries(app):
+    room=app.room
+    claims=[r for r in (getattr(room,'goods_deliveries',[]) or [])
+            if r['request_id'] in getattr(room,'goods_durable_deliveries',set())]
+    if not claims:return
+    with workshop_library._connect(app) as db:
+        _delivery_schema(db)
+        db.execute('BEGIN IMMEDIATE')
+        for claim in claims:
+            old=db.execute('SELECT * FROM world_goods_deliveries WHERE scene=? AND request_id=?',
+                           (room.scene,claim['request_id'])).fetchone()
+            if (old is None or old['owner']!=claim['owner'] or old['pile']!=claim['pile']
+                    or json.loads(old['goods'])!=claim['goods'] or old['status']=='released'):
+                raise ValueError('Saved machine delivery has no matching reserved source')
+            if old['status']=='reserved':
+                db.execute("UPDATE world_goods_deliveries SET status='applied' WHERE scene=? AND request_id=?",
+                           (room.scene,claim['request_id']))
+
+
+def _delivery_inputs(app, pile):
+    goods=app.brains.goods
+    source=goods.by_name(pile)
+    if source is None or source.get('rack'):raise ValueError('Select a machine input hopper')
+    accepted=set()
+    for brain in app.brains.brains.values():
+        routine=brain.routine
+        if routine is not None and routine.intake==pile:
+            recipe=goods.recipe(routine.recipe)
+            accepted.update((recipe or {}).get('in',{}))
+    if not accepted:raise ValueError('This pile is not a supported machine input')
+    return source,accepted
+
+
+def _personal_meter(db, owner, substance):
+    table,column=('workshop_material_rack','material') if substance in workshop_library.DEFAULT_RACK else ('workshop_goods_rack','substance')
+    row=db.execute(f'SELECT mass_kg FROM {table} WHERE owner_id=? AND {column}=?',(owner,substance)).fetchone()
+    return table,column,float(row['mass_kg']) if row else 0.
+
+
+def delivery(app, owner, body, keep):
+    """SQL source escrow before the paired hopper/receipt checkpoint.
+
+    A failed room save retains the source reservation. A restart restores the
+    last hopper and retries the same reservation; it never debits a second copy.
+    """
+    if not getattr(app,'world_id',None) or app.live.session is None:
+        raise ValueError('Open a named world before delivering materials')
+    if owner not in player_world.records(app):raise ValueError('Join this world before delivering materials')
+    with world_access.gate(app).enter(exclusive=True),world_access.state_lock(app):
+        return _delivery(app,owner,body,keep)
+
+
+def _delivery(app, owner, body, keep):
+    action=body.get('action','deliver')
+    if action not in ('view','deliver','release'):raise ValueError('Unknown material delivery action')
+    if set(body)-{'session','pile','request_id','person','substance','mass_kg','action'}:
+        raise ValueError('Deliver a selected Inventory material to a machine input')
+    room=app.room
+    claims=getattr(room,'goods_deliveries',None)
+    if claims is None:claims=room.goods_deliveries=[]
+    validate(claims,player_world.records(app))
+    if action=='view':
+        pile,accepted=_delivery_inputs(app,body.get('pile'))
+        with workshop_library._connect(app) as db:
+            choices=[{'substance':s,'mass_kg':_personal_meter(db,owner,s)[2]} for s in sorted(accepted)]
+        return {'pile':pile['name'],'inputs':choices,'pending':pending_deliveries(app,owner)}
+    request=body.get('request_id')
+    if not isinstance(request,str) or not REQUEST.fullmatch(request):raise ValueError('Delivery needs a request id')
+    with workshop_library._connect(app) as db:
+        _delivery_schema(db)
+        old=db.execute('SELECT * FROM world_goods_deliveries WHERE scene=? AND request_id=?',
+                       (room.scene,request)).fetchone()
+    claim=next((r for r in claims if r['request_id']==request),None)
+    if old is not None and old['owner']!=owner:raise ValueError('This delivery belongs to another player')
+    if action=='release':
+        if old is None:raise ValueError('This delivery reservation does not exist')
+        # Read durable evidence, including the save-succeeded/ack-lost case.
+        durable=app.store.read_record(room.scene).get('goods_deliveries',[])
+        if claim is not None or any(r['request_id']==request for r in durable) or old['status']=='applied':
+            raise ValueError('Materials already entered the hopper; finish the delivery save instead')
+        with workshop_library._connect(app) as db:
+            db.execute('BEGIN IMMEDIATE')
+            current=db.execute('SELECT status FROM world_goods_deliveries WHERE scene=? AND request_id=?',
+                               (room.scene,request)).fetchone()['status']
+            if current=='reserved':
+                for substance,mass in json.loads(old['goods']).items():
+                    table,column,_=_personal_meter(db,owner,substance)
+                    db.execute(f'UPDATE {table} SET mass_kg=mass_kg+? WHERE owner_id=? AND {column}=?',
+                               (mass,owner,substance))
+                db.execute("UPDATE world_goods_deliveries SET status='released' WHERE scene=? AND request_id=?",
+                           (room.scene,request))
+        return {'released':True,'repeated':current=='released'}
+    substance=body.get('substance'); mass=body.get('mass_kg')
+    if (not isinstance(substance,str) or isinstance(mass,bool) or not isinstance(mass,(int,float))
+            or not math.isfinite(mass) or not .000001<=mass<=25
+            or abs(mass*1e6-round(mass*1e6))>1e-6):
+        raise ValueError('Deliver 0.000001 to 25 kg in whole micrograms')
+    packet={substance:round(float(mass),6)}
+    encoded=json.dumps(packet,sort_keys=True)
+    if old is not None and (old['pile']!=body.get('pile') or old['goods']!=encoded):
+        raise ValueError('This request id already names another delivery')
+    if old is not None and old['status']=='released':raise ValueError('This reservation was returned; use a new request id')
+    if claim is not None:
+        if old is None or claim['owner']!=owner or claim['pile']!=body.get('pile') or claim['goods']!=packet:
+            raise ValueError('Delivery receipt does not match its reserved source')
+        if request not in getattr(room,'goods_durable_deliveries',set()) and not keep(app,'retry material delivery'):
+            raise ValueError('Delivery awaits a world save; retry the same request')
+        _settle_deliveries(app)
+        return {'delivered':packet,'pile':claim['pile'],'repeated':True,'goods':app.brains.goods.holders()}
+    if old is not None and old['status']=='applied':raise ValueError('Saved delivery receipt is missing; refusing another copy')
+    pile,accepted=_delivery_inputs(app,body.get('pile'))
+    if substance not in accepted:raise ValueError('This machine input does not accept '+substance)
+    eyes=(player_world.records(app)[owner].get('pose') or {}).get('eyes_m')
+    if not isinstance(eyes,list) or len(eyes)!=3 or math.hypot(eyes[0]-pile['at_m'][0],eyes[2]-pile['at_m'][1])>REACH_M:
+        raise ValueError('Stand within 2 m of the input hopper')
+    survey=app.live.act({'session':app.live.session.id,'op':'survey','at':pile['at_m']}).get('survey') or {}
+    if 'ground_m' not in survey or not 0<=eyes[1]-float(survey['ground_m'])<=3:
+        raise ValueError('Stand beside the input hopper on the ground')
+    saved,refused=app.live.snapshot()
+    if saved is None:raise ValueError('The world must be saveable before delivery: '+str(refused))
+    if len(claims)>=MAX_CLAIMS:raise ValueError('Delivery receipt limit reached')
+    if old is None:
+        with workshop_library._connect(app) as db:
+            _delivery_schema(db);db.execute('BEGIN IMMEDIATE')
+            if db.execute('SELECT COUNT(*) FROM world_goods_deliveries WHERE scene=?',(room.scene,)).fetchone()[0]>=MAX_CLAIMS:
+                raise ValueError('Delivery reservation limit reached')
+            table,column,available=_personal_meter(db,owner,substance)
+            if mass>available:raise ValueError('Not enough '+substance+' in your personal Inventory')
+            db.execute(f'UPDATE {table} SET mass_kg=mass_kg-? WHERE owner_id=? AND {column}=?',(packet[substance],owner,substance))
+            db.execute("INSERT INTO world_goods_deliveries VALUES (?,?,?,?,?,'reserved')",
+                       (room.scene,request,owner,pile['name'],encoded))
+    # The live destination and receipt stay paired even if persistence fails.
+    receiving_before=deepcopy(pile['holds'])
+    try:
+        app.brains.goods.put(*pile['at_m'],packet,named=pile['name'])
+        claims.append({'request_id':request,'owner':owner,'pile':pile['name'],'goods':packet})
+    except Exception:
+        pile['holds']=receiving_before
+        raise
+    app.brains.goods.activity('dump',packet,{'player':owner,'point_m':[eyes[0],eyes[1]-.3,eyes[2]]},
+                             {'pile':pile['name']},'player')
+    if not keep(app,'deliver personal material to machine input'):
+        raise ValueError('Delivery awaits a world save; retry the same request')
+    _settle_deliveries(app)
+    return {'delivered':packet,'pile':pile['name'],'repeated':False,'goods':app.brains.goods.holders()}
