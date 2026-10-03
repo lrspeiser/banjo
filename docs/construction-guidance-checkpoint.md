@@ -1,8 +1,8 @@
 # Construction requirements, starter foundations and proactive guidance
 
 October 3, 2026. Based on fetched GitHub main
-`410ac439faed8def6208c03d6f27a00e202ed284`. Implementation checkpoint; publication
-revision will be recorded after verification. The construction goal is active
+`410ac439faed8def6208c03d6f27a00e202ed284`. Verified implementation published to
+GitHub main as `23e48727ce832c7d399483cc9cde2bc64300bcd6`. The construction goal is active
 and unfinished. The earlier readable-world wrap and separately paused R3 do
 not close or pause this new goal.
 
