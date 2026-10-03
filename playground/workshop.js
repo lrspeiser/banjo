@@ -3496,6 +3496,77 @@ function updateLabSelection() {
     : "Discuss, modify or test your selected item. Lab changes leave your carried item or saved version unchanged until you explicitly make or save them.";
   if (intro && intro.textContent !== text) intro.textContent = text;
   labWasSelected = selected;
+  renderLabComponents();
+}
+
+// Visible identification uses authored components and machine bindings for
+// every design. Selecting geometry never needs to open the hidden edit panels.
+function labPartFunctions(candidate, part) {
+  const record=machinesOf(candidate) || {}, rows=[];
+  for(const [key,anchor,label,unit] of [['stores','in','Battery','capacity_j'],
+    ['lamps','on','Light','watts'],['panels','on','Solar collector',null],
+    ['chambers','in','Processing chamber',null]]) {
+    for(const device of record[key] || [])if(device[anchor]===part.name) {
+      const value=unit ? `${Number(device[unit]).toLocaleString()} ${unit==='watts'?'W':'J capacity'}` : device.name || label;
+      rows.push([label,value]);
+    }
+  }
+  for(const device of record.motors || [])if(device.turns?.includes(part.name))rows.push(['Motor',device.name]);
+  for(const program of record.programs || [])for(const sensor of program.sensors || [])
+    if(sensor.on===part.name)rows.push(['Sensor',program.name]);
+  return rows;
+}
+function selectLabComponent(name) {
+  if(!(chosen()?.parts || []).some(part=>part.name===name))return;
+  const wasIsolated=Boolean(bench.isolated || bench.libraryInspection);
+  bench.libraryInspection=null;bench.isolated=null;
+  setWorkspaceMode('build');bench.selectedPart=name;bench.forcePoint=null;
+  bench.jointVerdicts=null;$('#ws-push-result')?.replaceChildren();showForceAt(null);
+  show(wasIsolated);
+}
+function renderLabComponents() {
+  let root=$('#ws-lab-components');
+  if(!root) {
+    root=make('section',{id:'ws-lab-components','aria-label':'Design components'});
+    $('.ws-left > .game-tabs').after(root);
+  }
+  root.hidden=!bench.inventorySelection || !chosen() || $('.ws-viewport')?.hidden;
+  if(root.hidden)return;
+  const saved=bench.libraryInspection,candidate=saved?.component_preview || chosen();
+  const signature=JSON.stringify([bench.inventorySelection.id,bench.revision,bench.selectedPart,
+    bench.isolated,saved?.library_item.item_id,candidate.parts]);
+  if(root.dataset.signature===signature)return;
+  root.dataset.signature=signature;root.replaceChildren(make('h2',{},'Parts'));
+  const list=make('div',{class:'ws-lab-component-grid',role:'group','aria-label':'Select a component'});
+  for(const part of candidate.parts) {
+    const button=make('button',{type:'button',class:'ws-lab-component','data-component':part.name,
+      'aria-label':`${part.name}, ${part.material}`,'aria-pressed':String(saved || part.name===bench.selectedPart ? true : false)});
+    const picture=make('canvas',{role:'img','aria-label':part.name});
+    button.append(picture,make('strong',{},part.name),make('small',{},part.material));
+    button.disabled=Boolean(saved);button.onclick=()=>selectLabComponent(part.name);list.append(button);
+  }
+  root.append(list);
+  const part=saved?.component_preview?.parts?.[0] || selectedPart();
+  const detail=make('div',{id:'ws-component-info','aria-live':'polite'});root.append(detail);
+  if(part) {
+    detail.dataset.component=part.name;
+    const values=make('dl');
+    for(const [name,value] of [['Part',saved?.library_item.name || part.name],
+      ['Type',(part.family || part.role).replace(/[_-]/g,' ')],['Material',part.material]])
+      values.append(make('dt',{},name),make('dd',{},value));
+    const functions=labPartFunctions(candidate,part);
+    if(functions.length) {
+      values.append(make('dt',{},'Design functions'),make('dd',{},functions.map(([name,value])=>`${name} · ${value}`).join(' / ')));
+    }
+    detail.append(values);
+    if(!saved) {
+      const actions=make('div',{class:'ws-row'}),alone=make('button',{type:'button',class:'ws-action'},'Inspect alone');
+      alone.onclick=()=>openComponent(part.name);
+      const clear=make('button',{type:'button',class:'ws-action'},'Clear selection');
+      clear.onclick=()=>{bench.selectedPart=null;showWholeProduct()};actions.append(alone,clear);detail.append(actions);
+    }
+  }else detail.append(make('small',{},'Click a piece or its thumbnail.'));
+  for(const part of candidate.parts)paintInventoryPicture(list.querySelector(`[data-component=${CSS.escape(part.name)}] canvas`),[part]);
 }
 
 let carriedConditionReading=false;

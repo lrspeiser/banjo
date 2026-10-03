@@ -42,9 +42,13 @@ class WorkshopBrowserRegression(unittest.TestCase):
             sock.bind(("127.0.0.1", 0)); cls.port = sock.getsockname()[1]
         cls.log = (root / "server.log").open("w", encoding="utf-8")
         cls.addClassCleanup(cls.log.close)
+        # The HTTP authoring adapter needs the platform CLI. The separate
+        # live runner remains BANJO_LIVE_ENGINE for simulation subprocesses.
+        platform=Path(engine).parent / ('banjo_platform_cli.exe' if os.name=='nt' else 'banjo_platform_cli')
+        authoring=platform if platform.is_file() else Path(engine)
         cls.server = subprocess.Popen([
             sys.executable, "-u", str(ROOT / "playground/server.py"),
-            "--port", str(cls.port), "--engine", str(Path(engine).resolve()),
+            "--port", str(cls.port), "--engine", str(authoring.resolve()),
             "--runs", str(root / "runs"), "--rooms", str(root / "rooms"),
         ], cwd=ROOT, env={**os.environ, "OPENAI_API_KEY": ""}, stdout=cls.log, stderr=cls.log)
         cls.addClassCleanup(cls.stop_server)
@@ -78,7 +82,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.page = self.chrome.page
         self.page.send("Runtime.enable")
         self.page.send("Page.enable")
-        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&tab=recipes"})
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?scene=world&workshop=1&tab=recipes"})
         try:
             self.wait("document.querySelector('#ws-product-catalog button') && document.querySelector('#ws-name').textContent.trim()")
             # Bench regressions start with an explicit selection of a saved
@@ -90,7 +94,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
                 'save_design':True, 'label':'Browser fixture table'})
             self.assertEqual(200, saved['status'], saved)
             self.fixture_id = saved['body']['design']['design_id']
-            self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&tab=recipes"})
+            self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?scene=world&workshop=1&tab=recipes"})
             selector = f'[data-lab-source="saved"][data-item="{self.fixture_id}"]'
             self.wait(f'document.querySelector({json.dumps(selector)})')
             self.pointer_click(selector)
@@ -140,6 +144,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
             print(f"  (the condition kept throwing: {thrown})")
         diagnostics = self.js("""JSON.stringify({
           notice:document.querySelector('#ws-notice')?.textContent,
+          component:document.querySelector('#ws-component-info')?.dataset.component,
           build:document.querySelector('#ws-build-status')?.textContent,
           parts:document.querySelector('#ws-part-count')?.textContent,
           test:document.querySelector('#ws-bench-test')?.value,
@@ -741,6 +746,44 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.wait("document.querySelector('.ws-step-tab[aria-selected=true]').dataset.mode==='build'")
         self.assertFalse(self.js("document.querySelector('#ws-step-build').hidden"))
         self.assertIn("leg-1", self.js("document.querySelector('#ws-selected-part').textContent"))
+
+    def test_canvas_selection_identifies_every_lamp_piece_in_visible_rail(self):
+        source=self.install_api('/api/workshop/candidates',{'kind':'mine-lamp','generation':0})['body']['candidates'][0]
+        overrides=source.get('component_overrides',{})
+        overrides['@machines']={'stores':[{'name':'camp battery','in':'foot','capacity_j':1000.,'charge_j':500.,'voltage_v':24.,'max_power_w':25.}],
+            'lamps':[{'name':'camp light','on':'globe','store':'camp battery','watts':10.,'on_at_first':False}]}
+        saved=self.install_api('/api/workshop/feedback',{'kind':'mine-lamp','generation':0,
+            'design_id':source['design_id'],'parameters':source['parameters'],'component_overrides':overrides,
+            'save_design':True,'label':'Component inspection lamp'})
+        self.assertEqual(200,saved['status'],saved)
+        ident=saved['body']['design']['design_id']
+        self.page.send('Page.navigate',{'url':f'http://127.0.0.1:{self.port}/world?scene=world&workshop=1&tab=lab&design={ident}'})
+        self.wait("document.querySelectorAll('#ws-lab-components canvas[data-preview=ready]').length===3")
+        geometry=self.js("document.querySelector('#workshop-stage').visibleGeometry().meshes")
+        revision=self.js("document.querySelector('#workshop-stage').dataset.revision")
+        for name,point,material,function in [('foot',[.08,.045,.06],'iron','Battery'),
+                ('globe bracket',[.015,.055,.02],'iron',None),('globe',[0,.19,0],'glass','Light')]:
+            screen=self.js(f"document.querySelector('#workshop-stage').pagePointOf({json.dumps(point)})")
+            self.assertEqual('workshop-stage',self.js(f'document.elementFromPoint({screen[0]},{screen[1]}).id'))
+            for event in ('mousePressed','mouseReleased'):
+                self.page.send('Input.dispatchMouseEvent',{'type':event,'x':screen[0],'y':screen[1],'button':'left','clickCount':1})
+            self.wait(f"document.querySelector('#ws-component-info').dataset.component==={json.dumps(name)}")
+            self.assertIn(material,self.js("document.querySelector('#ws-component-info').textContent"))
+            if function:self.assertIn(function,self.js("document.querySelector('#ws-component-info').textContent"))
+            self.assertFalse(self.js("document.querySelector('#ws-lab-components').hidden"))
+            self.assertEqual(name,self.js("document.querySelector('#ws-lab-components [aria-pressed=true]').dataset.component"))
+            self.assertEqual(geometry,self.js("document.querySelector('#workshop-stage').visibleGeometry().meshes"))
+            self.assertEqual(revision,self.js("document.querySelector('#workshop-stage').dataset.revision"))
+        self.assertIn('10 W',self.js("document.querySelector('#ws-component-info').textContent"))
+        self.pointer_click('#ws-lab-components [data-component="foot"]')
+        self.assertEqual('foot',self.js("document.querySelector('#ws-component-info').dataset.component"))
+        self.assertIn('1,000 J capacity',self.js("document.querySelector('#ws-component-info').textContent"))
+        self.page.send('Page.navigate',{'url':f'http://127.0.0.1:{self.port}/world?scene=world&workshop=1&tab=inventory&design={ident}'})
+        self.wait("document.querySelector('#ws-lab-components')?.hidden")
+        self.page.send('Page.navigate',{'url':f'http://127.0.0.1:{self.port}/world?scene=world&workshop=1&tab=lab&design={ident}'})
+        self.wait("document.querySelectorAll('#ws-lab-components canvas[data-preview=ready]').length===3")
+        self.pointer_click('#ws-clear-lab')
+        self.wait("document.querySelector('#ws-lab-components').hidden")
 
     def test_an_edit_can_be_taken_back_and_what_you_did_is_listed(self):
         """There was no undo. None.

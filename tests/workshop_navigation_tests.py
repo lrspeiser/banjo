@@ -571,7 +571,9 @@ class GameScreens(unittest.TestCase):
         self.screenshot("recipes-short.png")
 
     def test_carried_item_requires_own_inventory_and_lab_leaves_it_unchanged(self):
-        world, owner, app = self.setup_world()
+        # This fixture authors its carried stool directly; it tests ownership
+        # and Lab isolation, not the paid manufacturing supply pipeline.
+        world, owner, app = self.setup_world(legacy_process=True)
         recipe = self.post("/api/workshop/goals", {}, world)["recipe"]
         context = self.post("/api/world/workshop/context", {}, world)
         preview = self.post("/api/world/workshop/preview", {"session":context["session"], "scene":context["scene"],

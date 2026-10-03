@@ -1,5 +1,17 @@
 # Workshop Mode: fast isolated design, variants, tests and component learning
 
+## Lab component identification — October 2, 2026
+
+Lab now shows a compact **Parts** tray in the right rail. Each authored component has a geometry thumbnail, name and material. Clicking its 3D geometry or thumbnail highlights the part and shows compact Part/Type/Material values plus any declared machine bindings (battery capacity, lamp watts, collector, chamber, motor or sensor). Whole-product geometry stays assembled during ordinary selection. **Inspect alone** is explicit; **Clear selection** returns to the whole product. The tray is hidden on other tabs and in an empty Lab. Saved-component inspection remains read-only. Existing selected-component chat receives the same selected part as before.
+
+This is driven by generic component names/families/materials and `@machines` bindings, so authored or LLM-created designs use the same inspection path. The label **Design functions** describes the saved declaration, not current physical charge, certified strength or a measured running device. Selecting a part changes neither its design revision nor the carried item. Unsupported physical laws remain unsupported.
+
+The light `workshop-2cb5866ab68b4450` in the October 2 walkthrough came from the built-in `mine-lamp` recipe. The ignored walkthrough authoring script saved `codex-demo-lamp` with a battery on `foot` and a 10 W lamp on `globe`; it did not obtain new geometry from game chat. Its installed receipt retains `foot`, `globe bracket` and `globe` even though all three compile into one precise rigid body. Previously the 3D picker selected these parts but the identifying controls were hidden.
+
+Windows/Python 3.13/Chrome verification, source base `d84a7c0`, existing `build/agent-object-strike/Release` fixtures: four Workshop browser cases pass (new real canvas clicks on all three lamp pieces and thumbnail selection, existing selection/edit-mode behavior, isolation/save, and saved-component inspection); two named-world navigation cases pass (empty Lab and carried ownership/unchanged bag and hands). The new case checks unchanged mesh count and design revision, correct glass/iron and battery/light bindings, tab hiding and Clear Lab. Live saved-lamp screenshots on 8771 were inspected. JavaScript syntax, Python test compilation and source registration 297/297 pass. The full Workshop browser suite and native physics suite were not rerun.
+
+Test setup corrections: standalone Workshop regressions now use the platform CLI for authoring and an explicit legacy scene, avoiding automatic creation of a different named world from their source folder. The carried ownership fixture explicitly selects its existing legacy authoring context; it does not qualify the paid manufacturing supply journey. Production admission, native source/binaries/laws and server processes are unchanged by this UI checkpoint.
+
 **Product/resource guidance, September 30:** [Recorded names and next use](product-labels.md)
 give carried products whole-source pictures, readable names/mass, personal
 ownership and actual next actions. Inventory resources separate Personal and
