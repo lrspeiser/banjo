@@ -228,7 +228,11 @@ export function makeTools(ctx) {
   // (tool_use.run). From here the page stops holding the tool ready, so no
   // step of this page's can cancel the swing. What it came to is said in the
   // side view's details (lastAction), not the chat.
-  async function useOnce() {
+  function sightInput() {
+    const direction=ctx.aimVector?.() || camera.getWorldDirection(new THREE.Vector3());
+    return {from:camera.position.toArray(),dir:direction.toArray()};
+  }
+  async function useOnce(input) {
     const held = world.held, use = world.use;
     if (!held || !held.pick || use.mode !== "tool-ready") return;
     use.mode = "tool-working";
@@ -238,12 +242,11 @@ export function makeTools(ctx) {
     showUse();
     let answer = null;
     try {
-      // The preview may still describe the previous view while its ray query
-      // is in flight. Use the current sight line at click time.
-      const from = camera.position, direction = new THREE.Vector3();
-      camera.getWorldDirection(direction);
-      const hit = await act("pick", { from: from.toArray(), dir: direction.toArray(),
-        max_m: 40, past_held: true });
+      // Explicit taps retain their clicked ray even if the cursor moves while
+      // another stroke finishes. Held repeats sample the current cursor ray.
+      // Sidebar actions retain the displayed point, not the camera centre.
+      const hit = input.at_m ? {hit:true,point_m:input.at_m,name:input.target_name}
+        : await act("pick", {...input,max_m:40,past_held:true});
       answer = await api("/api/world/tool/use", { session: world.session, person: whereIAm(),
         at_m: hit.hit ? hit.point_m : null, target_name: hit.hit ? hit.name || null : null });
     } catch (error) {
@@ -273,7 +276,7 @@ export function makeTools(ctx) {
     if (answer?.result?.working_point_connected === false) {
       // A separated head ends this burst even if clicks were queued while the
       // native stroke ran. The retained grip part can still be inspected in Lab.
-      use.stop = true; use.down = false; use.queued = 0;
+      use.stop = true; use.down = false; use.queued = 0; use.inputs=[];
       clearTimeout(use.timer); use.timer = null;
     }
     if (["contact", "object-contact"].includes(answer?.gesture) && !answer.refused) use.positioned = true;
@@ -285,7 +288,7 @@ export function makeTools(ctx) {
     if (!use.stop && answer && !answer.refused && (use.queued || (use.down && answer.repeat))) {
       schedule();
     } else if (answer?.refused) {
-      use.queued = 0;
+      use.queued = 0; use.inputs=[];
     }
   }
 
@@ -296,27 +299,31 @@ export function makeTools(ctx) {
     use.timer = setTimeout(() => {
       use.timer = null;
       if (world.held !== held || use.stop || (!use.queued && !use.down)) return;
+      const input=use.queued ? use.inputs.shift() : sightInput();
       if (use.queued) use.queued--;
-      useOnce();
+      useOnce(input);
     }, Math.max(0, interval - (performance.now() - (use.startedAt || 0))));
   }
 
   // The primary button: down uses it, and holding it goes on; up lets it stop
   // after the use in hand. The secondary stops it too. None of them ever puts
   // the tool down: E does.
-  function press() {
+  function press(target=null) {
     const use = world.use;
     if (!use || !world.held || !world.held.pick) return;
     use.down = true;
     use.stop = false;
     // Preserve short bursts while a native/network response is outstanding.
     // Still bounded, sequential, and discarded immediately by Stop / Esc.
-    use.queued = Math.min(16, (use.queued || 0) + 1);
+    use.inputs ||= [];
+    if(use.inputs.length<16)use.inputs.push(target?.at_m ?
+      {at_m:target.at_m.slice(),target_name:target.target_name || null} : sightInput());
+    use.queued=use.inputs.length;
     if (use.mode === "tool-ready") schedule();
   }
   function release() { if (world.use) world.use.down = false; }
   function stop() { if (world.use) {
-    world.use.stop = true; world.use.down = false; world.use.queued = 0;
+    world.use.stop = true; world.use.down = false; world.use.queued = 0; world.use.inputs=[];
     clearTimeout(world.use.timer); world.use.timer = null;
   } }
 

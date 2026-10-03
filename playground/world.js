@@ -25,7 +25,7 @@ import { makeTools } from "/tools.js";
 import { makeWorkbench } from "/workbench.js";
 import { gameNavigation, showSaveStatus, screenUrl, thumbnail, massLabel } from "/game_menu.js";
 import { conditionPanel } from "/body_condition.js";
-import { GROUND_APPEARANCE, materialAppearance, terrainCellAt, terrainTargetPath, exposedRunKind, toolTargetFeedback, collectedToolMaterials, columnTopData, walkColumnFaces, columnChunkIds, columnChunkBox } from "/material_appearance.js";
+import { GROUND_APPEARANCE, materialAppearance, terrainCellAt, terrainTargetPath, exposedRunKind, toolTargetFeedback, toolTargetColor, collectedToolMaterials, columnTopData, walkColumnFaces, columnChunkIds, columnChunkBox } from "/material_appearance.js";
 import { terrainMaterial } from "/terrain_material.js";
 import { renderPlayerGuidance } from "/player_guidance.js";
 import { constructionWrite, constructionControls } from "/construction_ui.js";
@@ -6225,7 +6225,10 @@ function showMaterialPreview() {
     action.className="target-action";action.textContent=feedback.ready ? `J / click · ${feedback.action}` : feedback.action;
     if(action.tagName==="BUTTON") {
       action.type="button";action.disabled=!!watchedId;
-      action.onclick=()=>{if(feedback.screen)location.href=screenUrl(feedback.screen);else {tools.press();tools.release();}};
+      const actionAt=(world.aim?.point_m || point)?.slice(), actionName=world.aim?.name || null;
+      action.onclick=()=>{if(feedback.screen)location.href=screenUrl(feedback.screen);else {
+        tools.press({at_m:actionAt,target_name:actionName});tools.release();
+      }};
     }
     box.append(action);
     if(feedback.reason) {
@@ -6969,6 +6972,9 @@ canvas.addEventListener("pointerdown", (e) => {
     return;
   }
   resumeClick=false;
+  // A press can arrive before pointermove or the asynchronous hover pick.
+  // Read this event's coordinates before capturing the tool's action target.
+  cursor=cursorAt(e);markAt(cursor);
   offerStick(e);
   // The LEFT button only. The right one releases a latch, and it used to do
   // that and then pick the thing up as well, because a pointerup is a
@@ -6987,6 +6993,7 @@ canvas.addEventListener("pointerdown", (e) => {
 canvas.addEventListener("pointermove", (e) => {
   if (cursorFree) return;
   cursor = cursorAt(e);
+  groundTarget.visible=false; // an old ray's green square is not the new cursor target
   if (cursor) cursor.touch = e.pointerType !== "mouse";
   offerStick(e);
   markAt(cursor);
@@ -7960,9 +7967,13 @@ function showGroundTarget() {
   const point=world.groundAim, g=ground.grid;
   const index=point&&g?terrainCellAt(point[0],point[2],g):-1;
   groundTarget.visible=index>=0 && !world.resourceAim && !world.aim && groundSeen(index)
-    && camera.position.distanceTo(new THREE.Vector3(...point))<5
+    && camera.position.distanceTo(new THREE.Vector3(...point))<40
     && Math.abs(point[1]-groundAt(point[0],point[2]))<.05;
   if(!groundTarget.visible)return;
+  const feedback=toolTargetFeedback({point,grid:g,tool:world.held?.pick ? world.use.name : null,
+    target:world.use.target,eyes:camera.position.toArray(),surface:groundMadeOf(point),context:targetContext(point)});
+  groundTarget.material.color.setHex(toolTargetColor(world.use.mode==='tool-working' ?
+    {...feedback,ready:false,state:'working'} : feedback));
   const path=terrainTargetPath(point,g,groundAt);
   groundTargetGeometry.attributes.position.array.set(path);
   groundTargetGeometry.attributes.position.needsUpdate=true;
@@ -7975,11 +7986,12 @@ async function aim() {
   if (watchedId || !world.session || aimBusy) return;
   aimBusy = true;
   try {
-    const from = camera.position;
+    const from = camera.position.clone();
     const dir = aimVector();
     let found = await act("pick", { from: [from.x, from.y, from.z],
                                     dir: [dir.x, dir.y, dir.z], max_m: 40,
                                     past_held: !!world.held?.pick });
+    if(from.distanceTo(camera.position)>.03 || dir.distanceTo(aimVector())>.001)return;
     world.aim = found.hit && found.name ? found : null;
     // Where the crosshair meets the ground, when it is the ground it meets:
     // that is where a spade goes in.
@@ -9122,7 +9134,7 @@ function rememberProfiles(spec) {
 // way whatever they are -- the server says what the tool does where the ring
 // is and does it (tool_use.py), each stroke the engine's; tools.js holds the
 // tool ready, draws the ring and sends the click.
-const tools = makeTools({ world, act, api, say, remember, showUse, camera, carryGround, scene, targetContext,
+const tools = makeTools({ world, act, api, say, remember, showUse, camera, carryGround, scene, targetContext, aimVector,
                           summarizeToolResult:answer=>{
                             const collected=collectedToolMaterials(answer);
                             return collected ? `Collected ${massLabel(collected.kg)} · ${collected.materials.map(titled).join(" + ")}` : answer.said;

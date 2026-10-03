@@ -2,7 +2,21 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
 import * as THREE from '../playground/vendor/three.module.js';
-import {GROUND_APPEARANCE,materialAppearance,terrainCellAt,terrainTargetPath,exposedRunKind,toolTargetFeedback,collectedToolMaterials,columnTopData,walkColumnFaces,columnChunkIds,columnChunkBox} from '../playground/material_appearance.js';
+import {GROUND_APPEARANCE,materialAppearance,terrainCellAt,terrainTargetPath,exposedRunKind,toolTargetFeedback,toolTargetColor,collectedToolMaterials,columnTopData,walkColumnFaces,columnChunkIds,columnChunkBox} from '../playground/material_appearance.js';
+
+test('dig square is green only for a fresh ready observation; refusals are red',()=>{
+  const point=[.25,0,.25],eyes=[0,1.62,0],grid={x0:0,z0:0,dx:.25,nx:3,nz:3};
+  const target={observed_at_m:point,observed_from_m:eyes,observed_context:'sand',
+    target:{material:'sand'},feedback:{ready:true,state:'ready'}};
+  const feedback=(extra={})=>toolTargetFeedback({point,eyes,grid,tool:'Authored hoe',target,
+    surface:'sand',context:'sand',...extra});
+  assert.equal(toolTargetColor(feedback()),0x62e595);
+  for(const extra of [{point:[.5,0,.25]},{eyes:[0,1.62,.1]},{context:'soil'},
+    {target:{...target,feedback:{ready:false,state:'blocked',action:'Move closer'}}}])
+    assert.notEqual(toolTargetColor(feedback(extra)),0x62e595);
+  assert.equal(toolTargetColor({ready:false,state:'blocked'}),0xf17f79);
+  assert.equal(toolTargetColor({ready:false,state:'checking'}),0xe7bf65);
+});
 import {terrainMaterial} from '../playground/terrain_material.js';
 
 for(const surface of ['smooth','columns'])test(surface+' full-terrain catchup reuses the mesh and streams variable runs once',()=>{

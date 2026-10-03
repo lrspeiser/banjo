@@ -708,6 +708,8 @@ if(BANJO_BUILD_TESTS)
     if(BANJO_NODE_EXECUTABLE)
         add_test(NAME banjo_terrain_material_tests COMMAND ${BANJO_NODE_EXECUTABLE}
             --experimental-default-type=module --test ${CMAKE_CURRENT_SOURCE_DIR}/tests/terrain_material_tests.mjs)
+        add_test(NAME banjo_tool_target_client_tests COMMAND ${BANJO_NODE_EXECUTABLE}
+            --experimental-default-type=module --test ${CMAKE_CURRENT_SOURCE_DIR}/tests/tool_target_client_tests.mjs)
         add_test(NAME banjo_workshop_supply_tests COMMAND ${BANJO_NODE_EXECUTABLE}
             --experimental-default-type=module --test ${CMAKE_CURRENT_SOURCE_DIR}/tests/workshop_supply_tests.mjs)
     endif()

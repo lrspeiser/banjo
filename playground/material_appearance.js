@@ -131,6 +131,14 @@ export function toolTargetFeedback({point, grid, tool, target, eyes, name=null, 
   return target.feedback || pending;
 }
 
+// Both World and the sidebar use the same fresh native readiness observation.
+export function toolTargetColor(feedback) {
+  if(feedback.ready)return 0x62e595;
+  if(feedback.state==='blocked')return 0xf17f79;
+  if(['checking','working'].includes(feedback.state))return 0xe7bf65;
+  return 0xe7eff5;
+}
+
 // A collected amount comes from a closed native receipt, never a preview or
 // guessed per-material density. Keep the engine report available separately.
 export function collectedToolMaterials(answer) {
