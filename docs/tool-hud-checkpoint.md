@@ -25,7 +25,10 @@ constitutive laws, resistance, conservation tolerances and resolution are unchan
 - World navigation is a compact bottom bar. Details opens the optional right
   rail; `/` or Chat opens its chat view, Esc closes chat. The full Workshop tabs
   are unchanged. A short action toast keeps refusals/results visible in World.
-- Target thumbnails/actions appear beside the pointer after 1.5 seconds of dwell.
+- Target thumbnails/actions appear in a fixed upper-right card after 1.5 seconds of dwell.
+  The October 3 placement repair keeps the cursor and targeted ground unobscured;
+  opening the right rail offsets the card alongside it. Narrow screens bound its
+  width and retain scrolling. No target, action, native law or hover-delay change.
   Changed target, >12 px drift, camera translation, cursor mode or leaving reset
   the dwell. Readiness refresh alone does not. Moving into a popover stops edge
   looking; moving out dismisses it. Current native checks remain authoritative.
@@ -48,6 +51,14 @@ constitutive laws, resistance, conservation tolerances and resolution are unchan
   no tool-specific swing animation or extra LLM call is needed for digging.
 
 ## Verification
+
+Upper-right placement repair: Windows browser verification in the separate
+`bd899fb4d1aa4e029bb88b6ace0194ab` world shows Sand details clear of the cursor
+and successful expansion of Nearby materials. The owner world is unchanged.
+The two registered terrain/material and tool-client suites pass (28 checks),
+JS syntax and whitespace checks pass, and source registration remains 298/298.
+Screenshot: `build/construction-preview/target-details-top-right.png` (ignored).
+This is layout verification only; no new physics qualification.
 
 Windows 11, Python 3.13, Node 22.18, VS17 x64 MSVC 19.44 Release CPU reference,
 existing `build/agent-column-terrain`, Lab off. Six registered focused suites:

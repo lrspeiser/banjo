@@ -863,7 +863,7 @@ body.moving-a-thing #panel .workshop-entry { border-style: dashed; }
 #hand-slots .mini-product {grid-template-columns:46px minmax(0,1fr);padding:7px;}
 #hand-slots .mini-product-actions {display:none;}
 #hand-slots .mini-product:hover .mini-product-actions,#hand-slots .mini-product:focus-within .mini-product-actions {display:flex;}
-#material-preview {position:fixed;z-index:19;width:250px;max-height:55vh;overflow:auto;margin:0;box-shadow:0 8px 25px #0008;background:#12202bf5;}
+#material-preview {position:fixed;top:14px;right:calc(var(--panel-w) + 14px);z-index:19;width:250px;max-width:calc(100vw - var(--panel-w) - 28px);max-height:55vh;overflow:auto;margin:0;box-shadow:0 8px 25px #0008;background:#12202bf5;}
 #material-preview[hidden] {display:none;}
 #material-preview > h3 {display:none;}
 #material-preview .target-facts {display:none;}

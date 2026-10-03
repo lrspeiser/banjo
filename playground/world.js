@@ -6187,8 +6187,6 @@ function positionTargetPopover() {
   const visible=targetHover(performance.now(),!watchedId && !cursorFree && cursor && key && !world.placing ?
     {key,x,y,eyes:camera.position.toArray()} : null);
   box.hidden=!visible;
-  if(visible){box.style.left=`${Math.max(8,Math.min(innerWidth-box.offsetWidth-12,x+24))}px`;
-    box.style.top=`${Math.max(8,Math.min(innerHeight-box.offsetHeight-90,y+24))}px`;}
 }
 function targetContext(at,name=null) {
   if(name)return JSON.stringify([name,world.bodies.get(name)?.revision]);
