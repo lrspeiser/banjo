@@ -10358,18 +10358,93 @@ function whereIAm() {
   return person;
 }
 
+// A typed message has an explicit audience. Private AI help never broadcasts.
+const chatRecipient = document.createElement('select');
+chatRecipient.id='chat-recipient';chatRecipient.setAttribute('aria-label','Chat with');
+for(const [value,label] of [['guide','AI Guide'],['actions','AI Actions'],['players','Players in this world']]) {
+  const option=document.createElement('option');option.value=value;option.textContent=label;chatRecipient.append(option);
+}
+const chatAudience=document.createElement('label');chatAudience.textContent='Chat with ';chatAudience.append(chatRecipient);
+chatAudience.className='chat-audience';
+chatAudience.hidden=!worldId||!!watchedId; $('ask').before(chatAudience);
+const playerRetry=document.createElement('button');playerRetry.type='button';playerRetry.textContent='Retry last player message';playerRetry.hidden=true;
+$('ask').after(playerRetry);
+const privateTurns=new Map(), publicMessages=[];let messageCursor=0,messagePolling=false;
+const pendingMessageKey=()=>`banjo.player-message.${worldId}.${playerId}`;
+function pendingPlayerMessage(){try{return JSON.parse(sessionStorage.getItem(pendingMessageKey())||'null')}catch{return null}}
+function showPlayerMessage(row){const turn=say('player',row.message);turn.querySelector('.who').textContent=`${row.name} · Players`;turn.dataset.messageId=String(row.id)}
+function renderChatRecipient(){
+  if(!worldId||watchedId)return;
+  $('chat').replaceChildren();const mode=chatRecipient.value;
+  if(mode==='players') {
+    for(const row of publicMessages)showPlayerMessage(row);
+    $('ask-text').placeholder='Message players in this world';$('ask-text').maxLength=1000;
+    playerRetry.hidden=!pendingPlayerMessage();pollPlayerMessages();
+  } else {
+    for(const row of privateTurns.get(mode)||[]) {const turn=say(row.role==='user'?'you':'world',row.content);if(row.role!=='user')turn.querySelector('.who').textContent=row.name||'AI Guide'}
+    $('ask-text').maxLength=mode.startsWith('robot:')?500:4000;
+    $('ask-text').placeholder=mode==='guide'?'Ask about energy, supplies, tools or your next step':mode==='actions'?'Ask the AI to use an existing world action':'Talk to this character';
+    playerRetry.hidden=true;
+  }
+}
+async function refreshChatRecipients(){
+  if(!worldId||watchedId||!world.session)return;
+  const current=chatRecipient.value;
+  const targets=await api('/api/world/ai',{action:'list'});
+  for(const option of [...chatRecipient.options].slice(3))option.remove();
+  for(const character of targets.characters||[]) {const option=document.createElement('option');option.value='character:'+character.id;option.textContent=character.name+' · AI character';chatRecipient.append(option)}
+  for(const program of programsNow()) {const option=document.createElement('option');option.value='robot:'+program.name;option.textContent=program.name+' · Machine';chatRecipient.append(option)}
+  if([...chatRecipient.options].some(o=>o.value===current))chatRecipient.value=current;
+}
+async function pollPlayerMessages(){
+  if(messagePolling||!worldId||watchedId||!world.session||document.hidden||chatRecipient.value!=='players')return;
+  messagePolling=true;
+  try {
+    const result=await api('/api/world/messages',{action:'list',after_id:messageCursor});
+    for(const row of result.messages||[])if(!publicMessages.some(m=>m.id===row.id)) {publicMessages.push(row);if(chatRecipient.value==='players')showPlayerMessage(row)}
+    publicMessages.splice(0,Math.max(0,publicMessages.length-50));messageCursor=result.cursor;
+    if(chatRecipient.value==='players')for(const row of [...$('chat').querySelectorAll('[data-message-id]')].slice(0,-50))row.remove();
+  } catch(error) {$('ask-text').placeholder='Player chat unavailable — retry shortly'}
+  finally {messagePolling=false}
+}
+chatRecipient.onchange=renderChatRecipient;
+chatRecipient.onfocus=()=>refreshChatRecipients().catch(()=>{});
+playerRetry.onclick=()=>{const pending=pendingPlayerMessage();if(pending){$('ask-text').value=pending.message;$('ask').requestSubmit()}};
+setInterval(pollPlayerMessages,2500);
+
 $("ask").addEventListener("submit", async (e) => {
   e.preventDefault();
   const input = $("ask-text");
   const text = input.value.trim();
-  if (!text || !world.session) return;
+  if (!text || !world.session || world.asking) return;
+  const recipient=worldId?chatRecipient.value:'actions';
   input.value = "";
   // What was asked, said back straight away, before anything is waited on.
-  say("you", text);
-  const waiting = waitingFor("Reading the room and thinking it over");
+  if(recipient!=='players')say("you", text);
+  const waiting = waitingFor(recipient==='players'?"Sending to players in this world":"Reading the room and thinking it over");
   $("ask-send").disabled = true;
   world.asking = true;
+  chatRecipient.disabled=true;
   try {
+    if(recipient==='players') {
+      let pending=pendingPlayerMessage();
+      if(pending&&pending.message!==text)throw Error('Retry your earlier player message first; its acknowledgement is uncertain.');
+      if(!pending) {pending={action:'send',message:text,request_id:crypto.randomUUID()};sessionStorage.setItem(pendingMessageKey(),JSON.stringify(pending))}
+      await api('/api/world/messages',pending);sessionStorage.removeItem(pendingMessageKey());playerRetry.hidden=true;
+      waiting.done();await pollPlayerMessages();return;
+    }
+    if(recipient!=='actions') {
+      const prior=privateTurns.get(recipient)||[];
+      const history=prior.slice(-10).map(({role,content})=>({role,content:content.slice(0,4000)}));
+      let answer,name='AI Guide';
+      if(recipient==='guide')answer=await api('/api/world/help',{screen:'world',message:text,history,
+        ...(picked.name||world.held?.name?{focus:picked.name||world.held?.name}:{})});
+      else if(recipient.startsWith('character:')) {answer=await api('/api/world/character/chat',{id:recipient.slice(10),message:text,history});name=answer.name}
+      else {const program=recipient.slice(6);answer=await api('/api/world/rover/talk',{session:world.session,program,said:text,person:whereIAm()});name=program;if(answer.program)mergeProgram(answer.program)}
+      const reply=answer.game_chat?.reply||answer.reply||'(nothing to say)';
+      prior.push({role:'user',content:text},{role:'assistant',content:reply,name});privateTurns.set(recipient,prior.slice(-40));
+      waiting.done();const turn=say('world',reply);turn.querySelector('.who').textContent=name;return;
+    }
     const answer = await api("/api/world/ask", {
       session: world.session,
       message: text,
@@ -10381,13 +10456,16 @@ $("ask").addEventListener("submit", async (e) => {
     });
     waiting.done();
     const turn = say("world", answer.reply || "(nothing to say)", answer.did);
+    if(worldId)turn.querySelector('.who').textContent='AI Actions';
     if (answer.then && answer.then.length) sayThen(turn, answer.then);
     if (answer.checked && answer.checked.length) sayChecked(turn, answer.checked);
     if (answer.reopened) adoptRebuilt(answer);
+    const prior=privateTurns.get(recipient)||[];prior.push({role:'user',content:text},{role:'assistant',content:answer.reply||'',name:'AI Actions'});privateTurns.set(recipient,prior.slice(-40));
   } catch (error) {
     waiting.done();
     say("bad", String(error.message || error));
-  } finally { world.asking = false; $("ask-send").disabled = false; input.focus(); }
+    if(recipient==='players') {input.value=pendingPlayerMessage()?.message||text;playerRetry.hidden=!pendingPlayerMessage()}
+  } finally { world.asking = false; chatRecipient.disabled=false; $("ask-send").disabled = false; input.focus(); }
 });
 
 // A room rebuilt from what it has become -- after the chat changed it, or after
@@ -11308,10 +11386,13 @@ async function open({ again = false } = {}) {
     // reload, and across the server starting again (room_store) -- so the panel
     // beside a room the chat has built in is not blank. A turn that failed is
     // shown as the room said it then, not as a new error.
-    for (const turn of data.chat || []) {
+    if(worldId&&!watchedId)privateTurns.set('actions',(data.chat||[]).flatMap(turn=>[
+      {role:'user',content:turn.asked},{role:'assistant',content:turn.replied,name:'AI Actions'}]));
+    for (const turn of (worldId?[]:data.chat || [])) {
       say("you", turn.asked);
       say("world", turn.replied, turn.did);
     }
+    if(worldId&&!watchedId){renderChatRecipient();refreshChatRecipients().catch(()=>{})}
     // As left: rejoined, or opened again whole after a restart -- or, for a room
     // kept before the running world was kept with it, as the chat left it.
     if (asItStood || (data.kept && !data.restored && !data.kept_problem))
@@ -11327,6 +11408,10 @@ async function open({ again = false } = {}) {
         say("world", upgrade.help);
     }
     if (watchedId) say("world", "This camera follows the character's eyes. Its bag, goals and tech journal are shown here. Use Menu to pause it, or return to your character to play.");
+    else if(worldId) {
+      const welcome=say('world','Ask about energy, supplies, tools or your next step. Choose Players to talk to people in this world.');
+      welcome.querySelector('.who').textContent='AI Guide';
+    }
     else say("world",
       `${data.bodies.length} things, made of ${
         [...new Set(data.bodies.map((b) => b.material).filter(Boolean))].join(", ")

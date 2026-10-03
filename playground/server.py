@@ -60,6 +60,7 @@ import workshop_api
 import workshop_library
 import market
 import game_guidance
+import player_messages
 import starter_goals
 import ai_player
 import workshop_install
@@ -1512,8 +1513,28 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/world/help':
             if not getattr(self.app, 'world_id', None): raise ValueError('Join a named world for game help')
             game_guidance.validate(body)
-            context = game_guidance.snapshot(self.app, player, journal_of(self.app, player), registry())
+            context = game_guidance.snapshot(self.app, player, journal_of(self.app, player), registry(), body.get('focus'))
             return self.send({'game_chat':game_guidance.answer(self.app, body, context)})
+        if path == '/api/world/messages':
+            if not getattr(self.app,'world_id',None):raise ValueError('Join a named world for player chat')
+            return self.send(player_messages.request(self.app,player,body))
+        if path == '/api/world/character/chat':
+            if not isinstance(body,dict) or set(body)-{'id','message','history'}:
+                raise ValueError('Character chat accepts an id, message and recent conversation')
+            if not getattr(self.app,'world_id',None):raise ValueError('Join a named world to talk to a character')
+            if not isinstance(body.get('id'),str):raise ValueError('Choose an AI character in this world')
+            question={k:v for k,v in body.items() if k!='id'}
+            question['screen']='world';game_guidance.validate(question)
+            with player_world.lock_of(self.app):
+                profile=player_world.records(self.app).get(body.get('id'))
+                if not profile or not isinstance(profile.get('ai'),dict):raise ValueError('Choose an AI character in this world')
+                speaker={k:deepcopy(profile.get(k)) for k in ('id','name')}
+                speaker.update({k:deepcopy(profile['ai'].get(k)) for k in ('status','message','history','memory')})
+            scope=workshop_library.REQUEST_OWNER.set(speaker['id'])
+            try:context=game_guidance.snapshot(self.app,speaker['id'],journal_of(self.app,speaker['id']),registry())
+            finally:workshop_library.REQUEST_OWNER.reset(scope)
+            context['speaker']=speaker
+            return self.send({'name':speaker['name'],'game_chat':game_guidance.answer(self.app,question,context)})
         if getattr(self.app, "world_id", None) and path == "/api/live/open":
             raise ValueError("The shared world cannot be replaced by a laboratory scene")
         world_call = path.startswith(("/api/world/", "/api/live/")) and not path.startswith(("/api/world/workshop/", "/api/world/fabrication/"))
@@ -1831,7 +1852,7 @@ class Handler(BaseHTTPRequestHandler):
                 if kept: opened["kept_since_unix_s"]=getattr(room,"kept_since",None)
                 # The conversation so far in this room, so the page shows it again
                 # rather than a blank panel beside a room the chat has built in.
-                opened["chat"]=room.chat[-20:]
+                opened["chat"]=personal_action_chat(app, player)
                 app.brains.settle(opened,app.live.session)
                 opened["brains"]=app.brains.summaries()
                 # So the page draws the ground that is known and leaves the rest
@@ -1860,22 +1881,26 @@ class Handler(BaseHTTPRequestHandler):
                 # "confirmed" answers what the room asked; this turn is kept for
                 # the next, failed or not.
                 room=app.room
+                if player:
+                    with player_world.lock_of(app):
+                        history=player_world.records(app)[player].setdefault('action_chat',[])
+                else:history=room.chat
                 try:
                     answer=world_chat.ask(app.api_key,app.model,room,session.state,message,
                                           [str(s)[:200] for s in (body.get("story") or [])][-24:],
                                           trace=trace,water_state=live_water(session,room.spec),
-                                          person=person,history=room.chat,journal=journal_of(app),
+                                          person=person,history=history,journal=journal_of(app),
                                           funded=fabrication_room.active(app),
                                           # Working what is in the room -- a thing's action
                                           # pressed, a motor told -- happens to the room as
                                           # it stands.
                                           live=lambda name,args:_player_chat_live(app,name,args,body.get("person"),player))
                 except Exception as failure:
-                    world_chat.remember_turn(room.chat,message,None,failure=str(failure)[:300])
+                    world_chat.remember_turn(history,message,None,failure=str(failure)[:300])
                     room_store.keep(app,room)
                     remember_chat(app,message,trace,None,failure,_now()-began,person)
                     raise
-                world_chat.remember_turn(room.chat,message,answer)
+                world_chat.remember_turn(history,message,answer)
                 if player: _sync_hand_owner(app,player)
                 # What the chat built is in room.spec now (export_spec) and the
                 # turn is in room.chat: both are kept, so a restart has them.
@@ -2873,6 +2898,12 @@ def player_arrival(app, opened):
     opened['arrival']={'eye_m':[x,y+1.62,z],'look_m':[x+2,y,z]}
 
 
+def personal_action_chat(app, player_id):
+    if not getattr(app, 'world_id', None):return app.room.chat[-20:]
+    with player_world.lock_of(app):
+        return deepcopy(player_world.records(app).get(player_id, {}).get('action_chat', [])[-20:])
+
+
 def _rejoin(app,scene,player_id=""):
     """The room this server is running, for a page that opens it again: every
     body where it is and as it is now -- moved, broken, dented -- the hand still
@@ -2903,7 +2934,7 @@ def _rejoin(app,scene,player_id=""):
     opened["scenes"]=sorted(world_room.SCENES)
     # Not read back from disk: this server holds it (kept means that).
     opened["kept"]=False
-    opened["chat"]=room.chat[-20:]
+    opened["chat"]=personal_action_chat(app, player_id)
     # And what every machine is doing and carrying, and where its mouths are.
     # NOT brains.opened(), which would throw away the routines this room has
     # been running -- only what they say. A page that reloaded onto a room

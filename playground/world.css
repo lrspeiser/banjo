@@ -817,3 +817,5 @@ body.moving-a-thing #panel .workshop-entry { border-style: dashed; }
 #cursor-mode[aria-pressed="true"] { border-color:#a7d7ed; color:#d7f2ff; }
 .pk-input-guidance { display: grid; gap: .5rem; margin: .4rem 0 .6rem; }
 .pk-input-guidance a { width: fit-content; padding: .4rem .7rem; border: 1px solid var(--edge); border-radius: .3rem; }
+#talk .chat-audience:not([hidden]) { display:flex; align-items:center; gap:8px; padding:8px 0; font-size:12px; color:var(--dim); }
+#chat-recipient { flex:1; min-width:0; background:#0a1013; color:var(--ink); border:1px solid var(--edge); border-radius:6px; padding:7px; font:inherit; }
