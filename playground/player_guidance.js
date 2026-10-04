@@ -93,13 +93,21 @@ export function renderPlayerGuidance(root,data,api) {
         if(!['ready','quiet','dismissed'].includes(advice.status))return;
         if(turn.timer) {clearTimeout(turn.timer);turn.timer=null;}
         const paint=JSON.stringify([advice.key,advice.status,advice.text,advice.enabled]);
+        // An explicit Ask AI / F1 is also a request to hear the answer when
+        // Banjo Voice is present. Dispatch before the paint dedupe so pressing
+        // F1 again can replay an already-visible explanation without a new tip.
+        if(body.event==='asked' && advice.status==='ready' && advice.text)
+          dispatchEvent(new CustomEvent('banjo-voice-speak',{detail:{text:advice.text,source:'f1',key:advice.key}}));
         if(turn.paint===paint)return;
         turn.paint=paint;area.replaceChildren();
         if(advice.status==='ready') {
           const label=document.createElement('small');label.textContent='AI Guide';area.append(label);
           const tip=document.createElement('p');tip.textContent=advice.text;area.append(tip);
+          const speak=document.createElement('button');speak.type='button';speak.className='ws-action';speak.textContent='Speak';
+          speak.onclick=()=>dispatchEvent(new CustomEvent('banjo-voice-speak',
+            {detail:{text:advice.text,source:'guide-button',key:advice.key}}));
           const hide=document.createElement('button');hide.type='button';hide.className='ws-action';hide.textContent='Hide tip';
-          hide.onclick=()=>read({action:'dismiss',key:advice.key});area.append(hide);
+          hide.onclick=()=>read({action:'dismiss',key:advice.key});area.append(speak,hide);
         }
         if(advice.status==='ready' || advice.status==='quiet') {
           const quiet=document.createElement('button');quiet.type='button';quiet.className='ws-action';
