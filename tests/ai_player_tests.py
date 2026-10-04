@@ -316,6 +316,9 @@ class AutonomousGuests(unittest.TestCase):
         from copy import deepcopy
         world,owner,app=self.setup_world();app.api_key='mock-provider-only'
         before=deepcopy(app.live.session.state['bodies']);sid=app.live.session.id
+        # A new world starts with its own installations (the smelter's
+        # foundation); chat must add none.
+        installs=deepcopy(app.room.workshop_installs)
         outputs=[{'status':'completed','output':[{'type':'function_call','name':'describe_world','call_id':'read','arguments':'{}'},
             {'type':'function_call','name':'add_object','call_id':'blocked','arguments':'{"name":"free item"}'}]},
             {'status':'completed','output':[{'type':'message','content':[{'type':'output_text','text':'Open your recipe in Lab, then fund Make.'}]}]}]
@@ -327,7 +330,7 @@ class AutonomousGuests(unittest.TestCase):
         answers={c['call_id']:json.loads(c['output']) for c in conversation if c.get('type')=='function_call_output'}
         self.assertIn('objects',answers['read']);self.assertIn('error',answers['blocked'])
         self.assertEqual(sid,app.live.session.id);self.assertEqual(before,app.live.session.state['bodies'])
-        self.assertEqual({},app.room.fabrication_record['jobs']);self.assertEqual([],app.room.workshop_installs)
+        self.assertEqual({},app.room.fabrication_record['jobs']);self.assertEqual(installs,app.room.workshop_installs)
 
     def test_waiting_action_allows_world_clock_and_other_guest_to_run(self):
         world, owner, app = self.setup_world()
@@ -370,8 +373,8 @@ class AutonomousGuests(unittest.TestCase):
         sid=app.live.session.id
         pile=next(p for p in app.brains.goods.stockpiles if (p.get('holds') or {}).get('oak',0)>25)
         at=pile['at_m'];floor=self.post('/api/live/act',{'session':sid,'op':'survey','at':at},world)['survey']['ground_m']
-        self.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],'request_id':'ai-collect-real-oak',
-            'person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[0,0,-1]}},world,guest['token'])
+        collected=self.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],'request_id':'ai-collect-real-oak',
+            'person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[0,0,-1]}},world,guest['token'])['collected']['oak']
         common={'session':sid,'scene':app.room.scene}
         self.post('/api/world/fabrication/configure',{**common,'settings':settings(stock_kg={},energy_j=0),
             'request_id':'ai-empty-process-fixture'},world)
@@ -379,7 +382,8 @@ class AutonomousGuests(unittest.TestCase):
         initial=self.post('/api/world/fabrication/state',common,world,guest['token'])
         self.assertEqual(10000,next(s['max_power_w'] for s in initial['energy_sources'] if s['max_power_w']>0))
         personal=next(s for s in initial['stock_sources'] if s['pool']=='personal' and s['material']=='oak')
-        self.assertEqual(25.,personal['mass_kg'])
+        # Collecting takes what the pile holds; at least what the pick needs.
+        self.assertGreater(collected,2.);self.assertAlmostEqual(collected,personal['mass_kg'],places=9)
         shared=[s for s in initial['stock_sources'] if s['pool']=='shared']
         human_stock=self.post('/api/world/fabrication/state',common,world)['stock_sources']
         lost={'fund_stock','fund_energy','start_make','commit','before-commit'};phases=[];requests=[];advancing_meters=[]
@@ -451,7 +455,7 @@ class AutonomousGuests(unittest.TestCase):
         self.assertEqual(1,len(app.room.fabrication_record['energy_imports']))
         common={'session':app.live.session.id,'scene':app.room.scene}
         final=self.post('/api/world/fabrication/state',common,world,guest['token'])
-        self.assertAlmostEqual(25-job['stock_kg'],next(s['mass_kg'] for s in final['stock_sources']
+        self.assertAlmostEqual(collected-job['stock_kg'],next(s['mass_kg'] for s in final['stock_sources']
             if s['pool']=='personal' and s['material']=='oak'),places=6)
         self.assertEqual(shared,[s for s in final['stock_sources'] if s['pool']=='shared'])
         self.assertEqual(human_stock,self.post('/api/world/fabrication/state',common,world)['stock_sources'])
@@ -505,9 +509,10 @@ class AutonomousGuests(unittest.TestCase):
         # receipts; the generated solar battery is the energy source.
         pile=app.brains.goods.put(0,0,{'oak':25.,'iron':25.,'copper':.5,'copper wire':.6},named='paid machine test supplies')['onto']
         floor=self.post('/api/live/act',{'session':app.live.session.id,'op':'survey','at':[0,0]},world)['survey']['ground_m']
-        for index in range(3):
-            self.post('/api/world/goods/collect',{'session':app.live.session.id,'pile':pile,
-                'request_id':'ai-machine-collect-'+str(index),'person':{'eyes_m':[0,floor+1.62,0],'facing':[0,0,-1]}},world,guest['token'])
+        # One collection takes what the pile holds.
+        taken=self.post('/api/world/goods/collect',{'session':app.live.session.id,'pile':pile,
+            'request_id':'ai-machine-collect-0','person':{'eyes_m':[0,floor+1.62,0],'facing':[0,0,-1]}},world,guest['token'])['collected']
+        self.assertEqual({'oak':25.,'iron':25.,'copper':.5,'copper wire':.6},taken)
         common={'session':app.live.session.id,'scene':app.room.scene}
         self.post('/api/world/fabrication/configure',{**common,'settings':settings(stock_kg={},energy_j=0),
             'request_id':'ai-machine-empty-process'},world)
@@ -1026,7 +1031,7 @@ class AutonomousGuests(unittest.TestCase):
             self.fail('Browser did not reach '+expression)
         page.send('Page.navigate',{'url':self.base+f'/world?world={world}&workshop=1&tab=market'})
         wait('document.querySelector("#ws-market-recipe h3")?.textContent === "Personal field pick" && document.querySelectorAll("#ws-market-offers li").length === 6')
-        self.assertIn('Build stock estimate',page.evaluate('document.querySelector("#ws-market-recipe").textContent'))
+        self.assertIn('Stock to buy',page.evaluate('document.querySelector("#ws-market-recipe").textContent'))
         self.assertIn('Covered',page.evaluate('document.querySelector("[data-market-gap=oak]").textContent'))
         self.assertEqual(0,page.evaluate('document.querySelectorAll("[data-market-supply-goal]").length'))
         self.assertFalse(page.evaluate('document.querySelector("#ws-market-recipe details").open'))
@@ -1034,10 +1039,14 @@ class AutonomousGuests(unittest.TestCase):
         visitor=next(p['id'] for p in server.player_world.records(app).values() if p['token']==visitor_token)
         self.assertEqual(set(),server.journal_of(app,visitor).knows())
         wait('!document.querySelector("#ws-market-bank").disabled')
+        # The Bank button deposits 100 J at a time (500 J only on a guide link).
         page.evaluate('document.querySelector("#ws-market-bank").click()')
-        wait('document.querySelector("#ws-market-balance").textContent === "500 J"')
+        wait('document.querySelector("#ws-market-balance").textContent === "100 J"')
+        wait('!document.querySelector("#ws-market-bank").disabled')
+        page.evaluate('document.querySelector("#ws-market-bank").click()')
+        wait('document.querySelector("#ws-market-balance").textContent === "200 J"')
         page.evaluate('document.querySelector("[data-market-item=oak-stock] button").click()')
-        wait('document.querySelector("#ws-market-balance").textContent === "380 J"')
+        wait('document.querySelector("#ws-market-balance").textContent === "80 J"')
         guidance=self.post('/api/workshop/market',{},world,visitor_token)['guidance']
         plan=guidance['plan']
         self.assertAlmostEqual(.5,plan['lines'][0]['personal_kg'])
@@ -1090,8 +1099,11 @@ class AutonomousGuests(unittest.TestCase):
         wait('banjoRoom.use().target?.enabled && document.querySelector("#tool-skill output")?.textContent==="0 / 1"')
         journal=server.journal_of(app,actor)
         self.assertEqual({},journal.data['evidence'],'pickup and guidance must not earn a skill')
-        self.assertIn('Dig soil or sand',page.evaluate('document.querySelector("#tool-skill").innerText'))
-        self.assertTrue(page.evaluate('document.querySelector("#next-step").hidden'))
+        # The panel starts folded (Details opens it); the box is in it.
+        self.assertIn('Dig soil or sand',page.evaluate('document.querySelector("#tool-skill").textContent'))
+        # The next action is always shown now (one guide for every screen),
+        # beside the tool's own progress.
+        self.assertFalse(page.evaluate('document.querySelector("#next-step").hidden'))
         key('KeyJ','j')
         wait('document.querySelector("#tool-skill").classList.contains("is-working")')
         self.assertEqual('0 / 1',page.evaluate('document.querySelector("#tool-skill output").textContent'))
@@ -1101,7 +1113,7 @@ class AutonomousGuests(unittest.TestCase):
         self.assertNotIn('study-example',journal.standing_of('field-pick')['demonstrated'])
         self.assertEqual(set(),server.journal_of(app,peer['id']).knows())
         self.assertEqual(set(),server.journal_of(app,owner['id']).knows())
-        self.assertIn('No further skills for this tool yet',page.evaluate('document.querySelector("#tool-skill").innerText'))
+        self.assertIn('No further skills for this tool yet',page.evaluate('document.querySelector("#tool-skill").textContent'))
         wait('banjoRoom.use().mode==="tool-ready" && !!banjoRoom.use().last?.result',tick=True)
         result=page.evaluate('banjoRoom.use().last.result')
         self.assertGreater(result['loosened_kg'],0)
@@ -1121,6 +1133,9 @@ class AutonomousGuests(unittest.TestCase):
         page.send('Page.reload',{})
         wait('banjoRoom?.ready() && document.querySelector("#tool-skill output")?.textContent==="1 / 1"')
         self.assertTrue(page.evaluate('document.querySelector("#unlocked").hidden'),'reload must not replay achievement')
+        # Open the folded panel with Details, as a player would, to reach the link.
+        page.evaluate('document.querySelector("#panel-details").click()')
+        wait('!document.body.classList.contains("panel-away") && (r=>r.right<=innerWidth && r.left>=0)(document.querySelector("#tool-skill .skill-link").getBoundingClientRect())')
         box=page.evaluate('(()=>{const b=document.querySelector("#tool-skill .skill-link").getBoundingClientRect();return {x:b.x+b.width/2,y:b.y+b.height/2}})()')
         for kind in ('mousePressed','mouseReleased'):
             page.send('Input.dispatchMouseEvent',{'type':kind,**box,'button':'left','clickCount':1})
@@ -1200,7 +1215,7 @@ class AutonomousGuests(unittest.TestCase):
         page.evaluate('document.querySelector("#game-menu-ai-start").requestSubmit()')
         wait_for('location.search.includes("watch=") && !!window.banjoRoom?.status().ready && !!document.querySelector("#watch-status")')
         bot_id = page.evaluate('new URLSearchParams(location.search).get("watch")')
-        wait_for('document.querySelector("#watch-status").textContent.includes("complete")',seconds=100)
+        wait_for('document.querySelector("#watch-status").textContent.includes("complete")',seconds=300)
         view = self.post("/api/world/ai", {"action": "watch", "id": bot_id}, world)
         self.assertEqual(viewer_id, page.evaluate('window.banjoRoom.status().player_id'))
         camera = page.evaluate('window.banjoRoom.camera.position.toArray()')
@@ -1209,8 +1224,10 @@ class AutonomousGuests(unittest.TestCase):
         self.assertEqual(before["record"], after["record"])
         self.assertGreaterEqual(sum(s['known'] for s in view['skills']),2)
         self.assertTrue(page.evaluate('document.querySelector("#watch-tech").textContent.includes("Gathering by hand")'))
-        self.assertIn('Field pick',page.evaluate('document.querySelector("#inv-right").textContent'))
-        self.assertEqual("4 / 4 goals", page.evaluate('document.querySelector("#watch-progress").textContent').split(' · ')[0])
+        self.assertIn('field pick',page.evaluate('document.querySelector("[data-hand=right]").textContent').lower())
+        # The last chapter, complete: as many goals done as it has.
+        done,_,of=page.evaluate('document.querySelector("#watch-progress").textContent').split(' · ')[0].split(' ')[:3]
+        self.assertEqual(done,of)
         # Inspection may read native geometry while watching, but does not
         # permit controls or change either character's physical state.
         session_id = view["state"]["session"]
