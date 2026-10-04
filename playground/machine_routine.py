@@ -391,9 +391,13 @@ class Routine:
         return self.frame.current()
 
     def resume(self) -> None:
+        # Told to go on is an explicit retry: its spent tries start afresh.
+        # Keeping them, the step it had given up on gave up again at once and
+        # the machine sat still after "go on".
         self.paused_by = None
         self.frame.issued = None
         self.frame.began_t = None
+        self.frame.tries = 0
 
     def interrupt(self, name: str, steps: list[dict[str, Any]], then: str = "resume",
                   order_id: int | None = None) -> Frame:

@@ -245,7 +245,9 @@ def go_to(ctx: senses.Context, call: Call) -> dict[str, Any]:
         stand = 0.0
     aim = _short_of(ctx, point, stand)
     navigation=None
-    if call.by=='routine' and ctx.program.get('kind')=='roam' and ctx.bodies:
+    # A person's 'come here' is planned as the routine's own trips are: driven
+    # straight at them, the rover went down a river bank into 0.23 m of water.
+    if call.by in ('routine','talk') and ctx.program.get('kind')=='roam' and ctx.bodies:
         import machine_navigation
         arrival=(max(0.,stand-.6),max(0.,stand-.3)) if stand>=1.5 else (0.,NEAR_M)
         pile=ctx.goods.by_name(str(call.args.get('place'))) if ctx.goods and call.args.get('place') else None

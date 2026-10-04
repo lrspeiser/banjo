@@ -55,6 +55,21 @@ def bounds(body, cell_m):
             [max(p[a] for p in points) for a in range(3)])
 
 
+def part_bounds(body, cell_m):
+    """One box per rigid part, or the whole body's for anything else.
+
+    A solar farm is a deck on four legs: as one box it filled the open space
+    under its deck, and a rover stopped beside it could never plan a route
+    away. Its parts are its legs, its deck and its panels, each where it is."""
+    parts=body.get('rigid_parts_local')
+    if not parts:return [bounds(body,cell_m)]
+    out=[]
+    for part in parts:
+        points=shape_points({**body,'rigid_parts_local':[part]},cell_m)
+        out.append(([min(p[a] for p in points) for a in range(3)],[max(p[a] for p in points) for a in range(3)]))
+    return out
+
+
 def waypoint(ctx, target, arrival=(0.,0.)):
     """One safe visible waypoint, or an explicit blocked result. No global map."""
     at=ctx.at();mine=set(ctx.program.get('parts') or [])|{ctx.program.get('body')}
@@ -76,12 +91,14 @@ def waypoint(ctx, target, arrival=(0.,0.)):
     rear_offsets=[(s['at_m'][0]-at[0],s['at_m'][2]-at[1],float(s['depth_m'])) for s in rear]
     initial_heading=math.radians(ctx.heading())
     obstacles=[]
+    top=max(p[1] for p in own)
     for b in ctx.bodies or []:
         if b.get('name') in mine:continue
-        lo,hi=bounds(b,ctx.cell_m)
-        if hi[1]<floor-.1:continue  # buried geometry does not obstruct this route
-        if math.hypot(float(b['position_m'][0])-at[0],float(b['position_m'][2])-at[1])>LOOK_M+max(hi[0]-lo[0],hi[2]-lo[2]):continue
-        obstacles.append((lo,hi))
+        for lo,hi in part_bounds(b,ctx.cell_m):
+            if hi[1]<floor-.1:continue  # buried geometry does not obstruct this route
+            if lo[1]>top+.1:continue    # a deck it passes under does not either
+            if math.hypot((lo[0]+hi[0])/2-at[0],(lo[2]+hi[2])/2-at[1])>LOOK_M+max(hi[0]-lo[0],hi[2]-lo[2]):continue
+            obstacles.append((lo,hi,b.get('name')))
     queries=0;surveyed={};valid={};rejections={}
     def rejected(kind,point,details=None):
         info=rejections.setdefault(kind,{'count':0,'nearest':None,'distance':math.inf})
@@ -116,10 +133,15 @@ def waypoint(ctx, target, arrival=(0.,0.)):
                 # region itself. Taper that allowance at a close destination;
                 # the actual occupied radius and native hazard guards remain.
                 pad=min(pad,STOP_MARGIN_M*max(0.,math.hypot(x-target[0],z-target[1])-arrival[1])/1.5)
-            for lo,hi in obstacles:
+            for lo,hi,name in obstacles:
                 dx=max(lo[0]-x,0,x-hi[0]);dz=max(lo[2]-z,0,z-hi[2])
+                # Already within a part's margin where it stands (beside a leg
+                # of the solar farm), it may still move AWAY from that part:
+                # refusing every node left it parked there for good.
+                ox=max(lo[0]-at[0],0,at[0]-hi[0]);oz=max(lo[2]-at[1],0,at[1]-hi[2])
+                if math.hypot(ox,oz)<radius and (node==(0,0) or math.hypot(dx,dz)>math.hypot(ox,oz)+1e-6):continue
                 if math.hypot(dx,dz)<radius+pad:
-                    rejected('geometry',(x,z),{'bounds_m':[lo,hi]});ok=False;break
+                    rejected('geometry',(x,z),{'bounds_m':[lo,hi],'body':name});ok=False;break
         if ok:
             reach=radius/CELL_M
             footprint=((0,0),(-reach,0),(reach,0),(0,-reach),(0,reach))
@@ -180,20 +202,26 @@ def waypoint(ctx, target, arrival=(0.,0.)):
         # Already in the receiving/work region: only ask its brakes to hold.
         # Do not require a new route over terrain it need not traverse.
         return {'target':list(at),'final':True,'radius_m':radius,'surveys':queries,'path':[list(at)]}
-    if not clear(start):return {'blocked':'there is no clearance around its current assembled footprint',
-                               'rejections':rejections,'radius_m':radius,'surveys':queries}
     # Reserve a checked short retreat before a failed search consumes its
     # observation budget. No blind reverse: require actual rear probes and
     # sample a metre including braking room; request only half that distance.
+    # Stopped where its own footprint is not clear (at a river's margin, say),
+    # only the cells it would back into are asked: requiring its present cell
+    # too left it there for good, refusing every route, even after 'go on'.
+    start_clear=clear(start)
     retreat=None
     if len(rear)>=2 and not any(s.get('sees') for s in rear):
         dx,dz=-math.sin(initial_heading),-math.cos(initial_heading)
         if all(clear((dx*k*.25/CELL_M,dz*k*.25/CELL_M)) and
                clear_pose((dx*k*.25/CELL_M,dz*k*.25/CELL_M),initial_heading,reverse=True)
-               for k in range(5)):
+               for k in range(0 if start_clear else 1,5)):
             retreat={'target':[at[0]+dx*.5,at[1]+dz*.5],'from_m':list(at),
                      'reverse':True,'travel_m':.5,'heading_deg':ctx.heading(),
                      'final':False,'radius_m':radius}
+    if not start_clear:
+        if retreat:return dict(retreat,surveys=queries,escaping=True)
+        return {'blocked':'there is no clearance around its current assembled footprint'+(' ('+', '.join(sorted(k+(': '+str((v.get('details') or {}).get('body')) if (v.get('details') or {}).get('body') else '') for k,v in rejections.items()))+')' if rejections else ''),
+                'rejections':rejections,'radius_m':radius,'surveys':queries}
     # Heading is part of a route state: arrival from one direction can be safe
     # while a turn at the same location would sweep a probe over a drop.
     directions=[(dx,dz,math.atan2(dx,dz)) for dx,dz in product((-1,0,1),repeat=2) if dx or dz]
