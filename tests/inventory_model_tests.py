@@ -15,6 +15,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))  # the room store's market reads mcp/ (the price list)
 sys.path.insert(0, str(ROOT / "playground"))
 
 import inventory  # noqa: E402
