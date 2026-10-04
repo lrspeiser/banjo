@@ -86,8 +86,8 @@ followed the body with no page errors.
 - **Cargo pulls back on the body.** What the hand pushes on a thing it holds,
   reversed at the grip, acts on the body, and a held load presses on its feet
   for traction and balance. In zero gravity with nothing to stand on, body and
-  crate together keep their momentum to within 4% (the hand's bounded spring
-  is not exactly symmetric in one step). A thing carried whole, rather than
+  crate together keep their momentum to within about 4%; where the 4% goes is
+  not yet found (the test prints it). A thing carried whole, rather than
   held in the hand, does not yet push back.
 - **Bodies survive world edits.** An install rebuilds the room from its
   snapshot, and a restart reopens the saved world; the engine carries native
