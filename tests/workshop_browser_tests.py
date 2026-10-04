@@ -70,6 +70,13 @@ class WorkshopBrowserRegression(unittest.TestCase):
 
     @classmethod
     def stop_server(cls):
+        # The server's live runners (one per world a plain /world link
+        # generates) are its children. Ending only the server leaves them to
+        # notice the closed pipe a moment later, still holding their run
+        # folder when the temporary directory is removed. Stop the tree, as
+        # world_page_journey_tests does.
+        if os.name == "nt" and cls.server.poll() is None:
+            subprocess.run(["taskkill", "/PID", str(cls.server.pid), "/T", "/F"], capture_output=True)
         cls.server.terminate()
         try:
             cls.server.wait(timeout=5)
@@ -470,7 +477,11 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.wait("document.querySelector('#workshop-stage').dataset.showing === 'bearing-mount-11'")
         self.assert_geometry_is_visible()
         self.page.send("Emulation.setDeviceMetricsOverride",{"width":640,"height":900,"deviceScaleFactor":1,"mobile":False})
-        self.wait("document.querySelector('#workshop-stage').getBoundingClientRect().width < 650")
+        # Below 901 px the chat rail is an overlay that starts closed; a
+        # window narrowed into that layout closes it rather than leave it over
+        # the object (it closes when the media query reports the change).
+        self.wait("document.querySelector('#workshop-stage').getBoundingClientRect().width < 650"
+                  " && getComputedStyle(document.querySelector('.ws-left')).visibility === 'hidden'")
         self.pointer_click('#ws-fit-view')
         self.assert_geometry_is_visible()
 
@@ -577,7 +588,9 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.assertEqual(["World", "Inventory", "Lab", "Skills", "Recipes", "Market", "Goals"],
                          self.js("[...document.querySelectorAll('.game-tabs [data-screen]')].map(e=>e.textContent)"))
         self.assertTrue(self.js("document.querySelector('.ws-left').getBoundingClientRect().left >= document.querySelector('#workshop-stage').getBoundingClientRect().right - 1"))
-        self.assertEqual(["Chat"],
+        # The rail holds, above the chat, the open design's way to the world
+        # (89cbb019) and its parts (2ce0bb29); nothing else is added to it.
+        self.assertEqual(["Design → World", "Parts", "Chat"],
                          self.js("[...document.querySelectorAll('.ws-left h2')].map(h=>h.textContent)"))
         self.assertTrue(self.js("document.querySelector('#ws-chat-log').getBoundingClientRect().height>200"),
                         "the conversation gets the height, not a 340 px box")
@@ -590,7 +603,9 @@ class WorkshopBrowserRegression(unittest.TestCase):
         # takes under the tabs are the views.
         bar = self.js("[...document.querySelector('.ws-viewbar').children].filter(e=>!e.hidden)"
                       ".map(e=>e.id||e.tagName.toLowerCase())")
-        self.assertEqual(["span", "ws-make-status", "ws-check", "ws-make", "a", "ws-clear-lab"], bar)
+        # Plus "Save to Recipes" (6098387c): keeping the design is the other
+        # act that leaves the bench.
+        self.assertEqual(["span", "ws-make-status", "ws-check", "ws-make", "ws-quick-save", "a", "ws-clear-lab"], bar)
         self.assertEqual([], self.js("[...document.querySelectorAll('.ws-viewbar:not(.ws-viewbar-extra)"
                                      " > button[data-view]')].filter(b=>!b.hidden).map(b=>b.textContent)"))
         # The picker and the points of view still exist, in the holder, because
@@ -889,7 +904,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
             return response;
           };
         """})
-        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&tab=lab&design={self.fixture_id}&history-test=1"})
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?scene=world&workshop=1&tab=lab&design={self.fixture_id}&history-test=1"})
         self.wait("typeof window.__releaseHistory==='function' && document.querySelector('#ws-test-catalog button[data-value=try_in_a_room]')")
         self.click('[data-mode="test"]')
         self.click('#ws-test-catalog button[data-value="try_in_a_room"]')
@@ -917,7 +932,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
             return response;
           };
         """})
-        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&tab=lab&design={self.fixture_id}&dirty-editor-test=1"})
+        self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?scene=world&workshop=1&tab=lab&design={self.fixture_id}&dirty-editor-test=1"})
         self.wait("typeof window.__releaseHistory==='function' && document.querySelector('#ws-parts button')")
         self.click('[data-mode="build"]')
         self.js("[...document.querySelectorAll('#ws-parts button')].find(b=>b.textContent==='leg-1').click()")
@@ -1017,7 +1032,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
             'parameters':{'top_thickness_m':.005,'leg_section_m':.015},
             'save_design':True,'label':'Thin table for live world'})
         self.assertEqual(200,seed['status'],seed)
-        self.page.send('Page.navigate',{'url':f'http://127.0.0.1:{self.port}/world?workshop=1&design=browser-live-thin'})
+        self.page.send('Page.navigate',{'url':f'http://127.0.0.1:{self.port}/world?scene=world&workshop=1&design=browser-live-thin'})
         self.wait("document.querySelector('#ws-buildability-summary')?.textContent.includes('Not buildable')")
         opened=self.install_api('/api/world/open',{'scene':'yard','fresh':True})
         self.assertEqual(200,opened['status'],opened)
@@ -1092,7 +1107,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
             'parameters':{'top_thickness_m':.005,'leg_section_m':.015},
             'save_design':True, 'label':'Browser thin table'})
         self.assertEqual(200, seed['status'], seed)
-        self.page.send("Page.navigate", {"url":f"http://127.0.0.1:{self.port}/world?workshop=1&design=browser-thin-rigid"})
+        self.page.send("Page.navigate", {"url":f"http://127.0.0.1:{self.port}/world?scene=world&workshop=1&design=browser-thin-rigid"})
         self.wait("document.querySelector('#ws-buildability-summary')?.textContent.includes('Not buildable')")
         self.assertIn('top',self.js("document.querySelector('#ws-buildability-parts').textContent"))
         self.capture_evidence('thin-grid-warning.png')
@@ -1550,6 +1565,9 @@ class WorkshopBrowserRegression(unittest.TestCase):
             cls: li.className,
             missing: li.querySelector('.ws-missing')?.textContent || '',
             greyed: li.querySelector('.ws-recipe-acts button')?.disabled,
+            makeSays: li.querySelector('.ws-recipe-acts button')?.title || '',
+            paid: li.innerText.includes('Reviewed workbench supplies'),
+            fits: (li.querySelector('.ws-recipe-readiness')?.textContent || '') === 'ShapeFits',
             lines: li.querySelectorAll('.ws-need').length})))"""))
         self.assertTrue(rows, "no recipes at all")
         short = [r for r in rows if r["cls"] == "short"]
@@ -1560,7 +1578,21 @@ class WorkshopBrowserRegression(unittest.TestCase):
             # A percentage, not just "short".
             self.assertRegex(row["missing"], r"\d+% missing",
                              f"a short recipe does not say how much: {row['missing']!r}")
-            self.assertTrue(row["greyed"], "a short recipe's Make is not greyed out")
+            # Where the world has a paid workbench (ed9e0ebd), Make on a short
+            # recipe that fits opens the review of material, energy and work
+            # that buys what is missing, so it is not greyed -- but it says
+            # that is what it does. Without one, Make takes from your own
+            # stock and stays greyed until you have it all.
+            if not row["fits"]:
+                self.assertTrue(row["greyed"], "a recipe whose shape does not fit can be made")
+            elif row["paid"]:
+                self.assertFalse(row["greyed"], "a short recipe cannot reach the paid workbench review")
+                self.assertEqual("Review material, energy and work", row["makeSays"])
+            else:
+                self.assertTrue(row["greyed"], "a short recipe's Make is not greyed out")
+                self.assertRegex(row["makeSays"], r"\d+% materials missing")
+        self.assertTrue(any(r["fits"] for r in short),
+                        "no short recipe fits, so what Make does about a shortfall is never checked")
         for row in enough:
             self.assertFalse(row["greyed"], "a recipe you can make has its Make greyed out")
             self.assertEqual("", row["missing"], "a recipe you can make says something is missing")
@@ -1578,8 +1610,10 @@ class WorkshopBrowserRegression(unittest.TestCase):
             fit:li.querySelector('.ws-recipe-readiness')?.textContent || '',
             disabled:li.querySelector('.ws-recipe-acts button')?.disabled})))"""))
         by_name = {row["name"]: row for row in rows}
-        self.assertIn("Ready", by_name["Stool"]["fit"])
-        blocked = [row for row in rows if row["fit"] and row["fit"] != "BuildReady"]
+        # The readiness line is "Shape: Fits" since 0c18d185 (it was "Build:
+        # Ready"); it says whether the drawn shape fits both grids.
+        self.assertEqual("ShapeFits", by_name["Stool"]["fit"])
+        blocked = [row for row in rows if row["fit"] and row["fit"] != "ShapeFits"]
         self.assertTrue(blocked, "the catalog hid its unready recipes")
         self.assertTrue(all(row["disabled"] for row in blocked), blocked)
 
@@ -1639,9 +1673,14 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.wait("document.querySelector('.ws-tech.on')")
         said = self.js("document.getElementById('ws-tree-about').innerText")
         self.assertIn("Smelting copper", said)
-        # What has to be done, in the registry's own words.
-        self.assertIn("Watch a smelter work copper ore into copper", said,
+        # What has to be done. The registry's sentence ("Watch a smelter work
+        # copper ore into copper, once") is held in workshop_tabs_tests; since
+        # 0eeb8588 a route this world can satisfy is said as the action to
+        # take, with a way to get there. A new game's world has a copper
+        # smelter, so the card says what to do at it and links to it.
+        self.assertIn("Turn on; stay nearby and face it until a batch is saved.", said,
                       f"the card does not say what earns it: {said!r}")
+        self.assertIn("Go to machine", said, f"the card does not say where to earn it: {said!r}")
         # What it makes, and what comes after it.
         self.assertIn("Copper smelter", said, f"the card does not say what it makes: {said!r}")
         self.assertIn("Drawing wire", said, f"the card does not say what is next: {said!r}")
