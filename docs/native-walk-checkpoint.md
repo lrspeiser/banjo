@@ -85,10 +85,13 @@ followed the body with no page errors.
   up: a step taller than the rounded edge stops it. There are no legs.
 - **Cargo pulls back on the body.** What the hand pushes on a thing it holds,
   reversed at the grip, acts on the body, and a held load presses on its feet
-  for traction and balance. In zero gravity with nothing to stand on, body and
-  crate together keep their momentum to within about 4%; where the 4% goes is
-  not yet found (the test prints it). A thing carried whole, rather than
-  held in the hand, does not yet push back.
+  for traction and balance. A thing carried whole (a crate with a lid fixed to
+  it) pulls back the same way, through its joints. In zero gravity and clear
+  of the floor, body and load keep their momentum to 0.34% (one crate) and
+  0.32% (crate and lid): the crates' declared 0.02/s velocity damping, which
+  the body does not have. The earlier 4% was the floor: standing on it, the
+  reaction at the grip tipped the body onto the rim of its foot and the floor
+  took part of the push.
 - **Bodies survive world edits.** An install rebuilds the room from its
   snapshot, and a restart reopens the saved world; the engine carries native
   players in both. The body is within 1 cm of where it stood after an install,
@@ -101,7 +104,7 @@ followed the body with no page errors.
 
 ```powershell
 cmake --build build/walk --config Release --target banjo_valley_live_tests banjo_live_world_run
-build/walk/Release/banjo_valley_live_tests.exe        # 30/30
+build/walk/Release/banjo_valley_live_tests.exe        # 31/31
 $env:BANJO_LIVE_ENGINE="build/walk/Release/banjo_live_world_run.exe"; python tests/native_walk_tests.py
 ```
 
