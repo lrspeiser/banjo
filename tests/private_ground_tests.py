@@ -452,6 +452,12 @@ class PrivateGround(unittest.TestCase):
             wait('window.banjoRoom?.ready()')
             p.evaluate('banjoRoom.standAt('+','.join(map(str,person['eyes_m']))+');banjoRoom.pick('+json.dumps(program['body'])+');')
             wait('document.querySelector("[data-process-recipe] button")')
+            # The picked card lives in the right rail, which starts folded
+            # away (dcd94bae); Details in the bottom bar opens it (68bad3ca).
+            if p.evaluate('document.body.classList.contains("panel-away")'):click('#panel-details')
+            wait('!document.body.classList.contains("panel-away")')
+            wait('(()=>{const b=document.querySelector("[data-process-recipe] button");b.scrollIntoView({block:"center"});'
+                 'const r=b.getBoundingClientRect(),e=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return !!e && b.contains(e)})()')
         p.send('Page.navigate',{'url':self.base+f'/world?world={world}&hold=1'})
         select_machine();click('[data-process-recipe] button')
         wait('document.querySelector("[data-process-recipe] select")')
@@ -674,7 +680,10 @@ class PrivateGround(unittest.TestCase):
         self.post('/api/live/act',{'session':sid,'op':'dig','from':[-1,0],'to':[-1,0],
             'width_m':.8,'depth_m':.4},world)
         wait('banjoRoom.world.carriedGround && banjoRoom.world.carriedGround.total_kg===0')
-        self.assertIn('0.0 / 80 kg',p.evaluate('document.querySelector("#world-load-meter").textContent'))
+        # In a world the meter names the dig → pile route instead of a kg
+        # count (5af65746); its full flag still reads this browser's own load.
+        self.assertIn('Raw storage',p.evaluate('document.querySelector("#world-load-meter").textContent'))
+        self.assertEqual(0,p.evaluate('banjoRoom.world.carriedGround.total_kg'))
         self.assertEqual('false',p.evaluate('document.querySelector("#world-load-meter").dataset.full'))
         peer=next(g for g in app.room.player_records.values() if g['id']==browser_id)
         self.post('/api/live/act',{'session':sid,'op':'dig','from':[2,-1],'to':[2,-1],
@@ -690,11 +699,22 @@ class PrivateGround(unittest.TestCase):
         wait('document.querySelector("#ws-inv-ground [data-ground-load]")')
         wait('document.querySelector("#ws-inv-unassigned [data-ground-load]")')
         wait('document.querySelector("#ws-inv-energy .ws-energy-card")')
-        self.assertIn('80 kg',p.evaluate('document.querySelector("#ws-inv-ground").textContent'))
-        self.assertIn('Unassigned',p.evaluate('document.querySelector("#ws-inv-unassigned").textContent'))
-        self.assertIn('Heap → World',p.evaluate('document.querySelector("#ws-inv-ground").textContent'))
+        # The load card became "Material storage" when dug ground moved to
+        # nearby piles (5af65746); this player's own 80 kg is shown per
+        # material, each with its Store action, and adds up to the account.
         loaded=self.post('/api/workshop/inventory',{},world,peer['token'])
         self.assertAlmostEqual(80,loaded['ground_load']['total_kg'],places=5)
+        self.assertIn('Nearby material piles',p.evaluate('document.querySelector("#ws-inv-ground").textContent'))
+        self.assertIn('Unassigned',p.evaluate('document.querySelector("#ws-inv-unassigned").textContent'))
+        shown=p.evaluate('''Object.fromEntries([...document.querySelectorAll("#ws-inv-ground [data-ground-load]")].map(c=>
+          [c.dataset.groundLoad,{kg:Number(c.textContent.match(/([0-9.]+) kg/)[1]),
+           store:!!c.querySelector("[data-ground-action=store_ground]")}]))''')
+        expected={m:loaded['ground_load'][m+'_kg'] for m in ('sand','soil','rock') if loaded['ground_load'][m+'_kg']>.0005}
+        self.assertEqual(set(expected),set(shown))
+        for material,kg in expected.items():
+            self.assertAlmostEqual(kg,shown[material]['kg'],delta=.006)
+            self.assertTrue(shown[material]['store'])
+        self.assertAlmostEqual(80,sum(r['kg'] for r in shown.values()),delta=.02)
         self.assertAlmostEqual(legacy['total_kg'],loaded['unassigned_ground']['total_kg'],places=5)
         p.evaluate('document.querySelector("#ws-inv-unassigned").scrollIntoView({block:"end"})')
         (ROOT/'build/resource-flow/private-ground-inventory.png').write_bytes(

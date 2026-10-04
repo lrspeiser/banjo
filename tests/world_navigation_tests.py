@@ -28,7 +28,9 @@ class Navigation(unittest.TestCase):
         def wait(expr,seconds=25):
             until=time.monotonic()+seconds
             while time.monotonic()<until:
-                if page.evaluate('Boolean('+expr+')'):return
+                try:
+                    if page.evaluate('Boolean('+expr+')'):return
+                except (RuntimeError,TimeoutError):pass   # mid-navigation
                 time.sleep(.04)
             self.fail(expr)
         def key(code,down):
@@ -93,15 +95,28 @@ class Navigation(unittest.TestCase):
         key('Escape',True);key('Escape',False)
         self.assertFalse(page.evaluate('banjoRoom.controls().cursorFree'))
         # Focusing chat also freezes mouse/keyboard navigation.
+        # The chat box lives in the rail and is shown by the bottom bar's
+        # Chat control (dcd94bae). Open it the way a player does, go back to
+        # the world, then focus the visible box: focusing it alone must free
+        # the cursor again.
+        page.evaluate('[...document.querySelectorAll("button")].find(b=>b.textContent==="Chat /").click()')
+        wait('document.querySelector("#ask-text").getBoundingClientRect().width>0')
+        self.assertTrue(page.evaluate('banjoRoom.controls().cursorFree'))
+        click(400,400)
+        self.assertFalse(page.evaluate('banjoRoom.controls().cursorFree'))
+        self.assertNotEqual('ask-text',page.evaluate('document.activeElement?.id'))
         page.evaluate('document.querySelector("#ask-text").focus()')
+        self.assertEqual('ask-text',page.evaluate('document.activeElement?.id'))
         self.assertTrue(page.evaluate('banjoRoom.controls().cursorFree'))
         yaw=page.evaluate('banjoRoom.controls().yaw')
         page.send('Input.dispatchMouseEvent',{'type':'mouseMoved','x':edge,'y':400})
         time.sleep(.25)
         self.assertEqual(yaw,page.evaluate('banjoRoom.controls().yaw'))
         self.assertFalse([e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
-        page.evaluate('localStorage.setItem("banjo.movement","old-walk");location.reload()')
-        wait('window.banjoRoom?.ready()')
+        # Mark this document so the wait below cannot pass on the old page
+        # before the reload has replaced it.
+        page.evaluate('window.beforeReload=true;localStorage.setItem("banjo.movement","old-walk");location.reload()')
+        wait('!window.beforeReload && window.banjoRoom?.ready()')
         self.assertEqual('gravity',page.evaluate('banjoRoom.controls().movementMode'))
         OUT.mkdir(parents=True,exist_ok=True)
         (OUT/'world-navigation.json').write_text(json.dumps({'walk_m_s':rates[0],
