@@ -416,7 +416,7 @@ if(BANJO_BUILD_HEADLESS)
         banjo_enable_warnings(banjo_terrain_tests)
         add_test(NAME banjo_terrain_tests COMMAND banjo_terrain_tests)
     endif()
-    add_library(banjo_environment src/terrain/Environment.cpp)
+    add_library(banjo_environment src/terrain/Environment.cpp src/terrain/StreamedRegions.cpp)
     target_link_libraries(banjo_environment PUBLIC banjo_terrain banjo_water banjo_runtime
                                             PRIVATE nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_environment)
@@ -1169,6 +1169,15 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_valley_live_tests PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
             banjo_enable_warnings(banjo_valley_live_tests)
             add_test(NAME banjo_valley_live_tests COMMAND banjo_valley_live_tests)
+
+            # The ground beyond the valley: regions streamed in as somebody
+            # nears an edge -- a seam with no step, a body walking across it,
+            # digging out there, save and reopen, and what it costs
+            # (docs/streamed-regions.md).
+            add_executable(banjo_streamed_regions_tests tests/streamed_regions_tests.cpp)
+            target_link_libraries(banjo_streamed_regions_tests PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
+            banjo_enable_warnings(banjo_streamed_regions_tests)
+            add_test(NAME banjo_streamed_regions_tests COMMAND banjo_streamed_regions_tests)
 
             # Rolling resistance, M = c N r at every contact of a round body
             # (docs/rolling-resistance.md): the level deceleration 5/7 c g

@@ -133,6 +133,22 @@ struct Landscape {
 };
 
 [[nodiscard]] Landscape generateValley(const ValleyParameters &parameters);
+
+// A region of ground streamed in beside a generated valley as somebody nears
+// its edge (docs/streamed-regions.md). Regions sit on a lattice of the
+// valley's own size -- the valley is region (0, 0) -- and their columns tile
+// the valley's: region (1, 0) starts one cell east of the valley's last
+// column. The ground is one function of world position and the seed: hills
+// of noise taken in world coordinates, eased over kStreamBlendM metres
+// towards the valley's own generated edge, so a region meets the valley and
+// every other region without a step, and is the same whichever order the
+// regions were made in. No erosion, no water, no workings.
+inline constexpr int kStreamVersion = 1;
+inline constexpr double kStreamBlendM = 10.0;
+[[nodiscard]] Landscape streamedRegion(const Landscape &valley, std::uint64_t seed, int rx, int rz);
+// The streamed ground's surface at a point outside the valley, as
+// streamedRegion lays it: for checking a seam against the rule.
+[[nodiscard]] double streamedSurfaceM(const Landscape &valley, std::uint64_t seed, double x, double z);
 // The valley from the cache if it has been made before, and made and saved if
 // not. `directory` empty means BANJO_TERRAIN_CACHE, or the system's temporary
 // directory.

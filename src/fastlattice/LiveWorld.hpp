@@ -2102,6 +2102,17 @@ public:
     // was last asked, for a host that sends a picture of the ground: nothing
     // when nothing changed, and nothing in a world without ground.
     terrain::TerrainField::Rect takeChangedGround();
+    // The ground grows toward every native player, and toward each point
+    // given (a camera), where the scene lets it (terrain.stream): a region is
+    // added beside the ground somebody is on when they come within
+    // Environment::kGrowWithinM of its edge (docs/streamed-regions.md).
+    // Between steps only; what was added is in the environment's
+    // takeAddedRegions().
+    std::vector<terrain::Environment::Grown> growGround(const std::vector<std::pair<double, double>> &also = {});
+    // For a host that draws: the regions added since last asked, and each
+    // region's rectangle of changed points (Environment::takeAddedRegions).
+    std::vector<int> takeAddedRegions();
+    std::vector<std::pair<int, terrain::TerrainField::Rect>> takeChangedRegions();
     // Dig a trench from a to b (x, z), `width_m` wide and `depth_m` below the
     // ground as it stands. Rebuilds exactly the colliders it changed and wakes
     // exactly what they held up, here, between steps.

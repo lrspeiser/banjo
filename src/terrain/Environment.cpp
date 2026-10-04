@@ -131,7 +131,7 @@ std::pair<double, double> pointXZ(const Json &node, const char *key) {
     return {p[0].get<double>(), p[2].get<double>()};
 }
 
-Landscape landscapeFrom(const Json &terrain) {
+Landscape landscapeFrom(const Json &terrain, std::uint64_t *seed = nullptr) {
     const Json generate = terrain.contains("generate") ? terrain.at("generate") : Json("valley");
     std::string kind = "valley";
     Json options = Json::object();
@@ -154,6 +154,7 @@ Landscape landscapeFrom(const Json &terrain) {
         p.cell_m = number(options, "cell_m", p.cell_m, 0.1, 1.0);
         p.discharge_m3_s = number(options, "discharge_m3_s", p.discharge_m3_s, 0.0, 20.0);
         p.erosion_iterations = static_cast<int>(number(options, "erosion_iterations", p.erosion_iterations, 0, 5000));
+        if (seed != nullptr) *seed = p.seed;
         return valley(p);
     }
     SimpleParameters p;
@@ -255,11 +256,12 @@ std::unique_ptr<Environment> Environment::fromScene(const std::string &scene_jso
     const Json water = document.value("water", Json::object());
     if (!terrain.is_object()) throw std::invalid_argument("terrain is an object");
     if (!water.is_object()) throw std::invalid_argument("water is an object");
-    onlyKeys(terrain, {"generate", "edits", "surface"}, "terrain");
+    onlyKeys(terrain, {"generate", "edits", "surface", "stream", "regions"}, "terrain");
     const auto surface=terrain.value("surface",std::string("smooth"));
     if(surface!="smooth" && surface!="columns" && surface!="cuts")throw std::invalid_argument("terrain.surface is smooth, cuts or columns");
     onlyKeys(water, {"discharge_m3_s", "rivers", "state", "watershed"}, "water");
-    Landscape land = landscapeFrom(terrain);
+    std::uint64_t seed = 0;
+    Landscape land = landscapeFrom(terrain, &seed);
     // Regions beyond the edges (docs/watershed.md): the river network -- the
     // basins and junctions declared, and the reaches between them -- and a
     // river's source or mouth the network's water stands beyond, taken out of
@@ -434,6 +436,30 @@ std::unique_ptr<Environment> Environment::fromScene(const std::string &scene_jso
     auto environment = std::make_unique<Environment>(std::move(land));
     environment->terrain_->setColumnSurface(surface=="columns");
     environment->terrain_->setCutSurface(surface=="cuts");
+    environment->seed_ = seed;
+    // Ground streamed in beside the valley (docs/streamed-regions.md): whether
+    // it grows, and the regions it has grown so far -- made again from the
+    // seed before the edits, so an edit out there has its ground to land on.
+    if (terrain.contains("stream")) {
+        if (!terrain.at("stream").is_boolean()) throw std::invalid_argument("terrain.stream is true or false");
+        std::string why;
+        if (terrain.at("stream").get<bool>() && !environment->canStream(&why))
+            throw std::invalid_argument("this ground cannot grow: " + why);
+        environment->setStreaming(terrain.at("stream").get<bool>());
+    }
+    if (terrain.contains("regions")) {
+        const Json &list = terrain.at("regions");
+        if (!list.is_array() || list.size() > static_cast<std::size_t>(kMostRegions))
+            throw std::invalid_argument("terrain.regions is a list of at most " + std::to_string(kMostRegions) +
+                                        " [x, z] places on the lattice");
+        for (const Json &at : list) {
+            if (!at.is_array() || at.size() != 2 || !at[0].is_number_integer() || !at[1].is_number_integer())
+                throw std::invalid_argument("a region is [x, z], two whole numbers");
+            std::string why;
+            if (!environment->canStream(&why)) throw std::invalid_argument("this ground has no regions: " + why);
+            (void)environment->addRegion(nullptr, at[0].get<int>(), at[1].get<int>());
+        }
+    }
     environment->network_ = std::move(network);
     for (auto &join : joins) {
         join.first.connection = environment->water_->addConnection(join.second);
@@ -518,6 +544,8 @@ std::unique_ptr<Environment> Environment::fromScene(const std::string &scene_jso
             if (saved.contains("time_s")) net.restoreClock(saved.value("time_s", 0.0));
         }
     }
+    // A world opening is drawn whole: nothing in it is newly grown.
+    environment->regions_added_.clear();
     return environment;
 }
 
@@ -552,6 +580,8 @@ Environment::Environment(Landscape landscape) : landscape_(std::move(landscape))
 
 Environment::~Environment() = default;
 
+MaterialDefinition Environment::groundContactMaterial() { return groundContact(); }
+
 void Environment::applyEdits(const std::string &edits_json) {
     const Json edits = Json::parse(edits_json);
     if (!edits.is_array()) throw std::invalid_argument("terrain.edits is a list");
@@ -559,6 +589,16 @@ void Environment::applyEdits(const std::string &edits_json) {
     // settles in (commit).
     const auto settle = [this] {
         for (int k = 0; k < 20000 && !terrain_->settled(); ++k) (void)terrain_->relax(kGroundStrideS);
+        for (auto &region : regions_)
+            for (int k = 0; k < 20000 && !region->field->settled(); ++k) (void)region->field->relax(kGroundStrideS);
+    };
+    // An edit out past the valley lands on the region there, made now if the
+    // scene's list of regions did not already make it (a room written before
+    // the list was kept).
+    const auto groundFor = [this](double x, double z) {
+        if (regionAt(x, z) != -2 || !canStream()) return;
+        const auto [rx, rz] = latticeOf(x, z);
+        (void)addRegion(nullptr, rx, rz);
     };
     // A room runs before anyone digs in it: the ground the first edit met had
     // come to rest.
@@ -582,18 +622,34 @@ void Environment::applyEdits(const std::string &edits_json) {
             // out as a dig spread over the ground its wedge reached, and a small
             // pry takes less than a centimetre off each column
             // (docs/ground-work.md). A room keeps it as an edit like any other.
-            const EditReport dug = terrain_->dig(a.first, a.second, b.first, b.second,
-                                                 number(spec, "width_m", 1.0, 0.05, 50.0),
-                                                 number(spec, "depth_m", 0.5, 1.0e-6, 20.0));
+            const double width = number(spec, "width_m", 1.0, 0.05, 50.0);
+            const double depth = number(spec, "depth_m", 0.5, 1.0e-6, 20.0);
+            groundFor(a.first, a.second);
+            groundFor(b.first, b.second);
+            const EditReport dug = terrain_->dig(a.first, a.second, b.first, b.second, width, depth);
             carry(dug.moved);
             changed = dug.cells;
+            const double r = 0.5 * width;
+            for (const int k : fieldsTouching(std::min(a.first, b.first) - r, std::min(a.second, b.second) - r,
+                                              std::max(a.first, b.first) + r, std::max(a.second, b.second) + r)) {
+                if (k < 0) continue;
+                const EditReport part = fieldOf(k).dig(a.first, a.second, b.first, b.second, width, depth);
+                carry(part.moved);
+                if (!part.cells.empty()) regions_[static_cast<std::size_t>(k)]->edited = true;
+            }
         } else if (kind == "deposit") {
             onlyKeys(spec, {"at_m", "radius_m", "sand_m3", "soil_m3"}, "a deposit");
             const auto at = pointXZ(spec, "at_m");
             const double sand = number(spec, "sand_m3", 0.0, 0.0, 1.0e5);
             const double soil = number(spec, "soil_m3", 0.0, 0.0, 1.0e5);
-            changed = terrain_->deposit(at.first, at.second, number(spec, "radius_m", 1.0, 0.05, 50.0),
-                                        sand, soil).cells;
+            groundFor(at.first, at.second);
+            const int k = regionAt(at.first, at.second);
+            changed = fieldOf(k >= 0 ? k : -1).deposit(at.first, at.second, number(spec, "radius_m", 1.0, 0.05, 50.0),
+                                                       sand, soil).cells;
+            if (k >= 0) {
+                regions_[static_cast<std::size_t>(k)]->edited = true;
+                changed.clear();
+            }
             putBack(sand, soil);
         } else if (kind == "cut") {
             onlyKeys(spec, {"at_m", "cells", "height_m"}, "a cut");
@@ -604,8 +660,11 @@ void Environment::applyEdits(const std::string &edits_json) {
                 cz = spec.at("cells").at(1).get<int>();
             }
             std::string why;
-            if (!terrain_->cut(at.first, at.second, cx, cz, number(spec, "height_m", 0.4, 0.01, 20.0), &why))
+            groundFor(at.first, at.second);
+            const int k = regionAt(at.first, at.second);
+            if (!fieldOf(k >= 0 ? k : -1).cut(at.first, at.second, cx, cz, number(spec, "height_m", 0.4, 0.01, 20.0), &why))
                 throw std::invalid_argument("a cut in the scene cannot be made: " + why);
+            if (k >= 0) regions_[static_cast<std::size_t>(k)]->edited = true;
         } else {
             throw std::invalid_argument("a terrain edit is dig, deposit or cut, not \"" + kind + "\"");
         }
@@ -626,6 +685,15 @@ void Environment::applyEdits(const std::string &edits_json) {
     syncWaterBed(moved);
     (void)terrain_->takeDirtyChunks();
     (void)terrain_->takeChangedRect();
+    // The regions' colliders are made from their ground when they are attached.
+    for (auto &region : regions_) {
+        for (const int chunk : region->field->takeDirtyChunks()) region->edited_chunks.insert(chunk);
+        (void)region->field->takeChangedRect();
+        const int chunks = region->field->chunksX() * region->field->chunksZ();
+        for (int chunk = 0; chunk < chunks; ++chunk)
+            region->colliders[static_cast<std::size_t>(chunk)] =
+                chunkHeightsOf(static_cast<int>(&region - regions_.data()), chunk);
+    }
 }
 
 double Environment::floorY() const { return terrain_->floor(); }
@@ -651,67 +719,7 @@ std::vector<float> Environment::chunkHeights(int chunk) const {
 // heights bound the tops; void floors/roofs and exposed walls stay open. Each
 // column owns its outward faces, so chunks share neither a wall nor a top.
 std::vector<std::array<Vec3,3>> Environment::columnTriangles(int chunk) const {
-    const Grid &g=terrain_->grid();
-    using Interval=std::pair<double,double>;
-    const auto height=[&](int i,int j) {
-        const int cx=std::min(i/TerrainField::kChunkCells,terrain_->chunksX()-1);
-        const int cz=std::min(j/TerrainField::kChunkCells,terrain_->chunksZ()-1);
-        return double(collider_heights_[cz*terrain_->chunksX()+cx][
-            (j-cz*TerrainField::kChunkCells)*(TerrainField::kChunkCells+1)+i-cx*TerrainField::kChunkCells]);
-    };
-    const auto solids=[&](int i,int j) {
-        std::vector<Interval> out;
-        if(i<0 || j<0 || i>=g.nx || j>=g.nz)return out;
-        Run runs[TerrainField::kRunsMost];const int count=terrain_->runsOf(g.at(i,j),runs);
-        const double top=height(i,j);double lo=terrain_->floor();
-        for(int k=0;k<count;++k) {
-            const double hi=k==count-1 ? top : std::min(top,runs[k].top_m);
-            if(!isVoid(runs[k].kind) && hi-lo>1e-7) {
-                if(!out.empty() && std::abs(out.back().second-lo)<1e-7)out.back().second=hi;
-                else out.emplace_back(lo,hi);
-            }
-            lo=hi;if(lo>=top)break;
-        }
-        return out;
-    };
-    std::vector<std::array<Vec3,3>> out;
-    const auto quad=[&](Vec3 a,Vec3 b,Vec3 c,Vec3 d,bool reverse=false) {
-        if(reverse){out.push_back({a,c,b});out.push_back({a,d,c});}
-        else {out.push_back({a,b,c});out.push_back({a,c,d});}
-    };
-    const int cx=chunk%terrain_->chunksX(),cz=chunk/terrain_->chunksX();
-    const int i0=cx*TerrainField::kChunkCells,j0=cz*TerrainField::kChunkCells;
-    const int i1=cx+1==terrain_->chunksX()?g.nx:i0+TerrainField::kChunkCells;
-    const int j1=cz+1==terrain_->chunksZ()?g.nz:j0+TerrainField::kChunkCells;
-    for(int j=j0;j<j1;++j)for(int i=i0;i<i1;++i) {
-        const auto own=solids(i,j);const double x=g.xOf(i)-g.dx/2,z=g.zOf(j)-g.dx/2;
-        for(const auto &[lo,hi]:own) {
-            quad({x,hi,z},{x,hi,z+g.dx},{x+g.dx,hi,z+g.dx},{x+g.dx,hi,z});
-            if(lo>terrain_->floor()+1e-7)
-                quad({x,lo,z},{x,lo,z+g.dx},{x+g.dx,lo,z+g.dx},{x+g.dx,lo,z},true);
-        }
-        for(int side=0;side<4;++side) {
-            const int di=side==0?-1:side==1?1:0,dj=side==2?-1:side==3?1:0;
-            const auto neighbor=solids(i+di,j+dj);
-            for(const auto &[lo,hi]:own) {
-                double from=lo;
-                const auto wall=[&](double a,double b) {
-                    if(b-a<=1e-7)return;
-                    if(di) {const double at=x+(di>0?g.dx:0);
-                        quad({at,a,z},{at,b,z},{at,b,z+g.dx},{at,a,z+g.dx},di<0);
-                    } else {const double at=z+(dj>0?g.dx:0);
-                        quad({x,a,at},{x+g.dx,a,at},{x+g.dx,b,at},{x,b,at},dj<0);
-                    }
-                };
-                for(const auto &[nlo,nhi]:neighbor) {
-                    if(nhi<=from || nlo>=hi)continue;
-                    wall(from,std::min(hi,nlo));from=std::max(from,std::min(hi,nhi));
-                }
-                wall(from,hi);
-            }
-        }
-    }
-    return out;
+    return columnTrianglesOf(-1, chunk);
 }
 
 // Preserve the generated triangle planes inside each cell, displacing them by
@@ -859,7 +867,7 @@ std::string Environment::groundStateJson() const {
     accounts.erase("");
     Json actors = Json::object();
     for (const auto &[actor, volume] : accounts) actors[actor] = volumesJson(volume);
-    return Json{{"schema","banjo.ground-state.v5"},{"surface",terrain_->surfaceGeometry()},
+    Json out = Json{{"schema","banjo.ground-state.v5"},{"surface",terrain_->surfaceGeometry()},
         {"baseline",terrain_->cutSurface()?Json(packed(terrain_->baseline())):Json(nullptr)},
         {"exported",volumesJson(exported_)},{"returned",volumesJson(returned_)},
         {"grid",{s.grid.nx,s.grid.nz,s.grid.dx,s.grid.x0,s.grid.z0}},
@@ -875,7 +883,12 @@ std::string Environment::groundStateJson() const {
         {"carried",volumesJson(legacy)},{"carriers",actors},{"carry_limit_kg",std::isfinite(carry_limit_kg_)?Json(carry_limit_kg_):Json(nullptr)},
         {"time_s",time_s_},{"ground_behind_s",ground_behind_s_},{"water_behind_s",water_behind_s_},
         {"since_rebuild_s",since_rebuild_s_},{"commits",commits_},
-        {"pending_chunks",pending_chunks_},{"pending_wake",rect(pending_wake_)},{"colliders",colliders}}.dump();
+        {"pending_chunks",pending_chunks_},{"pending_wake",rect(pending_wake_)},{"colliders",colliders}};
+    // The regions streamed in beside the valley: where each is, and the ground
+    // of any that has been changed since it was made. One nobody has touched is
+    // made again from the seed, so it costs a few bytes.
+    if (!regions_.empty() || streaming_) out["regions"] = Json::parse(regionsStateJson());
+    return out.dump();
 }
 
 void Environment::restoreGroundState(const std::string &text) {
@@ -884,7 +897,7 @@ void Environment::restoreGroundState(const std::string &text) {
     const std::initializer_list<const char *> keys={"schema","exported","returned","grid","rock","beds","soil","sand","loose","moisture",
         "floor","ledger","frontier","dirty_chunks","changed","checked_total","frontier_peak","carried",
         "carriers","carry_limit_kg","time_s","ground_behind_s","water_behind_s","since_rebuild_s","commits",
-        "pending_chunks","pending_wake","colliders","surface","baseline"};
+        "pending_chunks","pending_wake","colliders","surface","baseline","regions"};
     if (!d.is_object()) throw std::invalid_argument("ground state must be an object");
     onlyKeys(d,keys,"ground state");
     if(d.value("surface",std::string("smooth"))!=(terrain_->surfaceGeometry()))
@@ -899,7 +912,8 @@ void Environment::restoreGroundState(const std::string &text) {
     for (const char *key:keys) if (!d.contains(key) && !((std::string(key)=="exported" && schema=="banjo.ground-state.v1") ||
         (std::string(key)=="returned" && schema!="banjo.ground-state.v3" && !v4) ||
         (std::string(key)=="rock" && v4) || (std::string(key)=="beds" && !v4) ||
-        (std::string(key)=="carriers" && !v5) || std::string(key)=="surface" || std::string(key)=="baseline"))
+        (std::string(key)=="carriers" && !v5) || std::string(key)=="surface" || std::string(key)=="baseline" ||
+        std::string(key)=="regions"))
         throw std::invalid_argument(std::string("missing ground state ")+key);
     const auto integer=[](const Json &v,std::uint64_t maximum) {
         if (!v.is_number_integer() || (!v.is_number_unsigned() && v.get<std::int64_t>()<0) ||
@@ -1005,6 +1019,18 @@ void Environment::restoreGroundState(const std::string &text) {
             total_carried.sand_m3+=volume.sand_m3;
         }
     }
+    // The regions first: what was dug out there is carried too, and the checks
+    // below weigh what is carried against everything dug, wherever it was.
+    // Restored into regions made fresh here, so a refusal further down leaves
+    // only regions the valley's own state would not have refused.
+    if (d.contains("regions")) restoreRegionsState(d.at("regions").dump());
+    Volumes all_dug = s.ledger.dug;
+    {
+        const Volumes out_there = regionsDug();
+        all_dug.rock_m3 += out_there.rock_m3;
+        all_dug.soil_m3 += out_there.soil_m3;
+        all_dug.sand_m3 += out_there.sand_m3;
+    }
     const auto exported=d.contains("exported")?volumes(d.at("exported")):Volumes{};
     const auto returned=d.contains("returned")?volumes(d.at("returned")):Volumes{};
     for (double v:{returned.rock_m3,returned.soil_m3,returned.sand_m3})
@@ -1013,10 +1039,10 @@ void Environment::restoreGroundState(const std::string &text) {
         throw std::invalid_argument("returned ground exceeds exports");
     for (double v:{exported.rock_m3,exported.soil_m3,exported.sand_m3})
         if (!std::isfinite(v) || v<0) throw std::invalid_argument("invalid exported ground");
-    if ((!v4 && !v5 && exported.rock_m3!=0) || exported.soil_m3-returned.soil_m3+total_carried.soil_m3>s.ledger.dug.soil_m3+1e-9 ||
-        exported.sand_m3-returned.sand_m3+total_carried.sand_m3>s.ledger.dug.sand_m3+1e-9)
+    if ((!v4 && !v5 && exported.rock_m3!=0) || exported.soil_m3-returned.soil_m3+total_carried.soil_m3>all_dug.soil_m3+1e-9 ||
+        exported.sand_m3-returned.sand_m3+total_carried.sand_m3>all_dug.sand_m3+1e-9)
         throw std::invalid_argument("exported and carried ground exceed excavation");
-    if ((v4 || v5) && exported.rock_m3-returned.rock_m3+total_carried.rock_m3>s.ledger.dug.rock_m3+s.ledger.cut.rock_m3+1e-9)
+    if ((v4 || v5) && exported.rock_m3-returned.rock_m3+total_carried.rock_m3>all_dug.rock_m3+s.ledger.cut.rock_m3+1e-9)
         throw std::invalid_argument("carried rock exceeds excavation and breakage");
     for (double v:{carried.rock_m3,carried.soil_m3,carried.sand_m3})
         if (!std::isfinite(v) || v<0) throw std::invalid_argument("invalid carried ground");
@@ -1086,6 +1112,8 @@ void Environment::attach(JoltWorld &world) {
     world.setGroundRollingResistance([this](double x, double z) { return rollingResistanceAt(x, z); });
     attached_ = true;
     if (!restored) (void)terrain_->takeDirtyChunks();
+    // And every region already made: by the scene, or by a saved world.
+    for (int k = 0; k < static_cast<int>(regions_.size()); ++k) attachRegion(world, k);
 }
 
 double Environment::addWater(double x_m, double z_m, double volume_m3) {
@@ -1118,9 +1146,10 @@ bool Environment::pushWater(double x_m, double z_m, double jx_n_s, double jz_n_s
 }
 
 double Environment::rollingResistanceAt(double x_m, double z_m) const {
-    const auto cell = terrain_->cellAt(x_m, z_m);
+    const TerrainField &field = fieldAt(x_m, z_m);
+    const auto cell = field.cellAt(x_m, z_m);
     if (!cell) return soilMaterial().rolling_resistance;
-    return groundMaterialOf(terrain_->surface(*cell)).rolling_resistance;
+    return groundMaterialOf(field.surface(*cell)).rolling_resistance;
 }
 
 void Environment::syncWaterBed(const std::vector<std::size_t> &cells) {
@@ -1295,11 +1324,15 @@ void Environment::commit(JoltWorld &world, const std::vector<water::BodyInWater>
             ground_behind_s_ -= kGroundStrideS;
             syncWaterBed(r.changed);
             noteChanged(r.changed);
+            if (!regions_.empty()) queueSeams(-1, r.changed);
             stats_.ground_checked += r.checked;
         } while (ground_behind_s_ >= kGroundStrideS && !terrain_->settled());
         stats_.ground_ms_total += msSince(tg);
     }
     for (const int chunk : terrain_->takeDirtyChunks()) pending_chunks_.insert(chunk);
+    // The regions beside the valley settle and rebuild the same way, each on
+    // its own; one that is still costs one question a step.
+    if (!regions_.empty()) commitRegions(world, dt_s);
     if (!pending_chunks_.empty() && since_rebuild_s_ >= kRebuildStrideS) {
         rebuildChunks(world, pending_chunks_, nullptr);
         pending_chunks_.clear();
@@ -1472,6 +1505,15 @@ void Environment::returnCarried(double sand_m3, double soil_m3, double rock_m3,
 EditEffect Environment::breakOut(JoltWorld &world, double x, double z,
                                  double from_m, double to_m) {
     EditEffect effect;
+    if (const int k = regionAt(x, z); k >= 0) {
+        TerrainField &field = fieldOf(k);
+        field.resetActivity();
+        effect.edit = field.breakOut(x, z, from_m, to_m);
+        if (effect.edit.cells.empty()) return effect;
+        carry(effect.edit.moved);
+        regionEdited(&world, k, effect.edit.cells, &effect);
+        return effect;
+    }
     terrain_->resetActivity();
     effect.edit = terrain_->breakOut(x, z, from_m, to_m);
     if (effect.edit.cells.empty()) return effect;
@@ -1486,6 +1528,7 @@ EditEffect Environment::breakOut(JoltWorld &world, double x, double z,
     stats_.ground_checked = 0;
     const std::set<int> chunks = terrain_->takeDirtyChunks();
     rebuildChunks(world, chunks, &effect);
+    if (!regions_.empty()) rebuildSeams(world, -1, effect.edit.cells, &effect);
     // And the working's own two colliders, wherever a chunk has gained or
     // changed one.
     for (const int chunk : chunks) syncWorkingPatches(world, chunk);
@@ -1505,17 +1548,23 @@ Environment::Chipped Environment::chip(JoltWorld &world, double x, double z, dou
     const double budget_m3 = std::isfinite(room_kg)
                                  ? std::max(0.0, room_kg) / rockMaterial().density_kg_m3
                                  : std::numeric_limits<double>::infinity();
-    const TerrainField::Chipped chipped = terrain_->chip(x, z, at_height_m, volume_m3, budget_m3);
+    const int k = regionAt(x, z);
+    const TerrainField::Chipped chipped = fieldOf(k >= 0 ? k : -1).chip(x, z, at_height_m, volume_m3, budget_m3);
     carry(chipped.edit.moved);
     out.broken = chipped.broken;
     out.full = chipped.full;
     out.effect.edit = chipped.edit;
     if (chipped.edit.cells.empty()) return out;
+    if (k >= 0) {
+        regionEdited(&world, k, chipped.edit.cells, &out.effect);
+        return out;
+    }
     for (const std::size_t c : chipped.edit.cells) out.effect.water_columns_moved += water_->depth(c) > 0.0;
     syncWaterBed(chipped.edit.cells);
     noteChanged(chipped.edit.cells);
     const std::set<int> chunks = terrain_->takeDirtyChunks();
     rebuildChunks(world, chunks, &out.effect);
+    if (!regions_.empty()) rebuildSeams(world, -1, chipped.edit.cells, &out.effect);
     for (const int chunk : chunks) syncWorkingPatches(world, chunk);
     return out;
 }
@@ -1540,23 +1589,70 @@ EditEffect Environment::dig(JoltWorld &world, double ax, double az, double bx, d
     // anything.
     const std::set<int> chunks = terrain_->takeDirtyChunks();
     rebuildChunks(world, chunks, &effect);
+    if (!regions_.empty()) {
+        rebuildSeams(world, -1, effect.edit.cells, &effect);
+        // A trench that reaches past the valley's edge is dug in every region
+        // it reaches too, each taking what still fits after the one before.
+        const double r = 0.5 * width_m;
+        const bool in_valley = !effect.edit.cells.empty();
+        for (const int k : fieldsTouching(std::min(ax, bx) - r, std::min(az, bz) - r,
+                                          std::max(ax, bx) + r, std::max(az, bz) + r)) {
+            if (k < 0) continue;
+            TerrainField &field = fieldOf(k);
+            field.resetActivity();
+            const EditReport part = field.dig(ax, az, bx, bz, width_m, depth_m,
+                                              std::max(0.0, carry_limit_kg_ - carriedKg() - carried_objects_kg));
+            carry(part.moved);
+            if (part.cells.empty()) continue;
+            regionEdited(&world, k, part.cells, &effect);
+            effect.edit.moved.sand_m3 += part.moved.sand_m3;
+            effect.edit.moved.soil_m3 += part.moved.soil_m3;
+            effect.edit.mass_kg += part.mass_kg;
+            effect.edit.limited = effect.edit.limited || part.limited;
+            if (!in_valley) effect.edit.depth_m = part.depth_m;
+            effect.region_columns += part.cells.size();
+        }
+    }
     return effect;
 }
 
 EditEffect Environment::deposit(JoltWorld &world, double x, double z, double radius_m,
                                 double sand_m3, double soil_m3) {
     EditEffect effect;
+    if (const int k = regionAt(x, z); k >= 0) {
+        effect.edit = fieldOf(k).deposit(x, z, radius_m, sand_m3, soil_m3);
+        putBack(sand_m3, soil_m3);
+        regionEdited(&world, k, effect.edit.cells, &effect);
+        effect.region_columns = effect.edit.cells.size();
+        effect.edit.cells.clear();
+        return effect;
+    }
     effect.edit = terrain_->deposit(x, z, radius_m, sand_m3, soil_m3);
     putBack(sand_m3, soil_m3);
     for (const std::size_t c : effect.edit.cells) effect.water_columns_moved += water_->depth(c) > 0.0;
     syncWaterBed(effect.edit.cells);
     noteChanged(effect.edit.cells);
     rebuildChunks(world, terrain_->takeDirtyChunks(), &effect);
+    if (!regions_.empty()) rebuildSeams(world, -1, effect.edit.cells, &effect);
     return effect;
 }
 
 std::optional<CutBlock> Environment::cut(JoltWorld &world, double x, double z, int cells_x, int cells_z,
                                          double depth_m, std::string *why) {
+    if (const int k = regionAt(x, z); k >= 0) {
+        TerrainField &field = fieldOf(k);
+        std::optional<CutBlock> block = field.cut(x, z, cells_x, cells_z, depth_m, why);
+        if (!block) return block;
+        // The columns the cut took: the dirty chunks say where.
+        std::vector<std::size_t> changed;
+        const Grid &g = field.grid();
+        for (std::size_t c = 0; c < g.cells(); ++c)
+            if (std::abs(g.xOf(static_cast<int>(c % static_cast<std::size_t>(g.nx))) - x) <= (cells_x + 1) * g.dx &&
+                std::abs(g.zOf(static_cast<int>(c / static_cast<std::size_t>(g.nx))) - z) <= (cells_z + 1) * g.dx)
+                changed.push_back(c);
+        regionEdited(&world, k, changed, nullptr);
+        return block;
+    }
     std::optional<CutBlock> block = terrain_->cut(x, z, cells_x, cells_z, depth_m, why);
     if (!block) return block;
     std::vector<std::size_t> changed;
@@ -1565,6 +1661,7 @@ std::optional<CutBlock> Environment::cut(JoltWorld &world, double x, double z, i
     syncWaterBed(changed);
     noteChanged(changed);
     rebuildChunks(world, terrain_->takeDirtyChunks(), nullptr);
+    if (!regions_.empty()) rebuildSeams(world, -1, changed, nullptr);
     return block;
 }
 
@@ -1572,8 +1669,9 @@ double Environment::contactImpedanceAt(const Vec3 &point_m) const {
     // Rock is the engine's stone and meets a blow as stone does. Soil and sand
     // are soft ground: a bulk stiffness of about 50 MPa (loose to medium-dense
     // sand, firm soil -- DECLARED, textbook range) at their bulk density.
-    const auto c = terrain_->cellAt(point_m.x, point_m.z);
-    const bool rock = c && terrain_->surface(*c) == Surface::Rock;
+    const TerrainField &field = fieldAt(point_m.x, point_m.z);
+    const auto c = field.cellAt(point_m.x, point_m.z);
+    const bool rock = c && field.surface(*c) == Surface::Rock;
     if (rock) return std::sqrt(rockMaterial().density_kg_m3 * 30.0e9);
     return std::sqrt(soilMaterial().density_kg_m3 * 0.05e9);
 }
@@ -1787,6 +1885,21 @@ std::string Environment::reportJson(bool full) const {
                                             {"shared_out", net.stats().shared_out}}},
                                {"water_held_m3", held}, {"unaccounted_m3", held - expected}};
     }
+    // The ground beyond the valley (docs/streamed-regions.md).
+    {
+        Json list = Json::array();
+        std::size_t columns = 0;
+        for (const auto &r : regions_) {
+            columns += r->field->grid().cells();
+            list.push_back({{"at", {r->rx, r->rz}}, {"x0_m", r->field->grid().x0}, {"z0_m", r->field->grid().z0},
+                            {"edited", r->edited}, {"unsettled_columns", r->field->unsettled()},
+                            {"generate_ms", r->generate_ms}, {"colliders_ms", r->colliders_ms}});
+        }
+        std::string why;
+        report["regions"] = {{"streaming", streaming_}, {"can_stream", canStream(&why)}, {"why_not", why},
+                             {"grow_within_m", kGrowWithinM}, {"most", kMostRegions},
+                             {"count", regions_.size()}, {"columns", columns}, {"list", list}};
+    }
     if (full) {
         const water::Settings &s = water_->settings();
         const water::CouplingSettings &c = coupling_.settings();
@@ -1884,33 +1997,37 @@ std::string Environment::stateJson() const {
 }
 
 std::string Environment::surveyJson(double x, double z) const {
-    const auto cell = terrain_->cellAt(x, z);
+    // Out past the valley the ground is a region's, and has no water.
+    const int region = regionAt(x, z);
+    if (region == -2) return Json{{"on_the_ground", false}}.dump();
+    const TerrainField *const field = &fieldOf(region);
+    const auto cell = field->cellAt(x, z);
     if (!cell) return Json{{"on_the_ground", false}}.dump();
     const std::size_t c = *cell;
-    Json out = {{"on_the_ground", true}, {"x_m", x}, {"z_m", z}, {"ground_m", terrain_->heightAt(x, z)},
-                {"rock_top_m", terrain_->rockTop(c)}, {"soil_m", terrain_->soil(c)},
-                {"sand_m", terrain_->sand(c)}, {"loose_soil_m", terrain_->looseSoil(c)},
-                {"surface", surfaceName(terrain_->surface(c))},
+    Json out = {{"on_the_ground", true}, {"x_m", x}, {"z_m", z}, {"ground_m", field->heightAt(x, z)},
+                {"rock_top_m", field->rockTop(c)}, {"soil_m", field->soil(c)},
+                {"sand_m", field->sand(c)}, {"loose_soil_m", field->looseSoil(c)},
+                {"surface", surfaceName(field->surface(c))},
                 // The ground's own share of a ball's rolling resistance here;
                 // the ball adds its own, and it rests on a slope whose tangent
                 // is below the sum.
-                {"rolling_resistance", groundMaterialOf(terrain_->surface(c)).rolling_resistance},
-                {"slope_deg", terrain_->slopeDeg(c)}};
+                {"rolling_resistance", groundMaterialOf(field->surface(c)).rolling_resistance},
+                {"slope_deg", field->slopeDeg(c)}};
     // The same half-cell terrain reference used by native rover ground probes.
     // A planner can predict the declared probe's reading without moving matter.
-    const double d=.5*terrain_->grid().dx;
+    const double d=.5*field->grid().dx;
     out["ground_gradient_xz"] = {
-        (terrain_->heightAt(x+d,z)-terrain_->heightAt(x-d,z))/(2*d),
-        (terrain_->heightAt(x,z+d)-terrain_->heightAt(x,z-d))/(2*d)};
+        (field->heightAt(x+d,z)-field->heightAt(x-d,z))/(2*d),
+        (field->heightAt(x,z+d)-field->heightAt(x,z-d))/(2*d)};
     // What the column is made of, bottom to top: the runs themselves, so
     // whoever is standing here can be told what is under their feet and how far
     // down it starts, rather than being handed four thicknesses to add up.
     {
         Run runs[TerrainField::kRunsMost];
-        const int n = terrain_->runsOf(c, runs);
-        const double top = terrain_->height(c);
+        const int n = field->runsOf(c, runs);
+        const double top = field->height(c);
         Json made = Json::array();
-        double below = terrain_->floor();
+        double below = field->floor();
         for (int k = 0; k < n; ++k) {
             made.push_back({{"material", runKindName(runs[k].kind)},
                             {"from_m", below},
@@ -1921,7 +2038,11 @@ std::string Environment::surveyJson(double x, double z) const {
         }
         out["runs"] = std::move(made);
     }
-    if (water_->wet(c) && water_->depth(c) > 0.003) {
+    if (region >= 0) {
+        const StreamedRegion &r = *regions_[static_cast<std::size_t>(region)];
+        out["region"] = {r.rx, r.rz};
+        out["water"] = nullptr;
+    } else if (water_->wet(c) && water_->depth(c) > 0.003) {
         const double u = water_->velocityX(c), w = water_->velocityZ(c);
         out["water"] = {{"depth_m", water_->depth(c)}, {"surface_m", water_->surface(c)},
                         {"speed_m_s", std::hypot(u, w)}, {"velocity_m_s", {u, w}},
@@ -1975,6 +2096,19 @@ std::vector<std::uint8_t> Environment::runsPacked(int i0, int j0, int ni, int nj
     const double floor_m = terrain_->floor();
     for (int j = 0; j < nj; ++j)
         for (int i = 0; i < ni; ++i) packRuns(*terrain_, g.at(i0 + i, j0 + j), floor_m, out);
+    return out;
+}
+
+// The same for any field: a region's columns, in millimetres above its own floor.
+std::vector<std::uint8_t> Environment::runsPackedOf(const TerrainField &field, int i0, int j0, int ni,
+                                                    int nj) const {
+    const Grid &g = field.grid();
+    std::vector<std::uint8_t> out;
+    if (ni <= 0 || nj <= 0 || i0 < 0 || j0 < 0 || i0 + ni > g.nx || j0 + nj > g.nz) return out;
+    out.reserve(static_cast<std::size_t>(ni) * nj * (1 + 3 * 4));
+    const double floor_m = field.floor();
+    for (int j = 0; j < nj; ++j)
+        for (int i = 0; i < ni; ++i) packRuns(field, g.at(i0 + i, j0 + j), floor_m, out);
     return out;
 }
 

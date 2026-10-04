@@ -1602,12 +1602,58 @@ nlohmann::json beyondBlock(const banjo::terrain::Environment &env) {
     return beyond;
 }
 
+// A region streamed in beside the valley (docs/streamed-regions.md), whole or
+// a rectangle of it: the same pictures the valley's ground is sent as, on the
+// region's own grid, its runs in millimetres above its own floor.
+nlohmann::json regionBlock(const banjo::terrain::Environment &env, int k, int i0 = 0, int j0 = 0, int ni = -1,
+                           int nj = -1) {
+    const banjo::terrain::StreamedRegion &region = *env.regions()[static_cast<std::size_t>(k)];
+    const banjo::terrain::TerrainField &field = *region.field;
+    const banjo::terrain::Grid &g = field.grid();
+    const bool whole = ni < 0;
+    if (whole) { i0 = 0; j0 = 0; ni = g.nx; nj = g.nz; }
+    std::vector<float> heights(static_cast<std::size_t>(ni) * nj);
+    std::vector<std::uint8_t> ground(heights.size());
+    for (int j = 0; j < nj; ++j)
+        for (int i = 0; i < ni; ++i) {
+            const std::size_t c = g.at(i0 + i, j0 + j);
+            heights[static_cast<std::size_t>(j) * ni + i] = static_cast<float>(field.height(c));
+            ground[static_cast<std::size_t>(j) * ni + i] = static_cast<std::uint8_t>(field.surface(c));
+        }
+    const std::vector<std::uint8_t> runs = env.runsPackedOf(field, i0, j0, ni, nj);
+    nlohmann::json out = {{"at", {region.rx, region.rz}},
+                          {"heights_b64", banjo::terrain::encodeBase64(heights.data(), heights.size() * sizeof(float))},
+                          {"ground_b64", banjo::terrain::encodeBase64(ground.data(), ground.size())},
+                          {"runs_b64", banjo::terrain::encodeBase64(runs.data(), runs.size())},
+                          {"floor_m", field.floor()}};
+    if (whole) {
+        out["grid"] = {{"nx", g.nx}, {"nz", g.nz}, {"cell_m", g.dx}, {"x0_m", g.x0}, {"z0_m", g.z0}};
+        out["surface"] = field.surfaceGeometry();
+    } else {
+        out["box"] = {i0, j0, ni, nj};
+    }
+    return out;
+}
+
+nlohmann::json grownJson(const std::vector<banjo::terrain::Environment::Grown> &grown) {
+    nlohmann::json out = nlohmann::json::array();
+    for (const auto &g : grown)
+        out.push_back({{"at", {g.rx, g.rz}}, {"generate_ms", tidy(g.generate_ms)},
+                       {"colliders_ms", tidy(g.colliders_ms)}, {"seams_ms", tidy(g.seams_ms)},
+                       {"seam_chunks", g.seam_chunks}});
+    return out;
+}
+
 nlohmann::json terrainBlock(const banjo::terrain::Environment &env, const std::vector<float> &heights, double objects_kg, double held_objects_kg) {
     const banjo::terrain::Grid &g = env.terrain().grid();
     const std::vector<std::uint8_t> ground = env.surfaces();
     const std::vector<std::uint8_t> runs = env.runsPacked();
     const banjo::terrain::Landscape &land = env.landscape();
+    nlohmann::json regions = nlohmann::json::array();
+    for (int k = 0; k < static_cast<int>(env.regions().size()); ++k) regions.push_back(regionBlock(env, k));
     return {{"kind", land.kind},
+            {"regions", std::move(regions)},
+            {"streaming", env.streaming()},
             {"surface",env.terrain().surfaceGeometry()},
             {"beyond", beyondBlock(env)},
             {"carried", carriedJson(env, objects_kg, held_objects_kg)},
@@ -1703,6 +1749,20 @@ void addEnvironment(LiveWorld &world, nlohmann::json &reply, bool whole) {
     // keeps it -- nothing copied or compared when nothing changed. Every reply
     // used to copy all of the valley's heights and compare them.
     const banjo::terrain::TerrainField::Rect changed = world.takeChangedGround();
+    // The regions beside the valley: one added since the last reply is sent
+    // whole, and a rectangle of one that changed, as the valley's is.
+    const std::vector<int> added = world.takeAddedRegions();
+    const auto region_changes = world.takeChangedRegions();
+    if (!whole) {
+        nlohmann::json grown = nlohmann::json::array(), patched = nlohmann::json::array();
+        for (const int k : added) grown.push_back(regionBlock(*env, k));
+        for (const auto &[k, r] : region_changes) {
+            if (std::find(added.begin(), added.end(), k) != added.end()) continue;
+            patched.push_back(regionBlock(*env, k, r.i0, r.j0, r.ni, r.nj));
+        }
+        if (!grown.empty()) reply["regions_added"] = std::move(grown);
+        if (!patched.empty()) reply["regions_changed"] = std::move(patched);
+    }
     if (whole) {
         reply["terrain"] = terrainBlock(*env, env->heights(), world.carriedObjectsKg(), world.heldObjectsKg());
     } else {
@@ -1738,7 +1798,7 @@ nlohmann::json dugJson(const banjo::terrain::EditEffect &effect) {
     // and made again from it the dig takes out the same. `limited` says it went
     // less deep than it was asked to, because no more could be carried.
     return {{"sand_m3", tidy(effect.edit.moved.sand_m3)}, {"soil_m3", tidy(effect.edit.moved.soil_m3)},
-            {"kg", tidy(effect.edit.mass_kg)}, {"columns", effect.edit.cells.size()},
+            {"kg", tidy(effect.edit.mass_kg)}, {"columns", effect.edit.cells.size() + effect.region_columns},
             {"depth_m", effect.edit.depth_m}, {"limited", effect.edit.limited},
             {"chunks_rebuilt", effect.chunks_rebuilt}, {"rebuild_ms", tidy(effect.rebuild_ms)},
             {"bodies_woken", effect.bodies_woken}};
@@ -1877,6 +1937,16 @@ int main(int argc, char **argv) {
                                             q[2].get<double>(), q[3].get<double>()});
                     }
                     if (command.contains("hand")) world->moveHeld(readVec(command, "hand"));
+                    // The ground grows toward every native body, and toward
+                    // where the host's camera is (grow_at), before the step:
+                    // a region is added between steps, never inside one
+                    // (docs/streamed-regions.md).
+                    {
+                        std::vector<std::pair<double, double>> toward;
+                        if (command.contains("grow_at")) toward.push_back(readXZ(command, "grow_at"));
+                        const auto grown = world->growGround(toward);
+                        if (!grown.empty()) reply["grown"] = grownJson(grown);
+                    }
                     const int count = std::max(1, command.value("n", 1));
                     // A fresh batch: what follows is what this call reports.
                     world->forgetImpacts();
@@ -2889,6 +2959,19 @@ int main(int argc, char **argv) {
                                      .dump()
                               << std::endl;
                     continue;
+                } else if (op == "grow") {
+                    // The ground grown toward a point, now, as a step would
+                    // (docs/streamed-regions.md): for a host or a test that
+                    // wants it without stepping. The reply carries what was
+                    // added (regions_added) like any other.
+                    const auto at = readXZ(command, "at");
+                    const banjo::terrain::Environment *env = world->environment();
+                    if (env == nullptr) throw std::invalid_argument("this room has no ground to grow");
+                    std::string why;
+                    if (!env->canStream(&why)) throw std::invalid_argument("this ground cannot grow: " + why);
+                    if (!env->streaming()) throw std::invalid_argument("this room does not let its ground grow "
+                                                                       "(terrain.stream)");
+                    reply["grown"] = grownJson(world->growGround({at}));
                 } else if (op == "terrain") {
                     nlohmann::json out{{"ok", true}};
                     addEnvironment(*world, out, true);

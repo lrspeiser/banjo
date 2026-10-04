@@ -451,8 +451,12 @@ struct Geology {
     double oxidised_m{2.6};        // how far down the weather has changed the ore
 };
 
+// `clay_x0` is where the clay bed's dip is measured from: the valley's own west
+// edge, also for a region streamed in beside it, so the bed runs on unbroken.
 Beds layBeds(const Grid &g, const std::vector<double> &rock_top, double floor_m,
-             double vein_x, double vein_z, std::uint64_t seed, const Geology &geology = {}) {
+             double vein_x, double vein_z, std::uint64_t seed, const Geology &geology = {},
+             double clay_x0 = std::numeric_limits<double>::quiet_NaN()) {
+    if (std::isnan(clay_x0)) clay_x0 = g.x0;
     Beds beds;
     const std::size_t n = g.cells();
     beds.start.assign(n + 1, 0);
@@ -474,7 +478,7 @@ Beds layBeds(const Grid &g, const std::vector<double> &rock_top, double floor_m,
             // Where each surface crosses this column, clamped into the rock.
             const double mantle = top - std::max(0.2, geology.mantle_m +
                 geology.mantle_vary_m * (2.0 * fbm(seed ^ 0x9e37ULL, x, z, 3, 1.0 / 7.0) - 1.0));
-            const double clay_top = geology.clay_at_m - geology.clay_dip * (x - g.x0) +
+            const double clay_top = geology.clay_at_m - geology.clay_dip * (x - clay_x0) +
                 0.35 * (2.0 * fbm(seed ^ 0x51edULL, x, z, 3, 1.0 / 11.0) - 1.0);
             const double clay_bottom = clay_top - geology.clay_thickness_m;
             // The vein: the plane's height in this column, and how thick it is
@@ -1066,6 +1070,122 @@ Landscape generateValley(const ValleyParameters &p) {
     const double view_x = g.x0 + 0.5 * length;
     setView(land, view_x - 2.0, centre(view_x - 2.0) - (floodplain + 5.0), view_x + 3.0,
             centre(view_x + 3.0), 0.2);
+    land.report.total_ms = msSince(t0);
+    return land;
+}
+
+// ---- streamed regions -------------------------------------------------------
+//
+// Ground beyond the valley, made as somebody comes near its edge
+// (docs/streamed-regions.md). Everything here is a function of world position
+// and the seed, plus the valley's own generated edge, so two regions side by
+// side agree on every column they would share and the order they were made in
+// changes nothing.
+
+namespace {
+
+struct StreamedGround {
+    const Landscape &valley;
+    std::uint64_t seed;
+    std::vector<double> top;     // the valley's generated surface
+    double x1{}, z1{};           // its last points
+
+    StreamedGround(const Landscape &v, std::uint64_t s) : valley(v), seed(s) {
+        const Grid &g = v.grid;
+        top.resize(g.cells());
+        for (std::size_t c = 0; c < top.size(); ++c)
+            top[c] = v.rock[c] + v.soil[c] + v.sand[c] + (c < v.loose.size() ? v.loose[c] : 0.0);
+        x1 = g.xOf(g.nx - 1);
+        z1 = g.zOf(g.nz - 1);
+    }
+    // One of the valley's arrays at the nearest point of its rectangle.
+    double edge(const std::vector<double> &a, double x, double z) const {
+        const Grid &g = valley.grid;
+        const double fi = std::clamp((x - g.x0) / g.dx, 0.0, static_cast<double>(g.nx - 1));
+        const double fj = std::clamp((z - g.z0) / g.dx, 0.0, static_cast<double>(g.nz - 1));
+        const int i = std::min(g.nx - 2, static_cast<int>(std::floor(fi)));
+        const int j = std::min(g.nz - 2, static_cast<int>(std::floor(fj)));
+        const double u = fi - i, w = fj - j;
+        return (1.0 - u) * (1.0 - w) * a[g.at(i, j)] + u * (1.0 - w) * a[g.at(i + 1, j)] +
+               (1.0 - u) * w * a[g.at(i, j + 1)] + u * w * a[g.at(i + 1, j + 1)];
+    }
+    // How far a point is outside the valley's rectangle of points.
+    double outside(double x, double z) const {
+        const Grid &g = valley.grid;
+        return std::hypot(std::max({0.0, g.x0 - x, x - x1}), std::max({0.0, g.z0 - z, z - z1}));
+    }
+    // How much of the streamed ground's own shape a point has: none at the
+    // valley's edge, all of it kStreamBlendM out.
+    double own(double x, double z) const { return smoothstep(0.0, kStreamBlendM, outside(x, z)); }
+    // The hills beyond: the valley's floor goes on falling 1.2 percent along
+    // x, with rolling ground over it made of the valley's own hill noise and a
+    // broader swell, and the valley's fine roughness on top.
+    double hills(double x, double z) const {
+        return 1.0 - 0.012 * (x - valley.grid.x0) + 2.2 + 0.9 * fbm(seed, x, z, 4, 1.0 / 9.0) +
+               1.4 * fbm(seed + 101, x, z, 3, 1.0 / 24.0) + 0.05 * fbm(seed + 17, x, z, 3, 1.0 / 2.5);
+    }
+    double surface(double x, double z) const {
+        const double e = edge(top, x, z);
+        return e + own(x, z) * (hills(x, z) - e);
+    }
+};
+
+} // namespace
+
+double streamedSurfaceM(const Landscape &valley, std::uint64_t seed, double x, double z) {
+    return StreamedGround(valley, seed).surface(x, z);
+}
+
+Landscape streamedRegion(const Landscape &valley, std::uint64_t seed, int rx, int rz) {
+    if (valley.kind != "valley" || valley.grid.nx < 2 || valley.grid.nz < 2)
+        throw std::invalid_argument("only a generated valley has ground streamed in beside it");
+    if (rx == 0 && rz == 0) throw std::invalid_argument("region (0, 0) is the valley itself");
+    const Clock::time_point t0 = Clock::now();
+    const StreamedGround ground(valley, seed);
+    Landscape land;
+    land.kind = "streamed";
+    Grid &g = land.grid;
+    g = valley.grid;
+    // Columns tile: a region starts one cell past its neighbour's last column.
+    g.x0 = valley.grid.x0 + rx * valley.grid.nx * valley.grid.dx;
+    g.z0 = valley.grid.z0 + rz * valley.grid.nz * valley.grid.dx;
+    const std::size_t n = g.cells();
+    std::vector<double> top(n);
+    land.rock.resize(n);
+    land.soil.resize(n);
+    land.sand.resize(n);
+    land.loose.resize(n);
+    const double h = g.dx;
+    for (int j = 0; j < g.nz; ++j)
+        for (int i = 0; i < g.nx; ++i) {
+            const std::size_t c = g.at(i, j);
+            const double x = g.xOf(i), z = g.zOf(j);
+            const double y = ground.surface(x, z);
+            // Soil as the valley thins it (generateValley): gone where it is
+            // steeper than about 37 degrees, and near the valley the valley's
+            // own soil, sand and loose ground eased out from its edge.
+            const double gx = (ground.surface(x + h, z) - ground.surface(x - h, z)) / (2.0 * h);
+            const double gz = (ground.surface(x, z + h) - ground.surface(x, z - h)) / (2.0 * h);
+            const double natural_soil = 1.2 * std::clamp(1.0 - std::hypot(gx, gz) / 0.75, 0.0, 1.0);
+            const double w = ground.own(x, z);
+            const double soil = ground.edge(valley.soil, x, z) * (1.0 - w) + natural_soil * w;
+            const double sand = ground.edge(valley.sand, x, z) * (1.0 - w);
+            const double loose = valley.loose.empty() ? 0.0 : ground.edge(valley.loose, x, z) * (1.0 - w);
+            top[c] = y;
+            land.soil[c] = std::max(0.0, soil);
+            land.sand[c] = std::max(0.0, sand);
+            land.loose[c] = std::max(0.0, loose);
+            land.rock[c] = y - land.soil[c] - land.sand[c] - land.loose[c];
+        }
+    // The rock's beds: the weathered mantle and the clay bed carry on from the
+    // valley's (measured from the valley's own west edge); the vein is the
+    // valley's alone, so it is placed where no region reaches.
+    land.beds = layBeds(g, land.rock, *std::min_element(land.rock.begin(), land.rock.end()) -
+                            TerrainField::kEarthDepthM, 1.0e9, 1.0e9, seed, Geology{}, valley.grid.x0);
+    land.moisture.assign(n, 0.0F);
+    land.depth.assign(n, 0.0);
+    land.qx.assign(n, 0.0);
+    land.qz.assign(n, 0.0);
     land.report.total_ms = msSince(t0);
     return land;
 }
