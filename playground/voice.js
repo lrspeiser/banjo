@@ -107,8 +107,8 @@ export function createVoiceController({
   const button = document.createElement("button");
   button.type = "button";
   button.id = "voice-talk";
-  button.textContent = "Hold V";
-  button.title = "Hold V, or press and hold this button, to talk to AI Guide";
+  button.textContent = "Hold Y";
+  button.title = "Hold Y, or press and hold this button, to talk to AI Guide";
   button.setAttribute("aria-label", button.title);
 
   const lensButton = document.createElement("button");
@@ -471,15 +471,15 @@ export function createVoiceController({
   });
 
   const keydown = (event) => {
-    if (event.code !== "KeyV" || event.repeat || event.altKey || event.ctrlKey ||
+    if (event.code !== "KeyY" || event.repeat || event.altKey || event.ctrlKey ||
         event.metaKey || editableTarget(event.target)) return;
     event.preventDefault();
     start();
   };
   const keyup = (event) => {
-    // If V began outside a text box, always honor its release even if focus
+    // If Y began outside a text box, always honor its release even if focus
     // moved while the microphone was held.
-    if (event.code !== "KeyV" || !holding) return;
+    if (event.code !== "KeyY" || !holding) return;
     event.preventDefault();
     stop();
   };
