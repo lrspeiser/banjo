@@ -288,7 +288,10 @@ class StarterGoals(unittest.TestCase):
         wait_for('document.querySelector("#ws-market-balance").textContent === "1,000 J"')
         for count in range(6):
             click('[data-market-item="oak-stock"] button')
-            wait_for(f'document.querySelectorAll("#ws-market-orders > li").length === {count+1}')
+            # Orders by their "<price> J · <time>" line: with none yet, the list
+            # holds one "No purchases yet." item, which counted as the first.
+            wait_for('[...document.querySelectorAll("#ws-market-orders > li")]'
+                     f'.filter(li => li.textContent.includes(" J · ")).length === {count+1}')
             wait_for('document.querySelector("[data-market-item=oak-stock] button").disabled === false')
         click('.game-tabs [data-screen="goals"]')
         wait_for('document.querySelector("[data-goal=stock-oak]")?.dataset.complete === "true"')
@@ -299,14 +302,16 @@ class StarterGoals(unittest.TestCase):
         camp_selector = '[data-recipe="stool:Camp stool"]'
         wait_for(f'!!document.querySelector({json.dumps(camp_selector + ".ws-goal-target")})')
         click('[data-recipe="stool:Camp stool"] .ws-recipe-acts button')
+        # The separate transfers are folded away under "Supply details" since
+        # 3544fd2b; one "Prepare supplies" takes the oak from personal stock
+        # first, connects the battery and charges. A click charges for at most
+        # five seconds and then offers "Continue charging".
         wait_for('!!document.querySelector("#ws-remake-stock-personal")')
-        click('#ws-remake-stock-personal')
-        wait_for('!!document.querySelector("#ws-remake-connect")')
-        click('#ws-remake-connect')
-        wait_for('!!document.querySelector("#ws-remake-charge-wait")')
-        click('#ws-remake-charge-wait')
-        wait_for('!document.querySelector("#ws-remake-energy").disabled')
-        click('#ws-remake-energy')
+        for _ in range(8):
+            click('#ws-remake-prepare')
+            wait_for('!document.querySelector("#ws-remake-start").disabled || '
+                     '!!document.querySelector("#ws-remake-prepare:not(:disabled)")')
+            if page.evaluate('!document.querySelector("#ws-remake-start").disabled'): break
         wait_for('!document.querySelector("#ws-remake-start").disabled')
         click('#ws-remake-start')
         wait_for('!!document.querySelector("#ws-remake-step")')
@@ -328,7 +333,10 @@ class StarterGoals(unittest.TestCase):
         wait_for('document.querySelector("#mini-products").textContent.includes("Camp stool")')
         self.assertEqual(0,page.evaluate('document.querySelectorAll("#mini-products details").length'))
         screenshot("packed-in-world.png")
+        # Goals opens on the active chapter (f15cd75b); the camp is the
+        # earlier one, chosen the same way as at the start.
         click('.game-tabs [data-screen="goals"]')
+        click('[aria-label="Goal chapters"] button:last-child')
         wait_for('document.querySelector("#ws-goals-progress")?.textContent.includes("First camp complete")')
         self.assertTrue(self.post("/api/workshop/goals", {"chain":starter_goals.CHAIN}, world, player)["complete"])
         page.send("Page.reload")
