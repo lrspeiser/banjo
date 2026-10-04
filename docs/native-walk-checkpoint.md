@@ -83,15 +83,25 @@ followed the body with no page errors.
 - **Not anatomical.** The balance torque and traction are declared control
   limits on a cylinder proxy, not muscles or footwear. There is no stepping
   up: a step taller than the rounded edge stops it. There are no legs.
-- **Not yet done:** cargo carried as real mass, bodies kept through world edits
-  that rebuild the room, and the hand and camera tied fully to the body. The
-  camera controller remains the default.
+- **Cargo pulls back on the body.** What the hand pushes on a thing it holds,
+  reversed at the grip, acts on the body, and a held load presses on its feet
+  for traction and balance. In zero gravity with nothing to stand on, body and
+  crate together keep their momentum to within 4% (the hand's bounded spring
+  is not exactly symmetric in one step). A thing carried whole, rather than
+  held in the hand, does not yet push back.
+- **Bodies survive world edits.** An install rebuilds the room from its
+  snapshot, and a restart reopens the saved world; the engine carries native
+  players in both. The body is within 1 cm of where it stood after an install,
+  walks on in the rebuilt room, and is back within 5 cm after a restart
+  (`tests/native_walk_tests.py`).
+- **Not yet done:** the hand and camera tied fully to the body. The camera
+  controller remains the default.
 
 ## Verification
 
 ```powershell
 cmake --build build/walk --config Release --target banjo_valley_live_tests banjo_live_world_run
-build/walk/Release/banjo_valley_live_tests.exe        # 29/29
+build/walk/Release/banjo_valley_live_tests.exe        # 30/30
 $env:BANJO_LIVE_ENGINE="build/walk/Release/banjo_live_world_run.exe"; python tests/native_walk_tests.py
 ```
 
