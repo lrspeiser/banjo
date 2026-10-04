@@ -231,9 +231,16 @@ class RapidPlayer(unittest.TestCase):
         page.evaluate('window.quickUses=[]')
         for _ in range(5):
             key('keyDown','KeyJ','j');key('keyUp','KeyJ','j');time.sleep(.12)
+        tapped=time.monotonic()
         wait('quickActive===0 && banjoRoom.use().mode==="tool-ready" && !banjoRoom.use().queued && !banjoRoom.use().timer')
+        settled=time.monotonic()-tapped
         taps=page.evaluate('quickUses')
-        self.assertEqual(5,len(taps),'rapid explicit taps should not be lost')
+        # Rapid taps never queue behind the player (the owner, 2026-10-04): at
+        # most one waits, so a burst ends with the swing in hand plus the last
+        # click, soon after the last tap, rather than playing out one by one.
+        self.assertGreaterEqual(len(taps),2,'the last tap of a burst is not lost')
+        self.assertLessEqual(len(taps),5)
+        self.assertLess(settled,1.5,f'a burst of taps finished {settled:.2f} s after the last one')
         self.assertEqual(1,page.evaluate('quickMax'),'requests must be sequential')
         # Stop ends held repeat after the currently executing native use.
         page.evaluate('window.quickUses=[];window.quickDelayOnce=true')

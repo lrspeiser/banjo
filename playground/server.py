@@ -2132,8 +2132,12 @@ class Handler(BaseHTTPRequestHandler):
                 # and return the current hand/bag even after refused readiness.
                 answer['inventory']=inventory_room.shown(self.app,player)
                 if getattr(self.app,'world_id',None):
-                    if not keep_world(self.app,'the personal tool action closed'):
-                        answer['learning_pending']=True
+                    # Saved by the next page step, at most every
+                    # KEEP_WORLD_PENDING_GAP_S: a whole-world save after
+                    # every swing held the locks walking and the next swing
+                    # need, and fast digging queued behind it (2026-10-04).
+                    room=getattr(self.app,'room',None)
+                    if room is not None: room.world_save_pending=True
                     if any(r['owner']==player for r in player_learning.pending_of(self.app)):
                         answer['learning_pending']=True
                     if answer.get('learning_pending'):
@@ -2919,6 +2923,10 @@ KEEP_WORLD_EVERY_S=5.0
 # And after a save the engine refused -- something under way that a saved world
 # cannot carry -- how long before it is asked again: not on every step.
 KEEP_WORLD_RETRY_S=0.5
+# A save asked for by an action (a swing) waits for the next page step, and
+# for at least this long after the last save, so a burst of swings saves once
+# every few of them rather than after each.
+KEEP_WORLD_PENDING_GAP_S=2.0
 
 
 def keep_world(app,why=""):
@@ -2992,8 +3000,9 @@ def keep_world_after(app,body,answer):
     due=bool(answer.get("finished"))
     if not due and body.get("op")=="step" and isinstance(t,(int,float)):
         # Either way round: a world opened again starts its clock over.
-        due=((getattr(room,"world_save_pending",False) or
-              abs(float(t)-float(getattr(room,"world_saved_t",-1.0e9)))>=KEEP_WORLD_EVERY_S)
+        since=abs(float(t)-float(getattr(room,"world_saved_t",-1.0e9)))
+        due=(((getattr(room,"world_save_pending",False) and since>=KEEP_WORLD_PENDING_GAP_S) or
+              since>=KEEP_WORLD_EVERY_S)
              and abs(float(t)-float(getattr(room,"world_refused_t",-1.0e9)))>=KEEP_WORLD_RETRY_S)
     if not due: return
     if not keep_world(app,"a break was worked out" if answer.get("finished") else "the world moved on") \

@@ -47,6 +47,11 @@ constexpr double kArrivingS = 0.05;
 constexpr double kOutM = 0.01;
 // The resistance of rock under the soil a point has gone through: it stops it.
 constexpr double kRockN = 1.0e7;
+// On cube ground: swings to take out a cell of clay, and of rock (anything
+// at least kHardRockPa hard). Soil and sand come out in one.
+constexpr double kClaySwingsPerCell = 3.0;
+constexpr double kRockSwingsPerCell = 10.0;
+constexpr double kHardRockPa = 1.0e7;
 
 [[nodiscard]] Quat qMul(const Quat &a, const Quat &b) {
     return {a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
@@ -589,6 +594,7 @@ void ToolTerrain::meet(const ToolTerrainHost &host, Point &p, MatterBodyId id, c
     p.at_rock = rock && breaks_here;
     p.breaks_rock = p.at_rock;
     p.broke_m3 = 0.0;
+    p.paid_cell = false;
     p.rock_hardness_pa = p.at_rock
         ? terrain::groundHardnessPa(field.kindAt(column, field.rockTop(column) - 0.01)) : 0.0;
     if (p.at_rock && !(p.rock_hardness_pa > 0.0)) { p.breaks_rock = false; p.at_rock = false; }
@@ -726,7 +732,16 @@ void ToolTerrain::settle(const ToolTerrainHost &host, double dt_s) {
             // been paid for. Nothing here is a rate or a guess -- the work is
             // the solver's own, as it is in soil.
             if (p.breaks_rock && host.environment != nullptr && work_in > 0.0) {
-                const double bought = terrain::brokenVolumeM3(p.rock_hardness_pa, work_in);
+                // On cube ground a swing pays a set share of the cell it
+                // meets, once: a third of clay, a tenth of rock (the owner,
+                // 2026-10-04: a cube should go "pretty fast so you can see your
+                // progress"). Paid from work, clay took about 800 swings.
+                const double q = host.environment->terrain().grid().dx;
+                const bool cubes = host.environment->terrain().columnSurface();
+                const double bought = cubes
+                    ? (p.paid_cell ? 0.0 : q * q * q / (p.rock_hardness_pa >= kHardRockPa ? kRockSwingsPerCell : kClaySwingsPerCell))
+                    : terrain::brokenVolumeM3(p.rock_hardness_pa, work_in);
+                if (cubes && bought > 0.0) p.paid_cell = true;
                 if (bought > 0.0) {
                     // At the tip's own height: a pick swung at a tunnel face
                     // takes the rock out in front of the miner, not off the top
@@ -823,12 +838,25 @@ void ToolTerrain::finish(const ToolTerrainHost &host, Point &p, bool tool_here) 
         const double reach = std::max(terrain::wedgeLengthM(g, p.deepest), p.sideways);
         const double dx = field.grid().dx;
         const double width = std::max(terrain::breakoutWidthM(leadingWidth(p), p.deepest), 1.5 * dx);
-        const double ax = p.entry.x, az = p.entry.z;
-        const double bx = ax + reach * way.x, bz = az + reach * way.z;
-        const std::size_t columns = field.columnsAlong(ax, az, bx, bz, width).size();
+        double ax = p.entry.x, az = p.entry.z;
+        double bx = ax + reach * way.x, bz = az + reach * way.z;
+        std::size_t columns = field.columnsAlong(ax, az, bx, bz, width).size();
+        double depth = columns > 0 ? volume / (static_cast<double>(columns) * dx * dx) : 0.0;
+        double dig_width = width;
+        // On cube ground a swing that breaks soil or sand loose takes out the
+        // whole cube it struck, a cell deep, rather than a thin layer spread
+        // over the wedge (the owner, 2026-10-04: "in minecraft an entire cube
+        // goes away pretty fast so you can see your progress"). What comes out
+        // is still carried at its real mass, and only what lies over the rock.
+        if (field.columnSurface()) {
+            ax = bx = field.grid().xOf(static_cast<int>(p.column % static_cast<std::size_t>(field.grid().nx)));
+            az = bz = field.grid().zOf(static_cast<int>(p.column / static_cast<std::size_t>(field.grid().nx)));
+            dig_width = 0.5 * dx;
+            columns = field.columnsAlong(ax, az, bx, bz, dig_width).size();
+            depth = dx;
+        }
         if (columns > 0) {
-            const double depth = volume / (static_cast<double>(columns) * dx * dx);
-            const terrain::EditEffect effect = env.dig(world, ax, az, bx, bz, width, depth,
+            const terrain::EditEffect effect = env.dig(world, ax, az, bx, bz, dig_width, depth,
                 host.objects_of ? host.objects_of(p.carrier) : host.carried_objects_kg);
             r.loosened = effect.edit.moved;
             r.loosened_kg = effect.edit.mass_kg;
@@ -842,7 +870,7 @@ void ToolTerrain::finish(const ToolTerrainHost &host, Point &p, bool tool_here) 
             r.dug_from_m[1] = az;
             r.dug_to_m[0] = bx;
             r.dug_to_m[1] = bz;
-            r.dug_width_m = width;
+            r.dug_width_m = dig_width;
             r.dug_depth_m = effect.edit.depth_m;
         }
     }

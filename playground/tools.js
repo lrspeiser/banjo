@@ -312,7 +312,10 @@ export function makeTools(ctx) {
     use.timer = setTimeout(() => {
       use.timer = null;
       if (world.held !== held || use.stop || (!use.queued && !use.down)) return;
-      const input=use.queued ? use.inputs.shift() : sightInput();
+      // A waiting click aims where you look NOW, not where you looked when
+      // you clicked (an explicit point from the side panel keeps its point).
+      const waiting=use.queued ? use.inputs.shift() : null;
+      const input=waiting?.at_m ? waiting : sightInput();
       if (use.queued) use.queued--;
       useOnce(input);
     }, Math.max(0, interval - (performance.now() - (use.startedAt || 0))));
@@ -326,12 +329,12 @@ export function makeTools(ctx) {
     if (!use || !world.held || !world.held.pick) return;
     use.down = true;
     use.stop = false;
-    // Preserve short bursts while a native/network response is outstanding.
-    // Still bounded, sequential, and discarded immediately by Stop / Esc.
-    use.inputs ||= [];
-    if(use.inputs.length<16)use.inputs.push(target?.at_m ?
-      {at_m:target.at_m.slice(),target_name:target.target_name || null} : sightInput());
-    use.queued=use.inputs.length;
+    // At most ONE click waits while a swing is in hand: a newer click
+    // replaces it. Up to 16 used to queue and play out one by one, seconds
+    // behind the player and at old aims (the owner, 2026-10-04: "not queue
+    // up way behind me").
+    use.inputs=[target?.at_m ? {at_m:target.at_m.slice(),target_name:target.target_name || null} : {sight:true}];
+    use.queued=1;
     if (use.mode === "tool-ready") schedule();
   }
   function release() { if (world.use) world.use.down = false; }

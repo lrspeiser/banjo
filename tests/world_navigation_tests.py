@@ -117,7 +117,9 @@ class Navigation(unittest.TestCase):
         # before the reload has replaced it.
         page.evaluate('window.beforeReload=true;localStorage.setItem("banjo.movement","old-walk");location.reload()')
         wait('!window.beforeReload && window.banjoRoom?.ready()')
-        self.assertEqual('gravity',page.evaluate('banjoRoom.controls().movementMode'))
+        # An unknown stored choice falls back to the game's default: a body
+        # (the owner's call, 2026-10-04).
+        self.assertEqual('native',page.evaluate('banjoRoom.controls().movementMode'))
         OUT.mkdir(parents=True,exist_ok=True)
         (OUT/'world-navigation.json').write_text(json.dumps({'walk_m_s':rates[0],
             'run_m_s':rates[1],'edge_turn_rad_in_055_s':turned,'cursor_stops_look_and_keys':True,

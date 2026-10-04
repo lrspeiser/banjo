@@ -76,6 +76,12 @@ Json ground(double soil, double sand) {
     return {{"generate", {{"kind", "flat"}, {"nx", 48}, {"nz", 48}, {"cell_m", 0.1},
                           {"soil_m", soil}, {"sand_m", sand}, {"discharge_m3_s", 0.0}}}};
 }
+// The same, as the game's 25 cm cubes: 5 m square.
+Json cubeGround(double soil, double sand) {
+    return {{"surface", "columns"},
+            {"generate", {{"kind", "flat"}, {"nx", 20}, {"nz", 20}, {"cell_m", 0.25},
+                          {"soil_m", soil}, {"sand_m", sand}, {"discharge_m3_s", 0.0}}}};
+}
 
 std::unique_ptr<LiveWorld> open(const Json &scene) {
     const std::string text = scene.dump();
@@ -539,9 +545,9 @@ struct Swing {
 
 // Open a world with the pick in the air above the ground, take it by its grip
 // and swing it at the ground 0.3 m out, from a shoulder behind it.
-Swing swingAt(double soil, double sand, const std::string &material) {
+Swing swingAt(double soil, double sand, const std::string &material, bool cubes = false) {
     const double top = soil + sand;
-    Json scene{{"terrain", ground(soil, sand)}, {"bodies", pick(material, top)}};
+    Json scene{{"terrain", cubes ? cubeGround(soil, sand) : ground(soil, sand)}, {"bodies", pick(material, top)}};
     Swing out;
     out.live = open(scene);
     LiveWorld &live = *out.live;
@@ -718,6 +724,50 @@ void aPryBreaksGroundOutAndItIsCarried(bool limited = false) {
     require(kept.soil_m3 == made.soil_m3 && kept.sand_m3 == made.sand_m3,
             "the ground opened again from its edits carries a different amount");
     require(worst == 0.0, "the ground opened again from its edits does not have the same hole");
+}
+
+// On cube ground a swing that breaks soil loose takes out the whole cube it
+// struck (the owner, 2026-10-04): that column a cell lower, its neighbours
+// untouched, and the cube carried at its real mass.
+void aSwingTakesAWholeCubeOutOfCubeGround() {
+    Swing swing = swingAt(0.75, 0.0, "oak", true);
+    LiveWorld &live = *swing.live;
+    const terrain::Environment &env = *live.environment();
+    const terrain::TerrainField &field = env.terrain();
+    const double q = field.grid().dx;
+    std::vector<double> before(field.grid().cells());
+    for (std::size_t c = 0; c < before.size(); ++c) before[c] = field.height(c);
+    const double carried_before = swing.carried_before_m3;
+    // Pried and drawn out, as the pick test above does.
+    LiveStrike lever;
+    lever.lever = true;
+    lever.shoulder_m = {-0.9, 0.75 + 1.85 - 0.4, kTipZ};
+    lever.speed_m_s = 1.2;
+    lever.lever_deg = 40.0;
+    std::string why;
+    if (!swing.work.empty() && swing.work.front().open) {
+        require(live.strike(lever, why), "the lever was refused: " + why);
+        (void)finishStroke(live, 960, 30);
+    }
+    if (!live.groundWork().empty() && live.groundWork().front().open) {
+        const Vec3 grip = live.hand().grip_m;
+        LiveStroke up;
+        up.path_m = {grip, grip + Vec3{0.0, 0.4, 0.0}};
+        up.speed_m_s = 0.6; up.accel_m_s2 = 4.0; up.give_up_s = 3.0;
+        require(live.stroke(up, why), "the pull was refused: " + why);
+        (void)finishStroke(live, 960, 30);
+    }
+    require(!live.groundWork().empty(), "the swing met no ground");
+    const LiveGroundWork w = live.groundWork().front();
+    std::printf("  on cube ground: %s\n", said(w).c_str());
+    require(w.kind == "broke out" && w.dug, "the swing broke nothing out");
+    std::size_t lowered = 0, struck = 0;
+    for (std::size_t c = 0; c < before.size(); ++c)
+        if (std::abs(field.height(c) - before[c]) > 1e-9) { ++lowered; struck = c; }
+    require(lowered == 1, "one swing lowered " + std::to_string(lowered) + " columns, not one");
+    near(before[struck] - field.height(struck), q, 1e-9, "the struck column is a whole cell lower");
+    near(w.loosened.total(), q * q * q, 1e-9, "the cube's volume came out");
+    near(env.carried().total() - carried_before, q * q * q, 1e-9, "and is carried");
 }
 
 // ---- the grip ------------------------------------------------------------------
@@ -1008,6 +1058,7 @@ int main() {
         {"soil against rock", soilAgainstRock},
         {"a pry breaks ground out, and it is carried", [] { aPryBreaksGroundOutAndItIsCarried(); }},
         {"a held tool shares the excavation budget", [] { aPryBreaksGroundOutAndItIsCarried(true); }},
+        {"a swing takes a whole cube out of cube ground", aSwingTakesAWholeCubeOutOfCubeGround},
         {"a grip off the body is refused", aGripOffTheBodyIsRefused},
         {"a broad end meets the ground from wherever it is swung", aBroadEndMeetsTheGroundFromWhereverItIsSwung},
         {"lattice ground tools share exact equipment", latticeGroundToolsCanShareExactEquipment},

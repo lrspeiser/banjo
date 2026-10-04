@@ -146,6 +146,7 @@ private:
         bool breaks_rock{};
         double rock_hardness_pa{};
         double broke_m3{};      // what this meeting has broken out of the rock
+        bool paid_cell{};       // on cube ground, this swing's share of a cell is paid
         std::string ground;  // the layer the tip is in
         std::string carrier; // owner when this meeting began, even if the tool is later released
         // As the step began, for what the step did.
