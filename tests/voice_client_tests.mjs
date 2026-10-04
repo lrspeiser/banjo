@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { targetNarration } from "../playground/voice.js";
+
+const interaction=await readFile(new URL("../playground/interaction.js",import.meta.url),"utf8");
+assert.equal(interaction.includes('"KeyY"'),false,
+  "Hold Y must remain free of Banjo's existing interaction bindings");
 
 const plain=targetNarration({
   identity:"body:oak stool:7",
