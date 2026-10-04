@@ -1,4 +1,68 @@
 const REALTIME_CALLS = "https://api.openai.com/v1/realtime/calls";
+const LENS_MODES = ["off", "helpful", "everything"];
+
+function cleanWords(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function spokenAction(value) {
+  const text = cleanWords(value);
+  if (!text) return "";
+  const pieces = text.split("·");
+  return cleanWords(pieces[pieces.length - 1]);
+}
+
+// Turn the same deterministic Target-card facts the player sees into a short
+// utterance. No model is asked to identify the object or invent game state.
+export function targetNarration(target) {
+  if (!target || typeof target !== "object" || !target.identity) return null;
+  const rows = Array.isArray(target.rows) ? target.rows : [];
+  const primary = rows.find(row => row && cleanWords(row.label));
+  const feedback = target.feedback && typeof target.feedback === "object" ? target.feedback : null;
+  if (!primary && !feedback) return null;
+
+  const parts = [];
+  const add = value => {
+    const text = cleanWords(value).replace(/[.!?]+$/, "");
+    if (text && !parts.some(part => part.toLowerCase() === text.toLowerCase())) parts.push(text);
+  };
+  if (primary) {
+    add(primary.label);
+    if (primary.value && primary.value !== "Whole item") add(primary.value);
+    add(spokenAction(primary.action));
+  }
+  if (feedback) {
+    if (!primary) add(feedback.surface || feedback.tool || "Target");
+    add(spokenAction(feedback.action));
+    if (feedback.reason) add(feedback.reason);
+  }
+  if (!parts.length) return null;
+
+  const helpful = !!(
+    primary?.action ||
+    primary?.kind === "pile" ||
+    primary?.kind === "ore" ||
+    target.machine_input ||
+    feedback?.ready ||
+    feedback?.screen ||
+    feedback?.reason ||
+    ["blocked", "tool-needed", "working"].includes(feedback?.state)
+  );
+  const stableRows = rows.slice(0, 4).map(row => [
+    row?.name || null, row?.material || null, row?.label || null,
+    row?.value || null, row?.action || null, row?.kind || null,
+  ]);
+  const stableFeedback = feedback ? [
+    feedback.state || null, feedback.ready || false, feedback.action || null,
+    feedback.reason || null, feedback.screen || null,
+    Array.isArray(feedback.materials) ? feedback.materials : [],
+  ] : null;
+  return {
+    key: JSON.stringify([target.identity, stableRows, stableFeedback]),
+    text: parts.join(". ") + ".",
+    helpful,
+  };
+}
 
 function editableTarget(target) {
   return !!target?.closest?.("input, textarea, select, [contenteditable='true']");
@@ -34,6 +98,7 @@ export function createVoiceController({
   onUser = () => {},
   onReply = () => {},
   onStatus = () => {},
+  preferenceKey = "banjo.voice-lens",
 } = {}) {
   if (typeof api !== "function") throw new Error("Banjo voice requires the game API");
   const form = mount || document.querySelector("#ask");
@@ -46,6 +111,12 @@ export function createVoiceController({
   button.title = "Hold V, or press and hold this button, to talk to AI Guide";
   button.setAttribute("aria-label", button.title);
 
+  const lensButton = document.createElement("button");
+  lensButton.type = "button";
+  lensButton.id = "voice-lens";
+  lensButton.title = "Cycle automatic target narration: off, helpful targets, everything";
+  lensButton.setAttribute("aria-label", lensButton.title);
+
   const status = document.createElement("small");
   status.id = "voice-status";
   status.setAttribute("role", "status");
@@ -53,11 +124,32 @@ export function createVoiceController({
   status.hidden = true;
 
   const send = form.querySelector("#ask-send");
+  form.insertBefore(lensButton, send || null);
   form.insertBefore(button, send || null);
   form.insertAdjacentElement("afterend", status);
 
+  let lensMode = "off";
+  try {
+    const saved = localStorage.getItem(preferenceKey);
+    if (LENS_MODES.includes(saved)) lensMode = saved;
+  } catch {}
+  const paintLens = () => {
+    lensButton.dataset.mode = lensMode;
+    lensButton.setAttribute("aria-pressed", lensMode === "off" ? "false" : "true");
+    lensButton.textContent = lensMode === "off" ? "Lens off" :
+      lensMode === "helpful" ? "Lens helpful" : "Lens all";
+  };
+  const setLensMode = mode => {
+    if (!LENS_MODES.includes(mode)) return;
+    lensMode = mode;
+    try { localStorage.setItem(preferenceKey, lensMode); } catch {}
+    paintLens();
+  };
+  paintLens();
+
   let peer = null;
   let channel = null;
+  let transceiver = null;
   let media = null;
   let mic = null;
   let remoteAudio = null;
@@ -69,6 +161,7 @@ export function createVoiceController({
   let activePointer = null;
   let speechCounter = 0;
   let activeSpeech = null;
+  const spokenHover = new Set();
   let closed = false;
 
   function setStatus(state, text = "") {
@@ -109,6 +202,7 @@ export function createVoiceController({
     try { if (remoteAudio) remoteAudio.srcObject = null; } catch {}
     media = null;
     mic = null;
+    transceiver = null;
     channel = null;
     peer = null;
     remoteAudio?.remove();
@@ -118,6 +212,32 @@ export function createVoiceController({
     asking = false;
     speaking = false;
     activeSpeech = null;
+  }
+
+  async function ensureInput() {
+    if (mic) return;
+    if (!navigator.mediaDevices?.getUserMedia)
+      throw new Error("This browser does not support microphone voice");
+    const acquired = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+    const track = acquired.getAudioTracks()[0];
+    if (!track) {
+      for (const candidate of acquired.getTracks()) candidate.stop();
+      throw new Error("No microphone is available");
+    }
+    if (!transceiver?.sender) {
+      for (const candidate of acquired.getTracks()) candidate.stop();
+      throw new Error("Voice connection has no audio sender");
+    }
+    track.enabled = false;
+    await transceiver.sender.replaceTrack(track);
+    media = acquired;
+    mic = track;
   }
 
   async function handleTranscript(event) {
@@ -182,8 +302,8 @@ export function createVoiceController({
     if (closed) throw new Error("Voice is closed");
     if (channel?.readyState === "open") return;
     if (connecting) return connecting;
-    if (!navigator.mediaDevices?.getUserMedia || !window.RTCPeerConnection)
-      throw new Error("This browser does not support microphone voice");
+    if (!window.RTCPeerConnection)
+      throw new Error("This browser does not support voice playback");
     if (!canTalk()) throw new Error("Open your character's world before using voice");
     // A dead prior peer must not keep its microphone/track around when the
     // player reconnects after Wi-Fi or server recovery.
@@ -194,17 +314,6 @@ export function createVoiceController({
       const secret = await api("/api/world/voice/session", {});
       if (!secret?.value) throw new Error("Banjo did not receive a voice client secret");
 
-      media = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-      mic = media.getAudioTracks()[0];
-      if (!mic) throw new Error("No microphone is available");
-      mic.enabled = false;
-
       peer = new RTCPeerConnection();
       remoteAudio = document.createElement("audio");
       remoteAudio.autoplay = true;
@@ -214,7 +323,10 @@ export function createVoiceController({
         remoteAudio.srcObject = event.streams[0] || new MediaStream([event.track]);
         remoteAudio.play?.().catch(() => {});
       };
-      peer.addTrack(mic, media);
+      // Negotiate one bidirectional audio m-line up front. Spoken F1/hover
+      // guidance can therefore play without asking for microphone permission;
+      // push-to-talk later replaces the empty sender track without renegotiation.
+      transceiver = peer.addTransceiver("audio", { direction: "sendrecv" });
 
       channel = peer.createDataChannel("oai-events");
       channel.addEventListener("message", handleEvent);
@@ -253,7 +365,11 @@ export function createVoiceController({
     holding = true;
     try {
       await connect();
-      if (!holding || closed) return;
+      await ensureInput();
+      if (!holding || closed) {
+        if (mic) mic.enabled = false;
+        return;
+      }
       stopRemoteSpeech();
       emit({ type: "input_audio_buffer.clear" });
       mic.enabled = true;
@@ -274,7 +390,7 @@ export function createVoiceController({
   }
 
   async function speak(text) {
-    text = String(text || "").trim();
+    text = cleanWords(text);
     if (!text || closed) return;
     await connect();
     stopRemoteSpeech();
@@ -295,6 +411,35 @@ export function createVoiceController({
       },
     });
   }
+
+  async function narrateHover(detail) {
+    if (closed || lensMode === "off" || holding || transcribing || asking || speaking) return;
+    const narration = targetNarration(detail);
+    if (!narration || (lensMode === "helpful" && !narration.helpful) || spokenHover.has(narration.key)) return;
+    spokenHover.add(narration.key);
+    if (spokenHover.size > 128) spokenHover.delete(spokenHover.values().next().value);
+    try { await speak(narration.text); }
+    catch {
+      spokenHover.delete(narration.key);
+      // Hover narration is optional; leave normal play and the visible card intact.
+    }
+  }
+
+  const speakEvent = event => {
+    const text = cleanWords(event?.detail?.text);
+    if (text) speak(text).catch(error => setStatus("error", error.message || String(error)));
+  };
+  const hoverEvent = event => { void narrateHover(event?.detail); };
+  addEventListener("banjo-voice-speak", speakEvent);
+  addEventListener("banjo-voice-hover", hoverEvent);
+
+  lensButton.addEventListener("click", () => {
+    const at = LENS_MODES.indexOf(lensMode);
+    setLensMode(LENS_MODES[(at + 1) % LENS_MODES.length]);
+    setStatus("idle", lensMode === "off" ? "" :
+      lensMode === "helpful" ? "Voice lens will speak useful targets and blockers." :
+      "Voice lens will identify every stable target.");
+  });
 
   button.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
@@ -352,11 +497,14 @@ export function createVoiceController({
     removeEventListener("keyup", keyup);
     removeEventListener("blur", releaseOnBlur);
     document.removeEventListener("visibilitychange", releaseWhenHidden);
+    removeEventListener("banjo-voice-speak", speakEvent);
+    removeEventListener("banjo-voice-hover", hoverEvent);
     cleanupConnection();
     button.remove();
+    lensButton.remove();
     status.remove();
   }
 
   setStatus("idle");
-  return { button, status, start, stop, speak, destroy };
+  return { button, lensButton, status, start, stop, speak, setLensMode, destroy };
 }
