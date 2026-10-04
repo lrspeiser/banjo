@@ -184,6 +184,27 @@ the depths: those change with every spadeful, and each change would have asked
 for a new explanation. These are local measurements on one machine, not
 multiplayer load.
 
+## Fastening and the first construction skill (2026-10-04)
+
+**Fastening.** A thing set down on a support only rests there. Once it is
+placed on one, the build guide offers "Fasten to the (support)". That makes
+a native fixing between the two (`construction_mount.py`), rated the way a
+product's own bonded joint is: the weaker material's tensile and shear
+strength over the area where the thing's foot meets the support's top. Joint
+efficiency stays 1.0 by the owner's call of 2026-09-19. The fixing is a joint
+in the room. It is saved with the room and comes back after a restart (tested
+on the smelter, which really stands on its pad). When it is pulled or sheared
+past its rating it breaks in the room, and the guide then says it came apart.
+Unfasten removes it. The fastener itself (bolts, glue) is not modelled, and
+the engine checks pull and shear only, not bending or twisting.
+
+**Setting things down.** A new skill with no prerequisites. It is earned when
+a player looks over a Camp light or Camp solar panel they placed with the
+build guide, and the running room has it within 15 cm of where it was set
+and within 10 degrees of upright: the guide's own Placed check and the stand
+trial's tilt limit. Each placement is one evidence record, so looking again
+adds nothing. A thing that moved or leans is recorded as not standing.
+
 ## Full construction goal: remaining work
 
 1. Contract: declarations/readiness exist; enforce advanced skills and consume
@@ -200,18 +221,19 @@ multiplayer load.
    add repeated-failure events and qualify the complete construction milestones.
 7. Routing: the two-second guide target is met and measured (2026-10-04,
    below). Routing routine design edits apart from redesigns is still open.
-8. Projects: save prepare/support/platform/mount/access/operate steps with
-   navigation links and durable resumption.
+8. Projects: prepare, hold, site, place, fasten and inspect are saved steps,
+   each with where it is done; the current one is a link. Platform, access
+   and operate steps are still to come.
 9. Supports: pad exists; qualify posts/beams/braces/platforms and actual concrete
    production, supported/unsupported comparisons and removal behavior.
-10. Connections: distinguish attached hoppers from separate piles, implement
-    mounting and truthful settling/movement/support-removal guidance. Current
-    rigid fixed connections have no attachment failure model.
+10. Connections: mounting is done (2026-10-04, below): a fastening is a
+    native fixing rated by its contact, and it breaks in the room. Telling
+    attached hoppers from separate piles is still open.
 11. Customization: design editing and installation declarations exist; build
     bounded versioned proposals for slope fitting, recipes, appearance,
     machine behavior and goals through paid use/reopening.
-12. Skills: evidence-based construction practice, reachable Learn paths,
-    achievement/unlock presentation and no circular prerequisites.
+12. Skills: "Setting things down" is earned from the engine (below). More
+    construction techniques, such as building on a pad, are still to come.
 13. Shared writes: private selection/site intent now has exact revision/retry
     receipts, peer privacy and restart checks; extend complete world mutation
     receipts to preparation/mounting, depletion, stale advice and lost replies.
