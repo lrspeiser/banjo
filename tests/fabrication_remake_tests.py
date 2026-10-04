@@ -1181,7 +1181,7 @@ class LabRemake(unittest.TestCase):
             self.fail(expr + '; ' + str(p.evaluate('document.body.innerText.slice(-1800)')))
         def click(selector):
             wait('document.querySelector(' + json.dumps(selector) + ') && !document.querySelector(' + json.dumps(selector) + ').disabled')
-            point = p.evaluate('(()=>{const e=document.querySelector(%s);e.scrollIntoView({block:"center"});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()' % json.dumps(selector))
+            point = p.evaluate('(()=>{const e=document.querySelector(%s);const d=e.closest("details:not([open])");if(d)d.open=true;e.scrollIntoView({block:"center"});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()' % json.dumps(selector))
             for event in ('mousePressed', 'mouseReleased'):
                 p.send('Input.dispatchMouseEvent', {'type': event, **point, 'button': 'left', 'clickCount': 1})
         p.send('Page.navigate', {'url': self.base + f'/world?world={world}&workshop=1&tab=lab&carry=field%20pick'})
@@ -1233,9 +1233,9 @@ class LabRemake(unittest.TestCase):
         # receipts. This qualifies Make; it does not close all supply routes.
         pile=app.brains.goods.put(0,0,{'oak':20.,'iron':20.},named='mixed pick test supplies')['onto']
         floor=app.live.act({'session':app.live.session.id,'op':'survey','at':[0,0]})['survey']['ground_m']
-        for number in range(2):
-            self.post('/api/world/goods/collect',{'session':app.live.session.id,'pile':pile,
-                'request_id':'mixed-pick-supplies-'+str(number),'person':{'eyes_m':[0,floor+1.62,0],'facing':[0,0,-1]}},world)
+        # One pickup takes the whole pile (5af65746: storage is a ledger, not a hand load).
+        self.assertEqual({'oak':20.,'iron':20.},self.post('/api/world/goods/collect',{'session':app.live.session.id,'pile':pile,
+            'request_id':'mixed-pick-supplies-0','person':{'eyes_m':[0,floor+1.62,0],'facing':[0,0,-1]}},world)['collected'])
         click('#ws-remake-review')
         wait('document.querySelector("#ws-remake-stock-personal-oak")')
         click('#ws-remake-stock-personal-oak');wait('!document.querySelector("#ws-remake-stock-personal-oak")')
@@ -1359,13 +1359,10 @@ class LabRemake(unittest.TestCase):
             named='explicit canonical build fixture supplies')['onto']
         sid=app.live.session.id
         floor=app.live.act({'session':sid,'op':'survey','at':[0,0]})['survey']['ground_m']
-        collected={}
-        for index in range(3):
-            receipt=self.post('/api/world/goods/collect',{'session':sid,'pile':pile,
-                'request_id':f'canonical-browser-collect-{index}',
-                'person':{'eyes_m':[0,floor+1.62,0],'facing':[0,0,-1]}},world)
-            for material,mass in receipt['collected'].items():
-                collected[material]=collected.get(material,0)+mass
+        # One pickup takes the whole pile (5af65746: storage is a ledger, not a hand load).
+        collected=self.post('/api/world/goods/collect',{'session':sid,'pile':pile,
+            'request_id':'canonical-browser-collect-0',
+            'person':{'eyes_m':[0,floor+1.62,0],'facing':[0,0,-1]}},world)['collected']
         self.assertEqual({'oak':40.,'iron':12.,'glass':5.,'copper':.5,'copper wire':2.3},collected)
         self.post('/api/world/fabrication/configure',{'session':sid,'scene':app.room.scene,
             'settings':funded.settings(stock_kg={},energy_j=0),'request_id':'canonical-browser-process'},world)
@@ -1382,7 +1379,7 @@ class LabRemake(unittest.TestCase):
             self.fail(expr+'; '+str(p.evaluate('document.body.innerText.slice(-1600)')))
         def click(selector):
             wait('document.querySelector("#ws-remake").getAttribute("aria-busy")!=="true"')
-            point=p.evaluate('(()=>{const b=document.querySelector(%s);b.scrollIntoView({block:"center"});const r=b.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()'%json.dumps(selector))
+            point=p.evaluate('(()=>{const b=document.querySelector(%s);const d=b.closest("details:not([open])");if(d)d.open=true;b.scrollIntoView({block:"center"});const r=b.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()'%json.dumps(selector))
             for event in ('mousePressed','mouseReleased'):
                 p.send('Input.dispatchMouseEvent',{'type':event,**point,'button':'left','clickCount':1})
             wait('document.querySelector("#ws-remake").getAttribute("aria-busy")!=="true"')
@@ -1456,7 +1453,7 @@ class LabRemake(unittest.TestCase):
             self.fail(expr+'; '+str(p.evaluate('document.body.innerText.slice(-1800)')))
         def click(selector):
             wait('document.querySelector("#ws-remake").getAttribute("aria-busy")!=="true"')
-            box=p.evaluate('(()=>{const b=document.querySelector(%s);b.scrollIntoView({block:"center"});const r=b.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()'%json.dumps(selector))
+            box=p.evaluate('(()=>{const b=document.querySelector(%s);const d=b.closest("details:not([open])");if(d)d.open=true;b.scrollIntoView({block:"center"});const r=b.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()'%json.dumps(selector))
             p.send('Input.dispatchMouseEvent',{'type':'mousePressed',**box,'button':'left','clickCount':1})
             p.send('Input.dispatchMouseEvent',{'type':'mouseReleased',**box,'button':'left','clickCount':1})
             wait('document.querySelector("#ws-remake").getAttribute("aria-busy")!=="true"')
