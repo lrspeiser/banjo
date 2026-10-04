@@ -1629,18 +1629,16 @@ class ARoverRoamsTheShore(PageJourney):
               flush=True)
         self.assertGreater(path, 10.0, "it did not roam")
         self.assertGreaterEqual(said["turns"], 1, f"it never turned away from anything: {seen}")
-        # NOT DRY, SHALLOW. The sensors trip at 3 mm, which is the depth the
-        # water itself calls wet, and they sit over a metre ahead of the
-        # wheels; on a curved shore the front sweeps through the shallows as
-        # the machine turns, and a wheel can touch. Asking it to stay drier
-        # than its own sensors can see is asking for something no arrangement
-        # of them delivers.
+        # WADING, NOT SWIMMING. The sensors trip at 80 mm, the axle of its
+        # caster (the owner, 2026-10-04: a rover may wade the shallows of a
+        # shore, never go into the lake), and they sit over a metre ahead of
+        # the wheels; on a curved shore the front sweeps through the shallows
+        # as the machine turns, and a wheel can go deeper than they read.
+        # That sweep is the 47 mm this allowed over the old 3 mm sensors.
         #
         # What it must not do is get IN. Before the sensor work it put a wheel
-        # 12 to 176 mm down on every single run; now it is dry on most and
-        # grazes about 20 mm on the rest, always while manoeuvring and never
-        # while driving at the water. So: shallow, and out again by the end.
-        self.assertLessEqual(wet, 0.05, f"a wheel went INTO the water: {wettest}")
+        # 12 to 176 mm down on every single run. So: the shallows at most.
+        self.assertLessEqual(wet, 0.08 + 0.047, f"a wheel went INTO the water: {wettest}")
         # The panel says why, and it is still roaming: the reason it gave a
         # moment ago is not the reason now. Ask the page to compare the two
         # itself, so both come from one instant instead of two round-trips apart.

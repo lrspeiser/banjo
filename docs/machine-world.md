@@ -833,6 +833,26 @@ and through the playground's own route (the `tests-rover` room, `behave` with
 9 m up the shore: its own ask left it dry at z -6.4 saying "the water was in
 the way of what it was asked, so it gave it up"; a person's order put it at
 (0.15, -0.88), 152 mm of water under a wheel, waiting where it was sent.
+
+### Wading the shallows
+
+**Status, 2026-10-04.** A rover now wades shallow water by itself: water up to
+the axle of its smallest wheel, the 160 mm caster, so 80 mm. It still keeps out
+of the river and the lake.
+
+Water was kept out because electricity and water do not mix. Nothing in the
+engine models that: water only pushes up on what is in it and drags on what
+moves through it. The cost of keeping out was real, though. In the mine, a
+rover on its way home ended beside the water with every way out more than
+3 mm deep, and stood there for the rest of the run. The owner chose wading.
+
+There is one number, and it belongs to the machine: each water sensor's
+`depth_mm`, how deep the water ahead must be before it counts as in the way.
+The rooms' rovers and the Workshop's rover template have 80 (they had 3). The
+reflex reads it, and the route planner (`machine_navigation.waypoint`) reads
+the same number off the machine's sensors, so it never plans a way the
+reflexes would refuse. A wet step counts double, so it wades only where that
+saves going round. The drone keeps 3 mm: it should never land in water.
 ## What has been seen
 
 A room answered about ground nobody had ever been near as readily as about the

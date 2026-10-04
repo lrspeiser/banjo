@@ -24,6 +24,11 @@ WAYPOINT_NEAR_M = .4
 FINAL_NEAR_M = .1
 # Water under its own footprint it may drive out of: a dig's puddle, not a lake.
 OWN_WET_M = .1
+# How deep water counts as wet, for a machine with no water sensor to say.
+WET_M = .003
+# A wet cell's step costs this many dry ones: it wades only where that saves
+# going round.
+WADE_COST = 2.
 
 
 def shape_points(body, cell_m):
@@ -92,6 +97,12 @@ def waypoint(ctx, target, arrival=(0.,0.), avoid_workings=True):
           if s.get('kind')=='ground' and s.get('stops',1)<0]
     rear_offsets=[(s['at_m'][0]-at[0],s['at_m'][2]-at[1],float(s['depth_m'])) for s in rear]
     initial_heading=math.radians(ctx.heading())
+    # The water it may go through is the water its own sensors let it: a
+    # route its reflexes would refuse is no route. The mine's rover, held to
+    # 3 mm, was boxed in at a 50 mm shore margin; its sensors now let it wade
+    # to its caster's axle, and so does this.
+    wade=min((float(s['depth_m']) for s in ctx.program.get('sensors') or []
+              if s.get('kind')=='water' and s.get('depth_m') is not None),default=WET_M)
     obstacles=[]
     top=max(p[1] for p in own)
     for b in ctx.bodies or []:
@@ -133,7 +144,7 @@ def waypoint(ctx, target, arrival=(0.,0.), avoid_workings=True):
         # its own wet cells left it parked in the hole for good. Only the
         # cells it occupies now, and only shallow water.
         own=math.hypot(x-at[0],z-at[1])<=radius+1e-6 and depth<OWN_WET_M
-        if not s.get('on_the_ground') or (depth>.003 and not own):
+        if not s.get('on_the_ground') or (depth>wade and not own):
             rejected('terrain',(x,z),{k:s.get(k) for k in ('on_the_ground','slope_deg','water')});s=None
         surveyed[key]=s;return s
     def clear(node):
@@ -280,6 +291,7 @@ def waypoint(ctx, target, arrival=(0.,0.), avoid_workings=True):
             if dx and dz and (not clear((node[0]+dx,node[1])) or not clear((node[0],node[1]+dz))):continue
             if not leg_clear(node,nxt,heading(state),yaw):continue
             step=CELL_M*math.hypot(dx,dz)
+            if float(((terrain(nxt) or {}).get('water') or {}).get('depth_m') or 0)>WET_M:step*=WADE_COST
             score=cost+step+.1*abs(angle_change(heading(state),yaw))
             next_state=(*nxt,i)
             if score>=costs.get(next_state,math.inf):continue

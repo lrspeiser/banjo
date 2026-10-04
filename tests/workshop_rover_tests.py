@@ -23,7 +23,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "playground")]
 import mcp  # noqa: E402,F401  (installs the products into the catalogue)
-from mcp import workshop as w, workshop_components, workshop_construction, workshop_machines  # noqa: E402
+from mcp import workshop as w, workshop_components, workshop_construction, workshop_machines, workshop_products  # noqa: E402
 import fracture_lab, inventory, live_session, rigid_assembly, room_store, rover_brain, rover_talk  # noqa: E402
 import workshop_install as install  # noqa: E402
 import workshop_library  # noqa: E402
@@ -112,7 +112,7 @@ class TheRoverIsInTheCatalogue(unittest.TestCase):
         [program] = made["programs"]
         self.assertEqual("rover", program["body"], "the chassis is the body both wheels' pins turn on")
         self.assertEqual([1550.0, 560.0, -2000.0], program["sensors"][0]["at_mm"])
-        self.assertEqual(3.0, program["sensors"][0]["depth_mm"])
+        self.assertEqual(1000.0 * workshop_products.ROVER_SENSOR_DEPTH_M, program["sensors"][0]["depth_mm"])
         self.assertEqual({"kind": "dig", "hopper_kg": 40.0, "places": {"dig site": [1.0, 0.0], "depot": [1.0, -6.0]}},
                          program["routine"])
         [panel] = made["panels"]
@@ -239,7 +239,7 @@ class InstalledIntoTheRoom(unittest.TestCase):
     def pose(self, name):
         return next(b for b in self.live.session.send(op="poses")["bodies"] if b["name"] == name)
 
-    def test_it_installs_as_the_rooms_rover_and_roams_dry(self):
+    def test_it_installs_as_the_rooms_rover_and_roams_wading_at_most(self):
         preview = install.preview(self.app, {"session": self.ctx["session"], "scene": "basin", "mode": "authoring",
                                              "position_m": list(ROVER_AT), "candidate": rover_candidate()})
         self.assertEqual("preview", preview["status"])
@@ -282,7 +282,10 @@ class InstalledIntoTheRoom(unittest.TestCase):
         print(f"\n    the Workshop's rover roamed {path:.1f} m in 20 s, {program['turns']} turns away, at most "
               f"{wet * 1000:.0f} mm of water under a wheel; now {program['doing']}: {program['why']}")
         self.assertGreater(path, 3.0, "it went somewhere")
-        self.assertLessEqual(wet, 0.003, "and stayed dry")
+        # Wading at most: its water eyes let it to its caster's axle, and a
+        # wheel can sweep a little past what they read as it turns at a shore
+        # (tests/rover_room_tests.py allows the same 47 mm).
+        self.assertLessEqual(wet, workshop_products.ROVER_SENSOR_DEPTH_M + 0.047, "and never went in deep")
         # Its routine knows its places, and a person can talk to it.
         brain = self.brains.of("rover")
         self.assertEqual({"dig site", "depot"}, set(brain.routine.places))

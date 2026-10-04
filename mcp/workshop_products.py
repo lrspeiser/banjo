@@ -114,7 +114,11 @@ ROVER_PARAMETERS = (
     w.Parameter("material", "", "oak", choices=("oak", "iron")),
 )
 ROVER_MOTOR = {"stall_torque_n_m": 20.0, "no_load_rpm": 60.0, "brake_torque_n_m": 40.0}
-ROVER_SENSOR_DEPTH_M = 0.003
+# A rover's water eyes let it wade to the axle of its caster wheel (80 mm),
+# as the room's rover does (tools/build_rover_room.py, SENSOR_DEPTH_MM). A
+# drone's still see the first wet millimetres: it should never land in water.
+ROVER_SENSOR_DEPTH_M = 0.08
+DRONE_SENSOR_DEPTH_M = 0.003
 
 
 def _build_rover(library: w.ComponentLibrary, values: dict[str, Any]) -> list[w.WirePart]:
@@ -313,7 +317,7 @@ def _drone_overrides(values: dict[str, Any], parts: list[w.WirePart]) -> dict[st
         "programs": [{"kind": "hover", "rotors": [f"{name} rotor" for name, _ in DRONE_ROTORS],
                       "hover_m": values["hover_m"], "setting": 1.0,
                       "sensors": [{"kind": "water", "on": "deck", "at_m": [sx * 0.3, deck_y - 0.02, side / 2.0 + 0.3],
-                                   "depth_m": ROVER_SENSOR_DEPTH_M} for sx in (1.0, -1.0)],
+                                   "depth_m": DRONE_SENSOR_DEPTH_M} for sx in (1.0, -1.0)],
                       "routine": {"kind": "dig", "hopper_kg": values["hopper_kg"]}}],
     })
     out: dict[str, Any] = {workshop_construction.CONSTRUCTION_KEY: construction,

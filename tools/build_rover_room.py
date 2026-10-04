@@ -116,7 +116,13 @@ SENSORS_LOCAL_M = ((0.55, 0.36, 1.5), (0.0, 0.36, 1.5), (-0.55, 0.36, 1.5))
 # -1 behind, and the program stops reversing the moment one of these sees
 # water, whatever is still in front of it.
 REAR_SENSORS_LOCAL_M = ((0.55, 0.36, -0.9), (-0.55, 0.36, -0.9))
-SENSOR_DEPTH_MM = 3.0
+# How deep the water may be before a sensor counts it in the way: up to the
+# axle of its smallest wheel, the 160 mm caster. It wades the shallows at a
+# shore and still keeps out of the river and the lake (the owner, 2026-10-04:
+# water was kept out as electricity's enemy, which nothing here models, and
+# a rover boxed in at a 50 mm margin is the cost). It was 3 mm, the depth
+# the water itself calls wet, and "never a wheel in the water" with it.
+SENSOR_DEPTH_MM = 80.0
 MACHINE = {"capacity_j": 100000.0, "voltage_v": 24.0,
            "stall_torque_n_m": 20.0, "no_load_rpm": 60.0, "brake_torque_n_m": 40.0}
 # Qualified for this unloaded 43.55 kg oak-wheel assembly and existing 20 N m
