@@ -8,7 +8,8 @@ const source=(await readFile(new URL('../playground/tools.js',import.meta.url),'
 const {makeTools}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
 
 test('pile clicks precede tool use and recheck exact-ray occlusion and reach',async()=>{
-  const full=await readFile(new URL('../playground/world.js',import.meta.url),'utf8');
+  // A Windows checkout has CRLF line ends; the markers below are written with LF.
+  const full=(await readFile(new URL('../playground/world.js',import.meta.url),'utf8')).replace(/\r\n/g,'\n');
   const code=full.slice(full.indexOf('canvas.addEventListener("pointerdown", (e) => {'),full.indexOf('canvas.addEventListener("pointermove", (e) => {'));
   for(const mode of ['clear','occluded','far','input']) {
     let callback, collected=0, strokes=0;const requests=[],messages=[];
@@ -46,7 +47,8 @@ test('idle contact hand ignores hover targets before and after use',()=>{
 });
 
 test('first-person render hides only held tool parts and restores visibility on failure',async()=>{
-  const full=await readFile(new URL('../playground/world.js',import.meta.url),'utf8');
+  // A Windows checkout has CRLF line ends; the markers below are written with LF.
+  const full=(await readFile(new URL('../playground/world.js',import.meta.url),'utf8')).replace(/\r\n/g,'\n');
   const code=full.slice(full.indexOf('function render()'),full.indexOf('// ---------------------------------------------------------------------------\n// The panel',full.indexOf('function render()')));
   const handle={visible:true},head={visible:true},peer={visible:true},pickedBox={visible:true};
   const world={held:{name:'handle',pick:{parts:['handle','head']}},bodies:new Map([

@@ -57,11 +57,14 @@ class RecipeGuidance(unittest.TestCase):
         all_lines=[l for t in recipes()['templates'] for l in [*t.get('materials',[]),*t.get('goods',[])]]
         deposits=[r for l in all_lines for r in l['acquisition'] if r['kind']=='deposit']
         if deposits:self.assertTrue(any('rover' in r['equipment'] for r in deposits))
-        # An exhausted source must disappear rather than remain a suggested supply.
-        while pile['holds'].get('oak',0)>0:
-            self.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],
-                'request_id':'empty-oak-'+str(len(app.room.goods_claims)),
-                'person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[0,0,-1]}},world)
+        # An exhausted source must disappear rather than remain a suggested
+        # supply. The timber lies in several piles; empty every one.
+        for loose in [p for p in app.brains.goods.stockpiles if p.get('holds',{}).get('oak',0)>0 and not p.get('rack')]:
+            lx,lz=loose['at_m'];lfloor=app.live.act({'session':sid,'op':'survey','at':[lx,lz]})['survey']['ground_m']
+            while loose['holds'].get('oak',0)>0:
+                self.post('/api/world/goods/collect',{'session':sid,'pile':loose['name'],
+                    'request_id':'empty-oak-'+str(len(app.room.goods_claims)),
+                    'person':{'eyes_m':[lx,lfloor+1.62,lz],'facing':[0,0,-1]}},world)
         after=next(l for l in rover(other['token'])['materials'] if l['material']=='oak')
         self.assertFalse(any(r['kind']=='pile' for r in after['acquisition']))
         self.assertTrue(any(r['kind']=='market' and r['offer_id']=='oak-stock' for r in after['acquisition']))
@@ -124,10 +127,13 @@ class RecipeGuidance(unittest.TestCase):
         finally:flow.workshop_library.REQUEST_OWNER.reset(token)
         p.send('Page.navigate',{'url':recipes_url})
         wait(f'document.querySelector({json.dumps(card+" .ws-recipe-acts button")}) && !document.querySelector({json.dumps(card+" .ws-recipe-acts button")}).disabled')
+        # Back on Recipes the Table is under Work table's "Other versions" again.
+        p.evaluate(f'document.querySelector({json.dumps(card)}).closest(".ws-variants")?.setAttribute("open","")')
         click(card+' canvas');shot('supplied')
+        installed=len(app.room.workshop_installs)        # new worlds start with their own
         click(card+' .ws-recipe-acts button')
         wait(f'document.querySelector({json.dumps(card+" .ws-recipe-result")}).textContent.includes("Made ✓")')
-        self.assertEqual(1,len(app.room.workshop_installs))
+        self.assertEqual(installed+1,len(app.room.workshop_installs))
         token=flow.workshop_library.REQUEST_OWNER.set(browser_owner)
         try:after=next(r for r in flow.workshop_library.rack(app)['materials'] if r['material']=='oak')
         finally:flow.workshop_library.REQUEST_OWNER.reset(token)
@@ -142,7 +148,10 @@ class RecipeGuidance(unittest.TestCase):
         shot('made')
         click(rover+' canvas');wait(f'document.querySelector({json.dumps(rover+" details")}).open')
         text=p.evaluate(f'document.querySelector({json.dumps(rover)}).textContent')
-        self.assertIn('Processing machine required',text);self.assertIn('hopper',text)
+        # Whichever is true here: no machine smelts copper, a furnace can be
+        # switched to it, or (in a starter world) the furnace already does.
+        self.assertTrue(any(w in text for w in ('Processing machine required','Select Smelt Copper','Turn on in World')),text[:300])
+        self.assertIn('hopper',text)
         supplies=rover+' [data-supply="copper"] .ws-input-supplies summary'
         click(supplies)
         nested=rover+' [data-supply="copper"] [data-supply="copper ore"]'
@@ -197,7 +206,8 @@ class RecipeGuidance(unittest.TestCase):
         # This changes recipe descriptions only, not the running native world.
         app.room.spec['goods']['recipes'].append({'name':'circular-copper','in':{'copper':1},'out':{'copper':1}})
         circular=next(r for r in line()['acquisition'] if r.get('name')=='circular-copper')
-        blocked=circular['input_supplies'][0]['acquisition']
+        inputs=circular['machines'][0]['inputs'] if circular['machines'] else circular['input_supplies']
+        blocked=inputs[0]['acquisition']
         self.assertEqual('blocked',blocked[0]['kind']);self.assertIn('Supply cycle',blocked[0]['reason'])
 
 
