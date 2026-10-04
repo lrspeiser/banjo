@@ -16,7 +16,10 @@ class Element {
 }
 globalThis.document={createElement:tag=>new Element(tag)};
 globalThis.location={href:'http://localhost/world?world=test'};
-const events={};globalThis.addEventListener=(name,run)=>{events[name]=run;};
+const events={},dispatched=[];
+globalThis.addEventListener=(name,run)=>{events[name]=run;};
+globalThis.CustomEvent=class {constructor(type,options={}){this.type=type;this.detail=options.detail;}};
+globalThis.dispatchEvent=event=>{dispatched.push(event);return true;};
 const source=await readFile(new URL('../playground/player_guidance.js',import.meta.url),'utf8');
 const {renderPlayerGuidance}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
 const root=new Element('section');
@@ -32,6 +35,17 @@ const initial=pending.shift();assert.equal(initial.body.action,'status');
 reply(initial);await flush();
 const area=root.querySelector('.player-guide-tip'),tip=area.children[1];
 assert.match(area.textContent,/Place your item/);
+const speaker=area.children.find(c=>c.textContent==='Speak');
+assert.ok(speaker,'ready guidance should expose a Speak control');
+speaker.onclick();
+assert.equal(dispatched.at(-1).type,'banjo-voice-speak');
+assert.equal(dispatched.at(-1).detail.source,'guide-button');
+assert.match(dispatched.at(-1).detail.text,/Place your item/);
+// F1 speaks even when the same explanation is already painted.
+events.keydown({key:'F1',repeat:false,preventDefault(){}});const replay=pending.shift();
+reply(replay);await flush();
+assert.equal(dispatched.at(-1).detail.source,'f1');
+assert.match(dispatched.at(-1).detail.text,/Place your item/);
 // Repeated live refreshes cannot collapse or repaint the current ready tip,
 // including while a network read is outstanding or returns a transient state.
 for(let n=0;n<30;n++) {
