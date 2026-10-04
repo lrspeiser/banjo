@@ -2131,12 +2131,18 @@ class ASubstanceLooksLikeWhatItIs(PageJourney):
             self.assertTrue(self.wait_for("!banjoRoom.world.held", 60),
                             f"the hand would not let go of what was left in it: {self.situation()}")
 
-    def look_at_the_ground(self):
-        eye = self.js("banjoRoom.camera.position.toArray()")
-        x, z = eye[0], eye[2]
-        ground = self.js(f"banjoRoom.groundAt({x}, {z})") or 0.0
-        self.page.evaluate(f"banjoRoom.standAt({x}, {ground + 1.62}, {z});"
-                           f"banjoRoom.lookAt({x}, {ground}, {z - 2.0}); true")
+    def look_at_a_block(self, name="oak block"):
+        """Close up to one of the valley's blocks, so that it fills the middle
+        of the view. The ground is not grained any more: since 59f4efec it is
+        drawn with a material of its own that marks each column by what it is
+        made of, so the grain is looked for on a thing the room's substances
+        dress."""
+        x, y, z = self.position(name)
+        ground = self.js(f"banjoRoom.groundAt({x}, {z + 0.7})") or 0.0
+        self.page.evaluate(f"banjoRoom.standAt({x}, {ground + 1.62}, {z + 0.7});"
+                           f"banjoRoom.lookAt({x}, {y}, {z}); true")
+        self.assertTrue(self.wait_for(f"banjoRoom.world.aim && banjoRoom.world.aim.name === {json.dumps(name)}", 30),
+                        f"the {name} is not in the middle of the view: {self.situation()}")
         time.sleep(1.0)
 
     # A body the Workshop finished, and one it did not, built the same way the
@@ -2289,7 +2295,7 @@ class ASubstanceLooksLikeWhatItIs(PageJourney):
         is reading noise and would pass on anything.
         """
         self.open_valley()
-        self.look_at_the_ground()
+        self.look_at_a_block()
         self.page.evaluate("window.__patchBefore = null; banjoRoom.showGrain(0); true")
         time.sleep(0.8)
         self.assertIsNone(self.js(self.CHANGED_BY), "the first reading is the one to compare against")
