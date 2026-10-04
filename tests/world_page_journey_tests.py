@@ -3317,14 +3317,14 @@ class TheHotListTakesWhatYouPutInIt(PageJourney):
         self.assertNotEqual("none", shown, "an empty slot stays hidden while a thing is carried")
 
         # And a thing in the bag can be picked up with the mouse at all.
-        self.assertTrue(self.js("!!document.querySelector('#inv-bag li[draggable]')"),
+        self.assertTrue(self.js("!!document.querySelector('#mini-products .mini-product[draggable=true]')"),
                         "a thing in the bag cannot be picked up with the mouse")
 
         # THE OTHER PLACE IT CAN BE DROPPED. The owner: "from the inventory
         # screen you can click on an item and drag it into the workshop,
         # which will then take you into the workshop where you can modify
         # it." The Workshop link takes the same drag the slots do.
-        link = '#panel .game-tabs [data-screen="inventory"]'
+        link = '#world-quickbar .game-tabs [data-screen="inventory"]'
         self.assertEqual("yes", self.js(f"document.querySelector('{link}').dataset.takesThings"),
                          "the Workshop link does not take a thing")
         over = self.js(f"""(() => {{
@@ -3339,16 +3339,23 @@ class TheHotListTakesWhatYouPutInIt(PageJourney):
         self.assertEqual({"lights": True, "took": True}, json.loads(over),
                          "the Workshop link does not answer a thing dragged over it")
 
-        # Dropped, it opens that thing on the bench.
-        self.page.send("Page.navigate", {
-            "url": f"http://127.0.0.1:{self.port}/world?workshop=1&carry={ident}"})
+        # Dropped, it opens that thing on the bench -- the drop itself, as the
+        # dragover above, so the page says where it goes.
+        self.js(f"""(() => {{
+          const dt = new DataTransfer();
+          dt.setData('application/x-banjo-item', {json.dumps(ident)});
+          document.querySelector('{link}').dispatchEvent(
+            new DragEvent('drop', {{dataTransfer: dt, bubbles: true, cancelable: true}}));
+          return true;
+        }})()""")
         self.assertTrue(self.wait_for(
             "[...document.querySelectorAll('.ws-tabs button')]"
             ".some(b => b.dataset.tab === 'lab' && b.getAttribute('aria-selected') === 'true')",
             120),
             "dropping a thing on the Workshop did not open the bench")
         self.assertTrue(self.wait_for("!!document.querySelector('#ws-name')"
-                                      " && document.querySelector('#ws-name').textContent.trim()", 60),
+                                      " && document.querySelector('#ws-name').textContent.trim()"
+                                      " && document.querySelector('#ws-name').textContent.trim() !== 'Empty lab'", 60),
                         "the bench opened on nothing")
 
 

@@ -4822,6 +4822,17 @@ function showInventory() {
       lab.addEventListener("click",e=>{e.stopPropagation();tools.stop();});actions.append(lab);
     }
     if(inHand){row.dataset.hand=where.startsWith("Left")?"left":"right";row.tabIndex=0;}
+    // PICK IT UP WITH THE MOUSE and drop it on a slot of the row over the room
+    // (the hot list), or on the Workshop link to open it on the bench. Both
+    // still take a drop; the compact Inventory (1e532cc2) had left nothing to
+    // drag to them.
+    else if(!watchedId && thing.id) {
+      row.draggable=true;
+      row.title=`${bagName(thing)} -- drag it onto a slot in the row over the room, or onto Workshop to open it on the bench`;
+      row.addEventListener("dragstart",e=>{e.dataTransfer.setData(BAG_DRAG,thing.id);e.dataTransfer.effectAllowed="move";
+        document.body.classList.add("moving-a-thing");});
+      row.addEventListener("dragend",()=>document.body.classList.remove("moving-a-thing"));
+    }
     row.append(actions);parent.append(row);
   };
   for(const side of ['right','left']) {
@@ -4932,7 +4943,7 @@ const BAG_DRAG = "application/x-banjo-item";
 // it." The Workshop opens on that thing's bench rather than on whatever it
 // had open last.
 function workshopTakesDrops() {
-  const link = document.querySelector('#panel .game-tabs [data-screen="inventory"]');
+  const link = document.querySelector('#world-quickbar .game-tabs [data-screen="inventory"]');
   if (!link || link.dataset.takesThings) return;
   link.dataset.takesThings = "yes";
   link.addEventListener("dragover", (e) => {
@@ -4948,9 +4959,10 @@ function workshopTakesDrops() {
     if (!id) return;
     e.preventDefault();
     document.body.classList.remove("moving-a-thing");
-    const url = new URL("/world", location.origin);
-    url.searchParams.set("workshop", "1");
-    if (worldId) url.searchParams.set("world", worldId);
+    // To the Lab of THIS world or room, as the Inventory's own Lab link goes:
+    // a link with neither a world nor a scene now starts a new world, and a
+    // carried thing does not come into one.
+    const url = new URL(screenUrl("lab"), location.origin);
     url.searchParams.set("carry", id);
     location.href = url.toString();
   });
