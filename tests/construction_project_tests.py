@@ -15,6 +15,7 @@ import urllib.request
 ROOT=Path(__file__).resolve().parents[1]
 sys.path[:0]=[str(ROOT/'playground'),str(ROOT/'tests'),str(ROOT)]
 import construction_projects as projects
+import construction_prepare as prepare
 import ai_player_tests as fixture
 import placement_context_tests as preview_fixture
 import placement
@@ -38,6 +39,47 @@ class Suggestions(unittest.TestCase):
         with mock.patch.object(projects,'_native',return_value={'fits':False,'why':'Too steep'}):
             answer,reason=projects.suggest(app,'owner','item',preview_fixture.PERSON)
         self.assertIsNone(answer);self.assertEqual('Too steep',reason)
+
+
+class Preparation(unittest.TestCase):
+    """The patch is read from the ground as it is; nothing is invented."""
+    def app(self,height,rock=-5.0,wet=0.0):
+        app=type('App',(),{})()
+        session=type('Session',(),{'id':'s','state':{'bodies':[]}})()
+        def act(body):
+            x,z=body['at']
+            return {'survey':{'on_the_ground':True,'ground_m':height(x,z),'rock_top_m':rock,
+                'surface':'soil','water':{'depth_m':wet}}}
+        app.live=type('Live',(),{'session':session,'act':staticmethod(act)})()
+        return app
+
+    saved={'centre_m':[0.0,1.1],'ahead':[0.0,1.0],'size_m':[.7,.7]}
+
+    def test_flat_ground_needs_nothing(self):
+        got=prepare.read(self.app(lambda x,z:.8),self.saved)
+        self.assertTrue(got['done']);self.assertEqual([],got['squares'])
+        self.assertIn('level',prepare.instruction(got))
+
+    def test_a_hump_marks_only_the_squares_above_the_lowest(self):
+        got=prepare.read(self.app(lambda x,z:.8+(.12 if x>.1 else 0)),self.saved)
+        self.assertFalse(got['done'])
+        self.assertTrue(got['squares']);self.assertTrue(all(sq['at_m'][0]>.1 for sq in got['squares']))
+        self.assertAlmostEqual(.12,max(sq['dig_m'] for sq in got['squares']),3)
+        area=sum(sq['size_m'][0]*sq['size_m'][1] for sq in got['squares'])
+        self.assertAlmostEqual(.12*area,got['dig_m3'],4)
+        self.assertNotIn('why',got);self.assertIn('Dig the',prepare.instruction(got))
+
+    def test_hillside_rock_and_water_are_said(self):
+        steep=prepare.read(self.app(lambda x,z:.8+z),self.saved)
+        self.assertIn('too much to level by hand',steep['why'])
+        rocky=prepare.read(self.app(lambda x,z:.8+(.1 if x>0 else 0),rock=.85),self.saved)
+        self.assertIn('pick',rocky['why']);self.assertTrue(any(sq['rock'] for sq in rocky['squares']))
+        wet=prepare.read(self.app(lambda x,z:.8+(.1 if x>0 else 0),wet=.2),self.saved)
+        self.assertIn('water',wet['why'])
+
+    def test_the_patch_is_bounded_and_sized_to_the_thing(self):
+        big={**self.saved,'size_m':[9.0,9.0]}
+        self.assertLessEqual(len(list(prepare.squares(big))),prepare.MOST_SQUARES)
 
 
 @unittest.skipUnless(fixture.hub.RUNNER.is_file() and fixture.hub.ENGINE.is_file(),'native world engine not built')
@@ -128,6 +170,54 @@ class PlacementJourney(unittest.TestCase):
                 'person':person,'placement_target':target},world)
         self.assertFalse(refused['ok']);self.assertIn('occupied',refused['why'])
         self.assertEqual('camp light',app.live.session.state['player_hands'][owner['id']]['holding'])
+
+    def test_no_spot_marks_ground_to_dig_and_digging_it_clears_the_step(self):
+        world,owner,app=self.setup_world();item,person=self.take_lamp(world,app)
+        sid=app.live.session.id
+        self.write(world,'select',item=item)
+        # A hump of earth where the lamp would go, as a player's own heap of
+        # earth dug from behind them: ground does not come from nowhere.
+        bx,bz=person['standing_m'][0]-2.5,person['standing_m'][2]
+        carried=self.post('/api/live/act',{'session':sid,'op':'dig','from':[bx,bz],'to':[bx,bz],'width_m':.6,'depth_m':.2},world)['carried']
+        cx,cz=person['standing_m'][0]+prepare.AHEAD_M,person['standing_m'][2]
+        self.post('/api/live/act',{'session':sid,'op':'deposit','at':[cx+.15,cz],'radius_m':.3,
+            'soil_m3':carried.get('soil_m3',0),'sand_m3':carried.get('sand_m3',0),'from_carried':True},world)
+        with mock.patch.object(projects,'suggest',return_value=(None,'No supported spot within reach. Move or prepare the ground.')):
+            asked=self.write(world,'suggest',person=person)
+        self.assertFalse(asked['site_found']);self.assertTrue(asked['preparing'])
+        self.assertEqual([cx,cz],[round(v,4) for v in asked['project']['prepare']['centre_m']])
+        view=self.post('/api/world/construction',{'person':person},world)['project']
+        self.assertEqual('Prepare ground',view['status'],view.get('preparation'))
+        self.assertEqual(['prepare','hold','site','place','inspect'],[s['id'] for s in view['steps']])
+        self.assertEqual('current',view['steps'][0]['status'])
+        ground=view['preparation'];self.assertTrue(ground['squares']);self.assertIn('Dig the',ground['instruction'])
+        guide=self.post('/api/world/guidance',{},world)
+        self.assertEqual('Check the ground again',guide['next_action']['label'])
+        # Reading changes nothing in the world.
+        self.assertEqual(ground,self.post('/api/world/construction',{'person':person},world)['project']['preparation'])
+        # Asking again while still digging keeps the same patch.
+        with mock.patch.object(projects,'suggest',return_value=(None,'still no spot')):
+            again=self.write(world,'suggest',person=person)
+        self.assertEqual(asked['project']['prepare'],again['project']['prepare'])
+        # Dig each marked square down by what it says, as a shovel would.
+        dug=0.0
+        for _ in range(4):
+            marked=self.post('/api/world/construction',{'person':person},world)['project'].get('preparation')
+            if not marked or marked['done']:break
+            for sq in marked['squares']:
+                at=[sq['at_m'][0],sq['at_m'][2]]
+                got=self.post('/api/live/act',{'session':sid,'op':'dig','from':at,'to':at,
+                    'width_m':sq['size_m'][0],'depth_m':sq['dig_m']},world)
+                dug+=1
+        done=self.post('/api/world/construction',{'person':person},world)['project']
+        self.assertTrue(done['preparation']['done'],done['preparation'])
+        self.assertEqual('Choose site',done['status'])
+        self.assertEqual('done',done['steps'][0]['status'])
+        # The native trial still decides the spot; the step is then kept done.
+        found=self.write(world,'suggest',person=person)
+        self.assertTrue(found['project']['target'],found)
+        self.assertNotIn('prepare',found['project']);self.assertTrue(found['project']['prepared'])
+        self.assertEqual('done',self.post('/api/world/construction',{'person':person},world)['project']['steps'][0]['status'])
 
     def test_native_place_and_resume_on_both_surfaces(self):
         reports=[]

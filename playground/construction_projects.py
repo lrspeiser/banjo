@@ -9,6 +9,7 @@ from copy import deepcopy
 import json
 import math
 
+import construction_prepare
 import inventory_room
 import placement
 import player_world
@@ -160,7 +161,18 @@ def view(app, owner, *, person=None, _record=None):
             from mcp import workshop_components, workshop_placement
             design, _ = workshop_components.design_from_spec(recipe)
             project['installation'] = workshop_placement.for_design(design)
-        if where == 'stowed':
+        prepare = project.get('prepare')
+        ground = None
+        if prepare and getattr(app.live, 'session', None):
+            ground = construction_prepare.read(app, prepare)
+            ground['instruction'] = construction_prepare.instruction(ground)
+            project['preparation'] = ground
+        if ground and not ground['done']:
+            # The digging is done with an ordinary tool, with the item put
+            # away; the ground is read again on every view.
+            project.update(status='Prepare ground', next_label='Check the ground again',
+                blocker=ground.get('why'))
+        elif where == 'stowed':
             project.update(status='Equip', next_label='Hold ' + project['name'])
         else:
             project.update(status='Choose site', next_label='Find a supported spot')
@@ -189,8 +201,12 @@ def view(app, owner, *, person=None, _record=None):
                 blocker=None, operation=operation(app, project['body']))
         else:
             project.update(next_label='Open Inventory', blocker='This item is no longer in your hands or bag.')
+    preparing = project['status'] == 'Prepare ground'
     project['steps'] = [
-        {'id': 'hold', 'label': 'Hold item', 'status': 'current' if project['status']=='Equip' else 'done' if where or project['status']=='Placed' else 'blocked'},
+        *([{'id': 'prepare', 'label': 'Prepare the ground',
+            'status': 'current' if preparing else 'done'}]
+          if project.get('prepare') or project.get('prepared') else []),
+        {'id': 'hold', 'label': 'Hold item', 'status': 'pending' if preparing else 'current' if project['status']=='Equip' else 'done' if where or project['status']=='Placed' else 'blocked'},
         {'id': 'site', 'label': 'Choose supported spot', 'status': 'done' if project['status'] in ('Place','Placed') else 'current' if where and where!='stowed' else 'pending'},
         {'id': 'place', 'label': 'Place item', 'status': 'done' if project['status']=='Placed' else 'current' if project['status']=='Place' else 'pending'},
         {'id': 'inspect', 'label': 'View components and use', 'status': 'done' if project['status']=='Placed' and project.get('inspected')
@@ -262,9 +278,28 @@ def request(app, owner, body):
             moving = _moving_name(app, owner, thing)
             answer, blocker = suggest(app, owner, moving, person, project.get('target'))
             if not answer:
-                return {'schema':SCHEMA,'revision':revision,'project':deepcopy(project),
-                    'site_found':False,'blocker':blocker}
-            project.update(body=moving,target=answer['target'], at_m=answer['at_m'],inspected=False)
+                if project.get('target') or (project.get('prepare') and
+                        not construction_prepare.read(app, project['prepare'])['done']):
+                    # Still digging, or another spot was asked for: say
+                    # why, without moving the patch the player is digging.
+                    return {'schema':SCHEMA,'revision':revision,'project':deepcopy(project),
+                        'site_found':False,'blocker':blocker}
+                # Nothing stands within reach: mark the ground in front to
+                # level, sized to the thing. Saved, so it survives a reload.
+                project.update(body=moving, target=None, at_m=None,
+                    prepare=construction_prepare.plan(app, moving, person))
+                record['revision'] += 1
+                answer = {'schema':SCHEMA,'revision':record['revision'],'project':deepcopy(project),
+                    'site_found':False,'blocker':blocker,'preparing':True}
+                record['receipts'][ident] = {'fingerprint':fingerprint,'answer':answer}
+                record['receipts'] = dict(list(record['receipts'].items())[-MAX_RECEIPTS:])
+                db.execute('INSERT INTO construction_projects VALUES (?,?,?,?) '
+                    'ON CONFLICT(world_id,owner_id,scene) DO UPDATE SET payload_json=excluded.payload_json',
+                    (*key,json.dumps(record,allow_nan=False)))
+                return deepcopy(answer)
+            prepared = bool(project.pop('prepare', None)) or project.get('prepared', False)
+            project.update(body=moving,target=answer['target'], at_m=answer['at_m'],inspected=False,
+                prepared=prepared)
         record['revision'] += 1
         answer = {'schema':SCHEMA,'revision':record['revision'],'project':deepcopy(record['project'])}
         record['receipts'][ident] = {'fingerprint':fingerprint,'answer':answer}

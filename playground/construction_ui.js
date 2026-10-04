@@ -26,7 +26,7 @@ export async function constructionWrite(api,scope,action,fields={},person=null) 
   }
 }
 
-export function constructionControls(root,context,{hold,find,place,inspect,cancel}) {
+export function constructionControls(root,context,{hold,find,place,inspect,cancel,check}) {
   const project=context?.project;if(!project)return;
   const link=root.querySelector('a.ws-action');if(link)link.remove();
   root.querySelector('[data-guidance-clear]')?.remove();
@@ -46,7 +46,15 @@ export function constructionControls(root,context,{hold,find,place,inspect,cance
       finally {if(b.isConnected)b.disabled=false;}
     };actions.append(b);return b;
   };
-  if(project.status==='Equip')button(project.next_label,hold);
+  if(project.status==='Prepare ground' && project.preparation) {
+    // The marked squares are drawn on the ground in World; this says how
+    // much to dig and with what, as the server read the ground just now.
+    const note=document.createElement('p');note.className='construction-prepare';
+    note.textContent=project.preparation.instruction;
+    root.insertBefore(note,root.querySelector('.player-guide-tip'));
+  }
+  if(project.status==='Prepare ground')button(project.next_label,check);
+  else if(project.status==='Equip')button(project.next_label,hold);
   else if(project.status==='Place')button('Place here',place);
   else if(project.status==='Placed')button(project.inspected?'View item':'View components and use',inspect);
   else if(project.status!=='Unavailable')button('Find a supported spot',find);
