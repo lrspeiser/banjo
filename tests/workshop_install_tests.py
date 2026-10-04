@@ -125,10 +125,10 @@ class InstallationBoundary(unittest.TestCase):
         body['parked']={'mass_kg':1};install._clearance({'bodies':[body]},{(75,0,0)},.04)
 
     def test_strict_preservation_rejects_even_unrecognized_changed_state(self):
-        before={'bodies':[{'name':'old'}],'parts':[], 'next':{'body':1},'future_energy':14}
+        before={'format':'banjo.world.v1','bodies':[{'name':'old'}],'parts':[], 'next':{'body':1},'future_energy':14}
         after={**deepcopy(before),'bodies':[{'name':'old'},{'name':'new'}],'next':{'body':2}}
         install._preserved(before,after,'new')
-        for key,value in (('future_energy',13),('bodies',[{'name':'old','changed':1},{'name':'new'}])):
+        for key,value in (('future_energy',13),('bodies',[{'name':'old','changed':1},{'name':'new'}]),('format','banjo.world.v2')):
             corrupt=deepcopy(after);corrupt[key]=value
             with self.assertRaises(ValueError):install._preserved(before,corrupt,'new')
 
@@ -148,7 +148,7 @@ class InstallationBoundary(unittest.TestCase):
             install._terrain_floor(old,([0,0,0],[1,1,1]))
 
     def test_material_reference_geometry_must_survive_installation(self):
-        before={'bodies':[{'name':'old'}], 'parts':[], 'next':{'body':1},
+        before={'format':'banjo.world.v1','bodies':[{'name':'old'}], 'parts':[], 'next':{'body':1},
                 'material_geometry':{'schema':'banjo.material-geometry.v1',
                                      'records':{'old':{'applied_m':0.001}}}}
         after=deepcopy(before)
