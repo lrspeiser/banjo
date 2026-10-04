@@ -293,7 +293,7 @@ and the two-second guide.
 
 ```powershell
 $R="build/rel/Release"
-$env:BANJO_LIVE_ENGINE="$R/banjo_live_world_run.exe"; $env:BANJO_PLATFORM_ENGINE="$R/banjo_platform_cli.exe"; $env:BANJO_LIBRARY="$R/banjo_c.dll"
+$env:BANJO_LIVE_ENGINE="$R/banjo_live_world_run.exe"; $env:BANJO_PLATFORM_ENGINE="$R/banjo_platform_cli.exe"; $env:BANJO_LIBRARY="$R/banjo.dll"
 python tests/recipe_audit_tests.py
 python -m unittest tests.fabrication_remake_tests -k camp_solar
 python -m unittest tests.fabrication_remake_tests -k test_failed_connection_paid_mixed   # 8 of 8
