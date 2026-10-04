@@ -2153,9 +2153,10 @@ def normalise_terrain(terrain: Any) -> dict[str, Any]:
         return {}
     if not isinstance(terrain, dict):
         raise ValueError("terrain must be an object: {\"generate\": ..., \"edits\": [...]}")
-    unknown = set(terrain) - {"generate", "edits", "surface"}
+    unknown = set(terrain) - {"generate", "edits", "surface", "stream", "regions"}
     if unknown:
-        raise ValueError(f"terrain cannot say {sorted(unknown)}: it holds generate, edits and surface")
+        raise ValueError(f"terrain cannot say {sorted(unknown)}: it holds generate, edits, surface, stream "
+                         f"and regions")
     out: dict[str, Any] = {}
     generate = terrain.get("generate", "valley")
     kind = generate if isinstance(generate, str) else (generate or {}).get("kind", "valley")
@@ -2166,6 +2167,18 @@ def normalise_terrain(terrain: Any) -> dict[str, Any]:
         if terrain['surface'] not in ('smooth', 'cuts', 'columns'):
             raise ValueError('terrain.surface must be smooth, cuts or columns')
         out['surface'] = terrain['surface']
+    # Ground that grows as somebody nears its edge, and the regions it has grown
+    # so far (docs/streamed-regions.md). The engine says whether this ground can.
+    if "stream" in terrain:
+        if type(terrain["stream"]) is not bool:
+            raise ValueError("terrain.stream is true or false")
+        out["stream"] = terrain["stream"]
+    if "regions" in terrain:
+        regions = terrain["regions"]
+        if (not isinstance(regions, list) or len(regions) > 48 or
+                any(not isinstance(r, list) or len(r) != 2 or any(type(v) is not int for v in r) for r in regions)):
+            raise ValueError("terrain.regions is a list of at most 48 [x, z] places, two whole numbers each")
+        out["regions"] = regions
     edits = terrain.get("edits") or []
     if not isinstance(edits, list) or len(edits) > 400:
         raise ValueError("terrain.edits is a list of at most 400")

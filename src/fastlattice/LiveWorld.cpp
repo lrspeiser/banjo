@@ -1683,9 +1683,10 @@ struct LiveWorld::Impl {
                 const RigidSnapshot at = world->snapshot(body_of[found->second]);
                 sensor.at_m = at.center_of_mass_world_m + at.orientation_world.rotate(sensor.at_local_m);
                 if (environment && sensor.kind == "ground") {
-                    const auto &terrain = environment->terrain();
-                    if (!terrain.cellAt(sensor.at_m.x, sensor.at_m.z) ||
-                        !terrain.cellAt(at.center_of_mass_world_m.x, at.center_of_mass_world_m.z)) {
+                    const auto &terrain = environment->fieldAt(at.center_of_mass_world_m.x,
+                                                               at.center_of_mass_world_m.z);
+                    if (!environment->onTheGround(sensor.at_m.x, sensor.at_m.z) ||
+                        !environment->onTheGround(at.center_of_mass_world_m.x, at.center_of_mass_world_m.z)) {
                         sensor.reading_m = 10.0; // bounded out-of-map hazard
                     } else {
                         // Reference the terrain under the chassis, not its
@@ -1698,7 +1699,7 @@ struct LiveWorld::Impl {
                         const double gx=(terrain.heightAt(x+d,z)-terrain.heightAt(x-d,z))/(2*d);
                         const double gz=(terrain.heightAt(x,z+d)-terrain.heightAt(x,z-d))/(2*d);
                         sensor.reading_m = terrain.heightAt(x,z) + gx*(sensor.at_m.x-x) + gz*(sensor.at_m.z-z) -
-                                           terrain.heightAt(sensor.at_m.x, sensor.at_m.z);
+                                           environment->groundHeightAt(sensor.at_m.x, sensor.at_m.z);
                     }
                 } else if (environment) sensor.reading_m = environment->waterDepthAt(sensor.at_m.x, sensor.at_m.z);
             }
@@ -1998,7 +1999,6 @@ struct LiveWorld::Impl {
             }
             return;
         }
-        const terrain::TerrainField &field = environment->terrain();
         for (LiveBreaker &breaker : breakers) {
             breaker.drawn_w = breaker.broke_m3 = 0.0;
             breaker.working = false;
@@ -2023,6 +2023,7 @@ struct LiveWorld::Impl {
             for (double d = 0.0; d <= breaker.reach_m + 1.0e-9 && !met; d += step) {
                 const Vec3 probe{breaker.at_m.x + d * breaker.along.x, breaker.at_m.y + d * breaker.along.y,
                                  breaker.at_m.z + d * breaker.along.z};
+                const terrain::TerrainField &field = environment->fieldAt(probe.x, probe.z);
                 const auto column = field.cellAt(probe.x, probe.z);
                 if (!column) continue;
                 if (!(field.cellRockM3(*column, probe.y) > 0.0)) continue;
@@ -2035,6 +2036,7 @@ struct LiveWorld::Impl {
             const double got_w = std::clamp(can_w, 0.0, breaker.watts);
             if (!(got_w > 0.0)) { breaker.why = "the battery is flat"; continue; }
             const double work_j = got_w * dt_s;
+            const terrain::TerrainField &field = environment->fieldAt(face.x, face.z);
             const auto column = field.cellAt(face.x, face.z);
             const double hardness = terrain::groundHardnessPa(field.kindAt(*column, face.y));
             if (!(hardness > 0.0)) { breaker.why = "there is nothing there to break"; continue; }
@@ -2108,8 +2110,8 @@ struct LiveWorld::Impl {
         p.velocity = at.linear_velocity_m_s;
         p.spin = at.angular_velocity_rad_s;
         p.said.climb_m_s = at.linear_velocity_m_s.y;
-        const double ground = environment ? environment->terrain().heightAt(at.center_of_mass_world_m.x,
-                                                                             at.center_of_mass_world_m.z)
+        const double ground = environment ? environment->groundHeightAt(at.center_of_mass_world_m.x,
+                                                                         at.center_of_mass_world_m.z)
                                           : 0.0;
         p.said.height_m = at.center_of_mass_world_m.y - ground;
         p.said.landed_height_m = p.landed_height_m;
@@ -9392,7 +9394,7 @@ void LiveWorld::surveyLoads() {
                 c.at[axis] = std::llround((part(offset, axis) - part(first, axis)) / cell);
             c.at[up] = static_cast<long long>(up_sign) * c.at[up];
             const Vec3 world = pose.center_of_mass_world_m + pose.orientation_world.rotate(offset);
-            const double ground = impl_->environment ? impl_->environment->terrain().heightAt(world.x, world.z)
+            const double ground = impl_->environment ? impl_->environment->groundHeightAt(world.x, world.z)
                                                      : impl_->setup->ground_y;
             c.foot = std::abs(world.y - 0.5 * cell - ground) < reach;
             best.stands = best.stands || c.foot;
@@ -10794,7 +10796,7 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
         if (sustained.on_ground)
             for (std::size_t local = 0; local < count; ++local) {
                 const Vec3 p = island.matter.nodes[local].position_world_m;
-                const double ground = impl_->environment ? impl_->environment->terrain().heightAt(p.x, p.z)
+                const double ground = impl_->environment ? impl_->environment->groundHeightAt(p.x, p.z)
                                                          : setup.ground_y;
                 if (p.y - ground > cell || p.y < ground - 0.5 * cell) continue;
                 holding_cells.insert(static_cast<std::uint32_t>(local));
@@ -13586,6 +13588,32 @@ terrain::TerrainField::Rect LiveWorld::takeChangedGround() {
     return impl_->environment ? impl_->environment->takeChangedGround() : terrain::TerrainField::Rect{};
 }
 
+std::vector<int> LiveWorld::takeAddedRegions() {
+    return impl_->environment ? impl_->environment->takeAddedRegions() : std::vector<int>{};
+}
+
+std::vector<std::pair<int, terrain::TerrainField::Rect>> LiveWorld::takeChangedRegions() {
+    return impl_->environment ? impl_->environment->takeChangedRegions()
+                              : std::vector<std::pair<int, terrain::TerrainField::Rect>>{};
+}
+
+std::vector<terrain::Environment::Grown> LiveWorld::growGround(const std::vector<std::pair<double, double>> &also) {
+    std::vector<terrain::Environment::Grown> out;
+    terrain::Environment *env = impl_->environment.get();
+    if (env == nullptr || !env->streaming()) return out;
+    const auto toward = [&](double x, double z) {
+        for (const auto &grown : env->growToward(impl_->world.get(), x, z)) out.push_back(grown);
+    };
+    for (const auto &[actor, player] : impl_->native_players) {
+        (void)actor;
+        if (!impl_->world->contains(player.id)) continue;
+        const Vec3 at = impl_->world->snapshot(player.id).center_of_mass_world_m;
+        toward(at.x, at.z);
+    }
+    for (const auto &[x, z] : also) toward(x, z);
+    return out;
+}
+
 namespace {
 terrain::Environment &requireEnvironment(const std::unique_ptr<terrain::Environment> &environment) {
     if (!environment) throw std::invalid_argument("this world has no terrain: its scene declares none");
@@ -13780,7 +13808,7 @@ LiveWorld::Chipped LiveWorld::workRock(double x, double y, double z, double work
     terrain::Environment &env = requireEnvironment(impl_->environment);
     Chipped out;
     if (!(work_j > 0.0)) return out;
-    const terrain::TerrainField &field = env.terrain();
+    const terrain::TerrainField &field = env.fieldAt(x, z);
     const auto column = field.cellAt(x, z);
     if (!column) return out;
     // rock-work-v1: what this much work buys, at the hardness of the rock at

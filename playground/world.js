@@ -27,6 +27,7 @@ import { gameNavigation, showSaveStatus, screenUrl, thumbnail, massLabel } from 
 import { conditionPanel } from "/body_condition.js";
 import { GROUND_APPEARANCE, materialAppearance, terrainCellAt, terrainTargetPath, exposedRunKind, toolTargetFeedback, toolTargetColor, collectedToolMaterials, toolOutcomeFeedback, makeTargetHover, columnTopData, walkColumnFaces, columnChunkIds, columnChunkBox } from "/material_appearance.js";
 import { terrainMaterial } from "/terrain_material.js";
+import { makeRegions } from "/ground_regions.js";
 import { baselineHeightAt, cutHeightAt, walkCutSurface, cutWallBands, cutRimSegments } from "/cut_surface.js";
 import { renderPlayerGuidance } from "/player_guidance.js";
 import { constructionWrite, constructionControls } from "/construction_ui.js";
@@ -224,7 +225,10 @@ async function act(op, extra) {
   // measured, an action, or the chat -- and only then.
   const answer = await api("/api/live/act", Object.assign(
       { session: world.session, op, notebook_seen: notebookRevision,
-        ...(op==="step" && worldId ? {terrain_seen:world.terrainVersion || null} : {}) }, extra || {}));
+        ...(op==="step" && worldId ? {terrain_seen:world.terrainVersion || null} : {}),
+        // Where the eye is across the ground: a world that grows grows toward
+        // it, as it does toward a body (docs/streamed-regions.md).
+        ...(op==="step" && ground.grid ? {grow_at:[camera.position.x, camera.position.z]} : {}) }, extra || {}));
   if (answer && answer.notebook) showNotebook(answer.notebook, notebookRevision >= 0);
   return answer;
 }
@@ -917,6 +921,25 @@ const ground = {
   was: null, next: null, arrived: 0, flow: null, flowBox: [0, 0, 0, 0], last: null,
   beyond: [],   // sheets of water standing beyond the edges: see drawBeyond
 };
+// The ground beyond the valley, streamed in as somebody nears its edge
+// (docs/streamed-regions.md): each region drawn on its own grid, beside the
+// valley's, and never redrawn whole because another arrived.
+const groundRegions = makeRegions(scene, dress);
+
+// The column of ground under a point, whoever's it is: the valley's, or a
+// region's beside it. What the tool's aim and the material preview read.
+function groundColumn(x, z) {
+  const g = ground.grid;
+  if (g) {
+    const c = terrainCellAt(x, z, g);
+    if (c >= 0) return { grid: g, c, heights: ground.heights, surfaces: ground.surfaces, runs: ground.runs,
+                         valley: true };
+  }
+  const at = groundRegions.columnAt(x, z);
+  if (!at) return null;
+  const r = at.region;
+  return { grid: r.grid, c: at.c, heights: r.heights, surfaces: r.surfaces, runs: r.runs, valley: false };
+}
 
 function bytesOf(b64) {
   const s = atob(b64 || "");
@@ -929,6 +952,10 @@ function bytesOf(b64) {
 function groundAt(x, z) {
   const g = ground.grid;
   if (!g) return 0;
+  if (groundRegions.count && terrainCellAt(x, z, g) < 0) {
+    const out = groundRegions.heightAt(x, z);
+    if (out !== null) return out;
+  }
   if(g.surface==="cuts")return cutHeightAt(g,ground.baseline,ground.heights,x,z);
   if(g.surface==="columns") {
     const i=clamp(Math.floor((x-g.x0)/g.dx+.5),0,g.nx-1),j=clamp(Math.floor((z-g.z0)/g.dx+.5),0,g.nz-1);
@@ -959,6 +986,7 @@ function waterAt(x, z) {
 }
 
 function clearGround() {
+  groundRegions.clear();
   ground.materialCells?.dispose(); ground.materialCells=null;
   for(const mesh of ground.faceChunks.values()){scene.remove(mesh);mesh.geometry.dispose();}
   ground.faceChunks.clear();ground.dirtyFaceChunks.clear();
@@ -1087,7 +1115,7 @@ function standingOn(x, z, y) {
   const g = ground.grid, runs = ground.runs;
   if (!g || !runs) return groundAt(x, z);
   const i = Math.round((x - g.x0) / g.dx), j = Math.round((z - g.z0) / g.dx);
-  if (i < 0 || j < 0 || i >= g.nx || j >= g.nz) return groundAt(x, z);
+  if (i < 0 || j < 0 || i >= g.nx || j >= g.nz) return groundRegions.standingOn(x, z, y) ?? groundAt(x, z);
   const c = j * g.nx + i;
   for (let k = runs.count[c] - 1; k >= 0; --k) {
     const at = c * runs.stride + k;
@@ -1471,6 +1499,7 @@ function drawTerrain(block) {
   for (let p = 0; p < FOAM_COUNT; ++p) foam.attributes.position.array[3 * p + 1] = -100;
   scene.add(ground.foam);
   drawBeyond(block.beyond);
+  groundRegions.refresh(block.regions);
 
   // The flat floor is the rock's safety net far below: not a thing to draw.
   floor.visible = false;
@@ -1544,6 +1573,15 @@ function refreshTerrain(block) {
   // geometry packet is still one linear patch, not a scene replacement.
   patchTerrain({box:[0,0,b.nx,b.nz],heights_b64:block.heights_b64,
     ground_b64:block.ground_b64,runs_b64:block.runs_b64});
+  groundRegions.refresh(block.regions);
+}
+
+// Regions the engine grew since the last reply, and rectangles of ones that
+// changed (docs/streamed-regions.md).
+function followRegions(state) {
+  if (!state) return;
+  for (const block of state.regions_added || []) groundRegions.add(block);
+  for (const change of state.regions_changed || []) groundRegions.patch(change);
 }
 
 // A surface for every point: the level where there is water, and where there
@@ -5074,10 +5112,12 @@ function showHotbar(slots, hand) {
 // surface -- as the label says it. Null off the ground, or in a room without.
 function groundMadeOf(at) {
   if (!Array.isArray(at) || !ground.grid || !ground.surfaces) return null;
-  const c=terrainCellAt(at[0],at[2],ground.grid);
-  if(c<0)return null;
-  const kind=Math.abs(at[1]-groundAt(at[0],at[2]))<.05 ? groundKind(c)
-    : exposedRunKind(ground.runs,c,at[1],ground.surfaces[c]);
+  const col=groundColumn(at[0],at[2]);
+  if(!col)return null;
+  const c=col.c;
+  const top=col.runs && col.runs.count[c]>0 ? col.runs.kind[c*col.runs.stride+col.runs.count[c]-1] : col.surfaces[c];
+  const kind=Math.abs(at[1]-groundAt(at[0],at[2]))<.05 ? (col.valley ? groundKind(c) : top)
+    : exposedRunKind(col.runs,c,at[1],col.surfaces[c]);
   return RUN_NAMES[kind] || null;
 }
 
@@ -6290,19 +6330,20 @@ function positionTargetPopover() {
 function targetContext(at,name=null) {
   if(name)return JSON.stringify([name,world.bodies.get(name)?.revision]);
   if(!at || !ground.grid)return null;
-  const c=terrainCellAt(at[0],at[2],ground.grid);
-  if(c<0)return null;
-  const runs=[];
-  for(let n=0;n<(ground.runs?.count[c] || 0);n++) {
-    const i=c*ground.runs.stride+n;runs.push(ground.runs.kind[i],ground.runs.top[i]);
+  const col=groundColumn(at[0],at[2]);
+  if(!col)return null;
+  const c=col.c,runs=[];
+  for(let n=0;n<(col.runs?.count[c] || 0);n++) {
+    const i=c*col.runs.stride+n;runs.push(col.runs.kind[i],col.runs.top[i]);
   }
-  return JSON.stringify([ground.grid.x0,ground.grid.z0,ground.grid.dx,c,ground.heights[c],ground.surfaces[c],runs]);
+  return JSON.stringify([col.grid.x0,col.grid.z0,col.grid.dx,c,col.heights[c],col.surfaces[c],runs]);
 }
 function showMaterialPreview() {
   const point=world.groundAim, pileHit=world.resourceAim;
   const target=world.use.target;
   const heldTool=world.held?.pick ? world.use.name || target?.object || "Ground tool" : null;
-  let feedback=toolTargetFeedback({point:world.aim?.point_m || point,grid:ground.grid,
+  const aimedAt=world.aim?.point_m || point;
+  let feedback=toolTargetFeedback({point:aimedAt,grid:(aimedAt && groundColumn(aimedAt[0],aimedAt[2])?.grid) || ground.grid,
     tool:heldTool,target,eyes:camera.position.toArray(),name:world.aim?.name || null,
     surface:point ? groundMadeOf(point) : null,
     context:targetContext(world.aim?.point_m || point,world.aim?.name || null)});
@@ -8155,8 +8196,11 @@ function walk(dt) {
     ? standingOn(camera.position.x, camera.position.z, camera.position.y - BODY_BELOW_EYE_M + 0.2)
     : 0;
   if (movementMode === "fly") camera.position.y = clamp(camera.position.y, under + 0.25, under + 12);
-  camera.position.x = clamp(camera.position.x, -28, 28);
-  camera.position.z = clamp(camera.position.z, -28, 28);
+  // Over the ground there is, and a little past it: the valley and every
+  // region grown beside it.
+  const reach = ground.grid ? groundRegions.extent(ground.grid) : { x0: -22, x1: 22, z0: -22, z1: 22 };
+  camera.position.x = clamp(camera.position.x, Math.min(-28, reach.x0 - 6), Math.max(28, reach.x1 + 6));
+  camera.position.z = clamp(camera.position.z, Math.min(-28, reach.z0 - 6), Math.max(28, reach.z1 + 6));
   camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, "YXZ"));
 }
 
@@ -8288,9 +8332,9 @@ const groundTargetFill=new THREE.Mesh(groundTargetFillGeometry,new THREE.MeshBas
   transparent:true,opacity:.34,depthWrite:false,side:THREE.DoubleSide}));
 groundTargetFill.renderOrder=3;groundTarget.add(groundTargetFill);
 function showGroundTarget() {
-  const point=world.groundAim, g=ground.grid;
-  const index=point&&g?terrainCellAt(point[0],point[2],g):-1;
-  groundTarget.visible=index>=0 && !world.resourceAim && !world.aim && groundSeen(index)
+  const point=world.groundAim, col=point&&ground.grid?groundColumn(point[0],point[2]):null, g=col?.grid;
+  const index=col?col.c:-1;
+  groundTarget.visible=index>=0 && !world.resourceAim && !world.aim && (!col.valley || groundSeen(index))
     && camera.position.distanceTo(new THREE.Vector3(...point))<40
     && Math.abs(point[1]-groundAt(point[0],point[2]))<.05;
   if(!groundTarget.visible){delete $('crosshair').dataset.readiness;return;}
@@ -10682,6 +10726,7 @@ async function tick() {
     narrateCuts(state.cuts, say, remember);
     if (state.terrain) refreshTerrain(state.terrain);
     if (state.terrain_changed) patchTerrain(state.terrain_changed);
+    followRegions(state);
     // Acknowledge only after geometry is applied. A lost response or another
     // player's edit asks for current native terrain again on the next step.
     if (state.terrain_version) world.terrainVersion=state.terrain_version;
@@ -10908,6 +10953,7 @@ function frame() {
   aimLamps();
   skyEnvironment();
   if (ground.facesStale) buildFaces();
+  if (groundRegions.dirty) groundRegions.buildFaces();
   drawPickedOutline();
   animateReveal(now);
   resourceVisuals.advance(now);
@@ -11859,6 +11905,7 @@ async function digAt(x, z, width = 0.8, depth = 0.4) {
   const answer = await act("dig", { from: [x, z], to: [x, z], width_m: width, depth_m: depth });
   draw(answer);
   if (answer.terrain_changed) patchTerrain(answer.terrain_changed);
+  followRegions(answer);
   if (answer.water) drawWater(answer.water);
   return answer;
 }
@@ -11974,6 +12021,7 @@ async function heapAt(x, z, sand, soil, radius = 0.8) {
   const answer = await act("deposit", { at: [x, z], radius_m: radius, sand_m3: sand, soil_m3: soil });
   draw(answer);
   if (answer.terrain_changed) patchTerrain(answer.terrain_changed);
+  followRegions(answer);
   if (answer.water) drawWater(answer.water);
   return answer;
 }

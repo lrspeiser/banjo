@@ -139,6 +139,9 @@ private:
         unsigned joint{};
         Vec3 entry{}, axis{}, across_x{}, across_z{};
         std::size_t column{};
+        // Whose column: the valley's ground, or a region's beside it
+        // (docs/streamed-regions.md). Set with `column`.
+        const terrain::TerrainField *field{};
         double deepest{}, sideways{};
         Vec3 pry{};          // the sideways motion in the ground, added up
         bool broke_out{};

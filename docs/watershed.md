@@ -5,7 +5,9 @@
 W2's first piece -- water crossing between regions by level -- and W3, the
 coarse river network beyond the valley's source and mouth, are implemented and
 measured, and the watershed room shows them -- see [Measured (W2)](#measured-w2)
-and [Measured (W3)](#measured-w3). Everything else below is **design**: each
+and [Measured (W3)](#measured-w3). The ground half of promotion -- a region made real ground as somebody nears it
+-- is built for dry ground: see [streamed regions](streamed-regions.md).
+Everything else below is **design**: each
 part moves to the development status only with its own tests, a 3D check in the
 playground and green CI.
 

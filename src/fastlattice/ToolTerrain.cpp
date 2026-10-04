@@ -486,14 +486,14 @@ void ToolTerrain::meet(const ToolTerrainHost &host, Point &p, MatterBodyId id, c
     double ground_y = host.floor_y;
     std::size_t column = 0;
     if (env != nullptr) {
-        const auto c = env->terrain().cellAt(tip.x, tip.z);
+        const auto c = env->fieldAt(tip.x, tip.z).cellAt(tip.x, tip.z);
         if (!c) {
             closeNote(host, p);
             if (world.groundContactSuspended(id)) world.restoreGroundContact(id);
             return;
         }
         column = *c;
-        ground_y = env->terrain().heightAt(tip.x, tip.z);
+        ground_y = env->groundHeightAt(tip.x, tip.z);
     }
     const Vec3 next = tip + dt_s * v;
     const bool touching = tip.y <= ground_y + kTouchM;
@@ -535,9 +535,10 @@ void ToolTerrain::meet(const ToolTerrainHost &host, Point &p, MatterBodyId id, c
         }
         return;
     }
-    const terrain::TerrainField &field = env->terrain();
+    const terrain::TerrainField &field = env->fieldAt(tip.x, tip.z);
     const bool rock = field.height(column) - field.rockTop(column) < 0.01;
-    const double water = env->water() != nullptr ? env->water()->depth(column) : 0.0;
+    // A region beside the valley has no water of its own.
+    const double water = env->water() != nullptr && &field == &env->terrain() ? env->water()->depth(column) : 0.0;
     const terrain::GroundVerdict verdict = terrain::judgeGround(rock, water, hardness, material);
     const std::string layer = rock ? std::string("rock") : terrain::groundAt(field, column, 0.0).name;
     const bool breaks_here = verdict.answer == terrain::GroundAnswer::Breakable;
@@ -587,6 +588,7 @@ void ToolTerrain::meet(const ToolTerrainHost &host, Point &p, MatterBodyId id, c
     p.across_z = length(squared) > 1e-6 ? normalized(squared) : anyAcross(a);
     p.across_x = cross(a, p.across_z);
     p.column = column;
+    p.field = &field;
     p.deepest = 0.0;
     p.sideways = 0.0;
     p.pry = {};
@@ -636,7 +638,7 @@ void ToolTerrain::holdIn(const ToolTerrainHost &host, Point &p, MatterBodyId id,
         finish(host, p, true);
         return;
     }
-    const terrain::TerrainField &field = env->terrain();
+    const terrain::TerrainField &field = p.field != nullptr ? *p.field : env->terrain();
     const double depth = dot(tip - p.entry, p.axis);
     // Rock under the soil the point has gone through stops it. What that
     // means for the tool is the same gate as bare rock: harder than the tool
@@ -720,7 +722,7 @@ void ToolTerrain::settle(const ToolTerrainHost &host, double dt_s) {
             r.sideways_m = p.sideways;
             if (!p.at_rock) {
                 const terrain::GroundAtDepth deep =
-                    terrain::groundAt(host.environment->terrain(), p.column, p.deepest);
+                    terrain::groundAt(p.field != nullptr ? *p.field : host.environment->terrain(), p.column, p.deepest);
                 const terrain::GroundMaterial &g = deep.rock ? terrain::soilMaterial() : deep.material;
                 r.resistance_n = terrain::penetrationResistanceN(g, p.shape, p.deepest);
                 r.passive_n = terrain::passiveResistanceN(g, p.deepest, leadingWidth(p));
@@ -778,8 +780,7 @@ void ToolTerrain::settle(const ToolTerrainHost &host, double dt_s) {
         // Out of the ground -- clear of the surface where the tip now is, or
         // drawn back past where it went in: the meeting is over, and what it
         // broke loose comes out of the ground with it.
-        const terrain::TerrainField &field = host.environment->terrain();
-        if (tip.y > field.heightAt(tip.x, tip.z) + kOutM || depth < -kOutM) finish(host, p, true);
+        if (tip.y > host.environment->groundHeightAt(tip.x, tip.z) + kOutM || depth < -kOutM) finish(host, p, true);
     }
 }
 
@@ -796,7 +797,8 @@ double ToolTerrain::leadingWidth(const Point &p) const {
 
 double ToolTerrain::loosened(const ToolTerrainHost &host, const Point &p) const {
     if (host.environment == nullptr || !(p.deepest > 0.0)) return 0.0;
-    const terrain::GroundAtDepth deep = terrain::groundAt(host.environment->terrain(), p.column, p.deepest);
+    const terrain::GroundAtDepth deep =
+        terrain::groundAt(p.field != nullptr ? *p.field : host.environment->terrain(), p.column, p.deepest);
     const terrain::GroundMaterial &g = deep.rock ? terrain::soilMaterial() : deep.material;
     return terrain::loosenedVolumeM3(g, p.deepest, leadingWidth(p), p.sideways);
 }
@@ -831,7 +833,7 @@ void ToolTerrain::finish(const ToolTerrainHost &host, Point &p, bool tool_here) 
         // ground is made of, and they are coarser than the wedge.
         terrain::Environment &env = *host.environment;
         CarrierScope account(env, p.carrier);
-        const terrain::TerrainField &field = env.terrain();
+        const terrain::TerrainField &field = p.field != nullptr ? *p.field : env.terrain();
         Vec3 way = level(p.pry);
         if (!(length(way) > 1e-6)) way = level(p.across_x);
         way = normalized(way, Vec3{1.0, 0.0, 0.0});

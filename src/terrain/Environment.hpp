@@ -61,6 +61,7 @@ struct EditEffect {
     double rebuild_ms{};
     unsigned bodies_woken{};
     std::size_t water_columns_moved{};   // columns whose bed changed under water
+    std::size_t region_columns{};        // columns changed in regions beside the valley
 };
 
 struct EnvironmentStats {
@@ -103,6 +104,29 @@ struct EnvironmentStats {
     std::uint64_t water_tile_checks{};
     std::uint64_t obstacle_cells_checked{};
     std::uint64_t obstacle_cells_changed{};
+};
+
+// A region of ground streamed in beside the valley as somebody nears its edge
+// (docs/streamed-regions.md): its own columns, its own colliders, its own
+// ledger. No water: the valley's water stays in the valley.
+struct StreamedRegion {
+    int rx{}, rz{};                              // where on the lattice; the valley is (0, 0)
+    std::unique_ptr<TerrainField> field;
+    std::vector<std::vector<float>> colliders;   // each chunk's heights as last built
+    std::vector<unsigned> patches;               // each chunk's collider; 0 until attached
+    std::set<int> pending_chunks;                // to rebuild at the next stride
+    TerrainField::Rect pending_wake{};
+    double ground_behind_s{};
+    double since_rebuild_s{};
+    bool edited{};                               // changed since it was generated
+    std::set<int> edited_chunks;                 // the chunks whose ground is not as generated
+    double generate_ms{};                        // what it cost to make
+    double colliders_ms{};                       // and to give it colliders
+    // Chunks still waiting for their colliders, nearest the one who grew it
+    // first: a region grown while the world runs gets them a few a step.
+    std::vector<int> unattached;
+    bool seams_pending{};
+    std::vector<std::pair<int, int>> seam_queue;  // the neighbours' chunks to meet it, field and chunk
 };
 
 class Environment {
@@ -212,6 +236,56 @@ public:
     void setCarryLimitKg(double kg);
 
     [[nodiscard]] const TerrainField &terrain() const { return *terrain_; }
+
+    // ---- the ground beyond the valley (docs/streamed-regions.md) ----
+    //
+    // A generated valley on the column surface can grow: a region the valley's
+    // size is added beside whatever ground somebody is standing on when they
+    // come within kGrowWithinM of its edge. Off unless a scene asks for it
+    // (terrain.stream), so every room that was there before is as it was.
+    static constexpr double kGrowWithinM = 10.0;
+    // At most this many regions, and at most this far out each way: a region
+    // costs about 4.4 MB with its colliders (measured), so 48 are about 210 MB.
+    static constexpr int kMostRegions = 48;
+    static constexpr int kMostRegionsOut = 6;
+    // How long a step may spend giving a newly grown region its colliders:
+    // a whole region at once is about 70 ms, which is a hitch; a few
+    // milliseconds a step is not, and the 20 chunks are all there within a
+    // tenth of a second of world time -- long before anyone 10 m away walks
+    // onto them.
+    static constexpr double kAttachBudgetMs = 3.0;
+    // Whether this ground can grow at all, and if not, why.
+    [[nodiscard]] bool canStream(std::string *why = nullptr) const;
+    [[nodiscard]] bool streaming() const { return streaming_; }
+    void setStreaming(bool on) { streaming_ = on && canStream(); }
+    struct Grown {
+        int rx{}, rz{};
+        double generate_ms{};      // making its ground
+        double colliders_ms{};     // its colliders, when the world is running
+        double seams_ms{};         // the neighbours' edge chunks, rebuilt to meet it
+        std::size_t seam_chunks{};
+    };
+    // Every region within `within_m` of (x, z) that is beside the ground under
+    // (x, z), added -- nothing if there is no ground under it, or the ground
+    // cannot grow. Between steps only. `world` may be null before attach().
+    std::vector<Grown> growToward(JoltWorld *world, double x, double z, double within_m = kGrowWithinM);
+    // One region, by its place on the lattice. False if it is there already,
+    // or cannot be.
+    bool addRegion(JoltWorld *world, int rx, int rz, Grown *grown = nullptr);
+    [[nodiscard]] const std::vector<std::unique_ptr<StreamedRegion>> &regions() const { return regions_; }
+    // Which region a point is in, -1 for the valley, -2 for no ground at all.
+    [[nodiscard]] int regionAt(double x, double z) const;
+    // The ground that holds the column under (x, z): the valley's, or a
+    // region's. The valley's where there is none, as before regions.
+    [[nodiscard]] const TerrainField &fieldAt(double x, double z) const;
+    [[nodiscard]] double groundHeightAt(double x, double z) const { return fieldAt(x, z).heightAt(x, z); }
+    [[nodiscard]] bool onTheGround(double x, double z) const { return regionAt(x, z) != -2; }
+    // For a host that draws: regions added since last asked, and each
+    // region's rectangle of changed points since last asked.
+    [[nodiscard]] std::vector<int> takeAddedRegions();
+    [[nodiscard]] std::vector<std::pair<int, TerrainField::Rect>> takeChangedRegions();
+    [[nodiscard]] std::vector<std::uint8_t> runsPackedOf(const TerrainField &field, int i0, int j0, int ni,
+                                                        int nj) const;
     [[nodiscard]] const water::ShallowWater *water() const { return water_.get(); }
     [[nodiscard]] const Landscape &landscape() const { return landscape_; }
     [[nodiscard]] const EnvironmentStats &stats() const { return stats_; }
@@ -289,6 +363,45 @@ public:
 
 private:
     void applyEdits(const std::string &edits_json);
+    // ---- streamed regions (StreamedRegions.cpp) ----
+    // -1 is the valley, 0.. a region.
+    [[nodiscard]] const TerrainField &fieldOf(int which) const {
+        return which < 0 ? *terrain_ : *regions_[static_cast<std::size_t>(which)]->field;
+    }
+    [[nodiscard]] TerrainField &fieldOf(int which) {
+        return which < 0 ? *terrain_ : *regions_[static_cast<std::size_t>(which)]->field;
+    }
+    [[nodiscard]] int regionIndex(int rx, int rz) const;   // -1 for the valley, -2 for none
+    [[nodiscard]] std::pair<int, int> latticeOf(double x, double z) const;
+    // Every field a rectangle of ground reaches, valley first.
+    [[nodiscard]] std::vector<int> fieldsTouching(double x_lo, double z_lo, double x_hi, double z_hi) const;
+    // The solid spans of a column of any field, its top as last built into
+    // its collider; a column past a field's edge is looked for in the field
+    // beside it, so the walls at a seam are the ones a single field would have.
+    void solidsAt(int which, int i, int j, std::vector<std::pair<double, double>> &out) const;
+    std::vector<std::array<Vec3,3>> columnTrianglesOf(int which, int chunk) const;
+    std::vector<float> chunkHeightsOf(int which, int chunk) const;
+    void attachRegion(JoltWorld &world, int k);
+    // Colliders for a grown region's waiting chunks, nearest first, until
+    // `budget_ms` is spent (one at least); then the seams beside it.
+    void attachSome(JoltWorld &world, int k, double budget_ms);
+    // Where the region being grown is grown toward, for which chunks first.
+    double grow_x_{std::numeric_limits<double>::quiet_NaN()};
+    double grow_z_{std::numeric_limits<double>::quiet_NaN()};
+    void rebuildRegionChunks(JoltWorld &world, int k, const std::set<int> &chunks, EditEffect *effect);
+    // The chunks of the fields beside `which` whose walls face columns of it
+    // that changed: rebuilt with it, so a seam is never half old.
+    [[nodiscard]] std::vector<std::pair<int, int>> seamChunks(int which, const std::vector<std::size_t> &cells) const;
+    void queueSeams(int which, const std::vector<std::size_t> &cells);
+    void rebuildSeams(JoltWorld &world, int which, const std::vector<std::size_t> &cells, EditEffect *effect);
+    void rebuildFieldChunks(JoltWorld &world, int which, const std::set<int> &chunks, EditEffect *effect);
+    // An edit made in a region: its colliders, its seams, its record.
+    void regionEdited(JoltWorld *world, int k, const std::vector<std::size_t> &cells, EditEffect *effect);
+    void commitRegions(JoltWorld &world, double dt_s);
+    [[nodiscard]] std::string regionsStateJson() const;
+    void restoreRegionsState(const std::string &saved);
+    [[nodiscard]] Volumes regionsDug() const;
+    static MaterialDefinition groundContactMaterial();
     void restoreGroundState(const std::string &state_json);
     void rebuildChunks(JoltWorld &world, const std::set<int> &chunks, EditEffect *effect);
     void syncWaterBed(const std::vector<std::size_t> &cells);
@@ -313,6 +426,12 @@ private:
     void syncWorkingPatches(JoltWorld &world, int chunk);
 
     Landscape landscape_;
+    // Streaming (docs/streamed-regions.md).
+    std::uint64_t seed_{};
+    bool streaming_{};
+    std::vector<std::unique_ptr<StreamedRegion>> regions_;
+    std::map<std::pair<int, int>, int> region_at_;
+    std::vector<int> regions_added_;
     std::unique_ptr<TerrainField> terrain_;
     std::unique_ptr<water::ShallowWater> water_;
     water::WaterCoupling coupling_;
