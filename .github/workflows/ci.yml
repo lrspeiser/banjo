@@ -43,6 +43,8 @@ jobs:
           python3 tests/material_qa_tests.py -v
           node --check playground/workshop.js
           node --check playground/game_menu.js
+          node --check playground/voice.js
+          python3 tests/voice_tests.py -v
           python3 tests/workshop_buildability_tests.py -v
           python3 tests/workshop_rigid_tests.py -v
           python3 tests/workshop_install_tests.py -v
