@@ -2098,7 +2098,7 @@ function resourceTile(row, shape) {
   const tile = invTile({name:material,label:titleCase(material),material,shape,color_rgba:MATERIAL_LOOK[material] || "9aa7b4"},
     {quantity:kgSaid(row.mass_kg),onOpen:() => openMaterialRecipes(material)});
   tile.dataset.resource = material;
-  for (const [label,value] of [["Personal",row.personal_kg],["Shared",row.shared_kg]]) {
+  for (const [label,value] of [["Yours",row.personal_kg],["Shared",row.shared_kg]]) {
     const line = make("span", {class:"ws-stock-owner"});
     line.append(make("span", {}, label),make("b", {}, kgSaid(value))); tile.append(line);
   }
@@ -2624,8 +2624,17 @@ function installRecipes() {
   pane.append(make("p", {class:"ws-recipes-intro"}, "Make places an item in the World. Pick it up there to add it to your bag."),
     make("div", {id:"ws-recipe-filter", class:"ws-recipe-filter", role:"group", "aria-label":"Filter recipes by material"}),
     make("p", {id:"ws-recipe-filter-status", class:"ws-note", role:"status"}),
-    make("h3", {id:"ws-rec-build-title"}, "Build recipes"), make("ul", {id:"ws-recipes-templates", class:"ws-list ws-recipe-grid"}));
+    make("h3", {id:"ws-rec-build-title"}, "Useful now"), make("ul", {id:"ws-recipes-templates", class:"ws-list ws-recipe-grid"}));
+  const next = screenSection(pane, "Next projects", "ws-rec-next", "ws-list ws-recipe-grid");
+  next.id = "ws-rec-next-section";
+  next.querySelector("h3").after(make("p", {class:"ws-note"}, "Gather or process the missing supplies to make these."));
   screenSection(pane,"Construction","ws-rec-construction","ws-list ws-recipe-grid");
+  // Designs whose shape cannot be made as drawn are kept out of the starter
+  // list, so a disabled Make never competes with something achievable.
+  const experimental = screenSection(pane, "Experimental designs", "ws-rec-experimental", "ws-list ws-recipe-grid");
+  experimental.id = "ws-rec-experimental-section";
+  experimental.querySelector("h3").after(make("p", {class:"ws-note"},
+    "These need design changes before they can be made. Open one in the Lab to change it."));
   screenSection(pane, "Saved designs", "ws-rec-saved", "ws-design-groups");
   screenSection(pane, "Saved parts", "ws-rec-components", "ws-design-grid").id = "ws-rec-components-section";
   const blocks = screenSection(pane, "Building blocks", "ws-rec-blocks", "ws-design-groups");
@@ -2680,6 +2689,8 @@ function applyRecipeMaterialFilter() {
   $("#ws-rec-build-title").hidden = !built;
   const construction=$("#ws-rec-construction");
   construction.closest(".ws-inventory-section").hidden=![...construction.querySelectorAll("[data-recipe]")].some(c=>!c.hidden);
+  $("#ws-rec-next-section").hidden=![...$("#ws-rec-next").querySelectorAll("[data-recipe]")].some(c=>!c.hidden);
+  $("#ws-rec-experimental-section").hidden=![...$("#ws-rec-experimental").querySelectorAll("[data-recipe]")].some(c=>!c.hidden);
   $("#ws-rec-saved").closest(".ws-inventory-section").hidden = Boolean(selected) && ![...$("#ws-rec-saved").querySelectorAll("[data-recipe], [data-recipe-source]")].some(c => !c.hidden);
   $("#ws-rec-components-section").hidden = Boolean(selected) || !$("#ws-rec-components").childElementCount;
   $("#ws-rec-blocks-section").hidden = Boolean(selected);
@@ -2730,7 +2741,8 @@ function recipeAcquisition(line) {
         for (const input of machine.inputs) row.append(recipeValue(titleCase(input.substance),
           input.held_kg > 0 ? `${kgSaid(input.held_kg)} in hopper` : "Hopper empty"));
         row.append(recipeValue("Output", machine.output || "No output configured"),
-          recipeValue("Use", "Turn on in World · supply its hopper"),
+          recipeValue("Use", machine.select_recipe ? `Select ${titleCase(machine.select_recipe)} on it · supply its hopper · turn on`
+            : "Turn on in World · supply its hopper"),
           recipeValue("Collect", "Walk to output · nearby pickup"), recipeWorldRoute(machine, "Locate machine in World"));
         supplies(machine.inputs);
       }
@@ -2782,6 +2794,29 @@ function recipeResult(card, result) {
     const details = make("details", {}); details.append(make("summary", {}, "Reason"), make("p", {}, result.message)); line.append(details);
   }
 }
+// One recommended version of each starter item is shown; the catalog version
+// it stands in for sits beneath it under "Other versions". Anything that
+// cannot be made as drawn goes to Experimental. Saved designs have already
+// been moved to their own section by showDesignSources.
+function arrangeRecipeCards() {
+  const list = $("#ws-recipes-templates"), cards = [...list.children].filter(c => c.dataset.recipe);
+  const experimental = $("#ws-rec-experimental"); experimental.replaceChildren();
+  const next = $("#ws-rec-next"); next.replaceChildren();
+  for (const card of cards) {
+    const main = card.dataset.variantOf && cards.find(c => c.querySelector("strong")?.textContent === card.dataset.variantOf);
+    if (main && main.dataset.state !== "needs-changes") {
+      let more = main.querySelector(".ws-variants");
+      if (!more) {
+        more = make("details", {class:"ws-variants"});
+        more.append(make("summary", {}, "Other versions"), make("ul", {class:"ws-list ws-recipe-grid"}));
+        const acts = main.querySelector(".ws-recipe-acts");
+        if (acts) acts.after(more); else main.append(more);
+      }
+      more.querySelector("ul").append(card);
+    } else if (card.dataset.state === "needs-changes") experimental.append(card);
+    else if (card.dataset.state === "short") next.append(card);
+  }
+}
 async function showRecipes() {
   const [r, inv] = await Promise.all([api("/api/workshop/recipes"), api("/api/workshop/inventory")]);
   let paidProcess=false;
@@ -2800,14 +2835,23 @@ async function showRecipes() {
     if (selectedRecipe ? recipeKey(t)===selectedRecipe : t.name===guidedRecipe) li.classList.add("ws-goal-target");
     const canvas = make("canvas", {width:"160", height:"112", role:"img", "aria-label":`${t.name} shape preview`});
     li.querySelector("strong").before(canvas);
+    li.dataset.state = t.problem || !ready ? "needs-changes" : t.enough ? "ready" : "short";
+    if (t.variant_of) li.dataset.variantOf = t.variant_of;
     if (t.problem) {
-      li.append(recipeValue("Build", "Needs repair", "ws-recipe-readiness"));
+      li.append(recipeValue("Status", "Design needs changes", "ws-recipe-readiness"));
       const details = make("details", {}); details.append(make("summary", {}, "Reason"), make("p", {}, t.problem)); li.append(details); return li;
     }
     loadInventoryPicture(li, {id:recipeKey(t), source:"recipe", recipe:t,
       version:JSON.stringify([t.parameters, t.component_overrides])});
-    const progress = recipeValue("Materials", `${100-short}%`);
-    progress.append(make("progress", {max:"100", value:String(100-short), "aria-label":`${t.name}: ${100-short}% of materials available`}));
+    // One status, in the same words the next-action guidance uses. Supplies
+    // count yours and shared stock together, which is what Make draws on.
+    const lines = [...(t.materials || []), ...(t.goods || [])];
+    const yours = lines.every(l => (l.personal_kg || 0) + 5e-5 >= l.kg);
+    li.dataset.yours = String(yours);
+    li.append(recipeValue("Status", !ready ? "Design needs changes" : !t.enough ? "Needs supplies"
+      : yours ? "Ready to make" : "Ready · uses shared stock", "ws-recipe-status"));
+    const progress = recipeValue("Supplies", `${100-short}%`);
+    progress.append(make("progress", {max:"100", value:String(100-short), "aria-label":`${t.name}: ${100-short}% of supplies available to you`}));
     li.append(progress);
     if (!t.enough) li.append(make("p", {class:"ws-missing"}, `${short}% missing`));
     const needs = make("div", {class:"ws-needs"});
@@ -2821,8 +2865,8 @@ async function showRecipes() {
     const materials = make("div", {class:"ws-needs"});
     for (const line of [...(t.materials || []), ...(t.goods || [])]) {
       materials.append(recipeLine(line), recipeValue("Stock",
-        `Personal ${kgSaid(line.personal_kg)} · Shared ${kgSaid(line.shared_kg)}`), recipeValue("Make takes",
-        `Personal ${kgSaid(line.debit_personal_kg)} · Shared ${kgSaid(line.debit_shared_kg)}`));
+        `Yours ${kgSaid(line.personal_kg)} · Shared ${kgSaid(line.shared_kg)}`), recipeValue("Make takes",
+        `Yours ${kgSaid(line.debit_personal_kg)} · Shared ${kgSaid(line.debit_shared_kg)}`));
     }
     all.append(materials);
     const acquisition = make("div", {class:"ws-acquisition"});
@@ -2839,11 +2883,17 @@ async function showRecipes() {
     // Current Workshop authoring has no technique gate. Do not infer a
     // requirement from an item's name or a progression hint.
     li.append(recipeValue("Skill", "None required", "ws-recipe-skill"));
-    li.append(recipeValue("Make uses", paidProcess ? "Reviewed workbench supplies" : "Personal → Shared"));
-    const uses = make("div", {class:"ws-recipe-uses", "aria-label":"Declared uses"});
-    uses.append(make("span", {}, "Uses"));
-    for (const use of recipeUses(t)) uses.append(tag(use));
-    uses.title = "Source declarations; a functional trial is still required.";
+    li.append(recipeValue("Make uses", paidProcess ? "Reviewed workbench supplies" : "Yours first, then shared"));
+    const uses = make("div", {class:"ws-recipe-uses", "aria-label":"What it can do"});
+    uses.append(make("span", {}, "Can do"));
+    if (t.capabilities) {
+      for (const c of t.capabilities) {
+        const badge = tag(c.label, c.label === "Shape only" ? "ws-shape-only" : "");
+        badge.title = c.detail; uses.append(badge);
+      }
+      if (!t.capabilities.length) uses.append(tag("Carry / place"));
+    } else for (const use of recipeUses(t)) uses.append(tag(use));
+    uses.title = "From the design's declaration; making it and using it is the real test.";
     li.append(uses);
     if (t.can_do?.length) all.append(make("p", {}, "Declared: " + t.can_do.join("; ")));
     li.append(all);
@@ -2894,6 +2944,7 @@ async function showRecipes() {
     if(card)construction.append(card);
   }
   showDesignSources(inv, r.templates);
+  arrangeRecipeCards();
   fill("#ws-recipes-room", r.room_recipes.map(x => {
     const li = item(x.name);
     li.append(recipeValue("Input", Object.entries(x.in).map(([k,v])=>`${v} kg ${k}`).join(" + ")),
@@ -2907,7 +2958,10 @@ async function showRecipes() {
   const requested = new URLSearchParams(location.search).get("recipe");
   if (requested) {
     const card = [...$("#ws-recipes-templates").children].find(c => c.dataset.recipe === requested);
-    if (card) { card.classList.add("ws-goal-target"); card.scrollIntoView({block:"center"}); }
+    if (card) {
+      const more = card.closest(".ws-variants"); if (more) more.open = true;
+      card.classList.add("ws-goal-target"); card.scrollIntoView({block:"center"});
+    }
   }
 }
 
@@ -2971,8 +3025,8 @@ async function showMarket() {
     }; recommendation.append(open);
     const details = make("details", {}); details.append(make("summary", {}, "Stock & debit details"));
     for (const line of plan.lines) details.append(recipeValue(titleCase(line.substance),
-      `Personal ${kgSaid(line.personal_kg)} · Shared ${kgSaid(line.shared_kg)}`),
-      recipeValue("Make uses now", `Personal ${kgSaid(line.debit_personal_kg)} → Shared ${kgSaid(line.debit_shared_kg)}`));
+      `Yours ${kgSaid(line.personal_kg)} · Shared ${kgSaid(line.shared_kg)}`),
+      recipeValue("Make uses now", `Yours ${kgSaid(line.debit_personal_kg)} → Shared ${kgSaid(line.debit_shared_kg)}`));
     if (plan.declared_uses?.length) details.append(recipeValue("Declared use", plan.declared_uses.join(" · ")));
     recommendation.append(details);
   } else if (market.guidance?.player?.next_action?.verb==='continue-build') {
@@ -3021,7 +3075,7 @@ async function showMarket() {
     li.dataset.marketItem = offer.id;
     if (offer.id === new URLSearchParams(location.search).get("offer")) li.classList.add("ws-goal-target");
     if (offer.id === "oak-stock" && ["bank-solar", "stock-oak"].includes(guide)) li.classList.add("ws-goal-target");
-    const buy = make("button", { type:"button", class:"ws-action" }, "Buy → Personal stock");
+    const buy = make("button", { type:"button", class:"ws-action" }, "Buy → Your stock");
     buy.disabled = offer.remaining < 1 || market.balance_j < offer.price_j;
     if (buy.disabled) li.append(recipeValue("Needs", offer.remaining < 1 ? "Restock" : `${(offer.price_j-market.balance_j).toLocaleString()} J more`));
     buy.onclick = () => guard(buy, async () => {

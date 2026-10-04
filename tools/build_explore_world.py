@@ -132,7 +132,21 @@ BLOCK_NOTE = {
 # The ground
 # --------------------------------------------------------------------------
 
-def read_ground(engine: Path, terrain_seed: int | None = None, *, surface: str = 'smooth') -> dict:
+def valley(terrain_seed: int | None, cell_m: float = 0.25):
+    """The valley declaration at a terrain cell size, keeping its extent.
+
+    The valley is 5 x 4 chunks of 31 cells at 25 cm; a finer cell gets more
+    chunks so the same ground, and the resources laid on it, still fit."""
+    if abs(cell_m - 0.25) < 1e-9:
+        return "valley" if terrain_seed is None else {"kind": "valley", "seed": terrain_seed}
+    scale = 0.25 / cell_m
+    out = {"kind": "valley", "cell_m": cell_m, "chunks": [round(5 * scale), round(4 * scale)]}
+    if terrain_seed is not None: out["seed"] = terrain_seed
+    return out
+
+
+def read_ground(engine: Path, terrain_seed: int | None = None, *, surface: str = 'smooth',
+                cell_m: float = 0.25) -> dict:
     """Open a bare valley and read its heightfield, so everything after this
     knows where the ground actually is -- and where the water is on it.
 
@@ -142,8 +156,7 @@ def read_ground(engine: Path, terrain_seed: int | None = None, *, surface: str =
     bench in it, their legs in the water."""
     spec = fracture_lab.validate({
         "algorithm": "lattice", "cell_m": CELL_M, "duration_s": 1.0,
-        "terrain": {"surface":surface,"generate": "valley" if terrain_seed is None else
-                    {"kind": "valley", "seed": terrain_seed}}, "water": dict(WATER),
+        "terrain": {"surface":surface,"generate": valley(terrain_seed, cell_m)}, "water": dict(WATER),
         "bodies": [{"name": "sounding", "shape": "box", "material": "oak",
                     "size_mm": [100, 100, 100], "center_mm": [0, 8000, 0]}]})
     with tempfile.TemporaryDirectory() as tmp:

@@ -114,6 +114,23 @@ def camp_light_recipe():
     return {**source,'parameters':dict(design.parameters),'component_overrides':overrides}
 
 
+def camp_solar_recipe():
+    """A one-panel collector a new player can afford, ahead of the yard array.
+
+    Geometry, panel area, battery capacity and output rating are all reduced
+    together: 0.24 m2 of glass at 20% gives about 48 W in full sun, into a
+    50 Wh battery rated at 60 W, so it asks for 1.8 kg of copper, not 200.
+    It starts empty and banks its surplus like the full array; nothing about
+    the solar law is changed for it.
+    """
+    from mcp import workshop
+    design=workshop.assemble('solar-array',design_id='starter-camp-solar',parameters={
+        'panels':1,'panel_w_m':.6,'panel_d_m':.4,'frame_height_m':.35,
+        'capacity_j':1.8e5,'charge_j':0.,'max_power_w':60.,'efficiency':.2,'material':'oak'})
+    return {'kind':design.kind,'design_id':design.design_id,'parameters':dict(design.parameters),
+            'component_overrides':deepcopy(design.lineage.get('component_overrides') or {})}
+
+
 def funded_tools(saved, owner):
     """Saved paid native admission plus an actual installed ground-tool profile.
 

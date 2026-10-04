@@ -222,6 +222,65 @@ def _can_do(record: dict[str, Any], made: w.Assembly, design=None) -> list[str]:
     return out
 
 
+def _capabilities(record: dict[str, Any], design: Any) -> list[dict[str, str]]:
+    """Short badges for what a design is declared to do, from its machinery.
+
+    Each badge names behaviour the design's own declaration supports; a part
+    that only LOOKS like a panel or lamp, with no machine record behind it, is
+    reported as a shape so a player is not told a block of glass makes power.
+    These remain declarations: whether the made product works is its trial.
+    """
+    out: list[dict[str, str]] = []
+    def add(label: str, detail: str) -> None:
+        if all(c["label"] != label for c in out):
+            out.append({"label": label, "detail": detail})
+    record = record or {}
+    if record.get("lamps"):
+        lamp = record["lamps"][0]
+        add("Light", f"{lamp['watts']:g} W lamp" + (f" on {lamp['store']}" if lamp.get("store") else ""))
+    for store in record.get("stores") or []:
+        add("Battery", f"stores {store['capacity_j'] / 3600:.2g} Wh")
+    if record.get("panels"):
+        n = len(record["panels"])
+        add("Solar power", f"{n} panel{'s' if n != 1 else ''} charge its battery")
+    if record.get("motors"):
+        n = len(record["motors"])
+        add("Motor", f"{n} driven joint{'s' if n != 1 else ''}")
+    if record.get("chambers"):
+        add("Heat", "a heated chamber")
+    for program in record.get("programs") or []:
+        kind = program.get("kind")
+        if kind == "roam": add("Drives", "drives itself and turns away from water")
+        elif kind == "hover": add("Flies", "holds a height")
+        routine = program.get("routine") or {}
+        if routine.get("kind") == "dig": add("Digs", "digs at a site and carries the load to a depot")
+        elif routine.get("kind") == "haul": add("Hauls", "carries goods between stockpiles")
+        elif routine.get("kind") == "process": add("Processes", f"works {routine.get('recipe')!r}")
+        elif routine.get("kind") == "custom": add("Program", f"{len(routine.get('steps') or [])} steps")
+        if program.get("sensors"): add("Senses", f"{len(program['sensors'])} probes")
+    if design is not None:
+        from mcp import workshop_tools
+        if workshop_tools.frame(design) is not None:
+            add("Gathers", "dry soil or sand")
+        use = (design.parameters or {}).get("primary_use") or {}
+        furniture = {"stool": ("Seat", "seats one person"), "chair": ("Seat", "seats one person, with a back"),
+                     "bench": ("Seat", "seats two or three people"), "table": ("Surface", "a stable work surface"),
+                     "shelf-unit": ("Storage", "holds things on several levels"), "cart": ("Wheels", "carries a load on wheels"),
+                     "foundation-pad": ("Foundation", "a level pad to build on")}
+        # The starter work table is built from the bench assembly; its own
+        # declared use, not the assembly it came from, says what it is for.
+        if not out and "surface" in str(use.get("label", "")).lower():
+            add("Surface", use["label"])
+        if not out and design.kind in furniture:
+            add(*furniture[design.kind])
+        families = {p.family for p in design.parts if p.family}
+        if "solar-panel" in families and not record.get("panels"):
+            add("Shape only", "panel shape with no declared power")
+        if "lamp" in families and not record.get("lamps"):
+            add("Shape only", "lamp shape with no declared light")
+    return out
+
+
 def recipes(app: Any) -> dict[str, Any]:
     stock = {r["material"]: r for r in workshop_library.rack(app)["materials"]}
     goods_stock = {r["substance"]: r for r in workshop_library.goods_rack(app)["goods"]}
@@ -258,6 +317,7 @@ def recipes(app: Any) -> dict[str, Any]:
                           "enough": all(m["enough"] for m in materials) and all(g["enough"] for g in goods),
                           **_shortfall(materials, goods),
                           "can_do": _can_do(record, made, design),
+                          "capabilities": _capabilities(record, design),
                           "machines": workshop_machines.described(design)["says"] if record else None,
                           "readiness": workshop_recipe.assess(design, overrides, world_cell_m=world_cell_m)})
 
@@ -271,6 +331,8 @@ def recipes(app: Any) -> dict[str, Any]:
         try:
             design = w.assemble(made.name, design_id=made.name)
             add(design, made, name=made.name, source="built-in")
+            if made.name in product_labels.RECOMMENDED_OVER:
+                templates[-1]["variant_of"] = product_labels.RECOMMENDED_OVER[made.name]
         except Exception as failed:               # a template that will not assemble is listed as such
             templates.append({"name": made.name, "purpose": made.purpose, "problem": str(failed)[:160]})
     # A design saved by the Workshop assistant is a recipe too. Rebuild it from
@@ -315,6 +377,10 @@ def recipes(app: Any) -> dict[str, Any]:
     import market
     traded = {lot[3]: lot[0] for lot in market.LOTS}
     programs = ((room.get('machines') or {}).get('programs') or [])
+    import machine_routine
+    def machine_process_options(brain):
+        if brain is None or brain.routine is None: return set()
+        return {r['name'] for r in machine_routine.process_options(room, brain.routine)}
     def acquire(substance, needed, path=(), remaining=None):
         # Facts and stoichiometric estimates, not a simulated future batch.
         # Authored recipes may contain cycles; bound each expanded line.
@@ -354,11 +420,19 @@ def recipes(app: Any) -> dict[str, Any]:
             machines = []
             for program in programs:
                 routine = program.get('routine') or {}
-                if routine.get('recipe') != process['name']: continue
+                # A machine running another recipe it can also run is a source
+                # too: the furnace that smelts copper melts glass once the
+                # player selects Melt Glass on it (machine_process).
+                switch = None
+                if routine.get('recipe') != process['name']:
+                    brain = brains.get(program.get('name'))
+                    able = machine_process_options(brain)
+                    if process['name'] not in able: continue
+                    switch = process['name']
                 intake = next((p for p in piles if p['name'] == routine.get('intake')), {})
                 machines.append({'name':program['name'], 'body':program.get('body'),
                     'intake':routine.get('intake'), 'output':routine.get('output'),
-                    'inputs':input_lines(intake)})
+                    'select_recipe':switch, 'inputs':input_lines(intake)})
             routes.append({'kind':'process', 'name':process['name'], 'inputs':process.get('in') or {},
                            'machines':machines, 'input_supplies':input_lines({}) if not machines else []})
         if substance in traded: routes.append({'kind':'market', 'offer_id':traded[substance]})

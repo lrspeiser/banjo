@@ -720,3 +720,8 @@ body.workshop-mode .ws-left > .game-bottom-tabs { visibility:visible; }
 @media(max-width:360px) {
   body.workshop-mode { --game-nav-space:164px; }
 }
+.ws-tag.ws-shape-only { background:#3a3326;color:#e6cf9c; }
+.ws-variants { margin-top:.4rem; }
+.ws-variants > summary { cursor:pointer;color:var(--dim);font-size:.8rem; }
+.ws-variants > ul { margin:.3rem 0 0;padding:0;grid-template-columns:1fr; }
+.ws-variants > ul > li { width:auto;box-sizing:border-box; }

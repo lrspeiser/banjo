@@ -247,6 +247,9 @@ def verify(snapshot: dict[str, Any], artifact: dict[str, Any], root: str) -> Non
         raise ValueError("Native precise rigid mass differs from density times actual volume")
     expected = artifact["live_definition"]
     if (not all(math.isclose(float(v), float(w), abs_tol=1e-9, rel_tol=0) for v,w in zip(body["pose"]["com_m"], expected["position_m"])) or
-            body["pose"]["q_wxyz"] != expected["orientation_wxyz"] or
+            # The engine holds a turn in single precision. Upright [1,0,0,0]
+            # comes back exactly; a body squared to sloping ground comes back
+            # within float32 of the request (q and -q are the same turn).
+            abs(sum(float(a)*float(b) for a,b in zip(body["pose"]["q_wxyz"], expected["orientation_wxyz"]))) < 1-1e-6 or
             body["pose"]["v_m_s"] != [0,0,0] or body["pose"]["w_rad_s"] != [0,0,0]):
         raise ValueError("Native precise rigid initial placement or motion changed")

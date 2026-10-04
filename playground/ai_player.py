@@ -26,6 +26,13 @@ MAX_AGENTS = 4
 CADENCE_S = .8
 
 
+
+# Where a player tries to set a new thing down, nearest first: three
+# distances in eight directions. A preview refuses a spot where the thing
+# would tip over, so on sloping valleys six spots were often all refused.
+PLACEMENT_SPOTS=tuple((round(r*math.cos(a*math.pi/4),2),round(r*math.sin(a*math.pi/4),2))
+                      for r in (2.,3.,4.) for a in range(8))
+
 class Manager:
     def __init__(self, app: Any, port: int, keep: Any, journal: Any, registry: Any):
         self.app, self.port, self.keep, self.journal, self.registry = app, port, keep, journal, registry
@@ -340,7 +347,7 @@ class Manager:
                 return {'phase':'work','job_id':pending['job_id']}
             if job['status']!='ready':raise ValueError('The pending workpiece is not placeable')
             eyes=(profile.get('pose') or {}).get('eyes_m',[0,1.62,3]);failures=[]
-            for dx,dz in ((3,0),(-3,0),(0,3),(0,-3),(3,3),(-3,-3)):
+            for dx,dz in PLACEMENT_SPOTS:
                 if stop.is_set():return {}
                 try:
                     preview=self._post(profile,'/api/world/fabrication/preview',
@@ -452,7 +459,7 @@ class Manager:
             if funding['configured'] or memory.get('fabrication_build'):
                 return self._fabricated_build(profile,stop,cookie,action,ident,common,funding)
             eyes=(profile.get('pose') or {}).get('eyes_m',[0,1.62,3]);failures=[]
-            for dx,dz in ((3,0),(-3,0),(0,3),(0,-3),(3,3),(-3,-3)):
+            for dx,dz in PLACEMENT_SPOTS:
                 if stop.is_set():return {}
                 try:
                     preview=self._post(profile,'/api/world/workshop/preview',{'session':source['session'],'scene':source['scene'],

@@ -452,7 +452,7 @@ def _object_contact(app,said,use,tool,eyes,note):
                      'target-connection-failed':'Target connection failed.',
                      'contact-only':f'Hit {name}. No connection failure detected.',
                      'no-contact':'No contact with the selected item.'}[outcome]
-        answer={'action':'Strike','did':['Strike'] if impacts else [],'done':done,'said':said_result,
+        answer={'action':'Strike','did':['Strike'] if impacts or target_failed else [],'done':done,'said':said_result,
                 'detail':'Internal fracture from held strikes is not available yet.',
                 'result':result,'carried':_carried(app),
                 'repeat':bool(not refused and use['repeat'] and connected and impacts and complete),
@@ -487,8 +487,29 @@ def _object_contact(app,said,use,tool,eyes,note):
             phase='ready'
             # Pickup can start far from the working pose. Move the wish along
             # a bounded path instead of giving idle feedback a large jump.
+            # Turn the tool at a standoff behind the ready pose and come in
+            # along the strike line: turning or sliding it beside the target
+            # swept the head through it, so the strike was spent before it
+            # began, depending only on how the clock fell.
+            standoff=[ready['hand'][i]-tool_gestures.STANDOFF_M*direction[i] for i in range(3)]
+            if math.dist(grip,standoff)>.02:
+                started=app.live.act({'session':session.id,'op':'stroke','path':[grip,standoff],
+                    'speed_m_s':2.,'accel_m_s2':8.,'lead_m':tool_gestures.LEAD_M,
+                    'give_up_s':2.,'let_go':False})
+                done.append('standoff: '+_stroke(app,started=bool(started.get('stroking'))))
+                grip=_grip(session) or standoff
             app.live.act({'session':session.id,'op':'step','dt':1/240,'n':1,
                           'hand':grip,'hand_q':ready['hand_q']})
+            # The wrist turns a heavy head slowly. Let it finish turning here,
+            # clear of the target, so the last move is straight along the line.
+            turn_from=float(session.state.get('t') or 0);wall=time.monotonic()+30
+            while float(session.state.get('t') or 0)-turn_from<2 and time.monotonic()<wall:
+                point=_native_point(app,tool)
+                if not point:
+                    return finish('The working point disconnected while turning. Inspect the tool in Lab.')
+                if sum(point['pointing'][i]*direction[i] for i in range(3))>.98: break
+                time.sleep(.005)
+            grip=_grip(session) or grip
             started=app.live.act({'session':session.id,'op':'stroke','path':[grip,ready['hand']],
                 'speed_m_s':2.,'accel_m_s2':8.,'lead_m':tool_gestures.LEAD_M,
                 'give_up_s':2.,'let_go':False})
@@ -496,15 +517,21 @@ def _object_contact(app,said,use,tool,eyes,note):
         app.live.act({'session':session.id,'op':'step','dt':1/240,'n':1,
                       'hand':ready['hand'],'hand_q':ready['hand_q']})
         wanted=[target['at_m'][i]-tool_gestures.CLEARANCE_M*direction[i] for i in range(3)]
-        deadline=time.monotonic()+2
-        while time.monotonic()<deadline:
+        # Two seconds of WORLD time, not wall time: a loaded machine steps the
+        # world slower, and a wall deadline then refused a reachable contact.
+        # The wall cap only stops a wait on a clock that has stopped.
+        settle_from=float(session.state.get('t') or 0);wall=time.monotonic()+30
+        while float(session.state.get('t') or 0)-settle_from<2 and time.monotonic()<wall:
             if live_session.current_hand(session).get('holding')!=tool:
                 return finish('The tool is no longer in your hand.')
             point=_native_point(app,tool)
             if not point:
                 return finish('The working point disconnected while positioning. Inspect the tool in Lab.')
             if (math.dist(point['tip'],wanted)<.035 and
-                sum(point['pointing'][i]*direction[i] for i in range(3))>.98): break
+                sum(point['pointing'][i]*direction[i] for i in range(3))>.98 and
+                # At rest, so every press starts from the same standstill
+                # rather than from whatever the approach left moving.
+                math.hypot(*(live_session.current_hand(session).get('grip_velocity_m_s') or [0,0,0]))<.05): break
             time.sleep(.005)
         else:
             return finish('The tool cannot reach that contact from here.')

@@ -84,6 +84,61 @@ class NativeRemake(unittest.TestCase):
         self.assertEqual(1,len(self.room.energy_banks))
         self.assertLess(abs(model.audit(self.room.fabrication_record)['energy_residual_j']),1e-7)
 
+    def test_camp_solar_panel_is_a_paid_starter_that_charges_and_banks(self):
+        """The starter collector is the same array law at starter scale."""
+        import goal_chains, market, server
+        def wait(seconds):
+            while seconds:
+                step=min(10,seconds);api.wait(self.app,{**self.context(),'seconds':step});seconds-=step
+        candidate=goal_chains.camp_solar_recipe()
+        # A 55 kg build takes more than the 4 kJ fixture battery holds.
+        self.room.spec['machines']['stores'][0].update(capacity_j=1e6,charge_j=1e6)
+        self.live.open(self.app,{'spec':self.room.spec})
+        library.set_rack(self.app,'oak',60.);library.set_rack(self.app,'glass',8.)
+        library.set_goods(self.app,'copper',2.);library.set_goods(self.app,'copper wire',.2)
+        plan=self.call('plan_make',candidate=candidate)
+        # Starter scale: a few kilograms of copper, not the yard array's 200.
+        self.assertAlmostEqual(1.8,plan['quote']['assembly_goods_kg']['copper'])
+        for material,mass in model.materials(plan['quote'],'stock').items():
+            api.request(self.app,'fund_stock',self.request(mass,material,'camp-solar-'+material))
+        for material,mass in plan['quote']['assembly_goods_kg'].items():
+            reading=self.call('state')
+            source=next(s for s in reading['goods_sources'] if s['material']==material and s['pool']=='personal')
+            self.call('fund_goods',material=material,mass_kg=mass,pool='personal',rack_hash=source['rack_hash'],
+                revision=reading['state']['revision'],request_id='camp-solar-goods-'+material.replace(' ','-'))
+        reading=self.call('state');source=reading['energy_sources'][0]
+        self.call('connect_energy',store=source['id'],store_hash=source['store_hash'],power_w=250.,
+            revision=reading['state']['revision'],request_id='camp-solar-connect')
+        wait(max(1,math.ceil(plan['quote']['supply_required_j']/250.)))
+        reading=self.call('state');source=reading['energy_sources'][0]
+        self.call('fund_energy',store_hash=source['store_hash'],joules=plan['quote']['supply_required_j'],
+            revision=reading['state']['revision'],request_id='camp-solar-fund')
+        plan=self.call('plan_make',candidate=candidate)
+        started=self.call('start_make',plan_id=plan['plan_id'],revision=plan['revision'],request_id='camp-solar')
+        wait(max(1,math.ceil(started['state']['jobs']['camp-solar']['minimum_duration_s'])))
+        preview=api.preview(self.app,{**self.context(),'job_id':'camp-solar','position_m':[0,1.]})
+        result=api.commit(self.app,{**self.context(),'job_id':'camp-solar','preview_id':preview['preview_id'],
+            'request_id':'camp-solar-place'})
+        self.assertTrue(result['resources_charged'])
+        self.live.session.send(op='sun',elevation_deg=70.,azimuth_deg=0.,irradiance_w_m2=1000.)
+        self.assertTrue(server.keep_world(self.app,'installed camp solar'))
+        store=next(s for s in self.live.session.state['machines']['stores']
+                   if s['body'].startswith(result['root_body'].split(' ')[0]) or s['name']=='array battery')
+        self.assertAlmostEqual(1.8e5,store['capacity_j'])
+        before=store['charge_j']
+        for _ in range(40):
+            self.live.act({'session':self.live.session.id,'op':'step','dt':1/240,'n':60})
+        self.assertTrue(server.keep_world(self.app,'camp solar income'))
+        owner=result['owner_id']
+        with library._connect(self.app) as db:
+            market._schema(db);banked=market._balance(db,owner)
+        after=next(s for s in self.live.session.state['machines']['stores'] if s['id']==store['id'])
+        # 10 s of 1 kW/m2 on 0.24 m2 at 20% is at most ~480 J; it must gain,
+        # and never more than the sunlight that fell on the panel.
+        gained=after['charge_j']-before+banked
+        self.assertGreater(gained,0)
+        self.assertLessEqual(gained,0.24*1000*10*1.01)
+
     def take_source(self,material):
         name='selected '+material
         self.room.spec['bodies'].append({'name':name,'shape':'box','material':material,
@@ -607,12 +662,20 @@ class NativeRemake(unittest.TestCase):
                     time.sleep(1/240)
             except Exception as error:errors.append(str(error))
         pump=threading.Thread(target=clock,daemon=True);pump.start()
-        try:used=tool_use.run(self.app,{'session':self.live.session.id,'person':person,'target_name':'target'})
+        # The replacement pick is held at the foot of a 0.85 m haft, so from
+        # the original stance its strike pose is 1.31 m from the eyes, past
+        # the hand's reach; the native hand stops short and the use is
+        # rightly refused. A player steps closer, and so does this one.
+        closer={**person,'standing_m':[-.95,-.12,0],'eyes_m':[-.95,1.5,0]}
+        try:used=tool_use.run(self.app,{'session':self.live.session.id,'person':closer,'target_name':'target'})
         finally:stop.set();pump.join(5)
         self.assertEqual([],errors);self.assertNotIn('refused',used,{
             'answer':used,'poses':self.live.session.send(op='poses'),
             'points':self.live.session.send(op='tool_points')})
-        self.assertTrue(used['result']['impacts'],used)
+        # A slow press can shear the fixing below the impact-event speed; the
+        # parted target is the strike's outcome either way.
+        self.assertTrue(used['result']['impacts'] or used['result']['target_connections_failed'],used)
+        self.assertEqual(['Strike'],used['did'])
         self.assertTrue(used['result']['working_point_connected'],used)
         self.assertTrue(used['result']['parted_joints'],used)
         # Persist the post-use native state before the whole reopen, as a host

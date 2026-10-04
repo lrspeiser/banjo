@@ -1212,14 +1212,19 @@ class WorldHub:
             self.apps[world_id] = app
             return app
 
-    def create(self, name=None, surface='smooth'):
+    def create(self, name=None, surface='smooth', seeds=None):
         # The builder temporarily lends positions and terrain to the rover
         # composer, so two generations must not overlap.
         with self.lock:
-            return self._create(name,surface)
+            return self._create(name,surface,seeds)
 
-    def _create(self, name, surface='smooth'):
-        if surface not in ('smooth','cuts','columns'):raise ValueError('Terrain must be smooth, sharp cuts or material cells')
+    def _create(self, name, surface='smooth', seeds=None):
+        if surface not in ('smooth','cuts','columns','columns-fine'):
+            raise ValueError('Terrain must be smooth, sharp cuts or material cells')
+        # A preview of the same valley in 12.5 cm cells, for comparing against
+        # 25 cm; its own declaration, so a saved world reopens the same way.
+        cell_m=.125 if surface=='columns-fine' else .25
+        if surface=='columns-fine':surface='columns'
         if name is None: name = "New world"
         if not isinstance(name, str) or not 1 <= len(name.strip()) <= 80:
             raise ValueError("World name must be 1 to 80 characters")
@@ -1236,10 +1241,18 @@ class WorldHub:
         # These two terrain seeds have room for the complete starter ladder.
         # Many arbitrary valley seeds do not; world_seed refuses them. The
         # resource positions still vary for every game.
-        terrain_seed = (4, 7)[secrets.randbelow(2)]
-        ground = grounds.read_ground(self.base.engine_path, terrain_seed,surface=surface)
-        for _ in range(6):
-            goods_seed = secrets.randbelow(2**31 - 1) + 1
+        # Given seeds replay one map exactly, so ground types can be compared
+        # on the same valley with the same resources laid on it.
+        if seeds is not None:
+            if (not isinstance(seeds,dict) or set(seeds)-{'terrain','goods'} or seeds.get('terrain') not in (4,7)
+                    or not isinstance(seeds.get('goods'),int) or not 1<=seeds['goods']<2**31):
+                raise ValueError('Seeds are a terrain seed of 4 or 7 and a positive goods seed')
+            terrain_seed=seeds['terrain']
+        else:
+            terrain_seed = (4, 7)[secrets.randbelow(2)]
+        ground = grounds.read_ground(self.base.engine_path, terrain_seed,surface=surface,cell_m=cell_m)
+        for attempt in range(6):
+            goods_seed = seeds['goods'] if seeds is not None and attempt==0 else secrets.randbelow(2**31 - 1) + 1
             try:
                 generated = world_seed.new_world(ground, goods_seed,
                                                  start_xz=new_game.ARRIVE_AT)
@@ -1271,7 +1284,7 @@ class WorldHub:
             meta = {"format": "banjo.world.v1", "id": world_id, "name": name,
                     "created_unix_s": time.time(), "terrain_seed": terrain_seed,
                     "goods_seed": proof["seed"], "reachability": proof,
-                    "arrival_xz":list(new_game.ARRIVE_AT),"terrain_surface":surface}
+                    "arrival_xz":list(new_game.ARRIVE_AT),"terrain_surface":surface,"terrain_cell_m":cell_m}
             declaration=fabrication_room.starter_settings()
             if declaration is not None:meta['workbench']=declaration
             path = folder / "manifest.json"
@@ -1492,9 +1505,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def _dispatch_POST(self,path,body):
         if path == "/api/worlds":
-            if not isinstance(body, dict) or set(body) - {"name","surface"}:
+            if not isinstance(body, dict) or set(body) - {"name","surface","seeds"}:
                 raise ValueError("Expected a world name")
-            return self.send(self.server.app.hub.create(body.get("name"),body.get('surface','smooth')), 201)
+            return self.send(self.server.app.hub.create(body.get("name"),body.get('surface','smooth'),body.get('seeds')), 201)
         if path == "/api/world/player/join":
             if not isinstance(body, dict) or set(body) - {"token", "name"}:
                 raise ValueError("Expected a player token and optional name")

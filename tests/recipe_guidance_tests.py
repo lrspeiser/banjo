@@ -34,12 +34,17 @@ class RecipeGuidance(unittest.TestCase):
         self.assertEqual([],route['input_to'])
         sid=app.live.session.id;at=pile['at_m']
         floor=app.live.act({'session':sid,'op':'survey','at':at})['survey']['ground_m']
-        self.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],'request_id':'recipe-oak',
-            'person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[0,0,-1]}},world)
+        # A collect takes the whole pile into private stock (bulk pickup).
+        got=self.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],'request_id':'recipe-oak',
+            'person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[0,0,-1]}},world)['collected']['oak']
+        self.assertGreater(got,0)
         updated=next(l for l in rover()['materials'] if l['material']=='oak')
-        self.assertEqual(25,updated['personal_kg']);self.assertEqual(12.4,updated['shared_kg'])
-        self.assertAlmostEqual(updated['kg']-37.4,updated['short_kg'])
-        self.assertEqual(pile['holds']['oak'],next(r for r in updated['acquisition'] if r['kind']=='pile')['available_kg'])
+        self.assertAlmostEqual(got,updated['personal_kg']);self.assertEqual(12.4,updated['shared_kg'])
+        self.assertAlmostEqual(max(0.,updated['kg']-12.4-got),updated['short_kg'])
+        left=pile['holds'].get('oak',0)
+        routes=[r for r in updated.get('acquisition',[]) if r['kind']=='pile' and r['name']==pile['name']]
+        if left>0:self.assertEqual(left,routes[0]['available_kg'])
+        else:self.assertEqual([],routes,'an emptied pile is not offered as a supply')
         other_oak=next(l for l in rover(other['token'])['materials'] if l['material']=='oak')
         self.assertEqual(0,other_oak['personal_kg']);self.assertEqual(oak['short_kg'],other_oak['short_kg'])
         copper=next(l for l in initial['goods'] if l['substance']=='copper')
@@ -88,9 +93,12 @@ class RecipeGuidance(unittest.TestCase):
         card='[data-recipe="table:table"]'
         wait(f'document.querySelector({json.dumps(card)})')
         self.assertTrue(p.evaluate(f'document.querySelector({json.dumps(card+" .ws-recipe-acts button")}).disabled'))
+        # The catalog Table is listed under the recommended Work table's
+        # "Other versions"; a player opens that first.
+        p.evaluate(f'document.querySelector({json.dumps(card)}).closest(".ws-variants")?.setAttribute("open","")')
         click(card+' canvas');wait(f'document.querySelector({json.dumps(card+" details")}).open')
         text=p.evaluate(f'document.querySelector({json.dumps(card)}).textContent')
-        self.assertIn('Personal 0',text);self.assertIn('Shared 12.4',text);self.assertIn('None required',text)
+        self.assertIn('Yours 0',text);self.assertIn('Shared 12.4',text);self.assertIn('None required',text)
         self.assertIn('oak pile',text);self.assertIn('Missing',text);shot('shortage')
         click(card+' [data-supply-route="oak pile"]')
         wait('window.banjoRoom?.ready() && location.search.includes("resource=")')
@@ -105,12 +113,14 @@ class RecipeGuidance(unittest.TestCase):
         self.assertGreater(((initial_pose[0]-x)**2+(initial_pose[2]-z)**2)**.5,2)
         p.evaluate(f'banjoRoom.standAt({x+1},banjoRoom.groundAt({x},{z})+1.6,{z});banjoRoom.lookAt({x},banjoRoom.groundAt({x},{z})+.2,{z})')
         wait('!document.querySelector("#collect-output").hidden && document.querySelector("#collect-output").dataset.pile==="oak pile"')
+        in_pile=pile['holds']['oak']
         click('#collect-output')
         wait('document.querySelector("#details-last-text").textContent.includes("Inventory")')
         token=flow.workshop_library.REQUEST_OWNER.set(browser_owner)
         try:
+            # Collect takes the whole pile into private stock.
             before=next(r for r in flow.workshop_library.rack(app)['materials'] if r['material']=='oak')
-            self.assertEqual(25,before['personal_kg']);self.assertEqual(12.4,before['shared_kg'])
+            self.assertAlmostEqual(in_pile,before['personal_kg']);self.assertEqual(12.4,before['shared_kg'])
         finally:flow.workshop_library.REQUEST_OWNER.reset(token)
         p.send('Page.navigate',{'url':recipes_url})
         wait(f'document.querySelector({json.dumps(card+" .ws-recipe-acts button")}) && !document.querySelector({json.dumps(card+" .ws-recipe-acts button")}).disabled')
@@ -121,11 +131,14 @@ class RecipeGuidance(unittest.TestCase):
         token=flow.workshop_library.REQUEST_OWNER.set(browser_owner)
         try:after=next(r for r in flow.workshop_library.rack(app)['materials'] if r['material']=='oak')
         finally:flow.workshop_library.REQUEST_OWNER.reset(token)
-        self.assertEqual(0,after['personal_kg']);self.assertAlmostEqual(6.6224,after['shared_kg'],places=4)
+        # Make draws on your own stock first; the shared stock is untouched.
+        table_kg=37.4-6.6224
+        self.assertAlmostEqual(in_pile-table_kg,after['personal_kg'],places=4)
+        self.assertAlmostEqual(12.4,after['shared_kg'],places=4)
         rover='[data-recipe="rover:rover"]'
         # Make's final refresh must replace the previous stock values before
         # the next recipe's guidance is read or acted on.
-        wait(f'document.querySelector({json.dumps(rover)}).textContent.includes("6.62 kg")')
+        wait(f'document.querySelector({json.dumps(rover)}).textContent.includes("Yours "+(({after["personal_kg"]}).toLocaleString(undefined,{{maximumFractionDigits:2}}))+" kg")')
         shot('made')
         click(rover+' canvas');wait(f'document.querySelector({json.dumps(rover+" details")}).open')
         text=p.evaluate(f'document.querySelector({json.dumps(rover)}).textContent')

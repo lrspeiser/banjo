@@ -537,6 +537,115 @@ def _terrain_floor(old, bounds):
     return max(values) + max(.001, max(abs(v) for v in values)*2**-22)
 
 
+def _supporting_plane(old, bounds, com_xz):
+    """The plane a thing set down here would rest on: through three ground
+    samples under its footprint, with none above it, lowest under its centre
+    of mass. None on flat ground or with too few samples.
+
+    Set down upright on a slope, a slender thing pivots onto its uphill edge
+    and the energy that gains carries it over at about a quarter of its static
+    tipping angle (Housner's rocking block); a work table fell on its side on
+    an 8 degree patch. Set square to this plane it starts at rest.
+    """
+    terrain = _terrain_state(old)
+    if terrain is None:
+        return None
+    grid = terrain["grid"]
+    nx, nz, h = grid["nx"], grid["nz"], grid["cell_m"]
+    heights = struct.unpack("<"+"f"*(nx*nz), base64.b64decode(terrain["heights_b64"], validate=True))
+    span = []
+    for axis, count, origin in ((0,nx,grid["x0_m"]),(2,nz,grid["z0_m"])):
+        lo, hi = (bounds[k][axis]-origin for k in (0,1))
+        span.append((max(0,math.floor(lo/h)),min(count-1,math.ceil(hi/h))))
+    samples = [(grid["x0_m"]+i*h, heights[j*nx+i], grid["z0_m"]+j*h)
+               for j in range(span[1][0],span[1][1]+1) for i in range(span[0][0],span[0][1]+1)]
+    if len(samples) < 3 or not all(math.isfinite(s[1]) for s in samples):
+        return None
+    if len(samples) > 48:                       # bound the search on big footprints
+        samples = samples[::math.ceil(len(samples)/48)]
+    best = None
+    count = len(samples)
+    for a in range(count):
+        for b in range(a+1, count):
+            for c in range(b+1, count):
+                (x1,y1,z1),(x2,y2,z2),(x3,y3,z3) = samples[a],samples[b],samples[c]
+                det = (x2-x1)*(z3-z1)-(x3-x1)*(z2-z1)
+                if abs(det) < 1e-9: continue
+                ga = ((y2-y1)*(z3-z1)-(y3-y1)*(z2-z1))/det
+                gb = ((x2-x1)*(y3-y1)-(x3-x1)*(y2-y1))/det
+                gc = y1-ga*x1-gb*z1
+                if any(y > ga*x+gb*z+gc+1e-6 for x,y,z in samples): continue
+                under = ga*com_xz[0]+gb*com_xz[1]+gc
+                if best is None or under < best[0]: best = (under, ga, gb, gc)
+    return None if best is None else best[1:]
+
+
+def _square_to_ground(old, body, room):
+    """Turn a precise body square to its supporting plane and seat it 2 mm
+    clear of it. Steeper than 25 degrees it is left upright: a slope like that
+    is no place to set a thing down, and the preview says where it lands."""
+    seated = precise_rigid.bounds(body["parts"], body["position_m"], body["orientation_wxyz"])
+    plane = _supporting_plane(old, seated, (body["position_m"][0], body["position_m"][2]))
+    if plane is None:
+        return False
+    ga, gb, gc = plane
+    n = [-ga, 1.0, -gb]; size = math.sqrt(sum(v*v for v in n)); n = [v/size for v in n]
+    angle = math.acos(max(-1.0, min(1.0, n[1])))
+    if angle > math.radians(25):
+        return False
+    if angle > 1e-6:
+        axis = [n[2], 0.0, -n[0]]; length = math.hypot(axis[0], axis[2])
+        s = math.sin(angle/2)
+        tilt = [math.cos(angle/2), axis[0]/length*s, 0.0, axis[2]/length*s]
+        w1,x1,y1,z1 = tilt; w2,x2,y2,z2 = body["orientation_wxyz"]
+        body["orientation_wxyz"] = [w1*w2-x1*x2-y1*y2-z1*z2, w1*x2+x1*w2+y1*z2-z1*y2,
+                                    w1*y2-x1*z2+y1*w2+z1*x2, w1*z2+x1*y2-y1*x2+z1*w2]
+    turn = precise_rigid._turn(body["orientation_wxyz"])
+    clearance = math.inf
+    for part in body["parts"]:
+        half = [d/2 for d in part["dimensions_m"]]
+        for sx in (-1,1):
+            for sy in (-1,1):
+                for sz in (-1,1):
+                    local = [part["center_local_m"][0]+sx*half[0], part["center_local_m"][1]+sy*half[1],
+                             part["center_local_m"][2]+sz*half[2]]
+                    p = [body["position_m"][a]+sum(turn[a][k]*local[k] for k in range(3)) for a in range(3)]
+                    clearance = min(clearance, p[1]-(ga*p[0]+gb*p[2]+gc))
+    body["position_m"][1] += .002 - clearance
+    return True
+
+
+STAND_TRIAL_S = 2.0
+STAND_TILT_DEG = 10.0
+
+
+def _stands_here(staged, root):
+    """Let the new thing stand for two seconds in the private staged copy of
+    the world, and refuse the spot if it falls over.
+
+    Squared to its supporting plane a thing starts at rest, but rest is not
+    stability: on an 8 degree patch of the valley a paid work table, well
+    short of its static tipping angle, still toppled onto its side in 1.2 s.
+    The engine says whether it stands; nothing here estimates it. The staged
+    copy is thrown away, so the trial changes nothing in the real world.
+    """
+    def up():
+        body = next((b for b in staged.session.state.get("bodies", []) if b.get("name") == root), None)
+        if body is None: return None
+        w, x, y, z = body.get("orientation_wxyz") or [1, 0, 0, 0]
+        return [2*(x*y-z*w), 1-2*(x*x+z*z), 2*(y*z+x*w)]
+    start = up()
+    for _ in range(int(STAND_TRIAL_S*240)//120):
+        staged.act({"session": staged.session.id, "op": "step", "dt": 1/240, "n": 120})
+    end = up()
+    if start is None or end is None:
+        return
+    turn = math.degrees(math.acos(max(-1.0, min(1.0, sum(a*b for a, b in zip(start, end))))))
+    if turn > STAND_TILT_DEG:
+        raise ValueError(f"It would not stand here: it tipped {turn:.0f} degrees in its first "
+                         f"{STAND_TRIAL_S:g} s. Choose flatter ground.")
+
+
 def _body_bounds(body: dict[str, Any], h: float):
     """Conservative actual-cell AABB, including rotated cubic cell extents."""
     if body.get("mechanical_model") == precise_rigid.MODEL:
@@ -1725,10 +1834,11 @@ def _preview_rigid(app, room, live, old, design, overrides, pos, candidate=None)
     # that nothing starts below the ground. A flat floor answers 0 and leaves
     # it where placement put it.
     if room.spec.get("terrain"):
-        lo, _ = seated = precise_rigid.bounds(body["parts"], body["position_m"], body["orientation_wxyz"])
-        lift = _terrain_floor(old, seated) + .002 - lo[1]
-        body["position_m"][1] += lift
-        translation[1] += lift
+        before = body["position_m"][1]
+        if not _square_to_ground(old, body, room):
+            lo, _ = seated = precise_rigid.bounds(body["parts"], body["position_m"], body["orientation_wxyz"])
+            body["position_m"][1] += _terrain_floor(old, seated) + .002 - lo[1]
+        translation[1] += body["position_m"][1] - before
     spec = deepcopy(room.spec)
     spec["precise_rigid_bodies"] = spec.get("precise_rigid_bodies", []) + [body]
     from mcp import core_use
@@ -1750,7 +1860,11 @@ def _preview_rigid(app, room, live, old, design, overrides, pos, candidate=None)
             raise ValueError("Prototype placement overlaps the current collision envelope of " + existing["name"])
     fracture_lab.validate(spec)
     staged, _ = _stage(app, live, old, spec, saved, artifact, root, None)
-    staged.session.close()
+    try:
+        if room.spec.get("terrain"):
+            _stands_here(staged, root)
+    finally:
+        staged.session.close()
     token = uuid.uuid4().hex
     answer = {"schema": SCHEMA, "status": "preview", "preview_id": token,
               "scene": room.scene, "session": old.id, "mode": "authoring", "root_body": root,

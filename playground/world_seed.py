@@ -187,6 +187,9 @@ GROUND_HOLDS: tuple[Seam, ...] = (
          "floodplain clay, wet and mixed with the silt over it"),
 )
 
+#: How many separate piles each found heap's total is laid out in.
+HEAP_SPLIT = 4
+
 LIES_ABOUT: tuple[Heap, ...] = (
     Heap("oak", "open", (120.0, 260.0),
          "fallen timber. NOTHING REGROWS: this is the only oak the world will "
@@ -716,8 +719,8 @@ def place(ground: dict[str, Any], seed: int, *,
                 and flatness(ground, x, z, radius) <= WORKABLE_SPREAD_M)
 
     def pick(kind: str, radius: float, near: tuple[float, float] | None = None,
-             where: list[tuple[float, float, str, float]] | None = None
-             ) -> tuple[float, float, float] | None:
+             where: list[tuple[float, float, str, float]] | None = None,
+             least: float = LEAST_RADIUS_M) -> tuple[float, float, float] | None:
         """Somewhere of this kind that will take a patch this big, or the best
         compromise: the right kind of ground first, then any ground, and a
         smaller patch before no patch at all.
@@ -732,7 +735,7 @@ def place(ground: dict[str, Any], seed: int, *,
             if not here:
                 continue
             size = radius
-            while size >= LEAST_RADIUS_M:
+            while size >= least:
                 able = sorted((x, z) for x, z in here if fits(x, z, size))
                 if able:
                     x, z = min(able, key=lambda p: math.dist(p, near)) if near else roll.choice(able)
@@ -820,8 +823,15 @@ def place(ground: dict[str, Any], seed: int, *,
     # first clay seam is the whole of ceramics.
     wanted = [(heap, 0) for heap in LIES_ABOUT]
     wanted += [(seam, 0) for seam in GROUND_HOLDS]
-    wanted += [(seam, n) for seam in GROUND_HOLDS for n in range(1, roll.randint(*seam.veins))]
+    spares = [(seam, n) for seam in GROUND_HOLDS for n in range(1, roll.randint(*seam.veins))]
+    wanted += spares
 
+    # A click collects a whole pile (docs/automatic-excavation-piles-
+    # checkpoint.md), so one heap of all the timber went to whoever reached it
+    # first and left a second player none. The same finite timber now lies in
+    # HEAP_SPLIT piles; the first takes its place as before and the rest are
+    # laid last of all (below).
+    later: list[tuple[Heap, dict, float]] = []
     for thing, n in wanted:
         if isinstance(thing, Heap):
             got = pick(thing.ground, 1.0)
@@ -829,9 +839,13 @@ def place(ground: dict[str, Any], seed: int, *,
                 continue
             x, z, radius = got
             taken.append((x, z, radius))
-            stockpiles.append({"name": f"{thing.substance} pile",
-                               "at_m": [round(x, 2), round(z, 2)], "radius_m": radius,
-                               "holds": {thing.substance: round(roll.uniform(*thing.kg), 1)}})
+            total = round(roll.uniform(*thing.kg), 1)
+            share = round(total / HEAP_SPLIT, 1)
+            first = {"name": f"{thing.substance} pile",
+                     "at_m": [round(x, 2), round(z, 2)], "radius_m": radius,
+                     "holds": {thing.substance: round(total - share * (HEAP_SPLIT - 1), 1)}}
+            stockpiles.append(first)
+            later += [(thing, first, share)] * (HEAP_SPLIT - 1)
             continue
         got = pick(thing.ground, round(roll.uniform(*thing.radius_m), 2))
         if got is None:
@@ -846,6 +860,21 @@ def place(ground: dict[str, Any], seed: int, *,
 
     for works in WORKS[1:]:
         a_works_yard(works, middle)
+
+    # The rest of the timber, last of all so it takes only room nothing
+    # else wanted: nearest the start, so a new player finds it, and without
+    # a roll, so no other draw of a seeded map moves.
+    for k, (heap, first, share) in enumerate(later, 2):
+        # A share of timber is a stack of logs, not a seam: it fits a
+        # 0.3 m patch where a vein needs 0.6 m.
+        got = pick(heap.ground, 1.0, near=start_xz, least=0.3)
+        if got is None:                 # no room: it stays in the first pile
+            first["holds"][heap.substance] = round(first["holds"][heap.substance] + share, 1)
+            continue
+        x, z, radius = got
+        taken.append((x, z, radius))
+        stockpiles.append({"name": f"{heap.substance} pile {k}", "at_m": [round(x, 2), round(z, 2)],
+                           "radius_m": radius, "holds": {heap.substance: share}})
 
     # The goods block and nothing else in it: machine_goods.checked holds it
     # to deposits, stockpiles and recipes and refuses anything else, which is

@@ -392,6 +392,16 @@ scene.add(rim);
 const fill = new THREE.DirectionalLight(0xffffff, 0.22);
 fill.position.set(0, 2, 8);
 scene.add(fill);
+// Moonlight: the night's own lamp, cool and dim, so the ground's materials and
+// shape can still be read after sunset (night was a black screen in which only
+// the river's sparkle showed). Presentation only, like the sky's light: it
+// charges nothing, and a lamp still visibly lights a camp beyond it.
+const moon = new THREE.DirectionalLight(0xa9bdf0, 0);
+moon.name = "moon-light";
+moon.position.set(-6, 12, 4);
+scene.add(moon);
+scene.add(moon.target);
+const MOON_LIGHT = 0.55;
 const KEY_AT = key.position.clone();
 const KEY_LIGHT = key.intensity, SKY_LIGHT = sky.intensity, RIM_LIGHT = rim.intensity;
 const FILL_LIGHT = fill.intensity;
@@ -427,7 +437,7 @@ const sunDirection = new THREE.Vector3();
 // lights rather than per fragment, and standing in a 1.75 m adit there is not
 // much of the meadow to see anyway.
 const COVER_DARK_M = 2.0;
-const daylight = { key: KEY_LIGHT, sky: SKY_LIGHT, rim: RIM_LIGHT, fill: FILL_LIGHT };
+const daylight = { key: KEY_LIGHT, sky: SKY_LIGHT, rim: RIM_LIGHT, fill: FILL_LIGHT, moon: 0 };
 let underCover = 1;
 function applyDaylight() {
   key.intensity = daylight.key * underCover;
@@ -436,6 +446,7 @@ function applyDaylight() {
   sky.intensity = daylight.sky * Math.max(0.05, underCover);
   rim.intensity = daylight.rim * underCover;
   fill.intensity = daylight.fill * underCover;
+  moon.intensity = daylight.moon * underCover;
 }
 function daylightUnderCover(eye) {
   const over = coverOver(eye.x, eye.y, eye.z);
@@ -748,7 +759,7 @@ function skyPMREM() {
 }
 // The sky's light at night, and the rim's: dim, but enough to see what is in
 // the room by.
-const SKY_NIGHT = 0.035, RIM_NIGHT = 0.015, FILL_NIGHT = 0.01;
+const SKY_NIGHT = 0.2, RIM_NIGHT = 0.04, FILL_NIGHT = 0.03;
 // The sky behind the room under a sun with a day: a day's blue with the sun
 // well up, red as it nears the horizon, and the night's black the page has
 // always had. A room without a day keeps that black.
@@ -783,6 +794,7 @@ function lightFromSun(sun) {
     daylight.sky = SKY_NIGHT + (SKY_LIGHT - SKY_NIGHT) * dusk;
     daylight.rim = RIM_NIGHT + (RIM_LIGHT - RIM_NIGHT) * dusk;
     daylight.fill = FILL_NIGHT + (FILL_LIGHT - FILL_NIGHT) * dusk;
+    daylight.moon = MOON_LIGHT * (1 - dusk);
     applyDaylight();
     skyTint.copy(LOW_SKY).lerp(DAY_SKY, Math.min(1, Math.max(0, sun.elevation_deg / 20)));
     scene.background.copy(NIGHT_SKY).lerp(skyTint, dusk);
@@ -794,6 +806,7 @@ function lightFromSun(sun) {
     daylight.sky = SKY_LIGHT;
     daylight.rim = RIM_LIGHT;
     daylight.fill = FILL_LIGHT;
+    daylight.moon = 0;
     applyDaylight();
     if (skyTinted) {
       scene.background.copy(NIGHT_SKY);
@@ -3915,7 +3928,7 @@ function inputDeliveryPanel(name) {
   } else for(const row of menu.stored || []) {
     const item=document.createElement('div');item.className='mini-resource';
     item.append(thumbnail({name:titled(row.substance),material:row.substance,shape:'box',color_rgba:slotColour(row.substance).slice(1)}));
-    const label=document.createElement('span');label.textContent=`${titled(row.substance)} · ${row.pool==='personal'?'Stored':'Shared storage'}`;
+    const label=document.createElement('span');label.textContent=`${titled(row.substance)} · ${row.pool==='personal'?'Yours · stored':'Shared · stored'}`;
     const value=document.createElement('b');value.textContent=massLabel(row.mass_kg);item.append(label,value);pane.append(item);
     const amount=Math.min(5,Math.floor(row.mass_kg*1e6)/1e6);
     const b=button(`Load stored ${massLabel(amount)}`,()=>change({pile:name,substance:row.substance,mass_kg:amount,

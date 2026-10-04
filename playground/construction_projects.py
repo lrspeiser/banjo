@@ -139,6 +139,7 @@ def operation(app, body):
         'power':store.get('name') or 'No connected battery',
         'drawn_w':lamp.get('drawn_w',0),'lumens':lamp.get('lumens',0),
         'instruction':('Leave it in World; it switches on at night and off in daylight.' if automatic
+            else 'It is on. Select it in World to switch it off and save its battery.' if lamp.get('lit')
             else 'Select the light in World, then use Switch light on.')}
 
 

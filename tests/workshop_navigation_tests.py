@@ -414,7 +414,7 @@ class GameScreens(unittest.TestCase):
         self.wait('document.querySelectorAll("#ws-inv-stock .ws-tile").length > 0')
         self.assertTrue(self.page.evaluate('[...document.querySelectorAll("#ws-inv-stock .ws-tile")].every(c => !c.disabled && getComputedStyle(c).userSelect === "none" && c.querySelector(".ws-tile-count").parentElement === c && getComputedStyle(c.querySelector(".ws-tile-count")).position === "static")'))
         self.assertEqual(f'{next(r["mass_kg"] for r in stock["materials"] if r["material"] == "oak"):g} kg', self.page.evaluate('document.querySelector("#ws-inv-stock [data-resource=oak] .ws-tile-count").textContent'))
-        self.assertIn('Personal',self.page.evaluate('document.querySelector("#ws-inv-stock [data-resource=oak]").textContent'))
+        self.assertIn('Yours',self.page.evaluate('document.querySelector("#ws-inv-stock [data-resource=oak]").textContent'))
         self.assertIn('Shared',self.page.evaluate('document.querySelector("#ws-inv-stock [data-resource=oak]").textContent'))
         self.screenshot("material-quantities.png")
         self.click('#ws-inv-stock [data-resource="oak"]')
@@ -615,7 +615,7 @@ class GameScreens(unittest.TestCase):
         self.navigate(world, "workshop=1&tab=recipes")
         card = '[data-recipe="stool:Camp stool"]'
         self.wait(f'!!document.querySelector({json.dumps(card)})')
-        self.wait('document.querySelectorAll("#ws-recipes-templates canvas[data-preview=ready]").length >= 10')
+        self.wait('document.querySelectorAll("#ws-pane-recipes canvas[data-preview=ready]").length >= 10')
         self.assertIsNone(self.page.evaluate('document.querySelector("#workshop-stage").visibleGeometry()'))
         self.assertIn("SkillNone required", self.page.evaluate(f'document.querySelector({json.dumps(card)}).textContent'))
         bodies = set()

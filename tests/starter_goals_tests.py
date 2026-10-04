@@ -37,10 +37,14 @@ def make_paid(client,world,player,candidate,position,ident):
             'rack_hash':source['rack_hash'],'revision':funding['state']['revision'],'request_id':ident+'-stock-'+material},world,player)
     funding=call('/api/world/fabrication/state',common,world,player)
     source=next(s for s in funding['energy_sources'] if s['body']=='solar farm')
+    power=min(source['max_power_w'],funding['state']['config']['power_w'])
     call('/api/world/fabrication/connect_energy',{**common,'store':source['id'],'store_hash':source['store_hash'],
-        'power_w':min(source['max_power_w'],funding['state']['config']['power_w']),
-        'revision':funding['state']['revision'],'request_id':ident+'-connect'},world,player)
-    funding=call('/api/world/fabrication/wait',{**common,'seconds':1},world,player)
+        'power_w':power,'revision':funding['state']['revision'],'request_id':ident+'-connect'},world,player)
+    # Energy arrives at the connected power, so wait as long as it takes
+    # rather than assuming one second covers any build.
+    seconds=max(1,math.ceil(max(0,plan['quote']['supply_required_j']-funding['state']['energy_j'])/power))
+    while seconds:
+        step=min(10,seconds);call('/api/world/fabrication/wait',{**common,'seconds':step},world,player);seconds-=step
     funding=call('/api/world/fabrication/state',common,world,player)
     source=next(s for s in funding['energy_sources'] if s['connected'])
     need=max(0,plan['quote']['supply_required_j']-funding['state']['energy_j'])
@@ -54,7 +58,15 @@ def make_paid(client,world,player,candidate,position,ident):
     while remaining:
         seconds=min(10,remaining)
         call('/api/world/fabrication/wait',{**common,'seconds':seconds},world,player);remaining-=seconds
-    preview=call('/api/world/fabrication/preview',{**common,'job_id':ident,'position_m':position},world,player)
+    # A list of spots is tried in order, as a player moves on from a spot the
+    # preview refuses (for instance one where the thing would not stand).
+    spots=position if position and isinstance(position[0],(list,tuple)) else [position]
+    for spot in spots:
+        try:
+            preview=call('/api/world/fabrication/preview',{**common,'job_id':ident,'position_m':list(spot)},world,player)
+            break
+        except AssertionError as refused:
+            if spot is spots[-1] or 'would not stand' not in str(refused):raise
     before=call('/api/world/inventory/shown',{'session':common['session']},world,player)
     built=call('/api/world/fabrication/commit',{**common,'job_id':ident,'preview_id':preview['preview_id'],
         'request_id':ident+'-place'},world,player)
@@ -94,7 +106,7 @@ def play_first_camp(client, world, player):
                 reply = client.post("/api/workshop/market", {"action": "buy", "item_id": oak["id"],
                     "quoted_price_j": oak["price_j"], "request_id": key}, world, player)
         elif step == "build-camp":
-            reply=make_paid(client,world,player,goals['recipe'],[3,0],key)
+            reply=make_paid(client,world,player,goals['recipe'],[[3,0],[3.5,2.5],[3.5,-3.],[2,0],[3,1],[3,-1]],key)
             if not reply["native_precise_geometry_verified"] or not reply["resources_charged"]:
                 raise AssertionError("Build did not pass native admission and resource debit")
         elif step == "carry-camp":

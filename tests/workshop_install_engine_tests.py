@@ -641,7 +641,17 @@ class NativeInstallation(unittest.TestCase):
         built=next(b for b in self.room.spec["precise_rigid_bodies"] if b["name"]==p["root_body"])
         lo,hi=precise_rigid.bounds(built["parts"],built["position_m"],built["orientation_wxyz"])
         floor=install._terrain_floor(self.live.session,(lo,hi))
-        self.assertAlmostEqual(floor+.002,lo[1],delta=1e-9)
+        # Set square to the plane it rests on (three ground samples, none
+        # above it): its lowest corner is 2 mm clear of that plane, and every
+        # ground sample under it is on or below the plane.
+        plane=install._supporting_plane(self.live.session,(lo,hi),(built["position_m"][0],built["position_m"][2]))
+        self.assertIsNotNone(plane)
+        ga,gb,gc=plane
+        turn=precise_rigid._turn(built["orientation_wxyz"])
+        corners=[[built["position_m"][a]+sum(turn[a][k]*(part["center_local_m"][k]+s[k]*part["dimensions_m"][k]/2)
+                  for k in range(3)) for a in range(3)]
+                 for part in built["parts"] for s in [(x,y,z) for x in (-1,1) for y in (-1,1) for z in (-1,1)]]
+        self.assertAlmostEqual(.002,min(c[1]-(ga*c[0]+gb*c[2]+gc) for c in corners),delta=1e-9)
         self.live.session.send(op="step",dt=1/240,n=240)
         body=next(b for b in self.live.session.send(op="poses")["bodies"] if b["name"]==p["root_body"])
         settled=precise_rigid.bounds(body["rigid_parts_local"],body["position_m"],body["orientation_wxyz"])

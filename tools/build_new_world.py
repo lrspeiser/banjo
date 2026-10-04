@@ -119,8 +119,7 @@ def compose(ground: dict, world: dict, terrain_seed: int | None = None, *, insta
     was = (rover_room.ROVER_AT, rover_room.POST_AT, rover_room.TERRAIN)
     rover_room.ROVER_AT = _rover_start(ground,intake,vein['at_m'])
     rover_room.POST_AT = _clear_of(ground, rack, 2.5, away_from=middle)
-    rover_room.TERRAIN = {"generate": "valley" if terrain_seed is None else
-                          {"kind": "valley", "seed": terrain_seed}}
+    rover_room.TERRAIN = {"generate": grounds.valley(terrain_seed, ground.get("cell", 0.25))}
     if ground.get('surface') in ('cuts','columns'):rover_room.TERRAIN['surface']=ground['surface']
     try:
         here=rover_room.ROVER_AT

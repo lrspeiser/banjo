@@ -1,6 +1,7 @@
 """Composed personal goals exercised through player HTTP/native controls."""
 from copy import deepcopy
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -129,7 +130,7 @@ class PlayerJourney(unittest.TestCase):
             alice=self.join(world,'Alice');bob=self.join(world,'Bob');self.players={world:alice}
             self.post('/api/world/open',{},world);app=self.app.hub.get(world)
             wood_before=sum(p.get('holds',{}).get('oak',0) for p in app.brains.goods.stockpiles)
-            results=[]
+            results=[];collected_kg={}
             for index,player in enumerate((alice,bob)):
                 token=player['token']
                 def goals():return self.post('/api/workshop/goals',{},world,token)
@@ -141,6 +142,9 @@ class PlayerJourney(unittest.TestCase):
                 collected=self.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],
                     'request_id':f'collect-{index}','person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[1,0,0]}},world,token)
                 self.assertGreaterEqual(collected['collected']['oak'],2)
+                # A collect takes the whole pile, so the second player is sent
+                # to another of the world's separate timber piles, not Market.
+                collected_kg[player['token']]=collected['collected']['oak']
                 ready=goals();self.assertEqual('make-own-tool',ready['next_goal'])
                 built=camp.make_paid(self,world,token,ready['recipe'],[-1.4,-.6+index*1.2],f'opening-made-{index}')
                 self.assertTrue(built['engine_grid_verified']);self.assertTrue(built['resources_charged'])
@@ -195,9 +199,11 @@ class PlayerJourney(unittest.TestCase):
                     [(g['id'],g['complete'],g['evidence']) for g in restored['goals']])
                 inv=self.post('/api/workshop/inventory',{},world,player['token'])
                 self.assertTrue(any(i['name']==finished['product_body'] and i['label']=='Personal field pick' for i in inv['carried']))
-                self.assertAlmostEqual(23.075,next(m['personal_kg'] for m in inv['materials'] if m['material']=='oak'))
+                self.assertAlmostEqual(collected_kg[player['token']]-1.925,
+                    next(m['personal_kg'] for m in inv['materials'] if m['material']=='oak'),places=4)
             app=self.app.hub.get(world)
-            self.assertAlmostEqual(50,wood_before-sum(p.get('holds',{}).get('oak',0) for p in app.brains.goods.stockpiles))
+            self.assertAlmostEqual(sum(collected_kg.values()),
+                wood_before-sum(p.get('holds',{}).get('oak',0) for p in app.brains.goods.stockpiles),places=4)
             with server.workshop_library._connect(app) as db:
                 self.assertEqual(0,db.execute('SELECT COUNT(*) FROM market_orders').fetchone()[0])
                 self.assertEqual(0,db.execute('SELECT COUNT(*) FROM market_deposits').fetchone()[0])
@@ -249,10 +255,10 @@ class PlayerJourney(unittest.TestCase):
             ground=self.post('/api/live/act',{'session':session,'op':'survey','at':[.3,.025]},world)['survey']['ground_m']
             person={'standing_m':[-.9,floor,.025],'eyes_m':[-.9,floor+1.62,.025],
                 'facing':[1,0,0],'look_direction':[1.2,ground-floor-1.62,0]}
-            def inventory(op,item):
+            def inventory(op,item,tag=''):
                 shown=self.post('/api/world/inventory/shown',{'session':session},world)
                 reply=self.post('/api/world/inventory',{'session':session,'op':op,'item':item,
-                    'request':f'{op}-{item}-{terrain_choice}','revision':shown['record']['revision'],'person':person},world)
+                    'request':f'{op}-{item}-{terrain_choice}{tag}','revision':shown['record']['revision'],'person':person},world)
                 self.assertTrue(reply['ok'],reply)
             inventory('take_up','field pick')
             studied=self.post('/api/world/action',{'session':session,'object':'field pick','primary':True,'person':person},world)
@@ -276,12 +282,17 @@ class PlayerJourney(unittest.TestCase):
             if not terrain_choice:
                 candidate['design_id']='another-useful-surface'
                 candidate['parameters'].update(width_m=.50,depth_m=.35)
-            context=self.post('/api/world/workshop/context',{},world)
-            preview=self.post('/api/world/workshop/preview',{'session':context['session'],'scene':context['scene'],
-                'mode':'authoring','candidate':candidate,'position_m':[4.5,0]},world)
-            self.assertTrue(preview['needs']['enough'],preview)
-            made=self.post('/api/world/workshop/commit',{'session':preview['session'],'scene':preview['scene'],
-                'preview_id':preview['preview_id'],'request_id':f'surface-{terrain_choice}'},world)
+            # Generated rooms make through the paid workbench, as a player does:
+            # collect their own wood, plan, fund from their stock and energy,
+            # wait, then place.
+            pile=next(p for p in app.brains.goods.stockpiles if p.get('holds',{}).get('oak',0)>=40)
+            at=pile['at_m'];sid=self.post('/api/world/workshop/context',{},world)['session']
+            floor=self.post('/api/live/act',{'session':sid,'op':'survey','at':at},world)['survey']['ground_m']
+            self.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],'request_id':f'table-oak-{terrain_choice}',
+                'person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[1,0,0]}},world)
+            # The first spot that the table will stand on: on sloping patches of
+            # these valleys the engine tips it over and the preview refuses it.
+            made=camp.make_paid(self,world,owner['token'],candidate,[[3.5,-3.],[3.5,2.5],[4.5,0],[3.5,0],[4.5,1.],[3.,-1.]],f'surface-{terrain_choice}')
             session=made['session']
             self.assertTrue(made['resources_charged']);self.assertTrue(made['native_precise_geometry_verified'])
             self.assertEqual('observe-process',goals()['next_goal'])
@@ -294,17 +305,32 @@ class PlayerJourney(unittest.TestCase):
             import placement
             delta=placement.rotate(native['orientation_wxyz'],surface['position_m'])
             top=[native['position_m'][k]+delta[k] for k in range(3)]
-            floor=self.post('/api/live/act',{'session':session,'op':'survey','at':[top[0],top[2]+1.2]},world)['survey']['ground_m']
-            person={'standing_m':[top[0],floor,top[2]+1.2],'eyes_m':[top[0],floor+1.62,top[2]+1.2],
-                'facing':[0,0,-1],'look_direction':[0,top[1]-floor-1.62,-1.2],'looking_at':root}
-            inventory('equip',stool)
-            target=self.post('/api/world/placement',{'session':session,'name':stool,'person':person},world)
+            # Stand on whichever side of the table has ground to stand on, as a
+            # player walks round to it; the table may stand near the river.
+            # Close enough to reach the table top: the hand reaches ~1.25 m from the eyes.
+            for sx,sz in ((0,.7),(0,-.7),(.7,0),(-.7,0)):
+                floor=self.post('/api/live/act',{'session':session,'op':'survey','at':[top[0]+sx,top[2]+sz]},world)['survey']['ground_m']
+                person={'standing_m':[top[0]+sx,floor,top[2]+sz],'eyes_m':[top[0]+sx,floor+1.62,top[2]+sz],
+                    'facing':[-sx/.7,0,-sz/.7],'look_direction':[-sx,top[1]-floor-1.62,-sz],'looking_at':root}
+                inventory('equip',stool,f'side-{sx}-{sz}')
+                target=self.post('/api/world/placement',{'session':session,'name':stool,'person':person},world)
+                if target.get('fits'):break
+                inventory('stow',stool,f'side-{sx}-{sz}')
             self.assertTrue(target['fits'],target)
             self.assertEqual(root,target['onto'],target)
             placed=[];place_errors=[]
             def putdown():
-                try:placed.append(self.post('/api/world/putdown',{'session':session,'object':stool,'person':person,
-                    'placement_target':target['target']},world))
+                # The world keeps running, so a preview can expire before the
+                # put-down lands; the refusal asks for a new one, as the page does.
+                try:
+                    chosen=target
+                    for _ in range(4):
+                        reply=self.post('/api/world/putdown',{'session':session,'object':stool,'person':person,
+                            'placement_target':chosen['target']},world)
+                        if reply.get('ok') or not any(w in str(reply.get('why')) for w in ('no longer available','destination moved')):break
+                        chosen=self.post('/api/world/placement',{'session':session,'name':stool,'person':person},world)
+                        if not chosen.get('fits'):break
+                    placed.append(reply)
                 except Exception as exc:place_errors.append(exc)
             worker=threading.Thread(target=putdown,daemon=True);worker.start();deadline=time.monotonic()+25
             while worker.is_alive() and time.monotonic()<deadline:

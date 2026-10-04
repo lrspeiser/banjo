@@ -8,6 +8,8 @@ BITE_M = .08
 DRAG_M = .04
 ACCEL_M_S2 = 80.0
 LEAD_M = .025
+# How far behind the ready pose a held tool is turned before it comes in.
+STANDOFF_M = .3
 
 
 def lift_path(grip, tip, pointing, at):

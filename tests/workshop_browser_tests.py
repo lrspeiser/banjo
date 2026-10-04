@@ -1544,9 +1544,9 @@ class WorkshopBrowserRegression(unittest.TestCase):
         read exactly the same."""
         self.page.send("Page.navigate",
                        {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&tab=recipes"})
-        self.wait("document.querySelectorAll('#ws-recipes-templates > li').length > 1")
+        self.wait("document.querySelectorAll('#ws-pane-recipes li[data-recipe]').length > 1")
         rows = json.loads(self.js("""JSON.stringify(
-          [...document.querySelectorAll('#ws-recipes-templates > li')].map(li => ({
+          [...document.querySelectorAll('#ws-pane-recipes li[data-recipe]')].map(li => ({
             cls: li.className,
             missing: li.querySelector('.ws-missing')?.textContent || '',
             greyed: li.querySelector('.ws-recipe-acts button')?.disabled,
@@ -1571,9 +1571,9 @@ class WorkshopBrowserRegression(unittest.TestCase):
     def test_recipes_show_grid_readiness_and_never_make_a_blocked_source(self):
         self.page.send("Page.navigate",
                        {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&tab=recipes"})
-        self.wait("document.querySelectorAll('#ws-recipes-templates > li').length > 1")
+        self.wait("document.querySelectorAll('#ws-pane-recipes li[data-recipe]').length > 1")
         rows = json.loads(self.js("""JSON.stringify(
-          [...document.querySelectorAll('#ws-recipes-templates > li')].map(li => ({
+          [...document.querySelectorAll('#ws-pane-recipes li[data-recipe]')].map(li => ({
             name:li.querySelector('strong')?.textContent,
             fit:li.querySelector('.ws-recipe-readiness')?.textContent || '',
             disabled:li.querySelector('.ws-recipe-acts button')?.disabled})))"""))
@@ -1588,16 +1588,16 @@ class WorkshopBrowserRegression(unittest.TestCase):
         because you have the wire."""
         self.page.send("Page.navigate",
                        {"url": f"http://127.0.0.1:{self.port}/world?workshop=1&tab=recipes"})
-        self.wait("document.querySelectorAll('#ws-recipes-templates > li').length > 1")
+        self.wait("document.querySelectorAll('#ws-pane-recipes li[data-recipe]').length > 1")
         said = json.loads(self.js("""JSON.stringify(
-          [...document.querySelectorAll('#ws-recipes-templates > li')]
+          [...document.querySelectorAll('#ws-pane-recipes li[data-recipe]')]
             .filter(li => li.className === 'short')
             .map(li => li.querySelector('.ws-missing').textContent))"""))
         for line in said:
             share = int(line.split("%")[0])
             self.assertGreater(share, 0, f"a short recipe missing 0%: {line!r}")
             self.assertLessEqual(share, 100, f"a recipe missing more than all of it: {line!r}")
-        self.assertTrue(self.js("[...document.querySelectorAll('#ws-recipes-templates > li.short')]"
+        self.assertTrue(self.js("[...document.querySelectorAll('#ws-pane-recipes li[data-recipe].short')]"
                                 ".every(li => !!li.querySelector('.ws-needs .ws-need.short .ws-need-what')?.textContent)"),
                         "missing materials are not named beside their progress bars")
 
