@@ -220,6 +220,7 @@ def view(app, owner, *, person=None, _record=None):
         else:
             project.update(next_label='Open Inventory', blocker='This item is no longer in your hands or bag.')
     preparing = project['status'] == 'Prepare ground'
+    automatic = (project.get('operation') or {}).get('mode') == 'Automatic at night'
     fastened = project.get('fastened') or {}
     project['steps'] = [
         *([{'id': 'prepare', 'label': 'Prepare the ground',
@@ -233,13 +234,20 @@ def view(app, owner, *, person=None, _record=None):
           if project.get('support') else []),
         {'id': 'inspect', 'label': 'View components and use', 'status': 'done' if project['status']=='Placed' and project.get('inspected')
             else 'current' if project['status']=='Placed' else 'pending'},
+        # A thing with something to operate (a light) is finished when it is
+        # working, as the running room reports it, not when it is placed.
+        # An automatic one runs itself: there is nothing for the player to do.
+        *([{'id': 'operate', 'label': 'Lights itself at night' if automatic else 'Switch it on',
+            'status': 'done' if automatic or (project.get('operation') or {}).get('status') == 'On'
+            else 'current' if project.get('inspected') else 'pending'}]
+          if project['status'] == 'Placed' and project.get('operation') else []),
     ]
     # Where each step is done, so a saved project can be picked up from any
     # step: the guide links a step to its screen and the thing it is about.
     for step in project['steps']:
         step['destination'] = ({'screen': 'inventory', 'place': project['item']} if step['id'] == 'hold'
             else {'screen': 'world', 'place': project['item'],
-                  **({'focus': project['body']} if step['id'] == 'inspect' else {})})
+                  **({'focus': project['body']} if step['id'] in ('inspect', 'operate') else {})})
     out['project'] = project
     return out
 

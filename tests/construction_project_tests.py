@@ -416,8 +416,12 @@ class PlacementJourney(unittest.TestCase):
             self.assertFalse(errors);self.assertTrue(done['ok'],done)
             placed=self.post('/api/world/construction',{'person':person},world)
             self.assertEqual('Placed',placed['project']['status'])
-            self.assertEqual(['done','done','done','current'],[s['status'] for s in placed['project']['steps']])
-            self.assertEqual('View components and use',placed['project']['steps'][-1]['label'])
+            # Hold, site, place done; look it over now. The camp light runs
+            # itself at night, so it has nothing to operate.
+            self.assertEqual(['done','done','done','current','done'],[s['status'] for s in placed['project']['steps']])
+            self.assertEqual(('operate','Lights itself at night'),
+                             tuple(placed['project']['steps'][-1][k] for k in ('id','label')))
+            self.assertEqual('View components and use',placed['project']['steps'][-2]['label'])
             use=placed['project']['operation']
             self.assertEqual('Automatic at night',use['mode'])
             self.assertIn('switches on at night',use['instruction'])
@@ -437,7 +441,7 @@ class PlacementJourney(unittest.TestCase):
             self.assertEqual(1,len(shown));self.assertTrue(shown[0]['passes'])
             self.assertLess(shown[0]['result']['tilt_deg'],10)
             placed=self.post('/api/world/construction',{'person':person},world)
-            self.assertEqual('done',placed['project']['steps'][-1]['status'])
+            self.assertEqual(['done']*5,[s['status'] for s in placed['project']['steps']])
             self.assertFalse(app.live.session.state['player_hands'][owner['id']]['holding'])
             self.assertTrue(fixture.server.keep_world(app,'placement test checkpoint'))
             reports.append({'surface':surface,'world':world,'owner':owner,'project':placed,
