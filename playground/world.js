@@ -6395,7 +6395,7 @@ function showMaterialPreview() {
   }
   for(const row of rows)materialRow(row,box,
     row.action==="Collect" ? ()=>{void resourceVisuals.collectPile(pileHit.pile.name);} :
-    row.action==="Equip tool" ? ()=>{location.href=screenUrl("inventory");} :
+    row.action==="Hold a digging tool" ? ()=>{location.href=screenUrl("inventory");} :
     row.kind==="ore" ? ()=>openSource(row.material) : null);
   if(toolPreview) {
     box.dataset.readiness=feedback.state;
@@ -7107,7 +7107,11 @@ function pressPrimary() {
   if (world.paused) { lastAction("Resume the world before using a product.", "refused"); return true; }
   // Inspection is available in the side panel. A held gathering tool uses its
   // native stroke even when the design also declares a Study action.
-  if (world.held?.pick) { tools.press(); return true; }
+  if (world.held?.pick) {
+    // A machine or anything fixed in place is selected, not swung at.
+    if (world.aim?.name && selectsInsteadOfSwing(world.aim.name)) return false;
+    tools.press(); return true;
+  }
   const name = world.held?.name || world.aim?.name;
   // A throw takes the button ahead of the held thing's OWN action, but only
   // when that action does nothing but set it down (the owner, 2026-09-26).
@@ -7263,11 +7267,31 @@ canvas.addEventListener("pointerup", (e) => {
   if (was && was.moved) return;          // that was a look, not a click
   // A tool is never dropped by a click -- E puts it down. A second click with
   // the pick's point in the ground used to come here and drop it.
-  if (world.held && world.held.pick) return;
+  if (world.held && world.held.pick) {
+    // A machine clicked with a tool in hand: its panel, as E would open it.
+    const machine = world.aim?.name && selectsInsteadOfSwing(world.aim.name) ? machinesOfPart(world.aim.name)[0] : null;
+    if (machine) openMachinePanel(machine);
+    return;
+  }
   if (world.held) { intend("drop"); return; }
-  // Hand empty, and the cursor is on something: do the thing.
+  // Hand empty, and the cursor is on something: do the thing. Clicked before
+  // the view's answer came back: ask now, then do it.
   if (world.aim && world.aim.name) intend(doChoice);
+  else if (!world.aim && !world.groundAim) void aimNow().then(() => { if (world.aim?.name && !world.held) intend(doChoice); });
 });
+
+// What a click with a tool in hand selects rather than swings at: a machine's
+// parts and anything fixed in place.
+function selectsInsteadOfSwing(name) {
+  const entry = world.bodies.get(name);
+  return !!entry && (!!entry.anchored || machinesOfPart(name).length > 0);
+}
+
+// The view's answer now: wait for one under way, then ask again.
+async function aimNow() {
+  for (let i = 0; i < 40 && aimBusy; i++) await new Promise(r => setTimeout(r, 25));
+  await aim();
+}
 
 // AND THE SAME CLICK PINS IT. Separate from doing the thing: picking a stone
 // up and reading about the stone you picked up are not in each other's way,
@@ -7277,7 +7301,9 @@ canvas.addEventListener("click", (e) => {
   if (resumeClick) { resumeClick=false; return; }
   if (cursorFree) return;
   if (e.button !== 0) return;
-  if (world.held && world.held.pick && !e.altKey) return;   // a swing, not a choice
+  if (world.held && world.held.pick && !e.altKey
+      && !(world.aim?.name && selectsInsteadOfSwing(world.aim.name))) return;   // a swing, not a choice
+  if (!world.aim && !world.groundAim) { void aimNow().then(pinWhatWasClicked); return; }
   pinWhatWasClicked();
 });
 
@@ -8299,7 +8325,11 @@ async function aim() {
     let found = await act("pick", { from: [from.x, from.y, from.z],
                                     dir: [dir.x, dir.y, dir.z], max_m: 40,
                                     past_held: !!world.held?.pick });
-    if(from.distanceTo(camera.position)>.03 || dir.distanceTo(aimVector())>.001)return;
+    // Kept unless the view has really moved meanwhile. With a body the eye
+    // sways a little even standing still, and at 3 cm and 0.06 degrees nearly
+    // every answer was thrown away: things showed only "eventually", and a
+    // click found nothing under it (the owner, 2026-10-04).
+    if(from.distanceTo(camera.position)>.2 || dir.distanceTo(aimVector())>.02)return;
     world.aim = found.hit && found.name ? found : null;
     // Where the crosshair meets the ground, when it is the ground it meets:
     // that is where a spade goes in.

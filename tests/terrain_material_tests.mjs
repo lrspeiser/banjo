@@ -252,7 +252,7 @@ test('tool feedback cannot follow a neighboring cell, changed layer or moved obs
   assert.equal(toolTargetFeedback({...model,target:full}).action,'Free load space',
     'early native load refusal still belongs to its observed sight point');
   const absent=toolTargetFeedback({...model,tool:null});
-  assert.equal(absent.action,'Equip tool');assert.equal(absent.screen,'inventory');assert.equal(absent.ready,false);
+  assert.equal(absent.action,'Hold a digging tool');assert.equal(absent.screen,'inventory');assert.equal(absent.ready,false);
 });
 
 test('object readiness belongs to the observed object and preserves the server refusal',()=>{

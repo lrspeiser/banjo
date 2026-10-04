@@ -115,7 +115,7 @@ export function walkColumnFaces(grid, heights, runs, floor, visit, box=[0,0,grid
 // cells can contain different materials even when less than 35 cm apart.
 export function toolTargetFeedback({point, grid, tool, target, eyes, name=null, surface=null, context=null}) {
   const pending={tool:tool || null,ready:false,state:tool ? "checking" : "tool-needed",
-    action:tool ? "Checking target" : "Equip tool",screen:tool ? null : "inventory",
+    action:tool ? "Checking target" : "Hold a digging tool",screen:tool ? null : "inventory",
     materials:[],reason:null};
   if(!tool)return pending;
   const at=target?.observed_at_m, observed=target?.observed_from_m;

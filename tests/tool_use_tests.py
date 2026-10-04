@@ -185,7 +185,7 @@ class WhatAToolDoesWhereYouLook(unittest.TestCase):
         cases=[(IN_REACH,{},'ready',True,'Dig here',['sand']),
                ([13, .6, -7.38],{},'blocked',False,'Move closer',[]),
                ([13, .6, -4.48],{},'blocked',False,'Step back',[]),
-               (IN_REACH,{'holding':None},'tool-needed',False,'Equip tool',[]),
+               (IN_REACH,{'holding':None},'tool-needed',False,'Hold a digging tool',[]),
                (IN_REACH,{'survey':{'water':{'depth_m':.1}}},'no-yield',False,'Find loose ground',[]),
                (IN_REACH,{'survey':{'surface':'rock'}},'no-yield',False,'Find loose ground',[])]
         for at,room,state,ready,action,materials in cases:

@@ -51,7 +51,7 @@ def tool_feedback(result):
            'action': 'Unavailable', 'screen': None, 'materials': [],
            'reason': result.get('reason')}
     if not result.get('object'):
-        out.update(state='tool-needed', action='Equip tool', screen='inventory')
+        out.update(state='tool-needed', action='Hold a digging tool', screen='inventory')
     elif target.get('kind') == 'object':
         out.update(ready=bool(result.get('enabled')),
                    state='ready' if result.get('enabled') else 'blocked',
