@@ -864,12 +864,18 @@ class TheSensesAndTheTools(unittest.TestCase):
         did = machine_tools.run(far, machine_tools.Call("dig", {"place": "depot"}, "routine"))
         self.assertNotIn("failed", did, did)
         self.assertIn("beyond the 2.0 m it can reach, so it goes back", did["did"])
-        asked = next(c for c in far.ask.sent if c["op"] == "behave")
-        self.assertEqual("approaching", asked["doing"])
-        # It is sent to where it should STAND to work the place, not to the place.
-        stand = math.hypot(asked["toward"][0] - (-3.0), asked["toward"][-1] - 0.0)
-        self.assertLess(abs(stand - (machine_tools.DIG_STAND_M - machine_tools.NEAR_M)), 0.05,
-                        f"aimed {stand:.2f} m short of the depot")
+        # It is sent to where it should STAND to work the place, not to the
+        # place: a trip of its routine's own (planned, and braked on arrival)
+        # to a stand with fresh ground in reach. Asked straight at a point a
+        # metre short of the place, the engine's own metre of arrival counted
+        # it there from 2.05 m off, and it sat out the minute of the ask.
+        go = did["reposition"]
+        stand = math.hypot(go["point"][0] - (-3.0), go["point"][-1] - 0.0)
+        self.assertGreaterEqual(stand, machine_tools.DIG_CLEAR_M + go["within_m"],
+                                f"a stand {stand:.2f} m from the depot is over the ground it would dig")
+        self.assertLessEqual(stand, machine_tools.DIG_REACH_M - go["within_m"],
+                             f"from a stand {stand:.2f} m from the depot it cannot reach it")
+        self.assertNotIn("dig", [c["op"] for c in far.ask.sent], "and it dug nothing from where it was")
         # A machine that flies works the ground under it: it hovers over the
         # place and scoops down, so it keeps no stand-off and what it digs is
         # never under its wheels.

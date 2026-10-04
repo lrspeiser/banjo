@@ -72,7 +72,7 @@ def part_bounds(body, cell_m):
     return out
 
 
-def waypoint(ctx, target, arrival=(0.,0.)):
+def waypoint(ctx, target, arrival=(0.,0.), avoid_workings=True):
     """One safe visible waypoint, or an explicit blocked result. No global map."""
     at=ctx.at();mine=set(ctx.program.get('parts') or [])|{ctx.program.get('body')}
     close_arrival=0 < arrival[1] <= 1. and arrival[0] == 0.
@@ -101,7 +101,17 @@ def waypoint(ctx, target, arrival=(0.,0.)):
             if lo[1]>top+.1:continue    # a deck it passes under does not either
             if math.hypot((lo[0]+hi[0])/2-at[0],(lo[2]+hi[2])/2-at[1])>LOOK_M+max(hi[0]-lo[0],hi[2]-lo[2]):continue
             obstacles.append((lo,hi,b.get('name')))
-    queries=0;surveyed={};valid={};rejections={}
+    # Its own scoops, where its routine remembers them: holes its wheels keep
+    # out of. Heights cannot show them on a hillside (a scoop on the high side
+    # stands above the low side's untouched ground), and the mine's rover,
+    # sent home across ground it had worked, stuck in a scoop with its wheels
+    # turning and gave the trip up.
+    # Only preferred: where they leave no route that makes progress, it
+    # crosses them (one scoop is crossable, docs/machine-world.md) rather
+    # than stand boxed in between its workings and a slope for good.
+    workings=[(d[0],d[1],d[2]/2) for d in (getattr(ctx.routine,'dug_spots',None) or [])
+              if avoid_workings and math.hypot(d[0]-at[0],d[1]-at[1])<=LOOK_M+radius]
+    queries=0;surveyed={};valid={};rejections={};start_grade=[0.]
     def rejected(kind,point,details=None):
         info=rejections.setdefault(kind,{'count':0,'nearest':None,'distance':math.inf})
         info['count']+=1;d=math.hypot(point[0]-at[0],point[1]-at[1])
@@ -151,6 +161,15 @@ def waypoint(ctx, target, arrival=(0.,0.)):
                 if math.hypot(dx,dz)<radius+pad:
                     rejected('geometry',(x,z),{'bounds_m':[lo,hi],'body':name});ok=False;break
         if ok:
+            # No stopping margin: a scoop is ground to keep its wheels out of,
+            # not a solid to brake short of. Standing over one, it may still
+            # move away from it, as from a part it stands beside.
+            for px,pz,half in workings:
+                d=math.hypot(x-px,z-pz);now=math.hypot(at[0]-px,at[1]-pz)
+                if now<radius+half and (node==(0,0) or d>now+1e-6):continue
+                if d<radius+half:
+                    rejected('working',(x,z),{'scoop_m':[px,pz]});ok=False;break
+        if ok:
             reach=radius/CELL_M
             footprint=((0,0),(-reach,0),(reach,0),(0,-reach),(0,reach))
             samples=[terrain((node[0]+dx,node[1]+dz)) for dx,dz in footprint]
@@ -169,7 +188,14 @@ def waypoint(ctx, target, arrival=(0.,0.)):
                 # 8.15 deg against 8) stopped there and then refused every
                 # route away, its own cell failing first. Every other node is
                 # still graded, and the native probes still veto the drive.
-                if grade>float(ctx.program.get('climb_deg',8)) and node!=(0,0):
+                # Nor may the cells round it be: on a working's pitted
+                # hillside at 9.1 deg every cell beside the mine's rover was
+                # 9.08 deg, and no route away was admitted for the rest of
+                # the run. Standing over the bound, it may cross ground no
+                # steeper than it already stands on, and nothing steeper.
+                if node==(0,0):start_grade[0]=grade
+                bound=max(float(ctx.program.get('climb_deg',8)),start_grade[0])
+                if grade>bound and node!=(0,0):
                     rejected('supported_grade',(x,z),{'grade_deg':grade});ok=False
         valid[node]=ok;return ok
     poses={}
@@ -234,6 +260,7 @@ def waypoint(ctx, target, arrival=(0.,0.)):
                      'final':False,'radius_m':radius}
     if not start_clear:
         if retreat:return dict(retreat,surveys=queries,escaping=True)
+        if workings:return waypoint(ctx,target,arrival,avoid_workings=False)
         return {'blocked':'there is no clearance around its current assembled footprint'+(' ('+', '.join(sorted(k+(': '+str((v.get('details') or {}).get('body')) if (v.get('details') or {}).get('body') else '') for k,v in rejections.items()))+')' if rejections else ''),
                 'rejections':rejections,'radius_m':radius,'surveys':queries}
     # Heading is part of a route state: arrival from one direction can be safe
@@ -261,6 +288,7 @@ def waypoint(ctx, target, arrival=(0.,0.)):
     if best==begin:
         if retreat:
             return dict(retreat,surveys=queries)
+        if workings:return waypoint(ctx,target,arrival,avoid_workings=False)
         return {'blocked':'no visible dry route makes progress toward that place','rejections':rejections,
                 'radius_m':radius,'surveys':queries,'reachable_nodes':len(costs)}
     path=[best]
