@@ -47,6 +47,7 @@ jobs:
           node --check playground/player_guidance.js
           node --check playground/voice.js
           node tests/voice_client_tests.mjs
+          node tests/voice_controller_tests.mjs
           node tests/player_guidance_ui.mjs
           python3 tests/voice_tests.py -v
           python3 tests/workshop_buildability_tests.py -v
