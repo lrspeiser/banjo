@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import sys
 import unittest
+import urllib.error
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'tests'), str(ROOT / 'playground'), str(ROOT)]
@@ -81,6 +82,64 @@ class NativeWalk(unittest.TestCase):
         rest = (app.live.session.state.get('native_players') or {})[me['id']]
         self.assertLess(math.dist(rest['position_m'], stopped['position_m']), .1)
 
+    def test_a_native_body_survives_an_install_and_a_restart(self):
+        # An install rebuilds the room from its snapshot; a restart reopens
+        # it from the saved world. The body must be where it stood both times.
+        world, me, app = agents.AutonomousGuests.setup_world(self, legacy_process=True)
+        sid = app.live.session.id
+        x, z = -3.0, 2.5
+        floor = self.post('/api/live/act', {'session': sid, 'op': 'survey', 'at': [x, z]}, world)['survey']['ground_m']
+        person = {'standing_m': [x, floor, z], 'eyes_m': [x, floor + 1.62, z], 'facing': [1, 0, 0]}
+        self.post('/api/live/act', {'session': sid, 'op': 'step', 'dt': 1 / 240, 'n': 1, 'person': person}, world)
+        for _ in range(6):
+            stood = self.post('/api/world/player/walk', {'session': sid, 'velocity_m_s': [0, 0, 0],
+                                                         'heading_rad': 0}, world)['native']
+            app.clock._tick(.25)
+        self.assertTrue(stood['walk']['supported'], stood)
+        def mine(app):
+            return (app.live.session.state.get('native_players') or {}).get(me['id'])
+        before = mine(app)
+        recipe = self.post('/api/workshop/goals', {'chain': 'first-camp-v1'}, world)['recipe']
+        context = self.post('/api/world/workshop/context', {}, world)
+        # The terrain is chosen at random; the stand trial refuses a slope, so
+        # try a few spots clear of the body, as the AI players do.
+        refusals = []
+        for spot in ([3, 0], [3, 3], [0, 4], [4, -2], [-1, -3], [5, 2]):
+            try:
+                preview = self.post('/api/world/workshop/preview', {'session': context['session'], 'scene': context['scene'],
+                    'candidate': recipe, 'mode': 'authoring', 'position_m': spot}, world)
+                break
+            except urllib.error.HTTPError as error:
+                refusals.append(error.read().decode()[:160])
+        else:
+            self.fail('; '.join(refusals))
+        try:
+            built = self.post('/api/world/workshop/commit', {'session': preview['session'], 'scene': preview['scene'],
+                'preview_id': preview['preview_id'], 'request_id': 'native-body-install'}, world)
+        except urllib.error.HTTPError as error:
+            self.fail(error.read().decode())
+        self.assertNotEqual(sid, built['session'], 'the install rebuilt the room')
+        after = mine(app)
+        self.assertIsNotNone(after, 'the body is still in the rebuilt room')
+        self.assertLess(math.dist(after['position_m'], before['position_m']), .01)
+        self.assertLess(tilt_deg(after), 3)
+        # And it walks on in the rebuilt room.
+        sid = built['session']
+        for _ in range(8):
+            moved = self.post('/api/world/player/walk', {'session': sid, 'velocity_m_s': [1, 0, 0],
+                                                         'heading_rad': math.pi / 2}, world)['native']
+            app.clock._tick(.25)
+        self.assertGreater(moved['position_m'][0] - after['position_m'][0], .5)
+        self.assertTrue(agents.server.keep_world(app, 'native body restart'))
+        kept = mine(app)
+        self.stop(); self.start(); self.players = {world: me}
+        self.post('/api/world/player/join', {'token': me['token']}, world)
+        self.post('/api/world/open', {}, world)
+        app = self.app.hub.get(world)
+        back = mine(app)
+        self.assertIsNotNone(back, 'the body is back after a restart')
+        self.assertLess(math.dist(back['position_m'], kept['position_m']), .05)
+        self.assertLess(tilt_deg(back), 5)
 
 if __name__ == '__main__':
     unittest.main()
