@@ -1657,11 +1657,13 @@ class ARoverRoamsTheShore(PageJourney):
         self.wait_world(1.0)
         self.assertLess(math.dist(self.js(f"{program}.at_m"), rest), 0.02,
                         "turned off, it did not stop")
-        # waterAt answers null where the room has no water at all.
+        # waterAt answers null where the room has no water at all. It may end
+        # standing in the shallows it wades (80 mm, its sensors' depth), not
+        # in the lake.
         ended = [self.js(f"(banjoRoom.waterAt({p[0]}, {p[2]}) || {{}}).depth || 0")
                  for p in (self.position(w) for w in self.WHEELS) if p]
-        self.assertTrue(all((d or 0.0) <= 0.003 for d in ended),
-                        f"it finished with a wheel in the water: {ended}")
+        self.assertTrue(all((d or 0.0) <= 0.08 for d in ended),
+                        f"it finished with a wheel in deep water: {ended}")
         self.no_page_errors("after the rover roamed")
 
 
