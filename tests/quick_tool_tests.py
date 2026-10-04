@@ -191,11 +191,16 @@ class RapidPlayer(unittest.TestCase):
         # Ask for a real native snapshot during the real tool movement. This
         # must keep the previous disk checkpoint and queue a quiet retry.
         deadline=time.monotonic()+2
+        deferred=False
         while time.monotonic()<deadline:
             if not ai.server.keep_world(app,'browser stroke boundary'):
+                deferred=True
                 break
+            # A quick swing can be over before a save lands inside it; then
+            # there is no stroke to defer to and nothing to check.
+            if page.evaluate('quickUses.length'):break
             time.sleep(.005)
-        self.assertEqual('pending',app.room.persistence['state'],save_events)
+        if deferred:self.assertEqual('pending',app.room.persistence['state'],save_events)
         wait('quickUses.length===1 && banjoRoom.use().mode==="tool-ready"')
         self.assertGreater(page.evaluate('quickUses[0].answer.result?.loosened_kg || 0'),0,
                            str(page.evaluate('({use:quickUses[0],target:banjoRoom.use().target,aim:banjoRoom.world.aim})')))
@@ -254,6 +259,13 @@ class RapidPlayer(unittest.TestCase):
         self.assertEqual(stopped,page.evaluate('quickUses.length'))
         # Esc gives the mouse to navigation without dropping the tool or
         # leaving held repeat queued. The already executing use may finish.
+        # Fresh ground half a metre aside: the swings above dug where they were
+        # aimed, and the view across a deeper hole lands out of reach.
+        page.evaluate('banjoRoom.standAt(-.9,banjoRoom.groundAt(-.9,.025)+1.62,.025);banjoRoom.lookAt(.3,banjoRoom.groundAt(.3,.6),.6)')
+        # The aim follows the cursor, which the right click above left aside.
+        middle=page.evaluate('(()=>{const r=document.querySelector("#stage").getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()')
+        page.send('Input.dispatchMouseEvent',{'type':'mouseMoved',**middle})
+        wait('banjoRoom.use().target?.enabled')
         key('keyDown','KeyJ','j');wait('quickActive===1')
         page.send('Input.dispatchKeyEvent',{'type':'keyDown','code':'Escape','key':'Escape','windowsVirtualKeyCode':27})
         page.send('Input.dispatchKeyEvent',{'type':'keyUp','code':'Escape','key':'Escape','windowsVirtualKeyCode':27})
