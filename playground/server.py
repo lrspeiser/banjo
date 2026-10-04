@@ -1497,9 +1497,12 @@ class Handler(BaseHTTPRequestHandler):
                 guest = player_world.require(self.app, self.headers.get("X-Banjo-Player"))
                 owner_scope = workshop_library.REQUEST_OWNER.set(guest)
             began=time.monotonic()
+            changes=_may_change_guidance(path,body)
+            if changes:_guidance_moved(self.app)
             try:
                 return self._dispatch_POST(path,body)
             finally:
+                if changes:_guidance_moved(self.app)
                 # A request that holds the room for a quarter of a second makes
                 # every walker in it stutter: say which, so it can be found.
                 took=time.monotonic()-began
@@ -1667,7 +1670,18 @@ class Handler(BaseHTTPRequestHandler):
                     player_guidance.clear_project(app,player)
                     import construction_projects
                     construction_projects.clear(app,player)
-                return self.send(player_guidance.resolve(app,player,focus=body.get('focus')))
+                # The plain view is kept per player until something that could
+                # change it happens (_may_change_guidance) or GUIDANCE_KEEP_S
+                # passes: the page asks every 5 s, and working it out held the
+                # world lock 150+ ms that every walk and swing waited behind.
+                plain=action=='view' and not body.get('focus')
+                epoch=getattr(app,'guidance_epoch',0)
+                kept=getattr(app,'guidance_kept',{}).get(player) if plain else None
+                if kept and kept[0]==epoch and time.monotonic()-kept[1]<GUIDANCE_KEEP_S:
+                    return self.send(kept[2])
+                answer=player_guidance.resolve(app,player,focus=body.get('focus'))
+                if plain:app.__dict__.setdefault('guidance_kept',{})[player]=(epoch,time.monotonic(),answer)
+                return self.send(answer)
             if path=="/api/workshop/market":
                 app = self.app
                 app.knowledge = lambda app=app: knowledge_view(app)
@@ -2927,6 +2941,25 @@ KEEP_WORLD_RETRY_S=0.5
 # for at least this long after the last save, so a burst of swings saves once
 # every few of them rather than after each.
 KEEP_WORLD_PENDING_GAP_S=2.0
+
+# Guidance kept per player at most this long, if nothing happens meanwhile.
+GUIDANCE_KEEP_S=15.0
+# Requests that only look or move a body: they never change what to do next.
+_QUIET_POSTS={'/api/world/player/walk','/api/world/guidance','/api/world/tool',
+              '/api/workshop/inventory','/api/trace','/api/status'}
+_QUIET_OPS={'step','pick','poses','survey','tool_points','place_check','condition'}
+
+
+def _may_change_guidance(path,body):
+    if path=='/api/world/guidance':return isinstance(body,dict) and body.get('action','view')!='view'
+    if path in _QUIET_POSTS:return False
+    if path=='/api/workshop/market':return not isinstance(body,dict) or body.get('action','view')!='view'
+    if path=='/api/live/act':return not isinstance(body,dict) or body.get('op') not in _QUIET_OPS
+    return True
+
+
+def _guidance_moved(app):
+    app.__dict__['guidance_epoch']=getattr(app,'guidance_epoch',0)+1
 
 
 def keep_world(app,why=""):

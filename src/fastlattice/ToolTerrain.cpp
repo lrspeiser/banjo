@@ -52,6 +52,8 @@ constexpr double kRockN = 1.0e7;
 constexpr double kClaySwingsPerCell = 3.0;
 constexpr double kRockSwingsPerCell = 10.0;
 constexpr double kHardRockPa = 1.0e7;
+// How many cells from where it broke ground a swing's aimed cube may be.
+constexpr double kAimNearCells = 1.5;
 
 [[nodiscard]] Quat qMul(const Quat &a, const Quat &b) {
     return {a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
@@ -851,6 +853,19 @@ void ToolTerrain::finish(const ToolTerrainHost &host, Point &p, bool tool_here) 
         if (field.columnSurface()) {
             ax = bx = field.grid().xOf(static_cast<int>(p.column % static_cast<std::size_t>(field.grid().nx)));
             az = bz = field.grid().zOf(static_cast<int>(p.column / static_cast<std::size_t>(field.grid().nx)));
+            // The cube aimed at, when the swing broke ground beside it: once a
+            // hole is a cube deep the point often meets its rim first, and the
+            // hole grew sideways instead of down (the owner, 2026-10-04).
+            if (host.aim_of) {
+                if (const std::optional<Vec3> aim = host.aim_of(p.carrier);
+                    aim && std::hypot(aim->x - ax, aim->z - az) <= kAimNearCells * dx) {
+                    const auto &g = field.grid();
+                    const int i = std::clamp(static_cast<int>(std::floor((aim->x - g.x0) / dx + 0.5)), 0, g.nx - 1);
+                    const int j = std::clamp(static_cast<int>(std::floor((aim->z - g.z0) / dx + 0.5)), 0, g.nz - 1);
+                    ax = bx = g.xOf(i);
+                    az = bz = g.zOf(j);
+                }
+            }
             dig_width = 0.5 * dx;
             columns = field.columnsAlong(ax, az, bx, bz, dig_width).size();
             depth = dx;

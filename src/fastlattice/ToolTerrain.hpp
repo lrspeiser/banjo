@@ -61,6 +61,8 @@ struct ToolTerrainHost {
     // An attached six-degree fixing path; proximity, hinges and ropes cannot
     // substitute for the fixed connection between a head and its handle.
     std::function<bool(const std::string &, const std::string &)> fixed_connected;
+    // Where a carrier last said its swing was aimed (LiveWorld::setGroundAim).
+    std::function<std::optional<Vec3>(const std::string &)> aim_of;
 };
 
 class ToolTerrain {

@@ -678,6 +678,8 @@ def _contact(app,said,use,tool,eyes,heard,note):
     else:
         return {'action':said['label'],'refused':'The tool is still moving into position','done':[]}
     grip=_grip(session)
+    # The cube this swing is for: on cube ground, the one taken out.
+    session.send(op='ground-aim',at_m=[float(v) for v in at])
     started=app.live.act({'session':session.id,'op':'stroke',
         'path':tool_gestures.contact_path(grip,use,eyes,at),
         'speed_m_s':use['swing']['speed_m_s'],'accel_m_s2':tool_gestures.ACCEL_M_S2,

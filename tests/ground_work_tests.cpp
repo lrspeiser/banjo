@@ -545,12 +545,14 @@ struct Swing {
 
 // Open a world with the pick in the air above the ground, take it by its grip
 // and swing it at the ground 0.3 m out, from a shoulder behind it.
-Swing swingAt(double soil, double sand, const std::string &material, bool cubes = false) {
+Swing swingAt(double soil, double sand, const std::string &material, bool cubes = false,
+              std::optional<Vec3> aim = std::nullopt) {
     const double top = soil + sand;
     Json scene{{"terrain", cubes ? cubeGround(soil, sand) : ground(soil, sand)}, {"bodies", pick(material, top)}};
     Swing out;
     out.live = open(scene);
     LiveWorld &live = *out.live;
+    if (aim) live.setGroundAim(*aim);
     const Vec3 tip{kTipX, top + 0.72, kTipZ};
     const Vec3 grip{kGripX, top + 1.02, kTipZ};
     require(live.toolPoint("pick", tip, {0.0, -1.0, 0.0}, 0.04, 0.04, 30.0, kPointLength, grip) != 0,
@@ -729,8 +731,8 @@ void aPryBreaksGroundOutAndItIsCarried(bool limited = false) {
 // On cube ground a swing that breaks soil loose takes out the whole cube it
 // struck (the owner, 2026-10-04): that column a cell lower, its neighbours
 // untouched, and the cube carried at its real mass.
-void aSwingTakesAWholeCubeOutOfCubeGround() {
-    Swing swing = swingAt(0.75, 0.0, "oak", true);
+void aSwingTakesAWholeCubeOutOfCubeGround(std::optional<Vec3> aim = std::nullopt) {
+    Swing swing = swingAt(0.75, 0.0, "oak", true, aim);
     LiveWorld &live = *swing.live;
     const terrain::Environment &env = *live.environment();
     const terrain::TerrainField &field = env.terrain();
@@ -768,6 +770,13 @@ void aSwingTakesAWholeCubeOutOfCubeGround() {
     near(before[struck] - field.height(struck), q, 1e-9, "the struck column is a whole cell lower");
     near(w.loosened.total(), q * q * q, 1e-9, "the cube's volume came out");
     near(env.carried().total() - carried_before, q * q * q, 1e-9, "and is carried");
+    if (aim) {
+        // The cube that came out is the one aimed at, not the one the point met.
+        const auto &g = field.grid();
+        const int i = static_cast<int>(std::floor((aim->x - g.x0) / q + 0.5));
+        const int j = static_cast<int>(std::floor((aim->z - g.z0) / q + 0.5));
+        require(struck == g.at(i, j), "the cube that came out is not the one aimed at");
+    }
 }
 
 // ---- the grip ------------------------------------------------------------------
@@ -1058,7 +1067,8 @@ int main() {
         {"soil against rock", soilAgainstRock},
         {"a pry breaks ground out, and it is carried", [] { aPryBreaksGroundOutAndItIsCarried(); }},
         {"a held tool shares the excavation budget", [] { aPryBreaksGroundOutAndItIsCarried(true); }},
-        {"a swing takes a whole cube out of cube ground", aSwingTakesAWholeCubeOutOfCubeGround},
+        {"a swing takes a whole cube out of cube ground", [] { aSwingTakesAWholeCubeOutOfCubeGround(); }},
+        {"a swing takes out the cube aimed at", [] { aSwingTakesAWholeCubeOutOfCubeGround(Vec3{0.3 + 0.25, 0.75, kTipZ}); }},
         {"a grip off the body is refused", aGripOffTheBodyIsRefused},
         {"a broad end meets the ground from wherever it is swung", aBroadEndMeetsTheGroundFromWhereverItIsSwung},
         {"lattice ground tools share exact equipment", latticeGroundToolsCanShareExactEquipment},

@@ -51,10 +51,13 @@ constexpr double kNativePlayerContactDampingRatio = 0.7;
 constexpr const char *kNativePlayerModel = "rigid-avatar-cylinder-v1";
 // The walk controller's declared constants. Traction is the proxy's own
 // declared friction; the rest are control gains, not tissue properties.
-constexpr double kWalkTraction = 0.6;
-constexpr double kWalkMostForceN = 600.0;
+// A player's feet grip as well as its weight and close a speed difference in
+// a tenth of a second: about 0.2 s to a walk, where 0.6 and 0.25 s took 0.6 s
+// and felt like lag (the owner, 2026-10-04: bodies are slightly superhuman).
+constexpr double kWalkTraction = 1.0;
+constexpr double kWalkMostForceN = 1000.0;
 constexpr double kWalkMostTorqueNm = 400.0;   // ankle and hip balance together, not one joint
-constexpr double kWalkResponseS = 0.25;       // closes a velocity error in about this long
+constexpr double kWalkResponseS = 0.1;        // closes a velocity error in about this long
 constexpr double kWalkSlopeProbeM = 0.1;
 constexpr double kWalkStepTellM = 0.01;       // halves of a slope disagreeing by more: a step
 constexpr double kNativePlayerHalfHeightM = 0.85;
@@ -3333,6 +3336,7 @@ struct LiveWorld::Impl {
         Vec3 walk_impulse_n_s{}, walk_angular_impulse_kg_m2_s{}, support_reaction_n_s{};
     };
     std::map<std::string, NativePlayer> native_players;
+    std::map<std::string, Vec3> ground_aims;   // by actor: setGroundAim
     // The walk controller (setNativePlayerWalk), worked out for one step from
     // where the body is now. Sets its contacts frictionless while it drives.
     void walkPlayer(NativePlayer &player, const RigidSnapshot &now, double load_y_n, Vec3 &force, Vec3 &torque,
@@ -3409,10 +3413,20 @@ struct LiveWorld::Impl {
                         grade_x = gx; grade_z = gz;
                     }
                 }
-                const double limit = std::min(kWalkTraction * weight / std::max(normal.y, 0.2), kWalkMostForceN);
+                // Holding on a slope takes m g tan(slope) across it, and the
+                // grip gives traction times its weight: past tan(slope) =
+                // traction it cannot hold. (Divided by cos(slope), as this
+                // once was, it held wherever sin(slope) <= traction -- with a
+                // traction of 1, on any slope at all.)
+                const double limit = std::min(kWalkTraction * weight, kWalkMostForceN);
                 const Vec3 hold = (-weight / std::max(normal.y, 0.2)) * Vec3{normal.x, 0, normal.z};
                 const Vec3 have{now.linear_velocity_m_s.x, 0, now.linear_velocity_m_s.z};
                 const Vec3 want{player.walk_velocity.x, 0, player.walk_velocity.z};
+                // Standing still, its feet keep their friction: driven
+                // frictionless, a pull on what its hand held (a pick in the
+                // ground) slid it along (the owner, 2026-10-04: "sometimes i
+                // get pulled forward").
+                drive = length(want) > 0.05 || length(have) > 0.3;
                 // The slope's push, plus a proportional pull on the velocity
                 // error, all within its traction.
                 force = hold + (kNativePlayerMassKg / kWalkResponseS) * (want - have);
@@ -14426,6 +14440,12 @@ void LiveWorld::setNativePlayerActuator(const std::string &actor, const Vec3 &fo
     player.remaining_s = duration_s;
 }
 
+void LiveWorld::setGroundAim(const Vec3 &at_world_m) {
+    if (!std::isfinite(at_world_m.x) || !std::isfinite(at_world_m.y) || !std::isfinite(at_world_m.z))
+        throw std::invalid_argument("a ground aim is a finite point");
+    impl_->ground_aims[impl_->selected_hand] = at_world_m;
+}
+
 bool LiveWorld::removeNativePlayer(const std::string &actor) {
     const auto found = impl_->native_players.find(actor);
     if (found == impl_->native_players.end()) return false;
@@ -16124,6 +16144,11 @@ ToolTerrainHost LiveWorld::toolHost() const {
         return impl_->carrierOfBody(found->second);
     };
     host.objects_of = [this](const std::string &actor) { return impl_->carriedObjectsKgFor(actor); };
+    host.aim_of = [this](const std::string &actor) -> std::optional<Vec3> {
+        const auto found = impl_->ground_aims.find(actor);
+        if (found == impl_->ground_aims.end()) return std::nullopt;
+        return found->second;
+    };
     host.id_of = [this](const std::string &name) -> std::optional<MatterBodyId> {
         const auto found = impl_->index_of.find(name);
         if (found == impl_->index_of.end()) return std::nullopt;
