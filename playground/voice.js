@@ -63,6 +63,7 @@ export function createVoiceController({
   let remoteAudio = null;
   let connecting = null;
   let holding = false;
+  let transcribing = false;
   let asking = false;
   let speaking = false;
   let activePointer = null;
@@ -113,11 +114,14 @@ export function createVoiceController({
     remoteAudio?.remove();
     remoteAudio = null;
     connecting = null;
+    transcribing = false;
+    asking = false;
     speaking = false;
     activeSpeech = null;
   }
 
   async function handleTranscript(event) {
+    transcribing = false;
     const transcript = String(event.transcript || "").trim();
     if (!transcript || asking || closed) {
       if (!asking) setStatus("idle");
@@ -152,6 +156,11 @@ export function createVoiceController({
       handleTranscript(event);
       return;
     }
+    if (event.type === "conversation.item.input_audio_transcription.failed") {
+      transcribing = false;
+      setStatus("error", event.error?.message || "I could not transcribe that. Try again.");
+      return;
+    }
     if (event.type === "response.done") {
       const id = event.response?.metadata?.banjo_speech;
       if (id && id === activeSpeech) {
@@ -162,6 +171,8 @@ export function createVoiceController({
       return;
     }
     if (event.type === "error") {
+      transcribing = false;
+      asking = false;
       const detail = event.error?.message || "Voice service error";
       setStatus("error", detail);
     }
@@ -238,7 +249,7 @@ export function createVoiceController({
   }
 
   async function start() {
-    if (holding || asking || closed) return;
+    if (holding || transcribing || asking || closed) return;
     holding = true;
     try {
       await connect();
@@ -257,6 +268,7 @@ export function createVoiceController({
     holding = false;
     if (!mic || !channel || channel.readyState !== "open") return;
     mic.enabled = false;
+    transcribing = true;
     emit({ type: "input_audio_buffer.commit" });
     setStatus("thinking", "Transcribing…");
   }
