@@ -4831,11 +4831,13 @@ function stripElement() {
   new ResizeObserver(placeInventoryStrip).observe(worldNavigation);
   return strip;
 }
+// The menu sits at the bottom left and this strip at the bottom right (the
+// owner, 2026-10-04); a row up when the two would meet.
 function placeInventoryStrip() {
   const inventoryStrip=stripElement();
   const bar=worldNavigation.getBoundingClientRect(), wide=bar.right+12+inventoryStrip.offsetWidth<=innerWidth-12;
   inventoryStrip.classList.toggle("above",!wide);
-  inventoryStrip.style.left=wide?`${Math.round(bar.right+8)}px`:"";
+  inventoryStrip.style.left="";
   inventoryStrip.style.bottom=wide?`${Math.round(innerHeight-bar.bottom)}px`:`${Math.round(innerHeight-bar.top+6)}px`;
 }
 function showInventoryStrip() {
@@ -7095,7 +7097,10 @@ canvas.addEventListener("wheel", (e) => {
 // latch is a second thing to do to the object you are already pointing at, and
 // reaching for a key to do it is one hand too many.
 $("zoom-range")?.addEventListener("input", (e) => setZoom(parseFloat(e.target.value)));
-setZoom(1);
+// Fully zoomed out, with no zoom bar (the owner, 2026-10-04); the wheel can
+// still bring something closer.
+setZoom(ZOOM_LEAST);
+$("zoom")?.remove();
 
 canvas.addEventListener("contextmenu", (e) => {
   e.preventDefault();
