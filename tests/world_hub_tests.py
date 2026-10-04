@@ -360,12 +360,18 @@ class NamedWorlds(unittest.TestCase):
                       f"exceptions={[e for e in page.events if e.get('method') == 'Runtime.exceptionThrown'][-2:]}")
 
         page.send("Page.navigate", {"url": self.base + "/world"})
+        # A plain /world makes a world of its own and goes to it (enterGame),
+        # so the menu is used from inside that one, once it has arrived.
+        wait_for('location.search.includes("world=") && !!window.banjoRoom?.status().ready', 90)
+        entered = page.evaluate('new URLSearchParams(location.search).get("world")')
+        self.assertEqual("New world", self.get(f"/api/worlds/{entered}")["name"])
         wait_for('!!document.querySelector("#game-menu")')
         page.evaluate('document.querySelector("[data-game-menu]").click()')
         self.assertTrue(page.evaluate('document.querySelector("#game-menu").open'))
         page.evaluate('document.querySelector("#game-menu-new input").value="Browser game";'
                       'document.querySelector("#game-menu-new").requestSubmit()')
-        wait_for('location.search.includes("world=") && !!window.banjoRoom?.status().ready')
+        wait_for(f'location.search.includes("world=") && !location.search.includes("{entered}") && '
+                 '!!window.banjoRoom?.status().ready', 90)
         world_id = page.evaluate('new URLSearchParams(location.search).get("world")')
         self.assertEqual("Browser game", self.get(f"/api/worlds/{world_id}")["name"])
 
