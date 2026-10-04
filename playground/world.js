@@ -8232,8 +8232,10 @@ async function aim() {
     aimFailure=null;
   } catch(error) {
     // Asked of a room that has since been started again or swapped: the old
-    // world is closed, which is the switch happening and not a fault.
-    if(world.session!==asked || world.opening) return;
+    // world is closed, which is the switch happening and not a fault. The same
+    // while the chat or an action is reopening it, before its answer hands the
+    // new world over -- the conditions the step loop already excuses.
+    if(world.session!==asked || world.opening || world.asking || (world.acting && !error.transient)) return;
     const reason=String(error.message || error);
     if(reason!==aimFailure) { noteError(`Aim: ${reason}`); console.warn(`World aim: ${reason}`); }
     aimFailure=reason; // the next frame asks again; report a repeated fault once
