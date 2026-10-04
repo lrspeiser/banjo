@@ -1136,6 +1136,12 @@ class AutonomousGuests(unittest.TestCase):
         # Open the folded panel with Details, as a player would, to reach the link.
         page.evaluate('document.querySelector("#panel-details").click()')
         wait('!document.body.classList.contains("panel-away") && (r=>r.right<=innerWidth && r.left>=0)(document.querySelector("#tool-skill .skill-link").getBoundingClientRect())')
+        # And has stopped sliding: a click mid-slide lands where the link was.
+        last=None
+        for _ in range(60):
+            now=page.evaluate('(()=>{const b=document.querySelector("#tool-skill .skill-link").getBoundingClientRect();return [b.x,b.y]})()')
+            if now==last:break
+            last=now;time.sleep(.1)
         box=page.evaluate('(()=>{const b=document.querySelector("#tool-skill .skill-link").getBoundingClientRect();return {x:b.x+b.width/2,y:b.y+b.height/2}})()')
         for kind in ('mousePressed','mouseReleased'):
             page.send('Input.dispatchMouseEvent',{'type':kind,**box,'button':'left','clickCount':1})
