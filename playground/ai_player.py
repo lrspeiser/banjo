@@ -516,6 +516,29 @@ class Manager:
                 'sender':ident,'seq':1},cookie)
             if reply.get('operated')!='applied':raise ValueError('Machine did not accept the power command')
             return reply
+        if verb=='order-rover':
+            # The same plain order a person can type to the rover: dig at the
+            # seam it knows, dump at this intake. The routine checks and runs
+            # it; nothing is moved or credited here.
+            order=action['rover']
+            reply=self._post(profile,'/api/world/rover/talk',{'session':sid,'program':order['program'],
+                'order':order['said']},cookie)
+            if not reply.get('ordered'):raise ValueError('The rover refused the order: '+str(reply.get('said'))[:160])
+            memory['rover_order']={'program':order['program'],'substance':order['substance']};self._save(profile,memory=memory)
+            return reply
+        if verb=='await-delivery':
+            # Let the world run while the rover digs and hauls; reconsider as
+            # soon as the intake changes the goal or the guidance.
+            began_t=state['native']['t']
+            for index in range(20):
+                if stop.is_set():break
+                self._post(profile,'/api/live/act',{'session':sid,'op':'step','dt':1/240,'n':120},cookie)
+                if index%4==3:
+                    goals=self._post(profile,'/api/workshop/goals',{'chain':'active'},cookie)
+                    if (goals['chain_id'],goals['next_goal']) != (state['goals']['chain_id'],state['goals']['next_goal']):
+                        return {'goal_changed':True,'awaited_from_t_s':began_t}
+                stop.wait(.5)
+            return {'awaited_from_t_s':began_t}
         if verb in ('watch-batch','observe'):
             person=self._person(profile,cookie,target['at_m'])
             reply=self._post(profile,'/api/world/watch-machine',{'session':sid,'machine':target['machine'],'person':person},cookie)

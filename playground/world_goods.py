@@ -295,7 +295,7 @@ def input_readiness(app,owner,pile,accepted):
             if r['substance']==substance and r['pool']=='personal')
         row['carried_kg']=float(carried.get(substance+'_kg',0)) if substance in fabrication.GROUND_DENSITIES else 0.
         row['carried_m3']=float(carried.get(substance+'_m3',0)) if substance in fabrication.GROUND_DENSITIES else 0.
-        row['sources']=[{'name':d['name'],'at_m':d['at_m'],
+        row['sources']=[{'name':d['name'],'at_m':d['at_m'],'radius_m':d.get('radius_m'),
             'left_kg':app.brains.goods.reserve_kg(d)}
             for d in app.brains.goods.deposits if d['substance']==substance]
         row['piles']=[{'name':p['name'],'at_m':p['at_m'],'mass_kg':p['holds'][substance]}

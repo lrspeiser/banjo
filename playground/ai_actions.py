@@ -238,7 +238,7 @@ def reference_pick(state,actions):
     # mode sees the same offers, requirements, comparisons and observed state.
     for verb in ('continue-process','collect','buy','bank','compare-recipes','select-recipe','acquire','inspect','use-tool',
                  'continue-build','build','pack','power-off','select-process','store-ground','process-input',
-                 'power-on','watch-batch','observe','move','select-target','wait'):
+                 'order-rover','await-delivery','power-on','watch-batch','observe','move','select-target','wait'):
         chosen=next((a for a in actions if a['verb']==verb),None)
         if chosen:return chosen['id']
     raise ValueError('The observed catalog has no stop action')

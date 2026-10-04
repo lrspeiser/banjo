@@ -105,11 +105,34 @@ def choices(app, owner, technique=None):
                     is not None for p in (intake,output)),
                 'limits':'Possible input batch, not a future result. Heat/work, distance, ownership and durable saves recheck at execution.'}
             row['watching']=watching.get('machine')==source['machine'] and watching.get('until_t',0)>session.state['t']
+            row['rover_order']=_rover_order(app,intake['name'],[r for r in inputs if r['substance'] in missing])
             row['next_action']=_next(row,pose)
             out.append(row)
     return sorted(out,key=lambda r:(not r['ports_in_reach'],not bool(r['available_batch_kg']),r['power_blocked'],
         not (r['recipe']==r['current_recipe'] and bool(r['input_batch_kg'])),
         r['recipe']!=r['current_recipe'],len(r['missing']),r['machine'],r['recipe']))
+
+
+def _rover_order(app,intake,short):
+    """A digging machine that already knows both a seam of what is short and
+    this intake, with the plain order that sends it: dig there, dump here.
+
+    Only places the machine's own routine declares are named, so the order is
+    one its routine checks and runs; nothing is moved or credited here."""
+    for line in short:
+        for deposit in line.get('sources') or []:
+            if deposit.get('left_kg',0)<=0 or not deposit.get('at_m'):continue
+            for name,brain in sorted((getattr(app.brains,'brains',{}) or {}).items()):
+                routine=brain.routine
+                if routine is None or routine.kind=='process' or intake not in routine.places:continue
+                reach=float(deposit.get('radius_m') or 1.0)+1.5
+                for place,xz in sorted(routine.places.items()):
+                    if place==intake or math.dist(xz,deposit['at_m'][:2] if len(deposit['at_m'])==2
+                                                 else [deposit['at_m'][0],deposit['at_m'][-1]])>reach:continue
+                    busy=len(getattr(routine,'frames',[]) or [])>1 or bool(getattr(brain,'orders_given',None))
+                    return {'program':name,'substance':line['substance'],'seam':deposit['name'],
+                            'said':f'dig at {place} and dump it at {intake}','busy':busy}
+    return None
 
 
 def _next(row,pose=None):
@@ -134,6 +157,13 @@ def _next(row,pose=None):
         name=shortage['substance']
         source=next((s for s in shortage['sources'] if s['left_kg']>0),None)
         reason=f"{row['input']} intake needs: {', '.join(row['missing'])}"
+        order=row.get('rover_order')
+        if order and order['substance']==name:
+            if order['busy']:
+                return answer(f"Wait while {order['program']} brings {name} to {row['input']}",verb='await-delivery',
+                    destination={'screen':'world','focus':order['program']},rover=order)
+            return answer(f"Order {order['program']}: dig {name} at {order['seam']} and bring it to {row['input']}",
+                verb='order-rover',destination={'screen':'world','focus':order['program']},rover=order)
         if source:
             return answer('Find '+name+' · Mining rover',operation='find-source',
                 destination={'screen':'world','resource':source['name']},blockers=[reason])

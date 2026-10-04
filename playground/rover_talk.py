@@ -345,7 +345,8 @@ def model_order(app: Any, said: str, program: dict[str, Any], places: dict[str, 
     return {"steps": steps, "say": str(out.get("say") or ""), "cannot": out.get("cannot")}
 
 
-def give_order(app: Any, brain: rover_brain.Brain, program: dict[str, Any], said: str) -> str:
+def give_order(app: Any, brain: rover_brain.Brain, program: dict[str, Any], said: str,
+               plain: bool = False) -> str:
     """An order given: written as steps (by the model, or from plain words),
     checked against the routine language and the places it knows, queued on
     the routine, and answered."""
@@ -356,7 +357,7 @@ def give_order(app: Any, brain: rover_brain.Brain, program: dict[str, Any], said
     ports = _ports_of(brain, program)
     substances = brain.goods.substances() if brain.goods is not None else []
     recipes = [r.get("name") for r in brain.goods.recipes] if brain.goods is not None else []
-    written = model_order(app, said, program, places, substances, recipes, ports)
+    written = None if plain else model_order(app, said, program, places, substances, recipes, ports)
     if written is None:
         steps = plain_order(said, places, substances, ports)
         if steps is None:
@@ -432,9 +433,21 @@ def talk(app: Any, body: Any) -> dict[str, Any]:
     answer. close: the rover goes on. Every answer carries the program as it
     now stands and the conversation so far."""
     if not isinstance(body, dict):
-        raise ValueError("expected {program, open | said | close, person}")
+        raise ValueError("expected {program, open | said | close | order, person}")
     program = _program(app, body)
     brain = app.brains.of(str(program["name"]))
+    if body.get("order") is not None:
+        # An order in the plain words the routine already parses ("dig at
+        # vein and dump it at smelter intake"), for a caller that knows what
+        # it wants -- the AI player's executor. No model writes or sorts it.
+        said = str(body["order"]).strip()[:500]
+        if not program.get("power"):
+            raise ValueError("Switch the machine on before giving it an order")
+        reply = give_order(app, brain, program, said, plain=True)
+        brain.talk.append({"who": "you", "said": said, "at": time.time()})
+        brain.talk.append({"who": str(program.get("name")), "said": reply, "at": time.time()})
+        brain.changed = True
+        return {"program": program, "said": reply, "ordered": reply.startswith("Will do")}
     standing = _standing(body)
     name = str(program.get("name") or "the machine")
     reply: str
