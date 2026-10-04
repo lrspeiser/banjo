@@ -439,6 +439,10 @@ export function createVoiceController({
     setStatus("idle", lensMode === "off" ? "" :
       lensMode === "helpful" ? "Voice lens will speak useful targets and blockers." :
       "Voice lens will identify every stable target.");
+    // Establish output audio from the explicit user gesture. This asks for no
+    // microphone permission; the microphone is acquired only on Hold Y.
+    if (lensMode !== "off")
+      connect().catch(error => setStatus("error", error.message || String(error)));
   });
 
   button.addEventListener("pointerdown", (event) => {
