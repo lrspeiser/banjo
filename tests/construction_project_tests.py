@@ -190,6 +190,9 @@ class PlacementJourney(unittest.TestCase):
         self.assertEqual('Prepare ground',view['status'],view.get('preparation'))
         self.assertEqual(['prepare','hold','site','place','inspect'],[s['id'] for s in view['steps']])
         self.assertEqual('current',view['steps'][0]['status'])
+        # Each saved step says where it is done, to pick it up from there.
+        self.assertEqual({'screen':'inventory','place':item},view['steps'][1]['destination'])
+        self.assertEqual('world',view['steps'][0]['destination']['screen'])
         ground=view['preparation'];self.assertTrue(ground['squares']);self.assertIn('Dig the',ground['instruction'])
         guide=self.post('/api/world/guidance',{},world)
         self.assertEqual('Check the ground again',guide['next_action']['label'])

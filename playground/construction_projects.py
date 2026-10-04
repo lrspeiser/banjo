@@ -212,6 +212,12 @@ def view(app, owner, *, person=None, _record=None):
         {'id': 'inspect', 'label': 'View components and use', 'status': 'done' if project['status']=='Placed' and project.get('inspected')
             else 'current' if project['status']=='Placed' else 'pending'},
     ]
+    # Where each step is done, so a saved project can be picked up from any
+    # step: the guide links a step to its screen and the thing it is about.
+    for step in project['steps']:
+        step['destination'] = ({'screen': 'inventory', 'place': project['item']} if step['id'] == 'hold'
+            else {'screen': 'world', 'place': project['item'],
+                  **({'focus': project['body']} if step['id'] == 'inspect' else {})})
     out['project'] = project
     return out
 

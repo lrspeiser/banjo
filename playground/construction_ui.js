@@ -31,9 +31,19 @@ export function constructionControls(root,context,{hold,find,place,inspect,cance
   const link=root.querySelector('a.ws-action');if(link)link.remove();
   root.querySelector('[data-guidance-clear]')?.remove();
   const steps=document.createElement('ol');steps.className='construction-steps';steps.setAttribute('aria-label','Placement steps');
+  // The current step is a link to doing it, the same as its button below.
+  const does={prepare:check,hold,site:find,place,inspect};
   for(const step of project.steps || []) {
     const row=document.createElement('li');row.dataset.status=step.status;
-    row.textContent=`${step.status==='done'?'✓ ':''}${step.label}`;
+    const text=`${step.status==='done'?'✓ ':''}${step.label}`;
+    if(step.status==='current' && does[step.id] && project.status!=='Unavailable') {
+      const go=document.createElement('a');go.href='#';go.textContent=text;go.dataset.step=step.id;
+      go.onclick=async event=>{
+        event.preventDefault();
+        try {await does[step.id]();}catch(error){dispatchEvent(new CustomEvent('banjo-construction-error',{detail:error.message}));}
+      };
+      row.append(go);
+    }else row.textContent=text;
     if(step.status==='current')row.setAttribute('aria-current','step');steps.append(row);
   }
   root.insertBefore(steps,root.querySelector('.player-guide-tip'));
