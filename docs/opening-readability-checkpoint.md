@@ -192,6 +192,71 @@ Found while baselining. Each failure was reproduced on untouched main
 
 Repair of the two browser files is in progress on separate branches.
 
+## Since then, on the same branch
+
+**The opening has a light and a sun goal.** Chapter two keeps only *Learn from
+a working machine*; the work table stays in Recipes as something you may make.
+A new chapter, *Light and power your camp*, asks for:
+
+- your own light, lit from its own battery: the engine has counted energy its
+  lamp drew;
+- your own solar panel, charged by sunlight: its battery has received energy.
+
+Both are judged from the saved world and never awarded. Guidance offers the
+Camp light and the Camp solar panel when each is next.
+
+**Ore is delivered by mining it.** When a batch is short of an ore that lies in
+a seam, and the rover already knows that seam and the furnace intake, guidance
+offers the plain order a person could type: "dig at vein and dump it at smelter
+intake". It then waits while the ore is delivered. The AI player carries out
+both steps. `tests/rover_order_tests.py` checks that ore arrives in the intake
+from the seam, by the rover's own dig and dump.
+
+**The rover on harder ground.** `tests/rover_route_tests.py` gives it ordinary
+orders on both valleys: a trench across its haul, a second haul, a call to the
+river's edge, a call up the steepest slope, then "go on". It must end upright,
+out of water and with a reason, and go back to its rounds. Four defects it
+found are fixed:
+
+- "come here" drove straight down a bank into 0.23 m of river;
+- the solar farm's open deck counted as a solid box and trapped a rover
+  parked beside it;
+- a rover inside a part's margin could not start any route;
+- "go on" kept its spent retries.
+
+A blocked route now says what blocks it. On terrain 7 it delivers round the
+trench; on terrain 4 the trench honestly blocks it. The "mound" scenario never
+heaps a mound, because the dig's spoil goes to a pile, so it is a second haul
+over trenched ground.
+
+**Main's red suites are repaired.** These were failing on untouched main and
+now pass on this branch:
+
+- `workshop_navigation_tests` (15/15);
+- `workshop_browser_tests` (56/56);
+- `world_room_tests`, `api_docs_tests`, `market_tests`, `goods_tests` and
+  `gathering_journey_tests`;
+- `world_goods_tests`, `private_ground_tests`, `quick_tool_tests`,
+  `material_preview_tests` and `world_navigation_tests`.
+
+Real bugs found along the way and fixed:
+
+- soil dug just before a terrain rewrite was lost on server restart;
+- a heavy tool's first stroke started while its head still sagged, and
+  loosened nothing;
+- Menu → Controls opened a panel inside a folded rail;
+- physical skin edits always failed;
+- the chat box could not be reached on a 720 px window;
+- links without a world dropped `?technique=`;
+- a mine rover on 8.15° ground could not leave its vein;
+- the picked-machine panel, rebuilt every 150 ms, swallowed clicks.
+
+**Native bodies walk and swim** (experimental):
+[native-walk checkpoint](native-walk-checkpoint.md).
+
+**The new-player playtest is ready to run, not run:**
+[protocol](human-playtest-protocol.md) and `tools/playtest_report.py`.
+
 ## Verification
 
 ```powershell

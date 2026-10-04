@@ -3298,7 +3298,7 @@ struct LiveWorld::Impl {
     std::map<std::string, NativePlayer> native_players;
     // The walk controller (setNativePlayerWalk), worked out for one step from
     // where the body is now. Sets its contacts frictionless while it drives.
-    void walkPlayer(NativePlayer &player, const RigidSnapshot &now, Vec3 &force, Vec3 &torque,
+    void walkPlayer(NativePlayer &player, const RigidSnapshot &now, double load_y_n, Vec3 &force, Vec3 &torque,
                     std::optional<MatterBodyId> &under, Vec3 &under_at) {
         force = {}; torque = {}; under.reset();
         player.supported = false; player.swimming = false; player.support.clear(); player.traction_used = 0;
@@ -3318,7 +3318,8 @@ struct LiveWorld::Impl {
                         if (body_of[i] == hit.body_id) { player.support = described[i].name; break; }
                     under = hit.body_id; under_at = hit.point_world_m;
                 }
-                const double weight = kNativePlayerMassKg * std::abs(request.gravity_m_s2.y);
+                // Its own weight, and a load it holds pressing down through it.
+                const double weight = kNativePlayerMassKg * std::abs(request.gravity_m_s2.y) + std::max(0.0, -load_y_n);
                 // The ground's slope under it, from four short rays round its
                 // middle: on a frictionless contact the ground pushes it
                 // downhill by m g tan(slope), so standing still takes that much
@@ -6688,18 +6689,36 @@ void LiveWorld::step(double dt_s) {
         std::optional<MatterBodyId> under;
         Vec3 under_at{};
         bool swimming{};
+        // What it holds pulls back on it: the hand's push on the held thing,
+        // reversed, at the grip. A heavy load presses on its feet and leans
+        // it over, and its balance and traction have to carry that.
+        bool loaded{};
+        Vec3 load_force{}, load_torque{}, load_at{};
     };
     std::vector<PlayerPush> player_pushes;
     for (auto &[actor, player] : impl_->native_players) {
         const double fraction = std::min(player.remaining_s, dt_s) / dt_s;
         PlayerPush push{actor, player.id, impl_->world->snapshot(player.id),
                         fraction * player.force_n, fraction * player.torque_n_m};
-        impl_->walkPlayer(player, push.before, push.walk_force, push.walk_torque, push.under, push.under_at);
+        const auto held = std::find_if(hands.begin(), hands.end(),
+                                       [&](const HandPush &h) { return h.actor == actor && h.on; });
+        if (held != hands.end()) {
+            push.loaded = true;
+            push.load_force = -1.0 * held->force;
+            push.load_torque = -1.0 * held->torque;
+            push.load_at = held->grip;
+        }
+        impl_->walkPlayer(player, push.before, push.load_force.y, push.walk_force, push.walk_torque, push.under, push.under_at);
         push.swimming = player.swimming;
         player_pushes.push_back(std::move(push));
     }
     const auto pushPlayers = [&]() {
         for (const auto &push : player_pushes) {
+            if (push.loaded) {
+                impl_->world->pushBodyAt(push.id, push.load_force, push.load_at);
+                impl_->world->twistBody(push.id, push.load_torque);
+                impl_->world->wake(push.id);
+            }
             const Vec3 force = push.force + push.walk_force, torque = push.torque + push.walk_torque;
             if (lengthSquared(force) == 0 && lengthSquared(torque) == 0) continue;
             impl_->world->pushBody(push.id, force);
