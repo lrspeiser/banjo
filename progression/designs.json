@@ -731,6 +731,66 @@
           }
         }
       ]
+    },
+    {
+      "id": "camp-light",
+      "revision": 1,
+      "name": "Camp light",
+      "purpose": {
+        "function": "light a camp at night from its own battery",
+        "claim": "intended, not guaranteed"
+      },
+      "components": [],
+      "routes": {
+        "any_of": [
+          {
+            "id": "made-at-the-workbench",
+            "obtain": "made from its recipe at the workbench"
+          }
+        ]
+      },
+      "tests": [
+        {
+          "id": "stands-where-set",
+          "action": "set it down in World with the build guide, then look it over",
+          "target": {
+            "place": "the ground or a surface"
+          },
+          "passes_when": {
+            "stands": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "camp-solar-panel",
+      "revision": 1,
+      "name": "Camp solar panel",
+      "purpose": {
+        "function": "charge a small battery from the sun",
+        "claim": "intended, not guaranteed"
+      },
+      "components": [],
+      "routes": {
+        "any_of": [
+          {
+            "id": "made-at-the-workbench",
+            "obtain": "made from its recipe at the workbench"
+          }
+        ]
+      },
+      "tests": [
+        {
+          "id": "stands-where-set",
+          "action": "set it down in World with the build guide, then look it over",
+          "target": {
+            "place": "the ground or a surface"
+          },
+          "passes_when": {
+            "stands": true
+          }
+        }
+      ]
     }
   ]
 }

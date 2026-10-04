@@ -254,8 +254,18 @@ class PlacementJourney(unittest.TestCase):
             with self.assertRaises(urllib.error.HTTPError):
                 away=deepcopy(person);away['eyes_m'][0]-=20;away['standing_m'][0]-=20
                 self.write(world,'inspect',person=away)
+            journal=fixture.server.journal_of(app,owner['id'])
+            self.assertNotIn('setting-out',journal.knows())
             inspected=self.write(world,'inspect',person=person)
             self.assertTrue(inspected['project']['inspected'])
+            # The engine found it standing where it was set: that is the
+            # evidence for Setting things down, and looking again adds none.
+            self.assertEqual(['setting-out'],inspected['project'].get('learned'))
+            self.assertIn('setting-out',fixture.server.journal_of(app,owner['id']).knows())
+            shown=[e for e in fixture.server.journal_of(app,owner['id']).data['evidence'].values()
+                   if e['test']=='stands-where-set']
+            self.assertEqual(1,len(shown));self.assertTrue(shown[0]['passes'])
+            self.assertLess(shown[0]['result']['tilt_deg'],10)
             placed=self.post('/api/world/construction',{'person':person},world)
             self.assertEqual('done',placed['project']['steps'][-1]['status'])
             self.assertFalse(app.live.session.state['player_hands'][owner['id']]['holding'])

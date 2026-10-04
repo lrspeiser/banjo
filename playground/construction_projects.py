@@ -264,15 +264,21 @@ def request(app, owner, body):
             at=record['project'].get('at_m')
             if not person or math.dist(person['eyes_m'],at)>placement.REACH_M:
                 raise ValueError('Walk closer to view the placed item')
-            # This acknowledges opening inspection. It does not award a skill,
-            # certify settling/strength or claim the machine operated.
+            # This acknowledges opening inspection. It does not certify
+            # settling or strength, or claim the machine operated. Whether the
+            # item stands where it was set is read from the running room, and
+            # that alone is evidence towards Setting things down.
             record['project']['inspected']=True
+            import construction_skill
+            learned=construction_skill.demonstrated(app,owner,record['project'])
+            if learned:record['project']['learned']=learned
         elif action=='select':
             where, thing = _owned(app, owner, body['item'])
             if not thing:
                 raise ValueError('Select your own item from hands or bag')
             record['project'] = {'item':thing['id'], 'body':_moving_name(app,owner,thing),
-                'name':thing.get('label') or thing['name'], 'target':None, 'at_m':None}
+                'name':thing.get('label') or thing['name'], 'target':None, 'at_m':None,
+                'kind':(thing.get('recipe') or {}).get('kind')}
         else:
             project = record['project']
             where, thing = _owned(app, owner, project['item']) if project else (None,None)
