@@ -11738,6 +11738,11 @@ LivePick LiveWorld::pick(const Vec3 &from_world_m, const Vec3 &direction,
     if (past_held && impl_->holding < impl_->body_of.size())
         for (const auto member : impl_->jointedWith(impl_->holding, true))
             if (member < impl_->body_of.size()) ignore.push_back(impl_->body_of[member]);
+    // Its own body: the eye is inside the top of it, so a look from the eye
+    // met the body before anything else, unnamed, and every pointing and
+    // taking up read as "the ground" (2026-10-04).
+    if (const auto own = impl_->native_players.find(impl_->selected_hand); own != impl_->native_players.end())
+        ignore.push_back(own->second.id);
     const RayHit hit = impl_->world->castRayIgnoring(from_world_m, direction, max_distance_m, ignore);
     if (!hit.hit) return out;
     out.hit = true;

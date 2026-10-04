@@ -1102,6 +1102,24 @@ void nativePlayerWalksAcrossUnevenCellsTheSameBothWays() {
     require(speed[0]>1.75 && speed[1]>1.75,"near the asked 2 m/s both ways");
     near(speed[0],speed[1],.1,"the same each way");
 }
+void nativePlayerSeesPastItsOwnBody() {
+    // The eye is inside the top of the body. Looking from it must find what
+    // is in front, not the body's own inside.
+    Json scene=nativePlayerScene();
+    scene["bodies"].push_back(box("floor","concrete",{8,.2,8},{0,-.1,0},true));
+    scene["bodies"].push_back(box("lamp","iron",{.2,.2,.2},{1.5,.1,0},true));
+    auto world=open(scene,{},{0,-9.81,0});
+    world->spawnNativePlayer("looker",{0,.01,0});
+    walkFor(*world,"looker",{},.5);
+    const Vec3 eye=nativePlayerOf(*world,"looker").state.center_of_mass_world_m+Vec3{0,.77,0};
+    const Vec3 to=Vec3{1.5,.1,0}-eye;
+    world->selectHand("looker");
+    const auto seen=world->pick(eye,(1.0/length(to))*to,40,false);
+    require(seen.hit && seen.name=="lamp","the looker sees the lamp, not its own body: '"+seen.name+"'");
+    world->selectHand("someone else");
+    const auto other=world->pick(eye,(1.0/length(to))*to,40,false);
+    require(other.hit && other.name.empty() && other.distance_m<.1,"another's look from there meets the body");
+}
 void nativePlayersWalkOnFlatGroundAndStop() {
     auto world=open(walkScene(),{},{0,-9.81,0});
     world->spawnNativePlayer("walker",{0,groundUnder(*world,0,0)+.01,0});
@@ -1469,6 +1487,7 @@ int main(int argc, char **argv) {
         {"native player jumps a metre and not in the air",nativePlayerJumpsAMetreAndNotInTheAir},
         {"native player steps up a cell but not a wall",nativePlayerStepsUpACellButNotAWall},
         {"native player climbs stairs without stopping",nativePlayerClimbsStairsWithoutStopping},
+        {"native player sees past its own body",nativePlayerSeesPastItsOwnBody},
         {"native player walks across uneven cells the same both ways",nativePlayerWalksAcrossUnevenCellsTheSameBothWays},
         {"native player inputs are bounded and cannot teleport",nativePlayerInputsAreBoundedAndCannotTeleport},
         {"exact compounds have native water forces and retain their state",exactCompoundsHaveNativeWaterForcesAndRetainTheirState},
