@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 class Element {
   constructor(tag) {this.tag=tag;this.children=[];this.dataset={};this.isConnected=true;}
-  append(node) {this.children.push(node);}
+  append(...nodes) {this.children.push(...nodes);}
   replaceChildren(...nodes) {this.children=nodes;}
   setAttribute() {}
   classList={add() {}};
