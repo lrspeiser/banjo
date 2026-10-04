@@ -20,13 +20,13 @@ export async function constructionWrite(api,scope,action,fields={},person=null) 
     const answer=await api('/api/world/construction',{...pending,...(person?{person}: {})});
     sessionStorage.removeItem(key);return answer;
   }catch(error) {
-    if(/Construction revision changed|Select your own item|Hold your selected item|Invalid construction|Open World to check|Walk closer to view|Place your selected item/i.test(error.message))
+    if(/Construction revision changed|Select your own item|Hold your selected item|Invalid construction|Open World to check|Walk closer to (view|fasten)|Place your (selected item|item on a support)|already fastened|not fastened/i.test(error.message))
       sessionStorage.removeItem(key);
     throw error;
   }
 }
 
-export function constructionControls(root,context,{hold,find,place,inspect,cancel,check}) {
+export function constructionControls(root,context,{hold,find,place,inspect,cancel,check,fasten,unfasten}) {
   const project=context?.project;if(!project)return;
   const link=root.querySelector('a.ws-action');if(link)link.remove();
   root.querySelector('[data-guidance-clear]')?.remove();
@@ -69,6 +69,22 @@ export function constructionControls(root,context,{hold,find,place,inspect,cance
   else if(project.status==='Placed')button(project.inspected?'View item':'View components and use',inspect);
   else if(project.status!=='Unavailable')button('Find a supported spot',find);
   if(project.status==='Place')button('Another location',find);
+  // On a support it only rests there until it is fastened; fastened, it
+  // goes with the support and holds what the weaker material does.
+  if(project.status==='Placed' && project.support) {
+    const held=project.fastened && !project.fastened.broken;
+    if(held && unfasten)button('Unfasten from the '+project.support,unfasten);
+    else if(fasten)button('Fasten to the '+project.support,fasten);
+    if(project.fastened) {
+      const note=document.createElement('p');note.className='construction-fastened';
+      const kn=n=>(n/1000).toLocaleString(undefined,{maximumFractionDigits:1});
+      note.textContent=project.fastened.broken
+        ? `The fastening to the ${project.fastened.to} has come apart.`
+        : `Fastened to the ${project.fastened.to}: holds ${kn(project.fastened.holds_tension_n)} kN pulling, `
+          +`${kn(project.fastened.holds_shear_n)} kN sideways (${project.fastened.governed_by}, the weaker material).`;
+      root.insertBefore(note,root.querySelector('.player-guide-tip'));
+    }
+  }
   button('Close build guide',cancel);root.insertBefore(actions,root.querySelector('.player-guide-tip'));
   if(project.status==='Placed' && project.operation) {
     const use=document.createElement('div');use.className='construction-use';

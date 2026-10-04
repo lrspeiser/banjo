@@ -9,6 +9,7 @@ from copy import deepcopy
 import json
 import math
 
+import construction_mount
 import construction_prepare
 import inventory_room
 import placement
@@ -120,6 +121,16 @@ def suggest(app, owner, name, person, previous=None):
     return None, initial.get('why') or 'No supported spot within reach. Move or prepare the ground.'
 
 
+def _support(app, project):
+    """What a placed item stands on, when that is a thing and not the ground."""
+    target = project.get('target') or {}
+    name = target.get('body')
+    if not name:
+        return None   # the terrain itself
+    bodies = {b['name']: b for b in (getattr(app.live.session, 'state', None) or {}).get('bodies', [])}
+    return name if name in bodies else None
+
+
 def _same_site(a, b):
     return bool(a and b and a['body'] == b['body'] and
                 math.dist(a['on'], b['on']) < .2)
@@ -199,9 +210,17 @@ def view(app, owner, *, person=None, _record=None):
         if not peer and body and not body.get('parked') and at and math.dist(body['position_m'], at) < .15:
             project.update(status='Placed', next_label='View components and use',
                 blocker=None, operation=operation(app, project['body']))
+            support = _support(app, project)
+            if support:
+                project['support'] = support
+                fastened = project.get('fastened')
+                if fastened and not construction_mount.holding(app, fastened):
+                    # Pulled or sheared off in the room: say so, keep the record.
+                    project['fastened'] = {**fastened, 'broken': True}
         else:
             project.update(next_label='Open Inventory', blocker='This item is no longer in your hands or bag.')
     preparing = project['status'] == 'Prepare ground'
+    fastened = project.get('fastened') or {}
     project['steps'] = [
         *([{'id': 'prepare', 'label': 'Prepare the ground',
             'status': 'current' if preparing else 'done'}]
@@ -209,6 +228,9 @@ def view(app, owner, *, person=None, _record=None):
         {'id': 'hold', 'label': 'Hold item', 'status': 'pending' if preparing else 'current' if project['status']=='Equip' else 'done' if where or project['status']=='Placed' else 'blocked'},
         {'id': 'site', 'label': 'Choose supported spot', 'status': 'done' if project['status'] in ('Place','Placed') else 'current' if where and where!='stowed' else 'pending'},
         {'id': 'place', 'label': 'Place item', 'status': 'done' if project['status']=='Placed' else 'current' if project['status']=='Place' else 'pending'},
+        *([{'id': 'fasten', 'label': 'Fasten to the ' + project['support'],
+            'status': 'done' if fastened and not fastened.get('broken') else 'optional'}]
+          if project.get('support') else []),
         {'id': 'inspect', 'label': 'View components and use', 'status': 'done' if project['status']=='Placed' and project.get('inspected')
             else 'current' if project['status']=='Placed' else 'pending'},
     ]
@@ -226,7 +248,7 @@ def request(app, owner, body):
     if not isinstance(body, dict) or set(body)-{'action','item','revision','request_id','person'}:
         raise ValueError('Construction accepts a selected item and action, not supplied game state')
     action = body.get('action', 'view')
-    if action not in ('view','select','clear','suggest','inspect'):
+    if action not in ('view','select','clear','suggest','inspect','fasten','unfasten'):
         raise ValueError('Unknown construction action')
     if action=='view':
         if set(body)-{'action','person'}:
@@ -272,6 +294,24 @@ def request(app, owner, body):
             import construction_skill
             learned=construction_skill.demonstrated(app,owner,record['project'])
             if learned:record['project']['learned']=learned
+        elif action in ('fasten','unfasten'):
+            current=view(app,owner,person=body.get('person'),_record=record)['project']
+            if not current or current['status']!='Placed' or not current.get('support'):
+                raise ValueError('Place your item on a support before fastening it')
+            person=_person(app,owner,body.get('person'))
+            if not person or math.dist(person['eyes_m'],record['project']['at_m'])>placement.REACH_M:
+                raise ValueError('Walk closer to fasten it')
+            if action=='fasten':
+                if (record['project'].get('fastened') or {}).get('broken')==False:
+                    raise ValueError('It is already fastened')
+                record['project']['fastened']=construction_mount.fasten(app,record['project']['body'],current['support'])
+                record['project']['fastened']['broken']=False
+            else:
+                if not record['project'].get('fastened'):
+                    raise ValueError('It is not fastened')
+                if construction_mount.holding(app,record['project']['fastened']):
+                    construction_mount.unfasten(app,record['project']['fastened'])
+                record['project'].pop('fastened')
         elif action=='select':
             where, thing = _owned(app, owner, body['item'])
             if not thing:

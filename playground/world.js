@@ -11337,6 +11337,8 @@ async function showNextStep() {
       constructionControls(root,constructionContext,{hold:()=>enterConstruction(constructionContext.project.item),
         find:findConstructionSite,place:placeConstruction,cancel:closeConstruction,
         check:async()=>{guidanceReadAt=-Infinity;await showNextStep();},
+        fasten:async()=>{await constructionWrite(api,constructionScope(),'fasten',{},whereIAm());guidanceReadAt=-Infinity;await showNextStep();},
+        unfasten:async()=>{await constructionWrite(api,constructionScope(),'unfasten',{},whereIAm());guidanceReadAt=-Infinity;await showNextStep();},
         inspect:async()=>{const name=constructionContext.project.body,entry=world.bodies.get(name);
           if(!entry)throw Error('Open World and walk closer to your placed item');
           await constructionWrite(api,constructionScope(),'inspect',{},whereIAm());

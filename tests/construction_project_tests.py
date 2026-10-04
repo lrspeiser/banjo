@@ -222,6 +222,45 @@ class PlacementJourney(unittest.TestCase):
         self.assertNotIn('prepare',found['project']);self.assertTrue(found['project']['prepared'])
         self.assertEqual('done',self.post('/api/world/construction',{'person':person},world)['project']['steps'][0]['status'])
 
+    def test_a_thing_on_its_support_fastens_rated_by_its_contact_and_keeps_through_a_restart(self):
+        import construction_mount
+        from mcp import engine_materials
+        world,owner,app=self.setup_world()
+        # The smelter stands on its own foundation pad: a real support.
+        rated=construction_mount.rating(app,'smelter','smelter foundation')
+        self.assertGreater(rated['area_m2'],.1)
+        # The weaker material's own strength over the contact, as a bonded joint.
+        weaker=engine_materials.mechanics(rated['governed_by'])
+        self.assertAlmostEqual(rated['area_m2']*weaker['tensile_strength_pa'],rated['holds_tension_n'],delta=1e-3)
+        self.assertAlmostEqual(rated['area_m2']*weaker['shear_strength_pa'],rated['holds_shear_n'],delta=1e-3)
+        self.assertGreater(rated['holds_shear_n'],0)
+        # Not standing on it: refused, nothing joined.
+        with self.assertRaisesRegex(ValueError,'not standing on'):construction_mount.rating(app,'camp light','smelter foundation')
+        joints_before=len(app.live.session.state.get('joints') or [])
+        fastened=construction_mount.fasten(app,'smelter','smelter foundation')
+        self.post('/api/live/act',{'session':app.live.session.id,'op':'step','dt':1/240,'n':8},world)
+        self.assertTrue(construction_mount.holding(app,fastened))
+        self.assertEqual(joints_before+1,len(app.live.session.state.get('joints') or []))
+        # Saved with the room and back after a restart, with its rating.
+        self.assertTrue(fixture.server.keep_world(app,'fastening test'))
+        self.stop();self.start();self.players={world:owner}
+        self.post('/api/world/player/join',{'token':owner['token']},world)
+        self.post('/api/world/open',{},world)
+        app=self.app.hub.get(world)
+        joint=next(j for j in app.live.session.state['joints'] if {j['a'],j['b']}=={'smelter','smelter foundation'})
+        self.assertTrue(joint.get('attached',True))
+        construction_mount.unfasten(app,{**fastened,'joint':joint['id']})
+        self.post('/api/live/act',{'session':app.live.session.id,'op':'step','dt':1/240,'n':4},world)
+        self.assertFalse(construction_mount.holding(app,{**fastened,'joint':joint['id']}))
+
+    def test_an_item_on_bare_ground_has_nothing_to_fasten_to(self):
+        world,owner,app=self.setup_world();item,person=self.take_lamp(world,app)
+        self.write(world,'select',item=item)
+        found=self.write(world,'suggest',person=person)
+        project=self.post('/api/world/construction',{'person':person},world)['project']
+        self.assertNotIn('fasten',[s['id'] for s in project['steps']])
+        with self.assertRaises(urllib.error.HTTPError):self.write(world,'fasten',person=person)
+
     def test_native_place_and_resume_on_both_surfaces(self):
         reports=[]
         for surface in ('smooth','columns'):

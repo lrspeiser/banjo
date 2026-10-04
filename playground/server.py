@@ -2026,6 +2026,8 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/world/construction':
                 import construction_projects
                 answer=construction_projects.request(self.app,player,body)
+                if body.get('action') in ('fasten','unfasten') and not keep_world(self.app,'a construction fastening'):
+                    raise ValueError('Fastening changed, but the world was not saved; retry the same step')
                 if body.get('action')=='select':
                     import player_guidance
                     player_guidance.clear_project(self.app,player)
