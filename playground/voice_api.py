@@ -238,6 +238,7 @@ def session_config():
     return {
         "type": "realtime",
         "model": model(),
+        "output_modalities": ["audio"],
         "instructions": AUDIO_INSTRUCTIONS,
         "audio": {
             "input": {
