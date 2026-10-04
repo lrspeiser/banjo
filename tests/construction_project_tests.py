@@ -70,12 +70,33 @@ class Preparation(unittest.TestCase):
         self.assertNotIn('why',got);self.assertIn('Dig the',prepare.instruction(got))
 
     def test_hillside_rock_and_water_are_said(self):
-        steep=prepare.read(self.app(lambda x,z:.8+z),self.saved)
-        self.assertIn('too much to level by hand',steep['why'])
+        steep=prepare.read(self.app(lambda x,z:.8+1.5*z),self.saved)
+        self.assertIn('too much',steep['why'])
         rocky=prepare.read(self.app(lambda x,z:.8+(.1 if x>0 else 0),rock=.85),self.saved)
         self.assertIn('pick',rocky['why']);self.assertTrue(any(sq['rock'] for sq in rocky['squares']))
         wet=prepare.read(self.app(lambda x,z:.8+(.1 if x>0 else 0),wet=.2),self.saved)
         self.assertIn('water',wet['why'])
+
+    def test_a_slope_is_cut_and_filled_to_its_mean_and_the_level_is_kept(self):
+        slope=lambda x,z:.8+.5*x            # 35 cm across a 0.7 m patch
+        app=self.app(slope)
+        rows=prepare._rows(app,self.saved)
+        chosen=prepare.choose(rows)
+        self.assertEqual('cut-and-fill',chosen['mode'])
+        mean=sum(r['ground_m'] for r in rows)/len(rows)
+        self.assertAlmostEqual(mean,chosen['level_m'],4)
+        got=prepare.read(app,{**self.saved,**chosen})
+        digs=[s for s in got['squares'] if 'dig_m' in s];fills=[s for s in got['squares'] if 'fill_m' in s]
+        self.assertTrue(digs and fills)
+        self.assertTrue(all(s['at_m'][0]>0 for s in digs) and all(s['at_m'][0]<0 for s in fills))
+        # What is dug is what is filled: the mean is what moving earth keeps.
+        self.assertAlmostEqual(got['dig_m3'],got['fill_m3'],4)
+        self.assertIn('blue',prepare.instruction(got));self.assertIn('with H',prepare.instruction(got))
+        # The saved level holds while earth is carried off mid-job.
+        lowered=prepare.read(self.app(lambda x,z:slope(x,z)-.03),{**self.saved,**chosen})
+        self.assertEqual(chosen['level_m'],lowered['level_m'])
+        # A small hump is still just dug.
+        self.assertEqual('dig',prepare.choose(prepare._rows(self.app(lambda x,z:.8+(.12 if x>.1 else 0)),self.saved))['mode'])
 
     def test_the_patch_is_bounded_and_sized_to_the_thing(self):
         big={**self.saved,'size_m':[9.0,9.0]}
@@ -207,10 +228,19 @@ class PlacementJourney(unittest.TestCase):
         for _ in range(4):
             marked=self.post('/api/world/construction',{'person':person},world)['project'].get('preparation')
             if not marked or marked['done']:break
-            for sq in marked['squares']:
+            # Dig the high squares first, then heap what was dug on the low.
+            for sq in sorted(marked['squares'],key=lambda sq:'fill_m' in sq):
                 at=[sq['at_m'][0],sq['at_m'][2]]
-                got=self.post('/api/live/act',{'session':sid,'op':'dig','from':at,'to':at,
-                    'width_m':sq['size_m'][0],'depth_m':sq['dig_m']},world)
+                if 'dig_m' in sq:
+                    self.post('/api/live/act',{'session':sid,'op':'dig','from':at,'to':at,
+                        'width_m':sq['size_m'][0],'depth_m':sq['dig_m']},world)
+                else:
+                    carried=self.post('/api/live/act',{'session':sid,'op':'ground_work'},world).get('carried') or {}
+                    want=sq['fill_m']*sq['size_m'][0]*sq['size_m'][1]
+                    sand=min(want,float(carried.get('sand_m3') or 0));soil=min(want-sand,float(carried.get('soil_m3') or 0))
+                    if sand+soil>1e-6:
+                        self.post('/api/live/act',{'session':sid,'op':'deposit','at':at,'radius_m':sq['size_m'][0]/2,
+                            'sand_m3':sand,'soil_m3':soil,'from_carried':True},world)
                 dug+=1
         done=self.post('/api/world/construction',{'person':person},world)['project']
         self.assertTrue(done['preparation']['done'],done['preparation'])

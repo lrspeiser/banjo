@@ -11356,9 +11356,9 @@ async function showNextStep() {
   finally {guidanceBusy=false;}
 }
 setInterval(showNextStep,5000);
-// Ground to dig before a thing will stand: one square on each ground cell
-// that stands above the lowest, amber for earth, red where rock is near
-// the top. Drawn from the server's reading, redrawn on every guidance read.
+// Ground to level before a thing will stand: one square on each ground cell
+// to change, amber to dig, red where rock is near the top, blue to fill with
+// the earth that was dug. Drawn from the server's reading, redrawn on every guidance read.
 let preparationMarks=null;
 function drawPreparation(preparation) {
   if(preparationMarks) {
@@ -11371,11 +11371,11 @@ function drawPreparation(preparation) {
   for(const square of preparation.squares) {
     const [w,d]=square.size_m;
     const mark=new THREE.Mesh(new THREE.PlaneGeometry(w*.9,d*.9),
-      new THREE.MeshBasicMaterial({color:square.rock?0xe0654f:0xf2b544,transparent:true,opacity:.55,
+      new THREE.MeshBasicMaterial({color:square.fill_m?0x5aa9e6:square.rock?0xe0654f:0xf2b544,transparent:true,opacity:.55,
         depthTest:false,side:THREE.DoubleSide}));
     mark.rotation.x=-Math.PI/2;   // the ground's cells run along x and z
     mark.position.set(square.at_m[0],square.at_m[1]+.03,square.at_m[2]);mark.renderOrder=11;
-    mark.userData.dig_m=square.dig_m;preparationMarks.add(mark);
+    mark.userData.dig_m=square.dig_m;mark.userData.fill_m=square.fill_m;preparationMarks.add(mark);
   }
   scene.add(preparationMarks);
 }

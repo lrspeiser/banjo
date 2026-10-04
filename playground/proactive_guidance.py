@@ -60,7 +60,9 @@ def _preparation(ground):
     every spadeful: a new explanation per dig would only repeat itself."""
     if not ground:
         return None
-    return {'task':'Dig the marked squares down level with the lowest, with a shovel or pick',
+    fills=[s for s in ground.get('squares') or [] if 'fill_m' in s]
+    return {'task':('Dig the amber squares down and heap that earth on the blue ones with H, until level'
+                    if fills else 'Dig the marked squares down level with the lowest, with a shovel or pick'),
         'marked_squares':len(ground.get('squares') or []),'done':bool(ground.get('done')),
         'rock_near_surface':any(s.get('rock') for s in ground.get('squares') or []),
         'problem':ground.get('why')}
