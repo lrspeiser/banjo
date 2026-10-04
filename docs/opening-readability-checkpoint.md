@@ -173,11 +173,12 @@ collects, and it assumed one second of charging. It now:
 - picks a spot the table will stand on;
 - retries an expired placement preview as the page does.
 
-It is still red. Putting the stool on the light table, the hand drives it in
-at close to its 800 N limit and shoves the table, so every put-down is refused
-with "the destination moved". This is the next fix: a put-down should lower an
-object onto a receiver gently. The two-player personal-tool journey in the
-same file passes.
+The last red step was the stool going onto the light table: carried in at the
+whole path's 0.8 m/s, it landed hard enough to shove the table, and every
+put-down was refused with "the destination moved". A put-down now does its
+last 4 cm at 0.12 m/s or less, as a hand sets a thing down. The composed
+journey passes on both valleys, and so does the two-player personal-tool
+journey in the same file.
 
 ## Main's test suites are red
 
@@ -207,7 +208,6 @@ python scripts/check-source-registration.py
 
 ## Still to do on the owner's list
 
-- Gentle put-down onto receivers, then the composed journey green.
 - A useful light reachable without outside instructions, end to end; a
   workbench that is optional or useful; fewer trips and transfers.
 - Human recognition of materials by day and night on the three ground types.

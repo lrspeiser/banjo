@@ -355,6 +355,11 @@ def resolve(app, body):
         answer["target"]["id"] = "ground"
     return answer
 
+# The slow last stretch of a put-down: how far above its spot, and how fast.
+SETTLE_M = .04
+SETTLE_SPEED_M_S = .12
+
+
 def execute(app, name, person, stroke, expected=None, speed=.8, direct=False):
     """Place with the bounded native hand; the host continues physics ticks.
 
@@ -388,11 +393,17 @@ def execute(app, name, person, stroke, expected=None, speed=.8, direct=False):
     act("step", dt=1/240, n=1, hand_q=plan["facing"])
     end = plan["at_m"]
     over = max(start[1], end[1]+.2)
+    # The last few centimetres slowly, as a hand sets a thing down: carried in
+    # at the whole path's pace, a stool landed on a light work table hard enough
+    # to shove it, and every put-down was refused as 'the destination moved'.
+    above = [end[0], end[1]+SETTLE_M, end[2]]
     if direct and start[1] >= end[1]+.2:
-        path = [start, [end[0],end[1]+.2,end[2]], end]
+        path = [start, [end[0],end[1]+.2,end[2]], above]
     else:
-        path = [start, [start[0],over,start[2]], [end[0],over,end[2]], end]
+        path = [start, [start[0],over,start[2]], [end[0],over,end[2]], above]
     outcome = stroke(app, path, speed)
+    if outcome in ("reached", "blocked"):
+        outcome = stroke(app, [list(current()["position_m"]), end], min(speed, SETTLE_SPEED_M_S))
     if outcome not in ("reached", "blocked"):
         act("cancel_stroke")
         return "", "placement stroke " + outcome + "; the item is still held"
