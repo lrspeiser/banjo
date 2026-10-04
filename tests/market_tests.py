@@ -255,8 +255,14 @@ class MarketLedger(unittest.TestCase):
                 {'id':'next','name':'Next technique','known':False,'within_reach':False,
                  'needs':[{'name':'First technique','known':False}], 'world_missing':['Equipment missing']}]}), \
                  mock.patch('workshop_tabs.recipes',return_value={'templates':[]}), \
-                 mock.patch('starter_goals.view',return_value={'chain_id':'new','goals':[]}) as goals:
+                 mock.patch('starter_goals.view',return_value={'chain_id':'new','goals':[]}) as goals, \
+                 mock.patch('player_guidance.resolve',return_value={'project':None}) as unified:
+                # Since 0c18d185 the Market's guidance starts from the one
+                # resolved next action (player_guidance.resolve, which reads
+                # the live world); it too must be bound to the signed-in guest.
                 guidance=market._guidance(app,[],0)
+            unified.assert_called_once_with(app,'alice',offers=[],balance=0)
+            self.assertEqual({'project':None},guidance['player'])
             goals.assert_called_once_with(app,'alice',{'chain':'active'})
             self.assertEqual(['First technique'],guidance['skill_blocked']['prerequisites'])
             self.assertEqual(['Equipment missing'],guidance['skill_blocked']['world_missing'])

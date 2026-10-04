@@ -26,6 +26,17 @@ ENGINE = next((p for p in [
     ROOT / "build/integration/Release/banjo_live_world_run.exe",
     ROOT / "build/integration/banjo_live_world_run",
 ] if p.is_file()), None)
+# The C library the room is held in (room_world opens every room as an MCP
+# world). BANJO_LIBRARY first: ctest sets it to the library it just built, so
+# under ctest these run; run by hand with no build, they skip as "not built"
+# like the engine's tests rather than erroring in banjo.World.
+LIBRARY = next((p for p in [
+    *([Path(os.environ["BANJO_LIBRARY"])] if os.environ.get("BANJO_LIBRARY") else []),
+    ROOT / "build/integration/Release/banjo.dll",
+    ROOT / "build/integration/libbanjo.so",
+    ROOT / "build/integration/Release/libbanjo.dylib",
+] if p.is_file()), None)
+NEEDS_LIBRARY = unittest.skipUnless(LIBRARY, "the C library is not built")
 
 
 class TheMenuHasOneWorld(unittest.TestCase):
@@ -123,6 +134,7 @@ class TheRoomAsAuthored(unittest.TestCase):
                                f"the floor rather than on piers")
 
 
+@NEEDS_LIBRARY
 class TheToolsThatChangeIt(unittest.TestCase):
     """The chat's tools are the MCP's, run on the room held as an MCP world.
 
@@ -872,6 +884,7 @@ class TheCourtyard(unittest.TestCase):
                 side * (face - (top if side > 0 else top - shaft["size_mm"][1])),
                 0.0, f"the shaft runs through {block} rather than past it")
 
+    @NEEDS_LIBRARY
     def test_a_change_elsewhere_in_the_courtyard_keeps_its_bow_usable(self):
         """The chat changes the room through the MCP's own tools, and the room
         is written back from the MCP world. It used to be written back without
@@ -893,6 +906,7 @@ class TheCourtyard(unittest.TestCase):
         self.assertEqual(bows[0]["draw"]["max_mm"], 450.0)
         self.assertEqual(bows[0]["draw"]["speed_mm_s"], 400.0)
 
+    @NEEDS_LIBRARY
     def test_taking_the_bows_arrow_away_withdraws_it_and_says_why(self):
         """And a change that takes away what a profile names withdraws it at the
         call that did it, with the reason -- rather than the room refusing the
@@ -908,6 +922,7 @@ class TheCourtyard(unittest.TestCase):
         self.assertNotIn("interactions", spec)
         fracture_lab.validate(spec)     # and the room is still one the lane opens
 
+    @NEEDS_LIBRARY
     def test_the_courtyard_bow_is_copied_beside_itself_and_tried(self):
         """Asked for a stiffer bow beside the courtyard's, the chat copies it
         across its line of fire (duplicate); the room carries both bows, and
@@ -930,6 +945,7 @@ class TheCourtyard(unittest.TestCase):
         self.assertEqual({p["object"] for p in spec["interactions"]},
                          {"the courtyard bow", "the stiff bow"})
 
+    @NEEDS_LIBRARY
     def test_a_copy_that_would_overlap_is_refused_and_leaves_nothing(self):
         """The room refuses a copy that overlaps anything, with its own reason,
         and none of the copy is left behind -- no bodies, joints or controls."""
@@ -2017,8 +2033,16 @@ class TheWorldsPickIsUsedByItsOneAction(unittest.TestCase):
             record = said["result"] or {}
             litres = 1000.0 * sum(float(v or 0.0) for v in (record.get("loosened") or {}).values())
             self.assertFalse(record.get("open"), said)
-            self.assertGreater(litres, 2.0, said)
+            # One use is a short contact stroke since df15b595 (docs/quick-tools-
+            # checkpoint.md), not the old swing-and-pry whose 5 L was the yield
+            # this once held to 2 L: the oak haft's stroke on that checkpoint's
+            # flat soil loosened 0.76 L. Half a litre still says the ground broke
+            # out rather than being scratched, and what is said is that amount.
+            self.assertEqual(record.get("kind"), "broke out", said)
+            self.assertGreater(litres, 0.5, said)
+            self.assertGreater(float(record.get("loosened_kg") or 0.0), 0.0, said)
             self.assertTrue(said["said"].startswith("Dug"), said)
+            self.assertIn(f"{litres:.1f} L", said["said"], said)
             self.assertEqual(app.reply_listeners, [])
         finally:
             running.clear()

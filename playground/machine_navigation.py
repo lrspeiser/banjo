@@ -155,7 +155,13 @@ def waypoint(ctx, target, arrival=(0.,0.)):
                 heights=[float(s['ground_m']) for s in samples]
                 grade=math.degrees(math.atan(math.hypot(heights[2]-heights[1],
                                                         heights[4]-heights[3])/(2*radius)))
-                if grade>float(ctx.program.get('climb_deg',8)):
+                # The bound is on where it may GO, not on the ground it already
+                # stands on. A final arrival is not graded, so a rover sent to
+                # dig on a hillside a little over its bound (the mine's vein,
+                # 8.15 deg against 8) stopped there and then refused every
+                # route away, its own cell failing first. Every other node is
+                # still graded, and the native probes still veto the drive.
+                if grade>float(ctx.program.get('climb_deg',8)) and node!=(0,0):
                     rejected('supported_grade',(x,z),{'grade_deg':grade});ok=False
         valid[node]=ok;return ok
     poses={}

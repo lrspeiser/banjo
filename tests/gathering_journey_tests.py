@@ -1,8 +1,14 @@
-"""Ordinary browser tool discovery, native primary/F strokes, capacity and H heap.
+"""Ordinary browser tool discovery, native primary/F strokes, piles and collection.
 
 The observer is placed on surveyed ground for repeatability. This verifies input
 and native tool/carry/deposit behavior, not physical-avatar locomotion or private
 per-player ground ownership.
+
+Since 5af65746 (docs/automatic-excavation-piles-checkpoint.md) a named world
+exports every stroke's measured output to a nearby material pile, so the hand
+never fills and digging never stops at "Load full"; the pile is collected by
+an ordinary click into private Inventory. The capacity refusal itself is held
+by tests/tool_use_tests.py for worlds without automatic piles.
 """
 import base64
 import json
@@ -24,8 +30,9 @@ class GatheringJourney(unittest.TestCase):
     post=flow.GoodsJourney.post
     join=flow.GoodsJourney.join
     setup_world=flow.GoodsJourney.setup_world
+    personal=flow.GoodsJourney.personal
 
-    def test_find_equip_dig_full_heap_and_resume_use_native_operations(self):
+    def test_find_equip_dig_to_pile_collect_and_resume_use_native_operations(self):
         if not flow.qa_browser.CHROME.is_file():self.skipTest('Chrome not installed')
         with mock.patch.object(flow.server.secrets,'randbelow',side_effect=[0,851269740]):
             world,owner,app=self.setup_world()
@@ -73,35 +80,56 @@ class GatheringJourney(unittest.TestCase):
         aim(.3,.025)
         wait('document.querySelector("#details-actions").textContent.includes("dig here")')
         self.assertNotIn('Study tool',p.evaluate('document.querySelector("#details-actions").textContent'))
+        def carried_ground():
+            c=p.evaluate('banjoRoom.world.carriedGround')
+            return c['sand_kg']+c['soil_kg']+c.get('rock_kg',0)
+        def excavated():   # the server's own ledger, not the page's rounded copy
+            return {q['name']:dict(q['holds']) for q in app.brains.goods.stockpiles if q.get('excavated')}
         strokes=[]
-        for i in range(6):
+        for i in range(4):
             answer=stroke('KeyJ' if i==0 else 'KeyF');strokes.append(answer)
-            if answer.get('refused'):break
+            self.assertNotIn('refused',answer)
             self.assertTrue(answer['result']['supported'],answer)
             self.assertGreater(answer['result']['work_j'],0)
-        self.assertIn('Load full',strokes[-1].get('refused',''))
-        self.assertEqual([],strokes[-1]['done'],'A full load starts no stroke')
-        self.assertGreater(strokes[0]['result']['loosened_kg'],0)
-        self.assertGreater(strokes[1]['result']['loosened_kg'],0,'F must run the actual tool too')
-        full=p.evaluate('banjoRoom.world.carriedGround')
-        self.assertLessEqual(full['total_kg'],full['limit_kg']+.02) # native sampled mass reports round to .01 kg
-        wait('document.querySelector("#world-load-meter").dataset.full==="true"')
-        self.assertIn('H to heap',p.evaluate('document.querySelector("#world-load-meter").textContent'))
+            self.assertGreater(answer['result']['loosened_kg'],0,'F must run the actual tool too' if i else answer)
+            self.assertIn('nearby pile',answer['said'],answer)
+            # Every stroke's measured output leaves the hand: nothing builds up
+            # towards a load limit, so no stroke is ever refused as full.
+            self.assertAlmostEqual(0,carried_ground(),places=6)
+        piles=excavated()
+        self.assertTrue(piles,'the measured output went to a pile')
+        dug=sum(s['result']['loosened_kg'] for s in strokes)
+        held=sum(sum(h.values()) for h in piles.values())
+        self.assertAlmostEqual(dug,held,delta=1e-4*len(strokes),msg=f'piles hold what was dug: {piles}')
+        self.assertNotEqual('true',p.evaluate('document.querySelector("#world-load-meter").dataset.full'))
+        self.assertIn('No weight limit',p.evaluate('document.querySelector("#world-load-meter").textContent'))
         self.assertTrue(p.evaluate('document.querySelector("#world-load-meter a").href.includes("tab=inventory")'))
-        shot('full')
-        aim(-1,-.8);key('KeyH')
-        wait('document.querySelector("#details-last-text").textContent.startsWith("Heaped")')
-        emptied=p.evaluate('banjoRoom.world.carriedGround')
-        self.assertAlmostEqual(0,emptied['sand_kg']+emptied['soil_kg'],places=6)
-        self.assertAlmostEqual(emptied['objects_kg'],emptied['total_kg'],places=6)
-        wait('document.querySelector("#world-load-meter").dataset.full==="false"')
-        shot('emptied')
+        shot('piled')
+        # The page joins as its own guest; whoever it is, exactly that one
+        # player's private ledger gains the whole pile and nobody else's moves.
+        def ledgers():return {pid:self.personal(app,{'id':pid}) for pid in app.room.player_records}
+        before=ledgers()
+        wait('!document.querySelector("#collect-output").hidden')
+        click('#collect-output')
+        wait('document.querySelector("#details-last-text").textContent.includes("Inventory")')
+        emptied=excavated()
+        self.assertTrue(all(not h for h in emptied.values()),f'a click takes the whole pile: {emptied}')
+        after=ledgers()
+        gained=[pid for pid in after if after[pid]!=before.get(pid,{})]
+        self.assertEqual(1,len(gained),f'one collector is credited: {before} -> {after}')
+        self.assertNotEqual(owner['id'],gained[0],'the page collected for itself, not the fixture owner')
+        for name,holds in piles.items():
+            for substance,kg in holds.items():
+                self.assertAlmostEqual(before.get(gained[0],{}).get(substance,0)+kg,
+                                       after[gained[0]].get(substance,0),delta=5e-5)
+        shot('collected')
         aim(.3,.65);answer=stroke('KeyF')
         self.assertNotIn('refused',answer)
-        self.assertGreater(answer['result']['loosened_kg'],0,'Emptying allows another measured stroke')
+        self.assertGreater(answer['result']['loosened_kg'],0,'Collecting leaves digging free to go on')
+        self.assertAlmostEqual(0,carried_ground(),places=6)
         self.assertEqual([],[e for e in p.events if e.get('method')=='Runtime.exceptionThrown'])
-        (out/'gathering-journey.json').write_text(json.dumps({'strokes':strokes,'full':full,
-            'emptied':emptied,'resumed':answer},indent=2))
+        (out/'gathering-journey.json').write_text(json.dumps({'strokes':strokes,'piles':piles,
+            'collected':{'before':before,'after':after},'resumed':answer},indent=2))
 
 
 if __name__=='__main__':unittest.main()

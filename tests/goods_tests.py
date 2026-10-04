@@ -107,7 +107,9 @@ class TheRoomsAccountOfGoods(unittest.TestCase):
         self.assertEqual(["smelter intake", "workshop rack"], [s["name"] for s in held["stockpiles"]])
         self.assertEqual([{}, {}], [s["holds_kg"] for s in held["stockpiles"]], "nothing in them yet")
         self.assertEqual([False, True], [s["rack"] for s in held["stockpiles"]], "which one is the Workshop's")
+        # Its reach and grade too (6098387c): the page draws a deposit's extent.
         self.assertEqual([{"name": "copper vein", "at_m": [2.0, -6.5], "substance": "copper ore",
+                           "radius_m": 3.0, "grade": 0.3,
                            "left_kg": 20.0, "of_kg": 20.0}], held["deposits"])
         goods.put(-3.0, -8.0, {"copper ore": 12.0})
         goods.dug(2.0, -6.5, 10.0)
