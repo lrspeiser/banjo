@@ -455,7 +455,19 @@ class PageJourney(unittest.TestCase):
 
         It checks the press will reach the control first. A click that lands
         on something else used to fail the check several assertions later,
-        with nothing saying the button had moved."""
+        with nothing saying the button had moved. And it waits for the control
+        to stop moving: the side panel slides in when a machine's panel opens
+        it (it starts folded away), and a press mid-slide lands where the
+        button was."""
+        where = f"(() => {{ const e = document.getElementById({json.dumps(element_id)}); " \
+                f"return e ? [...Object.values(e.getBoundingClientRect().toJSON())] : null; }})()"
+        last = None
+        for _ in range(30):
+            now = self.js(where)
+            if now is not None and now == last:
+                break
+            last = now
+            time.sleep(0.1)
         x, y, why = self.aim_at(element_id)
         if why:
             # Once more: the panel may have been mid-layout.
@@ -1039,10 +1051,13 @@ class ACartDrivesItselfToTheWater(PageJourney):
         # always the one that knew the truth; the bead check beside it was a
         # second look at the same fact through a picture of it.
         self.assertEqual(self.js(f"{control}.sensors.map((s) => [s.kind, s.sees])"), [["water", False]])
-        # Beside the front wheels, low enough that the crosshair is on a wheel
-        # rather than the deck above it.
+        # Beside the front wheels and far enough off that the crosshair is on a
+        # wheel rather than the deck above it: a person stands on the ground
+        # now (the gravity controller lifts an eye put lower back to 1.62 m),
+        # and from 1.4 m away the deck hides the wheels.
         x, y, z = self.position("cart-2")
-        self.page.evaluate(f"banjoRoom.standAt({x + 1.4}, {y + 0.12}, {z}); banjoRoom.lookAt({x}, {y}, {z}); true")
+        ground = self.js(f"banjoRoom.groundAt({x + 4.0}, {z})")
+        self.page.evaluate(f"banjoRoom.standAt({x + 4.0}, {ground + 1.62}, {z}); banjoRoom.lookAt({x}, {y}, {z}); true")
         self.assertTrue(self.wait_for("banjoRoom.world.aim && banjoRoom.world.aim.name === 'cart-2'", 10),
                         f"the crosshair is not on the front wheels: {self.situation()}")
         self.assertTrue(self.offering("Open the cart's panel"),
@@ -1060,8 +1075,10 @@ class ACartDrivesItselfToTheWater(PageJourney):
         self.assertTrue(self.wait_for(f"({control}.condition || '').startsWith('water ahead')", 90),
                         f"the cart never stopped for the water: {self.situation()}")
         text = lambda element_id: self.js(f"document.getElementById({json.dumps(element_id)}).textContent")
-        self.assertEqual(text("mp-condition"), "water ahead: it stopped at the water's edge")
-        self.assertIn("its water sensor ahead:", text("mp-measured"))
+        # The engine names what stopped it -- water, or a drop or step in the ground (ff1b252b).
+        self.assertEqual(text("mp-condition"), "water ahead: it stopped at the edge")
+        # Its water sensor's reading, named for where it sits (ff1b252b).
+        self.assertIn("Front middle · water:", text("mp-measured"))
         self.assertTrue(self.wait_for(f"{control}.sensors.every((s) => s.sees)", 10),
                         "the cart's water sensor does not see the water that stopped it")
         self.wait_world(2.0)          # brought to rest on its brake
@@ -1070,7 +1087,7 @@ class ACartDrivesItselfToTheWater(PageJourney):
         wx, wy, wz = self.position("cart-2")
         wet = self.js(f"banjoRoom.waterAt({wx}, {wz})")
         print(f"\n   sent forward from its panel, it went {math.dist(start, rest):.2f} m down the shore and "
-              f"stopped: the panel says {text('mp-measured')!r}", flush=True)
+              f"stopped: the panel says {text('mp-measured')!a}", flush=True)   # ascii: a Windows console cannot print its warning sign
         self.assertGreater(math.dist(start, rest), 3.0, "it did not drive down the shore")
         self.assertTrue(c["brake"] and c["command"] == 0, f"it is not held on its brake: {c}")
         self.assertTrue(wet is None or wet["depth"] < 0.005, f"its front wheels stopped in the water: {wet}")
