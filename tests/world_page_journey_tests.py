@@ -683,10 +683,28 @@ class WhatIsDugIsCarriedAndWeighs(PageJourney):
         self.assertGreaterEqual(seen["frames"], 10, f"the page drew too few frames to pace anyone: {seen}")
         return seen
 
+    # A way to face with a run of dry ground ahead, within the room: the world
+    # has a river, and running is walking in water, so a run that went into it
+    # was read as a person who cannot run (they walk 4.2 m/s since 3e2b508d and
+    # run 6.8, so two paces are 13 m).
+    DRY_AHEAD = ("(() => { const p = banjoRoom.camera.position;"
+                 " for (let turn = 0; turn < 24; turn++) { const a = turn * Math.PI / 12, dx = Math.sin(a), dz = Math.cos(a);"
+                 "   let dry = true; for (let d = 0; d <= 15 && dry; d += 0.25) { const x = p.x + d * dx, z = p.z + d * dz,"
+                 "     w = banjoRoom.waterAt(x, z); dry = Math.abs(x) < 27 && Math.abs(z) < 27 &&"
+                 "     !(w && w.level - banjoRoom.groundAt(x, z) > 0.01); }"
+                 "   if (dry) { banjoRoom.lookAt(p.x + 6 * dx, banjoRoom.groundAt(p.x + 6 * dx, p.z + 6 * dz), p.z + 6 * dz); return true; } }"
+                 " return false; })()")
+
+    def face_dry_ground(self):
+        self.assertTrue(self.js(self.DRY_AHEAD), "no way from here has fifteen metres of dry ground")
+
     def pace(self, run=False, seconds=1.2):
         """How fast W takes the person across the ground, in metres a second of the page's time."""
         seen = self.walk(run, seconds)
         return seen["far"] / seen["time"]
+
+    METER = "#world-load-meter"
+    MOVING = "#world-load-meter [data-movement]"
 
     def heap_it_all(self):
         for _ in range(8):
@@ -711,9 +729,11 @@ class WhatIsDugIsCarriedAndWeighs(PageJourney):
                                       "return (c.sand_kg || 0) + (c.soil_kg || 0) > 1; })()", 30), "nothing was dug")
         kg, limit = self.carried()
         self.assertAlmostEqual(limit, kg, delta=0.01, msg="the spade did not take exactly what could be carried")
-        self.assertTrue(self.wait_for("document.getElementById('inv-carrying').textContent.includes('all you can carry')", 10),
-                        self.js("document.getElementById('inv-carrying').textContent"))
-        self.assertIn("80 of 80 kg", self.js("document.getElementById('inv-carrying').textContent"))
+        # The load meter over the room says it is full, and how much (it took
+        # over from the panel's Carrying line with the compact Inventory).
+        self.assertTrue(self.wait_for(f"document.querySelector({self.METER!r}).textContent.includes('Full')", 10),
+                        self.js(f"document.querySelector({self.METER!r}).textContent"))
+        self.assertIn("80.0 / 80 kg", self.js(f"document.querySelector({self.METER!r}).textContent"))
 
         # Again: refused, in words, and the ground and the load are as they were.
         self.page.evaluate("document.getElementById('dig-it').click(); true")
@@ -723,6 +743,7 @@ class WhatIsDugIsCarriedAndWeighs(PageJourney):
         self.assertAlmostEqual(kg, self.carried()[0], delta=1e-9)
 
         # It is in their legs: two fifths of the pace, and no running.
+        self.face_dry_ground()
         loaded_walk, loaded_run = self.pace(), self.pace(run=True)
         self.assertLess(loaded_run, 1.2 * loaded_walk, "a person carrying all they can still ran")
 
@@ -734,6 +755,7 @@ class WhatIsDugIsCarriedAndWeighs(PageJourney):
         # Heaped back, the hands are free and so are the legs.
         self.assertTrue(self.wait_for("!!banjoRoom.world.groundAim", 30), "the crosshair is not on the ground")
         self.heap_it_all()
+        self.face_dry_ground()
         free_walk, free_run = self.pace(), self.pace(run=True)
         print(f"\n   carrying {kg:.1f} kg: {loaded_walk:.2f} m/s walking and {loaded_run:.2f} running; "
               f"with empty hands {free_walk:.2f} and {free_run:.2f}", flush=True)
@@ -788,8 +810,8 @@ class ThePersonIsInTheWater(WhatIsDugIsCarriedAndWeighs):
         # Five metres over the river is over it, not in it.
         self.assertIsNone(stand(shallow, 5.0), "a person in the air over a river was in the water")
         free = self.pace(seconds=0.5)
-        # About the 2.4 m/s they walk at; what follows is read against this, not against 2.4.
-        self.assertAlmostEqual(2.4, free, delta=0.5)
+        # About the 4.2 m/s they walk at (3e2b508d; it was 2.4); what follows is read against this.
+        self.assertAlmostEqual(4.2, free, delta=0.5)
 
         # Standing on its bed they wade, slower the deeper -- and a shallow
         # river, however fast, does not carry them.
@@ -816,15 +838,16 @@ class ThePersonIsInTheWater(WhatIsDugIsCarriedAndWeighs):
                         f"walking down a shallow reach they were hardly in the water, so this proves nothing: {waded}")
         self.assertAlmostEqual(free, legs(waded) / waded["paced"], delta=0.06 * free,
                                msg=f"wading at {wading:.2f} m/s against {free:.2f} on dry land: {waded}")
-        self.assertTrue(self.wait_for("document.getElementById('inv-carrying').textContent.includes('wading')", 10),
-                        self.js("document.getElementById('inv-carrying').textContent"))
+        self.assertTrue(self.wait_for(f"document.querySelector({self.MOVING!r}).textContent.startsWith('Wade')", 10),
+                        self.js(f"document.querySelector({self.MOVING!r}).textContent"))
 
         # Crouched on the bed of the deepest pool their head is under, and it
         # looks it; they swim at three tenths of their pace.
         wet = stand(deep, 0.3)
         self.assertTrue(wet["head_under"], wet)
         self.assertTrue(self.js("document.body.classList.contains('head-under-water')"))
-        self.assertTrue(self.wait_for("document.getElementById('inv-carrying').textContent.includes('under water')", 10))
+        self.assertTrue(self.wait_for(f"document.querySelector({self.MOVING!r}).textContent.startsWith('Swim')", 10),
+                        self.js(f"document.querySelector({self.MOVING!r}).textContent"))
         # Standing up in it, as much of them as there is water for is under.
         wet = stand(deep, 1.6)
         self.assertGreater(wet["under"], 1.0)
