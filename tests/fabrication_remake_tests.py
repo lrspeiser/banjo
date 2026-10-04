@@ -838,9 +838,13 @@ class LabRemake(unittest.TestCase):
             person={'standing_m':[-2.2,floor,0.],'eyes_m':[-2.2,floor+1.62,0.],
                 'facing':[1,0,0],'look_direction':[1.2,ground-floor-1.62,0.]}
             replies=[]
-            def inventory():return post('/api/workshop/inventory',{})
+            # Since 5af65746 dug ground goes to a sand pile beside the dig, not
+            # into the hand; a pickup then takes the whole pile into personal
+            # Inventory, and that Inventory is delivered to the furnace.
+            def piled():return [p for p in app.brains.goods.stockpiles
+                if p.get('excavated')=='sand' and p['holds'].get('sand',0)>0]
             for attempt in range(50):
-                if inventory()['ground_load']['sand_kg']>=4.32/.85+.00001:break
+                if sum(p['holds']['sand'] for p in piled())>=4.32/.85+.00001:break
                 answer=[];errors=[]
                 def use():
                     try:answer.append(post('/api/world/tool/use',{**context(),'person':person,'at_m':[-1.,ground,0.]}))
@@ -851,16 +855,17 @@ class LabRemake(unittest.TestCase):
                     app.clock._tick(.05);time.sleep(.015)
                 worker.join(1);self.assertFalse(worker.is_alive());self.assertEqual([],errors)
                 replies.extend(answer)
-            load=inventory()['ground_load'];sand=load['sand_kg']
-            self.assertGreaterEqual(sand,4.32/.85)
             self.assertTrue(any((a.get('result') or {}).get('loosened_kg',0)>0 for a in replies))
+            self.assertEqual(0.,post('/api/workshop/inventory',{})['ground_load']['sand_kg'])
             shown=post('/api/world/inventory/shown',context())
             post('/api/world/inventory',{**context(),'op':'stow','item':'field pick',
                 'request':'glass-journey-stow','revision':shown['record']['revision'],'person':person})
-            state=post('/api/world/fabrication/state',context())
-            raw={**context(),'request_id':'glass-journey-store','revision':state['state']['revision'],
-                **{s+'_m3':load.get(s+'_m3',0) for s in ('sand','soil','rock')}}
-            post('/api/world/fabrication/store_ground',raw)
+            sand=0.
+            for number,heap in enumerate(piled()):
+                hx,hz=heap['at_m'];hfloor=app.live.act({**context(),'op':'survey','at':[hx,hz]})['survey']['ground_m']
+                sand+=post('/api/world/goods/collect',{'session':app.live.session.id,'pile':heap['name'],'request_id':f'glass-journey-sand-{number}',
+                    'person':{'eyes_m':[hx+.5,hfloor+1.62,hz],'facing':[-1,0,0]}})['collected'].get('sand',0)
+            self.assertGreaterEqual(sand,4.32/.85)
             machine=next(p for p in app.live.session.state['machines']['programs'] if p['name']==processor.name)
             post('/api/world/machine',{'session':app.live.session.id,'program':machine['id'],
                 'power':False,'sender':'glass-journey','seq':1})
@@ -871,10 +876,8 @@ class LabRemake(unittest.TestCase):
             post('/api/world/process',{'session':app.live.session.id,'program':machine['id'],
                 'action':'select','recipe':'melt glass','expected_recipe':processor.recipe,'person':input_person})
             intake=app.brains.goods.by_name(processor.intake);output=app.brains.goods.by_name(processor.output)
-            state=post('/api/world/fabrication/state',context())
             sand_mass=math.floor(sand*1e6)/1e6
             sand_input={'session':app.live.session.id,'pile':intake['name'],'substance':'sand','mass_kg':sand_mass,
-                'lot_id':raw['request_id'],'revision':state['state']['revision'],
                 'request_id':'glass-journey-input','person':input_person}
             post('/api/world/goods/deliver',sand_input)
             before=sum(s['given_j'] for s in app.live.session.state['machines']['stores'])
