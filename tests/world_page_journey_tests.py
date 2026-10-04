@@ -2639,7 +2639,9 @@ class BrokenPiecesComeWithYou(PageJourney):
         print(f"\n   standing among them, without walking: "
               + ", ".join(f"{kg * 1000:.0f} g of {what}" for what, kg in stock.items())
               + f" (was {held_before * 1000:.0f} g of oak)", flush=True)
-        self.assertIn("oak", self.js("document.getElementById('inv-carrying').innerText"))
+        # And the Inventory says so: what you carry is listed by material.
+        self.assertTrue(self.wait_for("!!document.querySelector('#mini-materials [data-material=\"oak\"]')", 10),
+                        self.js("document.getElementById('mini-materials').innerText"))
         self.no_page_errors("after walking over the pieces")
 
     def test_a_piece_in_the_hand_goes_into_what_you_carry(self):
@@ -2657,8 +2659,14 @@ class BrokenPiecesComeWithYou(PageJourney):
         name = None
         for candidate, at in loose[:8]:
             for aside in (2.0, -2.0):
-                self.page.evaluate(f"banjoRoom.standAt({at[0] + aside}, {at[1] + 1.62}, {at[2] - 2.0}); "
-                                   f"banjoRoom.lookAt({at[0]}, {at[1]}, {at[2]}); true")
+                # Looked at once they are standing: a person stands on the floor
+                # now (the gravity controller), which settles the eye a few
+                # centimetres from where it was put -- and a line aimed from
+                # where it was put passes over a piece this small.
+                self.page.evaluate(f"banjoRoom.standAt({at[0] + aside}, {at[1] + 1.62}, {at[2] - 2.0}); true")
+                self.page.evaluate("new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => "
+                                   "requestAnimationFrame(done))))", await_promise=True, timeout=30)
+                self.page.evaluate(f"banjoRoom.lookAt({at[0]}, {at[1]}, {at[2]}); true")
                 if self.wait_for("banjoRoom.world.aim && banjoRoom.world.aim.name === "
                                  f"{json.dumps(candidate)}", 5):
                     name = candidate
