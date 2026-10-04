@@ -324,6 +324,84 @@ void theNewGroundIsDugLikeTheValley() {
             "the survey says which region");
 }
 
+// The same swing the valley's ground work is tested with (ground_work_tests),
+// a pick of oak swung and pried, out on a region.
+std::string finishStroke(LiveWorld &live, int most_steps, int settle_steps) {
+    for (int i = 0; i < most_steps; ++i) {
+        run(live, kDt);
+        if (!live.hand().stroking) break;
+    }
+    const std::string ended = live.hand().stroke_ended;
+    if (!live.held().empty()) live.moveHeld(live.hand().grip_m);
+    for (int i = 0; i < settle_steps; ++i) run(live, kDt);
+    return ended;
+}
+
+void aPickSwungOutThereBreaksTheRegionsGround() {
+    // Somewhere level on the region east of the valley, away from the seam.
+    auto preview = ground(terrainBlock());
+    (void)preview->addRegion(nullptr, 1, 0);
+    double best = 1e9, X = 0, Z = 0;
+    for (double x = 26.0; x < 52.0; x += 1.0)
+        for (double z = -12.0; z < 12.0; z += 1.0) {
+            const double h = preview->groundHeightAt(x, z);
+            double worst = 0.0;
+            for (double dx = -1.0; dx <= 1.5; dx += 0.25)
+                for (double dz = -0.5; dz <= 0.5; dz += 0.25)
+                    worst = std::max(worst, std::abs(preview->groundHeightAt(x + dx, z + dz) - h));
+            if (worst < best) { best = worst; X = x; Z = z; }
+        }
+    const double top = preview->groundHeightAt(X + 0.3, Z);
+    Json bodies = Json::array({box("pick", "oak", {0.8, 0.04, 0.04}, {X, top + 1.02, Z + 0.02}),
+                               box("pick arm", "oak", {0.04, 0.28, 0.04}, {X + 0.38, top + 0.86, Z + 0.02})});
+    bodies[0]["join"] = "pick";
+    bodies[1]["join"] = "pick";
+    auto world = open(sceneWith(terrainBlock(true, Json::array({Json::array({1, 0})})), bodies));
+    const terrain::Environment &env = *world->environment();
+    const Vec3 grip{X - 0.36, top + 1.02, Z + 0.02};
+    require(world->toolPoint("pick", {X + 0.38, top + 0.72, Z + 0.02}, {0.0, -1.0, 0.0}, 0.04, 0.04, 30.0, 0.2,
+                             grip) != 0, "the pick would not take a point: " + world->toolPointRefusal());
+    require(world->wield("pick", grip), "the pick could not be taken by its grip");
+    LiveStrike strike;
+    strike.target_m = {X + 0.3, top, Z + 0.02};
+    strike.shoulder_m = {X - 0.9, top + 1.45, Z + 0.02};
+    strike.speed_m_s = 4.0;
+    strike.raise_deg = 110.0;
+    std::string why;
+    require(world->strike(strike, why), "the swing was refused: " + why);
+    (void)finishStroke(*world, 480, 120);
+    require(!world->groundWork().empty() && world->groundWork().front().open, "the pick is not in the region's ground");
+    const LiveGroundWork in = world->groundWork().front();
+    const double carried_before = env.carriedTotal().total();
+    LiveStrike lever;
+    lever.lever = true;
+    lever.shoulder_m = {X - 0.9, top + 1.45, Z + 0.02};
+    lever.speed_m_s = 1.2;
+    lever.lever_deg = 40.0;
+    require(world->strike(lever, why), "the lever was refused: " + why);
+    (void)finishStroke(*world, 960, 30);
+    if (world->groundWork().front().open) {
+        const Vec3 at = world->hand().grip_m;
+        LiveStroke up;
+        up.path_m = {at, at + Vec3{0.0, 0.4, 0.0}};
+        up.speed_m_s = 0.6;
+        up.accel_m_s2 = 4.0;
+        up.give_up_s = 3.0;
+        require(world->stroke(up, why), "the pull was refused: " + why);
+        (void)finishStroke(*world, 960, 30);
+    }
+    const LiveGroundWork out = world->groundWork().front();
+    const terrain::Ledger &ledger = env.regions()[0]->field->ledger();
+    const double gained = env.carriedTotal().total() - carried_before;
+    std::cout << "    the pick went " << in.depth_m * 1000 << " mm into the region's " << in.ground << "; pried, it "
+              << out.kind << ": " << out.loosened.total() * 1000 << " L loosened, " << gained * 1000
+              << " L carried, the region's ledger dug " << (ledger.dug.soil_m3 + ledger.dug.sand_m3) * 1000 << " L\n";
+    require(in.depth_m > 0.0, "the point went into the region's ground");
+    require(out.kind == "broke out" && out.loosened.total() > 0.0, "the pry broke the region's ground out");
+    require(std::abs(gained - out.loosened.total()) < 1e-12, "what came out is carried");
+    require(std::abs(ledger.dug.soil_m3 + ledger.dug.sand_m3 - gained) < 1e-12, "and came out of the region");
+}
+
 void aGrownWorldIsSavedAndComesBack() {
     const Json scene = sceneWith(terrainBlock());
     auto world = open(scene);
@@ -438,15 +516,25 @@ void whatItCosts() {
     const Clock::time_point t0 = Clock::now();
     const auto grown = world->growGround();
     const double grow_ms = msSince(t0);
-    const Clock::time_point t1 = Clock::now();
-    world->step(kDt);
-    const double first_after = msSince(t1);
-    const double after = stepMs(*world, 0.5, &worst);
     require(grown.size() == 1, "one region grown");
-    std::cout << "    growing one region while it runs: " << grow_ms << " ms in all (ground " << grown[0].generate_ms
-              << " ms, colliders " << grown[0].colliders_ms << " ms, the valley's seam " << grown[0].seams_ms
-              << " ms over " << grown[0].seam_chunks << " chunks); steps " << before << " ms before, the first after "
-              << first_after << " ms, then " << after << " ms\n";
+    // The rest of its colliders come a few a step: every step until they are
+    // all there, timed.
+    const terrain::StreamedRegion &region = *env.regions()[0];
+    double attaching_worst = 0.0;
+    int attaching_steps = 0;
+    while (!region.unattached.empty() || region.seams_pending) {
+        const Clock::time_point t1 = Clock::now();
+        world->step(kDt);
+        attaching_worst = std::max(attaching_worst, msSince(t1));
+        require(++attaching_steps < 240, "its colliders all come within a second");
+    }
+    const double after = stepMs(*world, 0.5, &worst);
+    std::cout << "    growing one region while it runs: " << grow_ms << " ms in the step that grew it (ground "
+              << grown[0].generate_ms << " ms, the nearest colliders " << grown[0].colliders_ms << " ms); the rest "
+              << "over the next " << attaching_steps << " steps (" << attaching_steps * kDt * 1000
+              << " ms of world time), the slowest of them " << attaching_worst << " ms, all its colliders "
+              << region.colliders_ms << " ms; steps " << before << " ms before, " << after << " ms after\n";
+    require(attaching_worst < 25.0, "no step stalls while its colliders come");
 }
 
 } // namespace
@@ -464,6 +552,7 @@ int main(int argc, char **argv) {
         {"a region meets the valley without a step", aRegionMeetsTheValleyWithoutAStep},
         {"a body walks out of the valley and the world grows", aBodyWalksOutOfTheValleyAndTheWorldGrows},
         {"the new ground is dug like the valley", theNewGroundIsDugLikeTheValley},
+        {"a pick swung out there breaks the region's ground", aPickSwungOutThereBreaksTheRegionsGround},
         {"a grown world is saved and comes back", aGrownWorldIsSavedAndComesBack},
         {"what it costs", whatItCosts},
     };

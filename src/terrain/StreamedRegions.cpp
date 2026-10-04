@@ -149,7 +149,10 @@ std::vector<Environment::Grown> Environment::growToward(JoltWorld *world, double
             const double away = std::hypot(std::max({0.0, x_lo - x, x - x_hi}), std::max({0.0, z_lo - z, z - z_hi}));
             if (away > within_m) continue;
             Grown grown;
+            grow_x_ = x;
+            grow_z_ = z;
             if (addRegion(world, rx, rz, &grown)) out.push_back(grown);
+            grow_x_ = grow_z_ = std::numeric_limits<double>::quiet_NaN();
         }
     return out;
 }
@@ -181,11 +184,48 @@ bool Environment::addRegion(JoltWorld *world, int rx, int rz, Grown *grown) {
     r.generate_ms = msSince(t0);
     Grown g{rx, rz, r.generate_ms, 0.0, 0.0, 0};
     if (world != nullptr && attached_) {
-        attachRegion(*world, k);
-        g.colliders_ms = r.colliders_ms;
-        // The fields beside it had walls down to the floor along this edge,
-        // facing nothing. They face this region now: rebuilt to meet it.
-        const Clock::time_point ts = Clock::now();
+        // Its colliders a few at a time, nearest the one who grew it first
+        // (commitRegions gives the rest, kAttachBudgetMs a step), and then
+        // the seams of the fields beside it.
+        const Grid &rg = r.field->grid();
+        std::vector<std::pair<double, int>> order;
+        for (int chunk = 0; chunk < chunks; ++chunk) {
+            const int cx = chunk % r.field->chunksX(), cz = chunk / r.field->chunksX();
+            const double mx = rg.xOf(std::min(rg.nx - 1, cx * TerrainField::kChunkCells + 15));
+            const double mz = rg.zOf(std::min(rg.nz - 1, cz * TerrainField::kChunkCells + 15));
+            const double away = std::isfinite(grow_x_) ? std::hypot(mx - grow_x_, mz - grow_z_) : chunk;
+            order.emplace_back(away, chunk);
+        }
+        std::stable_sort(order.begin(), order.end());
+        for (const auto &[away, chunk] : order) r.unattached.push_back(chunk);
+        r.seams_pending = true;
+        const Clock::time_point ta = Clock::now();
+        attachSome(*world, k, kAttachBudgetMs);
+        g.colliders_ms = msSince(ta);
+    }
+    regions_added_.push_back(k);
+    if (grown != nullptr) *grown = g;
+    return true;
+}
+
+void Environment::attachSome(JoltWorld &world, int k, double budget_ms) {
+    StreamedRegion &r = *regions_[static_cast<std::size_t>(k)];
+    const Clock::time_point t0 = Clock::now();
+    const MaterialDefinition contact = groundContactMaterial();
+    std::size_t done = 0;
+    while (done < r.unattached.size() && (done == 0 || msSince(t0) < budget_ms)) {
+        const int chunk = r.unattached[done++];
+        // Its heights as they are now: it may have been dug before it got here.
+        r.colliders[static_cast<std::size_t>(chunk)] = chunkHeightsOf(k, chunk);
+        r.patches[static_cast<std::size_t>(chunk)] = world.addGroundTriangles(columnTrianglesOf(k, chunk), contact);
+    }
+    r.unattached.erase(r.unattached.begin(), r.unattached.begin() + static_cast<std::ptrdiff_t>(done));
+    r.colliders_ms += msSince(t0);
+    if (!r.unattached.empty() || !r.seams_pending || (done > 0 && msSince(t0) >= budget_ms)) return;
+    // The fields beside it had walls down to the floor along this edge,
+    // facing nothing. They face this region now: rebuilt to meet it, a chunk
+    // or two a step like the rest.
+    if (r.seam_queue.empty()) {
         const Grid &rg = r.field->grid();
         std::vector<std::size_t> edge;
         for (int i = 0; i < rg.nx; ++i) {
@@ -196,13 +236,15 @@ bool Environment::addRegion(JoltWorld *world, int rx, int rz, Grown *grown) {
             edge.push_back(rg.at(0, j));
             edge.push_back(rg.at(rg.nx - 1, j));
         }
-        g.seam_chunks = seamChunks(k, edge).size();
-        rebuildSeams(*world, k, edge, nullptr);
-        g.seams_ms = msSince(ts);
+        r.seam_queue = seamChunks(k, edge);
     }
-    regions_added_.push_back(k);
-    if (grown != nullptr) *grown = g;
-    return true;
+    std::size_t rebuilt = 0;
+    while (rebuilt < r.seam_queue.size() && (rebuilt == 0 || msSince(t0) < budget_ms)) {
+        const auto [other, chunk] = r.seam_queue[rebuilt++];
+        rebuildFieldChunks(world, other, {chunk}, nullptr);
+    }
+    r.seam_queue.erase(r.seam_queue.begin(), r.seam_queue.begin() + static_cast<std::ptrdiff_t>(rebuilt));
+    if (r.seam_queue.empty()) r.seams_pending = false;
 }
 
 void Environment::attachRegion(JoltWorld &world, int k) {
@@ -299,10 +341,19 @@ std::vector<std::array<Vec3, 3>> Environment::columnTrianglesOf(int which, int c
     const int i0 = cx * TerrainField::kChunkCells, j0 = cz * TerrainField::kChunkCells;
     const int i1 = cx + 1 == field.chunksX() ? g.nx : i0 + TerrainField::kChunkCells;
     const int j1 = cz + 1 == field.chunksZ() ? g.nz : j0 + TerrainField::kChunkCells;
-    std::vector<Interval> own, neighbor;
+    // Every column's solid spans once, the chunk and a column round it: each
+    // is asked for by itself and by its four neighbours' walls.
+    const int across = i1 - i0 + 2;
+    std::vector<std::vector<Interval>> spans(static_cast<std::size_t>(across) * static_cast<std::size_t>(j1 - j0 + 2));
+    for (int j = j0 - 1; j <= j1; ++j)
+        for (int i = i0 - 1; i <= i1; ++i)
+            solidsAt(which, i, j, spans[static_cast<std::size_t>(j - j0 + 1) * across + static_cast<std::size_t>(i - i0 + 1)]);
+    const auto solids = [&](int i, int j) -> const std::vector<Interval> & {
+        return spans[static_cast<std::size_t>(j - j0 + 1) * across + static_cast<std::size_t>(i - i0 + 1)];
+    };
     for (int j = j0; j < j1; ++j)
         for (int i = i0; i < i1; ++i) {
-            solidsAt(which, i, j, own);
+            const std::vector<Interval> &own = solids(i, j);
             const double x = g.xOf(i) - g.dx / 2, z = g.zOf(j) - g.dx / 2;
             for (const auto &[lo, hi] : own) {
                 quad({x, hi, z}, {x, hi, z + g.dx}, {x + g.dx, hi, z + g.dx}, {x + g.dx, hi, z});
@@ -311,7 +362,7 @@ std::vector<std::array<Vec3, 3>> Environment::columnTrianglesOf(int which, int c
             }
             for (int side = 0; side < 4; ++side) {
                 const int di = side == 0 ? -1 : side == 1 ? 1 : 0, dj = side == 2 ? -1 : side == 3 ? 1 : 0;
-                solidsAt(which, i + di, j + dj, neighbor);
+                const std::vector<Interval> &neighbor = solids(i + di, j + dj);
                 for (const auto &[lo, hi] : own) {
                     double from = lo;
                     const auto wall = [&](double a, double b) {
@@ -444,6 +495,7 @@ void Environment::regionEdited(JoltWorld *world, int k, const std::vector<std::s
 void Environment::commitRegions(JoltWorld &world, double dt_s) {
     for (int k = 0; k < static_cast<int>(regions_.size()); ++k) {
         StreamedRegion &r = *regions_[static_cast<std::size_t>(k)];
+        if (!r.unattached.empty() || r.seams_pending) attachSome(world, k, kAttachBudgetMs);
         r.since_rebuild_s += dt_s;
         if (r.field->settled()) {
             r.ground_behind_s = 0.0;

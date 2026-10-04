@@ -1171,16 +1171,25 @@ Landscape streamedRegion(const Landscape &valley, std::uint64_t seed, int rx, in
     land.sand.resize(n);
     land.loose.resize(n);
     const double h = g.dx;
+    // The surface at every point and one point past each edge, once: the
+    // slope at a point is the fall between its neighbours either side.
+    const int ex = g.nx + 2;
+    std::vector<double> surface(static_cast<std::size_t>(ex) * static_cast<std::size_t>(g.nz + 2));
+    for (int j = -1; j <= g.nz; ++j)
+        for (int i = -1; i <= g.nx; ++i)
+            surface[static_cast<std::size_t>(j + 1) * ex + static_cast<std::size_t>(i + 1)] =
+                ground.surface(g.xOf(i), g.zOf(j));
+    const auto at = [&](int i, int j) { return surface[static_cast<std::size_t>(j + 1) * ex + static_cast<std::size_t>(i + 1)]; };
     for (int j = 0; j < g.nz; ++j)
         for (int i = 0; i < g.nx; ++i) {
             const std::size_t c = g.at(i, j);
             const double x = g.xOf(i), z = g.zOf(j);
-            const double y = ground.surface(x, z);
+            const double y = at(i, j);
             // Soil as the valley thins it (generateValley): gone where it is
             // steeper than about 37 degrees, and near the valley the valley's
             // own soil, sand and loose ground eased out from its edge.
-            const double gx = (ground.surface(x + h, z) - ground.surface(x - h, z)) / (2.0 * h);
-            const double gz = (ground.surface(x, z + h) - ground.surface(x, z - h)) / (2.0 * h);
+            const double gx = (at(i + 1, j) - at(i - 1, j)) / (2.0 * h);
+            const double gz = (at(i, j + 1) - at(i, j - 1)) / (2.0 * h);
             const double natural_soil = 1.2 * std::clamp(1.0 - std::hypot(gx, gz) / 0.75, 0.0, 1.0);
             const double w = ground.own(x, z);
             const double soil = ground.edge(valley.soil, x, z) * (1.0 - w) + natural_soil * w;

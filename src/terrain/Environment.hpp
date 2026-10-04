@@ -122,6 +122,11 @@ struct StreamedRegion {
     std::set<int> edited_chunks;                 // the chunks whose ground is not as generated
     double generate_ms{};                        // what it cost to make
     double colliders_ms{};                       // and to give it colliders
+    // Chunks still waiting for their colliders, nearest the one who grew it
+    // first: a region grown while the world runs gets them a few a step.
+    std::vector<int> unattached;
+    bool seams_pending{};
+    std::vector<std::pair<int, int>> seam_queue;  // the neighbours' chunks to meet it, field and chunk
 };
 
 class Environment {
@@ -240,9 +245,15 @@ public:
     // (terrain.stream), so every room that was there before is as it was.
     static constexpr double kGrowWithinM = 10.0;
     // At most this many regions, and at most this far out each way: a region
-    // holds about 2 MB, so 48 of them are about 100 MB.
+    // costs about 4.4 MB with its colliders (measured), so 48 are about 210 MB.
     static constexpr int kMostRegions = 48;
     static constexpr int kMostRegionsOut = 6;
+    // How long a step may spend giving a newly grown region its colliders:
+    // a whole region at once is about 70 ms, which is a hitch; a few
+    // milliseconds a step is not, and the 20 chunks are all there within a
+    // tenth of a second of world time -- long before anyone 10 m away walks
+    // onto them.
+    static constexpr double kAttachBudgetMs = 3.0;
     // Whether this ground can grow at all, and if not, why.
     [[nodiscard]] bool canStream(std::string *why = nullptr) const;
     [[nodiscard]] bool streaming() const { return streaming_; }
@@ -371,6 +382,12 @@ private:
     std::vector<std::array<Vec3,3>> columnTrianglesOf(int which, int chunk) const;
     std::vector<float> chunkHeightsOf(int which, int chunk) const;
     void attachRegion(JoltWorld &world, int k);
+    // Colliders for a grown region's waiting chunks, nearest first, until
+    // `budget_ms` is spent (one at least); then the seams beside it.
+    void attachSome(JoltWorld &world, int k, double budget_ms);
+    // Where the region being grown is grown toward, for which chunks first.
+    double grow_x_{std::numeric_limits<double>::quiet_NaN()};
+    double grow_z_{std::numeric_limits<double>::quiet_NaN()};
     void rebuildRegionChunks(JoltWorld &world, int k, const std::set<int> &chunks, EditEffect *effect);
     // The chunks of the fields beside `which` whose walls face columns of it
     // that changed: rebuilt with it, so a seam is never half old.

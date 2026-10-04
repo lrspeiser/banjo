@@ -90,6 +90,14 @@ export function makeRegions(scene, dressMaterial) {
     const key = `${block.at[0]},${block.at[1]}`;
     const { nx, nz, cell_m: dx, x0_m: x0, z0_m: z0 } = block.grid;
     const was = regions.get(key);
+    // Already drawn (a page sent the whole ground in the same reply): only
+    // what differs is drawn again.
+    if (was && was.grid.nx === nx && was.grid.nz === nz && was.grid.x0 === x0 && was.grid.z0 === z0 &&
+        was.floor === (Number(block.floor_m) || 0)) {
+      patch({ at: block.at, box: [0, 0, nx, nz], heights_b64: block.heights_b64, ground_b64: block.ground_b64,
+              runs_b64: block.runs_b64 });
+      return was;
+    }
     if (was) remove(was);
     const grid = { nx, nz, dx, x0, z0, surface: block.surface || "columns" };
     const count = nx * nz, floor = Number(block.floor_m) || 0;
