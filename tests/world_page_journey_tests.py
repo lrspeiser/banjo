@@ -1919,17 +1919,27 @@ class AThrowIsAimedBeforeItIsMade(PageJourney):
 
     def test_escape_puts_it_back_instead(self):
         self.open_valley()
-        self.take_the_block("escape")
-        # A throwable thing has a placing ghost up from the moment it is picked
-        # up, so Esc used to only ever dismiss the ghost. One press now means
-        # "never mind" and the block goes down.
+        x, _y, z = self.take_the_block("escape")
+        block = self.BLOCKS["escape"]
+        # Esc is "never mind", and never a throw. Since 3e2b508d it gives the
+        # person the cursor: the throw's ghost goes and the block stays in the
+        # hand, neither thrown nor dropped.
+        self.assertTrue(self.look_at_the_ground(x, z, 2)["onTarget"])
         self.press_escape()
-        self.assertTrue(self.wait_for("!banjoRoom.world.held", 60),
-                        f"Esc did not put it down: {self.js('banjoRoom.details().last')}")
+        self.assertTrue(self.wait_for("banjoRoom.controls().cursorFree && !banjoRoom.world.placing", 10),
+                        f"Esc did not stand the throw down: {self.situation()}")
         said = self.js("banjoRoom.details().last")
         print(f"\n   {said}", flush=True)
         self.assertNotIn("left your hand at", said["text"], "Esc threw it")
-        self.no_page_errors("after Esc put it back")
+        self.assertEqual(block, self.js("banjoRoom.world.held && banjoRoom.world.held.name"), "Esc let go of it")
+        # Put back instead: a click in the room takes back the view (and does
+        # nothing else), and E sets it down where the copy shows.
+        self.hold_the_button(0.05)
+        self.assertTrue(self.wait_for("!banjoRoom.controls().cursorFree", 10), "a click did not take back the view")
+        self.assertEqual(block, self.js("banjoRoom.world.held && banjoRoom.world.held.name"), "the click threw it")
+        self.put_it_down(block)
+        self.assertNotIn("left your hand at", self.js("banjoRoom.details().last")["text"], "it was thrown, not put back")
+        self.no_page_errors("after Esc and putting it back")
 
 
 class ADrawingOfTheMatterItIsMadeOf:
