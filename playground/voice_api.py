@@ -141,21 +141,6 @@ def _remember_exchange(app, owner, message, reply, *, focus=None, screen="world"
         return len(value["turns"])
 
 
-def _same_last_exchange(turns, message, focus, screen):
-    if len(turns) < 2:
-        return None
-    user, assistant = turns[-2:]
-    if user.get("role") != "user" or assistant.get("role") != "assistant":
-        return None
-    if user.get("content") != message:
-        return None
-    if user.get("focus") != focus:
-        return None
-    if user.get("screen", "world") != screen:
-        return None
-    return assistant.get("content")
-
-
 def validate_ask(body):
     if not isinstance(body, dict) or set(body) - {"message", "focus", "screen"}:
         raise ValueError("Voice help accepts a message, optional focus and screen")
@@ -173,16 +158,6 @@ def ask(app, owner, body, journal, registry):
     """Answer one transcribed voice question from fresh authenticated state."""
     message, focus, screen = validate_ask(body)
     remembered = memory(app, owner)
-    repeated = _same_last_exchange(remembered["turns"], message, focus, screen)
-    if repeated:
-        return {
-            "schema": SCHEMA,
-            "reply": repeated,
-            "mode": "remembered",
-            "repeated": True,
-            "remembered": len(remembered["turns"]),
-        }
-
     request_body = {
         "message": message,
         "screen": screen,
@@ -204,7 +179,6 @@ def ask(app, owner, body, journal, registry):
         "schema": SCHEMA,
         "reply": reply,
         "mode": answer.get("mode", "openai"),
-        "repeated": False,
         "remembered": count,
         "observed_native_t_s": answer.get("observed_native_t_s"),
     }
