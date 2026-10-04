@@ -257,6 +257,38 @@ Real bugs found along the way and fixed:
 **The new-player playtest is ready to run, not run:**
 [protocol](human-playtest-protocol.md) and `tools/playtest_report.py`.
 
+## 2026-10-04: the AI players finish the whole opening
+
+Both explorers, the reference one and the model-driven one, now finish every
+chapter on both terrains, the light and the sun included (70 to 75
+decisions). They do it as a person would. They make a recipe that declares a
+lamp or a panel, whatever it is called. They switch the light on through its
+own use. Then they let the world run until the lamp has drawn from its
+battery, or the sun has charged the panel's.
+
+Running it found four real problems:
+
+- **The sun goal could never complete.** It read `given_j`, which is what a
+  battery gives *out*. What a battery takes in from its panels is `taken_j`.
+- **The Camp solar panel had 10 mm of glass.** That is 6 kg for 0.24 m², and
+  a new player had to buy 24 lots of it. The solar array has a new
+  `panel_thickness_m` parameter (default unchanged at 10 mm). The camp panel
+  uses 4 mm, like module glass: 2.4 kg.
+- **Buying was one 0.25 kg lot per decision, and banking 500 J.** One
+  decision now buys every lot a gap needs, and banks enough for them first.
+  Each is still an ordinary priced purchase or 500 J deposit.
+- **The ground tool's turn waited 2 s of wall time.** On a busy machine it
+  refused. It now waits world time, like the other waits.
+
+The AI's decision cap goes from 64 to 128, because the opening is now four
+chapters with three paid builds. A native player's body is now tested to
+survive an install, which rebuilds the room, and a restart.
+
+Construction progress is in the
+[construction checkpoint](construction-guidance-checkpoint.md): ground
+preparation, saved steps with links, fastening, the first construction skill
+and the two-second guide.
+
 ## Verification
 
 ```powershell
@@ -273,13 +305,10 @@ python scripts/check-source-registration.py
 
 ## Still to do on the owner's list
 
-- A useful light reachable without outside instructions, end to end; a
-  workbench that is optional or useful; fewer trips and transfers.
-- Human recognition of materials by day and night on the three ground types.
-- Catalog designs that fail the audit; ore delivered by actually mining it.
-- Construction: paid ground preparation, saved steps, supports and mounts,
-  earned skills, bounded customisation, and the AI's 2 s response target.
-- Native bodies for people and robots: walking, swimming, one body for both,
-  surviving edits, physical cargo.
-- Rover hauling across pits, shores, slopes and obstacles on both maps.
+- Human recognition of materials by day and night on the three ground types
+  (needs people; the playtest protocol covers it).
+- Catalog shapes still missing: chair, shelf unit, kettle and cart; single
+  sources for ceramic and concrete.
+- Construction: supports beyond the pad (posts, beams, braces), raising low
+  ground by heaping, and bounded customisation proposals.
 - The playtest with 8–12 new players. R3 stays paused.
