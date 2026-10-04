@@ -174,6 +174,9 @@ export function createVoiceController({
     if (!navigator.mediaDevices?.getUserMedia || !window.RTCPeerConnection)
       throw new Error("This browser does not support microphone voice");
     if (!canTalk()) throw new Error("Open your character's world before using voice");
+    // A dead prior peer must not keep its microphone/track around when the
+    // player reconnects after Wi-Fi or server recovery.
+    if (peer || channel || media) cleanupConnection();
 
     connecting = (async () => {
       setStatus("connecting", "Connecting voice…");
@@ -317,18 +320,26 @@ export function createVoiceController({
     start();
   };
   const keyup = (event) => {
-    if (event.code !== "KeyV" || editableTarget(event.target)) return;
+    // If V began outside a text box, always honor its release even if focus
+    // moved while the microphone was held.
+    if (event.code !== "KeyV" || !holding) return;
     event.preventDefault();
     stop();
   };
+  const releaseOnBlur = () => { if (holding) stop(); };
+  const releaseWhenHidden = () => { if (document.hidden && holding) stop(); };
   addEventListener("keydown", keydown);
   addEventListener("keyup", keyup);
+  addEventListener("blur", releaseOnBlur);
+  document.addEventListener("visibilitychange", releaseWhenHidden);
 
   function destroy() {
     if (closed) return;
     closed = true;
     removeEventListener("keydown", keydown);
     removeEventListener("keyup", keyup);
+    removeEventListener("blur", releaseOnBlur);
+    document.removeEventListener("visibilitychange", releaseWhenHidden);
     cleanupConnection();
     button.remove();
     status.remove();
