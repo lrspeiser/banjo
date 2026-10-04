@@ -12,9 +12,11 @@ from mechanics_qa import binary
 
 ROOT=Path(__file__).resolve().parents[1]
 _LOCK=threading.Lock()
-# 77 fixed cases, including real Chrome/restart journeys, measured 127.384 s
-# on Windows. This is an orchestration deadline, not a physics tolerance.
-RUN_LIMIT_S=180
+# 90 fixed cases, including real Chrome/restart journeys (the sand-to-glass
+# journey alone takes about 190 s), measured 672 s on Windows on 2026-10-04;
+# 77 cases took 127 s. This is an orchestration deadline, not a physics
+# tolerance.
+RUN_LIMIT_S=900
 
 def stop_tree(process):
     if process.poll() is not None:return
