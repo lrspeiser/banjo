@@ -149,7 +149,9 @@ def join(app: Any, token: Any = None, name: Any = None) -> dict[str, Any]:
                         "name": name.strip() if name else f"Player {len(players) + 1}",
                         "color": COLORS[len(players) % len(COLORS)],
                         "inventory": inventory_record if isinstance(inventory_record, dict) else {},
-                        "pose": None}
+                        # When they arrived, so a playtest can time a first tool
+                        # or a first batch from a player's own start.
+                        "pose": None, "joined_unix_s": time.time()}
             players[ident] = existing
             if inventory_record is not None:
                 app.room.inventory_record = None

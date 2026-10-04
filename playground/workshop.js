@@ -1123,9 +1123,10 @@ async function makeIt(button, {candidate: suppliedCandidate = null, sourceAnswer
         break;
       } catch (error) {
         refused = error;
-        // Ground that is taken is worth stepping over; anything else is the
-        // real answer and must not be hidden behind seven more attempts.
-        if (!/claim .* of the same cells|placement error|placement overlaps(?: or touches)?/i.test(String(error.message))) throw error;
+        // Ground that is taken, or where the thing would tip or slide, is
+        // worth stepping over; anything else is the real answer and must not
+        // be hidden behind seven more attempts.
+        if (!/claim .* of the same cells|placement error|placement overlaps(?: or touches)?|would not stand here/i.test(String(error.message))) throw error;
       }
     }
     if (!preview) throw refused || new Error("There is nowhere clear to set it down.");
