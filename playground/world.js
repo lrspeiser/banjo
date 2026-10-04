@@ -11336,6 +11336,9 @@ async function showNextStep() {
       constructionContext=data.construction_project;
       constructionControls(root,constructionContext,{hold:()=>enterConstruction(constructionContext.project.item),
         find:findConstructionSite,place:placeConstruction,cancel:closeConstruction,
+        check:async()=>{guidanceReadAt=-Infinity;await showNextStep();},
+        fasten:async()=>{await constructionWrite(api,constructionScope(),'fasten',{},whereIAm());guidanceReadAt=-Infinity;await showNextStep();},
+        unfasten:async()=>{await constructionWrite(api,constructionScope(),'unfasten',{},whereIAm());guidanceReadAt=-Infinity;await showNextStep();},
         inspect:async()=>{const name=constructionContext.project.body,entry=world.bodies.get(name);
           if(!entry)throw Error('Open World and walk closer to your placed item');
           await constructionWrite(api,constructionScope(),'inspect',{},whereIAm());
@@ -11346,11 +11349,36 @@ async function showNextStep() {
         world.placing.answer=constructionContext.project.site;drawGhost(world.placing);
       }
     }
+    drawPreparation(data.construction_project?.project?.status==='Prepare ground'
+      ? data.construction_project.project.preparation : null);
   }
   catch {renderPlayerGuidance(root,null);}
   finally {guidanceBusy=false;}
 }
 setInterval(showNextStep,5000);
+// Ground to dig before a thing will stand: one square on each ground cell
+// that stands above the lowest, amber for earth, red where rock is near
+// the top. Drawn from the server's reading, redrawn on every guidance read.
+let preparationMarks=null;
+function drawPreparation(preparation) {
+  if(preparationMarks) {
+    scene.remove(preparationMarks);
+    preparationMarks.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});
+    preparationMarks=null;
+  }
+  if(!preparation?.squares?.length)return;
+  preparationMarks=new THREE.Group();preparationMarks.name='construction-preparation';
+  for(const square of preparation.squares) {
+    const [w,d]=square.size_m;
+    const mark=new THREE.Mesh(new THREE.PlaneGeometry(w*.9,d*.9),
+      new THREE.MeshBasicMaterial({color:square.rock?0xe0654f:0xf2b544,transparent:true,opacity:.55,
+        depthTest:false,side:THREE.DoubleSide}));
+    mark.rotation.x=-Math.PI/2;   // the ground's cells run along x and z
+    mark.position.set(square.at_m[0],square.at_m[1]+.03,square.at_m[2]);mark.renderOrder=11;
+    mark.userData.dig_m=square.dig_m;preparationMarks.add(mark);
+  }
+  scene.add(preparationMarks);
+}
 addEventListener('banjo-guidance-clear',async()=>{
   try {await api('/api/world/guidance',{action:'clear-project'});constructionContext=null;stopPlacing(false);guidanceReadAt=-Infinity;await showNextStep();}
   catch(error){lastAction(error.message || String(error),'refused');}

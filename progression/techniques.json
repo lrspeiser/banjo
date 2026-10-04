@@ -301,6 +301,46 @@
           }
         ]
       }
+    },
+    {
+      "id": "setting-out",
+      "version": 1,
+      "name": "Setting things down",
+      "practice": "Place a thing so it stands",
+      "describes": "Choose ground that holds a thing, prepare it if it does not, and set the thing down so it stands upright where it was put",
+      "prerequisites": {
+        "all_of": []
+      },
+      "learn_from": [
+        "experiment"
+      ],
+      "processes": [],
+      "earned_by": {
+        "any_of": [
+          {
+            "id": "set-a-light",
+            "says": "Set your Camp light down so it stands, then look it over.",
+            "all_of": [
+              {
+                "design": "camp-light",
+                "demonstrated": true,
+                "test": "stands-where-set"
+              }
+            ]
+          },
+          {
+            "id": "set-a-panel",
+            "says": "Set your Camp solar panel down so it stands, then look it over.",
+            "all_of": [
+              {
+                "design": "camp-solar-panel",
+                "demonstrated": true,
+                "test": "stands-where-set"
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }
