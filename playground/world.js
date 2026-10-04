@@ -6219,6 +6219,7 @@ function detailsModel() {
 // second, and at once when the hand's state changes (showUse). The crosshair's
 // ring fills with the meter.
 let materialPreviewSaid = "";
+let materialPreviewVoice = null;
 const targetHover=makeTargetHover();
 function positionTargetPopover() {
   const box=$("material-preview");if(!box)return;
@@ -6232,6 +6233,11 @@ function positionTargetPopover() {
   const visible=targetHover(performance.now(),!watchedId && !cursorFree && cursor && key && !world.placing ?
     {key,x,y,eyes:camera.position.toArray()} : null);
   box.hidden=!visible;
+  // Voice lens consumes the same stable 1.5 s dwell as the visible Target
+  // card. Dispatching repeatedly is cheap; voice.js owns semantic dedupe so
+  // enabling the lens while already looking at something works immediately.
+  if(visible && materialPreviewVoice)
+    dispatchEvent(new CustomEvent("banjo-voice-hover",{detail:materialPreviewVoice}));
 }
 function targetContext(at,name=null) {
   if(name)return JSON.stringify([name,world.bodies.get(name)?.revision]);
@@ -6287,6 +6293,19 @@ function showMaterialPreview() {
   const toolPreview=!pileHit && (point || world.aim?.name && heldTool);
   const model={rows,feedback:toolPreview ? feedback : null,
     nearby:nearby.map(s=>[s.name,s.material,s.method,s.d]),readonly:!!watchedId};
+  const aimedName=world.aim?.name || null, aimedEntry=aimedName ? world.bodies.get(aimedName) : null;
+  const cell=point && ground.grid ? terrainCellAt(point[0],point[2],ground.grid) : null;
+  materialPreviewVoice={
+    identity:pileHit ? `pile:${pileHit.pile.name}` :
+      aimedName ? `body:${aimedName}:${aimedEntry?.revision ?? ""}` :
+      cell!=null && cell>=0 ? `ground:${cell}:${groundMadeOf(point) || ""}` : "target",
+    machine_input:pileHit?.role==="input",
+    rows:rows.slice(0,4).map(row=>({name:row.name||null,material:row.material||null,label:row.label||null,
+      value:row.value||null,action:row.action||null,kind:row.kind||null})),
+    feedback:toolPreview ? {state:feedback.state,ready:!!feedback.ready,action:feedback.action||null,
+      reason:feedback.reason||null,screen:feedback.screen||null,tool:feedback.tool||null,
+      surface:point ? groundMadeOf(point) : null,materials:[...(feedback.materials||[])]} : null,
+  };
   const said=JSON.stringify(model);
   if(said===materialPreviewSaid)return;
   materialPreviewSaid=said;
@@ -11043,6 +11062,7 @@ const privateTurns=new Map(), publicMessages=[];let messageCursor=0,messagePolli
 const voiceGuide=worldId&&!watchedId ? createVoiceController({
   api,
   mount:$("ask"),
+  preferenceKey:`banjo.voice-lens.${worldId}`,
   canTalk:()=>!!world.session&&!!playerToken&&!world.asking,
   // Spoken "this" means what the crosshair is on first, then what is held.
   // The server resolves the name again in a fresh authenticated snapshot.
