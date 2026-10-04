@@ -530,23 +530,46 @@ def _object_contact(app,said,use,tool,eyes,note):
             point=_native_point(app,tool)
             if not point:
                 return finish('The working point disconnected while positioning. Inspect the tool in Lab.')
+            # Reach and aim only: the strike itself starts at rest from the
+            # standoff below, and a head touching the target never rests here.
             if (math.dist(point['tip'],wanted)<.035 and
-                sum(point['pointing'][i]*direction[i] for i in range(3))>.98 and
-                # At rest, so every press starts from the same standstill
-                # rather than from whatever the approach left moving.
-                math.hypot(*(live_session.current_hand(session).get('grip_velocity_m_s') or [0,0,0]))<.05): break
+                sum(point['pointing'][i]*direction[i] for i in range(3))>.98): break
             time.sleep(.005)
         else:
             return finish('The tool cannot reach that contact from here.')
         # A blocked solid should receive a brief press, not a one-second hold.
         # Cadence sets the bounded wish duration, never force or contact outcome.
         duration=.5/use['cadence_hz']
-        phase='press'
+        # Reach is confirmed at the ready point. Draw back along the line to
+        # the standoff and strike from there: started at rest 6 cm short of
+        # the target the head could not reach swing speed, so a strike was a
+        # push, and only a head still moving from its approach ever broke
+        # anything -- by chance of the clock.
         grip=_grip(session)
-        into=[grip[i]+(tool_gestures.CLEARANCE_M+tool_gestures.BITE_M)*direction[i] for i in range(3)]
+        ready_grip=list(grip)
+        back=[grip[i]-tool_gestures.STANDOFF_M*direction[i] for i in range(3)]
+        started=app.live.act({'session':session.id,'op':'stroke','path':[grip,back],
+            'speed_m_s':1.,'accel_m_s2':8.,'lead_m':tool_gestures.LEAD_M,
+            'give_up_s':2.,'let_go':False})
+        done.append('draw back: '+_stroke(app,started=bool(started.get('stroking'))))
+        rest_from=float(session.state.get('t') or 0);wall=time.monotonic()+30
+        while float(session.state.get('t') or 0)-rest_from<1 and time.monotonic()<wall:
+            if math.hypot(*(live_session.current_hand(session).get('grip_velocity_m_s') or [0,0,0]))<.05:break
+            time.sleep(.005)
+        if live_session.current_hand(session).get('holding')!=tool:
+            return finish('The tool is no longer in your hand.')
+        if _native_point(app,tool) is None:
+            return finish('The working point disconnected while drawing back. Inspect the tool in Lab.')
+        phase='press'
+        grip=_grip(session) or back
+        into=[ready_grip[i]+(tool_gestures.CLEARANCE_M+tool_gestures.BITE_M)*direction[i] for i in range(3)]
+        # give_up_s is the stroke's whole time: the run-up, with the heavy head
+        # trailing the hand (twice the hand's own time, and its acceleration),
+        # then the brief press.
+        reach=2*math.dist(grip,into)/max(.1,use['swing']['speed_m_s'])+.25
         started=app.live.act({'session':session.id,'op':'stroke','path':[grip,into],
             'speed_m_s':use['swing']['speed_m_s'],'accel_m_s2':tool_gestures.ACCEL_M_S2,
-            'lead_m':tool_gestures.LEAD_M,'give_up_s':duration,'let_go':False})
+            'lead_m':tool_gestures.LEAD_M,'give_up_s':duration+reach,'let_go':False})
         if note: note(app,started)
         done.append('press: '+_stroke(app,started=bool(started.get('stroking'))))
         grip=_grip(session)

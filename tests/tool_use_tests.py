@@ -448,7 +448,9 @@ class ObjectControls(unittest.TestCase):
                 with mock.patch.object(tool_use,'_native_point',side_effect=point):
                     said=tool_use.run(app,{'person':self.person,'target_name':'made item'})
                 self.assertEqual(bool(contact and not detach),said['repeat'])
-                self.assertEqual(1 if detach else 2,count,'a detached head stops further tool strokes')
+                # Draw back, strike, withdraw; a head that came off on the
+                # first stroke stops the rest.
+                self.assertEqual(1 if detach else 3,count,'a detached head stops further tool strokes')
                 self.assertEqual(-.5,said['result']['hand_work_j'],'signed native work is retained')
                 self.assertEqual(1 if detach else 0,len(said['result']['parted_joints']))
                 self.assertEqual('tool-connection-failed' if detach else 'contact-only' if contact else 'no-contact',
