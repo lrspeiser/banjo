@@ -123,8 +123,11 @@ def spec_digest(spec: Any) -> str:
         return ""
     plain = dict(spec)
     terrain = plain.get("terrain")
-    if isinstance(terrain, dict) and "edits" in terrain:
-        plain["terrain"] = {k: v for k, v in terrain.items() if k != "edits"}
+    # The regions a world has grown, and whether it may grow, change as it is
+    # played, like its edits: a world saved before the room was let grow, or
+    # before it grew, is still that room's world (docs/streamed-regions.md).
+    if isinstance(terrain, dict) and {"edits", "regions", "stream"} & set(terrain):
+        plain["terrain"] = {k: v for k, v in terrain.items() if k not in ("edits", "regions", "stream")}
     water = plain.get("water")
     if isinstance(water, dict) and "state" in water:
         plain["water"] = {k: v for k, v in water.items() if k != "state"}
@@ -1753,6 +1756,16 @@ class Live:
                 if not all(math.isfinite(v) for v in q) or sum(v * v for v in q) < 1e-12:
                     raise LiveError("a step was given a hand_q that is not an orientation")
                 step["hand_q"] = q
+            # Where the page's camera is, across the ground: the world grows
+            # toward it as it does toward a native body (docs/streamed-regions.md).
+            grow_at = body.get("grow_at")
+            if grow_at is not None:
+                if not isinstance(grow_at, list) or len(grow_at) != 2:
+                    raise LiveError("a step's grow_at is [x, z]")
+                at = [float(v) for v in grow_at]
+                if not all(math.isfinite(v) and abs(v) < 1e4 for v in at):
+                    raise LiveError("a step was given a grow_at that is not a place")
+                step["grow_at"] = at
             return session.send(**step)
         if op == "wield":
             # A grip, with a bounded force and torque -- not a carry. Without a

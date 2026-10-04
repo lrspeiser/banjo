@@ -38,6 +38,13 @@ class TerrainView:
             self.session=session;self.revision=0;self.geometry=None
 
     def observe(self, session, reply):
+        # Ground grown beside the valley, or changed out there, is a change of
+        # the ground like any other (docs/streamed-regions.md).
+        if reply.get('regions_added') or reply.get('regions_changed'):
+            with self.lock:
+                self.reset(session.id)
+                self.revision+=1;self.geometry=None
+            return
         if not reply.get('terrain_changed') and not reply.get('terrain'):return
         with self.lock:
             self.reset(session.id)
@@ -201,7 +208,9 @@ def update_pose(app: Any, ident: str, person: Any) -> None:
         return
     if not all(math.isfinite(v) for v in eye + face):
         return
-    if abs(eye[0]) > 100 or abs(eye[2]) > 100 or not -10 <= eye[1] <= 80:
+    # The world grows by regions the valley's size, six each way at most
+    # (docs/streamed-regions.md): about 240 m out from the middle.
+    if abs(eye[0]) > 300 or abs(eye[2]) > 300 or not -40 <= eye[1] <= 80:
         return
     norm = math.hypot(face[0], face[2])
     if norm < 0.1:

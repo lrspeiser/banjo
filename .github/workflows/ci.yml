@@ -182,6 +182,7 @@ jobs:
             python3 tests/machine_room_tests.py -v
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run python3 tests/world_upgrades_tests.py -v
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run python3 tests/world_seed_tests.py -v
+          BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run python3 tests/streamed_regions_server_tests.py -v
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run BANJO_CHROME=/usr/bin/google-chrome \
             BANJO_CHROME_ARGS="--no-sandbox --enable-unsafe-swiftshader" \
             BANJO_BROWSER_TESTS=required python3 tests/world_hub_tests.py -v

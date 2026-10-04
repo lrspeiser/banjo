@@ -1098,8 +1098,23 @@ struct StreamedGround {
         x1 = g.xOf(g.nx - 1);
         z1 = g.zOf(g.nz - 1);
     }
-    // One of the valley's arrays at the nearest point of its rectangle.
+    // One of the valley's arrays at the nearest point of its rectangle --
+    // softened the further out the point is: averaged over a square half as
+    // wide as the point is far from the valley, so whatever the edge has (the
+    // river's channel, a strip of sand) fades out as it goes, instead of
+    // running on as a straight furrow. At the seam itself it is the edge.
     double edge(const std::vector<double> &a, double x, double z) const {
+        const double spread = 0.5 * outside(x, z);
+        if (!(spread > 1.0e-9)) return at(a, x, z);
+        double sum = 0.0;
+        constexpr int kAcross = 5;
+        for (int v = 0; v < kAcross; ++v)
+            for (int u = 0; u < kAcross; ++u)
+                sum += at(a, x + spread * (2.0 * u / (kAcross - 1) - 1.0), z + spread * (2.0 * v / (kAcross - 1) - 1.0));
+        return sum / (kAcross * kAcross);
+    }
+    // One of the valley's arrays at the nearest point of its rectangle.
+    double at(const std::vector<double> &a, double x, double z) const {
         const Grid &g = valley.grid;
         const double fi = std::clamp((x - g.x0) / g.dx, 0.0, static_cast<double>(g.nx - 1));
         const double fj = std::clamp((z - g.z0) / g.dx, 0.0, static_cast<double>(g.nz - 1));

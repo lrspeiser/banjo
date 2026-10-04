@@ -1453,7 +1453,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/workshop.js":"workshop.js","/workshop.css":"workshop.css",
                 "/blades.js":"blades.js","/interaction.js":"interaction.js","/tools.js":"tools.js","/workbench.js":"workbench.js",
                 "/cellmesh.js":"cellmesh.js","/surfaces.js":"surfaces.js",
-                "/material_appearance.js":"material_appearance.js","/terrain_material.js":"terrain_material.js","/cut_surface.js":"cut_surface.js",
+                "/material_appearance.js":"material_appearance.js","/terrain_material.js":"terrain_material.js","/cut_surface.js":"cut_surface.js","/ground_regions.js":"ground_regions.js",
                 "/player_guidance.js":"player_guidance.js","/construction_ui.js":"construction_ui.js",
                 "/debug":"debug.html","/debug.js":"debug.js","/debug.css":"debug.css",
                 "/vendor/three.module.js":"vendor/three.module.js","/vendor/three.core.js":"vendor/three.core.js"}
@@ -1847,6 +1847,7 @@ class Handler(BaseHTTPRequestHandler):
                 # authoring room. Only use a world saved from its current spec:
                 # chat's changes are a new spec, and a world saved before them is
                 # not the room they made.
+                let_the_ground_grow(app,room)
                 carry_kept = kept or funded_room or not (body.get("again") or body.get("fresh"))
                 world=getattr(room,"world_record",None) if carry_kept else None
                 if not carry_kept: room.world_record=None
@@ -2975,6 +2976,7 @@ def keep_world(app,why=""):
         world_goods.settle(app)
         room.world_saved_t=float(saved.get("t_s") or 0.0)
         room.world_save_pending=False
+        room.regions_unsaved=False
         machine_witness.saved(app,journal_of,registry())
         if getattr(app,'world_id',None): player_learning.saved(app,journal_of,registry())
     market._settle(app)
@@ -2990,9 +2992,13 @@ def keep_world_after(app,body,answer):
     if room is None: return
     t=answer.get("t")
     due=bool(answer.get("finished"))
-    if not due and body.get("op")=="step" and isinstance(t,(int,float)):
+    # A world that has just grown is saved at once, with its new ground
+    # (docs/streamed-regions.md) -- but no more often than a refused save is
+    # tried again.
+    grew=bool(getattr(room,"regions_unsaved",False))
+    if not due and (grew or body.get("op")=="step") and isinstance(t,(int,float)):
         # Either way round: a world opened again starts its clock over.
-        due=((getattr(room,"world_save_pending",False) or
+        due=((grew or getattr(room,"world_save_pending",False) or
               abs(float(t)-float(getattr(room,"world_saved_t",-1.0e9)))>=KEEP_WORLD_EVERY_S)
              and abs(float(t)-float(getattr(room,"world_refused_t",-1.0e9)))>=KEEP_WORLD_RETRY_S)
     if not due: return
@@ -3756,6 +3762,8 @@ def heard(app,session,reply):
     that fails is logged and never stops the room."""
     view=getattr(app,'terrain_view',None)
     if view is not None and session is app.live.session:view.observe(session,reply)
+    if session is app.live.session and isinstance(reply,dict) and reply.get('regions_added'):
+        remember_regions(app,reply)
     hear(app,session,reply)
     for listener in list(getattr(app,"reply_listeners",None) or ()):
         try: listener(session,reply)
@@ -3864,6 +3872,47 @@ def with_notebook(app,answer,seen):
 
 # As many as a room's terrain may hold; see fracture_lab.normalise_terrain.
 MAX_GROUND_EDITS=400
+
+
+def remember_regions(app,answer):
+    """The regions the ground grew (docs/streamed-regions.md), written into the
+    room's spec beside its edits: a room opened again from its spec without a
+    saved world makes the same regions again from the seed, and an edit out
+    there lands on its own ground. The saved world carries what was dug in them;
+    keep_world_after saves it as soon as the ground has grown."""
+    grown=[r.get('at') for r in (answer.get('regions_added') or []) if isinstance(r,dict)]
+    grown=[[int(a[0]),int(a[1])] for a in grown if isinstance(a,list) and len(a)==2]
+    if not grown: return
+    room=getattr(app,"room",None)
+    with world_access.state_lock(app):
+        spec=getattr(room,"spec",None)
+        if not isinstance(spec,dict) or not isinstance(spec.get("terrain"),dict): return
+        terrain=dict(spec["terrain"])
+        regions=[list(r) for r in terrain.get("regions") or []]
+        for at in grown:
+            if at not in regions and len(regions)<48: regions.append(at)
+        terrain["regions"]=regions
+        room.spec=dict(spec,terrain=terrain)
+        brains=getattr(app,"brains",None)
+        if brains is not None and getattr(brains,"spec",None) is spec: brains.rebind(room.spec)
+    session=getattr(getattr(app,"live",None),"session",None)
+    if session is not None and isinstance(getattr(session,"spec",None),dict):
+        session.spec=dict(session.spec,terrain=deepcopy(terrain))
+    room.regions_unsaved=True
+
+
+def let_the_ground_grow(app,room):
+    """A named world on ground in 25 cm columns grows as its players near the
+    edge (the owner, 2026-10-04: docs/streamed-regions.md). Said in its spec, once;
+    the spec's digest leaves it out, so a world saved before still opens."""
+    spec=getattr(room,"spec",None)
+    if not getattr(app,"world_id",None) or not isinstance(spec,dict): return
+    terrain=spec.get("terrain")
+    if not isinstance(terrain,dict) or "stream" in terrain or terrain.get("surface")!="columns": return
+    generate=terrain.get("generate","valley")
+    kind=generate if isinstance(generate,str) else (generate or {}).get("kind","valley")
+    if kind!="valley": return
+    room.spec=dict(spec,terrain=dict(terrain,stream=True))
 
 
 def remember_ground(app,body,answer=None):
