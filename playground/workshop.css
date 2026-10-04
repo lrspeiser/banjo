@@ -670,6 +670,15 @@ body.workshop-mode .ws-chat-suggestions { flex:none;max-height:24vh;overflow:aut
 #ws-component-info dt { color:var(--dim); }
 #ws-component-info dd { margin:0;overflow-wrap:anywhere; }
 #ws-component-info .ws-action { padding:.25rem .4rem;font-size:.72rem; }
+/* The chat is the way in. The Lab sections above it in the rail (the draft,
+   its parts, Make) each scroll within what is left, rather than pushing the
+   box you type in below the bottom of a 720 px window where the rail clips it. */
+body.workshop-mode .ws-left > #ws-lab-draft,
+body.workshop-mode .ws-left > #ws-lab-components,
+body.workshop-mode .ws-left > #ws-carried-condition,
+body.workshop-mode .ws-left > #ws-remake { flex:0 1 auto;min-height:0;overflow:auto; }
+body.workshop-mode #ws-chat-home { flex:1 0 min(36rem,58vh); }
+body.workshop-mode .ws-chat-suggestions { flex:0 1 auto;min-height:2.4rem;max-height:min(24vh,6rem); }
 
 .player-guidance { display:grid;gap:.35rem;padding:.55rem;margin:.45rem 0;border:1px solid var(--edge);border-radius:.45rem;font-size:.75rem; }
 .player-guidance p { margin:0;color:var(--dim); }

@@ -23,7 +23,10 @@ export async function enterGame() {
     if (!response.ok) throw new Error(answer.error || "Map generation failed");
     remember(answer);
     const target = new URL(answer.url, location.origin);
-    for (const key of ["workshop", "tab"]) if (params.has(key)) target.searchParams.set(key, params.get(key));
+    // Keep where the link was going. A rung of the tree or a catalog recipe
+    // exists in every world; a saved design, carried item or job belongs to
+    // the world it was made in, so those are not carried into a new one.
+    for (const key of ["workshop", "tab", "technique", "recipe"]) if (params.has(key)) target.searchParams.set(key, params.get(key));
     location.replace(target.pathname + target.search);
   } catch (error) {
     if (state) state.textContent = `Could not start: ${error.message}. Use Menu → New game to retry.`;

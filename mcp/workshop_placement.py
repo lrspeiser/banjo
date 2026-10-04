@@ -69,8 +69,15 @@ def for_design(design):
     # Preview take IDs differ between Catalog and Lab even when the authored
     # geometry is identical. Requirements describe the design, not that take.
     intent['kind'] = design.kind
-    from mcp import workshop_construction
-    intent['connections'] = deepcopy(workshop_construction.adopted(design).get('joints',[]))
+    from mcp import workshop_construction, workshop_matter_metrics
+    if workshop_matter_metrics.has_physical_skin(design):
+        # The connections are read off the wireframe ProductGraph, which does
+        # not consume physical skin cells. Saying none are known is honest;
+        # refusing here made every physical skin edit fail as a whole.
+        intent['connections'] = []
+        intent['connections_unavailable'] = 'physical skin: connections need the exact-Matter trial'
+    else:
+        intent['connections'] = deepcopy(workshop_construction.adopted(design).get('joints',[]))
     intent['supplies'] = {'source':'paid manufacturing quote', 'reserved':False}
     intent['placement_checked'] = False
     intent['limits'] = 'Installation intent. Native placement, settling and operation still require checks.'

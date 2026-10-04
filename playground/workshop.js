@@ -1590,6 +1590,13 @@ function installBench() {
     else chatToggle.focus();
   }
   chatToggle.onclick=()=>openChat(!document.body.classList.contains("ws-chat-open"));
+  // Below 901 px the rail is an overlay over the object, and it starts
+  // closed. A window narrowed into that layout gets the same: left open, the
+  // chat it had beside the object would now sit over it, unasked.
+  matchMedia("(min-width:901px)").addEventListener("change",event=>{
+    if(event.matches || !document.body.classList.contains("ws-chat-open"))return;
+    document.body.classList.remove("ws-chat-open");chatToggle.setAttribute("aria-expanded","false");
+  });
   tabs.append(make("button",{type:"button","data-game-menu":""},"Menu"),chatToggle);
   addEventListener("keydown",event=>{
     if(event.key==="Escape" && document.body.classList.contains("ws-chat-open") && !document.querySelector("#game-menu")?.open) {
