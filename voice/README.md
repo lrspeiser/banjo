@@ -47,8 +47,9 @@ Fresh authenticated game observations always override remembered conversation.
 Memory is context for continuity and avoiding repetition, never evidence that an
 old machine state, balance, inventory quantity, or blocker is still true.
 
-The first implementation also deduplicates an exact retried question when the
-last stored exchange already has an answer, avoiding an unnecessary model call.
+Even when the player repeats the same words, Banjo takes a fresh game snapshot.
+Recent conversation is used to avoid re-explaining what was already said, not
+to cache potentially stale game-state answers.
 
 ## First implementation architecture
 
@@ -169,10 +170,9 @@ Current OpenAI references:
 3. “What is this?” resolves the same currently focused body as typed Guide help.
 4. Two different players in the same world do not share voice memory.
 5. The same player retains recent voice context after reconnect/restart.
-6. Repeating the exact last acknowledged question can reuse the stored answer
-   rather than issuing another paid reasoning call.
-7. A fresh game snapshot is taken for every new question; old memory never
-   substitutes for current game state.
+6. Repeating the same words still takes a fresh game snapshot, while recent
+   conversation lets the guide avoid repeating an explanation unnecessarily.
+7. Old memory never substitutes for current game state.
 8. Standard OpenAI API credentials never appear in browser responses or logs.
 9. Voice remains usable if the proactive guide is disabled.
 10. Failure to start voice does not break ordinary keyboard/mouse/chat play.
