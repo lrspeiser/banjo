@@ -5831,7 +5831,7 @@ function showPicked() {
       for (const d of deposits) values.push([titled(d.substance),"Mining rover"]);
       if (ore.length) {
         values.push(["Layers contain", [...new Set(ore.map(b => b.name))].join(" / ")]);
-      }
+      } else if (!deposits.length) values.push(["Layers contain", "no ore"]);   // the owner asked whether there is any, either way
       rows.push(inspectionValues(values), revealButton());
     }
     const water = waterAt(picked.at[0], picked.at[2]);

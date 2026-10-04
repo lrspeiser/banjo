@@ -3102,6 +3102,11 @@ class ClickingSomethingKeepsIt(PageJourney):
         self.js("(banjoRoom.pickGround(-4.8, 0, 4.1), true)")
         self.assertTrue(self.wait_for("!document.getElementById('picked').hidden", 15),
                         "clicking the ground showed nothing")
+        # The panel starts folded away, and the beds are under their own
+        # disclosure in it (f978d1af): Details, then Ground layers.
+        self.open_details()
+        self.click_selector("#picked details > summary")
+        self.assertTrue(self.wait_for("document.querySelector('#picked details').open", 5), "Ground layers did not open")
         beds = json.loads(self.js(
             "JSON.stringify([...document.querySelectorAll('#picked .pk-bed')]"
             ".map(b => b.innerText))"))
