@@ -73,7 +73,7 @@ class VoiceContract(unittest.TestCase):
         self.assertEqual(0, cleared["remembered"])
         self.assertEqual([], voice_api.memory(restarted, "alice")["turns"])
 
-    def test_exact_retry_reuses_answer_only_for_the_same_focus(self):
+    def test_repeated_words_still_refresh_state_and_receive_recent_history(self):
         snapshots = []
         answers = []
 
@@ -84,7 +84,7 @@ class VoiceContract(unittest.TestCase):
         def answer(app, body, context):
             answers.append(body)
             return {
-                "reply": f"Answer about {body.get('focus') or 'nothing'}.",
+                "reply": f"Answer {context['observed_native_t_s']} about {body.get('focus') or 'nothing'}.",
                 "mode": "fixture",
                 "observed_native_t_s": context["observed_native_t_s"],
             }
@@ -96,32 +96,36 @@ class VoiceContract(unittest.TestCase):
                 {"message": "What is this?", "focus": "copper mill"},
                 object(), object(),
             )
-            repeated = voice_api.ask(
+            repeated_words = voice_api.ask(
                 self.app, "alice",
                 {"message": "What is this?", "focus": "copper mill"},
                 object(), object(),
             )
-            changed = voice_api.ask(
+            changed_focus = voice_api.ask(
                 self.app, "alice",
                 {"message": "What is this?", "focus": "oak stool"},
                 object(), object(),
             )
 
-        self.assertFalse(first["repeated"])
-        self.assertTrue(repeated["repeated"])
-        self.assertEqual("remembered", repeated["mode"])
-        self.assertFalse(changed["repeated"])
+        self.assertEqual("Answer 1 about copper mill.", first["reply"])
+        self.assertEqual("Answer 2 about copper mill.", repeated_words["reply"])
+        self.assertEqual("Answer 3 about oak stool.", changed_focus["reply"])
         self.assertEqual(
-            [("alice", "copper mill"), ("alice", "oak stool")],
+            [
+                ("alice", "copper mill"),
+                ("alice", "copper mill"),
+                ("alice", "oak stool"),
+            ],
             snapshots,
         )
-        self.assertEqual(2, len(answers))
-        # The second real question sees the remembered prior exchange, while
-        # fresh state still comes from snapshot().
+        self.assertEqual(3, len(answers))
+        # The second question sees the prior explanation, but does not use it
+        # instead of taking a new authenticated snapshot.
         self.assertEqual(
             ["user", "assistant"],
             [row["role"] for row in answers[1]["history"][-2:]],
         )
+        self.assertIn("Answer 1", answers[1]["history"][-1]["content"])
 
     def test_session_config_is_manual_push_to_talk_and_secret_stays_server_side(self):
         captured = {}
