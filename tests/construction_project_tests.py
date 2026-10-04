@@ -291,6 +291,91 @@ class PlacementJourney(unittest.TestCase):
         self.assertNotIn('fasten',[s['id'] for s in project['steps']])
         with self.assertRaises(urllib.error.HTTPError):self.write(world,'fasten',person=person)
 
+    def lamp_on_a_table(self, fasten):
+        """A work table beside the camp light; the light set on its top with
+        the build guide, fastened or not. Returns world, app, table, person."""
+        world,owner,app=self.setup_world(legacy_process=True)
+        recipe=self.post('/api/workshop/goals',{'chain':'first-workshop-v1'},world)['recipe']
+        ctx=self.post('/api/world/workshop/context',{},world)
+        lamp=next(b for b in app.live.session.state['bodies'] if b['name']=='camp light')
+        lx,_,lz=lamp['position_m']
+        # Somewhere clear: at least 1 m from the edge of every other thing
+        # (the solar farm's deck reaches metres from its middle).
+        boxes=[]
+        for b in app.live.session.state['bodies']:
+            if b['name']=='camp light' or b.get('parked'):continue
+            q=b.get('orientation_wxyz',[1,0,0,0])
+            boxes.append([b['position_m'][k]+v for k in (0,2) for v in placement._span(b,q,k)])
+        def clearance(x,z):
+            return min([math.hypot(max(x0-x,0,x-x1),max(z0-z,0,z-z1)) for x0,x1,z0,z1 in boxes]+[9])
+        spots=[[lx+r*math.cos(k*math.pi/8),lz+r*math.sin(k*math.pi/8)] for r in (1.3,2,2.8) for k in range(16)]
+        spot=max(spots,key=lambda s:(clearance(*s)>=1,-math.hypot(s[0]-lx,s[1]-lz)))
+        self.assertGreaterEqual(clearance(*spot),1,'no clear spot near the light')
+        preview=self.post('/api/world/workshop/preview',{'session':ctx['session'],'scene':ctx['scene'],
+            'candidate':recipe,'mode':'authoring','position_m':spot},world)
+        table=self.post('/api/world/workshop/commit',{'session':preview['session'],'scene':preview['scene'],
+            'preview_id':preview['preview_id'],'request_id':'support-table'},world)['root_body']
+        item,_=self.take_lamp(world,app)
+        sid=app.live.session.id
+        top=next(b for b in app.live.session.state['bodies'] if b['name']==table)
+        tx,_,tz=top['position_m'];d=math.hypot(tx-lx,tz-lz);way=[(tx-lx)/d,(tz-lz)/d]
+        x,z=tx-.75*way[0],tz-.75*way[1]
+        y=self.post('/api/live/act',{'session':sid,'op':'survey','at':[x,z]},world)['survey']['ground_m']
+        top_y=top['position_m'][1]+placement._span(top,top.get('orientation_wxyz',[1,0,0,0]),1)[1]
+        # Facing the table and looking at its top, as a player setting a thing on it.
+        person={'standing_m':[x,y,z],'eyes_m':[x,y+1.62,z],'facing':[way[0],0,way[1]],
+                'aim_m':[tx,top_y,tz],'looking_at':table}
+        self.write(world,'select',item=item)
+        import world_chat
+        found=self.write(world,'suggest',person=person)
+        self.assertEqual(table,found['project']['target']['body'],found)
+        ready=self.post('/api/world/construction',{'person':person},world)['project']
+        stop=threading.Event()
+        def tick():
+            while not stop.is_set():
+                self.post('/api/live/act',{'session':sid,'op':'step','dt':1/240,'n':8},world);stop.wait(.01)
+        worker=threading.Thread(target=tick);worker.start()
+        try:
+            done=self.post('/api/world/putdown',{'session':sid,'object':'camp light','person':person,
+                'placement_target':ready['site']['target']},world)
+        finally:stop.set();worker.join(5)
+        self.assertTrue(done['ok'],done)
+        placed=self.post('/api/world/construction',{'person':person},world)['project']
+        self.assertEqual('Placed',placed['status']);self.assertEqual(table,placed['support'])
+        self.assertIn('fasten',[s['id'] for s in placed['steps']])
+        if fasten:
+            fastened=self.write(world,'fasten',person=person)['project']['fastened']
+            self.assertFalse(fastened['broken']);self.assertGreater(fastened['holds_shear_n'],0)
+            self.assertEqual('done',next(s for s in self.post('/api/world/construction',{'person':person},world)
+                ['project']['steps'] if s['id']=='fasten')['status'])
+        return world,app,table,person
+
+    def test_a_fastened_thing_goes_with_its_support_and_a_resting_one_falls(self):
+        outcomes={}
+        for fasten in (True,False):
+            world,app,table,person=self.lamp_on_a_table(fasten)
+            sid=app.live.session.id
+            before=next(b for b in app.live.session.state['bodies'] if b['name']=='camp light')
+            # Take the table away, as a player picks it up.
+            taken=self.post('/api/world/inventory',{'session':sid,'op':'take','item':table,
+                'request':'take-support-'+str(fasten),'person':person},world)
+            self.assertTrue(taken['ok'],taken)
+            for _ in range(6):self.post('/api/live/act',{'session':sid,'op':'step','dt':1/240,'n':120},world)
+            lamp=next((b for b in app.live.session.state['bodies'] if b['name']=='camp light'),None)
+            if lamp is None or lamp.get('parked'):
+                outcomes[fasten]={'parked':True};continue
+            ground=self.post('/api/live/act',{'session':sid,'op':'survey','at':[lamp['position_m'][0],lamp['position_m'][2]]},
+                world)['survey']['ground_m']
+            outcomes[fasten]={'parked':False,'fell_m':round(before['position_m'][1]-lamp['position_m'][1],3),
+                'above_ground_m':round(lamp['position_m'][1]-ground,3)}
+        # Fastened: it went with the table, into the bag, out of the world.
+        self.assertTrue(outcomes[True]['parked'],outcomes)
+        # Only resting on it: the table went and the light fell to the ground.
+        self.assertFalse(outcomes[False]['parked'],outcomes)
+        self.assertGreater(outcomes[False]['fell_m'],.3,outcomes)
+        self.assertLess(outcomes[False]['above_ground_m'],.5,outcomes)
+        print('\n    support removed:',outcomes)
+
     def test_native_place_and_resume_on_both_surfaces(self):
         reports=[]
         for surface in ('smooth','columns'):
