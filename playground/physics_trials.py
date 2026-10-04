@@ -121,7 +121,7 @@ def validate(value):
         return v
     # Reuse the public operation validator before starting any native process.
     probe = live_session.Live()
-    probe.session = SimpleNamespace(id="validation", send=lambda **kw: {"ok": True})
+    probe.session = SimpleNamespace(id="validation", send=lambda **kw: {"ok": True}, _actor_local=threading.local())
     for step in steps:
         if not isinstance(step, dict) or not isinstance(step.get("op"), str) or step.get("op") not in COMMANDS: raise ValueError("Unsupported physical operation")
         op = step["op"]; allowed, required = COMMANDS[op]
