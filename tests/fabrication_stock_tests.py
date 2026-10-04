@@ -428,9 +428,11 @@ class CollectedStock(unittest.TestCase):
         pile=next(p for p in app.brains.goods.stockpiles if (p.get('holds') or {}).get('oak',0)>25)
         at=pile['at_m'];sid=app.live.session.id
         floor=app.live.act({'session':sid,'op':'survey','at':at})['survey']['ground_m']
+        # One pickup takes the whole pile since 5af65746 (it used to take 25 kg).
+        held=pile['holds']['oak']
         self.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],
             'request_id':'stock-collected-oak','person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[0,0,-1]}},world)
-        self.assertEqual({'oak':25.},self.personal(app,owner))
+        self.assertEqual({'oak':held},self.personal(app,owner))
         peer=self.join(world,'Private stock peer')
         context={'scene':app.room.scene,'session':sid}
         self.post('/api/world/fabrication/configure',{**context,'settings':settings(stock_kg={},energy_j=0),
@@ -450,7 +452,7 @@ class CollectedStock(unittest.TestCase):
             self.assertEqual(503,failed.exception.code)
             return request
         first=reserve('collected-return-0001')
-        self.assertEqual({'oak':24.},self.personal(app,owner))
+        self.assertEqual({'oak':held-1.},self.personal(app,owner))
         self.assertEqual([],self.post('/api/workshop/inventory',{},world,peer['token'])['fabrication_reservations'])
         with self.assertRaises(urllib.error.HTTPError):
             self.post('/api/world/fabrication/fund_stock',first,world,peer['token'])
@@ -478,7 +480,7 @@ class CollectedStock(unittest.TestCase):
         p.evaluate('[...document.querySelectorAll("#ws-inv-reserved button")].find(b=>b.textContent==="Return to stock").click()')
         wait('!document.querySelector("[data-stock-reservation]")')
         wait(f'Number(document.querySelector("#ws-inv-energy").dataset.updated)>{meter_time}')
-        self.assertEqual({'oak':25.},self.personal(app,owner))
+        self.assertEqual({'oak':held},self.personal(app,owner))
         second=reserve('collected-finish-0001')
         p.send('Page.navigate',{'url':url})
         wait('document.querySelector("[data-stock-reservation]")')
@@ -487,7 +489,7 @@ class CollectedStock(unittest.TestCase):
         p.evaluate('[...document.querySelectorAll("#ws-inv-reserved button")].find(b=>b.textContent==="Finish transfer").click()')
         wait('!document.querySelector("[data-stock-reservation]")')
         wait(f'Number(document.querySelector("#ws-inv-energy").dataset.updated)>{meter_time}')
-        self.assertEqual({'oak':24.},self.personal(app,owner))
+        self.assertEqual({'oak':held-1.},self.personal(app,owner))
         self.assertEqual({'oak':1.},app.room.fabrication_record['stock_kg'])
         self.assertEqual(claims,app.store.load(app.room.scene).goods_claims)
         self.assertEqual([], [e for e in p.events if e.get('method')=='Runtime.exceptionThrown'])
@@ -516,7 +518,7 @@ class CollectedStock(unittest.TestCase):
         self.post('/api/world/player/join',{'token':owner['token']},world)
         self.post('/api/world/open',{},world)
         app=self.app.hub.get(world);context['session']=app.live.session.id
-        self.assertEqual({'oak':24.},self.personal(app,owner))
+        self.assertEqual({'oak':held-1.},self.personal(app,owner))
         reading=self.post('/api/world/fabrication/state',context,world)
         self.assertEqual(final['stock_kg'],reading['state']['stock_kg'])
         self.assertEqual('installed',reading['state']['jobs']['collected-job-0001']['status'])
@@ -528,7 +530,7 @@ class CollectedStock(unittest.TestCase):
         funded=self.post('/api/world/fabrication/fund_stock',{**context,'material':'oak','mass_kg':1.,'pool':'shared',
             'rack_hash':source['rack_hash'],'revision':reading['state']['revision'],'request_id':'explicit-shared-stock-0001'},world)
         self.assertEqual({'oak':1.},funded['state']['stock_kg'])
-        self.assertEqual({'oak':24.},self.personal(app,owner))
+        self.assertEqual({'oak':held-1.},self.personal(app,owner))
         self.assertEqual({},self.personal(app,peer))
         self.assertEqual(11.4,next(r for r in funded['stock_sources'] if r['material']=='oak' and r['pool']=='shared')['mass_kg'])
 
