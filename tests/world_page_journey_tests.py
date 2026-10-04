@@ -502,7 +502,8 @@ class PageJourney(unittest.TestCase):
 
     def open_world_menu(self, section):
         if not self.js("document.querySelector('#game-menu').open"):
-            self.click_selector("#panel [data-game-menu]")
+            # The bottom bar's Menu: the side panel's own starts folded away.
+            self.click_selector(".game-bottom-tabs [data-game-menu]")
         target = f'[data-world-menu="{section}"]'
         if not self.js(f"document.querySelector({json.dumps(target)}).open"):
             self.click_selector(target + " > summary")
