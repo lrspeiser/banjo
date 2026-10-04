@@ -1,6 +1,9 @@
 # Banjo Voice
 
-Status: implementation started on the `voice` branch, October 4, 2026.
+Status: Phase 1 is implemented on the `voice` branch, October 4, 2026.
+Spoken F1 guidance and the first deterministic Voice Lens are also implemented.
+The remaining unverified boundary is a live browser ↔ OpenAI audio playtest with
+a real API key; CI intentionally runs without one.
 
 Banjo Voice is an audio interface to the existing authenticated player-guidance
 system. Voice does **not** become a second source of game truth. Inventory,
@@ -19,7 +22,7 @@ The intended interaction has three layers:
 2. **Explain this** — the existing authenticated `Ask AI · F1` explanation can
    be spoken. The exact `next_action`, blockers, selected project, and build
    readiness stay authoritative.
-3. **Push to talk** — hold V or a microphone button and ask natural questions:
+3. **Push to talk** — hold Y or a microphone button and ask natural questions:
    “What should I do?”, “Why isn't this working?”, or “What is this?” The
    current looked-at/held object is supplied as focus.
 
@@ -164,7 +167,7 @@ Current OpenAI references:
 
 ## Acceptance criteria for Phase 1
 
-1. Player can press and hold V (or the mic button), speak, release, and receive
+1. Player can press and hold Y (or the hold button), speak, release, and receive
    a spoken AI Guide answer.
 2. The transcript and answer appear in the normal Guide conversation.
 3. “What is this?” resolves the same currently focused body as typed Guide help.
@@ -180,6 +183,7 @@ Current OpenAI references:
 ## Non-goals of the first slice
 
 - Always-listening microphone.
+- Automatic Voice Lens is opt-in; default is off.
 - Wake-word detection.
 - Autonomous AI actions from speech.
 - LLM-generated hover facts.
