@@ -161,7 +161,14 @@ face the player, and digging them missed the cells they had measured. The
 patch is saved with the project, so it survives a reload. Every view reads
 the ground again, which shows progress as the player digs. When the patch is
 level the step is done, and the native placement trial still decides the
-spot. The ground keeps its own books: the test digs earth from behind the
+spot.
+
+On a slope, digging down to the lowest square can be deep. When it would go
+deeper than 15 cm and working to the patch's mean height is at least 30%
+shallower, the guide marks amber squares to dig and blue squares to heap
+that earth on (H heaps what you carry). Moving earth within the patch keeps
+its mean, so what is dug is what is filled. The level is chosen once, when the
+patch is marked, and saved, so earth carried off mid-job does not move it. The ground keeps its own books: the test digs earth from behind the
 player to make a hump, because the engine refuses earth from nowhere.
 
 **The guide answers in two seconds or not at all.** The proactive guide now
@@ -215,8 +222,8 @@ adds nothing. A thing that moved or leans is recorded as not standing.
    now exist with one four-step placement card; expand to full construction steps.
 4. Site suggestions: highlighted checked footprint, night label, blocker and
    another-site option now exist; qualify the wider terrain/site matrix.
-5. Preparation: done for digging (2026-10-04, below). Raising low ground by
-   heaping carried earth is not offered yet; the patch is levelled down only.
+5. Preparation: done (2026-10-04, below): dig down, or cut and fill a slope
+   to its mean with the earth that was dug.
 6. Proactive AI: next-action, placement and observed-placement tips work;
    add repeated-failure events and qualify the complete construction milestones.
 7. Routing: the two-second guide target is met and measured (2026-10-04,

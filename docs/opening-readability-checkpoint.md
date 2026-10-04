@@ -309,6 +309,6 @@ python scripts/check-source-registration.py
   (needs people; the playtest protocol covers it).
 - Catalog shapes still missing: chair, shelf unit, kettle and cart; single
   sources for ceramic and concrete.
-- Construction: supports beyond the pad (posts, beams, braces), raising low
-  ground by heaping, and bounded customisation proposals.
+- Construction: supports beyond the pad (posts, beams, braces), and bounded
+  customisation proposals.
 - The playtest with 8–12 new players. R3 stays paused.
