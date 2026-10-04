@@ -1102,6 +1102,21 @@ double Environment::waterDepthAt(double x_m, double z_m) const {
     return std::max(0.0, water_->depth(*cell));
 }
 
+std::optional<double> Environment::waterSurfaceAt(double x_m, double z_m) const {
+    if (!water_) return std::nullopt;
+    const auto cell = terrain_->cellAt(x_m, z_m);
+    if (!cell || !water_->wet(*cell)) return std::nullopt;
+    return water_->surface(*cell);
+}
+
+bool Environment::pushWater(double x_m, double z_m, double jx_n_s, double jz_n_s) {
+    if (!water_) return false;
+    const auto cell = terrain_->cellAt(x_m, z_m);
+    if (!cell || !water_->wet(*cell)) return false;
+    water_->addImpulse(*cell, jx_n_s, jz_n_s);
+    return true;
+}
+
 double Environment::rollingResistanceAt(double x_m, double z_m) const {
     const auto cell = terrain_->cellAt(x_m, z_m);
     if (!cell) return soilMaterial().rolling_resistance;

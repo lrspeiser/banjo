@@ -34,8 +34,8 @@ struct LiveNativePlayer {
     // impulse it put in, and the impulse its feet gave a body it stood on.
     Vec3 walk_velocity_m_s{};
     double walk_heading_rad{}, walk_remaining_s{}, traction_used{};
-    bool supported{};
-    std::string support;                    // "" none, "ground", or a body name
+    bool supported{}, swimming{};
+    std::string support;                    // "" none, "ground", "water", or a body name
     double walk_work_j{};
     Vec3 walk_impulse_n_s{}, walk_angular_impulse_kg_m2_s{}, support_reaction_n_s{};
 };

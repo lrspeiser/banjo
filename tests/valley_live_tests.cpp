@@ -1079,6 +1079,31 @@ void nativePlayerFeetPushBackOnWhatTheyStandOn() {
     require(kept.walk_remaining_s==0,"a held walk request does not survive a reopen");
 }
 
+void nativePlayersSwimAgainstTheWater() {
+    Json scene=nativePlayerScene();scene["terrain"]={{"generate",{{"kind","basin"},{"nx",64},{"nz",48},{"lake_level_m",3.0}}}};
+    auto lake=open(scene);lake->spawnNativePlayer("swimmer",{0,.4,0});
+    walkFor(*lake,"swimmer",{},2);                         // float up, tread water
+    const auto floating=nativePlayerOf(*lake,"swimmer");
+    require(floating.swimming && floating.support=="water","it swims, held up by the water");
+    const double water0=lake->environment()->water()->ledger().impulse_in_x_n_s;
+    walkFor(*lake,"swimmer",{.8,0,0},4,3.14159265358979323846/2);
+    const auto swum=nativePlayerOf(*lake,"swimmer");
+    const double went=swum.state.center_of_mass_world_m.x-floating.state.center_of_mass_world_m.x;
+    require(swum.swimming,"still swimming");
+    require(went>1,"it swims where it is asked");
+    require(swum.state.linear_velocity_m_s.x<1.5,"no faster than a swimmer");
+    // Its stroke and the water's drag both cross between it and the water,
+    // but the coupling's hydrostatic force on a moving body has no reaction
+    // on the water (WaterCoupling.hpp), so the totals do not close exactly:
+    // the water is pushed back, and the shortfall is reported, not hidden.
+    const double body=70*(swum.state.linear_velocity_m_s.x-floating.state.linear_velocity_m_s.x);
+    const double water=lake->environment()->water()->ledger().impulse_in_x_n_s-water0;
+    require(water<0 && std::abs(water)>.5*std::abs(body),"the water is pushed back");
+    near(swum.support_reaction_n_s.x-floating.support_reaction_n_s.x,
+         -(swum.walk_impulse_n_s.x-floating.walk_impulse_n_s.x),1e-9,"its stroke's reaction is on the water");
+    std::cout<<"    swim: "<<went<<" m in 4 s, "<<swum.state.linear_velocity_m_s.x<<" m/s; stroke "<<swum.walk_impulse_n_s.x-floating.walk_impulse_n_s.x
+             <<" Ns; water took "<<water<<" Ns against the body's "<<body<<" Ns"<<std::endl;
+}
 void nativePlayersPersistAndRejectInvalidState() {
     const auto scene=nativePlayerScene();auto world=open(scene,{},{});
     world->spawnNativePlayer("z-owner",{-2,2,0});world->spawnNativePlayer("a-peer",{2,2,0});
@@ -1243,6 +1268,7 @@ int main(int argc, char **argv) {
         {"native player traction is limited and absent in the air",nativePlayerTractionIsLimitedAndAbsentInTheAir},
         {"native players hold on a ramp they can grip and slide one they cannot",nativePlayersHoldOnARampTheyCanGripAndSlideOneTheyCannot},
         {"native player feet push back on what they stand on",nativePlayerFeetPushBackOnWhatTheyStandOn},
+        {"native players swim against the water",nativePlayersSwimAgainstTheWater},
         {"native player inputs are bounded and cannot teleport",nativePlayerInputsAreBoundedAndCannotTeleport},
         {"exact compounds have native water forces and retain their state",exactCompoundsHaveNativeWaterForcesAndRetainTheirState},
         {"a closed basin conserves water with a log in it", aClosedBasinConservesWaterWithALogInIt},

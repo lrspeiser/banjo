@@ -52,7 +52,11 @@ constexpr double kWalkTraction = 0.6;
 constexpr double kWalkMostForceN = 600.0;
 constexpr double kWalkMostTorqueNm = 400.0;   // ankle and hip balance together, not one joint
 constexpr double kWalkResponseS = 0.25;       // closes a velocity error in about this long
-constexpr double kWalkSlopeProbeM = 0.1;      // the rays that read the slope, either side of its middle        // and a steady one, a slope's, in about this
+constexpr double kWalkSlopeProbeM = 0.1;
+constexpr double kNativePlayerHalfHeightM = 0.85;
+constexpr double kSwimDepthM = 0.5;           // water this far up its body: it swims, not wades
+constexpr double kSwimMostThrustN = 100.0;    // a swimmer's sustained stroke
+constexpr double kSwimResponseS = 1.0;      // the rays that read the slope, either side of its middle        // and a steady one, a slope's, in about this
 constexpr double kWalkUprightGain = 6000.0;   // N m per radian of tilt
 constexpr double kWalkUprightDamping = 640.0;  // N m s per radian: critical for its 17 kg m2
 constexpr double kWalkYawGain = 20.0;
@@ -3286,7 +3290,7 @@ struct LiveWorld::Impl {
         Vec3 impulse_n_s{}, angular_impulse_kg_m2_s{};
         Vec3 walk_velocity{};
         double walk_heading{}, walk_remaining_s{}, traction_used{};
-        bool supported{}, driven{};
+        bool supported{}, driven{}, swimming{};
         std::string support;
         double walk_work_j{};
         Vec3 walk_impulse_n_s{}, walk_angular_impulse_kg_m2_s{}, support_reaction_n_s{};
@@ -3297,7 +3301,7 @@ struct LiveWorld::Impl {
     void walkPlayer(NativePlayer &player, const RigidSnapshot &now, Vec3 &force, Vec3 &torque,
                     std::optional<MatterBodyId> &under, Vec3 &under_at) {
         force = {}; torque = {}; under.reset();
-        player.supported = false; player.support.clear(); player.traction_used = 0;
+        player.supported = false; player.swimming = false; player.support.clear(); player.traction_used = 0;
         bool drive = false;
         if (player.walk_remaining_s > 0) {
             const Vec3 up = now.orientation_world.rotate(Vec3{0, 1, 0});
@@ -3359,6 +3363,22 @@ struct LiveWorld::Impl {
                          Vec3{0, kWalkYawGain * turn - kWalkYawDamping * w.y, 0};
                 const double most = length(torque);
                 if (most > kWalkMostTorqueNm) torque = (kWalkMostTorqueNm / most) * torque;
+            } else if (environment) {
+                // Off the ground and in water deep enough to float in: a
+                // stroke, toward the asked velocity, no stronger than a
+                // swimmer's sustained push. It is the water it pushes on, so no
+                // traction limit and no balance torque: buoyancy holds it up.
+                const Vec3 c = now.center_of_mass_world_m;
+                const auto surface = environment->waterSurfaceAt(c.x, c.z);
+                if (surface && *surface > c.y - kNativePlayerHalfHeightM + kSwimDepthM) {
+                    player.swimming = true; player.support = "water";
+                    const Vec3 have{now.linear_velocity_m_s.x, 0, now.linear_velocity_m_s.z};
+                    const Vec3 want{player.walk_velocity.x, 0, player.walk_velocity.z};
+                    force = (kNativePlayerMassKg / kSwimResponseS) * (want - have);
+                    const double asked = length(force);
+                    if (asked > kSwimMostThrustN) force = (kSwimMostThrustN / asked) * force;
+                    player.traction_used = std::min(1.0, asked / kSwimMostThrustN);
+                }
             }
         }
         if (drive != player.driven) { world->setDrivenContact(player.id, drive); player.driven = drive; }
@@ -6667,6 +6687,7 @@ void LiveWorld::step(double dt_s) {
         Vec3 walk_force{}, walk_torque{};
         std::optional<MatterBodyId> under;
         Vec3 under_at{};
+        bool swimming{};
     };
     std::vector<PlayerPush> player_pushes;
     for (auto &[actor, player] : impl_->native_players) {
@@ -6674,6 +6695,7 @@ void LiveWorld::step(double dt_s) {
         PlayerPush push{actor, player.id, impl_->world->snapshot(player.id),
                         fraction * player.force_n, fraction * player.torque_n_m};
         impl_->walkPlayer(player, push.before, push.walk_force, push.walk_torque, push.under, push.under_at);
+        push.swimming = player.swimming;
         player_pushes.push_back(std::move(push));
     }
     const auto pushPlayers = [&]() {
@@ -6707,6 +6729,12 @@ void LiveWorld::step(double dt_s) {
             player.walk_impulse_n_s += dt_s * push.walk_force;
             player.walk_angular_impulse_kg_m2_s += dt_s * (push.walk_torque + cross(mean_com, push.walk_force));
             if (push.under) player.support_reaction_n_s += -dt_s * push.walk_force;
+            // A stroke pushes the water back: the reaction goes into the water
+            // column it swims in, on the steps that are kept.
+            if (push.swimming && impl_->environment &&
+                impl_->environment->pushWater(push.before.center_of_mass_world_m.x, push.before.center_of_mass_world_m.z,
+                                              -dt_s * push.walk_force.x, -dt_s * push.walk_force.z))
+                player.support_reaction_n_s += -dt_s * push.walk_force;
             player.walk_remaining_s = std::max(0.0, player.walk_remaining_s - dt_s);
         }
     };
@@ -14216,6 +14244,7 @@ std::vector<LiveNativePlayer> LiveWorld::nativePlayers() const {
         reading.walk_remaining_s = player.walk_remaining_s;
         reading.traction_used = player.traction_used;
         reading.supported = player.supported;
+        reading.swimming = player.swimming;
         reading.support = player.support;
         reading.walk_work_j = player.walk_work_j;
         reading.walk_impulse_n_s = player.walk_impulse_n_s;

@@ -233,6 +233,13 @@ public:
     // How deep the room's water stands in the column under (x, z), metres:
     // zero outside the grid or where it is dry. What a sensor reads.
     [[nodiscard]] double waterDepthAt(double x_m, double z_m) const;
+    // The room's water surface over (x, z), metres, or nothing where it is dry
+    // or off the grid. What a swimmer floats in.
+    [[nodiscard]] std::optional<double> waterSurfaceAt(double x_m, double z_m) const;
+    // Momentum a body gives the water in the column under (x, z), newton
+    // seconds: a swimmer's stroke pushes water back as it goes forward.
+    // False where there is no wet column to take it.
+    bool pushWater(double x_m, double z_m, double jx_n_s, double jz_n_s);
 
     // Everything, as JSON: the ground and its ledger, the water and its
     // ledger, rivers and ponds, the costs. `full` adds the model's provenance
