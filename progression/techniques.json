@@ -341,6 +341,48 @@
           }
         ]
       }
+    },
+    {
+      "id": "fastening",
+      "version": 1,
+      "name": "Fastening",
+      "practice": "Fasten a thing to what it stands on",
+      "describes": "Set a thing on a support and fix it there, so it goes with the support and holds against a pull",
+      "prerequisites": {
+        "all_of": [
+          "setting-out"
+        ]
+      },
+      "learn_from": [
+        "experiment"
+      ],
+      "processes": [],
+      "earned_by": {
+        "any_of": [
+          {
+            "id": "fastened-a-light",
+            "says": "Fasten your Camp light to what it stands on, then look it over.",
+            "all_of": [
+              {
+                "design": "camp-light",
+                "demonstrated": true,
+                "test": "held-fastened"
+              }
+            ]
+          },
+          {
+            "id": "fastened-a-panel",
+            "says": "Fasten your Camp solar panel to what it stands on, then look it over.",
+            "all_of": [
+              {
+                "design": "camp-solar-panel",
+                "demonstrated": true,
+                "test": "held-fastened"
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

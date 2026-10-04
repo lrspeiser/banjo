@@ -293,7 +293,7 @@ def request(app, owner, body):
             record['project']['inspected']=True
             import construction_skill
             learned=construction_skill.demonstrated(app,owner,record['project'])
-            if learned:record['project']['learned']=learned
+            record['project']['learned']=learned   # what this look taught, if anything
         elif action in ('fasten','unfasten'):
             current=view(app,owner,person=body.get('person'),_record=record)['project']
             if not current or current['status']!='Placed' or not current.get('support'):
@@ -305,6 +305,7 @@ def request(app, owner, body):
                 if (record['project'].get('fastened') or {}).get('broken')==False:
                     raise ValueError('It is already fastened')
                 record['project']['fastened']=construction_mount.fasten(app,record['project']['body'],current['support'])
+                record['project']['fastened']['at_t_s']=float((app.live.session.state or {}).get('t') or 0)
                 record['project']['fastened']['broken']=False
             else:
                 if not record['project'].get('fastened'):

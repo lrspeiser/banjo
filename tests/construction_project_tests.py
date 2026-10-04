@@ -350,6 +350,22 @@ class PlacementJourney(unittest.TestCase):
                 ['project']['steps'] if s['id']=='fasten')['status'])
         return world,app,table,person
 
+    def test_fastening_is_learned_once_the_fastening_has_held(self):
+        world,app,table,person=self.lamp_on_a_table(True)
+        owner=self.players[world]['id']
+        first=self.write(world,'inspect',person=person)['project']
+        # Looked over at once: it stands, but the fixing has not held for long.
+        self.assertEqual(['setting-out'],first.get('learned'))
+        self.assertNotIn('fastening',fixture.server.journal_of(app,owner).knows())
+        for _ in range(12):app.clock._tick(.25)   # three seconds of the room's own clock
+        again=self.write(world,'inspect',person=person)['project']
+        self.assertEqual(['fastening'],again.get('learned'))
+        evidence=[e for e in fixture.server.journal_of(app,owner).data['evidence'].values() if e['test']=='held-fastened']
+        self.assertEqual(1,len(evidence));self.assertTrue(evidence[0]['passes'])
+        self.assertGreaterEqual(evidence[0]['result']['held_s'],2)
+        # Looking again adds nothing.
+        self.assertEqual([],self.write(world,'inspect',person=person)['project']['learned'])
+
     def test_a_fastened_thing_goes_with_its_support_and_a_resting_one_falls(self):
         outcomes={}
         for fasten in (True,False):

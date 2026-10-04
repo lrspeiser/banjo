@@ -759,6 +759,16 @@
           "passes_when": {
             "stands": true
           }
+        },
+        {
+          "id": "held-fastened",
+          "action": "fasten it to what it stands on, then look it over",
+          "target": {
+            "place": "a support"
+          },
+          "passes_when": {
+            "held_s": ">=2"
+          }
         }
       ]
     },
@@ -788,6 +798,16 @@
           },
           "passes_when": {
             "stands": true
+          }
+        },
+        {
+          "id": "held-fastened",
+          "action": "fasten it to what it stands on, then look it over",
+          "target": {
+            "place": "a support"
+          },
+          "passes_when": {
+            "held_s": ">=2"
           }
         }
       ]
