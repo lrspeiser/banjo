@@ -64,6 +64,12 @@ class NamedWorlds(unittest.TestCase):
         self.fail("world server did not start")
 
     def stop(self):
+        if os.name == "nt" and self.server.poll() is None:
+            # Windows terminate is a hard kill of the server alone: its live
+            # runners outlive it for a moment, holding runs/ open, and the
+            # temporary folder then cannot be removed. Take the tree.
+            subprocess.run(["taskkill", "/PID", str(self.server.pid), "/T", "/F"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
         self.server.terminate()
         try: self.server.wait(timeout=15)
         except subprocess.TimeoutExpired:
