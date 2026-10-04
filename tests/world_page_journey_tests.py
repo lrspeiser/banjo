@@ -3191,6 +3191,10 @@ class ClickingSomethingKeepsIt(PageJourney):
         self.open_details()
         self.click_selector("#picked details > summary")
         self.assertTrue(self.wait_for("document.querySelector('#picked details').open", 5), "Ground layers did not open")
+        # And it stays open while the card is built again: walking changes how far away it says it is.
+        self.js("(banjoRoom.standAt(banjoRoom.camera.position.x + 0.5, banjoRoom.camera.position.y, banjoRoom.camera.position.z), true)")
+        time.sleep(1.0)
+        self.assertTrue(self.js("document.querySelector('#picked details').open"), "Ground layers closed when the card was built again")
         beds = json.loads(self.js(
             "JSON.stringify([...document.querySelectorAll('#picked .pk-bed')]"
             ".map(b => b.innerText))"))

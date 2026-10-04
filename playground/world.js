@@ -5708,6 +5708,7 @@ async function readPickedCondition() {
   finally {conditionReading=false;}
 }
 setInterval(readPickedCondition,1000);
+let groundLayersOpen = false;
 function showPicked() {
   const box = $("picked");
   if (!box || picked.pressed) return;
@@ -5834,6 +5835,9 @@ function showPicked() {
     if (beds.length) {
       const layers=document.createElement("details"),summary=document.createElement("summary");
       summary.textContent="Ground layers";layers.append(summary,coreColumn(beds));
+      // The card is built again whenever anything on it changes -- the
+      // distance does as you walk -- so it keeps whether you opened this.
+      layers.open=groundLayersOpen;layers.addEventListener("toggle",()=>{groundLayersOpen=layers.open;});
       rows.push(layers);
       // The one thing worth calling out of a column of dirt.
       const ore = beds.filter((b) => ORE_NAMES.includes(b.name));
