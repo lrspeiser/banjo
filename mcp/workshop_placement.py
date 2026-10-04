@@ -77,7 +77,14 @@ def for_design(design):
         intent['connections'] = []
         intent['connections_unavailable'] = 'physical skin: connections need the exact-Matter trial'
     else:
-        intent['connections'] = deepcopy(workshop_construction.adopted(design).get('joints',[]))
+        try:
+            intent['connections'] = deepcopy(workshop_construction.adopted(design).get('joints',[]))
+        except ValueError as refused:
+            # A design whose declared use names a part it no longer has
+            # (its machine stripped out) is still a shape; its use is
+            # refused where it is installed, not here.
+            intent['connections'] = []
+            intent['connections_unavailable'] = str(refused)
     intent['supplies'] = {'source':'paid manufacturing quote', 'reserved':False}
     intent['placement_checked'] = False
     intent['limits'] = 'Installation intent. Native placement, settling and operation still require checks.'
