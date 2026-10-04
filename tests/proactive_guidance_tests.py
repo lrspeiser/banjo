@@ -113,10 +113,36 @@ class Guide(unittest.TestCase):
         self.assertEqual('ready',manager.handle('bob',{'action':'status','event':'asked'},STEP)['status'])
         self.assertEqual('dismissed',manager.handle('bob',{'action':'status'},STEP)['status'])
 
+    def test_a_late_answer_is_not_waited_for(self):
+        import threading
+        release=threading.Event()
+        def slow(app,payload,**kwargs):
+            release.wait(5)
+            return {'status':'completed','output':[]}
+        self.app.guidance_deadline_s=.2
+        began=time.monotonic()
+        try:
+            with mock.patch.object(workshop_chat,'_call_model',side_effect=slow):
+                with self.assertRaisesRegex(ValueError,'deadline'):guide.explain(self.app,guide.observation(STEP))
+        finally:
+            release.set();del self.app.guidance_deadline_s
+        self.assertLess(time.monotonic()-began,1.0)
+        # A provider error is said, not hidden behind the deadline.
+        with mock.patch.object(workshop_chat,'_call_model',side_effect=ValueError('HTTP 401')):
+            with self.assertRaisesRegex(ValueError,'401'):guide.explain(self.app,guide.observation(STEP))
+
+    def test_preparation_is_seen_without_its_changing_depths(self):
+        def step(depth):
+            return {**STEP,'construction_project':{'project':{'name':'Camp light','status':'Prepare ground',
+                'preparation':{'done':False,'why':None,'squares':[{'dig_m':depth,'rock':False}]}}}}
+        seen=guide.observation(step(.1))['construction']['preparation']
+        self.assertEqual(1,seen['marked_squares']);self.assertIn('shovel',seen['task'])
+        self.assertEqual(guide.signature(guide.observation(step(.1))),guide.signature(guide.observation(step(.05))))
+
     def test_model_has_bounded_read_only_schema_timeout_and_actual_observation(self):
         context=guide.observation(STEP)
         def respond(app,payload,**kwargs):
-            self.assertEqual(6,kwargs['timeout_s']);self.assertEqual([],payload['tools'])
+            self.assertEqual(guide.DEADLINE_S,kwargs['timeout_s']);self.assertEqual([],payload['tools'])
             self.assertFalse(payload['store']);self.assertEqual(160,payload['max_output_tokens'])
             self.assertEqual('none',payload['reasoning']['effort'])
             self.assertEqual(context,json.loads(payload['input'][-1]['content']))
