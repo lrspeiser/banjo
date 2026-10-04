@@ -1,0 +1,86 @@
+"""A player's native body, walked through the server as the page walks it.
+
+The host derives the actor from the authenticated player and spawns the body
+once at that player's own reported stance; each request asks for a velocity
+and a facing held 0.3 s. On a generated valley the body must go where it is
+walked, stay upright and on the ground, stop when asked, and stand still when
+the requests stop. Its walk work is the engine's own account.
+
+    BANJO_LIVE_ENGINE=build/walk/Release/banjo_live_world_run.exe python tests/native_walk_tests.py -v
+"""
+import math
+import os
+from pathlib import Path
+import sys
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path[:0] = [str(ROOT / 'tests'), str(ROOT / 'playground'), str(ROOT)]
+import ai_player_tests as agents
+import world_hub_tests as hub
+
+ENGINE = os.environ.get('BANJO_LIVE_ENGINE')
+
+
+def tilt_deg(native):
+    w, x, y, z = native['orientation_wxyz']
+    return math.degrees(math.acos(max(-1, min(1, 1 - 2 * (x * x + z * z)))))
+
+
+@unittest.skipUnless(ENGINE and Path(ENGINE).is_file(), 'BANJO_LIVE_ENGINE is required')
+class NativeWalk(unittest.TestCase):
+    setUp = agents.AutonomousGuests.setUp
+    start = agents.AutonomousGuests.start
+    stop = agents.AutonomousGuests.stop
+    tearDown = agents.AutonomousGuests.tearDown
+    get = hub.NamedWorlds.get
+    post = hub.NamedWorlds.post
+    join = hub.NamedWorlds.join
+
+    def test_a_player_walks_their_own_native_body_and_it_stops(self):
+        world = self.post('/api/worlds', {'name': 'Walk', 'seeds': {'terrain': 7, 'goods': 851269742}})['id']
+        me = self.join(world, 'Walker')
+        self.players = {world: me}
+        opened = self.post('/api/world/open', {}, world)
+        app = self.app.hub.get(world)
+        sid = opened['session']
+        # Stand somewhere first: the host spawns the body where the player is.
+        x, z = -6.0, 2.0
+        floor = self.post('/api/live/act', {'session': sid, 'op': 'survey', 'at': [x, z]}, world)['survey']['ground_m']
+        person = {'standing_m': [x, floor, z], 'eyes_m': [x, floor + 1.62, z], 'facing': [1, 0, 0]}
+        self.post('/api/live/act', {'session': sid, 'op': 'step', 'dt': 1 / 240, 'n': 1, 'person': person}, world)
+        # A request may not name another actor or a place to appear.
+        with self.assertRaises(Exception):
+            self.post('/api/world/player/walk', {'session': sid, 'velocity_m_s': [0, 0, 0],
+                                                 'heading_rad': 0, 'actor': 'someone else'}, world)
+        def walk(v, seconds, heading=math.pi / 2):
+            reply = None
+            for _ in range(int(seconds / .25)):
+                reply = self.post('/api/world/player/walk', {'session': sid, 'velocity_m_s': v,
+                                                             'heading_rad': heading}, world)
+                app.clock._tick(.25)
+            return self.post('/api/world/player/walk', {'session': sid, 'velocity_m_s': v,
+                                                        'heading_rad': heading}, world)['native']
+        stood = walk([0, 0, 0], 1.0)
+        self.assertTrue(stood['walk']['supported'], stood)
+        self.assertLess(tilt_deg(stood), 3)
+        self.assertLess(math.hypot(stood['position_m'][0] - x, stood['position_m'][2] - z), .3,
+                        'spawned where the player stood')
+        moved = walk([1.0, 0, 0], 3.0)
+        went = moved['position_m'][0] - stood['position_m'][0]
+        self.assertGreater(went, 1.5, f'walked {went:.2f} m in 3 s at 1 m/s')
+        self.assertLess(tilt_deg(moved), 5)
+        # Its walk work is kept; on ground that falls away it brakes, so the
+        # sign is the ground's business, not the test's.
+        self.assertNotEqual(moved['walk']['work_j'], stood['walk']['work_j'])
+        stopped = walk([0, 0, 0], 1.5)
+        self.assertLess(math.hypot(*stopped['velocity_m_s']), .1, 'it stops when asked')
+        # No more requests: a passive body, which stays standing where it is.
+        for _ in range(8):
+            app.clock._tick(.25)
+        rest = (app.live.session.state.get('native_players') or {})[me['id']]
+        self.assertLess(math.dist(rest['position_m'], stopped['position_m']), .1)
+
+
+if __name__ == '__main__':
+    unittest.main()

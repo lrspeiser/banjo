@@ -1633,6 +1633,11 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/rover_route_tests.py -v)
     set_tests_properties(banjo_rover_route_tests PROPERTIES TIMEOUT 900)
+    add_test(NAME banjo_native_walk_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native_walk_tests.py -v)
+    set_tests_properties(banjo_native_walk_tests PROPERTIES TIMEOUT 300)
     add_test(NAME banjo_workshop_ground_tools_tests
         COMMAND ${CMAKE_COMMAND} -E env
             BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>

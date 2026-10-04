@@ -9,6 +9,7 @@ from copy import deepcopy
 import json
 import logging
 import math
+import os
 import threading
 import time
 from typing import Any
@@ -188,6 +189,31 @@ class Manager:
         def survey(x,z):
             return self._post(profile,'/api/live/act',{'session':sid,'op':'survey','at':[x,z]},cookie)['survey']
         route=ai_actions.walking_route(start,aim,stand_off_m,survey,stop.is_set)
+        if os.environ.get('BANJO_NATIVE_BODIES')=='1':
+            # The same native body and walk requests a person's page sends: it
+            # gets there by the engine's walk controller, or it does not.
+            for x,_,z in route:
+                if stop.is_set():return
+                for _ in range(60):                      # up to 12 s a waypoint
+                    here=self._post(profile,'/api/world/player/walk',{'session':sid,'velocity_m_s':[0,0,0],
+                        'heading_rad':0},cookie)['native'] if not profile.get('native_at') else None
+                    at=(here or {}).get('position_m') or profile.get('native_at')
+                    dx,dz=x-at[0],z-at[2];gap=math.hypot(dx,dz)
+                    if gap<.4:break
+                    speed=min(1.4,gap/.5)
+                    reply=self._post(profile,'/api/world/player/walk',{'session':sid,
+                        'velocity_m_s':[speed*dx/gap,0,speed*dz/gap],'heading_rad':math.atan2(dx,dz)},cookie)
+                    self._post(profile,'/api/live/act',{'session':sid,'op':'step','dt':1/240,'n':48},cookie)
+                    native=reply.get('native') or {}
+                    profile['native_at']=native.get('position_m') or at
+                    stop.wait(.05)
+                else:raise ValueError('The native body did not reach the next waypoint')
+            at=profile.get('native_at')
+            if at:
+                dx,dz=aim[0]-at[0],aim[2]-at[2];length=math.hypot(dx,dz) or 1
+                profile['pose']={'eyes_m':[at[0],at[1]+.77,at[2]],'facing':[dx/length,0,dz/length]}
+            if not stop.is_set():self._save(profile,status='running',message='Near the selected target')
+            return
         for x,y,z in route:
             if stop.is_set():return
             surveyed=survey(x,z)

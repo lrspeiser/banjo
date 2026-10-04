@@ -7892,19 +7892,52 @@ function showRidingSettings() {
 
 // Only an explicit Fly preference may bypass gravity. Legacy/unknown values
 // must not display Walk while falling through to the free-camera branch.
-let movementMode = localStorage.getItem("banjo.movement") === "fly" ? "fly" : "gravity";
+let movementMode = ({fly:"fly", native:"native"})[localStorage.getItem("banjo.movement")] || "gravity";
 let verticalSpeed = 0, jumpHeld = false;
 // Camera-controller approximation: 70 kg, 75 litres over the 1.6 m below
 // the eye. Buoyancy and drag accelerate the controller; this is not a native
 // avatar and applies no reaction to the river or carried objects.
 const PLAYER_MASS_KG = 70, PLAYER_VOLUME_M3 = .075;
 addEventListener("banjo-movement-mode", event => {
-  movementMode = event.detail === "fly" ? "fly" : "gravity";
+  movementMode = ({fly:"fly", native:"native"})[event.detail] || "gravity";
+  nativeBody.state = null;
   verticalSpeed = 0; jumpHeld = false;
   // Return the player's controls from a ridden machine to their own feet.
   letGoOfTheMachine();
   setCursorFree(false);
 });
+// A NATIVE BODY (experimental, native_body.py). The keys and stick ask the
+// engine's walk controller for a velocity and a facing a few times a second;
+// the body walks, grips, slides and falls by the engine's physics, and the eye
+// rides it. Nothing here moves the camera by itself except to follow the body
+// between replies, along its own reported velocity.
+const nativeBody = { state: null, at: 0, sent: 0, pending: false, eyes: .77, refused: null };
+const NATIVE_SEND_S = .08, NATIVE_WALK_M_S = 1.4, NATIVE_RUN_M_S = 3.0;
+function walkNatively(direction, running) {
+  const now = performance.now();
+  const speed = running ? NATIVE_RUN_M_S : NATIVE_WALK_M_S;
+  if (!nativeBody.pending && now - nativeBody.sent > NATIVE_SEND_S * 1000 && world.session) {
+    nativeBody.pending = true; nativeBody.sent = now;
+    const v = direction.lengthSq() > 0 ? direction.clone().normalize().multiplyScalar(speed) : new THREE.Vector3();
+    // The body's heading is its own +z; the eye's forward is -z, turned by yaw.
+    api("/api/world/player/walk", { session: world.session, velocity_m_s: [v.x, 0, v.z],
+                                    heading_rad: Math.atan2(-Math.sin(yaw), -Math.cos(yaw)) })
+      .then((reply) => { nativeBody.state = reply.native; nativeBody.at = performance.now();
+                         nativeBody.eyes = reply.eyes_above_center_m ?? .77; nativeBody.refused = null; })
+      .catch((error) => { nativeBody.refused = String(error.message || error); })
+      .finally(() => { nativeBody.pending = false; });
+  }
+  const body = nativeBody.state;
+  if (body && Array.isArray(body.position_m)) {
+    const ahead = Math.min(.25, (performance.now() - nativeBody.at) / 1000);
+    const v = body.velocity_m_s || [0, 0, 0];
+    camera.position.set(body.position_m[0] + v[0] * ahead,
+                        body.position_m[1] + nativeBody.eyes + v[1] * ahead,
+                        body.position_m[2] + v[2] * ahead);
+  }
+  camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, "YXZ"));
+}
+
 function walk(dt) {
   // RIDING IS THE ORDINARY WAY TO BE HERE. The keys go to the machine and
   // the eye goes where the machine is; everything below -- the free camera,
@@ -7948,6 +7981,7 @@ function walk(dt) {
   const shifted = keys.has("ShiftLeft") || keys.has("ShiftRight");
   const jump = BINDINGS.up.keys.some((k) => keys.has(k));
   if (movementMode === "fly" && jump) move.y += shifted ? -speed : speed;
+  if (movementMode === "native") { walkNatively(move, running); return; }
   // And where the water is going, as far as it has hold of them.
   if (water && water.carried > 0) { move.x += water.u * water.carried * dt; move.z += water.w * water.carried * dt; }
   if (movementMode === "gravity") {

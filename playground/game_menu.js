@@ -50,7 +50,7 @@ const dialog = document.createElement("dialog");
 dialog.id = "game-menu";
 dialog.innerHTML = `<div class="game-menu-head"><h2>Game menu</h2><button type="button" id="game-menu-close" aria-label="Close menu">×</button></div>
   <p id="game-menu-current">Current world</p>
-  <label id="game-menu-movement">Movement<select><option value="gravity">Walk, jump & swim · gravity</option><option value="fly">Fly · inspect world</option></select></label>
+  <label id="game-menu-movement">Movement<select><option value="gravity">Walk, jump & swim · gravity</option><option value="fly">Fly · inspect world</option><option value="native">Native body · experimental</option></select></label>
   <form id="game-menu-avatar" hidden><label>Your avatar name<input name="name" maxlength="32" required></label><button type="submit">Save avatar name</button></form>
   <form id="game-menu-new"><label>World name<input name="name" maxlength="80" value="New world" required></label><label>Ground<select name="surface"><option value="cuts">Smooth hills · sharp cuts · preview</option><option value="smooth" selected>Smooth slopes</option><option value="columns">Material cells · preview</option><option value="columns-fine">Material cells · 12.5 cm · preview</option></select></label><button type="submit">New game · generate map</button></form>
   <form id="game-menu-join"><label>Join a world<input name="link" placeholder="Paste a world link or id" required></label><button type="submit">Join world</button></form>
