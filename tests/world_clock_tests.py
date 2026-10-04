@@ -151,9 +151,10 @@ class TheWorldRunsWithNobodyOnIt(unittest.TestCase):
     def setUp(self):
         rooms = ROOT / "build" / "playground-rooms-clock-test"
         shutil.rmtree(rooms, ignore_errors=True)
-        engine = ROOT / "build/integration/Release/banjo_platform_cli.exe"
-        if not engine.is_file():
-            engine = ROOT / "build/ci/banjo_platform_cli"
+        # The platform engine is the one beside the live runner the skip
+        # above asks for: the server finds banjo_live_world_run next to it.
+        runner = Path(os.environ["BANJO_LIVE_ENGINE"])
+        engine = runner.with_name("banjo_platform_cli" + runner.suffix)
         # No keys: a decider that cannot be reached cannot be asked, which
         # keeps this test about the clock and not about the network.
         env = dict(os.environ, OPENAI_API_KEY="", TYPESAFE_API_KEY="")
