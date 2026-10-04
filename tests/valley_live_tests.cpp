@@ -949,6 +949,136 @@ void nativePlayersUseTerrainAndWater() {
     std::cout<<"    avatar volume="<<swimmer.volume_m3<<" m3; lift="<<lift<<" N; first vy="<<swimmer.state.linear_velocity_m_s.y<<" m/s; terrain clearance="<<bottom-bed<<" m\n";
     require(bottom>=bed-.035,"actual terrain contact rather than camera height");
 }
+
+// ---- walking -----------------------------------------------------------------
+// The walk controller on flat ground, ramps and a free plank. Each request is
+// renewed every quarter second, as a host renews it every frame.
+Json walkScene() {
+    Json scene=nativePlayerScene();
+    scene["terrain"]={{"generate",{{"kind","flat"},{"nx",96},{"nz",64},{"soil_m",.6},{"sand_m",.2}}}};
+    return scene;
+}
+double tiltDeg(const LiveNativePlayer &p) {
+    return std::acos(std::clamp(p.state.orientation_world.rotate(Vec3{0,1,0}).y,-1.0,1.0))*180/3.14159265358979323846;
+}
+void walkFor(LiveWorld &world,const std::string &actor,Vec3 velocity,double seconds,double heading=0) {
+    for(double t=0;t<seconds-1e-9;t+=.25){world.setNativePlayerWalk(actor,velocity,heading,.3);run(world,.25);}
+}
+double groundUnder(LiveWorld &world,double x,double z){return world.environment()->terrain().heightAt(x,z);}
+void nativePlayersWalkOnFlatGroundAndStop() {
+    auto world=open(walkScene(),{},{0,-9.81,0});
+    world->spawnNativePlayer("walker",{0,groundUnder(*world,0,0)+.01,0});
+    walkFor(*world,"walker",{},1);                          // stand, settle
+    const auto standing=nativePlayerOf(*world,"walker");
+    require(standing.supported && standing.support=="ground","standing on the ground");
+    require(tiltDeg(standing)<2,"standing upright");
+    walkFor(*world,"walker",{1.4,0,0},1.5,3.14159265358979323846/2);
+    const double x0=nativePlayerOf(*world,"walker").state.center_of_mass_world_m.x;
+    walkFor(*world,"walker",{1.4,0,0},2,3.14159265358979323846/2);
+    const auto walking=nativePlayerOf(*world,"walker");
+    // Ground patches are each compressed to 2 mm, so where two meet there can
+    // be a millimetre lip; crossing one costs a little speed (about 5%).
+    near((walking.state.center_of_mass_world_m.x-x0)/2,1.4,.1,"steady walking speed over 2 s, seams included");
+    near(walking.state.linear_velocity_m_s.z,0,.05,"walks straight");
+    require(tiltDeg(walking)<3,"walks upright");
+    require(walking.traction_used<1,"steady walking does not use all its traction");
+    // The terrain is patches; where they meet, a millimetre lip pushes back,
+    // so its accounts are checked on one seamless floor (below).
+
+    // One anchored slab: level, no seams, so its own push is the only
+    // horizontal force and its accounts must close.
+    Json slab=nativePlayerScene();slab["bodies"].push_back(box("floor","concrete",{40,.2,40},{0,-.1,0},true));
+    auto flat=open(slab,{},{0,-9.81,0});flat->spawnNativePlayer("walker",{0,.01,0});
+    walkFor(*flat,"walker",{},1);
+    const auto rest=nativePlayerOf(*flat,"walker");
+    walkFor(*flat,"walker",{1.4,0,0},3,3.14159265358979323846/2);
+    const auto moving=nativePlayerOf(*flat,"walker");
+    const double p=70*(moving.state.linear_velocity_m_s.x-rest.state.linear_velocity_m_s.x);
+    near(moving.walk_impulse_n_s.x-rest.walk_impulse_n_s.x,p,.5,"walk impulse is its horizontal momentum");
+    const double ke=.5*70*lengthSquared(moving.state.linear_velocity_m_s)-.5*70*lengthSquared(rest.state.linear_velocity_m_s);
+    near(moving.walk_work_j-rest.walk_work_j,ke,.03*ke+1,"walk work is its kinetic energy");
+    walkFor(*flat,"walker",{},1.5,3.14159265358979323846/2);
+    const auto stopped=nativePlayerOf(*flat,"walker");
+    require(length(stopped.state.linear_velocity_m_s)<.05,"it stops when asked");
+    require(stopped.state.center_of_mass_world_m.x>4,"it went somewhere");
+    run(*flat,1.0);                                         // request lapses: passive
+    const auto passive=nativePlayerOf(*flat,"walker");
+    require(passive.walk_remaining_s==0 && !passive.supported,"a lapsed request drives nothing");
+    std::cout<<"    walk 1.4 m/s on terrain: "<<(walking.state.center_of_mass_world_m.x-x0)/2<<" m/s over 2 s, tilt "<<tiltDeg(walking)
+             <<" deg; on a slab: P residual="<<moving.walk_impulse_n_s.x-rest.walk_impulse_n_s.x-p<<" Ns, work residual="
+             <<moving.walk_work_j-rest.walk_work_j-ke<<" J"<<std::endl;
+}
+void nativePlayerTractionIsLimitedAndAbsentInTheAir() {
+    auto world=open(walkScene(),{},{0,-9.81,0});
+    world->spawnNativePlayer("runner",{0,groundUnder(*world,0,0)+.01,0});
+    walkFor(*world,"runner",{},1);
+    const double v0=nativePlayerOf(*world,"runner").state.linear_velocity_m_s.x;
+    world->setNativePlayerWalk("runner",{6,0,0},3.14159265358979323846/2,.3);run(*world,.25);
+    const auto pushing=nativePlayerOf(*world,"runner");
+    // Traction 0.6 g at most: 1.47 m/s gained in a quarter second, no more.
+    require(pushing.state.linear_velocity_m_s.x-v0<=.6*9.81*.25+.02,"no more than its traction");
+    require(pushing.state.linear_velocity_m_s.x-v0>.5*9.81*.25,"close to its traction");
+    near(pushing.traction_used,1,1e-9,"asked for more than it can grip");
+    auto air=open(walkScene(),{},{0,-9.81,0});
+    air->spawnNativePlayer("jumper",{0,groundUnder(*air,0,0)+3,0});
+    walkFor(*air,"jumper",{2,0,0},.25);
+    const auto falling=nativePlayerOf(*air,"jumper");
+    require(!falling.supported,"in the air it is not held up");
+    near(falling.state.linear_velocity_m_s.x,0,1e-9,"no traction in the air");
+    near(falling.walk_work_j,0,1e-12,"and does no walk work");
+}
+Json rampScene(double degrees) {
+    Json scene=nativePlayerScene();
+    Json ramp=box("ramp","concrete",{12,.4,6},{0,3,0},true);ramp["rotation_deg"]={0,0,degrees};
+    scene["bodies"].push_back(ramp);
+    return scene;
+}
+void nativePlayersHoldOnARampTheyCanGripAndSlideOneTheyCannot() {
+    for(const double degrees:{20.0,40.0}) {
+        auto world=open(rampScene(degrees),{},{0,-9.81,0});
+        const double r=degrees*3.14159265358979323846/180;
+        // Feet on the ramp's top face at its middle; the ramp is raised 3 m,
+        // clear of the room's floor at y = 0.
+        const Vec3 feet{-.2*std::sin(r),3+.2*std::cos(r)+.02,0};
+        world->spawnNativePlayer("climber",feet);
+        const Vec3 spawned=nativePlayerOf(*world,"climber").state.center_of_mass_world_m;
+        // Set down upright on a slope it settles into its stance first.
+        walkFor(*world,"climber",{},1.5);
+        const Vec3 start=nativePlayerOf(*world,"climber").state.center_of_mass_world_m;
+        walkFor(*world,"climber",{},3);
+        const auto end=nativePlayerOf(*world,"climber");
+        const double moved=length(end.state.center_of_mass_world_m-start);
+        const double slid=length(end.state.center_of_mass_world_m-spawned);
+        if(degrees<30) {
+            require(end.supported && end.support=="ramp","stands on the ramp");
+            require(moved<.05,"holds on a ramp its traction can grip");
+        } else require(slid>.5,"slides on a ramp steeper than its traction");
+        std::cout<<"    ramp "<<degrees<<" deg: moved "<<moved<<" m in 3 s after settling, "<<slid
+                 <<" m from where it was set down; tilt "<<tiltDeg(end)<<" deg"<<std::endl;
+    }
+}
+void nativePlayerFeetPushBackOnWhatTheyStandOn() {
+    Json scene=walkScene();
+    auto probe=open(scene,{},{0,-9.81,0});const double g=groundUnder(*probe,0,0);
+    scene["bodies"].push_back(box("plank","oak",{4,.08,1.2},{0,g+.04,0}));
+    auto world=open(scene,{},{0,-9.81,0});
+    world->spawnNativePlayer("walker",{0,g+.09,0});
+    walkFor(*world,"walker",{},.5);
+    const auto before=nativePlayerOf(*world,"walker");
+    walkFor(*world,"walker",{1,0,0},.5,3.14159265358979323846/2);
+    const auto after=nativePlayerOf(*world,"walker");
+    require(after.support=="plank","it stands on the plank");
+    const Vec3 given=after.walk_impulse_n_s-before.walk_impulse_n_s, back=after.support_reaction_n_s-before.support_reaction_n_s;
+    near(back.x,-given.x,1e-9,"the plank takes the equal and opposite push");
+    require(given.x>10,"it pushed off");
+    std::cout<<"    plank: walk impulse "<<given.x<<" Ns; reaction on the plank "<<back.x<<" Ns\n";
+    std::string why;const auto saved=world->snapshot(why);require(!saved.empty(),"walk snapshot: "+why);
+    auto again=open(scene,saved,{0,-9.81,0});const auto kept=nativePlayerOf(*again,"walker");
+    near(kept.walk_work_j,after.walk_work_j,1e-9,"walk work survives a reopen");
+    near(length(kept.support_reaction_n_s-after.support_reaction_n_s),0,1e-9,"reaction account survives");
+    require(kept.walk_remaining_s==0,"a held walk request does not survive a reopen");
+}
+
 void nativePlayersPersistAndRejectInvalidState() {
     const auto scene=nativePlayerScene();auto world=open(scene,{},{});
     world->spawnNativePlayer("z-owner",{-2,2,0});world->spawnNativePlayer("a-peer",{2,2,0});
@@ -1109,6 +1239,10 @@ int main(int argc, char **argv) {
         {"native player strikers are not the ground",nativePlayerStrikersAreNotTheGround},
         {"native players use terrain and water",nativePlayersUseTerrainAndWater},
         {"native players persist and reject invalid state",nativePlayersPersistAndRejectInvalidState},
+        {"native players walk on flat ground and stop",nativePlayersWalkOnFlatGroundAndStop},
+        {"native player traction is limited and absent in the air",nativePlayerTractionIsLimitedAndAbsentInTheAir},
+        {"native players hold on a ramp they can grip and slide one they cannot",nativePlayersHoldOnARampTheyCanGripAndSlideOneTheyCannot},
+        {"native player feet push back on what they stand on",nativePlayerFeetPushBackOnWhatTheyStandOn},
         {"native player inputs are bounded and cannot teleport",nativePlayerInputsAreBoundedAndCannotTeleport},
         {"exact compounds have native water forces and retain their state",exactCompoundsHaveNativeWaterForcesAndRetainTheirState},
         {"a closed basin conserves water with a log in it", aClosedBasinConservesWaterWithALogInIt},

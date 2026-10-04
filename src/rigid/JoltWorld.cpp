@@ -5,6 +5,7 @@
 #include "material/MaterialCatalog.hpp"
 #include "material/MaterialCompiler.hpp"
 
+#include <unordered_set>
 #include <Jolt/Jolt.h>
 #include <Jolt/RegisterTypes.h>
 #include <Jolt/Core/Factory.h>
@@ -439,7 +440,9 @@ JPH::Ref<JPH::Shape> compoundPartShape(const RigidCompoundPart &p) {
         if (!sized || std::abs(v.x - v.z) > 1e-9 * std::max(1.0, v.x))
             throw std::invalid_argument("a compound cylinder is sized {diameter, length, diameter}");
         const float half = float(v.y / 2), radius = float(v.x / 2);
-        return new JPH::CylinderShape(half, radius, std::min(kSweepRadiusM, 0.1F * std::min(half, radius)));
+        const float rounding = std::min(std::max(kSweepRadiusM, float(p.edge_rounding_m)), 0.5F * std::min(half, radius));
+        return new JPH::CylinderShape(half, radius, p.edge_rounding_m > 0 ? rounding
+                                                    : std::min(kSweepRadiusM, 0.1F * std::min(half, radius)));
     }
     }
     throw std::invalid_argument("unknown compound part kind");
@@ -484,6 +487,8 @@ public:
         const std::unordered_map<MatterBodyId, GroundSuspension> &ground_suspended)
         : tick_(tick), contact_states_(contact_states), external_pairs_(external_pairs),
           ground_suspended_(ground_suspended) {}
+    // Written only between steps, like ground_suspended_.
+    std::unordered_set<MatterBodyId> driven;
 
     JPH::ValidateResult OnContactValidate(const JPH::Body &a,const JPH::Body &b,JPH::RVec3Arg,const JPH::CollideShapeResult &) override {
         const MatterBodyId first=a.GetUserData(),second=b.GetUserData();const auto key=std::minmax(first,second);
@@ -496,6 +501,9 @@ public:
         const JPH::ContactManifold &manifold,
         JPH::ContactSettings &settings) override {
         processContact(body1, body2, manifold, settings, true);
+        // After processContact, which sets the combined friction itself.
+        if (!driven.empty() && (driven.contains(body1.GetUserData()) || driven.contains(body2.GetUserData())))
+            settings.mCombinedFriction = 0.0F;
     }
 
     void OnContactPersisted(
@@ -504,6 +512,9 @@ public:
         const JPH::ContactManifold &manifold,
         JPH::ContactSettings &settings) override {
         processContact(body1, body2, manifold, settings, false);
+        // After processContact, which sets the combined friction itself.
+        if (!driven.empty() && (driven.contains(body1.GetUserData()) || driven.contains(body2.GetUserData())))
+            settings.mCombinedFriction = 0.0F;
     }
 
     [[nodiscard]] std::vector<ImpactEvent> capture() {std::scoped_lock lock(mutex_);if(events_.size()>65536)throw std::runtime_error("trial event queue budget exceeded");return events_;}
@@ -614,8 +625,10 @@ private:
         // which part touched.
         const int wheel1 = body1.IsDynamic() ? wheelOf(state1->second, body1, manifold.mSubShapeID1) : -1;
         const int wheel2 = body2.IsDynamic() ? wheelOf(state2->second, body2, manifold.mSubShapeID2) : -1;
-        const bool round1 = (state1->second.is_sphere && body1.IsDynamic()) || wheel1 >= 0;
-        const bool round2 = (state2->second.is_sphere && body2.IsDynamic()) || wheel2 >= 0;
+        // A body walking under its own controller is not a wheel: its grip is
+        // that controller's, and a rolling couple on it was a drag on its walk.
+        const bool round1 = ((state1->second.is_sphere && body1.IsDynamic()) || wheel1 >= 0) && !driven.contains(id1);
+        const bool round2 = ((state2->second.is_sphere && body2.IsDynamic()) || wheel2 >= 0) && !driven.contains(id2);
         if (round1 || round2) {
             const JPH::SubShapeIDPair key(body1.GetID(), manifold.mSubShapeID1,
                                           body2.GetID(), manifold.mSubShapeID2);
@@ -3434,6 +3447,11 @@ std::vector<PlacementOverlap> JoltWorld::overlapsAt(MatterBodyId body_id, const 
     std::sort(out.begin(), out.end(),
               [](const PlacementOverlap &a, const PlacementOverlap &b) { return a.depth_m > b.depth_m; });
     return out;
+}
+
+void JoltWorld::setDrivenContact(MatterBodyId body_id, bool driven) {
+    if (driven) impl_->impact_collector_.driven.insert(body_id);
+    else impl_->impact_collector_.driven.erase(body_id);
 }
 
 void JoltWorld::pushBody(MatterBodyId body_id, const Vec3 &force_n) {

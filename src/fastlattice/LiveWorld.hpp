@@ -28,6 +28,16 @@ struct LiveNativePlayer {
     double mass_kg{70.0}, volume_m3{};
     double actuator_remaining_s{}, actuator_work_j{};
     Vec3 actuator_impulse_n_s{}, actuator_angular_impulse_kg_m2_s{};
+    // Locomotion (setNativePlayerWalk): what it was asked for, whether the
+    // ground holds it up, how much of its traction the last step used, and
+    // the source account of what its own controller did: the work and
+    // impulse it put in, and the impulse its feet gave a body it stood on.
+    Vec3 walk_velocity_m_s{};
+    double walk_heading_rad{}, walk_remaining_s{}, traction_used{};
+    bool supported{};
+    std::string support;                    // "" none, "ground", or a body name
+    double walk_work_j{};
+    Vec3 walk_impulse_n_s{}, walk_angular_impulse_kg_m2_s{}, support_reaction_n_s{};
 };
 
 // Where one object is, under the name the request gave it.
@@ -2270,6 +2280,17 @@ public:
     // stop on whole reopen; physical state and cumulative accounts survive.
     void setNativePlayerActuator(const std::string &actor, const Vec3 &force_n,
                                  const Vec3 &torque_n_m, double duration_s);
+    // Walk: a wanted horizontal velocity (at most 6 m/s) and facing, held for
+    // at most 0.5 native seconds and renewed by the host. Its own controller
+    // drives the body only while the ground under it holds it up: a
+    // horizontal force toward that velocity, limited by its traction (0.6 of
+    // its weight, and 600 N), and an upright/heading torque of at most
+    // 120 N m. Its contacts carry no friction while it is driven, so that
+    // force -- its feet on the ground -- is its grip, and a body it stands on
+    // takes the equal and opposite push. Unsupported (mid-air, or afloat) it
+    // gets no traction at all. When the request lapses it is a passive body.
+    void setNativePlayerWalk(const std::string &actor, const Vec3 &velocity_m_s,
+                             double heading_rad, double duration_s);
     [[nodiscard]] std::string playerCarriedGround() const;
     // Previews, for aiming. Neither changes the world, and both are bounded:
     // at most ten seconds of flight, and a stroke at most its own give_up_s.

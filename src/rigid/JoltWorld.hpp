@@ -68,6 +68,11 @@ struct RigidCompoundPart {
     // friction and restitution; its mass is already in the body's mass and
     // inertia, which the caller measures.
     std::optional<MaterialDefinition> material;
+    // How round its edges are, for contact only: a walking avatar's base is
+    // rounded like a heel so it rides over the millimetre lips where ground
+    // patches meet instead of catching on them. Mass and inertia are the
+    // caller's. Zero keeps the usual 2 mm.
+    double edge_rounding_m{};
 };
 struct RigidCompoundDescription {
     MatterBodyId body_id{};
@@ -220,6 +225,11 @@ public:
     // caller that wants a sustained push applies it every step -- which is what
     // a hand holding something does.
     void pushBody(MatterBodyId body_id, const Vec3 &force_n);
+    // A body whose own controller supplies its traction (a walking avatar):
+    // its contacts carry no friction, so the controller's traction-limited
+    // force -- not the contact -- is what grips the ground. Normal response
+    // is unchanged. Set only between steps.
+    void setDrivenContact(MatterBodyId body_id, bool driven);
     // ---- the ground as a height field --------------------------------------
     //
     // A patch of terrain: a square of `count` x `count` heights, `spacing_m`

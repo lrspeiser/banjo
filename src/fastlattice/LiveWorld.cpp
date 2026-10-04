@@ -46,6 +46,19 @@ constexpr double kNativePlayerMassKg = 70.0;
 constexpr double kNativePlayerContactModulusPa = 1e6;
 constexpr double kNativePlayerContactDampingRatio = 0.05;
 constexpr const char *kNativePlayerModel = "rigid-avatar-cylinder-v1";
+// The walk controller's declared constants. Traction is the proxy's own
+// declared friction; the rest are control gains, not tissue properties.
+constexpr double kWalkTraction = 0.6;
+constexpr double kWalkMostForceN = 600.0;
+constexpr double kWalkMostTorqueNm = 400.0;   // ankle and hip balance together, not one joint
+constexpr double kWalkResponseS = 0.25;       // closes a velocity error in about this long
+constexpr double kWalkSlopeProbeM = 0.1;      // the rays that read the slope, either side of its middle        // and a steady one, a slope's, in about this
+constexpr double kWalkUprightGain = 6000.0;   // N m per radian of tilt
+constexpr double kWalkUprightDamping = 640.0;  // N m s per radian: critical for its 17 kg m2
+constexpr double kWalkYawGain = 20.0;
+constexpr double kWalkYawDamping = 6.4;
+constexpr double kWalkMostTiltRad = 0.6;      // past ~34 degrees it is falling, not walking
+constexpr double kWalkSupportReachM = 1.03;   // half its height on a 30 degree slope, and 5 cm
 RigidPrimitive nativePlayerGeometry() {
     RigidPrimitive shape;
     shape.kind = PrimitiveKind::Cylinder;
@@ -3271,8 +3284,85 @@ struct LiveWorld::Impl {
         Vec3 force_n{}, torque_n_m{};
         double remaining_s{}, work_j{};
         Vec3 impulse_n_s{}, angular_impulse_kg_m2_s{};
+        Vec3 walk_velocity{};
+        double walk_heading{}, walk_remaining_s{}, traction_used{};
+        bool supported{}, driven{};
+        std::string support;
+        double walk_work_j{};
+        Vec3 walk_impulse_n_s{}, walk_angular_impulse_kg_m2_s{}, support_reaction_n_s{};
     };
     std::map<std::string, NativePlayer> native_players;
+    // The walk controller (setNativePlayerWalk), worked out for one step from
+    // where the body is now. Sets its contacts frictionless while it drives.
+    void walkPlayer(NativePlayer &player, const RigidSnapshot &now, Vec3 &force, Vec3 &torque,
+                    std::optional<MatterBodyId> &under, Vec3 &under_at) {
+        force = {}; torque = {}; under.reset();
+        player.supported = false; player.support.clear(); player.traction_used = 0;
+        bool drive = false;
+        if (player.walk_remaining_s > 0) {
+            const Vec3 up = now.orientation_world.rotate(Vec3{0, 1, 0});
+            // Held up by what is under its feet: a ray from its middle, as far
+            // as its base and a little more on a slope.
+            const RayHit hit = world->castRay(now.center_of_mass_world_m, Vec3{0, -1, 0},
+                                              kWalkSupportReachM, player.id);
+            player.supported = hit.hit && up.y > std::cos(kWalkMostTiltRad);
+            if (player.supported) {
+                drive = true;
+                player.support = hit.named ? std::string("body") : std::string("ground");
+                if (hit.named) {
+                    for (std::size_t i = 0; i < body_of.size(); ++i)
+                        if (body_of[i] == hit.body_id) { player.support = described[i].name; break; }
+                    under = hit.body_id; under_at = hit.point_world_m;
+                }
+                const double weight = kNativePlayerMassKg * std::abs(request.gravity_m_s2.y);
+                // The ground's slope under it, from four short rays round its
+                // middle: on a frictionless contact the ground pushes it
+                // downhill by m g tan(slope), so standing still takes that much
+                // push into the hill -- given here, not found by drifting. The
+                // grip it has is its traction times the normal force,
+                // m g / cos(slope); past tan(slope) = 0.6 it cannot hold.
+                Vec3 normal{0, 1, 0};
+                {
+                    const Vec3 c = now.center_of_mass_world_m;
+                    double h[4]; bool all = true;
+                    const Vec3 offsets[4] = {{kWalkSlopeProbeM, 0, 0}, {-kWalkSlopeProbeM, 0, 0},
+                                             {0, 0, kWalkSlopeProbeM}, {0, 0, -kWalkSlopeProbeM}};
+                    for (int k = 0; k < 4 && all; ++k) {
+                        const RayHit probe = world->castRay(c + offsets[k], Vec3{0, -1, 0}, kWalkSupportReachM + 0.3, player.id);
+                        all = probe.hit; h[k] = probe.point_world_m.y;
+                    }
+                    if (all) {
+                        const double gx = (h[0] - h[1]) / (2 * kWalkSlopeProbeM), gz = (h[2] - h[3]) / (2 * kWalkSlopeProbeM);
+                        normal = normalized(Vec3{-gx, 1, -gz});
+                    }
+                }
+                const double limit = std::min(kWalkTraction * weight / std::max(normal.y, 0.2), kWalkMostForceN);
+                const Vec3 hold = (-weight / std::max(normal.y, 0.2)) * Vec3{normal.x, 0, normal.z};
+                const Vec3 have{now.linear_velocity_m_s.x, 0, now.linear_velocity_m_s.z};
+                const Vec3 want{player.walk_velocity.x, 0, player.walk_velocity.z};
+                // The slope's push, plus a proportional pull on the velocity
+                // error, all within its traction.
+                force = hold + (kNativePlayerMassKg / kWalkResponseS) * (want - have);
+                const double asked = length(force);
+                if (asked > limit && asked > 0) force = (limit / asked) * force;
+                player.traction_used = limit > 0 ? std::min(1.0, asked / limit) : 1.0;
+                // Upright, and turned to its heading: a damped spring on its
+                // tilt and its yaw, bounded like the actuator's torque.
+                const Vec3 w = now.angular_velocity_rad_s;
+                const Vec3 axis = cross(up, Vec3{0, 1, 0});
+                const double s = length(axis);
+                const Vec3 tilt = s > 1e-12 ? (std::asin(std::min(1.0, s)) / s) * axis : Vec3{};
+                const Vec3 ahead = now.orientation_world.rotate(Vec3{0, 0, 1});
+                const double yaw = std::atan2(ahead.x, ahead.z);
+                const double turn = std::remainder(player.walk_heading - yaw, 2 * 3.14159265358979323846);
+                torque = kWalkUprightGain * tilt - kWalkUprightDamping * Vec3{w.x, 0, w.z} +
+                         Vec3{0, kWalkYawGain * turn - kWalkYawDamping * w.y, 0};
+                const double most = length(torque);
+                if (most > kWalkMostTorqueNm) torque = (kWalkMostTorqueNm / most) * torque;
+            }
+        }
+        if (drive != player.driven) { world->setDrivenContact(player.id, drive); player.driven = drive; }
+    }
     void addNativePlayer(const std::string &actor, MatterBodyId id, const RigidSnapshot &state) {
         if (actor.empty() || actor.size() > 128 ||
             std::any_of(actor.begin(), actor.end(), [](unsigned char c) { return c < 32; }))
@@ -3305,7 +3395,7 @@ struct LiveWorld::Impl {
         material.contact_damping_ratio = kNativePlayerContactDampingRatio;
         RigidCompoundDescription body;
         body.body_id = id;
-        body.parts.push_back({geometry, {}, {}, std::nullopt});
+        body.parts.push_back({geometry, {}, {}, std::nullopt, 0.03});
         body.material = material;
         body.state = state;
         body.mass_kg = kNativePlayerMassKg;
@@ -6254,6 +6344,16 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             player.work_j = work;
             player.impulse_n_s = impulse;
             player.angular_impulse_kg_m2_s = angular;
+            // Walk accounts arrived after the actuator's: an older save has none.
+            if (row.contains("walk_work_j")) {
+                player.walk_work_j = numberFrom(row.at("walk_work_j"));
+                player.walk_impulse_n_s = vecFrom(row.at("walk_impulse_n_s"));
+                player.walk_angular_impulse_kg_m2_s = vecFrom(row.at("walk_angular_impulse_kg_m2_s"));
+                player.support_reaction_n_s = vecFrom(row.at("support_reaction_n_s"));
+                if (!std::isfinite(player.walk_work_j) || !finitePlayerVec(player.walk_impulse_n_s) ||
+                    !finitePlayerVec(player.walk_angular_impulse_kg_m2_s) || !finitePlayerVec(player.support_reaction_n_s))
+                    throw std::invalid_argument("saved native player walk account is invalid");
+            }
             if (!row.at("awake").get<bool>()) impl.world->sleep(player.id);
         }
     }
@@ -6564,19 +6664,30 @@ void LiveWorld::step(double dt_s) {
         MatterBodyId id{};
         RigidSnapshot before;
         Vec3 force{}, torque{};
+        Vec3 walk_force{}, walk_torque{};
+        std::optional<MatterBodyId> under;
+        Vec3 under_at{};
     };
     std::vector<PlayerPush> player_pushes;
-    for (const auto &[actor, player] : impl_->native_players) {
+    for (auto &[actor, player] : impl_->native_players) {
         const double fraction = std::min(player.remaining_s, dt_s) / dt_s;
-        player_pushes.push_back({actor, player.id, impl_->world->snapshot(player.id),
-                                 fraction * player.force_n, fraction * player.torque_n_m});
+        PlayerPush push{actor, player.id, impl_->world->snapshot(player.id),
+                        fraction * player.force_n, fraction * player.torque_n_m};
+        impl_->walkPlayer(player, push.before, push.walk_force, push.walk_torque, push.under, push.under_at);
+        player_pushes.push_back(std::move(push));
     }
     const auto pushPlayers = [&]() {
         for (const auto &push : player_pushes) {
-            if (lengthSquared(push.force) == 0 && lengthSquared(push.torque) == 0) continue;
-            impl_->world->pushBody(push.id, push.force);
-            impl_->world->twistBody(push.id, push.torque);
+            const Vec3 force = push.force + push.walk_force, torque = push.torque + push.walk_torque;
+            if (lengthSquared(force) == 0 && lengthSquared(torque) == 0) continue;
+            impl_->world->pushBody(push.id, force);
+            impl_->world->twistBody(push.id, torque);
             impl_->world->wake(push.id);
+            // Its feet push back on what it stands on; the ground takes it.
+            if (push.under && lengthSquared(push.walk_force) > 0) {
+                impl_->world->pushBodyAt(*push.under, -1.0 * push.walk_force, push.under_at);
+                impl_->world->wake(*push.under);
+            }
         }
     };
     const auto settlePlayers = [&]() {
@@ -6591,6 +6702,12 @@ void LiveWorld::step(double dt_s) {
             const Vec3 mean_com = (push.before.center_of_mass_world_m + after.center_of_mass_world_m) / 2;
             player.angular_impulse_kg_m2_s += dt_s * (push.torque + cross(mean_com, push.force));
             player.remaining_s = std::max(0.0, player.remaining_s - dt_s);
+            player.walk_work_j += dt_s * (dot(push.walk_force, (push.before.linear_velocity_m_s + after.linear_velocity_m_s) / 2) +
+                                          dot(push.walk_torque, (push.before.angular_velocity_rad_s + after.angular_velocity_rad_s) / 2));
+            player.walk_impulse_n_s += dt_s * push.walk_force;
+            player.walk_angular_impulse_kg_m2_s += dt_s * (push.walk_torque + cross(mean_com, push.walk_force));
+            if (push.under) player.support_reaction_n_s += -dt_s * push.walk_force;
+            player.walk_remaining_s = std::max(0.0, player.walk_remaining_s - dt_s);
         }
     };
 
@@ -14094,6 +14211,16 @@ std::vector<LiveNativePlayer> LiveWorld::nativePlayers() const {
         reading.actuator_work_j = player.work_j;
         reading.actuator_impulse_n_s = player.impulse_n_s;
         reading.actuator_angular_impulse_kg_m2_s = player.angular_impulse_kg_m2_s;
+        reading.walk_velocity_m_s = player.walk_velocity;
+        reading.walk_heading_rad = player.walk_heading;
+        reading.walk_remaining_s = player.walk_remaining_s;
+        reading.traction_used = player.traction_used;
+        reading.supported = player.supported;
+        reading.support = player.support;
+        reading.walk_work_j = player.walk_work_j;
+        reading.walk_impulse_n_s = player.walk_impulse_n_s;
+        reading.walk_angular_impulse_kg_m2_s = player.walk_angular_impulse_kg_m2_s;
+        reading.support_reaction_n_s = player.support_reaction_n_s;
         out.push_back(std::move(reading));
     }
     return out;
@@ -14111,6 +14238,19 @@ void LiveWorld::setNativePlayerActuator(const std::string &actor, const Vec3 &fo
     player.force_n = force_n;
     player.torque_n_m = torque_n_m;
     player.remaining_s = duration_s;
+}
+
+void LiveWorld::setNativePlayerWalk(const std::string &actor, const Vec3 &velocity_m_s,
+                                    double heading_rad, double duration_s) {
+    const auto found = impl_->native_players.find(actor);
+    if (found == impl_->native_players.end()) throw std::invalid_argument("native player does not exist");
+    if (!finitePlayerVec(velocity_m_s) || length(velocity_m_s) > 6 || !std::isfinite(heading_rad) ||
+        !std::isfinite(duration_s) || duration_s < 0 || duration_s > 0.5)
+        throw std::invalid_argument("player walk exceeds 6 m/s or 0.5 s, or is not finite");
+    auto &player = found->second;
+    player.walk_velocity = velocity_m_s;
+    player.walk_heading = heading_rad;
+    player.walk_remaining_s = duration_s;
 }
 
 std::map<std::string, LiveHand> LiveWorld::playerHands() {
@@ -16268,7 +16408,11 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                 {"pose", savedRigid(I.world->snapshot(player.id))}, {"awake", I.world->isAwake(player.id)},
                 {"actuator_work_j", savedNumber(player.work_j)},
                 {"actuator_impulse_n_s", savedVec(player.impulse_n_s)},
-                {"actuator_angular_impulse_kg_m2_s", savedVec(player.angular_impulse_kg_m2_s)}});
+                {"actuator_angular_impulse_kg_m2_s", savedVec(player.angular_impulse_kg_m2_s)},
+                {"walk_work_j", savedNumber(player.walk_work_j)},
+                {"walk_impulse_n_s", savedVec(player.walk_impulse_n_s)},
+                {"walk_angular_impulse_kg_m2_s", savedVec(player.walk_angular_impulse_kg_m2_s)},
+                {"support_reaction_n_s", savedVec(player.support_reaction_n_s)}});
         // Transient input is deliberately absent: a disconnected/reopened
         // actor retains its body and accounts without an old held command.
         doc["native_players"] = std::move(players);

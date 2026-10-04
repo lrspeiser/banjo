@@ -1279,7 +1279,13 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
             {"actuator_remaining_s", player.actuator_remaining_s}, {"actuator_work_j", player.actuator_work_j},
             {"actuator_impulse_n_s", player_vector(player.actuator_impulse_n_s)},
             {"actuator_angular_impulse_kg_m2_s", player_vector(player.actuator_angular_impulse_kg_m2_s)},
-            {"actuator_source", "external; locomotion reactions not supplied"}};
+            {"actuator_source", "external; locomotion reactions not supplied"},
+            {"walk", {{"velocity_m_s", player_vector(player.walk_velocity_m_s)}, {"heading_rad", player.walk_heading_rad},
+                      {"remaining_s", player.walk_remaining_s}, {"supported", player.supported}, {"support", player.support},
+                      {"traction_used", player.traction_used}, {"work_j", player.walk_work_j},
+                      {"impulse_n_s", player_vector(player.walk_impulse_n_s)},
+                      {"angular_impulse_kg_m2_s", player_vector(player.walk_angular_impulse_kg_m2_s)},
+                      {"support_reaction_n_s", player_vector(player.support_reaction_n_s)}}}};
     }
     state["native_players"] = std::move(native_players);
     // Every moment the world waited, or was spared waiting, since the last
@@ -1839,6 +1845,9 @@ int main(int argc, char **argv) {
                 bool made_bodies = false;
                 if (op == "player-spawn") {
                     world->spawnNativePlayer(command.value("actor", std::string{}), readVec(command, "feet_m"));
+                } else if (op == "player-walk") {
+                    world->setNativePlayerWalk(command.value("actor", std::string{}), readVec(command, "velocity_m_s"),
+                        command.value("heading_rad", 0.0), command.at("duration_s").get<double>());
                 } else if (op == "player-actuator") {
                     world->setNativePlayerActuator(command.value("actor", std::string{}),
                         readVec(command, "force_n"), readVec(command, "torque_n_m"), command.at("duration_s").get<double>());
