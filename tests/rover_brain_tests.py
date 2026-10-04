@@ -1132,6 +1132,46 @@ class LocalNavigation(unittest.TestCase):
         return machine_senses.Context(a_program(at_m=[0,.5,0],height_m=.5,power=True,climb_deg=12),
                                       bodies=[body,*obstacles],ask=ask,terrain_declared=True)
 
+    def test_a_far_place_is_reached_round_a_river_over_seen_ground_only(self):
+        """Beyond its 6 m window a machine follows a route over the shared map
+        of what has been seen: across a river at the ford, and never through
+        ground nobody has seen (the owner, 2026-10-04)."""
+        import base64, machine_navigation as nav, machine_sight
+        def field(x, z):
+            # A river across the room between z 2 and 4, 0.3 m deep, with a
+            # ford 50 mm deep 7 m off to the east.
+            depth = (0.05 if 6.0 <= x <= 8.0 else 0.3) if 2.0 <= z <= 4.0 else 0.0
+            return {'on_the_ground': True, 'ground_m': 0., 'slope_deg': 0.,
+                    'water': {'depth_m': depth} if depth else None}
+        def sight(seen):
+            return machine_sight.Sight({'sight': {'cell_m': 1.0, 'x0_m': -10.0, 'z0_m': -10.0, 'nx': 20, 'nz': 20,
+                                                  'seen_b64': base64.b64encode(bytes(seen)).decode()}})
+        ctx = self.context(field)
+        for s in ctx.program['sensors']:
+            s['depth_m'] = 0.08          # it wades to 80 mm, as the rooms' rovers do
+        ctx.sight = sight([1] * 400)
+        route = nav.map_route(ctx, [0., 8.])
+        self.assertIsNotNone(route, 'no route over the map, ford and all')
+        crossing = [p for p in route if 2.0 <= p[1] <= 4.0]
+        self.assertTrue(crossing and all(6.0 <= p[0] <= 8.0 for p in crossing), f'it did not cross at the ford: {route}')
+        leg = nav.plan(ctx, [0., 8.])
+        self.assertNotIn('blocked', leg)
+        self.assertFalse(leg['final'], 'a point on the way is not the arrival')
+        self.assertTrue(leg.get('map_route'), 'the leg came off the map')
+        self.assertGreater(leg['target'][0], 0.5, f'it set off east for the ford, not at the river: {leg}')
+        # Nobody has seen the ford: no route over the map, and no leg off it.
+        unseen = [1] * 400
+        for j in range(20):
+            for i in range(20):
+                if 6.0 <= -10.0 + i + 0.5 <= 8.0 and 2.0 <= -10.0 + j + 0.5 <= 4.0:
+                    unseen[j * 20 + i] = 0
+        ctx = self.context(field)
+        for s in ctx.program['sensors']:
+            s['depth_m'] = 0.08
+        ctx.sight = sight(unseen)
+        self.assertIsNone(nav.map_route(ctx, [0., 8.]), 'it routed through ground nobody has seen')
+        self.assertFalse(nav.plan(ctx, [0., 8.]).get('map_route'))
+
     def test_observed_geometry_routes_around_solid_without_mutation_or_remote_queries(self):
         import machine_navigation as nav
         box={'name':'wall','position_m':[2,.5,0],'dimensions_m':[1,1,1],'orientation_wxyz':[1,0,0,0]}

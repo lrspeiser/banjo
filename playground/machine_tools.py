@@ -264,7 +264,7 @@ def go_to(ctx: senses.Context, call: Call) -> dict[str, Any]:
         if pile:arrival=(0.,max(0.,machine_goods_reach()+float(pile.get('radius_m',1.))-.75))
         planning=point if arrival!=(0.,0.) else aim
         if arrival!=(0.,0.) or math.hypot(aim[0]-ctx.at()[0],aim[1]-ctx.at()[1])>NEAR_M:
-            navigation=machine_navigation.waypoint(ctx,planning,arrival)
+            navigation=machine_navigation.plan(ctx,planning,arrival)
             if navigation:navigation['arrival_m']=list(arrival)
             if navigation and navigation.get('blocked'):
                 # A failed plan keeps the load and requests actual braking.

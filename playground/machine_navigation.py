@@ -336,3 +336,134 @@ def waypoint(ctx, target, arrival=(0.,0.), avoid_workings=True):
     if final and arrival==(0.,0.):destination=list(target)
     return {'target':destination,'final':final,'near_m':near,'radius_m':radius,'surveys':queries,
             'path':[list(point(n)) for n in path[:64]]}
+
+
+# ---- the shared map ----------------------------------------------------------
+# The local planner sees a 6 m window and nothing else, so it heads greedily at
+# a place and a river between them is a wall: the mine's rover, sent home round
+# a bend of water, met the bank and stood there. Beyond that window it follows
+# a route over the room's record of what has been SEEN (machine_sight), the one
+# every machine and the person fill in, so a drone that has flown ahead gives a
+# rover its way round. Unseen ground is never routed through: what nobody has
+# seen nobody can know is passable (the owner, 2026-10-04).
+# Where the local window takes over: a route point this far along is handed to
+# it as the next place to reach, well inside LOOK_M so it can plan right to it.
+SUBGOAL_M = 4.
+# How long a cell's survey stands in the shared map, in room seconds. Ground
+# changes by digging and water moves; neither is quick at a metre a cell.
+MAP_FRESH_S = 20.
+# A step over one of its own scoops costs this many dry ones: crossed when
+# going round costs more, as in the local window.
+WORKING_COST = 4.
+# The most map cells one plan opens: a 60 m room is 3,600.
+MAP_MOST_CELLS = 6000
+
+
+def _map_cells(ctx, sight):
+    """The shared survey cache, on the room's own sight record, so every
+    machine reads what any one of them surveyed."""
+    cache=getattr(sight,'route_cells',None)
+    if cache is None:
+        cache={};sight.route_cells=cache
+    t=float(ctx.t)
+    def cell(i,j):
+        if not (0<=i<sight.nx and 0<=j<sight.nz) or not sight.seen[j*sight.nx+i]:return None
+        got=cache.get((i,j))
+        if got is None or not 0.<=t-got[0]<MAP_FRESH_S:
+            x=sight.x0_m+(i+.5)*sight.cell_m;z=sight.z0_m+(j+.5)*sight.cell_m
+            got=(t,ctx.survey(x,z) or {});cache[(i,j)]=got
+        return got[1]
+    return cell
+
+
+def map_route(ctx, target, arrival=(0.,0.)):
+    """Cell middles from where it stands to the place, over seen ground it may
+    cross; None when the seen ground holds no such route."""
+    sight=getattr(ctx,'sight',None)
+    if sight is None or not getattr(sight,'nx',0) or not ctx.terrain_declared:return None
+    at=ctx.at();mine=set(ctx.program.get('parts') or [])|{ctx.program.get('body')}
+    own=[p for b in ctx.bodies or [] if b.get('name') in mine for p in shape_points(b,ctx.cell_m)]
+    if not own:return None
+    radius=max(math.hypot(p[0]-at[0],p[2]-at[1]) for p in own)
+    floor=float(ctx.program['at_m'][1])-float(ctx.program.get('height_m') or 0)
+    top=max(p[1] for p in own)
+    climb=float(ctx.program.get('climb_deg',8))
+    wade=min((float(s['depth_m']) for s in ctx.program.get('sensors') or []
+              if s.get('kind')=='water' and s.get('depth_m') is not None),default=WET_M)
+    solids=[(lo,hi) for b in ctx.bodies or [] if b.get('name') not in mine
+            for lo,hi in part_bounds(b,ctx.cell_m) if hi[1]>=floor-.1 and lo[1]<=top+.1]
+    workings=[(d[0],d[1],d[2]/2) for d in (getattr(ctx.routine,'dug_spots',None) or [])]
+    survey=_map_cells(ctx,sight);c=sight.cell_m
+    def middle(i,j):return (sight.x0_m+(i+.5)*c,sight.z0_m+(j+.5)*c)
+    def index(x,z):return (int(math.floor((x-sight.x0_m)/c)),int(math.floor((z-sight.z0_m)/c)))
+    start=index(*at);goal_at=index(*target)
+    def remaining(i,j):
+        x,z=middle(i,j);d=math.hypot(x-target[0],z-target[1])
+        return max(arrival[0]-d,0.,d-arrival[1])
+    passable={}
+    def ok(i,j):
+        if (i,j)==start:return True
+        if (i,j) in passable:return passable[(i,j)]
+        s=survey(i,j);good=s is not None and bool(s.get('on_the_ground'))
+        if good:good=float((s.get('water') or {}).get('depth_m') or 0)<=wade
+        if good:
+            # The same secant over its occupied width as the local window,
+            # from the cells either side; a missing neighbour is not graded.
+            h=[survey(i+di,j+dj) for di,dj in ((1,0),(-1,0),(0,1),(0,-1))]
+            if all(n is not None and 'ground_m' in n for n in h):
+                grade=math.degrees(math.atan(math.hypot(float(h[0]['ground_m'])-float(h[1]['ground_m']),
+                                                        float(h[2]['ground_m'])-float(h[3]['ground_m']))/(2*c)))
+                good=grade<=climb
+        if good:
+            x,z=middle(i,j)
+            for lo,hi in solids:
+                if math.hypot(max(lo[0]-x,0,x-hi[0]),max(lo[2]-z,0,z-hi[2]))<radius:good=False;break
+        passable[(i,j)]=good;return good
+    def cost(i,j):
+        s=survey(i,j) or {};k=1.
+        if float((s.get('water') or {}).get('depth_m') or 0)>WET_M:k=WADE_COST
+        x,z=middle(i,j)
+        if any(math.hypot(x-px,z-pz)<radius+half for px,pz,half in workings):k=max(k,WORKING_COST)
+        return k
+    moves=[(di,dj) for di in (-1,0,1) for dj in (-1,0,1) if di or dj]
+    costs={start:0.};parents={};queue=[(remaining(*start),0.,start)];done=None;opened=0
+    while queue and opened<MAP_MOST_CELLS:
+        _,g,node=heapq.heappop(queue)
+        if g!=costs.get(node):continue
+        opened+=1
+        if remaining(*node)<=c/2 or node==goal_at:done=node;break
+        for di,dj in moves:
+            nxt=(node[0]+di,node[1]+dj)
+            if not ok(*nxt):continue
+            if di and dj and (not ok(node[0]+di,node[1]) or not ok(node[0],node[1]+dj)):continue
+            score=g+c*math.hypot(di,dj)*cost(*nxt)
+            if score>=costs.get(nxt,math.inf):continue
+            costs[nxt]=score;parents[nxt]=node
+            heapq.heappush(queue,(score+remaining(*nxt),score,nxt))
+    if done is None:return None
+    cells=[done]
+    while cells[-1]!=start:cells.append(parents[cells[-1]])
+    return [list(at)]+[list(middle(*n)) for n in reversed(cells[:-1])]
+
+
+def plan(ctx, target, arrival=(0.,0.)):
+    """The next leg toward a place: straight from the local window when the
+    place is within it, and otherwise toward the point SUBGOAL_M along a route
+    over the shared map, which the local window then plans to."""
+    at=ctx.at()
+    if math.hypot(target[0]-at[0],target[1]-at[1])-arrival[1]>SUBGOAL_M:
+        route=map_route(ctx,target,arrival)
+        if route and len(route)>2:
+            along=0.;subgoal=None
+            for a,b in zip(route,route[1:]):
+                along+=math.hypot(b[0]-a[0],b[1]-a[1])
+                if along>SUBGOAL_M:break
+                subgoal=b
+            if subgoal is not None and math.hypot(subgoal[0]-at[0],subgoal[1]-at[1])>WAYPOINT_NEAR_M+.05:
+                leg=waypoint(ctx,subgoal,(0.,CELL_M))
+                if leg and not leg.get('blocked'):
+                    # A point on the way, never the arrival: the routine plans
+                    # the next leg from wherever this one ends.
+                    leg.update(final=False,near_m=WAYPOINT_NEAR_M,map_route=route[:64])
+                    return leg
+    return waypoint(ctx,target,arrival)
