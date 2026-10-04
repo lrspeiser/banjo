@@ -808,7 +808,9 @@ class AutonomousGuests(unittest.TestCase):
             self.assertEqual([],stored.machine_evidence_pending)
             from mcp import fabrication
             process=stored.fabrication_record
-            self.assertEqual(2,len(process['jobs']))
+            # Three paid makes: the pick, the Camp light and the Camp solar
+            # panel. The work table is optional and no chapter asks for it.
+            self.assertEqual(3,len(process['jobs']))
             self.assertTrue(all(j['status']=='installed' and j['make_source']['owner']==bot['id'] for j in process['jobs'].values()))
             self.assertTrue(all(r['source_owner']==bot['id'] for r in process['stock_imports'].values()))
             totals=fabrication.audit(process)
@@ -860,7 +862,7 @@ class AutonomousGuests(unittest.TestCase):
         self.assertEqual("complete", final["character"]["status"], final["character"])
         self.assertTrue(final["goals"]["complete"])
         self.assertGreater(len(calls),10)
-        self.assertEqual({'first-tool-v1','first-workshop-v1'},{s['goals']['chain_id'] for s in calls})
+        self.assertEqual({'first-tool-v1','first-workshop-v1','camp-power-v1'},{s['goals']['chain_id'] for s in calls})
         self.assertIn("inventory", calls[0])
         self.assertIn("tech_tree", calls[0])
         self.assertTrue(all(e["mode"] == "openai" and e["result"] == "committed" for e in final["character"]["history"]))

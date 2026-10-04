@@ -615,8 +615,10 @@ def _contact(app,said,use,tool,eyes,heard,note):
         _stroke(app)
         app.live.act({'session':session.id,'op':'step','dt':1/240,'n':1,
             'hand':high,'hand_q':ready['hand_q']})
-        began=time.monotonic()
-        while time.monotonic()-began<2:
+        # Two seconds of world time to turn, as for the contact below: on a
+        # loaded machine the world steps slower and a wall deadline refused.
+        turn_from=float(session.state.get('t') or 0);wall=time.monotonic()+30
+        while float(session.state.get('t') or 0)-turn_from<2 and time.monotonic()<wall:
             point=_native_point(app,tool)
             if (point and point['pointing'][1]<-.98 and
                 math.dist(point['tip'],[at[0],at[1]+tool_gestures.CLEARANCE_M+.6,at[2]])<.035):break

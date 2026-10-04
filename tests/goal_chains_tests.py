@@ -83,6 +83,31 @@ class Predicates(unittest.TestCase):
         self.assertEqual(3,len(goal_chains.definitions()['first-tool-v1']['steps']))
 
 
+class CampPower(unittest.TestCase):
+    """A light counts once it has drawn from its battery; a panel once its
+    battery has taken energy in. Neither for placing it, nor for someone else."""
+    def saved(self,**world):
+        return {'workshop_installs':[{'status':'installed','owner_id':'alice','resources_charged':True,
+            'root_body':'thing','component_to_body':{}}],'world':{'t_s':12.0,**world}}
+
+    def test_a_panel_counts_once_its_battery_has_taken_sunlight_in(self):
+        def store(given,taken):
+            return self.saved(solar_panels=[{'body':'thing'}],
+                energy_stores=[{'body':'thing','name':'battery','given_j':given,'taken_j':taken}])
+        # Giving energy out (banking, a lamp) is not collecting it.
+        self.assertIsNone(goal_chains._solar_collected(store(50.,0.),'alice'))
+        got=goal_chains._solar_collected(store(0.,3.5),'alice')
+        self.assertEqual(3.5,got['taken_j'])
+        self.assertIsNone(goal_chains._solar_collected(store(0.,3.5),'bob'))
+        unpaid=store(0.,3.5);unpaid['workshop_installs'][0]['resources_charged']=False
+        self.assertIsNone(goal_chains._solar_collected(unpaid,'alice'))
+
+    def test_a_light_counts_once_it_has_drawn_from_its_battery(self):
+        self.assertIsNone(goal_chains._light_used(self.saved(lamps=[{'body':'thing','drawn_j':0}]),'alice'))
+        self.assertEqual(2.0,goal_chains._light_used(self.saved(lamps=[{'body':'thing','drawn_j':2.0}]),'alice')['drawn_j'])
+        self.assertIsNone(goal_chains._light_used(self.saved(lamps=[{'body':'other','drawn_j':2.0}]),'alice'))
+
+
 @unittest.skipUnless(hub.RUNNER.is_file() and hub.ENGINE.is_file(),'native engine required')
 class PlayerJourney(unittest.TestCase):
     setUp=agents.AutonomousGuests.setUp

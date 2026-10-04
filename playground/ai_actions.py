@@ -23,6 +23,13 @@ def fits_requirement(recipe,requirement):
     if recipe.get('problem'):return False
     if requirement['kind']=='admitted-recipe':
         return candidate(recipe)==candidate(requirement['candidate'])
+    if requirement['kind'] in ('own-light-used','own-solar-collected'):
+        # A recipe that declares the device, whatever it is called.
+        from mcp import workshop_machines
+        try:design,_=workshop_components.design_from_spec(candidate(recipe))
+        except (ValueError,KeyError):return False
+        machines=workshop_machines.of(design) or {}
+        return bool(machines.get('lamps' if requirement['kind']=='own-light-used' else 'panels'))
     if requirement['kind'] not in ('funded-box-surface','ground-tool','funded-ground-tool'):return False
     try:
         design,overrides=workshop_components.design_from_spec(candidate(recipe))
@@ -108,10 +115,22 @@ def catalog(state,memory):
             lot=next((o for o in state['market']['offers'] if o['substance']==name),None)
             if not lot or lot['remaining']<=0:
                 blockers.append(f'Market has no {name} lot in stock');continue
-            if state['market']['balance_j']>=lot['price_j']:
-                offer('buy',f"Buy {lot['mass_kg']:g} kg {name} for {lot['price_j']} J",item=lot['id'],quoted_price_j=lot['price_j'])
-            elif state['market'].get('bankable'):
-                if not any(a['verb']=='bank' for a in actions):offer('bank','Bank 500 J from the measured shared solar battery')
+            # Every lot the gap needs, in one decision; each is still an
+            # ordinary priced purchase, and buying stops when the wallet or
+            # the stock runs out (the price rises as stock falls). Bank first
+            # when the wallet cannot cover them all, in 500 J deposits, at
+            # most eight in one decision.
+            lots=max(1,min(16,lot['remaining'],math.ceil(gap['short_kg']/lot['mass_kg']-1e-9)))
+            short=lots*lot['price_j']*1.1-state['market']['balance_j']
+            bankable=state['market'].get('bankable')
+            if state['market']['balance_j']>=lot['price_j'] and (short<=0 or not bankable):
+                offer('buy',f"Buy {lots} × {lot['mass_kg']:g} kg {name}, from {lot['price_j']} J each" if lots>1
+                      else f"Buy {lot['mass_kg']:g} kg {name} for {lot['price_j']} J",
+                      item=lot['id'],quoted_price_j=lot['price_j'],lots=lots)
+            elif bankable:
+                if not any(a['verb']=='bank' for a in actions):
+                    deposits=max(1,min(8,math.ceil(short/500)))
+                    offer('bank',f"Bank {500*deposits} J from the measured shared solar battery",deposits=deposits)
             else:blockers.append('Open a solar-powered world before banking energy')
     pending=memory.get('fabrication_build')
     if pending:
@@ -197,6 +216,23 @@ def catalog(state,memory):
         row=next((g for g in state['goals']['goals'] if g['id']==state['goals']['next_goal']),{})
         if row.get('target'):target_actions(row['target'],'tool')
         else:blockers.append('Your made tool has no available native action; check Inventory or rebuild through Recipes')
+    elif kind in ('own-light-used','own-solar-collected'):
+        row=next((g for g in state['goals']['goals'] if g['id']==state['goals']['next_goal']),{})
+        devices=row.get('targets') or []
+        if not devices:building(req)
+        else:
+            light=kind=='own-light-used'
+            device=next((d for d in devices if d.get('on')),None) if light else devices[0]
+            if light and device is None:
+                device=devices[0]
+                if _distance(state['pose'],device['at_m'])>2:
+                    offer('move',f"Approach your {device['body']}",target=device,aim=device['at_m'],stand_off_m=1.4)
+                else:offer('use-product',f"Switch on your {device['body']}",target=device)
+            elif light:
+                offer('await-use',f"Let your {device['body']} burn from its own battery",target=device)
+            else:
+                offer('await-use',f"Let the sun charge your {device['body']}'s battery" if device.get('daylight')
+                      else f"Wait for daylight to charge your {device['body']}",target=device)
     elif kind=='personal-batch':
         reading=state.get('processing_readiness')
         if reading:
@@ -238,7 +274,8 @@ def reference_pick(state,actions):
     # mode sees the same offers, requirements, comparisons and observed state.
     for verb in ('continue-process','collect','buy','bank','compare-recipes','select-recipe','acquire','inspect','use-tool',
                  'continue-build','build','pack','power-off','select-process','store-ground','process-input',
-                 'order-rover','await-delivery','power-on','watch-batch','observe','move','select-target','wait'):
+                 'order-rover','await-delivery','power-on','watch-batch','observe','use-product','await-use',
+                 'move','select-target','wait'):
         chosen=next((a for a in actions if a['verb']==verb),None)
         if chosen:return chosen['id']
     raise ValueError('The observed catalog has no stop action')

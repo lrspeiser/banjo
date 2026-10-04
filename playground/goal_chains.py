@@ -126,7 +126,8 @@ def camp_solar_recipe():
     from mcp import workshop
     design=workshop.assemble('solar-array',design_id='starter-camp-solar',parameters={
         'panels':1,'panel_w_m':.6,'panel_d_m':.4,'frame_height_m':.35,
-        'capacity_j':1.8e5,'charge_j':0.,'max_power_w':60.,'efficiency':.2,'material':'oak'})
+        'capacity_j':1.8e5,'charge_j':0.,'max_power_w':60.,'efficiency':.2,'material':'oak',
+        'panel_thickness_m':.004})
     return {'kind':design.kind,'design_id':design.design_id,'parameters':dict(design.parameters),
             'component_overrides':deepcopy(design.lineage.get('component_overrides') or {})}
 
@@ -221,14 +222,44 @@ def _light_used(saved, owner):
 
 
 def _solar_collected(saved, owner):
-    """An own installed solar panel whose battery has received energy."""
+    """An own installed solar panel whose battery has received energy.
+
+    taken_j is what a store has taken in from its panels since it was made
+    (LiveEnergyStore); given_j is what it has given out, which a battery that
+    only banks or lights can do without the sun ever touching it."""
     world=saved.get('world') or {}; roots=_owned_roots(saved,owner)
     panelled={p.get('body') for p in world.get('solar_panels',[]) if p.get('body') in roots}
     for store in world.get('energy_stores',[]):
-        if store.get('body') in panelled and float(store.get('given_j') or 0)>0:
-            return {'body':store['body'],'store':store.get('name'),'given_j':float(store['given_j']),
+        if store.get('body') in panelled and float(store.get('taken_j') or 0)>0:
+            return {'body':store['body'],'store':store.get('name'),'taken_j':float(store['taken_j']),
                     'saved_t_s':world.get('t_s')}
     return None
+
+
+def own_devices(app, saved, owner, kind):
+    """This player's own installed lamps (own-light-used) or panels
+    (own-solar-collected), as the running room has them now."""
+    state=getattr(getattr(app.live,'session',None),'state',None) or {}
+    roots=_owned_roots(saved,owner)
+    bodies={b['name']:b for b in state.get('bodies',[])}
+    machines=state.get('machines') or {}
+    stores={s.get('id'):s for s in machines.get('stores',[])}
+    rows=[]
+    if kind=='own-light-used':
+        for lamp in machines.get('lamps',[]):
+            body=bodies.get(lamp.get('body'))
+            if lamp.get('body') in roots and body and not body.get('parked'):
+                store=stores.get(lamp.get('store'),{})
+                rows.append({'body':lamp['body'],'at_m':body['position_m'],'on':bool(lamp.get('on')),
+                    'lit':bool(lamp.get('lit')),'charge_j':store.get('charge_j')})
+    else:
+        sun=state.get('sun') or {}
+        for panel in machines.get('panels',[]) or machines.get('solar_panels',[]):
+            body=bodies.get(panel.get('body'))
+            if panel.get('body') in roots and body and not body.get('parked'):
+                rows.append({'body':panel['body'],'at_m':body['position_m'],
+                    'daylight':float(sun.get('elevation_deg',1))>0})
+    return rows
 
 
 def evaluate(predicate, journal, saved, owner, world, registry):
@@ -305,6 +336,8 @@ def view(app,owner,ident):
                 if profile.get('template')=='swing-and-lever'
                 if (target:=learning_routes.tool_location(app,owner,profile['tool']))
                 if row['requirement']['test']=='study-example' or target.get('ground_at_m')]
+        if row['requirement']['kind'] in ('own-light-used','own-solar-collected') and not row['complete']:
+            row['targets']=own_devices(app,saved,owner,row['requirement']['kind'])
         if row['requirement']['kind']=='own-tool-test':
             row['guide']['body']=product
             if not row['complete'] and product:

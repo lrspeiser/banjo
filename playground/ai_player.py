@@ -22,7 +22,10 @@ import player_world
 import rover_brain
 import world_access
 
-MAX_DECISIONS = 64
+# A safety cap on one start, not a target. The opening is four chapters with
+# four paid builds; each build is several recoverable workbench writes, one
+# per decision (_fabricated_build), so the whole opening takes about 90.
+MAX_DECISIONS = 128
 MAX_AGENTS = 4
 CADENCE_S = .8
 
@@ -237,7 +240,8 @@ class Manager:
         req=ai_actions.requirement_of(goals) or {}
         book=(self._post(profile,'/api/workshop/recipes',{},cookie)
               if req.get('kind') in ('admitted-recipe','funded-box-surface','personal-test',
-                                    'personal-stock','funded-ground-tool','own-tool-test')
+                                    'personal-stock','funded-ground-tool','own-tool-test',
+                                    'own-light-used','own-solar-collected')
                  or profile['ai'].get('memory',{}).get('fabrication_build') else {})
         funding=(self._post(profile,'/api/world/fabrication/state',
                  {'session':opened['session'],'scene':opened['scene']},cookie)
@@ -467,12 +471,28 @@ class Manager:
             self._move(profile,stop,cookie,action['aim'],action['stand_off_m'])
             return {'pose':deepcopy(profile.get('pose'))} if not stop.is_set() else {}
         if verb=='bank':
-            reply=self._post(profile,'/api/workshop/market',{'action':'bank','joules':500,'request_id':ident},cookie)
-            return {'balance_j':reply['balance_j']}
+            banked=0
+            for index in range(int(action.get('deposits',1))):
+                try:
+                    reply=self._post(profile,'/api/workshop/market',{'action':'bank','joules':500,
+                        'request_id':ident if index==0 else f'{ident}-{index}'},cookie)
+                except ValueError:
+                    # The battery has given what sunlight it had: keep what
+                    # was banked; the first deposit's refusal is still said.
+                    if index==0:raise
+                    break
+                banked+=500
+            return {'balance_j':reply['balance_j'],'banked_j':banked}
         if verb=='buy':
-            reply=self._post(profile,'/api/workshop/market',{'action':'buy','item_id':action['item'],
-                'quoted_price_j':action['quoted_price_j'],'request_id':ident},cookie)
-            return {'balance_j':reply['balance_j'],'paid_j':action['quoted_price_j'],'item':action['item']}
+            price,paid,bought=action['quoted_price_j'],0,0
+            for index in range(int(action.get('lots',1))):
+                reply=self._post(profile,'/api/workshop/market',{'action':'buy','item_id':action['item'],
+                    'quoted_price_j':price,'request_id':ident if index==0 else f'{ident}-{index}'},cookie)
+                paid+=price;bought+=1
+                lot=next((o for o in reply.get('offers',[]) if o['id']==action['item']),None)
+                if not lot or lot['remaining']<1 or reply['balance_j']<lot['price_j']:break
+                price=lot['price_j']
+            return {'balance_j':reply['balance_j'],'paid_j':paid,'lots':bought,'item':action['item']}
         if verb=='collect':
             at=action['at_m']
             reply=self._post(profile,'/api/world/goods/collect',{'session':sid,'pile':action['pile'],
@@ -564,6 +584,25 @@ class Manager:
                     if (goals['chain_id'],goals['next_goal']) != (state['goals']['chain_id'],state['goals']['next_goal']):
                         return {'goal_changed':True,'awaited_from_t_s':began_t}
                 stop.wait(.5)
+            return {'awaited_from_t_s':began_t}
+        if verb=='use-product':
+            # The product's own declared use, as a person clicking it in World:
+            # a lamp's is its switch. The server checks reach, sight and power.
+            reply=self._post(profile,'/api/world/action',{'session':sid,'object':target['body'],'primary':True,
+                'person':self._person(profile,cookie,target['at_m'])},cookie)
+            if reply.get('refused'):raise ValueError(reply['refused'])
+            return {'object':target['body'],'said':reply.get('said')}
+        if verb=='await-use':
+            # Let the world run while a light burns or the sun charges, up to
+            # a game hour and a bit; reconsider as soon as the goal changes.
+            began_t=state['native']['t']
+            for index in range(240):
+                if stop.is_set():break
+                self._post(profile,'/api/live/act',{'session':sid,'op':'step','dt':1/240,'n':120},cookie)
+                if index%20==19:
+                    goals=self._post(profile,'/api/workshop/goals',{'chain':'active'},cookie)
+                    if (goals['chain_id'],goals['next_goal']) != (state['goals']['chain_id'],state['goals']['next_goal']):
+                        return {'goal_changed':True,'awaited_from_t_s':began_t}
             return {'awaited_from_t_s':began_t}
         if verb in ('watch-batch','observe'):
             person=self._person(profile,cookie,target['at_m'])

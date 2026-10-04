@@ -629,6 +629,9 @@ SOLAR_ARRAY_PARAMETERS = (
     w.Parameter("efficiency", "", 0.2, 0.05, 0.35,
                 about="what share of the sunlight on a panel becomes power"),
     w.Parameter("material", "", "oak", choices=("oak", "iron")),
+    # The glass of each panel. Module glass is 3-4 mm; the 10 mm default is
+    # the yard array as it has always been built.
+    w.Parameter("panel_thickness_m", "m", 0.01, 0.004, 0.05, about="each panel's glass"),
 )
 
 
@@ -676,7 +679,8 @@ def _build_solar_array(library: w.ComponentLibrary, values: dict[str, Any]) -> l
         row, column = divmod(i, across)
         parts += library.make("solar-panel", name=f"panel-{i + 1}", material="glass",
                               at_m=(left + column * (pw + gap), high, front + row * (pd + gap)),
-                              parameters={"width_m": pw, "depth_m": pd}).parts
+                              parameters={"width_m": pw, "depth_m": pd,
+                                          "thickness_m": float(values.get("panel_thickness_m", 0.01))}).parts
     # ON the frame, at its height, like everything else a frame carries. Hung
     # below it the compound had a part touching nothing and the engine
     # refused the whole scene: "precise compound parts must meet".
