@@ -62,6 +62,9 @@ STROKE_UNSEEN_S = 1.5
 # to settle.
 MEET_WAIT_S = 0.6
 PRY_SETTLE_S = 0.3
+# After a fresh lift/turn/lower, the most a contact tap waits for its point
+# to come to rest at the ready clearance before it starts anyway.
+READY_REST_S = 1.0
 # A pry that does not bring the point out by its own lift is drawn straight up.
 PULL_M, PULL_SPEED_M_S = 0.4, 0.6
 # How long the ground is given to say a meeting is over once the point is out:
@@ -601,6 +604,7 @@ def _contact(app,said,use,tool,eyes,heard,note):
             'give_up_s':2.0,'let_go':False})
         _stroke(app)
     point=_native_point(app,tool)
+    lowered=False
     if point and point['pointing'][1]>-.98:
         # Turn above the terrain before lowering. Rotating and translating to
         # near-ground ready simultaneously can sweep the point through soil.
@@ -623,6 +627,7 @@ def _contact(app,said,use,tool,eyes,heard,note):
             'speed_m_s':1.0,'accel_m_s2':8.0,'lead_m':tool_gestures.LEAD_M,
             'give_up_s':2.0,'let_go':False})
         _stroke(app)
+        lowered=True
     # Establish a bounded wish once. The world clock, not this handler, moves
     # the tool to it. Do not insert settling sleeps between established taps.
     app.live.act({'session':session.id,'op':'step','dt':1/240,'n':1,
@@ -632,8 +637,18 @@ def _contact(app,said,use,tool,eyes,heard,note):
     while point and time.monotonic()-began<2:
         tip=point.get('tip') or []
         direction=point.get('pointing') or []
+        # A lowering stroke "reaches" when the hand's target does; a heavy
+        # head is still travelling (MEET_WAIT_S notes above) and sags below
+        # the ready clearance before the bounded hand lifts it back. A contact
+        # stroke started then begins centimetres above the soil, arrives
+        # slowly and cannot work the ground. After a fresh lowering, give the
+        # point up to READY_REST_S to rest at its ready clearance, as
+        # established taps start; then proceed as before rather than refuse.
+        ready_at=[at[0],at[1]+tool_gestures.CLEARANCE_M,at[2]]
         if (len(tip)==3 and len(direction)==3 and direction[1]<-.98
-            and math.dist(tip,[at[0],at[1]+tool_gestures.CLEARANCE_M,at[2]])<.035): break
+            and math.dist(tip,ready_at)<.035
+            and (not lowered or time.monotonic()-began>READY_REST_S
+                 or (math.dist(tip,ready_at)<.01 and _still(app,tool)))): break
         time.sleep(.005);point=_native_point(app,tool)
     else:
         return {'action':said['label'],'refused':'The tool is still moving into position','done':[]}
@@ -657,6 +672,14 @@ def _contact(app,said,use,tool,eyes,heard,note):
             'carried':carried,'repeat':use['repeat'],'gesture':'contact','rest_hand_m':_grip(session),
             'results':[r for r in heard.values() if r.get('open') is False
                 and float(r.get('at_s',since) or since)>=since-.05]}
+
+
+def _still(app: Any, tool: str) -> bool:
+    """Whether the held tool is moving slower than STILL_M_S now."""
+    body = next((b for b in (app.live.session.state or {}).get("bodies") or []
+                 if b.get("name") == tool), None)
+    speed = _point((body or {}).get("velocity_m_s"))
+    return speed is None or math.sqrt(sum(v * v for v in speed)) < STILL_M_S
 
 
 def _settle(app: Any, tool: str) -> bool:

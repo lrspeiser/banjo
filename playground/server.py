@@ -3894,17 +3894,25 @@ def remember_ground(app,body,answer=None):
                                    "width_m":float(dug["width_m"]),"depth_m":float(dug["depth_m"])}})
     if not new: return
     room=getattr(app,"room",None)
-    spec=getattr(room,"spec",None)
-    if not isinstance(spec,dict) or not spec.get("terrain"): return
-    terrain=dict(spec["terrain"])
-    edits=list(terrain.get("edits") or [])
-    if len(edits)+len(new)>MAX_GROUND_EDITS:
-        log.warning("ground: the room already holds %d edits; what does not fit stays in the running world only",
-                    len(edits))
-        new=new[:max(0,MAX_GROUND_EDITS-len(edits))]
-        if not new: return
-    terrain["edits"]=edits+new
-    room.spec=dict(spec,terrain=terrain)
+    # The room's spec is replaced, not edited, and the machine brains keep the
+    # same object for the goods ledger (piles heaped from a dig, vessels,
+    # ports). Replace it under the state lock the goods writers hold and move
+    # the brains onto the new spec, or a pile heaped by the concurrent tool
+    # request lands in the old spec and is lost at the next restart.
+    with world_access.state_lock(app):
+        spec=getattr(room,"spec",None)
+        if not isinstance(spec,dict) or not spec.get("terrain"): return
+        terrain=dict(spec["terrain"])
+        edits=list(terrain.get("edits") or [])
+        if len(edits)+len(new)>MAX_GROUND_EDITS:
+            log.warning("ground: the room already holds %d edits; what does not fit stays in the running world only",
+                        len(edits))
+            new=new[:max(0,MAX_GROUND_EDITS-len(edits))]
+            if not new: return
+        terrain["edits"]=edits+new
+        room.spec=dict(spec,terrain=terrain)
+        brains=getattr(app,"brains",None)
+        if brains is not None and getattr(brains,"spec",None) is spec: brains.rebind(room.spec)
     # These edits already happened in this native session. Keep its declaration
     # in sync so installing another object can carry the live settling state.
     session=getattr(getattr(app,"live",None),"session",None)
