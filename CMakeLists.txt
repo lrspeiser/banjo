@@ -1618,6 +1618,11 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/goal_chains_tests.py -v)
     set_tests_properties(banjo_goal_chains_tests PROPERTIES TIMEOUT 180)
+    add_test(NAME banjo_recipe_audit_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/recipe_audit_tests.py -v)
+    set_tests_properties(banjo_recipe_audit_tests PROPERTIES TIMEOUT 300)
     add_test(NAME banjo_workshop_ground_tools_tests
         COMMAND ${CMAKE_COMMAND} -E env
             BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
