@@ -3761,7 +3761,7 @@ function goodsVisuals({scene,camera,groundAt,body,ports,colour,collect,readonly}
     }
     pickup.dataset.pile=nearest?.name||"";
     if(nearest && storage(nearest.name)==="output" && nearest.d<=1.6 && !readonly() && !busy &&
-        !retry && now>nextPickup && now>failureUntil && movementMode==="gravity" && !whatIsRidden() &&
+        !retry && now>nextPickup && now>failureUntil && movementMode!=="fly" && !whatIsRidden() &&
         camera.position.y-groundAt(...nearest.at_m)>=0 && camera.position.y-groundAt(...nearest.at_m)<=3)
       void takeNearby(true);
   }
@@ -4874,8 +4874,8 @@ function showInventory() {
     meter.querySelector("small").textContent = worldId ? "Click a nearby material pile to collect it" : full ? "Sand / soil → point at clear ground → H to heap" :
       [...world.stock].filter(([,v])=>v.kg>0).map(([what,v])=>`${what} ${massLabel(v.kg)}`).join(" · ") || "Empty";
     meter.querySelector("[data-tool-guide]").hidden = !!world.held?.pick;
-    meter.querySelector("[data-movement]").textContent = movementMode === "fly" ? "Fly · Space ↑ · Shift + Space ↓" :
-      wet ? `${wet.under>.5 ? "Swim" : "Wade"} · ${Math.round(wet.under*100)} cm immersed · Space ${wet.under>.5 ? "↑ / Shift ↓" : "jump"}` :
+    meter.querySelector("[data-movement]").textContent = movementMode === "fly" ? "God mode · Space ↑ · Shift + Space ↓" :
+      wet ? `${wet.under>.5 ? "Swim" : "Wade"} · ${Math.round(wet.under*100)} cm immersed`+(movementMode === "native" ? "" : ` · Space ${wet.under>.5 ? "↑ / Shift ↓" : "jump"}`) :
       "Walk · Space jump · Shift run";
     const flow = meter.querySelector("[data-water-flow]");
     flow.hidden = !wet || wet.speed<.025;
@@ -5368,19 +5368,9 @@ function revealPicked(mode="components") {
     skin.transparent = true; skin.depthWrite = false;
     group.matrixAutoUpdate = false;
   } else if (picked.at) {
-    beds = bedsUnder(picked.at);
-    if (!beds.length) return;
-    kind = "layers";
-    const g = ground.grid;
-    const x = g.x0 + Math.round((picked.at[0] - g.x0) / g.dx) * g.dx;
-    const z = g.z0 + Math.round((picked.at[2] - g.z0) / g.dx) * g.dx;
-    for (const bed of beds) {
-      if (bed.hole) continue;
-      const mesh = new THREE.LineSegments(edgesOf(new THREE.BoxGeometry(g.dx, bed.thick_m, g.dx)),
-        material(GROUND_COLOURS[bed.kind] || 0x70eddb));
-      mesh.position.set(x, bed.top_m - bed.thick_m / 2, z);
-      group.add(mesh); count++;
-    }
+    // The ground's layers are said in the details card, not drawn: wireframes
+    // going down into the earth on every click were noise (the owner, 2026-10-04).
+    return;
   } else return;
   if (!count) { group.traverse(m => { m.geometry?.dispose(); m.material?.dispose(); }); return; }
   group.traverse(m => { m.renderOrder = 997; m.frustumCulled = false; });
@@ -7876,7 +7866,8 @@ function showRidingSettings() {
     } else movement.value=movementMode;
   }
   said.textContent = riding.godMode
-    ? movementMode === "fly" ? "Flying · Space up · Shift + Space down" : "On foot · walk, jump & swim"
+    ? movementMode === "fly" ? "God mode · Space up · Shift + Space down"
+      : movementMode === "native" ? "In your body · walk, jump, swim and carry" : "On foot · walk, jump & swim"
     : mine
       ? `You are ${mine.name}. W A S D drive it`
         + (mine.kind === "hover" ? ", Space up, Shift+Space down." : ".")
@@ -7916,14 +7907,17 @@ function showRidingSettings() {
 
 // Only an explicit Fly preference may bypass gravity. Legacy/unknown values
 // must not display Walk while falling through to the free-camera branch.
-let movementMode = ({fly:"fly", native:"native"})[localStorage.getItem("banjo.movement")] || "gravity";
+// A player starts as a body (the owner's call, 2026-10-04): the native body
+// walks, swims and is pushed by what it carries. God mode (fly) and the old
+// camera walk (gravity) are choices in the Menu.
+let movementMode = ({fly:"fly", gravity:"gravity", native:"native"})[localStorage.getItem("banjo.movement")] || "native";
 let verticalSpeed = 0, jumpHeld = false;
 // Camera-controller approximation: 70 kg, 75 litres over the 1.6 m below
 // the eye. Buoyancy and drag accelerate the controller; this is not a native
 // avatar and applies no reaction to the river or carried objects.
 const PLAYER_MASS_KG = 70, PLAYER_VOLUME_M3 = .075;
 addEventListener("banjo-movement-mode", event => {
-  movementMode = ({fly:"fly", native:"native"})[event.detail] || "gravity";
+  movementMode = ({fly:"fly", gravity:"gravity", native:"native"})[event.detail] || "native";
   nativeBody.state = null;
   verticalSpeed = 0; jumpHeld = false;
   // Return the player's controls from a ridden machine to their own feet.
@@ -7936,16 +7930,24 @@ addEventListener("banjo-movement-mode", event => {
 // rides it. Nothing here moves the camera by itself except to follow the body
 // between replies, along its own reported velocity.
 const nativeBody = { state: null, at: 0, sent: 0, pending: false, eyes: .77, refused: null };
-const NATIVE_SEND_S = .08, NATIVE_WALK_M_S = 1.4, NATIVE_RUN_M_S = 3.0;
-function walkNatively(direction, running) {
+const NATIVE_RETRY_MS = 5000;
+const EYE_FOLLOW_S = .06, EYE_RISE_S = .15;   // how far behind the body the eye trails
+// A player's body is a little more than a person's (the owner, 2026-10-04):
+// a brisk 2 m/s walk and a 5 m/s run; the server bounds both at 6 m/s.
+const NATIVE_SEND_S = .08, NATIVE_WALK_M_S = 2.0, NATIVE_RUN_M_S = 5.0;
+function walkNatively(direction, running, jump, dt = 1 / 60) {
   const now = performance.now();
+  if (jump && !nativeBody.jumpAsked) nativeBody.jump = true;
+  nativeBody.jumpAsked = !!jump;          // one jump per press of Space
   const speed = running ? NATIVE_RUN_M_S : NATIVE_WALK_M_S;
   if (!nativeBody.pending && now - nativeBody.sent > NATIVE_SEND_S * 1000 && world.session) {
     nativeBody.pending = true; nativeBody.sent = now;
     const v = direction.lengthSq() > 0 ? direction.clone().normalize().multiplyScalar(speed) : new THREE.Vector3();
     // The body's heading is its own +z; the eye's forward is -z, turned by yaw.
+    const leap = nativeBody.jump; nativeBody.jump = false;
     api("/api/world/player/walk", { session: world.session, velocity_m_s: [v.x, 0, v.z],
-                                    heading_rad: Math.atan2(-Math.sin(yaw), -Math.cos(yaw)) })
+                                    heading_rad: Math.atan2(-Math.sin(yaw), -Math.cos(yaw)),
+                                    ...(leap ? { jump: true } : {}) })
       .then((reply) => { nativeBody.state = reply.native; nativeBody.at = performance.now();
                          nativeBody.eyes = reply.eyes_above_center_m ?? .77; nativeBody.refused = null; })
       .catch((error) => { nativeBody.refused = String(error.message || error); })
@@ -7955,9 +7957,20 @@ function walkNatively(direction, running) {
   if (body && Array.isArray(body.position_m)) {
     const ahead = Math.min(.25, (performance.now() - nativeBody.at) / 1000);
     const v = body.velocity_m_s || [0, 0, 0];
-    camera.position.set(body.position_m[0] + v[0] * ahead,
-                        body.position_m[1] + nativeBody.eyes + v[1] * ahead,
-                        body.position_m[2] + v[2] * ahead);
+    const target = [body.position_m[0] + v[0] * ahead,
+                    body.position_m[1] + nativeBody.eyes + v[1] * ahead,
+                    body.position_m[2] + v[2] * ahead];
+    // The eye follows the body through a short lag, as a head carried on legs
+    // does: replies arrive every 80 ms or so, and on 25 cm cells the body
+    // rises a whole cell at each step up. Snapped to each, the view jolted.
+    // Gentler up and down than along the way; the body itself is unchanged.
+    const eye = nativeBody.eye || (nativeBody.eye = target.slice());
+    if (Math.hypot(target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]) > 3) eye.splice(0, 3, ...target);
+    const along = 1 - Math.exp(-dt / EYE_FOLLOW_S), up = 1 - Math.exp(-dt / EYE_RISE_S);
+    eye[0] += (target[0] - eye[0]) * along;
+    eye[1] += (target[1] - eye[1]) * up;
+    eye[2] += (target[2] - eye[2]) * along;
+    camera.position.set(eye[0], eye[1], eye[2]);
   }
   camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, "YXZ"));
 }
@@ -8005,7 +8018,11 @@ function walk(dt) {
   const shifted = keys.has("ShiftLeft") || keys.has("ShiftRight");
   const jump = BINDINGS.up.keys.some((k) => keys.has(k));
   if (movementMode === "fly" && jump) move.y += shifted ? -speed : speed;
-  if (movementMode === "native") { walkNatively(move, running); return; }
+  // A body the server will not give (a room without one, a lost reply) is
+  // not a frozen view: walk as the camera and ask again in a few seconds.
+  if (movementMode === "native" && !(nativeBody.refused && performance.now() - nativeBody.sent < NATIVE_RETRY_MS)) {
+    walkNatively(move, running, jump, dt); return;
+  }
   // And where the water is going, as far as it has hold of them.
   if (water && water.carried > 0) { move.x += water.u * water.carried * dt; move.z += water.w * water.carried * dt; }
   if (movementMode === "gravity") {

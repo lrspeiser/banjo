@@ -6,9 +6,20 @@ dimensions as drawn.  Placement, stock and a functional trial are later gates.
 """
 from __future__ import annotations
 
+import copy
+import json
+from collections import OrderedDict
 from typing import Any
 
 import workshop_fitting
+
+# A recipe's readiness is a function of its source alone: kind, purpose,
+# parameters, overrides and the cell size. Compiling every recipe takes about
+# 1.5 s of Python, and the page asks for guidance every few seconds; while that
+# ran, every walk and step of every player waited behind it (the walking
+# stutter of 2026-10-04). So each answer is kept, keyed on that source.
+_READY: OrderedDict[str, dict[str, Any]] = OrderedDict()
+_READY_MOST = 512
 
 
 def world_cell_size(app: Any) -> float | None:
@@ -37,7 +48,27 @@ def _one(design: Any, overrides: Any, cell_m: float) -> dict[str, Any]:
             **({"blocker": result["blocker"]} if result.get("blocker") else {})}
 
 
+def by_source(what: str, design: Any, overrides: Any, work: Any, *extra: Any) -> Any:
+    """``work()``, remembered for this design source (see _READY above)."""
+    try:
+        key = json.dumps([what, str(design.kind), design.design_id, design.purpose,
+                          dict(design.parameters), overrides, *extra], sort_keys=True, default=repr)
+    except (TypeError, ValueError):
+        return work()
+    if key not in _READY:
+        _READY[key] = work()
+        while len(_READY) > _READY_MOST:
+            _READY.popitem(last=False)
+    _READY.move_to_end(key)
+    return copy.deepcopy(_READY[key])
+
+
 def assess(design: Any, overrides: Any = None, *, world_cell_m: float | None) -> dict[str, Any]:
+    return by_source("readiness", design, overrides,
+                     lambda: _assess(design, overrides, world_cell_m=world_cell_m), world_cell_m)
+
+
+def _assess(design: Any, overrides: Any = None, *, world_cell_m: float | None) -> dict[str, Any]:
     from workshop_test_room import CELL_M
     from mcp.workshop import assemble
     # Callers may hold an already-overridden design. check_validity applies

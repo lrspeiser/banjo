@@ -17,11 +17,19 @@ reported-pose walking is unchanged until they are bound to the same requests.
 from __future__ import annotations
 
 import math
+import time
 from contextlib import nullcontext
 from typing import Any
 
-WALK_HOLD_S = 0.3
+# How long one walk request holds. The page renews it every 80 ms and sends
+# a stop when the keys are let go, so this only matters when a reply is
+# slow: the body keeps walking through a stall of up to half a second
+# instead of stopping and starting (the engine allows at most 0.5 s).
+WALK_HOLD_S = 0.5
 MOST_SPEED_M_S = 6.0
+# A jump off the ground: a metre's worth, a little more than a person
+# (the owner, 2026-10-04: bodies are slightly superhuman).
+JUMP_M_S = 4.4
 EYES_ABOVE_FEET_M = 1.62
 
 
@@ -35,8 +43,10 @@ def _vector(value: Any, what: str) -> list[float]:
 
 
 def walk(app: Any, player_id: str, body: Any) -> dict[str, Any]:
-    if not isinstance(body, dict) or set(body) - {"session", "velocity_m_s", "heading_rad"}:
-        raise ValueError("A walk is {session, velocity_m_s, heading_rad}")
+    if not isinstance(body, dict) or set(body) - {"session", "velocity_m_s", "heading_rad", "jump"}:
+        raise ValueError("A walk is {session, velocity_m_s, heading_rad, jump?}")
+    if "jump" in body and type(body["jump"]) is not bool:
+        raise ValueError("jump is true or false")
     if not player_id:
         raise ValueError("Join this world before walking in it")
     velocity = _vector(body.get("velocity_m_s"), "velocity_m_s")
@@ -53,6 +63,13 @@ def walk(app: Any, player_id: str, body: Any) -> dict[str, Any]:
         if session is None or body.get("session") != session.id:
             raise ValueError("That live world is no longer open; start a new one")
         natives = (session.state or {}).get("native_players") or {}
+        # A player who has left takes their body with them; one left standing
+        # where they last were is in everyone else's way.
+        now = time.time()
+        for actor, record in player_world.records(app).items():
+            if (actor != player_id and actor in natives
+                    and now - float(record.get("seen_unix_s", 0)) > player_world.ACTIVE_S):
+                session.send(op="player-remove", actor=actor)
         if player_id not in natives:
             pose = (player_world.records(app).get(player_id) or {}).get("pose") or {}
             eyes = pose.get("eyes_m")
@@ -62,6 +79,7 @@ def walk(app: Any, player_id: str, body: Any) -> dict[str, Any]:
             feet_y = max(float(eyes[1]) - EYES_ABOVE_FEET_M, float(ground) + 0.02 if ground is not None else -1e9)
             session.send(op="player-spawn", actor=player_id, feet_m=[eyes[0], feet_y, eyes[2]])
         reply = session.send(op="player-walk", actor=player_id, velocity_m_s=velocity,
-                             heading_rad=heading, duration_s=WALK_HOLD_S)
+                             heading_rad=heading, duration_s=WALK_HOLD_S,
+                             **({"jump_m_s": JUMP_M_S} if body.get("jump") else {}))
         native = ((reply or {}).get("native_players") or (session.state or {}).get("native_players") or {}).get(player_id)
     return {"native": native, "eyes_above_center_m": EYES_ABOVE_FEET_M - 0.85}

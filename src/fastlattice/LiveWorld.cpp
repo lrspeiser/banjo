@@ -44,7 +44,10 @@ constexpr MatterBodyId kNativePlayerFirstId = 900000000;
 constexpr std::size_t kNativePlayerLimit = 32;
 constexpr double kNativePlayerMassKg = 70.0;
 constexpr double kNativePlayerContactModulusPa = 1e6;
-constexpr double kNativePlayerContactDampingRatio = 0.05;
+// A body lands on its legs, which take the fall: at 0.05 the cylinder came
+// down from a metre's jump and bounced back 2.6 m/s, over and over, like a
+// rubber post. Well damped, it lands and stays.
+constexpr double kNativePlayerContactDampingRatio = 0.7;
 constexpr const char *kNativePlayerModel = "rigid-avatar-cylinder-v1";
 // The walk controller's declared constants. Traction is the proxy's own
 // declared friction; the rest are control gains, not tissue properties.
@@ -53,6 +56,7 @@ constexpr double kWalkMostForceN = 600.0;
 constexpr double kWalkMostTorqueNm = 400.0;   // ankle and hip balance together, not one joint
 constexpr double kWalkResponseS = 0.25;       // closes a velocity error in about this long
 constexpr double kWalkSlopeProbeM = 0.1;
+constexpr double kWalkStepTellM = 0.01;       // halves of a slope disagreeing by more: a step
 constexpr double kNativePlayerHalfHeightM = 0.85;
 constexpr double kSwimDepthM = 0.5;           // water this far up its body: it swims, not wades
 constexpr double kSwimMostThrustN = 100.0;    // a swimmer's sustained stroke
@@ -63,6 +67,31 @@ constexpr double kWalkYawGain = 20.0;
 constexpr double kWalkYawDamping = 6.4;
 constexpr double kWalkMostTiltRad = 0.6;      // past ~34 degrees it is falling, not walking
 constexpr double kWalkSupportReachM = 1.03;   // half its height on a 30 degree slope, and 5 cm
+// Getting up from lying down: lifting its 70 kg middle, 0.85 m from its base,
+// from the horizontal takes 70 x 9.81 x 0.85 = 584 N m. A person does it with
+// arms and legs the cylinder does not have; its whole-body righting is bounded
+// a fifth above that, and is only ever applied to a body that is down.
+constexpr double kGetUpMostTorqueNm = 700.0;
+// A player's body is a little more than a person's (the owner, 2026-10-04):
+// 4.5 m/s off the ground is a metre's jump, about twice a standing person's.
+constexpr double kMostJumpM_S = 4.5;
+// Stepping up: ground ahead higher than its feet by more than kStepLeastM and
+// at most kMostStepM is a step its legs lift it onto. A person takes about
+// 0.25 m; a little more here, so the 25 cm material cells are walkable.
+constexpr double kStepLeastM = 0.01;
+constexpr double kMostStepM = 0.35;
+constexpr double kStepProbeM = 0.15;          // how far ahead of its side it looks, at least
+// ...and how far it looks ahead in time: a 25 cm rise takes about
+// 0.17 s, so a body that looked only kStepProbeM ahead met each riser with its
+// side before its feet were up, stopped, and walked uphill in jerks.
+constexpr double kStepLookS = 0.3;
+// Its legs lift it at up to 2 m/s, closing on that in 50 ms, with up to
+// 2,500 N: about 3.6 times its weight, a little more than a person's legs
+// (the owner, 2026-10-04: bodies are slightly superhuman). A slower lift met
+// every 25 cm riser before its feet were up and walked uphill in jerks.
+constexpr double kStepUpM_S = 2.0;
+constexpr double kStepResponseS = 0.05;
+constexpr double kStepMostForceN = 2500.0;
 RigidPrimitive nativePlayerGeometry() {
     RigidPrimitive shape;
     shape.kind = PrimitiveKind::Cylinder;
@@ -3284,6 +3313,8 @@ struct LiveWorld::Impl {
     std::string selected_hand;
     struct NativePlayer {
         MatterBodyId id{};
+        double jump_m_s{};      // an asked jump, taken on the next step it stands
+        bool stepping{};        // lifting itself onto a step: still on its feet
         std::vector<water::CompoundWaterPart> fluid_parts;
         Vec3 force_n{}, torque_n_m{};
         double remaining_s{}, work_j{};
@@ -3307,10 +3338,27 @@ struct LiveWorld::Impl {
             const Vec3 up = now.orientation_world.rotate(Vec3{0, 1, 0});
             // Held up by what is under its feet: a ray from its middle, as far
             // as its base and a little more on a slope.
+            // Partway up a step its feet have left the lower ground; it is
+            // still standing, on its legs, until it is over the edge.
             const RayHit hit = world->castRay(now.center_of_mass_world_m, Vec3{0, -1, 0},
-                                              kWalkSupportReachM, player.id);
+                                              kWalkSupportReachM + (player.stepping ? kMostStepM : 0.0), player.id);
+            player.stepping = false;
             player.supported = hit.hit && up.y > std::cos(kWalkMostTiltRad);
-            if (player.supported) {
+            // Down with something under it -- fallen on the ground, or on a
+            // river bed -- it gets up before anything else. Not driven: its
+            // base keeps its friction to pivot on.
+            const bool fallen = hit.hit && !player.supported;
+            if (fallen) {
+                player.support = "fallen";
+                const Vec3 w = now.angular_velocity_rad_s;
+                const Vec3 axis = cross(up, Vec3{0, 1, 0});
+                const double s = length(axis);
+                const double angle = std::acos(std::max(-1.0, std::min(1.0, up.y)));
+                const Vec3 tilt = s > 1e-12 ? (angle / s) * axis : Vec3{1, 0, 0} * angle;
+                torque = kWalkUprightGain * tilt - kWalkUprightDamping * Vec3{w.x, 0, w.z};
+                const double most = length(torque);
+                if (most > kGetUpMostTorqueNm) torque = (kGetUpMostTorqueNm / most) * torque;
+            } else if (player.supported) {
                 drive = true;
                 player.support = hit.named ? std::string("body") : std::string("ground");
                 if (hit.named) {
@@ -3327,6 +3375,7 @@ struct LiveWorld::Impl {
                 // grip it has is its traction times the normal force,
                 // m g / cos(slope); past tan(slope) = 0.6 it cannot hold.
                 Vec3 normal{0, 1, 0};
+                double grade_x = 0, grade_z = 0;   // the ground's rise per metre, steps aside
                 {
                     const Vec3 c = now.center_of_mass_world_m;
                     double h[4]; bool all = true;
@@ -3337,8 +3386,21 @@ struct LiveWorld::Impl {
                         all = probe.hit; h[k] = probe.point_world_m.y;
                     }
                     if (all) {
-                        const double gx = (h[0] - h[1]) / (2 * kWalkSlopeProbeM), gz = (h[2] - h[3]) / (2 * kWalkSlopeProbeM);
+                        // A slope rises the same on both sides of its middle; a
+                        // step rises on one side only, and the side it does not
+                        // is the level top it stands on. Read across the edge
+                        // of a 25 cm cell, a step was a phantom hill: the push
+                        // into it helped one way and dragged the other, and the
+                        // body walked in surges (2026-10-04).
+                        const double middle = hit.point_world_m.y;
+                        const auto rise = [&](double ahead, double behind) {
+                            const double a = ahead - middle, b = middle - behind;
+                            if (std::abs(a - b) <= kWalkStepTellM) return (a + b) / (2 * kWalkSlopeProbeM);
+                            return (std::abs(a) < std::abs(b) ? a : b) / kWalkSlopeProbeM;
+                        };
+                        const double gx = rise(h[0], h[1]), gz = rise(h[2], h[3]);
                         normal = normalized(Vec3{-gx, 1, -gz});
+                        grade_x = gx; grade_z = gz;
                     }
                 }
                 const double limit = std::min(kWalkTraction * weight / std::max(normal.y, 0.2), kWalkMostForceN);
@@ -3351,6 +3413,48 @@ struct LiveWorld::Impl {
                 const double asked = length(force);
                 if (asked > limit && asked > 0) force = (limit / asked) * force;
                 player.traction_used = limit > 0 ? std::min(1.0, asked / limit) : 1.0;
+                // A step in its way: the ground just ahead, where it is going,
+                // higher than its feet by no more than it can step. Its legs
+                // lift it until its feet are over the edge; the walk then
+                // carries it on. The lift is its own force, accounted as walk.
+                if (length(want) > 0.1) {
+                    const Vec3 dir = normalized(want);
+                    const Vec3 c = now.center_of_mass_world_m;
+                    // The nearest step between its side and as far as it looks
+                    // (looking only far ahead, it stepped over the ground there
+                    // and walked into the small step right in front of it): a
+                    // rise above the ground under it beyond what the slope
+                    // there accounts for -- on a smooth hill, nothing.
+                    const double ground = hit.point_world_m.y;
+                    const double feet = c.y - kNativePlayerHalfHeightM;
+                    const double grade = grade_x * dir.x + grade_z * dir.z;
+                    const double look = std::max(kStepProbeM, kStepLookS * length(want));
+                    double step = 0.0;
+                    for (double d = 0.05; d < look + 0.04; d += 0.08) {
+                        const double out = 0.12 + std::min(d, look);
+                        const Vec3 ahead = c + out * dir;
+                        const RayHit front = world->castRay(Vec3{ahead.x, c.y + 0.3, ahead.z}, Vec3{0, -1, 0},
+                                                            kWalkSupportReachM + 0.6, player.id);
+                        step = front.hit ? front.point_world_m.y - ground - grade * out : 0.0;
+                        if (step > kStepLeastM) break;
+                    }
+                    // How far its feet still have to rise to the top of it.
+                    const double rise = step - std::max(0.0, feet - ground);
+                    if (step > kStepLeastM && step < kMostStepM) {
+                        // Its weight, and the push to rise: less than its weight
+                        // and it never leaves the lower ground. It rises at the
+                        // speed that would just carry it up what is left of the
+                        // step, so it arrives level rather than overshooting,
+                        // and stays up there until its feet are over the edge:
+                        // let down early, it caught the riser's corner.
+                        const double rising = std::min(kStepUpM_S,
+                            std::sqrt(2 * std::abs(request.gravity_m_s2.y) * std::max(0.0, rise)));
+                        const double lift = std::min(kStepMostForceN, weight +
+                            kNativePlayerMassKg * (rising - now.linear_velocity_m_s.y) / kStepResponseS);
+                        if (lift > 0) force.y += lift;
+                        player.stepping = true;
+                    }
+                }
                 // Upright, and turned to its heading: a damped spring on its
                 // tilt and its yaw, bounded like the actuator's torque.
                 const Vec3 w = now.angular_velocity_rad_s;
@@ -6709,6 +6813,16 @@ void LiveWorld::step(double dt_s) {
             push.load_at = held->grip;
         }
         impl_->walkPlayer(player, push.before, push.load_force.y, push.walk_force, push.walk_torque, push.under, push.under_at);
+        // A jump is its legs pushing on what it stands on, for this one step:
+        // the change of its upward speed, as a force, into the walk account,
+        // and back onto a body it stands on. Asked off the ground, it is gone.
+        if (player.jump_m_s > 0) {
+            if (player.supported) {
+                const double dv = player.jump_m_s - std::max(0.0, push.before.linear_velocity_m_s.y);
+                if (dv > 0) push.walk_force.y += kNativePlayerMassKg * dv / dt_s;
+            }
+            player.jump_m_s = 0;
+        }
         push.swimming = player.swimming;
         player_pushes.push_back(std::move(push));
     }
@@ -14286,6 +14400,22 @@ void LiveWorld::setNativePlayerActuator(const std::string &actor, const Vec3 &fo
     player.force_n = force_n;
     player.torque_n_m = torque_n_m;
     player.remaining_s = duration_s;
+}
+
+bool LiveWorld::removeNativePlayer(const std::string &actor) {
+    const auto found = impl_->native_players.find(actor);
+    if (found == impl_->native_players.end()) return false;
+    if (impl_->world->contains(found->second.id)) impl_->world->removeAndDestroy(found->second.id);
+    impl_->native_players.erase(found);
+    return true;
+}
+
+void LiveWorld::setNativePlayerJump(const std::string &actor, double up_m_s) {
+    const auto found = impl_->native_players.find(actor);
+    if (found == impl_->native_players.end()) throw std::invalid_argument("native player does not exist");
+    if (!std::isfinite(up_m_s) || up_m_s < 0 || up_m_s > kMostJumpM_S)
+        throw std::invalid_argument("a jump is 0 to 4.5 m/s upward");
+    found->second.jump_m_s = up_m_s;
 }
 
 void LiveWorld::setNativePlayerWalk(const std::string &actor, const Vec3 &velocity_m_s,

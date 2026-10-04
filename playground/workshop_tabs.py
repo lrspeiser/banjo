@@ -311,7 +311,8 @@ def recipes(app: Any) -> dict[str, Any]:
                           "source": source, "saved_design_id": saved_design_id,
                           "kind": design.kind, "parameters": dict(design.parameters),
                           "component_overrides": overrides,
-                          "installation":workshop_placement.for_design(design),
+                          "installation":workshop_recipe.by_source(
+                              "installation", design, overrides, lambda: workshop_placement.for_design(design)),
                           "parts": len(design.parts), "families": sorted({p.family for p in design.parts if p.family}),
                           "materials": materials, "goods": goods,
                           "enough": all(m["enough"] for m in materials) and all(g["enough"] for g in goods),

@@ -932,17 +932,20 @@ void nativePlayersUseTerrainAndWater() {
     near(wet->environment()->water()->residual(),0,1e-10*wet->environment()->water()->volume(),"water volume with actor");
     scene["terrain"]["generate"]["lake_level_m"]=0.0;auto dry=open(scene);dry->spawnNativePlayer("fall",{0,3,0});dry->step(kDt);
     near(nativePlayerOf(*dry,"fall").state.linear_velocity_m_s.y,-9.81*kDt,1e-8,"native gravity");
-    bool contacted=false;
+    // It lands on its legs now (a damped contact) rather than bouncing, so
+    // the ground's catch is seen as a fall at speed that is then stopped.
+    bool contacted=false;double fastest=0;
     for(int i=0;i<360;++i) {
         dry->step(kDt);
         const auto falling=nativePlayerOf(*dry,"fall");
-        if(falling.state.linear_velocity_m_s.y>1)contacted=true;
+        fastest=std::min(fastest,falling.state.linear_velocity_m_s.y);
+        if(fastest<-3&&falling.state.linear_velocity_m_s.y>-.1)contacted=true;
         RigidPrimitive cylinder;cylinder.kind=PrimitiveKind::Cylinder;cylinder.dimensions_m=falling.dimensions_m;
         const auto pos=falling.state.center_of_mass_world_m;
         const double bed=dry->environment()->terrain().heightAt(pos.x,pos.z);
         require(pos.y-cylinder.extent({0,1,0},falling.state.orientation_world)>=bed-.035,"native actor cannot fall through terrain");
     }
-    require(contacted,"native terrain contact returns a falling actor upward");
+    require(contacted,"native terrain contact stops a falling actor");
     const auto resting=nativePlayerOf(*dry,"fall");RigidPrimitive shape;shape.kind=PrimitiveKind::Cylinder;shape.dimensions_m=resting.dimensions_m;
     const auto p=resting.state.center_of_mass_world_m;const double bed=dry->environment()->terrain().heightAt(p.x,p.z);
     const double bottom=p.y-shape.extent({0,1,0},resting.state.orientation_world);
@@ -965,6 +968,140 @@ void walkFor(LiveWorld &world,const std::string &actor,Vec3 velocity,double seco
     for(double t=0;t<seconds-1e-9;t+=.25){world.setNativePlayerWalk(actor,velocity,heading,.3);run(world,.25);}
 }
 double groundUnder(LiveWorld &world,double x,double z){return world.environment()->terrain().heightAt(x,z);}
+void nativePlayerGetsUpAfterAFall() {
+    // Knocked flat, it gets up again when it is next asked to walk: lying down
+    // with the ground under it, it was neither standing (so no balance) nor
+    // afloat (so a swimmer's stroke against the ground's friction), and stayed
+    // down for good -- in a river, pinned to the bed.
+    auto world=open(walkScene());
+    const double y=groundUnder(*world,0,0);
+    world->spawnNativePlayer("faller",{0,y+.02,0});
+    walkFor(*world,"faller",{},1.0);
+    // Pushed over: short bounded shoves (120 N m at most) while it is not
+    // asked to stand, so nothing balances it; gravity does the rest.
+    for(int k=0;k<8;++k){world->setNativePlayerActuator("faller",{},{0,0,120},.25);run(*world,.25);}
+    run(*world,2.0);
+    const auto down=nativePlayerOf(*world,"faller");
+    require(tiltDeg(down)>60,"it was knocked over");
+    walkFor(*world,"faller",{},4.0);
+    const auto up=nativePlayerOf(*world,"faller");
+    require(tiltDeg(up)<10,"it got up: "+std::to_string(double(tiltDeg(up)))+" degrees");
+    require(up.supported,"and stands on the ground");
+    walkFor(*world,"faller",{1.4,0,0},2.0,3.14159265358979323846/2);
+    require(nativePlayerOf(*world,"faller").state.center_of_mass_world_m.x>up.state.center_of_mass_world_m.x+1,"and walks on");
+    std::cout<<"    fell to "<<tiltDeg(down)<<" degrees, stood back up to "<<tiltDeg(up)<<std::endl;
+}
+void nativePlayerJumpsAMetreAndNotInTheAir() {
+    // Its legs push the ground for one step: about 4.4 m/s up, a metre's
+    // rise (v^2 / 2g = 0.99 m), a little more than a person can.
+    auto world=open(walkScene());
+    world->spawnNativePlayer("jumper",{0,groundUnder(*world,0,0)+.01,0});
+    walkFor(*world,"jumper",{},1.0);
+    const double y0=nativePlayerOf(*world,"jumper").state.center_of_mass_world_m.y;
+    world->setNativePlayerJump("jumper",4.4);
+    double peak=y0,second=0;
+    for(int k=0;k<120;++k){
+        world->setNativePlayerWalk("jumper",{},0,.3);
+        if(k==30){const double before=nativePlayerOf(*world,"jumper").state.linear_velocity_m_s.y;
+                  world->setNativePlayerJump("jumper",4.4);world->step(kDt);
+                  second=nativePlayerOf(*world,"jumper").state.linear_velocity_m_s.y-before;continue;}
+        world->step(kDt);
+        peak=std::max(peak,nativePlayerOf(*world,"jumper").state.center_of_mass_world_m.y);
+    }
+    near(peak-y0,4.4*4.4/(2*9.81),.15,"it rises about a metre");
+    require(second<0,"asked again in the air, it does not jump: "+std::to_string(double(second)));
+    walkFor(*world,"jumper",{},2.0);
+    const auto landed=nativePlayerOf(*world,"jumper");
+    std::cout<<"    jump: rose "<<peak-y0<<" m"<<std::endl;
+}
+void nativePlayerStepsUpACellButNotAWall() {
+    // On 25 cm material cells every rise is a step. A body walks out of a
+    // trench whose end the dig left as 25 cm cell steps, up to the ground
+    // beyond, and a 50 cm wall still stops it.
+    auto stepWorld=[](double depth){
+        Json scene={{"bodies",{box("marker","iron",{.08,.08,.08},{20,20,20},true)}},
+            {"terrain",{{"surface","columns"},{"generate",{{"kind","flat"},{"nx",64},{"nz",24},
+            {"cell_m",.25},{"soil_m",.8},{"sand_m",0}}}}}};
+        auto world=open(scene);const auto &g=world->environment()->terrain().grid();
+        const double z=g.zOf(12);
+        world->dig(g.xOf(18),z,g.xOf(28),z,1.0,depth);       // a trench that ends ahead of it
+        const auto dug=world->dig(g.xOf(18),z,g.xOf(28),z,2.0,depth);       // a trench that ends ahead of it
+        return world;};
+    for(const double depth:{.25,.5}) {
+        auto world=stepWorld(depth);const auto &g=world->environment()->terrain().grid();
+        const double x=g.xOf(23),z=g.zOf(12);
+        world->spawnNativePlayer("climber",{x,groundUnder(*world,x,z)+.01,z});
+        walkFor(*world,"climber",{},1.0);
+        const double bottom=nativePlayerOf(*world,"climber").state.center_of_mass_world_m.y;
+        walkFor(*world,"climber",{2,0,0},4.0,3.14159265358979323846/2);
+        const auto out=nativePlayerOf(*world,"climber");
+        const double climbed=out.state.center_of_mass_world_m.y-bottom;
+        std::cout<<"    step "<<depth<<" m: rose "<<climbed<<" m, x "<<out.state.center_of_mass_world_m.x-x<<" m"<<std::endl;
+        const double top=groundUnder(*world,g.xOf(40),z)-groundUnder(*world,x,z);
+        if(depth<.3){
+            near(climbed,top,.05,"it stepped up out of the trench");
+            require(out.state.center_of_mass_world_m.x>g.xOf(31),"and walked on");
+            require(tiltDeg(out)<10,"upright");
+        } else require(climbed<top-.4,"a 50 cm wall at the top is not a step");
+    }
+}
+void nativePlayerClimbsStairsWithoutStopping() {
+    // Uphill on 25 cm cells is a staircase. It must start each step before
+    // its side meets the riser: one that waited until it touched stopped
+    // dead at every step and walked at 1.0-1.5 m/s in jerks (the walking
+    // stutter of 2026-10-04).
+    Json scene={{"bodies",{box("marker","iron",{.08,.08,.08},{20,20,20},true)}},
+        {"terrain",{{"surface","columns"},{"generate",{{"kind","flat"},{"nx",64},{"nz",24},
+        {"cell_m",.25},{"soil_m",1.2},{"sand_m",0}}}}}};
+    auto world=open(scene);const auto &g=world->environment()->terrain().grid();
+    const double z=g.zOf(12);
+    for(const int end:{44,40,36,32})                         // steps up at about x 32, 36, 40 and 44
+        world->dig(g.xOf(8),z,g.xOf(end),z,1.5,.25);
+    const double x=g.xOf(26);
+    world->spawnNativePlayer("climber",{x,groundUnder(*world,x,z)+.01,z});
+    walkFor(*world,"climber",{},1.0);
+    const auto start=nativePlayerOf(*world,"climber");
+    walkFor(*world,"climber",{2,0,0},1.0,3.14159265358979323846/2);
+    const auto before=nativePlayerOf(*world,"climber");
+    walkFor(*world,"climber",{2,0,0},3.0,3.14159265358979323846/2);
+    const auto after=nativePlayerOf(*world,"climber");
+    const double speed=(after.state.center_of_mass_world_m.x-before.state.center_of_mass_world_m.x)/3;
+    const double climbed=after.state.center_of_mass_world_m.y-start.state.center_of_mass_world_m.y;
+    std::cout<<"    up four 25 cm steps at 2 m/s: "<<speed<<" m/s, rose "<<climbed<<" m"<<std::endl;
+    near(climbed,1.0,.06,"it climbed all four steps");
+    require(speed>1.8 && speed<2.3,"without stopping at each");
+    require(tiltDeg(after)<10,"upright");
+}
+void nativePlayerWalksAcrossUnevenCellsTheSameBothWays() {
+    // Cell tops a centimetre or few apart are each level. Read as a slope
+    // across their edges, they made a phantom hill whose push helped one way
+    // and dragged the other: the body surged and sagged between 0.8 and
+    // 2 m/s, and only in one direction (2026-10-04).
+    Json scene={{"bodies",Json::array()},
+        {"terrain",{{"generate",{{"kind","flat"},{"nx",64},{"nz",24},{"cell_m",.25},{"soil_m",.8},{"sand_m",0}}}}}};
+    const double z=0,y0=1.2;
+    const double heights[]={0,.03,.01,.04,.02,0,.035,.015,.04,.005,.025,.01};
+    for(int i=0;i<36;++i)                                    // whole 4 cm cells, set at their heights
+        scene["bodies"].push_back(box("tile"+std::to_string(i),"concrete",{.24,.08,1.0},{-4.3+.24*i,y0+.04+heights[i%12],z},true));
+    auto world=open(scene);
+    world->spawnNativePlayer("walker",{-3.8,y0+.15,z});
+    walkFor(*world,"walker",{},1.0);
+    double speed[2];
+    for(int way=0;way<2;++way){
+        const double v=way==0?2.0:-2.0,heading=(way==0?1:-1)*3.14159265358979323846/2;
+        walkFor(*world,"walker",{v,0,0},1.0,heading);
+        const auto before=nativePlayerOf(*world,"walker");
+        walkFor(*world,"walker",{v,0,0},2.5,heading);
+        const auto after=nativePlayerOf(*world,"walker");
+        speed[way]=std::abs(after.state.center_of_mass_world_m.x-before.state.center_of_mass_world_m.x)/2.5;
+        require(tiltDeg(after)<5,"upright");
+    }
+    std::cout<<"    across uneven cells: "<<speed[0]<<" m/s one way, "<<speed[1]<<" m/s back"<<std::endl;
+    // Every lip costs it a little (a person slows on uneven ground too), but
+    // the same each way, and never the stop-and-go of a phantom hill.
+    require(speed[0]>1.75 && speed[1]>1.75,"near the asked 2 m/s both ways");
+    near(speed[0],speed[1],.1,"the same each way");
+}
 void nativePlayersWalkOnFlatGroundAndStop() {
     auto world=open(walkScene(),{},{0,-9.81,0});
     world->spawnNativePlayer("walker",{0,groundUnder(*world,0,0)+.01,0});
@@ -1328,6 +1465,11 @@ int main(int argc, char **argv) {
         {"native players swim against the water",nativePlayersSwimAgainstTheWater},
         {"native player hand pulls back on its body",nativePlayerHandPullsBackOnItsBody},
         {"native player carries a whole thing and it pulls back",nativePlayerCarriesAWholeThingAndItPullsBack},
+        {"native player gets up after a fall",nativePlayerGetsUpAfterAFall},
+        {"native player jumps a metre and not in the air",nativePlayerJumpsAMetreAndNotInTheAir},
+        {"native player steps up a cell but not a wall",nativePlayerStepsUpACellButNotAWall},
+        {"native player climbs stairs without stopping",nativePlayerClimbsStairsWithoutStopping},
+        {"native player walks across uneven cells the same both ways",nativePlayerWalksAcrossUnevenCellsTheSameBothWays},
         {"native player inputs are bounded and cannot teleport",nativePlayerInputsAreBoundedAndCannotTeleport},
         {"exact compounds have native water forces and retain their state",exactCompoundsHaveNativeWaterForcesAndRetainTheirState},
         {"a closed basin conserves water with a log in it", aClosedBasinConservesWaterWithALogInIt},

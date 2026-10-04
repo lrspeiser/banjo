@@ -2291,6 +2291,14 @@ public:
     // gets no traction at all. When the request lapses it is a passive body.
     void setNativePlayerWalk(const std::string &actor, const Vec3 &velocity_m_s,
                              double heading_rad, double duration_s);
+    // A jump: the upward speed its legs give it on the next step it stands on
+    // something, 0..4.5 m/s (about a metre: a little more than a person). Its
+    // feet push the ground down by as much; nothing happens off the ground.
+    void setNativePlayerJump(const std::string &actor, double up_m_s);
+    // A player who has left takes their body with them: it is removed from
+    // the world, so it is not left standing in everyone's way. False if they
+    // had none.
+    bool removeNativePlayer(const std::string &actor);
     [[nodiscard]] std::string playerCarriedGround() const;
     // Previews, for aiming. Neither changes the world, and both are bounded:
     // at most ten seconds of flight, and a stroke at most its own give_up_s.

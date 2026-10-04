@@ -107,6 +107,7 @@ NOTES_KEPT = 12
 # A go_to that runs out of time is tried again from where it stands, this many
 # times, before the routine gives up the step.
 RETRIES = 3
+BLOCKED_MOST_S = 30.0   # the longest a stuck machine waits before planning again
 UNTILS = ("arrived", "asked_done", "load_full", "load_empty", "done")
 STEPS_MOST = 24
 # A machine that processes works this much of its recipe's input at a time
@@ -191,6 +192,11 @@ class Frame:
     # step ran for ever (the mine's rover stood at the smelter's port).
     began_t: float | None = None
     order_id: int | None = None
+    # How many plans in a row came back blocked. Each costs up to MAX_SURVEYS
+    # engine reads while the room waits, so a stuck machine asks again after
+    # 3, 6, 12, 24, then every 30 s, not every 3 s: replanning every 3 s froze
+    # the room for half a second at a time and every walker in it stuttered.
+    blocked: int = 0
 
     def current(self) -> dict[str, Any] | None:
         if not self.steps:
@@ -292,13 +298,16 @@ class Routine:
             raise ValueError("Invalid machine execution stack")
         rebuilt=[]
         for i,f in enumerate(frames):
-            if not isinstance(f,dict) or set(f)!=set(asdict(Frame("",[]))): raise ValueError("Invalid machine frame")
+            # A frame saved before `blocked` was kept has no count: none.
+            if not isinstance(f,dict) or not set(asdict(Frame("",[])))-{'blocked'}<=set(f)<=set(asdict(Frame("",[]))):
+                raise ValueError("Invalid machine frame")
             if not isinstance(f["name"],str) or not 1<=len(f["name"])<=256 or f["then"] not in ("round","resume","restart"):
                 raise ValueError("Invalid machine frame identity")
             steps=checked_steps(f["steps"]) if f["steps"] else []
             if i==0 and (f["name"]!="routine" or f["then"]!="round" or f["steps"]!=self.steps):
                 raise ValueError("Machine execution stack changed its base routine")
             for k in ("step","tries"): number(f[k],True)
+            if "blocked" in f: number(f["blocked"],True)
             if f["then"]!="round" and f["step"]>len(steps): raise ValueError("Invalid machine frame position")
             number(f["issued_t"])
             if f["began_t"] is not None: number(f["began_t"])
@@ -577,7 +586,8 @@ class Routine:
                         tools.hold_still(ctx,tools.Call('hold_still',{'for_s':0},by))
                         return frame.issued
                     if frame.issued.get('drive_failed'):return None  # resume/recovery can retry; never dig here
-                    if float(ctx.t)-frame.issued_t<3. or float(program.get('speed_m_s') or 0)>.05 or abs(float(program.get('turning_deg_s') or 0))>3.:return None
+                    wait=min(BLOCKED_MOST_S,3.*2**max(0,min(frame.blocked-1,4)))
+                    if float(ctx.t)-frame.issued_t<wait or float(program.get('speed_m_s') or 0)>.05 or abs(float(program.get('turning_deg_s') or 0))>3.:return None
                     frame.issued=None;asked=None
                 elif asked and asked.get("doing") == "approaching" and program.get("doing") == "waiting":
                     navigation=frame.issued.get('navigation')
@@ -648,6 +658,10 @@ class Routine:
                            navigation={'blocked':'repeated retreats did not clear a route; recover or resume to retry'})
         frame.issued = did
         frame.issued_t = float(ctx.t)
+        # Consecutive blocked plans back off (Frame.blocked); a leg that goes
+        # starts the count again.
+        if (did.get('navigation') or {}).get('blocked') and not did.get('drive_failed'):frame.blocked+=1
+        elif did.get('navigation'):frame.blocked=0
         if did.get('blocked_route') and (not self.notes or self.notes[-1]!=did['did']):
             self.note(did['did'])
         if did.get("idle"):

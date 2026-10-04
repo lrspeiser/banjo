@@ -1496,9 +1496,15 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith(("/api/workshop/", "/api/world/", "/api/live/")) and path != "/api/world/player/join" and getattr(self.app, "world_id", None):
                 guest = player_world.require(self.app, self.headers.get("X-Banjo-Player"))
                 owner_scope = workshop_library.REQUEST_OWNER.set(guest)
+            began=time.monotonic()
             try:
                 return self._dispatch_POST(path,body)
             finally:
+                # A request that holds the room for a quarter of a second makes
+                # every walker in it stutter: say which, so it can be found.
+                took=time.monotonic()-began
+                if took>.25:logging.getLogger('banjo').info('slow request: %s %s took %.0f ms',path,
+                    (body.get('op') or body.get('action') or '') if isinstance(body,dict) else '',took*1000)
                 if owner_scope is not None:
                     workshop_library.REQUEST_OWNER.reset(owner_scope)
         except (ValueError,UnicodeError) as exc: self.send({"error":str(exc)},400)

@@ -359,6 +359,14 @@ class Chrome:
         try:
             self.port, self.browser_path = self._devtools_port()
             self.page = DevTools(self._page_socket())
+            # A new player starts as a body now. Suites about other things keep
+            # the camera walk they were written against, unless they choose a
+            # movement themselves (BANJO_TEST_MOVEMENT, or localStorage).
+            movement = os.environ.get("BANJO_TEST_MOVEMENT", "gravity")
+            if movement:
+                self.page.send("Page.addScriptToEvaluateOnNewDocument", {"source":
+                    "try{if(!localStorage.getItem('banjo.movement'))"
+                    f"localStorage.setItem('banjo.movement','{movement}')}}catch(e){{}}"})
         except Exception:
             self.close()
             raise

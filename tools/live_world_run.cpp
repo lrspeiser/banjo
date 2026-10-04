@@ -1849,6 +1849,10 @@ int main(int argc, char **argv) {
                 } else if (op == "player-walk") {
                     world->setNativePlayerWalk(command.value("actor", std::string{}), readVec(command, "velocity_m_s"),
                         command.value("heading_rad", 0.0), command.at("duration_s").get<double>());
+                    if (command.contains("jump_m_s"))
+                        world->setNativePlayerJump(command.value("actor", std::string{}), command.at("jump_m_s").get<double>());
+                } else if (op == "player-remove") {
+                    world->removeNativePlayer(command.value("actor", std::string{}));
                 } else if (op == "player-actuator") {
                     world->setNativePlayerActuator(command.value("actor", std::string{}),
                         readVec(command, "force_n"), readVec(command, "torque_n_m"), command.at("duration_s").get<double>());

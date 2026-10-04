@@ -19,8 +19,23 @@ def candidate(recipe):
     return {k:deepcopy(recipe.get(k,{})) for k in ('kind','parameters','component_overrides')}
 
 
+# Whether a recipe fits depends only on its candidate and the requirement; the
+# answer compiles designs, so it is remembered (guidance asks every few seconds
+# while holding the world lock).
+_FITS={}
+
+
 def fits_requirement(recipe,requirement):
     if recipe.get('problem'):return False
+    try:remembered=json.dumps([candidate(recipe),requirement],sort_keys=True)
+    except (TypeError,ValueError):return _fits(recipe,requirement)
+    if remembered not in _FITS:
+        if len(_FITS)>2048:_FITS.clear()
+        _FITS[remembered]=_fits(recipe,requirement)
+    return _FITS[remembered]
+
+
+def _fits(recipe,requirement):
     if requirement['kind']=='admitted-recipe':
         return candidate(recipe)==candidate(requirement['candidate'])
     if requirement['kind'] in ('own-light-used','own-solar-collected'):

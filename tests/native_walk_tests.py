@@ -2,13 +2,14 @@
 
 The host derives the actor from the authenticated player and spawns the body
 once at that player's own reported stance; each request asks for a velocity
-and a facing held 0.3 s. On a generated valley the body must go where it is
+and a facing held 0.5 s. On a generated valley the body must go where it is
 walked, stay upright and on the ground, stop when asked, and stand still when
 the requests stop. Its walk work is the engine's own account.
 
     BANJO_LIVE_ENGINE=build/walk/Release/banjo_live_world_run.exe python tests/native_walk_tests.py -v
 """
 import math
+import time
 import os
 from pathlib import Path
 import sys
@@ -82,6 +83,36 @@ class NativeWalk(unittest.TestCase):
         rest = (app.live.session.state.get('native_players') or {})[me['id']]
         self.assertLess(math.dist(rest['position_m'], stopped['position_m']), .1)
 
+    def test_a_player_who_has_left_takes_their_body_with_them(self):
+        # A body left standing where its player last was is in everyone's
+        # way (a walker tripped over eight of them, 2026-10-04).
+        from unittest import mock
+        import native_body
+        import player_world
+        world = self.post('/api/worlds', {'name': 'Leave', 'seeds': {'terrain': 7, 'goods': 851269742}})['id']
+        first, second = self.join(world, 'First'), self.join(world, 'Second')
+        self.players = {world: first}
+        sid = self.post('/api/world/open', {}, world)['session']
+        app = self.app.hub.get(world)
+        def stand_and_walk(who, x):
+            self.players[world] = who
+            floor = self.post('/api/live/act', {'session': sid, 'op': 'survey', 'at': [x, 2.0]}, world)['survey']['ground_m']
+            person = {'standing_m': [x, floor, 2.0], 'eyes_m': [x, floor + 1.62, 2.0], 'facing': [1, 0, 0]}
+            self.post('/api/live/act', {'session': sid, 'op': 'step', 'dt': 1 / 240, 'n': 1, 'person': person}, world)
+            return self.post('/api/world/player/walk', {'session': sid, 'velocity_m_s': [0, 0, 0], 'heading_rad': 0}, world)
+        stand_and_walk(first, -6.0)
+        stand_and_walk(second, -3.0)
+        bodies = lambda: set((app.live.session.send(op='step', dt=1 / 240, n=1) or {}).get('native_players') or {})
+        self.assertEqual({first['id'], second['id']}, bodies())
+        # A moment later both are still here; long after the first was last
+        # seen, the next walk by anyone takes the first one's body away.
+        self.post('/api/world/player/walk', {'session': sid, 'velocity_m_s': [0, 0, 0], 'heading_rad': 0}, world)
+        self.assertEqual({first['id'], second['id']}, bodies())
+        later = time.time() + player_world.ACTIVE_S + 5
+        with mock.patch.object(native_body.time, 'time', return_value=later):
+            self.post('/api/world/player/walk', {'session': sid, 'velocity_m_s': [0, 0, 0], 'heading_rad': 0}, world)
+        self.assertEqual({second['id']}, bodies())
+
     def test_a_native_body_survives_an_install_and_a_restart(self):
         # An install rebuilds the room from its snapshot; a restart reopens
         # it from the saved world. The body must be where it stood both times.
@@ -140,6 +171,50 @@ class NativeWalk(unittest.TestCase):
         self.assertIsNotNone(back, 'the body is back after a restart')
         self.assertLess(math.dist(back['position_m'], kept['position_m']), .05)
         self.assertLess(tilt_deg(back), 5)
+
+    @unittest.skipUnless(os.environ.get('BANJO_BROWSER_TESTS') == 'required' or agents.qa_browser.CHROME.is_file(),
+                         'Chrome is required')
+    def test_a_new_player_starts_as_a_body_and_can_switch_to_god_mode(self):
+        import json
+        import time
+        world, me, app = agents.AutonomousGuests.setup_world(self)
+        chrome = agents.qa_browser.Chrome(1280, 800)
+        self.addCleanup(chrome.close)
+        page = chrome.page
+        page.send('Page.enable')
+        # As a new player: nothing chosen yet, so the game's own default.
+        page.send('Page.addScriptToEvaluateOnNewDocument', {'source':
+            f'localStorage.setItem("banjo.player.{world}",{json.dumps(me["token"])});'
+            'localStorage.removeItem("banjo.movement");'})
+        page.send('Page.navigate', {'url': self.base + f'/world?world={world}'})
+        def wait(expression, seconds=40):
+            until = time.monotonic() + seconds
+            while time.monotonic() < until:
+                try:
+                    if page.evaluate('Boolean(' + expression + ')'):
+                        return
+                except (RuntimeError, TimeoutError):
+                    pass
+                time.sleep(.1)
+            self.fail('did not reach ' + expression)
+        wait('window.banjoRoom?.ready()')
+        self.assertEqual('native', page.evaluate('document.querySelector("#game-menu-movement select").value'))
+        self.assertIn('Body', page.evaluate('document.querySelector("#game-menu-movement select").selectedOptions[0].textContent'))
+        # Walking moves the body, and the eye goes with it.
+        page.evaluate('window.__from=banjoRoom.camera.position.clone();'
+                      'dispatchEvent(new KeyboardEvent("keydown",{code:"KeyW",key:"w"}))')
+        time.sleep(3)
+        page.evaluate('dispatchEvent(new KeyboardEvent("keyup",{code:"KeyW",key:"w"}))')
+        wait('Math.hypot(banjoRoom.camera.position.x-__from.x,banjoRoom.camera.position.z-__from.z)>1', 10)
+        native = (app.live.session.state.get('native_players') or {}).get(me['id'])
+        self.assertIsNotNone(native, 'the page walked a native body')
+        # God mode, from the Menu: the camera flies free of the body.
+        page.evaluate('(s=>{s.value="fly";s.dispatchEvent(new Event("change",{bubbles:true}))})'
+                      '(document.querySelector("#game-menu-movement select"))')
+        page.evaluate('window.__y=banjoRoom.camera.position.y;dispatchEvent(new KeyboardEvent("keydown",{code:"Space",key:" "}))')
+        wait('banjoRoom.camera.position.y>__y+1', 10)
+        page.evaluate('dispatchEvent(new KeyboardEvent("keyup",{code:"Space",key:" "}))')
+        self.assertIn('God mode', page.evaluate('document.querySelector("[data-movement]").textContent'))
 
 if __name__ == '__main__':
     unittest.main()
