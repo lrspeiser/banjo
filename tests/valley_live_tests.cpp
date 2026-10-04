@@ -1105,15 +1105,17 @@ void nativePlayersSwimAgainstTheWater() {
              <<" Ns; water took "<<water<<" Ns against the body's "<<body<<" Ns"<<std::endl;
 }
 void nativePlayerHandPullsBackOnItsBody() {
-    // In zero gravity, with nothing to stand on: what the hand pushes on the
-    // box it holds, the box pushes back on the body. Body and box together
-    // keep the momentum they had, zero.
+    // In zero gravity, two metres clear of the floor: what the hand pushes on
+    // the box it holds, the box pushes back on the body. Body and box together
+    // keep the momentum they had, zero. (Standing on the floor, as this test
+    // once did, the reaction tips the body onto the rim of its foot and the
+    // floor takes about 4% of the push: that was the residual.)
     Json scene=nativePlayerScene();
-    scene["bodies"].push_back(box("crate","oak",{.32,.32,.32},{.6,1.2,0}));
+    scene["bodies"].push_back(box("crate","oak",{.32,.32,.32},{.6,3.2,0}));
     auto world=open(scene,{},{0,0,0});
-    world->spawnNativePlayer("mover",{0,0,0});
+    world->spawnNativePlayer("mover",{0,2,0});
     world->selectHand("mover");
-    const Vec3 grip{.6,1.2,0};
+    const Vec3 grip{.6,3.2,0};
     require(world->wield("crate",grip),"the native player could not take hold of the crate");
     LiveStroke stroke;stroke.path_m={grip,grip+Vec3{.6,0,0}};
     stroke.speed_m_s=1.5;stroke.accel_m_s2=10;stroke.lead_m=.05;stroke.give_up_s=1;
@@ -1124,9 +1126,40 @@ void nativePlayerHandPullsBackOnItsBody() {
     const Vec3 p_body=70*body.state.linear_velocity_m_s, p_crate=crate.mass_kg*crate.velocity_m_s;
     require(crate.velocity_m_s.x>.2,"the hand pushed the crate");
     require(body.state.linear_velocity_m_s.x<-.01,"and the body went back");
-    // Closes to about 4% (the residual is printed); its source is not yet found.
-    near(p_body.x+p_crate.x,0,.05*std::abs(p_crate.x)+1e-3,"body and crate keep their momentum");
+    // The crate, a lattice box, carries the engine's declared 0.02/s velocity
+    // damping (JoltWorld, fragments that are not round); the body carries none.
+    // Over 0.25 s that takes at most 0.5% of the crate's momentum, measured 0.34%.
+    near(p_body.x+p_crate.x,0,(.02*.25+1e-3)*std::abs(p_crate.x),"body and crate keep their momentum");
     std::cout<<"    hand push: crate "<<p_crate.x<<" Ns, body "<<p_body.x<<" Ns, sum "<<p_body.x+p_crate.x<<" Ns"<<std::endl;
+}
+void nativePlayerCarriesAWholeThingAndItPullsBack() {
+    // A thing carried whole: the hand holds one part and the other hangs on it
+    // by a fixing. What the hand does to the gripped part reaches the other
+    // through the joint, and all of it pushes back on the body. In zero
+    // gravity and clear of the floor, body and both parts together keep their momentum.
+    Json scene=nativePlayerScene();
+    scene["bodies"].push_back(box("crate","oak",{.32,.32,.32},{.6,3.2,0}));
+    scene["bodies"].push_back(box("lid","oak",{.32,.16,.32},{.6,3.44,0}));
+    auto world=open(scene,{},{0,0,0});
+    require(world->fix("crate","lid",{.6,3.36,0},{0,1,0},0,0,0)!=0,"the lid would not fix to the crate");
+    world->spawnNativePlayer("mover",{0,2,0});
+    world->selectHand("mover");
+    const Vec3 grip{.6,3.2,0};
+    require(world->wield("crate",grip),"the native player could not take hold of the crate");
+    LiveStroke stroke;stroke.path_m={grip,grip+Vec3{.6,0,0}};
+    stroke.speed_m_s=1.5;stroke.accel_m_s2=10;stroke.lead_m=.05;stroke.give_up_s=1;
+    std::string why;require(world->stroke(stroke,why),"could not begin the push: "+why);
+    run(*world,.25);
+    const auto body=nativePlayerOf(*world,"mover");
+    const auto crate=poseOf(*world,"crate"),lid=poseOf(*world,"lid");
+    const double p_body=70*body.state.linear_velocity_m_s.x;
+    const double p_load=crate.mass_kg*crate.velocity_m_s.x+lid.mass_kg*lid.velocity_m_s.x;
+    require(lid.velocity_m_s.x>.2,"the lid went with the crate it is fixed to");
+    require(body.state.linear_velocity_m_s.x<-.01,"and the body went back");
+    // Less the parts' declared 0.02/s velocity damping (see the hand test): 0.32%.
+    near(p_body+p_load,0,(.02*.25+1e-3)*std::abs(p_load),"body and the whole load keep their momentum");
+    std::cout<<"    whole carry: load "<<p_load<<" Ns ("<<crate.mass_kg+lid.mass_kg<<" kg), body "<<p_body
+             <<" Ns, sum "<<p_body+p_load<<" Ns"<<std::endl;
 }
 void nativePlayersPersistAndRejectInvalidState() {
     const auto scene=nativePlayerScene();auto world=open(scene,{},{});
@@ -1294,6 +1327,7 @@ int main(int argc, char **argv) {
         {"native player feet push back on what they stand on",nativePlayerFeetPushBackOnWhatTheyStandOn},
         {"native players swim against the water",nativePlayersSwimAgainstTheWater},
         {"native player hand pulls back on its body",nativePlayerHandPullsBackOnItsBody},
+        {"native player carries a whole thing and it pulls back",nativePlayerCarriesAWholeThingAndItPullsBack},
         {"native player inputs are bounded and cannot teleport",nativePlayerInputsAreBoundedAndCannotTeleport},
         {"exact compounds have native water forces and retain their state",exactCompoundsHaveNativeWaterForcesAndRetainTheirState},
         {"a closed basin conserves water with a log in it", aClosedBasinConservesWaterWithALogInIt},
