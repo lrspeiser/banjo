@@ -30,6 +30,7 @@ import { terrainMaterial } from "/terrain_material.js";
 import { baselineHeightAt, cutHeightAt, walkCutSurface, cutWallBands, cutRimSegments } from "/cut_surface.js";
 import { renderPlayerGuidance } from "/player_guidance.js";
 import { constructionWrite, constructionControls } from "/construction_ui.js";
+import { createVoiceController } from "/voice.js";
 
 const $ = (id) => document.getElementById(id);
 const worldId = new URLSearchParams(location.search).get("world");
@@ -11039,6 +11040,25 @@ chatAudience.hidden=!worldId||!!watchedId; $('ask').before(chatAudience);
 const playerRetry=document.createElement('button');playerRetry.type='button';playerRetry.textContent='Retry last player message';playerRetry.hidden=true;
 $('ask').after(playerRetry);
 const privateTurns=new Map(), publicMessages=[];let messageCursor=0,messagePolling=false;
+const voiceGuide=worldId&&!watchedId ? createVoiceController({
+  api,
+  mount:$("ask"),
+  canTalk:()=>!!world.session&&!!playerToken&&!world.asking,
+  // Spoken "this" means what the crosshair is on first, then what is held.
+  // The server resolves the name again in a fresh authenticated snapshot.
+  getFocus:()=>world.aim?.name||world.held?.name||null,
+  onUser:(text)=>{
+    const prior=privateTurns.get("guide")||[];
+    prior.push({role:"user",content:text});privateTurns.set("guide",prior.slice(-40));
+    chatRecipient.value="guide";renderChatRecipient();
+  },
+  onReply:(text)=>{
+    const prior=privateTurns.get("guide")||[];
+    prior.push({role:"assistant",content:text,name:"AI Guide"});privateTurns.set("guide",prior.slice(-40));
+    if(chatRecipient.value==="guide")renderChatRecipient();
+  },
+}) : null;
+if(voiceGuide)addEventListener("pagehide",()=>voiceGuide.destroy(),{once:true});
 const pendingMessageKey=()=>`banjo.player-message.${worldId}.${playerId}`;
 function pendingPlayerMessage(){try{return JSON.parse(sessionStorage.getItem(pendingMessageKey())||'null')}catch{return null}}
 function showPlayerMessage(row){const turn=say('player',row.message);turn.querySelector('.who').textContent=`${row.name} · Players`;turn.dataset.messageId=String(row.id)}
