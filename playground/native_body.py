@@ -31,6 +31,8 @@ MOST_SPEED_M_S = 6.0
 # (the owner, 2026-10-04: bodies are slightly superhuman).
 JUMP_M_S = 4.4
 EYES_ABOVE_FEET_M = 1.62
+LOST_BELOW_M = 3.0          # this far under the ground at its spot, a body is lost
+_LOOKED: dict[str, float] = {}   # when each player's body was last checked for being lost
 
 
 def _vector(value: Any, what: str) -> list[float]:
@@ -70,9 +72,23 @@ def walk(app: Any, player_id: str, body: Any) -> dict[str, Any]:
             if (actor != player_id and actor in natives
                     and now - float(record.get("seen_unix_s", 0)) > player_world.ACTIVE_S):
                 session.send(op="player-remove", actor=actor)
+        # A body under the ground, or off the edge of the world, is lost: it
+        # is taken away and stood up again where a new player starts. One
+        # thrown off the map fell for ever and saved there (2026-10-04).
+        lost = False
+        mine = natives.get(player_id)
+        if (isinstance(mine, dict) and isinstance(mine.get("position_m"), list)
+                and now - _LOOKED.get(player_id, 0.0) >= 1.0):
+            _LOOKED[player_id] = now
+            x, y, z = (float(v) for v in mine["position_m"])
+            under = (session.send(op="survey", at=[x, z]).get("survey") or {}).get("ground_m")
+            if under is None or y < float(under) - LOST_BELOW_M:
+                session.send(op="player-remove", actor=player_id)
+                natives = {k: v for k, v in natives.items() if k != player_id}
+                lost = True
         if player_id not in natives:
             pose = (player_world.records(app).get(player_id) or {}).get("pose") or {}
-            eyes = pose.get("eyes_m")
+            eyes = [0.0, 0.0, 0.0] if lost else pose.get("eyes_m")
             if not isinstance(eyes, list) or len(eyes) != 3:
                 raise ValueError("Stand somewhere in the world before taking a native body")
             ground = (session.send(op="survey", at=[eyes[0], eyes[2]]).get("survey") or {}).get("ground_m")

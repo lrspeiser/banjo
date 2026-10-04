@@ -75,6 +75,12 @@ constexpr double kGetUpMostTorqueNm = 700.0;
 // A player's body is a little more than a person's (the owner, 2026-10-04):
 // 4.5 m/s off the ground is a metre's jump, about twice a standing person's.
 constexpr double kMostJumpM_S = 4.5;
+// Its shoulder, above its middle, and how far from it its hand can hold
+// anything. A pick comes down up to 2 m in front of it (interaction_profiles
+// reach_m), which puts the grip about 1.5 m from the shoulder; 1.8 m keeps
+// that in hand, with room for the grip to trail a fast turn.
+constexpr double kShoulderAboveCenterM = 0.55;
+constexpr double kArmReachM = 1.8;
 // Stepping up: ground ahead higher than its feet by more than kStepLeastM and
 // at most kMostStepM is a step its legs lift it onto. A person takes about
 // 0.25 m; a little more here, so the 25 cm material cells are walkable.
@@ -6761,6 +6767,19 @@ void LiveWorld::step(double dt_s) {
                                        impl_->request.gravity_m_s2,
                                        fixed_group && !impl_->stroke ? 20.0 : 100.0,
                                        fixed_group ? 20.0 : 100.0);
+        // An arm reaches so far. A grip further from a body's shoulder than
+        // that is not in its hand: it lets go. Pulling on, against something
+        // that would not give, slid the body away for as long as the pull
+        // lasted and twisted it at the grip -- a player digging was flung
+        // 184 m off the map (2026-10-04).
+        if (const auto own = impl_->native_players.find(actor); own != impl_->native_players.end()) {
+            const RigidSnapshot body = impl_->world->snapshot(own->second.id);
+            const Vec3 shoulder = body.center_of_mass_world_m + body.orientation_world.rotate(Vec3{0, kShoulderAboveCenterM, 0});
+            if (length(pull.grip - shoulder) > kArmReachM) {
+                release();
+                return out;
+            }
+        }
         out.on = true;
         out.id = id;
         out.force = pull.force;

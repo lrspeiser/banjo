@@ -113,6 +113,29 @@ class NativeWalk(unittest.TestCase):
             self.post('/api/world/player/walk', {'session': sid, 'velocity_m_s': [0, 0, 0], 'heading_rad': 0}, world)
         self.assertEqual({second['id']}, bodies())
 
+    def test_a_body_lost_under_the_world_is_stood_up_again(self):
+        # Thrown off the map, a body fell for ever and was saved there.
+        world = self.post('/api/worlds', {'name': 'Lost', 'seeds': {'terrain': 7, 'goods': 851269742}})['id']
+        me = self.join(world, 'Faller')
+        self.players = {world: me}
+        sid = self.post('/api/world/open', {}, world)['session']
+        app = self.app.hub.get(world)
+        floor = self.post('/api/live/act', {'session': sid, 'op': 'survey', 'at': [-6.0, 2.0]}, world)['survey']['ground_m']
+        person = {'standing_m': [-6.0, floor, 2.0], 'eyes_m': [-6.0, floor + 1.62, 2.0], 'facing': [1, 0, 0]}
+        self.post('/api/live/act', {'session': sid, 'op': 'step', 'dt': 1 / 240, 'n': 1, 'person': person}, world)
+        self.post('/api/world/player/walk', {'session': sid, 'velocity_m_s': [0, 0, 0], 'heading_rad': 0}, world)
+        # Put it far under the ground, as a fall off the edge leaves it.
+        app.live.session.send(op='player-remove', actor=me['id'])
+        app.live.session.send(op='player-spawn', actor=me['id'], feet_m=[-6.0, -9.0, 2.0])
+        app.live.session.send(op='step', dt=1 / 240, n=1)
+        import native_body
+        native_body._LOOKED.clear()
+        reply = self.post('/api/world/player/walk', {'session': sid, 'velocity_m_s': [0, 0, 0], 'heading_rad': 0}, world)
+        at = reply['native']['position_m']
+        ground = self.post('/api/live/act', {'session': sid, 'op': 'survey', 'at': [0.0, 0.0]}, world)['survey']['ground_m']
+        self.assertLess(math.hypot(at[0], at[2]), .5, f'back where a new player starts: {at}')
+        self.assertGreater(at[1], ground, 'standing on the ground, not under it')
+
     def test_a_native_body_survives_an_install_and_a_restart(self):
         # An install rebuilds the room from its snapshot; a restart reopens
         # it from the saved world. The body must be where it stood both times.

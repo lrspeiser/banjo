@@ -1287,6 +1287,35 @@ void nativePlayerHandPullsBackOnItsBody() {
     near(p_body.x+p_crate.x,0,(.02*.25+1e-3)*std::abs(p_crate.x),"body and crate keep their momentum");
     std::cout<<"    hand push: crate "<<p_crate.x<<" Ns, body "<<p_body.x<<" Ns, sum "<<p_body.x+p_crate.x<<" Ns"<<std::endl;
 }
+void nativePlayerLetsGoOfWhatItCannotReach() {
+    // A swing that drives a thing into something that will not give: the hand
+    // pushes up to 800 N, its feet hold 0.6 of its weight, and the push back
+    // slid the body away for as long as the swing lasted, twisting it at the
+    // grip -- a player digging was flung 184 m off the map (2026-10-04). An
+    // arm reaches so far: past that the hand lets go, and the body stays.
+    Json scene=nativePlayerScene();
+    scene["bodies"].push_back(box("floor","concrete",{20,.2,20},{0,-.1,0},true));
+    scene["bodies"].push_back(box("wall","concrete",{.2,2.0,2.0},{1.2,1.0,0},true));
+    scene["bodies"].push_back(box("crate","oak",{.32,.32,.32},{.92,1.2,0}));
+    auto world=open(scene,{},{0,-9.81,0});
+    world->spawnNativePlayer("digger",{0,.01,0});
+    walkFor(*world,"digger",{},.5);
+    world->selectHand("digger");
+    const Vec3 grip{.92,1.2,0};
+    require(world->wield("crate",grip),"the native player could not take hold of the crate");
+    LiveStroke stroke;stroke.path_m={grip,grip+Vec3{1.5,0,0}};
+    stroke.speed_m_s=1.5;stroke.accel_m_s2=10;stroke.lead_m=.3;stroke.give_up_s=6;
+    std::string why;require(world->stroke(stroke,why),"could not begin the swing: "+why);
+    const Vec3 start=nativePlayerOf(*world,"digger").state.center_of_mass_world_m;
+    for(int k=0;k<16;++k){world->setNativePlayerWalk("digger",{},0,.3);run(*world,.25);}
+    const auto after=nativePlayerOf(*world,"digger");
+    const double went=length(after.state.center_of_mass_world_m-start);
+    std::cout<<"    swing into a wall: body moved "<<went<<" m, at "<<length(after.state.linear_velocity_m_s)
+             <<" m/s, holding '"<<world->held()<<"'"<<std::endl;
+    require(world->held().empty(),"the hand let go of what it could not reach");
+    require(went<1.5,"the body was not driven away");
+    require(length(after.state.linear_velocity_m_s)<.5,"and is not still going");
+}
 void nativePlayerCarriesAWholeThingAndItPullsBack() {
     // A thing carried whole: the hand holds one part and the other hangs on it
     // by a fixing. What the hand does to the gripped part reaches the other
@@ -1488,6 +1517,7 @@ int main(int argc, char **argv) {
         {"native player steps up a cell but not a wall",nativePlayerStepsUpACellButNotAWall},
         {"native player climbs stairs without stopping",nativePlayerClimbsStairsWithoutStopping},
         {"native player sees past its own body",nativePlayerSeesPastItsOwnBody},
+        {"native player lets go of what it cannot reach",nativePlayerLetsGoOfWhatItCannotReach},
         {"native player walks across uneven cells the same both ways",nativePlayerWalksAcrossUnevenCellsTheSameBothWays},
         {"native player inputs are bounded and cannot teleport",nativePlayerInputsAreBoundedAndCannotTeleport},
         {"exact compounds have native water forces and retain their state",exactCompoundsHaveNativeWaterForcesAndRetainTheirState},

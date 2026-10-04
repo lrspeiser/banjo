@@ -3687,16 +3687,25 @@ function goodsVisuals({scene,camera,groundAt,body,ports,colour,collect,readonly}
         steel.dispose();
       }
       let n=0;
-      for(const [what,kg] of slots) {
-        const count=p.excavated ? Math.min(30,Math.max(21,20+Math.ceil(Math.cbrt(kg)*4))) : Math.min(16,Math.max(1,Math.ceil(Math.sqrt(kg)*3)));
+      if(p.excavated && slots.length) {
+        // A dug pile is drawn at its own size: a cone of loose ground at its
+        // angle of repose, holding the volume its mass makes loose. It was a
+        // block of 21 or more cubes, 75 cm across for even a kilogram, so
+        // every swing grew a big pile beside a hole that hardly showed
+        // (the owner, 2026-10-04).
+        const loose={sand:1600,soil:1300,clay:1400,rock:1700},repose=Math.tan(34*Math.PI/180);
+        let volume=0;for(const [what,kg] of slots)volume+=kg/(loose[what]||1500);
+        const r=Math.cbrt(3*volume/(Math.PI*repose)),h=r*repose;
+        const most=slots.reduce((a,b)=>b[1]>a[1]?b:a)[0];
+        const heap=new THREE.Mesh(new THREE.ConeGeometry(r,h,20,1,false),material(most));
+        heap.position.y=h/2;heap.castShadow=heap.receiveShadow=true;group.add(heap);
+      }
+      for(const [what,kg] of p.excavated ? [] : slots) {
+        const count=Math.min(16,Math.max(1,Math.ceil(Math.sqrt(kg)*3)));
         const mesh=new THREE.InstancedMesh(cube,material(what),count);
         for(let i=0;i<count;i++,n++) {
-          if(p.excavated) {
-            const layer=i<16 ? 0 : i<25 ? 1 : i<29 ? 2 : 3, width=4-layer, cell=i-[0,16,25,29][layer];
-            matrix.scale.setScalar(1.4);
-            matrix.position.set((cell%width-(width-1)/2)*.19,.1+layer*.19,(Math.floor(cell/width)-(width-1)/2)*.19);
-          } else matrix.position.set((n%5-2)*.16,.075+Math.floor(n/25)*.15,(Math.floor(n/5)%5-2)*.16);
-          if(!p.excavated)matrix.scale.setScalar(1);
+          matrix.position.set((n%5-2)*.16,.075+Math.floor(n/25)*.15,(Math.floor(n/5)%5-2)*.16);
+          matrix.scale.setScalar(1);
           matrix.updateMatrix();mesh.setMatrixAt(i,matrix.matrix);
         }
         group.add(mesh);
