@@ -5049,7 +5049,7 @@ function groundUnderfoot(at) {
 // owner had already said there was too much in the panel, and two cards saying
 // nearly the same thing about two different objects is the worst of it.
 
-const picked = { name: null, at: null, resource: null, box: null };
+const picked = { name: null, at: null, resource: null, box: null, pressed: false };
 
 // Its section, made here. world.html's inline blocks are hashed into the
 // content policy every running server sends, so a card added there would shut
@@ -5071,6 +5071,14 @@ const picked = { name: null, at: null, resource: null, box: null };
     last.setAttribute("aria-live","polite");
     box.before(last);
   }
+  // The card is rebuilt on the 150 ms details beat (its readings are live).
+  // A press and release that straddle a rebuild land on two different
+  // buttons, and the browser then sends no click at all: "Release rover"
+  // or "Load from Inventory" silently did nothing. Hold the rebuild while a
+  // press is down inside the card; the click's own handler redraws it.
+  box.addEventListener("pointerdown", () => { picked.pressed = true; });
+  for (const end of ["pointerup", "pointercancel"])
+    addEventListener(end, () => { picked.pressed = false; }, true);
 })();
 
 // The box drawn round what is pinned. One set of lines, reused: it is moved
@@ -5690,7 +5698,7 @@ async function readPickedCondition() {
 setInterval(readPickedCondition,1000);
 function showPicked() {
   const box = $("picked");
-  if (!box) return;
+  if (!box || picked.pressed) return;
   const details = $("details");
   if (!somethingIsPinned()) {
     box.hidden = true;

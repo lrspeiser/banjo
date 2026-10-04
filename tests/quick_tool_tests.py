@@ -200,8 +200,13 @@ class RapidPlayer(unittest.TestCase):
         self.assertGreater(page.evaluate('quickUses[0].answer.result?.loosened_kg || 0'),0,
                            str(page.evaluate('({use:quickUses[0],target:banjoRoom.use().target,aim:banjoRoom.world.aim})')))
         first=page.evaluate('quickUses[0].answer')
+        # Dug ground is heaped into nearby material piles (5af65746), not
+        # carried: the hand load stays empty and the piles receive exactly
+        # the native stroke's loosened mass.
         delta=sum(first['carried'].get(k,0)-before.get(k,0) for k in ('soil_kg','sand_kg'))
-        self.assertAlmostEqual(delta,first['result']['loosened_kg'],delta=5e-6)
+        self.assertEqual(0,delta,'Output goes to piles, not a filling hand load')
+        self.assertAlmostEqual(sum(p['kg'] for p in first.get('excavation_piles',[])),
+                               first['result']['loosened_kg'],delta=5e-6,msg=first)
         page.evaluate('window.quickUses=[];window.quickRotation=[]')
         key('keyDown','KeyJ','j')
         began=time.monotonic()
@@ -268,12 +273,16 @@ class RapidPlayer(unittest.TestCase):
         self.assertTrue(ai.server.keep_world(app,'rapid tool restart boundary'))
         saved=app.store.read_record(app.room.scene)['world']
         carried=saved['ground']['carriers']
-        self.assertGreater(sum(c.get('soil_m3',0)+c.get('sand_m3',0) for c in carried.values()),0)
+        piles=[p for p in app.brains.goods.stockpiles if p.get('excavated')]
+        self.assertGreater(sum(sum(p['holds'].values()) for p in piles),0,
+                           'the dug ground must be held in nearby piles')
         self.stop();self.start()
         reopened=self.post('/api/world/open',{},ident)
         restored=self.app.hub.get(ident)
         again=restored.live.snapshot()[0]['ground']['carriers']
-        self.assertEqual(carried,again,'actual excavated stock must survive server restart')
+        self.assertEqual(carried,again,'carried ground must survive server restart')
+        self.assertEqual(piles,[p for p in restored.brains.goods.stockpiles if p.get('excavated')],
+                         'actual excavated stock must survive server restart')
         self.assertEqual(saved['tool_points'],restored.live.snapshot()[0]['tool_points'])
         OUT.mkdir(parents=True,exist_ok=True)
         (OUT/'quick-tool-browser.json').write_text(json.dumps({'held':held,'rapid_taps':taps,

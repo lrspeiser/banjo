@@ -365,7 +365,12 @@ class PlayerMaterials(unittest.TestCase):
         page.evaluate('banjoRoom.standAt(-.9,banjoRoom.groundAt(-.9,.025)+1.62,.025);'
             'banjoRoom.lookAt(.3,banjoRoom.groundAt(.3,.025),.025)')
         wait('document.querySelector("#material-preview [data-method=dig] canvas") && document.querySelector("#material-preview [data-method=ore] canvas")')
-        materials=page.evaluate('[...document.querySelectorAll("#material-preview [data-method=dig]")].map(e=>e.dataset.material)')
+        # The ground under the crosshair is listed once: as the surface row,
+        # marked "Possible yield" when the native tool can loosen it, and any
+        # deeper candidate the stroke may reach as a separate dig row.
+        materials=page.evaluate('''[...document.querySelectorAll("#material-preview [data-method=dig],#material-preview [data-method=surface]")]
+          .filter(e=>e.dataset.method==="dig" || e.textContent.includes("Possible yield")).map(e=>e.dataset.material)''')
+        self.assertTrue(materials)
         self.assertTrue(set(materials)<= {'soil','sand'})
         self.assertEqual('Mining rover',page.evaluate('document.querySelector("#material-preview [data-method=ore] small").textContent'))
         self.assertTrue(page.evaluate('document.querySelector("#label").hidden'))

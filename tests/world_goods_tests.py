@@ -217,15 +217,30 @@ class GoodsJourney(unittest.TestCase):
             errors=[e for e in page.events if e.get('method')=='Runtime.exceptionThrown']
             self.fail('Recovery browser did not reach '+expression+'; '+str(info)+'; '+str(errors))
         def click(selector):
-            spot=page.evaluate('(()=>{const b=document.querySelector('+json.dumps(selector)+');b.scrollIntoView({block:"center"});const r=b.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()')
-            for kind in ('mousePressed','mouseReleased'):
-                page.send('Input.dispatchMouseEvent',{'type':kind,'button':'left','clickCount':1,**spot})
+            # Press only once the element itself is under the pointer, so a
+            # click can never land on whatever a re-render left there.
+            under=('(()=>{const b=document.querySelector('+json.dumps(selector)+');if(!b||b.disabled)return null;b.scrollIntoView({block:"center"});'
+                   'const r=b.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2,e=document.elementFromPoint(x,y);'
+                   'return e && b.contains(e) ? {x,y} : null})()')
+            wait(under)
+            spot=page.evaluate(under)
+            # Held for 0.2 s like a person's click, longer than the picked
+            # card's 150 ms rebuild: the rebuild must not swallow the click.
+            page.send('Input.dispatchMouseEvent',{'type':'mousePressed','button':'left','clickCount':1,**spot})
+            time.sleep(.2)
+            page.send('Input.dispatchMouseEvent',{'type':'mouseReleased','button':'left','clickCount':1,**spot})
+        def details():
+            # The picked card lives in the right rail, which starts folded
+            # away (dcd94bae); Details in the bottom bar opens it (68bad3ca).
+            if page.evaluate('document.body.classList.contains("panel-away")'):click('#panel-details')
+            wait('!document.body.classList.contains("panel-away")')
         page.send('Page.navigate',{'url':self.base+f'/world?world={world}&hold=1'})
         wait('window.banjoRoom?.ready()')
         # Position the test observer beside the actual chassis; acquire through
         # the visible button and move it through ordinary hand targets/keys.
         page.evaluate('(()=>{const p=banjoRoom.world.bodies.get("rover").mesh.position;banjoRoom.standAt(p.x+.8,p.y+1.1,p.z+.5);banjoRoom.lookAt(p.x,p.y,p.z);banjoRoom.pick("rover");})()')
         wait('!!document.querySelector("#picked [data-recovery-action=start]")')
+        details()
         click('#picked [data-recovery-action=start]')
         wait('banjoRoom.world.held?.recovery')
         self.assertTrue(page.evaluate('banjoRoom.controls().cursorFree'),
@@ -251,6 +266,7 @@ class GoodsJourney(unittest.TestCase):
         self.assertAlmostEqual(held['work_j'],page.evaluate('banjoRoom.world.held.hand.work_j'),places=3)
         page.evaluate('(()=>{const p=banjoRoom.world.bodies.get("rover").mesh.position;banjoRoom.lookAt(p.x,p.y,p.z);banjoRoom.pick("rover");})()')
         wait('!!document.querySelector("#picked [data-recovery-action=release]")')
+        details()
         click('#picked .pk-reveal:not([data-recovery-action])')
         import base64
         out=ROOT/'build/resource-flow';out.mkdir(parents=True,exist_ok=True)
@@ -485,6 +501,11 @@ class GoodsJourney(unittest.TestCase):
         # the supported monolithic oak source must really install and charge.
         chat('make the whole object oak')
         before=workshop_library.rack(app)
+        # New worlds start with generated installations (starter machines and
+        # their foundation pads, 23e48727); Make must add exactly one more and
+        # leave those exactly as they were.
+        installs=json.loads(json.dumps(app.room.workshop_installs))
+        installed={r['root_body'] for r in installs}
         page.evaluate('document.querySelector("#ws-make").click()')
         def paid_click(selector):
             wait(f'document.querySelector({json.dumps(selector)}) && !document.querySelector({json.dumps(selector)}).disabled')
@@ -499,7 +520,9 @@ class GoodsJourney(unittest.TestCase):
         paid_click('#ws-remake-step')
         paid_click('#ws-remake-place')
         wait('document.querySelector("#ws-remake a")?.textContent==="Collect in World"')
-        self.assertEqual(1,len(app.room.workshop_installs))
+        made=[r for r in app.room.workshop_installs if r['root_body'] not in installed]
+        self.assertEqual(1,len(made),made)
+        self.assertEqual(installs,[r for r in app.room.workshop_installs if r['root_body'] in installed])
         before_oak=next(r['mass_kg'] for r in before['materials'] if r['material']=='oak')
         after_oak=next(r['mass_kg'] for r in workshop_library.rack(app)['materials'] if r['material']=='oak')
         self.assertGreater(before_oak,after_oak)
@@ -617,7 +640,11 @@ class GoodsJourney(unittest.TestCase):
         first=page.evaluate('new URL(location.href).searchParams.get("world")')
         self.assertTrue(self.app.hub.get(first).room.spec['sun']['day_s']>0)
         wait('document.querySelector("#world-load-meter")')
-        self.assertIn('Ground materials',page.evaluate('document.querySelector("#world-load-meter").textContent'))
+        # In a world dug ground goes to nearby piles, so the meter shows that
+        # route and the unlimited raw store instead of a hand load (5af65746).
+        wait('document.querySelector("#world-load-meter b").textContent==="Dig → Pile → Inventory"')
+        self.assertIn('Raw storage',page.evaluate('document.querySelector("#world-load-meter").textContent'))
+        self.assertIn('material pile',page.evaluate('document.querySelector("#world-load-meter").textContent'))
         self.assertEqual(0,page.evaluate('banjoRoom.scene.getObjectByName("resource-packets").children.filter(c=>c.userData.resourceDeposit).length'))
         wait('document.querySelector("#material-preview details canvas")')
         self.assertIn('Nearby materials',page.evaluate('document.querySelector("#material-preview").textContent'))
@@ -630,7 +657,15 @@ class GoodsJourney(unittest.TestCase):
         room=self.app.hub.get(first)
         floor=room.live.act({'session':room.live.session.id,'op':'survey','at':[0,0]})['survey']['ground_m']
         wait(f'Math.abs(banjoRoom.camera.position.y-{floor+1.6})<.03')
-        base_y=page.evaluate('banjoRoom.camera.position.y')
+        # Within 3 cm can still be the last frames of the fall; a jump only
+        # starts from standing (and a held key never relaunches), so press
+        # Space once the player has actually come to rest.
+        base_y=None
+        for _ in range(100):
+            y=page.evaluate('banjoRoom.camera.position.y')
+            if base_y is not None and abs(y-base_y)<1e-6:break
+            base_y=y;time.sleep(.15)
+        else:self.fail('The player never came to rest after falling')
         page.send('Input.dispatchKeyEvent',{'type':'keyDown','key':' ','code':'Space','windowsVirtualKeyCode':32})
         wait(f'banjoRoom.camera.position.y>{base_y+.3}')
         time.sleep(1.3)
@@ -876,6 +911,12 @@ class GoodsJourney(unittest.TestCase):
         program=next(p for p in app.live.session.state['machines']['programs'] if p['name']==source['machine'])
         page.evaluate('banjoRoom.standAt('+','.join(map(str,eyes))+');banjoRoom.pick('+json.dumps(program['body'])+');')
         wait('document.querySelector("[data-input-delivery] button:not(:disabled)")')
+        # The picked card lives in the right rail, which starts folded away
+        # (dcd94bae); Details in the bottom bar opens it (68bad3ca).
+        click('#panel-details')
+        wait('!document.body.classList.contains("panel-away")')
+        wait('(()=>{const b=document.querySelector("[data-input-delivery] button");b.scrollIntoView({block:"center"});'
+             'const r=b.getBoundingClientRect(),e=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return !!e && b.contains(e)})()')
         click('[data-input-delivery] button')
         wait('document.querySelector("[data-deliver-substance=\\"copper ore\\"]:not(:disabled)")')
         click('[data-deliver-substance="copper ore"]')
