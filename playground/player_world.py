@@ -66,10 +66,12 @@ class TerrainView:
                     # The ordinary native read also invalidates through observe.
                     # The reentrant lock excludes a delayed listener overwriting
                     # this snapshot. Later mutations invalidate it again.
-                    block=live.act({'session':session.id,'op':'terrain'})['terrain']
+                    # A room with no generated ground (a fixture, an indoor
+                    # room) has no terrain block: it has no terrain to draw.
+                    block=live.act({'session':session.id,'op':'terrain'}).get('terrain') or {}
                     self.geometry={k:deepcopy(v) for k,v in block.items() if k!='carried'}
                 stamp={'session':self.session,'revision':self.revision}
-                answer['terrain']=deepcopy(self.geometry)
+                if self.geometry:answer['terrain']=deepcopy(self.geometry)
                 answer.pop('terrain_changed',None)
             answer['terrain_version']=stamp
 

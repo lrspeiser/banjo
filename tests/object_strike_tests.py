@@ -275,7 +275,7 @@ class NativeObjectStrikes(unittest.TestCase):
           window.burstCalls=0;window.burstTools=makeTools({world:burstWorld,
             camera:banjoRoom.camera,act:async()=>({hit:false}),
             api:()=>{burstCalls++;return new Promise(resolve=>window.finishBurst=resolve);},
-            say:noop,remember:noop,showUse:noop,carryGround:noop,whereIAm:()=>({}),lastAction:noop});
+            say:noop,remember:noop,showUse:noop,carryGround:noop,whereIAm:()=>({eyes_m:[0,1.62,0]}),lastAction:noop});
           burstTools.press();})()''')
         wait('window.burstCalls===1 && burstWorld.use.mode==="tool-working"')
         page.evaluate('burstTools.press();burstTools.press();burstTools.press();burstTools.release()')
@@ -288,10 +288,18 @@ class NativeObjectStrikes(unittest.TestCase):
         # The compact Inventory opens the exact carried source for a paid
         # replacement review, rather than landing on an unrelated Lab design.
         source_id=answer['inventory']['record']['hands'][answer['inventory']['hand_in_the_world']]
-        wait('document.querySelector("#mini-products .mini-product-lab")')
+        wait('document.querySelector("#hand-slots .mini-product-lab")')
         for kind in ('keyDown','keyUp'):
             page.send('Input.dispatchKeyEvent',{'type':kind,'code':'Escape','key':'Escape','windowsVirtualKeyCode':27})
-        link=page.evaluate('''(()=>{const a=document.querySelector('#mini-products .mini-product-lab');
+        # Lab opens a carried item from a saved room: let the strike's pieces
+        # settle until the room can be saved, as a player would wait.
+        until=time.monotonic()+30
+        while not ai.server.keep_world(app,'before opening Lab') and time.monotonic()<until:time.sleep(.5)
+        # The hand card shows its actions while the pointer is over it.
+        card=page.evaluate('''(()=>{const r=document.querySelector('#hand-slots .mini-product-lab').closest('.mini-product').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()''')
+        page.send('Input.dispatchMouseEvent',{'type':'mouseMoved','x':card['x'],'y':card['y']})
+        wait('document.querySelector("#hand-slots .mini-product-lab").getBoundingClientRect().width>0')
+        link=page.evaluate('''(()=>{const a=document.querySelector('#hand-slots .mini-product-lab');
           a.scrollIntoView({block:'center'});const r=a.getBoundingClientRect();return {href:a.href,x:r.x+r.width/2,y:r.y+r.height/2};})()''')
         self.assertIn('carry='+source_id,link['href']);self.assertIn('tab=lab',link['href'])
         for kind in ('mousePressed','mouseReleased'):
