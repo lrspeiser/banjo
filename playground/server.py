@@ -2062,6 +2062,11 @@ class Handler(BaseHTTPRequestHandler):
                 if player and isinstance(answer.get("state"),dict):
                     player_world.personalize_hand(answer["state"],player)
                 return self.send(answer)
+            if path=="/api/world/player/walk":
+                # A player's native body, walked by them (native_body,
+                # experimental): the actor is the authenticated player.
+                import native_body
+                return self.send(native_body.walk(self.app,player,body))
             if path=="/api/world/watch-machine":
                 _this_pages_room(self.app,body)
                 if not player:
