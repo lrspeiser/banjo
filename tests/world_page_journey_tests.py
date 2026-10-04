@@ -508,6 +508,15 @@ class PageJourney(unittest.TestCase):
         if not self.js(f"document.querySelector({json.dumps(target)}).open"):
             self.click_selector(target + " > summary")
 
+    def hover(self, selector):
+        """The mouse moved over the middle of what `selector` finds, as a person
+        moves it there to see what it offers."""
+        self.assertTrue(self.wait_for(f"!!document.querySelector({json.dumps(selector)})"), f"there is no {selector}")
+        x, y = self.js(f"(() => {{ const r = document.querySelector({json.dumps(selector)}).getBoundingClientRect();"
+                       f" return [r.x + r.width / 2, r.y + r.height / 2]; }})()")
+        self.page.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
+        time.sleep(0.1)
+
     def open_details(self):
         """The side panel, opened as a person opens it: it starts folded away
         (body.panel-away), and Details on the bottom bar slides it in. Waits
@@ -3386,14 +3395,19 @@ class CompactInventoryAndStableToolShape(PageJourney):
         self.assertTrue(self.when_idle())
         self.assertEqual(before,self.js(geometry),"pickup changed the local mesh, matter or mass")
         self.assertTrue(self.wait_for("!!document.querySelector('.mini-product img')"))
-        picture = self.js("document.querySelector('.mini-product img').src")
-        self.click_selector(".mini-product button")
-        self.assertTrue(self.wait_for("!banjoRoom.held() && document.querySelector('.mini-product small')?.textContent.startsWith('Bag')"),self.situation())
-        self.assertEqual(picture,self.js("document.querySelector('.mini-product img').src"))
+        # What is in the hand is a card over the room, its Stow showing while
+        # the mouse is over it; what is in the bag is the side panel's.
+        hand = "#hand-slots [data-hand=right]"
+        picture = self.js(f"document.querySelector('{hand} img').src")
+        self.hover(hand)
+        self.click_selector(f"{hand} button")
+        self.assertTrue(self.wait_for("!banjoRoom.held() && document.querySelector('#mini-products .mini-product small')?.textContent.startsWith('Bag')"),self.situation())
+        self.assertEqual(picture,self.js("document.querySelector('#mini-products .mini-product img').src"))
         self.page.send("Page.reload")
-        self.assertTrue(self.wait_for("window.banjoRoom?.ready() && !!document.querySelector('.mini-product img')",30))
-        self.assertEqual(picture,self.js("document.querySelector('.mini-product img').src"))
-        self.click_selector(".mini-product button")
+        self.assertTrue(self.wait_for("window.banjoRoom?.ready() && !!document.querySelector('#mini-products .mini-product img')",30))
+        self.assertEqual(picture,self.js("document.querySelector('#mini-products .mini-product img').src"))
+        self.open_details()
+        self.click_selector("#mini-products .mini-product button")
         self.assertTrue(self.wait_for("banjoRoom.held()?.name==='field pick'",20),self.situation())
         self.assertEqual(before,self.js(geometry),"equipping after reload changed the tool")
         self.open_world_menu("keys")
@@ -3401,6 +3415,10 @@ class CompactInventoryAndStableToolShape(PageJourney):
         self.press_key("KeyQ","q")
         self.assertEqual("field pick",self.js("banjoRoom.held()?.name"),"Menu keyboard help also stowed the tool")
         self.click("game-menu-close")
+        # Menu gave the mouse its cursor, which freezes the room's keys (3e2b508d):
+        # a click in the room takes it back, and does nothing else.
+        self.click_selector("#stage")
+        self.assertTrue(self.wait_for("!banjoRoom.controls().cursorFree",10),"a click did not take back the view")
         self.press_key("KeyK","k")
         self.assertTrue(self.wait_for("document.querySelector('#game-menu').open && document.querySelector('[data-world-menu=bench]').open"))
         self.assertTrue(self.wait_for("document.querySelector('#workbench-runs li') && !document.querySelector('#workbench-runs').textContent.includes('Looking for')"))
