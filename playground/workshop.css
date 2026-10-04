@@ -520,6 +520,9 @@ body.workshop-mode > :not(#design-workshop):not(#game-menu) { display:none!impor
 .ws-product-card { border:1px solid #34404e;background:#151e28;border-radius:.5rem;padding:.5rem;min-width:0; }
 .ws-product-card > .ws-tile { width:100%;border:0; }
 .ws-product-card .ws-tile-art canvas { width:100%;max-width:160px;height:auto; }
+/* A made thing's kept picture (item_pictures) is a 128 px square. */
+.ws-tile-art img.item-picture { display:block;margin:0 auto;object-fit:contain; }
+.ws-product-card .ws-tile-art img.item-picture { width:96px;height:96px; }
 .ws-product-card .ws-recipe-value { font-size:.72rem; }
 .ws-product-debug { font-size:.72rem;margin-top:.5rem;overflow-wrap:anywhere; }
 .ws-product-debug .ws-recipe-value { display:block; }

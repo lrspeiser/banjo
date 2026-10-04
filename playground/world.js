@@ -23,7 +23,7 @@ import { cellSurface } from "/cellmesh.js";
 import { dress, dressedClone, showGrain, grainState } from "/surfaces.js";
 import { makeTools } from "/tools.js";
 import { makeWorkbench } from "/workbench.js";
-import { gameNavigation, showSaveStatus, screenUrl, thumbnail, massLabel } from "/game_menu.js";
+import { gameNavigation, showSaveStatus, screenUrl, thumbnail, massLabel, useItemPictures, itemPicture, keepItemPicture } from "/game_menu.js";
 import { conditionPanel } from "/body_condition.js";
 import { GROUND_APPEARANCE, materialAppearance, terrainCellAt, terrainTargetPath, exposedRunKind, toolTargetFeedback, toolTargetColor, collectedToolMaterials, toolOutcomeFeedback, makeTargetHover, columnTopData, walkColumnFaces, columnChunkIds, columnChunkBox } from "/material_appearance.js";
 import { terrainMaterial } from "/terrain_material.js";
@@ -100,7 +100,8 @@ function linkFailure(error) {
 async function api(path, body, renewed = false) {
   if (watchedId && body !== undefined && path !== "/api/world/player/join"
       && !(path === "/api/world/ai" && body.action === "watch")
-      && !(path === "/api/live/act" && body.op === "structure"))
+      && !(path === "/api/live/act" && body.op === "structure")
+      && path !== "/api/workshop/thumbnails")
     throw new Error("Watching is read-only. Return to your character to interact.");
   const headers = { "Content-Type": "application/json" };
   if (worldId) headers["X-Banjo-World"] = worldId;
@@ -4746,21 +4747,66 @@ let miniStock = null, miniWallet = null, miniReading = false;
 const miniPictures = new Map();
 const miniPictureRequests = new Set();
 let miniRenderer = null;
-function meshPicture(mesh) {
+function meshPicture(mesh, width=80, height=60) {
   miniRenderer ||= new THREE.WebGLRenderer({alpha:true,antialias:true});
-  miniRenderer.setSize(80,60,false); miniRenderer.outputColorSpace=THREE.SRGBColorSpace;
+  miniRenderer.setPixelRatio(1);
+  miniRenderer.setSize(width,height,false); miniRenderer.outputColorSpace=THREE.SRGBColorSpace;
   const preview = new THREE.Scene(); preview.add(mesh);
+  mesh.updateMatrixWorld(true);
   const bounds = new THREE.Box3().setFromObject(mesh), centre = bounds.getCenter(new THREE.Vector3());
   const radius = Math.max(.01,bounds.getSize(new THREE.Vector3()).length()/2);
   preview.add(new THREE.HemisphereLight(0xffffff,0x45505c,2.1));
   const light = new THREE.DirectionalLight(0xffffff,2.8); light.position.set(3,5,4); preview.add(light);
-  const camera = new THREE.PerspectiveCamera(38,80/60,.001,radius*20+10);
+  const camera = new THREE.PerspectiveCamera(38,width/height,.001,radius*20+10);
   camera.position.copy(centre).add(new THREE.Vector3(1.3,.9,1.7).normalize().multiplyScalar(radius/Math.sin(19*Math.PI/180)*1.12));
   camera.lookAt(centre); miniRenderer.render(preview,camera);
-  return miniRenderer.domElement.toDataURL();
+  return miniRenderer.domElement.toDataURL("image/png");
+}
+// The server keeps one picture of each thing a person has (item_pictures.py),
+// fetched here only when its revision is new to this page.
+useItemPictures(items => api("/api/workshop/thumbnails",{items}));
+addEventListener("banjo-item-pictures",() => {inventorySaid="";showInventory();});
+// A thing with no kept picture yet -- made before pictures were kept, or
+// picked up from the room -- gets one from this page the first time its mesh
+// is here to draw: every part of it, as it stands, in a 128 px square.
+const sentPictures = new Set();
+function wholeThing(thing) {
+  const names = thing.parts?.length ? thing.parts : [thing.name];
+  const first = world.bodies.get(names[0]) || world.bodies.get(thing.name);
+  if (!first?.mesh) return null;
+  first.mesh.updateWorldMatrix(true,false);
+  const into = first.mesh.matrixWorld.clone().invert(), group = new THREE.Group();
+  for (const name of names) {
+    const entry = world.bodies.get(name);
+    if (!entry?.mesh) continue;
+    entry.mesh.updateWorldMatrix(true,false);
+    const copy = entry.mesh.clone(); copy.visible = true;
+    copy.matrixAutoUpdate = false; copy.matrix.multiplyMatrices(into,entry.mesh.matrixWorld);
+    group.add(copy);
+  }
+  return group.children.length ? group : null;
+}
+function sendItemPicture(thing) {
+  const id = thing?.id != null ? String(thing.id) : "";
+  if (!id || thing.thumbnail_rev || watchedId || !world.session || sentPictures.has(id)) return;
+  sentPictures.add(id);
+  let picture;
+  try { const group = wholeThing(thing); if (!group) return; picture = meshPicture(group,128,128); }
+  catch { return; }
+  if (!picture?.startsWith("data:image/png;base64,") || picture.length > 60000) return;
+  api("/api/workshop/thumbnail",{item_id:id,png_data_url:picture}).then(answer => {
+    keepItemPicture(answer.item_id,answer.thumbnail_rev,picture);
+    inventorySaid=""; showInventory();
+  }).catch(() => { /* kept for this page only; another page may send it */ });
 }
 function miniPicture(thing) {
+  const kept = itemPicture(thing);
+  if (kept) {
+    const image = document.createElement("img"); image.src=kept; image.alt=bagName(thing);
+    image.className="item-picture"; return image;
+  }
   const entry = world.bodies.get(thing.name);
+  if (entry) sendItemPicture(thing);
   const key = `${thing.name}:${entry?.revision || 0}:${entry?.material || thing.material}`;
   const savedKey = `banjo.inventory-picture.${worldId || world.scene}.${playerId || "local"}.${thing.name}`;
   if (entry && !miniPictures.has(key)) {

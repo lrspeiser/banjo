@@ -1294,9 +1294,15 @@ class LabRemake(unittest.TestCase):
         wait('document.querySelector(%s)?.value==="9" && !document.querySelector(%s).disabled'%(json.dumps(selector),json.dumps(selector)))
         shown=self.post('/api/world/inventory/shown',{'session':app.live.session.id},world)
         self.assertEqual(output['id'],shown['record']['stowed'][9])
+        # Making it kept a picture of it, drawn from the design on the bench.
+        picture=self.post('/api/workshop/thumbnails',{'items':[output['id']]},world)['thumbnails'].get(output['id'])
+        self.assertIsNotNone(picture,'Making the pick kept no picture of it')
+        self.assertTrue(base64.b64decode(picture['png_data_url'].split(',',1)[1]).startswith(b'PNG',1))
+        self.assertEqual(picture['thumbnail_rev'],shown['stowed'][9].get('thumbnail_rev'))
         click('.game-tabs [data-screen="world"]')
         wait('window.banjoRoom?.ready()')
         wait('document.querySelector("#mini-materials")?.textContent.includes("Iron") && document.querySelector("#mini-materials").textContent.includes("Oak")')
+        wait('[...document.querySelectorAll("#inventory-strip img")].some(i=>i.src===%s)'%json.dumps(picture['png_data_url']))
         def key(code):
             for event in ('keyDown','keyUp'):p.send('Input.dispatchKeyEvent',{'type':event,'code':code,'key':code[-1].lower()})
         wait('document.querySelector("#hotbar .slot:nth-child(10) button img")')
@@ -1349,7 +1355,8 @@ class LabRemake(unittest.TestCase):
             'boundary': 'Explicit collected test supplies; no complete raw supply or live-provider qualification.'}
         p.send('Page.navigate',{'url':self.base+f'/world?world={world}&workshop=1&tab=inventory'})
         wait('document.body.innerText.includes("Field pick")')
-        wait('document.querySelector("#ws-inv-grid canvas[data-preview=ready]")')
+        wait('document.querySelector(%s)?.src===%s'%(json.dumps(f'#ws-inv-grid [data-product="{output["id"]}"] img.item-picture'),
+            json.dumps(picture['png_data_url'])))
         self.native_evidence['inventory_source_thumbnail']=True
         out = ROOT / 'build/resource-flow'; out.mkdir(parents=True, exist_ok=True)
         (out / 'mixed-pick-paid-restart.png').write_bytes(base64.b64decode(p.send('Page.captureScreenshot', {'format': 'png'})['data']))

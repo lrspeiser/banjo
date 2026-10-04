@@ -35,6 +35,20 @@ ownership unchanged and do not certify current damage or function.
 
 **Recipes update, September 30:** [Visual cards and Make results](recipe-contract.md#visual-cards-and-make-feedback--september-30-2026) replace prose-first listings with source pictures, material progress/missing supplies and compact Build/Skill/Uses values. Make preserves Lab selection, reports on Recipes and adds separate native copies; View in World faces the new item. Current Workshop Make requires no technique unlock. The 55 browser and 6 screen-navigation regressions pass; this is UI/action integration, not a new physical law.
 
+## A picture of each thing you have — October 4, 2026
+
+The owner: "it also needs to have proper icons for items, when we create an item in the workshop it needs to generate the thumbnail".
+
+Each thing a person has now has one picture, kept by the server in the world's `banjo.db` (`playground/item_pictures.py`, table `item_thumbnails`, one row per world, room and item id; a newer picture replaces the older one).
+
+- **When you make something**, the Workshop draws the design you made it from (the skin view: every part, its colour and finish) into a 128 px square from a three-quarter view, and sends it with the new thing's id as soon as the server says the thing exists. It does this only for a build the page saw under way, so a finished build found later under an edited design is not pictured wrongly.
+- **Things that were made or picked up before this** get a picture the first time a page can draw one: the world page draws the thing from its own meshes (every part, as it stands) when it is in the room, and the Workshop draws a Workshop-made thing from its recorded design when you open it in the Lab.
+- **Who may send one:** only the person who has the thing (in a hand or the bag), or who made it and has not had it taken by anyone else. The picture must be a `data:image/png;base64,` URL under 64 KB whose bytes start with the PNG signature; anything else is refused.
+- **What the pages poll stays small.** Inventory rows (`/api/world/inventory/shown`, the hands and bag in the room's replies, and `carried` in `/api/workshop/inventory`) carry only `thumbnail_rev`, the first 12 hex digits of the picture's SHA-256. A page asks `/api/workshop/thumbnails` `{items: [ids]}` for a picture only when it sees a revision it has not got, and keeps it for every panel (`itemPicture` in `game_menu.js`).
+- **Where it shows:** the strip at the bottom right of the world page, the hands and bag in the world's Inventory panel and hot list, and the Workshop's Inventory cards. A thing with no picture yet still falls back to the drawn mesh, the recipe preview, or the coloured material icon.
+
+Tests: `tests/item_picture_tests.py` (keeping, replacing and restarting; refusing someone else's thing and anything but a small PNG; the world page picturing a held pick and the strip and Workshop showing the kept picture), and the paid Make journey in `tests/fabrication_remake_tests.py`, which now checks the made pick's picture is kept and shown in the strip and the Workshop's Inventory.
+
 ## Visual Inventory and starting a design — September 30, 2026
 
 Inventory shows Hands & bag, Materials & supplies, categorized Saved designs, Saved parts when present, and Building blocks. Cards show names, shape thumbnails and a relevant action rather than family parameter dumps. Supplies retain useful mass quantities; they are stock for Make, not editable physical items. Saved designs open in Lab; a saved part starts a separate design copy. The redundant list of objects standing in the World is removed from Inventory.
