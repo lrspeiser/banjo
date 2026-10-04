@@ -52,7 +52,37 @@ constitutive laws, resistance, conservation tolerances and resolution are unchan
 
 ## Verification
 
-### Shared navigation and phone layout, October 3
+### Navigation browser suite repair, October 3
+
+`tests/workshop_navigation_tests.py` (a required CI browser step) had 8–9 of
+15 failing on `68bad3ca`. Most were stale after deliberate UI changes (folded
+rail with Details, bottom-bar Menu, Esc as cursor toggle, the "Ground layers"
+core log, the first-tool opening chain, paid Recipes Make, generated starter
+installations, excavation piles). Three were product defects, now fixed:
+
+- World Menu → World diagnostics → Controls opened the machine panel inside
+  the folded rail, so nothing visible happened. Controls now unfolds the rail
+  and closing folds it again. The bottom-bar Menu carries `data-game-menu`
+  like the Workshop's; Details is `#panel-details` with `aria-expanded`.
+- The first contact tap after a fresh lift/turn/lower started while a heavy
+  point was still sagging about 3 cm below its ready clearance. The authored
+  iron-head/oak-handle pick arrived at 0.6–0.7 m/s, dragged about 5 mm against
+  the 10%-of-depth breakout onset, and loosened nothing. Established taps from
+  rest loosened about 1 kg. That first tap now waits up to 1 s for the point
+  to rest at clearance, then proceeds as before. Established taps are
+  unchanged. No native law, tolerance, gesture distance or speed changed.
+- A dig's terrain edit replaced `room.spec` without moving the machine brains.
+  An excavation pile heaped by the concurrent tool request could land in the
+  orphaned spec. The native debit was saved but the pile was not, so about
+  1 kg of soil vanished on server restart in 3 of 4 runs. The spec is now
+  replaced under the world state lock and the brains are rebound.
+
+The owned-solar test was also flaky. New worlds pick terrain 4 or 7 at
+random. On terrain 4, the installed 0.2 m array tips about 34° at the
+fixture's fixed `[-2, 0]` spot, and its own body shades its panel. The test
+now pins terrain 7 and asserts that the panel is upright and unshaded.
+Placement preview still admits a spot where a small array tips over. That is
+open.
 
 World and all six Workshop screens now share the bottom navigation position,
 screen order, active selection, Menu and Chat access. Workshop switches retain

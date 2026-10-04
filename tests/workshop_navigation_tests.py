@@ -53,10 +53,24 @@ class GameScreens(unittest.TestCase):
         self.wait('!!document.querySelector("#ws-screen-status") && !!document.querySelector("#ws-chat-log")')
 
     def click(self, selector):
-        self.page.evaluate(f'document.querySelector({json.dumps(selector)}).scrollIntoView({{block:"center"}})')
-        point = self.page.evaluate(f'(()=>{{const e=document.querySelector({json.dumps(selector)}),r=e.getBoundingClientRect();return {{x:r.x+r.width/2,y:r.y+r.height/2}}}})()')
+        # A real pointer click: it must land on the element itself, not on
+        # whatever covers it or on a list still growing around it.
+        target = json.dumps(selector)
+        self.wait(f'(()=>{{const e=document.querySelector({target});if(!e)return false;e.scrollIntoView({{block:"center"}});'
+                  f'const r=e.getBoundingClientRect(),h=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);'
+                  f'return r.width>0 && r.height>0 && !!h && (h===e || e.contains(h))}})()')
+        point = self.page.evaluate(f'(()=>{{const e=document.querySelector({target}),r=e.getBoundingClientRect();return {{x:r.x+r.width/2,y:r.y+r.height/2}}}})()')
         for event in ("mousePressed", "mouseReleased"):
             self.page.send("Input.dispatchMouseEvent", {"type":event, **point, "button":"left", "clickCount":1})
+
+    def wait_rail_shown(self):
+        # The World right rail slides in; wait until it is fully on screen.
+        self.wait('!document.body.classList.contains("panel-away") && '
+                  'Math.abs(document.querySelector("#panel").getBoundingClientRect().right - innerWidth) < 1')
+
+    def open_rail(self):
+        # Details in the bottom navigation opens the folded right rail.
+        self.click('#panel-details'); self.wait_rail_shown()
 
     def assert_empty(self):
         self.wait('document.querySelector("#workshop-stage").dataset.showing === "empty"')
@@ -92,7 +106,12 @@ class GameScreens(unittest.TestCase):
         import math
         import fabrication_stock_tests as funded
         import server
-        world,owner,app=self.setup_world(legacy_process=True)
+        # New worlds pick one of two terrains at random. On terrain 4 the
+        # fixed [-2,0] spot is uneven: the 0.2 m array tips about 34 degrees
+        # and its own frame shades its panel. Pin the terrain the fixture was
+        # written for (as the reveal tests below do) and check it is upright.
+        with mock.patch.object(server.secrets,'randbelow',side_effect=[1,851269741]):
+            world,owner,app=self.setup_world(legacy_process=True)
         peer=self.join(world,'Solar peer')
         def post(path,body):
             try:return self.post(path,body,world)
@@ -135,10 +154,15 @@ class GameScreens(unittest.TestCase):
         started=post('/api/world/fabrication/start_make',{**context(),'plan_id':plan['plan_id'],'revision':plan['revision'],'request_id':'solar-build'})
         wait_sim(math.ceil(started['state']['jobs']['solar-build']['minimum_duration_s']))
         preview=post('/api/world/fabrication/preview',{**context(),'job_id':'solar-build','position_m':[-2,0]})
-        post('/api/world/fabrication/commit',{**context(),'job_id':'solar-build','preview_id':preview['preview_id'],'request_id':'solar-install'})
+        installed=post('/api/world/fabrication/commit',{**context(),'job_id':'solar-build','preview_id':preview['preview_id'],'request_id':'solar-install'})
         app.live.session.send(op='sun',day_s=600,noon_elevation_deg=70.,hour=12.,irradiance_w_m2=1000.)
         app.live.act({'session':app.live.session.id,'op':'poses'})
         for _ in range(40):app.clock._tick(.25)
+        panels=[p for p in app.live.act({'session':app.live.session.id,'op':'poses'})['machines']['panels']
+                if p['body']==installed['root_body']]
+        self.assertEqual(1,len(panels))
+        self.assertGreater(panels[0]['normal'][1],.99,panels[0])
+        self.assertFalse(panels[0]['shaded'],panels[0])
         wallet=post('/api/workshop/market',{'action':'view'})
         self.assertGreater(wallet['balance_j'],0);self.assertEqual(1,len(wallet['automatic_sources']))
         other=self.post('/api/workshop/market',{'action':'view'},world,peer['token'])
@@ -216,9 +240,23 @@ class GameScreens(unittest.TestCase):
         wait('banjoRoom.use().target?.enabled && banjoRoom.use().target.ready && banjoRoom.use().target.target?.distance_m>=1.15')
         key('KeyJ','j')
         wait('banjoRoom.use().mode==="tool-ready" && !!banjoRoom.use().last?.result')
-        result=page.evaluate('banjoRoom.use().last.result')
+        answer=page.evaluate('banjoRoom.use().last')
+        result=answer['result']
         self.assertGreater(result['loosened_kg'],0,result)
         self.assertEqual(result['tool'],'handle')
+        self.assertEqual(result['actor'],owner['id'],'the head work belongs to its holder')
+        # Named worlds heap measured excavation into nearby material piles
+        # (5af65746) instead of leaving it in the digger's carried account.
+        piles={}
+        for pile in answer.get('excavation_piles') or []:
+            self.assertEqual('soil',pile['material'])
+            piles[pile['pile']]=piles.get(pile['pile'],0)+pile['kg']
+        self.assertAlmostEqual(sum(r['loosened_kg'] for r in answer.get('results') or [result]),
+                               sum(piles.values()),delta=5e-6)
+        def piled(app):
+            return {name:app.brains.goods.by_name(name)['holds'].get('soil',0) for name in piles}
+        self.assertEqual(piles.keys(),piled(app).keys())
+        for name,kg in piled(app).items(): self.assertAlmostEqual(piles[name],kg,delta=5e-6)
         points=app.live.act({'session':app.live.session.id,'op':'tool_points'})['tool_points']
         self.assertEqual((points[0]['material'],points[0]['grip_body']),('iron','handle'))
         self.assertTrue(points[0]['grip_connected'])
@@ -237,9 +275,10 @@ class GameScreens(unittest.TestCase):
         # other objects; roomReady's drawable-body guard is intentionally false.
         wait('!!window.banjoRoom?.status().session && document.querySelector("#panel-state").textContent==="Live."')
         accounts=app.live.session.state['player_carried']
-        self.assertGreater(accounts[owner['id']]['soil_kg'],0)
+        self.assertEqual(accounts[owner['id']].get('soil_kg',0),0,'dug soil was moved to its pile')
         self.assertEqual(accounts.get(peer['id'],{}).get('soil_kg',0),0)
         self.assertAlmostEqual(accounts[owner['id']]['objects_kg'],4.42176,places=5)
+        for name,kg in piled(app).items(): self.assertAlmostEqual(piles[name],kg,delta=5e-6)
         self.assertFalse([e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
         # Exercise the saved server/native world, not only a page refresh.
         page.send('Page.navigate',{'url':'about:blank'})
@@ -247,9 +286,10 @@ class GameScreens(unittest.TestCase):
         self.stop();self.start();app=self.app.hub.get(world)
         self.post('/api/world/open',{},world)
         accounts=app.live.session.state['player_carried']
-        self.assertGreater(accounts[owner['id']]['soil_kg'],0)
+        self.assertEqual(accounts[owner['id']].get('soil_kg',0),0)
         self.assertEqual(accounts.get(peer['id'],{}).get('soil_kg',0),0)
         self.assertAlmostEqual(accounts[owner['id']]['objects_kg'],4.42176,places=5)
+        for name,kg in piled(app).items(): self.assertAlmostEqual(piles[name],kg,delta=5e-6)
         parked_point=app.live.session.send(op='tool_points')['tool_points'][0]
         self.assertEqual(parked_point['grip_body'],'handle')
         self.assertFalse(parked_point['grip_connected'],'parked members are not actively wieldable')
@@ -272,13 +312,22 @@ class GameScreens(unittest.TestCase):
         self.wait('window.banjoRoom?.ready()',seconds=60)
         at = source["at_m"]
         self.page.evaluate(f'banjoRoom.standAt({at[0]},{at[1]+1.2},{at[2]+2}); banjoRoom.lookAt({at[0]},{at[1]},{at[2]})')
-        self.click('[data-game-menu]')
+        # World's visible Menu is the shared bottom navigation (68bad3ca); the
+        # rail header's copy is folded away with the rail.
+        self.click('#world-quickbar [data-game-menu]')
+        # The menu fills its Characters section asynchronously, above World
+        # diagnostics; a click during that reflow presses one row and releases
+        # on another. Click once the list has loaded, and check it opened.
+        self.wait('document.querySelector("#game-menu").open && !!document.querySelector("#game-menu-ai-status").textContent')
         self.click('[data-world-menu="room"] summary')
+        self.wait('document.querySelector("[data-world-menu=room]").open')
         selector = f'[aria-label="Control {source["machine"]}"]'
         self.wait(f'!!document.querySelector({json.dumps(selector)})')
         self.click(selector)
         self.page.evaluate('document.querySelector("#game-menu").close()')
         self.wait('document.querySelector("#mp-watch-batch")?.offsetParent !== null')
+        # Controls opens the machine panel in the rail, unfolding it.
+        self.wait_rail_shown()
         self.click("#mp-watch-batch")
         self.wait('document.querySelector("#mp-ack").textContent.includes("Stay nearby")')
         self.screenshot("watch-next-batch.png")
@@ -352,6 +401,9 @@ class GameScreens(unittest.TestCase):
         self.assertTrue(self.page.evaluate('banjoRoom.world.bodies.get(revealTarget).mesh.material === originalSkin && !banjoRoom.scene.getObjectByName("selection-structure-reveal")'))
         self.page.evaluate('[...document.querySelectorAll("#picked button")].find(b=>b.textContent==="Show native cells").click()')
         self.wait('!!banjoRoom.reveal()')
+        # The pinned card lives in the right rail, which starts folded
+        # (dcd94bae); Details opens it, then its close button dismisses.
+        self.open_rail()
         self.click('#pk-close'); self.wait('banjoRoom.reveal() === null && document.querySelector("#picked").hidden')
         # Switching selection disposes the old overlay rather than stacking it.
         self.page.evaluate('banjoRoom.pick(revealTarget); banjoRoom.pick("solar farm")')
@@ -392,11 +444,22 @@ class GameScreens(unittest.TestCase):
         self.assertTrue(layers)
         self.assertTrue(self.page.evaluate('(()=>{const r=banjoRoom,b=r.reveal().layers.filter(b=>!b.hole),m=r.scene.getObjectByName("selection-structure-reveal").children,g=r.groundDrawn();return m.length===b.length && b.every((bed,i)=>{m[i].geometry.computeBoundingBox();const s=m[i].geometry.boundingBox.getSize(new r.THREE.Vector3());return Math.abs(s.y-bed.thick_m)<1e-5 && Math.abs(m[i].position.y-(bed.top_m-bed.thick_m/2))<1e-6 && Math.abs(s.x-g.dx)<1e-6})})()'))
         self.assertEqual(len(layers), self.page.evaluate('document.querySelectorAll("#picked .pk-bed").length'))
-        self.assertIn("Layers", self.page.evaluate('document.querySelector("#picked").textContent'))
+        # The bed-count row was replaced by a named "Ground layers" core log
+        # (f978d1af); every reported bed is labelled in it.
+        said = self.page.evaluate('document.querySelector("#picked").textContent')
+        self.assertIn("Ground layers", said)
+        for bed in layers: self.assertIn("dug out" if bed.get("hole") else bed["name"], said)
         self.assertNotIn("kg", self.page.evaluate('document.querySelector("#picked").textContent'))
         self.screenshot("world-ground-reveal.png")
+        # Since 3e2b508d Esc switches explore/cursor mode and keeps the pin;
+        # the pinned card's close button (in the Details rail) clears it.
+        cursor = self.page.evaluate('document.querySelector("#cursor-mode").getAttribute("aria-pressed")')
         self.page.send("Input.dispatchKeyEvent", {"type":"keyDown", "code":"Escape", "key":"Escape"})
         self.page.send("Input.dispatchKeyEvent", {"type":"keyUp", "code":"Escape", "key":"Escape"})
+        self.wait('document.querySelector("#cursor-mode").getAttribute("aria-pressed") !== ' + json.dumps(cursor))
+        self.assertFalse(self.page.evaluate('document.querySelector("#picked").hidden'))
+        self.open_rail()
+        self.click('#pk-close')
         self.wait('banjoRoom.reveal() === null && document.querySelector("#picked").hidden')
         after = self.post("/api/live/act", {"session":session, "op":"poses"}, world)
         for key in ("t", "machines", "ground"):
@@ -505,6 +568,10 @@ class GameScreens(unittest.TestCase):
 
     def test_saved_selection_and_world_tabs_preserve_player_and_clear_explicitly(self):
         world, owner, app = self.setup_world()
+        # New worlds start with generated installations (starter machines and
+        # their foundation pads, 23e48727). Selecting and editing a design must
+        # leave that installed set exactly as it was.
+        installs = json.loads(json.dumps(app.room.workshop_installs))
         source = self.post("/api/workshop/candidates", {"kind":"table", "generation":0}, world)
         candidate = source["candidates"][0]
         saved = self.post("/api/workshop/feedback", {"kind":"table", "generation":0,
@@ -534,7 +601,7 @@ class GameScreens(unittest.TestCase):
         count=len(candidate['parts'])+1
         self.wait(f'document.querySelector("#ws-part-count").textContent==="{count}"')
         self.wait('document.querySelector("#ws-lab-draft").textContent.includes("Draft saved in this browser")')
-        self.assertFalse(app.room.workshop_installs)
+        self.assertEqual(installs, app.room.workshop_installs)
         self.assertFalse(app.room.fabrication_record['jobs'])
         self.screenshot("selected.png")
         self.click('.ws-bar-link')
@@ -553,7 +620,7 @@ class GameScreens(unittest.TestCase):
         selected=self.page.evaluate('new URLSearchParams(location.search).get("design")')
         stored=self.post('/api/workshop/open',{'saved_design_id':selected},world)
         self.assertEqual(count,len(stored['candidates'][0]['parts']))
-        self.assertFalse(app.room.workshop_installs)
+        self.assertEqual(installs, app.room.workshop_installs)
         self.assertFalse(self.page.evaluate('Object.keys(localStorage).some(k=>k.startsWith("banjo.lab-draft."))'))
         self.click("#ws-clear-lab"); self.assert_empty()
         self.page.send("Page.reload"); self.assert_empty()
@@ -610,8 +677,13 @@ class GameScreens(unittest.TestCase):
         self.assertFalse([e for e in self.page.events if e.get("method") == "Runtime.exceptionThrown"])
 
     def test_recipe_make_reports_world_output_and_adds_independent_copies(self):
-        world, owner, app = self.setup_world(); self.browser(world, owner)
+        # The card's direct Make serves worlds without a configured workbench
+        # process. Fresh worlds are paid (b3051290): their Make opens the Lab's
+        # reviewed workbench flow, covered by fabrication_remake_tests.
+        world, owner, app = self.setup_world(legacy_process=True); self.browser(world, owner)
         before = self.post("/api/workshop/inventory", {}, world)
+        # Generated starter installations are already present (23e48727).
+        installed = {r["root_body"] for r in app.room.workshop_installs}
         self.navigate(world, "workshop=1&tab=recipes")
         card = '[data-recipe="stool:Camp stool"]'
         self.wait(f'!!document.querySelector({json.dumps(card)})')
@@ -630,8 +702,10 @@ class GameScreens(unittest.TestCase):
         self.assertEqual(before["carried"], after["carried"])
         oak = lambda rows: next(r["mass_kg"] for r in rows if r["material"] == "oak")
         self.assertAlmostEqual(2 * 2.5088, oak(before["materials"]) - oak(after["materials"]), places=4)
-        self.assertEqual(bodies, {r["root_body"] for r in app.room.workshop_installs})
-        self.assertTrue(all(r.get("owner_id") == owner["id"] for r in app.room.workshop_installs))
+        made = [r for r in app.room.workshop_installs if r["root_body"] not in installed]
+        self.assertEqual(bodies, {r["root_body"] for r in made})
+        self.assertEqual(2, len(made))
+        self.assertTrue(all(r.get("owner_id") == owner["id"] for r in made))
         self.screenshot("recipes-made.png")
         self.click(card + ' .ws-recipe-result a')
         self.wait('location.pathname === "/world" && !new URLSearchParams(location.search).has("workshop")')
@@ -643,7 +717,9 @@ class GameScreens(unittest.TestCase):
         self.assertFalse([e for e in self.page.events if e.get("method") == "Runtime.exceptionThrown"])
 
     def test_recipe_make_shows_a_stock_race_refusal_on_the_card(self):
-        world, owner, app = self.setup_world(); self.browser(world, owner)
+        # Direct card Make, as above: a world without a configured process.
+        world, owner, app = self.setup_world(legacy_process=True); self.browser(world, owner)
+        installs = json.loads(json.dumps(app.room.workshop_installs))
         table = self.post("/api/workshop/candidates", {"kind":"table", "generation":0}, world)["candidates"][0]
         saved = self.post("/api/workshop/feedback", {"kind":"table", "design_id":table["design_id"],
             "parameters":table["parameters"], "component_overrides":table.get("component_overrides", {}),
@@ -663,7 +739,7 @@ class GameScreens(unittest.TestCase):
         self.wait(f'document.querySelector({json.dumps(card + " .ws-recipe-result")})?.dataset.bad === "yes" && document.querySelector({json.dumps(card + " .ws-recipe-acts button")})?.disabled === true')
         self.assertIn("Nothing has been spent", self.page.evaluate(f'document.querySelector({json.dumps(card + " .ws-recipe-result")}).textContent'))
         self.assertIn("tab=recipes", self.page.evaluate('location.search'))
-        self.assertFalse(app.room.workshop_installs)
+        self.assertEqual(installs, app.room.workshop_installs)
         self.assertEqual(saved, self.page.evaluate('new URLSearchParams(location.search).get("design")'))
         self.assertEqual(meshes, self.page.evaluate('document.querySelector("#workshop-stage").visibleGeometry().meshes'))
         self.screenshot("recipes-short.png")
@@ -672,7 +748,9 @@ class GameScreens(unittest.TestCase):
         # This fixture authors its carried stool directly; it tests ownership
         # and Lab isolation, not the paid manufacturing supply pipeline.
         world, owner, app = self.setup_world(legacy_process=True)
-        recipe = self.post("/api/workshop/goals", {}, world)["recipe"]
+        # The active opening chain is now the personal field pick (f15cd75b);
+        # the Camp stool fixture is the first-camp chain's admitted recipe.
+        recipe = self.post("/api/workshop/goals", {"chain":"first-camp-v1"}, world)["recipe"]
         context = self.post("/api/world/workshop/context", {}, world)
         preview = self.post("/api/world/workshop/preview", {"session":context["session"], "scene":context["scene"],
             "candidate":recipe, "mode":"authoring", "position_m":[3, 0]}, world)

@@ -2780,6 +2780,12 @@ function openMachinePanel(control) {
   machinePanel.stale = false;
   $("machine-panel").hidden = false;
   document.body.classList.add("machine-open");
+  // The machine panel lives in the right rail, which starts folded away
+  // (dcd94bae). Opening Controls must show it; closing folds it again.
+  if (document.body.classList.contains("panel-away")) {
+    machinePanel.unfolded = true;
+    foldPanel(false);
+  }
   // The mouse is the person's again, to press the panel's buttons; a click in
   // the room takes it back to looking round.
   if (document.pointerLockElement) document.exitPointerLock?.();
@@ -2794,6 +2800,7 @@ function closeMachinePanel() {
   machinePanel.name = "";
   $("machine-panel").hidden = true;
   document.body.classList.remove("machine-open");
+  if (machinePanel.unfolded) { machinePanel.unfolded = false; foldPanel(true); }
   showMachineHolds();
   setCursorFree(false);
 }
@@ -7388,6 +7395,7 @@ function foldPanel(away) {
   document.body.classList.toggle("panel-away", away);
   const fold = $("panel-fold"), show = $("panel-show");
   if (fold) fold.setAttribute("aria-expanded", String(!away));
+  $("panel-details")?.setAttribute("aria-expanded", String(!away));
   if (show) show.hidden = !away;
   try { localStorage.setItem("banjo.panel", away ? "away" : "out"); } catch { /* private */ }
 }
@@ -7397,10 +7405,16 @@ function installPanelFold() {
   if (fold) fold.addEventListener("click", () => foldPanel(true));
   if (show) show.addEventListener("click", () => foldPanel(false));
   foldPanel(true);
-  for(const [label,run] of [["Menu",()=>document.querySelector('[data-game-menu]').click()],
+  // Menu is the same [data-game-menu] control as the Workshop's bottom bar
+  // (game_menu.js opens it); Details is the rail's own disclosure.
+  for(const [label,run] of [["Menu",null],
     ["Details",()=>{document.body.classList.remove("chat-open");foldPanel(!document.body.classList.contains("panel-away"));setCursorFree(true);}],
     ["Chat /",talk]]) {
-    const button=document.createElement("button");button.type="button";button.textContent=label;button.onclick=run;worldNavigation.append(button);
+    const button=document.createElement("button");button.type="button";button.textContent=label;
+    if(run)button.onclick=run;else button.dataset.gameMenu="";
+    if(label==="Details"){button.id="panel-details";button.setAttribute("aria-controls","panel");
+      button.setAttribute("aria-expanded",String(!document.body.classList.contains("panel-away")));}
+    worldNavigation.append(button);
   }
 }
 
