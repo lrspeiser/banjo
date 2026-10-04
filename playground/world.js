@@ -8194,6 +8194,7 @@ async function aim() {
   // that" has to know what that is. The label stays down while holding.
   if (watchedId || !world.session || aimBusy) return;
   aimBusy = true;
+  const asked = world.session;
   try {
     const from = camera.position.clone();
     const dir = aimVector();
@@ -8214,6 +8215,9 @@ async function aim() {
     if (!world.held) showLabel(world.aim);
     aimFailure=null;
   } catch(error) {
+    // Asked of a room that has since been started again or swapped: the old
+    // world is closed, which is the switch happening and not a fault.
+    if(world.session!==asked || world.opening) return;
     const reason=String(error.message || error);
     if(reason!==aimFailure) { noteError(`Aim: ${reason}`); console.warn(`World aim: ${reason}`); }
     aimFailure=reason; // the next frame asks again; report a repeated fault once
