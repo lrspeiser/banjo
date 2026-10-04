@@ -16,13 +16,16 @@ def named_sources():
     return [('Personal field pick',goal_chains.first_tool_recipe()),
             ('Camp stool',starter_goals.recipe()),('Work table',goal_chains.work_table_recipe()),
             ('Camp light',goal_chains.camp_light_recipe()),
-            ('Camp solar panel',goal_chains.camp_solar_recipe())]
+            ('Camp solar panel',goal_chains.camp_solar_recipe()),
+            ('Camp chair',goal_chains.exact_furniture_recipe('chair','starter-camp-chair')),
+            ('Camp shelf',goal_chains.exact_furniture_recipe('shelf-unit','starter-camp-shelf'))]
 
 
 # The starter variant a new player should make, keyed by the catalog design it
 # stands in for. Recipes shows the catalog version beneath it, not beside it.
 RECOMMENDED_OVER={'field-pick':'Personal field pick','stool':'Camp stool','table':'Work table',
-                  'solar-array':'Camp solar panel','mine-lamp':'Camp light'}
+                  'solar-array':'Camp solar panel','mine-lamp':'Camp light',
+                  'chair':'Camp chair','shelf-unit':'Camp shelf'}
 
 
 def source_key(recipe):

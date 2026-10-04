@@ -19,7 +19,9 @@ sys.path[:0] = [str(ROOT / 'tests'), str(ROOT / 'playground'), str(ROOT)]
 import ai_player_tests as agents
 import world_hub_tests as hub
 
-STARTERS = ('Personal field pick', 'Camp stool', 'Work table', 'Camp light', 'Camp solar panel')
+STARTERS = ('Personal field pick', 'Camp stool', 'Work table', 'Camp light', 'Camp solar panel',
+            # Catalog furniture built from exact parts, recommended over the cell versions.
+            'Camp chair', 'Camp shelf')
 ENGINE = os.environ.get('BANJO_LIVE_ENGINE')
 
 

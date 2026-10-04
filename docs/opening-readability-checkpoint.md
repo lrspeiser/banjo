@@ -303,12 +303,28 @@ python tools/terrain_compare.py --build $R --out build/terrain-compare
 python scripts/check-source-registration.py
 ```
 
+## Camp chair and Camp shelf (2026-10-04)
+
+The catalog chair and shelf unit could not be made: their thin parts (a
+shelf's 18 mm sides, a chair's 24 mm back posts) are under the 40 mm Workshop
+cell. Camp chair and Camp shelf are the same designs built from exact parts,
+as the Work table is, and Recipes recommends them over the cell versions. The
+chair's back panel ran through both back posts (out to their outer faces); it
+now fits between them. Both pass the recipe audit on both valleys and stand
+where they are built (chair 0.5 degrees, shelf 0.1 degrees).
+
 ## Still to do on the owner's list
 
 - Human recognition of materials by day and night on the three ground types
   (needs people; the playtest protocol covers it).
-- Catalog shapes still missing: chair, shelf unit, kettle and cart; single
-  sources for ceramic and concrete.
+- Catalog shapes still missing: the kettle (its handle comes apart at the
+  40 mm cell, and it declares no use) and the cart (an iron axle with oak
+  wheels needs an engine adapter). The chair and shelf unit are now Camp
+  chair and Camp shelf, built from exact parts (below).
+- Ceramic and concrete are made in the world: the electric furnace fires
+  clay and burns limestone from seams the rover digs. Most worlds have one
+  seam of each, so a worked-out seam has no second; giving them two changes
+  every generated layout and the valley often has no room, so it is open.
 - Construction: supports beyond the pad (posts, beams, braces), and bounded
   customisation proposals.
 - The playtest with 8–12 new players. R3 stays paused.

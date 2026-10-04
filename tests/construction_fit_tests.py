@@ -117,5 +117,36 @@ class FittedPad(unittest.TestCase):
             self.post('/api/world/workshop/fit_to_ground', {'candidate': drawn, 'position_m': [1]}, world)
 
 
+class ExactFurniture(FittedPad):
+    """The Camp chair and Camp shelf are made of exact parts, so their thin
+    parts are what they are drawn as; built on level ground, each stands."""
+    test_a_fitted_pad_stands_level_where_one_as_drawn_tilts = None   # run once, above
+
+    def test_exact_furniture_stands_where_it_is_built(self):
+        import goal_chains
+        world, owner, app = self.setup_world(legacy_process=True)
+        for pile in [p for p in app.brains.goods.stockpiles if (p.get('holds') or {}).get('oak', 0) > 0
+                     and not p.get('rack')][:2]:
+            x, z = pile['at_m']
+            self.post('/api/world/goods/collect', {'session': app.live.session.id, 'pile': pile['name'],
+                'request_id': 'furniture-oak-' + pile['name'].replace(' ', '-'),
+                'person': {'eyes_m': [x, self.ground(app, world, x, z) + 1.62, z], 'facing': [0, 0, -1]}}, world)
+        bodies = [b['position_m'] for b in app.live.session.state['bodies']]
+        spots = []
+        for i in range(-14, 15, 2):
+            for j in range(-14, 15, 2):
+                x, z = i * .5, j * .5
+                if any(math.hypot(b[0] - x, b[2] - z) < 2.5 for b in bodies) or                         any(math.hypot(s[0] - x, s[1] - z) < 2.5 for s in spots):
+                    continue
+                heights = [self.ground(app, world, x + dx, z + dz) for dx in (-.5, .5) for dz in (-.5, .5)]
+                if max(heights) - min(heights) < .03:
+                    spots.append([x, z])
+        self.assertGreaterEqual(len(spots), 2, 'no level ground for two pieces')
+        for (kind, ident), spot in zip((('chair', 'starter-camp-chair'), ('shelf-unit', 'starter-camp-shelf')), spots):
+            body = self.build(app, world, goal_chains.exact_furniture_recipe(kind, ident), spot, 'furniture-' + kind)
+            self.assertTrue(body.get('rigid_parts_local'), f'{kind} is exact parts, not cells')
+            self.assertLess(tilt_deg(body), 2.0, f'{kind} stands')
+
+
 if __name__ == '__main__':
     unittest.main()

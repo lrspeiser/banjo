@@ -93,6 +93,17 @@ def work_table_recipe():
         'component_overrides':{p.name:{'mechanics':{'model':'rigid'}} for p in design.parts}}
 
 
+def exact_furniture_recipe(kind, design_id):
+    """A catalog piece of furniture built from exact parts, as the Work table
+    is: its thin parts (a shelf's 18 mm sides, a chair's back posts) are under
+    the 40 mm Workshop cell and cannot be drawn in cells without being
+    redrawn away from what they join."""
+    design=workshop.assemble(kind,design_id=design_id)
+    design.parameters['primary_use']={'label':'Place on it','steps':[{'do':'place'}]}
+    return {'kind':design.kind,'design_id':design.design_id,'parameters':dict(design.parameters),
+        'component_overrides':{p.name:{'mechanics':{'model':'rigid'}} for p in design.parts}}
+
+
 def first_tool_recipe():
     design=workshop.assemble('field-pick',design_id='starter-personal-pick')
     return {'kind':design.kind,'design_id':design.design_id,

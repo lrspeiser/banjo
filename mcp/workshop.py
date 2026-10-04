@@ -851,7 +851,10 @@ def _build_chair(library: ComponentLibrary, values: dict[str, Any]) -> list[Wire
     parts.extend(library.make(
         "panel", name="back-panel", material=material,
         at_m=(0.0, top_y + back_h - panel_h / 2 - back_h * 0.08, half_d - section / 2),
-        parameters={"width_m": (half_w - inset) * 2 + section, "height_m": panel_h,
+        # Between the posts, against their inner faces: out to their outer
+        # faces it ran through both, which a lattice hid and an exact solid
+        # refuses (it would count the overlap's mass twice).
+        parameters={"width_m": (half_w - inset) * 2 - section, "height_m": panel_h,
                     "thickness_m": max(0.012, section * 0.5), "facing": "z"}).parts)
     if seat.role != "top":
         raise ValueError("the seat must be the first part")
