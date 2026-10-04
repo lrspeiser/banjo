@@ -490,6 +490,16 @@ class PageJourney(unittest.TestCase):
         if not self.js(f"document.querySelector({json.dumps(target)}).open"):
             self.click_selector(target + " > summary")
 
+    def open_details(self):
+        """The side panel, opened as a person opens it: it starts folded away
+        (body.panel-away), and Details on the bottom bar slides it in. Waits
+        until it is all on screen, so that a click does not land mid-slide."""
+        if self.js("document.body.classList.contains('panel-away')"):
+            self.click_selector("#panel-details")
+        self.assertTrue(self.wait_for("!document.body.classList.contains('panel-away') && Math.abs("
+                                      "document.getElementById('panel').getBoundingClientRect().right - innerWidth) < 1", 10),
+                        "Details did not bring the panel out")
+
     def touch_and_cancel(self, element_id):
         """A finger put on a button and taken away by the browser -- a scroll,
         a gesture -- rather than lifted: pointerdown, then pointercancel, and
@@ -3066,6 +3076,8 @@ class ClickingSomethingKeepsIt(PageJourney):
         self.js("(banjoRoom.pick('rover'), true)")
         self.assertTrue(self.wait_for("!document.getElementById('picked').hidden", 15),
                         "clicking the rover showed nothing")
+        # The panel starts folded away; Details shows what was clicked.
+        self.open_details()
         said = self.js("document.getElementById('picked').innerText")
         self.assertIn("Rover", said)
         # The battery is a picture with a percentage, not a sentence.
