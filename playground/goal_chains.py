@@ -49,7 +49,7 @@ def definitions():
                 if (set(p) != {'kind','material','minimum_kg'} or p['material'] != 'oak'
                     or type(p['minimum_kg']) not in (int,float) or not .01 <= p['minimum_kg'] <= 25):
                     raise ValueError('Invalid personal opening stock')
-            elif kind in ('funded-ground-tool','own-tool-test'):
+            elif kind in ('funded-ground-tool','own-tool-test','own-light-used','own-solar-collected'):
                 if set(p) != {'kind'}: raise ValueError('Invalid funded tool predicate')
             elif kind != 'personal-batch' or set(p) != {'kind'}:
                 raise ValueError('Unknown goal predicate; implement its evaluator first')
@@ -195,7 +195,47 @@ def _surface(saved, owner, area):
     return None
 
 
+def _owned_roots(saved, owner):
+    """Native bodies of this player's paid, admitted installations."""
+    roots=set()
+    for receipt in saved.get('workshop_installs',[]):
+        if (receipt.get('status')!='installed' or receipt.get('owner_id')!=owner
+            or not receipt.get('resources_charged')): continue
+        roots|=set(receipt.get('root_bodies') or [receipt.get('root_body')])
+        roots|=set((receipt.get('component_to_body') or {}).values())
+    return roots-{None}
+
+
+def _light_used(saved, owner):
+    """An own installed lamp that has actually drawn energy to give light.
+
+    The engine counts what each lamp draws (drawn_j); a lamp that never lit
+    has drawn nothing. Placing it, or switching it on with an empty battery,
+    is not a lit camp."""
+    world=saved.get('world') or {}; roots=_owned_roots(saved,owner)
+    for lamp in world.get('lamps',[]):
+        if lamp.get('body') in roots and float(lamp.get('drawn_j') or 0)>0:
+            return {'body':lamp['body'],'lamp':lamp.get('name'),'drawn_j':float(lamp['drawn_j']),
+                    'saved_t_s':world.get('t_s')}
+    return None
+
+
+def _solar_collected(saved, owner):
+    """An own installed solar panel whose battery has received energy."""
+    world=saved.get('world') or {}; roots=_owned_roots(saved,owner)
+    panelled={p.get('body') for p in world.get('solar_panels',[]) if p.get('body') in roots}
+    for store in world.get('energy_stores',[]):
+        if store.get('body') in panelled and float(store.get('given_j') or 0)>0:
+            return {'body':store['body'],'store':store.get('name'),'given_j':float(store['given_j']),
+                    'saved_t_s':world.get('t_s')}
+    return None
+
+
 def evaluate(predicate, journal, saved, owner, world, registry):
+    if predicate['kind']=='own-light-used':
+        return _light_used(saved,owner)
+    if predicate['kind']=='own-solar-collected':
+        return _solar_collected(saved,owner)
     if predicate['kind']=='funded-box-surface':
         return _surface(saved,owner,predicate['minimum_area_m2'])
     if predicate['kind']=='funded-ground-tool':

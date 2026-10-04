@@ -617,6 +617,7 @@ def _square_to_ground(old, body, room):
 
 STAND_TRIAL_S = 2.0
 STAND_TILT_DEG = 10.0
+STAND_SLIDE_M = 0.03
 
 
 def _stands_here(staged, root):
@@ -629,20 +630,26 @@ def _stands_here(staged, root):
     The engine says whether it stands; nothing here estimates it. The staged
     copy is thrown away, so the trial changes nothing in the real world.
     """
-    def up():
+    def pose():
         body = next((b for b in staged.session.state.get("bodies", []) if b.get("name") == root), None)
         if body is None: return None
         w, x, y, z = body.get("orientation_wxyz") or [1, 0, 0, 0]
-        return [2*(x*y-z*w), 1-2*(x*x+z*z), 2*(y*z+x*w)]
-    start = up()
+        return [2*(x*y-z*w), 1-2*(x*x+z*z), 2*(y*z+x*w)], list(body.get("position_m") or [0, 0, 0])
+    start = pose()
     for _ in range(int(STAND_TRIAL_S*240)//120):
         staged.act({"session": staged.session.id, "op": "step", "dt": 1/240, "n": 120})
-    end = up()
+    end = pose()
     if start is None or end is None:
         return
-    turn = math.degrees(math.acos(max(-1.0, min(1.0, sum(a*b for a, b in zip(start, end))))))
+    turn = math.degrees(math.acos(max(-1.0, min(1.0, sum(a*b for a, b in zip(start[0], end[0]))))))
     if turn > STAND_TILT_DEG:
         raise ValueError(f"It would not stand here: it tipped {turn:.0f} degrees in its first "
+                         f"{STAND_TRIAL_S:g} s. Choose flatter ground.")
+    # Creeping down a slope is not standing either: a work table that slid
+    # 9 cm after it was set down moved out from under the stool put on it.
+    slid = math.hypot(end[1][0]-start[1][0], end[1][2]-start[1][2])
+    if slid > STAND_SLIDE_M:
+        raise ValueError(f"It would not stand here: it slid {slid*100:.0f} cm in its first "
                          f"{STAND_TRIAL_S:g} s. Choose flatter ground.")
 
 

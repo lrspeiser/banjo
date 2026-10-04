@@ -2826,11 +2826,12 @@ async function showRecipes() {
   fill("#ws-recipes-templates", r.templates.map(t => {
     const ready = Boolean(t.readiness?.ready_as_drawn);
     const short = t.enough ? 0 : Math.max(1, Math.round((t.short_share || 0) * 100));
-    const li = item(t.source === "saved" || ["Personal field pick", "Camp stool", "Work table"].includes(t.name) ? t.name : titleCase(t.name), "",
+    const li = item(t.source === "saved" || ["Personal field pick", "Camp stool", "Work table", "Camp light", "Camp solar panel"].includes(t.name) ? t.name : titleCase(t.name), "",
       !t.enough ? "short" : ready ? "enough" : "blocked");
     li.dataset.recipe = recipeKey(t);
     li.dataset.materials = JSON.stringify([...(t.materials || []), ...(t.goods || [])].map(r => r.material || r.substance));
-    const guidedRecipe = {"build-camp":"Camp stool", "build-surface":"Work table", "make-own-tool":"Personal field pick"}[new URLSearchParams(location.search).get("guide")];
+    const guidedRecipe = {"build-camp":"Camp stool", "build-surface":"Work table", "make-own-tool":"Personal field pick",
+      "light-camp":"Camp light", "charge-from-sun":"Camp solar panel"}[new URLSearchParams(location.search).get("guide")];
     const selectedRecipe=new URLSearchParams(location.search).get('recipe');
     if (selectedRecipe ? recipeKey(t)===selectedRecipe : t.name===guidedRecipe) li.classList.add("ws-goal-target");
     const canvas = make("canvas", {width:"160", height:"112", role:"img", "aria-label":`${t.name} shape preview`});

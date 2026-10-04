@@ -69,27 +69,8 @@
       "id": "first-workshop-v1",
       "title": "Put your camp to work",
       "after": "first-tool-v1",
-      "limits": "Tool use measures dry soil or sand. A work surface receives items; it does not unlock shaping. Machine batches use the declared recipe ledger, not simulated chemistry.",
+      "limits": "Machine batches use the declared recipe ledger, not simulated chemistry. A work table is optional: it receives items, and nothing in this chapter needs one.",
       "steps": [
-        {
-          "id": "build-surface",
-          "title": "Build a work surface",
-          "unit": "build",
-          "target": 1,
-          "predicate": {
-            "kind": "funded-box-surface",
-            "minimum_area_m2": 0.1
-          },
-          "guide": {
-            "where": "Recipes",
-            "screen": "recipes",
-            "recipe": "Work table",
-            "steps": [
-              "Find Work table in Recipes, or make another supported surface of at least 0.1 m\u00b2.",
-              "Check supplies, then Make. The new table receives items with Place; it does not perform shaping."
-            ]
-          }
-        },
         {
           "id": "observe-process",
           "title": "Learn from a working machine",
@@ -105,6 +86,50 @@
               "Follow Your next action to a compatible machine and its available supplies.",
               "Stop it before changing recipe. Store carried ground materials in Inventory, then load the selected machine input.",
               "Use Power / Watch batch, turn it on and watch while nearby and facing it. Only an actual saved batch completes this goal."
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "camp-power-v1",
+      "title": "Light and power your camp",
+      "after": "first-workshop-v1",
+      "limits": "A light counts once its own battery has actually lit it. A panel counts once sunlight has charged its battery; it charges only by day. Nothing here is awarded by placing or naming a thing.",
+      "steps": [
+        {
+          "id": "light-camp",
+          "title": "Light your camp",
+          "unit": "light",
+          "target": 1,
+          "predicate": {
+            "kind": "own-light-used"
+          },
+          "guide": {
+            "where": "Recipes",
+            "screen": "recipes",
+            "recipe": "Camp light",
+            "steps": [
+              "Make Camp light in Recipes: glass from your batch, a little oak and copper, and its first charge.",
+              "Place it in World, select it and switch it on. It counts once it has lit from its own battery."
+            ]
+          }
+        },
+        {
+          "id": "charge-from-sun",
+          "title": "Charge a battery from the sun",
+          "unit": "charge",
+          "target": 1,
+          "predicate": {
+            "kind": "own-solar-collected"
+          },
+          "guide": {
+            "where": "Recipes",
+            "screen": "recipes",
+            "recipe": "Camp solar panel",
+            "steps": [
+              "Make Camp solar panel in Recipes: one small panel, a 50 Wh battery, oak, glass and 1.8 kg of copper.",
+              "Place it in the open by day. It counts once sunlight has put charge into its battery; its surplus banks to your energy."
             ]
           }
         }

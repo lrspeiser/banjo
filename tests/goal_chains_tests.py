@@ -75,8 +75,11 @@ class Predicates(unittest.TestCase):
                     with self.assertRaises(ValueError):goal_chains.definitions()
                 goal_chains.definitions.cache_clear()
         finally:goal_chains.definitions.cache_clear()
-        self.assertEqual(['build-surface','observe-process'],
+        # The work table is optional: nothing in chapter two needs one.
+        self.assertEqual(['observe-process'],
                          [s['id'] for s in goal_chains.definitions()['first-workshop-v1']['steps']])
+        self.assertEqual(['light-camp','charge-from-sun'],
+                         [s['id'] for s in goal_chains.definitions()['camp-power-v1']['steps']])
         self.assertEqual(3,len(goal_chains.definitions()['first-tool-v1']['steps']))
 
 
@@ -98,7 +101,7 @@ class PlayerJourney(unittest.TestCase):
         def goals(player=None):
             return self.post('/api/workshop/goals',{'chain':'first-workshop-v1'},world,player)
         initial=goals()
-        self.assertEqual(['build-surface','observe-process'],[g['id'] for g in initial['goals']])
+        self.assertEqual(['observe-process'],[g['id'] for g in initial['goals']])
         self.assertFalse(any(g['complete'] for g in initial['goals']))
         # Historical receipt fixture only: old completed steps are never erased
         # or turned into a new batch, skill, inventory item or Market purchase.
@@ -109,7 +112,9 @@ class PlayerJourney(unittest.TestCase):
         updated=goals()
         self.assertEqual('observe-process',updated['next_goal'])
         self.assertFalse(updated['complete'])
-        self.assertEqual({'legacy':'build-surface'},updated['goals'][0]['evidence'])
+        # Retired steps, the work surface among them, no longer gate the
+        # chapter; their receipts stay in the table untouched (below).
+        self.assertEqual(['observe-process'],[g['id'] for g in updated['goals']])
         self.assertEqual(initial['balance_j'],updated['balance_j'])
         self.assertFalse(any(g['complete'] for g in goals(peer['token'])['goals']))
         self.assertEqual(set(),server.journal_of(app,owner['id']).knows())
@@ -247,7 +252,7 @@ class PlayerJourney(unittest.TestCase):
             first=camp.play_first_camp(self,world,owner['token'])
             self.assertTrue(first['complete'])
             def goals(player=None):return self.post('/api/workshop/goals',{'chain':'first-workshop-v1'},world,player)
-            before=goals();self.assertEqual('build-surface',before['next_goal'])
+            before=goals();self.assertEqual('observe-process',before['next_goal'])
             self.assertEqual(before['goals'],goals()['goals'],'viewing cannot award progress')
             self.assertTrue(before['unlocked'])
             session=before['session']
@@ -263,7 +268,7 @@ class PlayerJourney(unittest.TestCase):
             inventory('take_up','field pick')
             studied=self.post('/api/world/action',{'session':session,'object':'field pick','primary':True,'person':person},world)
             self.assertNotIn('refused',studied,studied)
-            self.assertEqual('build-surface',goals()['next_goal'],'Study is optional and does not create a work surface')
+            self.assertEqual('observe-process',goals()['next_goal'],'Study is optional and is not a batch')
             replies=[];errors=[]
             def use():
                 try:replies.append(self.post('/api/world/tool/use',{'session':session,'person':person,'at_m':[.3,ground,.025]},world))
@@ -273,7 +278,7 @@ class PlayerJourney(unittest.TestCase):
                 app.clock._tick(.05);time.sleep(.015)
             worker.join(1);self.assertFalse(worker.is_alive());self.assertEqual([],errors)
             self.assertGreater(replies[0]['result']['loosened_kg'],0,replies[0])
-            gathered=goals();self.assertEqual('build-surface',gathered['next_goal'])
+            gathered=goals();self.assertEqual('observe-process',gathered['next_goal'])
             self.assertIn('using-ground-tools',server.journal_of(app,owner['id']).knows())
             inventory('stow','field pick')
             candidate=deepcopy(gathered['recipe'])
@@ -357,7 +362,7 @@ class PlayerJourney(unittest.TestCase):
             self.stop();self.start();self.post('/api/world/open',{},world)
             restored=goals();self.assertEqual(final['goals'],restored['goals'])
             self.assertTrue(restored['complete'])
-            self.assertEqual('first-workshop-v1',self.post('/api/workshop/goals',{'chain':'active'},world)['chain_id'])
+            self.assertEqual('camp-power-v1',self.post('/api/workshop/goals',{'chain':'active'},world)['chain_id'])
             reports.append({'terrain_seed':7 if terrain_choice else 4,'goods_seed':goods_seed,
                 'camp_actions':len(first['trace']),'chain':final,'native_dt_s':1/240,'cell_m':.05,
                 'provider_calls':0,'mode':'scripted HTTP player; accelerated ordinary clock',
@@ -387,22 +392,24 @@ class PlayerJourney(unittest.TestCase):
         page.send('Page.navigate',{'url':self.base+'/world'})
         wait('document.readyState === "complete"')
         page.evaluate(f'localStorage.setItem("banjo.player.{world}",{json.dumps(owner["token"])})')
-        url=self.base+f'/world?world={world}&workshop=1&tab=goals&goal-chain=first-workshop-v1'
-        page.send('Page.navigate',{'url':url})
-        wait('!!document.querySelector("[data-goal-go=build-surface]")')
-        before=self.post('/api/workshop/goals',{'chain':'first-workshop-v1'},world)
+        power=self.base+f'/world?world={world}&workshop=1&tab=goals&goal-chain=camp-power-v1'
+        page.send('Page.navigate',{'url':power})
+        wait('!!document.querySelector("[data-goal-go=light-camp]")')
+        before=self.post('/api/workshop/goals',{'chain':'camp-power-v1'},world)
         self.assertEqual(0,page.evaluate('document.querySelectorAll("[data-goal-action],[data-goal-bank]").length'))
-        page.evaluate('document.querySelector("[data-goal-go=build-surface]").click()')
+        page.evaluate('document.querySelector("[data-goal-go=light-camp]").click()')
         wait('!!document.querySelector(".ws-goal-target[data-recipe]")')
-        self.assertEqual('Work table',page.evaluate('document.querySelector(".ws-goal-target strong").textContent'))
-        after=self.post('/api/workshop/goals',{'chain':'first-workshop-v1'},world)
+        self.assertEqual('Camp light',page.evaluate('document.querySelector(".ws-goal-target strong").textContent'))
+        after=self.post('/api/workshop/goals',{'chain':'camp-power-v1'},world)
         self.assertEqual(before['goals'],after['goals'])
         self.assertEqual(before['balance_j'],after['balance_j'])
+        url=self.base+f'/world?world={world}&workshop=1&tab=goals&goal-chain=first-workshop-v1'
+        before=self.post('/api/workshop/goals',{'chain':'first-workshop-v1'},world)
         page.send('Page.navigate',{'url':url});wait('!!document.querySelector("[data-goal-go=observe-process]")')
         page.evaluate('document.querySelector("[data-goal-go=observe-process]").click()')
         wait('!location.search.includes("workshop=1") && !!document.querySelector("#next-step")')
         self.assertEqual(before['goals'],self.post('/api/workshop/goals',{'chain':'first-workshop-v1'},world)['goals'])
-        page.send('Page.navigate',{'url':url});wait('!!document.querySelector("[data-goal-go=build-surface]")')
+        page.send('Page.navigate',{'url':url});wait('!!document.querySelector("[data-goal-go=observe-process]")')
         import base64
         output=ROOT/'build/goal-chains';output.mkdir(parents=True,exist_ok=True)
         (output/'checklist.png').write_bytes(base64.b64decode(page.send('Page.captureScreenshot')['data']))

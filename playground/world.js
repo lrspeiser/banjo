@@ -401,7 +401,7 @@ moon.name = "moon-light";
 moon.position.set(-6, 12, 4);
 scene.add(moon);
 scene.add(moon.target);
-const MOON_LIGHT = 0.55;
+const MOON_LIGHT = 0.38;
 const KEY_AT = key.position.clone();
 const KEY_LIGHT = key.intensity, SKY_LIGHT = sky.intensity, RIM_LIGHT = rim.intensity;
 const FILL_LIGHT = fill.intensity;
@@ -759,7 +759,7 @@ function skyPMREM() {
 }
 // The sky's light at night, and the rim's: dim, but enough to see what is in
 // the room by.
-const SKY_NIGHT = 0.2, RIM_NIGHT = 0.04, FILL_NIGHT = 0.03;
+const SKY_NIGHT = 0.14, RIM_NIGHT = 0.03, FILL_NIGHT = 0.02;
 // The sky behind the room under a sun with a day: a day's blue with the sun
 // well up, red as it nears the horizon, and the night's black the page has
 // always had. A room without a day keeps that black.

@@ -261,7 +261,11 @@ def resolve(app, owner, *, offers=None, balance=None, focus=None, project_overri
                 if construction:return construction
             project=_project_plan(app,selected,offers,balance) if selected else market._recommend(book['templates'],offers,balance,goals)
             follow_up=False;use_light=None
-            if goals['complete'] and not selected:
+            next_kind=((next((g for g in goals['goals'] if g['id']==goals['next_goal']),None) or {})
+                       .get('requirement') or {}).get('kind')
+            # Lighting the camp is now a goal of its own; the light is offered
+            # as soon as it is next, not only after every chapter is done.
+            if (goals['complete'] or next_kind=='own-light-used') and not selected:
                 from mcp import workshop_components
                 candidate,use_light,already=_camp_light(app,owner,native)
                 design,_=workshop_components.design_from_spec(candidate)
@@ -272,6 +276,11 @@ def resolve(app, owner, *, offers=None, balance=None, focus=None, project_overri
                     project=_project_plan(app,{'name':'Camp light','candidate':candidate,
                         'selection':{'source':'recipe','id':'mine-lamp:Camp light'}},offers,balance)
                     project['focused']=False;follow_up=True
+            elif next_kind=='own-solar-collected' and not selected:
+                import goal_chains
+                project=_project_plan(app,{'name':'Camp solar panel','candidate':goal_chains.camp_solar_recipe(),
+                    'selection':{'source':'recipe','id':'solar-array:Camp solar panel'}},offers,balance)
+                project['focused']=False;follow_up=True
             row=next((g for g in goals['goals'] if g['id']==goals['next_goal']),None)
             state={'goals':goals,'skills':skills,'recipes':book['templates'],
                 'stockpiles':book['stockpiles'],'pose':deepcopy((player_world.records(app).get(owner) or {}).get('pose')),
