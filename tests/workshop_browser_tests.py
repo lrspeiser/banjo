@@ -1563,11 +1563,13 @@ class WorkshopBrowserRegression(unittest.TestCase):
         rows = json.loads(self.js("""JSON.stringify(
           [...document.querySelectorAll('#ws-pane-recipes li[data-recipe]')].map(li => ({
             cls: li.className,
-            missing: li.querySelector('.ws-missing')?.textContent || '',
-            greyed: li.querySelector('.ws-recipe-acts button')?.disabled,
-            makeSays: li.querySelector('.ws-recipe-acts button')?.title || '',
-            paid: li.innerText.includes('Reviewed workbench supplies'),
-            fits: (li.querySelector('.ws-recipe-readiness')?.textContent || '') === 'ShapeFits',
+            // :scope > -- a card holds its other versions as cards of their own
+            // ("Other versions", f7796dce); read this card's lines, not theirs.
+            missing: li.querySelector(':scope > .ws-missing')?.textContent || '',
+            greyed: li.querySelector(':scope > .ws-recipe-acts button')?.disabled,
+            makeSays: li.querySelector(':scope > .ws-recipe-acts button')?.title || '',
+            paid: [...li.querySelectorAll(':scope > .ws-recipe-value')].some(v => v.textContent.includes('Reviewed workbench supplies')),
+            fits: (li.querySelector(':scope > .ws-recipe-readiness')?.textContent || '') === 'ShapeFits',
             lines: li.querySelectorAll('.ws-need').length})))"""))
         self.assertTrue(rows, "no recipes at all")
         short = [r for r in rows if r["cls"] == "short"]
