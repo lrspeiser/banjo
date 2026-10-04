@@ -449,6 +449,19 @@ class PageJourney(unittest.TestCase):
           return [x, y, ""];
         }})()""")
 
+    def when_still(self, selector):
+        """Wait until what `selector` finds has stopped moving: two readings of
+        where it is, a tenth of a second apart, the same."""
+        where = f"(() => {{ const e = document.querySelector({json.dumps(selector)}); " \
+                f"return e ? [...Object.values(e.getBoundingClientRect().toJSON())] : null; }})()"
+        last = None
+        for _ in range(30):
+            now = self.js(where)
+            if now is not None and now == last:
+                return
+            last = now
+            time.sleep(0.1)
+
     def click(self, element_id):
         """A button pressed with the mouse, as a person presses it: moved over
         its middle, down and up (Input.dispatchMouseEvent).
@@ -459,15 +472,7 @@ class PageJourney(unittest.TestCase):
         to stop moving: the side panel slides in when a machine's panel opens
         it (it starts folded away), and a press mid-slide lands where the
         button was."""
-        where = f"(() => {{ const e = document.getElementById({json.dumps(element_id)}); " \
-                f"return e ? [...Object.values(e.getBoundingClientRect().toJSON())] : null; }})()"
-        last = None
-        for _ in range(30):
-            now = self.js(where)
-            if now is not None and now == last:
-                break
-            last = now
-            time.sleep(0.1)
+        self.when_still(f"#{element_id}")
         x, y, why = self.aim_at(element_id)
         if why:
             # Once more: the panel may have been mid-layout.
@@ -2877,7 +2882,10 @@ class TheMineShowsWhatEachThingHolds(PageJourney):
     def click_where(self, selector):
         """A button pressed with the mouse, found by what it is rather than by
         an id: the Controls buttons are one per machine and have none. Scrolled
-        into the panel's view first -- the Room tab's list scrolls."""
+        into the panel's view first -- the Room tab's list scrolls -- and once
+        it has stopped moving: the side panel slides in when a machine's panel
+        opens it."""
+        self.when_still(selector)
         where = self.js(
             f"(() => {{ const e = document.querySelector({json.dumps(selector)}); if (!e) return null;"
             f" e.scrollIntoView({{block: 'center'}}); const r = e.getBoundingClientRect();"
