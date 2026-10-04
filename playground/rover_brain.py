@@ -946,6 +946,16 @@ class Brains:
             if found:
                 shown["found_cells"] = found
             answer["sight"] = shown
+            # And the way each machine is going over that map, for the page's
+            # mini map: the route a leg was planned on (machine_navigation.plan).
+            routes = {}
+            for brain in self.brains.values():
+                issued = brain.routine.frame.issued if brain.routine is not None else None
+                route = ((issued or {}).get("navigation") or {}).get("map_route") if isinstance(issued, dict) else None
+                if route:
+                    routes[brain.name] = [[round(p[0], 2), round(p[1], 2)] for p in route]
+            if routes:
+                answer["routes"] = routes
         # Each guest has their own delivery marker. One observer cannot
         # consume another's fill/decision updates; unchanged ticks stay small.
         observer=str(body.get('actor') or 'page')

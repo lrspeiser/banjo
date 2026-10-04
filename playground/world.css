@@ -232,6 +232,22 @@ body.head-under-water #stage { filter: brightness(.72) sepia(.45) hue-rotate(155
 }
 #panel-build { flex-basis: 100%; margin: 0; color: var(--warm); font-size: 12px; }
 
+/* The mini map: the room from above, as far as it has been seen. A card in the
+   top right corner, as the inventory is in the top left, beside the side panel
+   when that is out; its heading folds it away. */
+#minimap { position: fixed; top: 14px; right: calc(var(--panel-w) + 14px); z-index: 15; width: 15rem;
+           padding: .5rem .65rem .6rem; background: #12202bea; color: #f1f5fa; border: 1px solid #526578;
+           border-radius: .55rem; font-size: .8rem; pointer-events: auto; }
+#minimap[hidden] { display: none; }
+.minimap-head { display: flex; align-items: baseline; gap: .6rem; }
+#minimap-fold { padding: 0; border: 0; background: none; color: #c3dfef; font: inherit; cursor: pointer; }
+#minimap-fold[aria-expanded="false"]::after { content: " \25B8"; }
+#minimap-fold[aria-expanded="true"]::after { content: " \25BE"; }
+#minimap-note { color: #9fb0c0; font-size: .72rem; }
+#minimap-canvas { display: block; width: 100%; height: 150px; margin-top: .4rem; border-radius: .3rem;
+                  background: #15181d; image-rendering: pixelated; }
+#minimap-canvas[hidden] { display: none; }
+
 /* 1. The conversation: whatever height the other two leave. */
 #talk { flex: 1 1 0; min-height: 24vh; display: flex; flex-direction: column;
         border-bottom: 1px solid var(--edge); }
