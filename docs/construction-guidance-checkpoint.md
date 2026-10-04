@@ -212,6 +212,37 @@ and within 10 degrees of upright: the guide's own Placed check and the stand
 trial's tilt limit. Each placement is one evidence record, so looking again
 adds nothing. A thing that moved or leans is recorded as not standing.
 
+## Removing a support, and fitting a pad to a slope (2026-10-04)
+
+**Removing a support.** A work table stands beside the camp light, the light
+is set on its top with the build guide, and then the table is taken away.
+Fastened, the light goes with the table into the bag. Only resting on it, the
+light falls about half a metre and comes to rest on the ground (4 runs on
+random terrain).
+
+**Fitting a pad to a slope (the first bounded customisation).** A foundation
+pad as drawn is turned to the slope when it is set down, so its top tilts as
+much as the ground does. `POST /api/world/workshop/fit_to_ground` reads the
+ground under each of the pad's four footings at a chosen spot and proposes
+footing lengths that make its top level (`construction_fit.py`). With
+`save`, the proposal is kept as a new version of the player's design (the
+design store and the versioned library), which is then made and paid for
+like any other.
+
+A thing whose own feet are at different heights, and whose feet already meet
+the ground under them to within 3 cm, is now seated upright as made, instead
+of being turned to the slope (`workshop_install._seat_as_made`). Things with
+level feet are squared to the ground as before.
+
+On a moderate slope (8 to 14 cm of fall across 0.6 m), a pad as drawn stood
+at 15.7 degrees, or tipped over and was refused, depending on the terrain.
+The fitted pad stood at 0.00 degrees on both terrains
+(`tests/construction_fit_tests.py`, 4 runs). On a 22 degree patch a fitted
+pad with footings up to 0.6 m slid 3 cm in the stand trial and was refused,
+so the fitter refuses a fall of more than 45 cm under the pad. The proposal is
+for one spot with the pad turned as drawn; there is no Lab or World button for
+it yet.
+
 ## Full construction goal: remaining work
 
 1. Contract: declarations/readiness exist; enforce advanced skills and consume
@@ -231,14 +262,16 @@ adds nothing. A thing that moved or leans is recorded as not standing.
 8. Projects: prepare, hold, site, place, fasten and inspect are saved steps,
    each with where it is done; the current one is a link. Platform, access
    and operate steps are still to come.
-9. Supports: pad exists; qualify posts/beams/braces/platforms and actual concrete
-   production, supported/unsupported comparisons and removal behavior.
+9. Supports: the pad, with footings fitted to a slope, is a platform on posts;
+   removal behaviour is tested (below). Beams, braces and concrete made in the
+   world are still to come.
 10. Connections: mounting is done (2026-10-04, below): a fastening is a
     native fixing rated by its contact, and it breaks in the room. Telling
     attached hoppers from separate piles is still open.
-11. Customization: design editing and installation declarations exist; build
-    bounded versioned proposals for slope fitting, recipes, appearance,
-    machine behavior and goals through paid use/reopening.
+11. Customization: slope fitting for the pad is a saved, versioned proposal
+    made through the paid flow (below). Appearance (set_skin), recipe
+    variants and a machine's recipe choice already exist. A button for slope
+    fitting, and proposals for other designs, are still to come.
 12. Skills: "Setting things down" is earned from the engine (below). More
     construction techniques, such as building on a pad, are still to come.
 13. Shared writes: private selection/site intent now has exact revision/retry

@@ -1740,12 +1740,15 @@ class Handler(BaseHTTPRequestHandler):
             # validated scene; /act steps it, takes hold of an object, moves it,
             # lets go, or puts something back into the lattice to be broken.
             if path.startswith("/api/world/workshop/"):
+                import construction_fit
                 operations = {"/api/world/workshop/context": workshop_install.context,
                               "/api/world/workshop/preview": workshop_install.preview,
                               # Which design made this body, so a thing standing
                               # in the world can be opened on the bench again.
                               "/api/world/workshop/what_made": workshop_install.what_made,
-                              "/api/world/workshop/commit": workshop_install.commit}
+                              "/api/world/workshop/commit": workshop_install.commit,
+                              # Footings cut to the ground at a spot (construction_fit).
+                              "/api/world/workshop/fit_to_ground": construction_fit.request}
                 if path in operations:
                     try:
                         answer = operations[path](self.app,body)

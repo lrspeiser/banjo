@@ -32,7 +32,7 @@ PLAYER_ROUTES = {'/api/world/open','/api/world/ask','/api/world/action','/api/wo
     '/api/world/putdown','/api/world/inventory','/api/world/inventory/shown',
     '/api/world/machine','/api/world/watch-machine','/api/world/tool','/api/world/tool/use',
     '/api/world/goods/collect','/api/world/goods/deliver','/api/world/process','/api/world/rover/talk','/api/world/rover/brain',
-    '/api/world/workshop/context','/api/world/workshop/what_made','/api/world/guidance',
+    '/api/world/workshop/context','/api/world/workshop/what_made','/api/world/workshop/fit_to_ground','/api/world/guidance',
     # A player's own native body (native_body): the host derives the actor.
     '/api/world/player/walk'}
 PLAYER_NATIVE_OPS = {'step','poses','wield','grab','hand','move','release','stroke',

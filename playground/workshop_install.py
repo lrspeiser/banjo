@@ -580,10 +580,93 @@ def _supporting_plane(old, bounds, com_xz):
     return None if best is None else best[1:]
 
 
+# A thing whose own feet are at different heights by more than this was made
+# for uneven ground; standing upright, its feet must meet the ground to within
+# FITTED_GROUND_M for it to be seated as it is, not turned to the slope.
+UNEVEN_FEET_M = .01
+FITTED_GROUND_M = .03
+
+
+def _ground_reader(old):
+    """A function giving the terrain's height at (x, z), interpolated between
+    its samples (None off the terrain), or None in a room with no terrain."""
+    terrain = _terrain_state(old)
+    if terrain is None:
+        return None
+    grid = terrain["grid"]
+    nx, nz, h = grid["nx"], grid["nz"], grid["cell_m"]
+    heights = struct.unpack("<"+"f"*(nx*nz), base64.b64decode(terrain["heights_b64"], validate=True))
+    return lambda x, z: _interpolate(grid, heights, x, z)
+
+
+def _interpolate(grid, heights, x, z):
+    nx, nz, h = grid["nx"], grid["nz"], grid["cell_m"]
+    u, v = (x-grid["x0_m"])/h, (z-grid["z0_m"])/h
+    i, j = math.floor(u), math.floor(v)
+    if i < 0 or j < 0 or i+1 >= nx or j+1 >= nz:
+        return None
+    fu, fv = u-i, v-j
+    at = lambda a, b: heights[b*nx+a]
+    return ((1-fu)*(1-fv)*at(i,j) + fu*(1-fv)*at(i+1,j) + (1-fu)*fv*at(i,j+1) + fu*fv*at(i+1,j+1))
+
+
+def _feet(body):
+    """The bottom middle of each part with nothing of the body below any of
+    its footprint: the feet it stands on, in world space as it is turned now."""
+    turn = precise_rigid._turn(body["orientation_wxyz"])
+    def world(local):
+        return [body["position_m"][a]+sum(turn[a][k]*local[k] for k in range(3)) for a in range(3)]
+    boxes = []
+    for part in body["parts"]:
+        half = [d/2 for d in part["dimensions_m"]]
+        c = part["center_local_m"]
+        boxes.append((c, half))
+    feet = []
+    for c, half in boxes:
+        bottom = c[1]-half[1]
+        # Anything of the body under any of its footprint: a platform over
+        # its footings is not a foot.
+        if any(o is not c and abs(o[0]-c[0]) < oh[0]+half[0] and abs(o[2]-c[2]) < oh[2]+half[2]
+               and o[1]-oh[1] < bottom-1e-6 for o, oh in boxes):
+            continue
+        # The middle of its bottom: on a slope a foot's own corners differ by
+        # the slope across it, which is not a misfit.
+        feet.append(world([c[0], bottom, c[2]]))
+    return feet
+
+
+def _seat_as_made(old, body):
+    """Seat a body made for uneven ground upright, as it was made, when its
+    feet already meet the ground under them. True when it was seated."""
+    feet = _feet(body)
+    if not feet or max(f[1] for f in feet)-min(f[1] for f in feet) <= UNEVEN_FEET_M:
+        return False
+    ground_at = _ground_reader(old)
+    if ground_at is None:
+        return False
+    gaps = []
+    for x, y, z in feet:
+        ground = ground_at(x, z)
+        if ground is None:
+            return False
+        gaps.append(y-ground)
+    if max(gaps)-min(gaps) > FITTED_GROUND_M:
+        return False
+    body["position_m"][1] += .002-min(gaps)
+    return True
+
+
 def _square_to_ground(old, body, room):
     """Turn a precise body square to its supporting plane and seat it 2 mm
     clear of it. Steeper than 25 degrees it is left upright: a slope like that
-    is no place to set a thing down, and the preview says where it lands."""
+    is no place to set a thing down, and the preview says where it lands.
+
+    A thing made for this ground -- a pad whose footings were each cut to
+    the slope under them -- is not turned: squared to the slope its level top
+    would tilt by the slope. Its feet already meet the ground, so it is
+    seated upright."""
+    if _seat_as_made(old, body):
+        return True
     seated = precise_rigid.bounds(body["parts"], body["position_m"], body["orientation_wxyz"])
     plane = _supporting_plane(old, seated, (body["position_m"][0], body["position_m"][2]))
     if plane is None:
