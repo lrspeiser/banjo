@@ -1283,21 +1283,23 @@ class LearningSomethingIsSaidWhereYouAreLooking(PageJourney):
         card = self.js("[document.getElementById('unlocked-what').textContent, "
                        "document.getElementById('unlocked-opens').textContent]")
         print(f"\n   the card said {card[0]!r} / {card[1]!r}", flush=True)
-        self.assertIn("learned:", card[0].lower())
+        self.assertIn("new achievement:", card[0].lower())   # the card's heading since a9ba0e3c
         # And it says what the technique opened. Read off the technique, not
         # off the ladder: a rung leaves the ladder the moment it is learned.
         self.assertTrue(card[1], "the card did not say what the new skill was for")
 
-        # And the ladder is under the details, not a tab away.
-        self.assertTrue(self.wait_for("!document.getElementById('next-step').hidden", 60),
-                        f"the next rung is not shown: {self.situation()}")
-        line = self.js("document.getElementById('next-step').textContent")
-        print(f"   and the next rung reads {line!r}", flush=True)
-        self.assertIn("next:", line.lower())
-        # It names what it would open, rather than counting it. "It would let
-        # you make 1 thing you cannot make yet" is not a reason to want it.
-        self.assertNotIn("thing you cannot make", line,
-                         "the rung counts what it opens instead of naming it")
+        # It names what the technique opened, rather than counting it: "It
+        # lets you make 1 thing" is not a reason to want it. (The line under
+        # the details was the next rung of the ladder until 0c18d185; it is the
+        # world's one next action now, which a test room has none of, and the
+        # ladder is the Workshop's Skills tree.)
+        learned = json.loads(self.page.evaluate(
+            "(async () => JSON.stringify((await fetch('/api/knowledge').then((r) => r.json()))"
+            ".techniques))()", timeout=30, await_promise=True))
+        said = next((t for t in learned if card[0].lower().endswith(t["name"].lower())), None)
+        self.assertIsNotNone(said, f"the card names no technique the journal holds: {card[0]!r} against {learned}")
+        opens = [o["name"] for o in said.get("opens_named") or []]
+        self.assertEqual(f"Unlocked: {', '.join(opens)}" if opens else "Skill learned", card[1])
 
     def test_the_card_goes_away_by_itself(self):
         self.page.send("Page.navigate", {"url": f"http://127.0.0.1:{self.port}/world?scene=tests-mine"})
