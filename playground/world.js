@@ -4773,7 +4773,7 @@ async function readMiniInventory() {
   miniReading = true;
   const session = world.session;
   try {
-    const [stock,wallet] = await Promise.allSettled([api("/api/workshop/inventory",{}),api("/api/workshop/market",{action:"view"})]);
+    const [stock,wallet] = await Promise.allSettled([api("/api/workshop/inventory",{}),api("/api/workshop/market",{action:"view",guidance:false})]);
     if (session !== world.session) return;
     miniStock = stock.status==="fulfilled" ? stock.value : null;
     miniWallet = wallet.status==="fulfilled" ? wallet.value : null;
@@ -4781,7 +4781,63 @@ async function readMiniInventory() {
   } finally { miniReading=false; }
 }
 setInterval(readMiniInventory,5000);
+// A strip of what you have, as pictures, just right of the menu bar (the
+// owner, 2026-10-04): your hands, then the bag, then materials. A thing is
+// held or put away with a click; a material opens what it makes.
+function stripElement() {
+  let strip=$("inventory-strip");
+  if(strip)return strip;
+  strip=document.createElement("section");strip.id="inventory-strip";strip.setAttribute("aria-label","What you have");
+  document.body.append(strip);
+  addEventListener("resize",placeInventoryStrip);
+  new ResizeObserver(placeInventoryStrip).observe(worldNavigation);
+  return strip;
+}
+function placeInventoryStrip() {
+  const inventoryStrip=stripElement();
+  const bar=worldNavigation.getBoundingClientRect(), wide=bar.right+12+inventoryStrip.offsetWidth<=innerWidth-12;
+  inventoryStrip.classList.toggle("above",!wide);
+  inventoryStrip.style.left=wide?`${Math.round(bar.right+8)}px`:"";
+  inventoryStrip.style.bottom=wide?`${Math.round(innerHeight-bar.bottom)}px`:`${Math.round(innerHeight-bar.top+6)}px`;
+}
+function showInventoryStrip() {
+  const inv=world.inventory, cells=[];
+  const held=watchedId ? inv?.hands?.[inv?.hand_in_the_world]?.name : world.held?.name;
+  const cell=(picture,title,amount,onClick,hand) => {
+    const button=document.createElement(onClick ? "button" : "a");
+    if(onClick){button.type="button";button.addEventListener("click",e=>{e.stopPropagation();button.blur();onClick();});}
+    button.className="strip-item";button.title=title;button.setAttribute("aria-label",title);
+    if(hand)button.dataset.hand=hand;
+    button.append(picture);
+    if(amount){const small=document.createElement("small");small.textContent=amount;button.append(small);}
+    cells.push(button);return button;
+  };
+  for(const side of ["right","left"]) {
+    let thing=inv?.hands?.[side];
+    if(!thing && side===(inv?.hand_in_the_world || "right") && held)
+      thing={name:held,label:heldName(),material:world.bodies.get(held)?.material};
+    if(thing)cell(miniPicture(thing),`${bagName(thing)} · ${titled(side)} hand · click to put it away`,"",
+      watchedId ? null : () => {if(handBusy())return;
+        if(world.held?.name===thing.name || thing.parts?.includes(world.held?.name))toTheBag();
+        else inventoryChange("stow",thing.id || thing.name);},side);
+  }
+  (inv?.stowed || []).forEach((thing,i)=>{if(thing)cell(miniPicture(thing),`${bagName(thing)} · Bag ${(i + 1) % 10} · click to hold it`,"",
+    watchedId ? null : () => {if(!handBusy())inventoryChange("equip",thing.id || thing.name);});});
+  const materials=[...[...world.stock].filter(([,v])=>v.kg>0).map(([m,v])=>[m,v.kg,"carried"]),
+    ...[...(miniStock?.materials || []),...(miniStock?.goods || [])].filter(r=>r.mass_kg>0)
+      .map(r=>[r.material || r.substance,r.mass_kg,"in stock"])];
+  for(const [material,kg,where] of materials) {
+    const link=cell(thumbnail({name:titled(material),material,shape:"box",color_rgba:slotColour(material).slice(1)}),
+      `${titled(material)} · ${massLabel(kg)} ${where} · click for what it makes`,massLabel(kg),null);
+    const url=new URL(screenUrl("recipes"),location.origin);url.searchParams.set("material",material);
+    link.href=url.pathname+url.search;
+  }
+  if(!cells.length){const empty=document.createElement("span");empty.className="strip-empty";empty.textContent="Nothing yet";cells.push(empty);}
+  stripElement().replaceChildren(...cells);
+  placeInventoryStrip();
+}
 function showInventory() {
+  showInventoryStrip();
   if (!$("mini-products")) return;
   const energy=$("mini-energy"), solar=world.machines?.stores?.find(s=>s.body==="solar farm");
   const value=j=>`${Number(j).toLocaleString(undefined,{maximumFractionDigits:1})} J`;

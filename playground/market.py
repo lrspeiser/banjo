@@ -501,6 +501,11 @@ def request(app: Any, owner: str, body: Any, keep_world: Any, *, include_guidanc
         raise ValueError("Expected a Market view, bank or buy request")
     if len(body) > 4:
         raise ValueError("Market request has too many fields")
+    # A view that only wants the balance (the page's 5 s refresh) skips the
+    # guidance: that took up to 1.6 s under the world lock, and every walk
+    # waited behind it.
+    if body.get("guidance", True) is False:
+        include_guidance = False
     # Consistent ordering with guidance and the unattended checkpoint thread.
     # A bank first excludes installation; read-only views already in world
     # access must not try to upgrade their reader gate to an exclusive one.

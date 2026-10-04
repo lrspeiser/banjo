@@ -883,3 +883,12 @@ body.panel-away #panel {visibility:hidden;}
 #world-action-toast {position:fixed;left:50%;bottom:112px;transform:translateX(-50%);max-width:70vw;padding:7px 12px;font-size:12px;background:#12202bf0;border:1px solid #526578;border-radius:7px;z-index:19;pointer-events:none;}
 #world-action-toast[hidden] {display:none;}
 body.chat-open #panel > :not(header):not(#talk) {display:none;}
+/* The inventory strip, right of the menu bar (or above it when there is no room). */
+#inventory-strip {position:fixed;z-index:30;display:flex;align-items:center;gap:4px;max-width:calc(100vw - 24px);overflow-x:auto;padding:5px 7px;background:#12202bf2;border:1px solid #526578;border-radius:10px;box-sizing:border-box;min-height:56px;}
+#inventory-strip.above {left:50%;transform:translateX(-50%);}
+#inventory-strip .strip-item {position:relative;flex:none;display:flex;align-items:center;justify-content:center;width:44px;height:44px;padding:2px;box-sizing:border-box;border:1px solid #3c4f60;border-radius:7px;background:#1b2e3b;cursor:pointer;color:inherit;text-decoration:none;}
+#inventory-strip .strip-item:hover,#inventory-strip .strip-item:focus-visible {border-color:#a7d7ed;outline:none;}
+#inventory-strip .strip-item[data-hand] {border-color:#e6a14b;}
+#inventory-strip .strip-item img,#inventory-strip .strip-item canvas,#inventory-strip .strip-item svg {width:36px;height:36px;object-fit:contain;}
+#inventory-strip .strip-item small {position:absolute;right:2px;bottom:1px;font-size:9px;line-height:1;padding:1px 2px;border-radius:3px;background:#000a;color:#fff;pointer-events:none;}
+#inventory-strip .strip-empty {font-size:11px;color:#9fb3c2;padding:0 6px;}
