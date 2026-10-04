@@ -22,6 +22,8 @@ WAYPOINT_NEAR_M = .4
 # A close destination needs a smaller motor arrival allowance than a through
 # waypoint. This is a request to the native brakes, never a pose correction.
 FINAL_NEAR_M = .1
+# Water under its own footprint it may drive out of: a dig's puddle, not a lake.
+OWN_WET_M = .1
 
 
 def shape_points(body, cell_m):
@@ -115,7 +117,13 @@ def waypoint(ctx, target, arrival=(0.,0.)):
         if not ctx.terrain_declared:
             surveyed[key]={'ground_m':0.};return surveyed[key]
         queries+=1;s=ctx.survey(x,z)
-        if not s.get('on_the_ground') or float((s.get('water') or {}).get('depth_m') or 0)>.003:
+        depth=float((s.get('water') or {}).get('depth_m') or 0)
+        # Water is a bound on where it may GO, not on the ground it already
+        # stands on: a rover's own dig fills with water under it, and refusing
+        # its own wet cells left it parked in the hole for good. Only the
+        # cells it occupies now, and only shallow water.
+        own=math.hypot(x-at[0],z-at[1])<=radius+1e-6 and depth<OWN_WET_M
+        if not s.get('on_the_ground') or (depth>.003 and not own):
             rejected('terrain',(x,z),{k:s.get(k) for k in ('on_the_ground','slope_deg','water')});s=None
         surveyed[key]=s;return s
     def clear(node):

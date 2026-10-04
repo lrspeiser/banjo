@@ -1280,6 +1280,22 @@ class LearningSomethingIsSaidWhereYouAreLooking(PageJourney):
     the card has to appear for it.
     """
 
+    def machine_notes(self):
+        """Each machine's brain as the server has it: its routine's notes say
+        where a delivery stopped."""
+        try:
+            return self.page.evaluate("""(async () => {
+                const w = window.banjoRoom.world, out = {};
+                const token = (await fetch("/api/status").then((r) => r.json())).csrf_token;
+                for (const p of (w.machines?.programs || []))
+                    out[p.name] = await fetch("/api/world/rover/brain", {method: "POST",
+                        headers: {"Content-Type": "application/json", "X-Banjo-Token": token},
+                        body: JSON.stringify({session: w.session, program: p.name})}).then((r) => r.json());
+                return JSON.stringify(out).slice(0, 6000);
+            })()""", timeout=60, await_promise=True)
+        except Exception as error:
+            return f"(could not read the machines: {error})"
+
     def turn_the_machines_on(self):
         return self.page.evaluate("""(async () => {
             const w = window.banjoRoom.world;
@@ -1312,7 +1328,8 @@ class LearningSomethingIsSaidWhereYouAreLooking(PageJourney):
         self.turn_the_machines_on()
         # The smelter working in front of the page is what teaches it.
         self.assertTrue(self.wait_for("!document.getElementById('unlocked').hidden", 180),
-                        f"nothing was said over the world when a technique was learned: {self.situation()}")
+                        f"nothing was said over the world when a technique was learned: {self.situation()}; "
+                        f"the machines: {self.machine_notes()}")
         card = self.js("[document.getElementById('unlocked-what').textContent, "
                        "document.getElementById('unlocked-opens').textContent]")
         print(f"\n   the card said {card[0]!r} / {card[1]!r}", flush=True)

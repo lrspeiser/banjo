@@ -1208,6 +1208,26 @@ class LocalNavigation(unittest.TestCase):
             *[{'kind':'ground','at_m':[x,.5,-1.],'depth_m':.12,'stops':-1,'sees':False} for x in (-.3,.3)]]
         return ctx
 
+    def test_a_rover_in_its_own_dig_puddle_can_drive_out_but_not_through_water(self):
+        import machine_navigation as nav
+        def puddle(depth):
+            def field(x,z):
+                wet=math.hypot(x,z)<=.45
+                return {'on_the_ground':True,'ground_m':0.,'slope_deg':0.,
+                        'water':{'depth_m':depth} if wet else None}
+            return field
+        # A dig's puddle under it: it drives out of it to dry ground.
+        out=nav.waypoint(self.context(field=puddle(.04)),[4,0])
+        self.assertNotIn('blocked',out,out)
+        self.assertGreater(math.hypot(*out['target']),.45)
+        # Deep water under it is not a puddle to drive out of.
+        self.assertIn('blocked',nav.waypoint(self.context(field=puddle(.3)),[4,0]))
+        # And a puddle ahead is still not somewhere to go.
+        ahead=lambda x,z:{'on_the_ground':True,'ground_m':0.,'slope_deg':0.,
+                          'water':{'depth_m':.04} if 1.5<x<2.5 and abs(z)<3 else None}
+        route=nav.waypoint(self.context(field=ahead),[4,0])
+        self.assertTrue('blocked' in route or not any(1.5<p[0]<2.5 and abs(p[1])<3 for p in route['path']),route)
+
     def test_blocked_front_can_retreat_on_surveyed_dry_rear_ground_but_not_wet_or_blind(self):
         import machine_navigation as nav
         route=nav.waypoint(self.retreat_context(),[0,4])
