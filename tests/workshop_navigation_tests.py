@@ -439,16 +439,13 @@ class GameScreens(unittest.TestCase):
         self.wait('!!banjoRoom.world.groundAim')
         for event in ("mousePressed", "mouseReleased"):
             self.page.send("Input.dispatchMouseEvent", {"type":event, **point, "button":"left", "clickCount":1, "modifiers":1})
-        self.wait('banjoRoom.reveal()?.kind === "layers" && banjoRoom.reveal().amount === 1')
-        layers = self.page.evaluate('banjoRoom.reveal().layers')
-        self.assertTrue(layers)
-        self.assertTrue(self.page.evaluate('(()=>{const r=banjoRoom,b=r.reveal().layers.filter(b=>!b.hole),m=r.scene.getObjectByName("selection-structure-reveal").children,g=r.groundDrawn();return m.length===b.length && b.every((bed,i)=>{m[i].geometry.computeBoundingBox();const s=m[i].geometry.boundingBox.getSize(new r.THREE.Vector3());return Math.abs(s.y-bed.thick_m)<1e-5 && Math.abs(m[i].position.y-(bed.top_m-bed.thick_m/2))<1e-6 && Math.abs(s.x-g.dx)<1e-6})})()'))
-        self.assertEqual(len(layers), self.page.evaluate('document.querySelectorAll("#picked .pk-bed").length'))
-        # The bed-count row was replaced by a named "Ground layers" core log
-        # (f978d1af); every reported bed is labelled in it.
-        said = self.page.evaluate('document.querySelector("#picked").textContent')
-        self.assertIn("Ground layers", said)
-        for bed in layers: self.assertIn("dug out" if bed.get("hole") else bed["name"], said)
+        # The ground's layers are said in the card, in words. Nothing is drawn
+        # down into the earth: those wireframes on every click were noise (the
+        # owner, 2026-10-04).
+        self.wait('document.querySelector("#picked")?.textContent.includes("Ground layers")')
+        self.assertIsNone(self.page.evaluate('banjoRoom.reveal()'))
+        self.assertFalse(self.page.evaluate('!!banjoRoom.scene.getObjectByName("selection-structure-reveal")'))
+        self.assertGreater(self.page.evaluate('document.querySelectorAll("#picked .pk-bed").length'), 0)
         self.assertNotIn("kg", self.page.evaluate('document.querySelector("#picked").textContent'))
         self.screenshot("world-ground-reveal.png")
         # Since 3e2b508d Esc switches explore/cursor mode and keeps the pin;
