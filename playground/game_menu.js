@@ -18,7 +18,8 @@ export async function enterGame() {
     const status = await fetch("/api/status").then(r => r.json());
     const response = await fetch("/api/worlds", {method:"POST",
       headers:{"Content-Type":"application/json", "X-Banjo-Token":status.csrf_token},
-      body:JSON.stringify({name:"New world"})});
+      // A player's new world is 25 cm material cells (the owner, 2026-10-04).
+      body:JSON.stringify({name:"New world", surface:"columns"})});
     const answer = await response.json();
     if (!response.ok) throw new Error(answer.error || "Map generation failed");
     remember(answer);
@@ -52,7 +53,7 @@ dialog.innerHTML = `<div class="game-menu-head"><h2>Game menu</h2><button type="
   <p id="game-menu-current">Current world</p>
   <label id="game-menu-movement">Movement<select><option value="native">Body · walk, swim, carry</option><option value="fly">Fly · God mode</option><option value="gravity">Camera · walk without a body</option></select></label>
   <form id="game-menu-avatar" hidden><label>Your avatar name<input name="name" maxlength="32" required></label><button type="submit">Save avatar name</button></form>
-  <form id="game-menu-new"><label>World name<input name="name" maxlength="80" value="New world" required></label><label>Ground<select name="surface"><option value="cuts">Smooth hills · sharp cuts · preview</option><option value="smooth" selected>Smooth slopes</option><option value="columns">Material cells · preview</option><option value="columns-fine">Material cells · 12.5 cm · preview</option></select></label><button type="submit">New game · generate map</button></form>
+  <form id="game-menu-new"><label>World name<input name="name" maxlength="80" value="New world" required></label><label>Ground<select name="surface"><option value="cuts">Smooth hills · sharp cuts · preview</option><option value="smooth">Smooth slopes</option><option value="columns" selected>Material cells · 25 cm</option><option value="columns-fine">Material cells · 12.5 cm · preview</option></select></label><button type="submit">New game · generate map</button></form>
   <form id="game-menu-join"><label>Join a world<input name="link" placeholder="Paste a world link or id" required></label><button type="submit">Join world</button></form>
   <div id="game-menu-share" hidden><p>People with this link join the same live world with their own avatar and bag.</p><button type="button" id="game-menu-copy">Copy world link</button></div>
   <section id="game-menu-ai" hidden><h3>Characters</h3><p>Watch a character follow the goal chains with its own bag, energy and tech journal.</p><form id="game-menu-ai-start"><label>Character name<input name="name" maxlength="32" value="Banjo explorer" required></label><label>Controller<select name="mode"><option value="openai">AI · OpenAI</option><option value="reference">Reference bot · no model calls</option></select></label><button type="submit">Start character</button></form><p id="game-menu-ai-status" role="status"></p><ul id="game-menu-ai-list"></ul><p>OpenAI play uses the server's configured model. Each run stops after 64 decisions, completed goal chains or a blocker. A server restart pauses characters.</p></section>

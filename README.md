@@ -20,12 +20,14 @@ that turns ore into wire while you watch. You can talk to any of them. You can
 design a new one on a bench, drive it with the arrow keys, and install it in
 the world, where it breaks like everything else.
 
-> **Where this is, 26 September 2026.** Banjo is early and experimental, built
+> **Where this is, 4 October 2026.** Banjo is early and experimental, built
 > in the open, and it does not have a licence yet. A lot of physics is merged;
 > not all of it has reached the world you can walk around in, and this README
-> says which is which every time. CI on `main` is currently **red** — see
-> [What is not done](#what-is-not-done). Developed on Windows, built on Linux
-> in CI, untested on macOS.
+> says which is which every time. You now play as a body in a world of 25 cm
+> cubes that you can dig a cube at a time, and the world grows as you walk to
+> its edge — see
+> [Playing as a body](#playing-as-a-body-digging-in-cubes-and-a-world-that-grows).
+> Developed on Windows, built on Linux in CI, untested on macOS.
 
 **Contents**
 
@@ -33,7 +35,8 @@ the world, where it breaks like everything else.
 2. [Eight materials, and what they actually do](#eight-materials-and-what-they-actually-do)
 3. [What a break costs](#what-a-break-costs)
 4. [Fire that eats the log, and ice that melts into the river](#fire-that-eats-the-log-and-ice-that-melts-into-the-river)
-5. [Water, and ground you can dig](#water-and-ground-you-can-dig)
+5. [Water, and ground you can dig](#water-and-ground-you-can-dig) ·
+   [Playing as a body, digging in cubes, and a world that grows](#playing-as-a-body-digging-in-cubes-and-a-world-that-grows)
 6. [Machines are joints, not animations](#machines-are-joints-not-animations)
 7. [Machines that decide for themselves](#machines-that-decide-for-themselves)
 8. [Ore to wire: a chain that runs itself](#ore-to-wire-a-chain-that-runs-itself)
@@ -459,6 +462,53 @@ fire; breaking rock under a tool, tool wear, landslides that rotate rather than
 slump, and the holes and tunnels the earth is now deep enough to hold.
 
 ---
+
+## Playing as a body, digging in cubes, and a world that grows
+
+Since 4 October 2026 a new player starts **as a body**: a 70 kg upright
+cylinder that the engine walks, the same body a push, a carried load or the
+river acts on. It is a little more than a person, as the owner asked:
+- it walks at 2 m/s and runs at 5 m/s, reaching full speed in about 0.2 s;
+- it jumps about a metre and gets up after a fall;
+- it climbs any rise up to 35 cm, so a 25 cm cube is one step;
+- its feet hold while it stands, so a stuck pick cannot drag it about.
+
+The view looks past its own body, so pointing at a thing works.
+Menu → Movement → **Fly · God mode** lets go of the body and flies, as the
+camera always did. How it works, and what was measured:
+[native-walk-checkpoint.md](docs/native-walk-checkpoint.md).
+
+New worlds are made of **25 cm cubes**, and the field pick digs them the way
+a block game does:
+- one click takes out the whole cube you point at: 25 kg of soil or sand, a
+  third of a cube of clay, a tenth of one of rock;
+- every click is answered in tens of milliseconds, and clicks never queue up;
+- dug walls stand straight until there are braces to hold them
+  ([bracing-plan.md](docs/bracing-plan.md));
+- what you dig goes to a pile beside you, never on the hole.
+
+How the engine decides each strike: [cube-digging.md](docs/cube-digging.md).
+
+The world **grows**. Walk within 10 m of the valley's edge and a new region
+of the same size is made beside it, from the world's seed and its position,
+joined so the seam cannot be seen or felt. It is dug like the rest, saved
+only where it changed, and still there after a restart. Each extra region
+adds almost nothing to a step (0.142 to 0.158 ms with nine of them); water
+stays in the original valley for now. See
+[streamed-regions.md](docs/streamed-regions.md).
+
+The world page keeps the **menu at the bottom left** and **what you have at
+the bottom right**: a strip of thumbnails, with your hands first, then the
+bag, then materials with amounts. A thing made on the Workshop bench gets a
+real picture of its design, saved with it on the server. The view is fixed at
+its widest; the mouse wheel can still bring something closer.
+
+**A player regression** plays all of this in a real browser with real input:
+dig one spot, walk, drive the rover, change and make a thing in the Workshop,
+point and click. It measures what a player feels, for example how long a
+click takes to answer and whether the walk stutters. Run it before pushing:
+`python tools/player_regression.py --build <build>/Release`
+([player-regression.md](docs/player-regression.md)).
 
 ## Machines are joints, not animations
 
@@ -1018,8 +1068,9 @@ between what is built and what you can find.
 
 | Key | Does |
 |---|---|
-| W A S D, mouse | walk and look |
-| Left click on a thing | does what E does to that thing, in one click — the cursor picks, so it needs no lining up |
+| W A S D, mouse | walk and look, as your body (Shift runs, Space jumps) |
+| Left click on a thing | selects it and does what E does to it; a machine opens its panel; a thing no hand takes (fixed, fastened or too heavy) shows its card instead |
+| Left click on the ground, pick in hand | digs out the cube you point at (cube ground) |
 | E | pick up what you look at, or do what the side panel marks with E; with something held, put it down where the see-through copy shows |
 | Tab | move E to the next action |
 | Q, 1–9 | put it in the bag; take a bag slot into the hand |
@@ -1028,14 +1079,15 @@ between what is built and what you can find.
 | Right mouse | lower, let down, pry with the pick, or turn a sword's edge |
 | R | release a latch |
 | F, H, B | dig here, heap here, heat it |
-| Space, Shift+Space | up and down |
+| Space, Shift+Space | in God mode (Menu → Movement → Fly), up and down |
 | / | talk to the room's chat |
 
 And: W A S D walk, drag or the arrow keys look, E takes or puts down, J uses a
 thing, Q bags it, G sweeps up loose pieces, X lets go, and the mouse wheel
-pulls the camera back. A **zoom slider** on the view changes the field of view
-and nothing else: where you stand does not move, so what you can reach, dig,
-pick up and put down at 4× is exactly what it was at 1×. Pointing at a thing is
+pulls the camera back. The view starts at its widest and has no zoom slider;
+the mouse wheel brings things closer and changes nothing else: where you stand
+does not move, so what you can reach, dig, pick up and put down is the same at
+every zoom. Pointing at a thing is
 enough to see what it is — the side view fills in without a click — and one
 click then does that thing's first action, where it used to take two.
 
@@ -1301,6 +1353,10 @@ right.** Start with these:
 | The live world and why it works as it does | [a-world-that-keeps-running.md](docs/a-world-that-keeps-running.md) |
 | Heat, fire and strength | [thermal-mechanics.md](docs/thermal-mechanics.md), [thermochemistry.md](docs/thermochemistry.md) |
 | Water and ground | [terrain-and-water.md](docs/terrain-and-water.md), [watershed.md](docs/watershed.md), [ground-work.md](docs/ground-work.md) |
+| Playing as a body | [native-walk-checkpoint.md](docs/native-walk-checkpoint.md) |
+| Digging cubes, and bracing deep holes | [cube-digging.md](docs/cube-digging.md), [bracing-plan.md](docs/bracing-plan.md) |
+| A world that grows at its edges | [streamed-regions.md](docs/streamed-regions.md) |
+| The player regression (play-tested before every push) | [player-regression.md](docs/player-regression.md) |
 | Machines, programs and goods | [machine-world.md](docs/machine-world.md), [machine-circuits.md](docs/machine-circuits.md) |
 | Cutting and handling | [cutting-model.md](docs/cutting-model.md), [interaction-profiles.md](docs/interaction-profiles.md), [placement-and-interaction-points.md](docs/placement-and-interaction-points.md) |
 | The bench and products | [workshop-mode.md](docs/workshop-mode.md), [workshop-deep-dive.md](docs/workshop-deep-dive.md), [product-framework.md](docs/product-framework.md) |
