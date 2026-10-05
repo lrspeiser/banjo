@@ -17149,8 +17149,12 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
         if (!actor.empty()) players[actor] = saveHand(hand);
     doc["player_hands"] = std::move(players);
     // The water as it stands, for the scene's own "water": {"state": ...}.
+    // The ground, 2.9 MB of it on a valley, is spliced in as the environment
+    // wrote it (below): parsed into the document and written out again, it
+    // was most of a save, and every walk waited behind each save.
+    std::string ground_text;
     if (I.environment) {
-        doc["ground"] = nlohmann::json::parse(I.environment->groundStateJson());
+        ground_text = I.environment->groundStateJson();
         const nlohmann::json water = nlohmann::json::parse(I.environment->stateJson(), nullptr, false);
         if (water.is_object() && water.contains("depth_b64")) doc["water"] = water;
     }
@@ -17229,7 +17233,14 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                               {"pending_heaters", pending_heaters},
                               {"gas_regions", gas_regions}};
     doc["not_kept"] = notKept();
-    return doc.dump();
+    std::string out = doc.dump();
+    if (!ground_text.empty() && !out.empty() && out.back() == '}') {
+        out.pop_back();
+        out += ",\"ground\":";
+        out += ground_text;
+        out += '}';
+    }
+    return out;
 }
 
 std::unique_ptr<LiveWorld> LiveWorld::open(const TileImpactRequest &request, const std::string &snapshot) {

@@ -2002,12 +2002,14 @@ int main(int argc, char **argv) {
                     // saved world cannot carry -- not a failure.
                     std::string why;
                     const std::string saved = world->snapshot(why, command.value("spec_digest", std::string{}));
-                    nlohmann::json answer{{"ok", true}};
-                    if (saved.empty())
-                        answer["refused"] = why;
-                    else
-                        answer["snapshot"] = nlohmann::json::parse(saved);
-                    std::cout << answer.dump() << std::endl;
+                    if (saved.empty()) {
+                        std::cout << nlohmann::json{{"ok", true}, {"refused", why}}.dump() << std::endl;
+                    } else {
+                        // Passed on as the engine wrote it: parsing 3.4 MB of
+                        // world only to write it out again took most of a
+                        // save, and every walk waited behind each save.
+                        std::cout << "{\"ok\":true,\"snapshot\":" << saved << "}" << std::endl;
+                    }
                     continue;
                 } else if (op == "foresee") {
                     // How far ahead to look, in seconds. Zero is off, which is
