@@ -2,7 +2,47 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
 import * as THREE from '../playground/vendor/three.module.js';
-import {GROUND_APPEARANCE,materialAppearance,terrainCellAt,terrainTargetPath,exposedRunKind,toolTargetFeedback,toolTargetColor,collectedToolMaterials,toolOutcomeFeedback, makeTargetHover,cellWaterData,columnTopData,walkColumnFaces,columnChunkIds,columnChunkBox} from '../playground/material_appearance.js';
+import {GROUND_APPEARANCE,materialAppearance,terrainCellAt,terrainHitPoint,terrainTargetPath,exposedRunKind,toolTargetFeedback,toolTargetColor,collectedToolMaterials,toolOutcomeFeedback, makeTargetHover,cellWaterData,columnTopData,walkColumnFaces,columnChunkIds,columnChunkBox} from '../playground/material_appearance.js';
+
+test('wall selection works from all four directions and marks the clicked vertical band',()=>{
+  const grid={nx:5,nz:5,dx:.25,x0:0,z0:0,surface:'columns'};
+  for(const axis of [0,2])for(const sign of [-1,1]) {
+    const point=[.5,1.375,.5],eyes=[.5,1.7,.5];
+    point[axis]+=.125*sign;eyes[axis]+=sign;
+    const at=terrainHitPoint(point,eyes,grid);
+    assert.equal(terrainCellAt(at[0],at[2],grid),12,'solid side of each shared face');
+    assert.deepEqual(terrainHitPoint(at,eyes,grid),at,'host cannot shift an already resolved point');
+    const path=terrainTargetPath(at,grid,()=>2);
+    const ys=path.filter((_,i)=>i%3===1);
+    assert.equal(Math.min(...ys),1.25);assert.equal(Math.max(...ys),1.5);
+    assert.ok(path.filter((_,i)=>i%3===axis).every(v=>Math.abs(v-point[axis]-.012*sign)<1e-10));
+  }
+  const receipt={open:false,kind:'broke rock out',work_j:26,at_m:[.5,1.375,.5],loosened_kg:37.5,loosened:{rock_m3:.015625}};
+  assert.deepEqual(collectedToolMaterials({result:receipt}),{kg:37.5,materials:['rock']});
+  assert.ok(toolOutcomeFeedback({result:receipt}).packets.every(m=>m==='rock'));
+});
+
+test('the shipped world renders a green wall square with its fill on the face',()=>{
+  const source=readFileSync(new URL('../playground/world.js',import.meta.url),'utf8');
+  const code=source.slice(source.indexOf('const groundTargetGeometry='),source.indexOf('async function aim()'));
+  const grid={nx:5,nz:5,dx:.25,x0:0,z0:0,surface:'columns'},at=[.623,1.375,.5],eyes=[1.5,1.7,.5];
+  const target={observed_at_m:at,observed_from_m:eyes,observed_context:'wall',target:{material:'rock'},
+    feedback:{ready:true,state:'ready'}};
+  const world={groundAim:at,held:{pick:{}},use:{name:'pick',mode:'tool-ready',target}};
+  const camera=new THREE.PerspectiveCamera();camera.position.fromArray(eyes);
+  const crosshair={dataset:{}};
+  const run=new Function('THREE','scene','world','ground','groundColumn','groundSeen','camera','$',
+    'toolTargetFeedback','toolTargetColor','groundMadeOf','targetContext','terrainTargetPath','groundAt',code+
+    ';showGroundTarget();return {groundTarget,groundTargetFill};');
+  const {groundTarget,groundTargetFill}=run(THREE,new THREE.Scene(),world,{grid},()=>({c:12,grid}),()=>true,camera,
+    ()=>crosshair,toolTargetFeedback,toolTargetColor,()=> 'rock',()=> 'wall',terrainTargetPath,()=>2);
+  assert.equal(groundTarget.visible,true);assert.equal(crosshair.dataset.readiness,'ready');
+  assert.equal(groundTarget.material.color.getHex(),0x62e595);
+  assert.equal(groundTargetFill.material.opacity,.62);
+  const vertices=groundTargetFill.geometry.attributes.position.array;
+  assert.ok(Math.abs(vertices[0]-.637)<1e-6,'fill center stays on wall rather than floating behind it');
+  assert.ok(Math.abs(vertices[1]-1.375)<1e-6);
+});
 
 test('a one-cell channel draws wet footprints without bridging dry excavation',()=>{
   for(const mode of ['smooth','columns','cuts']) {

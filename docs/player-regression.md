@@ -24,8 +24,8 @@ Facing east, then south, then north, they aim at one cube about 2 m away. With t
 - every click is answered within 400 ms, timed from the mouse press to the server's reply;
 - clicks do not queue: at most one dig is in flight at a time, and the burst is over within 1.5 s of the last click;
 - no click lands on a pile and collects it by mistake;
-- each click takes the aimed column down one whole cube (0.25 m), until it reaches rock;
-- no column next to the hole changes;
+- the first top click lowers its column one cube (0.25 m); later receipts match their actual clicked points, including walls exposed by the first cut;
+- columns that were never clicked do not change;
 - the hole is drawn at the depth the engine has it;
 - everything dug ends up in piles, kilogram for kilogram.
 

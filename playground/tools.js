@@ -248,6 +248,7 @@ export function makeTools(ctx) {
       // Sidebar actions retain the displayed point, not the camera centre.
       const hit = input.at_m ? {hit:true,point_m:input.at_m,name:input.target_name}
         : await act("pick", {...input,max_m:40,past_held:true});
+      if(hit.hit && !hit.name && ctx.groundTargetPoint)hit.point_m=ctx.groundTargetPoint(hit.point_m);
       struckAt=hit.hit ? hit.point_m : null;
       answer = await api("/api/world/tool/use", { session: world.session, person: whereIAm(),
         at_m: hit.hit ? hit.point_m : null, target_name: hit.hit ? hit.name || null : null });

@@ -237,6 +237,11 @@ Surface TerrainField::surface(std::size_t c) const {
     // film of sand a millimetre deep on a soil bank is a soil bank.
     if (sand_[c] + loose_[c] > 0.02) return sand_[c] >= loose_[c] ? Surface::Sand : Surface::Soil;
     if (soil_[c] + sand_[c] + loose_[c] > 0.02) return Surface::Soil;
+    // An excavated soft roof retains its source material as a bed, rather
+    // than becoming rock when its former surface layers are folded into runs.
+    const auto top=static_cast<RunKind>(beds_.kind[beds_.start[c]+beds_.count[c]-1]);
+    if(top==RunKind::Sand)return Surface::Sand;
+    if(top==RunKind::Soil || top==RunKind::LooseSoil)return Surface::Soil;
     return Surface::Rock;
 }
 
@@ -521,7 +526,9 @@ EditReport TerrainField::breakOut(double x, double z, double from_m, double to_m
     double lo = std::floor(std::min(from_m, to_m) / q) * q;
     double hi = std::ceil(std::max(from_m, to_m) / q) * q;
     lo = std::max(lo, floor_ + q);          // never through the bottom of the world
-    const double top = rockTop(c);
+    const double rock_top = rockTop(c);
+    const bool include_cap = column_surface_ && hi >= rock_top-1e-9 && height(c)>rock_top;
+    const double top = include_cap ? height(c) : rock_top;
     if (!(hi > lo) || !(lo < top)) return report;
     hi = std::min(hi, top);
 
@@ -529,37 +536,51 @@ EditReport TerrainField::breakOut(double x, double z, double from_m, double to_m
     // with rock over it, and a column's topmost bed is never a void. Everything
     // over the rock comes off with it.
     if (hi >= top - 1.0e-9) {
-        const Volumes film = strip(c, soil_[c] + sand_[c] + loose_[c]);
+        const Volumes film = strip(c, std::max(0.0, height(c)-lo));
         report.moved.sand_m3 += film.sand_m3;
         report.moved.soil_m3 += film.soil_m3;
-        takeRockDownTo(c, lo, report.moved);
+        if(lo<rock_top)takeRockDownTo(c, lo, report.moved);
         report.cells.push_back(c);
         touched(c);
         ledger_.dug.rock_m3 += report.moved.rock_m3;
         ledger_.dug.sand_m3 += report.moved.sand_m3;
         ledger_.dug.soil_m3 += report.moved.soil_m3;
         report.depth_m = top - lo;
+        report.mass_kg = report.moved.rock_m3 * rockMaterial().density_kg_m3 +
+                         report.moved.soil_m3 * soilMaterial().density_kg_m3 +
+                         report.moved.sand_m3 * sandMaterial().density_kg_m3;
         markChanged(report.cells);
         return report;
     }
 
     // A hole with rock over it: the beds it passes through are split into what
     // is under the working, the working, and what is over it. A column with no
-    // room to say that keeps its rock -- which is a refusal, not a silence.
+    // room grows only on an edit, within the bounded run representation.
     const std::uint32_t from = beds_.start[c];
     const std::uint32_t room = beds_.start[c + 1] - from;
     std::uint8_t kind[kRunsMost];
     double bed_top[kRunsMost];
     std::uint32_t n = 0;
     double below = floor_;
+    std::vector<Run> source;
+    for(std::uint32_t b=0;b<beds_.count[c];++b)
+        source.push_back({static_cast<RunKind>(beds_.kind[from+b]),beds_.top[from+b]});
+    if(include_cap) {
+        double cap_top=rock_top;
+        for(const auto &[k,depth] : {std::pair{RunKind::Soil,soil_[c]},
+                                   std::pair{RunKind::LooseSoil,loose_[c]},
+                                   std::pair{RunKind::Sand,sand_[c]}})
+            if(depth>0) {cap_top+=depth;source.push_back({k,cap_top});}
+    }
     const auto push = [&](std::uint8_t k, double t) {
         if (n > 0 && kind[n - 1] == k) { bed_top[n - 1] = t; return; }
-        if (n + 1 >= static_cast<std::uint32_t>(kRunsMost)) return;
+        if (n >= static_cast<std::uint32_t>(kRunsMost-2))
+            throw std::invalid_argument("that column has reached the supported working layer limit");
         kind[n] = k; bed_top[n] = t; ++n;
     };
-    for (std::uint32_t b = 0; b < beds_.count[c]; ++b) {
-        const double t = beds_.top[from + b];
-        const std::uint8_t k = beds_.kind[from + b];
+    for (const auto &run : source) {
+        const double t = run.top_m;
+        const std::uint8_t k = static_cast<std::uint8_t>(run.kind);
         const double bottom = below;
         if (t <= lo) { push(k, t); below = t; continue; }
         if (below < lo) { push(k, lo); below = lo; }
@@ -572,8 +593,18 @@ EditReport TerrainField::breakOut(double x, double z, double from_m, double to_m
         push(k, t);
         below = t;
     }
-    if (n == 0 || n > room) {
+    if (n == 0) {
         throw std::invalid_argument("there is no room left in that column for another working");
+    }
+    if(n>room) {
+        // Flat terrain and older saves may have no spare rows. Allocate before
+        // mutating either array so an allocation failure leaves matter intact.
+        const auto extra=n-room;
+        beds_.kind.reserve(beds_.kind.size()+extra);
+        beds_.top.reserve(beds_.top.size()+extra);
+        beds_.kind.insert(beds_.kind.begin()+from+room,extra,0);
+        beds_.top.insert(beds_.top.begin()+from+room,extra,top);
+        for(std::size_t next=c+1;next<beds_.start.size();++next)beds_.start[next]+=extra;
     }
     const bool was_working = workingIn(c).has_value();
     for (std::uint32_t b = 0; b < n; ++b) {
@@ -581,12 +612,16 @@ EditReport TerrainField::breakOut(double x, double z, double from_m, double to_m
         beds_.top[from + b] = bed_top[b];
     }
     beds_.count[c] = n;
+    if(include_cap)soil_[c]=sand_[c]=loose_[c]=0;
     if (!was_working) ++workings_;
     ledger_.dug.rock_m3 += report.moved.rock_m3;
     ledger_.dug.sand_m3 += report.moved.sand_m3;
     ledger_.dug.soil_m3 += report.moved.soil_m3;
     report.cells.push_back(c);
     report.depth_m = hi - lo;
+    report.mass_kg = report.moved.rock_m3 * rockMaterial().density_kg_m3 +
+                     report.moved.soil_m3 * soilMaterial().density_kg_m3 +
+                     report.moved.sand_m3 * sandMaterial().density_kg_m3;
     touched(c);
     markChanged(report.cells);
     return report;
@@ -618,8 +653,9 @@ double TerrainField::cellRockM3(std::size_t c, double at_height_m) const {
     // at or over the top of the rock works the topmost cell of it -- a tip
     // resting on a hillside is a hair above the rock as often as a hair into it,
     // and that is the same blow.
-    const double lo = std::max((std::ceil(std::min(at_height_m, rockTop(c)) / q) - 1.0) * q, floor_);
-    const double hi = std::min(lo + q, rockTop(c));
+    const double top=column_surface_ ? height(c) : rockTop(c);
+    const double lo = std::max((std::ceil(std::min(at_height_m, top) / q) - 1.0) * q, floor_);
+    const double hi = std::min(lo + q, top);
     if (!(hi > lo)) return 0.0;
     // Everything in the band that is not a void: what has to be broken to take
     // the cell out. A band that straddles the top of the rock holds only the
@@ -635,6 +671,7 @@ double TerrainField::cellRockM3(std::size_t c, double at_height_m) const {
         below = top;
         if (below >= hi) break;
     }
+    if(column_surface_)solid+=std::max(0.0,std::min(height(c),hi)-std::max(rockTop(c),lo));
     return solid * grid_.dx * grid_.dx;
 }
 
@@ -647,7 +684,8 @@ TerrainField::Chipped TerrainField::chip(double x, double z, double at_height_m,
     const double q = grid_.dx;
     // The cell the blow landed in, named by its level so that working across to
     // another one does not spend what was paid here.
-    const int level = static_cast<int>(std::ceil(std::min(at_height_m, rockTop(c)) / q)) - 1;
+    const double top=column_surface_ ? height(c) : rockTop(c);
+    const int level = static_cast<int>(std::ceil(std::min(at_height_m, top) / q)) - 1;
     const double holds = cellRockM3(c, at_height_m);
     if (!(holds > 0.0)) return out;      // no rock there to break
     Owed &owed = chipped_[c];
@@ -668,7 +706,7 @@ TerrainField::Chipped TerrainField::chip(double x, double z, double at_height_m,
     const double lo = std::max(static_cast<double>(level) * q, floor_);
     out.edit = breakOut(grid_.xOf(static_cast<int>(c % static_cast<std::size_t>(grid_.nx))),
                         grid_.zOf(static_cast<int>(c / static_cast<std::size_t>(grid_.nx))),
-                        lo, std::min(lo + q, rockTop(c)));
+                        lo, std::min(lo + q, top));
     // What it cost is what was in it, not a nominal cell: a bite that trims a
     // hillside to the lattice is smaller than a cell and is charged as such, and
     // anything overpaid is credited to the next one.

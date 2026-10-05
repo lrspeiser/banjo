@@ -400,6 +400,24 @@ void aPickSwungOutThereBreaksTheRegionsGround() {
     require(out.kind == "broke out" && out.loosened.total() > 0.0, "the pry broke the region's ground out");
     require(std::abs(gained - out.loosened.total()) < 1e-12, "what came out is carried");
     require(std::abs(ledger.dug.soil_m3 + ledger.dug.sand_m3 - gained) < 1e-12, "and came out of the region");
+    // The browser's immediate cube route must use this region too, rather
+    // than clamp the clicked point to the original valley's last column.
+    const auto &field=*env.regions()[0]->field;
+    const auto &g=field.grid();
+    const auto valley_before=env.terrain().volumes();
+    bool struck=false;
+    for(std::size_t c=0;c<g.cells() && !struck;++c) {
+        if(field.height(c)-field.rockTop(c)<g.dx)continue;
+        const double x=g.xOf(static_cast<int>(c%g.nx)),z=g.zOf(static_cast<int>(c/g.nx));
+        const double before=field.height(c),carried=env.carriedTotal().total();
+        const auto receipt=world->strikeCell({x,before,z});
+        require(std::abs(receipt.loosened.total()-g.dx*g.dx*g.dx)<1e-10,"one full grown-region cube");
+        require(std::abs(field.height(c)-(before-g.dx))<1e-10,"clicked grown-region column lowers");
+        require(std::abs(env.carriedTotal().total()-carried-receipt.loosened.total())<1e-10,"region cube credited once");
+        struck=true;
+    }
+    require(struck,"a grown-region soft cube was available");
+    require(std::abs(env.terrain().volumes().total()-valley_before.total())<1e-10,"region click leaves original valley untouched");
 }
 
 void aGrownWorldIsSavedAndComesBack() {

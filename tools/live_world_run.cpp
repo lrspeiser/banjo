@@ -1021,7 +1021,8 @@ nlohmann::json groundWorkFields(const LiveGroundWork &w) {
             {"passive_n", tidy(w.passive_n)},
             // Not rounded: the carried account is kept to the bit, and what a
             // meeting took out of the ground is part of it.
-            {"loosened", {{"sand_m3", w.loosened.sand_m3}, {"soil_m3", w.loosened.soil_m3}}},
+            {"loosened", {{"sand_m3", w.loosened.sand_m3}, {"soil_m3", w.loosened.soil_m3}, {"rock_m3",w.loosened.rock_m3}}},
+            {"broken_share",w.broken_share},
             {"loosened_kg", tidy(w.loosened_kg)},
             {"tool_whole", w.tool_whole},
             {"tool_dent_mm", tidy(w.tool_dent_m * 1000.0)},

@@ -148,8 +148,8 @@ struct GroundMaterial {
 // column's beds are read far more often than they change.
 //
 // A column always keeps at least one bed. A cut lowers the top bed and drops the
-// ones it takes whole, so the count falls and never rises: nothing here ever
-// reallocates, and a column's room for beds is fixed when the ground is made.
+// ones it takes whole. Excavation can split beds; spare rows grow on demand,
+// bounded by kRunsMost minus the two surface layers sent to the renderer.
 struct Beds {
     std::vector<std::uint32_t> start;    // cells + 1 offsets into kind and top
     std::vector<std::uint32_t> count;    // how many of each column's are live

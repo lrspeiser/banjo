@@ -16,12 +16,76 @@ import live_session
 import room_store
 import world_room
 import world_upgrades as upgrades
+sys.path.insert(0, str(ROOT / 'tools'))
+import upgrade_cube_world
 
 ENGINE = Path(os.environ.get("BANJO_LIVE_ENGINE", ROOT / "build/ci/banjo_live_world_run"))
 
 
+class CubeUpgradeRecord(unittest.TestCase):
+    def record(self):
+        spec = {'terrain': {'generate': {'kind': 'valley', 'seed': 4},
+                            'edits': [{'dig': {'depth_m': .007}}]}, 'bodies': []}
+        return {'spec': spec, 'world': {'spec_digest': live_session.spec_digest(spec), 't_s': 42,
+            'ground': {'surface': 'smooth', 'grid': [156,125,.25,-19.375,-15.5],
+                       'soil': 'unchanged', 'ledger': {'dug': 12.93}}, 'future_field': {'keep': True}},
+            'players': {'alice': {'inventory': ['pick'], 'raw': {'sand': 12.93}}},
+            'fabrication': {'energy_j': 1234}, 'future_account': {'keep': True}}
+
+    def test_upgrade_changes_only_paired_surface_digest_and_receipt(self):
+        original = self.record()
+        before = deepcopy(original)
+        changed = upgrades.cube_digging_record(original)
+        self.assertEqual(original, before)
+        self.assertEqual(changed['spec']['terrain']['surface'], 'columns')
+        self.assertEqual(changed['world']['ground']['surface'], 'columns')
+        self.assertEqual(changed['world']['spec_digest'], live_session.spec_digest(changed['spec']))
+        self.assertEqual(upgrades.cube_digging_record(changed), changed, 'an upgrade cannot repeat')
+        del changed['spec']['terrain']['surface']
+        changed['world']['ground']['surface'] = 'smooth'
+        changed['world']['spec_digest'] = before['world']['spec_digest']
+        del changed['world_upgrades']
+        self.assertEqual(changed, before, 'all material, player, energy and future state retained')
+
+    def test_mismatched_source_and_ground_refuse_instead_of_resetting(self):
+        for key in ('digest', 'surface', 'missing'):
+            record = self.record()
+            if key == 'digest':record['world']['spec_digest'] = 'wrong'
+            if key == 'surface':record['world']['ground']['surface'] = 'cuts'
+            if key == 'missing':record['world'].pop('ground')
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                upgrades.cube_digging_record(record)
+
+
 @unittest.skipUnless(ENGINE.is_file(), "Build the native world runner")
 class NativeUpgrades(unittest.TestCase):
+    def test_cube_wire_receipts_keep_progress_rock_volume_mass_and_owner(self):
+        for material in ('glass','oak','iron'):
+            with self.subTest(material=material):
+                spec={'algorithm':'lattice','cell_m':.04,'duration_s':1,
+                    'terrain':{'surface':'columns','generate':{'kind':'flat','nx':20,'nz':20,
+                        'cell_m':.25,'soil_m':0,'sand_m':0,'discharge_m3_s':0}},
+                    'bodies':[{'name':'pick','shape':'box','material':material,
+                        'size_mm':[900,40,40],'center_mm':[0,100,0]}]}
+                self.app.live.open(self.app,{'spec':spec})
+                session=self.app.live.session
+                with self.app.live.as_actor('alice'):
+                    session.send(op='tool_point',body='pick',tip=[.45,.1,0],pointing=[1,0,0],
+                        width_m=.04,thickness_m=.04,angle_deg=30,length_m=.04,grip=[-.4,.1,0])
+                    session.send(op='wield',name='pick',grip=[-.4,.1,0])
+                    for n in range(1,11):
+                        answer=session.send(op='strike-cell',at_m=[1,-.375,1])
+                        receipt=answer['ground_work'][-1]
+                        self.assertEqual('alice',receipt['actor'])
+                        self.assertFalse(receipt['open'])
+                        if n<10:
+                            self.assertAlmostEqual(n/10,receipt['broken_share'])
+                            self.assertEqual(0,receipt['loosened']['rock_m3'])
+                        else:
+                            self.assertAlmostEqual(.25**3,receipt['loosened']['rock_m3'])
+                            self.assertAlmostEqual(37.5,receipt['loosened_kg'])
+                            self.assertEqual('broke rock out',receipt['kind'])
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -51,6 +115,27 @@ class NativeUpgrades(unittest.TestCase):
     def step(self, seconds):
         for _ in range(round(seconds * 30)):
             self.app.live.session.send(op="step", dt=1 / 240, n=8)
+
+    def test_cube_upgrade_keeps_dug_ground_water_bodies_and_accounts(self):
+        for surface in ('smooth', 'cuts'):
+            with self.subTest(surface=surface):
+                spec = deepcopy(self.room.spec)
+                spec['terrain']['surface'] = surface
+                self.app.live.open(self.app, {'spec': spec})
+                self.app.live.session.send(op='dig', **{'from': [2,1], 'to': [2,1], 'width_m': .125, 'depth_m': .25})
+                before = self.snapshot()
+                self.room.spec = spec
+                self.room.world_record = before
+                self.assertTrue(self.app.store.save(self.room))
+                record = json.loads(self.app.store.path_of(self.room.scene).read_text(encoding='utf-8'))
+                candidate = upgrades.cube_digging_record(record)
+                upgrade_cube_world.verify(candidate, ENGINE.parent)
+                self.assertEqual(candidate['world']['ground']['ledger'], before['ground']['ledger'])
+                self.assertEqual(candidate['world']['water'], before['water'])
+                opened = self.app.live.open(self.app, {'spec': candidate['spec'], 'snapshot': candidate['world']})
+                self.assertEqual(opened['restored']['tier'], 'whole')
+                self.assertEqual(opened['terrain']['surface'], 'columns')
+                self.assertEqual(opened['t'], before['t_s'])
 
     def test_addition_preserves_running_world_and_restart_receipt(self):
         self.step(.2)

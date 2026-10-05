@@ -375,6 +375,7 @@ class PlayerJourney(unittest.TestCase):
             const w = window.__watched, which = w.fragments.find((f) => String(url).includes(f));
             if (!which) return original.apply(this, arguments);
             const call = {url: which, start: performance.now(), end: null, body: null};
+            try {call.aim=JSON.parse(options?.body || '{}').at_m || null;} catch {}
             w.calls.push(call); w.most = Math.max(w.most, ++w.active);
             try {
               const reply = await original.apply(this, arguments);
@@ -531,18 +532,22 @@ class PlayerJourney(unittest.TestCase):
                     said + f"the burst of clicks should be over within {BURST_DONE_S} s of the last click; "
                            f"it took {done_s:.2f} s" + ("" if settled else " and never settled"))
         self.expect(len(strikes) >= 2, said + f"only {len(strikes)} of {self.CLICKS} clicks dug anything")
-        # A strike takes a whole cube of soil or sand, down to the rock and no
-        # further; clay and rock come away a share at a time.
-        whole = [u for u in strikes if (u["body"].get("result") or {}).get("ground") in ("sand", "soil", "loose soil")]
-        expected = -min(CELL_M * len(whole), loose)
-        self.expect(expected - 0.01 - CELL_M * (len(strikes) - len(whole)) <= changed["0,0"] <= expected + 0.01,
-                    said + f"each click should take the aimed column one cube (0.25 m) deeper: {len(whole)} digs "
-                           f"into soil and sand ({loose:.2f} m of it above the rock) should have lowered it "
-                           f"{expected:.2f} m, and it went {changed['0,0']:+.3f} m. The digs landed on these "
-                           f"columns, counted in cubes along x and z from the aimed one: {struck}")
-        others = {k: v for k, v in changed.items() if k != "0,0" and abs(v) > 0.005}
-        self.expect(not others, said + f"digging one spot changed the columns beside it (metres, keyed by "
-                                       f"cubes along x,z from the aimed one): {others}")
+        # The first top click lowers its column. The same sight line then meets
+        # a visible wall, which must be struck at its clicked height rather
+        # than silently redirected to the original pit floor. Native wall
+        # tests separately qualify full cubes, roof retention and save/restore.
+        self.expect(abs(changed['0,0']+CELL_M)<.01,
+                    said+f"the first top cube should leave exactly: floor change {changed['0,0']} m")
+        for u in strikes:
+            receipt=u['body']['result'];aim=u.get('aim');at=receipt.get('at_m')
+            self.expect(aim and at and math.dist(aim,at)<.003,
+                        said+f"the native strike redirected the clicked point: {aim} -> {at}")
+            volume=sum(float(receipt.get('loosened',{}).get(k+'_m3') or 0) for k in ('soil','sand','rock'))
+            self.expect(0<volume<=CELL_M**3+1e-9,
+                        said+f"the clicked cube removed {volume} m3, beyond its {CELL_M**3} m3 bounds")
+        aimed_columns={f'{dx},{dz}' for dx,dz in struck}
+        others={k:v for k,v in changed.items() if k not in aimed_columns and abs(v)>.005}
+        self.expect(not others,said+f"columns never clicked changed: {others}")
         self.expect(drawn is not None and abs(drawn - after[(0, 0)]) < 0.02,
                     said + f"the hole is drawn at {drawn} m but the engine has the ground there at "
                            f"{after[(0, 0)]:.3f} m")

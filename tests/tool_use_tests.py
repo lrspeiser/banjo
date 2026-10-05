@@ -181,6 +181,20 @@ class AToolsUseIsShapedByItsProfile(unittest.TestCase):
 
 
 class WhatAToolDoesWhereYouLook(unittest.TestCase):
+    def test_cube_wall_targets_the_solid_side_and_clicked_height_not_column_top(self):
+        app=app_with(survey={'ground_m':3.5,'rock_top_m':3.5,'surface':'clay',
+            'runs':[{'material':'rock','from_m':-5,'to_m':3.0},
+                    {'material':'clay','from_m':3.0,'to_m':3.5}]})
+        app.live.session.room_spec={'terrain':{'surface':'columns'}}
+        app.live.session.state['terrain']={'grid':{'cell_m':.25,'x0_m':0,'z0_m':0}}
+        at=[12.625,2.625,-5.5]
+        answer=tool_use.resolve(app,{'person':PERSON,'at_m':at})
+        self.assertTrue(answer['feedback']['ready'])
+        self.assertEqual('rock',answer['target']['material'])
+        self.assertEqual(2.625,answer['target']['at_m'][1])
+        self.assertAlmostEqual(12.623,answer['target']['at_m'][0])
+        self.assertEqual(answer['target']['at_m'],tool_use.cube_target_point(app,answer['target']['at_m'],PERSON['eyes_m']))
+
     def test_wet_cube_readiness_matches_existing_cell_strike_without_relaxing_smooth_ground(self):
         for surface,materials in [('sand',['sand']),('soil',['soil']),('rock',['rock'])]:
             with self.subTest(surface=surface):
@@ -243,6 +257,13 @@ class WhatAToolDoesWhereYouLook(unittest.TestCase):
         self.assertIn('50 mL',said)
         self.assertIn('80 g',said)
         self.assertNotIn('0.0 L',said)
+
+    def test_completed_rock_cube_reports_its_real_mass_instead_of_no_yield(self):
+        said=tool_use._said({'kind':'broke rock out','ground':'rock','depth_m':.25,
+            'loosened':{'rock_m3':.015625},'loosened_kg':37.5},interaction_profiles.tool_use(PICK),0)
+        self.assertIn('37.5 kg',said)
+        self.assertIn('15.6 L',said)
+        self.assertNotIn('without breaking',said)
 
     def resolve(self, at, **room):
         return tool_use.resolve(app_with(**room), {"person": PERSON, "at_m": at})

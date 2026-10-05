@@ -143,6 +143,19 @@ export function toolTargetColor(feedback) {
   return 0xe7eff5;
 }
 
+// A shared face belongs to the solid column along the ray, not empty air
+// toward the eye. Both the preview and the host inset it by two millimetres.
+export function terrainHitPoint(point, eyes, grid) {
+  const at=point.slice();
+  if(grid?.surface!=="columns")return at;
+  for(const [axis,origin] of [[0,grid.x0],[2,grid.z0]]) {
+    const phase=(at[axis]-origin)/grid.dx+.5;
+    if(Math.abs(phase-Math.round(phase))*grid.dx<.0005)
+      at[axis]+=at[axis]>eyes[axis] ? .002 : -.002;
+  }
+  return at;
+}
+
 // Water covers the solver's wet cell footprints, not triangles stretched from
 // a river into dry neighbors. A one-cell channel must have a visible surface.
 export function cellWaterData(grid, heights, surface) {
@@ -168,9 +181,9 @@ export function collectedToolMaterials(answer) {
     return rows.length ? {kg:rows.reduce((sum,r)=>sum+r.kg,0),materials:[...new Set(rows.flatMap(r=>r.materials))]} : null;
   }
   const receipt=answer?.result, kg=receipt?.loosened_kg;
-  if(answer?.refused || !receipt || receipt.open!==false || receipt.kind!=="broke out"
+  if(answer?.refused || !receipt || receipt.open!==false || !["broke out","broke rock out"].includes(receipt.kind)
     || !Number.isFinite(kg) || kg<=0)return null;
-  const materials=["sand","soil"].filter(name=>Number(receipt.loosened?.[`${name}_m3`])>0);
+  const materials=["sand","soil","rock"].filter(name=>Number(receipt.loosened?.[`${name}_m3`])>0);
   return materials.length ? {kg,materials} : null;
 }
 
@@ -208,6 +221,17 @@ export function terrainTargetPath(point, grid, heightAt) {
   if(index<0)return null;
   const x=grid.x0+(index%grid.nx)*grid.dx, z=grid.z0+Math.floor(index/grid.nx)*grid.dx;
   const half=grid.dx/2;
+  if(grid.surface==="columns" && Math.max(Math.abs(point[0]-x),Math.abs(point[2]-z))>=half-.003
+      && Math.abs(point[1]-heightAt(point[0],point[2]))>.05) {
+    const lo=(Math.ceil(point[1]/grid.dx)-1)*grid.dx,hi=lo+grid.dx;
+    const dx=point[0]-x,dz=point[2]-z;
+    if(Math.abs(dx)>Math.abs(dz)) {
+      const face=x+Math.sign(dx)*(half+.012);
+      return [face,lo,z-half,face,hi,z-half,face,hi,z+half,face,lo,z+half,face,lo,z-half];
+    }
+    const face=z+Math.sign(dz)*(half+.012);
+    return [x-half,lo,face,x-half,hi,face,x+half,hi,face,x+half,lo,face,x-half,lo,face];
+  }
   if(grid.surface==="columns")return [[-1,-1],[1,-1],[1,1],[-1,1],[-1,-1]]
     .flatMap(([i,j])=>[x+i*half,point[1]+.012,z+j*half]);
   return [[-1,-1],[0,-1],[1,-1],[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1]]

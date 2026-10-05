@@ -18,6 +18,37 @@ CATALOG = Path(__file__).resolve().parents[1] / "progression/world-upgrades.json
 log = logging.getLogger("banjo")
 
 
+def cube_digging_record(record):
+    """Stage an explicit saved-world geometry upgrade, never a new game.
+
+    The caller must stop the serving process and prove whole native restore
+    before replacing its file. Cell sizes, terrain arrays and every account
+    stay as saved; only the surface declaration and paired digest change.
+    """
+    staged = deepcopy(record)
+    spec = staged.get('spec') or {}
+    world = staged.get('world') or {}
+    ground = world.get('ground') or {}
+    terrain = spec.get('terrain') or {}
+    surface = terrain.get('surface', 'smooth')
+    if not isinstance(ground, dict) or not ground.get('grid'):
+        raise ValueError('Cube digging needs a saved native terrain; refusing a reset')
+    if world.get('spec_digest') != live_session.spec_digest(spec):
+        raise ValueError('Saved world and source differ; refusing a terrain upgrade')
+    if surface not in ('smooth', 'cuts', 'columns') or ground.get('surface', 'smooth') != surface:
+        raise ValueError('Saved terrain and collision declaration differ')
+    if surface == 'columns':
+        return staged
+    terrain['surface'] = 'columns'
+    ground['surface'] = 'columns'
+    world['spec_digest'] = live_session.spec_digest(spec)
+    staged.setdefault('world_upgrades', {})['cube-digging-v1'] = {
+        'id': 'cube-digging-v1', 'status': 'installed', 'from_surface': surface,
+        'time_s': world['t_s'], 'cell_m': ground['grid'][2],
+        'help': 'Cube digging; existing terrain, inventory and energy retained.'}
+    return staged
+
+
 def catalog(scene):
     document = json.loads(CATALOG.read_text(encoding="utf-8"))
     if document.get("schema") != "banjo.world-upgrades.v1":

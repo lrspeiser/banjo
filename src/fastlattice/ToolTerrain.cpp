@@ -808,7 +808,11 @@ LiveGroundWork ToolTerrain::strikeCell(const ToolTerrainHost &host, const std::s
         return r;
     }
     terrain::Environment &env = *host.environment;
-    const terrain::TerrainField &field = env.terrain();
+    if(!env.onTheGround(at.x,at.z)) {
+        r.kind="not supported";r.supported=false;r.why="there is no ground at that point";
+        log_.push_back(r);return r;
+    }
+    const terrain::TerrainField &field = env.fieldAt(at.x,at.z);
     const auto &g = field.grid();
     const double q = g.dx;
     const int i = std::clamp(static_cast<int>(std::floor((at.x - g.x0) / q + 0.5)), 0, g.nx - 1);
@@ -822,7 +826,7 @@ LiveGroundWork ToolTerrain::strikeCell(const ToolTerrainHost &host, const std::s
     r.work_j = kStrikeWorkJ;
     r.penetration_work_j = kStrikeWorkJ;
     CarrierScope account(env, carrier);
-    if (field.height(c) - field.rockTop(c) >= 0.01) {
+    if (at.y >= field.height(c)-0.01 && field.height(c) - field.rockTop(c) >= 0.01) {
         r.ground = terrain::groundAt(field, c, 0.0).name;
         const terrain::EditEffect effect = env.dig(*host.world, x, z, x, z, 0.5 * q, q, carried);
         r.loosened = effect.edit.moved;
@@ -836,11 +840,16 @@ LiveGroundWork ToolTerrain::strikeCell(const ToolTerrainHost &host, const std::s
         r.kind = r.loosened.total() > 0.0 ? "broke out" : "cannot carry it";
         if (r.kind == "cannot carry it") r.why = "nothing more can be carried";
     } else {
-        const double hardness = terrain::groundHardnessPa(field.kindAt(c, field.rockTop(c) - 0.01));
-        r.ground = hardness >= kHardRockPa ? "rock" : "clay";
-        const double share = q * q * q / (hardness >= kHardRockPa ? kRockSwingsPerCell : kClaySwingsPerCell);
+        // A wall hit belongs to the visible vertical cell, not the top of its
+        // column. Existing chip/breakOut retain the roof and account the void.
+        const double height = std::min(at.y, field.height(c) - 0.001);
+        const auto kind = field.kindAt(c, height);
+        const bool soft=kind==terrain::RunKind::Soil || kind==terrain::RunKind::Sand || kind==terrain::RunKind::LooseSoil;
+        const double hardness = terrain::groundHardnessPa(kind);
+        r.ground = soft ? (kind==terrain::RunKind::Sand ? "sand" : "soil") : hardness >= kHardRockPa ? "rock" : "clay";
+        const double share = q * q * q / (soft ? 1 : hardness >= kHardRockPa ? kRockSwingsPerCell : kClaySwingsPerCell);
         const terrain::Environment::Chipped chipped =
-            env.chip(*host.world, x, z, field.rockTop(c) - 0.01, share, carried);
+            env.chip(*host.world, x, z, height, share, carried);
         r.broken_share = chipped.broken;
         r.depth_m = 0.05;
         if (chipped.full) {
@@ -849,7 +858,7 @@ LiveGroundWork ToolTerrain::strikeCell(const ToolTerrainHost &host, const std::s
         } else if (!chipped.effect.edit.cells.empty()) {
             r.loosened = chipped.effect.edit.moved;
             r.loosened_kg = chipped.effect.edit.mass_kg;
-            r.kind = "broke rock out";
+            r.kind = soft ? "broke out" : "broke rock out";
         } else {
             r.kind = "breaking rock";
         }

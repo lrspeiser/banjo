@@ -25,7 +25,7 @@ import { makeTools } from "/tools.js";
 import { makeWorkbench } from "/workbench.js";
 import { gameNavigation, showSaveStatus, screenUrl, thumbnail, massLabel, useItemPictures, itemPicture, keepItemPicture } from "/game_menu.js";
 import { conditionPanel } from "/body_condition.js";
-import { GROUND_APPEARANCE, materialAppearance, terrainCellAt, terrainTargetPath, exposedRunKind, toolTargetFeedback, toolTargetColor, collectedToolMaterials, toolOutcomeFeedback, makeTargetHover, cellWaterData, columnTopData, walkColumnFaces, columnChunkIds, columnChunkBox } from "/material_appearance.js";
+import { GROUND_APPEARANCE, materialAppearance, terrainCellAt, terrainHitPoint, terrainTargetPath, exposedRunKind, toolTargetFeedback, toolTargetColor, collectedToolMaterials, toolOutcomeFeedback, makeTargetHover, cellWaterData, columnTopData, walkColumnFaces, columnChunkIds, columnChunkBox } from "/material_appearance.js";
 import { terrainMaterial } from "/terrain_material.js";
 import { makeRegions } from "/ground_regions.js";
 import { baselineHeightAt, cutHeightAt, walkCutSurface, cutWallBands, cutRimSegments } from "/cut_surface.js";
@@ -8398,8 +8398,7 @@ function showGroundTarget() {
   const point=world.groundAim, col=point&&ground.grid?groundColumn(point[0],point[2]):null, g=col?.grid;
   const index=col?col.c:-1;
   groundTarget.visible=index>=0 && !world.resourceAim && !world.aim && (!col.valley || groundSeen(index))
-    && camera.position.distanceTo(new THREE.Vector3(...point))<40
-    && Math.abs(point[1]-groundAt(point[0],point[2]))<.05;
+    && camera.position.distanceTo(new THREE.Vector3(...point))<40;
   if(!groundTarget.visible){delete $('crosshair').dataset.readiness;return;}
   const feedback=toolTargetFeedback({point,grid:g,tool:world.held?.pick ? world.use.name : null,
     target:world.use.target,eyes:camera.position.toArray(),surface:groundMadeOf(point),context:targetContext(point)});
@@ -8413,7 +8412,8 @@ function showGroundTarget() {
   groundTargetGeometry.setDrawRange(0,path.length/3);
   groundTargetGeometry.attributes.position.needsUpdate=true;
   groundTargetGeometry.computeBoundingSphere();
-  const count=path.length/3-1,center=[point[0],point[1]+.013,point[2]],triangles=[];
+  const count=path.length/3-1,center=[0,0,0],triangles=[];
+  for(let i=0;i<count;i++)for(let axis=0;axis<3;axis++)center[axis]+=path[3*i+axis]/count;
   for(let i=0;i<count;i++)triangles.push(...center,...path.slice(3*i,3*i+3),...path.slice(3*i+3,3*i+6));
   groundTargetFillGeometry.attributes.position.array.set(triangles);
   groundTargetFillGeometry.setDrawRange(0,triangles.length/3);
@@ -8442,7 +8442,7 @@ async function aim() {
     world.aim = found.hit && found.name ? found : null;
     // Where the crosshair meets the ground, when it is the ground it meets:
     // that is where a spade goes in.
-    world.groundAim = found.hit && !found.name ? found.point_m : null;
+    world.groundAim = found.hit && !found.name ? groundTargetPoint(found.point_m,from.toArray()) : null;
     const hitDistance=found.hit && found.point_m ? from.distanceTo(new THREE.Vector3(...found.point_m)) : 40;
     world.resourceAim=resourceVisuals.pick(from,dir,hitDistance+.02);
     showGroundTarget();
@@ -9612,7 +9612,10 @@ function showToolOutcome(answer,point) {
       {duration:1250,delay:i*35,easing:'ease-out',fill:'both'}).finished.finally(()=>packet.remove());
   }
 }
-const tools = makeTools({ world, act, api, say, remember, showUse, camera, carryGround, scene, targetContext, aimVector, showToolOutcome, followGoods,
+function groundTargetPoint(point,eyes=camera.position.toArray()) {
+  return terrainHitPoint(point,eyes,groundColumn(point[0],point[2])?.grid || ground.grid);
+}
+const tools = makeTools({ world, act, api, say, remember, showUse, camera, carryGround, scene, targetContext, groundTargetPoint, aimVector, showToolOutcome, followGoods,
                           summarizeToolResult:answer=>{
                             const collected=collectedToolMaterials(answer);
                             return collected ? `${answer.excavation_piles?.length ? 'Dug' : 'Collected'} ${massLabel(collected.kg)} · ${collected.materials.map(titled).join(" + ")}${answer.excavation_piles?.length ? ' → nearby pile' : ''}` : answer.said;

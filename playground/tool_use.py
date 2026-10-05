@@ -142,6 +142,9 @@ def _resolve(app: Any, body: dict[str, Any]) -> dict[str, Any]:
         out["reason"] = "The page did not say where you are."
         return out
     eyes = [float(v) for v in person["eyes_m"]]
+    cell_strike=use.get('gesture')=='contact' and cube_ground(app)
+    if cell_strike:
+        at=cube_target_point(app,at,eyes)
     level = math.hypot(at[0] - eyes[0], at[2] - eyes[2])
     least, most = use["reach_m"]
     if use.get("gesture") == "contact" and cube_ground(app):
@@ -176,7 +179,7 @@ def _resolve(app: Any, body: dict[str, Any]) -> dict[str, Any]:
         out["reason"] = "There is no ground there to work."
         return out
     ground_m = float(survey.get("ground_m", at[1]))
-    ring["at_m"] = out["target"]["at_m"] = [at[0], ground_m, at[2]]
+    ring["at_m"] = out["target"]["at_m"] = at if cell_strike else [at[0], ground_m, at[2]]
     cover = ground_m - float(survey.get("rock_top_m", ground_m - 1.0))
     water = survey.get("water")
     wet = float((water or {}).get("depth_m", 0.0) if isinstance(water, dict)
@@ -185,10 +188,21 @@ def _resolve(app: Any, body: dict[str, Any]) -> dict[str, Any]:
     out["target"]["ground"] = surface
     runs = survey.get('runs') or []
     out['target']['material'] = runs[-1]['material'] if runs else surface
+    if cell_strike and at[1] < ground_m-.01:
+        selected=next((r for r in runs if at[1] <= float(r['to_m'])+.001),None)
+        if selected:
+            out['target']['material']=out['target']['ground']=selected['material']
+            if selected['material']=='void':
+                ring['state']='no'
+                out['reason']='That cube has already been removed. Aim at a solid face.'
+                return out
     point=_native_point(app,profile['tool'])
-    cell_strike=use.get('gesture')=='contact' and cube_ground(app)
     depth=cube_depth_m(app) if cell_strike else float((point or {}).get('length_m',.2))
     out['gather']=resource_previews.ground_tool(survey,use,depth,cell_strike=cell_strike)
+    if cell_strike and at[1] < ground_m-.01:
+        material=out['target']['material']
+        out['gather'].update(materials=['sand' if material=='sand' else 'soil' if material in ('soil','loose soil','clay') else 'rock'],
+                             state='possible',label='Dig')
     if point is None:
         out['gather'].update(materials=[],state='unavailable',label='No attached tool point')
         ring['state']='no'
@@ -621,9 +635,21 @@ def _native_point(app,tool):
 
 # How near and how far a click strikes a cube on cube ground, level from the eyes.
 CUBE_REACH_M = (0.25, 4.0)
-# How far back towards the eyes a struck point is taken before its column is
-# found (_strike_cell): far less than a cube, far more than rounding.
-STRIKE_BACK_M = 0.002
+def cube_target_point(app,at,eyes):
+    """Resolve a shared vertical face into the solid column along the sight ray.
+
+    Top hits away from a boundary remain exact. Rendering uses the same inset;
+    once inset, a point is not moved again by the host or a repeated strike.
+    """
+    grid=((app.live.session.state or {}).get('terrain') or {}).get('grid') or {}
+    q=float(grid.get('cell_m',cube_depth_m(app)))
+    point=list(at)
+    for axis,key in ((0,'x0_m'),(2,'z0_m')):
+        if key not in grid:continue
+        phase=(point[axis]-float(grid[key]))/q+.5
+        if abs(phase-round(phase))*q<.0005:
+            point[axis]+=(.002 if point[axis]>eyes[axis] else -.002)
+    return point
 
 
 def cube_ground(app):
@@ -654,28 +680,12 @@ def _strike_cell(app,said,use,tool,heard,note,eyes=None):
     since=float(session.state.get('t') or 0)
     if note:note(app,{'t':since})
     at=[float(v) for v in said['target']['at_m']]
-    # A click that meets the wall of a hole takes the hole one cube deeper, not
-    # the wall. Once a hole is a cube deep the line of sight into it meets its
-    # far wall, exactly on the face two columns share, and the engine rounds
-    # such a point to the column on the +x or +z side: looking east or south
-    # it took the cube beyond the hole, so the hole grew away from the player
-    # instead of down, and looking west or north it went down (the owner,
-    # 2026-10-04: "holes that didn't deepen"; tests/player_regression_tests.py
-    # digs facing east, south and north). Taken a hair back towards the eyes, the point
-    # is in the column the line of sight came down into, whichever way it
-    # faces; a point on top of a cube stays in that cube.
-    if isinstance(eyes,(list,tuple)) and len(eyes)==3:
-        dx,dz=at[0]-float(eyes[0]),at[2]-float(eyes[2])
-        level=math.hypot(dx,dz)
-        if level>1e-6:
-            at[0]-=dx/level*STRIKE_BACK_M
-            at[2]-=dz/level*STRIKE_BACK_M
     # Straight to the engine, as the hand's own commands go: not a /api/live/act
     # op a page could call without this route's reach and readiness checks.
     session.send(op='strike-cell',at_m=at)
     record=_latest(app,tool,since,heard)
     if record is None or record.get('kind')=='not supported':return None
-    carried=_carried(app);kg=sum(float(carried.get(k) or 0) for k in ('soil_kg','sand_kg'))
+    carried=_carried(app);kg=sum(float(carried.get(k) or 0) for k in ('soil_kg','sand_kg','rock_kg'))
     return {'action':said['label'],'did':[said['label']],'done':['struck the cube'],
             'said':_said(record,use,kg),'detail':_detail(record),'result':record,
             'carried':carried,'repeat':use['repeat'],'gesture':'contact','struck':True,
@@ -893,7 +903,7 @@ def _said(record: dict[str, Any] | None, use: dict[str, Any], carried_kg: float)
         return (f"{ground_word}: {share:.0%} broken through. Keep striking the same cube: "
                 f"it comes out whole when it is through.")
     loosened = record.get("loosened") or {}
-    litres = 1000.0 * (float(loosened.get("sand_m3") or 0.0) + float(loosened.get("soil_m3") or 0.0))
+    litres = 1000.0 * sum(float(loosened.get(k+'_m3') or 0) for k in ('sand','soil','rock'))
     depth_cm = 100.0 * float(record.get("depth_m") or 0.0)
     if litres > 0.0:
         # Said with the profile's own word, whatever it is: "dug", or the chat's

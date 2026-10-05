@@ -1105,10 +1105,53 @@ void cubeStrikesOpenAWetChannel() {
     }
 }
 
+void cubeStrikesRemoveTheClickedRockWallCell() {
+    constexpr double q=.25;
+    for (const std::string material : {"glass", "oak", "iron"}) for(const std::string ground : {"soil","sand","rock"}) {
+        const bool soft=ground!="rock";
+        const double top=soft ? .75 : 0, y=soft ? .375 : -.375;
+        const auto expected=ground=="soil" ? terrain::RunKind::Soil : ground=="sand" ? terrain::RunKind::Sand : terrain::RunKind::Rock;
+        const int strikes=soft ? 1 : 10;
+        auto live=open(Json{{"terrain",cubeGround(ground=="soil" ? top : 0,ground=="sand" ? top : 0)},{"bodies",pick(material,top)}});
+        live->selectHand("alice");
+        const Vec3 grip{kGripX,top+1.02,kTipZ};
+        require(live->toolPoint("pick",{kTipX,top+.72,kTipZ},{0,-1,0},.04,.04,30,kPointLength,grip)!=0,"wall point");
+        require(live->wield("pick",grip),"wall pick held");
+        const auto &field=live->environment()->terrain();const auto &g=field.grid();
+        const auto c=g.at(10,10),neighbor=g.at(11,10);
+        double kg=0;
+        for(int n=1;n<=strikes;n++) {
+            const auto receipt=live->strikeCell({g.xOf(10),y,g.zOf(10)});
+            require(receipt.actor=="alice" && !receipt.open,"private closed wall receipt");
+            if(n<strikes) {
+                near(receipt.loosened.total(),0,0,"no early wall loot");
+                near(receipt.broken_share,n/10.0,1e-10,"each wall strike advances progress");
+                require(field.kindAt(c,y)==expected,"wall stays solid until paid");
+            } else {
+                near(receipt.loosened.total(),q*q*q,1e-12,"one full clicked material cube");
+                kg=receipt.loosened_kg;
+            }
+            near(field.height(c),top,1e-12,"wall strike retains roof above it");
+            require(field.kindAt(neighbor,y)==expected,"adjacent wall cube retained");
+        }
+        require(field.kindAt(c,y)==terrain::RunKind::Void,"clicked vertical band becomes a void");
+        require(field.kindAt(c,y-q)==expected,"floor below clicked band retained");
+        near(live->environment()->carriedKg(),kg,1e-10,"wall mass credited once to owner");
+        near(field.residual().total(),0,1e-10,"wall volume ledger closes");
+        terrain::TerrainField restored=field;
+        restored.restore(field.state());
+        require(restored.kindAt(c,y)==terrain::RunKind::Void,"expanded saved beds retain the clicked hole");
+        near(restored.residual().total(),0,1e-10,"expanded bed save retains material ledger");
+        std::printf("  %s %s wall: cell %.2f m, %d immediate strikes, %.6g kg removed; volume residual %.12g m3\n",material.c_str(),ground.c_str(),q,strikes,kg,field.residual().total());
+        live->selectHand("bob");near(live->environment()->carriedKg(),0,0,"peer receives no wall loot");
+    }
+}
+
 } // namespace
 
 int main() {
     const std::vector<std::pair<const char *, std::function<void()>>> checks = {
+        {"held cube tools remove the clicked wall band and retain its roof",cubeStrikesRemoveTheClickedRockWallCell},
         {"held cube tools open a wet channel without creating water", cubeStrikesOpenAWetChannel},
         {"the model is the closed forms", theModelIsTheClosedForms},
         {"a stake dropped into soil, and drawn out", aStakeDroppedIntoSoilAndDrawnOut},
