@@ -3013,12 +3013,21 @@ function sensorName(s) {
 let recoveryBusy = false;
 function recoverySection(program) {
   const section=document.createElement("section");section.dataset.roverRecovery="";
+  if(machinePanel.of!=="program" || machinePanel.name!==program.name || $("machine-panel").hidden) {
+    const controls=document.createElement("button");controls.type="button";
+    controls.textContent="Rover controls / Chat";controls.onclick=()=>openMachinePanel(program);section.append(controls);
+  }
   const held=world.held?.recovery===program.id ? world.held : null;
   const button=document.createElement("button");button.type="button";button.className="pk-recovery";
   button.dataset.recoveryAction=held ? "release" : "start";
   button.textContent=held ? "Release rover" : "Take hold to recover";
   button.disabled=recoveryBusy || !!watchedId || (!held && !!world.held);
   button.onclick=()=>recoverRover(program,held ? "release" : "start");section.append(button);
+  if(world.brains.get(program.name)?.routine?.recovery) {
+    const hint=document.createElement("p");hint.className="hint";
+    hint.textContent="Stow your tool → approach the chassis → take hold → pull clear onto dry, flat ground → release → switch on.";
+    section.append(hint);
+  }
   if(held) {
     const hand=held.hand || {};
     section.append(inspectionValues([
@@ -3125,6 +3134,11 @@ function showProgramPanel(p) {
   $("mp-condition").classList.toggle("attention",
     p.power && /water|ground drop|steeper|progress|gone|battery is low/.test(p.why || ""));
   showBrain(p);
+  const recoveryState=world.brains.get(p.name)?.routine?.recovery;
+  if(recoveryState) {
+    setText("mp-condition", "Stuck · Needs recovery · job and load retained");
+    $("mp-condition").classList.add("attention");
+  }
   showMachineHolds();
   setText("mp-ack", machinePanel.said);
   $("mp-ack").classList.toggle("stale", machinePanel.stale);
@@ -3153,7 +3167,8 @@ function showBrain(p) {
   showBatchWatch(p, brain && brain.routine);
   const last = brain && brain.decisions && brain.decisions.length ? brain.decisions[brain.decisions.length - 1] : null;
   const decided = $("mp-decided");
-  if (brain && brain.thinking) { decided.textContent = `Asking ${who} about: ${brain.thinking}…`; decided.hidden = false; }
+  if (brain?.routine?.recovery) { decided.textContent = "Escape attempts exhausted · recover before resuming"; decided.hidden = false; }
+  else if (brain && brain.thinking) { decided.textContent = `Asking ${who} about: ${brain.thinking}…`; decided.hidden = false; }
   else if (mode !== "reflex" && last) { decided.textContent = last.said + (last.applied === "applied" ? "" : last.applied ? ` (${last.applied})` : ""); decided.hidden = false; }
   else if (mode !== "reflex") { decided.textContent = `${who} has not been asked anything yet: nothing has happened to it.`; decided.hidden = false; }
   else { decided.hidden = true; }

@@ -293,6 +293,10 @@ def go_to(ctx: senses.Context, call: Call) -> dict[str, Any]:
 
 def carry_on(ctx: senses.Context, call: Call) -> dict[str, Any]:
     """Asked nothing more: its reflexes, and its routine, have it back."""
+    if ctx.routine is not None and ctx.routine.recovery is not None:
+        out=_behave(ctx,call,'waiting',0.)
+        out.update(blocked_recovery=True,did='still stuck; move me clear with Take hold to recover before resuming')
+        return out
     out = _behave(ctx, call, "", 0.0)
     if ctx.routine is not None:
         ctx.routine.resume()

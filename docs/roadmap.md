@@ -6,6 +6,8 @@
 
 # Banjo roadmap and acceptance gates
 
+**Rover recovery recognition, October 5:** [Verified checkpoint](rover-stuck-recognition-checkpoint.md) closes erased exhausted-escape state and misleading stuck chat. Keep the job/load while paused; clear only after measured movement, release, rest and reported dry traversable ground. Next qualify an ordinary browser recovery journey and prevent repeated mined-pit trapping; retained-world autonomous escape remains open.
+
 **Shoreline checkpoint, October 4:** [Measured channel and renderer repair](shoreline-channel-checkpoint.md) closes fabricated dry-cell water and the wet/cube readiness mismatch. Real held-tool channels pass material/water bookkeeping; storage/peer/restart and render checks pass. Next stabilize the still-failing player walking/body-view gate (also fails on unchanged main), then manually qualify a connected river outlet. Cell-level water seams, water in streamed regions, wet physical strokes, bracing and erosion remain separate requirements; R3 stays paused.
 
 **The map grows by streaming regions, October 4 (first increment built):** [Streamed regions](streamed-regions.md) -- the owner's choice of 2026-10-04. Built: regions grown within 10 m of an edge, seamless seams, colliders, digging, page drawing, saving by changed chunk, measured costs. Next, in order: water in regions with river crossing points (the watershed's connections), demotion of far regions with hysteresis (watershed W4/W5), sending a page only the regions that changed, slumping across seams, the smooth and cut surfaces.

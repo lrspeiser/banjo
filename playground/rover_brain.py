@@ -518,6 +518,10 @@ class Brain:
         self.before, self.machines, self.impacts, self.t = program, machines, impacts, t
         if bodies is not None:
             self.bodies = bodies
+        if self.routine.observe_recovery(self.context(engine)):
+            self.changed = True
+        if self.routine.recovery is not None:
+            return
         if self.mode == "reflex" or self.client is None or not events:
             return
         if self.unattended:
@@ -881,7 +885,9 @@ class Brains:
             decision = brain.take()
             if decision is not None:
                 call, applied = decision.get("call"), None
-                if call and (brain.before or {}).get("id") is not None and brain.mode != "reflex":
+                if brain.routine.recovery is not None:
+                    applied = 'not applied: needs physical recovery'
+                elif call and (brain.before or {}).get("id") is not None and brain.mode != "reflex":
                     did = tools.run(ctx, tools.Call(call["tool"], call.get("args") or {}, brain.mode, call.get("why", "")))
                     applied = "not applied: " + did["did"] if did.get("failed") else did.get("did", "applied")
                 brain.record(decision, applied)

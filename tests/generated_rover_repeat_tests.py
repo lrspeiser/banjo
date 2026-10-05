@@ -46,7 +46,9 @@ class RepeatedHauling(unittest.TestCase):
         self.assertTrue(routine.load_reading()['empty'])
         for receipt in receipts:
             self.assertEqual({'pile':processor.intake},receipt['to'])
-            self.assertEqual(12.,receipt['goods_kg']['copper ore'])
+            # Repeated binary-float additions can represent 12 kg as
+            # 12.000000000000002; retain a sub-nanogram quantity gate.
+            self.assertAlmostEqual(12.,receipt['goods_kg']['copper ore'],delta=1e-12)
         self.assertTrue(any(e['kind']=='output' and e['machine']!='rover'
                             and e['goods_kg'].get('copper',0)>0 for e in app.brains.goods.activities),
                         'Receiving must feed an actual paid native processing batch')

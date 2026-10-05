@@ -31,6 +31,7 @@ INTENTS = {
     "come_here": "Come here, come to me, come over, approach me, come closer.",
     "turn_around": "Turn around, turn round, about face, turn back, go the other way.",
     "back_off": "Back off, back up, reverse, go back a bit, get away from that.",
+    "recover": "You are stuck, get unstuck, cannot move, need help escaping. Report actual recovery state and the supported recovery controls.",
     "dig": "Dig here, take a scoop, dig for something, get some sand, soil or ore.",
     "dump": "Dump it, empty your hopper, drop the load, put it down here, unload onto the pile.",
     "take": "Take that, load up, pick up the ore, take some copper off the pile, fill your hopper from the heap.",
@@ -72,6 +73,8 @@ MAX_OUTPUT_TOKENS = 300
 
 def classify(client: rover_brain.JevClient | None, said: str, kind: str = "roam") -> tuple[str, float, str]:
     """What the person means: the intent, how sure, and who sorted it."""
+    if re.search(r'\b(unstuck|stuck|not moving|cannot move|can.t move|going nowhere)\b',said.lower()):
+        return 'recover',1.0,'words'
     if client is not None:
         try:
             answers = client.ask({"said": said, "machine": rover_brain.kind_of(kind)}, INTENT_QUESTIONS)
@@ -90,11 +93,15 @@ def classify(client: rover_brain.JevClient | None, said: str, kind: str = "roam"
     return "other", 0.0, "words"
 
 
-def describe(program: dict[str, Any], machines: dict[str, Any] | None = None) -> str:
+def describe(program: dict[str, Any], machines: dict[str, Any] | None = None, recovery=None) -> str:
     """What the rover says of itself, from its program as the engine reports
     it: what it is doing and why, its battery, what its sensors see."""
     doing, why = str(program.get("doing") or "stopped"), str(program.get("why") or "")
-    if not program.get("power"):
+    if recovery is not None:
+        first = ('I am stuck and my escape attempts did not get me clear. Approach my chassis and use '
+                 'Take hold to recover; move me at least 2 m onto dry, flat ground, release me and switch me on. '
+                 'My load and job are retained.')
+    elif not program.get("power"):
         first = "I am switched off."
     elif doing == "waiting":
         first = f"I am holding still: {why}." if why else "I am holding still."
@@ -391,7 +398,7 @@ def give_order(app: Any, brain: rover_brain.Brain, program: dict[str, Any], said
     return (say or "Will do") + f": {plan}{behind}. Then back to my rounds."
 
 
-def _model_answer(app: Any, said: str, program: dict[str, Any]) -> str:
+def _model_answer(app: Any, said: str, program: dict[str, Any], routine=None) -> str:
     """The chat's model, in the rover's voice, from its state alone."""
     api_key, model = getattr(app, "api_key", ""), getattr(app, "model", "")
     if not api_key:
@@ -405,7 +412,7 @@ def _model_answer(app: Any, said: str, program: dict[str, Any]) -> str:
         "come here, turn round, back off, dig, dump, take, make, or say what you are doing and why.")
     payload = {"model": model, "store": False, "max_output_tokens": MAX_OUTPUT_TOKENS,
                "reasoning": {"effort": "low"}, "instructions": instructions,
-               "input": f"STATE: {json.dumps(program, allow_nan=False)}\n\nThe person said: {said}"}
+               "input": f"STATE: {json.dumps({'program':program,'routine':routine}, allow_nan=False)}\n\nThe person said: {said}"}
     req = request.Request("https://api.openai.com/v1/responses", data=json.dumps(payload).encode(), method="POST",
                           headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"})
     try:
@@ -458,19 +465,20 @@ def talk(app: Any, body: Any) -> dict[str, Any]:
 
     if body.get("open"):
         if not program.get("power"):
-            reply = f"{describe(program)} Switch me on and I will talk."
-        elif standing is not None and program.get("kind") != "still":
+            reply = f"{describe(program,recovery=brain.routine.recovery)} Switch me on and I will talk."
+        elif standing is not None and program.get("kind") != "still" and brain.routine.recovery is None:
             program = _ask(app, program, brain, "facing", 0.0, "the person came to talk to it", standing)
-            reply = describe(program)
+            reply = describe(program,recovery=brain.routine.recovery)
         else:
             program = _ask(app, program, brain, "waiting", 0.0, "the person came to talk to it")
-            reply = describe(program)
+            reply = describe(program,recovery=brain.routine.recovery)
         say(name, reply, opened=True)
     elif body.get("close"):
         asked = program.get("asked") if isinstance(program.get("asked"), dict) else None
         if asked and asked.get("by") == "talk":
             did, program = _use(app, program, brain, body, "carry_on", {}, "")
-        reply = "Going on." if program.get("power") else "Still off."
+        reply = (describe(program,recovery=brain.routine.recovery) if brain.routine.recovery else
+                 "Going on." if program.get("power") else "Still off.")
         say(name, reply, closed=True)
     else:
         said = str(body.get("said") or "").strip()[:500]
@@ -478,14 +486,18 @@ def talk(app: Any, body: Any) -> dict[str, Any]:
             raise ValueError("say something: {said: ...}")
         say("you", said)
         intent, confidence, sorted_by = classify(brain.decider(), said, str(program.get("kind") or "roam"))
-        if not program.get("power") and intent not in ("status", "why", "other"):
+        if intent == 'recover':
+            reply = (describe(program,recovery=brain.routine.recovery) if brain.routine.recovery else
+                     'I have not confirmed an escape failure yet. Back off asks for a short reverse; '
+                     'if that makes no progress, approach my chassis and use Take hold to recover.')
+        elif not program.get("power") and intent not in ("status", "why", "other"):
             reply = "I am switched off, so I cannot. Switch me on first."
         elif intent == "stop":
             did, program = _use(app, program, brain, body, "hold_still", {"for_s": 0.0}, "the person told it to stop")
             reply = "Stopping. I will hold here until you say."
         elif intent == "go_on":
             did, program = _use(app, program, brain, body, "carry_on", {}, "")
-            reply = "Going on with my rounds."
+            reply = describe(program,recovery=brain.routine.recovery) if did.get('blocked_recovery') else "Going on with my rounds."
         elif intent in ("come_here", "turn_around", "back_off") and program.get("kind") == "still":
             reply = "I go nowhere: I stand where I was built."
         elif intent == "come_here":
@@ -516,7 +528,7 @@ def talk(app: Any, body: Any) -> dict[str, Any]:
             reply = (f"Dropped {gone} order{'' if gone == 1 else 's'}. Back to my rounds." if gone
                      else "I had no orders to drop.")
         elif intent in ("status", "why"):
-            reply = describe(program)
+            reply = describe(program,recovery=brain.routine.recovery)
             orders = brain.routine.orders()
             if orders:
                 reply += f" I have {len(orders)} order{'' if len(orders) == 1 else 's'} to do" + (
@@ -530,6 +542,6 @@ def talk(app: Any, body: Any) -> dict[str, Any]:
             if written is not None and not written.startswith("I could not make a job"):
                 reply = written
             else:
-                reply = _model_answer(app, said, program)
+                reply = _model_answer(app, said, program, brain.routine.summary())
         say(name, reply, intent=intent, confidence=round(confidence, 2), sorted_by=sorted_by)
     return {"program": program, "reply": reply, "talk": list(brain.talk)}

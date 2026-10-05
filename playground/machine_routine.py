@@ -267,6 +267,7 @@ class Routine:
         # When a look round its working last found no stand: a worked-out
         # place's idle dig is asked every step, and the look is ~130 surveys.
         self.no_stand_t: float | None = None
+        self.recovery: dict[str, Any] | None = None
 
     def record(self):
         """Exact load and execution state; display summaries deliberately round."""
@@ -275,11 +276,13 @@ class Routine:
                 **{k:deepcopy(getattr(self,k)) for k in
                    ("sand_m3","soil_m3","kg","goods","made_kg","batches","delivered_kg",
                     "trips","watching","paused_by","seq","next_order")},
-                "frames":[asdict(f) for f in self.frames],
+                "recovery":deepcopy(self.recovery), "frames":[asdict(f) for f in self.frames],
                 "notes":list(self.notes),"finished":list(self.finished)}
 
     def restore(self, record):
         # Validate the entire candidate before changing any running state.
+        if isinstance(record,dict) and 'recovery' not in record:
+            record={**record,'recovery':None}
         if self.kind=='process' and isinstance(record,dict) and 'process_recipe' not in record:
             record={**record,'process_recipe':self.recipe}  # Earlier v1 keeps its declared recipe.
         if not isinstance(record,dict) or set(record)!=set(self.record()):
@@ -291,6 +294,16 @@ class Routine:
         def number(v, integer=False):
             if type(v) not in ((int,) if integer else (int,float)) or not math.isfinite(v) or not 0<=v<=1e15:
                 raise ValueError("Invalid machine runtime quantity")
+        recovery=record['recovery']
+        if recovery is not None:
+            if not isinstance(recovery,dict) or set(recovery)!={'at_m','since_s','reason'}:
+                raise ValueError('Invalid machine recovery state')
+            if not isinstance(recovery['at_m'],list) or len(recovery['at_m'])!=2 or any(
+                    type(v) not in (int,float) or not math.isfinite(v) or abs(v)>1e6 for v in recovery['at_m']):
+                raise ValueError('Invalid machine recovery position')
+            number(recovery['since_s'])
+            if not isinstance(recovery['reason'],str) or not 1<=len(recovery['reason'])<=1024:
+                raise ValueError('Invalid machine recovery reason')
         for k in ("sand_m3","soil_m3","kg","made_kg","delivered_kg"): number(record[k])
         for k in ("batches","trips","seq","next_order"): number(record[k],True)
         if not isinstance(record["goods"],dict) or len(record["goods"])>256:
@@ -337,6 +350,7 @@ class Routine:
         self.frames=rebuilt
         self.notes=deque(record["notes"],maxlen=NOTES_KEPT)
         self.finished=deque(record["finished"],maxlen=8)
+        self.recovery=deepcopy(recovery)
         if self.kind=='process':self.recipe=record['process_recipe']
 
     # ---- the hopper ------------------------------------------------------------
@@ -412,14 +426,17 @@ class Routine:
     def current(self) -> dict[str, Any] | None:
         return self.frame.current()
 
-    def resume(self) -> None:
+    def resume(self) -> bool:
         # Told to go on is an explicit retry: its spent tries start afresh.
         # Keeping them, the step it had given up on gave up again at once and
         # the machine sat still after "go on".
+        if self.recovery is not None:
+            return False  # A new command is not evidence that the machine escaped.
         self.paused_by = None
         self.frame.issued = None
         self.frame.began_t = None
         self.frame.tries = 0
+        return True
 
     def interrupt(self, name: str, steps: list[dict[str, Any]], then: str = "resume",
                   order_id: int | None = None) -> Frame:
@@ -506,6 +523,16 @@ class Routine:
                 self.note(f"{name}: {conditions.described(watch['when'])}")
         return fired
 
+    def observe_recovery(self, ctx: senses.Context) -> bool:
+        """Retain an exhausted native escape before another controller replaces its ask."""
+        if ctx.program.get('kind')!='roam' or ctx.program.get('doing')!='stuck' or self.recovery is not None:
+            return False
+        self.recovery={'at_m':list(ctx.at()),'since_s':float(ctx.t),
+                       'reason':str(ctx.program.get('why') or 'Its escape attempts made no progress.')[:1024]}
+        self.paused_by='recovery needed'
+        self.note('Needs recovery: '+self.recovery['reason'])
+        return True
+
     def tick(self, ctx: senses.Context, by: str = "routine") -> dict[str, Any] | None:
         """Before a step the page takes: the routine's next move, if it is its
         turn. Returns what it did, or None when it did nothing."""
@@ -513,6 +540,30 @@ class Routine:
         if not program.get("power"):
             return None
         asked = program.get("asked") if isinstance(program.get("asked"), dict) else None
+        self.observe_recovery(ctx)
+        if self.recovery is not None:
+            at=ctx.at();origin=self.recovery['at_m']
+            still=(abs(float(program.get('speed_m_s') or 0))<=.05 and abs(float(program.get('turning_deg_s') or 0))<=3.)
+            held=any(b.get('name')==program.get('body') and b.get('held') for b in ctx.bodies or [])
+            clear=math.hypot(at[0]-origin[0],at[1]-origin[1])>2. and still and not held
+            if clear and ctx.terrain_declared:
+                ground=ctx.survey(*at)
+                gradient=ground.get('ground_gradient_xz')
+                slope=(math.degrees(math.atan(math.hypot(*gradient))) if gradient else ground.get('slope_deg'))
+                clear=(ground.get('on_the_ground') is True and slope is not None
+                       and float(slope)<=float(program.get('climb_deg') or 0)
+                       and float((ground.get('water') or {}).get('depth_m') or 0)<=.003)
+            if clear:
+                self.recovery=None
+                self.resume()
+                self.note('Recovered: moved clear and stopped; resuming the retained job.')
+            else:
+                self.paused_by='recovery needed'
+                if not asked or asked.get('by')==by:
+                    if not asked or asked.get('doing')!='waiting':
+                        return tools.hold_still(ctx,tools.Call('hold_still',{'for_s':0},by,
+                            why='stuck: needs recovery before resuming its job'))
+                return None
         if program.get("doing") == "resting":
             self.paused_by = "its battery"
             return None
@@ -737,6 +788,8 @@ class Routine:
                "orders": self.orders(), "watches": len(self.watch),
                "paused_by": self.paused_by, "load": self.load_reading() if self.carries() else None,
                "notes": list(self.notes)[-6:]}
+        if self.recovery is not None:
+            out['recovery']=deepcopy(self.recovery)
         if self.recipe:
             out["making"] = {"recipe": self.recipe, "intake": self.intake, "output": self.output,
                              "batch_kg": self.batch_kg, "made_kg": round(self.made_kg, 2), "batches": self.batches}

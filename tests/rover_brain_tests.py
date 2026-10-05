@@ -234,6 +234,21 @@ class TheBrainOffTheStep(unittest.TestCase):
         while brain.thinking is not None and time.monotonic() < end:
             time.sleep(0.01)
 
+    def test_native_failure_is_retained_before_an_inflight_model_answer_can_replace_it(self):
+        ask=jev_says('turn_right',.9)
+        brain=rover_brain.Brain('rover',rover_brain.JevClient('unused'),'jev')
+        brain._answer={'event':'old water warning','pick':'turn_right',
+            'call':{'tool':'turn_right','args':{'for_s':1}},'confidence':.9,'said':'old decision'}
+        brain.observe(a_program(doing='stuck',why='three failed escape attempts',at_m=[0,.5,0]),
+                      None,[],10.,ask=ask)
+        self.assertIsNotNone(brain.routine.recovery)
+        self.assertEqual([],ask.asked)
+        sent=[];app=SimpleNamespace(live=SimpleNamespace(act=lambda body:(sent.append(body),{})[1]))
+        brains=rover_brain.Brains(lambda:None);brains.brains['rover']=brain
+        brains.before(app,{'session':'s','op':'step'})
+        self.assertEqual(['waiting'],[body['doing'] for body in sent])
+        self.assertEqual('not applied: needs physical recovery',brain.decisions[-1]['applied'])
+
     def test_an_event_asks_jev_once_and_the_answer_goes_to_the_program(self):
         ask = jev_says("turn_right", 0.7)
         brain = rover_brain.Brain("rover", rover_brain.JevClient("unused"), "jev")
@@ -676,6 +691,23 @@ class InTheRealEngine(unittest.TestCase):
         self.assertEqual("I am switched off, so I cannot. Switch me on first.", said["reply"])
         with self.assertRaisesRegex(ValueError, "no machine with a program called"):
             rover_talk.talk(self.app, {"program": "toaster", "open": True})
+
+    def test_stuck_chat_and_continue_preserve_recovery_without_calling_a_model(self):
+        self.live.session.send(op="run", program=self.program()['id'], sender='test', seq=1, power=True)
+        brain=self.brains.of('rover');r=brain.routine
+        r.recovery={'at_m':[0.,0.], 'since_s':0., 'reason':'backed out three times and still here'}
+        before=deepcopy(r.record())
+        for said in ('get unstuck', "you are stuck", 'go on'):
+            calls=len(self.ask.asked)
+            reply=rover_talk.talk(self.app, {'program':'rover','said':said})
+            self.assertIn('I am stuck',reply['reply'])
+            self.assertIn('Take hold to recover',reply['reply'])
+            self.assertIn('load and job are retained',reply['reply'])
+            self.assertEqual(before,r.record())
+            if said!='go on':self.assertEqual(calls,len(self.ask.asked))
+        closed=rover_talk.talk(self.app,{'program':'rover','close':True})
+        self.assertIn('I am stuck',closed['reply'])
+        self.assertEqual('waiting',closed['program']['asked']['doing'])
 
 
 class TheSensesAndTheTools(unittest.TestCase):
@@ -1131,6 +1163,52 @@ class LocalNavigation(unittest.TestCase):
               'orientation_wxyz':[1,0,0,0]}
         return machine_senses.Context(a_program(at_m=[0,.5,0],height_m=.5,power=True,climb_deg=12),
                                       bodies=[body,*obstacles],ask=ask,terrain_declared=True)
+
+    def test_exhausted_native_escape_latches_job_load_and_persists_across_restart(self):
+        declaration={'kind':'custom','hopper_kg':40,
+            'steps':[{'do':'dig','until':'load_full','repeat':True}]}
+        ctx=self.context();r=machine_routine.Routine('rover',declaration);ctx.routine=r
+        r.load_in(0,0,30,{'copper ore':9,'sand/soil':21});load=deepcopy(r.load_reading())
+        r.interrupt('moving round',[{'do':'go_to','args':{'point':[4,0]},'until':'arrived'}])
+        ctx.program.update(doing='stuck',why='backed out 3 times and is still here',speed_m_s=0)
+        r.tick(ctx);self.assertIsNotNone(r.recovery)
+        before=deepcopy(r.record());self.assertFalse(r.resume());self.assertEqual(before,r.record())
+        ctx.program.update(doing='waiting',asked={'by':'routine','doing':'waiting'})
+        for t in (1,30,300):ctx.t=t;r.tick(ctx)
+        self.assertEqual(before,r.record());self.assertEqual(load,r.load_reading())
+        self.assertFalse(any(c['op'] in ('dig','ground_withdraw','draw') for c in self.commands))
+        restored=machine_routine.Routine('rover',declaration);restored.restore(before)
+        self.assertEqual(before,restored.record())
+        # Earlier v1 snapshots are still accepted without inventing a failure.
+        legacy=deepcopy(before);legacy.pop('recovery')
+        restored.restore(legacy);self.assertIsNone(restored.recovery)
+        invalid=deepcopy(before);invalid['recovery']['at_m'][0]=float('nan')
+        valid=deepcopy(restored.record())
+        with self.assertRaisesRegex(ValueError,'recovery position'):restored.restore(invalid)
+        self.assertEqual(valid,restored.record())
+
+    def test_recovery_requires_actual_dry_clearance_rest_and_release(self):
+        declaration={'kind':'custom','steps':[{'do':'hold_still','args':{'for_s':0},'until':'asked_done'}]}
+        for obstacle in ('wet','blind','steep','held','moving','turning','near'):
+            with self.subTest(obstacle=obstacle):
+                ground={'on_the_ground':True,'slope_deg':0.,'water':None}
+                if obstacle=='wet':ground['water']={'depth_m':.2}
+                if obstacle=='blind':ground={}
+                if obstacle=='steep':ground['ground_gradient_xz']=[1.,0.]
+                ctx=self.context(field=lambda x,z:ground);r=machine_routine.Routine('rover',declaration);ctx.routine=r
+                r.recovery={'at_m':[0.,0.],'since_s':0.,'reason':'native escape exhausted'}
+                ctx.program.update(at_m=[3,.5,0],doing='waiting',speed_m_s=0,asked={'by':'routine','doing':'waiting'})
+                if obstacle=='held':ctx.bodies[0]['held']=True
+                if obstacle=='moving':ctx.program['speed_m_s']=-.2
+                if obstacle=='turning':ctx.program['turning_deg_s']=10
+                if obstacle=='near':ctx.program['at_m'][0]=1.9
+                r.tick(ctx);self.assertIsNotNone(r.recovery)
+                if obstacle=='held':ctx.bodies[0]['held']=False
+                ctx.program.update(at_m=[3,.5,0],speed_m_s=0,turning_deg_s=0)
+                ground.update(on_the_ground=True,slope_deg=0.,water=None,ground_gradient_xz=[0.,0.])
+                ctx._surveys.clear();r.tick(ctx)
+                self.assertIsNone(r.recovery);self.assertIsNone(r.paused_by)
+                self.assertIn('Recovered:',r.notes[-1])
 
     def test_a_far_place_is_reached_round_a_river_over_seen_ground_only(self):
         """Beyond its 6 m window a machine follows a route over the shared map

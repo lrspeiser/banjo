@@ -163,6 +163,8 @@ def sense_position(ctx: Context) -> dict[str, Any]:
         out["not_getting_anywhere_for_s"] = round(nowhere, 1)
     if int(ctx.program.get("stucks") or 0) > 0:
         out["tried_to_get_out_times"] = int(ctx.program.get("stucks") or 0)
+    if ctx.routine is not None and getattr(ctx.routine,'recovery',None):
+        out['recovery_needed']=ctx.routine.recovery
     if ctx.program.get("kind") == "hover":
         out["height_above_ground_m"] = round(float(ctx.program.get("height_m") or 0.0), 2)
         out["climb_m_s"] = round(float(ctx.program.get("climb_m_s") or 0.0), 2)
