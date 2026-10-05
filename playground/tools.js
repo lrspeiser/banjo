@@ -248,7 +248,7 @@ export function makeTools(ctx) {
       // Sidebar actions retain the displayed point, not the camera centre.
       const hit = input.at_m ? {hit:true,point_m:input.at_m,name:input.target_name}
         : await act("pick", {...input,max_m:40,past_held:true});
-      if(hit.hit && !hit.name && ctx.groundTargetPoint)hit.point_m=ctx.groundTargetPoint(hit.point_m);
+      if(hit.hit && !hit.name && ctx.groundTargetPoint)hit.point_m=ctx.groundTargetPoint(hit.point_m,input.from);
       struckAt=hit.hit ? hit.point_m : null;
       answer = await api("/api/world/tool/use", { session: world.session, person: whereIAm(),
         at_m: hit.hit ? hit.point_m : null, target_name: hit.hit ? hit.name || null : null });
@@ -313,10 +313,10 @@ export function makeTools(ctx) {
     use.timer = setTimeout(() => {
       use.timer = null;
       if (world.held !== held || use.stop || (!use.queued && !use.down)) return;
-      // A waiting click aims where you look NOW, not where you looked when
-      // you clicked (an explicit point from the side panel keeps its point).
+      // Keyboard/mouse repeats follow the current sight. A finger tap keeps
+      // its screen ray after release; sidebar actions keep their exact point.
       const waiting=use.queued ? use.inputs.shift() : null;
-      const input=waiting?.at_m ? waiting : sightInput();
+      const input=waiting?.at_m || waiting?.from ? waiting : sightInput();
       if (use.queued) use.queued--;
       useOnce(input);
     }, Math.max(0, interval - (performance.now() - (use.startedAt || 0))));
@@ -334,7 +334,8 @@ export function makeTools(ctx) {
     // replaces it. Up to 16 used to queue and play out one by one, seconds
     // behind the player and at old aims (the owner, 2026-10-04: "not queue
     // up way behind me").
-    use.inputs=[target?.at_m ? {at_m:target.at_m.slice(),target_name:target.target_name || null} : {sight:true}];
+    use.inputs=[target?.at_m ? {at_m:target.at_m.slice(),target_name:target.target_name || null}
+      : target?.from && target?.dir ? {from:target.from.slice(),dir:target.dir.slice()} : {sight:true}];
     use.queued=1;
     if (use.mode === "tool-ready") schedule();
   }

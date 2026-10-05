@@ -202,6 +202,29 @@ for(const surface of ['smooth','columns','cuts'])test(surface+' full-terrain cat
   refreshTerrain({...block,surface:surface==='smooth'?'columns':'smooth'});assert.equal(rebuilt,2);
 });
 
+test('a roof-removal packet moves all four top vertices to the real floor and rebuilds its void faces',()=>{
+  const source=readFileSync(new URL('../playground/world.js',import.meta.url),'utf8');
+  const part=(a,b)=>source.slice(source.indexOf('function '+a),source.indexOf('function '+b));
+  const code=part('markColumnFaces','buildColumnFaces')+part('decodeRuns','runsRoom')+part('patchRuns','standingOn')+part('patchTerrain','refreshTerrain');
+  const g={nx:1,nz:1,dx:.25,x0:0,z0:0,surface:'columns'};
+  const top=columnTopData(g,new Float32Array([.75]),new Float32Array([1,1,1]));
+  const geometry=new THREE.BufferGeometry();
+  geometry.setAttribute('position',new THREE.BufferAttribute(top.positions,3));
+  geometry.setAttribute('color',new THREE.BufferAttribute(top.colors,3));
+  const ground={grid:g,floor:0,mesh:{geometry},heights:new Float32Array([.75]),surfaces:new Uint8Array([1]),
+    colors:new Float32Array([1,1,1]),runs:{stride:4,count:new Uint8Array([3]),kind:new Uint8Array([1,8,1,0]),top:new Float32Array([.25,.5,.75,0])},
+    dirtyFaceChunks:new Set(),materialCells:{update(){}}};
+  const patch=new Function('ground','bytesOf','paintGround','columnChunkIds','runsRoom',code+';return patchTerrain;')(
+    ground,x=>new Uint8Array(Buffer.from(x,'base64')),()=>{},columnChunkIds,()=>{});
+  patch({box:[0,0,1,1],heights_b64:Buffer.from(new Float32Array([.25]).buffer).toString('base64'),
+    ground_b64:Buffer.from([1]).toString('base64'),runs_b64:Buffer.from([1,1,250,0]).toString('base64')});
+  for(let v=0;v<4;v++)assert.equal(geometry.attributes.position.array[3*v+1],.25,'no top vertex stays above the hole');
+  const faces=[];walkColumnFaces(g,ground.heights,ground.runs,0,f=>faces.push(f));
+  assert.ok(faces.every(f=>f.points.every(p=>p[1]<=.25)),'no old roof/ceiling face remains');
+  assert.deepEqual([...ground.dirtyFaceChunks],[0]);assert.equal(ground.runs.count[0],1);
+  assert.equal(geometry.attributes.position.version,1,'changed positions are uploaded');
+});
+
 test('material columns have flat tops with outward winding and true cell bounds',()=>{
   const grid={nx:3,nz:2,dx:.25,x0:-1,z0:-2,surface:'columns'},H=new Float32Array([1,2,3,4,5,6]);
   const colors=new Float32Array(18).fill(.5),data=columnTopData(grid,H,colors);

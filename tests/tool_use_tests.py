@@ -258,6 +258,11 @@ class WhatAToolDoesWhereYouLook(unittest.TestCase):
         self.assertIn('80 g',said)
         self.assertNotIn('0.0 L',said)
 
+    def test_saved_empty_surface_recovery_does_not_claim_collected_material(self):
+        said=tool_use._said({'kind':'cleared empty surface','loosened':{},'loosened_kg':0},
+            interaction_profiles.tool_use(PICK),0)
+        self.assertEqual('Cleared an empty surface. The hole is open.',said)
+
     def test_completed_rock_cube_reports_its_real_mass_instead_of_no_yield(self):
         said=tool_use._said({'kind':'broke rock out','ground':'rock','depth_m':.25,
             'loosened':{'rock_m3':.015625},'loosened_kg':37.5},interaction_profiles.tool_use(PICK),0)

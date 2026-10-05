@@ -7213,7 +7213,7 @@ function wouldOnlySetItDown(name) {
   return program.steps?.length === 1 && program.steps[0].do === "place";
 }
 
-function pressPrimary() {
+function pressPrimary(target=null) {
   if (!world.session) return false;
   if (world.placing?.carrying || world.placing?.confirming) return true;
   if (world.asking || world.acting) return true;
@@ -7222,8 +7222,8 @@ function pressPrimary() {
   // native stroke even when the design also declares a Study action.
   if (world.held?.pick) {
     // A machine or anything fixed in place is selected, not swung at.
-    if (world.aim?.name && selectsInsteadOfSwing(world.aim.name)) return false;
-    tools.press(); return true;
+    if (!target && world.aim?.name && selectsInsteadOfSwing(world.aim.name)) return false;
+    tools.press(target); return true;
   }
   const name = world.held?.name || world.aim?.name;
   // A throw takes the button ahead of the held thing's OWN action, but only
@@ -7317,7 +7317,8 @@ canvas.addEventListener("pointerdown", (e) => {
   }
   // Primary held with something throwable in the hand winds it up. Looking
   // still works while it does -- that is how a throw is aimed.
-  if (looking || world.held) primaryUsed = pressPrimary();
+  if (looking || world.held) primaryUsed = pressPrimary(e.pointerType !== "mouse" && world.held?.pick
+    ? {from:from.toArray(),dir:dir.toArray()} : null);
   if (looking) return;           // captured: the move handler has it
   drag = { x: e.clientX, y: e.clientY, moved: false };
   // Capture can be refused -- a pointer already gone, or one a test made up --
@@ -7371,6 +7372,7 @@ canvas.addEventListener("pointerup", (e) => {
     if (drag) try { canvas.releasePointerCapture(e.pointerId); } catch { /* gone */ }
     drag = null;
     releasePrimary();
+    if (e.pointerType !== "mouse") { cursor = null; markAt(null); }
     return;
   }
   const was = drag;
@@ -8312,7 +8314,7 @@ function cursorAt(e) {
   if (!box.width || !box.height) return null;
   return { x: ((e.clientX - box.left) / box.width) * 2 - 1,
            y: -((e.clientY - box.top) / box.height) * 2 + 1,
-           px: e.clientX - box.left, py: e.clientY - box.top };
+           px: e.clientX - box.left, py: e.clientY - box.top, touch:e.pointerType !== "mouse" };
 }
 // The direction a pick is cast along: through the cursor where there is one,
 // and along the camera's forward where there is not. Through the camera's

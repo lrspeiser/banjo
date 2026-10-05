@@ -652,8 +652,44 @@ void cutsPreserveOriginalSlopesAndExactLocalDepth() {
         near(v,0,1e-10,"cut geometry retains material ledger");
 }
 
+void removingRoofOpensTheExistingVoidToDaylight() {
+    for (const std::string material : {"soil", "sand", "rock"}) {
+        auto field=flat(8,8,material=="soil"?.75:0,material=="sand"?.75:0);
+        field.setColumnSurface(true);
+        const auto c=field.grid().at(4,4);
+        const double top=field.height(c),floor=top-.5;
+        const auto under=field.breakOut(1,1,floor,top-.25);
+        near(field.height(c),top,1e-12,"an actual roof remains after a wall cut");
+        const auto cap=field.breakOut(1,1,top-.25,top);
+        near(field.height(c),floor,1e-12,"removing the roof exposes the hole floor, not an air surface");
+        require(!field.workingIn(c),"an open pit no longer has a retained roof");
+        near(under.moved.total()+cap.moved.total(),.5*.25*.25,1e-12,"only solid cubes enter the material ledger");
+        near(field.residual().total(),0,1e-10,"opening a roof preserves the material ledger");
+        auto restored=flat(8,8,0,0);restored.setColumnSurface(true);restored.restore(field.state());
+        near(restored.height(c),floor,0,"reopening retains the real floor");
+    }
+}
+
+void legacyAirCapClearsWithoutCollectingItsRoofTwice() {
+    auto field=flat(8,8,.75,0);field.setColumnSurface(true);
+    const auto c=field.grid().at(4,4),neighbor=field.grid().at(5,4);
+    (void)field.breakOut(1,1,.25,.5);
+    auto legacy=field.state();const auto cap=legacy.beds.start[c]+legacy.beds.count[c]-1;
+    legacy.beds.top[cap]=.5;legacy.ledger.dug.soil_m3+=.25*.25*.25;
+    field.restore(legacy);
+    near(field.height(c),.5,0,"old saved air cap is retained until an explicit repair strike");
+    const auto repair=field.chip(1,1,.25,.25*.25*.25);
+    require(repair.edit.cells.size()==1,"repair updates the clicked column");
+    near(repair.edit.moved.total(),0,0,"repair credits no already collected material");
+    near(field.height(c),.25,0,"repair exposes the solid floor");
+    near(field.height(neighbor),.75,0,"repair preserves its neighbors");
+    near(field.residual().total(),0,1e-10,"repair preserves material accounting");
+}
+
 int main() {
     const std::vector<std::pair<std::string_view, std::function<void()>>> tests{
+        {"removing a roof opens the existing void to daylight",removingRoofOpensTheExistingVoidToDaylight},
+        {"old air caps clear without collecting the roof twice",legacyAirCapClearsWithoutCollectingItsRoofTwice},
         {"cuts preserve original slopes and exact local depth",cutsPreserveOriginalSlopesAndExactLocalDepth},
         {"column surface owns exact bounds without changing volumes",columnSurfaceOwnsExactBoundsWithoutChangingVolumes},
         {"unsettled state resumes exactly", unsettledStateResumesExactly},

@@ -858,7 +858,7 @@ LiveGroundWork ToolTerrain::strikeCell(const ToolTerrainHost &host, const std::s
         } else if (!chipped.effect.edit.cells.empty()) {
             r.loosened = chipped.effect.edit.moved;
             r.loosened_kg = chipped.effect.edit.mass_kg;
-            r.kind = soft ? "broke out" : "broke rock out";
+            r.kind = r.loosened.total()>0 ? (soft ? "broke out" : "broke rock out") : "cleared empty surface";
         } else {
             r.kind = "breaking rock";
         }

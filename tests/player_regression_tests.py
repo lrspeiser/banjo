@@ -582,6 +582,55 @@ class PlayerJourney(unittest.TestCase):
                 return [x, here["ground_m"], z]
         return None
 
+    def test_phone_tap_digs_the_finger_target_not_the_crosshair(self):
+        self.open_world()
+        # Equip as a fixture precondition: this journey measures touch targeting,
+        # while the independent opening/dig journey exercises E pickup and bag.
+        eyes=self.js('banjoRoom.camera.position.toArray()')
+        person={'standing_m':[eyes[0],eyes[1]-1.62,eyes[2]],'eyes_m':eyes,
+                'facing':[1,0,0],'look_direction':[1,-1,0]}
+        sid=self.game.live.session.id
+        shown=self.post('/api/world/inventory/shown',{'session':sid},self.world)
+        taken=self.post('/api/world/inventory',{'session':sid,'op':'take_up','item':'field pick',
+            'request':'phone-fixture-equip','revision':shown['record']['revision'],'person':person},self.world)
+        self.need(taken.get('ok'),f"phone fixture could not equip the tool: {taken.get('why')}")
+        self.page.send('Page.reload',{})
+        self.need(self.wait("banjoRoom.held()?.name === 'field pick' && banjoRoom.use().mode === 'tool-ready'",30),
+                  'the phone page did not restore its equipped tool')
+        self.page.send("Emulation.setDeviceMetricsOverride", {"width":844,"height":390,"deviceScaleFactor":1,"mobile":True})
+        self.page.send("Emulation.setTouchEmulationEnabled", {"enabled":True,"maxTouchPoints":1})
+        stood=self.body()["position_m"]
+        spot=self.a_spot_to_dig(stood,0,[])
+        self.need(spot is not None,"no reachable ground for the phone tapping journey")
+        x,z,_,survey=spot
+        x,z=self.column(x,z);top=self.survey(x,z)["ground_m"]
+        # The finger target is deliberately off centre. Hover/crosshair state
+        # must never supply this tap's tool target, even after touchEnd.
+        distance=math.hypot(x-stood[0],z-stood[2])
+        self.look_at(x-(z-stood[2])*.65/distance,top,z+(x-stood[0])*.65/distance)
+        time.sleep(.3)  # render the new camera/projection before projecting the finger point
+        target=self.js(f"(() => {{ const v=banjoRoom.camera.position.clone().set({x},{top},{z}).project(banjoRoom.camera);"
+                       " const r=document.querySelector('#stage').getBoundingClientRect();"
+                       " return {x:r.left+(v.x+1)*r.width/2,y:r.top+(1-v.y)*r.height/2}; })()")
+        middle=self.stage_middle()
+        self.need(abs(target["x"]-middle["x"])>25,"phone target is not visibly off the crosshair")
+        self.need(10<target["x"]<834 and 10<target["y"]<340,"phone target is obscured by navigation")
+        self.need(self.wait("banjoRoom.use().mode === 'tool-ready'",15),"pick is not ready for the phone tap")
+        self.watch_fetches("/api/world/tool/use")
+        self.page.send("Input.dispatchTouchEvent", {"type":"touchStart","touchPoints":[{"x":target["x"],"y":target["y"],"id":1}]})
+        self.page.send("Input.dispatchTouchEvent", {"type":"touchEnd","touchPoints":[]})
+        self.need(self.wait("__watched.calls.length === 1 && __watched.active === 0",15),"phone tap never completed one tool use")
+        call=self.calls("/api/world/tool/use")[0]
+        self.report["measured"].update({"finger_px":target,"crosshair_px":middle,"sent_target":call["aim"],"response":call["body"]})
+        self.need(call["aim"] is not None,"phone tool use has no selected target")
+        hit=self.column(call["aim"][0],call["aim"][2])
+        self.expect(hit==(x,z),f"finger selected {(x,z)} but tool dug {hit}")
+        self.expect(not call["body"].get("refused"),f"phone dig was refused: {call['body'].get('refused')}")
+        after=self.survey(x,z)["ground_m"]
+        self.expect(abs(after-(top-CELL_M))<1e-5,f"phone dig did not remove the selected top cube: {top} -> {after}")
+        self.expect(self.wait(f"Math.abs(banjoRoom.groundAt({x},{z}) - {after}) < 1e-5",10),"phone render left the removed top tile in place")
+        self.finish()
+
     def test_dig_in_one_spot(self):
         self.open_world()
         # The pick, taken up where it lies and put in the bag (Q) to carry.
@@ -947,7 +996,7 @@ class PlayerJourney(unittest.TestCase):
         self.open_world()
         stowed_before = set(filter(None, self.js("banjoRoom.world.inventory?.record?.stowed || []") or []))
         # From the world's bar to the Workshop's Recipes, and the Camp stool into the Lab.
-        self.click('.game-tabs [data-screen="recipes"]', "(the bar at the bottom of the world)")
+        self.click('.game-tabs [data-screen="build"]', "(the bar at the bottom of the world)")
         self.need(self.wait("!!document.querySelector('[data-recipe=\"stool:Camp stool\"]')", 30),
                   "Recipes does not list the Camp stool")
         self.click('[data-recipe="stool:Camp stool"] .ws-recipe-acts button:nth-child(2)')
@@ -957,6 +1006,7 @@ class PlayerJourney(unittest.TestCase):
                   "the Lab lists none of the stool's parts")
         before = self.parts()
         self.step(f"opened the Camp stool in the Lab: {before}")
+        self.click('[data-customize-item]')
         said = self.lab_says("make the legs thicker")
         self.need(self.wait(f"JSON.stringify([...document.querySelectorAll('#ws-parts li')].map((e) => e.textContent))"
                             f" !== {json.dumps(json.dumps(before))}", 20),
@@ -966,7 +1016,7 @@ class PlayerJourney(unittest.TestCase):
         self.step(f"the Lab made the legs thicker: {after}")
         # Make it, the paid way: Make, review, prepare supplies, start, step, collect.
         time.sleep(1.0)
-        ready = self.js("document.querySelector('#ws-make') && document.body.innerText.match(/Needs changes[^\\n]*/)?.[0]")
+        ready = self.js("document.querySelector('#ws-make') && document.querySelector('#ws-build-editor').innerText.match(/Needs changes[^\\n]*/)?.[0]")
         self.need(not ready, f"the changed stool cannot be made: the Workshop says {ready!r} "
                              f"({self.js('document.body.innerText.match(/[^\\n]*overlaps[^\\n]*/)?.[0]')})")
         self.click("#ws-make")

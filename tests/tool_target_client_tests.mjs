@@ -158,6 +158,13 @@ test('a waiting click aims where you look; taps during a use become one; sidebar
     displayed[0]=99;await runTimer();assert.equal(picks.length,2);
     assert.deepEqual(uses[2].at_m,[.2,0,-1.1],'sidebar retains the displayed point');
     finish();await flush();
+    const touch={from:[1,1.62,2],dir:[.7,-.6,-.4]};
+    const expectedTouch=structuredClone(touch);
+    tools.press(touch);tools.release();touch.dir[0]=99;
+    direction.set(0,0,-1);await runTimer();
+    assert.deepEqual(picks.at(-1).from,expectedTouch.from,'touch retains the finger ray origin');
+    assert.deepEqual(picks.at(-1).dir,expectedTouch.dir,'lifting a finger cannot replace its ray with the crosshair');
+    finish();await flush();
     tools.press();await runTimer();finish();await flush();
     direction.set(-.5,-.7,-1).normalize();const repeated=direction.toArray();
     await runTimer();assert.deepEqual(picks.at(-1).dir,repeated,'held repeat follows current cursor');
@@ -165,4 +172,20 @@ test('a waiting click aims where you look; taps during a use become one; sidebar
     const before=uses.length;tools.press();tools.release();tools.stop();await runTimer();
     assert.equal(uses.length,before,'Stop discards queued targets');
   } finally {globalThis.setTimeout=oldSet;globalThis.clearTimeout=oldClear;}
+});
+
+test('a touch press disables edge looking immediately and releases its cursor after the tool captures the ray',async()=>{
+  const full=(await readFile(new URL('../playground/world.js',import.meta.url),'utf8')).replace(/\r\n/g,'\n');
+  const at=full.slice(full.indexOf('function cursorAt(e)'),full.indexOf('// The direction a pick',full.indexOf('function cursorAt(e)')));
+  const cursorAt=new Function('canvas',at+';return cursorAt;')({getBoundingClientRect:()=>({left:10,top:20,width:800,height:400})});
+  const touch=cursorAt({clientX:610,clientY:320,pointerType:'touch'});
+  assert.deepEqual(touch,{x:.5,y:-.5,px:600,py:300,touch:true});
+  assert.equal(cursorAt({clientX:610,clientY:320,pointerType:'mouse'}).touch,false);
+  const code=full.slice(full.indexOf('canvas.addEventListener("pointerup", (e) => {'),full.indexOf('// Whether a hand can take',full.indexOf('canvas.addEventListener("pointerup", (e) => {')));
+  let run,released=0;
+  const state=new Function('canvas','releasePrimary','markAt',
+    'let resumeClick=false,cursorFree=false,primaryUsed=true,drag={},cursor={touch:true};'+code+';return ()=>({cursor,drag,primaryUsed});')(
+      {addEventListener:(_,fn)=>run=fn,releasePointerCapture(){}},()=>released++,()=>{});
+  run({button:0,pointerId:1,pointerType:'touch'});
+  assert.equal(released,1);assert.deepEqual(state(),{cursor:null,drag:null,primaryUsed:false});
 });

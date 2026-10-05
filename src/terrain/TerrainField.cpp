@@ -272,14 +272,21 @@ void TerrainField::takeRockDownTo(std::size_t c, double bottom, Volumes &took) {
     while (beds_.count[c] > 0) {
         const std::uint32_t k = beds_.count[c] - 1;
         const double top = beds_.top[from + k];
-        if (!(top > bottom)) return;
+        if (!(top > bottom)) break;
         const double below = bedBottom(c, k);
         addByKind(took, static_cast<RunKind>(beds_.kind[from + k]),
                   (top - std::max(bottom, below)) * area);
         // A bed taken whole goes, unless it is the last one: a column always
         // keeps a bed, and the cut is refused before it reaches the floor.
-        if (below > bottom && k > 0) --beds_.count[c];
-        else { beds_.top[from + k] = bottom; return; }
+        if (below >= bottom && k > 0) --beds_.count[c];
+        else { beds_.top[from + k] = bottom; break; }
+    }
+    // Removing the final cap opens the working to daylight. Its air is not a
+    // surface or a water barrier, and trimming it removes no additional mass.
+    while (beds_.count[c] > 1) {
+        const auto k=beds_.count[c]-1;
+        if (!isVoid(static_cast<RunKind>(beds_.kind[from+k])) && beds_.top[from+k]>bedBottom(c,k)) break;
+        --beds_.count[c];
     }
 }
 
@@ -685,9 +692,22 @@ TerrainField::Chipped TerrainField::chip(double x, double z, double at_height_m,
     // The cell the blow landed in, named by its level so that working across to
     // another one does not spend what was paid here.
     const double top=column_surface_ ? height(c) : rockTop(c);
+    // A saved zero-thickness cap can be visible in the old top buffer even
+    // though the native ray meets the floor below it. The first strike in
+    // that column clears only this empty boundary, not the floor or a roof.
+    const auto last=beds_.count[c]-1;
+    if (column_surface_ && last>0 && height(c)==rockTop(c) &&
+        beds_.top[beds_.start[c]+last]<=bedBottom(c,last)) {
+        takeRockDownTo(c,top,out.edit.moved);
+        if (height(c)<top) {
+            out.edit.cells.push_back(c);out.edit.depth_m=top-height(c);
+            touched(c);markChanged(out.edit.cells);chipped_.erase(c);
+            return out;
+        }
+    }
     const int level = static_cast<int>(std::ceil(std::min(at_height_m, top) / q)) - 1;
     const double holds = cellRockM3(c, at_height_m);
-    if (!(holds > 0.0)) return out;      // no rock there to break
+    if (!(holds > 0.0)) return out;
     Owed &owed = chipped_[c];
     if (owed.level != level) owed = Owed{level, 0.0};
     owed.m3 += volume_m3;

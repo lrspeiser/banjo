@@ -892,6 +892,8 @@ def _said(record: dict[str, Any] | None, use: dict[str, Any], carried_kg: float)
     if record is None:
         return "The swing met no ground."
     kind = str(record.get("kind") or "")
+    if kind == "cleared empty surface":
+        return "Cleared an empty surface. The hole is open."
     ground = str(record.get("ground") or "ground")
     if kind in ("stopped", "glanced", "not supported"):
         why = str(record.get("why") or f"it {kind} on the {ground}")

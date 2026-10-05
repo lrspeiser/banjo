@@ -1105,6 +1105,47 @@ void cubeStrikesOpenAWetChannel() {
     }
 }
 
+void cubeStrikesOpenAnUnroofedPitToWater() {
+    constexpr int nx=20,nz=20,row=10,source=9,target=10;
+    constexpr double q=.25,top=.75,volume=.1*q*q;
+    for(const std::string material : {"glass","oak","iron"}) {
+        Json scene{{"terrain",cubeGround(top,0)},{"bodies",pick(material,top)}};
+        auto dry=open(scene);Json saved=Json::parse(dry->environmentState());
+        std::vector<double> depths(nx*nz,0);depths[row*nx+source]=.1;
+        saved["depth_b64"]=terrain::encodeBase64(depths.data(),depths.size()*sizeof(double));
+        saved["ledger"]["initial_m3"]=volume;scene["water"]={{"state",saved}};
+        auto live=open(scene);live->selectHand("alice");
+        const Vec3 grip{kGripX,top+1.02,kTipZ};
+        require(live->toolPoint("pick",{kTipX,top+.72,kTipZ},{0,-1,0},.04,.04,30,kPointLength,grip)!=0,"pit point");
+        require(live->wield("pick",grip),"pit pick held");
+        const auto &field=live->environment()->terrain();const auto &g=field.grid();const auto c=g.at(target,row);
+        const auto under=live->strikeCell({g.xOf(target),top-.375,g.zOf(row)});
+        near(under.loosened.total(),q*q*q,1e-12,"the clicked underground cube leaves");
+        near(field.height(c),top,1e-12,"real cap remains until selected");
+        for(int n=0;n<480;n++)stepOnce(*live);
+        near(live->environment()->water()->terrain(c),top,0,"surface water remains above the real cap");
+        const auto roof=live->strikeCell({g.xOf(target),top,g.zOf(row)});
+        near(roof.loosened.total(),q*q*q,1e-12,"only the roof cube is collected");
+        near(field.height(c),top-2*q,1e-12,"open pit exposes its solid floor");
+        near(live->environment()->water()->terrain(c),field.height(c),0,"water bed tracks the opened pit");
+        for(int n=0;n<480;n++)stepOnce(*live);
+        const auto &water=*live->environment()->water();
+        require(water.depth(c)>.005,"surface water enters the opened pit");
+        near(water.volume(),volume,1e-10,"roof removal creates no water");
+        near(water.residual(),0,1e-10,"pit water ledger closes");
+        near(field.residual().total(),0,1e-10,"pit ground ledger closes");
+        near(field.height(g.at(target,row+1)),top,0,"uncut neighboring bank remains solid");
+        std::string why;const auto snapshot=live->snapshot(why);require(!snapshot.empty(),"pit snapshot: "+why);
+        TileImpactRequest request;request.cell_size_m=kCell;request.backend=BackendKind::CpuParallel;
+        request.bodies=readSceneJson(scene.dump());readSceneSettings(scene.dump(),request);
+        auto reopened=LiveWorld::open(request,snapshot);require(reopened->restored().tier=="whole","pit reopens whole");
+        near(reopened->environment()->terrain().height(c),top-2*q,0,"saved pit has no air cap");
+        near(reopened->environment()->water()->volume(),volume,1e-10,"saved pit retains water");
+        std::printf("  %s unroofed pit: dt %.9g s, cell %.2f m; water %.12g m3, residual %.12g; ground residual %.12g m3\n",
+                    material.c_str(),kDt,q,water.volume(),water.residual(),field.residual().total());
+    }
+}
+
 void cubeStrikesRemoveTheClickedRockWallCell() {
     constexpr double q=.25;
     for (const std::string material : {"glass", "oak", "iron"}) for(const std::string ground : {"soil","sand","rock"}) {
@@ -1153,6 +1194,7 @@ int main() {
     const std::vector<std::pair<const char *, std::function<void()>>> checks = {
         {"held cube tools remove the clicked wall band and retain its roof",cubeStrikesRemoveTheClickedRockWallCell},
         {"held cube tools open a wet channel without creating water", cubeStrikesOpenAWetChannel},
+        {"removing a cube roof opens a pit to water and survives restart",cubeStrikesOpenAnUnroofedPitToWater},
         {"the model is the closed forms", theModelIsTheClosedForms},
         {"a stake dropped into soil, and drawn out", aStakeDroppedIntoSoilAndDrawnOut},
         {"the same swing is the same meeting", theSameSwingIsTheSameMeeting},
