@@ -233,6 +233,12 @@ jobs:
             BANJO_CHROME_ARGS="--no-sandbox --enable-unsafe-swiftshader" \
             BANJO_BROWSER_TESTS=required python3 tests/workshop_browser_tests.py -v
           python3 tests/playground_record_tests.py --recorder build/ci/banjo_playground_record --engine build/ci/banjo_platform_cli -v -k rigid -k output
+          # The player regression: dig, walk, the rover, the Workshop, point and click,
+          # played with real input on a 25 cm cube world (docs/player-regression.md).
+          # Last in this step, so that what it finds does not hide the suites above.
+          BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run BANJO_LIBRARY=$PWD/build/ci/libbanjo.so BANJO_CHROME=/usr/bin/google-chrome \
+            BANJO_CHROME_ARGS="--no-sandbox --disable-dev-shm-usage --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader" \
+            BANJO_BROWSER_TESTS=required python3 tests/player_regression_tests.py -v
 
       - name: Test generic physics trial contracts
         run: BANJO_LIBRARY=$PWD/build/ci/libbanjo.so BANJO_TRIAL_ENGINE=$PWD/build/ci/banjo_live_world_run python3 tests/physics_trials_tests.py -v
