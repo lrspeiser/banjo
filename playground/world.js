@@ -4535,6 +4535,17 @@ function forgetHold() {
   showUse();
 }
 
+async function refreshHeldInventory() {
+  const session = world.session;
+  try {
+    const shown = await api("/api/world/inventory/shown", {session});
+    if (world.session !== session) return;
+    world.inventory = shown;
+    inventorySaid = "";
+    showInventory();
+  } catch (error) { say("bad", String(error.message || error)); }
+}
+
 // A thing the server has put in the hand -- taken up with E, or out of the bag:
 // held where the server gripped it, as taking hold of a loose thing a hand can
 // lift always is. A tool is held ready by its handle instead (tools.js), from
@@ -4646,7 +4657,10 @@ async function takeIntoHand(name, point) {
   const answer = await inventoryChange("take_up", name,
                                       { quiet: true, grip: point ? point.grip : null, point });
   if (!answer) return null;
-  return answer.ok ? "held" : "not kept";
+  if (answer.ok) return "held";
+  if (answer.unknown) return "not kept";
+  lastAction(answer.why || "This item could not be taken up.", "refused");
+  return null;
 }
 
 // A hand in the middle of a throw, a draw or a tool's stroke, or of one of a
@@ -4668,7 +4682,7 @@ async function toTheBag() {
   if (handBusy()) return;
   const on = world.aim && world.aim.name;
   const name = world.held ? world.held.name
-    : on ? (tools.profileOf(on) ? tools.profileOf(on).tool : on) : null;
+    : on ? (tools.profileOf(on) ? tools.profileOf(on).tool : on) : tools.nearTool()?.tool || null;
   if (!name) { lastAction("Look at what to put in your bag, or hold it, first.", "refused"); return; }
   // The pieces you walk over are collected as you walk, so the one the panel
   // offered can be in what you carry by the time the key arrives. That is not
@@ -9621,7 +9635,7 @@ const tools = makeTools({ world, act, api, say, remember, showUse, camera, carry
                             return collected ? `${answer.excavation_piles?.length ? 'Dug' : 'Collected'} ${massLabel(collected.kg)} · ${collected.materials.map(titled).join(" + ")}${answer.excavation_piles?.length ? ' → nearby pile' : ''}` : answer.said;
                           },
                           whereIAm, lastAction, takeIntoHand, showHolding,
-                          showInventory,
+                          showInventory, refreshInventory: refreshHeldInventory,
                           showNotebook: (book) => showNotebook(book, notebookRevision >= 0) });
 
 function profileOf(name) {

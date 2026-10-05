@@ -217,6 +217,44 @@ class WhatTakingAndHoldingDoToTheThing(unittest.TestCase):
         self.assertIn("changed", stale["why"])
         self.assertIn("ball", self.bodies())
 
+    def test_native_release_returns_item_to_world_and_retains_retry_receipt(self):
+        took = self.ask("lost-grip", 0, "take_up")
+        self.assertTrue(took["ok"], took)
+        record = inventory_room.inventory_of(self.app)
+        self.live.act({"session": self.session, "op": "release"})
+        shown = inventory_room.shown(self.app)
+        self.assertIsNone(shown["hands"]["right"])
+        self.assertEqual(shown["stowed"], [])
+        self.assertEqual(record.where(BALL["id"]), "world")
+        self.assertIn("ball", self.bodies())
+        self.assertIn("lost-grip", record.answers)
+        revision = record.revision
+        inventory_room.shown(self.app)
+        self.assertEqual(record.revision, revision, "release reconciles only once")
+        again = self.ask("take-again", revision, "take_up")
+        self.assertTrue(again["ok"], again)
+        self.assertEqual(self.held(), "ball")
+
+    def test_peers_cannot_take_a_held_item_but_can_take_it_after_native_release(self):
+        self.app.world_id = "grip-test"
+        self.app.room.player_records = {p: {"inventory": {}} for p in ("alice", "bob")}
+        ask = lambda actor, request: inventory_room.request(self.app,
+            {"request": request, "op": "take_up", "item": "ball", "person": PERSON}, actor)
+        took = ask("alice", "alice-take")
+        self.assertTrue(took["ok"], took)
+        refused = ask("bob", "bob-refused")
+        self.assertFalse(refused["ok"])
+        self.assertIn("another player", refused["why"])
+        self.assertNotIn("unknown", refused)
+        self.live.act({"session": self.session, "op": "release", "actor": "alice"})
+        taken = ask("bob", "bob-take-released")
+        self.assertTrue(taken["ok"], taken)
+        self.assertIsNone(inventory_room.shown(self.app, "alice")["hands"]["right"])
+        self.assertEqual(taken["shown"]["hands"]["right"]["name"], "ball")
+        state = self.live.act({"session": self.session, "op": "poses"})
+        self.assertEqual(state["player_hands"]["alice"]["holding"], "")
+        self.assertEqual(state["player_hands"]["bob"]["holding"], "ball")
+
     def test_a_change_without_its_own_id_is_refused(self):
         with self.assertRaises(ValueError):
             inventory_room.request(self.app, {"revision": 0, "op": "take", "item": "ball", "person": PERSON})

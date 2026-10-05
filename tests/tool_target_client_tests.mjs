@@ -7,6 +7,41 @@ const source=(await readFile(new URL('../playground/tools.js',import.meta.url),'
   .replace('"/vendor/three.module.js"',JSON.stringify(new URL('../playground/vendor/three.module.js',import.meta.url).href));
 const {makeTools}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
 
+test('native tool release clears the hand and queued uses once, without regripping',()=>{
+  let refreshed=0;const messages=[];const noop=()=>{};
+  const world={held:{name:'pick',pick:{object:'Field pick'}},use:{mode:'tool-ready',name:'Field pick',queued:1,down:true}};
+  const tools=makeTools({world,camera:new THREE.PerspectiveCamera(),carryGround:noop,
+    showHolding:noop,showUse:noop,lastAction:text=>messages.push(text),refreshInventory:()=>refreshed++});
+  tools.follow({hand:{holding:'pick'}});assert.ok(world.held);
+  tools.follow({hand:{}});assert.ok(world.held,'missing hand fields are not proof of release');
+  tools.follow({hand:{holding:''},player_hands:{peer:{holding:'peer pick'}}});
+  assert.equal(world.held,null);assert.equal(world.use.mode,'none');
+  assert.equal(refreshed,1);assert.match(messages[0],/left your hand.*press E/);
+  assert.deepEqual(tools.hand(),{hand:null,hand_q:null});
+  tools.follow({hand:{holding:''}});assert.equal(messages.length,1);
+});
+
+test('a refused registered pickup never falls through to an untracked native grip',async()=>{
+  const full=(await readFile(new URL('../playground/world.js',import.meta.url),'utf8')).replace(/\r\n/g,'\n');
+  const code=full.slice(full.indexOf('async function takeIntoHand('),full.indexOf('// A hand in the middle',full.indexOf('async function takeIntoHand(')));
+  const messages=[];let reply={ok:false,why:'That item belongs to another player'};
+  const take=new Function('inventoryChange','lastAction',code+';return takeIntoHand;')(
+    async()=>reply,text=>messages.push(text));
+  assert.equal(await take('pick'),null);assert.equal(messages[0],reply.why);
+  reply={ok:false,unknown:true};assert.equal(await take('loose fragment'),'not kept');
+  reply={ok:true};assert.equal(await take('own pick'),'held');
+});
+
+test('bag pickup finds a nearby thin tool even when the centre ray misses its handle',async()=>{
+  const full=(await readFile(new URL('../playground/world.js',import.meta.url),'utf8')).replace(/\r\n/g,'\n');
+  const code=full.slice(full.indexOf('async function toTheBag()'),full.indexOf('// 1-9:',full.indexOf('async function toTheBag()')));
+  const requests=[];
+  const pack=new Function('world','handBusy','tools','inventoryChange','titled','recordHolds','lastAction','sweepPiece','heldName',code+';return toTheBag;')(
+    {held:null,aim:null,bodies:new Map([['pick',{}]])},()=>false,{nearTool:()=>({tool:'pick'})},
+    async(...args)=>{requests.push(args);return {ok:true};},x=>x,()=>false,()=>{},()=>{},()=> '');
+  await pack();assert.equal(requests[0][0],'take');assert.equal(requests[0][1],'pick');
+});
+
 test('an empty hand collects a pile, rechecking exact-ray occlusion and reach; a pick digs past it',async()=>{
   // A Windows checkout has CRLF line ends; the markers below are written with LF.
   const full=(await readFile(new URL('../playground/world.js',import.meta.url),'utf8')).replace(/\r\n/g,'\n');

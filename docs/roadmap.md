@@ -1095,3 +1095,4 @@ Retained in the backlog, not yet placed in a lane:
 ## Keep the project on track
 
 Every checkpoint should state: source commit/branch; implemented change; reproducible tests; quantitative result and tolerance; numerical/model limitations; measured performance; remaining work; and main-versus-experimental status. Update the status document and property coverage matrix when features move between categories. Do not call a gate complete merely because its types, menu items, or future enum values exist.
+**October 5 tool recovery:** [Verified grip/ownership repair](tool-grip-recovery-checkpoint.md) removes phantom held picks, stops registered pickup refusals and provides thin-tool bag recovery. Actual Player 2 rock mining and collection pass. Body/view timing, partial mining persistence and broader construction/physics work remain open.

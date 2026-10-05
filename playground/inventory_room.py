@@ -81,7 +81,7 @@ def _hand_of(app: Any, player_id: str = "") -> dict[str, Any]:
     state = _state(app)
     if player_id:
         return (state.get("player_hands") or {}).get(player_id) or {}
-    return state.get("hand") or {}
+    return state.get("hand") or ({"holding": state["held"]} if "held" in state else {})
 
 
 def items_of(app: Any) -> list[dict[str, Any]]:
@@ -93,7 +93,7 @@ def items_of(app: Any) -> list[dict[str, Any]]:
     return inventory.items_of(app.room.spec, _state(app).get("joints"))
 
 
-def reconcile(app: Any) -> None:
+def reconcile(app: Any, *, released: bool = True) -> None:
     """A separated held assembly owns only what the native grip still carries.
 
     Rebind the retained component's bag slot/facing without moving bodies or
@@ -108,9 +108,16 @@ def reconcile(app: Any) -> None:
     players = list(player_world.records(app)) if getattr(app, "world_id", None) else [""]
     for actor in players:
         record = inventory_of(app, actor)
-        holding = str(_hand_of(app, actor).get("holding") or "")
+        native_hand = _hand_of(app, actor)
+        holding = str(native_hand.get("holding") or "")
         with record.lock:
             old_id = record.hands.get(record.dominant)
+            # An authoritative native release leaves the item in the world,
+            # not in a phantom inventory hand. Missing hand data is not a release.
+            if released and old_id and "holding" in native_hand and not holding:
+                record.forget(old_id)
+                record.revision += 1
+                continue
             old = original.get(old_id)
             if not old or not any(i.get("separated_from") == old_id for i in current):
                 continue
@@ -339,19 +346,19 @@ def after_open(app: Any, opened: dict[str, Any] | None = None,
     session = app.live.session
     if session is None:
         return shown(app)
-    reconcile(app)
+    restored = opened.get("restored") if isinstance(opened, dict) else None
+    whole = isinstance(restored, dict) and restored.get("tier") in ("whole", "carried")
+    reconcile(app, released=whole)  # A fresh authored room moves old hands to the bag.
     items = {item["id"]: item for item in items_of(app)}
     item_of_body = {name: item_id for item_id, item in items.items() for name in item["bodies"]}
     state = session.state or {}
     # What the engine's hand holds as the room opens: nothing in a room opened
     # from its spec; what it held, in one opened again as it stood.
     holding = str((state.get("hand") or {}).get("holding") or "")
-    restored = opened.get("restored") if isinstance(opened, dict) else None
     # Opened again as it stood: whole after a restart, or carried into a room
     # the chat or an action has changed -- where the engine's hand still holds
     # what it held when that came back as it was, and what was set aside is
     # still away.
-    whole = isinstance(restored, dict) and restored.get("tier") in ("whole", "carried")
     parked: set[str] = set()
     with record.lock:
         changed = False
@@ -441,10 +448,10 @@ def _after_open_players(app: Any, opened: dict[str, Any] | None,
                 if isinstance(target, list) and len(target) == 3:
                     app.live.act({"session": session.id, "op": "move", "actor": owner,
                                   "to": target})
-        reconcile(app)
-        native_hands = (session.state or {}).get("player_hands") or {}
         restored = opened.get("restored") if isinstance(opened, dict) else None
         whole = isinstance(restored, dict) and restored.get("tier") in ("whole", "carried")
+        reconcile(app, released=whole)
+        native_hands = (session.state or {}).get("player_hands") or {}
         parked: set[str] = set()
         for ident in players:
             record = inventory_of(app, ident)

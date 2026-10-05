@@ -373,6 +373,19 @@ export function makeTools(ctx) {
   // After every step: what the person carries.
   function follow(state) {
     if (state.carried) carryGround(state.carried);
+    if (world.held?.pick && state.hand && Object.hasOwn(state.hand, "holding")
+        && state.hand.holding !== world.held.name) {
+      const name = world.use.name || world.held.pick.object;
+      stop();
+      world.held = null;
+      world.use = { mode: "none" };
+      forget();
+      showHolding(false);
+      showUse();
+      lastAction(`${name} left your hand. Move close to it and press E to take it up again.`, "refused");
+      ctx.refreshInventory?.();
+      return;
+    }
     const use=world.use;
     if(use?.mode!=="tool-working" || !world.held?.pick)return;
     const rows=[];
