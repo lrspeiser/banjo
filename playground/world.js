@@ -5025,7 +5025,7 @@ function showInventory() {
     meter.querySelector("small").textContent = worldId ? "Click a nearby material pile to collect it" : full ? "Sand / soil → point at clear ground → H to heap" :
       [...world.stock].filter(([,v])=>v.kg>0).map(([what,v])=>`${what} ${massLabel(v.kg)}`).join(" · ") || "Empty";
     meter.querySelector("[data-tool-guide]").hidden = !!world.held?.pick;
-    meter.querySelector("[data-movement]").textContent = movementMode === "fly" ? "God mode · Space ↑ · Shift + Space ↓" :
+    meter.querySelector("[data-movement]").textContent = movementMode === "fly" ? "Flying · God mode · Space ↑ · Shift + Space ↓" :
       wet ? `${wet.under>.5 ? "Swim" : "Wade"} · ${Math.round(wet.under*100)} cm immersed`+(movementMode === "native" ? "" : ` · Space ${wet.under>.5 ? "↑ / Shift ↓" : "jump"}`) :
       "Walk · Space jump · Shift run";
     const flow = meter.querySelector("[data-water-flow]");
@@ -8049,7 +8049,7 @@ function showRidingSettings() {
     } else movement.value=movementMode;
   }
   said.textContent = riding.godMode
-    ? movementMode === "fly" ? "God mode · Space up · Shift + Space down"
+    ? movementMode === "fly" ? "Flying · God mode · Space up · Shift + Space down"
       : movementMode === "native" ? "In your body · walk, jump, swim and carry" : "On foot · walk, jump & swim"
     : mine
       ? `You are ${mine.name}. W A S D drive it`
@@ -8421,10 +8421,12 @@ async function aim() {
                                     dir: [dir.x, dir.y, dir.z], max_m: 40,
                                     past_held: !!world.held?.pick });
     // Kept unless the view has really moved meanwhile. With a body the eye
-    // sways a little even standing still, and at 3 cm and 0.06 degrees nearly
-    // every answer was thrown away: things showed only "eventually", and a
-    // click found nothing under it (the owner, 2026-10-04).
-    if(from.distanceTo(camera.position)>.2 || dir.distanceTo(aimVector())>.02)return;
+    // sways a little even standing still, and at 3 cm nearly every answer
+    // was thrown away: things showed only "eventually", and a click found
+    // nothing under it (the owner, 2026-10-04). The sway moves the eye, not
+    // where it looks, so the direction is still held close: a throw compares
+    // where it would land with this answer.
+    if(from.distanceTo(camera.position)>.2 || dir.distanceTo(aimVector())>.002)return;
     world.aim = found.hit && found.name ? found : null;
     // Where the crosshair meets the ground, when it is the ground it meets:
     // that is where a spade goes in.

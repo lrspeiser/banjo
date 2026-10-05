@@ -1920,6 +1920,27 @@ class AThrowIsAimedBeforeItIsMade(PageJourney):
                            {"type": kind, "x": 400, "y": 350, "button": "left",
                             "buttons": buttons, "clickCount": 1})
 
+    def hold_until_green(self, most_s=4.0, least_s=0.4):
+        """Hold the button until the ring goes green, then let go -- as a
+        person throws. A fixed hold lands where it does only for one view: the
+        thing sits beside the view, so a wider view throws from elsewhere.
+        Pressed at the middle of the view, where the ground was looked at: the
+        ring follows the cursor."""
+        middle = self.js('(()=>{const r=document.querySelector("#stage").getBoundingClientRect();'
+                         'return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()')
+        self.page.send("Input.dispatchMouseEvent",
+                       {"type": "mousePressed", **middle, "button": "left",
+                        "buttons": 1, "clickCount": 1})
+        began = time.monotonic()
+        time.sleep(least_s)
+        while time.monotonic() - began < most_s:
+            if self.js("banjoRoom.world.use.mode === 'preparing' && !!banjoRoom.world.use.preview?.onTarget"):
+                break
+            time.sleep(0.05)
+        self.page.send("Input.dispatchMouseEvent",
+                       {"type": "mouseReleased", **middle, "button": "left",
+                        "buttons": 0, "clickCount": 1})
+
     def press_escape(self):
         for kind in ("keyDown", "keyUp"):
             self.page.send("Input.dispatchKeyEvent",
@@ -1966,7 +1987,7 @@ class AThrowIsAimedBeforeItIsMade(PageJourney):
         self.open_valley()
         x, _y, z = self.take_the_block("green")
         self.assertTrue(self.look_at_the_ground(x, z, 2)["onTarget"])
-        self.hold_the_button(1.4)
+        self.hold_until_green()
         self.assertTrue(self.wait_for("!banjoRoom.world.held", 60),
                         f"it never left the hand: {self.js('banjoRoom.details().last')}")
         said = self.js("banjoRoom.details().last")
