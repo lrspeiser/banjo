@@ -167,7 +167,7 @@
        -7469.2
       ],
       "body": "rover",
-      "depth_mm": 3.0,
+      "depth_mm": 80.0,
       "kind": "water",
       "stops": 1
      },
@@ -178,7 +178,7 @@
        -7469.2
       ],
       "body": "rover",
-      "depth_mm": 3.0,
+      "depth_mm": 80.0,
       "kind": "water",
       "stops": 1
      },
@@ -189,7 +189,7 @@
        -7469.2
       ],
       "body": "rover",
-      "depth_mm": 3.0,
+      "depth_mm": 80.0,
       "kind": "water",
       "stops": 1
      },
@@ -200,7 +200,7 @@
        -9854.3
       ],
       "body": "rover",
-      "depth_mm": 3.0,
+      "depth_mm": 80.0,
       "kind": "water",
       "stops": -1
      },
@@ -211,7 +211,7 @@
        -9854.3
       ],
       "body": "rover",
-      "depth_mm": 3.0,
+      "depth_mm": 80.0,
       "kind": "water",
       "stops": -1
      }

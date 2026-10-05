@@ -57,6 +57,12 @@ DIG_CLEAR_M = 1.2
 # came to rest 1.6 m off, inside the window between DIG_CLEAR_M and DIG_REACH_M
 # that it may dig in. Nearer than that and it backs off before it digs.
 DIG_STAND_M = 2.0
+# How close to a chosen stand a machine moving round its working must come.
+# The stand is picked so the fresh ground it is for stays in reach (and out of
+# the ground under it) anywhere within this of it.
+FINAL_STAND_M = 0.25
+# How long a look round a working that found no stand holds, in room seconds.
+STAND_LOOK_S = 3.0
 # How fresh the ground a bite goes into must be, and how wide the working may
 # spread. Each spot is scooped ONCE: a bite only goes into ground still within
 # this of the ground around it, so the working spreads across the place and no
@@ -250,11 +256,15 @@ def go_to(ctx: senses.Context, call: Call) -> dict[str, Any]:
     if call.by in ('routine','talk') and ctx.program.get('kind')=='roam' and ctx.bodies:
         import machine_navigation
         arrival=(max(0.,stand-.6),max(0.,stand-.3)) if stand>=1.5 else (0.,NEAR_M)
+        if call.args.get('within_m') is not None:
+            # A particular spot, not a place: where a dig stands to reach the
+            # fresh ground of its working (_stand_for).
+            arrival=(0.,min(NEAR_M,max(FINAL_STAND_M,float(call.args['within_m']))))
         pile=ctx.goods.by_name(str(call.args.get('place'))) if ctx.goods and call.args.get('place') else None
         if pile:arrival=(0.,max(0.,machine_goods_reach()+float(pile.get('radius_m',1.))-.75))
         planning=point if arrival!=(0.,0.) else aim
         if arrival!=(0.,0.) or math.hypot(aim[0]-ctx.at()[0],aim[1]-ctx.at()[1])>NEAR_M:
-            navigation=machine_navigation.waypoint(ctx,planning,arrival)
+            navigation=machine_navigation.plan(ctx,planning,arrival)
             if navigation:navigation['arrival_m']=list(arrival)
             if navigation and navigation.get('blocked'):
                 # A failed plan keeps the load and requests actual braking.
@@ -327,10 +337,36 @@ def _spread_m(ctx: senses.Context, middle: list[float]) -> float:
     return max(DIG_SPREAD_M, float(deposit.get("radius_m") or 0.0))
 
 
+def _place_spots(ctx: senses.Context, middle: list[float]) -> list[list[float]]:
+    """Every spot of a place: its middle and rings out to its spread.
+
+    In a deposit, only the spots inside it. Its outermost ring lay on the
+    deposit's edge, where rounding decided whether a scoop was in the vein or
+    not, and the far side of a vein is that ring: from the stand the mine's
+    rover reaches it from, half its first scoops brought up no ore."""
+    spread = _spread_m(ctx, middle)
+    deposit = ctx.goods.deposit_at(middle[0], middle[1]) if ctx.goods is not None else None
+    if deposit is not None:
+        inside = float(deposit.get("radius_m") or 0.0) - 1e-6
+        at = deposit["at_m"]
+    radii = [0.0]
+    while radii[-1] + DIG_STEP_M <= spread + 1e-6:
+        radii.append(round(radii[-1] + DIG_STEP_M, 3))
+    spots = []
+    for radius in radii:
+        turns = 1 if radius == 0.0 else max(8, int(2.0 * math.pi * radius / DIG_STEP_M))
+        for i in range(turns):
+            turn = i * 2.0 * math.pi / turns
+            spot = [middle[0] + radius * math.sin(turn), middle[1] + radius * math.cos(turn)]
+            if deposit is None or math.hypot(spot[0] - at[0], spot[-1] - at[-1]) < inside:
+                spots.append(spot)
+    return spots
+
+
 def _spots(ctx: senses.Context, middle: list[float]) -> list[list[float]]:
-    """Where it could put this bite: the middle of the place and rings out to the
-    spread, keeping only what the machine can reach without standing on it, and
-    preferring the far side of the place to the near one.
+    """Where it could put this bite: the spots of the place, keeping only what
+    the machine can reach without standing on it, and preferring the far side
+    of the place to the near one.
 
     The far side is the ground it is not about to drive over. It comes at a place
     from wherever the depot happens to be that trip, so working away from itself
@@ -338,22 +374,85 @@ def _spots(ctx: senses.Context, middle: list[float]) -> list[list[float]]:
     it now."""
     ax, az = ctx.at()
     to_middle = math.hypot(middle[0] - ax, middle[1] - az)
-    spread = _spread_m(ctx, middle)
     # A flyer is over its work, not on it, so no spot is under its wheels.
     clear = 0.0 if _flies(ctx) else DIG_CLEAR_M
-    radii = [0.0]
-    while radii[-1] + DIG_STEP_M <= spread + 1e-6:
-        radii.append(round(radii[-1] + DIG_STEP_M, 3))
     near, far = [], []
-    for radius in radii:
-        turns = 1 if radius == 0.0 else max(8, int(2.0 * math.pi * radius / DIG_STEP_M))
-        for i in range(turns):
-            turn = i * 2.0 * math.pi / turns
-            spot = [middle[0] + radius * math.sin(turn), middle[1] + radius * math.cos(turn)]
-            off = math.hypot(spot[0] - ax, spot[1] - az)
-            if clear <= off <= DIG_REACH_M:
-                (far if off >= to_middle - 0.05 else near).append(spot)
+    for spot in _place_spots(ctx, middle):
+        off = math.hypot(spot[0] - ax, spot[1] - az)
+        if clear <= off <= DIG_REACH_M:
+            (far if off >= to_middle - 0.05 else near).append(spot)
     return far+near
+
+
+def _stand_for(ctx: senses.Context, middle: list[float], around: float) -> list[float] | None:
+    """Where to stand to reach fresh ground of a place, when there is none in
+    reach from where it stands: the nearest point round the place, at its
+    stand-off, with fresh ground in reach of it however it comes to rest there.
+
+    A machine comes to a place along whichever line it arrives on, and a place
+    worked from one side is worked out from that side only. The mine's rover
+    stood where it had always stood, said "worked out" with half the vein's
+    width still fresh across it, and waited there until its last ask ran out --
+    about a minute a trip, and some trips it went on to roam into its own pits.
+    None for one that flies (it is over its work) or for a place with nothing
+    fresh left anywhere in it."""
+    if _flies(ctx):
+        return None
+    r = ctx.routine
+    looked = getattr(r, "no_stand_t", None)
+    if looked is not None and 0.0 <= float(ctx.t) - looked < STAND_LOOK_S:
+        return None
+    stand = _find_stand(ctx, middle, around)
+    if r is not None and hasattr(r, "no_stand_t"):
+        r.no_stand_t = float(ctx.t) if stand is None else None
+    return stand
+
+
+def _find_stand(ctx: senses.Context, middle: list[float], around: float) -> list[float] | None:
+    ax, az = ctx.at()
+    refused = getattr(ctx.routine, "refused_stands", None) or []
+    # Its wheels stay out of its own scoops, at a stand and turning on it.
+    # Moved round onto a stand half a metre from a scoop, the mine's rover
+    # turned for home, swept into it and its neighbours, and stuck there
+    # pitched 8 deg down with its wheels turning.
+    import machine_navigation
+    mine = set(ctx.program.get("parts") or []) | {ctx.program.get("body")}
+    own = [p for b in ctx.bodies or [] if b.get("name") in mine for p in machine_navigation.shape_points(b, ctx.cell_m)]
+    footprint = max((math.hypot(p[0] - ax, p[2] - az) for p in own), default=DIG_CLEAR_M / 2.0)
+    dug = list(getattr(ctx.routine, "dug_spots", None) or [])
+    fresh = []
+    for spot in _place_spots(ctx, middle):
+        here = ctx.survey(spot[0], spot[1]) or {}
+        if "ground_m" in here and around - float(here["ground_m"] or 0.0) <= DIG_FRESH_M:
+            fresh.append(spot)
+    if not fresh:
+        return None
+    # Inside reach and outside the ground under it with FINAL_STAND_M to spare
+    # both ways, both of the place (the bite's own test) and of the spot.
+    lo, hi = DIG_CLEAR_M + FINAL_STAND_M, DIG_REACH_M - FINAL_STAND_M
+    ring = (lo + hi) / 2.0
+    best = None
+    for i in range(24):
+        turn = i * 2.0 * math.pi / 24
+        stand = [middle[0] + ring * math.sin(turn), middle[1] + ring * math.cos(turn)]
+        away = math.hypot(stand[0] - ax, stand[1] - az)
+        if away <= FINAL_STAND_M + machine_navigation.CELL_M / 2.0:
+            # Here already, with nothing to bite, or nearer than its route
+            # planner's own acceptance of the stand: a trip it would hold
+            # short of where it stands.
+            continue
+        if any(math.hypot(stand[0] - p[0], stand[1] - p[1]) < 0.3 for p in refused):
+            continue                      # set out for since its last scoop, and not reached
+        if any(math.hypot(stand[0] - d[0], stand[1] - d[1]) < footprint + d[2] / 2.0 for d in dug):
+            continue                      # its wheels would be in its own working
+        if not any(lo <= math.hypot(s[0] - stand[0], s[1] - stand[1]) <= hi for s in fresh):
+            continue
+        ground = ctx.survey(stand[0], stand[1]) or {}
+        if not ground.get("on_the_ground", True) or float((ground.get("water") or {}).get("depth_m") or 0) > 0.003:
+            continue
+        if best is None or away < best[0]:
+            best = (away, stand)
+    return best[1] if best else None
 
 
 def _bite(ctx: senses.Context, args: dict[str, Any]) -> dict[str, Any]:
@@ -394,6 +493,14 @@ def _bite(ctx: senses.Context, args: dict[str, Any]) -> dict[str, Any]:
         # because the step that took the machine there is behind it -- measured
         # on a drone given a dig routine, which wandered 4.8 m off the vein and
         # said "it must go there first" for the rest of the run.
+        # Sent straight back with no route (a point a metre inside its reach,
+        # which the engine's own metre of arrival already counts as reached
+        # from 2.05 m off), the rover sat out a minute's ask; it goes the way
+        # its routine's trips go, to a stand with fresh ground in reach.
+        stand = _stand_for(ctx, middle, _around_m(ctx, middle, _spread_m(ctx, middle) + 0.5))
+        if stand is not None:
+            return {"stand": stand, "why": f"{named} is {off:.1f} m off, beyond the {DIG_REACH_M:.1f} m it can "
+                                           f"reach, so it goes back to where it can reach fresh ground"}
         return {"go_to": _short_of(ctx, middle, stands_off_m(ctx)),
                 "why": f"{named} is {off:.1f} m off, beyond the {DIG_REACH_M:.1f} m it can reach, so it goes back"}
     if off < clear:
@@ -411,13 +518,23 @@ def _bite(ctx: senses.Context, args: dict[str, Any]) -> dict[str, Any]:
             continue
         ground = float(here["ground_m"] or 0.0)
         candidates.append((ground,spot))
+    def elsewhere(words):
+        # Nothing to bite from HERE is not the place worked out.
+        stand = _stand_for(ctx, middle, around)
+        if stand is not None:
+            return {"stand": stand, "why": words + ", so it moves round to fresh ground of it"}
+        return {"why": words}
     if not candidates:
-        return {"why": f"it cannot reach any of {named} from where it stands"}
+        return elsewhere(f"it cannot reach any of {named} from where it stands")
     to_middle=math.hypot(middle[0]-ax,middle[1]-az)
     candidates.sort(key=lambda pair:(math.hypot(pair[1][0]-ax,pair[1][1]-az)>=to_middle-.05,pair[0]),reverse=True)
     high=max(pair[0] for pair in candidates)
     down_mm = (around - high) * 1000.0
     if down_mm > DIG_FRESH_M * 1000.0:
+        stand = _stand_for(ctx, middle, around)
+        if stand is not None:
+            return {"stand": stand, "why": f"the ground of {named} in reach is {down_mm:.0f} mm down already, "
+                                           f"so it moves round to fresh ground of it"}
         return {"why": f"{named} is worked out: the highest ground of it it can reach is {down_mm:.0f} mm down "
                        f"already, and it will not dig one hole deeper"}
     # A high reachable point can still intersect the actual turned assembly's
@@ -432,7 +549,7 @@ def _bite(ctx: senses.Context, args: dict[str, Any]) -> dict[str, Any]:
                            **{'from':spot,'to':spot},width_m=width)
             if clearance.get('clear') is False:continue
         return {'point':spot}
-    return {'why':f'{named} has no fresh bite within reach that clears its current support; move to another approach'}
+    return elsewhere(f'{named} has no fresh bite within reach that clears its current support')
 
 
 def _resource_endpoint(ctx, flow=None):
@@ -461,6 +578,14 @@ def dig(ctx: senses.Context, call: Call) -> dict[str, Any]:
     if bite.get("back_off_m"):
         _behave(ctx, call, "backing off", max(1.0, float(bite["back_off_m"]) / BACK_OFF_M_S))
         return {"did": f"dug nothing yet: {bite['why']}, so it backs off first", "load": r.load_reading()}
+    if bite.get("stand"):
+        go = {"point": bite["stand"], "within_m": FINAL_STAND_M}
+        if call.by == "routine":
+            # Its routine drives it there as one of its own trips (planned,
+            # replanned, braked on arrival), then this dig is asked again.
+            return {"did": f"dug nothing yet: {bite['why']}", "reposition": go, "load": r.load_reading()}
+        went = go_to(ctx, Call("go_to", go, call.by, call.why))
+        return {"did": f"dug nothing yet: {bite['why']}; {went['did']}", "load": r.load_reading()}
     if bite.get("go_to"):
         _behave(ctx, call, "approaching", 60.0, bite["go_to"])
         return {"did": f"dug nothing yet: {bite['why']}", "load": r.load_reading()}
@@ -545,6 +670,9 @@ def dig(ctx: senses.Context, call: Call) -> dict[str, Any]:
     ore = ctx.goods.dug(point[0], point[1], kg) if ctx.goods is not None else {}
     ore_share = min(1.0, sum(ore.values()) / kg) if ore else 0.0
     r.load_in(sand * (1.0 - ore_share), soil * (1.0 - ore_share), kg, ore)
+    r.refused_stands.clear()
+    r.no_stand_t = None
+    r.dug_spots.append([float(point[0]), float(point[1]), float(width)])
     if ctx.goods is not None:
         contents=dict(ore)
         if kg-sum(ore.values())>0: contents['sand and soil']=kg-sum(ore.values())

@@ -833,6 +833,62 @@ and through the playground's own route (the `tests-rover` room, `behave` with
 9 m up the shore: its own ask left it dry at z -6.4 saying "the water was in
 the way of what it was asked, so it gave it up"; a person's order put it at
 (0.15, -0.88), 152 mm of water under a wheel, waiting where it was sent.
+
+### Wading the shallows
+
+**Status, 2026-10-04.** A rover now wades shallow water by itself: water up to
+the axle of its smallest wheel, the 160 mm caster, so 80 mm. It still keeps out
+of the river and the lake.
+
+Water was kept out because electricity and water do not mix. Nothing in the
+engine models that: water only pushes up on what is in it and drags on what
+moves through it. The cost of keeping out was real, though. In the mine, a
+rover on its way home ended beside the water with every way out more than
+3 mm deep, and stood there for the rest of the run. The owner chose wading.
+
+There is one number, and it belongs to the machine: each water sensor's
+`depth_mm`, how deep the water ahead must be before it counts as in the way.
+The rooms' rovers and the Workshop's rover template have 80 (they had 3). The
+reflex reads it, and the route planner (`machine_navigation.waypoint`) reads
+the same number off the machine's sensors, so it never plans a way the
+reflexes would refuse. A wet step counts double, so it wades only where that
+saves going round. The drone keeps 3 mm: it should never land in water.
+
+### Routes over the map of what has been seen
+
+**Status, 2026-10-04.** A rover's own route planner looks 6 m around it and no
+further, so it heads straight at a place, and a river between the two is a
+wall. A rover sent home round a bend of water met the bank and stood there.
+
+Now a trip to somewhere further than 4 m off is planned twice
+(`machine_navigation.plan`):
+
+- **Over the room's map of what has been seen** (`machine_sight`, the grid that
+  every machine and the person fill in just by being somewhere), a metre a
+  cell. A cell can be crossed when it has been seen, is on the ground, has no
+  more water than the machine wades, is no steeper than it climbs, and is clear
+  of anything solid. A wet cell costs double and a cell over one of its own
+  scoops costs four times, so it goes round them when it can.
+- **Then 4 m along that route**, the local planner plans the next leg exactly,
+  as it always has. The routine plans the leg after that from wherever this
+  one ends.
+
+Ground nobody has seen is never routed through (the owner, 2026-10-04). A
+drone that has flown over the far side of a river therefore gives a rover its
+way round. With no route over seen ground, the trip falls back to the local
+planner alone, as before. Trips of 4 m or less (docking, standing to dig) are
+planned only as they were. Each cell's survey is kept on the shared map for
+20 room seconds, so the machines share it.
+
+### The mini map
+
+The world page shows a map card in its top right corner: the room from above,
+only as far as it has been seen. Seen ground is shaded by height and its water
+is blue by depth; unseen ground stays dark. On it are the machines (a rover
+orange, a drone cyan, a still machine a grey square), the person as an arrow
+the way they face, and, dashed, the route over the map each machine is
+following. The route comes with every step as `routes` (`rover_brain.Brains`).
+Its heading folds it away, and the page remembers that.
 ## What has been seen
 
 A room answered about ground nobody had ever been near as readily as about the

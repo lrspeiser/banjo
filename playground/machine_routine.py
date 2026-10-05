@@ -104,6 +104,8 @@ ROUTINES: dict[str, dict[str, Any]] = {
 }
 DEFAULT_HOPPER_KG = 40.0
 NOTES_KEPT = 12
+# How many of its latest scoops a digging machine remembers the place of.
+DUG_SPOTS_KEPT = 256
 # A go_to that runs out of time is tried again from where it stands, this many
 # times, before the routine gives up the step.
 RETRIES = 3
@@ -254,6 +256,17 @@ class Routine:
         self.finished: deque[dict[str, Any]] = deque(maxlen=8)  # orders and watches that ran to their end
         self.seq = 0
         self.next_order = 1
+        # Stands round a working it set out for and did not reach, since its
+        # last scoop: a dig choosing where to stand passes them over, so it
+        # does not set out for the same unreachable spot again and again.
+        self.refused_stands: list[list[float]] = []
+        # Where its own scoops went (the latest, while it runs): a stand it
+        # moves round to keeps its wheels out of them. A hillside's heights
+        # cannot tell a scoop from the slope it is on; the scoop's own record can.
+        self.dug_spots: deque[list[float]] = deque(maxlen=DUG_SPOTS_KEPT)
+        # When a look round its working last found no stand: a worked-out
+        # place's idle dig is asked every step, and the look is ~130 surveys.
+        self.no_stand_t: float | None = None
 
     def record(self):
         """Exact load and execution state; display summaries deliberately round."""
@@ -470,6 +483,12 @@ class Routine:
             self.frame.issued = None
             self.frame.began_t = None
 
+    def _refuse_stand(self, step: dict[str, Any], why: str) -> None:
+        point = (step.get("args") or {}).get("point")
+        if isinstance(point, (list, tuple)):
+            self.refused_stands.append([float(point[0]), float(point[-1])])
+        self._advance(f"not that stand: {why}")
+
     def _watches(self, ctx: senses.Context) -> dict[str, Any] | None:
         """A watch whose condition has just come to hold: its steps go on top,
         once per rising edge, and never while its own steps are running."""
@@ -603,6 +622,14 @@ class Routine:
                     if navigation and (not navigation.get('final') or not in_region):
                         frame.issued=None  # re-plan the next leg from actual native pose
                         asked=None
+                    elif frame.name=="moving round" and destination and math.hypot(
+                            ctx.at()[0]-destination[0],ctx.at()[1]-destination[1])>float(step['args'].get('within_m',0))+.1:
+                        # Held short of a stand its route could not take it
+                        # onto: from here the fresh ground it chose that stand
+                        # for is not in reach, and choosing it again would
+                        # only hold it here again.
+                        self._refuse_stand(step, "it could not get onto it")
+                        return None
                     else:
                         self._advance("it arrived")
                         return None
@@ -614,6 +641,11 @@ class Routine:
                     # seconds, where anything here would wait out the whole
                     # minute and would only ever cover a routine's own go_to.
                     frame.tries += 1
+                    if frame.tries > int(step.get("retries", RETRIES)) and frame.name == "moving round":
+                        # Its own way round a working, not a trip it was sent
+                        # on: back to the dig, which picks another stand.
+                        self._refuse_stand(step, f"{frame.tries - 1} tries did not get it there")
+                        return None
                     if frame.tries > int(step.get("retries", RETRIES)):
                         self.note(f"gave up going to {step['args'].get('place')}: {frame.tries - 1} tries")
                         frame.issued=tools.hold_still(ctx,tools.Call('hold_still',{'for_s':0},by))
@@ -664,6 +696,18 @@ class Routine:
         elif did.get('navigation'):frame.blocked=0
         if did.get('blocked_route') and (not self.notes or self.notes[-1]!=did['did']):
             self.note(did['did'])
+        if frame.name == "moving round" and str(did.get("did", "")).startswith("go_to blocked:"):
+            self._refuse_stand(step, "no route goes there")
+            return did
+        if did.get("reposition"):
+            # A dig with nothing to bite from where it stands, and fresh ground
+            # of its place elsewhere: a trip to where it can reach it, then the
+            # dig again. Left to itself it stood braked by its last ask.
+            self.note(did["did"][:160])
+            frame.issued = None
+            self.interrupt("moving round", [{"do": "go_to", "args": did["reposition"], "until": "arrived",
+                                             "retries": RETRIES}])
+            return did
         if did.get("idle"):
             # Nothing to do yet (nothing on the pile, nothing to work): asked
             # again next time, quietly. A take with something in the hopper

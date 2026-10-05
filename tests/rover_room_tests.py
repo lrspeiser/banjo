@@ -22,6 +22,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "playground")]
 import fracture_lab, live_session, room_store, world_room   # noqa: E402
 
+# How deep the water its sensors let it drive through (tools/build_rover_room.py,
+# SENSOR_DEPTH_MM): to the axle of its 160 mm caster.
+WADES_M = 0.08
+
 ENGINE = Path(os.environ["BANJO_LIVE_ENGINE"]).resolve() if os.environ.get("BANJO_LIVE_ENGINE") else None
 DT = 1 / 120
 ROVER = ("rover", "rover: left wheel", "rover: right wheel", "rover: caster", "rover: caster wheel")
@@ -66,7 +70,7 @@ class TheRoomDeclaresIt(unittest.TestCase):
         # program nothing stops by itself -- the program reads them.
         self.assertEqual([1, 1, 1, -1, -1],
                          [s["stops"] for s in program["sensors"]])
-        self.assertEqual((3.0, 3.0), (left["depth_mm"], right["depth_mm"]))
+        self.assertEqual((WADES_M * 1000.0, WADES_M * 1000.0), (left["depth_mm"], right["depth_mm"]))
         self.assertGreater(left["at_mm"][0] - right["at_mm"][0], 1000.0)
         # The middle one is between them, and the pair behind are behind.
         self.assertEqual(0.0, middle["at_mm"][0])
@@ -261,7 +265,7 @@ class RoamingIt(unittest.TestCase):
         self.assertEqual([1, 1, 1, -1, -1], [s["stops"] for s in program["sensors"]])
         self.assertFalse(any(s["sees"] for s in program["sensors"]))
 
-    def test_turned_on_it_roams_the_shore_dry_and_turned_off_it_stops(self):
+    def test_turned_on_it_roams_the_shore_wading_and_turned_off_it_stops(self):
         self.live.session.send(op="step", dt=DT, n=240)       # settled
         self.assertEqual("going forward", self.run_it(True, 1)["doing"])
         path, wet = self.roam(30.0)
@@ -270,12 +274,14 @@ class RoamingIt(unittest.TestCase):
               f"of water under a wheel; now {program['doing']}: {program['why']}")
         self.assertGreater(path, 8.0)
         self.assertGreaterEqual(program["turns"], 1)
-        # Shallow, not dry. The sensors trip at 3 mm -- the depth the water
-        # itself calls wet -- and they look from over a metre ahead of the
-        # wheels, so on a curved shore the front sweeps through the
-        # shallows as it turns and a wheel can touch. It used to go 12 to
-        # 176 mm IN, on every run, which is the thing this is watching for.
-        self.assertLessEqual(wet, 0.05)
+        # Wading, not swimming. The sensors trip at 80 mm, the axle of its
+        # caster (the owner, 2026-10-04: it may wade the shallows of a shore,
+        # never go into the lake), and they look from over a metre ahead of
+        # the wheels, so on a curved shore the front sweeps through the
+        # shallows as it turns and a wheel can go deeper than they read. That
+        # sweep is the 47 mm this allowed over the old 3 mm sensors; it once
+        # went 176 mm IN, on every run, which is the thing this is watching for.
+        self.assertLessEqual(wet, WADES_M + 0.047)
         self.assertEqual("stopped", self.run_it(False, 2)["doing"])
         self.live.session.send(op="step", dt=DT, n=240)
         speed = math.sqrt(sum(v * v for v in self.pose("rover")["velocity_m_s"]))
@@ -298,12 +304,14 @@ class RoamingIt(unittest.TestCase):
         self.assertEqual((before["doing"], before["turns"]), (after["doing"], after["turns"]))
         path, wet = self.roam(12.0)
         self.assertGreater(path, 3.0)
-        # Shallow, not dry. The sensors trip at 3 mm -- the depth the water
-        # itself calls wet -- and they look from over a metre ahead of the
-        # wheels, so on a curved shore the front sweeps through the
-        # shallows as it turns and a wheel can touch. It used to go 12 to
-        # 176 mm IN, on every run, which is the thing this is watching for.
-        self.assertLessEqual(wet, 0.05)
+        # Wading, not swimming. The sensors trip at 80 mm, the axle of its
+        # caster (the owner, 2026-10-04: it may wade the shallows of a shore,
+        # never go into the lake), and they look from over a metre ahead of
+        # the wheels, so on a curved shore the front sweeps through the
+        # shallows as it turns and a wheel can go deeper than they read. That
+        # sweep is the 47 mm this allowed over the old 3 mm sensors; it once
+        # went 176 mm IN, on every run, which is the thing this is watching for.
+        self.assertLessEqual(wet, WADES_M + 0.047)
 
 
 @unittest.skipUnless(ENGINE and ENGINE.is_file(), "BANJO_LIVE_ENGINE is required")

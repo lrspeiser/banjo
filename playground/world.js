@@ -1391,6 +1391,7 @@ function showSeen(block) {
   ground.seen = bytesOf(block.seen_b64);
   ground.seenGrid = { nx: block.nx, nz: block.nz, cell_m: block.cell_m,
                       x0_m: block.x0_m, z0_m: block.z0_m, known };
+  if (!previous || previous.known !== known) minimap.dirty = true;
   repaintSeen(was,previous);
 }
 
@@ -10808,6 +10809,9 @@ async function tick() {
     if (state.terrain_version) world.terrainVersion=state.terrain_version;
     // What has been seen of the room, which grows as machines get about it.
     if (state.sight) showSeen(state.sight);
+    // The way each machine is going over the map, for the mini map.
+    world.mapRoutes = state.routes || null;
+    if (state.terrain || state.terrain_changed) minimap.dirty = true;
     if (state.water) drawWater(state.water);
     if (state.joints) {
         const wasAttached = new Map(world.joints.map((p) => [p.id, p.attached]));
@@ -10995,6 +10999,152 @@ async function watchTheDraw() {
   } catch (error) { say("bad", String(error.message || error)); }
 }
 
+// The mini map: the room from above, ONLY as far as it has been seen
+// (machine_sight; the owner, 2026-10-04). Ground nobody has seen stays dark;
+// seen ground is shaded by height, water in blue by depth. On it: the machines,
+// the person and which way they face, and the route each machine is following
+// over the same shared map (machine_navigation.plan), which is what lets a
+// rover go round a river a drone has flown over.
+// The ground layer is drawn into its own canvas only when what it shows has
+// changed, and at most once a second for moving water; the markers over it
+// five times a second.
+const minimap = { base: null, drawnAt: -1e9, markedAt: -1e9, dirty: true, view: null };
+const MINIMAP_UNSEEN = "#15181d";
+const MINIMAP_COLOURS = { roam: "#f0a040", hover: "#5fd0e0", still: "#9aa4ae" };
+
+function minimapFold(open) {
+  const section = $("minimap"), canvas = $("minimap-canvas");
+  if (!section || !canvas) return;
+  canvas.hidden = !open;
+  $("minimap-fold").setAttribute("aria-expanded", String(open));
+  try { localStorage.setItem("banjo.minimap", open ? "open" : "folded"); } catch (_) { /* a private window */ }
+  minimap.dirty = true;
+}
+
+function minimapSetup() {
+  const fold = $("minimap-fold");
+  if (!fold || fold.dataset.ready) return;
+  fold.dataset.ready = "1";
+  fold.addEventListener("click", () => minimapFold($("minimap-canvas").hidden));
+  let open = true;
+  try { open = localStorage.getItem("banjo.minimap") !== "folded"; } catch (_) { /* stays open */ }
+  minimapFold(open);
+}
+
+// Where the room's ground is on the canvas: the whole grid, fitted and centred,
+// world +x to the right and +z down.
+function minimapView(canvas) {
+  const g = ground.grid;
+  if (!g) return null;
+  const w = canvas.width, h = canvas.height;
+  const spanX = (g.nx - 1) * g.dx, spanZ = (g.nz - 1) * g.dx;
+  const scale = Math.min(w / spanX, h / spanZ);
+  return { scale, ox: (w - spanX * scale) / 2 - g.x0 * scale, oz: (h - spanZ * scale) / 2 - g.z0 * scale,
+           x0: g.x0, z0: g.z0, spanX, spanZ };
+}
+
+function minimapSeen(x, z) {
+  const s = ground.seenGrid, seen = ground.seen;
+  if (!seen || !s) return true;          // a room that keeps no record: all of it is known
+  const i = Math.floor((x - s.x0_m) / s.cell_m), j = Math.floor((z - s.z0_m) / s.cell_m);
+  if (i < 0 || j < 0 || i >= s.nx || j >= s.nz) return true;
+  return seen[j * s.nx + i] !== 0;
+}
+
+// At CSS-pixel resolution, scaled up onto the canvas: a sample a pixel is a
+// height and a water lookup, and four times that on a high-density screen.
+function drawMinimapGround(canvas, ratio) {
+  const base = minimap.base || (minimap.base = document.createElement("canvas"));
+  base.width = Math.max(1, Math.round(canvas.width / ratio)); base.height = Math.max(1, Math.round(canvas.height / ratio));
+  const view = minimapView(base);
+  const ctx = base.getContext("2d");
+  ctx.fillStyle = MINIMAP_UNSEEN;
+  ctx.fillRect(0, 0, base.width, base.height);
+  const H = ground.heights;
+  let lo = Infinity, hi = -Infinity;
+  for (let k = 0; k < H.length; ++k) { if (H[k] < lo) lo = H[k]; if (H[k] > hi) hi = H[k]; }
+  const range = Math.max(0.5, hi - lo);
+  const img = ctx.getImageData(0, 0, base.width, base.height);
+  const px = img.data, land = [[61, 74, 58], [163, 154, 124]];
+  const shallow = [88, 167, 173], deep = [22, 63, 99];
+  for (let y = 0; y < base.height; ++y) {
+    const z = (y + 0.5 - view.oz) / view.scale;
+    if (z < view.z0 || z > view.z0 + view.spanZ) continue;
+    for (let x = 0; x < base.width; ++x) {
+      const wx = (x + 0.5 - view.ox) / view.scale;
+      if (wx < view.x0 || wx > view.x0 + view.spanX || !minimapSeen(wx, z)) continue;
+      const water = waterAt(wx, z);
+      let c;
+      if (water && water.depth > 0.003) {
+        const t = Math.min(1, water.depth / 0.5);
+        c = shallow.map((v, i) => v + (deep[i] - v) * t);
+      } else {
+        const t = (groundAt(wx, z) - lo) / range;
+        c = land[0].map((v, i) => v + (land[1][i] - v) * t);
+      }
+      const k = 4 * (y * base.width + x);
+      px[k] = c[0]; px[k + 1] = c[1]; px[k + 2] = c[2]; px[k + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+function drawMinimap(now) {
+  const canvas = $("minimap-canvas"), section = $("minimap");
+  if (!canvas || !section) return;
+  minimapSetup();
+  if (!ground.grid || !ground.heights) { section.hidden = true; return; }
+  section.hidden = false;
+  if (canvas.hidden || now - minimap.markedAt < 200) return;
+  minimap.markedAt = now;
+  // The canvas at the screen's own resolution, its width the panel's.
+  const ratio = window.devicePixelRatio || 1;
+  const w = Math.max(80, Math.round(canvas.clientWidth * ratio)), h = Math.max(60, Math.round(canvas.clientHeight * ratio));
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; minimap.dirty = true; }
+  const view = minimapView(canvas);
+  if (!view) return;
+  if (minimap.dirty || (ground.next && now - minimap.drawnAt > 1000)) {
+    drawMinimapGround(canvas, ratio);
+    minimap.dirty = false; minimap.drawnAt = now;
+  }
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, w, h);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(minimap.base, 0, 0, w, h);
+  const at = (x, z) => [view.ox + x * view.scale, view.oz + z * view.scale];
+  const programs = programsNow();
+  // The routes first, under the things following them.
+  for (const [name, route] of Object.entries(world.mapRoutes || {})) {
+    const p = programs.find((q) => q.name === name);
+    ctx.strokeStyle = MINIMAP_COLOURS[(p && p.kind) || "still"] || MINIMAP_COLOURS.still;
+    ctx.lineWidth = 1.5 * ratio; ctx.setLineDash([4 * ratio, 3 * ratio]);
+    ctx.beginPath();
+    route.forEach(([x, z], i) => { const [u, v] = at(x, z); if (i) ctx.lineTo(u, v); else ctx.moveTo(u, v); });
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  for (const p of programs) {
+    if (!p.at_m) continue;
+    const [u, v] = at(p.at_m[0], p.at_m[2]);
+    ctx.fillStyle = MINIMAP_COLOURS[p.kind] || MINIMAP_COLOURS.still;
+    ctx.beginPath();
+    if (p.kind === "still") ctx.rect(u - 2.5 * ratio, v - 2.5 * ratio, 5 * ratio, 5 * ratio);
+    else ctx.arc(u, v, 3.5 * ratio, 0, 2 * Math.PI);
+    ctx.fill();
+  }
+  // The person: an arrow the way they face.
+  const f = forwardVector(), len = Math.hypot(f.x, f.z) || 1, fx = f.x / len, fz = f.z / len;
+  const [u, v] = at(camera.position.x, camera.position.z), r = 6 * ratio;
+  ctx.fillStyle = "#ffffff"; ctx.strokeStyle = "#15181d"; ctx.lineWidth = ratio;
+  ctx.beginPath();
+  ctx.moveTo(u + fx * r, v + fz * r);
+  ctx.lineTo(u - fx * r * 0.6 - fz * r * 0.6, v - fz * r * 0.6 + fx * r * 0.6);
+  ctx.lineTo(u - fx * r * 0.6 + fz * r * 0.6, v - fz * r * 0.6 - fx * r * 0.6);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  const s = ground.seenGrid;
+  $("minimap-note").textContent = s && s.nx ? `${Math.round(100 * (s.known || 0) / (s.nx * s.nz))}% of the room seen` : "";
+}
+
 let last = performance.now();
 function frame() {
   const now = performance.now();
@@ -11033,6 +11183,7 @@ function frame() {
   drawPickedOutline();
   animateReveal(now);
   resourceVisuals.advance(now);
+  drawMinimap(now);
   render();
   world.framesSinceOpen++;
   requestAnimationFrame(frame);

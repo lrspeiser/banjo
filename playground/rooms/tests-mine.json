@@ -565,7 +565,7 @@
        -7966.1
       ],
       "body": "rover",
-      "depth_mm": 3.0,
+      "depth_mm": 80.0,
       "kind": "water"
      },
      {
@@ -575,7 +575,7 @@
        -7966.1
       ],
       "body": "rover",
-      "depth_mm": 3.0,
+      "depth_mm": 80.0,
       "kind": "water"
      }
     ],
