@@ -32,6 +32,7 @@ import math
 from typing import Any
 
 import inventory
+import item_pictures
 import live_session
 import player_world
 import room_world
@@ -294,6 +295,11 @@ def shown(app: Any, player_id: str = "") -> dict[str, Any]:
             out["shape"] = str(first.get("shape") or "box")
         if slot is not None:
             out["slot"] = slot
+        # Which kept picture of it there is (item_pictures): its revision
+        # only, so the page fetches the picture itself once, not every poll.
+        picture = item_pictures.revision_of(app, item)
+        if picture:
+            out["thumbnail_rev"] = picture
         # A thing of several parts says which, so the page counts every one of
         # them as held -- the hand grips one, and the part it grips need not be
         # the one the thing is named after.

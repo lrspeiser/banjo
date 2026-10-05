@@ -1,4 +1,4 @@
-import { thumbnail, massLabel as kgSaid } from "/game_menu.js";
+import { thumbnail, massLabel as kgSaid, useItemPictures, itemPicture, keepItemPicture } from "/game_menu.js";
 import { keyOf } from "/interaction.js";
 // Workshop Mode: product design, physical matter, editable skins and isolated physics playback.
 import * as THREE from "/vendor/three.module.js";
@@ -1991,7 +1991,9 @@ async function showInventory() {
     if (thing.mass_source) debug.append(recipeValue("Mass source", thing.mass_source));
     if (thing.mass_saved_t_s != null) debug.append(recipeValue("Saved at", `${thing.mass_saved_t_s} s`));
     card.append(debug);
-    if (thing.recipe) {
+    // A kept picture of the thing itself comes first; the recipe's preview
+    // is for a thing that has none yet.
+    if (thing.recipe && tile.querySelector("canvas")) {
       const canvas = tile.querySelector("canvas"); canvas.width=160; canvas.height=112;
       loadInventoryPicture(tile,{id:thing.id,source:"recipe",recipe:{...thing.recipe,name:thing.label},
         version:JSON.stringify([thing.recipe.parameters,thing.recipe.component_overrides])});
@@ -2259,6 +2261,62 @@ function paintInventoryPicture(canvas, parts) {
   canvas.dataset.preview = "ready";
   for (const mesh of objects.children) { mesh.geometry.dispose(); mesh.material.dispose(); }
 }
+
+// A made thing's picture for the server to keep (playground/item_pictures.py):
+// the design as the bench's skin view draws it -- every part, its finish and
+// colour, none of the selection or the spread -- in a 128 px square from the
+// same three-quarter view as the other pictures, on a clear background.
+let designRenderer = null;
+function designPicture(candidate, size = 128) {
+  if (!candidate?.parts?.length) return null;
+  designRenderer ||= new THREE.WebGLRenderer({alpha:true, antialias:true});
+  designRenderer.setPixelRatio(1); designRenderer.setSize(size, size, false);
+  designRenderer.outputColorSpace = THREE.SRGBColorSpace;
+  const preview = new THREE.Scene(), objects = new THREE.Group(); preview.add(objects);
+  preview.add(new THREE.HemisphereLight(0xffffff, 0x45505c, 2.1));
+  const light = new THREE.DirectionalLight(0xffffff, 2.8); light.position.set(3, 5, 4); preview.add(light);
+  try {
+    for (const part of candidate.parts) {
+      if (!part.size_m) continue;
+      const descriptor = skinPart(candidate, part.name);
+      const mesh = new THREE.Mesh(skinGeometry(part, descriptor), new THREE.MeshStandardMaterial({
+        color: parseColor(descriptor?.color, materialColor(part.material)),
+        roughness: Number(descriptor?.roughness ?? 0.72), metalness: Number(descriptor?.metalness ?? 0)}));
+      mesh.position.set(...(descriptor?.center_m || part.center_m || [0, 0, 0]));
+      mesh.rotation.copy(spinFor(descriptor?.rotation_deg || part.rotation_deg)); objects.add(mesh);
+    }
+    if (!objects.children.length) return null;
+    const bounds = new THREE.Box3().setFromObject(objects), centre = bounds.getCenter(new THREE.Vector3());
+    const radius = Math.max(.01, bounds.getSize(new THREE.Vector3()).length() / 2);
+    const camera = new THREE.PerspectiveCamera(38, 1, .001, radius * 20 + 10);
+    camera.position.copy(centre).add(new THREE.Vector3(1.3, .9, 1.7).normalize().multiplyScalar(radius / Math.sin(19 * Math.PI / 180) * 1.12));
+    camera.lookAt(centre); designRenderer.render(preview, camera);
+    return designRenderer.domElement.toDataURL("image/png");
+  } finally {
+    for (const mesh of objects.children) { mesh.geometry.dispose(); mesh.material.dispose(); }
+  }
+}
+// Send it once per thing per page. `item` is the thing's item id or the name
+// of one of its parts (a just-made thing is known by its root body); the
+// server keeps it under the thing's item id.
+const sentDesignPictures = new Set();
+async function sendDesignPicture(item, candidate) {
+  if (!item || sentDesignPictures.has(String(item))) return;
+  let picture = null;
+  try { picture = designPicture(candidate); } catch { picture = null; }
+  if (!picture?.startsWith("data:image/png;base64,") || picture.length > 60000) return;
+  sentDesignPictures.add(String(item));
+  try {
+    const answer = await api("/api/workshop/thumbnail", {item_id:String(item), png_data_url:picture});
+    keepItemPicture(answer.item_id, answer.thumbnail_rev, picture);
+    stage.dataset.itemPicture = answer.item_id;
+    dispatchEvent(new Event("banjo-item-pictures"));
+  } catch { sentDesignPictures.delete(String(item)); }
+}
+useItemPictures(items => api("/api/workshop/thumbnails", {items}, {preview:true}));
+addEventListener("banjo-item-pictures", () => {
+  if ($("#ws-pane-inventory") && !$("#ws-pane-inventory").hidden) showInventory().catch(() => {});
+});
 
 const inventoryPictures = new Map();
 const inventoryPictureQueue = [];
@@ -3155,6 +3213,9 @@ async function openTheCarriedThing(id) {
       if (revision !== bench.revision) return;
       const answer = await api("/api/workshop/candidates", {...source.recipe, sweeps:{}});
       if (revision !== bench.revision) return;
+      // A thing made before pictures were kept gets one from the design that
+      // made it (not from a private draft opened over it).
+      if (!thing.thumbnail_rev) void sendDesignPicture(thing.id, answer.candidates?.[0]);
       if (await openLabDraft(answer)) { $("#ws-archetype").value = answer.kind; return; }
     }
     if(thing.lab_problem)throw Error(thing.lab_problem);
@@ -3355,6 +3416,7 @@ setInterval(()=>{if (!document.hidden) refreshPlayerGuidance();},5000);
 
 let labWasSelected = false;
 const remake = {plan:null,job:null,selection:null,busy:false,supply:null,store:null};
+const remakesSeenRunning = new Set();
 function remakeKind() {return bench.inventorySelection?.source==="carried" ? "remake" : "make";}
 function remakeKey() {return `banjo.${remakeKind()}.${worldId || "local"}.${playerId}.${bench.inventorySelection?.id}`;}
 function remakePending() {try{return JSON.parse(sessionStorage.getItem(remakeKey()) || "null");}catch{return null;}}
@@ -3647,6 +3709,7 @@ function renderRemake() {
     let result;
     try {result=await api("/api/world/fabrication/start_"+kind,request);}
     catch(err) {if(/plan expired|Selected item changed|revision changed|process changed/i.test(String(err.message)))sessionStorage.removeItem(remakeKey());throw err;}
+    remakesSeenRunning.add(pending.request_id);
     remake.job=result.state.jobs[result.job_id];remake.plan=null;renderRemake();
   });
   begin.disabled=remake.busy || fundingPendingNow || !plan.build_readiness?.ready_to_start;
@@ -3665,6 +3728,12 @@ async function reviewRemake(force=false) {
   remake.selection=`${selected.id}:${revision}`;
   if(job) {
     remake.job=job;remake.plan=null;remake.carried=false;
+    // The thing exists now: picture it from the design that made it, so it
+    // is never shown as a plain box (the owner, 2026-10-04).
+    // Only a build this page saw under way: a finished one found later may be
+    // under a design edited since.
+    if(job.status!=="installed")remakesSeenRunning.add(pending.request_id);
+    else if(job.root_body && remakesSeenRunning.has(pending.request_id))void sendDesignPicture(job.root_body,chosen());
     if(job.status==="installed") {
       const shown=await api("/api/world/inventory/shown",{session:ctx.session});
       if(selected!==bench.inventorySelection || revision!==bench.revision)return;

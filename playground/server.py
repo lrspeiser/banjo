@@ -46,6 +46,7 @@ import room_world
 import progression  # noqa: E402  (mcp/, put on the path by room_world)
 import room_store
 import inventory_room
+import item_pictures
 import player_world
 import gameplay_room
 import rover_brain
@@ -1472,8 +1473,10 @@ class Handler(BaseHTTPRequestHandler):
             length=int(self.headers.get("Content-Length","0"))
             capture = urlsplit(self.path).path == "/api/capture"
             # A rendered frame is a PNG data URL, far past the bound the
-            # small JSON routes share, so it gets its own.
-            if not 1<=length<=(48*1024*1024 if capture else 32768):
+            # small JSON routes share, so it gets its own; so does a thing's
+            # picture (item_pictures), which is a small one.
+            picture = urlsplit(self.path).path == "/api/workshop/thumbnail"
+            if not 1<=length<=(48*1024*1024 if capture else item_pictures.MAX_BODY if picture else 32768):
                 raise ValueError("Request body exceeds bounds")
             # Consume the bounded body before rejecting headers. Closing with
             # unread POST bytes can reset the TCP connection on Windows and
@@ -1543,7 +1546,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(app.ai_players.handle(owner, body, self.headers.get("Cookie", "")))
         player = player_world.require(self.app, self.headers.get("X-Banjo-Player")) \
             if getattr(self.app, "world_id", None) and (
-                path.startswith(("/api/world/", "/api/live/")) or path=="/api/workshop/inventory") else ""
+                path.startswith(("/api/world/", "/api/live/")) or path in ("/api/workshop/inventory","/api/workshop/thumbnail")) else ""
         if path == '/api/world/assist':
             if not getattr(self.app,'world_id',None):raise ValueError('Join a named world for guidance')
             proactive_guidance.validate(body)
@@ -1700,6 +1703,13 @@ class Handler(BaseHTTPRequestHandler):
                 import workshop_drive
                 if body.get("action")=="start": workshop_drive.sweep(self.app)
                 return self.send(workshop_drive.handle(self.app,body))
+            # A thing's picture (item_pictures): kept when a page that can draw
+            # it sends one, and read back only when a page has not got it.
+            if path=="/api/workshop/thumbnail":
+                with world_access.gate(self.app).enter():
+                    return self.send(item_pictures.store(self.app,player,body))
+            if path=="/api/workshop/thumbnails":
+                return self.send(item_pictures.read(self.app,body))
             if path in ("/api/workshop/inventory","/api/workshop/recipes","/api/workshop/skills"):
                 import workshop_tabs
                 app=self.app
@@ -2947,7 +2957,8 @@ KEEP_WORLD_PENDING_GAP_S=2.0
 GUIDANCE_KEEP_S=15.0
 # Requests that only look or move a body: they never change what to do next.
 _QUIET_POSTS={'/api/world/player/walk','/api/world/guidance','/api/world/tool',
-              '/api/workshop/inventory','/api/trace','/api/status'}
+              '/api/workshop/inventory','/api/workshop/thumbnail','/api/workshop/thumbnails',
+              '/api/trace','/api/status'}
 _QUIET_OPS={'step','pick','poses','survey','tool_points','place_check','condition'}
 
 

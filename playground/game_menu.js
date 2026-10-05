@@ -292,7 +292,62 @@ export function massLabel(kg) {
   const amount=unit==="t"?value/1000:unit==="g"?value*1000:value;
   return `${amount.toLocaleString(undefined,{maximumFractionDigits:2})} ${unit}`;
 }
+// A made thing's own picture, kept by the server (playground/item_pictures.py).
+// An inventory row says only which picture there is (`thumbnail_rev`); the
+// picture itself is fetched once per revision, a few things to a request, and
+// kept here for every panel on the page. When pictures arrive, the page hears
+// a "banjo-item-pictures" event and redraws what it shows.
+const itemPictures = new Map();          // item id -> {rev, url}
+const itemPicturesWanted = new Map();    // item id -> rev not yet fetched
+const itemPicturesFailed = new Map();    // "id:rev" -> when it last failed
+let itemPictureFetcher = null, itemPictureTimer = 0;
+export function useItemPictures(fetcher) { itemPictureFetcher = fetcher; }
+export function keepItemPicture(id, rev, url) {
+  if (!id || !rev || !url) return;
+  itemPictures.set(String(id), {rev, url});
+}
+async function fetchItemPictures() {
+  itemPictureTimer = 0;
+  const wanted = [...itemPicturesWanted].slice(0, 40);
+  for (const [id] of wanted) itemPicturesWanted.delete(id);
+  if (!wanted.length || !itemPictureFetcher) return;
+  let changed = false;
+  try {
+    const answer = await itemPictureFetcher(wanted.map(([id]) => id));
+    for (const [id, rev] of wanted) {
+      const got = answer?.thumbnails?.[id];
+      if (got?.png_data_url) { keepItemPicture(id, got.thumbnail_rev, got.png_data_url); changed = true; }
+      else itemPicturesFailed.set(`${id}:${rev}`, Date.now());
+    }
+  } catch {
+    for (const [id, rev] of wanted) itemPicturesFailed.set(`${id}:${rev}`, Date.now());
+  }
+  if (itemPicturesWanted.size) itemPictureTimer = setTimeout(fetchItemPictures, 50);
+  if (changed) dispatchEvent(new Event("banjo-item-pictures"));
+}
+// The picture to show for a thing, or null when there is none yet (a request
+// for it is then on its way, unless it failed in the last half minute). While
+// a newer revision is fetched the older picture is still shown.
+export function itemPicture(thing) {
+  const id = thing?.id != null ? String(thing.id) : "", rev = thing?.thumbnail_rev;
+  if (!id) return null;
+  const kept = itemPictures.get(id);
+  if (!rev || kept?.rev === rev) return kept?.url || null;
+  const failed = itemPicturesFailed.get(`${id}:${rev}`);
+  if (itemPictureFetcher && !(failed && Date.now() - failed < 30000) && !itemPicturesWanted.has(id)) {
+    itemPicturesWanted.set(id, rev);
+    itemPictureTimer ||= setTimeout(fetchItemPictures, 50);
+  }
+  return kept?.url || null;
+}
 export function thumbnail(thing) {
+  const kept = itemPicture(thing);
+  if (kept) {
+    const image = document.createElement("img");
+    image.src = kept; image.alt = thing.label || thing.name || "Item";
+    image.className = "item-picture"; image.width = image.height = 48;
+    return image;
+  }
   const canvas = document.createElement("canvas"), size = 48, m = 8, w = 32;
   canvas.width = canvas.height = size;
   canvas.setAttribute("role", "img");

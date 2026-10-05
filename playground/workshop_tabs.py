@@ -76,6 +76,8 @@ def carried(app: Any, player_id: str = "") -> list[dict[str, Any]]:
                    "color_rgba": str(first.get("color_rgba") or ""),
                     "design_id": (made.get(name) or None) if not entry.get('separated') else None,
                     "separated": bool(entry.get('separated'))}
+            if entry.get("thumbnail_rev"):
+                out["thumbnail_rev"] = entry["thumbnail_rev"]
             out["bench_shape"] = _BENCH_SHAPE.get(out["shape"], "box")
             out["same_shape"] = out["bench_shape"] == out["shape"]
             if first.get('parts') and not out['design_id']:
