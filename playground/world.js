@@ -3734,7 +3734,10 @@ function goodsVisuals({scene,camera,groundAt,body,ports,colour,collect,readonly}
         // (the owner, 2026-10-04).
         const loose={sand:1600,soil:1300,clay:1400,rock:1700},repose=Math.tan(34*Math.PI/180);
         let volume=0;for(const [what,kg] of slots)volume+=kg/(loose[what]||1500);
-        const r=Math.cbrt(3*volume/(Math.PI*repose)),h=r*repose;
+        // Past 0.6 m across the base a pile grows taller, not wider: piles
+        // sit beside the digger, and a wide one spread over the work.
+        let r=Math.cbrt(3*volume/(Math.PI*repose)),h=r*repose;
+        if(r>.6){r=.6;h=3*volume/(Math.PI*r*r);}
         const most=slots.reduce((a,b)=>b[1]>a[1]?b:a)[0];
         const heap=new THREE.Mesh(new THREE.ConeGeometry(r,h,20,1,false),material(most));
         heap.position.y=h/2;heap.castShadow=heap.receiveShadow=true;group.add(heap);

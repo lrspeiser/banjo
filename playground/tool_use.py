@@ -144,6 +144,12 @@ def _resolve(app: Any, body: dict[str, Any]) -> dict[str, Any]:
     eyes = [float(v) for v in person["eyes_m"]]
     level = math.hypot(at[0] - eyes[0], at[2] - eyes[2])
     least, most = use["reach_m"]
+    if use.get("gesture") == "contact" and cube_ground(app):
+        # On cube ground a click strikes the cube at once (_strike_cell): no
+        # swing has to land, so any cube within reach of the hand will do,
+        # not only the 1.15 to 2 m band a pick comes down in (the owner,
+        # 2026-10-04: "why can't I use the pickaxe on most areas?").
+        least, most = CUBE_REACH_M
     ring = {"at_m": at, "state": "ok"}
     out["ring"] = ring
     out["target"] = {"at_m": at, "distance_m": round(level, 2)}
@@ -611,6 +617,17 @@ def _native_point(app,tool):
         return point
 
 
+# How near and how far a click strikes a cube on cube ground, level from the eyes.
+CUBE_REACH_M = (0.25, 4.0)
+
+
+def cube_ground(app):
+    """Whether the open room's ground is 25 cm cubes (the 'columns' surface)."""
+    session=getattr(getattr(app,'live',None),'session',None)
+    spec=getattr(session,'room_spec',None) or getattr(getattr(app,'room',None),'spec',None) or {}
+    return isinstance(spec,dict) and (spec.get('terrain') or {}).get('surface')=='columns'
+
+
 def _strike_cell(app,said,use,tool,heard,note):
     """On cube ground a swing's outcome is decided, not worked through: a whole
     cube of soil or sand, a share of clay or rock (ToolTerrain::strikeCell). So
@@ -618,8 +635,7 @@ def _strike_cell(app,said,use,tool,heard,note):
     turn, lower, settle and stroke -- 0.5 to 3 s a click that the owner felt as
     lag (2026-10-04). None where the ground is not cubes: swing it instead."""
     session=app.live.session
-    spec=getattr(session,'room_spec',None) or getattr(getattr(app,'room',None),'spec',None) or {}
-    if ((spec.get('terrain') or {}).get('surface') if isinstance(spec,dict) else None)!='columns':
+    if not cube_ground(app):
         return None
     since=float(session.state.get('t') or 0)
     if note:note(app,{'t':since})

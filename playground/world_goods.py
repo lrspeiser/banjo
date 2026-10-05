@@ -26,6 +26,12 @@ def auto_piles_enabled(app):
                 and getattr(getattr(app,'live',None),'session',None))
 
 
+# A dig this far from the digger's eyes, level, still gets a pile; a pile is
+# never set within PILE_CLEAR_OF_DIG_M of the dig.
+PILE_FROM_DIGGER_M = 4.5
+PILE_CLEAR_OF_DIG_M = 1.0
+
+
 def heap_excavation(app, body):
     """Move actual actor-owned native output to nearby single-material piles.
 
@@ -43,23 +49,27 @@ def heap_excavation(app, body):
         carried=live_session.current_carried(session)
         materials=[s for s in ('sand','soil','rock') if float(carried.get(s+'_m3') or 0)>0]
         if not materials:return []
-        # Perpendicular to the player's approach, outside the selected cell.
+        # Beside or behind the digger, never on what they are digging: a pile
+        # drawn over the hole hid it, and digging next to a pile dug under it
+        # (the owner, 2026-10-04: "the hole at the pile").
         eyes=(body.get('person') or {}).get('eyes_m')
-        if not isinstance(eyes,list) or len(eyes)!=3 or math.hypot(eyes[0]-at[0],eyes[2]-at[2])>2.3:return []
+        if not isinstance(eyes,list) or len(eyes)!=3 or math.hypot(eyes[0]-at[0],eyes[2]-at[2])>PILE_FROM_DIGGER_M:return []
         vx,vz=at[0]-eyes[0],at[2]-eyes[2]; length=math.hypot(vx,vz) or 1
-        side=(-vz/length,vx/length) if math.hypot(vx,vz)>0 else (0,1)
+        ahead=(vx/length,vz/length) if math.hypot(vx,vz)>0 else (1,0)
+        clear=lambda point:math.hypot(point[0]-at[0],point[1]-at[2])>=PILE_CLEAR_OF_DIG_M
         moved=[]
         for substance in materials:
             pile=next((p for p in goods.stockpiles if p.get('excavated')==substance
-                and math.hypot(p['at_m'][0]-at[0],p['at_m'][1]-at[2])<=2),None)
+                and math.hypot(p['at_m'][0]-eyes[0],p['at_m'][1]-eyes[2])<=3 and clear(p['at_m'])),None)
             if pile is None:
-                # Keep distinct material piles apart. Try the other side if
-                # a candidate is outside the map or underwater.
+                # Behind the digger first, then to either side; keep distinct
+                # material piles apart; skip ground outside the map or underwater.
                 candidate=None
-                for radius,angle in ((r,a) for r in (1.1,1.7,2.2) for a in (0,math.pi,math.pi/4,-math.pi/4,3*math.pi/4,-3*math.pi/4,math.pi/2,-math.pi/2)):
-                    sx=side[0]*math.cos(angle)-side[1]*math.sin(angle)
-                    sz=side[0]*math.sin(angle)+side[1]*math.cos(angle)
-                    point=[at[0]+sx*radius,at[2]+sz*radius]
+                for radius,angle in ((r,a) for r in (1.2,1.8,2.4) for a in (math.pi,3*math.pi/4,-3*math.pi/4,math.pi/2,-math.pi/2)):
+                    sx=ahead[0]*math.cos(angle)-ahead[1]*math.sin(angle)
+                    sz=ahead[0]*math.sin(angle)+ahead[1]*math.cos(angle)
+                    point=[eyes[0]+sx*radius,eyes[2]+sz*radius]
+                    if not clear(point):continue
                     if any(math.hypot(point[0]-p['at_m'][0],point[1]-p['at_m'][1])<.65 for p in goods.stockpiles):continue
                     survey=app.live.act({'session':session.id,'op':'survey','at':point}).get('survey') or {}
                     if survey.get('on_the_ground') and float((survey.get('water') or {}).get('depth_m',0))<=.01:
