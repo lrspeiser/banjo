@@ -227,12 +227,16 @@ render();
 
 // The same screen navigation in the world and Workshop, preserving the game
 // and an explicitly selected carried item. Selection is revalidated by Lab.
-export const SCREENS = [["world", "World"], ["inventory", "Inventory"], ["lab", "Lab"],
-  ["skills", "Skills"], ["recipes", "Recipes"], ["market", "Market"], ["goals", "Goals"]];
+export const SCREENS = [["world", "World"], ["inventory", "Inventory"], ["build", "Build"], ["progress", "Progress"]];
+// Keep old bookmarks and contextual destinations, with one selected hub.
+export const screenGroup = screen => ({market:"inventory",recipes:"build",lab:"build",skills:"progress",goals:"progress"}[screen] || screen);
+export const screenLabel = screen => SCREENS.find(([id]) => id === screenGroup(screen))?.[1] || screen;
+export const screenText = text => String(text || "").replace(/\b(Recipes|Market|Goals)\b/g,
+  word => ({Recipes:"Build",Market:"Inventory",Goals:"Progress"}[word]));
 
 export function screenUrl(screen) {
   const current = new URLSearchParams(location.search), query = new URLSearchParams();
-  for (const key of ["world", "scene", "carry", "design", "library", "recipe"]) if (current.get(key)) query.set(key, current.get(key));
+  for (const key of ["world", "scene", "carry", "design", "library", "recipe", "job"]) if (current.get(key)) query.set(key, current.get(key));
   if (screen !== "world") { query.set("workshop", "1"); query.set("tab", screen); }
   return `/world${query.size ? "?" + query : ""}`;
 }
@@ -247,15 +251,14 @@ export function gameNavigation(active, onSelect = null) {
     tab.textContent = label; tab.dataset.screen = name; tab.dataset.tab = name;
     if (local) {
       tab.type = "button"; tab.setAttribute("role", "tab");
-      tab.setAttribute("aria-controls", name === "lab" ? "ws-centre" : `ws-pane-${name}`);
-      tab.setAttribute("aria-selected", String(name === active));
+      tab.setAttribute("aria-controls", `ws-hub-${name}`);
+      tab.setAttribute("aria-selected", String(name === screenGroup(active)));
       tab.onclick = () => onSelect(name);
     } else {
       tab.href = screenUrl(name);
-      if (name === active) tab.setAttribute("aria-current", "page");
+      if (name === screenGroup(active)) tab.setAttribute("aria-current", "page");
       if (name === "inventory") tab.classList.add("workshop-entry");
-      if (name === "goals") tab.classList.add("goals-entry");
-      if (name === "market") tab.classList.add("market-entry");
+      if (name === "progress") tab.classList.add("goals-entry");
     }
     nav.append(tab);
   }
@@ -265,7 +268,7 @@ export function gameNavigation(active, onSelect = null) {
 export function refreshNavigation(active) {
   for (const tab of document.querySelectorAll(".game-tabs [data-screen]")) {
     if (tab.tagName === "A") tab.href = screenUrl(tab.dataset.screen);
-    else tab.setAttribute("aria-selected", String(tab.dataset.screen === active));
+    else tab.setAttribute("aria-selected", String(tab.dataset.screen === screenGroup(active)));
   }
 }
 

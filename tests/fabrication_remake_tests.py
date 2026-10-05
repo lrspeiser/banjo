@@ -1193,6 +1193,7 @@ class LabRemake(unittest.TestCase):
         for event in ('mousePressed', 'mouseReleased'):
             p.send('Input.dispatchMouseEvent', {'type': event, 'x': point[0], 'y': point[1], 'button': 'left', 'clickCount': 1})
         wait('document.querySelector("#ws-selected-part").textContent.includes(' + json.dumps(head) + ')')
+        click('[data-customize-item]')
         wait('!document.querySelector("#ws-component-chat-text").disabled')
         p.evaluate('document.querySelector("#ws-component-chat-text").value="make this iron"')
         click('#ws-component-chat button[type=submit]')

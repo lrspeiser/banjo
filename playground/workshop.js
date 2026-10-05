@@ -2,7 +2,7 @@ import { thumbnail, massLabel as kgSaid, useItemPictures, itemPicture, keepItemP
 import { keyOf } from "/interaction.js";
 // Workshop Mode: product design, physical matter, editable skins and isolated physics playback.
 import * as THREE from "/vendor/three.module.js";
-import { gameNavigation, refreshNavigation, showSaveStatus, screenUrl } from "/game_menu.js";
+import { gameNavigation, refreshNavigation, showSaveStatus, screenUrl, screenGroup, screenLabel, screenText } from "/game_menu.js";
 import { conditionPanel } from "/body_condition.js";
 import { renderPlayerGuidance, guidanceUrl } from "/player_guidance.js";
 import { placementUrl } from "/construction_ui.js";
@@ -1304,7 +1304,7 @@ function installBench() {
   checkButton.onclick = () => checkValidity(checkButton);
   const madeButton = make("button", { id:"ws-make", type:"button", class:"ws-action primary" }, "Build a new item");
   madeButton.onclick = () => makeIt(madeButton);
-  const saveButton = make("button", {id:"ws-quick-save", type:"button", class:"ws-action"}, "Save to Recipes");
+  const saveButton = make("button", {id:"ws-quick-save", type:"button", class:"ws-action"}, "Save design");
   saveButton.onclick = () => $("#ws-save-design").click();
   const notice = $("#ws-notice");
   top.replaceChildren(keep);
@@ -1576,12 +1576,12 @@ function installBench() {
   // for guidance and chat; it becomes an optional overlay on small screens.
   const centre = make("div", { id:"ws-centre" });
   viewport.parentElement.insertBefore(centre, viewport);
-  const tabs = gameNavigation(WORKSHOP_OPENS_ON, showTab);
+  const tabs = gameNavigation(WORKSHOP_OPENS_ON, name=>{navigationRequest=name;showTab(name);});
   // Inventory first, and open: the owner asked for it to be "the default
   // screen you go into when you switch out of the world". Coming out of the
   // room, what you have is the question; the Lab is where you go next.
   railHeader.after(tabs);
-  const chatInitiallyOpen=matchMedia("(min-width:901px)").matches;
+  const chatInitiallyOpen=false;
   document.body.classList.toggle("ws-chat-open",chatInitiallyOpen);
   const chatToggle=make("button",{type:"button","aria-expanded":String(chatInitiallyOpen),"aria-controls":"ws-chat-home"},"Chat /");
   function openChat(open) {
@@ -1618,11 +1618,10 @@ function installBench() {
   centre.append(takes, viewport, machineBench);
   const empty = make("section", {id:"ws-empty", "aria-label":"Empty lab"});
   empty.append(make("h2", {}, "Your lab is empty"),
-    make("p", {}, "Choose a product in Inventory or a design in Recipes."));
+    make("p", {}, "Select a recipe here, or bring an item from Inventory."));
   const pick = make("button", {type:"button", class:"ws-action"}, "Choose from Inventory");
   pick.onclick = () => showTab("inventory"); empty.append(pick);
-  const designs = make("button", {type:"button", class:"ws-action"}, "Choose from Recipes");
-  designs.onclick = () => showTab("recipes"); empty.append(designs); viewport.append(empty);
+  viewport.append(empty);
   const clear = make("button", {id:"ws-clear-lab", type:"button", class:"ws-action"}, "Clear Lab");
   clear.onclick = () => guard(clear,async()=>{if(worldId)await api('/api/world/guidance',{action:'clear-project'});
     clearLab();showTab('lab');}); $(".ws-viewbar").append(clear);
@@ -1630,7 +1629,48 @@ function installBench() {
   for (const name of ["inventory", "skills", "recipes", "market", "goals"]) { const pane = $(`#ws-pane-${name}`); if (pane) centre.append(pane); }
   installInventory();
   installRecipes();
+  installScreenHubs(centre, viewport, takes, machineBench);
   renderTakes();
+}
+
+function installScreenHubs(centre, viewport, takes, machineBench) {
+  centre.prepend($("#ws-notice"));
+  for (const [name,label] of [["inventory","Inventory"],["build","Build"],["progress","Progress"]]) {
+    const hub=make("section",{id:`ws-hub-${name}`,class:`ws-hub ws-hub-${name}`,role:"tabpanel","aria-label":label,hidden:""});
+    centre.append(hub);
+  }
+  const inventory=$("#ws-hub-inventory"), build=$("#ws-hub-build"), progress=$("#ws-hub-progress");
+  const energy=$("#ws-inv-energy").parentElement;
+  energy.classList.add("ws-hub-energy");
+  energy.querySelector("h3").after($(".ws-market-balance"));
+  inventory.append(energy,$("#ws-pane-inventory"),$("#ws-pane-market"));
+  $("#ws-pane-market > h2").textContent="Buy supplies";
+  $("#ws-pane-market > .ws-note").remove();
+  $(".ws-market-balance > span").hidden=true;
+  $("#ws-market-balance").hidden=true; // Wallet appears once, in Energy & rates.
+  $("#ws-pane-market > h2:nth-of-type(2)").textContent="Materials";
+  const supplyDetails=make("details",{class:"ws-supply-plan"});
+  supplyDetails.append(make("summary",{},"Supplies for next build"),$(".ws-market-guidance"));
+  $("#ws-market-offers").previousElementSibling.before(supplyDetails);
+  $("#ws-market-next").hidden=true;
+  $("#ws-market-next").previousElementSibling.hidden=true;
+  const meters=make("details",{class:"ws-more"});meters.append(make("summary",{},"Solar array meters"),$("#ws-market-energy"));
+  energy.append(meters);
+  const orders=make("details",{class:"ws-more"});orders.append(make("summary",{},"Purchase history"),$("#ws-market-orders"));
+  $("#ws-pane-market > h2:last-of-type").remove();$("#ws-pane-market").append(orders);
+  const editor=make("section",{id:"ws-build-editor","aria-label":"Selected item Lab"});
+  editor.append(takes,viewport,machineBench);
+  const customize=make("button",{type:"button",class:"ws-action","data-customize-item":""},"Customize with AI /");
+  customize.onclick=()=>{document.body.classList.add("ws-chat-open");
+    $(".game-bottom-tabs button[aria-controls=ws-chat-home]").setAttribute("aria-expanded","true");$("#ws-component-chat-text").focus();};
+  const tools=make("div",{id:"ws-build-tools"});tools.append(customize);editor.append(tools);
+  build.append($("#ws-pane-recipes"),editor);
+  progress.append($("#ws-pane-goals"),$("#ws-pane-skills"));
+  // Only hubs are tab panels; their child sections stay together.
+  for(const pane of document.querySelectorAll(".ws-tabpane"))pane.removeAttribute("role");
+  $("#ws-pane-recipes > h2").textContent="Recipes & designs";
+  $("#ws-pane-inventory > h2").textContent="Your items";
+  $("#ws-pane-skills > h2").textContent="Skills & unlocks";
 }
 
 // ---------------------------------------------------------------------------
@@ -2004,7 +2044,6 @@ async function showInventory() {
   $("#ws-inv-grid").replaceChildren(...carried);
   $("#ws-inv-note").textContent = carried.length ? "Place → World · Edit → Lab" : "Empty · Pick up items in World";
   const load=inv.ground_load || {};
-  const budget=energyCard("▦","Material storage",[["Inventory","No weight limit"],["Digging","Nearby material piles"]]);
   const groundCards=(account,where) => ["sand","soil","rock"].filter(s => Number(account?.[`${s}_kg`])>.0005)
     .map(s => {
       const card=make("article",{class:"ws-product-card","data-ground-load":s});
@@ -2016,7 +2055,9 @@ async function showInventory() {
       action.onclick=()=>guard(action,()=>transferInventoryGround(op,s,account[`${s}_m3`]));
       card.append(action);return card;
     });
-  $("#ws-inv-ground").replaceChildren(budget,...groundCards(load,"You"));
+  const personalGround=groundCards(load,"You");
+  $("#ws-inv-ground").replaceChildren(...personalGround);
+  $("#ws-inv-ground").parentElement.hidden=personalGround.length===0;
   const unassigned=groundCards(inv.unassigned_ground,"Unassigned");
   $("#ws-inv-unassigned").replaceChildren(...unassigned);
   $("#ws-inv-unassigned").parentElement.hidden=unassigned.length===0;
@@ -2036,6 +2077,7 @@ async function showInventory() {
   });
   $("#ws-inv-stored-ground").replaceChildren(...stored);
   $("#ws-inv-stored-empty").hidden=stored.length>0;
+  $("#ws-inv-stored-ground").parentElement.hidden=stored.length===0;
   const pending=pendingGroundTransfer();
   const pendingBox=$("#ws-inv-ground-pending");pendingBox.replaceChildren();pendingBox.parentElement.hidden=!pending;
   if(pending) {
@@ -2053,6 +2095,7 @@ async function showInventory() {
   const goods = (inv.goods || []).filter(r => r.mass_kg > 0 && !['sand','soil','rock'].includes(r.substance)).map(r => resourceTile(r,"sphere"));
   $("#ws-inv-goods").replaceChildren(...goods);
   $("#ws-inv-goods-empty").hidden = goods.length > 0;
+  $("#ws-inv-goods").parentElement.hidden=goods.length===0;
   const reserved = (inv.fabrication_reservations || []).map(row => {
     const card = make("article", {class:"ws-product-card", "data-stock-reservation":row.reservation_id});
     const material = row.material;
@@ -2112,7 +2155,7 @@ function resourceTile(row, shape) {
     const line = make("span", {class:"ws-stock-owner"});
     line.append(make("span", {}, label),make("b", {}, kgSaid(value))); tile.append(line);
   }
-  tile.append(make("span", {class:"ws-tile-next"}, "Recipes → Uses"));
+  tile.append(make("span", {class:"ws-tile-next"}, "Build → Uses"));
   tile.title = `${titleCase(material)} · ${row.mass_kg} kg total · Find recipes`;
   return tile;
 }
@@ -2139,14 +2182,18 @@ async function showInventoryEnergy() {
     const solar = m?.stores?.find(s => s.body === "solar farm");
     const generation = (m?.panels || []).filter(p => solar && p.store === solar.id).reduce((n,p) => n + (Number(p.power_w) || 0), 0);
     const motorDraw = (m?.motors || []).reduce((n,p) => n + Math.max(0, Number(p.power_w) || 0), 0);
+    const machineMeters=make("details",{class:"ws-energy-extra"});
+    machineMeters.open=Boolean($("#ws-inv-energy .ws-energy-extra")?.open);
+    machineMeters.append(make("summary",{},"Machine meters"),
+      energyCard("⚙", "World machines · shared", [["Programs", m ? String((m.programs || []).length) : "Unavailable"],
+        ["Motor draw now", m ? rateSaid(motorDraw) : "Unavailable"], ["Currency income", "0 J/s"], ["Goods rate", "Not metered"]]));
     $("#ws-inv-energy").replaceChildren(
       energyCard("⚡", "Your energy", [["Spendable", wallet.status === "fulfilled" ? energySaid(wallet.value.balance_j) : "Unavailable"],
         ["Auto bank", wallet.status === "fulfilled" ? `${wallet.value.automatic_sources?.length || 0} arrays` : "Unavailable"],
         ["Solar input", wallet.status === "fulfilled" ? rateSaid((wallet.value.automatic_sources || []).reduce((n,s) => n+s.generation_w,0)) : "Unavailable"]]),
       energyCard("☀", "World solar · shared", [["Stored", solar ? energySaid(solar.charge_j) : m ? "No solar battery" : "Unavailable"],
         ["Generating now", m ? rateSaid(generation) : "Unavailable"], ["Banking", "Manual"]]),
-      energyCard("⚙", "World machines · shared", [["Programs", m ? String((m.programs || []).length) : "Unavailable"],
-        ["Motor draw now", m ? rateSaid(motorDraw) : "Unavailable"], ["Currency income", "0 J/s"], ["Goods rate", "Not metered"]]),
+      machineMeters,
     );
     $("#ws-inv-energy").dataset.updated = String(Date.now());
   } finally { inventoryMeterReading = false; }
@@ -2200,12 +2247,6 @@ function screenSection(pane, title, id, cls = "ws-inv-grid") {
 }
 function installInventory() {
   const pane = $("#ws-pane-inventory"); pane.replaceChildren(make("h2", {}, "Inventory"));
-  const actions = make("div", {class:"ws-inventory-actions"});
-  for (const [title, screen] of [["Build → Recipes", "recipes"], ["Energy & supplies → Market", "market"]]) {
-    const button = make("button", {type:"button", class:"ws-action"}, title);
-    button.onclick = () => showTab(screen); actions.append(button);
-  }
-  pane.append(actions);
   screenSection(pane, "Energy & rates", "ws-inv-energy", "ws-energy-grid");
   const carried = screenSection(pane, "Products · hands & bag", "ws-inv-grid");
   carried.append(make("p", {id:"ws-inv-note", class:"ws-note"}));
@@ -2215,7 +2256,7 @@ function installInventory() {
   stored.append(make("p",{id:"ws-inv-stored-empty",class:"ws-note"},"Empty · Store your ground load"));
   screenSection(pane,"Material transfer pending","ws-inv-ground-pending").hidden=true;
   const stock = screenSection(pane, "Raw materials", "ws-inv-stock");
-  stock.append(make("p", {id:"ws-inv-stock-empty", class:"ws-note"}, "Empty · Market → Supplies"));
+  stock.append(make("p", {id:"ws-inv-stock-empty", class:"ws-note"}, "Collect material piles in World or buy supplies here."));
   const goods = screenSection(pane, "Processed goods", "ws-inv-goods");
   goods.append(make("p", {id:"ws-inv-goods-empty", class:"ws-note"}, "Empty"));
   const reserved=screenSection(pane,"Reserved for fabrication","ws-inv-reserved");
@@ -2569,6 +2610,8 @@ function drawTree() {
         type: "button", class: `ws-tech ${state}`, "data-technique": t.id,
         role: "treeitem", "aria-selected": String(tree.picked === t.id),
       });
+      const icon=/ground|gather|wood|tool/.test(t.id) ? "🪓" : /solar|light|power/.test(t.id) ? "☀" : /melt|smelt|fire/.test(t.id) ? "🔥" : /wire|electric/.test(t.id) ? "⚡" : "⚙";
+      card.append(make("span", {class:"ws-tech-icon","aria-hidden":"true"}, icon));
       card.append(make("b", {}, t.name));
       // One line under the name, and it is the useful one: what it makes.
       const opens = (t.opens || []).map((o) => o.name);
@@ -3045,7 +3088,7 @@ async function showMarket() {
   $("#ws-market-balance").textContent = `${market.balance_j.toLocaleString()} J`;
   showMarketEnergy(market);
   $("#ws-market-pricing").textContent = `${market.pricing} One lot restocks every 120 seconds of world time. ${market.guidance?.estimate_basis || ""}`;
-  renderPlayerGuidance($("#ws-market-next"),market.guidance?.player,api);
+  $("#ws-market-next").replaceChildren(); // Shared next-action bar owns guidance.
   const recommendation = $("#ws-market-recipe"); recommendation.replaceChildren();
   const plan = market.guidance?.plan;
   if (plan && market.guidance?.player?.next_action?.verb!=='continue-build') {
@@ -3103,8 +3146,8 @@ async function showMarket() {
     open.onclick=()=>{location.href=guidanceUrl(player.next_action.destination,player);};
     recommendation.append(open);
   } else {
-    recommendation.append(recipeValue("Build", market.guidance?.recipe || "Choose a design in Recipes"));
-    const open = make("button", {type:"button",class:"ws-action"}, "Open Recipes");
+    recommendation.append(recipeValue("Build", market.guidance?.recipe || "Choose a design in Build"));
+    const open = make("button", {type:"button",class:"ws-action"}, "Open Build");
     open.onclick = () => showTab("recipes"); recommendation.append(open);
   }
   const bank = $("#ws-market-bank");
@@ -3126,7 +3169,7 @@ async function showMarket() {
       const depositedJ = pending.joules;
       sessionStorage.removeItem(pendingKey); pending = null;
       $("#ws-market-status").textContent = `Banked ${depositedJ} J. Balance: ${after.balance_j.toLocaleString()} J.`;
-      await showMarket();
+      await refreshInventoryHub();
     } catch (error) {
       bank.textContent = `Retry bank ${pending?.joules || bankJ} J`;
       $("#ws-market-status").textContent = error.message || String(error);
@@ -3136,21 +3179,23 @@ async function showMarket() {
   });
   fill("#ws-market-offers", market.offers.map((offer) => {
     const li = item(offer.name);
+    const substance=offer.substance || offer.material || offer.id.replace(/-stock$/, "");
+    li.prepend(thumbnail({name:offer.name,material:substance,color_rgba:MATERIAL_LOOK[substance],shape:"box"}));
     li.append(recipeValue("Lot", kgSaid(offer.mass_kg)), recipeValue("Price", `${offer.price_j.toLocaleString()} J`),
       recipeValue("Stock", `${offer.remaining} lots`));
     if (offer.id === market.guidance?.offer_id) li.classList.add("ws-market-next");
     li.dataset.marketItem = offer.id;
     if (offer.id === new URLSearchParams(location.search).get("offer")) li.classList.add("ws-goal-target");
     if (offer.id === "oak-stock" && ["bank-solar", "stock-oak"].includes(guide)) li.classList.add("ws-goal-target");
-    const buy = make("button", { type:"button", class:"ws-action" }, "Buy → Your stock");
+    const buy = make("button", { type:"button", class:"ws-action" }, "Buy");
     buy.disabled = offer.remaining < 1 || market.balance_j < offer.price_j;
     if (buy.disabled) li.append(recipeValue("Needs", offer.remaining < 1 ? "Restock" : `${(offer.price_j-market.balance_j).toLocaleString()} J more`));
     buy.onclick = () => guard(buy, async () => {
       try {
         const after = await api("/api/workshop/market", { action:"buy", item_id:offer.id,
           quoted_price_j:offer.price_j, request_id:crypto.randomUUID() });
-        $("#ws-market-status").textContent = `${offer.name} is on your Workshop rack. ${after.balance_j.toLocaleString()} J remains.`;
-        await showMarket();
+        $("#ws-market-status").textContent = `${offer.name} added to your materials. ${after.balance_j.toLocaleString()} J remains.`;
+        await refreshInventoryHub();
       } catch (error) {
         $("#ws-market-status").textContent = error.message || String(error);
         await showMarket();
@@ -3166,6 +3211,10 @@ async function showMarket() {
     market.offers.find((offer) => offer.id === order.item_id)?.name || order.item_id,
     `${order.price_j} J · ${order.created_at}`)), "No purchases yet.");
   await showGoalGuide("market");
+}
+async function refreshInventoryHub() {
+  await Promise.all([showInventory(),showMarket()]);
+  await refreshPlayerGuidance();
 }
 
 setInterval(() => {
@@ -3302,19 +3351,27 @@ async function showGoals() {
   const firstCamp=goals.chain_id === "first-camp-v1";
   const chainUrl=new URL(location.href); chainUrl.searchParams.set("goal-chain",goals.chain_id);
   window.history.replaceState(null,"",chainUrl);
-  const chapters=make("li", {class:"ws-inventory-actions", "aria-label":"Goal chapters"});
+  const chapters=make("div", {class:"ws-inventory-actions", "aria-label":"Goal chapters"});
   for (const chain of goals.chains || []) {
     const button=make("button", {type:"button", class:"ws-action", "aria-pressed":String(chain.id===goals.chain_id)}, chain.title);
     button.onclick=()=>{const url=new URL(location.href); url.searchParams.set("goal-chain",chain.id); url.searchParams.delete("guide"); window.history.replaceState(null,"",url); showTab("goals");};
     chapters.append(button);
   }
-  root.append(chapters);
-  $("#ws-goals-progress").textContent = goals.complete ? `${firstCamp ? "First camp" : goals.title} complete. Your progress is saved.`
-    : `${goals.title} · ${goals.goals.filter(g=>g.complete).length} / ${goals.goals.length} complete`;
+  let chapterPicker=$("#ws-goal-chapters");
+  if(!chapterPicker){chapterPicker=make("details",{id:"ws-goal-chapters"});$("#ws-goals-next").after(chapterPicker);}
+  chapterPicker.replaceChildren(make("summary",{},"Chapters"),chapters);
+  $("#ws-goals-progress").textContent = goals.complete ? "Chapter complete ✓"
+    : `${goals.goals.filter(g=>g.complete).length} / ${goals.goals.length} steps complete`;
   $("#ws-goals-next").textContent = goals.complete ? goals.follow_up
     : goals.unlocked === false ? "Later chapter · Follow Your next action to finish the opening first."
-    : firstCamp ? "Earn energy → buy wood → make a stool → carry it. Do each step in the game; this checklist updates automatically."
-    : goals.goals.map(g=>g.title).join(" → ");
+    : "Do the highlighted step in the game. Progress updates as you play.";
+  $("#ws-goals-next").hidden=goals.unlocked!==false && !goals.complete;
+  let path=$("#ws-goal-path");
+  if(!path){path=make("div",{id:"ws-goal-path","aria-label":"Chapter milestones"});root.before(path);}
+  path.replaceChildren(...goals.goals.map((goal,index)=>{
+    const node=make("span",{class:goal.complete ? "done" : goals.unlocked!==false && goals.next_goal===goal.id ? "current" : "later"},
+      `${goal.complete ? "✓" : index+1} ${goal.title}`);return node;
+  }));
   const limits = $("#ws-goals-limits"); limits.replaceChildren();
   const details=make("details", {}); details.append(make("summary", {}, "About this goal"), make("p", {}, goals.limits)); limits.append(details);
   for (const [index, goal] of goals.goals.entries()) {
@@ -3326,10 +3383,10 @@ async function showGoals() {
       make("span", {}, goal.complete ? "" : `${goal.value} / ${goal.target} ${goal.unit}`)); li.prepend(state);
     if (!goal.complete) {
       const progress=make("progress", {max:String(goal.target), value:String(goal.value), "aria-label":`${goal.title} progress`}); li.append(progress);
-      li.append(recipeValue("Where", guide.where));
+      li.append(recipeValue("Where", screenText(guide.where)));
       const how=make("details", {class:"ws-goal-how"}); if (current) how.open=true;
       how.append(make("summary", {}, "What to do"));
-      const steps=make("ol", {}); for (const step of guide.steps) steps.append(make("li", {}, step)); how.append(steps); li.append(how);
+      const steps=make("ol", {}); for (const step of guide.steps) steps.append(make("li", {}, screenText(step))); how.append(steps); li.append(how);
       let link;
       if (guide.screen === "world") {
         const url=new URL(goalWorldLink(guide.body || (firstCamp ? goals.camp_body : null)),location.origin);
@@ -3337,24 +3394,36 @@ async function showGoals() {
         link=make("a", {href:url.pathname+url.search, class:"ws-action primary", "data-goal-go":goal.id},
           guide.resource ? `Find ${guide.resource} in World` : guide.body ? "Find my tool in World" : "Open World");
         if (firstCamp && !goals.camp_body) {
-          link=make("button", {type:"button", class:"ws-action", "data-goal-go":goal.id}, "Open Recipes"); link.onclick=()=>goToGoalScreen("build-camp", "recipes");
+          link=make("button", {type:"button", class:"ws-action", "data-goal-go":goal.id}, "Open Build"); link.onclick=()=>goToGoalScreen("build-camp", "recipes");
         }
       } else if (goal.id === "bank-solar" && !goals.session) {
         link=make("a", {href:goalWorldLink("solar farm"), class:"ws-action primary", "data-goal-go":goal.id}, "Visit your World first");
       } else {
-        link=make("button", {type:"button", class:current ? "ws-action primary" : "ws-action", "data-goal-go":goal.id}, guide.recipe ? `Find ${guide.recipe} in Recipes` : guide.screen === "recipes" ? "Find Camp stool in Recipes" : `Open ${titleCase(guide.screen)}`);
+        link=make("button", {type:"button", class:current ? "ws-action primary" : "ws-action", "data-goal-go":goal.id}, guide.recipe ? `Build ${guide.recipe}` : guide.screen === "recipes" ? "Build Camp stool" : `Open ${screenLabel(guide.screen)}`);
         link.onclick=()=>goToGoalScreen(goal.id, guide.screen);
       }
       li.append(link);
     }
-    root.append(li);
+    if(current)root.prepend(li);
+    else {
+      let history=root.querySelector(".ws-goal-history");
+      if(!history){history=make("li",{class:"ws-goal-history"});const rest=make("details",{});
+        rest.append(make("summary",{},"Full chapter checklist"),make("ol",{class:"ws-list"}));history.append(rest);root.append(history);}
+      history.querySelector("ol").append(li);
+    }
   }
 }
 
 const WORKSHOP_OPENS_ON = "inventory";
+let navigationRequest=null;
+const hubLoads={};
 
 function showTab(name) {
+  if(name==="build")name=bench.inventorySelection ? "lab" : "recipes";
+  if(name==="progress")name="goals";
+  if(screenGroup(name)==="build" && bench.inventorySelection)name="lab";
   if (!["inventory", "lab", "skills", "recipes", "market", "goals"].includes(name)) name = WORKSHOP_OPENS_ON;
+  const hub=screenGroup(name);
   const url = new URL(location.href); url.searchParams.set("tab", name);
   for (const key of ["carry", "design", "library", "recipe"]) url.searchParams.delete(key);
   if (bench.inventorySelection) {
@@ -3367,19 +3436,26 @@ function showTab(name) {
   window.history.replaceState(null, "", url);
   refreshNavigation(name);
   $(".ws-bar-link").href=homeWorld();
-  $("#ws-screen-status").textContent = name === "lab" && bench.inventorySelection ? bench.inventorySelection.name : name[0].toUpperCase() + name.slice(1);
-  for (const button of document.querySelectorAll(".ws-tabs button")) button.setAttribute("aria-selected", String(button.dataset.tab === name));
-  const viewport = $(".ws-viewport"); if (viewport) viewport.hidden = name !== "lab";
+  $("#ws-screen-status").textContent = screenLabel(name);
+  for(const group of document.querySelectorAll(".ws-hub"))group.hidden=group.id!==`ws-hub-${hub}`;
+  const viewport = $(".ws-viewport"); if (viewport) viewport.hidden = hub !== "build";
   // The takes are the Lab's too: little pictures of the thing on the
   // bench, which mean nothing beside what you are carrying.
-  const takes = $("#ws-takes"); if (takes) takes.hidden = name !== "lab" || !bench.inventorySelection;
-  const machines = $("#ws-machine-bench"); if (machines && name !== "lab") machines.hidden = true;
-  for (const pane of ["inventory", "skills", "recipes", "market", "goals"]) { const el = $(`#ws-pane-${pane}`); if (el) el.hidden = pane !== name; }
-  if (name === "lab") resize();
-  const loader = { inventory: showInventory, skills: showSkills, recipes: showRecipes, market: showMarket, goals: showGoals }[name];
-  if (loader) guard(null, loader);
+  const takes = $("#ws-takes"); if (takes) takes.hidden = hub !== "build" || !bench.inventorySelection;
+  const machines = $("#ws-machine-bench"); if (machines && hub !== "build") machines.hidden = true;
+  for (const pane of ["inventory", "skills", "recipes", "market", "goals"]) { const el = $(`#ws-pane-${pane}`); if (el) el.hidden = screenGroup(pane) !== hub; }
+  $(".ws-supply-plan").open=name==="market";
+  if (hub === "build") resize();
+  const loader = { inventory: refreshInventoryHub, build: showRecipes, progress: async()=>{await showGoals();await showSkills();} }[hub];
+  const root=$(`#ws-hub-${hub}`), request=(hubLoads[hub] || 0)+1;
+  hubLoads[hub]=request;root.setAttribute("aria-busy","true");
+  if(hub==="inventory")root.inert=true;
+  const loading=loader ? guard(null,loader).finally(()=>{
+    if(hubLoads[hub]===request){root.inert=false;root.setAttribute("aria-busy","false");}
+  }) : Promise.resolve();
   updateLabSelection();
   refreshPlayerGuidance();
+  return loading;
 }
 
 let guidanceRequest=0, guidanceBusy=false, guidanceAgain=false, guidanceSelectionSignature='';
@@ -3393,11 +3469,11 @@ async function refreshPlayerGuidance() {
   if (guidanceBusy) {guidanceAgain=true;return;}
   guidanceBusy=true;
   let root=$("#ws-player-guidance");
-  if (!root) {root=make("section",{id:"ws-player-guidance"});$(".ws-left > .game-tabs").after(root);}
+  if (!root) {root=make("section",{id:"ws-player-guidance"});$("#ws-centre").prepend(root);}
   const request=++guidanceRequest;
   try {
     let body={},newSignature=null;
-    if(new URLSearchParams(location.search).get('tab')==='lab' && bench.inventorySelection &&
+    if(screenGroup(new URLSearchParams(location.search).get('tab'))==='build' && bench.inventorySelection &&
        !bench.inventorySelection.job_id && !remakePending() && chosen()) {
       const {generation,...candidate}=candidateBody();
       const project={name:bench.inventorySelection.name,candidate,
@@ -3869,9 +3945,9 @@ function renderLabDraft() {
   remakeRow(root,"Design",labDraft.status || "Original design");
   if(bench.inventorySelection.source==="carried")remakeRow(root,"Your item","Unchanged · In Inventory");
   const actions=make("div",{class:"ws-row"});
-  const save=make("button",{id:"ws-draft-save",type:"button",class:"ws-action"},"Save to Recipes");
+  const save=make("button",{id:"ws-draft-save",type:"button",class:"ws-action",hidden:""},"Save design");
   save.onclick=()=>$("#ws-save-design").click();
-  const build=make("button",{id:"ws-draft-build",type:"button",class:"ws-action primary"},"Build a new item");
+  const build=make("button",{id:"ws-draft-build",type:"button",class:"ws-action primary",hidden:""},"Build a new item");
   build.onclick=()=>makeIt(build);actions.append(save,build);root.append(actions);
   root.append(make("small",{},"Save keeps the design. Build uses supplies, then Add to Inventory or Place in World."));
 }
@@ -3908,6 +3984,12 @@ function updateLabSelection() {
   labWasSelected = selected;
   renderLabComponents();
   renderLabDraft();
+  const tools=$("#ws-build-tools");
+  if(tools){tools.hidden=!selected;
+    for(const id of ["ws-carried-condition","ws-lab-components","ws-lab-draft","ws-remake"]){
+      const area=document.getElementById(id);if(area && area.parentElement!==tools)tools.append(area);
+    }
+  }
 }
 
 // Visible identification uses authored components and machine bindings for
@@ -5493,6 +5575,7 @@ stage.visibleGeometry = () => {
 };
 
 async function start() {
+  $("#design-workshop").setAttribute("aria-busy","true");
   // Every direct game tab needs the saved native world for paid readiness;
   // opening Recipes after a server restart must not show the sandbox cost.
   if(worldId)await api('/api/world/open',{});
@@ -5542,8 +5625,8 @@ async function start() {
       if (await openLabDraft(source)) picker.value = source.kind;
     } else say("That recipe is no longer available. Select another recipe.", true);
   }
-  if (wantTechnique && (!wantTab || wantTab === "skills")) openTheTreeAt(wantTechnique);
-  else showTab(wantTab || (wantJob || wantCarried || wantSaved || wantLibrary || wantRecipe ? "lab" : WORKSHOP_OPENS_ON));
+  if (wantTechnique && !navigationRequest && (!wantTab || wantTab === "skills")) openTheTreeAt(wantTechnique);
+  else await showTab(navigationRequest || wantTab || (wantJob || wantCarried || wantSaved || wantLibrary || wantRecipe ? "lab" : WORKSHOP_OPENS_ON));
   try {
     const remembered = await api("/api/workshop/remembered", {}); $("#ws-feedback-count").textContent = remembered.kept ? `${remembered.kept} feedback records kept` : "";
     bench.personalLibrary = remembered.personal_library || bench.personalLibrary; bench.pricebook = remembered.pricebook || bench.pricebook; bench.benchPresets = remembered.bench_presets || bench.benchPresets;
@@ -5554,6 +5637,8 @@ async function start() {
     // unsubmitted curve/material inputs if it arrives while the user edits.
     renderUserLibrary(); renderBenchPresets();
   } catch { /* optional */ }
+  $("#design-workshop").dataset.ready="true";
+  $("#design-workshop").setAttribute("aria-busy","false");
 }
 
 placeCamera(); resize(); requestAnimationFrame(frame); guard(null, start);

@@ -50,7 +50,7 @@ class GameScreens(unittest.TestCase):
 
     def navigate(self, world, query):
         self.page.send("Page.navigate", {"url":self.base + f"/world?world={world}&" + query})
-        self.wait('!!document.querySelector("#ws-screen-status") && !!document.querySelector("#ws-chat-log")')
+        self.wait('document.querySelector("#design-workshop")?.dataset.ready === "true" && !!document.querySelector("#ws-chat-log")')
 
     def click(self, selector):
         # A real pointer click: it must land on the element itself, not on
@@ -518,7 +518,7 @@ class GameScreens(unittest.TestCase):
         self.browser(world, owner); self.navigate(world, "workshop=1&tab=inventory")
         self.wait('!!document.querySelector("#ws-inv-energy").dataset.updated')
         def displayed():
-            return self.page.evaluate('[...document.querySelectorAll(".ws-energy-card")].map(c => ({title:c.querySelector("h4").textContent,values:Object.fromEntries([...c.querySelectorAll(".ws-recipe-value")].map(v=>[v.querySelector("span").textContent,v.querySelector("b").textContent]))}))')
+            return self.page.evaluate('[...document.querySelectorAll("#ws-inv-energy .ws-energy-card")].map(c => ({title:c.querySelector("h4").textContent,values:Object.fromEntries([...c.querySelectorAll(".ws-recipe-value")].map(v=>[v.querySelector("span").textContent,v.querySelector("b").textContent]))}))')
         cards = displayed()
         self.assertEqual("200 J", cards[0]["values"]["Spendable"])
         self.assertEqual("0 arrays", cards[0]["values"]["Auto bank"])
@@ -550,9 +550,9 @@ class GameScreens(unittest.TestCase):
         self.page.evaluate('localStorage.setItem("banjo.workshop.opened", JSON.stringify({kind:"cart"}))')
         self.navigate(world, "workshop=1&tab=lab&kind=table")
         self.assert_empty()
-        self.assertEqual(["World", "Inventory", "Lab", "Skills", "Recipes", "Market", "Goals"],
+        self.assertEqual(["World", "Inventory", "Build", "Progress"],
             self.page.evaluate('[...document.querySelectorAll(".game-tabs [data-screen]")].map(e=>e.textContent)'))
-        self.assertTrue(self.page.evaluate('document.querySelector(".ws-left").getBoundingClientRect().left >= document.querySelector("#workshop-stage").getBoundingClientRect().right - 1'))
+        self.assertFalse(self.page.evaluate('document.body.classList.contains("ws-chat-open")'))
         self.screenshot("empty.png")
         self.navigate(world, "workshop=1&tab=lab&carry=missing-item")
         # Empty geometry is shown before the asynchronous source lookup has
@@ -562,6 +562,58 @@ class GameScreens(unittest.TestCase):
         self.assertFalse(self.page.evaluate('location.search.includes("carry=")'))
         self.page.send("Page.reload"); self.assert_empty()
         self.assertFalse([e for e in self.page.events if e.get("method") == "Runtime.exceptionThrown"])
+
+    def test_combined_inventory_buy_updates_stock_and_wallet_without_leaving_the_hub(self):
+        world, owner, app = self.setup_world(); self.browser(world, owner)
+        peer = self.join(world, "Independent shopper")
+        before = self.post('/api/workshop/inventory', {}, world)
+        wallet = self.post('/api/workshop/market', {'action':'bank','joules':500,
+            'request_id':'hub-shopping-fixture'}, world)
+        offer = next(o for o in wallet['offers'] if o['id']=='oak-stock')
+        oak = lambda inv: next(r for r in inv['materials'] if r['material']=='oak')
+        self.navigate(world, 'workshop=1&tab=inventory')
+        self.wait('document.querySelector("[data-market-item=oak-stock] button")?.disabled === false')
+        self.assertTrue(self.page.evaluate('!document.querySelector("#ws-pane-market").hidden && !document.querySelector("#ws-pane-inventory").hidden'))
+        self.click('[data-market-item="oak-stock"] button')
+        self.wait('document.querySelector("#ws-market-status").textContent.includes("added to your materials")')
+        self.wait('document.querySelector("#ws-market-balance").textContent === '+json.dumps(f"{500-offer['price_j']:,} J"))
+        self.wait('document.querySelector("#ws-inv-energy .ws-recipe-value b").textContent === '+json.dumps(f"{500-offer['price_j']:,} J"))
+        expected = oak(before)['personal_kg'] + offer['mass_kg']
+        self.wait('document.querySelector("[data-resource=oak] .ws-stock-owner b").textContent === '+json.dumps(f'{expected*1000:g} g'))
+        self.assertEqual(expected,oak(self.post('/api/workshop/inventory',{},world))['personal_kg'])
+        self.assertEqual('inventory', self.page.evaluate('new URLSearchParams(location.search).get("tab")'))
+        self.assertEqual(oak(before)['shared_kg'], oak(self.post('/api/workshop/inventory',{},world))['shared_kg'])
+        self.assertEqual(0, self.post('/api/workshop/market',{},world,peer['token'])['balance_j'])
+        self.assertEqual(0, oak(self.post('/api/workshop/inventory',{},world,peer['token']))['personal_kg'])
+        self.assertFalse(self.page.evaluate('!!document.querySelector("#workshop-stage").visibleGeometry()'))
+        self.assertEqual([], [e for e in self.page.events if e.get('method')=='Runtime.exceptionThrown'])
+
+    def test_hubs_and_next_step_stay_reachable_on_desktop_and_phone_layouts(self):
+        world, owner, app = self.setup_world(); self.browser(world, owner)
+        self.navigate(world, 'workshop=1&tab=inventory')
+        for width, height in [(1440,900),(844,390),(390,844)]:
+            self.page.send('Emulation.setDeviceMetricsOverride',{'width':width,'height':height,'deviceScaleFactor':1,'mobile':False})
+            for hub, ready in [('inventory','!!document.querySelector("[data-market-item]")'),
+                               ('build','!!document.querySelector("#ws-pane-recipes [data-recipe]")'),
+                               ('progress','!!document.querySelector("#ws-tree [data-technique]")')]:
+                self.click(f'.game-tabs [data-screen="{hub}"]')
+                self.wait(ready)
+                self.assertTrue(self.page.evaluate(f'document.querySelector("#ws-hub-{hub}").hidden === false'))
+                self.assertEqual(1,self.page.evaluate('document.querySelectorAll(".ws-hub:not([hidden])").length'))
+                self.assertTrue(self.page.evaluate('(()=>{const n=document.querySelector(".game-bottom-tabs").getBoundingClientRect();return n.left>=0 && n.right<=innerWidth && n.bottom<=innerHeight && document.documentElement.scrollWidth<=innerWidth})()'))
+                self.wait('!!document.querySelector("#ws-player-guidance .ws-action")')
+                self.assertFalse(self.page.evaluate('document.body.classList.contains("ws-chat-open")'))
+                if hub=='progress':
+                    # Stacked goals and skills must not overlap at narrow widths.
+                    self.assertTrue(self.page.evaluate('(()=>{const a=document.querySelector("#ws-pane-goals").getBoundingClientRect(),b=document.querySelector("#ws-pane-skills").getBoundingClientRect();return b.top>=a.bottom-1 || b.left>=a.right-1})()'))
+                    self.assertEqual(1,self.page.evaluate('document.querySelectorAll(".ws-goal-current").length'))
+                    self.assertTrue(self.page.evaluate('!!document.querySelector(".ws-goal-current [data-goal-go]")'))
+                if hub=='build':
+                    self.assert_empty()
+                    self.assertTrue(self.page.evaluate('!document.querySelector("#ws-pane-recipes").hidden'))
+            self.screenshot(f'hubs-progress-{width}x{height}.png')
+        self.assertFalse(app.room.fabrication_record['jobs'])
+        self.assertEqual([], [e for e in self.page.events if e.get('method')=='Runtime.exceptionThrown'])
 
     def test_saved_selection_and_world_tabs_preserve_player_and_clear_explicitly(self):
         world, owner, app = self.setup_world()
@@ -604,15 +656,15 @@ class GameScreens(unittest.TestCase):
         self.click('.ws-bar-link')
         self.wait('!!window.banjoRoom?.status().ready')
         self.assertEqual(owner["id"], self.page.evaluate('window.banjoRoom.status().player_id'))
-        self.assertEqual(7, self.page.evaluate('document.querySelectorAll(".game-tabs [data-screen]").length'))
-        self.click('.game-tabs [data-screen="skills"]')
+        self.assertEqual(4, self.page.evaluate('document.querySelectorAll(".game-tabs [data-screen]").length'))
+        self.click('.game-tabs [data-screen="progress"]')
         self.wait('document.querySelector("#ws-pane-skills")?.hidden === false && !!document.querySelector("#ws-tree button")')
-        self.click('.game-tabs [data-screen="lab"]')
+        self.click('.game-tabs [data-screen="build"]')
         self.wait('document.querySelector("#workshop-stage").visibleGeometry()?.meshes > 0')
         self.wait(f'document.querySelector("#ws-part-count").textContent==="{count}"')
         self.assertIn('Draft restored',self.page.evaluate('document.querySelector("#ws-lab-draft").textContent'))
         self.page.send("Page.reload"); self.wait(f'document.querySelector("#ws-part-count")?.textContent==="{count}"')
-        self.click('#ws-draft-save')
+        self.click('#ws-quick-save')
         self.wait('document.querySelector("#ws-lab-draft").textContent.includes("Saved to Recipes")')
         selected=self.page.evaluate('new URLSearchParams(location.search).get("design")')
         stored=self.post('/api/workshop/open',{'saved_design_id':selected},world)
@@ -646,7 +698,7 @@ class GameScreens(unittest.TestCase):
             ids.add(self.page.evaluate('new URLSearchParams(location.search).get("library")'))
             self.assertEqual("1", self.page.evaluate('document.querySelector("#ws-part-count").textContent'))
             self.assertFalse(self.page.evaluate('document.querySelector("#ws-component-chat-text").disabled'))
-            self.click('.game-tabs [data-screen="recipes"]')
+            self.click('.game-tabs [data-screen="build"]')
             self.wait('document.querySelectorAll("[data-building-block]").length === 16')
         self.assertEqual(16, len(ids))
         after = self.post("/api/workshop/inventory", {}, world)
@@ -726,7 +778,7 @@ class GameScreens(unittest.TestCase):
         self.wait(f'!!document.querySelector({json.dumps(selected)})'); self.click(selected)
         self.wait('document.querySelector("#workshop-stage").visibleGeometry()?.meshes > 0')
         meshes = self.page.evaluate('document.querySelector("#workshop-stage").visibleGeometry().meshes')
-        self.click('.game-tabs [data-screen="recipes"]')
+        self.click('.game-tabs [data-screen="build"]')
         card = '[data-recipe="stool:Camp stool"]'
         self.wait(f'document.querySelector({json.dumps(card + " .ws-recipe-acts button")})?.disabled === false')
         # Another actor can spend shared stock after this page displayed it.
@@ -735,7 +787,7 @@ class GameScreens(unittest.TestCase):
         self.click(card + ' .ws-recipe-acts button')
         self.wait(f'document.querySelector({json.dumps(card + " .ws-recipe-result")})?.dataset.bad === "yes" && document.querySelector({json.dumps(card + " .ws-recipe-acts button")})?.disabled === true')
         self.assertIn("Nothing has been spent", self.page.evaluate(f'document.querySelector({json.dumps(card + " .ws-recipe-result")}).textContent'))
-        self.assertIn("tab=recipes", self.page.evaluate('location.search'))
+        self.assertTrue(self.page.evaluate('document.querySelector(".game-tabs [data-screen=build]").getAttribute("aria-selected") === "true"'))
         self.assertEqual(installs, app.room.workshop_installs)
         self.assertEqual(saved, self.page.evaluate('new URLSearchParams(location.search).get("design")'))
         self.assertEqual(meshes, self.page.evaluate('document.querySelector("#workshop-stage").visibleGeometry().meshes'))
@@ -744,7 +796,10 @@ class GameScreens(unittest.TestCase):
     def test_carried_item_requires_own_inventory_and_lab_leaves_it_unchanged(self):
         # This fixture authors its carried stool directly; it tests ownership
         # and Lab isolation, not the paid manufacturing supply pipeline.
-        world, owner, app = self.setup_world(legacy_process=True)
+        # Keep this ownership fixture on the declared starter valley. Its
+        # fixed installation site is not a terrain-search qualification.
+        with mock.patch.object(guests.server.secrets, 'randbelow', return_value=0):
+            world, owner, app = self.setup_world(legacy_process=True)
         # The active opening chain is now the personal field pick (f15cd75b);
         # the Camp stool fixture is the first-camp chain's admitted recipe.
         recipe = self.post("/api/workshop/goals", {"chain":"first-camp-v1"}, world)["recipe"]

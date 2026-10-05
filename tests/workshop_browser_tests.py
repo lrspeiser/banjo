@@ -106,6 +106,8 @@ class WorkshopBrowserRegression(unittest.TestCase):
             self.wait(f'document.querySelector({json.dumps(selector)})')
             self.pointer_click(selector)
             self.wait("document.querySelector('#workshop-stage').visibleGeometry()?.meshes > 0")
+            self.pointer_click('[data-customize-item]')
+            self.wait("document.body.classList.contains('ws-chat-open')")
         except Exception:
             # unittest skips tearDown when setUp fails. Keep startup evidence
             # before the registered Chrome cleanup closes this page.
@@ -585,13 +587,14 @@ class WorkshopBrowserRegression(unittest.TestCase):
             "document.querySelectorAll('#variant-list, #ws-library, #ws-more, #ws-reset-variants').length"))
         self.assertEqual(0, self.js("document.querySelectorAll('#ws-extras').length"))
         # Chat follows the same navigation as the world, on the right.
-        self.assertEqual(["World", "Inventory", "Lab", "Skills", "Recipes", "Market", "Goals"],
+        self.assertEqual(["World", "Inventory", "Build", "Progress"],
                          self.js("[...document.querySelectorAll('.game-tabs [data-screen]')].map(e=>e.textContent)"))
         self.assertTrue(self.js("document.querySelector('.ws-left').getBoundingClientRect().left >= document.querySelector('#workshop-stage').getBoundingClientRect().right - 1"))
-        # The rail holds, above the chat, the open design's way to the world
-        # (89cbb019) and its parts (2ce0bb29); nothing else is added to it.
-        self.assertEqual(["Design → World", "Parts", "Chat"],
+        # Editing context stays with the item; the optional rail is chat.
+        self.assertEqual(["Chat"],
                          self.js("[...document.querySelectorAll('.ws-left h2')].map(h=>h.textContent)"))
+        self.assertTrue(self.js("!!document.querySelector('#ws-build-tools #ws-lab-components') && !!document.querySelector('#ws-build-tools #ws-lab-draft')"))
+        self.assertFalse(self.js("document.querySelector('#ws-pane-recipes').hidden"))
         self.assertTrue(self.js("document.querySelector('#ws-chat-log').getBoundingClientRect().height>200"),
                         "the conversation gets the height, not a 340 px box")
         # No right nav, and no page header above the bar.

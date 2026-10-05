@@ -737,3 +737,84 @@ body.workshop-mode .ws-left > .game-bottom-tabs { visibility:visible; }
 .ws-variants > summary { cursor:pointer;color:var(--dim);font-size:.8rem; }
 .ws-variants > ul { margin:.3rem 0 0;padding:0;grid-template-columns:1fr; }
 .ws-variants > ul > li { width:auto;box-sizing:border-box; }
+
+/* Three task hubs. One next action stays visible while the main area scrolls. */
+body.workshop-mode #ws-centre {display:flex;flex-direction:column;min-width:0;min-height:0;}
+#ws-centre > #ws-player-guidance {flex:none;margin:0;border:0;border-bottom:1px solid #344951;border-radius:0;
+  padding:10px 18px;display:flex;align-items:center;gap:10px;background:#142329;font-size:.8rem;flex-wrap:wrap;}
+#ws-player-guidance > strong {color:#b8ddc8;}
+#ws-player-guidance > .ws-action {margin:0;}
+#ws-player-guidance > p {font-size:.75rem;}
+#ws-player-guidance > .player-guide-tip:not(:empty) {flex-basis:100%;}
+.ws-hub {flex:1;min-width:0;min-height:0;overflow:auto;display:grid;gap:0;align-content:start;grid-auto-rows:max-content;padding:0!important;margin:0!important;}
+.ws-hub[hidden] {display:none!important;}
+body.workshop-mode .ws-hub .ws-tabpane {min-width:0;min-height:min-content;overflow:visible;padding:16px;margin:0;border:0;}
+.ws-hub-inventory {grid-template-columns:minmax(0,1.4fr) minmax(280px,1fr);}
+.ws-hub-energy {grid-column:1/-1;margin:0!important;padding:14px 16px;border-bottom:1px solid var(--edge);}
+.ws-hub-energy > h3 {display:inline-block;margin:0 16px 8px 0;font-size:.85rem;}
+.ws-hub-energy .ws-market-balance {display:inline-flex;margin:0;padding:0;border:0;background:transparent;}
+.ws-hub-energy .ws-energy-grid {grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
+.ws-hub-energy .ws-energy-card {padding:10px;position:relative;display:block;}
+.ws-hub-energy .ws-energy-icon {float:left;font-size:1.1rem;margin-right:8px;}
+.ws-hub-energy .ws-energy-card h4 {margin:0 0 8px;font-size:.8rem;}
+.ws-hub-energy .ws-energy-card .ws-recipe-value {font-size:.73rem;margin:3px 0;}
+.ws-hub-energy .ws-energy-card:first-child .ws-recipe-value:first-of-type b {font-size:1.3rem;color:#e8d18c;}
+.ws-energy-extra {grid-column:1/-1;font-size:.78rem;color:var(--dim);}
+.ws-energy-extra > summary {cursor:pointer;padding:6px 0;}
+#ws-centre > #ws-notice {position:static;flex:none;}
+#ws-market-status:empty {display:none;}
+.ws-more,.ws-supply-plan {margin:8px 0;color:var(--dim);font-size:.78rem;}
+.ws-more > summary,.ws-supply-plan > summary,#ws-goal-chapters > summary {cursor:pointer;padding:7px 0;}
+.ws-hub-inventory #ws-pane-market {border-left:1px solid var(--edge);background:#111a21;}
+#ws-market-offers {display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:8px;}
+#ws-market-offers > li {padding:10px;min-width:0;}
+#ws-market-offers > li > canvas {width:48px;height:48px;display:block;margin:0 auto 8px;}
+#ws-market-offers .ws-recipe-value {font-size:.73rem;}
+#ws-market-offers .ws-action {width:100%;margin-top:8px;}
+.ws-market-guidance {margin:0;padding:8px;}
+.ws-hub-inventory .ws-inv-grid {grid-template-columns:repeat(auto-fit,minmax(150px,1fr));}
+.ws-hub-build {grid-template-columns:minmax(260px,34%) minmax(0,1fr);grid-template-rows:minmax(0,1fr);overflow:hidden;align-content:stretch;}
+body.workshop-mode .ws-hub-build #ws-pane-recipes {min-height:0;overflow:auto;border-right:1px solid var(--edge);}
+.ws-hub-build .ws-recipe-grid,.ws-hub-build .ws-design-grid {grid-template-columns:repeat(auto-fit,minmax(210px,1fr));}
+#ws-build-editor {display:flex;flex-direction:column;min-width:0;min-height:0;overflow:auto;background:#0d141b;}
+body.workshop-mode #ws-build-editor .ws-viewport {flex:1 0 300px;min-height:300px;}
+#ws-build-tools {padding:12px;}
+#ws-build-tools[hidden] {display:none;}
+#ws-draft-save[hidden],#ws-draft-build[hidden] {display:none;}
+#ws-build-tools > section,#ws-build-tools > div {margin-top:10px;}
+#ws-build-tools #ws-lab-components {padding:0;}
+#ws-build-tools #ws-remake {border:1px solid var(--edge);border-radius:8px;padding:10px;}
+.ws-hub-progress {grid-template-columns:minmax(300px,42%) minmax(0,1fr);}
+.ws-hub-progress #ws-pane-skills {border-left:1px solid var(--edge);}
+#ws-goals-list {max-width:none;}
+#ws-goals-progress {border:0;background:transparent;padding:0;margin:6px 0;color:var(--dim);}
+#ws-goals-next[hidden] {display:none;}
+#ws-goal-path {display:flex;gap:6px;flex-wrap:wrap;margin:12px 0;}
+#ws-goal-path span {flex:1;min-width:80px;font-size:.73rem;padding:8px;border-radius:6px;border:1px solid #34424e;color:var(--dim);}
+#ws-goal-path .done {background:#1b3328;color:#9ccead;}
+#ws-goal-path .current {border-color:#a4d8b7;color:#dcefe3;background:#233e31;}
+#ws-goal-chapters {font-size:.78rem;color:var(--dim);}
+#ws-goal-chapters .ws-inventory-actions {list-style:none;}
+.ws-goal-history {padding:8px!important;background:transparent!important;border:0!important;}
+.ws-goal-history > details > summary {cursor:pointer;font-size:.8rem;color:var(--dim);}
+.ws-goal-history ol {margin:12px 0 0!important;}
+.ws-hub-progress .ws-tree {max-width:100%;overflow:auto;min-height:200px;}
+.ws-hub-progress .ws-tree-rank {min-width:155px;}
+.ws-tech-icon {font-size:1.25rem;margin-bottom:4px;}
+@media(max-width:1100px) {
+  .ws-hub-progress {grid-template-columns:1fr;}
+  .ws-hub-progress #ws-pane-skills {border-left:0;border-top:1px solid var(--edge);}
+}
+@media(max-width:700px) {
+  .ws-hub-inventory {grid-template-columns:1fr;}
+  .ws-hub-inventory #ws-pane-market {border-left:0;border-top:1px solid var(--edge);}
+  .ws-hub-energy .ws-energy-grid {grid-template-columns:1fr;}
+  .ws-hub-build {grid-template-columns:1fr;grid-template-rows:auto auto;overflow:auto;}
+  body.workshop-mode .ws-hub-build #ws-pane-recipes {max-height:45vh;overflow:auto;border-bottom:1px solid var(--edge);}
+  #ws-build-editor {overflow:visible;}
+  body.workshop-mode #ws-build-editor .ws-viewport {flex:none;height:340px;}
+  #ws-centre > #ws-player-guidance {padding:8px;font-size:.75rem;gap:6px;}
+}
+@media(max-height:500px) and (min-width:701px) {
+  body.workshop-mode #ws-build-editor .ws-viewport {flex-basis:200px;min-height:200px;}
+}

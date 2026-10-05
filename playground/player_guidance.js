@@ -47,7 +47,7 @@ export function renderPlayerGuidance(root,data,api) {
   root.setAttribute('role','region');
   if (!data?.next_action) {
     const note=document.createElement('strong');note.textContent='Next action unavailable';root.append(note);
-    const link=document.createElement('a');link.className='ws-action';link.textContent='Open Goals';
+    const link=document.createElement('a');link.className='ws-action';link.textContent='Open Progress';
     link.href=guidanceUrl({screen:'goals'},data || {});root.append(link);return;
   }
   const next=data.next_action;
