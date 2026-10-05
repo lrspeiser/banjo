@@ -875,6 +875,12 @@ def _said(record: dict[str, Any] | None, use: dict[str, Any], carried_kg: float)
     if kind in ("stopped", "glanced", "not supported"):
         why = str(record.get("why") or f"it {kind} on the {ground}")
         return why[:1].upper() + why[1:] + ("" if why.endswith(".") else ".")
+    if kind == "breaking rock":
+        # A share of the cube per swing (ToolTerrain::strikeCell): say how far.
+        share = float(record.get("broken_share") or 0.0)
+        ground_word = ground[:1].upper() + ground[1:]
+        return (f"{ground_word}: {share:.0%} broken through. Keep striking the same cube: "
+                f"it comes out whole when it is through.")
     loosened = record.get("loosened") or {}
     litres = 1000.0 * (float(loosened.get("sand_m3") or 0.0) + float(loosened.get("soil_m3") or 0.0))
     depth_cm = 100.0 * float(record.get("depth_m") or 0.0)

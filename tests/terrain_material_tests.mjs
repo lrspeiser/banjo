@@ -24,7 +24,7 @@ test('dig square is green only for a fresh ready observation; refusals are red',
   const feedback=(extra={})=>toolTargetFeedback({point,eyes,grid,tool:'Authored hoe',target,
     surface:'sand',context:'sand',...extra});
   assert.equal(toolTargetColor(feedback()),0x62e595);
-  for(const extra of [{point:[.5,0,.25]},{eyes:[0,1.62,.1]},{context:'soil'},
+  for(const extra of [{point:[.5,0,.25]},{eyes:[0,1.62,.4]},{context:'soil'},
     {target:{...target,feedback:{ready:false,state:'blocked',action:'Move closer'}}}])
     assert.notEqual(toolTargetColor(feedback(extra)),0x62e595);
   assert.equal(toolTargetColor({ready:false,state:'blocked'}),0xf17f79);
@@ -85,8 +85,11 @@ for(const surface of ['smooth','columns','cuts'])test(surface+' full-terrain cat
       computeVertexNormals:()=>normals++,computeBoundingSphere:()=>{}}}};
   ground.colors=surface==='columns'?new Float32Array(18):ground.mesh.geometry.attributes.color.array;
   const bytesOf=x=>new Uint8Array(Buffer.from(x,'base64'));
-  const {refreshTerrain}=new Function('ground','bytesOf','paintGround','drawTerrain','columnChunkIds',code+
-    '\nreturn {refreshTerrain};')(ground,bytesOf,()=>{},()=>rebuilt++,columnChunkIds);
+  // Grown regions (docs/streamed-regions.md) are drawn by their own module;
+  // this valley has none.
+  const groundRegions={refresh:()=>{},count:0,clear:()=>{}};
+  const {refreshTerrain}=new Function('ground','bytesOf','paintGround','drawTerrain','columnChunkIds','groundRegions',code+
+    '\nreturn {refreshTerrain};')(ground,bytesOf,()=>{},()=>rebuilt++,columnChunkIds,groundRegions);
   const heights=Buffer.from(new Float32Array([1,2,3,4,5,6]).buffer).toString('base64');
   const raw=[];
   for(let c=0;c<6;c++) {
@@ -243,7 +246,7 @@ test('tool feedback cannot follow a neighboring cell, changed layer or moved obs
   const model={grid,point,eyes,tool:'Custom spade',target,surface:'sand'};
   assert.equal(toolTargetFeedback(model),feedback);
   for(const change of [{point:[.126,1,.25]},{point:[.124,.96,.25]},
-    {eyes:[0,2,.04]},{surface:'soil'},{context:'changed run depths'},
+    {eyes:[0,2,.4]},{surface:'soil'},{context:'changed run depths'},
     {target:{...target,observed_from_m:null}}]) {
     const next=toolTargetFeedback({...model,...change});
     assert.equal(next.ready,false);assert.equal(next.state,'checking');assert.deepEqual(next.materials,[]);

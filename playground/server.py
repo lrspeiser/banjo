@@ -2162,7 +2162,7 @@ class Handler(BaseHTTPRequestHandler):
                     # every swing held the locks walking and the next swing
                     # need, and fast digging queued behind it (2026-10-04).
                     room=getattr(self.app,'room',None)
-                    if room is not None: room.world_save_pending=True
+                    if room is not None: room.world_save_soon=True
                     if any(r['owner']==player for r in player_learning.pending_of(self.app)):
                         answer['learning_pending']=True
                     if answer.get('learning_pending'):
@@ -3028,6 +3028,7 @@ def keep_world(app,why=""):
         world_goods.settle(app)
         room.world_saved_t=float(saved.get("t_s") or 0.0)
         room.world_save_pending=False
+        room.world_save_soon=False
         room.regions_unsaved=False
         machine_witness.saved(app,journal_of,registry())
         if getattr(app,'world_id',None): player_learning.saved(app,journal_of,registry())
@@ -3051,7 +3052,10 @@ def keep_world_after(app,body,answer):
     if not due and (grew or body.get("op")=="step") and isinstance(t,(int,float)):
         # Either way round: a world opened again starts its clock over.
         since=abs(float(t)-float(getattr(room,"world_saved_t",-1.0e9)))
-        due=((grew or (getattr(room,"world_save_pending",False) and since>=KEEP_WORLD_PENDING_GAP_S) or
+        # A save the engine put off (a stroke under way) is tried again soon;
+        # one a swing asked for waits KEEP_WORLD_PENDING_GAP_S since the last.
+        due=((grew or getattr(room,"world_save_pending",False)
+              or (getattr(room,"world_save_soon",False) and since>=KEEP_WORLD_PENDING_GAP_S) or
               since>=KEEP_WORLD_EVERY_S)
              and abs(float(t)-float(getattr(room,"world_refused_t",-1.0e9)))>=KEEP_WORLD_RETRY_S)
     if not due: return

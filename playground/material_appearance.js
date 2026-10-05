@@ -126,8 +126,12 @@ export function toolTargetFeedback({point, grid, tool, target, eyes, name=null, 
     if(cell<0 || cell!==terrainCellAt(at[0],at[2],grid))return pending;
     if(surface && target.target?.material && surface!==target.target.material)return pending;
   }
-  if(Math.hypot(...point.map((v,i)=>v-at[i]))>.03
-    || Math.hypot(...eyes.map((v,i)=>v-observed[i]))>.03)return pending;
+  // The ground is judged by its cell (above); a thing by the point on it. The
+  // eye sways with the body, so it is held to 25 cm, not 3: at 3 cm the square
+  // sat on "checking" and turned green only now and then (the owner, 2026-10-04).
+  if((name || !grid) && Math.hypot(...point.map((v,i)=>v-at[i]))>.03)return pending;
+  if(!name && grid && Math.abs(point[1]-at[1])>.03)return pending;   // the cell was dug since
+  if(Math.hypot(...eyes.map((v,i)=>v-observed[i]))>.25)return pending;
   return target.feedback || pending;
 }
 

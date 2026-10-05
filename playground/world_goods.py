@@ -56,7 +56,11 @@ def heap_excavation(app, body):
         if not isinstance(eyes,list) or len(eyes)!=3 or math.hypot(eyes[0]-at[0],eyes[2]-at[2])>PILE_FROM_DIGGER_M:return []
         vx,vz=at[0]-eyes[0],at[2]-eyes[2]; length=math.hypot(vx,vz) or 1
         ahead=(vx/length,vz/length) if math.hypot(vx,vz)>0 else (1,0)
-        clear=lambda point:math.hypot(point[0]-at[0],point[1]-at[2])>=PILE_CLEAR_OF_DIG_M
+        # Clear of this dig and of the digger's recent ones: digging round
+        # oneself put piles on the next hole (player regression, 2026-10-04).
+        recent=app.__dict__.setdefault('recent_digs',[])
+        recent.append((float(at[0]),float(at[2])));del recent[:-64]
+        clear=lambda point:all(math.hypot(point[0]-x,point[1]-z)>=PILE_CLEAR_OF_DIG_M for x,z in recent)
         moved=[]
         for substance in materials:
             pile=next((p for p in goods.stockpiles if p.get('excavated')==substance

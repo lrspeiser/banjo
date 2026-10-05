@@ -7,25 +7,28 @@ const source=(await readFile(new URL('../playground/tools.js',import.meta.url),'
   .replace('"/vendor/three.module.js"',JSON.stringify(new URL('../playground/vendor/three.module.js',import.meta.url).href));
 const {makeTools}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
 
-test('pile clicks precede tool use and recheck exact-ray occlusion and reach',async()=>{
+test('an empty hand collects a pile, rechecking exact-ray occlusion and reach; a pick digs past it',async()=>{
   // A Windows checkout has CRLF line ends; the markers below are written with LF.
   const full=(await readFile(new URL('../playground/world.js',import.meta.url),'utf8')).replace(/\r\n/g,'\n');
   const code=full.slice(full.indexOf('canvas.addEventListener("pointerdown", (e) => {'),full.indexOf('canvas.addEventListener("pointermove", (e) => {'));
-  for(const mode of ['clear','occluded','far','input']) {
+  for(const mode of ['clear','occluded','far','input','pick']) {
     let callback, collected=0, strokes=0;const requests=[],messages=[];
     const camera=new THREE.PerspectiveCamera();camera.position.set(0,1.62,0);
     const direction=new THREE.Vector3(1,-1,0).normalize();
     const pile={name:'soil pile',at_m:mode==='far'?[3,0]:[1,0]};
     const visual={pick:()=>({pile,distance:1.8,role:mode==='input'?'input':'stock'}),collectPile:async()=>{collected++;}};
     const install=new Function('canvas','camera','aimVector','resourceVisuals','act','THREE','pressPrimary','lastAction',
-      'let cursorFree=false,resumeClick=false,primaryUsed=false,cursor,drag;const watchedId=null,world={held:{pick:{}}},looking=false;'+
+      'let cursorFree=false,resumeClick=false,primaryUsed=false,cursor,drag;const watchedId=null,looking=false;'+
+      // With a digging tool in hand a click digs; a pile is for an empty hand
+      // (the owner, 2026-10-04: digging past a pile collected it instead).
+      'const world={held:'+(mode==='pick'?'{pick:{}}':'null')+'};'+
       'const cursorAt=e=>({px:e.clientX,py:e.clientY}),markAt=()=>{},offerStick=()=>{},setCursorFree=()=>{};'+code);
     install({addEventListener:(_,fn)=>{callback=fn;},setPointerCapture(){}},camera,()=>direction.clone(),visual,
       async(op,args)=>{requests.push(args);return mode==='occluded'?{hit:true,point_m:[.1,1.52,0]}:{hit:false};},THREE,
       ()=>{strokes++;return true;},message=>messages.push(message));
     callback({button:0,clientX:100,clientY:200});await new Promise(setImmediate);
     assert.equal(collected,mode==='clear'?1:0);
-    assert.equal(strokes,mode==='input'?1:0,'collectible pile clicks never swing the held tool');
+    if(mode==='pick'){assert.equal(requests.length,0,'a held pick does not stop at a pile');continue;}
     if(mode!=='input')assert.deepEqual(requests[0].dir,direction.toArray(),'native check uses the click ray');
     if(mode==='far')assert.match(messages[0],/within 2 m/);
   }
@@ -83,7 +86,7 @@ test('closed native outcomes are shown as they arrive and are not replayed by th
   } finally {globalThis.setTimeout=oldSet;globalThis.clearTimeout=oldClear;}
 });
 
-test('cursor clicks, queued taps, sidebar targets and held repeats retain their intended targets',async()=>{
+test('a waiting click aims where you look; taps during a use become one; sidebar targets and held repeats keep theirs',async()=>{
   const oldSet=globalThis.setTimeout,oldClear=globalThis.clearTimeout;
   const timers=[];
   globalThis.setTimeout=run=>{const timer={run};timers.push(timer);return timer;};
@@ -103,19 +106,22 @@ test('cursor clicks, queued taps, sidebar targets and held repeats retain their 
       api:async(path,body)=>{assert.equal(path,'/api/world/tool/use');uses.push(body);
         return await new Promise(resolve=>{finish=()=>resolve({said:'Collected',repeat:true});});},
       showUse:noop,say:noop,remember:noop,lastAction:noop,carryGround:noop,showNotebook:noop});
-    const first=direction.toArray();tools.press();tools.release();
-    direction.set(-.3,-.6,-1).normalize(); // movement before the scheduled stroke
-    await runTimer();assert.deepEqual(picks[0].dir,first);
-    assert.deepEqual(uses[0].at_m,[first[0],0,first[2]]);
-    const second=direction.toArray();tools.press();tools.release();
+    // The owner, 2026-10-04: clicks must not "queue up way behind me". A
+    // waiting click aims where you look when it runs, and taps made while a
+    // use is under way become one, not a backlog replayed at old aims.
+    tools.press();tools.release();
+    direction.set(-.3,-.6,-1).normalize();const moved=direction.toArray();
+    await runTimer();assert.deepEqual(picks[0].dir,moved,'a waiting click aims where you look when it runs');
+    assert.deepEqual(uses[0].at_m,[moved[0],0,moved[2]]);
+    tools.press();tools.release();
     direction.set(.6,-.5,-1).normalize();const third=direction.toArray();tools.press();tools.release();
     assert.equal(uses.length,1,'pending native use must not overlap');
-    finish();await flush();await runTimer();assert.deepEqual(picks[1].dir,second);
-    finish();await flush();await runTimer();assert.deepEqual(picks[2].dir,third);
+    finish();await flush();await runTimer();assert.deepEqual(picks[1].dir,third,'taps during a use become one, at the current aim');
     finish();await flush();assert.equal(world.use.queued,0);
+    assert.equal(uses.length,2,'no taps are replayed behind the player');
     const displayed=[.2,0,-1.1];tools.press({at_m:displayed,target_name:null});tools.release();
-    displayed[0]=99;await runTimer();assert.equal(picks.length,3);
-    assert.deepEqual(uses[3].at_m,[.2,0,-1.1],'sidebar retains the displayed point');
+    displayed[0]=99;await runTimer();assert.equal(picks.length,2);
+    assert.deepEqual(uses[2].at_m,[.2,0,-1.1],'sidebar retains the displayed point');
     finish();await flush();
     tools.press();await runTimer();finish();await flush();
     direction.set(-.5,-.7,-1).normalize();const repeated=direction.toArray();

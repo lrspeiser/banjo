@@ -7278,7 +7278,9 @@ canvas.addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
   if (e.altKey) return;          // inspect while carrying, without primary Use
   const from=camera.position.clone(),dir=aimVector();
-  const pileHit=!watchedId && resourceVisuals.pick(from,dir,4);
+  // With a digging tool in hand a click digs; collecting a pile is for an
+  // empty hand. Digging past a pile collected it instead (player regression).
+  const pileHit=!watchedId && !world.held?.pick && resourceVisuals.pick(from,dir,4);
   if(pileHit && pileHit.role!=="input") {
     // A pile click has priority over the equipped tool. Recheck native
     // occlusion with this exact ray, then use the ordinary receiving route.
@@ -7369,11 +7371,29 @@ canvas.addEventListener("pointerup", (e) => {
     return;
   }
   if (world.held) { intend("drop"); return; }
-  // Hand empty, and the cursor is on something: do the thing. Clicked before
-  // the view's answer came back: ask now, then do it.
-  if (world.aim && world.aim.name) intend(doChoice);
-  else if (!world.aim && !world.groundAim) void aimNow().then(() => { if (world.aim?.name && !world.held) intend(doChoice); });
+  // Hand empty, and the cursor is on something: do the thing -- or, for a
+  // thing no hand takes, show it. Clicked before the view's answer came back:
+  // ask now, then do it.
+  const act = () => {
+    const name = world.aim?.name;
+    if (!name || world.held) return;
+    if (!machinesOfPart(name).length && !takenByHand(name)) { foldPanel(false); return; }
+    intend(doChoice);
+  };
+  if (world.aim && world.aim.name) act();
+  else if (!world.aim && !world.groundAim) void aimNow().then(act);
 });
+
+// Whether a hand can take a thing: not fixed in place, not fastened to
+// anything, and no heavier than can be carried. A click on the solar farm
+// (245 kg) asked to carry it and was refused, with its card in a folded
+// panel: the click did nothing anyone could see (player regression, 2026-10-04).
+function takenByHand(name) {
+  const entry = world.bodies.get(name);
+  if (!entry || entry.anchored || onAJoint(name)) return false;
+  const limit = Number(world.carryLimitKg) || 80;
+  return !(Number(entry.mass) > limit);
+}
 
 // What a click with a tool in hand selects rather than swings at: a machine's
 // parts and anything fixed in place.
