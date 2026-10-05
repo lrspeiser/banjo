@@ -2,7 +2,54 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
 import * as THREE from '../playground/vendor/three.module.js';
-import {GROUND_APPEARANCE,materialAppearance,terrainCellAt,terrainTargetPath,exposedRunKind,toolTargetFeedback,toolTargetColor,collectedToolMaterials,toolOutcomeFeedback, makeTargetHover,columnTopData,walkColumnFaces,columnChunkIds,columnChunkBox} from '../playground/material_appearance.js';
+import {GROUND_APPEARANCE,materialAppearance,terrainCellAt,terrainTargetPath,exposedRunKind,toolTargetFeedback,toolTargetColor,collectedToolMaterials,toolOutcomeFeedback, makeTargetHover,cellWaterData,columnTopData,walkColumnFaces,columnChunkIds,columnChunkBox} from '../playground/material_appearance.js';
+
+test('a one-cell channel draws wet footprints without bridging dry excavation',()=>{
+  for(const mode of ['smooth','columns','cuts']) {
+    const grid={nx:3,nz:3,x0:0,z0:0,dx:.25,surface:mode};
+    const heights=new Float32Array(9).fill(-1),water=new Float32Array(9).fill(NaN);
+    water[1]=water[4]=water[7]=.5;
+    const data=cellWaterData(grid,heights,water);
+    assert.deepEqual([...data.cells],[1,4,7]);assert.equal(data.indices.length,18);
+    for(let n=0;n<3;n++) {
+      const points=data.positions.subarray(12*n,12*n+12);
+      assert.equal(Math.min(points[0],points[3],points[6],points[9]),.125);
+      assert.equal(Math.max(points[0],points[3],points[6],points[9]),.375);
+      for(let v=0;v<4;v++)assert.equal(points[3*v+1],.5);
+    }
+    water[4]=NaN;assert.deepEqual([...cellWaterData(grid,heights,water).cells],[1,7]);
+    water[4]=-.5;heights[4]=0;assert.deepEqual([...cellWaterData(grid,heights,water).cells],[1,7]);
+    water.fill(NaN);assert.equal(cellWaterData(grid,heights,water).positions.length,0);
+  }
+});
+
+test('shipped water updates retain only wet cells across drying and changing topology',()=>{
+  const source=readFileSync(new URL('../playground/world.js',import.meta.url),'utf8');
+  const code=source.slice(source.indexOf('function extendShore'),source.indexOf('function stepFoam'));
+  const grid={nx:3,nz:1,dx:.25,x0:0,z0:0};
+  const geometry=new THREE.BufferGeometry();
+  geometry.setAttribute('position',new THREE.BufferAttribute(new Float32Array(0),3));
+  const ground={grid,heights:new Float32Array(3),water:new THREE.Mesh(geometry),waterCells:new Uint32Array(0)};
+  const {drawWater,animateWater,currentSurface}=new Function('ground','THREE','cellWaterData','bytesOf','WATER_SHALLOW',
+    'WATER_DEEP','clamp','WATER_EASE_MS','showWater','placeBeyond',code+'\nreturn {drawWater,animateWater,currentSurface};')(
+      ground,THREE,cellWaterData,x=>Uint8Array.from(Buffer.from(x,'base64')),new THREE.Color('#66ccee'),
+      new THREE.Color('#113355'),(x,a,b)=>Math.max(a,Math.min(b,x)),300,()=>{},()=>{});
+  const packet=values=>({box:[0,0,3,1],base_m:0,
+    surface_mm_b64:Buffer.from(new Uint16Array(values).buffer).toString('base64'),
+    flow_b64:Buffer.from(new Int8Array(6).buffer).toString('base64')});
+  drawWater(packet([500,0,0]));animateWater(ground.arrived+300);
+  assert.deepEqual([...ground.waterCells],[0]);assert.equal(currentSurface()[0],.5);
+  assert.ok(Number.isNaN(currentSurface()[1]),'a dry neighboring cell has no fabricated water');
+  let disposed=false;ground.water.geometry.addEventListener('dispose',()=>disposed=true);
+  drawWater(packet([0,700,0]));animateWater(ground.arrived+300);
+  assert.ok(disposed,'replaced water buffers are released');
+  assert.deepEqual([...ground.waterCells],[1]);
+  assert.ok(Number.isNaN(currentSurface()[0]));assert.ok(Math.abs(currentSurface()[1]-.7)<1e-6);
+  assert.ok([...ground.water.geometry.attributes.position.array].every(Number.isFinite));
+  drawWater(packet([0,0,0]));animateWater(ground.arrived+300);
+  assert.equal(ground.water.geometry.attributes.position.count,0);
+  assert.equal(ground.water.geometry.boundingSphere.radius,0);
+});
 
 test('outcome particles require native collection and pulses require actual contact',()=>{
   const answer={result:{open:false,kind:'broke out',loosened_kg:1.5,
@@ -211,9 +258,9 @@ test('shipped exploration repaints changed cells even when the known count stays
     mesh:{geometry:{attributes:{color:attribute}}},materialCells:{update:k=>painted.push(k)},dirtyFaceChunks:new Set()};
   const code=part('groundSeen','groundKind')+part('groundKind','decodeRuns')+
     part('markColumnFaces','buildColumnFaces')+part('showSeen','drawTerrain');
-  const {showSeen}=new Function('ground','bytesOf','GROUND_COLOURS','GROUND_UNSEEN','columnChunkIds',code+
+  const {showSeen}=new Function('ground','bytesOf','GROUND_COLOURS','GROUND_UNSEEN','columnChunkIds','minimap',code+
     '\nreturn {showSeen};')(ground,x=>Uint8Array.from(Buffer.from(x,'base64')),
-      [new THREE.Color('#8996a6'),new THREE.Color('#875132')],new THREE.Color('#2b2f36'),columnChunkIds);
+      [new THREE.Color('#8996a6'),new THREE.Color('#875132')],new THREE.Color('#2b2f36'),columnChunkIds,{dirty:false});
   const first=seen.slice(),a=12*g.nx+31,b=a+1;first[a]=0;
   const block={...sight,known_cells:count-1,cells:count,seen_b64:Buffer.from(first).toString('base64')};
   showSeen(block);assert.deepEqual(painted,[a]);assert.deepEqual([...ground.dirtyFaceChunks],[0]);

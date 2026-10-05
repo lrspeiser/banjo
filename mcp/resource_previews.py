@@ -6,7 +6,7 @@ separate extraction route and are never substituted for native soil/sand.
 from __future__ import annotations
 
 
-def ground_tool(survey, use, point_length_m=.2):
+def ground_tool(survey, use, point_length_m=.2, *, cell_strike=False):
     surface=survey.get('surface')
     # The coarse contact classification treats a <2 cm sand film as soil.
     # The visible top run still contains sand and native stripping removes it.
@@ -17,9 +17,13 @@ def ground_tool(survey, use, point_length_m=.2):
     wet=float(water.get('depth_m',0) if isinstance(water,dict) else water)
     out={'method':'ground-tool','materials':[],'state':'unavailable','label':'No loose materials'}
     if not survey.get('on_the_ground'):return out
-    if wet>.005:
+    if cell_strike:out['method']='cell-strike'
+    if cell_strike and surface not in ('sand','soil','loose soil'):
+        out.update(materials=['rock'],state='possible',label='Dig')
+        return out
+    if wet>.005 and not cell_strike:
         out['label']='Wet ground · unsupported';return out
-    if use.get('lever') is None:
+    if use.get('lever') is None and not cell_strike:
         out['label']='No loosening motion';return out
     if surface not in ('sand','soil','loose soil'):
         out['label']='No soil / sand here';return out

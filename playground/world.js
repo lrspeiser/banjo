@@ -25,7 +25,7 @@ import { makeTools } from "/tools.js";
 import { makeWorkbench } from "/workbench.js";
 import { gameNavigation, showSaveStatus, screenUrl, thumbnail, massLabel, useItemPictures, itemPicture, keepItemPicture } from "/game_menu.js";
 import { conditionPanel } from "/body_condition.js";
-import { GROUND_APPEARANCE, materialAppearance, terrainCellAt, terrainTargetPath, exposedRunKind, toolTargetFeedback, toolTargetColor, collectedToolMaterials, toolOutcomeFeedback, makeTargetHover, columnTopData, walkColumnFaces, columnChunkIds, columnChunkBox } from "/material_appearance.js";
+import { GROUND_APPEARANCE, materialAppearance, terrainCellAt, terrainTargetPath, exposedRunKind, toolTargetFeedback, toolTargetColor, collectedToolMaterials, toolOutcomeFeedback, makeTargetHover, cellWaterData, columnTopData, walkColumnFaces, columnChunkIds, columnChunkBox } from "/material_appearance.js";
 import { terrainMaterial } from "/terrain_material.js";
 import { makeRegions } from "/ground_regions.js";
 import { baselineHeightAt, cutHeightAt, walkCutSurface, cutWallBands, cutRimSegments } from "/cut_surface.js";
@@ -1007,7 +1007,7 @@ function clearGround() {
   }
   ground.beyond = [];
   Object.assign(ground, { grid: null, heights: null, surfaces: null, view: null, was: null,
-                          next: null, flow: null, last: null });
+                          next: null, flow: null, last: null, waterCells: null });
   floor.visible = true;
   grid.visible = true;
   scene.fog.near = 18;
@@ -1472,14 +1472,11 @@ function drawTerrain(block) {
   // And the faces of every step in it, in the materials the step cuts through.
   markColumnFaces([0,0,nx,nz],0);
 
-  // The water: the same points, lifted to the surface where there is water
-  // and tucked under the ground where there is none.
+  // Water geometry is populated from actual wet cells by drawWater.
   const wet = new THREE.BufferGeometry();
-  wet.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3));
-  wet.setAttribute("color", new THREE.BufferAttribute(new Float32Array(3 * count), 3));
-  wet.setIndex(new THREE.BufferAttribute(indices, 1));
-  const wetY = wet.attributes.position.array;
-  for (let k = 0; k < count; ++k) wetY[3 * k + 1] = ground.heights[k] - 0.3;
+  wet.setAttribute("position", new THREE.BufferAttribute(new Float32Array(0), 3));
+  wet.setAttribute("color", new THREE.BufferAttribute(new Float32Array(0), 3));
+  ground.waterCells=new Uint32Array(0);
   ground.water = new THREE.Mesh(wet, new THREE.MeshStandardMaterial({
     vertexColors: true, transparent: true, opacity: 0.8, roughness: 0.1, metalness: 0.05,
     depthWrite: false }));
@@ -1586,26 +1583,11 @@ function followRegions(state) {
   for (const change of state.regions_changed || []) groundRegions.patch(change);
 }
 
-// A surface for every point: the level where there is water, and where there
-// is none but water is next door, the neighbour's level -- so a lake meets its
-// shore flat and the ground cuts the waterline, rather than the water sloping
-// down into the bank.
+// Retain only reported water above its own bed. Dry neighbors stay dry even
+// after excavation reveals the place an extrapolated sheet used to occupy.
 function extendShore(surface) {
-  const g = ground.grid, out = new Float32Array(surface);
-  for (let j = 0; j < g.nz; ++j)
-    for (let i = 0; i < g.nx; ++i) {
-      const k = j * g.nx + i;
-      if (Number.isFinite(surface[k])) continue;
-      let best = -Infinity;
-      for (let dj = -1; dj <= 1; ++dj)
-        for (let di = -1; di <= 1; ++di) {
-          const x = i + di, z = j + dj;
-          if (x < 0 || z < 0 || x >= g.nx || z >= g.nz) continue;
-          const s = surface[z * g.nx + x];
-          if (Number.isFinite(s) && s > best) best = s;
-        }
-      out[k] = best > -Infinity ? best : NaN;
-    }
+  const out = new Float32Array(surface);
+  for(let k=0;k<out.length;k++)if(!(out[k]>ground.heights[k]))out[k]=NaN;
   return out;
 }
 
@@ -1635,15 +1617,23 @@ function drawWater(block) {
   // Ease from where the drawing is now to the new report.
   ground.was = ground.next ? currentSurface() : extended;
   ground.next = extended;
+  const waterData=cellWaterData(g,ground.heights,extended);
+  const geometry=new THREE.BufferGeometry();
+  geometry.setAttribute("position",new THREE.BufferAttribute(waterData.positions,3));
+  geometry.setAttribute("color",new THREE.BufferAttribute(new Float32Array(waterData.positions.length),3));
+  geometry.setIndex(new THREE.BufferAttribute(waterData.indices,1));
+  geometry.computeVertexNormals();
+  ground.water.geometry.dispose();ground.water.geometry=geometry;ground.waterCells=waterData.cells;
   ground.raw = surface;
   ground.arrived = performance.now();
   // Deeper is darker.
   const col = ground.water.geometry.attributes.color.array;
   const c = new THREE.Color();
-  for (let k = 0; k < g.nx * g.nz; ++k) {
+  for (let n = 0; n < ground.waterCells.length; ++n) {
+    const k=ground.waterCells[n];
     const depth = Number.isFinite(extended[k]) ? extended[k] - ground.heights[k] : 0;
     c.copy(WATER_SHALLOW).lerp(WATER_DEEP, clamp(depth / 0.9, 0, 1));
-    col[3 * k] = c.r; col[3 * k + 1] = c.g; col[3 * k + 2] = c.b;
+    for(let v=0;v<4;v++){const i=12*n+3*v;col[i]=c.r;col[i+1]=c.g;col[i+2]=c.b;}
   }
   ground.water.geometry.attributes.color.needsUpdate = true;
   ground.last = block;
@@ -1653,11 +1643,8 @@ function drawWater(block) {
 
 function currentSurface() {
   const pos = ground.water.geometry.attributes.position.array;
-  const out = new Float32Array(ground.grid.nx * ground.grid.nz);
-  for (let k = 0; k < out.length; ++k) {
-    const y = pos[3 * k + 1];
-    out[k] = y > ground.heights[k] - 0.25 ? y : NaN;
-  }
+  const out = new Float32Array(ground.grid.nx * ground.grid.nz).fill(NaN);
+  for(let n=0;n<ground.waterCells.length;n++)out[ground.waterCells[n]]=pos[12*n+1];
   return out;
 }
 
@@ -1666,13 +1653,14 @@ function animateWater(now) {
   const t = clamp((now - ground.arrived) / WATER_EASE_MS, 0, 1);
   const pos = ground.water.geometry.attributes.position.array;
   const was = ground.was, next = ground.next, H = ground.heights;
-  for (let k = 0; k < next.length; ++k) {
+  for (let n = 0; n < ground.waterCells.length; ++n) {
+    const k=ground.waterCells[n];
     const a = was[k], b = next[k];
     let y;
     if (Number.isFinite(a) && Number.isFinite(b)) y = a + (b - a) * t;
     else if (Number.isFinite(b)) y = b;
     else y = H[k] - 0.3;
-    pos[3 * k + 1] = y;
+    for(let v=0;v<4;v++)pos[12*n+3*v+1]=y;
   }
   ground.water.geometry.attributes.position.needsUpdate = true;
   ground.water.geometry.computeBoundingSphere();

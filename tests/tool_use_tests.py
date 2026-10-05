@@ -181,6 +181,29 @@ class AToolsUseIsShapedByItsProfile(unittest.TestCase):
 
 
 class WhatAToolDoesWhereYouLook(unittest.TestCase):
+    def test_wet_cube_readiness_matches_existing_cell_strike_without_relaxing_smooth_ground(self):
+        for surface,materials in [('sand',['sand']),('soil',['soil']),('rock',['rock'])]:
+            with self.subTest(surface=surface):
+                app=app_with(survey={'surface':surface,'water':{'depth_m':.1}})
+                app.live.session.room_spec={'terrain':{'surface':'columns'}}
+                answer=tool_use.resolve(app,{'person':PERSON,'at_m':IN_REACH})
+                self.assertTrue(answer['feedback']['ready'])
+                self.assertEqual(materials,answer['feedback']['materials'])
+                self.assertEqual('ok',answer['ring']['state'])
+                self.assertFalse(set(app.live.asked)&{'strike-cell','stroke','dig'})
+        app=app_with(survey={'water':{'depth_m':.1}})
+        app.live.session.room_spec={'terrain':{'surface':'smooth'}}
+        self.assertFalse(tool_use.resolve(app,{'person':PERSON,'at_m':IN_REACH})['feedback']['ready'])
+
+    def test_cube_preview_uses_native_cell_depth_for_layers_not_the_point_length(self):
+        app=app_with(survey={'surface':'sand','sand_m':.22,'soil_m':.8,'water':{'depth_m':.1}})
+        app.live.session.room_spec={'terrain':{'surface':'columns','generate':{'cell_m':.25}}}
+        answer=tool_use.resolve(app,{'person':PERSON,'at_m':IN_REACH})
+        self.assertEqual(['sand','soil'],answer['feedback']['materials'])
+        app.live.session.state['terrain']={'grid':{'cell_m':.125}}
+        answer=tool_use.resolve(app,{'person':PERSON,'at_m':IN_REACH})
+        self.assertEqual(['sand'],answer['feedback']['materials'])
+
     def test_compact_feedback_uses_actual_readiness_without_promising_yield(self):
         cases=[(IN_REACH,{},'ready',True,'Dig here',['sand']),
                ([13, .6, -7.38],{},'blocked',False,'Move closer',[]),

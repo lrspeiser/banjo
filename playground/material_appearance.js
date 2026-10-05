@@ -143,6 +143,22 @@ export function toolTargetColor(feedback) {
   return 0xe7eff5;
 }
 
+// Water covers the solver's wet cell footprints, not triangles stretched from
+// a river into dry neighbors. A one-cell channel must have a visible surface.
+export function cellWaterData(grid, heights, surface) {
+  const cells=[];
+  for(let k=0;k<grid.nx*grid.nz;k++)
+    if(Number.isFinite(surface[k]) && surface[k]>heights[k])cells.push(k);
+  const positions=new Float32Array(cells.length*12),indices=new Uint32Array(cells.length*6);
+  const half=grid.dx/2;
+  cells.forEach((k,n)=>{
+    const x=grid.x0+(k%grid.nx)*grid.dx,z=grid.z0+Math.floor(k/grid.nx)*grid.dx,y=surface[k];
+    positions.set([x-half,y,z-half,x+half,y,z-half,x-half,y,z+half,x+half,y,z+half],12*n);
+    const v=4*n;indices.set([v,v+2,v+3,v,v+3,v+1],6*n);
+  });
+  return {positions,indices,cells:new Uint32Array(cells)};
+}
+
 // A collected amount comes from a closed native receipt, never a preview or
 // guessed per-material density. Keep the engine report available separately.
 export function collectedToolMaterials(answer) {

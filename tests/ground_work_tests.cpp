@@ -1057,10 +1057,59 @@ void toolMeetingKeepsItsOwner() {
     std::printf("  owned native stroke: %s; owner %s; terrain residual %.12g m3\n",said(work).c_str(),work.actor.c_str(),live->environment()->terrain().residual().total());
 }
 
+// The cube action is the game's fixed-work abstraction, not a calibrated wet
+// soil constitutive law. Test its real held-tool path and the water bed it edits.
+void cubeStrikesOpenAWetChannel() {
+    constexpr int nx = 20, nz = 20, first = 8, row = 10, length = 5;
+    constexpr double q = .25, top = .75, waterVolume = .1 * q * q;
+    for (const std::string material : {"glass", "oak", "iron"}) {
+        Json scene{{"terrain", cubeGround(top, 0)}, {"bodies", pick(material, top)}};
+        auto dry = open(scene);
+        Json saved = Json::parse(dry->environmentState());
+        std::vector<double> depths(nx * nz, 0);
+        depths[row * nx + first] = .1;
+        saved["depth_b64"] = terrain::encodeBase64(depths.data(), depths.size() * sizeof(double));
+        saved["ledger"]["initial_m3"] = waterVolume;
+        scene["water"] = {{"state", saved}};
+        auto live = open(scene);
+        live->selectHand("alice");
+        const Vec3 grip{kGripX, top + 1.02, kTipZ};
+        require(live->toolPoint("pick", {kTipX, top + .72, kTipZ}, {0,-1,0}, .04,.04,30,kPointLength,grip) != 0,
+                "declare channel pick point");
+        require(live->wield("pick", grip), "wield channel pick");
+        const auto &field = live->environment()->terrain();
+        const auto &g = field.grid();
+        near(live->environment()->water()->depth(g.at(first,row)), .1, 1e-12, "initial wet target");
+        double kg = 0;
+        for (int i = first; i < first + length; ++i) {
+            const auto receipt = live->strikeCell({g.xOf(i),top,g.zOf(row)});
+            require(receipt.dug && !receipt.open && receipt.actor == "alice", "owned closed channel receipt");
+            near(receipt.loosened.total(), q*q*q, 1e-12, "one targeted cube removed");
+            near(field.height(g.at(i,row)), top-q, 1e-12, "channel floor matches edit");
+            near(field.height(g.at(i,row+1)), top, 1e-12, "neighboring bank unchanged");
+            kg += receipt.loosened_kg;
+        }
+        near(live->environment()->carried().total(), length*q*q*q, 1e-12, "Alice receives all channel material");
+        near(live->environment()->carriedKg(), kg, 1e-9, "carried mass matches receipts");
+        live->selectHand("bob");
+        near(live->environment()->carriedKg(), 0, 0, "Bob receives none of Alice's excavation");
+        for (int i = 0; i < 480; ++i) stepOnce(*live);
+        const auto &water = *live->environment()->water();
+        near(water.volume(), waterVolume, 1e-10, "channel conserves water volume");
+        near(water.residual(), 0, 1e-10, "channel water ledger closes");
+        near(field.residual().total(), 0, 1e-10, "channel ground ledger closes");
+        require(water.depth(g.at(first+length-1,row)) > .005, "water reaches the end of the dug channel");
+        near(water.depth(g.at(first+length-1,row+1)), 0, 1e-12, "uncut bank stays dry");
+        std::printf("  %s cube channel: dt %.9g s, cell %.2f m; %.6g kg removed; water %.12g m3, residual %.12g; ground residual %.12g m3\n",
+                    material.c_str(), kDt, q, kg, water.volume(), water.residual(), field.residual().total());
+    }
+}
+
 } // namespace
 
 int main() {
     const std::vector<std::pair<const char *, std::function<void()>>> checks = {
+        {"held cube tools open a wet channel without creating water", cubeStrikesOpenAWetChannel},
         {"the model is the closed forms", theModelIsTheClosedForms},
         {"a stake dropped into soil, and drawn out", aStakeDroppedIntoSoilAndDrawnOut},
         {"the same swing is the same meeting", theSameSwingIsTheSameMeeting},

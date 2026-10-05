@@ -186,7 +186,9 @@ def _resolve(app: Any, body: dict[str, Any]) -> dict[str, Any]:
     runs = survey.get('runs') or []
     out['target']['material'] = runs[-1]['material'] if runs else surface
     point=_native_point(app,profile['tool'])
-    out['gather']=resource_previews.ground_tool(survey,use,float((point or {}).get('length_m',.2)))
+    cell_strike=use.get('gesture')=='contact' and cube_ground(app)
+    depth=cube_depth_m(app) if cell_strike else float((point or {}).get('length_m',.2))
+    out['gather']=resource_previews.ground_tool(survey,use,depth,cell_strike=cell_strike)
     if point is None:
         out['gather'].update(materials=[],state='unavailable',label='No attached tool point')
         ring['state']='no'
@@ -196,10 +198,10 @@ def _resolve(app: Any, body: dict[str, Any]) -> dict[str, Any]:
         if point and all(k in point for k in ('tip_local','grip_local','pointing_local')):
             out['ready']=tool_gestures.ready_pose(point,out['target']['at_m'],eyes)
     out["enabled"] = True
-    if wet > WET_M:
+    if wet > WET_M and not cell_strike:
         ring["state"] = "warn"
         out["reason"] = "Under water: wet ground is not modelled, and the engine will say so."
-    elif surface == "rock" or cover < BARE_ROCK_M:
+    elif not cell_strike and (surface == "rock" or cover < BARE_ROCK_M):
         ring["state"] = "warn"
         out["target"]["ground"] = "rock"
         out["reason"] = "Bare rock: a point no harder than the rock stops on it."
@@ -629,6 +631,15 @@ def cube_ground(app):
     session=getattr(getattr(app,'live',None),'session',None)
     spec=getattr(session,'room_spec',None) or getattr(getattr(app,'room',None),'spec',None) or {}
     return isinstance(spec,dict) and (spec.get('terrain') or {}).get('surface')=='columns'
+
+
+def cube_depth_m(app):
+    """The native column depth, for candidate layers crossed by one click."""
+    session=app.live.session
+    grid=((session.state or {}).get('terrain') or {}).get('grid') or {}
+    spec=getattr(session,'room_spec',None) or getattr(getattr(app,'room',None),'spec',None) or {}
+    generated=(spec.get('terrain') or {}).get('generate') or {}
+    return float(grid.get('cell_m',generated.get('cell_m',.25)))
 
 
 def _strike_cell(app,said,use,tool,heard,note,eyes=None):
