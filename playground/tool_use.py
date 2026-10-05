@@ -297,6 +297,8 @@ def run(app: Any, body: dict[str, Any],
         if said.get('gesture')=='object-contact':
             return _object_contact(app,said,use,tool,eyes,note)
         if use['gesture']=='contact':
+            struck=_strike_cell(app,said,use,tool,heard,note)
+            if struck is not None:return struck
             return _contact(app,said,use,tool,eyes,heard,note)
         if _point_in(app, tool):
             # A point still in the ground from before is drawn out first: a
@@ -607,6 +609,33 @@ def _native_point(app,tool):
                 point = {**point, **tool_gestures.local_frame(point['tip'],grip or point['grip'],point['pointing'],
                     pose['position_m'],pose['orientation_wxyz'])}
         return point
+
+
+def _strike_cell(app,said,use,tool,heard,note):
+    """On cube ground a swing's outcome is decided, not worked through: a whole
+    cube of soil or sand, a share of clay or rock (ToolTerrain::strikeCell). So
+    it is done at once, in one engine call, rather than with the hand's lift,
+    turn, lower, settle and stroke -- 0.5 to 3 s a click that the owner felt as
+    lag (2026-10-04). None where the ground is not cubes: swing it instead."""
+    session=app.live.session
+    spec=getattr(session,'room_spec',None) or getattr(getattr(app,'room',None),'spec',None) or {}
+    if ((spec.get('terrain') or {}).get('surface') if isinstance(spec,dict) else None)!='columns':
+        return None
+    since=float(session.state.get('t') or 0)
+    if note:note(app,{'t':since})
+    at=said['target']['at_m']
+    # Straight to the engine, as the hand's own commands go: not a /api/live/act
+    # op a page could call without this route's reach and readiness checks.
+    session.send(op='strike-cell',at_m=[float(v) for v in at])
+    record=_latest(app,tool,since,heard)
+    if record is None or record.get('kind')=='not supported':return None
+    carried=_carried(app);kg=sum(float(carried.get(k) or 0) for k in ('soil_kg','sand_kg'))
+    return {'action':said['label'],'did':[said['label']],'done':['struck the cube'],
+            'said':_said(record,use,kg),'detail':_detail(record),'result':record,
+            'carried':carried,'repeat':use['repeat'],'gesture':'contact','struck':True,
+            'rest_hand_m':_grip(session),
+            'results':[r for r in heard.values() if r.get('open') is False
+                and float(r.get('at_s',since) or since)>=since-.05]}
 
 
 def _contact(app,said,use,tool,eyes,heard,note):

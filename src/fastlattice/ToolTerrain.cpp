@@ -52,6 +52,9 @@ constexpr double kRockN = 1.0e7;
 constexpr double kClaySwingsPerCell = 3.0;
 constexpr double kRockSwingsPerCell = 10.0;
 constexpr double kHardRockPa = 1.0e7;
+// A struck cube's swing, recorded as a measured pick swing goes.
+constexpr double kStrikeSpeedM_S = 3.0;
+constexpr double kStrikeWorkJ = 26.0;
 // How many cells from where it broke ground a swing's aimed cube may be.
 constexpr double kAimNearCells = 1.5;
 
@@ -782,6 +785,78 @@ void ToolTerrain::settle(const ToolTerrainHost &host, double dt_s) {
         // broke loose comes out of the ground with it.
         if (tip.y > host.environment->groundHeightAt(tip.x, tip.z) + kOutM || depth < -kOutM) finish(host, p, true);
     }
+}
+
+LiveGroundWork ToolTerrain::strikeCell(const ToolTerrainHost &host, const std::string &tool,
+                                      const std::string &carrier, const Vec3 &at) {
+    LiveGroundWork r;
+    r.tool = tool;
+    r.actor = carrier;
+    // Struck now, between steps: said at no later than the time the replies
+    // report, which they round to 1e-5 s -- a receipt read from the reply must
+    // not come before its own event.
+    r.at_s = std::floor(host.time_s * 1e5) / 1e5 - 1e-5;
+    r.at_m = at;
+    r.model = terrain::kGroundWorkModel;
+    r.open = false;
+    r.tool_whole = true;
+    if (host.environment == nullptr || !host.environment->terrain().columnSurface()) {
+        r.kind = "not supported";
+        r.supported = false;
+        r.why = "only cube ground is struck a cube at a time";
+        log_.push_back(r);
+        return r;
+    }
+    terrain::Environment &env = *host.environment;
+    const terrain::TerrainField &field = env.terrain();
+    const auto &g = field.grid();
+    const double q = g.dx;
+    const int i = std::clamp(static_cast<int>(std::floor((at.x - g.x0) / q + 0.5)), 0, g.nx - 1);
+    const int j = std::clamp(static_cast<int>(std::floor((at.z - g.z0) / q + 0.5)), 0, g.nz - 1);
+    const std::size_t c = g.at(i, j);
+    const double x = g.xOf(i), z = g.zOf(j);
+    const double carried = host.objects_of ? host.objects_of(carrier) : host.carried_objects_kg;
+    // A swing as the measured ones go: about 3 m/s at the point, and the work
+    // a pick puts into the ground (ground_work_tests: 26 J).
+    r.closing_speed_m_s = kStrikeSpeedM_S;
+    r.work_j = kStrikeWorkJ;
+    r.penetration_work_j = kStrikeWorkJ;
+    CarrierScope account(env, carrier);
+    if (field.height(c) - field.rockTop(c) >= 0.01) {
+        r.ground = terrain::groundAt(field, c, 0.0).name;
+        const terrain::EditEffect effect = env.dig(*host.world, x, z, x, z, 0.5 * q, q, carried);
+        r.loosened = effect.edit.moved;
+        r.loosened_kg = effect.edit.mass_kg;
+        r.depth_m = effect.edit.depth_m;
+        r.dug = effect.edit.depth_m > 0.0;
+        r.dug_from_m[0] = r.dug_to_m[0] = x;
+        r.dug_from_m[1] = r.dug_to_m[1] = z;
+        r.dug_width_m = 0.5 * q;
+        r.dug_depth_m = effect.edit.depth_m;
+        r.kind = r.loosened.total() > 0.0 ? "broke out" : "cannot carry it";
+        if (r.kind == "cannot carry it") r.why = "nothing more can be carried";
+    } else {
+        const double hardness = terrain::groundHardnessPa(field.kindAt(c, field.rockTop(c) - 0.01));
+        r.ground = hardness >= kHardRockPa ? "rock" : "clay";
+        const double share = q * q * q / (hardness >= kHardRockPa ? kRockSwingsPerCell : kClaySwingsPerCell);
+        const terrain::Environment::Chipped chipped =
+            env.chip(*host.world, x, z, field.rockTop(c) - 0.01, share, carried);
+        r.broken_share = chipped.broken;
+        r.depth_m = 0.05;
+        if (chipped.full) {
+            r.kind = "cannot carry it";
+            r.why = "the next cell of rock is more than can be carried";
+        } else if (!chipped.effect.edit.cells.empty()) {
+            r.loosened = chipped.effect.edit.moved;
+            r.loosened_kg = chipped.effect.edit.mass_kg;
+            r.kind = "broke rock out";
+        } else {
+            r.kind = "breaking rock";
+        }
+    }
+    if (host.id_of) r.tool_whole = host.id_of(tool).has_value();
+    log_.push_back(r);
+    return r;
 }
 
 double ToolTerrain::leadingWidth(const Point &p) const {

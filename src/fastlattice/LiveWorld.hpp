@@ -2313,6 +2313,9 @@ public:
     // Where the selected hand's next swing into cube ground is aimed: the cube
     // it takes out is the one aimed at, when the swing breaks ground next to it.
     void setGroundAim(const Vec3 &at_world_m);
+    // The selected hand's tool struck at the cube under `at_world_m`, at once
+    // (ToolTerrain::strikeCell). Throws when the hand holds nothing.
+    LiveGroundWork strikeCell(const Vec3 &at_world_m);
     [[nodiscard]] std::string playerCarriedGround() const;
     // Previews, for aiming. Neither changes the world, and both are bounded:
     // at most ten seconds of flight, and a stroke at most its own give_up_s.

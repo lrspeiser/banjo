@@ -810,6 +810,12 @@ std::optional<CutBlock> TerrainField::cut(double x, double z, int cells_x, int c
 Relaxed TerrainField::relax(double dt_s) {
     Relaxed out;
     if (frontier_.empty() || !(dt_s > 0.0)) return out;
+    // Cube ground holds its dug walls, as cubes do in Minecraft (the owner,
+    // 2026-10-04: "It should work like Minecraft until we've added the physics
+    // for putting braces to keep it open"). Sand slid into every cube-sized
+    // hole straight away, and a hole hardly deepened however much was dug out.
+    // Caving in comes back with bracing: docs/bracing-plan.md.
+    if (column_surface_) { frontier_.clear(); return out; }
     const double area = grid_.dx * grid_.dx;
     const std::vector<std::size_t> now(frontier_.begin(), frontier_.end());
     frontier_.clear();

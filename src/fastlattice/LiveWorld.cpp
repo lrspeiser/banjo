@@ -14474,6 +14474,15 @@ void LiveWorld::setGroundAim(const Vec3 &at_world_m) {
     impl_->ground_aims[impl_->selected_hand] = at_world_m;
 }
 
+LiveGroundWork LiveWorld::strikeCell(const Vec3 &at_world_m) {
+    if (!std::isfinite(at_world_m.x) || !std::isfinite(at_world_m.y) || !std::isfinite(at_world_m.z))
+        throw std::invalid_argument("a strike is at a finite point");
+    if (impl_->holding == static_cast<std::size_t>(-1))
+        throw std::invalid_argument("nothing is in the hand to strike with");
+    const std::string tool = impl_->described[impl_->holding].name;
+    return impl_->tools.strikeCell(toolHost(), tool, impl_->selected_hand, at_world_m);
+}
+
 bool LiveWorld::removeNativePlayer(const std::string &actor) {
     const auto found = impl_->native_players.find(actor);
     if (found == impl_->native_players.end()) return false;

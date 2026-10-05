@@ -69,6 +69,13 @@ class ToolTerrain {
 public:
     // Declare a point on a body (LiveWorld::toolPoint). 0 and the reason when
     // it cannot be one.
+    // One swing of `tool` at the cube of cube ground under `at_world_m`, decided
+    // at once rather than worked through the stroke: soil or sand comes out a
+    // whole cube, clay a third of one, rock a tenth, carried by `carrier`. The
+    // meeting is recorded closed, as a worked one is. "not supported" where the
+    // ground is not cubes, so the host can swing the tool instead.
+    LiveGroundWork strikeCell(const ToolTerrainHost &host, const std::string &tool,
+                              const std::string &carrier, const Vec3 &at_world_m);
     unsigned declare(const ToolTerrainHost &host, const std::string &body, const Vec3 &tip_world_m,
                      const Vec3 &pointing_world, const terrain::ToolPointShape &shape,
                      const Vec3 &grip_world_m, std::string &why,
