@@ -303,7 +303,7 @@ def run(app: Any, body: dict[str, Any],
         if said.get('gesture')=='object-contact':
             return _object_contact(app,said,use,tool,eyes,note)
         if use['gesture']=='contact':
-            struck=_strike_cell(app,said,use,tool,heard,note)
+            struck=_strike_cell(app,said,use,tool,heard,note,eyes)
             if struck is not None:return struck
             return _contact(app,said,use,tool,eyes,heard,note)
         if _point_in(app, tool):
@@ -619,6 +619,9 @@ def _native_point(app,tool):
 
 # How near and how far a click strikes a cube on cube ground, level from the eyes.
 CUBE_REACH_M = (0.25, 4.0)
+# How far back towards the eyes a struck point is taken before its column is
+# found (_strike_cell): far less than a cube, far more than rounding.
+STRIKE_BACK_M = 0.002
 
 
 def cube_ground(app):
@@ -628,7 +631,7 @@ def cube_ground(app):
     return isinstance(spec,dict) and (spec.get('terrain') or {}).get('surface')=='columns'
 
 
-def _strike_cell(app,said,use,tool,heard,note):
+def _strike_cell(app,said,use,tool,heard,note,eyes=None):
     """On cube ground a swing's outcome is decided, not worked through: a whole
     cube of soil or sand, a share of clay or rock (ToolTerrain::strikeCell). So
     it is done at once, in one engine call, rather than with the hand's lift,
@@ -639,10 +642,26 @@ def _strike_cell(app,said,use,tool,heard,note):
         return None
     since=float(session.state.get('t') or 0)
     if note:note(app,{'t':since})
-    at=said['target']['at_m']
+    at=[float(v) for v in said['target']['at_m']]
+    # A click that meets the wall of a hole takes the hole one cube deeper, not
+    # the wall. Once a hole is a cube deep the line of sight into it meets its
+    # far wall, exactly on the face two columns share, and the engine rounds
+    # such a point to the column on the +x or +z side: looking east or south
+    # it took the cube beyond the hole, so the hole grew away from the player
+    # instead of down, and looking west or north it went down (the owner,
+    # 2026-10-04: "holes that didn't deepen"; tests/player_regression_tests.py
+    # digs facing east, south and north). Taken a hair back towards the eyes, the point
+    # is in the column the line of sight came down into, whichever way it
+    # faces; a point on top of a cube stays in that cube.
+    if isinstance(eyes,(list,tuple)) and len(eyes)==3:
+        dx,dz=at[0]-float(eyes[0]),at[2]-float(eyes[2])
+        level=math.hypot(dx,dz)
+        if level>1e-6:
+            at[0]-=dx/level*STRIKE_BACK_M
+            at[2]-=dz/level*STRIKE_BACK_M
     # Straight to the engine, as the hand's own commands go: not a /api/live/act
     # op a page could call without this route's reach and readiness checks.
-    session.send(op='strike-cell',at_m=[float(v) for v in at])
+    session.send(op='strike-cell',at_m=at)
     record=_latest(app,tool,since,heard)
     if record is None or record.get('kind')=='not supported':return None
     carried=_carried(app);kg=sum(float(carried.get(k) or 0) for k in ('soil_kg','sand_kg'))
