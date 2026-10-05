@@ -27,3 +27,7 @@ The first full six-player run passed digging, phone touch, rover and point/click
 Final registered repair selection: six CTest targets pass in 14.75 s (terrain, ground work, environment FFI, terrain rendering, tool client and column material integration); the preceding ten-target selection additionally passed water, valley-live and smooth/cut material integration in 108.31 s. All 40 host tool-use checks pass. No physical tolerances are widened.
 
 The corrected final phone and paid Workshop journeys both pass (24.184 s): off-center touch → native cube removal → rendered floor; Build catalog → selected stool → explicit AI customization → paid Make → Inventory → World equip. The existing walking timing failure remains documented separately.
+
+## Published demo
+
+Implementation and tests are on main at `56f0d08d`. Port 18890 was restarted with the verified rebuilt executable/library and the fast-forwarded demo checkout; served World/tool scripts and three native product hashes match the verified files. The existing room store is retained and backed up locally under ignored `build/construction-preview/mobile-demo-backup-56f0d08d`. The owner saved world reopens as Live in the in-app browser.
