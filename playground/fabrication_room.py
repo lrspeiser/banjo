@@ -113,6 +113,25 @@ def compile_quote(candidate, stock_kg, cell_m, state, *, app=None):
     design, overrides = workshop_components.design_from_spec(candidate)
     import game_materials
     game_materials.require_design(app, design)
+    from mcp import workshop_local_cells
+    if workshop_local_cells.declaration(design, overrides):
+        from mcp import core_use
+        if not (design.parameters or {}).get('primary_use'):
+            raise ValueError('Program the product primary_use before manufacture')
+        core_use.installed(design, 'fabrication-probe')
+        if app is None:
+            raise ValueError('Local cell fabrication requires native material measurement')
+        artifact, measured = install.measure_local_for_fabrication(app, design, overrides, cell_m)
+        vector=measured['product_materials_kg'];mass=measured['mass_kg']
+        stock=model.number(stock_kg,'stock_kg',mass,10000)
+        return cost_quote({'candidate':deepcopy(candidate),'material':max(vector,key=vector.get),
+            'stock_kg':stock,'product_kg':mass,'product_materials_kg':vector,
+            'stock_materials_kg':{m:kg*stock/mass for m,kg in vector.items()},
+            'offcut_kg':stock-mass,'cell_m':cell_m,'cells':artifact['cells'],
+            'matter_physics_hash':measured['matter_physics_hash'],
+            'mechanical_model':'precise-rigid-v1','local_cell_geometry':workshop_local_cells.GEOMETRY,
+            'interface_limits':artifact['limitations'],'thermal_state':'unmodeled',
+            'output_energy_j':0.,'native_constituents_verified':True},state)
     from mcp import workshop_material_support
     blocker = workshop_material_support.fixed_lattice_blocker(design, overrides, cell_m=cell_m)
     if blocker:

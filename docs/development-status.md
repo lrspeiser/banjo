@@ -1,5 +1,7 @@
 # Development status and handoff
 
+**Thin metal tool/recipe checkpoint, October 6:** [Implementation and scoped evidence](local-cell-tools-checkpoint.md) adds explicit clipped local material cells and a shared versioned recipe identity. A 3 mm iron blade and 30 mm aluminum handle now pass native paid manufacture, Inventory/equip, ordinary sand digging and reload. Bounded chat authoring preserves refused sources. Internal bending/fracture/heat/wear and adaptive refinement remain unsupported; the fast 10 ft shaft, physical phone acceptance and wider regression audit remain open. This supersedes the earlier shovel admission blocker only for the explicitly selected local representation.
+
 **Shovel and wear audit, October 6:** [Actual fresh-player check](shovel-wear-audit-2026-10-06.md) verifies finite metal collection and the existing paid pick journey. Native condition explicitly lacks fatigue; a thin custom shovel is refused at the 50 mm solid grid and the catalog has no shovel recipe. No shovel completion-time or lifetime claim is made. Production code/native binaries are unchanged.
 
 **Mobile HUD, October 6:** [Checkpoint](mobile-hud-checkpoint.md) moves the touch movement pad above the actual bottom controls, folds the sidebar in initial HTML and places the map/target/help cards inside explicit Details. Both browser navigation tests pass across portrait, landscape, startup and reload; physical phone acceptance remains open. Native binaries/laws are unchanged.

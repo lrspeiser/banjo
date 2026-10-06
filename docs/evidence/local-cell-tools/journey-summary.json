@@ -1,0 +1,37 @@
+{
+  "schema": "banjo.local-cell-tools.checkpoint.v1",
+  "date": "2026-10-06",
+  "source_parent": "64f7c6d5",
+  "environment": "Windows MSVC 19.44 Release, Python 3.13, Chrome landscape 844x390, CPU/Jolt",
+  "make_wall_s": 11.18597559997579,
+  "strike_wall_s": 7.40480839999509,
+  "walking_included": false,
+  "physical_phone_verified": false,
+  "full_regression_green": false,
+  "job": {
+    "required_j": 230.79599999999996,
+    "minimum_duration_s": 0.46159199999999995,
+    "work_j": 230.79599999999996,
+    "product_materials_kg": {
+      "aluminum": 1.4579999999999995,
+      "iron": 0.8499599999999998
+    }
+  },
+  "use": {
+    "ground": "sand",
+    "depth_m": 0.09459,
+    "work_j": 1.58262,
+    "loosened_kg": 3.69399,
+    "tool_whole": true
+  },
+  "debris": {
+    "components": 1,
+    "cells": 50,
+    "mass_kg": 3.693985912141007
+  },
+  "native_binaries_sha256": {
+    "banjo_live_world_run.exe": "094e813a382afd035516b54df19a3b4fee2ae440973ff603c842608443d85b5b",
+    "banjo_platform_cli.exe": "93a2013ac6323b2901e2fe4bd244c63e98eb407e62b37efafb844053adaeb7f9",
+    "banjo.dll": "32eed837e0b4ce069e03f787518a337aaa45b323bcabecfb668b83fcffbe4a91"
+  }
+}

@@ -18,7 +18,9 @@ def recipe(kind, *, design_id=None, parameters=None):
             design=workshop.assemble(kind,design_id=source['design_id'],parameters=source['parameters'])
             source['component_overrides']['@machines']=deepcopy(design.lineage['component_overrides']['@machines'])
         return source
-    values = {'material': 'iron'}
+    # A blank custom source gets its materials from authored components;
+    # it has no template-level material parameter.
+    values = {} if kind == 'custom' else {'material': 'iron'}
     if kind == 'field-pick':
         values.update(length_m=.4, arm_m=.15, section_m=.05)
     elif kind in ('stool', 'table', 'bench', 'chair'):
@@ -75,6 +77,31 @@ def stone_pick_recipe():
     source = matter_fabrication.stone_pick_recipe()
     source['parameters']['material'] = 'aluminum'
     return source
+
+
+def metal_shovel_recipe():
+    """Actual thin metal geometry, explicit intact local-cell representation."""
+    from mcp import workshop_construction as construction, workshop_local_cells
+    handle=workshop.WirePart(name='handle',role='handle',family='beam',shape='box',
+        material='aluminum',size_m=(.6,.03,.03),center_m=(0,.015,0))
+    base=workshop.assemble('custom',design_id='metal-shovel-v1',purpose='Metal shovel',
+        parameters={'primary_use':{'label':'Study tool','steps':[{'do':'inspect'}]}})
+    overrides={'@construction':{'schema':construction.CONSTRUCTION_SCHEMA,'joints_authored':True,
+        'added':[{'name':handle.name,'role':handle.role,'family':handle.family,'shape':handle.shape,
+                  'material':handle.material,'size_m':list(handle.size_m),'center_m':list(handle.center_m),
+                  'rotation_deg':[0,0,0]}],'joints':[]},
+        workshop_local_cells.KEY:{'schema':workshop_local_cells.SCHEMA,'cell_size_m':.05}}
+    design=workshop_components.apply_overrides(base,overrides)
+    blade=workshop.WirePart(name='blade',role='tool-head',family='panel',shape='box',
+        material='iron',size_m=(.2,.003,.18),center_m=(.4,.0015,0))
+    overrides=construction.add_part(design,overrides,part=blade,joint={'to':'handle','kind':'fixed'})
+    parameters={**base.parameters,'ground_tool':{
+        'point':{'component':'blade','tip_local_m':[.1,0,0],'direction_local':[1,0,0],
+            'width_m':.18,'thickness_m':.003,'angle_deg':30.,'length_m':.2},
+        'grip':{'component':'handle','position_local_m':[-.2,0,0]},
+        'use':{'contact_drag_m':.10}}}
+    return {'kind':'custom','design_id':'metal-shovel-v1','purpose':'Metal shovel',
+            'parameters':parameters,'component_overrides':overrides}
 
 
 @lru_cache(maxsize=1)

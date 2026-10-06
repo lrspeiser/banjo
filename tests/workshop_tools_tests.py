@@ -115,7 +115,12 @@ class GroundToolInstallation(unittest.TestCase):
             profile=next(p for p in self.room.spec['interactions'] if p['tool']=='field pick')
             item=next(i for i in inventory.items_of(self.room.spec) if 'field pick' in i['bodies'])
             body=next(b for b in state['bodies'] if b['name']=='field pick')
-            self.assertAlmostEqual(1.925,body['mass_kg'])
+            # The playable pick now has a real aluminum haft and iron head;
+            # retain the separate homogeneous oak experiment below.
+            self.assertAlmostEqual(2.7,body['mass_kg'])
+            head=next(b for b in state['bodies'] if b['name']=='field pick-g0')
+            self.assertAlmostEqual(2.95125,head['mass_kg'])
+            self.assertEqual({'aluminum','iron'},{body['material'],head['material']})
             self.assertLessEqual(math.hypot(body['position_m'][0],body['position_m'][2]),1.8)
             self.assertFalse(world_seed.wet_near(ground,body['position_m'][0],body['position_m'][2],.4))
             root,grip=inventory_room.hold_point(self.app,item,'field pick')
@@ -123,7 +128,13 @@ class GroundToolInstallation(unittest.TestCase):
             self.assertEqual('field pick',root)
             # Player poses serialize each coordinate to five decimal places;
             # this is a display bound, not a native point-frame tolerance.
-            self.assertLess(math.dist(grip,[v/1000 for v in declared['grip_mm']]),1e-5)
+            # The spawned tool has settled before this read. A declared world
+            # coordinate is its original placement, not its current grip.
+            authored=next(b for b in self.room.spec['bodies'] if b['name']==root)
+            local=[(g-c)/1000 for g,c in zip(declared['grip_mm'],authored['center_mm'])]
+            turned=inventory_room._turned(body['orientation_wxyz'],local)
+            actual=[c+d for c,d in zip(body['position_m'],turned)]
+            self.assertLess(math.dist(grip,actual),1e-5)
             self.assertEqual(set(item['bodies']),set(profile['parts']))
             self.live.act({'session':session.id,'op':'wield','name':root,'grip':grip})
             self.assertEqual(root,session.state['hand']['holding'])

@@ -17,6 +17,7 @@ namespace banjo::fastlattice {
 // any origin; the body is measured from its material and re-centred on its
 // centre of mass, which is where `initial` puts it.
 struct PreciseRigidBody {
+    bool local_cells{}; // exact nonoverlapping box cells, intact rigid component
     std::string name;
     MaterialPreset material{};
     MaterialDefinition made_of;                     // the body's own material, defined

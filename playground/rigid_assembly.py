@@ -73,6 +73,13 @@ def material_measurement(artifact, snapshot):
     shape={'bodies':[{k:b[k] for k in ('material','parts','_components')} for b in artifact['bodies']],
            'source_joints':artifact['source_joints'],'materials_kg':dict(totals),
            'backend':'precise-rigid-material-allocation-v1'}
+    if artifact.get('schema') == 'banjo.workshop-local-cells.v1':
+        components={body:component for component,body in artifact['component_to_body'].items()}
+        shape.update(backend='clipped-box-cells-rigid-v1',
+            cell_geometry=[b.get('cell_geometry') for b in artifact['bodies']],
+            interfaces=[{**{k:v for k,v in pin.items() if k not in ('a','b','at_mm','axis')},
+                'a':components[pin['a']],'b':components[pin['b']]}
+                for pin in artifact['joints']])
     return {'product_materials_kg':dict(totals),'mass_kg':math.fsum(totals.values()),
         'native_mass_kg':native_mass,'material_mass_residual_kg':residual,
         'mechanical_mass_residual_kg':mechanical_residual,

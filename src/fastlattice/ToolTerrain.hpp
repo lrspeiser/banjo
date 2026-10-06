@@ -52,6 +52,9 @@ struct ToolTerrainHost {
     std::function<std::optional<MatterBodyId>(const std::string &)> id_of;
     // A body's cells: node number, and its centre in the body's own frame.
     std::function<std::vector<std::pair<std::uint32_t, Vec3>>(const std::string &)> cells_of;
+    // Exact occupied boxes of a local-cell component; coordinates are COM local.
+    std::function<bool(const std::string &)> local_cells_of;
+    std::function<bool(const std::string &, const Vec3 &)> contains_matter;
     std::function<const MaterialDefinition *(const std::string &)> material_of;
     std::function<std::string(const std::string &)> material_name_of;
     std::function<double(const std::string &)> dent_of;

@@ -37,6 +37,10 @@ def checked_overrides(value: Any) -> dict[str, dict[str, Any]]:
         raise ValueError("component_overrides must be an object with at most 250 parts")
     out: dict[str, dict[str, Any]] = {}
     for name, patch in value.items():
+        if name == '@local_cells':
+            from mcp import workshop_local_cells
+            out[name] = workshop_local_cells.checked(patch)
+            continue
         if name == PLACEMENT_KEY:
             from mcp import workshop_placement
             out[name] = workshop_placement.checked(patch)
@@ -87,7 +91,7 @@ def _changed(part: WirePart, patch: dict[str, Any]) -> WirePart:
 def apply_overrides(design: WorkshopDesign, overrides: Any) -> WorkshopDesign:
     patches = checked_overrides(overrides)
     built = workshop_construction.apply(design.parts, patches.get(CONSTRUCTION_KEY) or {})
-    known = {part.name for part in built}; missing = sorted(set(patches) - known - {CONSTRUCTION_KEY, MACHINES_KEY, PLACEMENT_KEY})
+    known = {part.name for part in built}; missing = sorted(set(patches) - known - {CONSTRUCTION_KEY, MACHINES_KEY, PLACEMENT_KEY, '@local_cells'})
     if missing: raise ValueError("component override names part(s) not in this design: " + ", ".join(missing))
     parts = [_changed(part, patches.get(part.name, {})) for part in built]
     lineage = {**deepcopy(design.lineage), "component_overrides": deepcopy(patches)}

@@ -1110,7 +1110,17 @@ def _appended_tool_points(before, after, added, definitions, removed=frozenset()
         body = bodies[name]; pose = body["pose"]
         if point.get("body_id") != body.get("body_id"):
             raise ValueError("Staging changed a tool point's matter frame")
-        if (point.get("frame_nodes_b64") != body.get("nodes_b64") or
+        local_definition=body.get('precise_rigid_definition') or {}
+        if local_definition.get('cell_geometry')=='clipped-box-cells-v1':
+            parts=local_definition['parts'];volumes=[math.prod(p['dimensions_m']) for p in parts]
+            centre=[math.fsum(v*p['center_local_m'][k] for v,p in zip(volumes,parts))/math.fsum(volumes) for k in range(3)]
+            nodes=[v[0] for v in struct.iter_unpack('<I',base64.b64decode(point['frame_nodes_b64'],validate=True))]
+            offsets=list(struct.iter_unpack('<ddd',base64.b64decode(point['frame_offsets_b64'],validate=True)))
+            if nodes!=list(range(len(parts))) or len(offsets)!=len(parts) or any(
+                    not near(offset,[p['center_local_m'][k]-centre[k] for k in range(3)])
+                    for offset,p in zip(offsets,parts)):
+                raise ValueError('Staging changed a tool point\'s exact local material cells')
+        elif (point.get("frame_nodes_b64") != body.get("nodes_b64") or
                 point.get("frame_offsets_b64") != body.get("offsets_b64")):
             raise ValueError("Staging changed a tool point's sampled matter")
         width = point["width_local"]; axis = point["pointing_local"]
@@ -1299,11 +1309,14 @@ def _stage(app, live, old, spec, snapshot, matter, root, shift, removed=frozense
                        removed=in_the_world, removed_matter=removed)
             for group in matter["groups"]:
                 sparse.verify_engine_matter(saved, group["matter"], group["root_body"], placement_grid=shift)
-        elif matter.get("schema") == rigid_assembly.SCHEMA:
+        elif matter.get("schema") in (rigid_assembly.SCHEMA, 'banjo.workshop-local-cells.v1'):
             # A finalized machine: exact bodies on real pins, nothing to verify
             # against the cell grid because nothing of it was ever cells.
-            _preserved(snapshot, saved, {body["name"] for body in matter["bodies"]},
-                       added_joints=matter["joints"], removed=in_the_world, removed_matter=removed)
+            roots={body['name'] for body in matter['bodies']}
+            _preserved(snapshot, saved, roots,
+                       added_joints=matter["joints"],
+                       added_tool_points=[p for p in spec.get('tool_points',[]) if p.get('body') in roots],
+                       removed=in_the_world, removed_matter=removed)
         elif matter.get("schema") == workshop_rigid.SCHEMA:
             _preserved(snapshot, saved, root, removed=in_the_world, removed_matter=removed)
             precise_rigid.verify(saved, matter, root)
@@ -1391,6 +1404,10 @@ def fixed_lattice_plan(design, overrides, *, root, cell_m, position_m, floor_of)
         from mcp import workshop_tools
         frame=workshop_tools.frame(design)
         held=frame['grip']['component'] if frame else sorted(p.name for p in design.parts)[0]
+        root_cells = [c['grid'] for g in artifact['groups'] if g['component'] == held
+                      for c in g['matter']['cells']]
+        root_centre = [sum((g[a]+.5)*h for g in root_cells)/len(root_cells)
+                       for a in range(3)]
         mapping={g['component']:root if g['component']==held else f'{root}-g{i}'
                  for i,g in enumerate(artifact['groups'])}
         added=[]
@@ -1418,7 +1435,7 @@ def fixed_lattice_plan(design, overrides, *, root, cell_m, position_m, floor_of)
             tool['point']['body']=mapping[frame['point']['component']]
             if tool['point']['body']!=root:tool['point']['grip_body']=root
         return {'matter':artifact,'cells':cells,'measured':measured,'shift':shift,'placed':placed,
-                'bodies':added,'tool':tool}
+                'bodies':added,'tool':tool,'root_centre_source_m':root_centre}
     placed_parts={tuple(g[a]+shift[a] for a in range(3)):f"{root}/{name}"
                   for g,name in sparse._grid_parts(matter).items()}
     labelled=sparse.decompose_by_part(placed,placed_parts)
@@ -1430,7 +1447,44 @@ def fixed_lattice_plan(design, overrides, *, root, cell_m, position_m, floor_of)
     from mcp import workshop_tools
     tool=workshop_tools.installed(design,root,[b['name'] for b in added],[s*h for s in shift])
     return {'matter':matter,'cells':cells,'measured':measured,'shift':shift,'placed':placed,
-            'bodies':added,'tool':tool}
+            'bodies':added,'tool':tool,
+            'root_centre_source_m':[sum((g[a]+.5)*h for g in cells)/len(cells)
+                                    for a in range(3)]}
+
+
+def measure_local_for_fabrication(app,design,overrides,cell_m):
+    """Native occupied geometry, finite fixings and actual point admission."""
+    from mcp import workshop_local_cells, workshop_tools
+    artifact=workshop_local_cells.compile_design(design,overrides,root='local-quote')
+    spec={'cell_m':cell_m,'bodies':[{'name':'quote marker','shape':'box','material':'concrete',
+        'anchored':True,'size_mm':[cell_m*1000]*3,'center_mm':[-5000,1000,-5000]}],
+        'precise_rigid_bodies':rigid_assembly.scene_bodies(artifact),
+        'joints':rigid_assembly.scene_joints(artifact)}
+    tool=workshop_tools.installed(design,artifact['root'],list(artifact['component_to_body'].values()),[0,0,0])
+    if tool:
+        frame=workshop_tools.frame(design)
+        tool['point']['body']=artifact['component_to_body'][frame['point']['component']]
+        if tool['point']['body']!=artifact['root']:tool['point']['grip_body']=artifact['root']
+        spec.update(tool_points=[tool['point']],interactions=[tool['profile']])
+    staged=live_session.Live()
+    try:
+        opened=staged.open(SimpleNamespace(engine_path=app.engine_path,runs_path=app.runs_path,
+            live_inprocess=False),{'spec':spec})
+        if any(opened.get(k) for k in ('joint_problems','tool_point_problems')):
+            raise ValueError('Native local quote could not admit every fixing and tool point')
+        saved=_snapshot(staged)
+        if saved.get('carry_readiness',{}).get('local_cell_tools_version')!=1:
+            raise ValueError('Rebuild the native engine for component-local cell tools')
+        roots={b['name'] for b in artifact['bodies']}
+        _appended_joints({'joints':[],'next':{'joint':1}},saved,roots,artifact['joints'])
+        _appended_tool_points({'tool_points':[],'next':{'point':1}},saved,roots,spec.get('tool_points',[]))
+        measured=rigid_assembly.material_measurement(artifact,saved)
+        if any(not math.isclose(measured['product_materials_kg'].get(m,0),kg,rel_tol=1e-10,abs_tol=1e-10)
+               for m,kg in artifact['material_mass_kg'].items()):
+            raise ValueError('Native local material allocation differs from actual occupied volume')
+        return artifact,measured
+    finally:
+        staged.shutdown()
 
 
 def measure_fixed_for_fabrication(app,design,overrides,cell_m):
@@ -1499,6 +1553,11 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
         else:
             taking_out: list[str] = []
         models = workshop_rigid.requested_models(design, overrides)
+        from mcp import workshop_local_cells
+        if workshop_local_cells.declaration(design,overrides):
+            return _with_needs(app,design,_replaces(app,_kept(app,_preview_exact(
+                app,room,live,old,design,overrides,pos,body.get('candidate'),None,local_cells=True),
+                design,overrides),taking_out))
         from mcp import workshop_tools
         tool = workshop_tools.frame(design)
         if tool and (models != {"lattice"} or workshop_articulation.has_bearings(design)):
@@ -1538,7 +1597,7 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
         from mcp import core_use
         spec["actions"] = spec.get("actions", []) + [core_use.installed(design, root)]
         from mcp import interaction_points
-        com = [sum((g[a]+0.5)*h for g in cells)/len(cells) for a in range(3)]
+        com = plan['root_centre_source_m']
         spec["interaction_points"] = spec.get("interaction_points", []) + [interaction_points.installed(design, root, com)]
         # What each of its joints leaves the bonds that cross it, so a blow
         # landing on it in the room breaks it where it is actually weak rather
@@ -1816,7 +1875,7 @@ def _named_apart(existing, made):
     return out
 
 
-def _preview_exact(app, room, live, old, design, overrides, pos, candidate, places):
+def _preview_exact(app, room, live, old, design, overrides, pos, candidate, places, *, local_cells=False):
     """A design installed as exact rigid bodies on pins (rigid_assembly): its
     rigid groups as compounds of their own parts, its bearings as hinges, and
     what drives it in the room's own words, sensors and panels carried from the
@@ -1827,7 +1886,13 @@ def _preview_exact(app, room, live, old, design, overrides, pos, candidate, plac
     if saved.get("carry_readiness", {}).get("precise_rigid_version") != 1:
         raise ValueError("Rebuild the native live engine for precise rigid installation; this binary does not declare support")
     root = "workshop-" + uuid.uuid4().hex[:16]
-    artifact = rigid_assembly.compile_design(design, overrides, root=root)
+    if local_cells:
+        from mcp import workshop_local_cells
+        if saved.get('carry_readiness',{}).get('local_cell_tools_version')!=1:
+            raise ValueError('Rebuild the native engine for component-local cell tools')
+        artifact=workshop_local_cells.compile_design(design,overrides,root=root)
+    else:
+        artifact = rigid_assembly.compile_design(design, overrides, root=root)
     flat = rigid_assembly.placed(artifact, [pos[0], 0.0, pos[1]], 0.0, 0.0)
     lift = 0.0
     for low, lo, hi in rigid_assembly.footprint(flat):
@@ -1837,7 +1902,13 @@ def _preview_exact(app, room, live, old, design, overrides, pos, candidate, plac
     set_down = rigid_assembly.placed(artifact, origin, 0.0, 0.0)
     bodies = rigid_assembly.scene_bodies(set_down)
     pins = rigid_assembly.scene_joints(set_down)
-    actions, points = rigid_assembly.room_entries(design, set_down)
+    if local_cells:
+        from mcp import core_use, interaction_points
+        actions=[core_use.installed(design,root)]
+        centre=next(b['_centre_m'] for b in artifact['bodies'] if b['name']==root)
+        points=[interaction_points.installed(design,root,centre)]
+    else:
+        actions, points = rigid_assembly.room_entries(design, set_down)
     # Points and directions of the design's frame in the room's: set down
     # facing +z with no turn, a point moves by the origin and a direction is
     # unchanged.
@@ -1852,6 +1923,15 @@ def _preview_exact(app, room, live, old, design, overrides, pos, candidate, plac
     spec = deepcopy(room.spec)
     made = chambers_into(spec, _named_apart(standing_names(spec), made))
     spec["precise_rigid_bodies"] = spec.get("precise_rigid_bodies", []) + bodies
+    if local_cells:
+        from mcp import workshop_tools
+        tool=workshop_tools.installed(design,root,[b['name'] for b in bodies],origin)
+        if tool:
+            tool_frame=workshop_tools.frame(design)
+            tool['point']['body']=set_down['component_to_body'][tool_frame['point']['component']]
+            if tool['point']['body']!=root:tool['point']['grip_body']=root
+            spec['tool_points']=(spec.get('tool_points') or [])+[tool['point']]
+            spec['interactions']=(spec.get('interactions') or [])+[tool['profile']]
     for field, extra in (("joints", pins), ("actions", actions), ("interaction_points", points)):
         spec[field] = (spec.get(field) or []) + extra
     if made:
@@ -1899,6 +1979,9 @@ def _preview_exact(app, room, live, old, design, overrides, pos, candidate, plac
               "limits": "Exact bodies on ideal pins: no bearing strength, wear or friction; no internal failure. "
                         + precise_rigid.LIMITS}
     answer['initial_energy_j']=sum(s.get('charge_j',0.) for s in made.get('stores',[]))
+    if local_cells:
+        answer.update(cells=artifact['cells'],local_cell_geometry=workshop_local_cells.GEOMETRY,
+                      limits=workshop_local_cells.LIMITS)
     if measured:
         answer.update({k:measured[k] for k in ('product_materials_kg','native_mass_kg',
             'material_mass_residual_kg','mechanical_mass_residual_kg','matter_physics_hash')})
@@ -2105,6 +2188,7 @@ def commit(app: Any, body: Any, *, funding_job: str | None = None) -> dict[str, 
                     # Exact bodies have no native thermal mechanics. Retain
                     # that boundary; never declare a fictitious heat parcel.
                     _preserved(before,saved,roots,added_joints=plan['matter'].get('joints',()),
+                        added_tool_points=[p for p in plan['spec'].get('tool_points',[]) if p.get('body') in roots],
                         removed=lost,removed_matter=removed)
                 elif plan["matter"].get("schema") in (workshop_articulation.SCHEMA, workshop_fixed_assembly.SCHEMA):
                     outputs = {g["root_body"]:g["mass_kg"] for g in plan["matter"]["groups"]}

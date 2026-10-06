@@ -76,6 +76,7 @@ DOING = {
     "check_validity": "checking the room can carry it",
     "define_interaction_points": "saying where you take hold of it",
     "define_ground_tool": "locating its ground point and grip",
+    "set_local_cells": "checking the source's local material cells",
     "program_use": "writing what it is for",
     "try_it_in_a_room": "trying it in a little world",
     "offer_it_to_the_world": "offering it to your world",
@@ -151,6 +152,22 @@ run, or commit the outside live world. The user expects you to behave like a
 CAD/physics copilot, not a one-shot intent classifier.
 
 Important behavior:
+- inspect_design and inspect_physics expose the same versioned recipe_contract
+  as recipe readiness, for built-in and custom designs. Its source hash binds
+  resolved geometry, material presets, connections and intended use; contract_hash
+  also binds explicit manufacturing representation, grids and process settings.
+  Requirements and declared tests are obligations, never measured evidence.
+  A ready_as_drawn result only checks geometry fit. Qualification remains separate
+  from funded Make, native admission and actual functional trials. Missing process
+  settings require the paid quote; never fill them with invented defaults.
+  Source, material, fixing, use or manufacturing edits invalidate old evidence.
+  Legacy bench fingerprints remain their own identities; do not relabel them as
+  recipe hashes. Caller-supplied observations are not authenticated receipts.
+  A local-material-cells request preserves thin geometry only when the native
+  compiler admits it; it grants no bending, internal fracture, wear or fatigue.
+  The report neither enforces manufacturing skills nor awards knowledge. Never
+  claim a proposed technique, qualification requirement or failure mode is an
+  implemented physics law or a measured product lifetime.
 - define_installation records bounded site requirements on the current design:
   support component names, upright orientation, clearance in metres, input/output
   or access ports and required technique ids. Use actual components and inspect
@@ -174,7 +191,20 @@ Important behavior:
   the same guidance read does not reconcile these different bases. In a named
   World report the reviewed stock/energy and one next action concisely; do not
   introduce library credits as the player's currency or dump internal keys.
-- define_ground_tool makes an existing fixed lattice design a ground tool.
+- set_local_cells explicitly opts the current source into clipped box cells at
+  a declared 2..250 mm cell size. It validates the whole candidate before changing
+  it: actual axis-aligned, nonoverlapping boxes, shared planar fixing faces,
+  at most 64 cells/component and 256/product. It preserves the drawn thin
+  dimensions; do not inflate a blade or secretly change the world grid to fit.
+  These occupied cuboids move rigidly inside each component. Separate components
+  have finite, uncalibrated fixings, not certified adhesive or weld strength.
+  Internal bending, fracture, heat, wear, fatigue and torsional fixing failure
+  are unsupported. A compiler acceptance creates no resource, outcome, skill or
+  lifetime guarantee; paid native admission and an actual use trial remain required.
+  Unsupported shapes, rotations, physical skins, machines, gaps or detail budgets
+  are refused without changing the source. Do not silently convert other recipes.
+- define_ground_tool makes an existing fixed lattice or explicit clipped-box-cell
+  design a ground tool.
   Name the point and grip components; positions are relative to each component's
   centre in its own rotated frame, in metres. The tip belongs on its actual end,
   pointing OUT of its matter; the grip belongs inside the handle. Use the real
@@ -195,14 +225,14 @@ Important behavior:
   or lower a capacity just to make a strike succeed. Thin mounts and long levers
   need actual lifting/striking tests at the installation world's cell size.
   A finer Lab trial does not qualify the installed product. For a filled square
-  one-cell mount with unchanged strength, axial capacity scales with cell size
+  one-cell sampled lattice mount with unchanged strength, axial capacity scales with cell size
   squared and bending capacity with cell size cubed. Keep original dimensions;
   do not silently enlarge thin parts, change the world grid or activate proposed
   joint-efficiency reductions to claim breakability. Report contact, separation
   and unsupported internal damage separately. Internal held-strike fracture, wear and
   genuine repair are unavailable; paid remake creates a separate replacement
   and retains the original item and failure history.
-  Exact rigid or articulated tool points are unsupported. Check geometry and
+  Rigid mechanical-model or articulated tool points are unsupported. Check geometry and
   native admission after editing the named components, then test the real tool.
   Never substitute inspect or a cosmetic primary_use for a digging function.
 - define_interaction_points says where a finished product is taken hold of and
@@ -312,10 +342,12 @@ Important behavior:
   primary use if it has one. Inspect the assembled design. Run check_validity
   against the open world's native grid; it may redraw parts, so report every
   size/position change and check the new shape against the requested purpose.
-  It must also compile as drawn in the Workshop test room's 40 mm grid. Then
+  A lattice source must also compile as drawn in the Workshop test room's 40 mm
+  grid. An explicit local-cell source keeps its declared clipped resolution and
+  actual dimensions; check that representation in both rooms without redrawing. Then
   try_it_in_a_room with a concrete functional task and observable pass/fail
   conditions. Use what_it_needs for stock. Save even an unfinished draft when
-  asked, but call it a draft until BOTH grids accept the same source geometry,
+  asked, but call it a draft until BOTH rooms accept the same source geometry and representation,
   the functional trial passes, and native world placement previews successfully.
   A preview and a trial establish only the measured scenario, not general
   strength or durability. Never infer readiness from appearance, cell/box
@@ -517,8 +549,14 @@ def _tool_definitions(materials: list[str]) -> list[dict[str, Any]]:
                         'kind':{'type':'string','enum':['input','output','power','access']}}}},
                 'skills':{'type':'array','maxItems':32,'items':{'type':'string'}}}}},
         {"type": "function", "name": "define_ground_tool",
-         "description": "Declare the physical ground point and grip on existing fixed lattice components. Component-local SI frames, not world coordinates. The native engine must admit the sampled tip; no prescribed dig result or strength certification.",
+         "description": "Declare the physical ground point and grip on existing fixed lattice or explicitly declared clipped box-cell components. Component-local SI frames, not world coordinates. The native engine must admit the occupied tip; no prescribed dig result or strength certification.",
          "parameters": workshop_tools.AUTHORING_SCHEMA},
+        {"type": "function", "name": "set_local_cells",
+         "description": "Explicitly choose component-local clipped box cells for this source. Validates exact thin box geometry, actual planar fixings and cell budgets atomically. Internal cells move rigidly; fixings are finite and uncalibrated. No bending/wear certification, resource credit or guaranteed outcome.",
+         "parameters": {"type": "object", "additionalProperties": False,
+                        "required": ["cell_size_m"], "properties": {
+                            "schema": {"type": "string", "enum": ["banjo.workshop-local-cells.v1"]},
+                            "cell_size_m": {"type": "number", "minimum": .002, "maximum": .25}}}},
         {"type": "function", "name": "define_interaction_points",
          "description": "Define the product's key interactions in design-local metres. grip/use points and surface/container receiving floors; size_m is usable width/height/depth above the floor. Does not add geometry.",
          "parameters": {"type": "object", "additionalProperties": False, "required": ["points"],
@@ -1103,6 +1141,28 @@ class _State:
             raise
 
     def _execute(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
+        if tool == "set_local_cells":
+            from mcp import workshop_local_cells as local
+            declaration = local.checked(args)
+            updated = deepcopy(self.overrides)
+            updated[local.KEY] = declaration
+            design, overrides = workshop_components.design_from_spec(
+                {**self.current_spec(), "component_overrides": updated})
+            artifact = local.compile_design(design, overrides, root="chat-local-source")
+            # Build the returned candidate before touching any live tool state,
+            # even in a research app where execute() has no game rollback guard.
+            candidate = deepcopy(self.candidate)
+            _refresh(self.app, candidate, design, overrides)
+            self.design, self.overrides = design, overrides
+            self.candidate.clear(); self.candidate.update(candidate)
+            self.changed.append("local cells")
+            return self.record(tool, {
+                "summary": f"Explicit local cells: {artifact['cells']} occupied cuboids; source dimensions preserved",
+                "declaration": declaration, "cells": artifact["cells"],
+                "source_material_mass_kg": artifact["material_mass_kg"],
+                "fixings": len(artifact["joints"]), "native_admission_required": True,
+                "functional_trial_required": True, "limitations": artifact["limitations"],
+            })
         if tool=='define_installation':
             from mcp import workshop_placement
             updated=deepcopy(self.overrides)
@@ -1203,11 +1263,14 @@ class _State:
 
         if tool == "inspect_design":
             measured = self.design.measure()
+            import workshop_recipe
             return self.record(tool, {
                 "summary": f"{len(self.design.parts)} components; {measured.get('mass_kg')} kg",
                 "kind": self.design.kind, "purpose": self.design.purpose,
                 "parameters": dict(self.design.parameters), "measured": measured,
                 "components": [_part_doc(part) for part in self.design.parts],
+                "recipe_contract": workshop_recipe.contract(
+                    self.design, self.overrides, world_cell_m=workshop_recipe.world_cell_size(self.app)),
                 "selected_component": self.selected_name,
             })
 
@@ -1227,6 +1290,7 @@ class _State:
             })
 
         if tool == "inspect_physics":
+            import workshop_recipe
             graph = workshop_graph.product(self.design)
             try:
                 statics = declared_statics(self.design)
@@ -1242,6 +1306,8 @@ class _State:
                 "analytical_limitations": limitations,
                 "relationships": graph.described().get("relationships") or [],
                 "physics_contract": contract,
+                "recipe_contract": workshop_recipe.contract(
+                    self.design, self.overrides, world_cell_m=workshop_recipe.world_cell_size(self.app)),
                 "declared_tests": deepcopy(self.design.tests),
             })
 

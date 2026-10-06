@@ -133,8 +133,15 @@ def plan(app: Any, body: Any) -> dict[str, Any]:
     answer = _core.plan(app, body)
     design, overrides = workshop_components.design_from_spec(request)
     models = workshop_rigid.requested_models(design, overrides)
+    from mcp import workshop_local_cells
+    local = workshop_local_cells.declaration(design,overrides)
     answer["mechanical_model"] = next(iter(models)) if len(models) == 1 else "mixed"
-    if models != {"lattice"}:
+    if local:
+        artifact=workshop_local_cells.compile_design(design,overrides)
+        answer.update(mechanical_model='local-material-cells',geometry_basis='clipped-box-cells',
+                      fingerprint=artifact['physics_hash'],local_cells=artifact)
+        answer['wireframe_objects']=answer.get('objects',[]);answer['objects']=[]
+    elif models != {"lattice"}:
         # Never return the old snapped primitive list as this model's build plan.
         answer["wireframe_objects"] = answer.get("wireframe_objects", answer.get("objects", []))
         answer["objects"] = []
@@ -168,6 +175,13 @@ def plan(app: Any, body: Any) -> dict[str, Any]:
         # Build surfaces before display filtering; null stays unavailable, never
         # a substituted bounding box when canonical compilation was rejected.
         answer["cell_skin"] = workshop_debug.cell_skin_document(full) if full is not None else None
+        if local:
+            rows=[{'component':b['_components'][0],'material':b['material'],
+                   'center_m':p['center_local_m'],'dimensions_m':p['dimensions_m'],'exposed':True}
+                  for b in artifact['bodies'] for p in b['parts']]
+            full={'schema':workshop_local_cells.SCHEMA,'cells':rows,'total_cells':len(rows),
+                  'cell_size_m':local['cell_size_m'],'physics_hash':artifact['physics_hash'],
+                  'cell_geometry':workshop_local_cells.GEOMETRY}
         if bool(options.get("debug", True)):
             answer["physics_debug"] = workshop_debug.debug_document(design)
         if full is not None and exterior:

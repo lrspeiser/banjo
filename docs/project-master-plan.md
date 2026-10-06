@@ -1,5 +1,7 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Thin metal tool/recipe checkpoint, October 6:** [Implementation and scoped evidence](local-cell-tools-checkpoint.md) adds explicit clipped local material cells and a shared versioned recipe identity. A 3 mm iron blade and 30 mm aluminum handle now pass native paid manufacture, Inventory/equip, ordinary sand digging and reload. Bounded chat authoring preserves refused sources. Internal bending/fracture/heat/wear and adaptive refinement remain unsupported; the fast 10 ft shaft, physical phone acceptance and wider regression audit remain open. This supersedes the earlier shovel admission blocker only for the explicitly selected local representation.
+
 **Playable material boundary, October 5 (implementation):** [Policy checkpoint](inorganic-game-policy-checkpoint.md) limits named worlds, new-game sources, market stock and AI editing to metals/inorganic components. Coal remains a raw resource. Starter tools use actual aluminum/iron geometry and preset densities; older organic worlds and designs are preserved but excluded from active play. Historical glass/oak/iron comparison laboratories remain available. [Generated opening evidence](inorganic-generated-world-checkpoint.md) records actual native hauling, constituent tool admission and finite resources; this restriction adds no organic, fracture, bending or combustion law.
 
 **Adaptive ground speed requirement, October 5 (design):** [Digging contract and

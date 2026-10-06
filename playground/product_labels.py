@@ -15,6 +15,7 @@ def named_sources():
     import goal_chains
     import playable_recipes
     return [('Personal field pick',goal_chains.first_tool_recipe()),
+            ('Metal shovel',playable_recipes.metal_shovel_recipe()),
             ('Stone field pick',playable_recipes.stone_pick_recipe()),
             ('Camp stool',starter_goals.recipe()),('Work table',goal_chains.work_table_recipe()),
             ('Camp light',goal_chains.camp_light_recipe()),

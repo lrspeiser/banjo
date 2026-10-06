@@ -63,6 +63,8 @@ jobs:
           python3 tests/workshop_library_physics_tests.py -v
           python3 tests/workshop_component_api_tests.py -v
           python3 tests/workshop_chat_tests.py -v
+          python3 tests/workshop_recipe_contract_tests.py -v
+          python3 tests/workshop_local_cells_tests.py Geometry -v
           python3 tests/workshop_tabs_tests.py -v
           python3 tests/workshop_bench_tests.py -v
           python3 tests/workshop_bench_api_tests.py -v
@@ -163,6 +165,8 @@ jobs:
           python3 tests/workshop_library_physics_tests.py -v
           python3 tests/workshop_component_api_tests.py -v
           python3 tests/workshop_chat_tests.py -v
+          python3 tests/workshop_recipe_contract_tests.py -v
+          python3 tests/workshop_local_cells_tests.py Geometry -v
           python3 tests/workshop_tabs_tests.py -v
           python3 tests/workshop_bench_tests.py -v
           python3 tests/workshop_bench_api_tests.py -v

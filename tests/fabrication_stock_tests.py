@@ -425,14 +425,14 @@ class CollectedStock(unittest.TestCase):
             'name':'stock fixture battery','body':'stock fixture battery host',
             'capacity_j':2000.,'charge_j':2000.,'max_power_w':300.,'voltage_v':24.})
         app.live.open(app,{'spec':app.room.spec})
-        pile=next(p for p in app.brains.goods.stockpiles if (p.get('holds') or {}).get('oak',0)>25)
+        pile=next(p for p in app.brains.goods.stockpiles if (p.get('holds') or {}).get('aluminum',0)>25)
         at=pile['at_m'];sid=app.live.session.id
         floor=app.live.act({'session':sid,'op':'survey','at':at})['survey']['ground_m']
         # One pickup takes the whole pile since 5af65746 (it used to take 25 kg).
-        held=pile['holds']['oak']
+        held=pile['holds']['aluminum']
         self.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],
-            'request_id':'stock-collected-oak','person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[0,0,-1]}},world)
-        self.assertEqual({'oak':held},self.personal(app,owner))
+            'request_id':'stock-collected-aluminum','person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[0,0,-1]}},world)
+        self.assertEqual({'aluminum':held},self.personal(app,owner))
         peer=self.join(world,'Private stock peer')
         context={'scene':app.room.scene,'session':sid}
         self.post('/api/world/fabrication/configure',{**context,'settings':settings(stock_kg={},energy_j=0),
@@ -443,8 +443,8 @@ class CollectedStock(unittest.TestCase):
             self.post('/api/world/workshop/preview',{},world)
         def reserve(ident):
             reading=self.post('/api/world/fabrication/state',context,world)
-            source=next(r for r in reading['stock_sources'] if r['pool']=='personal' and r['material']=='oak')
-            request={**context,'material':'oak','mass_kg':1.,'pool':'personal','rack_hash':source['rack_hash'],
+            source=next(r for r in reading['stock_sources'] if r['pool']=='personal' and r['material']=='aluminum')
+            request={**context,'material':'aluminum','mass_kg':1.,'pool':'personal','rack_hash':source['rack_hash'],
                 'revision':reading['state']['revision'],'request_id':ident}
             with mock.patch.object(app.store,'save',side_effect=OSError('injected receiving disk failure')):
                 with self.assertRaises(urllib.error.HTTPError) as failed:
@@ -452,7 +452,7 @@ class CollectedStock(unittest.TestCase):
             self.assertEqual(503,failed.exception.code)
             return request
         first=reserve('collected-return-0001')
-        self.assertEqual({'oak':held-1.},self.personal(app,owner))
+        self.assertEqual({'aluminum':held-1.},self.personal(app,owner))
         self.assertEqual([],self.post('/api/workshop/inventory',{},world,peer['token'])['fabrication_reservations'])
         with self.assertRaises(urllib.error.HTTPError):
             self.post('/api/world/fabrication/fund_stock',first,world,peer['token'])
@@ -480,7 +480,7 @@ class CollectedStock(unittest.TestCase):
         p.evaluate('[...document.querySelectorAll("#ws-inv-reserved button")].find(b=>b.textContent==="Return to stock").click()')
         wait('!document.querySelector("[data-stock-reservation]")')
         wait(f'Number(document.querySelector("#ws-inv-energy").dataset.updated)>{meter_time}')
-        self.assertEqual({'oak':held},self.personal(app,owner))
+        self.assertEqual({'aluminum':held},self.personal(app,owner))
         second=reserve('collected-finish-0001')
         p.send('Page.navigate',{'url':url})
         wait('document.querySelector("[data-stock-reservation]")')
@@ -489,8 +489,8 @@ class CollectedStock(unittest.TestCase):
         p.evaluate('[...document.querySelectorAll("#ws-inv-reserved button")].find(b=>b.textContent==="Finish transfer").click()')
         wait('!document.querySelector("[data-stock-reservation]")')
         wait(f'Number(document.querySelector("#ws-inv-energy").dataset.updated)>{meter_time}')
-        self.assertEqual({'oak':held-1.},self.personal(app,owner))
-        self.assertEqual({'oak':1.},app.room.fabrication_record['stock_kg'])
+        self.assertEqual({'aluminum':held-1.},self.personal(app,owner))
+        self.assertEqual({'aluminum':1.},app.room.fabrication_record['stock_kg'])
         self.assertEqual(claims,app.store.load(app.room.scene).goods_claims)
         self.assertEqual([], [e for e in p.events if e.get('method')=='Runtime.exceptionThrown'])
         chrome.close();self.chrome=None
@@ -505,34 +505,34 @@ class CollectedStock(unittest.TestCase):
              revision=reading['state']['revision'],request_id='collected-energy-0001')
         context['session']=result['session']
         design=candidate();design['component_overrides']['@construction']['added'][0].update(
-            size_m=[.1,.1,.1],center_m=[0,.05,0])
+            material='aluminum',size_m=[.05,.1,.05],center_m=[.025,.05,.025])
         call('start',candidate=design,stock_kg=1.,revision=result['state']['revision'],request_id='collected-job-0001')
         call('wait',seconds=1)
         preview=call('preview',job_id='collected-job-0001',position_m=[13,-7])
         result=call('commit',job_id='collected-job-0001',preview_id=preview['preview_id'],request_id='collected-install-0001')
         context['session']=result['session']
-        self.assertAlmostEqual(.7,result['mass_kg'],places=9)
+        self.assertAlmostEqual(.675,result['mass_kg'],places=9)
         self.assertEqual(claims,app.store.load(app.room.scene).goods_claims)
         final=deepcopy(app.room.fabrication_record)
         self.stop();self.start()
         self.post('/api/world/player/join',{'token':owner['token']},world)
         self.post('/api/world/open',{},world)
         app=self.app.hub.get(world);context['session']=app.live.session.id
-        self.assertEqual({'oak':held-1.},self.personal(app,owner))
+        self.assertEqual({'aluminum':held-1.},self.personal(app,owner))
         reading=self.post('/api/world/fabrication/state',context,world)
         self.assertEqual(final['stock_kg'],reading['state']['stock_kg'])
         self.assertEqual('installed',reading['state']['jobs']['collected-job-0001']['status'])
         self.assertEqual([],reading['stock_reservations'])
         self.assertTrue(self.post('/api/world/fabrication/fund_stock',second,world)['replayed'])
         self.assertEqual(claims,app.room.goods_claims)
-        source=next(r for r in reading['stock_sources'] if r['material']=='oak' and r['pool']=='shared')
-        self.assertEqual(12.4,source['mass_kg'])
-        funded=self.post('/api/world/fabrication/fund_stock',{**context,'material':'oak','mass_kg':1.,'pool':'shared',
+        source=next(r for r in reading['stock_sources'] if r['material']=='iron' and r['pool']=='shared')
+        self.assertEqual(6.2,source['mass_kg'])
+        funded=self.post('/api/world/fabrication/fund_stock',{**context,'material':'iron','mass_kg':1.,'pool':'shared',
             'rack_hash':source['rack_hash'],'revision':reading['state']['revision'],'request_id':'explicit-shared-stock-0001'},world)
-        self.assertEqual({'oak':1.},funded['state']['stock_kg'])
-        self.assertEqual({'oak':held-1.},self.personal(app,owner))
+        self.assertEqual({'aluminum':0.,'iron':1.},funded['state']['stock_kg'])
+        self.assertEqual({'aluminum':held-1.},self.personal(app,owner))
         self.assertEqual({},self.personal(app,peer))
-        self.assertEqual(11.4,next(r for r in funded['stock_sources'] if r['material']=='oak' and r['pool']=='shared')['mass_kg'])
+        self.assertEqual(5.2,next(r for r in funded['stock_sources'] if r['material']=='iron' and r['pool']=='shared')['mass_kg'])
 
 
 if __name__=='__main__':unittest.main()

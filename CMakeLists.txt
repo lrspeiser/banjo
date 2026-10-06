@@ -1352,6 +1352,10 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_ground_excavation_tests PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
             banjo_enable_warnings(banjo_ground_excavation_tests)
             add_test(NAME banjo_ground_excavation_tests COMMAND banjo_ground_excavation_tests)
+            add_executable(banjo_local_cell_tools_tests tests/local_cell_tools_tests.cpp)
+            target_link_libraries(banjo_local_cell_tools_tests PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
+            banjo_enable_warnings(banjo_local_cell_tools_tests)
+            add_test(NAME banjo_local_cell_tools_tests COMMAND banjo_local_cell_tools_tests)
 
             add_executable(banjo_body_condition_tests tests/body_condition_tests.cpp)
             target_link_libraries(banjo_body_condition_tests PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
@@ -1657,6 +1661,18 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/recipe_audit_tests.py -v)
     set_tests_properties(banjo_recipe_audit_tests PROPERTIES TIMEOUT 300)
+    add_test(NAME banjo_workshop_recipe_contract_tests
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/workshop_recipe_contract_tests.py -v)
+    set_tests_properties(banjo_workshop_recipe_contract_tests PROPERTIES TIMEOUT 60)
+    add_test(NAME banjo_workshop_local_cells_tests
+        COMMAND ${CMAKE_COMMAND} -E env BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/workshop_local_cells_tests.py -v)
+    set_tests_properties(banjo_workshop_local_cells_tests PROPERTIES TIMEOUT 90)
+    add_test(NAME banjo_metal_shovel_game_tests
+        COMMAND ${CMAKE_COMMAND} -E env BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_LIBRARY=$<TARGET_FILE:banjo_c> BANJO_BROWSER_TESTS=required
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/metal_shovel_game_tests.py -v)
+    set_tests_properties(banjo_metal_shovel_game_tests PROPERTIES TIMEOUT 240)
     add_test(NAME banjo_rover_order_tests
         COMMAND ${CMAKE_COMMAND} -E env
             BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>

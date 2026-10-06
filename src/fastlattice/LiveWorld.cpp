@@ -4741,7 +4741,8 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             if (saved->doc.contains("blades") && !saved->doc["blades"].empty())
                 throw std::invalid_argument("precise-rigid carry cannot preserve blades");
             for (const auto &point : saved->doc.value("tool_points", nlohmann::json::array()))
-                if (impl.precise_bodies.count(point.at("body").get<std::string>()))
+                if (const auto p = impl.precise_bodies.find(point.at("body").get<std::string>());
+                    p != impl.precise_bodies.end() && !p->second.local_cells)
                     throw std::invalid_argument("precise-rigid carry cannot preserve a tool point on an exact body");
         }
     }
@@ -5755,13 +5756,28 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             point.frame_nodes = unpackedArray<std::uint32_t>(p, "frame_nodes_b64");
             point.frame_offsets = unpackedVecs(p, "frame_offsets_b64");
             point.attached = p.value("attached", true);
+            if (const auto local = impl.precise_bodies.find(point.body);
+                local != impl.precise_bodies.end() && local->second.local_cells) {
+                if (point.frame_nodes.size() != local->second.parts.size() ||
+                    point.frame_offsets.size() != local->second.parts.size())
+                    throw std::invalid_argument("saved local tool frame does not cover its material cells");
+                for (std::size_t k=0;k<local->second.parts.size();++k)
+                    if (point.frame_nodes[k]!=k ||
+                        length(point.frame_offsets[k]-local->second.parts[k].center_local_m)>1e-12)
+                        throw std::invalid_argument("saved local tool frame changes a material cell");
+            }
             if (carrying) {
                 if (!kept(asked.tool_points, point.id) || !back(point.body)) continue;
                 if (!point.grip_body.empty() && !back(point.grip_body)) {
                     lost.push_back("the " + point.body + "'s point: its held handle was not carried");
                     continue;
                 }
-                for (std::uint32_t &node : point.frame_nodes) node = plan.node(node);
+                // Local-cell frame IDs index this component's immutable boxes,
+                // not the room lattice. Exact definition carry already pins
+                // their geometry and ordering; never remap them as room nodes.
+                const auto local = impl.precise_bodies.find(point.body);
+                if (local == impl.precise_bodies.end() || !local->second.local_cells)
+                    for (std::uint32_t &node : point.frame_nodes) node = plan.node(node);
                 if (std::find(point.frame_nodes.begin(), point.frame_nodes.end(), CarryPlan::none) !=
                     point.frame_nodes.end()) {
                     lost.push_back("the " + point.body + "'s point: its cells are not all the " + point.body +
@@ -16206,11 +16222,32 @@ ToolTerrainHost LiveWorld::toolHost() const {
     };
     host.cells_of = [this](const std::string &name) {
         std::vector<std::pair<std::uint32_t, Vec3>> out;
+        if (const auto local = impl_->precise_bodies.find(name);
+            local != impl_->precise_bodies.end() && local->second.local_cells) {
+            for (std::size_t i = 0; i < local->second.parts.size(); ++i)
+                out.emplace_back(static_cast<std::uint32_t>(i), local->second.parts[i].center_local_m);
+            return out;
+        }
         const auto found = impl_->index_of.find(name);
         if (found == impl_->index_of.end()) return out;
         for (const std::uint32_t node : impl_->nodes_of[found->second])
             if (node < impl_->cell_offset_m.size()) out.emplace_back(node, impl_->cell_offset_m[node]);
         return out;
+    };
+    host.local_cells_of = [this](const std::string &name) {
+        const auto p = impl_->precise_bodies.find(name);
+        return p != impl_->precise_bodies.end() && p->second.local_cells;
+    };
+    host.contains_matter = [this](const std::string &name, const Vec3 &point) {
+        const auto p = impl_->precise_bodies.find(name);
+        if (p == impl_->precise_bodies.end() || !p->second.local_cells) return false;
+        for (const auto &cell : p->second.parts) {
+            const Vec3 v = point - cell.center_local_m;
+            const auto &d = cell.geometry.dimensions_m;
+            if (std::abs(v.x) <= .5*d.x + 1e-12 && std::abs(v.y) <= .5*d.y + 1e-12 &&
+                std::abs(v.z) <= .5*d.z + 1e-12) return true;
+        }
+        return false;
     };
     host.material_of = [this](const std::string &name) -> const MaterialDefinition * {
         const auto found = impl_->index_of.find(name);
@@ -16243,7 +16280,7 @@ unsigned LiveWorld::toolPoint(const std::string &body, const Vec3 &tip_world_m, 
                               double width_m, double thickness_m, double angle_deg, double length_m,
                               const Vec3 &grip_world_m, const std::string &grip_body) {
     Impl &I = *impl_;
-    if (I.precise_bodies.count(body))
+    if (const auto p = I.precise_bodies.find(body); p != I.precise_bodies.end() && !p->second.local_cells)
         throw std::invalid_argument("toolPoint: " + body + " is an exact body; only a body made of cells can carry a ground tool point");
     const terrain::ToolPointShape shape{width_m, thickness_m, angle_deg, length_m};
     return I.tools.declare(toolHost(), body, tip_world_m, pointing_world, shape, grip_world_m,
@@ -17242,6 +17279,7 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
     }
     doc["carry_readiness"] = {{"schema", "banjo.carry-readiness.v1"},
                               {"precise_rigid_version", 1},
+                              {"local_cell_tools_version", 1},
                               {"thermal_network_version", 1},
                               {"pending_heaters", pending_heaters},
                               {"gas_regions", gas_regions}};

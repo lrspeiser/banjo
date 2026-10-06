@@ -39,9 +39,9 @@ json vec(Vec3 v) { return {v.x, v.y, v.z}; }
 // stuff does. It never bonds, so a brittle-bond law is unused here -- glass's
 // already is -- and the alumina the catalogue calls "alumina ceramic", which
 // `fire ceramic` makes in the game's own chain, has had both all along.
-constexpr std::array<MaterialPreset, 5> kExactMaterials{
+constexpr std::array<MaterialPreset, 6> kExactMaterials{
     MaterialPreset::Glass, MaterialPreset::Oak, MaterialPreset::Iron,
-    MaterialPreset::Concrete, MaterialPreset::Ceramic};
+    MaterialPreset::Concrete, MaterialPreset::Ceramic, MaterialPreset::Aluminum};
 MaterialPreset material(const json &j) {
     for (const MaterialPreset p : kExactMaterials)
         if (j == std::string(materialSceneName(p))) return p;
@@ -154,8 +154,12 @@ std::vector<PreciseRigidBody> readPreciseRigidScene(const std::string &text) {
     std::set<std::string> names;
     std::size_t shape_count = 0;
     for (const auto &j : source) {
-        fields(j, {"name", "material", "parts", "position_m", "orientation_wxyz", "velocity_m_s", "spin_rad_s", "color_rgba"});
+        fields(j, {"name", "material", "parts", "position_m", "orientation_wxyz", "velocity_m_s", "spin_rad_s", "color_rgba", "cell_geometry"});
         PreciseRigidBody b;
+        if (j.contains("cell_geometry")) {
+            require(j["cell_geometry"] == "clipped-box-cells-v1", "unsupported local cell geometry");
+            b.local_cells = true;
+        }
         require(j.contains("name") && j["name"].is_string(), "precise rigid body needs a name");
         b.name = j["name"].get<std::string>();
         require(!b.name.empty() && b.name.size() <= 120 && names.insert(b.name).second,
@@ -228,12 +232,33 @@ std::vector<PreciseRigidBody> readPreciseRigidScene(const std::string &text) {
             solid.hi = part.center_local_m + reach;
             solids.push_back(solid);
         }
-        takeBackWhatEarlierPartsClaim(solids, moments, b.part_mass_kg);
+        if (b.local_cells) {
+            std::set<std::string> cell_names;
+            for (std::size_t i = 0; i < b.parts.size(); ++i) {
+                const auto &p = b.parts[i];
+                require(p.geometry.kind == PrimitiveKind::Box &&
+                    std::abs(p.rotation_local.w - 1) <= 1e-12 &&
+                    std::abs(p.rotation_local.x) + std::abs(p.rotation_local.y) + std::abs(p.rotation_local.z) <= 1e-12 &&
+                    b.part_materials[i] == b.material,
+                    "local cells require axis-aligned boxes of one component material");
+                require(!b.part_names[i].empty() && cell_names.insert(b.part_names[i]).second,
+                        "local cell IDs must be nonempty and unique within the component");
+                for (std::size_t k = 0; k < i; ++k) {
+                    const Vec3 span{std::min(solids[i].hi.x, solids[k].hi.x)-std::max(solids[i].lo.x, solids[k].lo.x),
+                                    std::min(solids[i].hi.y, solids[k].hi.y)-std::max(solids[i].lo.y, solids[k].lo.y),
+                                    std::min(solids[i].hi.z, solids[k].hi.z)-std::max(solids[i].lo.z, solids[k].lo.z)};
+                    require(!(span.x > 1e-10 && span.y > 1e-10 && span.z > 1e-10),
+                            "local material cells cannot overlap");
+                }
+            }
+        } else {
+            takeBackWhatEarlierPartsClaim(solids, moments, b.part_mass_kg);
+        }
         require(moments.mass > 0 && moments.volume > 0, "precise compound has no matter");
 
         // One rigid thing: every part meets another, touching or within 1 mm.
         // Two things that do not meet are two bodies, and need a joint.
-        constexpr double kMeetM = 0.001;
+        const double kMeetM = b.local_cells ? 1e-10 : 0.001;
         std::vector<std::vector<unsigned>> neighbors(b.parts.size());
         for (unsigned a = 0; a < b.parts.size(); ++a)
             for (unsigned k = 0; k < a; ++k) {
@@ -242,7 +267,16 @@ std::vector<PreciseRigidBody> readPreciseRigidScene(const std::string &text) {
                     one.lo.y > two.hi.y + kMeetM || two.lo.y > one.hi.y + kMeetM ||
                     one.lo.z > two.hi.z + kMeetM || two.lo.z > one.hi.z + kMeetM)
                     continue;
-                if (JoltWorld::partsWithin(b.parts[a], b.parts[k], kMeetM)) {
+                // Local matter needs a face with positive area. A point/edge
+                // or a gap is not an internal connection between cells.
+                const Vec3 span{std::min(one.hi.x,two.hi.x)-std::max(one.lo.x,two.lo.x),
+                                std::min(one.hi.y,two.hi.y)-std::max(one.lo.y,two.lo.y),
+                                std::min(one.hi.z,two.hi.z)-std::max(one.lo.z,two.lo.z)};
+                const unsigned positive = unsigned(span.x > 1e-10) + unsigned(span.y > 1e-10) + unsigned(span.z > 1e-10);
+                const bool connected = b.local_cells
+                    ? positive == 2 && std::min({span.x,span.y,span.z}) >= -kMeetM
+                    : JoltWorld::partsWithin(b.parts[a], b.parts[k], kMeetM);
+                if (connected) {
                     neighbors[a].push_back(k);
                     neighbors[k].push_back(a);
                 }
@@ -276,6 +310,11 @@ std::vector<PreciseRigidBody> readPreciseRigidScene(const std::string &text) {
             {"parts", parts}, {"position_m", vec(origin)},
             {"orientation_wxyz", q}, {"velocity_m_s", vec(b.initial.linear_velocity_m_s)},
             {"spin_rad_s", vec(b.initial.angular_velocity_rad_s)}, {"color_rgba", b.color_rgba}}.dump();
+        if (b.local_cells) {
+            auto definition = json::parse(b.definition_json);
+            definition["cell_geometry"] = "clipped-box-cells-v1";
+            b.definition_json = definition.dump();
+        }
         bodies.push_back(std::move(b));
     }
     return bodies;

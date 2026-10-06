@@ -158,7 +158,12 @@ def _spread(app: Any, kind: str, base: dict[str, Any], sweeps: dict[str, list[An
     if game_materials.active(app):
         source = game_materials.recipe_spec(app, {"kind": kind, "design_id": f"{kind}-g{generation}",
             "purpose": purpose, "parameters": base, "component_overrides": overrides or {}})
-        root, overrides = workshop_components.design_from_spec(source)
+        # Keep the template clean until the common application below. Custom
+        # sources contain added parts, so applying construction twice duplicates
+        # those components rather than merely repeating a size override.
+        root = assemble(kind, design_id=source['design_id'], purpose=source.get('purpose'),
+                        parameters=source['parameters'])
+        overrides = source['component_overrides']
         # Default game sources present one version; explicit sweeps still work.
         if sweeps is SEED_SWEEPS.get(kind): sweeps = {}
     else:

@@ -75,7 +75,14 @@ def save(root: Path, design: WorkshopDesign, *,
         physical_error = None
         fingerprint = plan["fingerprint"]
         try:
-            if models != {"lattice"}:
+            from mcp import workshop_local_cells
+            if workshop_local_cells.declaration(design, overrides):
+                local = workshop_local_cells.compile_design(design, overrides)
+                measured.update(basis="local-material-cell-source-geometry", mass_kg=local["mass_kg"],
+                                geometry_coherent=True, strength_certified=False,
+                                native_qualification=False)
+                fingerprint = local["physics_hash"]
+            elif models != {"lattice"}:
                 rigid = workshop_rigid.compile_rigid(design)
                 measured.update(basis="precise-rigid-geometry", mass_kg=rigid["mass_kg"],
                                 centre_of_mass_m=rigid["centre_of_mass_m"],
@@ -108,7 +115,8 @@ def save(root: Path, design: WorkshopDesign, *,
             },
             "world_revision": str(world_revision)[:200] if world_revision else None,
             "fingerprint": fingerprint,
-            "mechanical_model": next(iter(models)) if len(models) == 1 else "mixed",
+            "mechanical_model": "local-material-cells" if workshop_local_cells.declaration(design, overrides) else
+                                next(iter(models)) if len(models) == 1 else "mixed",
             "physical_preview_error": physical_error,
             "measured": measured,
             "matter_physics_hash": measured.get("matter_physics_hash"),

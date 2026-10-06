@@ -258,7 +258,7 @@ class RigidAssembly(unittest.TestCase):
         cases = {'wheels on no axle': (without('axle-1'), 'held by a bearing'),
                  'an oval wheel': (changed('wheel-11', size_m=(.32, .06, .30)), 'oval cylinder'),
                  'a rubber wheel': (changed('wheel-11', material='rubber'),
-                                    'glass, oak, iron, concrete or ceramic')}
+                                    'glass, oak, iron, concrete, ceramic or aluminum')}
         for label, (broken, words) in cases.items():
             with self.subTest(label), self.assertRaisesRegex(ValueError, words):
                 rigid_assembly.compile_design(broken, over, root='cart')

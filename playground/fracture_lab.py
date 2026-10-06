@@ -2829,10 +2829,11 @@ def validate(spec: Any) -> dict[str, Any]:
         result["terrain"] = normalise_terrain(result.get("terrain"))
         result["water"] = normalise_water(result.get("water"))
         result["blades"] = normalise_blades(result.get("blades") or [], result["bodies"])
-        result["tool_points"] = normalise_tool_points(result.get("tool_points") or [],
-                                                      result["bodies"])
+        tool_bodies=result['bodies']+[b for b in result.get('precise_rigid_bodies',[])
+            if b.get('cell_geometry')=='clipped-box-cells-v1']
+        result["tool_points"] = normalise_tool_points(result.get("tool_points") or [], tool_bodies)
         result["interactions"] = normalise_interactions(result.get("interactions") or [],
-                                                        result["bodies"], result["joints"],
+                                                        tool_bodies, result["joints"],
                                                         result["tool_points"])
         result["actions"] = normalise_actions(result.get("actions") or [],
                                                result["bodies"] + result.get("precise_rigid_bodies", []))

@@ -81,6 +81,7 @@ def contact_path(grip, use, eyes, at):
     down=[grip[0],grip[1]-CLEARANCE_M-BITE_M,grip[2]]
     path=[list(grip),down]
     if use['lever'] is not None:
-        down=[down[i]-DRAG_M*forward[i] for i in range(3)];path.append(down)
+        drag=use.get('contact_drag_m',DRAG_M)
+        down=[down[i]-drag*forward[i] for i in range(3)];path.append(down)
     path.append([down[0],down[1]+CLEARANCE_M+BITE_M,down[2]])
     return path

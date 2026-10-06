@@ -5,8 +5,9 @@ material if need be -- share a room with everything made of cells, with its
 terrain and water, and with joints: a cart is three of them turning on pins.
 They carry machines too -- a battery in one, a motor on a pin between two, and
 the controller that works it, with its sensors: a cart that drives itself.
-What they cannot do yet is break inside, take heat, or carry blades or tool
-points; those are refused rather than weakened. The engine is the
+What they cannot do yet is break inside or take heat. Ordinary compounds
+cannot carry blades or tool points. Explicit clipped-box material cells can
+carry a ground point with native matter and grip checks. The engine is the
 authority on their geometry: it counts overlapping parts once, re-centres each
 body on its material's centre of mass, and asks Jolt's own shapes whether every
 part meets another (src/fastlattice/PreciseRigidScene.cpp).
@@ -20,8 +21,9 @@ from mcp import core_use, engine_materials
 MODEL = "precise-rigid-v1"
 MAX_BODIES = 32
 MAX_SHAPES = 256
-LIMITS = ("Precise rigid bodies: no internal deformation, fracture, heat, blades or ground tool points. "
-          "Lattice ground tools can share their room; blades still require a lattice-only room. "
+LIMITS = ("Precise rigid bodies: no internal deformation, fracture, heat or cutting blades. "
+          "Ground tool points require lattice matter or explicit clipped-box material cells; "
+          "ordinary rigid compounds cannot carry them. Cutting blades require a lattice-only room. "
           "A breakable body they strike is judged against their material, and a break that would need them inside "
           "the lattice run is declined and reported rather than run.")
 SHAPES = ("box", "cylinder")
@@ -30,7 +32,7 @@ SHAPES = ("box", "cylinder")
 # in src/fastlattice/PreciseRigidScene.cpp. "ceramic" is the alumina the
 # catalogue calls "alumina ceramic" and the chain fires; an exact body of it
 # asks for nothing a lattice would, since it never bonds.
-MATERIALS = ("glass", "oak", "iron", "concrete", "ceramic")
+MATERIALS = ("glass", "oak", "iron", "concrete", "ceramic", "aluminum")
 
 
 def _vector(value: Any, limit: float, label: str) -> list[float]:
@@ -50,18 +52,21 @@ def normalise(value: Any, spec: dict[str, Any]) -> list[dict[str, Any]]:
     if spec.get("blades"):
         raise ValueError("Precise rigid rooms do not yet support blades; nothing was installed")
     # A lattice gathering tool can stand beside exact equipment. The point
-    # still needs its own lattice matter: never attach one to an exact shape.
+    # still needs native checked matter, including explicit local material cells.
     lattice_names = {str(b.get("name")) for b in spec["bodies"]}
+    local_names = {str(b.get('name')) for b in value if isinstance(b,dict)
+                   and b.get('cell_geometry') == 'clipped-box-cells-v1'}
+    tool_names = lattice_names | local_names
     for point in spec.get("tool_points") or []:
         if (not isinstance(point, dict) or not isinstance(point.get("body"), str) or
-                point["body"] not in lattice_names):
-            raise ValueError("A ground tool point needs a lattice body; exact tool points are not supported")
+                point["body"] not in tool_names):
+            raise ValueError("A ground tool point needs lattice matter or explicit local material cells")
     for profile in spec.get("interactions") or []:
         if (not isinstance(profile, dict) or profile.get("template") != "swing-and-lever" or
-                not isinstance(profile.get("tool"), str) or profile["tool"] not in lattice_names or
+                not isinstance(profile.get("tool"), str) or profile["tool"] not in tool_names or
                 not isinstance(profile.get("parts"), list) or
-                any(not isinstance(name, str) or name not in lattice_names for name in profile["parts"])):
-            raise ValueError("Mixed precise rigid rooms support only lattice swing-and-lever profiles")
+                any(not isinstance(name, str) or name not in tool_names for name in profile["parts"])):
+            raise ValueError("Mixed precise rigid rooms support swing-and-lever only on lattice or local material cells")
     # HOT GAS IS ALLOWED HERE; a hot exact body is not. An exact body has no
     # thermal model -- thermoShapes leaves it out -- so heat on one means
     # nothing, and the engine refuses it by name. A gas region is not a body:
@@ -105,7 +110,7 @@ def normalise(value: Any, spec: dict[str, Any]) -> list[dict[str, Any]]:
         raise ValueError("Precise rigid rooms do not yet support thermal scenery declarations")
     names = {n for b in spec["bodies"] for n in (b.get("name"), b.get("join")) if n}
     out, total = [], 0
-    allowed = {"name", "material", "parts", "position_m", "orientation_wxyz", "velocity_m_s", "spin_rad_s", "color_rgba"}
+    allowed = {"name", "material", "parts", "position_m", "orientation_wxyz", "velocity_m_s", "spin_rad_s", "color_rgba", "cell_geometry"}
     for raw in value:
         if not isinstance(raw, dict) or set(raw) - allowed:
             raise ValueError("Unknown precise rigid body fields")
@@ -137,6 +142,10 @@ def normalise(value: Any, spec: dict[str, Any]) -> list[dict[str, Any]]:
         if total > MAX_SHAPES:
             raise ValueError(f"Precise rigid room exceeds {MAX_SHAPES} collision parts")
         b["parts"] = [_part(part) for part in parts]
+        if 'cell_geometry' in raw:
+            if raw['cell_geometry'] != 'clipped-box-cells-v1':
+                raise ValueError('Unsupported local cell geometry')
+            b['cell_geometry'] = raw['cell_geometry']
         # Overlaps, the centre of mass and whether every part meets another are
         # the engine's to settle: it counts a shared space once, as the part
         # listed first, re-centres the body on its material, and asks Jolt's own

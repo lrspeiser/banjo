@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+from copy import deepcopy
 from pathlib import Path
 import sys
 import tempfile
@@ -649,6 +650,123 @@ class ChatSurface(unittest.TestCase):
         self.assertGreaterEqual(len(scripts), 2)
         self.assertGreaterEqual(len(styles), 1)
         self.assertTrue(all(value.startswith("'sha256-") for value in scripts + styles))
+
+
+class ExplicitLocalCellChat(unittest.TestCase):
+    """The new representation is an explicit, validated source edit."""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.app = SimpleNamespace(workshop_store=Path(self.tmp.name), api_key="")
+
+    def state(self, change=None):
+        from mcp import workshop_components
+        base = assemble("table")
+        added = [
+            {"name": "handle", "role": "handle", "shape": "box", "material": "aluminum",
+             "size_m": [.03, .3, .03], "center_m": [0, .15, 0], "rotation_deg": [0, 0, 0]},
+            {"name": "blade", "role": "tool-head", "shape": "box", "material": "iron",
+             "size_m": [.12, .003, .12], "center_m": [.075, .0015, 0], "rotation_deg": [0, 0, 0]},
+        ]
+        source = {"kind": "table", "design_id": "thin-source", "purpose": "Study an actual thin blade",
+                  "parameters": {}, "component_overrides": {"@construction": {
+                      "schema": "banjo.workshop-construction.v1", "removed": [p.name for p in base.parts],
+                      "added": added, "joints_authored": True,
+                      "joints": [{"id": "blade-mount", "kind": "fixed", "method": "bonded",
+                                  "a": "handle", "b": "blade"}]}}}
+        if change:
+            change(source)
+        design, overrides = workshop_components.design_from_spec(source)
+        candidate = design.wireframe(); candidate["component_overrides"] = overrides
+        return workshop_chat._State(self.app, candidate, None, ["iron", "aluminum"], [])
+
+    def unchanged_after_refusal(self, state, args, message):
+        before = deepcopy((state.candidate, state.design, state.overrides, state.changed, state.trace))
+        with self.assertRaisesRegex(ValueError, message):
+            state.execute("set_local_cells", args)
+        self.assertEqual(before, (state.candidate, state.design, state.overrides, state.changed, state.trace))
+
+    def test_tool_is_bounded_and_exposes_actual_limits(self):
+        tool = next(t for t in workshop_chat._tool_definitions(["iron", "aluminum"]) if t["name"] == "set_local_cells")
+        self.assertFalse(tool["parameters"]["additionalProperties"])
+        cell = tool["parameters"]["properties"]["cell_size_m"]
+        self.assertEqual(.002, cell["minimum"]); self.assertEqual(.25, cell["maximum"])
+        self.assertIn("Internal cells move rigidly", tool["description"])
+        self.assertIn("preserves the drawn thin", workshop_chat.SYSTEM)
+        self.assertIn("finite, uncalibrated fixings", workshop_chat.SYSTEM)
+
+    def test_acceptance_preserves_thin_geometry_materials_and_original_source(self):
+        from mcp import workshop_local_cells as local
+        state = self.state()
+        before = deepcopy(state.design.parts)
+        old_identity = state.execute("inspect_design", {})["recipe_contract"]["source"]["hash"]
+        state.candidate["fingerprint"] = "earlier-materialization"
+        state.candidate["matter_physics_hash"] = "earlier-matter"
+        result = state.execute("set_local_cells", {"cell_size_m": .05})
+        self.assertEqual(before, state.design.parts)
+        self.assertEqual({"schema": local.SCHEMA, "cell_size_m": .05}, state.overrides[local.KEY])
+        self.assertEqual(state.overrides, state.candidate["component_overrides"])
+        self.assertNotIn("fingerprint", state.candidate)
+        self.assertNotIn("matter_physics_hash", state.candidate)
+        self.assertEqual(["local cells"], state.changed)
+        self.assertEqual(1, result["fixings"])
+        self.assertTrue(result["native_admission_required"])
+        self.assertTrue(result["functional_trial_required"])
+        artifact = local.compile_design(state.design, state.overrides)
+        blade = next(b for b in artifact["bodies"] if b["_components"] == ["blade"])
+        self.assertTrue(all(p["dimensions_m"][1] == .003 for p in blade["parts"]))
+        report = state.execute("inspect_design", {})["recipe_contract"]
+        self.assertNotEqual(old_identity, report["source"]["hash"])
+        self.assertEqual("local-material-cells", report["manufacturing"]["representation"])
+        self.assertEqual("unqualified", report["qualification"]["status"])
+
+    def test_invalid_settings_cannot_change_candidate(self):
+        for args in ({"cell_size_m": .001}, {"cell_size_m": .251}, {"cell_size_m": True},
+                     {"cell_size_m": float("nan")}, {"cell_size_m": .05, "free_energy_j": 1},
+                     {"schema": "invented", "cell_size_m": .05}):
+            with self.subTest(args=args):
+                self.unchanged_after_refusal(self.state(), args, "Local")
+
+    def test_unsupported_shape_gap_overlap_rotation_and_budget_keep_source_unchanged(self):
+        for kind, error in (("shape", "axis-aligned"), ("gap", "planar face"),
+                            ("overlap", "overlap"), ("rotation", "axis-aligned"), ("budget", "64 per component")):
+            def change(source):
+                blade = source["component_overrides"]["@construction"]["added"][1]
+                if kind == "shape": blade["shape"] = "cylinder"
+                elif kind == "gap": blade["center_m"][0] += .001
+                elif kind == "overlap": blade["center_m"][0] -= .001
+                elif kind == "rotation": blade["rotation_deg"][1] = 10
+            with self.subTest(kind=kind):
+                self.unchanged_after_refusal(self.state(change), {"cell_size_m": .002 if kind == "budget" else .05}, error)
+
+    def test_failed_reconfiguration_retains_earlier_valid_local_cells(self):
+        state = self.state()
+        state.execute("set_local_cells", {"cell_size_m": .05})
+        self.unchanged_after_refusal(state, {"cell_size_m": .002}, "64 per component")
+
+    def test_candidate_refresh_failure_is_atomic_in_research_mode(self):
+        state = self.state()
+        with mock.patch.object(workshop_chat, "_refresh", side_effect=ValueError("refresh refused")):
+            self.unchanged_after_refusal(state, {"cell_size_m": .05}, "refresh refused")
+
+    def test_mocked_llm_turn_uses_explicit_tool_and_keeps_dimensions(self):
+        state = self.state(); candidate = state.candidate
+        before = deepcopy(candidate["parts"])
+        self.app.api_key = "fake-key"; self.app.model = "fake-model"
+        replies = [
+            {"output": [{"type": "function_call", "call_id": "local-1", "name": "set_local_cells",
+                         "arguments": '{"cell_size_m":0.05}'}]},
+            {"output": [{"type": "message", "content": [{"type": "output_text",
+                         "text": "The actual thin source is retained; native admission and a use trial are still required."}]}]},
+        ]
+        with mock.patch.object(workshop_chat, "_call_model", side_effect=replies) as provider:
+            result = workshop_chat.propose(self.app, message="Keep this actual thin blade with explicit local cells",
+                selected_part=None, candidate=candidate, materials=["iron", "aluminum"], library=[])
+        self.assertEqual(2, provider.call_count)
+        self.assertEqual(before, candidate["parts"])
+        self.assertEqual(.05, candidate["component_overrides"]["@local_cells"]["cell_size_m"])
+        self.assertEqual(["set_local_cells"], [r["tool"] for r in result["tool_trace"]])
+        self.assertEqual(["local cells"], result["changed"])
 
 
 if __name__ == "__main__":

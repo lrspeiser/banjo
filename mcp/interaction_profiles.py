@@ -40,7 +40,7 @@ KEYS = {
 # Legacy swing/lever parameters remain bounded for an explicit full-swing
 # experiment; no saved name selects physics or a scripted yield.
 TOOL_USE_DEFAULTS = {"label": "Dig here", "past": "dug",
-                     "gesture": "contact", "cadence_hz": 4.0,
+                     "gesture": "contact", "cadence_hz": 4.0, "contact_drag_m": .04,
                      "swing": {"speed_m_s": 4.0, "raise_deg": 110.0},
                      "lever": {"speed_m_s": 1.2, "lever_deg": 40.0}, "pry": True,
                      "reach_m": [0.3, 2.0], "repeat": True}
@@ -71,6 +71,9 @@ TOOL_USE_SCHEMA = {
         "gesture": {"type": "string", "enum": ["contact", "swing"], "default": "contact"},
         "cadence_hz": {"type": "number", "minimum": 1, "maximum": 8, "default": 4,
             "description": "Requested input rate; never accelerates simulation or guarantees work."},
+        "contact_drag_m": {"type":"number", "minimum":.02, "maximum":.15, "default":.04,
+            "description":"Lateral hand target distance for a contact pry, in metres. Native forces "
+                "and resistance decide the actual motion and work; no removal is guaranteed."},
         "label": {"type": "string", "maxLength": 40},
         "past": {"type": "string", "maxLength": 24},
         "swing": {"type": "object", "additionalProperties": False,
@@ -96,6 +99,7 @@ def tool_use(profile: dict[str, Any] | None) -> dict[str, Any]:
            "past": said.get("past", TOOL_USE_DEFAULTS["past"]),
            "gesture": said.get("gesture", TOOL_USE_DEFAULTS["gesture"]),
            "cadence_hz": said.get("cadence_hz", TOOL_USE_DEFAULTS["cadence_hz"]),
+           "contact_drag_m": said.get("contact_drag_m", TOOL_USE_DEFAULTS["contact_drag_m"]),
            "swing": {**TOOL_USE_DEFAULTS["swing"], **(said.get("swing") or {})},
            "lever": (None if said.get("pry") is False
                      else {**TOOL_USE_DEFAULTS["lever"], **(said.get("lever") or {})}),
@@ -123,6 +127,11 @@ def _use_checked(name: str, use: Any) -> dict[str, Any]:
         if type(rate) not in (int,float) or not math.isfinite(rate) or not 1<=rate<=8:
             raise ValueError(f"{name}: use cadence_hz is 1 to 8; native work may take longer")
         out["cadence_hz"] = float(rate)
+    if "contact_drag_m" in use:
+        drag=use["contact_drag_m"]
+        if type(drag) not in (int,float) or not math.isfinite(drag) or not .02<=drag<=.15:
+            raise ValueError(f"{name}: contact_drag_m must be 0.02 to 0.15 metres")
+        out["contact_drag_m"]=float(drag)
     for key, most in (("label", 40), ("past", 24)):
         if key in use:
             words = use[key]

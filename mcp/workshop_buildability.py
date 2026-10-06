@@ -105,6 +105,22 @@ def assess(design: WorkshopDesign, component_overrides: Any = None, *,
                   costs={"stored_cells": None, "collision_boxes": None,
                          "active_deformation_cells": None, "fragment_count": None})
     from . import workshop_material_support
+    from . import workshop_local_cells
+    if workshop_local_cells.declaration(design,component_overrides):
+        try:
+            local=workshop_local_cells.compile_design(design,component_overrides)
+        except ValueError as exc:
+            report.update(assessment='compilation-blocked',errors=[str(exc)])
+            return report,None,None
+        report.update(assessment='exact-local-cells',compilation_ready=True,preview_complete=True,
+            physics_hash=local['physics_hash'],local_cell_geometry=local['schema'],
+            costs={'stored_cells':local['cells'],'collision_boxes':local['cells'],
+                   'active_deformation_cells':None,'fragment_count':None},
+            warnings=local['limitations'],opening_audit='actual axis-aligned component boundaries preserved')
+        for component in report['components']:
+            count=sum(len(b['parts']) for b in local['bodies'] if component['component'] in b['_components'])
+            component.update(sampled_cells=count,disappeared=False)
+        return report,None,None
     blocker = workshop_material_support.fixed_lattice_blocker(design, component_overrides, cell_m=cell_size_m)
     if blocker:
         report["blocker"] = blocker

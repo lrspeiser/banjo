@@ -204,11 +204,16 @@ unsigned ToolTerrain::declare(const ToolTerrainHost &host, const std::string &bo
     const auto cells = host.cells_of(body);
     const double cell = host.cell_m;
     if (cells.empty()) return refuse("it has no cells to be a tool of");
-    if (nearestCell(cells, made.tip_local) > 0.9 * cell)
+    const bool local = host.local_cells_of && host.local_cells_of(body);
+    if (local && (!host.contains_matter ||
+            !host.contains_matter(body, made.tip_local - 1e-6 * made.pointing_local) ||
+            host.contains_matter(body, made.tip_local + 1e-6 * made.pointing_local)))
+        return refuse("the local-cell tip must lie on an outward physical surface with matter immediately behind it");
+    if (!local && nearestCell(cells, made.tip_local) > 0.9 * cell)
         return refuse("the tip is not on the body's matter: it has to be at the end of it, on its surface");
-    if (nearestCell(cells, made.tip_local - 0.5 * cell * made.pointing_local) > 0.75 * cell)
+    if (!local && nearestCell(cells, made.tip_local - 0.5 * cell * made.pointing_local) > 0.75 * cell)
         return refuse("there is no matter behind the tip: the pointing has to run out of the body at the tip");
-    if (nearestCell(cells, made.tip_local + 0.5 * cell * made.pointing_local) < 0.45 * cell)
+    if (!local && nearestCell(cells, made.tip_local + 0.5 * cell * made.pointing_local) < 0.45 * cell)
         return refuse("the pointing runs back into the body: it has to point out of it, the way the point goes in");
     // And the grip is where a hand closes on it, so it is on the body as well.
     // A grip in the air beside it has the hand holding nothing: every swing is
@@ -217,7 +222,9 @@ unsigned ToolTerrain::declare(const ToolTerrainHost &host, const std::string &bo
     // swapped, 1.2 m above the haft, and its trial never reached the soil.
     const auto grip_pose = host.world->snapshot(*grip_id);
     const Vec3 grip_own = qConj(grip_pose.orientation_world).rotate(grip_world_m - grip_pose.center_of_mass_world_m);
-    if (nearestCell(host.cells_of(grip_name), grip_own) > 0.9 * cell)
+    const bool local_grip = host.local_cells_of && host.local_cells_of(grip_name);
+    if ((local_grip && (!host.contains_matter || !host.contains_matter(grip_name, grip_own))) ||
+        (!local_grip && nearestCell(host.cells_of(grip_name), grip_own) > 0.9 * cell))
         return refuse("the grip is not on the body's matter: it has to be where a hand takes hold of it, on the body");
     // Which way its edge runs: square to the point and to the line from the
     // tip to the grip. For a pick that is across the swing, which is how a
@@ -384,7 +391,10 @@ void ToolTerrain::shape(const ToolTerrainHost &host, Point &p, MatterBodyId id) 
     // and its handle would reach the ground before its point went in.
     std::vector<Vec3> cells;
     for (const auto &c : host.cells_of(p.body)) cells.push_back(c.second);
-    if (!cells.empty()) host.world->setCollisionCells(id, cells, host.cell_m);
+    // Local cells already collide as their exact occupied cuboids. Replacing
+    // them with world-sized cubes would inflate a 3 mm blade to 50 mm.
+    if (!cells.empty() && !(host.local_cells_of && host.local_cells_of(p.body)))
+        host.world->setCollisionCells(id, cells, host.cell_m);
     host.world->setManifoldReduction(id, false);
     p.shaped = true;
 }

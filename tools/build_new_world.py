@@ -173,8 +173,7 @@ def compose(ground: dict, world: dict, terrain_seed: int | None = None, *, insta
     spec["interactions"] = spec.get("interactions", []) + [plan["tool"]["profile"]]
     from mcp import core_use, interaction_points
     spec["actions"] = spec.get("actions", []) + [core_use.installed(design, "field pick")]
-    com = [sum((g[a]+.5)*spec["cell_m"] for g in plan["cells"])/len(plan["cells"])
-           for a in range(3)]
+    com = plan['root_centre_source_m']
     spec["interaction_points"] = spec.get("interaction_points", []) + [
         interaction_points.installed(design, "field pick", com)]
     if installations is not None:

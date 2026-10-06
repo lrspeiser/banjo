@@ -9,9 +9,11 @@ from __future__ import annotations
 import copy
 import json
 from collections import OrderedDict
+from dataclasses import asdict
 from typing import Any
 
 import workshop_fitting
+from mcp.workshop_recipe_contract import derive
 
 # A recipe's readiness is a function of its source alone: kind, purpose,
 # parameters, overrides and the cell size. Compiling every recipe takes about
@@ -52,7 +54,9 @@ def by_source(what: str, design: Any, overrides: Any, work: Any, *extra: Any) ->
     """``work()``, remembered for this design source (see _READY above)."""
     try:
         key = json.dumps([what, str(design.kind), design.design_id, design.purpose,
-                          dict(design.parameters), overrides, *extra], sort_keys=True, default=repr)
+                          dict(design.parameters), [asdict(part) for part in design.parts],
+                          design.tests, design.lineage.get("component_overrides"), overrides,
+                          *extra], sort_keys=True, default=repr)
     except (TypeError, ValueError):
         return work()
     if key not in _READY:
@@ -63,21 +67,41 @@ def by_source(what: str, design: Any, overrides: Any, work: Any, *extra: Any) ->
     return copy.deepcopy(_READY[key])
 
 
-def assess(design: Any, overrides: Any = None, *, world_cell_m: float | None) -> dict[str, Any]:
+def contract(design: Any, overrides: Any = None, *, world_cell_m: float | None,
+             manufacturing: Any = None, evidence: Any = None) -> dict[str, Any]:
+    """The same derived report for built-in, saved and LLM-authored candidates."""
+    from workshop_test_room import CELL_M
+    if manufacturing is not None and not isinstance(manufacturing, dict):
+        raise ValueError("manufacturing settings must be an object")
+    settings = {"cell_size_m": world_cell_m, "workshop_cell_size_m": CELL_M,
+                **(manufacturing or {})}
+    return derive(design, overrides, manufacturing=settings, evidence=evidence)
+
+
+def assess(design: Any, overrides: Any = None, *, world_cell_m: float | None,
+           manufacturing: Any = None, evidence: Any = None) -> dict[str, Any]:
     return by_source("readiness", design, overrides,
-                     lambda: _assess(design, overrides, world_cell_m=world_cell_m), world_cell_m)
+                     lambda: _assess(design, overrides, world_cell_m=world_cell_m,
+                                     manufacturing=manufacturing, evidence=evidence),
+                     world_cell_m, manufacturing, evidence)
 
 
-def _assess(design: Any, overrides: Any = None, *, world_cell_m: float | None) -> dict[str, Any]:
+def _assess(design: Any, overrides: Any = None, *, world_cell_m: float | None,
+            manufacturing: Any = None, evidence: Any = None) -> dict[str, Any]:
     from workshop_test_room import CELL_M
     from mcp.workshop import assemble
     # Callers may hold an already-overridden design. check_validity applies
     # overrides itself, so always rebuild its clean source first.
     base = assemble(str(design.kind), design_id=design.design_id,
                     purpose=design.purpose, parameters=dict(design.parameters))
+    from mcp.workshop_components import apply_overrides
+    effective_overrides = (base.lineage.get("component_overrides") or {}) if overrides is None else overrides
+    resolved = apply_overrides(base, effective_overrides)
     workshop = _one(base, overrides, CELL_M)
     world = _one(base, overrides, world_cell_m) if world_cell_m is not None else None
     return {"schema": "banjo.workshop-recipe-readiness.v1",
             "workshop": workshop, "world": world,
             "ready_as_drawn": bool(workshop["as_drawn"] and world and world["as_drawn"]),
-            "native_preview_required": True, "functional_test_required": True}
+            "native_preview_required": True, "functional_test_required": True,
+            "recipe_contract": contract(resolved, effective_overrides, world_cell_m=world_cell_m,
+                                        manufacturing=manufacturing, evidence=evidence)}

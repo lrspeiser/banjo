@@ -383,7 +383,8 @@ function drawMatterCells(candidate) {
     if (!byPart.has(item.component)) byPart.set(item.component, []);
     byPart.get(item.component).push(item);
   }
-  const cube = new THREE.BoxGeometry(cell * 0.94, cell * 0.94, cell * 0.94);
+  const localCells = matter.cell_geometry === 'clipped-box-cells-v1';
+  const cube = localCells ? new THREE.BoxGeometry(1,1,1) : new THREE.BoxGeometry(cell * 0.94, cell * 0.94, cell * 0.94);
   const matrix = new THREE.Matrix4();
   for (const [partName, cells] of byPart.entries()) {
     const material = cells[0]?.material || selectedPart()?.material || "iron";
@@ -393,7 +394,9 @@ function drawMatterCells(candidate) {
     }), cells.length);
     mesh.userData.partNames = [];
     cells.forEach((item, index) => {
-      matrix.makeTranslation(...item.center_m); mesh.setMatrixAt(index, matrix);
+      matrix.makeTranslation(...item.center_m);
+      if (localCells) matrix.scale(new THREE.Vector3(...item.dimensions_m));
+      mesh.setMatrixAt(index, matrix);
       mesh.userData.partNames[index] = item.component;
     });
     mesh.instanceMatrix.needsUpdate = true; group.add(mesh);
@@ -441,7 +444,7 @@ function drawCellSkin() {
   }
 }
 function drawMatter(candidate) {
-  if (bench.rigid) { drawMatterCells(candidate); return; }
+  if (bench.rigid || bench.matter?.cell_geometry === 'clipped-box-cells-v1') { drawMatterCells(candidate); return; }
   if (bench.matterMode === "solid") drawCellSkin();
   else if (bench.matterMode === "skin-cells") { drawMatterCells(candidate); drawSkin(candidate, 0.28); }
   else drawMatterCells(candidate);

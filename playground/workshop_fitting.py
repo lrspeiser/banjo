@@ -718,6 +718,17 @@ def check_validity(design: Any, overrides: Any = None, *, cell_m: float = 0.04,
         overrides = _readopt(base, overrides)
     current = _built(base, overrides)
 
+    from mcp import workshop_local_cells
+    if workshop_local_cells.declaration(current, overrides):
+        try:
+            artifact=workshop_local_cells.compile_design(current,overrides,root=root)
+        except ValueError as problem:
+            return {'schema':SCHEMA,'ok':False,'stage':'drawing','concepts':[],
+                'changes':[],'overrides':overrides,'says':str(problem)}
+        return {'schema':SCHEMA,'ok':True,'stage':'ready','concepts':[],
+            'changes':[],'overrides':overrides,'local_cells':artifact['cells'],
+            'says':'Local material cells preserve the source dimensions; native geometry and use trial required.'}
+
     blocker = workshop_material_support.fixed_lattice_blocker(current, overrides, cell_m=cell_m)
     if blocker:
         return {"schema": SCHEMA, "ok": False, "stage": "drawing", "concepts": [],
