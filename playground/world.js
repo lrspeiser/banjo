@@ -8411,6 +8411,9 @@ function cursorAt(e) {
 // projection is the only way that stays true.
 const throughCursor = new THREE.Raycaster();
 function aimVector() {
+  // Native walking and guided look changes can update the eye between draws.
+  // Use that same current pose for both the press origin and its screen ray.
+  camera.updateMatrixWorld();
   if (!cursor || document.pointerLockElement) return forwardVector();
   throughCursor.setFromCamera(new THREE.Vector2(cursor.x, cursor.y), camera);
   return throughCursor.ray.direction.clone();

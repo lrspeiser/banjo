@@ -50,6 +50,9 @@ GRIP_REACH_M = 1.5
 # One at the middle -- which is where every body's point is when nobody placed
 # one (interaction_points.checked) -- says nothing the middle does not already.
 DECLARED_GRIP_M = 0.02
+# Mirror LiveWorld's native arm boundary for admission, before recording a
+# successful pickup. Native steps still enforce this boundary independently.
+NATIVE_ARM_REACH_M, NATIVE_SHOULDER_ABOVE_CENTER_M = 1.8, 0.55
 
 
 def inventory_of(app: Any, player_id: str = "") -> inventory.Inventory:
@@ -603,6 +606,12 @@ def _request(app: Any, body: Any, player_id: str) -> dict[str, Any]:
             if now is None or not now.get("position_m"):
                 raise ValueError(f"{inventory.said_name(by or asked)} is not in the room to take up")
             grip = [round(v, 4) for v in at] if at is not None else _grip(body.get("grip"), now)
+            native = (_state(app).get('native_players') or {}).get(player_id)
+            if native:
+                offset = _turned(native['orientation_wxyz'], [0, NATIVE_SHOULDER_ABOVE_CENTER_M, 0])
+                shoulder = [p+d for p,d in zip(native['position_m'], offset)]
+                if math.dist(grip, shoulder) > NATIVE_ARM_REACH_M:
+                    raise ValueError('Move closer to pick this up · its handle is out of reach.')
             live({"session": sid, "op": "wield", "name": by, "grip": grip})
             said = {"taken_up": name, "held": True, "grip_m": grip}
             if by != name:

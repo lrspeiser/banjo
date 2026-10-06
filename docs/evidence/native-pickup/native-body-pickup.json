@@ -1,0 +1,208 @@
+{
+  "held": "field pick",
+  "mode": "tool-ready",
+  "last": {
+    "text": "Took up Field pick. Point at ground to preview materials; click or hold to dig.",
+    "tone": "did",
+    "detail": ""
+  },
+  "camera": [
+    0.3802107939388678,
+    2.389865955874682,
+    0.009793642174403287
+  ],
+  "native": {
+    "actuator_angular_impulse_kg_m2_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "actuator_impulse_n_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "actuator_remaining_s": 0.0,
+    "actuator_source": "external; locomotion reactions not supplied",
+    "actuator_work_j": 0.0,
+    "angular_velocity_rad_s": [
+      -0.0031518512405455112,
+      4.2468519723115605e-07,
+      0.002500728704035282
+    ],
+    "body_id": 900000000,
+    "dimensions_m": [
+      0.24,
+      1.7,
+      0.24
+    ],
+    "mass_kg": 70.0,
+    "model": "rigid-avatar-cylinder-v1",
+    "orientation_wxyz": [
+      0.7591680884361267,
+      -5.105495802126825e-06,
+      0.6508947014808655,
+      -2.3342996428254992e-05
+    ],
+    "position_m": [
+      0.3802102921623003,
+      1.6198600776173901,
+      0.00975389395656831
+    ],
+    "velocity_m_s": [
+      -0.0017976467497646809,
+      -1.8622376956045628e-05,
+      -0.0031741373240947723
+    ],
+    "volume_m3": 0.07690618815987812,
+    "walk": {
+      "angular_impulse_kg_m2_s": [
+        78.847152252531,
+        59.348985641288536,
+        -97.62073471217602
+      ],
+      "heading_rad": 1.0811670355835592,
+      "impulse_n_s": [
+        -186.07434244321723,
+        494.4679638509961,
+        -2.0811558015317195
+      ],
+      "remaining_s": 0.43333333333333357,
+      "support": "ground",
+      "support_reaction_n_s": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "supported": true,
+      "swimming": false,
+      "traction_used": 0.003055145188965966,
+      "velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "work_j": 225.46358521137762
+    }
+  },
+  "hand": {
+    "force_n": [
+      0.01624,
+      55.28339,
+      -0.00666
+    ],
+    "grip_m": [
+      0.78118,
+      1.88996,
+      0.4269
+    ],
+    "grip_velocity_m_s": [
+      -0.00277,
+      0.00212,
+      0.00521
+    ],
+    "holding": "field pick",
+    "mode": "grip",
+    "stroke_ended": "",
+    "stroking": false,
+    "target_m": [
+      0.78091,
+      1.88987,
+      0.4273
+    ],
+    "work_j": 57.84125
+  },
+  "tool": [
+    {
+      "anchored": false,
+      "color_rgba": "9fd3ffff",
+      "dent_at_m": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "dent_mm": 0.0,
+      "dimensions_m": [
+        0.4,
+        0.05,
+        0.05
+      ],
+      "held": true,
+      "mass_kg": 2.7,
+      "material": "aluminum",
+      "name": "field pick",
+      "orientation_wxyz": [
+        0.68602,
+        -0.68603,
+        -0.1714,
+        -0.17138
+      ],
+      "position_m": [
+        0.91351,
+        1.88997,
+        0.49743
+      ],
+      "revision": 0,
+      "shape": "box",
+      "velocity_m_s": [
+        -0.00277,
+        0.00211,
+        0.0052
+      ]
+    },
+    {
+      "anchored": false,
+      "color_rgba": "d0d4dcff",
+      "dent_at_m": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "dent_mm": 0.0,
+      "dimensions_m": [
+        0.05,
+        0.05,
+        0.15
+      ],
+      "held": false,
+      "mass_kg": 2.95125,
+      "material": "iron",
+      "name": "field pick-g0",
+      "orientation_wxyz": [
+        0.68602,
+        -0.68603,
+        -0.1714,
+        -0.17138
+      ],
+      "position_m": [
+        1.06795,
+        1.78997,
+        0.57974
+      ],
+      "revision": 0,
+      "shape": "box",
+      "velocity_m_s": [
+        -0.00277,
+        0.0021,
+        0.00519
+      ]
+    }
+  ],
+  "replies": [
+    {
+      "ok": false,
+      "why": "Move closer to pick this up \u00b7 its handle is out of reach."
+    },
+    {
+      "ok": true,
+      "grip": [
+        1.0312,
+        0.7824,
+        0.4476
+      ]
+    }
+  ],
+  "touch": false,
+  "far_refused": "Move closer to pick this up \u00b7 its handle is out of reach.",
+  "reload_keeps_native_hand": true
+}

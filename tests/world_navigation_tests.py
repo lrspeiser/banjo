@@ -19,6 +19,93 @@ class Navigation(unittest.TestCase):
     setUp,start,stop,tearDown,setup_world=(ai.AutonomousGuests.setUp,ai.AutonomousGuests.start,
         ai.AutonomousGuests.stop,ai.AutonomousGuests.tearDown,ai.AutonomousGuests.setup_world)
 
+    def test_opening_pickup_stays_in_native_players_hand(self):
+        self.native_pickup('field pick', False)
+
+    def test_touch_pickup_stays_in_native_players_hand(self):
+        self.native_pickup('field pick-g0', True)
+
+    def native_pickup(self, part, touch):
+        # Reproduce ordinary opening play: live clock, native body, no fly
+        # camera, no paused simulation and no moved/spawned tool fixture.
+        with mock.patch.dict(os.environ, {'BANJO_WORLD_CLOCK':'1'}), \
+             mock.patch.object(ai.server.secrets,'randbelow',side_effect=[0,1]):
+            ident,owner,app=self.setup_world(surface='columns')
+        screens.GameScreens.browser(self,ident,owner)
+        self.page.evaluate('localStorage.setItem("banjo.movement","native")')
+        if touch:
+            self.page.send('Emulation.setDeviceMetricsOverride',{'width':844,'height':390,
+                'deviceScaleFactor':1,'mobile':True})
+            self.page.send('Emulation.setTouchEmulationEnabled',{'enabled':True,'maxTouchPoints':5})
+        self.page.send('Page.navigate',{'url':self.base+f'/world?world={ident}'})
+        self.wait('banjoRoom?.ready() && document.querySelector("#panel-state").textContent==="Live."')
+        self.wait('banjoRoom.controls().movementMode==="native" && !banjoRoom.status().paused')
+        self.wait('!!banjoRoom.world.bodies.get("field pick")')
+        time.sleep(.5)
+        self.page.evaluate('''(()=>{const r=banjoRoom,p=r.world.bodies.get('field pick').mesh.position;
+            r.lookAt(p.x,p.y,p.z);})()''')
+        self.page.evaluate('''(()=>{window.pickupReplies=[];const original=window.fetch;
+            window.fetch=async function(url,options){const response=await original.apply(this,arguments);
+                if(String(url).includes('/api/world/inventory') && options?.body &&
+                    JSON.parse(options.body).op==='take_up')pickupReplies.push(await response.clone().json());
+                return response;};})()''')
+        # Walk away normally, rather than relocating the eye independently of
+        # its body. The old endpoint falsely accepted this grip, then the next
+        # native step dropped it before the hand HUD could stay equipped.
+        def key(code,down):
+            self.page.send('Input.dispatchKeyEvent',{'type':'keyDown' if down else 'keyUp',
+                'code':code,'key':code[-1].lower(),'windowsVirtualKeyCode':ord(code[-1])})
+        def click_pick():
+            self.page.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
+            point=self.page.evaluate(f'''(()=>{{const r=banjoRoom;r.camera.updateMatrixWorld();const v=r.world.bodies.get({json.dumps(part)}).mesh
+                .getWorldPosition(new r.THREE.Vector3()).project(r.camera);
+                return {{x:(v.x+1)*innerWidth/2,y:(1-v.y)*innerHeight/2}};}})()''')
+            self.assertTrue(0<point['x']<self.page.evaluate('innerWidth') and
+                0<point['y']<self.page.evaluate('innerHeight'),point)
+            hit=self.page.evaluate(f'document.elementFromPoint({point["x"]},{point["y"]})?.outerHTML?.slice(0,180)')
+            self.assertIn('id="stage"',hit, {'point':point,'hit':hit})
+            if touch:
+                self.page.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[point]})
+                self.page.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
+            else:
+                for kind in ('mousePressed','mouseReleased'):
+                    self.page.send('Input.dispatchMouseEvent',{'type':kind,**point,'button':'left','clickCount':1})
+        key('KeyS',True);time.sleep(.8);key('KeyS',False);time.sleep(.4)
+        click_pick();self.wait('pickupReplies.length>0')
+        far=self.page.evaluate('pickupReplies.at(-1)')
+        self.assertFalse(far['ok'],far)
+        self.assertIn('Move closer',far['why'])
+        self.assertIn('Move closer',self.page.evaluate('document.querySelector("#world-action-toast").textContent'))
+        self.assertIsNone(self.page.evaluate('banjoRoom.held()'))
+        self.assertEqual('',app.live.session.state.get('player_hands',{}).get(owner['id'],{}).get('holding',''))
+        key('KeyW',True);time.sleep(.8);key('KeyW',False);time.sleep(.4)
+        self.page.evaluate('''(()=>{const r=banjoRoom,p=r.world.bodies.get('field pick').mesh.position;
+            r.lookAt(p.x,p.y,p.z);})()''')
+        click_pick()
+        time.sleep(2)
+        observation=self.page.evaluate('({held:banjoRoom.held()?.name,mode:banjoRoom.use().mode,last:banjoRoom.world.last,camera:banjoRoom.camera.position.toArray()})')
+        state=app.live.session.state
+        observation['native']=state.get('native_players',{}).get(owner['id'])
+        observation['hand']=state.get('player_hands',{}).get(owner['id'])
+        observation['tool']=[b for b in state.get('bodies',[]) if b['name'] in ('field pick','field pick-g0')]
+        observation['replies']=self.page.evaluate('pickupReplies.map(r=>({ok:r.ok,why:r.why,grip:r.room?.grip_m}))')
+        self.assertEqual('field pick',observation.get('held'),observation)
+        self.assertEqual('field pick',observation['hand']['holding'],observation)
+        self.assertTrue(self.page.evaluate('document.body.classList.contains("panel-away")'))
+        self.assertFalse(self.page.evaluate('document.body.classList.contains("chat-open")'))
+        self.page.evaluate('window.beforePickupReload=true;location.reload()')
+        self.wait('!window.beforePickupReload && window.banjoRoom?.ready() && banjoRoom.held()?.name==="field pick"')
+        time.sleep(1)
+        self.assertEqual('field pick',self.page.evaluate('banjoRoom.held()?.name'))
+        self.assertEqual('field pick',app.live.session.state['player_hands'][owner['id']]['holding'])
+        observation['touch']=touch
+        observation['far_refused']=far['why']
+        observation['reload_keeps_native_hand']=True
+        OUT.mkdir(parents=True,exist_ok=True)
+        stem='native-body-pickup-touch' if touch else 'native-body-pickup'
+        (OUT/(stem+'.json')).write_text(json.dumps(observation,indent=2),encoding='utf-8')
+        (OUT/(stem+'.png')).write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot')['data']))
+
     def test_mobile_controls_and_deliberate_panels_from_first_paint(self):
         if not qa_browser.CHROME.is_file():
             if os.environ.get('BANJO_BROWSER_TESTS') == 'required':self.fail('Chrome required')
