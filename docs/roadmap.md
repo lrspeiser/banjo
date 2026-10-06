@@ -14,6 +14,12 @@
 
 # Banjo roadmap and acceptance gates
 
+**Adaptive ground speed requirement, October 5 (design):** [Plan and proposed
+usability gates](adaptive-ground-speed-plan.md) preserve local digging scale
+while grouping uniform solid ground. First measure preparation, repeat cuts and
+collection. Two successful uses per second and a declared five-minute dry shaft
+are targets, not measured acceptance or a new physical law.
+
 **Shared press/hold voice, October 5:** [Host/UI and live-provider checkpoint](voice-shared-chat-checkpoint.md) routes visible microphone/Y input through the selected typed Guide, rover or Lab chat. Persistent Audio starts Off; cancellation stops capture and errors preserve typing. Synthetic Windows browser regressions and one live synthetic rover stop verify routing and returned audio; real phone/human audio acceptance remains open. Voice implementation `0d10f510` and typed checkpoint `1572c275` are published on main and installed in `C:/play`; native laws are unchanged.
 
 **Owner-directed ground matter replacement, October 5 (implementation started):** [Audit and ordered acceptance gates](ground-matter-audit.md) requires authoritative constituent cells across terrain, physical fragments, storage and crafted tools. The [compiled free-solid reference](solid-matter-reference-checkpoint.md) now retains source cells/damage and measures bounded applied work; it is not terrain/tool coupling. Next qualify neighboring attachment, actual finite tool/actuator reactions and native settling; then granular/cohesive ground, collection/manufacture, wet coupling and bounded performance. Add a dimensioned 10 ft excavation-in-minutes journey after integration. Cosmetic receipt flights are removed; fixed-count cube extraction and host-positioned piles remain pending replacement. Preserve private saved quantities. Pickup ordering/repeated retrieval/reload is covered by the [grip checkpoint](tool-grip-recovery-checkpoint.md). Unrelated paused R3 scope is unchanged.

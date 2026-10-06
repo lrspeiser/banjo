@@ -7,6 +7,7 @@
 | Retained mechanic | Measured boundary | Next acceptance step |
 |---|---|---|
 | Dry hand excavation | Oak stroke: 9.452 kg / 100 exact cells / 26.321 J ground work; 77.3 ms native wall, 2.771 s simulated | Browser hand timing and complete reaction/work ledger |
+| Adaptive ground speed | Design only; larger storage blocks retain local bite scale | [Measure actual input/cut/collection, then compression and physical handoff](adaptive-ground-speed-plan.md); proposed 2 successful uses/s and five-minute dry shaft |
 | Funded work cut | Glass/iron rock: 37.5 kg / 468,750 J; oak rock refused; actual native falling/settling | Native read-only quote, calibrated detachment and affordable harder-point progression |
 | Physical collection | Actual mesh click, native reach/occlusion, paired private source-cell receipt, failure/retry/reopen | Sustained excavation/history limits and human/mobile acceptance |
 | Raw tool formation | Stone source: 8.4992 kg at 40 mm, 12.8 kg at 50 mm; finite stock/work/offcuts; installed point survives reopen | Preserve resolved constitutive state through actual manufacturing; calibrate wear/fracture |

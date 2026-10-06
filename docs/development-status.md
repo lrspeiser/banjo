@@ -1,5 +1,10 @@
 # Development status and handoff
 
+**Adaptive ground speed requirement, October 5 (design):** [Plan and proposed
+usability gates](adaptive-ground-speed-plan.md) require quick actual material
+removal while compressing uniform ground. Adaptive handoff and its speed gains
+are not implemented or qualified; existing physical boundaries remain.
+
 **Physical ground and raw tools, October 5 (integration checkpoint):** [Implementation, evidence and remaining gates](physical-ground-gameplay-checkpoint.md) replaces fixed-hit dry-column extraction with measured native hand work or explicitly funded work-cut requests. Exact small source cells move in native connected rigid components, collect into private raw Inventory and feed paid Stone field pick forming. The browser follows native poses rather than cosmetic flight/pile paths; save/retry and finite energy escrow prevent duplicate credit. This is an experimental cut reduction, not constitutive fracture, granular flow or complete conservation. Wet/smooth/machine lanes, affordable fresh-player rock progression, native read-only readiness, the 10 ft gameplay gate and human/mobile acceptance remain bounded or open; R3 stays paused. This entry supersedes historical fixed-click and unimplemented collection statements below.
 
 **Shared press/hold voice, October 5:** [Host/UI and live-provider checkpoint](voice-shared-chat-checkpoint.md) routes visible microphone/Y input through the selected typed Guide, rover or Lab chat. Persistent Audio starts Off; cancellation stops capture and errors preserve typing. Synthetic Windows browser regressions and one live synthetic rover stop verify routing and returned audio; real phone/human audio acceptance remains open. Voice implementation `0d10f510` and typed checkpoint `1572c275` are published on main and installed in `C:/play`; native laws are unchanged.
