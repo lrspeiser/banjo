@@ -39,3 +39,12 @@ Native grip loss during tool preparation remains open as recorded in
 [gameplay diagnostics](gameplay-interaction-trace-checkpoint.md). Physical-phone
 acceptance, native digging readiness/speed and the full regression suite remain
 open. Exact publication is recorded in Git history.
+
+## Published local demo
+
+Implementation and the final checks are on main `c29d8ade`. The stopped local
+checkout at `C:/play` was updated to that revision and restarted on port 18890
+in a supervised terminal, with its existing saved rooms and native binaries.
+The World page returns HTTP 200; served `world.js` bytes equal that checkout
+(SHA-256 prefix `b553a3b9ba0da037`). This establishes the local server's code,
+not the unidentified phone deployment or physical-phone acceptance.
