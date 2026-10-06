@@ -1,5 +1,7 @@
 # Development status and handoff
 
+**Shovel and wear audit, October 6:** [Actual fresh-player check](shovel-wear-audit-2026-10-06.md) verifies finite metal collection and the existing paid pick journey. Native condition explicitly lacks fatigue; a thin custom shovel is refused at the 50 mm solid grid and the catalog has no shovel recipe. No shovel completion-time or lifetime claim is made. Production code/native binaries are unchanged.
+
 **Mobile HUD, October 6:** [Checkpoint](mobile-hud-checkpoint.md) moves the touch movement pad above the actual bottom controls, folds the sidebar in initial HTML and places the map/target/help cards inside explicit Details. Both browser navigation tests pass across portrait, landscape, startup and reload; physical phone acceptance remains open. Native binaries/laws are unchanged.
 
 **Playable material boundary, October 5 (implementation):** [Policy checkpoint](inorganic-game-policy-checkpoint.md) limits named worlds, new-game sources, market stock and AI editing to metals/inorganic components. Coal remains a raw resource. Starter tools use actual aluminum/iron geometry and preset densities; older organic worlds and designs are preserved but excluded from active play. Historical glass/oak/iron comparison laboratories remain available. [Generated opening evidence](inorganic-generated-world-checkpoint.md) records actual native hauling, constituent tool admission and finite resources; this restriction adds no organic, fracture, bending or combustion law.

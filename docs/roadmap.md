@@ -16,6 +16,8 @@
 
 # Banjo roadmap and acceptance gates
 
+**Shovel route, October 6 (blocked):** [Audit](shovel-wear-audit-2026-10-06.md) finds sufficient finite starter metal but no shovel recipe and no admission for its thin blade/handle at 50 mm. Qualify finer local tool geometry, paid shovel make/use and an ordinary timed gathering journey. Fatigue/abrasive wear remains unsupported; the intact paid-pick probe is not lifetime evidence.
+
 **Mobile HUD repair, October 6:** [Checkpoint](mobile-hud-checkpoint.md) verifies menu-clear touch controls and deliberate Details/Chat at startup and reload in desktop, portrait and landscape Chrome. Physical phone acceptance remains required; this does not close broader digging or native locomotion gates.
 
 **Regression audit, October 5 (in progress):** [Audit and remaining gates](regression-audit-2026-10-05.md)

@@ -1,0 +1,261 @@
+{
+  "source_revision": "193ac7beb148ea38e3781357cadafe983e9b880a",
+  "environment": "Windows, Python 3.13, native Release, Chrome browser",
+  "native_runner_sha256": "44F74C1729E8C2BB01B9448A64C76C314E00500E3129CB821F1582D84D404026",
+  "terrain_seed": 4,
+  "goods_seed": 851269742,
+  "timing_scope": "Isolated HTTP/browser automation; gathering calls use declared nearby poses and exclude walking. Not a human completion time.",
+  "paid_pick_browser_fixture_seconds": 20.50004769998486,
+  "material_collection_calls": [
+    {
+      "path": "/api/world/goods/collect",
+      "action": null,
+      "seconds": 0.15792540000984445
+    },
+    {
+      "path": "/api/world/goods/collect",
+      "action": null,
+      "seconds": 0.10273260000394657
+    }
+  ],
+  "collected_kg": [
+    {
+      "iron": 10.9
+    },
+    {
+      "aluminum": 57.3
+    }
+  ],
+  "paid_pick_jobs": [
+    {
+      "status": "installed",
+      "required_j": 565.1250000000001,
+      "supply_required_j": 565.1250000000001,
+      "minimum_duration_s": 1.1302500000000002,
+      "work_j": 565.1250000000001,
+      "product_materials_kg": {
+        "iron": 2.951250000000001,
+        "aluminum": 2.7000000000000006
+      },
+      "started_t_s": null,
+      "finished_t_s": null
+    }
+  ],
+  "pick_condition": {
+    "basis": "minimum of retained bond continuity and supported current thermal section factors",
+    "bodies": [
+      {
+        "bonds": 3,
+        "broken_bonds": 0,
+        "connections_fraction": 1.0,
+        "damaged_bonds": 0,
+        "dent_mm": 0.0,
+        "fraction": 1.0,
+        "fragment": false,
+        "joints": [
+          {
+            "a": "workshop-0cb0d2024643456b-g0",
+            "attached": true,
+            "b": "workshop-0cb0d2024643456b",
+            "breaks_at_n": 0.0,
+            "comes_off_n": 0.0,
+            "holds_shear_n": 425000.00000000006,
+            "holds_tension_n": 625000.0000000001,
+            "id": 6,
+            "kind": "fixing",
+            "parted_because": "",
+            "parted_capacity_n": 0.0,
+            "parted_load_n": 0.0,
+            "section_u_local_a": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "section_u_m": 0.05,
+            "section_v_m": 0.05
+          }
+        ],
+        "material": "iron",
+        "mechanical_model": "",
+        "name": "workshop-0cb0d2024643456b-g0",
+        "parked": false,
+        "source_parts": [
+          "workshop-0cb0d2024643456b-g0"
+        ],
+        "state": "measured",
+        "thermal_fraction": 1.0,
+        "thermal_law": "carbon steel, EN 1993-1-2 Table 3.1"
+      },
+      {
+        "bonds": 13,
+        "broken_bonds": 0,
+        "connections_fraction": 1.0,
+        "damaged_bonds": 0,
+        "dent_mm": 0.0,
+        "fraction": 1.0,
+        "fragment": false,
+        "joints": [
+          {
+            "a": "workshop-0cb0d2024643456b-g0",
+            "attached": true,
+            "b": "workshop-0cb0d2024643456b",
+            "breaks_at_n": 0.0,
+            "comes_off_n": 0.0,
+            "holds_shear_n": 425000.00000000006,
+            "holds_tension_n": 625000.0000000001,
+            "id": 6,
+            "kind": "fixing",
+            "parted_because": "",
+            "parted_capacity_n": 0.0,
+            "parted_load_n": 0.0,
+            "section_u_local_a": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "section_u_m": 0.05,
+            "section_v_m": 0.05
+          }
+        ],
+        "material": "aluminum",
+        "mechanical_model": "",
+        "name": "workshop-0cb0d2024643456b",
+        "parked": false,
+        "source_parts": [
+          "workshop-0cb0d2024643456b"
+        ],
+        "state": "measured",
+        "thermal_fraction": null,
+        "thermal_law": ""
+      }
+    ],
+    "fatigue_supported": false,
+    "repair_supported": false,
+    "schema": "banjo.body-condition.v1",
+    "time_s": 6.508333333333284
+  },
+  "shovel_catalog_matches": [],
+  "shovel_source": {
+    "kind": "custom",
+    "design_id": "audit-metal-shovel",
+    "purpose": "Metal shovel",
+    "parameters": {
+      "primary_use": {
+        "label": "Study tool",
+        "steps": [
+          {
+            "do": "inspect"
+          }
+        ]
+      },
+      "ground_tool": {
+        "point": {
+          "component": "blade",
+          "tip_local_m": [
+            0.1,
+            0,
+            0
+          ],
+          "direction_local": [
+            1,
+            0,
+            0
+          ],
+          "width_m": 0.18,
+          "thickness_m": 0.003,
+          "angle_deg": 30,
+          "length_m": 0.2
+        },
+        "grip": {
+          "component": "handle",
+          "position_local_m": [
+            -0.2,
+            0,
+            0
+          ]
+        }
+      }
+    },
+    "component_overrides": {
+      "@construction": {
+        "schema": "banjo.workshop-construction.v1",
+        "added": [
+          {
+            "name": "handle",
+            "role": "handle",
+            "shape": "box",
+            "size_m": [
+              0.6,
+              0.03,
+              0.03
+            ],
+            "center_m": [
+              0.0,
+              0.015,
+              0.0
+            ],
+            "rotation_deg": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "material": "aluminum",
+            "family": "beam"
+          },
+          {
+            "name": "blade",
+            "role": "tool-head",
+            "shape": "box",
+            "size_m": [
+              0.2,
+              0.003,
+              0.18
+            ],
+            "center_m": [
+              0.4,
+              0.0015,
+              0.0
+            ],
+            "rotation_deg": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "material": "iron",
+            "family": "panel"
+          }
+        ],
+        "joints": [
+          {
+            "id": "joint-1",
+            "kind": "fixed",
+            "method": "bonded",
+            "a": "handle",
+            "b": "blade"
+          }
+        ],
+        "joints_authored": true
+      }
+    }
+  },
+  "shovel_authored_materials_kg": {
+    "aluminum": 1.4579999999999997,
+    "iron": 0.84996
+  },
+  "world_cell_m": 0.05,
+  "shovel_make_review": {
+    "status": 400,
+    "error": {
+      "error": "Cannot make blade (iron), handle (aluminum): Every fixed constituent needs its own occupied cells. You can save the design.",
+      "persistence": {
+        "state": "saved",
+        "reason": "",
+        "saved_t_s": 6.508333333333284,
+        "attempted_t_s": 6.508333333333284
+      }
+    }
+  },
+  "shovel_review_seconds": 0.0213303999917116,
+  "quote_did_not_create_job": true,
+  "quote_did_not_spend_stock": true
+}

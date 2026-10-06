@@ -1,5 +1,7 @@
 # Banjo mechanics scorecard
 
+**Pick wear/shovel audit, October 6:** [Recorded check](shovel-wear-audit-2026-10-06.md) observes an intact paid aluminum/iron pick after ordinary and funded use, with native fatigue/repair explicitly unsupported. A 3 mm iron blade/30 mm aluminum handle source is refused by the 50 mm solid grid before spending stock. Finite starter metal collection works; shovel fabrication and timed human gathering remain unqualified. Native laws/binaries are unchanged.
+
 **Playable material boundary, October 5 (implementation):** [Policy checkpoint](inorganic-game-policy-checkpoint.md) limits named worlds, new-game sources, market stock and AI editing to metals/inorganic components. Coal remains a raw resource. Starter tools use actual aluminum/iron geometry and preset densities; older organic worlds and designs are preserved but excluded from active play. Historical glass/oak/iron comparison laboratories remain available. [Generated opening evidence](inorganic-generated-world-checkpoint.md) records actual native hauling, constituent tool admission and finite resources; this restriction adds no organic, fracture, bending or combustion law.
 
 **October 5 regression maintenance:** [Audit](regression-audit-2026-10-05.md)
