@@ -27,7 +27,9 @@ Native bow laboratories use hinged rigid limb levers, elastic joints, tension-on
 
 ## Verification
 
-Windows / Python 3.13 / Chrome / unchanged MSVC Release native binaries in `build/local-cell-tools`, based on main `eaf9e306`. Final publication revision and demo activation are recorded below after publishing.
+Windows / Python 3.13 / Chrome / unchanged MSVC Release native binaries in `build/local-cell-tools`, based on main `eaf9e306`.
+
+**Published implementation:** `76b9f7e3` on GitHub main. The preserved `C:/play` demo checkout runs this revision at `http://localhost:18890`; Python restarted gracefully with unchanged native binaries and a rooms backup in `C:/play/backups/tool-authoring-76b9f7e3`. The existing owner world was reloaded in the in-app browser: the stage renders, status is `Live.`, saved stock is retained and chat starts closed. No owner item was manufactured, picked up or consumed by this smoke check.
 
 - An uncatalogued **Delta trench cutter**, authored through the same bounded calls offered to the LLM, uses components `spine-A` and `edge-B`: a 500 × 30 × 30 mm aluminum beam and 200 × 12 × 180 mm iron edge, actual shared face fixing, 4.61484 kg. No runtime/catalog dispatch entry is added for this product.
 - Landscape paid Make consumes finite collected aluminum/iron, produces an owned product, equips it, and preserves exact source geometry and private identity through restart.
