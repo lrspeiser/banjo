@@ -119,7 +119,7 @@ export function renderPlayerGuidance(root,data,api) {
     // an explicit click or F1. Status reads never launch provider work.
     if(!same) {
       const phase=project && `${project.item}:${project.status}`;
-      const automatic=phase && !turn.seenEvents.has(phase);
+      const automatic=false; // Model advice requires an explicit Ask AI/F1.
       if(automatic) {
         turn.seenEvents.add(phase);
         if(turn.seenEvents.size>64)turn.seenEvents.delete(turn.seenEvents.values().next().value);

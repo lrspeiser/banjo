@@ -1,5 +1,7 @@
 # Banjo mechanics scorecard
 
+**Build and shared typed chat, October 5:** [Host/UI checkpoint](build-lab-chat-checkpoint.md) exposes source selection, reversible Lab edits, visible Save and paid Make review, material-context recipe navigation and a compact targeted rover chat. World guidance is explicit, with clean World URLs. Isolated Windows desktop/landscape checks cover draft reload, native paid collection and failed turns; native laws are unchanged. Voice is the next separate checkpoint, and the pre-existing process-input guidance priority failure remains open.
+
 **Constituent solid reference, October 5:** [Measured boundary](solid-matter-reference-checkpoint.md)
 qualifies a free 125-cell patch under bounded external traction, preserving
 cells/damage and auditing source work, momentum and numerical error. It is an

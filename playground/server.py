@@ -1450,7 +1450,7 @@ class Handler(BaseHTTPRequestHandler):
             # than in a page of its own, which is how there came to be seven.
             allowed={"/":"world.html","/world":"world.html","/world.html":"world.html",
                 "/world.js":"world.js","/gameplay.js":"gameplay.js","/game_menu.js":"game_menu.js","/world.css":"world.css",
-                "/base.css":"base.css","/body_condition.js":"body_condition.js",
+                "/base.css":"base.css","/body_condition.js":"body_condition.js","/chat_actions.js":"chat_actions.js",
                 "/workshop.js":"workshop.js","/workshop.css":"workshop.css",
                 "/blades.js":"blades.js","/interaction.js":"interaction.js","/tools.js":"tools.js","/workbench.js":"workbench.js",
                 "/cellmesh.js":"cellmesh.js","/surfaces.js":"surfaces.js",

@@ -1747,6 +1747,12 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/proactive_guidance_tests.py -v)
     set_tests_properties(banjo_proactive_guidance_tests PROPERTIES TIMEOUT 180)
+    add_test(NAME banjo_build_lab_chat_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/build_lab_chat_tests.py -v)
+    set_tests_properties(banjo_build_lab_chat_tests PROPERTIES TIMEOUT 180)
     add_test(NAME banjo_construction_project_tests
         COMMAND ${CMAKE_COMMAND} -E env
             BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>

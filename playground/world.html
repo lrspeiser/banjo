@@ -71,6 +71,7 @@ if(await menu.enterGame()){
 }
 </script>
 <script type="module">
+import {renderChatActions} from '/chat_actions.js';
 if(new URLSearchParams(location.search).has("workshop")){
   const ready=()=>document.querySelector("#ws-component-chat");
   if(!ready())await new Promise(resolve=>{const observer=new MutationObserver(()=>{if(ready()){observer.disconnect();resolve()}});observer.observe(document.documentElement,{childList:true,subtree:true})});
@@ -127,25 +128,23 @@ if(new URLSearchParams(location.search).has("workshop")){
     }
     log.scrollTop=log.scrollHeight;
   });
-  function gameHelp(){return new URLSearchParams(location.search).get('tab')!=='lab'||document.querySelector('#design-workshop')?.classList.contains('lab-empty')}
+  function gameHelp(){return !['lab','build','recipes'].includes(new URLSearchParams(location.search).get('tab'))||document.querySelector('#design-workshop')?.classList.contains('lab-empty')}
   function finishWorking(){if(pendingBubble)pendingBubble.remove();pendingBubble=null;pendingOriginal="";status.textContent="";form.dataset.busy="false";textarea.disabled=false;if(send)send.disabled=false}
   addEventListener("banjo-workshop-chat-finished",event=>{if(!pendingBubble)return;finishWorking();if(event.detail?.error)assistant(event.detail.error)});
-  function assistant(text,tools=[],changed=[],asking=null){const clean=String(text||"").trim()||"Done.";const row=appendMessage("assistant",clean,{tools,changed});if(asking&&Array.isArray(asking.options)&&asking.options.length)ask(row,asking);history.push({role:"assistant",content:clean});if(history.length>20)history.splice(0,history.length-20)}
+  function assistant(text,tools=[],changed=[],asking=null,actions=[]){const clean=String(text||"").trim()||"Done.";const row=appendMessage("assistant",clean,{tools,changed});if(asking&&Array.isArray(asking.options)&&asking.options.length)ask(row,asking);renderChatActions(row,actions);history.push({role:"assistant",content:clean});if(history.length>20)history.splice(0,history.length-20)}
   appendMessage("assistant",gameHelp()?"Ask about your energy, supplies or next goal. I can read your current game state.":"I can work on the whole design or a selected component. Tell me what you want changed, or ask me to inspect the geometry or physics first.");
   // Things to ask for, because a blank box is the hardest question on the page.
   // The owner: "perhaps we have some suggested chat messages below like 'Ask me
   // to drop a bowling ball on the item' and it will do that and show you."
   // Every one of these is a real turn -- nothing here is a canned answer.
   const SUGGESTIONS=[
-    "Find the weight that breaks it: work up until it gives way",
-    "Throw blocks at it from light to heavy and show me where it shatters",
-    "Drop a 20 kg iron block on it from 2 m and show me what happens",
-    "Show me the solar power from midnight through daybreak to noon",
-    "Make all four legs 50 mm and tell me what that does to its weight",
-    "What would it take to make this, and does the rack have it?",
+    "Make the handle longer",
+    "Why can't I make this?",
+    "What would it take to make this?",
+    "Undo my last edit",
   ];
   const suggestions=el("div",{class:"ws-chat-suggestions","aria-label":"Things to ask for"});
-  function refreshSuggestions(){suggestions.replaceChildren();for(const line of (gameHelp()?["Why am I not collecting energy?","What should I do next?","What supplies do I need?"]:SUGGESTIONS)){
+  function refreshSuggestions(){suggestions.replaceChildren();for(const line of (gameHelp()?["Use what I have to make a pick","What should I do next?","Why am I not collecting energy?"]:SUGGESTIONS)){
     const chip=el("button",{type:"button",class:"ws-suggestion"},line);
     chip.addEventListener("click",()=>{textarea.value=line;form.requestSubmit()});
     suggestions.append(chip);
@@ -157,7 +156,7 @@ if(new URLSearchParams(location.search).has("workshop")){
   function deicticEditWithoutSelection(message){if(selectedComponentName())return false;if(/\b(drop|throw|hit|strike|push|slide|load|put|place|test|try|run|show|watch|simulate|break)\b/i.test(message))return false;const words=' '+message.toLowerCase().replace(/[^a-z0-9-]+/g,' ')+' ',named=[...document.querySelectorAll('#ws-parts .ws-part-link')].some(part=>words.includes(' '+part.textContent.toLowerCase().trim()+' '));if(named||/\b(whole|entire) (design|item|object|assembly)\b/i.test(message))return false;const edit=/\b(longer|shorter|thicker|thinner|wider|narrower|material|iron|oak|aluminum|aluminium)\b/i.test(message),deictic=/\b(this|that|it|selected|the part)\b/i.test(message),semanticSet=/\b(legs?|wheels?|posts?|beams?|braces?|aprons?|stretchers?|axles?|handles?|tops?|surfaces?|panels?|shelves?)\b/i.test(message);return edit&&deictic&&!semanticSet}
   function conversationContext(current){if(!keyConfigured)return current;const prior=history.slice(0,-1).slice(-10),lines=prior.map(row=>`${row.role==="user"?"User":"Workshop"}: ${row.content}`),selection=selectedComponentName(),selectionLine=selection?`The user currently has component ${selection} selected in the 3D Workshop.`:"No component is selected in the 3D Workshop. If the API transports a placeholder component, do not treat it as a user selection.";return ["WORKSHOP CONVERSATION CONTEXT (use this for references such as 'those' or 'a little more'):",...lines,selectionLine,`CURRENT USER REQUEST: ${current}`].join("\n")}
   form.addEventListener("submit",event=>{const message=textarea.value.trim();if(!message||form.dataset.busy==='true')return;const help=gameHelp();if(!help&&deicticEditWithoutSelection(message)){event.preventDefault();event.stopImmediatePropagation();assistant("Which component do you mean? Click it in the 3D view, or name the group—for example, ‘all the legs’.");return}if(!help&&!selectedComponentName())$("#ws-parts .ws-part-link")?.click();pendingOriginal=message;form.dataset.busy="true";history.push({role:"user",content:message});if(history.length>20)history.splice(0,history.length-20);appendMessage("user",message);pendingBubble=appendMessage("assistant",help?"Reading your current game state…":"Working… inspecting the design and choosing Workshop tools.",{working:true});status.textContent=help?"Checking energy, inventory and goals.":"Working — the design stays unchanged until this turn completes.";textarea.disabled=true;if(send)send.disabled=true},true);
-  const nativeFetch=window.fetch.bind(window);window.fetch=async function(resource,init={}){let isChat=false,requestBody=null;const url=typeof resource==="string"?resource:String(resource?.url||resource);if((url.includes("/api/workshop/candidates")||url.includes('/api/world/help'))&&init&&typeof init.body==="string"){try{requestBody=JSON.parse(init.body);isChat=Boolean(requestBody&&(requestBody.component_chat||url.includes('/api/world/help')));if(isChat&&pendingOriginal){if(requestBody.component_chat){requestBody.component_chat.message=conversationContext(pendingOriginal);status.textContent=keyConfigured?"Working — Workshop may inspect geometry, physics, library items and apply multiple edits.":"Working — applying deterministic Workshop tools."}else{requestBody.history=history.slice(0,-1).slice(-10).map(row=>({...row,content:row.content.slice(0,4000)}))}init={...init,body:JSON.stringify(requestBody)}}}catch{}}try{const response=await nativeFetch(resource,init);if(isChat){let answer=null;try{answer=await response.clone().json()}catch{}if(response.ok&&answer&&(answer.workshop_chat||answer.game_chat)){const chat=answer.workshop_chat||answer.game_chat;finishWorking();assistant(chat.reply||"Done.",Array.isArray(chat.tool_trace)?chat.tool_trace:[],Array.isArray(chat.changed)?chat.changed:[],chat.asking||null)}else if(!response.ok){finishWorking();assistant(`I couldn't complete that turn: ${(answer&&answer.error)||`request failed (${response.status})`}`)}else{finishWorking();assistant("That turn came back with nothing in it. Nothing has changed; ask again.")}}return response}catch(problem){if(isChat){finishWorking();assistant(`I couldn't reach the assistant: ${problem.message||problem}`)}throw problem}};
+  const nativeFetch=window.fetch.bind(window);window.fetch=async function(resource,init={}){let isChat=false,requestBody=null;const url=typeof resource==="string"?resource:String(resource?.url||resource);if((url.includes("/api/workshop/candidates")||url.includes('/api/world/help'))&&init&&typeof init.body==="string"){try{requestBody=JSON.parse(init.body);isChat=Boolean(requestBody&&(requestBody.component_chat||url.includes('/api/world/help')));if(isChat&&pendingOriginal){if(requestBody.component_chat){requestBody.component_chat.message=conversationContext(pendingOriginal);status.textContent=keyConfigured?"Working — Workshop may inspect geometry, physics, library items and apply multiple edits.":"Working — applying deterministic Workshop tools."}init={...init,body:JSON.stringify(requestBody)}}}catch{}}try{const response=await nativeFetch(resource,init);if(isChat){let answer=null;try{answer=await response.clone().json()}catch{}if(response.ok&&answer&&(answer.workshop_chat||answer.game_chat)){const chat=answer.workshop_chat||answer.game_chat;finishWorking();assistant(chat.reply||"Done.",Array.isArray(chat.tool_trace)?chat.tool_trace:[],Array.isArray(chat.changed)?chat.changed:[],chat.asking||null,chat.actions||[])}else if(!response.ok){finishWorking();assistant(`I couldn't complete that turn: ${(answer&&answer.error)||`request failed (${response.status})`}`)}else{finishWorking();assistant("That turn came back with nothing in it. Nothing has changed; ask again.")}}return response}catch(problem){if(isChat){finishWorking();assistant(`I couldn't reach the assistant: ${problem.message||problem}`)}throw problem}};
   textarea.addEventListener("keydown",event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();if(!textarea.disabled)form.requestSubmit()}});
 }
 </script>

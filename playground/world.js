@@ -25,6 +25,7 @@ import { makeTools } from "/tools.js";
 import { makeWorkbench } from "/workbench.js";
 import { gameNavigation, showSaveStatus, screenUrl, thumbnail, massLabel, useItemPictures, itemPicture, keepItemPicture } from "/game_menu.js";
 import { conditionPanel } from "/body_condition.js";
+import { renderChatActions, guideHistory, rememberGuide, actionUrl } from '/chat_actions.js';
 import { GROUND_APPEARANCE, materialAppearance, terrainCellAt, terrainHitPoint, terrainTargetPath, exposedRunKind, toolTargetFeedback, toolTargetColor, collectedToolMaterials, toolOutcomeFeedback, makeTargetHover, cellWaterData, columnTopData, walkColumnFaces, columnChunkIds, columnChunkBox } from "/material_appearance.js";
 import { terrainMaterial } from "/terrain_material.js";
 import { makeRegions } from "/ground_regions.js";
@@ -2894,6 +2895,7 @@ function setPressed(id, on, disabled = false) {
 // The panel, from the controller as the last step -- or the last command's
 // answer -- left it. With every step: only what changed is written.
 function showMachinePanel() {
+  $('machine-panel').classList.toggle('compact-rover',machinePanel.of==='program' && shownControl()?.kind==='roam');
   if (machinePanel.id == null) return;
   const c = shownControl();
   if (!c) {
@@ -3081,6 +3083,15 @@ function sensorReading(s) {
   return `${reading}${s.sees ? " · ⚠" : ""}`;
 }
 function showProgramPanel(p) {
+  if(p.kind==='roam') {
+    setText('mp-kind','Rover');setText('mp-name',titled(p.name));
+    let root=$('mp-rover-simple');
+    if(!root){root=document.createElement('section');root.id='mp-rover-simple';$('mp-name').closest('header').after(root);}
+    root.replaceChildren(compactRover(p));root.hidden=false;
+    $('mp-talk').hidden=false;$('mp-talk').textContent='Talk to rover';
+    $('mp-ack').textContent=machinePanel.said;return;
+  }
+  if($('mp-rover-simple'))$('mp-rover-simple').hidden=true;
   panelRows(true);
   setText("mp-kind", "Machine with a program");
   setText("mp-name", titled(p.name));
@@ -3143,6 +3154,48 @@ function showProgramPanel(p) {
   setText("mp-ack", machinePanel.said);
   $("mp-ack").classList.toggle("stale", machinePanel.stale);
   if ($("machine-panel").hidden) $("machine-panel").hidden = false;
+}
+
+// One compact view of measured machine state, shared by selection and Controls.
+function compactRover(p) {
+  const root=document.createElement('section');root.className='rover-card';root.dataset.rover=p.name;
+  root.append(thumbnail({name:p.name,label:titled(p.name),kind:'rover'}));
+  const routine=world.brains.get(p.name)?.routine;
+  const stuck=!!routine?.recovery || p.doing==='stuck';
+  const energy=energyOf(p),low=(p.charge_share || 0)<= (p.rest_below || 0);
+  const status=stuck?'Stuck':low?'No power':!p.power || ['waiting','resting'].includes(p.doing)?'Idle':'Working';
+  const heading=document.createElement('strong');heading.textContent=titled(p.name);root.append(heading);
+  const state=document.createElement('p');state.dataset.roverStatus=status;state.textContent=status+(p.why?' · '+p.why:'');root.append(state);
+  const meter=document.createElement('progress');meter.max=1;meter.value=p.charge_share || 0;meter.setAttribute('aria-label','Rover energy');
+  const value=document.createElement('p');value.textContent='Energy · '+(energy?`${joulesSaid(energy.store.charge_j)} / ${joulesSaid(energy.store.capacity_j)}`:`${Math.round(100*(p.charge_share || 0))}%`);root.append(meter,value);
+  const cargo=document.createElement('div');cargo.className='rover-cargo';
+  const holders=machineHolders(p,holdersNow());
+  for(const holder of holders) {
+    const line=document.createElement('p');line.textContent=holder.name+(holder.capacity_kg!=null?` · capacity ${massLabel(holder.capacity_kg)}`:'');cargo.append(line);
+    for(const {what:material,kg} of holder.slots || []) {
+      const tile=document.createElement('span');tile.append(thumbnail({material,name:material}));
+      tile.append(document.createTextNode(`${titled(material)} · ${massLabel(kg)}`));cargo.append(tile);
+    }
+  }
+  if(!holders.length || holders.every(h=>!h.slots?.some(s=>s.kg>0))) {
+    const empty=document.createElement('p');empty.textContent='Cargo · Empty';cargo.append(empty);
+  }
+  root.append(cargo);
+  const talkButton=document.createElement('button');talkButton.type='button';talkButton.textContent='Talk to rover';
+  talkButton.onclick=()=>talkToTarget(p);talkButton.disabled=!!watchedId;root.append(talkButton);
+  const action=document.createElement('button');action.type='button';action.dataset.roverCommand=stuck?'recover':p.power?'stop':'start';
+  action.textContent=stuck?(world.held?.recovery===p.id?'Release rover':'Recover'):p.power?'Stop':'Start';
+  action.disabled=!!watchedId || recoveryBusy || world.asking;
+  action.onclick=async()=>{if(stuck)return recoverRover(p,world.held?.recovery===p.id?'release':'start');
+    if(machinePanel.id!==p.id)openMachinePanel(p);await commandMachine({power:!p.power});};root.append(action);
+  return root;
+}
+
+async function talkToTarget(p) {
+  if(watchedId)return;
+  await refreshChatRecipients();
+  chatRecipient.value='robot:'+p.name;renderChatRecipient();talk();
+  $('ask-text').placeholder=`Tell ${titled(p.name)} what to do, or ask why`;
 }
 
 // Who decides for this program -- its reflexes, Jev, or the chat's OpenAI
@@ -3267,7 +3320,7 @@ async function closeTalk(tell = true) {
   } catch { /* it goes on when the ask runs out, or on the next open */ }
   showMachinePanel();
 }
-$("mp-talk").addEventListener("click", openTalk);
+$("mp-talk").addEventListener("click", () => {const p=shownControl();if(p)talkToTarget(p);});
 $("mp-chat-close").addEventListener("click", () => closeTalk(true));
 $("mp-chat-form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -5856,6 +5909,9 @@ function showPicked() {
   if (details) details.hidden = true;     // one card about one thing, not two
   $("interaction-controls").hidden=true;
   const rows = [];
+  const rover=picked.name && programsNow().find(p=>p.kind==='roam' &&
+    (p.name===picked.name || sameThing(p.body,picked.name)));
+  if(rover) {box.replaceChildren(compactRover(rover));return;}
 
   if (picked.resource) {
     const pile = world.goods?.stockpiles?.find(p=>p.name===picked.resource);
@@ -11469,7 +11525,7 @@ $("ask").addEventListener("submit", async (e) => {
     }
     if(recipient!=='actions') {
       const prior=privateTurns.get(recipient)||[];
-      const history=prior.slice(-10).map(({role,content})=>({role,content:content.slice(0,4000)}));
+      const history=(recipient==='guide'?guideHistory():prior.slice(-10).map(({role,content})=>({role,content:content.slice(0,4000)})));
       let answer,name='AI Guide';
       if(recipient==='guide')answer=await api('/api/world/help',{screen:'world',message:text,history,
         ...(picked.name||world.held?.name?{focus:picked.name||world.held?.name}:{})});
@@ -11477,7 +11533,12 @@ $("ask").addEventListener("submit", async (e) => {
       else {const program=recipient.slice(6);answer=await api('/api/world/rover/talk',{session:world.session,program,said:text,person:whereIAm()});name=program;if(answer.program)mergeProgram(answer.program)}
       const reply=answer.game_chat?.reply||answer.reply||'(nothing to say)';
       prior.push({role:'user',content:text},{role:'assistant',content:reply,name});privateTurns.set(recipient,prior.slice(-40));
-      waiting.done();const turn=say('world',reply);turn.querySelector('.who').textContent=name;return;
+      waiting.done();const turn=say('world',reply);turn.querySelector('.who').textContent=name;
+      if(recipient==='guide') {
+        rememberGuide('user',text);rememberGuide('assistant',reply);renderChatActions(turn,answer.game_chat?.actions);
+        const action=answer.game_chat?.actions?.find(a=>a.open && a.selection);const url=action && actionUrl(action);if(url)location.href=url;
+      }
+      return;
     }
     const answer = await api("/api/world/ask", {
       session: world.session,
@@ -11711,10 +11772,13 @@ function showToolSkills() {
 
 // The same authenticated next action is shown in every game screen and chat.
 let guidanceBusy=false, guidanceReadAt=-Infinity;
+let worldHelpRequested=false;
+addEventListener('keydown',event=>{if(event.key==='F1' && !event.repeat){event.preventDefault();worldHelpRequested=true;guidanceReadAt=-Infinity;showNextStep();}});
 async function showNextStep() {
   const root=$("next-step");
   const chat=$("talk");
   if(root && chat && root.parentElement!==chat.parentElement)chat.before(root);
+  if(root && !worldHelpRequested && !world.placing?.project){root.hidden=true;return;}
   if (!root || !worldId || !world.session || watchedId || guidanceBusy || performance.now()-guidanceReadAt<4500) return;
   guidanceBusy=true;guidanceReadAt=performance.now();
   try {

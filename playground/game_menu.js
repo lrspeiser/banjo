@@ -236,7 +236,10 @@ export const screenText = text => String(text || "").replace(/\b(Recipes|Market|
 
 export function screenUrl(screen) {
   const current = new URLSearchParams(location.search), query = new URLSearchParams();
-  for (const key of ["world", "scene", "carry", "design", "library", "recipe", "job"]) if (current.get(key)) query.set(key, current.get(key));
+  // World returns to play. Design selection belongs to the editor, and must
+  // not keep resurfacing unrelated recipe guidance on a plain World URL.
+  const keys = screen === 'world' ? ['world','scene'] : ['world','scene','carry','design','library','recipe','job'];
+  for (const key of keys) if (current.get(key)) query.set(key, current.get(key));
   if (screen !== "world") { query.set("workshop", "1"); query.set("tab", screen); }
   return `/world${query.size ? "?" + query : ""}`;
 }

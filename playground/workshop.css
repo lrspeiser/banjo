@@ -781,6 +781,16 @@ body.workshop-mode #ws-build-editor .ws-viewport {flex:1 0 300px;min-height:300p
 #ws-build-tools {padding:12px;}
 #ws-build-tools[hidden] {display:none;}
 #ws-draft-save[hidden],#ws-draft-build[hidden] {display:none;}
+/* Selected draft: one preview, concise values, explicit save and paid review. */
+#ws-player-guidance[hidden] {display:none!important;}
+#ws-lab-draft input {box-sizing:border-box;width:100%;margin:8px 0;padding:8px;background:#101b24;color:var(--ink);border:1px solid var(--edge);border-radius:6px;}
+#ws-build-editor #ws-check,#ws-build-editor #ws-make,#ws-build-editor #ws-quick-save,
+#ws-build-editor .ws-bar-link {display:none;}
+#ws-build-editor #ws-takes {display:none;}
+#ws-recipes-templates .ws-recipe-readiness,#ws-rec-next .ws-recipe-readiness,
+.ws-hub-build .ws-recipe-skill {display:none;}
+.chat-actions {display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
+.chat-actions .ws-action {font-size:.75rem;}
 #ws-build-tools > section,#ws-build-tools > div {margin-top:10px;}
 #ws-build-tools #ws-lab-components {padding:0;}
 #ws-build-tools #ws-remake {border:1px solid var(--edge);border-radius:8px;padding:10px;}

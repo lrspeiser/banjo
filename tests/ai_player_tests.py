@@ -1101,9 +1101,9 @@ class AutonomousGuests(unittest.TestCase):
         self.assertEqual({},journal.data['evidence'],'pickup and guidance must not earn a skill')
         # The panel starts folded (Details opens it); the box is in it.
         self.assertIn('Dig soil or sand',page.evaluate('document.querySelector("#tool-skill").textContent'))
-        # The next action is always shown now (one guide for every screen),
-        # beside the tool's own progress.
-        self.assertFalse(page.evaluate('document.querySelector("#next-step").hidden'))
+        # World guidance stays behind explicit help; measured tool progress
+        # remains available without a permanent instruction card.
+        self.assertTrue(page.evaluate('document.querySelector("#next-step").hidden'))
         key('KeyJ','j')
         wait('document.querySelector("#tool-skill").classList.contains("is-working")')
         self.assertEqual('0 / 1',page.evaluate('document.querySelector("#tool-skill output").textContent'))

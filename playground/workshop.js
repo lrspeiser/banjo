@@ -6,6 +6,7 @@ import { gameNavigation, refreshNavigation, showSaveStatus, screenUrl, screenGro
 import { conditionPanel } from "/body_condition.js";
 import { renderPlayerGuidance, guidanceUrl } from "/player_guidance.js";
 import { placementUrl } from "/construction_ui.js";
+import { guideHistory, rememberGuide } from '/chat_actions.js';
 
 const $ = (q) => document.querySelector(q);
 const worldId = new URLSearchParams(location.search).get("world");
@@ -1617,10 +1618,17 @@ function installBench() {
   machineBench.hidden = true;
   centre.append(takes, viewport, machineBench);
   const empty = make("section", {id:"ws-empty", "aria-label":"Empty lab"});
-  empty.append(make("h2", {}, "Your lab is empty"),
-    make("p", {}, "Select a recipe here, or bring an item from Inventory."));
+  empty.append(make("h2", {}, "Choose something to make or edit"),
+    make("p", {}, "Start with a field pick, or select an item from your hands, bag or saved designs."));
+  const firstTool=make('button',{type:'button',class:'ws-action primary',id:'ws-first-tool'},'Make my first tool');
+  firstTool.onclick=()=>guard(firstTool,async()=>{const recipes=await api('/api/workshop/recipes');
+    const recipe=recipes.templates.find(t=>t.name==='Personal field pick');
+    if(!recipe)throw Error('This world has no field pick recipe');
+    await selectChatSource({selection:{source:'recipe',id:recipeKey(recipe)}});});empty.append(firstTool);
   const pick = make("button", {type:"button", class:"ws-action"}, "Choose from Inventory");
   pick.onclick = () => showTab("inventory"); empty.append(pick);
+  const saved=make('button',{type:'button',class:'ws-action'},'Choose a saved design');
+  saved.onclick=()=>{$('#ws-rec-saved').scrollIntoView({block:'start'});};empty.append(saved);
   viewport.append(empty);
   const clear = make("button", {id:"ws-clear-lab", type:"button", class:"ws-action"}, "Clear Lab");
   clear.onclick = () => guard(clear,async()=>{if(worldId)await api('/api/world/guidance',{action:'clear-project'});
@@ -2730,7 +2738,7 @@ function recipeSource(t) {
 function installRecipes() {
   const pane = $("#ws-pane-recipes");
   pane.replaceChildren(make("h2", {}, "Recipes"));
-  pane.append(make("p", {class:"ws-recipes-intro"}, "Make places an item in the World. Pick it up there to add it to your bag."),
+  pane.append(make("p", {class:"ws-recipes-intro"}, "Choose → Edit in chat → Save design / Review Make → Inventory or World"),
     make("div", {id:"ws-recipe-filter", class:"ws-recipe-filter", role:"group", "aria-label":"Filter recipes by material"}),
     make("p", {id:"ws-recipe-filter-status", class:"ws-note", role:"status"}),
     make("h3", {id:"ws-rec-build-title"}, "Useful now"), make("ul", {id:"ws-recipes-templates", class:"ws-list ws-recipe-grid"}));
@@ -2749,7 +2757,7 @@ function installRecipes() {
   const blocks = screenSection(pane, "Building blocks", "ws-rec-blocks", "ws-design-groups");
   blocks.id = "ws-rec-blocks-section";
   const start = make("button", {type:"button", class:"ws-action"}, "New design → Choose a block");
-  start.onclick = () => { setRecipeMaterial(""); blocks.scrollIntoView({block:"start", behavior:"smooth"}); };
+  start.onclick = () => { setRecipeMaterial(""); if(blocks.parentElement.tagName==='DETAILS')blocks.parentElement.open=true;blocks.scrollIntoView({block:"start", behavior:"smooth"}); };
   const jumps = make("div", {class:"ws-inventory-actions"});
   const saved = make("button", {type:"button", class:"ws-action"}, "Saved designs");
   saved.onclick = () => { setRecipeMaterial(""); $("#ws-rec-saved").scrollIntoView({block:"start", behavior:"smooth"}); };
@@ -2760,6 +2768,10 @@ function installRecipes() {
   processes.append(make("summary", {}, "World processes"), make("ul", {id:"ws-recipes-room", class:"ws-list"}),
     make("ul", {id:"ws-recipes-deposits", class:"ws-list"}));
   pane.append(processes);
+  for(const [id,label] of [['ws-rec-blocks-section','Start from building blocks'],['ws-rec-experimental-section','Designs needing changes']]) {
+    const section=document.getElementById(id),drawer=make('details',{class:'ws-more'});
+    drawer.append(make('summary',{},label));section.before(drawer);drawer.append(section);
+  }
 }
 function openMaterialRecipes(material) {
   setRecipeMaterial(material);
@@ -2774,14 +2786,9 @@ function setRecipeMaterial(material) {
 }
 function renderRecipeMaterialFilter(recipes, inventory) {
   const selected = new URLSearchParams(location.search).get("material");
-  const materials = new Set(recipes.templates.flatMap(t => [...(t.materials || []), ...(t.goods || [])].map(r => r.material || r.substance)));
-  for (const row of [...(inventory.materials || []), ...(inventory.goods || [])]) materials.add(row.material || row.substance);
-  if (selected) materials.add(selected);
   const root = $("#ws-recipe-filter"); root.replaceChildren();
-  for (const material of ["", ...[...materials].filter(Boolean).sort()]) {
-    const button = make("button", {type:"button", class:"ws-action", "data-recipe-material":material}, material ? titleCase(material) : "All materials");
-    button.onclick = () => setRecipeMaterial(material); root.append(button);
-  }
+  if(selected) {const button=make('button',{type:'button',class:'ws-action','data-recipe-material':''},'Show all recipes');
+    button.onclick=()=>setRecipeMaterial('');root.append(button);}
   applyRecipeMaterialFilter();
 }
 function applyRecipeMaterialFilter() {
@@ -2789,8 +2796,10 @@ function applyRecipeMaterialFilter() {
   if (!pane || !$("#ws-recipe-filter-status")) return;
   let count = 0;
   for (const card of pane.querySelectorAll("[data-recipe], [data-recipe-source]")) {
+    // A material click is context, never a dead-end catalog filter. Recipes
+    // still expose selection and a supported supply or editing route.
     const matches = !selected || JSON.parse(card.dataset.materials || "[]").includes(selected);
-    card.hidden = !matches; if (matches) count++;
+    card.hidden = false; if (matches) count++;
   }
   for (const group of pane.querySelectorAll("#ws-rec-saved .ws-design-group"))
     group.hidden = ![...group.querySelectorAll("[data-recipe], [data-recipe-source]")].some(c => !c.hidden);
@@ -2801,13 +2810,14 @@ function applyRecipeMaterialFilter() {
   $("#ws-rec-next-section").hidden=![...$("#ws-rec-next").querySelectorAll("[data-recipe]")].some(c=>!c.hidden);
   $("#ws-rec-experimental-section").hidden=![...$("#ws-rec-experimental").querySelectorAll("[data-recipe]")].some(c=>!c.hidden);
   $("#ws-rec-saved").closest(".ws-inventory-section").hidden = Boolean(selected) && ![...$("#ws-rec-saved").querySelectorAll("[data-recipe], [data-recipe-source]")].some(c => !c.hidden);
-  $("#ws-rec-components-section").hidden = Boolean(selected) || !$("#ws-rec-components").childElementCount;
-  $("#ws-rec-blocks-section").hidden = Boolean(selected);
-  $("#ws-recipes-processes").hidden = Boolean(selected) || !$("#ws-recipes-room").querySelector("li") && !$("#ws-recipes-deposits").querySelector("li");
+  $("#ws-rec-components-section").hidden = !$("#ws-rec-components").childElementCount;
+  $("#ws-rec-blocks-section").hidden = false;
+  $("#ws-recipes-processes").hidden = !$("#ws-recipes-room").querySelector("li") && !$("#ws-recipes-deposits").querySelector("li");
   for (const button of $("#ws-recipe-filter").querySelectorAll("button")) button.setAttribute("aria-pressed", String(button.dataset.recipeMaterial === selected));
   const status = $("#ws-recipe-filter-status");
   status.hidden = !selected;
-  status.textContent = selected ? `${titleCase(selected)} · ${count} recipe${count === 1 ? "" : "s"}${count ? "" : " · No matches"}` : "";
+  status.textContent = selected ? count ? `${titleCase(selected)} appears in ${count} designs. Select a recipe to review all required supplies.`
+    : `No supported recipe uses ${titleCase(selected)} as drawn. Choose a recipe below, or edit a draft's material in Lab; Make checks native support.` : '';
 }
 
 function recipeValue(name, value, cls = "") {
@@ -2970,8 +2980,8 @@ async function showRecipes() {
     const all = make("details", {class:"ws-recipe-details"}); all.append(make("summary", {}, "Materials & build details"));
     canvas.style.cursor = "pointer"; canvas.tabIndex = 0; canvas.setAttribute("role", "button");
     canvas.setAttribute("aria-label", `${t.name} · required materials and how to get them`);
-    canvas.onclick = () => { all.open = !all.open; };
-    canvas.onkeydown = event => { if (["Enter"," "].includes(event.key)) {event.preventDefault();all.open=!all.open;} };
+    canvas.onclick = () => li.querySelector('[data-open-recipe]')?.click();
+    canvas.onkeydown = event => { if (["Enter"," "].includes(event.key)) {event.preventDefault();canvas.click();} };
     const materials = make("div", {class:"ws-needs"});
     for (const line of [...(t.materials || []), ...(t.goods || [])]) {
       materials.append(recipeLine(line), recipeValue("Stock",
@@ -3034,7 +3044,7 @@ async function showRecipes() {
       finally { recipeMaking=false; await showRecipes().catch(error=>say(error.message, true)); }
     };
     row.append(made);
-    const inspect = make("button", {type:"button", class:"ws-action", "data-open-recipe":recipeKey(t)}, "Open in Lab");
+    const inspect = make("button", {type:"button", class:"ws-action", "data-open-recipe":recipeKey(t)}, "Select & edit");
     inspect.onclick = () => guard(inspect, async () => {
       clearLab();
       const answer = await recipeSource(t);
@@ -3424,6 +3434,7 @@ function showTab(name) {
   if(screenGroup(name)==="build" && bench.inventorySelection)name="lab";
   if (!["inventory", "lab", "skills", "recipes", "market", "goals"].includes(name)) name = WORKSHOP_OPENS_ON;
   const hub=screenGroup(name);
+  if($('#ws-player-guidance'))$('#ws-player-guidance').hidden=hub!=='progress';
   const url = new URL(location.href); url.searchParams.set("tab", name);
   for (const key of ["carry", "design", "library", "recipe"]) url.searchParams.delete(key);
   if (bench.inventorySelection) {
@@ -3469,7 +3480,7 @@ async function refreshPlayerGuidance() {
   if (guidanceBusy) {guidanceAgain=true;return;}
   guidanceBusy=true;
   let root=$("#ws-player-guidance");
-  if (!root) {root=make("section",{id:"ws-player-guidance"});$("#ws-centre").prepend(root);}
+  if (!root) {root=make("section",{id:"ws-player-guidance",hidden:""});$("#ws-centre").prepend(root);}
   const request=++guidanceRequest;
   try {
     let body={},newSignature=null;
@@ -3483,7 +3494,11 @@ async function refreshPlayerGuidance() {
     }
     const data=await api('/api/world/guidance',body);
     if(newSignature)guidanceSelectionSignature=newSignature;
-    if(request===guidanceRequest)renderPlayerGuidance(root,data,api);
+    if(request===guidanceRequest) {
+      renderPlayerGuidance(root,data,api);
+      // Progress owns goal guidance. Lab has its exact paid review and chat.
+      root.hidden=screenGroup(new URLSearchParams(location.search).get('tab'))!=='progress';
+    }
   }
   catch {if (request===guidanceRequest) renderPlayerGuidance(root,null);}
   finally {guidanceBusy=false;if (guidanceAgain) {guidanceAgain=false;refreshPlayerGuidance();}}
@@ -3941,15 +3956,20 @@ function renderLabDraft() {
   }
   root.hidden=!bench.inventorySelection || !chosen() || $(".ws-viewport")?.hidden;
   if(root.hidden)return;
-  root.replaceChildren(make("h2",{},"Design → World"));
+  root.replaceChildren(make("h2",{},bench.inventorySelection.name || 'Your draft'));
   remakeRow(root,"Design",labDraft.status || "Original design");
+  remakeRow(root,'Materials',[...new Set(chosen().parts.map(p=>titleCase(p.material)))].join(' · '));
+  remakeRow(root,'Mass',kgSaid(chosen().measured?.mass_kg));
   if(bench.inventorySelection.source==="carried")remakeRow(root,"Your item","Unchanged · In Inventory");
   const actions=make("div",{class:"ws-row"});
-  const save=make("button",{id:"ws-draft-save",type:"button",class:"ws-action",hidden:""},"Save design");
+  const name=make('input',{id:'ws-draft-name',type:'text',maxlength:'80','aria-label':'Design name',value:$('#ws-save-name').value || bench.inventorySelection.name || chosen().label || chosen().design_id});
+  name.oninput=()=>{$('#ws-save-name').value=name.value;};root.append(name);
+  const save=make("button",{id:"ws-draft-save",type:"button",class:"ws-action"},"Save design");
   save.onclick=()=>$("#ws-save-design").click();
-  const build=make("button",{id:"ws-draft-build",type:"button",class:"ws-action primary",hidden:""},"Build a new item");
+  const build=make("button",{id:"ws-draft-build",type:"button",class:"ws-action primary"},"Review Make");
   build.onclick=()=>makeIt(build);actions.append(save,build);root.append(actions);
-  root.append(make("small",{},"Save keeps the design. Build uses supplies, then Add to Inventory or Place in World."));
+  root.append(make("small",{},"Save keeps a design. Make reviews supplies and work before creating a separate item."));
+  const saved=$('#ws-save-status').textContent;if(saved)root.append(make('p',{role:'status'},saved));
 }
 function updateLabSelection() {
   const selected = Boolean(bench.inventorySelection && chosen());
@@ -4189,13 +4209,36 @@ function watchTheTurn(turn) {
 }
 
 function gameChatMode() {
-  return new URLSearchParams(location.search).get('tab') !== 'lab' || !bench.inventorySelection;
+  return screenGroup(new URLSearchParams(location.search).get('tab')) !== 'build' || !bench.inventorySelection;
 }
+async function selectChatSource(action) {
+  const source=action.selection;if(!source)return;
+  persistLabDraft();
+  if(source.source==='carried')return openTheCarriedThing(source.id);
+  if(['saved','library'].includes(source.source))return openInventoryDesign(source.id,source.source);
+  if(source.source==='recipe') {
+    const recipes=await api('/api/workshop/recipes');
+    const recipe=recipes.templates.find(t=>recipeKey(t)===source.id);
+    if(!recipe)throw Error('That recipe is unavailable. Choose another.');
+    const answer=await recipeSource(recipe);clearLab();
+    bench.inventorySelection={source:'recipe',id:source.id,name:recipe.name};
+    if(await openLabDraft(answer))await showTab('lab');
+  }
+}
+addEventListener('click',event=>{
+  const link=event.target.closest?.('[data-chat-action]');if(!link)return;
+  const url=new URL(link.href);const key=['carry','design','library','recipe'].find(k=>url.searchParams.get(k));
+  if(!key)return;
+  event.preventDefault();guard(link,()=>selectChatSource({selection:{source:{carry:'carried',design:'saved',library:'library',recipe:'recipe'}[key],id:url.searchParams.get(key)}}));
+});
 async function chatEdit() {
   if (gameChatMode()) {
     const input = $("#ws-component-chat-text"), message = input.value.trim();
     if (!message) return;
-    await api('/api/world/help', {message, screen:new URLSearchParams(location.search).get('tab') || 'inventory'});
+    const answer=await api('/api/world/help', {message, screen:new URLSearchParams(location.search).get('tab') || 'inventory',history:guideHistory()});
+    rememberGuide('user',message);rememberGuide('assistant',answer.game_chat?.reply || '');
+    const action=answer.game_chat?.actions?.find(a=>a.open && a.selection);
+    if(action)await selectChatSource(action);
     input.value = '';
     return;
   }
