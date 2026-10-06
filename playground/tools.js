@@ -384,10 +384,12 @@ export function makeTools(ctx) {
         const eyes=whereIAm().eyes_m;
         return {hand:use.rest?.map((v,i)=>v+eyes[i]-use.restEyes[i]) || null,hand_q:null};
       }
-      // Previewing a target must not move a tool there. Carry in a fixed place
-      // above terrain, preserving native orientation; only Use positions it.
-      const eyes = whereIAm().eyes_m;
-      return { hand: [eyes[0], eyes[1] - 0.5, eyes[2]], hand_q: null };
+      // Prepare the wrist while carrying above terrain, never at a hovered
+      // target. The native player work gate leaves ordinary solid contact
+      // active here; only an explicit Use enables cutting in its chosen column.
+      // An unconstrained wrist let heavy heads sag/spin and made every first
+      // use repeat the lift/turn/lower sequence at the target.
+      return readyPose();
     }
     return readyPose();
   }

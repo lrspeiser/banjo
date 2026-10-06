@@ -2314,6 +2314,10 @@ public:
     // Where the selected hand's next ground stroke is aimed. This does not
     // enlarge its measured passive-earth wedge or supply extraction work.
     void setGroundAim(const Vec3 &at_world_m);
+    // Opt-in player interaction control. Idle/preparation uses ordinary solid
+    // contact; an active operation admits the reduced cutting contact only in
+    // its selected terrain column. Laboratory experiments remain uncontrolled.
+    void setGroundAction(const std::optional<Vec3> &at_world_m);
     // Admit a selected column band against a finite named work supply. Partial
     // paid progress persists; only a fully paid band detaches as native matter.
     // A zero budget does not extract. Throws when the hand holds nothing.

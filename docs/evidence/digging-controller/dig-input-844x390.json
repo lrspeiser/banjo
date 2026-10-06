@@ -1,0 +1,71 @@
+{
+  "touch": true,
+  "screen_press": {
+    "x": 472.64000000000004,
+    "y": 195.0
+  },
+  "selected_column": [
+    78,
+    64
+  ],
+  "request_at_m": [
+    0.12855,
+    0.76285,
+    0.54847
+  ],
+  "timing": {
+    "prepare_ms": 521.8524000083562,
+    "stroke_ms": 267.17849998385645,
+    "close_ms": 0.011800002539530396,
+    "native_elapsed_s": 0.8041666666666862
+  },
+  "result": {
+    "actor": "1b961ec4efcd43fd9a8d21a2086fb19f",
+    "at_m": [
+      0.12362,
+      0.76285,
+      0.57341
+    ],
+    "at_s": 2.22917,
+    "breakout_work_j": 1.13963,
+    "broken_share": 0,
+    "closing_speed_m_s": 1.51272,
+    "depth_m": 0.07953,
+    "dug": {
+      "depth_m": 0.02271795885814738,
+      "from_m": [
+        0.125,
+        0.5
+      ],
+      "to_m": [
+        0.125,
+        0.5
+      ],
+      "width_m": 0.125
+    },
+    "ground": "sand",
+    "impulse_n_s": 3.38622,
+    "kind": "broke out",
+    "loosened": {
+      "rock_m3": 0,
+      "sand_m3": 0.0014198724286342112,
+      "soil_m3": 0
+    },
+    "loosened_kg": 2.2718,
+    "model": "ground-work-v1-rigid-detachment",
+    "open": false,
+    "passive_n": 20.87146,
+    "peak_force_n": 88.72436,
+    "penetration_work_j": 2.68384,
+    "point": 1,
+    "resistance_n": 88.15432,
+    "sideways_m": 0.07441,
+    "supported": true,
+    "tool": "field pick",
+    "tool_dent_mm": 0,
+    "tool_whole": true,
+    "why": "",
+    "work_j": 3.82346
+  },
+  "released_components": 1
+}

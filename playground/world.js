@@ -11356,6 +11356,18 @@ function render() {
       const mesh=world.bodies.get(name)?.mesh;
       if(mesh){hidden.push([mesh,mesh.visible]);mesh.visible=false;}
     }
+    // Joint decorations are separate scene objects. Hiding only body meshes
+    // left their 34 cm pin stubs flying beside the first-person camera.
+    for(const mesh of pinGroup.children) if(names.has(mesh.userData.follows)) {
+      hidden.push([mesh,mesh.visible]);mesh.visible=false;
+    }
+    for(const joint of world.joints) if(names.has(joint.a) || names.has(joint.b)) {
+      const mesh=ropeLines.get(joint.id);
+      if(mesh){hidden.push([mesh,mesh.visible]);mesh.visible=false;}
+    }
+    if(revealing?.name && names.has(revealing.name)) {
+      hidden.push([revealing.group,revealing.group.visible]);revealing.group.visible=false;
+    }
     if(pickedBox && names.has(picked.name)){hidden.push([pickedBox,pickedBox.visible]);pickedBox.visible=false;}
   }
   const inTheWay = heldInTheWay();

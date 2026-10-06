@@ -3339,6 +3339,7 @@ struct LiveWorld::Impl {
     };
     std::map<std::string, NativePlayer> native_players;
     std::map<std::string, Vec3> ground_aims;   // by actor: setGroundAim
+    std::map<std::string, std::optional<Vec3>> ground_actions;
     // The walk controller (setNativePlayerWalk), worked out for one step from
     // where the body is now. Sets its contacts frictionless while it drives.
     void walkPlayer(NativePlayer &player, const RigidSnapshot &now, double load_y_n, Vec3 &force, Vec3 &torque,
@@ -14499,6 +14500,17 @@ LiveGroundWork LiveWorld::strikeCell(const Vec3 &at_world_m, double work_j, cons
     return impl_->tools.strikeCell(toolHost(), tool, impl_->selected_hand, at_world_m, work_j, work_source);
 }
 
+void LiveWorld::setGroundAction(const std::optional<Vec3> &at_world_m) {
+    if (at_world_m && (!std::isfinite(at_world_m->x) || !std::isfinite(at_world_m->y) ||
+                      !std::isfinite(at_world_m->z)))
+        throw std::invalid_argument("a ground action needs a finite target");
+    // The anonymous laboratory includes dropped, unheld physical tools. Empty
+    // carrier IDs cannot distinguish those bodies from an anonymous hand.
+    // Authenticated game players each have a separate named control scope.
+    if (impl_->selected_hand.empty()) return;
+    impl_->ground_actions[impl_->selected_hand] = at_world_m;
+}
+
 std::string LiveWorld::groundDebrisJson(bool include_cells) const {
     return requireEnvironment(impl_->environment).debrisJson(include_cells);
 }
@@ -16210,6 +16222,11 @@ ToolTerrainHost LiveWorld::toolHost() const {
         return impl_->carrierOfBody(found->second);
     };
     host.objects_of = [this](const std::string &actor) { return impl_->carriedObjectsKgFor(actor); };
+    host.work_control = [this](const std::string &actor) -> std::optional<std::optional<Vec3>> {
+        const auto found = impl_->ground_actions.find(actor);
+        if (found == impl_->ground_actions.end()) return std::nullopt;
+        return std::optional<std::optional<Vec3>>{std::in_place, found->second};
+    };
     host.aim_of = [this](const std::string &actor) -> std::optional<Vec3> {
         const auto found = impl_->ground_aims.find(actor);
         if (found == impl_->ground_aims.end()) return std::nullopt;

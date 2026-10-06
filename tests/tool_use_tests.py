@@ -67,6 +67,8 @@ class StandInRoom:
             state={"hand": {"holding": holding, "grip_m": [13.1, 1.7, -4.9]},
                    "bodies": [{"name": "pick haft", "velocity_m_s": [0.0, 0.0, 0.0]}],
                    "carried": {"sand_kg": 0.0, "soil_kg": 0.0}})
+        self.controls=[]
+        self.session.send=lambda **command: self.controls.append(command) or {'ok':True}
 
     def act(self, body):
         op = body["op"]
@@ -143,6 +145,7 @@ class AToolsUseIsShapedByItsProfile(unittest.TestCase):
         self.assertEqual(interaction_profiles.tool_use(PICK),
                          {"label": "Dig here", "past": "dug",
                           "gesture":"contact", "cadence_hz":4.0,
+                          "contact_drag_m":.04,
                           "swing": {"speed_m_s": 4.0, "raise_deg": 110.0},
                           "lever": {"speed_m_s": 1.2, "lever_deg": 40.0},
                           "reach_m": [0.3, 2.0], "repeat": True})
@@ -638,6 +641,22 @@ class ObjectControls(unittest.TestCase):
             for got,want in zip(actual['grip_local'],[.2,0,0]):self.assertAlmostEqual(got,want,places=12)
             for got,want in zip(actual['tip_local'],[.4,0,0]):self.assertAlmostEqual(got,want,places=12)
             self.assertEqual([0,0,-1],actual['pointing_local'])
+
+
+class StrokeAcknowledgement(unittest.TestCase):
+    def test_completed_acknowledged_stroke_has_no_unseen_stroke_delay(self):
+        app=app_with()
+        app.live.session.state['hand'].update(stroking=False,stroke_ended='reached')
+        with mock.patch.object(tool_use.time,'sleep',side_effect=AssertionError('spurious completion wait')):
+            self.assertIn('reached',tool_use._stroke(app,started=True))
+
+    def test_failed_ground_contact_clears_native_intent_and_busy_listener(self):
+        app=app_with();request={'person':PERSON,'at_m':IN_REACH}
+        with mock.patch.object(tool_use,'_contact',side_effect=RuntimeError('blocked fixture')):
+            with self.assertRaisesRegex(RuntimeError,'blocked fixture'): tool_use.run(app,request)
+        self.assertEqual([{'op':'ground-action','active':False}]*2,app.live.controls)
+        self.assertFalse(app.live.session.tool_busy)
+        self.assertEqual([],app.reply_listeners)
 
 
 if __name__ == "__main__":

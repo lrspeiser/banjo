@@ -478,6 +478,7 @@ class Session:
                          encoding="utf-8")
         self._lock = threading.RLock()
         self._actor_local = threading.local()
+        self._ground_controlled: set[str] = set()
         self._closed = False
         command = [str(exe), "--scene", str(scene), "--cell", f"{spec['cell_m']:.6g}"]
         # A saved world to open the scene into (LiveWorld::snapshot), beside
@@ -516,6 +517,15 @@ class Session:
             self.state = self._read("opening the world")
             if not self.state.get("ok"):
                 raise LiveError(self.state.get("error") or "the live world refused this scene")
+            # Restored hands start idle, before the unattended clock can move
+            # them. Active cutting intent is never resumed from a saved pose.
+            opening = self.state
+            for actor in (snapshot or {}).get("player_hands", {}):
+                if actor:
+                    self.send(op="ground-action", active=False, actor=actor)
+            # Registration has not stepped/changed matter. Retain the opening's
+            # one-time geometry and restore-tier proof for staged transactions.
+            self.state = opening
         except BaseException:
             self.close()
             raise
@@ -538,6 +548,10 @@ class Session:
             actor = getattr(self._actor_local, "actor", "")
             if actor and "actor" not in command:
                 command["actor"] = actor
+            actor = command.get("actor", "")
+            if actor and actor not in self._ground_controlled:
+                self._send({"op": "ground-action", "active": False, "actor": actor})
+                self._ground_controlled.add(actor)
             return self._send(command)
 
     def _send(self, command: dict[str, Any]) -> dict[str, Any]:

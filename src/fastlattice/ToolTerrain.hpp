@@ -68,6 +68,9 @@ struct ToolTerrainHost {
     std::function<bool(const std::string &, const std::string &)> fixed_connected;
     // Where a carrier last said its swing was aimed (LiveWorld::setGroundAim).
     std::function<std::optional<Vec3>(const std::string &)> aim_of;
+    // Outer absence: physical laboratory contact. Inner absence: controlled
+    // player is idle. Inner target: active selected-column contact.
+    std::function<std::optional<std::optional<Vec3>>(const std::string &)> work_control;
 };
 
 class ToolTerrain {
@@ -163,6 +166,7 @@ private:
         double broke_m3{};      // what this meeting has broken out of the rock
         std::string ground;  // the layer the tip is in
         std::string carrier; // owner when this meeting began, even if the tool is later released
+        bool selected_column_only{};
         // As the step began, for what the step did.
         Vec3 tip_before{};
         double vn_before{}, vx_before{}, vz_before{};

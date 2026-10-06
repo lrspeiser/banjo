@@ -101,7 +101,8 @@ test('an empty hand collects a pile, rechecking exact-ray occlusion and reach; a
     assert.equal(collected,mode==='clear'?1:0);
     assert.equal(nativeCollected,mode==='native'?1:0);
     if(mode==='native'){
-      assert.equal(requests.length,0,'native collection does not use the legacy pile ray request');
+      assert.equal(requests.length,1,'native collection rechecks exact-ray tool occlusion');
+      assert.equal(requests[0].past_held,true);
       assert.equal(strokes,0,'a native piece click collects before using an equipped pick');continue;
     }
     if(mode==='pick'){assert.equal(requests.length,0,'a held pick does not stop at a pile');continue;}
@@ -112,7 +113,8 @@ test('an empty hand collects a pile, rechecking exact-ray occlusion and reach; a
 
 test('idle contact hand ignores hover targets before and after use',()=>{
   const camera=new THREE.PerspectiveCamera();camera.position.set(0,1.62,0);
-  const world={held:{pick:{}},use:{mode:'tool-ready',target:{gesture:'contact',ready:{hand:[1,-1,-1]}}}};
+  const world={held:{pick:{},axes:{x:new THREE.Vector3(1,0,0),y:new THREE.Vector3(0,-1,0),z:new THREE.Vector3(0,0,-1)}},
+    use:{mode:'tool-ready',target:{gesture:'contact',ready:{hand:[1,-1,-1]}}}};
   const tools=makeTools({world,camera,whereIAm:()=>({eyes_m:camera.position.toArray()})});
   const pose=tools.hand();
   world.use.positioned=true;world.use.target.ready={hand:[-1,-4,1]};
@@ -121,7 +123,7 @@ test('idle contact hand ignores hover targets before and after use',()=>{
   assert.deepEqual(tools.hand(),{hand:[1,.5,-1],hand_q:null});
   camera.position.x=2;
   assert.deepEqual(tools.hand().hand,[3,.5,-1],'walking carries the resting hand without following hover');
-  assert.equal(pose.hand_q,null,'idle does not prescribe a rotation');
+  assert.equal(pose.hand_q.length,4,'carry requests a bounded wrist orientation above terrain');
   world.use.mode='tool-working';assert.deepEqual(tools.hand(),{hand:null,hand_q:null});
 });
 
@@ -130,15 +132,17 @@ test('first-person render hides only held tool parts and restores visibility on 
   const full=(await readFile(new URL('../playground/world.js',import.meta.url),'utf8')).replace(/\r\n/g,'\n');
   const code=full.slice(full.indexOf('function render()'),full.indexOf('// ---------------------------------------------------------------------------\n// The panel',full.indexOf('function render()')));
   const handle={visible:true},head={visible:true},peer={visible:true},pickedBox={visible:true};
-  const world={held:{name:'handle',pick:{parts:['handle','head']}},bodies:new Map([
+  const pin={visible:true,userData:{follows:'head'}},peerPin={visible:true,userData:{follows:'peer'}},rope={visible:true};
+  const world={held:{name:'handle',pick:{parts:['handle','head']}},joints:[{id:1,a:'head',b:'handle'}],bodies:new Map([
     ['handle',{mesh:handle}],['head',{mesh:head}],['peer',{mesh:peer}]])};
-  const render=new Function('world','watchedId','pickedBox','picked','heldInTheWay','revealing','renderer','scene','camera','trace',code+';return render;')(
+  const render=new Function('world','watchedId','pickedBox','picked','heldInTheWay','revealing','renderer','scene','camera','trace','pinGroup','ropeLines',code+';return render;')(
     world,null,pickedBox,{name:'handle'},()=>null,null,{render(){
       assert.equal(handle.visible,false);assert.equal(head.visible,false);assert.equal(pickedBox.visible,false);
+      assert.equal(pin.visible,false);assert.equal(rope.visible,false);assert.equal(peerPin.visible,true);
       assert.equal(peer.visible,true);throw Error('test render failure');
-    }},{},{},{renders:[]});
+    }},{},{},{renders:[]},{children:[pin,peerPin]},new Map([[1,rope]]));
   assert.throws(render,/test render failure/);
-  for(const mesh of [handle,head,peer,pickedBox])assert.equal(mesh.visible,true);
+  for(const mesh of [handle,head,peer,pickedBox,pin,peerPin,rope])assert.equal(mesh.visible,true);
 });
 
 test('closed native outcomes are shown as they arrive and are not replayed by the final reply',async()=>{
@@ -222,7 +226,8 @@ test('a touch press disables edge looking immediately and releases its cursor af
   const touch=cursorAt({clientX:610,clientY:320,pointerType:'touch'});
   assert.deepEqual(touch,{x:.5,y:-.5,px:600,py:300,touch:true});
   assert.equal(cursorAt({clientX:610,clientY:320,pointerType:'mouse'}).touch,false);
-  const code=full.slice(full.indexOf('canvas.addEventListener("pointerup", (e) => {'),full.indexOf('// Whether a hand can take',full.indexOf('canvas.addEventListener("pointerup", (e) => {')));
+  const start=full.indexOf('canvas.addEventListener("pointerup", (e) => {');
+  const code=full.slice(start,full.indexOf('\n});',start)+4);
   let run,released=0;
   const state=new Function('canvas','releasePrimary','markAt',
     'let resumeClick=false,cursorFree=false,primaryUsed=true,drag={},cursor={touch:true};'+code+';return ()=>({cursor,drag,primaryUsed});')(

@@ -548,13 +548,15 @@ struct Swing {
 // Open a world with the pick in the air above the ground, take it by its grip
 // and swing it at the ground 0.3 m out, from a shoulder behind it.
 Swing swingAt(double soil, double sand, const std::string &material, bool cubes = false,
-              std::optional<Vec3> aim = std::nullopt) {
+              std::optional<Vec3> aim = std::nullopt,
+              std::optional<std::optional<Vec3>> control = std::nullopt) {
     const double top = soil + sand;
     Json scene{{"terrain", cubes ? cubeGround(soil, sand) : ground(soil, sand)}, {"bodies", pick(material, top)}};
     Swing out;
     out.live = open(scene);
     LiveWorld &live = *out.live;
     if (aim) live.setGroundAim(*aim);
+    if (control) {live.selectHand("alice");live.setGroundAction(*control);}
     const Vec3 tip{kTipX, top + 0.72, kTipZ};
     const Vec3 grip{kGripX, top + 1.02, kTipZ};
     require(live.toolPoint("pick", tip, {0.0, -1.0, 0.0}, 0.04, 0.04, 30.0, kPointLength, grip) != 0,
@@ -734,15 +736,17 @@ void aPryBreaksGroundOutAndItIsCarried(bool limited = false) {
 
 // A measured stroke on column ground retains the passive-earth wedge law.
 // It cannot promote a small measured motion to an entire target cube.
-void aSwingTakesAWholeCubeOutOfCubeGround(std::optional<Vec3> aim = std::nullopt) {
-    Swing swing = swingAt(0.75, 0.0, "oak", true, aim);
+void aSwingTakesAWholeCubeOutOfCubeGround(std::optional<Vec3> aim = std::nullopt, bool controlled = false) {
+    const Vec3 selected{.3,.75,kTipZ};
+    Swing swing = swingAt(0.75, 0.0, "oak", true, aim, controlled
+        ? std::optional<std::optional<Vec3>>{std::in_place,selected} : std::nullopt);
     const auto follow_started=std::chrono::steady_clock::now();
     LiveWorld &live = *swing.live;
     const terrain::Environment &env = *live.environment();
     const terrain::TerrainField &field = env.terrain();
     const double q = field.grid().dx;
     std::vector<double> before(field.grid().cells());
-    for (std::size_t c = 0; c < before.size(); ++c) before[c] = field.height(c);
+    for (std::size_t c = 0; c < before.size(); ++c) before[c] = controlled ? .75 : field.height(c);
     const double carried_before = swing.carried_before_m3;
     // Pried and drawn out, as the pick test above does.
     LiveStrike lever;
@@ -768,7 +772,11 @@ void aSwingTakesAWholeCubeOutOfCubeGround(std::optional<Vec3> aim = std::nullopt
     std::printf("  on cube ground: %s\n", said(w).c_str());
     require(w.kind == "broke out" && w.dug, "the swing broke nothing out");
     double surface_volume=0;
-    for(std::size_t c=0;c<before.size();++c)surface_volume+=(before[c]-field.height(c))*q*q;
+    const auto selected_column=field.cellAt(selected.x,selected.z);
+    for(std::size_t c=0;c<before.size();++c) {
+        surface_volume+=(before[c]-field.height(c))*q*q;
+        if(controlled && c!=*selected_column)near(field.height(c),.75,0,"controlled bite changed an unselected column");
+    }
     require(w.loosened.total()<q*q*q,"a small physical stroke cannot be promoted to a whole cube");
     near(surface_volume,w.loosened.total(),1e-9,"the actual constitutive wedge equals the surface edit");
     near(env.carried().total()-carried_before,0,1e-9,"measured column wedge is physical matter before collection");
@@ -786,6 +794,23 @@ void aSwingTakesAWholeCubeOutOfCubeGround(std::optional<Vec3> aim = std::nullopt
     near(env.carried().total()-carried_before,matter,1e-9,"default measured pieces credit storage only upon collection");
     std::printf("  measured column stroke: %.12g m3; %zu source cells in %zu native components; %.9g J ground work; %.9g s native elapsed at dt %.9g; %.9g ms native wall time excluding fixture setup and collection; collection residual %.12g m3\n",
         matter,cells,components.size(),w.work_j,live.time_s(),kDt,wall_ms,env.carried().total()-carried_before-matter);
+}
+
+void controlledIdleAndOtherColumnsDoNotExcavate() {
+    for(const std::string material : {"glass","oak","iron"}) {
+        for(const bool idle : {true,false}) {
+            const std::optional<Vec3> target=idle ? std::nullopt : std::optional<Vec3>{{1.5,.75,kTipZ}};
+            auto swing=swingAt(.75,0,material,true,std::nullopt,
+                std::optional<std::optional<Vec3>>{std::in_place,target});
+            for(int i=0;i<240;++i)stepOnce(*swing.live);
+            const auto &field=swing.live->environment()->terrain();
+            near(field.ledger().dug.total(),0,0,"idle/unselected work removed ground");
+            require(Json::parse(swing.live->groundDebrisJson()).at("bodies").empty(),"idle/unselected work released matter");
+            require(swing.live->groundWork().empty(),"idle/unselected motion entered cutting contact");
+            std::printf("  %s %s: dt %.9g s, column .25 m; no cutting work or released matter; hand work %.9g J\n",
+                material.c_str(),idle?"idle":"wrong column",kDt,swing.live->hand().work_j);
+        }
+    }
 }
 
 // ---- the grip ------------------------------------------------------------------
@@ -1213,6 +1238,8 @@ void cubeStrikesRemoveTheClickedRockWallCell() {
 
 int main() {
     const std::vector<std::pair<const char *, std::function<void()>>> checks = {
+        {"controlled player preparation/carrying cannot excavate",controlledIdleAndOtherColumnsDoNotExcavate},
+        {"controlled player cuts remain in the selected column",[] {aSwingTakesAWholeCubeOutOfCubeGround(std::nullopt,true);}},
         {"held cube tools remove the clicked wall band and retain its roof",cubeStrikesRemoveTheClickedRockWallCell},
         {"held cube tools open a wet channel without creating water", cubeStrikesOpenAWetChannel},
         {"removing a cube roof opens a pit to water and survives restart",cubeStrikesOpenAnUnroofedPitToWater},

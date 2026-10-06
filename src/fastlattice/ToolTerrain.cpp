@@ -422,10 +422,33 @@ void ToolTerrain::prepare(const ToolTerrainHost &host, double dt_s) {
         const Vec3 tip = s.center_of_mass_world_m + s.orientation_world.rotate(p.tip_local);
         const Vec3 a = normalized(s.orientation_world.rotate(p.pointing_local));
         const Vec3 v = s.linear_velocity_m_s + cross(s.angular_velocity_rad_s, tip - s.center_of_mass_world_m);
+        const std::string carrier = host.carrier_of(p.grip_body.empty() ? p.body : p.grip_body);
+        const auto control = host.work_control ? host.work_control(carrier) : std::nullopt;
+        bool enabled = true;
+        if (control) {
+            enabled = control->has_value() && host.environment != nullptr;
+            if (enabled) {
+                const Vec3 &target = **control;
+                const auto &field = host.environment->fieldAt(tip.x, tip.z);
+                const auto &target_field = host.environment->fieldAt(target.x, target.z);
+                const auto actual = field.cellAt(tip.x, tip.z);
+                const auto selected = target_field.cellAt(target.x, target.z);
+                enabled = &field == &target_field && actual && selected && *actual == *selected;
+            }
+        }
+        if (!enabled) {
+            // Withdraw the cutting adapter, not the body's ordinary collision.
+            // Finish any already measured authorized bite before restoring it.
+            if (p.joint != 0) finish(host, p, true);
+            closeNote(host, p);
+            if (world.groundContactSuspended(*id)) world.restoreGroundContact(*id);
+            continue;
+        }
         if (p.joint != 0) {
             holdIn(host, p, *id, tip, v, dt_s);
             continue;
         }
+        p.selected_column_only = control.has_value();
         meet(host, p, *id, s, tip, a, v, dt_s);
     }
 }
@@ -910,6 +933,16 @@ void ToolTerrain::finish(const ToolTerrainHost &host, Point &p, bool tool_here) 
         std::size_t columns = field.columnsAlong(ax, az, bx, bz, width).size();
         double depth = columns > 0 ? volume / (static_cast<double>(columns) * dx * dx) : 0.0;
         double dig_width = width;
+        if (p.selected_column_only && field.columnSurface()) {
+            // The command bounds the activated patch. Keep measured yield as
+            // an upper bound; do not spread it across neighboring columns or
+            // promote it to a full cell. Ground outside this patch stays bonded.
+            ax = bx = field.grid().xOf(static_cast<int>(p.column % static_cast<std::size_t>(field.grid().nx)));
+            az = bz = field.grid().zOf(static_cast<int>(p.column / static_cast<std::size_t>(field.grid().nx)));
+            dig_width = .5 * dx;
+            columns = 1;
+            depth = std::min(p.deepest, volume / (dx * dx));
+        }
         if (columns > 0) {
             terrain::EditEffect effect;
             if(field.columnSurface()) {

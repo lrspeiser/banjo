@@ -177,11 +177,13 @@ class Journey(navigation.GameScreens):
             # as a joint to haul. Exercise the real native grab and UI reload.
             self.post('/api/live/act',{'session':restored.live.session.id,
                 'op':'grab','name':own['name']},world)
-            self.assertNotEqual('grip',restored.live.session.state['hand']['mode'])
+            # The unattended clock may publish the anonymous hand next. The
+            # named owner's hand is authoritative across all such replies.
+            self.assertNotEqual('grip',restored.live.session.state['player_hands'][owner['id']]['mode'])
             self.page.send('Page.navigate',{'url':self.base+f'/world?world={world}'})
             self.wait('banjoRoom?.ready() && banjoRoom.use().mode==="tool-ready"')
             self.assertEqual(own['name'],self.page.evaluate('banjoRoom.world.held.pick.tool'))
-            self.assertEqual('grip',restored.live.session.state['hand']['mode'])
+            self.assertEqual('grip',restored.live.session.state['player_hands'][owner['id']]['mode'])
             self.screenshot('06-restored-tool-ready.png')
         self.navigate(world,'workshop=1&tab=inventory')
         self.wait(f'document.querySelector("#ws-inv-grid").textContent.includes({json.dumps(self.label)})')

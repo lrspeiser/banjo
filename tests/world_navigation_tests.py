@@ -239,6 +239,9 @@ class Navigation(unittest.TestCase):
                 with mock.patch.object(ai.server.secrets,'randbelow',side_effect=[0,1]):
                     ident,owner,app=self.setup_world(surface='columns')
                 screens.GameScreens.browser(self,ident,owner)
+                # Hold a fixed observer before projecting a thin component's
+                # click ray. Normal walking has its separate transition test.
+                self.page.evaluate('localStorage.setItem("banjo.movement","fly")')
                 self.page.send('Emulation.setDeviceMetricsOverride',{'width':width,'height':height,
                     'deviceScaleFactor':1,'mobile':touch})
                 if touch:self.page.send('Emulation.setTouchEmulationEnabled',{'enabled':True,'maxTouchPoints':5})
@@ -272,6 +275,69 @@ class Navigation(unittest.TestCase):
                 self.assertTrue(self.page.evaluate('document.body.classList.contains("panel-away")'))
                 self.assertFalse(self.page.evaluate('document.body.classList.contains("chat-open")'))
                 # Selection alone cannot unfold the rail, including a machine.
+                # Pickup success is not digging success. Use the actual starter
+                # tool through ordinary mouse/touch input, with a fixed fly
+                # camera to isolate targeting from walking-controller timing.
+                self.page.evaluate('window.dispatchEvent(new CustomEvent("banjo-movement-mode",{detail:"fly"}))')
+                self.page.evaluate('''(()=>{const r=banjoRoom;
+                    r.standAt(-.9,r.groundAt(-.9,.025)+1.62,.025);
+                    r.lookAt(.125,r.groundAt(.125,.025),.025);
+                    window.digReplies=[];window.digRequests=[];
+                    const original=window.fetch;window.fetch=async function(url,options){
+                        const response=await original.apply(this,arguments);
+                        if(String(url).includes('/api/world/tool/use')) {
+                            digRequests.push(JSON.parse(options.body));
+                            digReplies.push(await response.clone().json());
+                        }return response;
+                    };})()''')
+                center={'x':width/2,'y':height/2}
+                self.page.send('Input.dispatchMouseEvent',{'type':'mouseMoved',**center})
+                self.wait('banjoRoom.use().target?.feedback?.ready && !banjoRoom.world.busy')
+                self.wait('document.querySelector("#crosshair").dataset.readiness==="ready"')
+                self.assertEqual('ready',self.page.evaluate('document.querySelector("#crosshair").dataset.readiness'))
+                OUT.mkdir(parents=True,exist_ok=True)
+                # Observe actual draw callbacks, rather than a stubbed renderer.
+                self.page.evaluate('''(()=>{window.drawnBodies=new Set();window.drawnAttachments=new Set();const r=banjoRoom;
+                    for(const [name,entry] of r.world.bodies)entry.mesh.traverse(mesh=>{
+                        if(!mesh.isMesh)return;const original=mesh.onBeforeRender;
+                        mesh.onBeforeRender=function(){drawnBodies.add(name);return original.apply(this,arguments);};
+                    });r.scene.traverse(mesh=>{if(!mesh.userData.follows)return;
+                        const original=mesh.onBeforeRender;mesh.onBeforeRender=function(){
+                            drawnAttachments.add(mesh.userData.follows);return original.apply(this,arguments);};
+                    });})()''')
+                self.wait('drawnBodies.size>0')
+                drawn=self.page.evaluate('({held:banjoRoom.world.held.pick.parts,drawn:[...drawnBodies],attachments:[...drawnAttachments]})')
+                (OUT/f'dig-render-{width}x{height}.json').write_text(json.dumps(drawn,indent=2),encoding='utf-8')
+                self.assertFalse(set(drawn['held']) & set(drawn['drawn']),drawn)
+                self.assertFalse(set(drawn['held']) & set(drawn['attachments']),drawn)
+                OUT.mkdir(parents=True,exist_ok=True)
+                (OUT/f'dig-green-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot')['data']))
+                press={**center,'x':width*.56} if touch else center
+                if touch:
+                    self.page.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[press]})
+                    self.page.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
+                else:
+                    for kind in ('mousePressed','mouseReleased'):
+                        self.page.send('Input.dispatchMouseEvent',{'type':kind,**press,'button':'left','clickCount':1})
+                self.wait('digReplies.length===1 && banjoRoom.use().mode==="tool-ready"',seconds=20)
+                response=self.page.evaluate('digReplies[0]');request=self.page.evaluate('digRequests[0]')
+                self.assertNotIn('refused',response,response)
+                self.assertGreater(response['result']['loosened_kg'],0,response)
+                grid=self.page.evaluate('banjoRoom.groundDrawn()');q=grid['dx']
+                def column(at):
+                    return (math.floor((at[0]-grid['x0'])/q+.5),math.floor((at[2]-grid['z0'])/q+.5))
+                target=column(request['at_m'])
+                pieces=app.live.session.send(op='ground-debris')['ground_debris']['bodies']
+                self.assertTrue(pieces,'successful digging must release native matter')
+                for piece in pieces:
+                    for cell in piece['cells']:
+                        self.assertEqual(target,column(cell['source_center_m']),'an unselected column was removed')
+                self.assertTrue(self.page.evaluate('document.body.classList.contains("panel-away")'))
+                (OUT/f'dig-result-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot')['data']))
+                (OUT/f'dig-input-{width}x{height}.json').write_text(json.dumps({
+                    'touch':touch,'screen_press':press,'selected_column':target,'request_at_m':request['at_m'],
+                    'timing':response.get('timing'),'result':response['result'],
+                    'released_components':len(pieces)},indent=2),encoding='utf-8')
                 self.page.evaluate('banjoRoom.pick("rover")')
                 self.assertTrue(self.page.evaluate('document.body.classList.contains("panel-away")'))
                 self.page.send('Input.dispatchKeyEvent',{'type':'keyDown','code':'Slash','key':'/','windowsVirtualKeyCode':191})

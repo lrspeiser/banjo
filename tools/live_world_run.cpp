@@ -1924,6 +1924,9 @@ int main(int argc, char **argv) {
                         command.value("maximum_distance_m",3.0)));
                 } else if (op == "ground-aim") {
                     world->setGroundAim(readVec(command, "at_m"));
+                } else if (op == "ground-action") {
+                    world->setGroundAction(command.value("active", false)
+                        ? std::optional<banjo::Vec3>{readVec(command, "at_m")} : std::nullopt);
                 } else if (op == "player-remove") {
                     world->removeNativePlayer(command.value("actor", std::string{}));
                 } else if (op == "player-actuator") {

@@ -324,6 +324,7 @@ def run(app: Any, body: dict[str, Any],
     record: dict[str, Any] | None = None
     short: str | None = None
     try:
+        session.send(op='ground-action',active=False)
         if said.get('gesture')=='object-contact':
             return _object_contact(app,said,use,tool,eyes,note)
         if use['gesture']=='contact':
@@ -341,6 +342,7 @@ def run(app: Any, body: dict[str, Any],
         if not _settle(app, tool):
             done.append(f"held {tool} as still as it would go")
         lever = use["lever"] or interaction_profiles.TOOL_USE_DEFAULTS["lever"]
+        session.send(op='ground-action',active=True,at_m=[float(v) for v in at])
         started = app.live.act({"session": session.id, "op": "strike", "at": at,
                                 "shoulder": shoulder, "speed_m_s": use["swing"]["speed_m_s"],
                                 "raise_deg": use["swing"]["raise_deg"], "lever": False,
@@ -348,7 +350,7 @@ def run(app: Any, body: dict[str, Any],
         if note is not None:
             note(app, started)
         since = float((started or {}).get("t") or 0.0)
-        ended = _stroke(app)
+        ended = _stroke(app, started=True)
         record = _latest(app, tool, since, heard)
         waited = time.monotonic()
         while record is None and time.monotonic() - waited < MEET_WAIT_S:
@@ -388,7 +390,7 @@ def run(app: Any, body: dict[str, Any],
                               "shoulder": shoulder, "speed_m_s": use["lever"]["speed_m_s"],
                               "raise_deg": 0.0, "lever_deg": use["lever"]["lever_deg"],
                               "give_up_s": GIVE_UP_S})
-                ended = _stroke(app)
+                ended = _stroke(app, started=True)
                 time.sleep(PRY_SETTLE_S)
                 record = _latest(app, tool, since, heard, record)
                 done.append(f"pried it: {record.get('kind')}, the stroke {ended}")
@@ -398,13 +400,16 @@ def run(app: Any, body: dict[str, Any],
                     done.append(f"drew it out: the stroke {_pull(app, grip)}")
             record = _closed(app, tool, since, heard, record)
     finally:
-        with use_lock:
-            if actor:
-                busy_players.discard(actor)
-                session.tool_feedback.pop(actor,None)
-            else: session.tool_busy = False
-        if listeners is not None and listen in listeners:
-            listeners.remove(listen)
+        try:
+            session.send(op='ground-action',active=False)
+        finally:
+            with use_lock:
+                if actor:
+                    busy_players.discard(actor)
+                    session.tool_feedback.pop(actor,None)
+                else: session.tool_busy = False
+            if listeners is not None and listen in listeners:
+                listeners.remove(listen)
     carried = _carried(app)
     kg = sum(float(carried.get(k) or 0.0) for k in ("soil_kg", "sand_kg"))
     return {"action": label, "did": [label], "done": done,
@@ -713,6 +718,7 @@ def _strike_cell(app,said,use,tool,heard,note,eyes=None,*,energy_assist=False,re
 
 def _contact(app,said,use,tool,eyes,heard,note):
     session=app.live.session
+    began_at=time.monotonic()
     # Lifting/turning/lowering are part of this native attempt. A meeting can
     # begin during readiness and close during the stroke; its entry timestamp
     # must not be discarded by starting the receipt window after readiness.
@@ -727,7 +733,7 @@ def _contact(app,said,use,tool,eyes,heard,note):
         app.live.act({'session':session.id,'op':'stroke','path':path,'speed_m_s':2.0,
             'accel_m_s2':tool_gestures.ACCEL_M_S2,'lead_m':tool_gestures.LEAD_M,
             'give_up_s':2.0,'let_go':False})
-        _stroke(app)
+        _stroke(app, started=True)
     point=_native_point(app,tool)
     lowered=False
     if point and point['pointing'][1]>-.98:
@@ -737,7 +743,7 @@ def _contact(app,said,use,tool,eyes,heard,note):
         app.live.act({'session':session.id,'op':'stroke','path':[_grip(session),high],
             'speed_m_s':1.0,'accel_m_s2':8.0,'lead_m':tool_gestures.LEAD_M,
             'give_up_s':2.0,'let_go':False})
-        _stroke(app)
+        _stroke(app, started=True)
         app.live.act({'session':session.id,'op':'step','dt':1/240,'n':1,
             'hand':high,'hand_q':ready['hand_q']})
         # Two seconds of world time to turn, as for the contact below: on a
@@ -753,7 +759,7 @@ def _contact(app,said,use,tool,eyes,heard,note):
         app.live.act({'session':session.id,'op':'stroke','path':[_grip(session),ready['hand']],
             'speed_m_s':1.0,'accel_m_s2':8.0,'lead_m':tool_gestures.LEAD_M,
             'give_up_s':2.0,'let_go':False})
-        _stroke(app)
+        _stroke(app, started=True)
         lowered=True
     # Establish a bounded wish once. The world clock, not this handler, moves
     # the tool to it. Do not insert settling sleeps between established taps.
@@ -780,23 +786,32 @@ def _contact(app,said,use,tool,eyes,heard,note):
     else:
         return {'action':said['label'],'refused':'The tool is still moving into position','done':[]}
     grip=_grip(session)
+    prepared_at=time.monotonic()
     # The cube this swing is for: on cube ground, the one taken out.
-    session.send(op='ground-aim',at_m=[float(v) for v in at])
+    session.send(op='ground-action',active=True,at_m=[float(v) for v in at])
     started=app.live.act({'session':session.id,'op':'stroke',
         'path':tool_gestures.contact_path(grip,use,eyes,at),
         'speed_m_s':use['swing']['speed_m_s'],'accel_m_s2':tool_gestures.ACCEL_M_S2,
         'lead_m':tool_gestures.LEAD_M,'give_up_s':1.0,'let_go':False})
     if note: note(app,started)
-    ended=_stroke(app)
-    record=_closed(app,tool,since,heard,_latest(app,tool,since,heard))
+    ended=_stroke(app, started=bool(started.get('stroking')))
+    stroke_at=time.monotonic()
+    record=_closed(app,tool,since,heard,_latest(app,tool,since,heard),wait_s=.15)
     done=[f'contact stroke: {ended}']
     if record and record.get('open') and record.get('tool_whole',True):
         grip=_grip(session)
         if grip is not None:
-            done.append(f'withdrew the point: {_pull(app,grip)}')
+            point=_native_point(app,tool)
+            # Withdraw only to the selected surface's clearance, rather than
+            # running the historical 40 cm slow recovery motion after a tap.
+            lift=max(.04,min(PULL_M,at[1]+tool_gestures.CLEARANCE_M-point['tip'][1])) if point else PULL_M
+            done.append(f'withdrew the point: {_pull(app,grip,lift_m=lift,speed_m_s=2.0,accel_m_s2=tool_gestures.ACCEL_M_S2)}')
             record=_closed(app,tool,since,heard,_latest(app,tool,since,heard,record))
     carried=_carried(app);kg=sum(float(carried.get(k) or 0) for k in ('soil_kg','sand_kg'))
     return {'action':said['label'],'did':[said['label']], 'done':done,
+            'timing':{'prepare_ms':1000*(prepared_at-began_at),'stroke_ms':1000*(stroke_at-prepared_at),
+                'close_ms':1000*(time.monotonic()-stroke_at),
+                'native_elapsed_s':float(session.state.get('t') or since)-since},
             'said':_said(record,use,kg),'detail':_detail(record),'result':record,
             'carried':carried,'repeat':use['repeat'],'gesture':'contact','rest_hand_m':_grip(session),
             'results':[r for r in heard.values() if r.get('open') is False
@@ -847,12 +862,13 @@ def _grip(session: Any) -> list[float] | None:
     return _point(live_session.current_hand(session).get("grip_m"))
 
 
-def _pull(app: Any, grip: list[float]) -> str:
-    app.live.act({"session": app.live.session.id, "op": "stroke",
-                  "path": [grip, [grip[0], grip[1] + PULL_M, grip[2]]],
-                  "speed_m_s": PULL_SPEED_M_S, "accel_m_s2": 4.0, "lead_m": 0.05,
+def _pull(app: Any, grip: list[float], *, lift_m: float = PULL_M,
+          speed_m_s: float = PULL_SPEED_M_S, accel_m_s2: float = 4.0) -> str:
+    started = app.live.act({"session": app.live.session.id, "op": "stroke",
+                  "path": [grip, [grip[0], grip[1] + lift_m, grip[2]]],
+                  "speed_m_s": speed_m_s, "accel_m_s2": accel_m_s2, "lead_m": 0.05,
                   "let_go": False, "give_up_s": GIVE_UP_S})
-    return _stroke(app)
+    return _stroke(app, started=bool(started.get('stroking')))
 
 
 def _point_in(app: Any, tool: str) -> bool:
@@ -883,10 +899,10 @@ def _latest(app: Any, tool: str, since: float, heard: dict[Any, dict[str, Any]],
 
 
 def _closed(app: Any, tool: str, since: float, heard: dict[Any, dict[str, Any]],
-            record: dict[str, Any] | None) -> dict[str, Any] | None:
+            record: dict[str, Any] | None, wait_s: float = CLOSE_WAIT_S) -> dict[str, Any] | None:
     """The meeting once the ground has said it is over, or as it last stood."""
     began = time.monotonic()
-    while record is not None and record.get("open") and time.monotonic() - began < CLOSE_WAIT_S:
+    while record is not None and record.get("open") and time.monotonic() - began < wait_s:
         time.sleep(0.05)
         record = _latest(app, tool, since, heard, record)
     return record
