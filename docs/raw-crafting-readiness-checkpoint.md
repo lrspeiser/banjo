@@ -233,5 +233,6 @@ final copied native bundle. Log: `build/goods-browser-all-final.log`.
 The final raw crafting suite passes twelve cases in 3.043 s and native escrow
 passes nine in 0.920 s. Source registration remains 304/304, Python compilation,
 JavaScript syntax and changed-file whitespace checks pass. These changes are
-uncommitted agent work awaiting the parent task's verified main checkpoint;
-the owner demo and retained material accounts were not changed by these tests.
+published in main checkpoint `2d9f626b`; the [integration checkpoint](physical-ground-gameplay-checkpoint.md)
+records the separately verified owner-demo restart. Retained owner material
+accounts were not changed by these tests.

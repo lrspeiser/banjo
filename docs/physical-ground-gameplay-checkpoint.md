@@ -134,5 +134,28 @@ fracture handling. Exact details are in the native checkpoint.
   scheduling. A deterministic, supported contact/failure experiment must replace
   that assumption before treating the complete test suite as a clean gate.
 
-Publication and owner-demo verification will be recorded after scoped native,
-host and browser checks and the explicit baseline failure review.
+## Publication and owner demo
+
+Implementation checkpoint **`2d9f626b6581911461211600c1951a582ada7b26`** is
+published on GitHub main. The owner demo at `http://localhost:18890` was gracefully
+stopped through its supported SIGBREAK save/shutdown handler, fast-forwarded from
+`249f350d` to that checkpoint, and restarted hidden with the tested runner/CLI/DLL
+hashes recorded in the native checkpoint. `/api/status` reports engine ready and
+the existing model credential configured; no credential or build/private state
+is committed.
+
+All 153 private room files match the post-shutdown backup byte for byte before
+restart. Private rooms, prior binaries and existing configuration have local
+backups under `C:/play/build/physical-ground-20261005`. Subsequent world-clock
+steps are normal live changes. The existing player/world reopens with its 225 kg
+legacy Rock, 37.5 kg Copper and prior stock intact; no materials were collected,
+spent or granted as an owner-demo fixture.
+
+The owner's existing browser tab was reloaded and left at
+`http://localhost:18890/world?world=8b5044e9fa524b46b8d887a22ec353af`.
+The visible World/Inventory/Build/Progress bar, microphone control, compact
+Inventory thumbnails and native collection instructions are verified. No browser
+console errors appeared; Three.js emits an existing shadow-map deprecation
+warning. Screenshot: ignored `build/workshop-navigation/owner-demo-published.jpg`.
+The new physical module is served with the same content hash as the installed
+source. This deployment does not qualify the unresolved gates listed above.
