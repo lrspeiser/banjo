@@ -3,6 +3,14 @@
 October 5, 2026. Host/UI implementation, synthetic regression and one live
 Windows provider check. Verification base: published main
 `1572c27514ef06814c119c3d042344af58e6c192`, plus this checkpoint.
+Published implementation on main:
+`0d10f51074070c720745979aeb73a9c368f76782`.
+Installed in `C:/play` on port 18890 with saved-state backups and graceful
+shutdown/restart. All 151 retained files remain: 150 match the post-shutdown
+backup exactly; the sole changed frame log preserves its existing bytes as a
+prefix and only appends a new observation. Native runner/CLI hashes match the
+verification bundle below. Status reports the engine and configured key ready;
+`/voice.js` returns 200 with the required API connection policy.
 The typed Build/shared-chat checkpoint is on main and installed in `C:/play`.
 Only the applicable transport, private-memory and test foundations were taken
 from `origin/voice` at `37f206faf83d9bd46545c1fb76a9e562e774a953`;
