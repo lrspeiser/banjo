@@ -786,7 +786,6 @@ body.moving-a-thing #panel .workshop-entry { border-style: dashed; }
 #hand-slots .mini-product-actions {grid-column:1/-1;}
 .empty-hand {color:var(--dim);font-size:11px;padding:4px 6px;border:1px solid var(--edge);border-radius:6px;}
 .tool-contact-pulse {position:fixed;pointer-events:none;width:22px;height:22px;border:2px solid #d4eddc;border-radius:50%;z-index:1001;}
-.tool-yield-packet {position:fixed;left:0;top:0;width:16px;height:16px;border:1px solid #ffffff70;box-shadow:1px 1px 0 #0008;pointer-events:none;z-index:1001;}
 .mini-product { display:grid; grid-template-columns:52px minmax(0,1fr) auto; gap:6px; align-items:center; }
 .mini-product img, .mini-product canvas { width:52px; height:40px; object-fit:contain; }
 .mini-product strong, .mini-product small { display:block; }

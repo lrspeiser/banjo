@@ -338,7 +338,7 @@ class GoodsJourney(unittest.TestCase):
         self.post('/api/world/goods/collect',request,world)
         self.assertEqual(initial,self.personal(restored,owner))
 
-    def test_browser_shows_output_packets_and_collects_into_personal_inventory(self):
+    def test_browser_shows_output_stock_and_collects_without_fabricated_flights(self):
         if not qa_browser.CHROME.is_file():self.skipTest('Chrome not installed')
         world,owner,app,source,pile,person=self.batch(process=False)
         chrome=qa_browser.Chrome(1280,800);self.addCleanup(chrome.close)
@@ -358,7 +358,8 @@ class GoodsJourney(unittest.TestCase):
         page.evaluate(f'banjoRoom.standAt({person["eyes_m"][0]}, {person["eyes_m"][1]}, {person["eyes_m"][2]+3.3})')
         page.evaluate(f'banjoRoom.lookAt({person["eyes_m"][0]}, {person["eyes_m"][1]-1.4}, {person["eyes_m"][2]})')
         self.process_batch(app,pile)
-        wait('banjoRoom.scene.getObjectByName("resource-packets").children.some(c=>c.userData.transferKind === "input" || c.userData.transferKind === "output")')
+        wait(f'banjoRoom.world.goods.stockpiles.some(p=>p.name==={json.dumps(pile["name"])} && p.holds_kg.copper>0)')
+        self.assertFalse(page.evaluate('banjoRoom.scene.getObjectByName("resource-packets").children.some(c=>c.userData.transferKind)'))
         wait('banjoRoom.scene.getObjectByName("resource-packets").children.some(c=>c.userData.resourceStorage === "input" && c.children.some(v=>v.geometry?.type==="BoxGeometry"))')
         viewer=page.evaluate(f'localStorage.getItem("banjo.player.{world}")')
         player=next(p for p in app.room.player_records.values() if p['token']==viewer)
@@ -380,7 +381,7 @@ class GoodsJourney(unittest.TestCase):
         page.send('Input.dispatchKeyEvent',{'type':'keyDown','key':'w','code':'KeyW','windowsVirtualKeyCode':87})
         try:wait(f'!banjoRoom.world.goods.stockpiles.find(p=>p.name==={json.dumps(pile["name"])}).holds_kg.copper')
         finally:page.send('Input.dispatchKeyEvent',{'type':'keyUp','key':'w','code':'KeyW','windowsVirtualKeyCode':87})
-        wait('banjoRoom.scene.getObjectByName("resource-packets").children.some(c=>c.userData.transferKind === "collect")')
+        self.assertFalse(page.evaluate('banjoRoom.scene.getObjectByName("resource-packets").children.some(c=>c.userData.transferKind)'))
         self.assertEqual({},pile['holds']);self.assertEqual(before,self.personal(app,player))
         out=ROOT/'build/resource-flow';out.mkdir(parents=True,exist_ok=True)
         shot=page.send('Page.captureScreenshot',{'format':'png'})['data']

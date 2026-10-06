@@ -3629,9 +3629,8 @@ function goodsVisuals({scene,camera,groundAt,body,ports,colour,collect,readonly}
   const root=new THREE.Group(); root.name="resource-packets"; scene.add(root);
   const cube=new THREE.BoxGeometry(.13,.13,.13);
   const materials=new Map(), piles=new Map(), hoppers=new Map();
-  const matrix=new THREE.Object3D(), flights=[];
-  let epoch=null, seen=new Set(), goods=null, brains=[], nearest=null, busy=false, retry=null, failureUntil=0, nextPickup=0;
-  const reduced=matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const matrix=new THREE.Object3D();
+  let goods=null, brains=[], nearest=null, busy=false, retry=null, failureUntil=0, nextPickup=0;
   const pickup=document.createElement("button");
   pickup.id="collect-output"; pickup.type="button"; pickup.hidden=true;
   async function takeNearby(automatic=false, selected=null) {
@@ -3689,28 +3688,8 @@ function goodsVisuals({scene,camera,groundAt,body,ports,colour,collect,readonly}
   function follow(next,reset=false) {
     if(next===undefined)return;
     goods=next;
-    const events=next?.activities||[];
-    if(reset || epoch!==next?.activity_epoch) {
-      epoch=next?.activity_epoch; seen=new Set(events.map(e=>e.id));
-      for(const f of flights)root.remove(f.mesh); flights.length=0;
-    } else {
-      for(const e of events) {
-        if(seen.has(e.id))continue;
-        seen.add(e.id);
-        if(reduced || document.hidden)continue;
-        const from=endpoint(e.from),to=endpoint(e.to);
-        if(!from || !to)continue;
-        for(const [what,kg] of Object.entries(e.goods_kg)) {
-          const count=Math.min(12,Math.max(2,Math.ceil(Math.sqrt(kg)*2)));
-          for(let i=0;i<count && flights.length<192;i++) {
-            const mesh=new THREE.Mesh(cube,material(what)); root.add(mesh);
-            mesh.userData.transferKind=e.kind;
-            flights.push({mesh,from,to,target:e.to,start:performance.now()+i*55+(e.kind==="output"?700:0),index:i});
-          }
-        }
-      }
-      seen=new Set(events.map(e=>e.id));
-    }
+    // Activities are transfer receipts, not trajectories. Never turn their
+    // mass into visual-only cubes or move them along a fabricated flight path.
     const keep=new Set();
     for(const p of next?.stockpiles||[]) {
       keep.add(p.name);
@@ -3769,17 +3748,6 @@ function goodsVisuals({scene,camera,groundAt,body,ports,colour,collect,readonly}
       if(pile)p.group.position.copy(pilePosition(pile));
       for(const child of p.group.children)if(child.isSprite)
         child.visible=p.group.position.distanceTo(camera.position)<5;
-    }
-    for(let i=flights.length-1;i>=0;i--) {
-      const f=flights[i],t=(now-f.start)/1150;
-      f.mesh.visible=t>=0;
-      if(t>=1){root.remove(f.mesh);flights.splice(i,1);continue;}
-      if(t<0)continue;
-      const to=endpoint(f.target)||f.to;
-      f.mesh.position.copy(f.from).lerp(to,t);
-      f.mesh.position.y+=Math.sin(t*Math.PI)*(.6+f.index*.02);
-      f.mesh.rotation.set(t*2,t*3,0);
-      if(f.mesh.userData.transferKind==="collect")f.mesh.scale.setScalar(1-.8*t);
     }
     const keep=new Set();
     for(const b of brains) {
@@ -9631,17 +9599,6 @@ function showToolOutcome(answer,point) {
   tally.textContent=`${worldId ? 'Dug ' : '+'}${massLabel(effect.collected.kg)} ${effect.collected.materials.map(titled).join(' + ')}${worldId ? ' → pile' : ''}`;
   tally.style.left=`${Math.min(innerWidth-180,x+20)}px`;tally.style.top=`${Math.max(16,y-45)}px`;
   document.body.append(tally);tally.animate([{opacity:1},{opacity:1,offset:.7},{opacity:0}],{duration:1700}).finished.finally(()=>tally.remove());
-  const destination=$('world-load-meter')?.getBoundingClientRect();if(!destination || reduced || worldId)return;
-  for(const [i,material] of effect.packets.entries()) {
-    if(document.querySelectorAll('.tool-yield-packet').length>=48)break;
-    const packet=document.createElement('i');packet.className='tool-yield-packet';packet.dataset.material=material;
-    packet.style.background=`#${materialAppearance(material)?.color || 'e7eff5'}`;document.body.append(packet);
-    const spread=(i%4-1.5)*22;
-    packet.animate([{transform:`translate(${x}px,${y}px)`,opacity:1},
-      {transform:`translate(${x+spread}px,${y-60-Math.floor(i/4)*16}px)`,opacity:1,offset:.35},
-      {transform:`translate(${destination.left+destination.width/2}px,${destination.top+55}px) scale(.3)`,opacity:0}],
-      {duration:1250,delay:i*35,easing:'ease-out',fill:'both'}).finished.finally(()=>packet.remove());
-  }
 }
 function groundTargetPoint(point,eyes=camera.position.toArray()) {
   return terrainHitPoint(point,eyes,groundColumn(point[0],point[2])?.grid || ground.grid);

@@ -19,7 +19,7 @@ test('wall selection works from all four directions and marks the clicked vertic
   }
   const receipt={open:false,kind:'broke rock out',work_j:26,at_m:[.5,1.375,.5],loosened_kg:37.5,loosened:{rock_m3:.015625}};
   assert.deepEqual(collectedToolMaterials({result:receipt}),{kg:37.5,materials:['rock']});
-  assert.ok(toolOutcomeFeedback({result:receipt}).packets.every(m=>m==='rock'));
+  assert.deepEqual(toolOutcomeFeedback({result:receipt}).collected,{kg:37.5,materials:['rock']});
 });
 
 test('the shipped world renders a green wall square with its fill on the face',()=>{
@@ -91,17 +91,42 @@ test('shipped water updates retain only wet cells across drying and changing top
   assert.equal(ground.water.geometry.boundingSphere.radius,0);
 });
 
-test('outcome particles require native collection and pulses require actual contact',()=>{
+test('outcome feedback reports native receipts without inventing debris',()=>{
   const answer={result:{open:false,kind:'broke out',loosened_kg:1.5,
     at_m:[1,0,2],loosened:{sand_m3:.001,soil_m3:0}}};
   const effect=toolOutcomeFeedback(answer);
   assert.deepEqual(effect.at,[1,0,2]);assert.equal(effect.collected.kg,1.5);
-  assert.equal(effect.packets.length,5);assert.ok(effect.packets.every(m=>m==='sand'));
+  assert.deepEqual(Object.keys(effect).sort(),['at','collected']);
   assert.equal(toolOutcomeFeedback({...answer,refused:'Load full'}),null);
   assert.equal(toolOutcomeFeedback({result:{...answer.result,open:true}}),null);
   assert.equal(toolOutcomeFeedback({result:{schema:'banjo.object-strike.v1',impacts:[]}}),null);
-  assert.deepEqual(toolOutcomeFeedback({result:{schema:'banjo.object-strike.v1',impacts:[{}]}}).packets,[]);
-  assert.equal(toolOutcomeFeedback({result:{...answer.result,loosened_kg:10000}}).packets.length,12);
+  assert.equal(toolOutcomeFeedback({result:{schema:'banjo.object-strike.v1',impacts:[{}]}}).collected,null);
+  assert.equal(toolOutcomeFeedback({result:{...answer.result,loosened_kg:10000}}).collected.kg,10000);
+});
+
+test('stock receipts never create flight bodies in the shipped renderer',()=>{
+  const source=readFileSync(new URL('../playground/world.js',import.meta.url),'utf8');
+  const code=source.slice(source.indexOf('function goodsVisuals('),source.indexOf('const resourceVisuals ='));
+  const document={createElement:()=>({addEventListener(){},dataset:{}}),body:{append(){}}};
+  const visuals=new Function('THREE','document','titled','heldSaid',code+';return goodsVisuals;')(
+    THREE,document,x=>x,x=>String(x));
+  const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera();camera.position.set(10,2,10);
+  const view=visuals({scene,camera,groundAt:()=>0,body:()=>null,ports:()=>[],
+    colour:()=> '#999999',collect:()=>{throw Error('drawing is not collection');},readonly:()=>true});
+  const pile={name:'soil stock',at_m:[0,0],holds_kg:{soil:25},excavated:'soil'};
+  const baseline={stockpiles:[pile],activities:[],activity_epoch:1};
+  view.follow(baseline,true);view.advance(0);
+  const root=scene.getObjectByName('resource-packets');
+  assert.equal(root.children.length,1);
+  const positions=root.children.map(mesh=>mesh.position.toArray());
+  const events=['excavate','mine','input','output','collect'].map((kind,id)=>({id,kind,
+    goods_kg:{soil:25},from:{point_m:[0,2,0]},to:{pile:pile.name}}));
+  const next={...baseline,activities:events};
+  view.follow(next);view.advance(1200);view.follow(next);view.advance(2000);
+  assert.equal(root.children.length,1,'receipts cannot mint flying fragment meshes');
+  assert.deepEqual(root.children.map(mesh=>mesh.position.toArray()),positions);
+  assert.ok(root.children.every(mesh=>!mesh.userData.transferKind));
+  assert.equal(pile.holds_kg.soil,25,'rendering cannot debit or credit material');
 });
 
 test('dig square is green only for a fresh ready observation; refusals are red',()=>{

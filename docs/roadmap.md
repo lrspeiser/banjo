@@ -10,6 +10,8 @@
 
 # Banjo roadmap and acceptance gates
 
+**Owner-directed ground matter replacement, October 5 (active design):** [Audit and ordered acceptance gates](ground-matter-audit.md) requires authoritative constituent cells across terrain, physical fragments, storage and crafted tools. First qualify a small dry solid patch with measured tool work and material-law detachment/native settling; then granular/cohesive ground, collection/manufacture, wet coupling and bounded performance. Cosmetic receipt flights are removed, but this is not the native rewrite. Fixed-count cube extraction and host-positioned piles remain pending replacement; preserve private saved quantities. Unrelated paused R3 scope is unchanged.
+
 **Rover recovery recognition, October 5:** [Verified checkpoint](rover-stuck-recognition-checkpoint.md) closes erased exhausted-escape state and misleading stuck chat. Keep the job/load while paused; clear only after measured movement, release, rest and reported dry traversable ground. Next qualify an ordinary browser recovery journey and prevent repeated mined-pit trapping; retained-world autonomous escape remains open.
 
 **Shoreline checkpoint, October 4:** [Measured channel and renderer repair](shoreline-channel-checkpoint.md) closes fabricated dry-cell water and the wet/cube readiness mismatch. Real held-tool channels pass material/water bookkeeping; storage/peer/restart and render checks pass. Next stabilize the still-failing player walking/body-view gate (also fails on unchanged main), then manually qualify a connected river outlet. Cell-level water seams, water in streamed regions, wet physical strokes, bracing and erosion remain separate requirements; R3 stays paused.

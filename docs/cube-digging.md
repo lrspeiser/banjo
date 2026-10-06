@@ -1,5 +1,7 @@
 # Digging on cube ground
 
+**October 5 audit:** The cube path below is a gameplay extraction approximation, not constitutive voxel fracture. Its fixed 26 J and one/three/ten-click counts are not contact-measured work. Host piles and static cone pictures are aggregate ledger representations. Cosmetic material-flight cubes have been removed. See [ground matter audit and replacement contract](ground-matter-audit.md) for the physical source/fragment/tool requirements and outstanding native rewrite.
+
 October 4 follow-up: [owner demo, clicked faces and saved-world upgrade](cube-targeting-checkpoint.md).
 
 The owner's calls of 2026-10-04: digging should feel like Minecraft ("an entire cube goes away pretty fast so you can see your progress"), clicks must keep up ("not queue up way behind me"), and dug walls hold until braces exist. This note says how that works now.

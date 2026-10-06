@@ -200,17 +200,15 @@ export function makeTargetHover(delayMs=1500) {
   };
 }
 
-// Small display packets describe confirmed collection; they are not simulated
-// debris, fragment bodies or an extra inventory transfer.
+// Receipt feedback only. A mass receipt cannot supply debris count, geometry,
+// poses or velocities; those must come from authoritative native matter.
 export function toolOutcomeFeedback(answer) {
   if(answer?.refused)return null;
   const result=answer?.result,collected=collectedToolMaterials(answer);
   const hit=!!collected || (result?.open===false && Number(result.work_j)>0)
     || (result?.schema==='banjo.object-strike.v1' && result.impacts?.length>0);
   if(!hit)return null;
-  const count=collected ? Math.min(12,Math.max(1,Math.ceil(collected.kg*3))) : 0;
-  return {at:result?.at_m || null,collected,
-    packets:Array.from({length:count},(_,i)=>collected.materials[i%collected.materials.length])};
+  return {at:result?.at_m || null,collected};
 }
 
 // Nine vertices include the midpoint of each side: each side can cross two
