@@ -6,7 +6,8 @@ import { gameNavigation, refreshNavigation, showSaveStatus, screenUrl, screenGro
 import { conditionPanel } from "/body_condition.js";
 import { renderPlayerGuidance, guidanceUrl } from "/player_guidance.js";
 import { placementUrl } from "/construction_ui.js";
-import { guideHistory, rememberGuide } from '/chat_actions.js';
+import { guideHistory, rememberGuide, finishChat, submitChatText } from '/chat_actions.js';
+import {createVoiceController} from '/voice.js';
 
 const $ = (q) => document.querySelector(q);
 const worldId = new URLSearchParams(location.search).get("world");
@@ -1011,10 +1012,11 @@ function installEditor() {
   };
   chat.onsubmit = async (event) => {
     event.preventDefault();
-    try { await chatEdit(); }
-    catch (error) { say(error.message || String(error), true);
+    let reply='',problem=null;
+    try { const answer=await chatEdit();reply=answer?.workshop_chat?.reply || answer?.game_chat?.reply || ''; }
+    catch (error) {problem=error.message || String(error);say(problem, true);
       dispatchEvent(new CustomEvent("banjo-workshop-chat-finished", {detail:{error:error.message || String(error)}})); }
-    finally { dispatchEvent(new CustomEvent("banjo-workshop-chat-finished")); }
+    finally { dispatchEvent(new CustomEvent("banjo-workshop-chat-finished"));finishChat(chat.id,reply,problem); }
   };
   testPicker.onchange = () => { bench.selectedBenchTest = testPicker.value; renderBenchControls(); $("#ws-bench-result").replaceChildren(); clearPlayback(); scheduleSetup(0); };
   $("#ws-run-bench").onclick = (event) => guard(event.currentTarget, runBenchTest);
@@ -1600,6 +1602,10 @@ function installBench() {
     document.body.classList.remove("ws-chat-open");chatToggle.setAttribute("aria-expanded","false");
   });
   tabs.append(make("button",{type:"button","data-game-menu":""},"Menu"),chatToggle);
+  createVoiceController({api,mount:chatForm,buttonMount:tabs,
+    canTalk:()=>!!worldId && !$('#ws-component-chat-text').disabled,
+    submitText:text=>submitChatText(chatForm,text,()=>openChat(true)),
+    onStatus:({text})=>{if(text)openChat(true);}});
   addEventListener("keydown",event=>{
     if(event.key==="Escape" && document.body.classList.contains("ws-chat-open") && !document.querySelector("#game-menu")?.open) {
       event.preventDefault();openChat(false);return;
@@ -4240,7 +4246,7 @@ async function chatEdit() {
     const action=answer.game_chat?.actions?.find(a=>a.open && a.selection);
     if(action)await selectChatSource(action);
     input.value = '';
-    return;
+    return answer;
   }
   if (!chosen()) throw new Error("Choose an item from Inventory or Recipes first.");
   if (!bench.selectedPart) bench.selectedPart = chosen().parts[0]?.name;
@@ -4259,7 +4265,7 @@ async function chatEdit() {
     answer = await api("/api/workshop/candidates",
                        { ...candidateBody(), component_chat:{ part_name:selected, message, turn } });
   } finally { watching.stop(); }
-  if (!took(answer, selected)) return;
+  if (!took(answer, selected)) return answer;
   if (answer.workshop_chat?.scope) $("#ws-edit-scope").value = answer.workshop_chat.scope;
   // Asked to try the thing, the chat hands back a run to watch. It is played
   // over the object, with one button back to the build.
@@ -4273,6 +4279,7 @@ async function chatEdit() {
   // here as well, which put it across the top of the page and under "Cheap
   // checks" at the same time: the same sentence in three places.
   input.value = "";
+  return answer;
 }
 async function saveSelectedComponent() {
   const part = selectedPart(); if (!part) throw new Error("Click the component you want to save first.");

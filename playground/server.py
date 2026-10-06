@@ -62,6 +62,7 @@ import workshop_library
 import market
 import game_guidance
 import proactive_guidance
+import voice_api
 import player_messages
 import starter_goals
 import ai_player
@@ -1343,7 +1344,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.close_connection: self.send_header("Connection","close")
         self.send_header("Cache-Control","no-store")
         self.send_header("X-Content-Type-Options","nosniff")
-        self.send_header("Content-Security-Policy","default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'")
+        self.send_header("Content-Security-Policy","default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://api.openai.com; media-src 'self' blob:; frame-ancestors 'none'")
         self.end_headers(); self.wfile.write(data)
     def trusted_host(self):
         allowed = {f"127.0.0.1:{self.server.server_port}",f"localhost:{self.server.server_port}"}
@@ -1455,7 +1456,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/blades.js":"blades.js","/interaction.js":"interaction.js","/tools.js":"tools.js","/workbench.js":"workbench.js",
                 "/cellmesh.js":"cellmesh.js","/surfaces.js":"surfaces.js",
                 "/material_appearance.js":"material_appearance.js","/terrain_material.js":"terrain_material.js","/cut_surface.js":"cut_surface.js","/ground_regions.js":"ground_regions.js",
-                "/player_guidance.js":"player_guidance.js","/construction_ui.js":"construction_ui.js",
+                "/player_guidance.js":"player_guidance.js","/voice.js":"voice.js","/construction_ui.js":"construction_ui.js",
                 "/debug":"debug.html","/debug.js":"debug.js","/debug.css":"debug.css",
                 "/vendor/three.module.js":"vendor/three.module.js","/vendor/three.core.js":"vendor/three.core.js"}
             if path not in allowed: return self.send({"error":"Not found"},404)
@@ -1563,11 +1564,25 @@ class Handler(BaseHTTPRequestHandler):
             # A provider worker never holds world access; responses are polled
             # against a newly authenticated decision before being displayed.
             return self.send(app.proactive_guide.handle(player,body,context))
+        if path == '/api/world/voice/session':
+            if not getattr(self.app,'world_id',None):raise ValueError('Join a named world for voice')
+            if body != {}:raise ValueError('Voice session takes no client-supplied configuration')
+            return self.send(voice_api.client_secret(self.app,player))
+        if path == '/api/world/voice/ask':
+            if not getattr(self.app,'world_id',None):raise ValueError('Join a named world for voice')
+            return self.send(voice_api.ask(self.app,player,body,journal_of(self.app,player),registry()))
+        if path == '/api/world/voice/memory':
+            if not getattr(self.app,'world_id',None):raise ValueError('Join a named world for voice')
+            return self.send(voice_api.memory_request(self.app,player,body))
         if path == '/api/world/help':
             if not getattr(self.app, 'world_id', None): raise ValueError('Join a named world for game help')
             game_guidance.validate(body)
+            if not body.get('history'):body={**body,'history':voice_api.history(self.app,player)}
             context = game_guidance.snapshot(self.app, player, journal_of(self.app, player), registry(), body.get('focus'))
-            return self.send({'game_chat':game_guidance.answer(self.app, body, context)})
+            answer=game_guidance.answer(self.app, body, context)
+            voice_api._remember_exchange(self.app,player,body['message'],answer['reply'][:voice_api.MAX_TEXT],
+                focus=body.get('focus'),screen=body.get('screen','world'))
+            return self.send({'game_chat':answer})
         if path == '/api/world/messages':
             if not getattr(self.app,'world_id',None):raise ValueError('Join a named world for player chat')
             return self.send(player_messages.request(self.app,player,body))

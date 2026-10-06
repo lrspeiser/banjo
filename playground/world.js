@@ -25,7 +25,8 @@ import { makeTools } from "/tools.js";
 import { makeWorkbench } from "/workbench.js";
 import { gameNavigation, showSaveStatus, screenUrl, thumbnail, massLabel, useItemPictures, itemPicture, keepItemPicture } from "/game_menu.js";
 import { conditionPanel } from "/body_condition.js";
-import { renderChatActions, guideHistory, rememberGuide, actionUrl } from '/chat_actions.js';
+import { renderChatActions, guideHistory, rememberGuide, actionUrl, finishChat, submitChatText } from '/chat_actions.js';
+import {createVoiceController} from '/voice.js';
 import { GROUND_APPEARANCE, materialAppearance, terrainCellAt, terrainHitPoint, terrainTargetPath, exposedRunKind, toolTargetFeedback, toolTargetColor, collectedToolMaterials, toolOutcomeFeedback, makeTargetHover, cellWaterData, columnTopData, walkColumnFaces, columnChunkIds, columnChunkBox } from "/material_appearance.js";
 import { terrainMaterial } from "/terrain_material.js";
 import { makeRegions } from "/ground_regions.js";
@@ -11502,6 +11503,10 @@ chatRecipient.onfocus=()=>refreshChatRecipients().catch(()=>{});
 playerRetry.onclick=()=>{const pending=pendingPlayerMessage();if(pending){$('ask-text').value=pending.message;$('ask').requestSubmit()}};
 setInterval(pollPlayerMessages,2500);
 
+createVoiceController({api,mount:$('ask'),buttonMount:document.querySelector('#world-quickbar .game-bottom-tabs'),
+  canTalk:()=>!!worldId && !!world.session && !watchedId && !world.asking,
+  submitText:text=>submitChatText($('ask'),text,talk),onStatus:({text})=>{if(text)talk();}});
+
 $("ask").addEventListener("submit", async (e) => {
   e.preventDefault();
   const input = $("ask-text");
@@ -11515,6 +11520,7 @@ $("ask").addEventListener("submit", async (e) => {
   $("ask-send").disabled = true;
   world.asking = true;
   chatRecipient.disabled=true;
+  let chatReply='',chatError=null;
   try {
     if(recipient==='players') {
       let pending=pendingPlayerMessage();
@@ -11532,6 +11538,7 @@ $("ask").addEventListener("submit", async (e) => {
       else if(recipient.startsWith('character:')) {answer=await api('/api/world/character/chat',{id:recipient.slice(10),message:text,history});name=answer.name}
       else {const program=recipient.slice(6);answer=await api('/api/world/rover/talk',{session:world.session,program,said:text,person:whereIAm()});name=program;if(answer.program)mergeProgram(answer.program)}
       const reply=answer.game_chat?.reply||answer.reply||'(nothing to say)';
+      chatReply=reply;
       prior.push({role:'user',content:text},{role:'assistant',content:reply,name});privateTurns.set(recipient,prior.slice(-40));
       waiting.done();const turn=say('world',reply);turn.querySelector('.who').textContent=name;
       if(recipient==='guide') {
@@ -11556,11 +11563,13 @@ $("ask").addEventListener("submit", async (e) => {
     if (answer.checked && answer.checked.length) sayChecked(turn, answer.checked);
     if (answer.reopened) adoptRebuilt(answer);
     const prior=privateTurns.get(recipient)||[];prior.push({role:'user',content:text},{role:'assistant',content:answer.reply||'',name:'AI Actions'});privateTurns.set(recipient,prior.slice(-40));
+    chatReply=answer.reply || '';
   } catch (error) {
+    chatError=String(error.message || error);
     waiting.done();
     say("bad", String(error.message || error));
     if(recipient==='players') {input.value=pendingPlayerMessage()?.message||text;playerRetry.hidden=!pendingPlayerMessage()}
-  } finally { world.asking = false; chatRecipient.disabled=false; $("ask-send").disabled = false; input.focus(); }
+  } finally { world.asking = false; chatRecipient.disabled=false; $("ask-send").disabled = false; input.focus();finishChat('ask',chatReply,chatError); }
 });
 
 // A room rebuilt from what it has become -- after the chat changed it, or after

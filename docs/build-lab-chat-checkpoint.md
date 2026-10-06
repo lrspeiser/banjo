@@ -1,7 +1,10 @@
 # Build selection and shared typed chat
 
 October 5, 2026. Host/UI implementation and Windows browser checkpoint.
-Verification base: `7b2a78db431af2b1a78488194170c78a0da56429`, plus this change.
+Published on main: `1572c27514ef06814c119c3d042344af58e6c192`.
+Verification base: `7b2a78db431af2b1a78488194170c78a0da56429`, plus that change.
+Installed in `C:/play` with a graceful restart, native binaries retained and
+all 151 saved private files matching the post-shutdown backup at startup.
 
 ## Implemented behavior
 
@@ -70,7 +73,8 @@ not evidence that the full main suite is green. Browser reloads can cancel old
 HTTP requests, producing Windows connection-aborted server diagnostics; the
 covered completed journeys require zero browser runtime exceptions.
 
-Next: finish the separately requested press/hold voice checkpoint through these
-same typed audiences and tools, with output off by default; live provider latency
-and real phone touch/audio acceptance remain to be measured. The broader
-construction and physical qualification gates remain open.
+The separate [press/hold voice checkpoint](voice-shared-chat-checkpoint.md) now
+uses these same typed audiences and tools with output off by default. Its live
+synthetic provider observation and physical phone/human acceptance boundary are
+recorded there. The broader construction and physical qualification gates remain
+open.

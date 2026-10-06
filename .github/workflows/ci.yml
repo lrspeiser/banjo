@@ -213,6 +213,10 @@ jobs:
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run BANJO_LIBRARY=$PWD/build/ci/libbanjo.so BANJO_CHROME=/usr/bin/google-chrome \
             BANJO_CHROME_ARGS="--no-sandbox --disable-dev-shm-usage --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader" \
             BANJO_BROWSER_TESTS=required python3 tests/build_lab_chat_tests.py -v
+          BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run BANJO_LIBRARY=$PWD/build/ci/libbanjo.so BANJO_CHROME=/usr/bin/google-chrome \
+            BANJO_CHROME_ARGS="--no-sandbox --disable-dev-shm-usage --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader" \
+            BANJO_BROWSER_TESTS=required python3 tests/voice_browser_tests.py -v
+          python3 tests/voice_tests.py -v
           BANJO_LIBRARY=$PWD/build/ci/libbanjo.so python3 tests/knowledge_tests.py -v
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run python3 tests/world_clock_tests.py -v
           BANJO_LIVE_ENGINE=$PWD/build/ci/banjo_live_world_run python3 tests/electric_furnace_tests.py -v

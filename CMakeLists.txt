@@ -713,6 +713,10 @@ if(BANJO_BUILD_TESTS)
             --experimental-default-type=module --test ${CMAKE_CURRENT_SOURCE_DIR}/tests/tool_target_client_tests.mjs)
         add_test(NAME banjo_workshop_supply_tests COMMAND ${BANJO_NODE_EXECUTABLE}
             --experimental-default-type=module --test ${CMAKE_CURRENT_SOURCE_DIR}/tests/workshop_supply_tests.mjs)
+        add_test(NAME banjo_voice_client_tests COMMAND ${BANJO_NODE_EXECUTABLE}
+            --experimental-default-type=module --test ${CMAKE_CURRENT_SOURCE_DIR}/tests/voice_client_tests.mjs)
+        add_test(NAME banjo_voice_controller_tests COMMAND ${BANJO_NODE_EXECUTABLE}
+            --experimental-default-type=module --test ${CMAKE_CURRENT_SOURCE_DIR}/tests/voice_controller_tests.mjs)
     endif()
     add_executable(banjo_patch_pressure_tests tests/patch_pressure_tests.cpp)
     target_link_libraries(banjo_patch_pressure_tests PRIVATE banjo_core)
@@ -1753,6 +1757,14 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/build_lab_chat_tests.py -v)
     set_tests_properties(banjo_build_lab_chat_tests PROPERTIES TIMEOUT 180)
+    add_test(NAME banjo_voice_tests COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/voice_tests.py -v)
+    add_test(NAME banjo_voice_browser_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/voice_browser_tests.py -v)
+    set_tests_properties(banjo_voice_browser_tests PROPERTIES TIMEOUT 180)
     add_test(NAME banjo_construction_project_tests
         COMMAND ${CMAKE_COMMAND} -E env
             BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>

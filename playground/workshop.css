@@ -791,6 +791,10 @@ body.workshop-mode #ws-build-editor .ws-viewport {flex:1 0 300px;min-height:300p
 .ws-hub-build .ws-recipe-skill {display:none;}
 .chat-actions {display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
 .chat-actions .ws-action {font-size:.75rem;}
+#voice-talk {touch-action:none;user-select:none;font-size:18px!important;}
+#voice-talk[data-voice-state=listening] {background:#256448;color:#fff;border-color:#9be3b3;}
+#voice-status {font-size:11px;flex:none;}
+#voice-status[hidden] {display:none;}
 #ws-build-tools > section,#ws-build-tools > div {margin-top:10px;}
 #ws-build-tools #ws-lab-components {padding:0;}
 #ws-build-tools #ws-remake {border:1px solid var(--edge);border-radius:8px;padding:10px;}

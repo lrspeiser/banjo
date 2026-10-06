@@ -36,3 +36,20 @@ export function guideHistory() {
   const player=world && localStorage.getItem(`banjo.player.${world}`);
   try {return JSON.parse(sessionStorage.getItem(`banjo.guide.${world}.${player}`)||'[]');}catch{return [];}
 }
+
+// Voice follows the same submit handler and completion as typing.
+export function finishChat(formId,reply='',error=null) {
+  dispatchEvent(new CustomEvent('banjo-chat-finished',{detail:{formId,reply,error}}));
+}
+export function submitChatText(form,text,open) {
+  const input=form.querySelector('textarea,input');
+  if(!input || input.disabled || form.dataset.busy==='true')return Promise.reject(Error('Chat is busy. Try again.'));
+  open?.();input.value=text;
+  return new Promise((resolve,reject)=>{
+    const done=event=>{if(event.detail?.formId!==form.id)return;
+      clearTimeout(timer);removeEventListener('banjo-chat-finished',done);
+      event.detail.error?reject(Error(event.detail.error)):resolve(event.detail);};
+    const timer=setTimeout(()=>{removeEventListener('banjo-chat-finished',done);reject(Error('Chat did not finish. Check the visible turn before retrying.'));},120000);
+    addEventListener('banjo-chat-finished',done);form.requestSubmit();
+  });
+}

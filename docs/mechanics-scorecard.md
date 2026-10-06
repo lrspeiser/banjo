@@ -1,6 +1,8 @@
 # Banjo mechanics scorecard
 
-**Build and shared typed chat, October 5:** [Host/UI checkpoint](build-lab-chat-checkpoint.md) exposes source selection, reversible Lab edits, visible Save and paid Make review, material-context recipe navigation and a compact targeted rover chat. World guidance is explicit, with clean World URLs. Isolated Windows desktop/landscape checks cover draft reload, native paid collection and failed turns; native laws are unchanged. Voice is the next separate checkpoint, and the pre-existing process-input guidance priority failure remains open.
+**Shared press/hold voice, October 5:** [Host/UI and live-provider checkpoint](voice-shared-chat-checkpoint.md) routes visible microphone/Y input through the selected typed Guide, rover or Lab chat. Persistent Audio starts Off; cancellation stops capture and errors preserve typing. Synthetic Windows browser regressions and one live synthetic rover stop verify routing and returned audio; real phone/human audio acceptance remains open. Typed checkpoint `1572c275` is published on main and installed in `C:/play`; native laws are unchanged.
+
+**Build and shared typed chat, October 5:** [Host/UI checkpoint](build-lab-chat-checkpoint.md) exposes source selection, reversible Lab edits, visible Save and paid Make review, material-context recipe navigation and a compact targeted rover chat. World guidance is explicit, with clean World URLs. Isolated Windows desktop/landscape checks cover draft reload, native paid collection and failed turns; native laws are unchanged. The separate voice checkpoint is linked above; the pre-existing process-input guidance priority failure remains open.
 
 **Constituent solid reference, October 5:** [Measured boundary](solid-matter-reference-checkpoint.md)
 qualifies a free 125-cell patch under bounded external traction, preserving
