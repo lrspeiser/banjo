@@ -89,7 +89,7 @@ test('an empty hand collects a pile, rechecking exact-ray occlusion and reach; a
       assert.deepEqual(dir.toArray(),direction.toArray());assert.equal(max,4);
       return mode==='native'?{id:8,distance:1}:null;
     },collect:async hit=>{assert.equal(hit.id,8);nativeCollected++;}};
-    const install=new Function('canvas','camera','aimVector','resourceVisuals','act','THREE','pressPrimary','lastAction','physicalGround',
+    const install=new Function('canvas','camera','aimVector','resourceVisuals','act','THREE','pressPrimary','lastAction','physicalGround','recordInteraction','$',
       'let cursorFree=false,resumeClick=false,primaryUsed=false,cursor,drag;const watchedId=null,looking=false;'+
       // With a digging tool in hand a click digs; a pile is for an empty hand
       // (the owner, 2026-10-04: digging past a pile collected it instead).
@@ -98,7 +98,7 @@ test('an empty hand collects a pile, rechecking exact-ray occlusion and reach; a
       full.slice(full.indexOf('function pointerToolTarget('),full.indexOf('function pressPrimary('))+code);
     install({addEventListener:(_,fn)=>{callback=fn;},setPointerCapture(){}},camera,()=>direction.clone(),visual,
       async(op,args)=>{requests.push(args);return mode==='occluded'?{hit:true,point_m:[.1,1.52,0]}:{hit:false};},THREE,
-      ()=>{strokes++;return true;},message=>messages.push(message),nativeMatter);
+      ()=>{strokes++;return true;},message=>messages.push(message),nativeMatter,()=>{},()=>({dataset:{}}));
     callback({button:0,clientX:100,clientY:200});await new Promise(setImmediate);
     assert.equal(collected,mode==='clear'?1:0);
     assert.equal(nativeCollected,mode==='native'?1:0);

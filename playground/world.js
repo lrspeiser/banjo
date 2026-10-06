@@ -4638,15 +4638,19 @@ async function changeInventory(op, item, options, again = false) {
   const oldItem=[...Object.values(world.inventory?.hands || {}),...(world.inventory?.stowed || [])]
     .find(thing=>thing && (thing.id===item || thing.name===item || thing.parts?.includes(item)));
   const revision = world.inventory && world.inventory.record ? world.inventory.record.revision : null;
+  const id=crypto.randomUUID();
   let answer;
   try {
-    const ask = { session: world.session, request: crypto.randomUUID(), op, item, revision,
+    const ask = { session: world.session, request: id, op, item, revision,
                   person: whereIAm() };
     if (options.grip) ask.grip = options.grip;
     // Which numbered slot to put it in, for `slot` (inventory.py).
     if (Number.isInteger(options.slot)) ask.slot = options.slot;
+    recordInteraction({event:'inventory-start',id,op,item,grip_m:ask.grip,eyes_m:ask.person.eyes_m});
     answer = await api("/api/world/inventory", ask);
+    recordInteraction({event:'inventory-reply',id,op,item,ok:answer.ok,why:answer.why});
   } catch (error) {
+    recordInteraction({event:'inventory-error',id,op,item,reason:String(error.message || error)});
     say("bad", String(error.message || error));
     return null;
   }
@@ -6901,8 +6905,8 @@ function recordInteraction(event) {
   event=compact(event);
   if(trace.interactions.length>=64){
     trace.droppedInteractions++;
-    if(!event.event.startsWith('tool-') && !event.event.endsWith('-error'))return;
-    const low=trace.interactions.findIndex(row=>!row.event.startsWith('tool-') && !row.event.endsWith('-error'));
+    if(!/^(tool-|inventory-|pointer-)/.test(event.event) && !event.event.endsWith('-error'))return;
+    const low=trace.interactions.findIndex(row=>!/^(tool-|inventory-|pointer-)/.test(row.event) && !row.event.endsWith('-error'));
     trace.interactions.splice(low<0 ? 0 : low,1);
   }
   trace.interactions.push({...event,client_ms:Math.round(performance.now()),native_s:world.clock});
@@ -7010,7 +7014,7 @@ async function sendTrace(why) {
   // prefer actual press/use/failure events over hover transitions when full.
   let dropped=trace.droppedInteractions;
   while(JSON.stringify(report.interactions).length>12000) {
-    const low=report.interactions.findIndex(row=>!row.event.startsWith('tool-') && !row.event.endsWith('-error'));
+    const low=report.interactions.findIndex(row=>!/^(tool-|inventory-|pointer-)/.test(row.event) && !row.event.endsWith('-error'));
     report.interactions.splice(low<0 ? 0 : low,1);dropped++;
   }
   const link = trace.link;
@@ -7391,6 +7395,9 @@ canvas.addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
   if (e.altKey) return;          // inspect while carrying, without primary Use
   const from=camera.position.clone(),dir=aimVector();
+  recordInteraction({event:'pointer-press',input:e.pointerType || 'mouse',
+    from_m:from.toArray(),direction:dir.toArray(),tool:world.held?.name || null,
+    state:$('crosshair').dataset.readiness || null,screen_x_px:e.clientX,screen_y_px:e.clientY});
   const matterHit=!watchedId && physicalGround.pick(from,dir,4);
   if(matterHit) {
     resumeClick=true;primaryUsed=false;

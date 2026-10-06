@@ -26,6 +26,9 @@ solver step of that duration. Frame reports already distinguish hidden tabs.
   failed previews, pointer/keyboard presses, queue replacement, use start
   and displayed responses. A shared interaction ID links each use to the
   server. Preview readiness is an observation, not a material-release promise.
+- Pointer traces include exact screen coordinates/ray even with empty hands.
+  Inventory pickup/equip/stow/drop requests and replies use the existing
+  request ID and retain operation, requested item/grip and refusal.
 - Server traces independently record authenticated request receipt, current
   native hand/player, tool preflight, target/material/desired grip, refusal
   or native result, work/mass fields and timings, before sending a response.
@@ -63,7 +66,9 @@ then click distant ground. Each verifies a visible refusal and six matching
 press/start/request/preflight/result/reply events, authenticated actor identity
 and retained native hand. Existing native source-cell digging cases remain.
 The added refusal checks do not teleport the player/tool or fabricate outcomes.
-Unit checks cover valid small observer movement, changed cell/layer invalidation,
+A further four-suite Inventory/pointer trace gate passes in 54.58 s; both
+native-body pickup cases verify logged requested grips and out-of-reach
+refusals. Unit checks cover valid small observer movement, changed cell/layer invalidation,
 retained queued mouse rays, large-reply compaction, rotation, failed writes,
 positioning failure measurements and disconnected responses.
 
@@ -77,3 +82,14 @@ Analyse the next linked failed attempt before changing forces or tolerances.
 Native positioning, fast 10 ft excavation, constitutive fracture, full
 momentum/energy closure, wear, water excavation, physical-phone acceptance and
 the full regression audit remain open. No new physical validation is claimed.
+
+## Published demo
+
+The initial implementation is published on main `535804ad`. The existing
+port-18890 demo was stopped with Ctrl+C, saved rooms backed up under
+`C:/play/backups/interaction-trace-535804ad`, updated and restarted with
+unchanged native binaries. `/api/status` reports `engine_ready: true`. The
+owner's same world reloads with a closed chat rail and writes target-state
+events locally. A live ordinary pickup check refuses an out-of-reach handle;
+this motivates the added Inventory request/outcome coverage. The preserved
+world is not reset. Broader gameplay/physical qualification remains open.

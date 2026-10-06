@@ -196,6 +196,16 @@ class TheEndpointThatReceivesThem(unittest.TestCase):
         self.assertEqual(rows[-1]['reason'],'stale room')
         self.assertEqual(rows[-1]['id'],rows[0]['id'])
 
+    def test_pickup_refusal_uses_inventory_request_id_and_keeps_grip(self):
+        with interaction_trace.attempt(self.app,'owner',{'request':'pickup-1','op':'take_up',
+                'item':'field pick','grip':[1,.8,2]},'inventory'):
+            interaction_trace.outcome({'ok':False,'why':'Handle is out of reach'})
+        rows=self.events()
+        self.assertEqual([r['event'] for r in rows],['inventory-request','inventory-result'])
+        self.assertEqual(rows[0]['id'],'pickup-1')
+        self.assertEqual(rows[0]['grip_m'],[1,.8,2])
+        self.assertEqual(rows[1]['why'],'Handle is out of reach')
+
     def test_disconnected_browser_preserves_finished_native_outcome(self):
         with self.assertRaises(ConnectionAbortedError):
             with interaction_trace.attempt(self.app,'owner',{'interaction_id':'lost-reply'}):

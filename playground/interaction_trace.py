@@ -33,12 +33,15 @@ _SCALAR = {'id', 'event', 'tool', 'target_name', 'input', 'state', 'mode', 'reas
            'distance_m', 'penetration_m', 'loosened_m3', 'ground_work_J',
            'hand_work_J', 'removed_kg', 'replayed', 'hand_work_j', 'ground_work_j',
            'work_j', 'break_work_j', 'cutting_work_j', 'required_work_j', 'charged_j',
-           'mass_kg', 'volume_m3', 'broken_share', 'body_id', 'supported'}
+           'mass_kg', 'volume_m3', 'broken_share', 'body_id', 'supported',
+           'op', 'item', 'ok', 'why', 'taken_up', 'held', 'by', 'set_aside', 'let_go',
+           'screen_x_px', 'screen_y_px'}
 _VECTOR = {'at_m', 'eyes_m', 'from_m', 'direction', 'tip_m', 'grip_m',
            'wish_hand_m', 'wish_tip_m', 'pointing', 'position_m', 'velocity_m_s',
            'target_m', 'force_n', 'grip_velocity_m_s'}
 _OBJECT = {'preview', 'target', 'hand', 'native_player', 'diagnostics', 'timing', 'result'}
 _OBJECT.add('cut')
+_OBJECT.add('room')
 
 
 def _finite(value):
@@ -122,14 +125,15 @@ def snapshot(app, player):
 
 
 @contextmanager
-def attempt(app, player, body):
+def attempt(app, player, body, kind='tool'):
     # Log before preflight/geometry checks; exceptions must leave an outcome.
     body = body if isinstance(body, dict) else {}
-    ident = body.get('interaction_id')
+    ident = body.get('request') if kind=='inventory' else body.get('interaction_id')
     ident = ident if isinstance(ident, str) and re.fullmatch(r'[A-Za-z0-9_-]{1,80}', ident) else uuid.uuid4().hex
-    item = {'app': app, 'player': player, 'id': ident, 'started': time.monotonic(), 'finished': False}
+    item = {'app': app, 'player': player, 'id': ident, 'kind':kind,'started': time.monotonic(), 'finished': False}
     token = _attempt.set(item)
-    write(app, player, 'server', {'event': 'tool-request', 'id': ident,
+    write(app, player, 'server', {'event': kind+'-request', 'id': ident,
+        'op':body.get('op'),'item':body.get('item'),'grip_m':body.get('grip'),
         'at_m': body.get('at_m'), 'target_name': body.get('target_name'),
         'eyes_m': (body.get('person') or {}).get('eyes_m') if isinstance(body.get('person'), dict) else None,
         'energy_assist': body.get('energy_assist') is True, **snapshot(app, player)})
@@ -137,7 +141,7 @@ def attempt(app, player, body):
         yield item
     except Exception as exc:
         if item['finished']:
-            write(app,player,'server',{'event':'tool-delivery-error','id':ident,
+            write(app,player,'server',{'event':kind+'-delivery-error','id':ident,
                   'error_type':type(exc).__name__,'reason':str(exc)})
         else:
             outcome({'status': 'error', 'error_type': type(exc).__name__, 'reason': str(exc)})
@@ -163,6 +167,6 @@ def outcome(answer):
     if item:
         item['finished'] = True
         write(item['app'], item['player'], 'server', {**answer,
-              'event': 'tool-result', 'id': item['id'],
+              'event': item['kind']+'-result', 'id': item['id'],
               'elapsed_ms': round(1000 * (time.monotonic() - item['started']), 1),
               **snapshot(item['app'], item['player'])})

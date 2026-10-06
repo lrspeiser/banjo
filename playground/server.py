@@ -1622,7 +1622,8 @@ class Handler(BaseHTTPRequestHandler):
         waits_for_steps = path in {"/api/world/action", "/api/world/tool/use", "/api/world/putdown", "/api/world/ask"}
         # Normal world calls share access; explicit installation is exclusive.
         # Keep ordinary requests concurrent and perform authentication first.
-        with (interaction_trace.attempt(self.app,player,body) if path=='/api/world/tool/use' else nullcontext()), \
+        with (interaction_trace.attempt(self.app,player,body,'inventory' if path=='/api/world/inventory' else 'tool')
+              if path in ('/api/world/tool/use','/api/world/inventory') else nullcontext()), \
              (world_access.gate(self.app).enter(exclusive=path in ("/api/world/open", "/api/live/open", "/api/world/goods/deliver", "/api/world/process", "/api/world/matter/collect")) if world_call else nullcontext()), \
              (world_access.state_lock(self.app) if world_call and not waits_for_steps else nullcontext()), \
              (gameplay_room.LOCK if world_call and not waits_for_steps and (gameplay_room.active(self.app)
@@ -2234,6 +2235,7 @@ class Handler(BaseHTTPRequestHandler):
                     keep_world(app,"what the person has changed")
                 if answer.get("ok"):
                     starter_goals.observe(app, player)
+                interaction_trace.outcome(answer)
                 return self.send(answer)
             if path=="/api/world/inventory/shown":
                 # And what the person has now, as the page shows it.

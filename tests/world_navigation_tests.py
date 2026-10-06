@@ -75,6 +75,13 @@ class Navigation(unittest.TestCase):
         far=self.page.evaluate('pickupReplies.at(-1)')
         self.assertFalse(far['ok'],far)
         self.assertIn('Move closer',far['why'])
+        pickup_log=app.runs_path/'interaction-events.jsonl'
+        pickup_rows=[json.loads(s) for s in pickup_log.read_text(encoding='utf-8').splitlines()]
+        pickup_result=next(r for r in reversed(pickup_rows) if r.get('event')=='inventory-result')
+        self.assertFalse(pickup_result['ok'])
+        self.assertIn('Move closer',pickup_result['why'])
+        self.assertTrue(any(r.get('event')=='inventory-request' and r.get('id')==pickup_result['id']
+            and r.get('op')=='take_up' and r.get('grip_m') for r in pickup_rows))
         self.assertIn('Move closer',self.page.evaluate('document.querySelector("#world-action-toast").textContent'))
         self.assertIsNone(self.page.evaluate('banjoRoom.held()'))
         self.assertEqual('',app.live.session.state.get('player_hands',{}).get(owner['id'],{}).get('holding',''))
