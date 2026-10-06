@@ -60,3 +60,15 @@ It does not qualify physical-phone behavior, crouching/reaching biomechanics,
 the full regression suite, constitutive excavation, tool wear or fast digging.
 The broader glass/oak/iron physics and conservation limitations remain those
 recorded in the mechanics scorecard.
+
+## Published demo verification
+
+Implementation and scoped checks are on main `3a2d5d6f`. The port-18890 demo
+was stopped with Ctrl+C, its saved rooms copied to
+`C:/play/backups/native-pickup-3a2d5d6f`, updated to that revision and restarted
+with unchanged native binaries. Through the owner's real in-app browser,
+Menu → New game created `d36ec8d4d52d49be9906973033b000a5` (Fresh pickup test).
+Clicking the visible pick equipped Field pick in the right hand, retained it
+across later native steps and left chat closed. The previous world remains
+available in the Menu. The hand screenshot is retained locally at
+`build/resource-flow/fresh-world-pick-held.jpg`.
