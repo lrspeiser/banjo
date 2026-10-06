@@ -31,8 +31,20 @@ def _dry_ground(app, at, use=None, pose=None):
                  for radius in ((least+most)/2,least+(most-least)/4,most+1.)
                  for angle in (0,math.pi/4,-math.pi/4,math.pi/2,-math.pi/2,
                                3*math.pi/4,-3*math.pi/4,math.pi)]
+    session=app.live.session
+    spec=getattr(session,'room_spec',None) or getattr(getattr(app,'room',None),'spec',None) or {}
+    terrain=spec.get('terrain') or {}
+    grid=((session.state or {}).get('terrain') or {}).get('grid') or {}
+    cell=float(grid.get('cell_m',(terrain.get('generate') or {}).get('cell_m',.25)))
     for dx,dz in offsets:
-        survey=app.live.act({'session':app.live.session.id,'op':'survey','at':[at[0]+dx,at[2]+dz]}).get('survey') or {}
+        x,z=at[0]+dx,at[2]+dz
+        if terrain.get('surface')=='columns' and all(k in grid for k in ('x0_m','z0_m')):
+            # Advice points into the cell, rather than at a boundary where
+            # the lateral working motion immediately leaves the selected
+            # column. Actual pointer/touch targeting remains unsnapped.
+            x,z=(float(grid[key])+math.floor((v-float(grid[key]))/cell+.5)*cell
+                 for v,key in ((x,'x0_m'),(z,'z0_m')))
+        survey=app.live.act({'session':session.id,'op':'survey','at':[x,z]}).get('survey') or {}
         if (survey.get('on_the_ground') and (survey.get('water') or {}).get('depth_m',0)<=.005
             and sum(float(survey.get(k,0)) for k in ('soil_m','sand_m','loose_soil_m'))>=.01
             and (not use or resource_previews.ground_tool(survey,use)['materials'])):
@@ -109,7 +121,7 @@ def resolve(app: Any, registry: Any, techniques: list[dict]) -> None:
                             if ground_use and not example['ground_at_m']: continue
                             ready.append({**example,'action':'tool/use' if ground_use else 'inspect',
                                 'label':'Gather dry ground' if ground_use else 'Study held tool',
-                                'instruction':(f'Take or equip {label}. Aim at dry soil or sand and dig once.' if ground_use
+                                'instruction':(f'Equip {label}. Aim at dry soil or sand; use it until material comes loose.' if ground_use
                                                else 'Take/equip this tool, then choose Study tool or Inspect.')})
                         locations.extend(ready)
                         if not ready: missing.append(f'No dry soil or sand surveyed near {label}')

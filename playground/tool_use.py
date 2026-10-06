@@ -807,6 +807,7 @@ def _contact(app,said,use,tool,eyes,heard,note):
             lift=max(.04,min(PULL_M,at[1]+tool_gestures.CLEARANCE_M-point['tip'][1])) if point else PULL_M
             done.append(f'withdrew the point: {_pull(app,grip,lift_m=lift,speed_m_s=2.0,accel_m_s2=tool_gestures.ACCEL_M_S2)}')
             record=_closed(app,tool,since,heard,_latest(app,tool,since,heard,record))
+    record=_contact_feedback(heard,since,record)
     carried=_carried(app);kg=sum(float(carried.get(k) or 0) for k in ('soil_kg','sand_kg'))
     return {'action':said['label'],'did':[said['label']], 'done':done,
             'timing':{'prepare_ms':1000*(prepared_at-began_at),'stroke_ms':1000*(stroke_at-prepared_at),
@@ -816,6 +817,20 @@ def _contact(app,said,use,tool,eyes,heard,note):
             'carried':carried,'repeat':use['repeat'],'gesture':'contact','rest_hand_m':_grip(session),
             'results':[r for r in heard.values() if r.get('open') is False
                 and float(r.get('at_s',since) or since)>=since-.05]}
+
+
+def _contact_feedback(heard, since, fallback):
+    """Show actual release rather than a later empty withdrawal contact.
+
+    Preserve the exact native record and every episode in `results`; this
+    neither sums separate contacts nor creates material or learning evidence.
+    A later whole-tool failure remains the primary feedback.
+    """
+    if fallback and not fallback.get('tool_whole',True):return fallback
+    released=[r for r in heard.values() if r.get('open') is False
+              and float(r.get('at_s',since) or since)>=since-.05
+              and float(r.get('loosened_kg') or 0)>0]
+    return max(released,key=lambda r:float(r.get('at_s') or 0),default=fallback)
 
 
 def _still(app: Any, tool: str) -> bool:

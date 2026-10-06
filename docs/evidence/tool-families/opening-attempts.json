@@ -1,0 +1,51 @@
+{
+  "ordinary_attempts": [
+    {
+      "at_m": [
+        0.37812,
+        0.75956,
+        7e-05
+      ],
+      "at_s": 6.27083,
+      "breakout_work_j": 1.51741,
+      "broken_share": 0.0,
+      "closing_speed_m_s": 1.28294,
+      "depth_m": 0.09354,
+      "dug": {
+        "depth_m": 0.027693967649906587,
+        "from_m": [
+          0.375,
+          0.0
+        ],
+        "to_m": [
+          0.375,
+          0.0
+        ],
+        "width_m": 0.125
+      },
+      "ground": "sand",
+      "impulse_n_s": 4.24049,
+      "kind": "broke out",
+      "loosened": {
+        "rock_m3": 0.0,
+        "sand_m3": 0.0017308729781191617,
+        "soil_m3": 0.0
+      },
+      "loosened_kg": 2.7694,
+      "model": "ground-work-v1-rigid-detachment",
+      "open": false,
+      "passive_n": 32.07646,
+      "peak_force_n": 115.09725,
+      "penetration_work_j": 4.25232,
+      "point": 2,
+      "resistance_n": 114.70847,
+      "sideways_m": 0.0539,
+      "supported": true,
+      "tool_dent_mm": 0.0,
+      "tool_whole": true,
+      "why": "",
+      "work_j": 5.76973
+    }
+  ],
+  "gathering_skill_known": true
+}

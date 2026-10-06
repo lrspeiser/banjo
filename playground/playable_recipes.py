@@ -88,10 +88,29 @@ def stone_pick_recipe():
 
 def metal_shovel_recipe():
     """Actual thin metal geometry, explicit intact local-cell representation."""
+    return _joined_metal_ground_tool('metal-shovel-v1','Metal shovel',
+        blade_size=(.2,.003,.18),blade_center=(.4,.0015,0),
+        tip=(.1,0,0),direction=(1,0,0),width=.18,thickness=.003,length=.2,
+        use={'contact_drag_m':.10})
+
+
+def metal_hoe_recipe():
+    """A perpendicular iron edge for loosening ground, not crop cultivation."""
+    return _joined_metal_ground_tool('metal-hoe-v1','Metal hoe',
+        blade_size=(.012,.12,.18),blade_center=(.306,.06,0),
+        handle_center=(0,.105,0),
+        tip=(0,-.06,0),direction=(0,-1,0),width=.18,thickness=.012,length=.12,
+        use={'label':'Loosen here','past':'loosened','contact_drag_m':.10})
+
+
+def _joined_metal_ground_tool(design_id,purpose,*,blade_size,blade_center,
+                              tip,direction,width,thickness,length,use,handle_center=(0,.015,0)):
+    # Geometry and declarations vary; authoring, paid manufacture, the native
+    # working point and player controls have no product-name dispatch.
     from mcp import workshop_construction as construction, workshop_local_cells
     handle=workshop.WirePart(name='handle',role='handle',family='beam',shape='box',
-        material='aluminum',size_m=(.6,.03,.03),center_m=(0,.015,0))
-    base=workshop.assemble('custom',design_id='metal-shovel-v1',purpose='Metal shovel',
+        material='aluminum',size_m=(.6,.03,.03),center_m=handle_center)
+    base=workshop.assemble('custom',design_id=design_id,purpose=purpose,
         parameters={'primary_use':{'label':'Study tool','steps':[{'do':'inspect'}]}})
     overrides={'@construction':{'schema':construction.CONSTRUCTION_SCHEMA,'joints_authored':True,
         'added':[{'name':handle.name,'role':handle.role,'family':handle.family,'shape':handle.shape,
@@ -100,14 +119,14 @@ def metal_shovel_recipe():
         workshop_local_cells.KEY:{'schema':workshop_local_cells.SCHEMA,'cell_size_m':.05}}
     design=workshop_components.apply_overrides(base,overrides)
     blade=workshop.WirePart(name='blade',role='tool-head',family='panel',shape='box',
-        material='iron',size_m=(.2,.003,.18),center_m=(.4,.0015,0))
+        material='iron',size_m=blade_size,center_m=blade_center)
     overrides=construction.add_part(design,overrides,part=blade,joint={'to':'handle','kind':'fixed'})
     parameters={**base.parameters,'ground_tool':{
-        'point':{'component':'blade','tip_local_m':[.1,0,0],'direction_local':[1,0,0],
-            'width_m':.18,'thickness_m':.003,'angle_deg':30.,'length_m':.2},
+        'point':{'component':'blade','tip_local_m':list(tip),'direction_local':list(direction),
+            'width_m':width,'thickness_m':thickness,'angle_deg':30.,'length_m':length},
         'grip':{'component':'handle','position_local_m':[-.2,0,0]},
-        'use':{'contact_drag_m':.10}}}
-    return {'kind':'custom','design_id':'metal-shovel-v1','purpose':'Metal shovel',
+        'use':dict(use)}}
+    return {'kind':'custom','design_id':design_id,'purpose':purpose,
             'parameters':parameters,'component_overrides':overrides}
 
 

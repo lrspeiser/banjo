@@ -1,4 +1,4 @@
-"""Paid thin metal shovel: real stock, native manufacture, carry, use and reload."""
+"""Paid tool families: real stock, native manufacture, constituent pickup/use/reload."""
 from pathlib import Path
 import base64
 import json
@@ -8,6 +8,7 @@ import time
 import unittest
 from copy import deepcopy
 import urllib.error
+from unittest import mock
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path[:0]=[str(ROOT/'tests'),str(ROOT/'playground'),str(ROOT)]
@@ -65,21 +66,34 @@ class Journey(navigation.GameScreens):
     def test_unfamiliar_chat_authored_tool_paid_make_pickup_use_and_reload(self):
         self.run_journey(novel=True)
 
-    def run_journey(self,novel):
+    def test_perpendicular_hoe_paid_make_pickup_use_and_reload(self):
+        self.run_journey(novel=False,family='hoe')
+
+    def test_catalog_pick_paid_make_pickup_use_and_reload(self):
+        self.run_journey(novel=False,family='pick')
+
+    def run_journey(self,novel,family='shovel'):
         began=time.monotonic()
-        world,owner,app=self.setup_world(surface='columns')
-        source=unfamiliar_tool(app) if novel else playable_recipes.metal_shovel_recipe()
-        self.label='Delta trench cutter' if novel else 'Metal shovel'
-        self.selector='[data-recipe="delta-trench-cutter"]' if novel else '[data-recipe="custom:Metal shovel"]'
-        self.evidence_dir='unfamiliar-tool' if novel else 'metal-shovel'
-        expected_mass=4.61484 if novel else 2.30796
-        blade_thickness=.012 if novel else .003
+        import ai_player_tests as ai,goal_chains
+        with mock.patch.object(ai.server.secrets,'randbelow',side_effect=[0,1]):
+            world,owner,app=self.setup_world(surface='columns')
+        cases={'shovel':(playable_recipes.metal_shovel_recipe(),'Metal shovel','custom:Metal shovel',
+                         2.30796,1,.003,'metal-shovel'),
+               'hoe':(playable_recipes.metal_hoe_recipe(),'Metal hoe','custom:Metal hoe',
+                       3.497904,0,.012,'metal-hoe'),
+               'pick':(goal_chains.first_tool_recipe(),'Personal field pick','field-pick:Personal field pick',
+                        5.65125,None,None,'metal-pick')}
+        source,self.label,key,expected_mass,thin_axis,blade_thickness,self.evidence_dir=(
+            (unfamiliar_tool(app),'Delta trench cutter','delta-trench-cutter',4.61484,1,.012,'unfamiliar-tool')
+            if novel else cases[family])
+        self.selector=f'[data-recipe="{key}"]'
         before=deepcopy(app.room.fabrication_record)
-        bad=deepcopy(source)
-        bad['component_overrides']['@construction']['added'][1]['center_m'][0]+=.001
-        with self.assertRaises(urllib.error.HTTPError):
-            self.post('/api/world/fabrication/plan_make',{'session':app.live.session.id,
-                'scene':app.room.scene,'candidate':bad},world)
+        if thin_axis is not None:
+            bad=deepcopy(source)
+            bad['component_overrides']['@construction']['added'][1]['center_m'][0]+=.001
+            with self.assertRaises(urllib.error.HTTPError):
+                self.post('/api/world/fabrication/plan_make',{'session':app.live.session.id,
+                    'scene':app.room.scene,'candidate':bad},world)
         self.assertEqual(before,app.room.fabrication_record,'invalid source must not charge materials or start work')
         for material in ('iron','aluminum'):
             pile=next(p for p in app.brains.goods.stockpiles if p.get('holds',{}).get(material,0)>=3)
@@ -115,7 +129,7 @@ class Journey(navigation.GameScreens):
         self.wait('document.querySelector("#ws-remake").textContent.includes("In your Inventory")')
         receipt=next(r for r in reversed(app.room.workshop_installs) if r.get('owner_id')==owner['id'])
         self.assertTrue(receipt['resources_charged'])
-        self.assertTrue(receipt['native_precise_geometry_verified'])
+        self.assertTrue(receipt['native_precise_geometry_verified'] if thin_axis is not None else receipt['engine_grid_verified'])
         self.assertEqual(source['component_overrides'],receipt['recipe']['component_overrides'])
         job=app.room.fabrication_record['jobs'][receipt['fabrication_job_id']]
         self.assertAlmostEqual(expected_mass,sum(job['product_materials_kg'].values()),places=6)
@@ -133,9 +147,8 @@ class Journey(navigation.GameScreens):
         equipped=self.post('/api/world/inventory',{'session':app.live.session.id,'op':'equip',
             'item':own['id'],'request':'equip-paid-shovel','person':person},world)
         self.assertTrue(equipped['ok'],equipped)
-        if novel:
-            self.pickup_each_component(world,own['id'],own['parts'],app)
-            self.page.send('Page.navigate',{'url':'about:blank'})
+        self.pickup_each_component(world,own['id'],own['parts'],app)
+        self.page.send('Page.navigate',{'url':'about:blank'})
         target_floor=self.post('/api/live/act',{'session':app.live.session.id,'op':'survey',
             'at':[x+1,z]},world)['survey']['ground_m']
         target=[x+1,target_floor,z]
@@ -153,6 +166,20 @@ class Journey(navigation.GameScreens):
         used=replies[0];self.assertNotIn('refused',used,used)
         self.assertGreater(used['result']['loosened_kg'],0,used)
         strike_s=time.monotonic()-strike_started
+        before_restart,reason=app.live.snapshot()
+        self.assertIsNotNone(before_restart,reason)
+        # Native precise mass is saved at mechanical precision. Voxel bodies
+        # preserve their mass-bearing cells/material; the UI body mass is a
+        # rounded presentation field, not part of this snapshot schema.
+        mass_fields=('material','dimensions_m','nodes_b64','offsets_b64',
+                     'precise_mass_kg','precise_material_mass_kg','precise_rigid_definition')
+        def matter(snapshot):
+            return {b['name']:{k:b[k] for k in mass_fields if k in b}
+                    for b in snapshot['bodies'] if b['name'] in own['parts']}
+        native_matter=matter(before_restart)
+        self.assertEqual(set(own['parts']),set(native_matter))
+        if thin_axis is not None:
+            self.assertTrue(all('precise_mass_kg' in b for b in native_matter.values()))
         # Save the actual equipped native matter, then reload through the server.
         self.page.send('Page.navigate',{'url':'about:blank'})
         self.stop();self.start();self.post('/api/world/player/join',{'token':owner['token']},world)
@@ -161,17 +188,21 @@ class Journey(navigation.GameScreens):
         after=self.post('/api/workshop/inventory',{},world)['carried']
         self.assertEqual(1,len([i for i in after if i['id']==own['id']]))
         item=next(i for i in after if i['id']==own['id'])
-        self.assertAlmostEqual(own['kg'],item['kg'],places=6)
+        # Inventory uses five-decimal display body masses on restore. Check
+        # that presentation bound separately from unchanged native matter.
+        self.assertAlmostEqual(own['kg'],item['kg'],delta=len(own['parts'])*5.00001e-6)
         saved,reason=restored.live.snapshot()
         self.assertIsNotNone(saved,reason)
         bodies=saved['bodies']
+        self.assertEqual(native_matter,matter(saved))
         local=[b for b in bodies if b.get('precise_rigid_definition',{}).get('cell_geometry')=='clipped-box-cells-v1']
-        self.assertEqual(2,len(local),[b['name'] for b in bodies])
-        blade=next(b for b in local if any(abs(p['dimensions_m'][1]-blade_thickness)<1e-12
-            for p in b['precise_rigid_definition']['parts']))
-        self.assertTrue(all(abs(p['dimensions_m'][1]-blade_thickness)<1e-12 for p in blade['precise_rigid_definition']['parts']))
+        if thin_axis is not None:
+            self.assertEqual(2,len(local),[b['name'] for b in bodies])
+            blade=next(b for b in local if any(abs(p['dimensions_m'][thin_axis]-blade_thickness)<1e-12
+                for p in b['precise_rigid_definition']['parts']))
+            self.assertTrue(all(abs(p['dimensions_m'][thin_axis]-blade_thickness)<1e-12 for p in blade['precise_rigid_definition']['parts']))
         self.assertTrue(opened.get('session'))
-        if novel:
+        if own['parts']:
             # Chat/actions can leave a plain native carry hold. Restoration
             # must recover the capability, rather than treating its fixing
             # as a joint to haul. Exercise the real native grab and UI reload.
@@ -182,7 +213,9 @@ class Journey(navigation.GameScreens):
             self.assertNotEqual('grip',restored.live.session.state['player_hands'][owner['id']]['mode'])
             self.page.send('Page.navigate',{'url':self.base+f'/world?world={world}'})
             self.wait('banjoRoom?.ready() && banjoRoom.use().mode==="tool-ready"')
-            self.assertEqual(own['name'],self.page.evaluate('banjoRoom.world.held.pick.tool'))
+            expected_root=next(p['tool'] for p in restored.room.spec['interactions']
+                if set(p.get('parts',[]))==set(own['parts']))
+            self.assertEqual(expected_root,self.page.evaluate('banjoRoom.world.held.pick.tool'))
             self.assertEqual('grip',restored.live.session.state['player_hands'][owner['id']]['mode'])
             self.screenshot('06-restored-tool-ready.png')
         self.navigate(world,'workshop=1&tab=inventory')
@@ -190,13 +223,19 @@ class Journey(navigation.GameScreens):
         self.screenshot('04-reloaded-shovel-mobile.png')
         self.assertFalse([e for e in self.page.events if e.get('method')=='Runtime.exceptionThrown'])
         out=ROOT/'build'/self.evidence_dir;out.mkdir(parents=True,exist_ok=True)
-        (out/'journey.json').write_text(json.dumps({'make_wall_s':make_s,'strike_wall_s':strike_s,
+        from mcp import fabrication
+        audit=fabrication.audit(restored.room.fabrication_record)
+        self.assertTrue(all(abs(v)<1e-7 for v in audit['material_residual_kg'].values()),audit)
+        self.assertLess(abs(audit['energy_residual_j']),1e-7,audit)
+        (out/'journey.json').write_text(json.dumps({'label':self.label,'candidate':source,
+            'make_wall_s':make_s,'strike_wall_s':strike_s,'ledger_audit':audit,
             'walking_included':False,'job':job,'hand_use':used,'restored_item':item},indent=2),encoding='utf-8')
 
     def pickup_each_component(self,world,item,parts,app):
         # Hold simulation/camera between press and ray verification. Walking
         # and gravity remain covered by the normal World navigation suite.
         self.page.evaluate('localStorage.setItem("banjo.movement","fly")')
+        root=next(p['tool'] for p in app.room.spec['interactions'] if set(p.get('parts',[]))==set(parts))
         for index,part in enumerate(parts):
             dropped=self.post('/api/world/inventory',{'session':app.live.session.id,'op':'drop',
                 'item':item,'request':f'novel-drop-{index}'},world)
@@ -208,27 +247,32 @@ class Journey(navigation.GameScreens):
             self.wait('banjoRoom?.ready() && document.querySelector("#panel-state").textContent==="Live."')
             actual=next(b['position_m'] for b in app.live.session.state['bodies'] if b['name']==part)
             self.wait(f'banjoRoom.world.bodies.get({json.dumps(part)}).mesh.position.distanceTo(new banjoRoom.THREE.Vector3(...{json.dumps(actual)}))<.001')
-            self.page.evaluate(f'''(()=>{{const r=banjoRoom,p=r.world.bodies.get({json.dumps(part)}).mesh.position;
-                r.standAt(p.x,r.groundAt(p.x,p.z+1)+1.62,p.z+1);r.lookAt(p.x,p.y,p.z);
-                r.camera.updateMatrixWorld(true);}})()''')
-            self.wait('!banjoRoom.world.busy && !banjoRoom.world.acting')
+            # A handle may physically occlude a head from one side. Find an
+            # exposed view, using real native ray results; never click through
+            # an occluder or accept pickup of the other constituent as proof.
+            for dx,dz in ((0,1),(1,0),(0,-1),(-1,0)):
+                self.page.evaluate(f'''(()=>{{const r=banjoRoom,p=r.world.bodies.get({json.dumps(part)}).mesh.position;
+                    r.standAt(p.x+{dx},r.groundAt(p.x+{dx},p.z+{dz})+1.62,p.z+{dz});r.lookAt(p.x,p.y,p.z);
+                    r.camera.updateMatrixWorld(true);}})()''')
+                self.wait('!banjoRoom.world.busy && !banjoRoom.world.acting')
+                ray=self.page.evaluate(f'''(()=>{{const r=banjoRoom,p=r.world.bodies.get({json.dumps(part)}).mesh.position;
+                    return {{from:r.camera.position.toArray(),dir:p.clone().sub(r.camera.position).normalize().toArray()}};}})()''')
+                native_hit=self.post('/api/live/act',{'session':app.live.session.id,'op':'pick',**ray,'max_m':4},world)
+                if native_hit.get('name')==part:break
+            self.assertEqual(part,native_hit.get('name'),native_hit)
             point=self.page.evaluate(f'''(()=>{{const r=banjoRoom,
                 v=r.world.bodies.get({json.dumps(part)}).mesh.getWorldPosition(new r.THREE.Vector3()).project(r.camera);
                 return {{x:(v.x+1)*innerWidth/2,y:(1-v.y)*innerHeight/2}};}})()''')
-            ray=self.page.evaluate(f'''(()=>{{const r=banjoRoom,p=r.world.bodies.get({json.dumps(part)}).mesh.position;
-                return {{from:r.camera.position.toArray(),dir:p.clone().sub(r.camera.position).normalize().toArray()}};}})()''')
-            native_hit=self.post('/api/live/act',{'session':app.live.session.id,'op':'pick',**ray,'max_m':4},world)
-            self.assertEqual(part,native_hit.get('name'),native_hit)
             if touch:
                 self.page.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[point]})
                 self.page.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
             else:
                 for kind in ('mousePressed','mouseReleased'):
                     self.page.send('Input.dispatchMouseEvent',{'type':kind,**point,'button':'left','clickCount':1})
-            self.wait(f'banjoRoom.world.held?.pick?.tool==={json.dumps(parts[0])}',seconds=12)
+            self.wait(f'banjoRoom.world.held?.pick?.tool==={json.dumps(root)}',seconds=12)
             self.page.evaluate('banjoRoom.resume()')
             try:
-                self.wait(f'banjoRoom.held()?.name==={json.dumps(parts[0])} && banjoRoom.use().mode==="tool-ready"',seconds=12)
+                self.wait(f'banjoRoom.held()?.name==={json.dumps(root)} && banjoRoom.use().mode==="tool-ready"',seconds=12)
             except AssertionError:
                 self.screenshot(f'failed-pickup-{index}.png')
                 self.fail(str(self.page.evaluate(f'''({{part:{json.dumps(part)},point:{json.dumps(point)},
@@ -236,7 +280,7 @@ class Journey(navigation.GameScreens):
                     controls:banjoRoom.controls(),camera:banjoRoom.camera.position.toArray(),
                     at:banjoRoom.world.bodies.get({json.dumps(part)}).mesh.position.toArray(),
                     hit:document.elementFromPoint({point['x']},{point['y']})?.id}})''')))
-            self.assertEqual(parts[0],app.live.session.state['hand']['holding'])
+            self.assertEqual(root,app.live.session.state['player_hands'][self.players[world]['id']]['holding'])
             self.assertTrue(self.page.evaluate('document.body.classList.contains("panel-away")'))
             self.screenshot(f'05-pickup-{index}.png')
 

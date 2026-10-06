@@ -1,3 +1,5 @@
+**Ground tool families, October 6:** [Implementation, paid journeys and boundaries](tool-family-checkpoint.md) adds an inorganic perpendicular hoe and verifies picks, shovels, hoes and an unfamiliar bounded-chat cutter through shared geometry/capability configs. Native constituent pickup, ordinary sand work, private Inventory and reload are checked for each source. LLM inspection gains conservative working-edge clearance; contact feedback retains actual release when a later empty contact follows. The constitutive terrain rewrite, complete reaction/energy accounting, calibrated rock/wear and sustained excavation-speed gates remain open.
+
 # Interaction profiles
 
 **October 6:** [Tool authoring contract](tool-authoring-contract-checkpoint.md) documents the LLM configuration checklist, authoritative functional anchors, unfamiliar-tool gameplay regressions and current adapter boundaries. Ground products have a complete shared configuration path; Studio-generated portable bows still need elastic/string/nock authoring, two-hand controls and arrow Inventory integration.

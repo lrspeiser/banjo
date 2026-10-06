@@ -45,6 +45,20 @@ SOIL = {"on_the_ground": True, "ground_m": 0.6, "rock_top_m": -0.5, "surface": "
         "water": None}
 
 
+class ContactFeedback(unittest.TestCase):
+    def test_later_empty_contact_does_not_hide_actual_release_or_mutate_receipts(self):
+        release={'at_s':10.,'open':False,'loosened_kg':.5,'tool_whole':True}
+        empty={'at_s':10.1,'open':False,'loosened_kg':0.,'tool_whole':True}
+        stale={'at_s':8.,'open':False,'loosened_kg':5.,'tool_whole':True}
+        pending={'at_s':10.2,'open':True,'loosened_kg':9.,'tool_whole':True}
+        heard={1:release,2:empty,3:stale,4:pending};before=deepcopy(heard)
+        self.assertIs(release,tool_use._contact_feedback(heard,9.9,empty))
+        self.assertEqual(before,heard)
+        self.assertIs(empty,tool_use._contact_feedback({2:empty,3:stale,4:pending},9.9,empty))
+        broken={**empty,'tool_whole':False}
+        self.assertIs(broken,tool_use._contact_feedback(heard,9.9,broken))
+
+
 class StandInRoom:
     """The running room, as far as a tool's use goes: a stroke is under way for a
     moment and then ends; while it goes the replies carry the ground's record of

@@ -223,6 +223,19 @@ Important behavior:
   ground_tool grip/tip override generic interaction_points grip/use coordinates;
   surfaces and containers keep their own authored coordinates. Configuration is
   not a passed trial. Report each missing capability instead of claiming success.
+  Picks, shovels, hoes and unfamiliar ground tools share that declaration;
+  change the actual head/edge geometry, material, grip and working direction
+  for the intended job. Do not select behavior from a tool's name or give every
+  shape a pickaxe point. Check paid Make, pickup of either part, ordinary ground
+  work, storage/equip and reload for each new source. A hoe can loosen supported
+  ground; farming/crops and calibrated rock fracture need their own capabilities.
+  Keep clearance between the working edge and the handle/other parts during
+  the declared stroke. Nonworking parts still collide with ground; declaring
+  a tip never makes the rest of the assembly pass through terrain.
+  Inspect tool_authoring.ground_work.working_clearance: this conservative source
+  estimate flags other parts near/ahead of the tip. Fix actual geometry or the
+  working direction when necessary, then run a native use trial; the estimate
+  itself grants no yield or qualification.
   A bow/arrow needs energy-storing limbs, tension-only strings and a releasable
   nock/projectile. The native draw-and-release laboratory exists, but Studio
   cannot yet author those elastic/link/nock joints. Do not fake shooting using

@@ -105,6 +105,33 @@ def installed(design, root, body_names, shift_m):
                     "parts": list(body_names), "tool": root, "use": deepcopy(value["use"])}}
 
 
+def working_clearance(design, value=None):
+    """Conservative bounding-envelope clearance behind the working tip.
+
+    This is source geometry in the declared point direction, not native
+    admission, a collision trial or a guarantee of available penetration.
+    """
+    value = frame(design) if value is None else value
+    if value is None:return None
+    from . import workshop_construction as construction, tool_gestures
+    direction,tip=value['pointing'],value['tip_m']
+    tip_projection=sum(a*b for a,b in zip(tip,direction))
+    rows=[]
+    for part in design.parts:
+        if part.name==value['point']['component']:continue
+        projections=[]
+        for sx in (-.5,.5):
+            for sy in (-.5,.5):
+                for sz in (-.5,.5):
+                    at=construction.to_product(part,tuple(s*d for s,d in zip((sx,sy,sz),part.size_m)))
+                    projections.append(sum(a*b for a,b in zip(at,direction)))
+        rows.append({'component':part.name,'clearance_m':tip_projection-max(projections)})
+    return {'model':'oriented-component-bounding-envelopes','components':rows,
+        'minimum_m':min((r['clearance_m'] for r in rows),default=None),
+        'contact_travel_m':tool_gestures.BITE_M,
+        'qualification':'geometry estimate only; native nonworking contacts remain'}
+
+
 def authoring_contract(design):
     """Machine-readable Studio capability boundary, independent of tool names.
 
@@ -120,7 +147,9 @@ def authoring_contract(design):
         "ground_work": {"status": "configured-unqualified" if value else "not-configured",
             "adapter": "swing-and-lever", "declaration_tool": "define_ground_tool",
             "declaration": deepcopy(value),
+            "working_clearance": working_clearance(design,value),
             "controls": "shared short contact; requested 4 Hz by default; native completion limits rate"},
+        "nonworking_contacts": "ordinary collision remains; provide working-edge clearance for the declared stroke",
         "draw_and_release": {"status": "studio-adapter-unimplemented",
             "native_model": "experimental hinged rigid limbs with elastic joints, tension-only links and a one-way nock",
             "missing": "Studio construction emits fixed/bearing joints, not elastic joints, strings or a releasable nock; portable two-hand control and arrow inventory also need integration",

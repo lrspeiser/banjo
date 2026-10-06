@@ -1,5 +1,6 @@
 """Inorganic player catalog and a real paid compact-tool browser journey."""
 from copy import deepcopy
+from dataclasses import replace
 import json
 import os
 from pathlib import Path
@@ -19,6 +20,53 @@ import workshop_navigation_tests as navigation
 
 
 class Sources(unittest.TestCase):
+    def test_tool_family_geometry_and_clearance_share_the_capability_contract(self):
+        from mcp import workshop_tools,workshop_recipe_contract
+        cases=[(playable_recipes.recipe('field-pick'),[0,0,-1],.15),
+               (playable_recipes.metal_shovel_recipe(),[1,0,0],.2),
+               (playable_recipes.metal_hoe_recipe(),[0,-1,0],.09)]
+        hashes=set()
+        for source,direction,clearance in cases:
+            with self.subTest(source=source['design_id']):
+                design,patches=workshop_components.design_from_spec(source)
+                report=workshop_recipe_contract.derive(design,patches)
+                contract=report['tool_authoring']
+                hashes.add(report['source']['hash'])
+                self.assertEqual(direction,contract['ground_work']['declaration']['pointing'])
+                self.assertEqual('swing-and-lever',contract['ground_work']['adapter'])
+                self.assertEqual('configured-unqualified',contract['ground_work']['status'])
+                measured=contract['ground_work']['working_clearance']
+                self.assertAlmostEqual(clearance,measured['minimum_m'])
+                self.assertGreater(measured['minimum_m'],measured['contact_travel_m'])
+                # A name can change without changing functional anchors.
+                design.purpose='Uncatalogued implement'
+                self.assertEqual(measured,workshop_tools.authoring_contract(design)['ground_work']['working_clearance'])
+        self.assertEqual(3,len(hashes))
+
+        bad=playable_recipes.metal_hoe_recipe()
+        bad['component_overrides']['@construction']['added'][0]['center_m'][1]=.015
+        design,_=workshop_components.design_from_spec(bad)
+        measured=workshop_tools.authoring_contract(design)['ground_work']['working_clearance']
+        self.assertAlmostEqual(0.,measured['minimum_m'])
+        self.assertIn('geometry estimate only',measured['qualification'])
+
+        # The same clearance survives a quarter-turn of the whole product
+        # and arbitrary component names; neither is a tool-family switch.
+        rotated,_=workshop_components.design_from_spec(playable_recipes.metal_hoe_recipe())
+        parts=[]
+        for part in rotated.parts:
+            x,y,z=part.center_m
+            parts.append(replace(part,center_m=(-y,x,z),rotation_deg=(0,0,90),
+                                 name={'handle':'member-q','blade':'edge-r'}[part.name]))
+        rotated.parts=parts
+        rotated.parameters['ground_tool']['point']['component']='edge-r'
+        rotated.parameters['ground_tool']['grip']['component']='member-q'
+        report=workshop_tools.authoring_contract(rotated)
+        self.assertAlmostEqual(.09,report['ground_work']['working_clearance']['minimum_m'])
+        for actual,expected in zip(report['ground_work']['declaration']['pointing'],[1,0,0]):
+            self.assertAlmostEqual(expected,actual)
+        self.assertEqual('configured-unqualified',report['ground_work']['status'])
+
     def test_machine_parameters_bind_before_lineage_and_fixed_geometry_overrides_are_retained(self):
         source=playable_recipes.recipe('solar-array',parameters={'max_power_w':10000.,'capacity_j':50000.,'charge_j':10000.})
         machine=source['component_overrides']['@machines']['stores'][0]
@@ -148,18 +196,31 @@ class Game(navigation.GameScreens):
         self.assertNotIn('refused',studied,studied)
         prior=self.post('/api/workshop/skills',{},world)
         self.assertFalse(next(s for s in prior['techniques'] if s['id']=='using-ground-tools')['known'])
+        # This trial drives the real clock below. Stop the browser observer
+        # from concurrently refreshing the hand/camera during the stroke.
+        self.page.send('Page.navigate',{'url':'about:blank'})
         target=self.post('/api/workshop/goals',{},world)['goals'][2]['target']['ground_at_m']
+        grid=app.live.session.state['terrain']['grid'];cell=float(grid['cell_m'])
+        for axis,key in ((0,'x0_m'),(2,'z0_m')):
+            index=(target[axis]-float(grid[key]))/cell
+            self.assertAlmostEqual(round(index),index)
         person['look_direction']=[target[0]-x,target[1]-floor-1.62,target[2]-z]
         replies=[];errors=[]
         def use_hand():
             try:replies.append(self.post('/api/world/tool/use',{'session':app.live.session.id,
                 'person':person,'at_m':target},world))
             except Exception as exc:errors.append(exc)
-        worker=threading.Thread(target=use_hand,daemon=True);worker.start();deadline=time.monotonic()+25
-        while worker.is_alive() and time.monotonic()<deadline:
-            app.clock._tick(.05);time.sleep(.015)
-        worker.join(1);self.assertFalse(worker.is_alive());self.assertEqual([],errors)
-        hand_used=replies[0]
+        # Keep each actual receipt: an initial lowering/contact can do work
+        # without release. Require useful ordinary work within three strokes,
+        # never replace a failed attempt with funded cutting.
+        for _ in range(3):
+            worker=threading.Thread(target=use_hand,daemon=True);worker.start();deadline=time.monotonic()+25
+            while worker.is_alive() and time.monotonic()<deadline:
+                app.clock._tick(.05);time.sleep(.015)
+            worker.join(1);self.assertFalse(worker.is_alive());self.assertEqual([],errors)
+            hand_used=replies[-1]
+            self.assertNotIn('refused',hand_used,hand_used)
+            if hand_used['result']['loosened_kg']>0:break
         self.assertNotIn('refused',hand_used,hand_used)
         self.assertGreater(hand_used['result']['loosened_kg'],0.,hand_used)
         finished=self.post('/api/workshop/goals',{'chain':'first-tool-v1'},world)
@@ -180,7 +241,7 @@ class Game(navigation.GameScreens):
         self.assertTrue(self.post('/api/workshop/goals',{'chain':'first-tool-v1'},world)['complete'])
         learned=self.post('/api/workshop/skills',{},world)
         self.assertTrue(next(s for s in learned['techniques'] if s['id']=='using-ground-tools')['known'])
-        self.click('.game-tabs [data-screen="progress"]')
+        self.navigate(world,'workshop=1&tab=skills')
         self.wait('document.querySelector("#ws-tree").textContent.includes("Gathering by hand")')
         self.screenshot('inorganic-tool-gathering-earned.png')
         self.assertFalse([e for e in self.page.events if e.get('method')=='Runtime.exceptionThrown'])
@@ -189,7 +250,8 @@ class Game(navigation.GameScreens):
             self.assertLess(after,before[material])
         out=ROOT/'build/playable-recipes';out.mkdir(parents=True,exist_ok=True)
         (out/'paid-metal-tool-use.json').write_text(json.dumps({'cut':used['cut'],
-            'result':hand_used['result'],'known':next(s for s in learned['techniques'] if s['id']=='using-ground-tools')},indent=2),encoding='utf-8')
+            'result':hand_used['result'],'ordinary_attempts':[r['result'] for r in replies],
+            'known':next(s for s in learned['techniques'] if s['id']=='using-ground-tools')},indent=2),encoding='utf-8')
 
 
 # Reuse browser infrastructure, not its unrelated historical journeys.

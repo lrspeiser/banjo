@@ -25,28 +25,28 @@ class RecipeGuidance(unittest.TestCase):
         other=self.join(world,'Other crafter')
         def recipes(token=None):return self.post('/api/workshop/recipes',{},world,token)
         def rover(token=None):return next(t for t in recipes(token)['templates'] if t.get('kind')=='rover')
-        initial=rover();oak=next(l for l in initial['materials'] if l['material']=='oak')
-        self.assertEqual(0,oak['personal_kg']);self.assertEqual(12.4,oak['shared_kg'])
-        self.assertAlmostEqual(oak['kg']-12.4,oak['short_kg'])
-        pile=next(p for p in app.brains.goods.stockpiles if p.get('holds',{}).get('oak',0)>25)
-        route=next(r for r in oak['acquisition'] if r['kind']=='pile')
-        self.assertEqual(pile['name'],route['name']);self.assertEqual(pile['holds']['oak'],route['available_kg'])
+        initial=rover();iron=next(l for l in initial['materials'] if l['material']=='iron')
+        self.assertEqual(0,iron['personal_kg']);self.assertEqual(6.2,iron['shared_kg'])
+        self.assertAlmostEqual(iron['kg']-6.2,iron['short_kg'])
+        route=next(r for r in iron['acquisition'] if r['kind']=='pile')
+        pile=next(p for p in app.brains.goods.stockpiles if p['name']==route['name'])
+        self.assertEqual(pile['name'],route['name']);self.assertEqual(pile['holds']['iron'],route['available_kg'])
         self.assertEqual([],route['input_to'])
         sid=app.live.session.id;at=pile['at_m']
         floor=app.live.act({'session':sid,'op':'survey','at':at})['survey']['ground_m']
         # A collect takes the whole pile into private stock (bulk pickup).
-        got=self.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],'request_id':'recipe-oak',
-            'person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[0,0,-1]}},world)['collected']['oak']
+        got=self.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],'request_id':'recipe-iron',
+            'person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[0,0,-1]}},world)['collected']['iron']
         self.assertGreater(got,0)
-        updated=next(l for l in rover()['materials'] if l['material']=='oak')
-        self.assertAlmostEqual(got,updated['personal_kg']);self.assertEqual(12.4,updated['shared_kg'])
-        self.assertAlmostEqual(max(0.,updated['kg']-12.4-got),updated['short_kg'])
-        left=pile['holds'].get('oak',0)
+        updated=next(l for l in rover()['materials'] if l['material']=='iron')
+        self.assertAlmostEqual(got,updated['personal_kg']);self.assertEqual(6.2,updated['shared_kg'])
+        self.assertAlmostEqual(max(0.,updated['kg']-6.2-got),updated['short_kg'])
+        left=pile['holds'].get('iron',0)
         routes=[r for r in updated.get('acquisition',[]) if r['kind']=='pile' and r['name']==pile['name']]
         if left>0:self.assertEqual(left,routes[0]['available_kg'])
         else:self.assertEqual([],routes,'an emptied pile is not offered as a supply')
-        other_oak=next(l for l in rover(other['token'])['materials'] if l['material']=='oak')
-        self.assertEqual(0,other_oak['personal_kg']);self.assertEqual(oak['short_kg'],other_oak['short_kg'])
+        other_iron=next(l for l in rover(other['token'])['materials'] if l['material']=='iron')
+        self.assertEqual(0,other_iron['personal_kg']);self.assertEqual(iron['short_kg'],other_iron['short_kg'])
         copper=next(l for l in initial['goods'] if l['substance']=='copper')
         process=next(r for r in copper['acquisition'] if r['kind']=='process')
         machine=process['machines'][0]
@@ -58,16 +58,16 @@ class RecipeGuidance(unittest.TestCase):
         deposits=[r for l in all_lines for r in l['acquisition'] if r['kind']=='deposit']
         if deposits:self.assertTrue(any('rover' in r['equipment'] for r in deposits))
         # An exhausted source must disappear rather than remain a suggested
-        # supply. The timber lies in several piles; empty every one.
-        for loose in [p for p in app.brains.goods.stockpiles if p.get('holds',{}).get('oak',0)>0 and not p.get('rack')]:
+        # supply. The iron lies in several piles; empty every one.
+        for loose in [p for p in app.brains.goods.stockpiles if p.get('holds',{}).get('iron',0)>0 and not p.get('rack')]:
             lx,lz=loose['at_m'];lfloor=app.live.act({'session':sid,'op':'survey','at':[lx,lz]})['survey']['ground_m']
-            while loose['holds'].get('oak',0)>0:
+            while loose['holds'].get('iron',0)>0:
                 self.post('/api/world/goods/collect',{'session':sid,'pile':loose['name'],
-                    'request_id':'empty-oak-'+str(len(app.room.goods_claims)),
+                    'request_id':'empty-iron-'+str(len(app.room.goods_claims)),
                     'person':{'eyes_m':[lx,lfloor+1.62,lz],'facing':[0,0,-1]}},world)
-        after=next(l for l in rover(other['token'])['materials'] if l['material']=='oak')
+        after=next(l for l in rover(other['token'])['materials'] if l['material']=='iron')
         self.assertFalse(any(r['kind']=='pile' for r in after['acquisition']))
-        self.assertTrue(any(r['kind']=='market' and r['offer_id']=='oak-stock' for r in after['acquisition']))
+        self.assertTrue(any(r['kind']=='market' and r['offer_id']=='iron-stock' for r in after['acquisition']))
 
     def test_browser_shortage_locate_collect_make_and_targeted_market(self):
         if not flow.qa_browser.CHROME.is_file():self.skipTest('Chrome not installed')
@@ -103,9 +103,9 @@ class RecipeGuidance(unittest.TestCase):
         # separate materials disclosure in the consolidated Build card.
         click(card+' .ws-recipe-details > summary');wait(f'document.querySelector({json.dumps(card+" .ws-recipe-details")}).open')
         text=p.evaluate(f'document.querySelector({json.dumps(card)}).textContent')
-        self.assertIn('Yours 0',text);self.assertIn('Shared 12.4',text);self.assertIn('None required',text)
-        self.assertIn('oak pile',text);self.assertIn('Missing',text);shot('shortage')
-        click(card+' [data-supply-route="oak pile"]')
+        self.assertIn('Yours 0',text);self.assertIn('Shared 6.2',text);self.assertIn('None required',text)
+        self.assertIn('iron pile',text);self.assertIn('Missing',text);shot('shortage')
+        click(card+' [data-supply-route="iron pile"]')
         wait('window.banjoRoom?.ready() && location.search.includes("resource=")')
         p.evaluate('banjoRoom.hold()')
         wait('document.querySelector("#picked").textContent.includes("Material pile")')
@@ -114,18 +114,18 @@ class RecipeGuidance(unittest.TestCase):
         initial_pose=p.evaluate('banjoRoom.camera.position.toArray()')
         # Locate turns the view, never teleports the player. For collection the
         # test observer stands beside the actual pile on its native ground.
-        pile=next(s for s in app.brains.goods.stockpiles if s['name']=='oak pile');x,z=pile['at_m']
+        pile=next(s for s in app.brains.goods.stockpiles if s['name']=='iron pile');x,z=pile['at_m']
         self.assertGreater(((initial_pose[0]-x)**2+(initial_pose[2]-z)**2)**.5,2)
         p.evaluate(f'banjoRoom.standAt({x+1},banjoRoom.groundAt({x},{z})+1.6,{z});banjoRoom.lookAt({x},banjoRoom.groundAt({x},{z})+.2,{z})')
-        wait('!document.querySelector("#collect-output").hidden && document.querySelector("#collect-output").dataset.pile==="oak pile"')
-        in_pile=pile['holds']['oak']
+        wait('!document.querySelector("#collect-output").hidden && document.querySelector("#collect-output").dataset.pile==="iron pile"')
+        in_pile=pile['holds']['iron']
         click('#collect-output')
         wait('document.querySelector("#details-last-text").textContent.includes("Inventory")')
         token=flow.workshop_library.REQUEST_OWNER.set(browser_owner)
         try:
             # Collect takes the whole pile into private stock.
-            before=next(r for r in flow.workshop_library.rack(app)['materials'] if r['material']=='oak')
-            self.assertAlmostEqual(in_pile,before['personal_kg']);self.assertEqual(12.4,before['shared_kg'])
+            before=next(r for r in flow.workshop_library.rack(app)['materials'] if r['material']=='iron')
+            self.assertAlmostEqual(in_pile,before['personal_kg']);self.assertEqual(6.2,before['shared_kg'])
         finally:flow.workshop_library.REQUEST_OWNER.reset(token)
         p.send('Page.navigate',{'url':recipes_url})
         wait(f'document.querySelector({json.dumps(card+" .ws-recipe-acts button")}) && !document.querySelector({json.dumps(card+" .ws-recipe-acts button")}).disabled')
@@ -137,12 +137,13 @@ class RecipeGuidance(unittest.TestCase):
         wait(f'document.querySelector({json.dumps(card+" .ws-recipe-result")}).textContent.includes("Made ✓")')
         self.assertEqual(installed+1,len(app.room.workshop_installs))
         token=flow.workshop_library.REQUEST_OWNER.set(browser_owner)
-        try:after=next(r for r in flow.workshop_library.rack(app)['materials'] if r['material']=='oak')
+        try:after=next(r for r in flow.workshop_library.rack(app)['materials'] if r['material']=='iron')
         finally:flow.workshop_library.REQUEST_OWNER.reset(token)
         # Make draws on your own stock first; the shared stock is untouched.
-        table_kg=37.4-6.6224
+        table=next(t for t in self.post('/api/workshop/recipes',{},world)['templates'] if t['kind']=='table')
+        table_kg=next(l['kg'] for l in table['materials'] if l['material']=='iron')
         self.assertAlmostEqual(in_pile-table_kg,after['personal_kg'],places=4)
-        self.assertAlmostEqual(12.4,after['shared_kg'],places=4)
+        self.assertAlmostEqual(6.2,after['shared_kg'],places=4)
         rover='[data-recipe="rover:rover"]'
         # Make's final refresh must replace the previous stock values before
         # the next recipe's guidance is read or acted on.

@@ -1,0 +1,751 @@
+{
+  "schema": "banjo.tool-family-evidence.v1",
+  "base_revision": "72e04d1e",
+  "dt_s": 0.004166666666666667,
+  "ground_cell_m": 0.25,
+  "trials": [
+    {
+      "label": "Personal field pick",
+      "source": {
+        "kind": "field-pick",
+        "design_id": "starter-personal-pick",
+        "parameters": {
+          "length_m": 0.4,
+          "arm_m": 0.15,
+          "section_m": 0.05,
+          "material": "iron",
+          "primary_use": {
+            "label": "Study tool",
+            "steps": [
+              {
+                "do": "inspect"
+              }
+            ]
+          },
+          "ground_tool": {
+            "schema": "banjo.workshop-ground-tool.v1",
+            "point": {
+              "component": "arm",
+              "tip_local_m": [
+                0,
+                0,
+                -0.075
+              ],
+              "direction_local": [
+                0,
+                0,
+                -1
+              ],
+              "width_m": 0.05,
+              "thickness_m": 0.05,
+              "angle_deg": 30,
+              "length_m": 0.2
+            },
+            "grip": {
+              "component": "haft",
+              "position_local_m": [
+                -0.15000000000000002,
+                0,
+                0
+              ]
+            }
+          }
+        },
+        "component_overrides": {
+          "haft": {
+            "material": "aluminum",
+            "center_m": [
+              0.0,
+              0.025,
+              0.125
+            ]
+          },
+          "arm": {
+            "center_m": [
+              0.17500000000000002,
+              0.025,
+              0.025
+            ]
+          }
+        }
+      },
+      "matter_physics_hash": "75e841f49ff208495ae7223152c0acb33f0ab49d71d32a6affeb558b7cc89c9a",
+      "product_materials_kg": {
+        "iron": 2.951250000000001,
+        "aluminum": 2.7000000000000006
+      },
+      "station_required_j": 565.1250000000001,
+      "station_work_j": 565.1250000000001,
+      "native_ground_result": {
+        "at_m": [
+          0.10146,
+          0.76853,
+          0.0301
+        ],
+        "at_s": 5.20417,
+        "breakout_work_j": 2.45137,
+        "broken_share": 0.0,
+        "closing_speed_m_s": 1.07903,
+        "depth_m": 0.13793,
+        "dug": {
+          "depth_m": 0.0742941713711652,
+          "from_m": [
+            0.125,
+            0.0
+          ],
+          "to_m": [
+            0.125,
+            0.0
+          ],
+          "width_m": 0.125
+        },
+        "ground": "sand",
+        "impulse_n_s": 28.07081,
+        "kind": "broke out",
+        "loosened": {
+          "rock_m3": 0.0,
+          "sand_m3": 0.004643385710697825,
+          "soil_m3": 0.0
+        },
+        "loosened_kg": 7.42942,
+        "model": "ground-work-v1-rigid-detachment",
+        "open": false,
+        "passive_n": 91.313,
+        "peak_force_n": 155.35572,
+        "penetration_work_j": 10.32353,
+        "point": 2,
+        "resistance_n": 155.07813,
+        "sideways_m": 0.06852,
+        "supported": true,
+        "tool_dent_mm": 0.0,
+        "tool_whole": true,
+        "why": "",
+        "work_j": 12.7749
+      },
+      "make_wall_s": 12.135908100026427,
+      "strike_wall_s": 1.1633698999939952,
+      "walking_included": false,
+      "ledger_audit": {
+        "material_residual_kg": {
+          "aluminum": 0.0,
+          "iron": 0.0
+        },
+        "assembly_goods_received_kg": {},
+        "assembly_goods_reserved_or_transferred_kg": {},
+        "assembly_goods_residual_kg": {},
+        "rack_material_received_kg": {
+          "iron": 2.951250000000001,
+          "aluminum": 2.7000000000000006
+        },
+        "native_matter_received_kg": {},
+        "native_energy_received_j": 565.1250000000001,
+        "reserved_output_energy_j": 0,
+        "transferred_output_energy_j": 0,
+        "native_transfer_residual_j": -1.1368683772161603e-13,
+        "native_meter_residual_j": 0.0,
+        "energy_residual_j": 1.5226708782734022e-13,
+        "work_residual_j": 0.0,
+        "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+      }
+    },
+    {
+      "label": "Metal shovel",
+      "source": {
+        "kind": "custom",
+        "design_id": "metal-shovel-v1",
+        "purpose": "Metal shovel",
+        "parameters": {
+          "primary_use": {
+            "label": "Study tool",
+            "steps": [
+              {
+                "do": "inspect"
+              }
+            ]
+          },
+          "ground_tool": {
+            "point": {
+              "component": "blade",
+              "tip_local_m": [
+                0.1,
+                0,
+                0
+              ],
+              "direction_local": [
+                1,
+                0,
+                0
+              ],
+              "width_m": 0.18,
+              "thickness_m": 0.003,
+              "angle_deg": 30.0,
+              "length_m": 0.2
+            },
+            "grip": {
+              "component": "handle",
+              "position_local_m": [
+                -0.2,
+                0,
+                0
+              ]
+            },
+            "use": {
+              "contact_drag_m": 0.1
+            }
+          }
+        },
+        "component_overrides": {
+          "@local_cells": {
+            "schema": "banjo.workshop-local-cells.v1",
+            "cell_size_m": 0.05
+          },
+          "@construction": {
+            "schema": "banjo.workshop-construction.v1",
+            "added": [
+              {
+                "name": "handle",
+                "role": "handle",
+                "shape": "box",
+                "size_m": [
+                  0.6,
+                  0.03,
+                  0.03
+                ],
+                "center_m": [
+                  0.0,
+                  0.015,
+                  0.0
+                ],
+                "rotation_deg": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "material": "aluminum",
+                "family": "beam"
+              },
+              {
+                "name": "blade",
+                "role": "tool-head",
+                "shape": "box",
+                "size_m": [
+                  0.2,
+                  0.003,
+                  0.18
+                ],
+                "center_m": [
+                  0.4,
+                  0.0015,
+                  0.0
+                ],
+                "rotation_deg": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "material": "iron",
+                "family": "panel"
+              }
+            ],
+            "joints": [
+              {
+                "id": "joint-1",
+                "kind": "fixed",
+                "method": "bonded",
+                "a": "handle",
+                "b": "blade"
+              }
+            ],
+            "joints_authored": true
+          }
+        }
+      },
+      "matter_physics_hash": "a2cde3deac10ad648bce551c239d7fb88bafe31e6060eabf172dd42efeb0dbc1",
+      "product_materials_kg": {
+        "aluminum": 1.4579999999999995,
+        "iron": 0.8499599999999998
+      },
+      "station_required_j": 230.79599999999996,
+      "station_work_j": 230.79599999999996,
+      "native_ground_result": {
+        "at_m": [
+          0.10495,
+          0.76853,
+          0.00725
+        ],
+        "at_s": 3.39583,
+        "breakout_work_j": 0.48526,
+        "broken_share": 0.0,
+        "closing_speed_m_s": 2.89402,
+        "depth_m": 0.09401,
+        "dug": {
+          "depth_m": 0.03082369851604482,
+          "from_m": [
+            0.125,
+            0.0
+          ],
+          "to_m": [
+            0.125,
+            0.0
+          ],
+          "width_m": 0.125
+        },
+        "ground": "sand",
+        "impulse_n_s": 0.358,
+        "kind": "broke out",
+        "loosened": {
+          "rock_m3": 0.0,
+          "sand_m3": 0.0019264811572528013,
+          "soil_m3": 0.0
+        },
+        "loosened_kg": 3.08237,
+        "model": "ground-work-v1-rigid-detachment",
+        "open": false,
+        "passive_n": 50.70959,
+        "peak_force_n": 19.2837,
+        "penetration_work_j": 1.06009,
+        "point": 2,
+        "resistance_n": 18.85238,
+        "sideways_m": 0.01583,
+        "supported": true,
+        "tool_dent_mm": 0.0,
+        "tool_whole": true,
+        "why": "",
+        "work_j": 1.54534
+      },
+      "make_wall_s": 10.549496299994644,
+      "strike_wall_s": 1.0763461999886204,
+      "walking_included": false,
+      "ledger_audit": {
+        "material_residual_kg": {
+          "aluminum": 0.0,
+          "iron": 0.0
+        },
+        "assembly_goods_received_kg": {},
+        "assembly_goods_reserved_or_transferred_kg": {},
+        "assembly_goods_residual_kg": {},
+        "rack_material_received_kg": {
+          "aluminum": 1.4579999999999995,
+          "iron": 0.8499599999999998
+        },
+        "native_matter_received_kg": {},
+        "native_energy_received_j": 230.79599999999996,
+        "reserved_output_energy_j": 0,
+        "transferred_output_energy_j": 0.0,
+        "native_transfer_residual_j": 8.944311957748141e-11,
+        "native_meter_residual_j": 0.0,
+        "energy_residual_j": 3.229361222878424e-14,
+        "work_residual_j": 0.0,
+        "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+      }
+    },
+    {
+      "label": "Metal hoe",
+      "source": {
+        "kind": "custom",
+        "design_id": "metal-hoe-v1",
+        "purpose": "Metal hoe",
+        "parameters": {
+          "primary_use": {
+            "label": "Study tool",
+            "steps": [
+              {
+                "do": "inspect"
+              }
+            ]
+          },
+          "ground_tool": {
+            "point": {
+              "component": "blade",
+              "tip_local_m": [
+                0,
+                -0.06,
+                0
+              ],
+              "direction_local": [
+                0,
+                -1,
+                0
+              ],
+              "width_m": 0.18,
+              "thickness_m": 0.012,
+              "angle_deg": 30.0,
+              "length_m": 0.12
+            },
+            "grip": {
+              "component": "handle",
+              "position_local_m": [
+                -0.2,
+                0,
+                0
+              ]
+            },
+            "use": {
+              "label": "Loosen here",
+              "past": "loosened",
+              "contact_drag_m": 0.1
+            }
+          }
+        },
+        "component_overrides": {
+          "@local_cells": {
+            "schema": "banjo.workshop-local-cells.v1",
+            "cell_size_m": 0.05
+          },
+          "@construction": {
+            "schema": "banjo.workshop-construction.v1",
+            "added": [
+              {
+                "name": "handle",
+                "role": "handle",
+                "shape": "box",
+                "size_m": [
+                  0.6,
+                  0.03,
+                  0.03
+                ],
+                "center_m": [
+                  0.0,
+                  0.105,
+                  0.0
+                ],
+                "rotation_deg": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "material": "aluminum",
+                "family": "beam"
+              },
+              {
+                "name": "blade",
+                "role": "tool-head",
+                "shape": "box",
+                "size_m": [
+                  0.012,
+                  0.12,
+                  0.18
+                ],
+                "center_m": [
+                  0.306,
+                  0.06,
+                  0.0
+                ],
+                "rotation_deg": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "material": "iron",
+                "family": "panel"
+              }
+            ],
+            "joints": [
+              {
+                "id": "joint-1",
+                "kind": "fixed",
+                "method": "bonded",
+                "a": "handle",
+                "b": "blade"
+              }
+            ],
+            "joints_authored": true
+          }
+        }
+      },
+      "matter_physics_hash": "19ffb039a842a50ecc86a48b85b10f2e4df6e133210a721686f35e046ff33aea",
+      "product_materials_kg": {
+        "aluminum": 1.4579999999999995,
+        "iron": 2.0399039999999995
+      },
+      "station_required_j": 349.7903999999999,
+      "station_work_j": 349.7903999999999,
+      "native_ground_result": {
+        "at_m": [
+          0.09357,
+          0.76853,
+          0.02985
+        ],
+        "at_s": 3.34583,
+        "breakout_work_j": 0.32452,
+        "broken_share": 0.0,
+        "closing_speed_m_s": 1.50964,
+        "depth_m": 0.08421,
+        "dug": {
+          "depth_m": 0.021850840933913967,
+          "from_m": [
+            0.125,
+            0.0
+          ],
+          "to_m": [
+            0.125,
+            0.0
+          ],
+          "width_m": 0.125
+        },
+        "ground": "sand",
+        "impulse_n_s": 17.77781,
+        "kind": "broke out",
+        "loosened": {
+          "rock_m3": 0.0,
+          "sand_m3": 0.001365677558369623,
+          "soil_m3": 0.0
+        },
+        "loosened_kg": 2.18508,
+        "model": "ground-work-v1-rigid-detachment",
+        "open": false,
+        "passive_n": 33.82015,
+        "peak_force_n": 68.9409,
+        "penetration_work_j": 3.21217,
+        "point": 2,
+        "resistance_n": 72.31417,
+        "sideways_m": 0.01932,
+        "supported": true,
+        "tool_dent_mm": 0.0,
+        "tool_whole": true,
+        "why": "",
+        "work_j": 3.53669
+      },
+      "make_wall_s": 11.265634499985026,
+      "strike_wall_s": 1.2076272999984212,
+      "walking_included": false,
+      "ledger_audit": {
+        "material_residual_kg": {
+          "aluminum": 0.0,
+          "iron": 0.0
+        },
+        "assembly_goods_received_kg": {},
+        "assembly_goods_reserved_or_transferred_kg": {},
+        "assembly_goods_residual_kg": {},
+        "rack_material_received_kg": {
+          "aluminum": 1.4579999999999995,
+          "iron": 2.0399039999999995
+        },
+        "native_matter_received_kg": {},
+        "native_energy_received_j": 349.7903999999999,
+        "reserved_output_energy_j": 0,
+        "transferred_output_energy_j": 0.0,
+        "native_transfer_residual_j": 5.633182809106074e-11,
+        "native_meter_residual_j": 0.0,
+        "energy_residual_j": -1.4627188349436437e-14,
+        "work_residual_j": 0.0,
+        "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+      }
+    },
+    {
+      "label": "Delta trench cutter",
+      "source": {
+        "kind": "custom",
+        "design_id": "delta-trench-cutter",
+        "purpose": "Delta trench cutter",
+        "parameters": {
+          "ground_tool": {
+            "schema": "banjo.workshop-ground-tool.v1",
+            "point": {
+              "component": "edge-B",
+              "tip_local_m": [
+                0.1,
+                0.0,
+                0.0
+              ],
+              "direction_local": [
+                1.0,
+                0.0,
+                0.0
+              ],
+              "width_m": 0.18,
+              "thickness_m": 0.012,
+              "angle_deg": 30.0,
+              "length_m": 0.2
+            },
+            "grip": {
+              "component": "spine-A",
+              "position_local_m": [
+                -0.15,
+                0.0,
+                0.0
+              ]
+            },
+            "use": {
+              "contact_drag_m": 0.1
+            }
+          },
+          "primary_use": {
+            "label": "Study tool",
+            "steps": [
+              {
+                "do": "inspect"
+              }
+            ]
+          },
+          "interaction_points": [
+            {
+              "id": "grip",
+              "kind": "grip",
+              "label": "Grip",
+              "position_m": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "yaw_deg": 0.0
+            },
+            {
+              "id": "use",
+              "kind": "use",
+              "label": "Use",
+              "position_m": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "yaw_deg": 0.0
+            }
+          ]
+        },
+        "component_overrides": {
+          "@construction": {
+            "schema": "banjo.workshop-construction.v1",
+            "added": [
+              {
+                "name": "spine-A",
+                "role": "beam",
+                "shape": "box",
+                "size_m": [
+                  0.5,
+                  0.03,
+                  0.03
+                ],
+                "center_m": [
+                  0.0,
+                  0.015,
+                  0.0
+                ],
+                "rotation_deg": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "material": "aluminum"
+              },
+              {
+                "name": "edge-B",
+                "role": "panel",
+                "shape": "box",
+                "size_m": [
+                  0.2,
+                  0.012,
+                  0.18
+                ],
+                "center_m": [
+                  0.35,
+                  0.006,
+                  0.0
+                ],
+                "rotation_deg": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "material": "iron",
+                "family": "panel"
+              }
+            ],
+            "joints": [
+              {
+                "id": "joint-1",
+                "kind": "fixed",
+                "method": "bonded",
+                "a": "spine-A",
+                "b": "edge-B"
+              }
+            ],
+            "joints_authored": true
+          },
+          "@local_cells": {
+            "schema": "banjo.workshop-local-cells.v1",
+            "cell_size_m": 0.05
+          }
+        }
+      },
+      "matter_physics_hash": "a1d3c8cdee2ac0499bc44e838e8810438f2e316128a400635f09cd2373776f16",
+      "product_materials_kg": {
+        "aluminum": 1.2149999999999996,
+        "iron": 3.3998399999999993
+      },
+      "station_required_j": 461.4839999999999,
+      "station_work_j": 461.4839999999999,
+      "native_ground_result": {
+        "at_m": [
+          0.08881,
+          0.76853,
+          0.02937
+        ],
+        "at_s": 3.58333,
+        "breakout_work_j": 2.28646,
+        "broken_share": 0.0,
+        "closing_speed_m_s": 2.69257,
+        "depth_m": 0.10774,
+        "dug": {
+          "depth_m": 0.06757091312310406,
+          "from_m": [
+            0.125,
+            0.0
+          ],
+          "to_m": [
+            0.125,
+            0.0
+          ],
+          "width_m": 0.125
+        },
+        "ground": "sand",
+        "impulse_n_s": 2.11416,
+        "kind": "broke out",
+        "loosened": {
+          "rock_m3": 0.0,
+          "sand_m3": 0.004223182070194004,
+          "soil_m3": 0.0
+        },
+        "loosened_kg": 6.75709,
+        "model": "ground-work-v1-rigid-detachment",
+        "open": false,
+        "passive_n": 77.36285,
+        "peak_force_n": 91.11973,
+        "penetration_work_j": 5.75521,
+        "point": 2,
+        "resistance_n": 90.8022,
+        "sideways_m": 0.06381,
+        "supported": true,
+        "tool_dent_mm": 0.0,
+        "tool_whole": true,
+        "why": "",
+        "work_j": 8.04167
+      },
+      "make_wall_s": 11.372337200009497,
+      "strike_wall_s": 1.4486897999886423,
+      "walking_included": false,
+      "ledger_audit": {
+        "material_residual_kg": {
+          "aluminum": 0.0,
+          "iron": 0.0
+        },
+        "assembly_goods_received_kg": {},
+        "assembly_goods_reserved_or_transferred_kg": {},
+        "assembly_goods_residual_kg": {},
+        "rack_material_received_kg": {
+          "aluminum": 1.2149999999999996,
+          "iron": 3.3998399999999993
+        },
+        "native_matter_received_kg": {},
+        "native_energy_received_j": 461.4839999999999,
+        "reserved_output_energy_j": 0,
+        "transferred_output_energy_j": 0.0,
+        "native_transfer_residual_j": -6.139089236967266e-11,
+        "native_meter_residual_j": 0.0,
+        "energy_residual_j": 1.4327428132787645e-13,
+        "work_residual_j": 0.0,
+        "boundary": "stock + workpieces + finite supply + station; installed outputs leave this boundary"
+      }
+    }
+  ]
+}
