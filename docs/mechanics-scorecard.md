@@ -12,6 +12,8 @@
 
 **World pickup/chat repair, October 6:** [Scoped implementation and evidence](world-pickup-chat-checkpoint.md) admits whole joined tools through ordinary click pickup, retains the exact desktop/touch press ray and makes the World rail deliberate chat only. Three browser navigation tests, native tool pickup/restore and the paid shovel journey pass. Native laws/binaries are unchanged; physical-phone acceptance and the broader regression audit remain open.
 
+**Rewrite audit, October 6 (design only):** [Source review and qualification plan](banjo-rewrite-audit.md) separates orchestration replacement from constitutive terrain qualification. No material law, tolerance or native binary changes in this checkpoint; earlier measurements retain their boundaries. Keep glass/oak/iron reference comparisons, one contact response and full transfer accounting in the rewrite. Fast productive digging, anchored tool/patch coupling, wet laws and wear remain open; static inventory/test discovery is not physical validation.
+
 # Banjo mechanics scorecard
 
 **Thin metal tool/recipe checkpoint, October 6:** [Implementation and scoped evidence](local-cell-tools-checkpoint.md) adds explicit clipped local material cells and a shared versioned recipe identity. A 3 mm iron blade and 30 mm aluminum handle now pass native paid manufacture, Inventory/equip, ordinary sand digging and reload. Bounded chat authoring preserves refused sources. Internal bending/fracture/heat/wear and adaptive refinement remain unsupported; the fast 10 ft shaft, physical phone acceptance and wider regression audit remain open. This supersedes the earlier shovel admission blocker only for the explicitly selected local representation.
