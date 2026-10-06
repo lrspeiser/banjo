@@ -1812,6 +1812,12 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/physical_matter_browser_tests.py -v)
     set_tests_properties(banjo_physical_matter_browser_tests PROPERTIES TIMEOUT 180)
+    add_test(NAME banjo_world_navigation_tests
+        COMMAND ${CMAKE_COMMAND} -E env
+            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+            BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/world_navigation_tests.py -v)
+    set_tests_properties(banjo_world_navigation_tests PROPERTIES TIMEOUT 180)
     add_test(NAME banjo_voice_tests COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/voice_tests.py -v)
     add_test(NAME banjo_voice_browser_tests

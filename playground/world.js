@@ -7166,6 +7166,7 @@ $("keys-list").replaceChildren(...controls().flatMap(([keysSaid, what]) => {
 // What they hold or look at, where they stand and which way they face go with
 // what they say (whereIAm), so "this" and "in front of me" mean something.
 function talk() {
+  closeMachinePanel();
   document.body.classList.add("chat-open");foldPanel(false);
   setCursorFree(true);
   $("ask-text").focus();
@@ -7326,8 +7327,10 @@ function releasePrimary() {
 canvas.addEventListener("pointerdown", (e) => {
   offerStick(e);
   if (cursorFree) {
-    if (e.button === 0) { setCursorFree(false); resumeClick=true; }
-    return;
+    if (e.button !== 0) return;
+    foldPanel(true); setCursorFree(false);
+    if (typing(document.activeElement)) document.activeElement.blur();
+    if (world.held) { resumeClick=true; return; }
   }
   resumeClick=false;
   // A press can arrive before pointermove or the asynchronous hover pick.
@@ -7369,7 +7372,8 @@ canvas.addEventListener("pointerdown", (e) => {
   if (looking || world.held) primaryUsed = pressPrimary(e.pointerType !== "mouse" && world.held?.pick
     ? {from:from.toArray(),dir:dir.toArray()} : null);
   if (looking) return;           // captured: the move handler has it
-  drag = { x: e.clientX, y: e.clientY, moved: false };
+  drag = { x: e.clientX, y: e.clientY, moved: false,
+           ray: {from:from.toArray(),dir:dir.toArray()} };
   // Capture can be refused -- a pointer already gone, or one a test made up --
   // and dragging to look works without it.
   try { canvas.setPointerCapture(e.pointerId); } catch { /* look without it */ }
@@ -7440,27 +7444,49 @@ canvas.addEventListener("pointerup", (e) => {
     return;
   }
   if (world.held) { intend("drop"); return; }
-  // Hand empty, and the cursor is on something: do the thing -- or, for a
-  // thing no hand takes, show it. Clicked before the view's answer came back:
-  // ask now, then do it.
-  const act = () => {
-    const name = world.aim?.name;
-    if (!name || world.held) return;
-    if (!machinesOfPart(name).length && !takenByHand(name)) { foldPanel(false); return; }
-    intend(doChoice);
-  };
-  if (world.aim && world.aim.name) act();
-  else if (!world.aim && !world.groundAim) void aimNow().then(act);
+  // Resolve the press ray afresh: a delayed hover answer may name another
+  // object, and a lifted finger has already cleared the hover cursor.
+  if (was?.ray) void clickWorld(was.ray);
 });
 
-// Whether a hand can take a thing: not fixed in place, not fastened to
-// anything, and no heavier than can be carried. A click on the solar farm
-// (245 kg) asked to carry it and was refused, with its card in a folded
-// panel: the click did nothing anyone could see (player regression, 2026-10-04).
+async function clickWorld(ray) {
+  const session = world.session;
+  if (!session || watchedId || world.held || world.acting) return;
+  try {
+    const found = await act("pick", {...ray,max_m:40});
+    if (world.session !== session || world.held || world.acting) return;
+    intend(() => {
+      if (world.session !== session || world.held || world.acting) return;
+      world.aim = found.hit && found.name ? found : null;
+      world.groundAim = found.hit && !found.name ? groundTargetPoint(found.point_m,ray.from) : null;
+      pinWhatWasClicked();
+      const name = world.aim?.name;
+      if (!name) return;
+      if (takenByHand(name)) doChoice();
+      else lastAction(`${titled(name)} selected · Press / to ask about it.`);
+    });
+  } catch (error) { lastAction(error.message,"refused"); }
+}
+
+// Whole products include their internal fixings. Only external attachments,
+// anchored constituents and excessive total weight exclude ordinary pickup.
+// Native pickup remains authoritative for reach, ownership and intact matter.
 function takenByHand(name) {
   const entry = world.bodies.get(name);
-  if (!entry || entry.anchored || onAJoint(name)) return false;
+  if (!entry || entry.anchored) return false;
   const limit = Number(world.carryLimitKg) || 80;
+  const tool = tools.profileOf(name);
+  if (tool) {
+    const members = new Set(tool.parts);
+    const bodies = [...members].map(part => world.bodies.get(part));
+    // Internal fixings belong to the product. External attachments and
+    // anchored constituents still refuse; native pickup validates its point,
+    // connection, ownership and reach before putting anything in the hand.
+    return bodies.every(body => body && !body.anchored) &&
+      bodies.reduce((kg,body) => kg + (Number(body.mass) || 0),0) <= limit &&
+      !world.joints.some(j => j.attached && members.has(j.a) !== members.has(j.b));
+  }
+  if (onAJoint(name)) return false;
   return !(Number(entry.mass) > limit);
 }
 
@@ -7485,6 +7511,9 @@ canvas.addEventListener("click", (e) => {
   if (resumeClick) { resumeClick=false; return; }
   if (cursorFree) return;
   if (e.button !== 0) return;
+  // Ordinary empty-hand clicks are resolved once by clickWorld, including
+  // selection. Alt is an explicit inspection gesture while carrying.
+  if (!e.altKey) return;
   if (world.held && world.held.pick && !e.altKey
       && !(world.aim?.name && selectsInsteadOfSwing(world.aim.name))) return;   // a swing, not a choice
   if (!world.aim && !world.groundAim) { void aimNow().then(pinWhatWasClicked); return; }
@@ -7694,6 +7723,7 @@ function offerStick(e) {
 // FOLDING THE PANEL AWAY. The room is what a small screen came for, so the
 // panel starts folded on one and is remembered either way.
 function foldPanel(away) {
+  away = away || !document.body.classList.contains("chat-open");
   if(away)document.body.classList.remove("chat-open");
   document.body.classList.toggle("panel-away", away);
   const fold = $("panel-fold"), show = $("panel-show");
@@ -7708,15 +7738,11 @@ function installPanelFold() {
   if (fold) fold.addEventListener("click", () => foldPanel(true));
   if (show) show.addEventListener("click", () => foldPanel(false));
   foldPanel(true);
-  // Menu is the same [data-game-menu] control as the Workshop's bottom bar
-  // (game_menu.js opens it); Details is the rail's own disclosure.
+  // Chat has one deliberate entry; the game's menu stays in the bottom bar.
   for(const [label,run] of [["Menu",null],
-    ["Details",()=>{document.body.classList.remove("chat-open");foldPanel(!document.body.classList.contains("panel-away"));setCursorFree(true);}],
     ["Chat /",talk]]) {
     const button=document.createElement("button");button.type="button";button.textContent=label;
     if(run)button.onclick=run;else button.dataset.gameMenu="";
-    if(label==="Details"){button.id="panel-details";button.setAttribute("aria-controls","panel");
-      button.setAttribute("aria-expanded",String(!document.body.classList.contains("panel-away")));}
     worldNavigation.append(button);
   }
 }

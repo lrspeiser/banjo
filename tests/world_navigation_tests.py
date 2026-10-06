@@ -9,10 +9,12 @@ import unittest
 from unittest import mock
 import ai_player_tests as ai
 import qa_browser
+import workshop_navigation_tests as screens
 
 OUT=Path(__file__).resolve().parents[1]/'build/resource-flow'
 
 class Navigation(unittest.TestCase):
+    wait = screens.GameScreens.wait
     get,post,join=ai.AutonomousGuests.get,ai.AutonomousGuests.post,ai.AutonomousGuests.join
     setUp,start,stop,tearDown,setup_world=(ai.AutonomousGuests.setUp,ai.AutonomousGuests.start,
         ai.AutonomousGuests.stop,ai.AutonomousGuests.tearDown,ai.AutonomousGuests.setup_world)
@@ -93,11 +95,10 @@ class Navigation(unittest.TestCase):
         after=page.evaluate('banjoRoom.camera.position.toArray()')
         self.assertGreater(math.hypot(after[0]-before[0],after[2]-before[2]),.05)
         wait('document.querySelector("#stick").dataset.held==="no"')
-        page.evaluate('document.querySelector("#panel-details").click()')
-        wait('!document.querySelector("#material-preview").hidden && !document.querySelector("#minimap").hidden')
-        self.assertTrue(page.evaluate('document.querySelector("#details").contains(document.querySelector("#material-preview")) && document.querySelector("#details").contains(document.querySelector("#minimap"))'))
+        self.assertIsNone(page.evaluate('document.querySelector("#panel-details")'))
         page.evaluate('[...document.querySelectorAll("#world-quickbar button")].find(b=>b.textContent==="Chat /").click()')
         wait('document.body.classList.contains("chat-open") && getComputedStyle(document.querySelector("#talk")).display!=="none"')
+        self.assertTrue(page.evaluate('getComputedStyle(document.querySelector("#details")).display==="none" && getComputedStyle(document.querySelector("#panel [data-game-menu]")).display==="none"'))
         page.evaluate('window.beforeReload=true;location.reload()')
         wait('!window.beforeReload && window.banjoRoom?.ready()')
         time.sleep(.3)
@@ -205,7 +206,7 @@ class Navigation(unittest.TestCase):
         click(400,400)
         self.assertFalse(page.evaluate('banjoRoom.controls().cursorFree'))
         self.assertNotEqual('ask-text',page.evaluate('document.activeElement?.id'))
-        page.evaluate('document.querySelector("#ask-text").focus()')
+        page.evaluate('[...document.querySelectorAll("button")].find(b=>b.textContent==="Chat /").click()')
         self.assertEqual('ask-text',page.evaluate('document.activeElement?.id'))
         self.assertTrue(page.evaluate('banjoRoom.controls().cursorFree'))
         yaw=page.evaluate('banjoRoom.controls().yaw')
@@ -228,5 +229,65 @@ class Navigation(unittest.TestCase):
             'native_terrain_seed':app.room.spec['terrain']['generate']['seed']},indent=2)+'\n',encoding='utf-8')
         (OUT/'world-navigation.png').write_bytes(base64.b64decode(
             page.send('Page.captureScreenshot',{'format':'png'})['data']))
+
+    def test_click_joined_tool_parts_and_slash_opens_only_chat(self):
+        # Native pickup of both constituents, including a first tap in cursor
+        # mode. Use real pointer/touch events; no mocked hit or pickup result.
+        for part,width,height,touch in [('field pick-g0',1280,800,False),
+                                      ('field pick',844,390,True)]:
+            with self.subTest(part=part,touch=touch):
+                with mock.patch.object(ai.server.secrets,'randbelow',side_effect=[0,1]):
+                    ident,owner,app=self.setup_world(surface='columns')
+                screens.GameScreens.browser(self,ident,owner)
+                self.page.send('Emulation.setDeviceMetricsOverride',{'width':width,'height':height,
+                    'deviceScaleFactor':1,'mobile':touch})
+                if touch:self.page.send('Emulation.setTouchEmulationEnabled',{'enabled':True,'maxTouchPoints':5})
+                self.page.send('Page.navigate',{'url':self.base+f'/world?world={ident}'})
+                self.wait('banjoRoom?.ready() && document.querySelector("#panel-state").textContent==="Live."')
+                self.assertTrue(self.page.evaluate('document.body.classList.contains("panel-away")'))
+                self.assertIsNone(self.page.evaluate('document.querySelector("#panel-details")'))
+                self.page.evaluate(f'''(()=>{{const r=banjoRoom,p=r.world.bodies.get({json.dumps(part)}).mesh.position;
+                    r.standAt(p.x,r.groundAt(p.x,p.z+1)+1.62,p.z+1.0);r.lookAt(p.x,p.y,p.z);}})()''')
+                self.wait('!banjoRoom.world.busy && !banjoRoom.world.acting')
+                if touch:
+                    # Slash opened chat, then the first world tap closes it
+                    # and picks up the item rather than consuming the tap.
+                    self.page.send('Input.dispatchKeyEvent',{'type':'keyDown','code':'Slash','key':'/','windowsVirtualKeyCode':191})
+                    self.wait('document.body.classList.contains("chat-open")')
+                point=self.page.evaluate(f'''(()=>{{const r=banjoRoom,
+                    v=r.world.bodies.get({json.dumps(part)}).mesh.getWorldPosition(new r.THREE.Vector3()).project(r.camera);
+                    return {{x:(v.x+1)*innerWidth/2,y:(1-v.y)*innerHeight/2}};}})()''')
+                self.page.evaluate('''(()=>{window.pickupEvents=[];for(const type of ['pointerdown','pointerup'])
+                    document.querySelector('#stage').addEventListener(type,e=>pickupEvents.push({type,x:e.clientX,y:e.clientY,button:e.button}));})()''')
+                if touch:
+                    self.page.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[point]})
+                    self.page.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
+                else:
+                    for kind in ('mousePressed','mouseReleased'):
+                        self.page.send('Input.dispatchMouseEvent',{'type':kind,**point,'button':'left','clickCount':1})
+                try:self.wait('banjoRoom.held()?.name==="field pick" && banjoRoom.use().mode==="tool-ready"',seconds=12)
+                except AssertionError:
+                    self.fail(str(self.page.evaluate('({events:pickupEvents,hit:document.elementFromPoint(innerWidth/2,innerHeight/2)?.id,held:banjoRoom.held()?.name,use:banjoRoom.use().mode,aim:banjoRoom.world.aim,last:banjoRoom.world.last,controls:banjoRoom.controls(),camera:banjoRoom.camera.position.toArray()})')))
+                self.assertEqual('field pick',app.live.session.state['hand']['holding'])
+                self.assertTrue(self.page.evaluate('document.body.classList.contains("panel-away")'))
+                self.assertFalse(self.page.evaluate('document.body.classList.contains("chat-open")'))
+                # Selection alone cannot unfold the rail, including a machine.
+                self.page.evaluate('banjoRoom.pick("rover")')
+                self.assertTrue(self.page.evaluate('document.body.classList.contains("panel-away")'))
+                self.page.send('Input.dispatchKeyEvent',{'type':'keyDown','code':'Slash','key':'/','windowsVirtualKeyCode':191})
+                self.wait('document.body.classList.contains("chat-open") && document.activeElement.id==="ask-text"')
+                self.wait('Math.abs(document.querySelector("#panel").getBoundingClientRect().right-innerWidth)<1')
+                visible=self.page.evaluate('''(()=>{const p=document.querySelector('#panel');return {
+                    body:[...p.children].filter(e=>getComputedStyle(e).display!=='none').map(e=>e.id||e.tagName),
+                    header:[...p.querySelector(':scope > header').children].filter(e=>getComputedStyle(e).display!=='none').map(e=>e.id||e.tagName)};})()''')
+                self.assertEqual(['HEADER','talk'],visible['body'])
+                self.assertEqual(['panel-fold','H1'],visible['header'])
+                OUT.mkdir(parents=True,exist_ok=True)
+                (OUT/f'chat-only-{width}x{height}.png').write_bytes(base64.b64decode(
+                    self.page.send('Page.captureScreenshot')['data']))
+                self.page.send('Input.dispatchKeyEvent',{'type':'keyDown','code':'Escape','key':'Escape','windowsVirtualKeyCode':27})
+                self.wait('!document.body.classList.contains("chat-open") && document.body.classList.contains("panel-away")')
+                self.assertEqual('field pick',self.page.evaluate('banjoRoom.held()?.name'))
+                self.chrome.close()
 
 if __name__=='__main__':unittest.main(verbosity=2)
