@@ -14,7 +14,9 @@ The shovel's `contact_drag_m: 0.10` asks the bounded native hand to work lateral
 
 ## Measured verification
 
-Windows / Python 3.13 / MSVC 19.44 / Release / Jolt, CPU reference. Separate `build/local-cell-tools`, `BANJO_BUILD_LAB=OFF`. The working tree was based on `64f7c6d5`; the publication revision is recorded in Git history and the follow-up handoff. Browser interactions used actual Chrome pointer clicks in an 844 × 390 landscape viewport. These are desktop emulation results, not physical-phone acceptance. The raylib native window/input loop was not exercised.
+Windows / Python 3.13 / MSVC 19.44 / Release / Jolt, CPU reference. Separate `build/local-cell-tools`, `BANJO_BUILD_LAB=OFF`. Implementation published to main as `8f3113d62e4e1f14540e1878b6130032617a18ed`, based on `64f7c6d5`. Source registration and the five scoped native/contract/local-source CTest groups were rerun on that commit (all passed). Browser interactions used actual Chrome pointer clicks in an 844 × 390 landscape viewport. These are desktop emulation results, not physical-phone acceptance. The raylib native window/input loop was not exercised.
+
+The local demo on port 18890 uses that source commit and the recorded native binaries. The server stopped through its Ctrl+C handler after a separate saved-room backup; the existing inorganic demo world reopened and the Build screen visibly offers Metal shovel with its required supplies. The older wood-based world is preserved and remains refused by the pre-existing inorganic-only admission rule; it was not reset or converted.
 
 | Check | Result |
 |---|---|
