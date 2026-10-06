@@ -1,5 +1,13 @@
 # Banjo mechanics scorecard
 
+**Constituent solid reference, October 5:** [Measured boundary](solid-matter-reference-checkpoint.md)
+qualifies a free 125-cell patch under bounded external traction, preserving
+cells/damage and auditing source work, momentum and numerical error. It is an
+isotropic strength surface, not calibrated wood/metal/soil or a finite tool
+contact. No terrain or debris integration is claimed. Next qualify terrain
+attachments, finite source/tool transfer and native settling before replacing
+fixed-count excavation; fast 10 ft digging remains an open gameplay gate.
+
 **Ground matter audit, October 5:** [Physics boundary audit](ground-matter-audit.md) separates conserved extraction mass from fracture/work qualification. A 25 cm rock cube requires 468,750 J under the existing declared specific-energy model, while cube mode reports ten fixed 26 J uses. This arithmetic comparison is not calibrated rock physics. Cosmetic receipt trajectories are removed; native cell extraction, teleport-to-receiver piles and static cone pictures remain shortcuts. Next qualify sparse persistent matter, measured tool work, constitutive failure, native component settling and full momentum/energy/source transfer. Existing mass/water regressions do not close those gates.
 
 **Phone digging and opened pits, October 5:** [Checkpoint](mobile-digging-checkpoint.md) retains finger rays through tool scheduling and clears empty cap/void boundaries after roof removal. Older air caps recover on an explicit strike without duplicate material credit. Native glass/oak/iron pit-flow and saved-floor checks retain 25 cm cells and dt 1/240 s; actual touch and render regressions cover the reported interaction. Covered-tunnel water, erosion/caving, streamed-region water and physical phone acceptance remain open; R3 stays paused.

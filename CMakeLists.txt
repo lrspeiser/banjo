@@ -161,6 +161,7 @@ add_library(
     src/fastlattice/CpuLatticeBackend.cpp
     src/fastlattice/ParallelCpuLatticeBackend.cpp
     src/fastlattice/Refracture.cpp
+    src/fastlattice/SolidMatterPatch.cpp
     src/fastlattice/Propagator.cpp)
 target_link_libraries(banjo_fastlattice PUBLIC banjo_core)
 target_compile_features(banjo_fastlattice PUBLIC cxx_std_23)
@@ -1084,6 +1085,11 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_lattice_external_load_tests PRIVATE banjo_fastlattice)
             banjo_enable_warnings(banjo_lattice_external_load_tests)
             add_test(NAME banjo_lattice_external_load_tests COMMAND banjo_lattice_external_load_tests)
+
+            add_executable(banjo_solid_matter_patch_tests tests/solid_matter_patch_tests.cpp)
+            target_link_libraries(banjo_solid_matter_patch_tests PRIVATE banjo_fastlattice)
+            banjo_enable_warnings(banjo_solid_matter_patch_tests)
+            add_test(NAME banjo_solid_matter_patch_tests COMMAND banjo_solid_matter_patch_tests)
 
             # A scene that keeps running instead of being run: stepping, reading
             # where everything is, and taking hold of something.

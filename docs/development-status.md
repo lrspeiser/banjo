@@ -1,5 +1,13 @@
 # Development status and handoff
 
+**Constituent solid implementation, October 5 (experimental reference):**
+[Checkpoint](solid-matter-reference-checkpoint.md) adds exact source cells,
+persistent constitutive damage, force/work budgets, connected components and
+audited free-patch ledgers in a compiled CPU module. Glass/oak/iron/concrete,
+dt refinement, nonzero source impulse/moment, unloading and rollback pass.
+Terrain attachment, finite tool coupling, granular ground, physical settling,
+storage/manufacture and the fast 10 ft gameplay gate remain unimplemented.
+
 **Pickup ordering, October 5:** [Grip checkpoint](tool-grip-recovery-checkpoint.md)
 now guards stale step hand observations and awaits inventory adoption. Ten
 client and 19 native inventory tests pass; a real browser verifies repeated
