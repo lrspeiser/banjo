@@ -16,6 +16,8 @@
 
 # Banjo roadmap and acceptance gates
 
+**Mobile HUD repair, October 6:** [Checkpoint](mobile-hud-checkpoint.md) verifies menu-clear touch controls and deliberate Details/Chat at startup and reload in desktop, portrait and landscape Chrome. Physical phone acceptance remains required; this does not close broader digging or native locomotion gates.
+
 **Regression audit, October 5 (in progress):** [Audit and remaining gates](regression-audit-2026-10-05.md)
 records verified contract repairs and native stability-preserving Lab placement.
 Finish the ordinary/supplemental and extended runs, resolve exposed failures,

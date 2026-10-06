@@ -17,6 +17,106 @@ class Navigation(unittest.TestCase):
     setUp,start,stop,tearDown,setup_world=(ai.AutonomousGuests.setUp,ai.AutonomousGuests.start,
         ai.AutonomousGuests.stop,ai.AutonomousGuests.tearDown,ai.AutonomousGuests.setup_world)
 
+    def test_mobile_controls_and_deliberate_panels_from_first_paint(self):
+        if not qa_browser.CHROME.is_file():
+            if os.environ.get('BANJO_BROWSER_TESTS') == 'required':self.fail('Chrome required')
+            self.skipTest('Chrome unavailable')
+        with mock.patch.object(ai.server.secrets,'randbelow',side_effect=[0,1]):
+            ident,owner,app=self.setup_world(surface='columns')
+        chrome=qa_browser.Chrome(390,844);self.addCleanup(chrome.close)
+        page=chrome.page;page.send('Page.enable');page.send('Runtime.enable')
+        def wait(expr,seconds=30):
+            until=time.monotonic()+seconds
+            while time.monotonic()<until:
+                try:
+                    if page.evaluate('Boolean('+expr+')'):return
+                except (RuntimeError,TimeoutError):pass
+                time.sleep(.04)
+            self.fail(expr+' '+str(page.evaluate('({hit:document.elementFromPoint(innerWidth/2,80)?.outerHTML?.slice(0,250),size:[innerWidth,innerHeight],controls:window.banjoRoom?.controls()})')))
+        url=self.base+f'/world?world={ident}&hold=1'
+        page.send('Emulation.setDeviceMetricsOverride',{'width':390,'height':844,'deviceScaleFactor':1,'mobile':True})
+        page.send('Emulation.setTouchEmulationEnabled',{'enabled':True,'maxTouchPoints':5})
+        # A slow or failed module download must not paint an open sidebar.
+        page.send('Emulation.setScriptExecutionDisabled',{'value':True})
+        page.send('Page.navigate',{'url':url})
+        wait('document.querySelector("#panel") && document.styleSheets.length >= 3')
+        self.assertEqual('hidden',page.evaluate('getComputedStyle(document.querySelector("#panel")).visibility'))
+        OUT.mkdir(parents=True,exist_ok=True)
+        (OUT/'mobile-hud-before-javascript.png').write_bytes(base64.b64decode(
+            page.send('Page.captureScreenshot',{'format':'png'})['data']))
+        page.send('Emulation.setScriptExecutionDisabled',{'value':False})
+        page.send('Page.addScriptToEvaluateOnNewDocument',{'source':"""
+          window.unwantedPanelFrames=0;
+          function observePaint(){const p=document.querySelector('#panel');
+            if(p && getComputedStyle(p).visibility!=='hidden')window.unwantedPanelFrames++;
+            requestAnimationFrame(observePaint)}requestAnimationFrame(observePaint);
+        """})
+        page.send('Page.navigate',{'url':url})
+        wait('window.banjoRoom?.ready() && document.querySelector("#inventory-strip")')
+        time.sleep(.3)
+        self.assertEqual(0,page.evaluate('window.unwantedPanelFrames'))
+        for width,height in ((390,844),(844,390),(360,640),(1280,800)):
+            with self.subTest(viewport=(width,height)):
+                page.send('Emulation.setDeviceMetricsOverride',{'width':width,'height':height,'deviceScaleFactor':1,'mobile':width<1000})
+                wait(f'innerWidth==={width} && innerHeight==={height}')
+                page.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
+                self.assertEqual('stage',page.evaluate('document.elementFromPoint(innerWidth/2,innerHeight/2)?.id'))
+                page.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':width/2,'y':height/2}]})
+                page.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
+                wait('!document.querySelector("#stick").hidden',seconds=5)
+                time.sleep(.15)
+                layout=page.evaluate("""(()=>{const pad=document.querySelector('#stick'),r=pad.getBoundingClientRect();
+                  const intersects=e=>{const b=e.getBoundingClientRect();return b.width && b.height &&
+                    r.left<b.right && r.right>b.left && r.top<b.bottom && r.bottom>b.top};
+                  const hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);
+                  return {onscreen:r.left>=0 && r.top>=0 && r.right<=innerWidth && r.bottom<=innerHeight,
+                    reachable:!!hit?.closest('#stick') && [.2,.8].every(y=>!!document.elementFromPoint(r.left+r.width/2,r.top+r.height*y)?.closest('#stick')),
+                    overlapsMenu:intersects(document.querySelector('#world-quickbar nav')),
+                    overlapsInventory:intersects(document.querySelector('#inventory-strip')),
+                    mapHidden:document.querySelector('#minimap').hidden,
+                    previewHidden:document.querySelector('#material-preview').hidden,
+                    panelHidden:getComputedStyle(document.querySelector('#panel')).visibility==='hidden'};})()""")
+                self.assertEqual({'onscreen':True,'reachable':True,'overlapsMenu':False,
+                    'overlapsInventory':False,'mapHidden':True,'previewHidden':True,'panelHidden':True},layout)
+                (OUT/f'mobile-hud-{width}x{height}.png').write_bytes(base64.b64decode(
+                    page.send('Page.captureScreenshot',{'format':'png'})['data']))
+        # The pad receives real touch input and moves the player. Presentation
+        # repair does not qualify native locomotion: use the existing walk mode.
+        page.evaluate('window.dispatchEvent(new CustomEvent("banjo-movement-mode",{detail:"gravity"}))')
+        before=page.evaluate('banjoRoom.camera.position.toArray()')
+        center=page.evaluate('(()=>{const r=document.querySelector("#stick").getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()')
+        page.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[center]})
+        page.send('Input.dispatchTouchEvent',{'type':'touchMove','touchPoints':[{'x':center['x'],'y':center['y']-35}]})
+        wait('document.querySelector("#stick").dataset.held==="yes"')
+        time.sleep(.35)
+        page.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
+        after=page.evaluate('banjoRoom.camera.position.toArray()')
+        self.assertGreater(math.hypot(after[0]-before[0],after[2]-before[2]),.05)
+        wait('document.querySelector("#stick").dataset.held==="no"')
+        page.evaluate('document.querySelector("#panel-details").click()')
+        wait('!document.querySelector("#material-preview").hidden && !document.querySelector("#minimap").hidden')
+        self.assertTrue(page.evaluate('document.querySelector("#details").contains(document.querySelector("#material-preview")) && document.querySelector("#details").contains(document.querySelector("#minimap"))'))
+        page.evaluate('[...document.querySelectorAll("#world-quickbar button")].find(b=>b.textContent==="Chat /").click()')
+        wait('document.body.classList.contains("chat-open") && getComputedStyle(document.querySelector("#talk")).display!=="none"')
+        page.evaluate('window.beforeReload=true;location.reload()')
+        wait('!window.beforeReload && window.banjoRoom?.ready()')
+        time.sleep(.3)
+        self.assertEqual(0,page.evaluate('window.unwantedPanelFrames'))
+        self.assertFalse(page.evaluate('document.body.classList.contains("chat-open")'))
+        # The folded World state must not shrink the shared Workshop chat.
+        page.send('Page.navigate',{'url':self.base+f'/world?world={ident}&workshop=1&tab=market'})
+        wait('document.body.classList.contains("workshop-mode") && document.querySelector("#ws-component-chat-text") && !document.querySelector("#ws-component-chat-text").disabled')
+        self.assertFalse(page.evaluate('document.body.classList.contains("ws-chat-open")'))
+        page.evaluate('[...document.querySelectorAll(".game-bottom-tabs button")].find(b=>b.textContent==="Chat /").click()')
+        wait('document.body.classList.contains("ws-chat-open")')
+        self.assertGreater(page.evaluate('document.querySelector(".ws-left").getBoundingClientRect().width'),200)
+        self.assertEqual('visible',page.evaluate('getComputedStyle(document.querySelector(".ws-left")).visibility'))
+        page.send('Emulation.setDeviceMetricsOverride',{'width':390,'height':844,'deviceScaleFactor':1,'mobile':True})
+        wait('!document.body.classList.contains("ws-chat-open")')
+        page.evaluate('[...document.querySelectorAll(".game-bottom-tabs button")].find(b=>b.textContent==="Chat /").click()')
+        self.assertGreater(page.evaluate('document.querySelector(".ws-left").getBoundingClientRect().width'),200)
+        self.assertFalse([e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
+
     def test_faster_walk_edge_look_and_safe_cursor_for_panels(self):
         if not qa_browser.CHROME.is_file():
             if os.environ.get('BANJO_BROWSER_TESTS')=='required':self.fail('Chrome required')

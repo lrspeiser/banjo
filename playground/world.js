@@ -28,7 +28,7 @@ import { conditionPanel } from "/body_condition.js";
 import { renderChatActions, guideHistory, rememberGuide, actionUrl, finishChat, submitChatText } from '/chat_actions.js';
 import {createVoiceController} from '/voice.js';
 import {makePhysicalGround,looseGroundLabel} from '/physical_matter.js';
-import { GROUND_APPEARANCE, materialAppearance, terrainCellAt, terrainHitPoint, terrainTargetPath, exposedRunKind, toolTargetFeedback, toolTargetColor, collectedToolMaterials, toolOutcomeFeedback, makeTargetHover, cellWaterData, columnTopData, walkColumnFaces, columnChunkIds, columnChunkBox } from "/material_appearance.js";
+import { GROUND_APPEARANCE, materialAppearance, terrainCellAt, terrainHitPoint, terrainTargetPath, exposedRunKind, toolTargetFeedback, toolTargetColor, collectedToolMaterials, toolOutcomeFeedback, cellWaterData, columnTopData, walkColumnFaces, columnChunkIds, columnChunkBox } from "/material_appearance.js";
 import { terrainMaterial } from "/terrain_material.js";
 import { makeRegions } from "/ground_regions.js";
 import { baselineHeightAt, cutHeightAt, walkCutSurface, cutWallBands, cutRimSegments } from "/cut_surface.js";
@@ -4929,6 +4929,7 @@ function stripElement() {
   document.body.append(strip);
   addEventListener("resize",placeInventoryStrip);
   new ResizeObserver(placeInventoryStrip).observe(worldNavigation);
+  new ResizeObserver(placeMovementStick).observe(strip);
   return strip;
 }
 // The menu sits at the bottom left and this strip at the bottom right (the
@@ -4939,6 +4940,21 @@ function placeInventoryStrip() {
   inventoryStrip.classList.toggle("above",!wide);
   inventoryStrip.style.left="";
   inventoryStrip.style.bottom=wide?`${Math.round(innerHeight-bar.bottom)}px`:`${Math.round(innerHeight-bar.top+6)}px`;
+  placeMovementStick();
+}
+// Use actual HUD bounds: portrait wraps the menu, and a fuller inventory
+// moves up a row. Keep the movement pad above anything sharing its lane.
+function placeMovementStick() {
+  const pad=$("stick");
+  if(!pad || pad.hidden)return;
+  const left=pad.getBoundingClientRect().left,right=left+pad.offsetWidth;
+  let top=innerHeight;
+  for(const control of [worldNavigation,$("inventory-strip"),...document.querySelectorAll('#hand-slots [data-hand]')]) {
+    if(!control || control.hidden || !control.getClientRects().length)continue;
+    const rect=control.getBoundingClientRect();
+    if(rect.width && rect.height && rect.left<right && rect.right>left)top=Math.min(top,rect.top);
+  }
+  pad.style.bottom=`${Math.max(18,Math.ceil(innerHeight-top+12))}px`;
 }
 function showInventoryStrip() {
   const inv=world.inventory, cells=[];
@@ -5106,7 +5122,7 @@ toolGuide.querySelector("button").addEventListener("click", (e) => {
   lastAction(`${titled(profile.object)} · ${camera.position.distanceTo(at).toFixed(1)} m away · walk close and press E to take up.`);
 });
 loadMeter.append(toolGuide);
-document.body.append(loadMeter);
+$("details").append(loadMeter);
 
 // The bag's first nine slots along the bottom of the view: each with its number,
 // the colour of what it is made of (round for a ball), and its name. A slot
@@ -6418,19 +6434,11 @@ function detailsModel() {
 // second, and at once when the hand's state changes (showUse). The crosshair's
 // ring fills with the meter.
 let materialPreviewSaid = "";
-const targetHover=makeTargetHover();
 function positionTargetPopover() {
   const box=$("material-preview");if(!box)return;
-  if(cursorFree || world.placing || watchedId){box.hidden=true;targetHover(performance.now(),null);return;}
-  if(box.matches(':hover'))return;
-  const at=world.aim?.point_m || world.groundAim;
-  const key=world.resourceAim?.pile?.name || world.aim?.name ||
-    (at&&ground.grid ? `ground:${terrainCellAt(at[0],at[2],ground.grid)}` : null);
-  const bounds=canvas.getBoundingClientRect();
-  const x=cursor?bounds.left+cursor.px:0,y=cursor?bounds.top+cursor.py:0;
-  const visible=targetHover(performance.now(),!watchedId && !cursorFree && cursor && key && !world.placing ?
-    {key,x,y,eyes:camera.position.toArray()} : null);
-  box.hidden=!visible;
+  box.hidden=document.body.classList.contains("panel-away") ||
+    document.body.classList.contains("chat-open") || document.body.classList.contains("machine-open") ||
+    !!world.placing || !!watchedId;
 }
 function targetContext(at,name=null) {
   if(name)return JSON.stringify([name,world.bodies.get(name)?.revision]);
@@ -6493,8 +6501,7 @@ function showMaterialPreview() {
   let box=$("material-preview");
   if(!box) {
     box=document.createElement("section");box.id="material-preview";box.setAttribute("aria-label","Material preview");
-    document.body.append(box);box.hidden=true;
-    box.addEventListener('pointerleave',()=>{cursor=null;markAt(null);targetHover(performance.now(),null);box.hidden=true;});
+    $("details").append(box);box.hidden=true;
   }
   box.replaceChildren();
   const heading=document.createElement("h3");heading.textContent="Target";box.append(heading);
@@ -7317,6 +7324,7 @@ function releasePrimary() {
 //
 // Looking around is dragging, which is what the drag handler was always for.
 canvas.addEventListener("pointerdown", (e) => {
+  offerStick(e);
   if (cursorFree) {
     if (e.button === 0) { setCursorFree(false); resumeClick=true; }
     return;
@@ -7325,7 +7333,6 @@ canvas.addEventListener("pointerdown", (e) => {
   // A press can arrive before pointermove or the asynchronous hover pick.
   // Read this event's coordinates before capturing the tool's action target.
   cursor=cursorAt(e);markAt(cursor);
-  offerStick(e);
   // The LEFT button only. The right one releases a latch, and it used to do
   // that and then pick the thing up as well, because a pointerup is a
   // pointerup whichever button made it.
@@ -7681,6 +7688,7 @@ function offerStick(e) {
   if (!pad || !pad.hidden || e.pointerType === "mouse") return;
   pad.hidden = false;
   pad.dataset.held = "no";
+  placeInventoryStrip();
 }
 
 // FOLDING THE PANEL AWAY. The room is what a small screen came for, so the
@@ -11083,6 +11091,7 @@ function minimapSetup() {
   const fold = $("minimap-fold");
   if (!fold || fold.dataset.ready) return;
   fold.dataset.ready = "1";
+  $("details").append($("minimap"));
   fold.addEventListener("click", () => minimapFold($("minimap-canvas").hidden));
   let open = true;
   try { open = localStorage.getItem("banjo.minimap") !== "folded"; } catch (_) { /* stays open */ }
@@ -11151,7 +11160,10 @@ function drawMinimap(now) {
   const canvas = $("minimap-canvas"), section = $("minimap");
   if (!canvas || !section) return;
   minimapSetup();
-  if (!ground.grid || !ground.heights) { section.hidden = true; return; }
+  if (!ground.grid || !ground.heights || document.body.classList.contains("panel-away") ||
+      document.body.classList.contains("chat-open") || document.body.classList.contains("machine-open")) {
+    section.hidden = true; return;
+  }
   section.hidden = false;
   if (canvas.hidden || now - minimap.markedAt < 200) return;
   minimap.markedAt = now;

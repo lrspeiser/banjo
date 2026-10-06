@@ -610,7 +610,7 @@ input[type="range"] { background: transparent; accent-color: var(--ink); }
   order: 9; margin-left: auto; padding: 2px 9px; line-height: 1;
   font-size: 18px; border-radius: 6px;
 }
-body.panel-away { --panel-w: 0px; }
+body.panel-away:not(.workshop-mode) { --panel-w: 0px; }
 body.panel-away #panel { transform: translateX(100%); }
 #panel { transition: transform .18s ease; }
 #panel-show {
@@ -625,7 +625,7 @@ body.panel-away #panel { transform: translateX(100%); }
    that is being touched -- world.js unhides it the first time a touch arrives,
    so a mouse never sees it. */
 #stick {
-  position: fixed; left: 18px; bottom: 18px; z-index: 7;
+  position: fixed; left: calc(18px + env(safe-area-inset-left,0px)); bottom: calc(var(--game-nav-space,76px) + 12px + env(safe-area-inset-bottom,0px)); z-index: 31;
   width: 108px; height: 108px; border-radius: 50%;
   border: 2px solid rgb(255 255 255 / .28); background: rgb(12 20 26 / .38);
   touch-action: none; user-select: none;
@@ -878,7 +878,9 @@ body.moving-a-thing #panel .workshop-entry { border-style: dashed; }
 #hand-slots .mini-product {grid-template-columns:46px minmax(0,1fr);padding:7px;}
 #hand-slots .mini-product-actions {display:none;}
 #hand-slots .mini-product:hover .mini-product-actions,#hand-slots .mini-product:focus-within .mini-product-actions {display:flex;}
-#material-preview {position:fixed;top:14px;right:calc(var(--panel-w) + 14px);z-index:19;width:250px;max-width:calc(100vw - var(--panel-w) - 28px);max-height:55vh;overflow:auto;margin:0;box-shadow:0 8px 25px #0008;background:#12202bf5;}
+#material-preview {position:static;width:auto;max-width:none;max-height:none;margin:8px 0;background:#12202bf5;}
+#details #minimap {position:static;width:auto;max-width:none;margin:12px 0;box-shadow:none;}
+#details #world-load-meter {position:static;max-width:none;margin:8px 0;}
 #material-preview[hidden] {display:none;}
 #material-preview > h3 {display:none;}
 #material-preview .target-facts {display:none;}
