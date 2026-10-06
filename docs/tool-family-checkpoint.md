@@ -110,7 +110,19 @@ all four paid tool journeys. After switching advice to native grid origins, the
 opening/catalog suite passes again in 17.05 s. **45/45 chat tests pass** and
 **305/305 native sources are registered**. Changed-file whitespace and the new
 relative documentation/evidence references pass. The complete CTest regression
-was not run. Publication/demo revision follows after installation.
+was not run.
+
+### Published and installed
+
+Implementation/evidence revision **`884fa67f`** is published on GitHub main.
+The preserved `C:/play` checkout runs that revision on port 18890. Python stopped
+with Ctrl+C before its room backup under `C:/play/backups/tool-families-884fa67f`
+and restarted hidden with the unchanged verified native binaries. Status reports
+`engine_ready: true`; the owner's existing world
+`c7c8058545c1492eb69f4dbcbb86edfc` reloads with `Live.`, `panel-away` and chat
+closed. Build visibly includes Personal field pick, Metal shovel and Metal hoe
+with actual current supply shortages. This smoke check manufactured/consumed no
+owner item or material; paid trials used isolated test worlds.
 
 ## Recorded sand trials
 

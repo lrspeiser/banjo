@@ -47,5 +47,40 @@
       "work_j": 5.76973
     }
   ],
-  "gathering_skill_known": true
+  "gathering_skill_known": true,
+  "pre_fix_zero_yield_contact": {
+    "at_m": [
+      0.12805,
+      0.76737,
+      0.12535
+    ],
+    "at_s": 6.07083,
+    "breakout_work_j": 0.09938,
+    "broken_share": 0.0,
+    "closing_speed_m_s": 1.28231,
+    "depth_m": 0.08061,
+    "ground": "sand",
+    "impulse_n_s": 1.52,
+    "kind": "pulled out",
+    "loosened": {
+      "rock_m3": 0.0,
+      "sand_m3": 0.0,
+      "soil_m3": 0.0
+    },
+    "loosened_kg": 0.0,
+    "model": "ground-work-v1",
+    "open": false,
+    "passive_n": 21.67926,
+    "peak_force_n": 85.66051,
+    "penetration_work_j": 2.59052,
+    "point": 2,
+    "resistance_n": 90.50208,
+    "sideways_m": 0.00642,
+    "supported": true,
+    "tool_dent_mm": 0.0,
+    "tool_whole": true,
+    "why": "",
+    "work_j": 2.6899
+  },
+  "pre_fix_note": "Earlier guide/controller observation before feedback repair and final native-origin advice; separate from the final paid opening attempts."
 }
