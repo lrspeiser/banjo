@@ -1,5 +1,11 @@
 # Development status and handoff
 
+**Pickup ordering, October 5:** [Grip checkpoint](tool-grip-recovery-checkpoint.md)
+now guards stale step hand observations and awaits inventory adoption. Ten
+client and 19 native inventory tests pass; a real browser verifies repeated
+pickup/storage/retrieval and reload against the native hand. Native physics is
+unchanged by this checkpoint.
+
 **Ground matter audit, October 5:** [Source audit and replacement contract](ground-matter-audit.md) identifies fixed-work/hit-count cube extraction, aggregate material export, receiver-positioned host piles and nonphysical transfer cubes. Cosmetic flight cubes are removed; actual collection/processing receipts remain. Static piles are still ledger pictures. Authoritative terrain cells, constitutive detachment/settling, state-preserving collection and stone-tool manufacture remain required and **unimplemented**. No native law/binary or material qualification changes in this presentation checkpoint; unrelated paused R3 work and walking timing remain open.
 
 **Phone digging and opened pits, October 5:** [Checkpoint](mobile-digging-checkpoint.md) retains finger rays through tool scheduling and clears empty cap/void boundaries after roof removal. Older air caps recover on an explicit strike without duplicate material credit. Native glass/oak/iron pit-flow and saved-floor checks retain 25 cm cells and dt 1/240 s; actual touch and render regressions cover the reported interaction. Covered-tunnel water, erosion/caving, streamed-region water and physical phone acceptance remain open; R3 stays paused.

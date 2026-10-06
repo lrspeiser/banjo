@@ -1,5 +1,21 @@
 # Tool grip recovery — October 5, 2026
 
+## Follow-up: in-flight step ordering
+
+Source base `7d90e648`. A step can be requested with an empty hand, then its
+reply arrive after an inventory pickup has adopted a new grip. The client now
+compares the held object captured at request time before applying hand release
+observations. World bodies and outcome receipts continue to be processed.
+A subsequent genuine native release still clears the grip; there is no timed
+grace period or automatic regrip. Inventory changes await tool adoption and
+honor the actual grip body in a multipart pickup reply.
+
+Windows verification: 10 client tests, 19 native-backed inventory tests, and a
+real browser journey covering E pickup, three Q/store/retrieve cycles and page
+reload pass. The journey checks the native player's hand as well as the client.
+This fixes a demonstrated ordering hazard; it does not establish that every
+earlier intermittent pickup failure had that sole cause.
+
 Source base: main `5db45923`. Windows, MSVC Release native bundle from
 `build/pickaxe-preview/Release`; host and browser changes only.
 

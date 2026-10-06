@@ -7,6 +7,21 @@ const source=(await readFile(new URL('../playground/tools.js',import.meta.url),'
   .replace('"/vendor/three.module.js"',JSON.stringify(new URL('../playground/vendor/three.module.js',import.meta.url).href));
 const {makeTools}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
 
+test('a step requested before pickup cannot discard its new grip; a later genuine release can',()=>{
+  const noop=()=>{};let refreshed=0;
+  const world={held:null,use:{mode:'none'}};
+  const tools=makeTools({world,camera:new THREE.PerspectiveCamera(),carryGround:noop,
+    showHolding:noop,showUse:noop,lastAction:noop,refreshInventory:()=>refreshed++});
+  const beforePickup=world.held;
+  world.held={name:'pick',pick:{object:'Field pick'}};
+  world.use={mode:'tool-ready',name:'Field pick'};
+  const adopted=world.held;
+  tools.follow({hand:{holding:''}},beforePickup);
+  assert.equal(world.held,adopted);assert.equal(refreshed,0);
+  tools.follow({hand:{holding:''}},adopted);
+  assert.equal(world.held,null);assert.equal(refreshed,1);
+});
+
 test('native tool release clears the hand and queued uses once, without regripping',()=>{
   let refreshed=0;const messages=[];const noop=()=>{};
   const world={held:{name:'pick',pick:{object:'Field pick'}},use:{mode:'tool-ready',name:'Field pick',queued:1,down:true}};

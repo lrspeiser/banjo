@@ -692,6 +692,36 @@ class PlayerJourney(unittest.TestCase):
         self.expect(after["walk"].get("supported"), "after digging the player's feet are on nothing")
         self.finish()
 
+    def test_tool_pickup_survives_ticks_bag_and_reload(self):
+        self.open_world()
+        self.take_up_the_pick()
+        for cycle in range(3):
+            # Real page ticks continue while inventory changes the native hand.
+            # Both records must agree after pickup, rather than just the HUD.
+            native_hand = (self.game.live.session.state.get("player_hands") or {}).get(self.me["id"], {})
+            self.need(native_hand.get("holding") == "field pick",
+                      "the displayed pick is not held by the native hand")
+            time.sleep(.5)
+            self.need(self.js("banjoRoom.held()?.name === 'field pick'"),
+                      "a later world update discarded the picked-up tool")
+            self.press("KeyQ", "q")
+            self.need(self.wait("!banjoRoom.held() && (banjoRoom.world.inventory?.record?.stowed || []).includes('field pick')", 15),
+                      "the tool did not enter the bag")
+            if cycle == 1:
+                self.page.send("Page.reload")
+                self.need(self.wait("window.banjoRoom?.ready() && document.querySelector('#panel-state')?.textContent === 'Live.'", 60),
+                          "the world did not reopen")
+                self.need(self.wait("(banjoRoom.world.inventory?.record?.stowed || []).includes('field pick')", 15),
+                          "reopening lost the stored tool")
+            self.click("#inventory-strip .strip-item[title*='Field pick' i]", "the stored pick")
+            self.need(self.wait("banjoRoom.held()?.name === 'field pick' && banjoRoom.use().mode === 'tool-ready'", 20),
+                      "retrieving the stored pick did not finish equipping it")
+            self.step(f"pickup/bag cycle {cycle + 1} agrees with the native hand")
+        native_hand = (self.game.live.session.state.get("player_hands") or {}).get(self.me["id"], {})
+        self.need(native_hand.get("holding") == "field pick",
+                  "the final retrieved pick has no native grip")
+        self.finish()
+
     # =========================================================================
     # 2. Walk
     # =========================================================================

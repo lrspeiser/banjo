@@ -4533,16 +4533,16 @@ async function refreshHeldInventory() {
 // held where the server gripped it, as taking hold of a loose thing a hand can
 // lift always is. A tool is held ready by its handle instead (tools.js), from
 // `point`, the grip it was taken up by, when there is one.
-function adoptGrip(name, point) {
+async function adoptGrip(name, point) {
   const entry = world.bodies.get(name);
   if (!entry) return;
   const tool = tools.profileOf(name);
-  if (tool) { tools.adopt(tool, point || null); return; }
+  if (tool) { await tools.adopt(tool, point || null); return; }
   const blade = bladeFor(name);
   if (blade) {
     // A blade out of the bag is held by its grip, its edge facing down, the way
     // E takes one up (pickUp): the hand takes it again where its blade says.
-    act("wield", { name }).then(() => {
+    await act("wield", { name }).then(() => {
       world.held = Object.assign({ name, blade, distance: 0.8 }, takeHold(camera, entry, blade, 0.8));
       showHolding(true);
       showUse();
@@ -4617,13 +4617,13 @@ async function changeInventory(op, item, options, again = false) {
   if (room.brought_back) {
     // Back in the world: drawn from what the room says of it now.
     draw(await act("poses"));
-    if (room.held) adoptGrip(room.brought_back);
+    if (room.held) await adoptGrip(room.brought_back);
   }
   // Its pins went with it and came back with it. The engine says so once, on
   // the reply the room's own call got (the bag's, not this page's), so they
   // are asked for: a pin left drawn where the cart stood is a pin to nothing.
   if (room.set_aside || room.brought_back) await refreshJoints();
-  if (room.taken_up) adoptGrip(room.taken_up, options.point);
+  if (room.taken_up) await adoptGrip(room.by || room.taken_up, options.point);
   remember(answer.did.replace(/\.$/, "").replace(/^./, (c) => c.toLowerCase()));
   if (!options.quiet) lastAction(answer.did);
   return answer;
@@ -10664,6 +10664,7 @@ async function tick() {
     // come to them, or asked what to do with someone close, reads it.
     if (worldId || (world.machines && world.machines.programs && world.machines.programs.length))
       ask.person = whereIAm();
+    const heldAtRequest = world.held;
     let state = await act("step", ask);
     if (worldId) showPlayers(state.players);
     // The pins too: they only come with a step when their set changes, and
@@ -10762,10 +10763,10 @@ async function tick() {
 
     draw(state);
     // What the hand did this tick, and where a throw would go from here.
-    followTheHand(state.hand);
+    if (world.held === heldAtRequest) followTheHand(state.hand);
     previewThrow();
     followTheBow(state);
-    tools.follow(state);
+    tools.follow(state, heldAtRequest);
     previewShot();
     followMachines(state.machines, state.t);
     followBrains(state.brains);

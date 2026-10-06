@@ -372,9 +372,12 @@ export function makeTools(ctx) {
   }
 
   // After every step: what the person carries.
-  function follow(state) {
+  function follow(state, heldAtRequest = world.held) {
     if (state.carried) carryGround(state.carried);
-    if (world.held?.pick && state.hand && Object.hasOwn(state.hand, "holding")
+    // A step can finish after pickup/equip changed the hand. Its bodies and
+    // receipts still matter, but its older hand observation cannot release
+    // the newly adopted grip. A later step can report a genuine release.
+    if (world.held === heldAtRequest && world.held?.pick && state.hand && Object.hasOwn(state.hand, "holding")
         && state.hand.holding !== world.held.name) {
       const name = world.use.name || world.held.pick.object;
       stop();
