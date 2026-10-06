@@ -179,21 +179,21 @@ class MarketLedger(unittest.TestCase):
             with workshop_library._connect(app) as db:
                 market._schema(db)
                 db.execute("INSERT INTO market_wallet VALUES ('alice',10000)")
-                offers=market._offers(db)
+                offers=market._offers(db,playable=True)
             recipe={'name':'Composite','materials':[
-                {'material':'oak','kg':1.1,'held_kg':.1,'personal_kg':.05,'shared_kg':.05},
+                {'material':'iron','kg':2.1,'held_kg':.1,'personal_kg':.05,'shared_kg':.05},
                 {'material':'glass','kg':.5,'held_kg':0}],
                 'goods':[{'substance':'copper wire','kg':.5,'held_kg':.5,'personal_kg':.5},
                          {'substance':'copper','kg':.7,'held_kg':0}]}
             plan=market._build_plan(recipe,offers,10000)
             self.assertEqual(4,len(plan['lines']))
             self.assertEqual('covered',next(l for l in plan['lines'] if l['substance']=='copper wire')['status'])
-            oak=plan['lines'][0]
-            self.assertEqual((.05,.05),(oak['debit_personal_kg'],oak['debit_shared_kg']))
-            self.assertEqual(242,oak['cost_j']) # 120 then 122, not two stale 120 quotes.
+            iron=plan['lines'][0]
+            self.assertEqual((.05,.05),(iron['debit_personal_kg'],iron['debit_shared_kg']))
+            self.assertEqual(1532,iron['cost_j']) # 760 then 772, not two stale quotes.
             for line in plan['lines']:
                 for index in range(line['lots']):
-                    with workshop_library._connect(app) as db: current=market._offers(db)
+                    with workshop_library._connect(app) as db: current=market._offers(db,playable=True)
                     offer=next(o for o in current if o['id']==line['offer_id'])
                     market._buy(app,'alice',{'item_id':offer['id'],'quoted_price_j':offer['price_j'],
                                            'request_id':f"{offer['id']}-{index}"})
@@ -300,44 +300,44 @@ class MarketLedger(unittest.TestCase):
                 with workshop_library._connect(app) as db:
                     market._schema(db)
                     db.execute("UPDATE workshop_material_rack SET mass_kg=0.1 "
-                               "WHERE owner_id='owner' AND material='oak'")
-                    db.execute("INSERT INTO market_wallet(owner_id,balance_j) VALUES ('alice',500)")
-                before = market._price(120, 60, 60)
-                order = {"item_id": "oak-stock", "quoted_price_j": before,
-                         "request_id": "one-oak-lot"}
+                               "WHERE owner_id='owner' AND material='iron'")
+                    db.execute("INSERT INTO market_wallet(owner_id,balance_j) VALUES ('alice',3000)")
+                before = market._price(760, 48, 48)
+                order = {"item_id": "iron-stock", "quoted_price_j": before,
+                         "request_id": "one-iron-lot"}
                 market._buy(app, "alice", order)
                 market._buy(app, "alice", order)
                 with workshop_library._connect(app) as db:
                     market._schema(db)
-                    self.assertEqual(500 - before, market._balance(db, "alice"))
-                    self.assertEqual(59, next(o for o in market._offers(db)
-                                              if o["id"] == "oak-stock")["remaining"])
-                self.assertAlmostEqual(0.6, next(r["mass_kg"] for r in workshop_library.rack(app)["materials"]
-                                                if r["material"] == "oak"))
-                drawn = workshop_library.take_from_rack(app, {"materials": [{"material": "oak", "needed_kg": 0.55}],
+                    self.assertEqual(3000 - before, market._balance(db, "alice"))
+                    self.assertEqual(47, next(o for o in market._offers(db,playable=True)
+                                              if o["id"] == "iron-stock")["remaining"])
+                self.assertAlmostEqual(1.1, next(r["mass_kg"] for r in workshop_library.rack(app)["materials"]
+                                                if r["material"] == "iron"))
+                drawn = workshop_library.take_from_rack(app, {"materials": [{"material": "iron", "needed_kg": 1.05}],
                                                              "goods": []})
-                alice_oak = next(r for r in workshop_library.rack(app)["materials"]
-                                 if r["material"] == "oak")
-                self.assertAlmostEqual(0, alice_oak["personal_kg"])
-                self.assertAlmostEqual(0.05, alice_oak["shared_kg"])
+                alice_iron = next(r for r in workshop_library.rack(app)["materials"]
+                                 if r["material"] == "iron")
+                self.assertAlmostEqual(0, alice_iron["personal_kg"])
+                self.assertAlmostEqual(0.05, alice_iron["shared_kg"])
                 # A concurrent purchase followed by an installation failure
                 # must restore the original owners without erasing that order.
                 with workshop_library._connect(app) as db:
-                    market._buy(app, "alice", {"item_id": "oak-stock", "quoted_price_j": 122,
-                                              "request_id": "concurrent-oak-lot"})
+                    market._buy(app, "alice", {"item_id": "iron-stock", "quoted_price_j": 772,
+                                              "request_id": "concurrent-iron-lot"})
                 workshop_library.refund_rack(app, drawn)
-                refunded = next(r for r in workshop_library.rack(app)["materials"] if r["material"] == "oak")
-                self.assertAlmostEqual(1.0, refunded["personal_kg"])
+                refunded = next(r for r in workshop_library.rack(app)["materials"] if r["material"] == "iron")
+                self.assertAlmostEqual(2.0, refunded["personal_kg"])
                 self.assertAlmostEqual(.1, refunded["shared_kg"])
                 with self.assertRaisesRegex(ValueError, "comes from the world and Market"):
-                    workshop_library.set_rack(app, "oak", 100)
+                    workshop_library.set_rack(app, "iron", 100)
                 app.room.world_record["t_s"] = 120
                 with workshop_library._connect(app) as db:
                     market._schema(db)
                     market._restock(app, db)
-                    restored = next(o for o in market._offers(db) if o["id"] == "oak-stock")
-                self.assertEqual(59, restored["remaining"])
-                self.assertEqual(122, restored["price_j"])
+                    restored = next(o for o in market._offers(db,playable=True) if o["id"] == "iron-stock")
+                self.assertEqual(47, restored["remaining"])
+                self.assertEqual(772, restored["price_j"])
             finally:
                 workshop_library.REQUEST_OWNER.reset(scope)
 

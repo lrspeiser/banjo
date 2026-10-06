@@ -111,6 +111,8 @@ def _state(room):
 def compile_quote(candidate, stock_kg, cell_m, state, *, app=None):
     """Cost the exact occupied matter, not the template's approximate BOM."""
     design, overrides = workshop_components.design_from_spec(candidate)
+    import game_materials
+    game_materials.require_design(app, design)
     from mcp import workshop_material_support
     blocker = workshop_material_support.fixed_lattice_blocker(design, overrides, cell_m=cell_m)
     if blocker:

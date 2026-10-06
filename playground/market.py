@@ -23,6 +23,7 @@ LOTS = (
     # id, name, category, kg per lot, starting lots, base joules per lot
     ("oak-stock", "Oak stock", "material", "oak", 0.5, 60, 120),
     ("iron-stock", "Iron stock", "material", "iron", 0.25, 48, 190),
+    ("aluminum-stock", "Aluminum stock", "material", "aluminum", 0.5, 48, 190),
     ("glass-stock", "Glass stock", "material", "glass", 0.25, 40, 170),
     ("rubber-stock", "Rubber stock", "material", "rubber", 0.25, 36, 170),
     ("copper-batch", "Copper batch", "goods", "copper", 0.5, 36, 260),
@@ -82,10 +83,13 @@ def _restock(app: Any, db: Any) -> None:
     db.commit()
 
 
-def _offers(db: Any) -> list[dict[str, Any]]:
+def _offers(db: Any, *, playable: bool = False) -> list[dict[str, Any]]:
     stock = {r["item_id"]: r for r in db.execute("SELECT * FROM market_stock")}
     out = []
     for item_id, label, kind, substance, kg, _, base in LOTS:
+        # The game trades larger finite iron lots at the same 760 J/kg.
+        # Preserve the historical quarter-kilo research-market fixture.
+        if playable and item_id == 'iron-stock': kg,base=1.,760
         row = stock[item_id]
         remaining, initial = int(row["remaining"]), int(row["initial"])
         out.append({"id": item_id, "name": label, "kind": kind, "substance": substance,
@@ -466,6 +470,9 @@ def _buy(app: Any, owner: str, body: dict[str, Any]) -> None:
     if not isinstance(request_id, str) or not REQUEST.fullmatch(request_id):
         raise ValueError("Buying needs a request id")
     _, _, kind, substance, kg, _, base = BY_ID[item_id]
+    import game_materials
+    game_materials.require_material(app, substance, body=False)
+    if game_materials.active(app) and item_id == 'iron-stock': kg,base=1.,760
     with workshop_library._connect(app) as db:
         _schema(db)
         db.execute("BEGIN IMMEDIATE")
@@ -522,7 +529,10 @@ def request(app: Any, owner: str, body: Any, keep_world: Any, *, include_guidanc
             _buy(app, owner, body)
         with workshop_library._connect(app) as db:
             _schema(db)
-            balance, offers = _balance(db, owner), _offers(db)
+            import game_materials
+            balance, offers = _balance(db, owner), _offers(db,playable=game_materials.active(app))
+            if game_materials.active(app):
+                offers = [offer for offer in offers if game_materials.allowed(offer['substance'])]
             history = [dict(r) for r in db.execute(
                 "SELECT item_id,price_j,created_at FROM market_orders WHERE owner_id=? "
                 "ORDER BY created_at DESC LIMIT 10", (owner,))]

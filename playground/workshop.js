@@ -1928,7 +1928,7 @@ function carriedDesign(thing) {
     component_overrides: { "@construction": {
       schema: "banjo.workshop-construction.v1",
       added: [{ name: thing.name || "part", role: "part", shape: thing.bench_shape || "box",
-                material: thing.material || "oak", size_m,
+                material: thing.material || "iron", size_m,
                 center_m: [0, size_m[1] / 2, 0] }],
       removed: [], joints: [] } },
   };
@@ -2428,7 +2428,7 @@ function renderBuildingBlocks(families) {
       const values = Object.fromEntries(family.parameters.map(p => [p.name, p.default]));
       const label = BLOCK_LABELS[name] || titleCase(name);
       const open = make("button", {type:"button", class:"ws-action", "data-building-block":name}, "Use in new design");
-      open.onclick = () => guard(open, () => designFromPart({family:name, material:"oak"}, `${label} design`));
+      open.onclick = () => guard(open, () => designFromPart({family:name, material:"iron"}, `${label} design`));
       const card = designCard(label, BLOCK_PURPOSES[name], open);
       group.querySelector(".ws-design-grid").append(card);
       const spanning = family.offers.includes("start"), round = ["wheel", "axle", "handle"].includes(name);
@@ -2436,7 +2436,7 @@ function renderBuildingBlocks(families) {
         : name === "wheel" ? [values.diameter_m, values.width_m, values.diameter_m]
         : name === "mount" ? [values.section_m, values.height_m, values.section_m]
         : [values.width_m, values.height_m || values.thickness_m, values.depth_m || values.thickness_m];
-      paintInventoryPicture(card.querySelector("canvas"), [{size_m:size, material:"oak", shape:round ? "cylinder" : "box"}]);
+      paintInventoryPicture(card.querySelector("canvas"), [{size_m:size, material:"iron", shape:round ? "cylinder" : "box"}]);
     }
   }
 }
@@ -3173,7 +3173,7 @@ async function showMarket() {
   }
   const bank = $("#ws-market-bank");
   const guide = new URLSearchParams(location.search).get("guide");
-  const bankJ = ["bank-solar", "stock-oak"].includes(guide) ? 500 : 100;
+  const bankJ = ["bank-solar", "stock-iron"].includes(guide) ? 500 : 100;
   const pendingKey = `banjo.pending-bank.${worldId || "local"}.${playerId}`;
   let pending = null;
   try { pending = JSON.parse(sessionStorage.getItem(pendingKey) || "null"); } catch {}
@@ -3207,7 +3207,7 @@ async function showMarket() {
     if (offer.id === market.guidance?.offer_id) li.classList.add("ws-market-next");
     li.dataset.marketItem = offer.id;
     if (offer.id === new URLSearchParams(location.search).get("offer")) li.classList.add("ws-goal-target");
-    if (offer.id === "oak-stock" && ["bank-solar", "stock-oak"].includes(guide)) li.classList.add("ws-goal-target");
+    if (offer.id === "iron-stock" && ["bank-solar", "stock-iron"].includes(guide)) li.classList.add("ws-goal-target");
     const buy = make("button", { type:"button", class:"ws-action" }, "Buy");
     buy.disabled = offer.remaining < 1 || market.balance_j < offer.price_j;
     if (buy.disabled) li.append(recipeValue("Needs", offer.remaining < 1 ? "Restock" : `${(offer.price_j-market.balance_j).toLocaleString()} J more`));
@@ -3330,7 +3330,7 @@ async function openInventoryDesign(id, source) {
 
 const GOAL_GUIDES = {
   "bank-solar": {where:"Market", screen:"market", steps:["Your World starts with a shared solar array.", "In Market, bank 500 J from its battery into your energy wallet.", "Your saved energy can pay for building supplies."]},
-  "stock-oak": {where:"Market", screen:"market", steps:["Choose Oak stock in Market. Each lot contains 0.5 kg.", "Buy six lots (3 kg). Bank more energy there if your wallet is short.", "Your purchases become personal supplies for Make."]},
+  "stock-iron": {where:"Market", screen:"market", steps:["Choose Iron stock in Market. Each lot contains 1 kg.", "Buy four lots (4 kg). Bank more energy there if your wallet is short.", "Your purchases become personal supplies for Make."]},
   "build-camp": {where:"Recipes", screen:"recipes", steps:["Find Camp stool in Recipes.", "Check its supplies and Build status, then choose Make.", "The stool appears in your World; Make does not put it in your bag."]},
   "carry-camp": {where:"World", screen:"world", steps:["Find your made stool in the World.", "Walk over and point at it. Press Q to put it in your bag, or E to pick it up.", "Check your bag or hand. Goals records this automatically."]},
 };
@@ -5554,8 +5554,8 @@ function renderBuildChoices() {
   if (mine.length) { const saved = make("optgroup", { label:"My library" }); for (const item of mine) saved.append(make("option", { value:`item:${item.item_id}` }, item.name)); what.append(saved); }
   if ([...what.options].some((o) => o.value === before)) what.value = before;
   const kept = material.value; material.replaceChildren();
-  const names = (bench.pricebook?.materials || []).map((m) => m.material); if (!names.includes("oak")) names.push("oak");
-  names.sort().forEach((name) => addOption(material, name, name)); material.value = names.includes(kept) ? kept : "oak";
+  const names = (bench.pricebook?.materials || []).map((m) => m.material); if (!names.includes("iron")) names.push("iron");
+  names.sort().forEach((name) => addOption(material, name, name)); material.value = names.includes(kept) ? kept : "iron";
   renderBuildSizes();
 }
 

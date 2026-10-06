@@ -186,7 +186,8 @@ class RoomStore:
         personal = getattr(room,"player_evidence_pending",None)
         if personal is not None:
             import player_learning
-            player_learning.validate_pending(personal,world,getattr(room,"player_records",{}))
+            player_learning.validate_pending(personal,world,getattr(room,"player_records",{}),
+                player_learning.registry_for_room(room))
             record["player_evidence_pending"] = json.loads(json.dumps(personal,allow_nan=False))
         text = json.dumps(record, allow_nan=False)
         path = self.path_of(room.scene)
@@ -270,7 +271,8 @@ class RoomStore:
         machine_witness.validate_pending(room.machine_evidence_pending,room.machine_runtime,room.player_records)
         room.player_evidence_pending = record.get("player_evidence_pending", [])
         import player_learning
-        player_learning.validate_pending(room.player_evidence_pending,record.get("world"),room.player_records)
+        player_learning.validate_pending(room.player_evidence_pending,record.get("world"),room.player_records,
+            player_learning.registry_for_room(room))
         room.player_learning_durable_ids = {r['evidence']['id'] for r in room.player_evidence_pending}
         room.market_pending = record.get("market_pending", [])
         room.energy_banks = record.get("energy_banks", [])

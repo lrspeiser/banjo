@@ -46,7 +46,8 @@ def definitions():
                 if set(p) != {'kind','minimum_area_m2'} or type(p['minimum_area_m2']) not in (int,float) or not .01 <= p['minimum_area_m2'] <= 4:
                     raise ValueError('Invalid supported surface area')
             elif kind == 'personal-stock':
-                if (set(p) != {'kind','material','minimum_kg'} or p['material'] != 'oak'
+                import game_materials
+                if (set(p) != {'kind','material','minimum_kg'} or not game_materials.allowed(p['material'])
                     or type(p['minimum_kg']) not in (int,float) or not .01 <= p['minimum_kg'] <= 25):
                     raise ValueError('Invalid personal opening stock')
             elif kind in ('funded-ground-tool','own-tool-test','own-light-used','own-solar-collected'):
@@ -84,13 +85,8 @@ def completed(app,owner,ident):
 
 
 def work_table_recipe():
-    design=workshop.assemble('bench',design_id='starter-work-table',parameters={
-        'width_m':.48,'depth_m':.32,'height_m':.50,'top_profile':'square',
-        'leg_section_m':.04,'top_thickness_m':.04,'aprons':0,'stretchers':0,
-        'splay_deg':0,'material':'oak'})
-    design.parameters['primary_use']={'label':'Place work surface','steps':[{'do':'place'}]}
-    return {'kind':design.kind,'design_id':design.design_id,'parameters':dict(design.parameters),
-        'component_overrides':{p.name:{'mechanics':{'model':'rigid'}} for p in design.parts}}
+    import playable_recipes
+    return playable_recipes.recipe('bench',design_id='starter-work-table')
 
 
 def exact_furniture_recipe(kind, design_id):
@@ -98,25 +94,26 @@ def exact_furniture_recipe(kind, design_id):
     is: its thin parts (a shelf's 18 mm sides, a chair's back posts) are under
     the 40 mm Workshop cell and cannot be drawn in cells without being
     redrawn away from what they join."""
-    design=workshop.assemble(kind,design_id=design_id)
-    design.parameters['primary_use']={'label':'Place on it','steps':[{'do':'place'}]}
-    return {'kind':design.kind,'design_id':design.design_id,'parameters':dict(design.parameters),
-        'component_overrides':{p.name:{'mechanics':{'model':'rigid'}} for p in design.parts}}
+    import playable_recipes
+    return playable_recipes.recipe(kind,design_id=design_id)
 
 
 def first_tool_recipe():
-    design=workshop.assemble('field-pick',design_id='starter-personal-pick')
-    return {'kind':design.kind,'design_id':design.design_id,
-            'parameters':dict(design.parameters),'component_overrides':{}}
+    import playable_recipes
+    return playable_recipes.recipe('field-pick',design_id='starter-personal-pick')
 
 
 def camp_light_recipe():
     """Small useful variant; its output charge is included in paid manufacture."""
     from mcp import workshop_components
     source={'kind':'mine-lamp','design_id':'starter-camp-light','parameters':{
-        'globe_m':.07,'bracket_m':.08,'foot_m':.16,'material':'oak',
+        'globe_m':.07,'bracket_m':.08,'foot_m':.16,'material':'iron',
         'watts':5.,'efficacy_lm_w':120.}}
     design,overrides=workshop_components.design_from_spec(source)
+    # Genuine iron geometry, not an oak-sized solid foot renamed to metal.
+    overrides['foot'].update(size_m=[.16,.005,.16],center_m=[0.,.0025,0.])
+    overrides['globe bracket'].update(size_m=[.02,.08,.02],center_m=[0.,.045,0.])
+    overrides['globe'].update(center_m=[0.,.12,0.])
     overrides['@machines']={
         'stores':[{'name':'camp battery','in':'foot','capacity_j':3500.,
                    'charge_j':3000.,'voltage_v':24.,'max_power_w':20.}],
@@ -137,10 +134,17 @@ def camp_solar_recipe():
     from mcp import workshop
     design=workshop.assemble('solar-array',design_id='starter-camp-solar',parameters={
         'panels':1,'panel_w_m':.6,'panel_d_m':.4,'frame_height_m':.35,
-        'capacity_j':1.8e5,'charge_j':0.,'max_power_w':60.,'efficiency':.2,'material':'oak',
+        'capacity_j':1.8e5,'charge_j':0.,'max_power_w':60.,'efficiency':.2,'material':'iron',
         'panel_thickness_m':.004})
+    overrides=deepcopy(design.lineage.get('component_overrides') or {})
+    overrides['frame'].update(size_m=[1.22,.0035,.52],center_m=[0.,.34825,0.])
+    for part in design.parts:
+        if part.name.startswith('leg-'):
+            overrides[part.name].update(size_m=[.01,.3465,.01],
+                center_m=[part.center_m[0],.17325,part.center_m[2]])
+    overrides['battery'].update(size_m=[.05,.005,.05],center_m=[.3,.3525,0.])
     return {'kind':design.kind,'design_id':design.design_id,'parameters':dict(design.parameters),
-            'component_overrides':deepcopy(design.lineage.get('component_overrides') or {})}
+            'component_overrides':overrides}
 
 
 def funded_tools(saved, owner):
@@ -364,15 +368,15 @@ def view(app,owner,ident):
             available.sort(key=lambda p:math.hypot(p['at_m'][0]-eye[0],p['at_m'][1]-eye[2]))
             if not getattr(app.live,'session',None) or app.live_holder!='world':
                 row['guide'].update(screen='world',where='World')
-                row['guide']['steps']=['Open your saved World to read its current loose wood supplies.',
+                row['guide']['steps']=['Open your saved World to read its current loose mineral and metal supplies.',
                     'Then follow the measured material source shown by your next action.']
             elif available:
                 row['guide'].update(resource=available[0]['name'],available_kg=available[0]['holds_kg'][material])
                 row['guide']['steps'][0]=f"Find {available[0]['name']} in World; it contains {available[0]['holds_kg'][material]:g} kg {material}."
             else:
                 row['guide'].update(screen='market',where='Market')
-                row['guide']['steps']=['Loose wood piles are empty. Use wood already in Inventory or the workbench; Market is an alternative supply.',
-                    'If Market is also empty, wait for its finite trader restock. No wood is created by this checklist.']
+                row['guide']['steps']=[f'Loose {material} piles are empty. Use stock already in Inventory or the workbench; Market is an alternative supply.',
+                    'If Market is also empty, wait for its finite trader restock. No material is created by this checklist.']
     return {'schema':'banjo.starter-goals.v1','chain_id':ident,'title':chain['title'],
         'goals':rows,'next_goal':next((r['id'] for r in rows if not r['complete']),None),
         'complete':all(r['complete'] for r in rows),'limits':chain['limits'],

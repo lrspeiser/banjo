@@ -1,5 +1,7 @@
 # Banjo: project vision, physics contract, and complete development plan
 
+**Playable material boundary, October 5 (implementation):** [Policy checkpoint](inorganic-game-policy-checkpoint.md) limits named worlds, new-game sources, market stock and AI editing to metals/inorganic components. Coal remains a raw resource. Starter tools use actual aluminum/iron geometry and preset densities; older organic worlds and designs are preserved but excluded from active play. Historical glass/oak/iron comparison laboratories remain available. [Generated opening evidence](inorganic-generated-world-checkpoint.md) records actual native hauling, constituent tool admission and finite resources; this restriction adds no organic, fracture, bending or combustion law.
+
 **Adaptive ground speed requirement, October 5 (design):** [Digging contract and
 test plan](adaptive-ground-speed-plan.md) preserve local cuts and material history
 while grouping uniform ground. Fast input and obtainable finite work are product

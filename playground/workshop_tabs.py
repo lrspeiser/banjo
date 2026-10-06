@@ -167,8 +167,9 @@ def inventory(app: Any, player_id: str = "") -> dict[str, Any]:
     saved = []
     try:
         import workshop_store
+        import game_materials
         from workshop_api_core import _store
-        saved = workshop_store.list_saved(_store(app))
+        saved = game_materials.saved_designs(app, _store(app))
     except Exception:
         saved = []
     import fabrication_stock
@@ -284,6 +285,9 @@ def _capabilities(record: dict[str, Any], design: Any) -> list[dict[str, str]]:
 
 
 def recipes(app: Any) -> dict[str, Any]:
+    import game_materials
+    import playable_recipes
+    playable = game_materials.active(app)
     stock = {r["material"]: r for r in workshop_library.rack(app)["materials"]}
     goods_stock = {r["substance"]: r for r in workshop_library.goods_rack(app)["goods"]}
     held = {name: float(r["mass_kg"]) for name,r in stock.items()}
@@ -296,6 +300,10 @@ def recipes(app: Any) -> dict[str, Any]:
     templates = []
     def add(design: w.WorkshopDesign, made: w.Assembly, *, name: str,
             source: str, saved_design_id: str | None = None) -> None:
+        from mcp import engine_materials
+        if playable and any(engine_materials.canonical(p.material) not in game_materials.body_materials()
+                            for p in design.parts):
+            return
         overrides = design.lineage.get("component_overrides", {})
         bom = workshop_library.bill_of_materials(app, design)
         materials = [{"material": r["material"], "kg": float(r["mass_kg"]),
@@ -340,7 +348,8 @@ def recipes(app: Any) -> dict[str, Any]:
         add(design,w.assembly(design.kind),name=label,source="built-in")
     for made in w.ASSEMBLIES:
         try:
-            design = w.assemble(made.name, design_id=made.name)
+            design = (workshop_components.design_from_spec(playable_recipes.recipe(made.name))[0]
+                      if playable else w.assemble(made.name, design_id=made.name))
             add(design, made, name=made.name, source="built-in")
             if made.name in product_labels.RECOMMENDED_OVER:
                 templates[-1]["variant_of"] = product_labels.RECOMMENDED_OVER[made.name]
@@ -350,7 +359,7 @@ def recipes(app: Any) -> dict[str, Any]:
     # source on every listing; old readiness and stock claims cannot go stale.
     import workshop_api_core
     root = workshop_api_core._store(app)
-    for saved in workshop_store.list_saved(root, limit=50):
+    for saved in game_materials.saved_designs(app, root, limit=50):
         try:
             record, design = workshop_store.load(root, saved["design_id"])
             add(design, w.assembly(design.kind), name=record["label"], source="saved",
@@ -372,6 +381,8 @@ def recipes(app: Any) -> dict[str, Any]:
     if isinstance(block, dict):
         programs = ((room.get("machines") or {}).get("programs") or [])
         for recipe in block.get("recipes") or []:
+            if playable and any(not game_materials.allowed(s) for s in
+                                [*recipe.get('in',{}), *recipe.get('out',{})]): continue
             worked_by = [p.get("name") for p in programs
                          if (p.get("routine") or {}).get("recipe") == recipe.get("name")]
             room_recipes.append({**recipe, "worked_by": worked_by})
@@ -385,8 +396,14 @@ def recipes(app: Any) -> dict[str, Any]:
     piles = quantities.get('stockpiles', [])
     if holders is not None:
         deposits = quantities['deposits']
+    if playable:
+        deposits = [d for d in deposits if game_materials.allowed(d['substance'])]
+        piles = [{**p, 'holds_kg':{s:kg for s,kg in p['holds_kg'].items() if game_materials.allowed(s)}}
+                 for p in piles]
+        piles = [p for p in piles if p['holds_kg']]
     import market
-    traded = {lot[3]: lot[0] for lot in market.LOTS}
+    traded = {lot[3]: lot[0] for lot in market.LOTS
+              if not playable or game_materials.allowed(lot[3])}
     programs = ((room.get('machines') or {}).get('programs') or [])
     import machine_routine
     def machine_process_options(brain):
@@ -501,8 +518,12 @@ def skills(app: Any) -> dict[str, Any]:
         import progression
     except ImportError:
         from mcp import progression  # type: ignore
-    registry = app.registry() if callable(getattr(app, "registry", None)) else progression.Registry()
+    import game_materials
+    import playable_recipes
+    registry = (playable_recipes.registry() if game_materials.active(app) else
+                app.registry() if callable(getattr(app, "registry", None)) else progression.Registry())
     known = {t["id"] for t in notebook.get("techniques") or []}
+    known &= set(registry.techniques)
     # THE TREE, from progression itself. This used to be walked here by hand,
     # which meant `needs` listed things you already knew and `learn_from` --
     # the same four words on every technique -- was served and never read.
@@ -514,7 +535,8 @@ def skills(app: Any) -> dict[str, Any]:
         import world_access
         with world_access.state_lock(app):
             learning_routes.resolve(app,registry,techniques)
-    return {"techniques": techniques, "designs": notebook.get("designs") or [],
+    return {"techniques": techniques, "designs": [d for d in notebook.get("designs") or []
+                if not game_materials.active(app) or d.get('id') in registry.designs],
             "blocked": notebook.get("blocked") or [], "not_modelled": notebook.get("not_modelled") or [],
             "revision": notebook.get("revision"), "known": len(known), "of": len(registry.techniques),
             "ranks": max((t["rank"] for t in techniques), default=0) + 1}

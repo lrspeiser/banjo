@@ -15,6 +15,21 @@ from mcp import workshop  # noqa: E402
 
 
 class MaterialParity(unittest.TestCase):
+    def test_direct_canonical_aluminum_and_ice_mass_before_synchronization(self):
+        # A fresh import must not price canonical aluminum/ice at the oak
+        # fallback. Preserve genuine oak/glass/iron comparison densities too.
+        script = "\n".join([
+            "import json, sys",
+            f"sys.path.insert(0, {str(ROOT)!r})",
+            "from mcp.workshop import WirePart",
+            "print(json.dumps({m:WirePart('sample','sample',(1,1,1),(0,0,0),m).mass_kg() "
+            "for m in ('aluminum','aluminium','ice','oak','glass','iron')}))",
+        ])
+        done=subprocess.run([sys.executable,'-c',script],cwd=ROOT,capture_output=True,text=True,timeout=30)
+        self.assertEqual(0,done.returncode,done.stderr)
+        self.assertEqual({'aluminum':2700.,'aluminium':2700.,'ice':917.,
+                          'oak':700.,'glass':2500.,'iron':7870.},json.loads(done.stdout))
+
     def test_densities_match_the_engine_catalogue(self):
         text = (ROOT / "src" / "material" / "MaterialCatalog.cpp").read_text(encoding="utf-8")
         expected = {

@@ -5095,7 +5095,7 @@ const loadMeter = document.createElement("aside"); loadMeter.id = "world-load-me
 loadMeter.innerHTML = `<a href="${worldId ? `/world?world=${worldId}&workshop=1&tab=inventory` : "/world?scene=world&workshop=1&tab=inventory"}">Inventory</a><b>Ground materials</b><output></output><progress max="1" value="0"></progress><small></small><small data-movement></small>`;
 loadMeter.insertAdjacentHTML("beforeend", '<small data-water-flow hidden></small><button type="button" id="cursor-mode" aria-pressed="false">Explore · Esc for cursor</button>');
 const toolGuide = document.createElement("nav"); toolGuide.dataset.toolGuide = "";
-toolGuide.innerHTML = `<button type="button" data-find-tool>Find tool</button><a href="${worldId ? `/world?world=${worldId}&workshop=1&tab=recipes&material=oak` : "/world?scene=world&workshop=1&tab=recipes"}">Make tool · Recipes</a>`;
+toolGuide.innerHTML = `<button type="button" data-find-tool>Find tool</button><a href="${worldId ? `/world?world=${worldId}&workshop=1&tab=recipes` : "/world?scene=world&workshop=1&tab=recipes"}">Make tool · Build</a>`;
 toolGuide.querySelector("button").addEventListener("click", (e) => {
   e.stopPropagation(); e.currentTarget.blur();
   const profile = (world.tools || []).find(p => world.bodies.has(p.tool));

@@ -197,12 +197,16 @@ def _open_connection(app: Any) -> sqlite3.Connection:
         );
     """)
     who, now = owner_id(app), _now()
+    import game_materials
+    playable = game_materials.active(app)
     for material, price in DEFAULT_PRICES.items():
+        if playable and not game_materials.allowed(material): continue
         db.execute("""INSERT OR IGNORE INTO workshop_material_prices
                     (owner_id, material, price_per_kg, currency, updated_at)
                     VALUES (?, ?, ?, 'credits', ?)""", (who, material, price, now))
     seed_owner = "owner" if getattr(app, "world_id", None) else who
     for material, mass in DEFAULT_RACK.items():
+        if playable and not game_materials.allowed(material): continue
         db.execute("""INSERT OR IGNORE INTO workshop_material_rack
                     (owner_id, material, mass_kg, updated_at)
                     VALUES (?, ?, ?, ?)""", (seed_owner, material, mass, now))
@@ -311,6 +315,8 @@ def _tags(db: sqlite3.Connection, who: str, item_id: str) -> dict[str, list[str]
 def save_item(app: Any, *, item_type: str, name: str, payload: dict[str, Any],
               family: str | None = None, role: str | None = None,
               item_id: str | None = None, tags: dict[str, Iterable[str]] | None = None) -> dict[str, Any]:
+    import game_materials
+    game_materials.require_item(app, payload, item_type)
     if item_type not in {"component", "assembly"}:
         raise ValueError("library item_type must be component or assembly")
     name = " ".join(str(name).split())[:160]
@@ -507,6 +513,7 @@ def delete_bench_preset(app: Any, preset_id: str) -> dict[str, Any]:
 
 
 def list_items(app: Any, *, item_type: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
+    import game_materials
     who = owner_id(app)
     query, args = "SELECT * FROM workshop_library_items WHERE owner_id=?", [who]
     if item_type:
@@ -518,7 +525,8 @@ def list_items(app: Any, *, item_type: str | None = None, limit: int = 200) -> l
         return [{"item_id": r["item_id"], "item_type": r["item_type"], "name": r["name"],
                  "family": r["family"], "role": r["role"], "version": r["current_version"],
                  "updated_at": r["updated_at"], "tags": _tags(db, who, r["item_id"]),
-                 "payload": json.loads(r["payload_json"])} for r in rows]
+                 "payload": json.loads(r["payload_json"])} for r in rows
+                if game_materials.item_allowed(app, json.loads(r["payload_json"]), r["item_type"])]
 
 
 def find_items(app: Any, *, tags: dict[str, Iterable[str]], item_type: str | None = None,
@@ -537,16 +545,20 @@ def find_items(app: Any, *, tags: dict[str, Iterable[str]], item_type: str | Non
 
 
 def pricebook(app: Any) -> dict[str, Any]:
+    import game_materials
     with _connect(app) as db:
         rows = db.execute("""SELECT material,price_per_kg,currency,updated_at
                            FROM workshop_material_prices WHERE owner_id=? ORDER BY material""",
                           (owner_id(app),)).fetchall()
     return {"currency": "credits", "basis": "starter in-world pricebook; user-configurable, not a retail-price claim",
             "materials": [{"material": r["material"], "price_per_kg": r["price_per_kg"],
-                           "currency": r["currency"], "updated_at": r["updated_at"]} for r in rows]}
+                           "currency": r["currency"], "updated_at": r["updated_at"]} for r in rows
+                          if not game_materials.active(app) or game_materials.allowed(r["material"])]}
 
 
 def set_price(app: Any, material: str, price_per_kg: float, currency: str = "credits") -> dict[str, Any]:
+    import game_materials
+    game_materials.require_material(app, material, body=False)
     material, price = engine_materials.canonical(material), float(price_per_kg)
     if price < 0 or price > 1e9: raise ValueError("price_per_kg must be between 0 and 1e9")
     currency = str(currency or "credits")[:24]
@@ -566,6 +578,7 @@ _SLACK_KG = 5e-5
 
 def rack(app: Any) -> dict[str, Any]:
     """What the workshop holds, per material, in kilograms."""
+    import game_materials
     who, owners = rack_owner_id(app), rack_owners(app)
     with _connect(app) as db:
         rows = db.execute("""SELECT material,mass_kg,updated_at FROM workshop_material_rack
@@ -574,7 +587,8 @@ def rack(app: Any) -> dict[str, Any]:
         by_owner = {owner: {r["material"]: r["mass_kg"] for r in db.execute(
             "SELECT material,mass_kg FROM workshop_material_rack WHERE owner_id=?", (owner,))}
                     for owner in owners}
-    materials = sorted({r["material"] for r in rows})
+    materials = sorted({r["material"] for r in rows
+                        if not game_materials.active(app) or game_materials.allowed(r["material"])})
     return {"schema": RACK_SCHEMA, "unit": "kg",
             "materials": [{"material": material,
                            "mass_kg": round(sum(by_owner[o].get(material, 0) for o in owners), 4),
@@ -584,6 +598,8 @@ def rack(app: Any) -> dict[str, Any]:
 
 
 def set_rack(app: Any, material: str, mass_kg: float) -> dict[str, Any]:
+    import game_materials
+    game_materials.require_material(app, material, body=False)
     if getattr(app, "world_id", None):
         raise ValueError("A game's material stock comes from the world and Market")
     material, mass = engine_materials.canonical(material), float(mass_kg)
@@ -613,6 +629,7 @@ GOODS_PER = {
 
 
 def goods_rack(app: Any) -> dict[str, Any]:
+    import game_materials
     """What the workshop holds of goods, per substance, in kilograms."""
     import world_goods
     world_goods.settle(app)
@@ -624,7 +641,8 @@ def goods_rack(app: Any) -> dict[str, Any]:
         by_owner = {owner: {r["substance"]: r["mass_kg"] for r in db.execute(
             "SELECT substance,mass_kg FROM workshop_goods_rack WHERE owner_id=?", (owner,))}
                     for owner in owners}
-    substances = sorted({r["substance"] for r in rows})
+    substances = sorted({r["substance"] for r in rows
+                         if not game_materials.active(app) or game_materials.allowed(r["substance"])})
     return {"schema": RACK_SCHEMA, "unit": "kg",
             "goods": [{"substance": substance,
                        "mass_kg": round(sum(by_owner[o].get(substance, 0) for o in owners), 4),
@@ -634,6 +652,8 @@ def goods_rack(app: Any) -> dict[str, Any]:
 
 
 def set_goods(app: Any, substance: str, mass_kg: float) -> dict[str, Any]:
+    import game_materials
+    game_materials.require_material(app, substance, body=False)
     if getattr(app, "world_id", None):
         raise ValueError("A game's machine goods come from the world and Market")
     substance, mass = " ".join(str(substance).split())[:64], float(mass_kg)
@@ -650,6 +670,8 @@ def set_goods(app: Any, substance: str, mass_kg: float) -> dict[str, Any]:
 def add_goods(app: Any, substance: str, mass_kg: float) -> dict[str, Any]:
     """Goods put on the rack, added to what is there (the room's rack
     stockpile, machine_goods.put)."""
+    import game_materials
+    game_materials.require_material(app, substance, body=False)
     substance, mass = " ".join(str(substance).split())[:64], float(mass_kg)
     if not substance or not 0.0 <= mass <= 1e9:
         raise ValueError("a substance has a name, and mass_kg is between 0 and 1e9")

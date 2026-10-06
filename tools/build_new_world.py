@@ -82,9 +82,10 @@ WORKS_BLOCK_M = (0.5, 0.65, 0.5)
 #: saying what built it fails the check rather than passing quietly.
 def built_from() -> dict:
     import world_seed as seed
-    made = {"rover": "rover", "solar farm": "solar-array", "field pick": "field-pick"}
+    made = {"rover": "rover", "solar farm": "solar-array", "field pick": "field-pick",
+            "camp light": "mine-lamp"}
     for works in seed.WORKS:
-        made[works.machine] = "processor"
+        made[works.machine] = "electric-furnace" if seed.CHAIN_BY_NAME[works.recipe].needs_c > 0 else "processor"
         if works.stands: made[works.machine+' foundation'] = 'foundation-pad'
     return made
 
@@ -124,9 +125,15 @@ def compose(ground: dict, world: dict, terrain_seed: int | None = None, *, insta
     try:
         here=rover_room.ROVER_AT
         yaw=math.atan2(vein['at_m'][0]-here[0],vein['at_m'][1]-here[1])
-        spec = rover_room.compose(ground, "tests-dig",yaw)
+        spec = rover_room.compose(ground, "tests-dig",yaw, inorganic=True)
     finally:
         rover_room.ROVER_AT, rover_room.POST_AT, rover_room.TERRAIN = was
+    if installations is not None:
+        starter = rover_room.inorganic_artifact()
+        installations.append({"status": "installed", "design_id": "rover", "root_body": "rover",
+            "component_to_body": dict(starter["component_to_body"]),
+            "recipe": rover_room.inorganic_recipe(), "source": "Generated inorganic starter geometry",
+            "presentation": {"label": "rover", "label_source": "generated-purpose"}})
     spec["water"] = dict(grounds.WATER)
     spec["sun"] = {"day_s":600.0, "noon_elevation_deg":60.0, "hour":8.0, "irradiance_w_m2":1000.0}
     spec["goods"] = spec_goods
@@ -161,6 +168,7 @@ def compose(ground: dict, world: dict, terrain_seed: int | None = None, *, insta
     plan, design = a_lattice_thing(ground, "field-pick", "field pick", tool_at,
                                  cell_m=spec["cell_m"])
     spec["bodies"] += plan["bodies"]
+    spec["joints"] += plan["matter"].get("joints", [])
     spec["tool_points"] = spec.get("tool_points", []) + [plan["tool"]["point"]]
     spec["interactions"] = spec.get("interactions", []) + [plan["tool"]["profile"]]
     from mcp import core_use, interaction_points
@@ -169,6 +177,13 @@ def compose(ground: dict, world: dict, terrain_seed: int | None = None, *, insta
            for a in range(3)]
     spec["interaction_points"] = spec.get("interaction_points", []) + [
         interaction_points.installed(design, "field pick", com)]
+    if installations is not None:
+        installations.append({"status": "installed", "design_id": design.design_id,
+            "root_body": "field pick", "recipe": workshop_install.recipe_of(design,
+                design.lineage.get("component_overrides", {})),
+            "component_to_body": dict(plan["matter"].get("component_to_body", {})),
+            "source": "Generated inorganic starter geometry",
+            "presentation": {"label": "Field pick", "label_source": "generated-purpose"}})
 
     # The rover's job in the routine language: go to the nearest copper, dig
     # until the hopper is full, come back, tip it into the smelter's intake.
@@ -317,14 +332,16 @@ def compose(ground: dict, world: dict, terrain_seed: int | None = None, *, insta
     for program in spec["machines"]["programs"]:
         program["power"] = True
 
+    import game_materials
+    game_materials.require_spec(spec)
     return spec
 
 
 def a_lattice_thing(ground: dict, kind: str, name: str, at: tuple[float, float],
                     *, cell_m: float, parameters: dict | None = None) -> tuple[dict, Any]:
     """A fixed Workshop solid, using the live installation's occupied compiler."""
-    design = w.assemble(kind, design_id=name, parameters=dict(parameters or {}))
-    candidate = workshop_install.recipe_of(design, design.lineage.get("component_overrides", {}))
+    import playable_recipes
+    candidate = playable_recipes.recipe(kind, design_id=name, parameters=dict(parameters or {}))
     design, overrides = workshop_components.design_from_spec(candidate)
     plan = workshop_install.fixed_lattice_plan(design, overrides, root=name,
         cell_m=cell_m, position_m=at, floor_of=lambda b: grounds.ground_under(
@@ -428,9 +445,8 @@ def a_built_thing(ground: dict, kind: str, name: str, at: tuple[float, float],
     design. Nothing here is made up for the world -- if the Workshop cannot
     build it, it cannot stand here either, which is the rule.
     """
-    design = w.assemble(kind, design_id=name, parameters=dict(parameters or {}))
-    candidate = {"kind": kind, "design_id": name, "parameters": dict(parameters or {}),
-                 "component_overrides": design.lineage["component_overrides"]}
+    import playable_recipes
+    candidate = playable_recipes.recipe(kind, design_id=name, parameters=dict(parameters or {}))
     design, overrides = workshop_components.design_from_spec(candidate)
     artifact = rigid_assembly.compile_design(design, overrides, root=name)
     if reserved is not None:
@@ -558,7 +574,7 @@ def _clear_of(ground: dict, of: tuple[float, float], by: float,
     return best
 
 
-def watch(engine: Path, validated: dict) -> list[str]:
+def watch(engine: Path, validated: dict, *, evidence: dict | None = None) -> list[str]:
     """Open the world and run it: does copper wire reach the rack?
 
     The generator's proof is a graph walk. This is the room, stepped, with the
@@ -585,6 +601,16 @@ def watch(engine: Path, validated: dict) -> list[str]:
                 faults.extend(value if isinstance(value, list) else [value] if value else [])
             if faults:
                 return faults
+            if evidence is not None:
+                opening = session.send(op="snapshot")["snapshot"]
+                evidence["rover_matter"] = rigid_assembly.material_measurement(
+                    rover_room.inorganic_artifact(), opening)
+                import playable_recipes
+                array_design, array_overrides = workshop_components.design_from_spec(
+                    playable_recipes.recipe("solar-array", design_id="solar farm",
+                        parameters={"max_power_w": STARTER_GRID_MAX_POWER_W}))
+                evidence["solar_matter"] = rigid_assembly.material_measurement(
+                    rigid_assembly.compile_design(array_design, array_overrides, root="solar farm"), opening)
             routines = {name: machine_routine.Routine(name, machine_routine.declared_for(validated, name))
                         for name in made["programs"]}
             session.send(op="step", dt=DT, n=int(2.0 / DT))
@@ -609,7 +635,11 @@ def watch(engine: Path, validated: dict) -> list[str]:
                     if did is not None:
                         log.append(f"{t:6.1f} s  {name}: {did.get('did', '')}")
                 rack = goods.by_name("smelter output") or {}
-                if float((rack.get("holds") or {}).get("copper", 0.0)) >= 1.0:
+                wire = goods.by_name("mill output") or {}
+                hauled = routines["rover"].load_reading().get("delivered_kg", 0.)
+                if (float((rack.get("holds") or {}).get("copper", 0.0)) >= 1.0 and
+                        float((wire.get("holds") or {}).get("copper wire", 0.0)) >= 1.0 and
+                        float(hauled) >= 1.0):
                     seconds = (tick + 1) * PER_QUARTER * DT
                     break
             print(f"  ran the new world for {seconds:.0f} s at "
@@ -631,8 +661,20 @@ def watch(engine: Path, validated: dict) -> list[str]:
                     f"in {WATCH_S:.0f} s the rover and the smelter put no copper on the rack; "
                     + "; ".join(f"{n}: {r.summary()['doing']} ({', '.join(list(r.notes)[-2:])})"
                                 for n, r in routines.items()))
+            if float(((goods.by_name("mill output") or {}).get("holds") or {}).get("copper wire", 0.)) < 1.:
+                faults.append("The starter mill did not produce copper wire for nearby collection")
+            if float(routines["rover"].load_reading().get("delivered_kg", 0.)) < 1.:
+                faults.append("The starter rover did not actually deliver gathered ore within the watch bound")
             if landed:
                 faults.append("New-world output was automatically banked; it must await nearby collection")
+            if evidence is not None:
+                evidence.update(solver_dt_s=DT, simulated_watch_s=seconds,
+                    wall_watch_s=time.monotonic()-wall,
+                    delivered=deepcopy(routines["rover"].load_reading()),
+                    copper_kg=float((rack.get("holds") or {}).get("copper", 0.)),
+                    copper_wire_kg=float(((goods.by_name("mill output") or {}).get("holds") or {}).get("copper wire", 0.)),
+                    automatically_banked=deepcopy(landed), faults=list(faults),
+                    limits="Existing bulk machine scoop and scaled processor work; no physical cargo packing, full conservation or combustion claim")
         finally:
             session.close()
     return faults
@@ -674,11 +716,14 @@ def main() -> int:
           f"{len(validated['goods']['recipes'])} recipes")
 
     print("Opening it and running the first chain ...")
-    faults = watch(engine, json.loads(json.dumps(validated)))
+    native_proof: dict = {}
+    faults = watch(engine, json.loads(json.dumps(validated)), evidence=native_proof)
     if faults:
         for fault in faults:
             print(f"  REFUSED: {fault}", file=sys.stderr)
         return 1
+
+    proof["native opening"] = native_proof
 
     # The SPEC, not what validate() gave back. Validation adds its own working
     # fields -- cells, cells_per_axis, requested_plate_m, seated, snapped --

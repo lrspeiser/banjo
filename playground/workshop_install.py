@@ -1481,6 +1481,8 @@ def preview(app: Any, body: Any) -> dict[str, Any]:
         if getattr(app, "store", None) is None:
             raise ValueError("Installation requires a persistent room store")
         design, overrides = workshop_components.design_from_spec(body.get("candidate") or {})
+        import game_materials
+        game_materials.require_design(app, design)
         # Making a design again can REPLACE the one standing there instead of
         # putting a second one beside it. The caller says which it wants:
         #   replace=True   the most recent still-standing copy of this design

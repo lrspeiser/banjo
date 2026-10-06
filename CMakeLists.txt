@@ -1585,6 +1585,15 @@ endif()
 # Precise live compounds must be tested through the real native subprocess,
 # including installation transactions and persistent state, not only JSON.
 if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
+    foreach(game_suite IN ITEMS game_material_policy playable_recipes world_seed workshop_material_catalog player_learning_fixed)
+        add_test(NAME banjo_${game_suite}_tests
+            COMMAND ${CMAKE_COMMAND} -E env
+                BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+                BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
+                BANJO_BROWSER_TESTS=required
+                ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/${game_suite}_tests.py -v)
+        set_tests_properties(banjo_${game_suite}_tests PROPERTIES TIMEOUT 300)
+    endforeach()
     add_test(NAME banjo_world_goods_tests
         COMMAND ${CMAKE_COMMAND} -E env
             BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>

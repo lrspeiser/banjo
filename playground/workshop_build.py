@@ -39,7 +39,10 @@ def _template(app: Any, asked: Any, taken: set[str]):
             index += 1
         name = f"{stem}-{index}"
     asked["name"] = name
-    return construction.template_part(asked)
+    part = construction.template_part(asked)
+    import game_materials
+    game_materials.require_material(app, part.material)
+    return part
 
 
 def starting_overrides(app: Any, asked: Any) -> dict[str, Any]:

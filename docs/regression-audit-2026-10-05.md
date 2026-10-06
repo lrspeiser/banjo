@@ -10,6 +10,31 @@ are retained separately rather than relabeled as original passes.
 
 ## Environment and coverage
 
+### Supplemental archive snapshot, October 5
+
+The first 125 supplemental commands have finished against the immutable
+`c25f53b6aebcdd3cdaedc70eccc93a6c0c2be79f` tracked-source archive: **109 passed,
+12 failed and 4 timed out**. These are command counts, not unique test counts.
+Original results are retained in `build/full-regression-extra/results-full-initial.json`;
+the expanded 132-command plan includes three additional coverage commands and
+four explicit timeout recoveries, which remain in progress. Native binaries
+remain unchanged. These results do not qualify the newer inorganic game policy.
+
+Material QA completed all **96 cases in 361.54 s**: **81 passed and 15 require
+baseline review**, with zero reported integrity issues. The reviews are ceramic
+at 30 m/s for 20/40/80 mm plate thicknesses, plus all twelve ice cases. No baseline or
+tolerance was changed. The declared experiment uses detailed lattice,
+strain-threshold fracture with plasticity off, 10 mm cells, a 120 × 120 mm
+plate, an iron 40 mm striker, 80 mm ledge clearance and 0.35 s duration.
+The stored signed striker-loss metric is not a closed energy audit. Evidence
+is `build/full-regression-extra/evidence-material_qa/report.json`.
+
+Current gameplay failures include stale single-cube/queue and screen-layout
+assertions as well as unresolved target/walk timing and native review gates.
+They remain failures pending a supported repair or explicit resolution; new
+scoped catalog/player passes do not relabel them. The primary extended CTest
+run and an isolated final performance measurement also remain unfinished.
+
 - Windows, MSVC Release, CMake Visual Studio 2022; `BANJO_BUILD_LAB=OFF`.
 - Every configured target built with
   `cmake --build build/agent-column-terrain --config Release --parallel 4`.

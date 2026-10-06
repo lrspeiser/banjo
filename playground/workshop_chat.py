@@ -21,6 +21,7 @@ import re
 import threading
 import time
 from typing import Any
+import game_materials
 from urllib import error, request
 
 from mcp import engine_materials, workshop_components, workshop_construction, workshop_graph, workshop_machines, interaction_points, workshop_tools
@@ -416,6 +417,7 @@ def _spec(candidate: dict[str, Any]) -> dict[str, Any]:
 def _refresh(app: Any, candidate: dict[str, Any], design: Any,
              overrides: dict[str, dict[str, Any]]) -> None:
     """Replace one candidate dictionary from the authoritative Workshop model."""
+    game_materials.require_design(app, design)
     prior_label = candidate.get("label")
     wire = design.wireframe()
     wire["component_overrides"] = workshop_components.checked_overrides(overrides)
@@ -974,6 +976,9 @@ class _State:
         self.library = library
         spec = _spec(candidate)
         self.design, self.overrides = workshop_components.design_from_spec(spec)
+        game_materials.require_design(app, self.design)
+        if game_materials.active(app):
+            self.materials = [m for m in materials if engine_materials.canonical(m) in game_materials.body_materials()]
         # The template the overrides sit on. Every redraw is the template plus
         # one set of overrides, never a patch on top of a patched design.
         self.base = assemble(str(spec.get("kind") or ""),
@@ -1081,6 +1086,23 @@ class _State:
         raise ValueError("a power part is a store, a motor, a panel or a control")
 
     def execute(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
+        if not game_materials.active(self.app):
+            return self._execute(tool, args)
+        game_materials.require_payload(self.app, args)
+        game_materials.require_design(self.app, self.design)
+        before = deepcopy({name: getattr(self, name) for name in
+                           ("design", "base", "overrides", "changed")})
+        candidate = deepcopy(self.candidate)
+        try:
+            result = self._execute(tool, args)
+            game_materials.require_design(self.app, self.design)
+            return result
+        except Exception:
+            for name, value in before.items(): setattr(self, name, value)
+            self.candidate.clear(); self.candidate.update(candidate)
+            raise
+
+    def _execute(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
         if tool=='define_installation':
             from mcp import workshop_placement
             updated=deepcopy(self.overrides)
@@ -1112,7 +1134,7 @@ class _State:
         if tool == "list_saved_designs":
             import workshop_store
             from workshop_api_core import _store
-            rows = workshop_store.list_saved(_store(self.app), limit=40)
+            rows = game_materials.saved_designs(self.app, _store(self.app), limit=40)
             return self.record(tool, {
                 "summary": f"{len(rows)} saved" if rows else "nothing has been saved yet",
                 "saved": [{"design_id": r.get("design_id"), "name": r.get("label"),
@@ -1680,6 +1702,7 @@ def _model_turn(app: Any, state: _State, *, message: str, history: list[dict[str
     # end with the selection and the assembly kind, which put two changing lines
     # in front of 5,400 tokens of tool schema.
     instructions = SYSTEM
+    if game_materials.active(app): instructions += "\n" + game_materials.instructions()
     inputs: list[dict[str, Any]] = list(history)
     inputs.append({"role": "user", "content": _what_it_is_looking_at(state)})
     if getattr(app,'world_id',None):
@@ -1860,6 +1883,9 @@ def fallback(message: str, *, materials: list[str], library: list[dict[str, Any]
 def _fallback_turn(state: _State, message: str) -> str:
     """Useful no-key behavior: supports semantic multi-part and multi-edit requests."""
     lower = message.lower(); role = _role_from_message(message, state.design)
+    if game_materials.active(state.app) and re.search(r"\b(oak|wood|wooden|rubber|plastic|leather)\b", lower) \
+            and not any(re.search(r"\b"+re.escape(m)+r"\b",lower) for m in game_materials.body_materials()):
+        return "Organic materials are unavailable while their physics is deferred. Use iron or aluminum for tools, or glass, ceramic or concrete for other parts."
     selector: dict[str, Any] = {"roles": [role]} if role else {"names":[state.selected_name]} if state.selected_name else {}
     if any(word in lower for word in ("whole object","entire object","everything","whole item")):
         selector = {"names":[p.name for p in state.design.parts]}

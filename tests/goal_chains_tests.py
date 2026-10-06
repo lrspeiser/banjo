@@ -19,6 +19,35 @@ import starter_goals_tests as camp
 import world_hub_tests as hub
 
 
+def acquire_material(client,world,player,material,minimum,ident):
+    """Follow finite World sources, with the quoted trader as fallback."""
+    collected=0.;purchased=0.;orders=0;deposits=0
+    for index in range(32):
+        inv=client.post('/api/workshop/inventory',{},world,player)
+        have=next((m['personal_kg'] for m in inv['materials'] if m['material']==material),0.)
+        if have+1e-9>=minimum:return {'collected_kg':collected,'purchased_kg':purchased,'orders':orders,'deposits':deposits}
+        recipes=client.post('/api/workshop/recipes',{},world,player)
+        pile=next((p for p in recipes['stockpiles'] if not p.get('rack') and p['holds_kg'].get(material,0)>0),None)
+        key=f'{ident}-{index}'
+        if pile:
+            context=client.post('/api/world/workshop/context',{},world,player);sid=context['session'];at=pile['at_m']
+            floor=client.post('/api/live/act',{'session':sid,'op':'survey','at':at},world,player)['survey']['ground_m']
+            got=client.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],'request_id':key,
+                'person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[1,0,0]}},world,player)
+            collected+=got['collected'].get(material,0.)
+        else:
+            market=client.post('/api/workshop/market',{},world,player)
+            offer=next(o for o in market['offers'] if o['substance']==material)
+            if not offer['remaining']:raise AssertionError('Finite trader exhausted '+material)
+            if market['balance_j']<offer['price_j']:
+                client.post('/api/workshop/market',{'action':'bank','joules':500,'request_id':key},world,player);deposits+=1
+            else:
+                client.post('/api/workshop/market',{'action':'buy','item_id':offer['id'],
+                    'quoted_price_j':offer['price_j'],'request_id':key},world,player)
+                purchased+=offer['mass_kg'];orders+=1
+    raise AssertionError('Finite supply route exceeded 32 actions')
+
+
 class Predicates(unittest.TestCase):
     def test_own_tool_requires_paid_owner_admission_and_positive_use_of_that_body(self):
         from types import SimpleNamespace
@@ -119,7 +148,7 @@ class PlayerJourney(unittest.TestCase):
     join=hub.NamedWorlds.join
 
     def test_retired_opening_checks_preserve_older_partial_progress_and_restart(self):
-        world=self.post('/api/worlds',{'name':'Retained chapter history'})['id']
+        world=camp.create_world(self,{'name':'Retained chapter history'})['id']
         owner=self.join(world,'Returning player');peer=self.join(world,'Other player')
         self.players={world:owner};self.post('/api/world/open',{},world)
         app=self.app.hub.get(world)
@@ -156,28 +185,23 @@ class PlayerJourney(unittest.TestCase):
         reports=[]
         for terrain_choice,goods_seed in ((1,851269742),(0,1)):
             with mock.patch.object(server.secrets,'randbelow',side_effect=[terrain_choice,goods_seed-1]):
-                world=self.post('/api/worlds',{'name':'Gather and make'})['id']
+                world=camp.create_world(self,{'name':'Gather and make'})['id']
             alice=self.join(world,'Alice');bob=self.join(world,'Bob');self.players={world:alice}
             self.post('/api/world/open',{},world);app=self.app.hub.get(world)
-            wood_before=sum(p.get('holds',{}).get('oak',0) for p in app.brains.goods.stockpiles)
-            results=[];collected_kg={}
+            metal_before={m:sum(p.get('holds',{}).get(m,0) for p in app.brains.goods.stockpiles) for m in ('iron','aluminum')}
+            results=[];collected_kg={};charged_stock={}
             for index,player in enumerate((alice,bob)):
                 token=player['token']
                 def goals():return self.post('/api/workshop/goals',{},world,token)
                 first=goals();self.assertEqual('first-tool-v1',first['chain_id'])
-                self.assertEqual('get-tool-wood',first['next_goal'])
-                sid=first['session'];guide=first['goals'][0]['guide']
-                pile=app.brains.goods.by_name(guide['resource']);at=pile['at_m']
-                floor=self.post('/api/live/act',{'session':sid,'op':'survey','at':at},world,token)['survey']['ground_m']
-                collected=self.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],
-                    'request_id':f'collect-{index}','person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[1,0,0]}},world,token)
-                self.assertGreaterEqual(collected['collected']['oak'],2)
-                # A collect takes the whole pile, so the second player is sent
-                # to another of the world's separate timber piles, not Market.
-                collected_kg[player['token']]=collected['collected']['oak']
+                self.assertEqual('get-tool-metal',first['next_goal'])
+                supplies={m:acquire_material(self,world,token,m,kg,f'collect-{index}-{m}')
+                    for m,kg in (('iron',2.95125),('aluminum',2.7))}
+                collected_kg[player['token']]=supplies
                 ready=goals();self.assertEqual('make-own-tool',ready['next_goal'])
                 built=camp.make_paid(self,world,token,ready['recipe'],[-1.4,-.6+index*1.2],f'opening-made-{index}')
                 self.assertTrue(built['engine_grid_verified']);self.assertTrue(built['resources_charged'])
+                charged_stock[token]=deepcopy(app.room.fabrication_record['jobs'][f'opening-made-{index}']['stock_materials_kg'])
                 ready=goals();self.assertEqual('use-own-tool',ready['next_goal'])
                 sid=ready['session'];root=ready['product_body']
                 native=next(b for b in app.live.session.state['bodies'] if b['name']==root)
@@ -216,9 +240,17 @@ class PlayerJourney(unittest.TestCase):
                 # The active checklist moves on; the old purchase checklist does not gate it.
                 self.assertEqual('first-workshop-v1',goals()['chain_id'])
                 legacy=self.post('/api/workshop/goals',{'chain':'first-camp-v1'},world,token)
-                self.assertFalse(any(g['complete'] for g in legacy['goals']))
-                self.post('/api/world/inventory',{'session':sid,'op':'stow','item':root,
+                # A guest who exhausted the loose heap really banks/buys
+                # finite iron; those earlier supply goals may be earned.
+                # They cannot earn the unrelated camp build or packing.
+                prior={g['id']:g for g in legacy['goals']}
+                self.assertEqual(sum(v['deposits'] for v in supplies.values())>0,prior['bank-solar']['complete'])
+                self.assertEqual(supplies['iron']['purchased_kg']>=4.,prior['stock-iron']['complete'])
+                self.assertFalse(prior['build-camp']['complete'])
+                self.assertFalse(prior['carry-camp']['complete'])
+                packed=self.post('/api/world/inventory',{'session':sid,'op':'stow','item':root,
                     'request':f'pack-{index}','person':person},world,token)
+                self.assertTrue(packed.get('ok'),packed)
                 results.append((player,finished))
             self.assertNotEqual(results[0][1]['product_body'],results[1][1]['product_body'])
             self.stop();self.start()
@@ -228,33 +260,55 @@ class PlayerJourney(unittest.TestCase):
                 self.assertEqual([(g['id'],g['complete'],g['evidence']) for g in finished['goals']],
                     [(g['id'],g['complete'],g['evidence']) for g in restored['goals']])
                 inv=self.post('/api/workshop/inventory',{},world,player['token'])
-                self.assertTrue(any(i['name']==finished['product_body'] and i['label']=='Personal field pick' for i in inv['carried']))
-                self.assertAlmostEqual(collected_kg[player['token']]-1.925,
-                    next(m['personal_kg'] for m in inv['materials'] if m['material']=='oak'),places=4)
+                # A fixed mixed tool has two native groups; the bag's
+                # canonical id can be its head rather than the recipe root.
+                expected=set(finished['goals'][1]['evidence']['parts'])
+                carried=next((i for i in inv['carried'] if set(i['parts'])==expected),None)
+                self.assertIsNotNone(carried,{'product':finished['product_body'],'inventory':inv})
+                self.assertEqual('Personal field pick',carried['label'])
+                self.assertFalse(carried['separated'])
+                self.assertAlmostEqual(5.65125,carried['kg'],places=5)
+                for material in ('iron','aluminum'):
+                    got=collected_kg[player['token']][material]
+                    used=charged_stock[player['token']][material]
+                    with server.workshop_library._connect(self.app.hub.get(world)) as db:
+                        exact=db.execute('SELECT mass_kg FROM workshop_material_rack WHERE owner_id=? AND material=?',
+                            (player['id'],material)).fetchone()[0]
+                    self.assertAlmostEqual(got['collected_kg']+got['purchased_kg']-used,exact,places=8)
+                    # Inventory is a four-decimal presentation, while its
+                    # authoritative ledger and native debit remain full precision.
+                    self.assertEqual(round(exact,4),
+                        next(m['personal_kg'] for m in inv['materials'] if m['material']==material))
             app=self.app.hub.get(world)
-            self.assertAlmostEqual(sum(collected_kg.values()),
-                wood_before-sum(p.get('holds',{}).get('oak',0) for p in app.brains.goods.stockpiles),places=4)
+            for material in metal_before:
+                self.assertAlmostEqual(sum(got[material]['collected_kg'] for got in collected_kg.values()),
+                    metal_before[material]-sum(p.get('holds',{}).get(material,0) for p in app.brains.goods.stockpiles),places=4)
+            orders=sum(got[m]['orders'] for got in collected_kg.values() for m in got)
+            deposits=sum(got[m]['deposits'] for got in collected_kg.values() for m in got)
+            # Tight maps may merge all iron into one finite heap. A second
+            # guest then buys genuine metal rather than receiving fabricated stock.
+            self.assertEqual(0,sum(v['orders'] for v in collected_kg[alice['token']].values()))
             with server.workshop_library._connect(app) as db:
-                self.assertEqual(0,db.execute('SELECT COUNT(*) FROM market_orders').fetchone()[0])
-                self.assertEqual(0,db.execute('SELECT COUNT(*) FROM market_deposits').fetchone()[0])
+                self.assertEqual(orders,db.execute('SELECT COUNT(*) FROM market_orders').fetchone()[0])
+                self.assertEqual(deposits,db.execute('SELECT COUNT(*) FROM market_deposits').fetchone()[0])
             reports.append({'terrain_seed':7 if terrain_choice else 4,'goods_seed':goods_seed,
                 'players':2,'cell_m':.05,'dt_s':1/240,'provider_calls':0,
-                'market_orders':0,'wallet_deposits':0,'results':[r[1] for r in results],
+                'market_orders':orders,'wallet_deposits':deposits,'results':[r[1] for r in results],
                 'restart_retained':True})
         output=ROOT/'build/opening-tools';output.mkdir(parents=True,exist_ok=True)
         (output/'acceptance.json').write_text(json.dumps(reports,indent=2),encoding='utf-8')
 
-    def test_empty_loose_wood_and_market_produce_a_real_blocker_without_awards(self):
-        world=self.post('/api/worlds',{'name':'Finite exhausted wood'})['id']
+    def test_empty_loose_metal_and_market_produce_a_real_blocker_without_awards(self):
+        world=camp.create_world(self,{'name':'Finite exhausted metal'})['id']
         owner=self.join(world,'Late arrival');self.players={world:owner}
         self.post('/api/world/open',{},world);app=self.app.hub.get(world)
         # Explicit depleted-source fixture: removes supply, grants no material.
-        for pile in app.brains.goods.stockpiles: pile.get('holds',{}).pop('oak',None)
+        for pile in app.brains.goods.stockpiles: pile.get('holds',{}).pop('iron',None)
         self.post('/api/workshop/market',{},world)
         with server.workshop_library._connect(app) as db:
-            db.execute("UPDATE market_stock SET remaining=0 WHERE item_id='oak-stock'")
+            db.execute("UPDATE market_stock SET remaining=0 WHERE item_id='iron-stock'")
         goals=self.post('/api/workshop/goals',{},world)
-        self.assertEqual('get-tool-wood',goals['next_goal'])
+        self.assertEqual('get-tool-metal',goals['next_goal'])
         self.assertFalse(any(g['complete'] for g in goals['goals']))
         self.assertEqual('market',goals['goals'][0]['guide']['screen'])
         self.assertNotIn('resource',goals['goals'][0]['guide'])
@@ -263,13 +317,13 @@ class PlayerJourney(unittest.TestCase):
         book=self.post('/api/workshop/recipes',{},world)
         offered=ai_actions.catalog({'goals':goals,'market':market,'stockpiles':book['stockpiles']}, {})
         self.assertEqual(['wait'],[a['verb'] for a in offered])
-        self.assertIn('no oak lot in stock',offered[0]['blockers'][0])
+        self.assertIn('no iron lot in stock',offered[0]['blockers'][0])
 
     def test_camp_tool_surface_and_supported_batch_on_two_seeds_without_grants(self):
         reports=[]
         for terrain_choice,goods_seed in ((1,851269742),(0,1)):
             with mock.patch.object(server.secrets,'randbelow',side_effect=[terrain_choice,goods_seed-1]):
-                world=self.post('/api/worlds',{'name':'Composed player journey'})['id']
+                world=camp.create_world(self,{'name':'Composed player journey'})['id']
             owner=self.join(world,'Builder');self.players={world:owner}
             other=self.join(world,'Distant guest')
             self.post('/api/world/open',{},world)
@@ -313,13 +367,9 @@ class PlayerJourney(unittest.TestCase):
                 candidate['design_id']='another-useful-surface'
                 candidate['parameters'].update(width_m=.50,depth_m=.35)
             # Generated rooms make through the paid workbench, as a player does:
-            # collect their own wood, plan, fund from their stock and energy,
+            # collect or buy their own metal, fund actual stock and energy,
             # wait, then place.
-            pile=next(p for p in app.brains.goods.stockpiles if p.get('holds',{}).get('oak',0)>=40)
-            at=pile['at_m'];sid=self.post('/api/world/workshop/context',{},world)['session']
-            floor=self.post('/api/live/act',{'session':sid,'op':'survey','at':at},world)['survey']['ground_m']
-            self.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],'request_id':f'table-oak-{terrain_choice}',
-                'person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[1,0,0]}},world)
+            acquire_material(self,world,owner['token'],'iron',12.,f'table-iron-{terrain_choice}')
             # The first spot that the table will stand on: on sloping patches of
             # these valleys the engine tips it over and the preview refuses it.
             made=camp.make_paid(self,world,owner['token'],candidate,[[3.5,-3.],[3.5,2.5],[4.5,0],[3.5,0],[4.5,1.],[3.,-1.]],f'surface-{terrain_choice}')
@@ -400,7 +450,7 @@ class PlayerJourney(unittest.TestCase):
         if not qa_browser.CHROME.is_file():
             if os.environ.get('BANJO_BROWSER_TESTS')=='required':self.fail('Chrome required')
             self.skipTest('Chrome unavailable')
-        world=self.post('/api/worlds',{'name':'Goal chapters'})['id']
+        world=camp.create_world(self,{'name':'Goal chapters'})['id']
         owner=self.join(world,'Guide reader');self.players={world:owner}
         self.post('/api/world/open',{},world)
         camp.play_first_camp(self,world,owner['token'])

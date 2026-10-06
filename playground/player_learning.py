@@ -41,7 +41,7 @@ def require_capacity(app):
 
 def _construction(value):
     if (not isinstance(value,dict) or set(value)!={'template','one_piece','parts','point'}
-        or value['template']!='swing-and-lever' or value['one_piece'] is not True
+        or value['template']!='swing-and-lever' or type(value['one_piece']) is not bool
         or not isinstance(value['parts'],list) or not 1<=len(value['parts'])<=240):
         raise ValueError('Invalid inspected ground-tool construction')
     for part in value['parts']:
@@ -164,6 +164,94 @@ def ground(app, owner, session, record, registry):
           t_s=(session.state or {}).get('t',record['at_s']),registry=registry)
 
 
+def registry_for_room(room):
+    """Bind durable receipts to the playable source graph without rewriting history."""
+    if getattr(room,'scene',None)=='new-game':
+        import game_materials
+        try:
+            game_materials.require_spec(room.spec)
+        except ValueError:
+            pass  # Retained organic saves keep their historical receipt graph.
+        else:
+            import playable_recipes
+            return playable_recipes.registry()
+    return progression.Registry()
+
+
+def _whole_fixed_tool(spec, profile, held, snapshot):
+    """Inspect every native constituent, and only live two-way finite fixings.
+
+    A grip may be on a different material group from its cutting point. Neither
+    authored adjacency, a hinge nor a broken/one-way fixing proves an assembly.
+    """
+    import fracture_lab
+    names=set(profile['parts'])
+    declared=[b for b in spec['bodies'] if b['name'] in names or b.get('join') in names]
+    aliases={b['name'] for b in declared} | {b.get('join') or b['name'] for b in declared}
+    if not names or not names <= aliases:
+        raise ValueError('Study needs every declared tool component')
+    groups={}
+    for part in declared:
+        groups.setdefault(part.get('join') or part['name'],[]).append(part)
+    native={b['name']:b for b in snapshot.get('bodies',[]) if b['name'] in groups}
+    if held not in groups or set(native)!=set(groups):
+        raise ValueError('Study needs the original whole tool and its attached native point')
+    matter={}
+    for group, parts in groups.items():
+        body=native[group]
+        expected=fracture_lab.scene_cell_count(parts,spec['cell_m'])
+        if (str(body.get('mechanical_model','')).startswith('precise-rigid')
+            or type(body.get('body_id')) is not int or body['body_id']<=0
+            or not isinstance(body.get('nodes_b64'),str) or not isinstance(body.get('offsets_b64'),str)):
+            raise ValueError('Study needs all of the declared sampled matter')
+        try:
+            nodes=base64.b64decode(body['nodes_b64'],validate=True)
+            offsets=base64.b64decode(body['offsets_b64'],validate=True)
+        except (ValueError,TypeError) as error:
+            raise ValueError('Study needs valid native sampled matter') from error
+        if expected<=0 or len(nodes)!=expected*4 or len(offsets)!=expected*24:
+            raise ValueError('Study needs all of the declared sampled matter')
+        matter[group]={'body_id':body['body_id'],'nodes':body['nodes_b64'],'offsets':body['offsets_b64']}
+    point=next((p for p in snapshot.get('tool_points',[]) if p.get('attached') is True
+        and p.get('body') in groups and (p.get('grip_body') or p.get('body'))==held),None)
+    body=native.get((point or {}).get('body'))
+    if (point is None or body is None or point.get('body_id')!=body['body_id']
+        or point.get('frame_nodes_b64')!=body['nodes_b64']
+        or point.get('frame_offsets_b64')!=body['offsets_b64']):
+        raise ValueError('Study needs the original whole tool and its attached native point')
+    declared_point=next((p for p in spec.get('tool_points',[]) if p.get('body')==point['body']
+        and (p.get('grip_body') or p.get('body'))==held),None)
+    if declared_point is None or (declared_point.get('id') is not None and declared_point['id']!=point['id']):
+        raise ValueError('Study needs the declared native point on its actual cutting component')
+    for field,declared_field,default,scale in (
+            ('width_m','width_mm',40.,.001),('thickness_m','thickness_mm',40.,.001),
+            ('angle_deg','angle_deg',30.,1.),('length_m','length_mm',150.,.001)):
+        actual=point.get(field)
+        expected=float(declared_point.get(declared_field,default))*scale
+        if type(actual) not in (int,float) or not math.isfinite(actual) or not math.isclose(actual,expected,rel_tol=0,abs_tol=1e-12):
+            raise ValueError('Study needs the original declared native point shape')
+    edges=[]
+    for joint in snapshot.get('joints',[]):
+        a,b=joint.get('a'),joint.get('b')
+        if (a not in groups or b not in groups or joint.get('attached') is not True
+            or joint.get('kind')!='fixing' or joint.get('comes_off_n',0)!=0
+            or not isinstance(joint.get('held'),dict)):
+            continue
+        capacities=[joint.get(k) for k in ('holds_tension_n','holds_shear_n')]
+        if all(type(v) in (int,float) and math.isfinite(v) and v>0 for v in capacities):
+            edges.append(joint)
+    connected={held}
+    for _ in groups:
+        before=len(connected)
+        for joint in edges:
+            if joint['a'] in connected or joint['b'] in connected:
+                connected.update((joint['a'],joint['b']))
+        if len(connected)==before: break
+    if connected!=set(groups):
+        raise ValueError('Study needs a whole tool joined by attached finite native fixings')
+    return point,native[held],{'groups':matter,'point':point,'fixings':edges}
+
+
 def study(app, owner, name, registry):
     session=app.live.session
     if not getattr(app,'world_id',None) or not owner: return False
@@ -174,23 +262,11 @@ def study(app, owner, name, registry):
     require_capacity(app)
     snapshot,refused=app.live.snapshot()
     if snapshot is None: raise ValueError('Study waits for the current tool action to finish: '+str(refused))
-    point=next((p for p in snapshot.get('tool_points',[]) if p['body']==held and p['attached']),None)
-    body=next((b for b in snapshot.get('bodies',[]) if b['name']==held),None)
-    if (point is None or body is None or body.get('mechanical_model')=='precise-rigid'
-        or point['body_id']!=body['body_id'] or point['frame_nodes_b64']!=body.get('nodes_b64')
-        or point['frame_offsets_b64']!=body.get('offsets_b64')):
-        raise ValueError('Study needs the original whole tool and its attached native point')
+    point,body,matter=_whole_fixed_tool(app.room.spec,profile,held,snapshot)
     construction=progression.construction_of(app.room.spec,profile)
-    # Check actual node count against the authored sampled parts. No fracture
-    # fragment can pass merely because its old descriptive name survived.
-    import fracture_lab
-    expected=fracture_lab.scene_cell_count([b for b in app.room.spec['bodies'] if b['name'] in profile['parts']],
-                                         app.room.spec['cell_m'])
-    nodes=base64.b64decode(body['nodes_b64'],validate=True)
-    if len(nodes)!=expected*4: raise ValueError('Study needs all of the declared sampled matter')
     source={'construction':construction,'tool':held,'object':profile['object'],
         'body_id':body['body_id'],'point_id':point['id'],
-        'matter_sha256':_digest({'nodes':body['nodes_b64'],'offsets':body['offsets_b64'],'point':point})}
+        'matter_sha256':_digest(matter)}
     queue(app,owner,'study',source,session=session.id,t_s=snapshot['t_s'],registry=registry)
     return True
 

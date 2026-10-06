@@ -13,9 +13,9 @@ def named_sources():
     """Shared named variants used by Recipes and product presentation."""
     import starter_goals
     import goal_chains
-    from mcp import matter_fabrication
+    import playable_recipes
     return [('Personal field pick',goal_chains.first_tool_recipe()),
-            ('Stone field pick',matter_fabrication.stone_pick_recipe()),
+            ('Stone field pick',playable_recipes.stone_pick_recipe()),
             ('Camp stool',starter_goals.recipe()),('Work table',goal_chains.work_table_recipe()),
             ('Camp light',goal_chains.camp_light_recipe()),
             ('Camp solar panel',goal_chains.camp_solar_recipe()),

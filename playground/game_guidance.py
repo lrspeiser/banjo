@@ -180,6 +180,8 @@ def answer(app, body, context):
     instructions=GUIDE
     if context.get('speaker'):
         instructions=CHARACTER_GUIDE
+    import game_materials
+    if game_materials.active(app): instructions += "\n" + game_materials.instructions()
     messages = [{'role':'system', 'content':instructions}, *body.get('history', []),
                 {'role':'user', 'content':json.dumps({'screen':body.get('screen', 'inventory'),
                     'current_request':body['message'], 'server_observations':context}, allow_nan=False)}]

@@ -18,6 +18,11 @@ from types import SimpleNamespace
 from unittest import mock
 import tempfile
 
+def create_world(client,body):
+    try:return client.post('/api/worlds',body)
+    except urllib.error.HTTPError as failure:
+        raise AssertionError(failure.read().decode()) from failure
+
 def make_paid(client,world,player,candidate,position,ident):
     context=client.post('/api/world/workshop/context',{},world,player)
     common={k:context[k] for k in ('session','scene')}
@@ -94,17 +99,17 @@ def play_first_camp(client, world, player):
         if step == "bank-solar":
             reply = client.post("/api/workshop/market", {"action": "bank", "joules": 500,
                                                        "request_id": key}, world, player)
-        elif step == "stock-oak":
+        elif step == "stock-iron":
             market = client.post("/api/workshop/market", {}, world, player)
-            oak = next(o for o in market["offers"] if o["id"] == "oak-stock")
-            if market["balance_j"] < oak["price_j"]:
+            iron = next(o for o in market["offers"] if o["id"] == "iron-stock")
+            if market["balance_j"] < iron["price_j"]:
                 reply = client.post("/api/workshop/market", {"action": "bank", "joules": 500,
                                                            "request_id": key}, world, player)
             else:
-                if not oak["remaining"]:
-                    raise AssertionError("Oak sold out; goal awaits trader restock")
-                reply = client.post("/api/workshop/market", {"action": "buy", "item_id": oak["id"],
-                    "quoted_price_j": oak["price_j"], "request_id": key}, world, player)
+                if not iron["remaining"]:
+                    raise AssertionError("Iron sold out; goal awaits trader restock")
+                reply = client.post("/api/workshop/market", {"action": "buy", "item_id": iron["id"],
+                    "quoted_price_j": iron["price_j"], "request_id": key}, world, player)
         elif step == "build-camp":
             reply=make_paid(client,world,player,goals['recipe'],[[3,0],[3.5,2.5],[3.5,-3.],[2,0],[3,1],[3,-1]],key)
             if not reply["native_precise_geometry_verified"] or not reply["resources_charged"]:
@@ -129,19 +134,20 @@ class StarterGoals(unittest.TestCase):
     get, post, join = hub.NamedWorlds.get, hub.NamedWorlds.post, hub.NamedWorlds.join
 
     def test_two_players_complete_from_earned_energy_and_keep_progress_after_restart(self):
-        world = self.post("/api/worlds", {"name": "First camp"})["id"]
+        world = create_world(self, {"name": "First camp"})["id"]
         alice, bob = self.join(world, "Alice"), self.join(world, "Bob")
         self.players = {world: alice}
         opened = self.post("/api/world/open", {}, world)
         source = next(s for s in opened["machines"]["stores"] if s["body"] == "solar farm")
         result = play_first_camp(self, world, alice["token"])
         self.assertTrue(result["complete"])
-        self.assertAlmostEqual(2.5088, result["goals"]["recipe_mass_kg"])
+        self.assertAlmostEqual(3.931065, result["goals"]["recipe_mass_kg"])
         # Only purchased personal stock is used; the communal rack is intact.
         rack = self.post("/api/workshop/inventory", {}, world)
-        oak = next(r for r in rack["materials"] if r["material"] == "oak")
-        self.assertAlmostEqual(.4912, oak["personal_kg"])
-        self.assertAlmostEqual(12.4, oak["shared_kg"])
+        iron = next(r for r in rack["materials"] if r["material"] == "iron")
+        # The Inventory API rounds rack quantities to four decimal places.
+        self.assertEqual(round(4.-3.931065,4), iron["personal_kg"])
+        self.assertAlmostEqual(6.2, iron["shared_kg"])
         bob_view = self.post("/api/workshop/goals", {"chain":starter_goals.CHAIN}, world, bob["token"])
         self.assertEqual("bank-solar", bob_view["next_goal"])
         self.assertTrue(all(not g["complete"] for g in bob_view["goals"]))
@@ -152,7 +158,7 @@ class StarterGoals(unittest.TestCase):
             product=self.post('/api/workshop/inventory',{},world,player['token'])['carried'][0]
             self.assertEqual('Camp stool',product['label'])
             self.assertEqual(completed['goals']['camp_body'],product['name'])
-            self.assertAlmostEqual(2.5088,product['kg'],places=4)
+            self.assertAlmostEqual(3.931065,product['kg'],places=4)
         # Both guests' packed precise assemblies must remain byte-for-byte
         # intact while another recipe is admitted into the shared scene.
         room_path=Path(self.temp.name)/"rooms"/"worlds"/world/"rooms"/"new-game.json"
@@ -163,14 +169,18 @@ class StarterGoals(unittest.TestCase):
         self.post('/api/workshop/market',{'action':'bank','joules':500,'request_id':'packed-bench-bank'},world)
         for index in range(10):
             market=self.post('/api/workshop/market',{},world)
-            oak=next(o for o in market['offers'] if o['id']=='oak-stock')
-            if market['balance_j']<oak['price_j']:
+            iron=next(o for o in market['offers'] if o['id']=='iron-stock')
+            bank_index=0
+            while market['balance_j']<iron['price_j']:
                 self.post('/api/workshop/market',{'action':'bank','joules':500,
-                    'request_id':f'packed-bench-extra-bank-{index}'},world)
-            self.post('/api/workshop/market',{'action':'buy','item_id':oak['id'],'quoted_price_j':oak['price_j'],
-                'request_id':f'packed-bench-oak-{index}'},world)
+                    'request_id':f'packed-bench-extra-bank-{index}-{bank_index}'},world)
+                bank_index+=1
+                market=self.post('/api/workshop/market',{},world)
+                iron=next(o for o in market['offers'] if o['id']=='iron-stock')
+            self.post('/api/workshop/market',{'action':'buy','item_id':iron['id'],'quoted_price_j':iron['price_j'],
+                'request_id':f'packed-bench-iron-{index}'},world)
         before=json.loads(room_path.read_text())
-        built=make_paid(self,world,alice['token'],bench,[4.5,0],'multi-packed-bench')
+        built=make_paid(self,world,alice['token'],bench,[[4.5,0],[3,0],[3.5,2.5],[3.5,-3.],[2,0],[3,1],[3,-1]],'multi-packed-bench')
         after=json.loads(room_path.read_text())
         self.assertEqual(before["players"],after["players"])
         by_name={b["name"]:b for b in after["world"]["bodies"]}
@@ -216,20 +226,28 @@ class StarterGoals(unittest.TestCase):
         (output/'acceptance.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
 
     def test_wrong_geometry_or_another_builders_receipt_does_not_earn_goal(self):
-        world = self.post("/api/worlds", {"name": "Evidence"})["id"]
+        world = create_world(self, {"name": "Evidence"})["id"]
         alice = self.join(world, "Alice"); self.players = {world: alice}
         self.post("/api/world/open", {}, world)
         context = self.post("/api/world/workshop/context", {}, world)
         candidate = starter_goals.recipe()
         candidate["parameters"]["width_m"] = .3
         self.post('/api/workshop/market',{'action':'bank','joules':500,'request_id':'wrong-stool-bank'},world)
-        for index in range(9):
+        for index in range(5):
             market=self.post('/api/workshop/market',{},world)
-            oak=next(o for o in market['offers'] if o['id']=='oak-stock')
-            if market['balance_j']<oak['price_j']:
-                self.post('/api/workshop/market',{'action':'bank','joules':500,'request_id':f'wrong-stool-bank-{index}'},world)
-            self.post('/api/workshop/market',{'action':'buy','item_id':oak['id'],'quoted_price_j':oak['price_j'],
-                'request_id':f'wrong-stool-oak-{index}'},world)
+            iron=next(o for o in market['offers'] if o['id']=='iron-stock')
+            bank_index=0
+            while market['balance_j']<iron['price_j']:
+                self.post('/api/workshop/market',{'action':'bank','joules':500,
+                    'request_id':f'wrong-stool-bank-{index}-{bank_index}'},world)
+                bank_index+=1
+                market=self.post('/api/workshop/market',{},world)
+                iron=next(o for o in market['offers'] if o['id']=='iron-stock')
+            try:
+                self.post('/api/workshop/market',{'action':'buy','item_id':iron['id'],'quoted_price_j':iron['price_j'],
+                    'request_id':f'wrong-stool-iron-{index}'},world)
+            except urllib.error.HTTPError as failure:
+                raise AssertionError(failure.read().decode()) from failure
         make_paid(self,world,alice['token'],candidate,[3,0],'wrong-stool-geometry')
         self.assertFalse(self.post("/api/workshop/goals", {"chain":starter_goals.CHAIN}, world)["goals"][2]["complete"])
 
@@ -237,7 +255,7 @@ class StarterGoals(unittest.TestCase):
         if not qa_browser.CHROME.is_file():
             if os.environ.get("BANJO_BROWSER_TESTS") == "required": self.fail("Chrome is required")
             self.skipTest("Chrome not installed")
-        world = self.post("/api/worlds", {"name": "Browser camp"})["id"]
+        world = create_world(self, {"name": "Browser camp"})["id"]
         chrome = qa_browser.Chrome(1280, 800); self.addCleanup(chrome.close)
         page = chrome.page; page.send("Page.enable"); page.send("Runtime.enable")
         def wait_for(expression):
@@ -267,7 +285,7 @@ class StarterGoals(unittest.TestCase):
         self.assertIn('Ask about energy',page.evaluate('document.querySelector("#ask-text").placeholder'))
         player=page.evaluate(f'localStorage.getItem("banjo.player.{world}")')
         click('.game-tabs [data-screen="progress"]')
-        wait_for('!!document.querySelector("[data-goal=get-tool-wood]")')
+        wait_for('!!document.querySelector("[data-goal=get-tool-metal]")')
         click('#ws-goal-chapters > summary')
         click('[aria-label="Goal chapters"] button:last-child')
         wait_for('!!document.querySelector("[data-goal-go=bank-solar]")')
@@ -285,21 +303,24 @@ class StarterGoals(unittest.TestCase):
         wait_for('document.querySelector("#ws-market-balance").textContent === "500 J"')
         click('.game-tabs [data-screen="progress"]')
         wait_for('document.querySelector("[data-goal=bank-solar]")?.dataset.complete === "true"')
-        click('[data-goal-go="stock-oak"]')
+        click('[data-goal-go="stock-iron"]')
         wait_for('document.querySelector("#ws-market-bank")?.textContent === "Bank 500 J · Shared farm"')
-        # Two real bank transactions fund the six dynamically quoted lots.
+        # Real bank transactions fund the four dynamically quoted iron lots.
         click('#ws-market-bank')
         wait_for('document.querySelector("#ws-market-balance").textContent === "1,000 J"')
-        for count in range(6):
-            click('[data-market-item="oak-stock"] button')
+        for count in range(4):
+            while page.evaluate('document.querySelector("[data-market-item=iron-stock] button").disabled'):
+                click("#ws-market-bank")
+                wait_for('!document.querySelector("#ws-market-bank").disabled')
+            click('[data-market-item="iron-stock"] button')
             # Orders by their "<price> J · <time>" line: with none yet, the list
             # holds one "No purchases yet." item, which counted as the first.
             wait_for('[...document.querySelectorAll("#ws-market-orders > li")]'
                      f'.filter(li => li.textContent.includes(" J · ")).length === {count+1}')
-            wait_for('document.querySelector("[data-market-item=oak-stock] button").disabled === false')
+            wait_for('!document.querySelector("#ws-market-bank").disabled')
         click('.game-tabs [data-screen="progress"]')
-        wait_for('document.querySelector("[data-goal=stock-oak]")?.dataset.complete === "true"')
-        # An unrelated material filter must not hide the guided oak recipe.
+        wait_for('document.querySelector("[data-goal=stock-iron]")?.dataset.complete === "true"')
+        # An unrelated material filter must not hide the guided iron recipe.
         page.evaluate('(()=>{const u=new URL(location.href);u.searchParams.set("material","glass");window.history.replaceState(null,"",u)})()')
         click('[data-goal-go="build-camp"]')
         self.assertFalse(page.evaluate('new URLSearchParams(location.search).has("material")'))
@@ -307,7 +328,7 @@ class StarterGoals(unittest.TestCase):
         wait_for(f'!!document.querySelector({json.dumps(camp_selector + ".ws-goal-target")})')
         click('[data-recipe="stool:Camp stool"] .ws-recipe-acts button')
         # The separate transfers are folded away under "Supply details" since
-        # 3544fd2b; one "Prepare supplies" takes the oak from personal stock
+        # 3544fd2b; one "Prepare supplies" takes the iron from personal stock
         # first, connects the battery and charges. A click charges for at most
         # five seconds and then offers "Continue charging".
         wait_for('!!document.querySelector("#ws-remake-stock-personal")')

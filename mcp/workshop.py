@@ -46,10 +46,12 @@ DENSITY_KG_M3 = {
     "iron": engine_materials.density("iron"),
     "steel": 7850.0,
     "aluminium": engine_materials.density("aluminium"),
+    "aluminum": engine_materials.density("aluminum"),
     "glass": engine_materials.density("glass"),
     "concrete": engine_materials.density("concrete"),
     "rubber": engine_materials.density("rubber"),
     "alumina ceramic": engine_materials.density("alumina ceramic"),
+    "ice": engine_materials.density("ice"),
 }
 
 _ON_THE_FLOOR_M = 0.002  # a part this close to the lowest point is standing on it

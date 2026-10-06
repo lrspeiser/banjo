@@ -18,6 +18,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+import game_materials
 
 from mcp import engine_materials, workshop_components, workshop_construction, workshop_visual, workshop_matter_metrics  # noqa: E402
 from mcp.workshop import (  # noqa: E402
@@ -105,6 +106,7 @@ def _label(kind: str, values: dict[str, Any], spec: Any) -> str:
 
 
 def _candidate(app: Any, design: Any, spec: Any, overrides: Any = None) -> dict[str, Any]:
+    game_materials.require_design(app, design)
     engine_materials.synchronize_workshop_model()
     # A template with joints and machines of its own (Assembly.overrides)
     # opens with them, unless the person's own overrides are given.
@@ -153,7 +155,14 @@ def _candidate(app: Any, design: Any, spec: Any, overrides: Any = None) -> dict[
 def _spread(app: Any, kind: str, base: dict[str, Any], sweeps: dict[str, list[Any]],
             generation: int, purpose: str | None = None, overrides: Any = None) -> list[dict[str, Any]]:
     spec = assembly(kind)
-    root = assemble(kind, design_id=f"{kind}-g{generation}", purpose=purpose, parameters=base)
+    if game_materials.active(app):
+        source = game_materials.recipe_spec(app, {"kind": kind, "design_id": f"{kind}-g{generation}",
+            "purpose": purpose, "parameters": base, "component_overrides": overrides or {}})
+        root, overrides = workshop_components.design_from_spec(source)
+        # Default game sources present one version; explicit sweeps still work.
+        if sweeps is SEED_SWEEPS.get(kind): sweeps = {}
+    else:
+        root = assemble(kind, design_id=f"{kind}-g{generation}", purpose=purpose, parameters=base)
     checked = workshop_components.checked_overrides(overrides)
     # A template with joints and machines of its own (Assembly.overrides) is
     # spread with them when the person gives none: a machine's template says
@@ -300,11 +309,11 @@ def library(app: Any = None, body: Any = None,
                                            str(body.get("name") or ""))
             return {"schema": WORKSHOP_SCHEMA, "saved": {k: record.get(k) for k in
                                                          ("design_id", "label", "revision", "kind")},
-                    "saved_designs": workshop_store.list_saved(_store(app))}
+                    "saved_designs": game_materials.saved_designs(app, _store(app))}
         if action == "delete_design":
             gone = workshop_store.delete(_store(app), str(body.get("design_id") or ""))
             return {"schema": WORKSHOP_SCHEMA, "deleted": gone,
-                    "saved_designs": workshop_store.list_saved(_store(app))}
+                    "saved_designs": game_materials.saved_designs(app, _store(app))}
         if action == "results":
             return {"schema": WORKSHOP_SCHEMA,
                     "results": workshop_library.results_for(
@@ -319,7 +328,7 @@ def library(app: Any = None, body: Any = None,
         "families": ComponentLibrary().described(),
         "assemblies": assemblies(),
         "seeds": {k: sorted(v) for k, v in SEED_SWEEPS.items()},
-        "saved_designs": workshop_store.list_saved(_store(app)) if app is not None else [],
+        "saved_designs": game_materials.saved_designs(app, _store(app)) if app is not None else [],
         "personal_library": workshop_library.list_items(app) if app is not None else [],
         "pricebook": workshop_library.pricebook(app) if app is not None else {},
         "rack": workshop_library.rack(app) if app is not None else {},
@@ -373,6 +382,7 @@ def candidates(app: Any, body: Any) -> dict[str, Any]:
     current = {"kind": kind, "design_id": str(body.get("design_id") or f"{kind}-g{generation}"),
                "purpose": body.get("purpose"), "parameters": _parameters(body),
                **({"component_overrides":body["component_overrides"]} if "component_overrides" in body else {})}
+    current = game_materials.recipe_spec(app, current)
     if isinstance(body.get("component_chat"), dict):
         chat, part_name = body["component_chat"], str(body["component_chat"].get("part_name") or "")
         design, overrides = workshop_components.design_from_spec(current)
@@ -505,9 +515,10 @@ def _remember_result(app: Any, design: Any, answer: dict[str, Any]) -> None:
 
 def plan(app: Any, body: Any) -> dict[str, Any]:
     body, kind = _object(body), _kind(_object(body))
-    design, overrides = workshop_components.design_from_spec(
+    design, overrides = workshop_components.design_from_spec(game_materials.recipe_spec(app,
         {"kind": kind, "design_id": str(body.get("design_id") or kind), "parameters": _parameters(body),
-         **({"component_overrides":body["component_overrides"]} if "component_overrides" in body else {})})
+         **({"component_overrides":body["component_overrides"]} if "component_overrides" in body else {})}))
+    game_materials.require_design(app, design)
     try:
         cell = float(body.get("cell_size_m", 0.04))
     except (TypeError, ValueError):
@@ -581,6 +592,7 @@ def remember(app: Any, body: Any) -> dict[str, Any]:
     design, overrides = workshop_components.design_from_spec(
         {"kind": kind, "design_id": design_id, "parameters": _parameters(body),
          **({"component_overrides":body["component_overrides"]} if "component_overrides" in body else {})})
+    game_materials.require_design(app, design)
     rating = body.get("rating")
     if rating not in (None, "") and int(rating) not in range(1, 6):
         raise ValueError("rating must be 1 through 5")
@@ -622,7 +634,7 @@ def remember(app: Any, body: Any) -> dict[str, Any]:
         with _lock:
             with where.open(encoding="utf-8") as back:
                 kept = sum(1 for line in back if line.strip())
-    designs = workshop_store.list_saved(_store(app))
+    designs = game_materials.saved_designs(app, _store(app))
     return {"schema": WORKSHOP_SCHEMA, "saved": record, "design": saved_design,
             "library_item": library_item, "kept": kept, "designs_kept": len(designs),
             "saved_designs": designs, "personal_library": workshop_library.list_items(app),
@@ -642,7 +654,7 @@ def remembered(app: Any, body: Any = None) -> dict[str, Any]:
                 except ValueError:
                     continue
     rows.reverse()
-    designs = workshop_store.list_saved(_store(app))
+    designs = game_materials.saved_designs(app, _store(app))
     return {"schema": WORKSHOP_SCHEMA, "kept": len(rows), "feedback": rows[:200],
             "designs_kept": len(designs), "saved_designs": designs,
             "personal_library": workshop_library.list_items(app),

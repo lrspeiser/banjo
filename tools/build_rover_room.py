@@ -233,7 +233,59 @@ def read_ground(engine: Path) -> dict:
     return ground
 
 
-def compose(ground: dict, kind: str, yaw_rad: float = 0.) -> dict:
+def inorganic_recipe(*, design_id: str = "rover") -> dict:
+    """Editable iron starter, with explicit plate/disk geometry and catalog mass.
+
+    The historical oak fixture remains rover_artifact(). These exact rigid
+    parts do not implement elastic plate bending, cargo packing or tire laws.
+    """
+    from copy import deepcopy
+    from mcp import workshop as w
+    design = w.assemble("rover", design_id=design_id, parameters={"material": "iron"})
+    patches = deepcopy(design.lineage["component_overrides"])
+    geometry = {
+        "deck": ((.7, .0035, 1.), (0., .37825, 0.)),
+        "solar panel": ((.4, .01, .5), (0., .385, -.05)),
+        "battery": ((.05, .005, .05), (0., .3825, .25)),
+        "hopper": ((.05, .005, .10), (0., .3825, .40)),
+        "caster mount": ((.10, .0665, .10), (0., .34325, .38)),
+        "caster swivel": ((.02, .06, .02), (0., .33, .38)),
+        "caster plate": ((.08, .02, .08), (0., .30, .38)),
+        "caster pin": ((.012, .082, .012), (0., .08, .32)),
+        "caster wheel": ((.16, .04, .16), (0., .08, .32)),
+    }
+    for side, sign in (("left", 1.), ("right", -1.)):
+        geometry[side + " mount"] = ((.01, .2165, .01), (sign*.1925, .26825, -.32))
+        geometry[side + " wheel"] = ((.32, .0054, .32), (sign*.3527, .16, -.32))
+        geometry[side + " wheel stub"] = ((.03, .20, .03), (sign*.26, .16, -.32))
+        geometry["caster " + side + " cheek"] = ((.012, .22, .05), (sign*.035, .18, .335))
+    for name, (size, center) in geometry.items():
+        patches.setdefault(name, {}).update(size_m=list(size), center_m=list(center))
+    return {"kind": "rover", "design_id": design_id, "parameters": {"material": "iron"},
+            "component_overrides": patches}
+
+
+def inorganic_artifact() -> dict:
+    """Compile the very same source offered by the playable recipe catalog."""
+    from mcp import workshop_components
+    design, overrides = workshop_components.design_from_spec(inorganic_recipe())
+    artifact = rigid_assembly.compile_design(design, overrides, root="rover")
+    mapping = artifact["component_to_body"]
+    names = {mapping[part]: label for part, label in (
+        ("deck", "rover"), ("left wheel", "rover: left wheel"),
+        ("right wheel", "rover: right wheel"), ("caster plate", "rover: caster"),
+        ("caster wheel", "rover: caster wheel"))}
+    if len(names) != 5 or len(artifact["bodies"]) != 5:
+        raise ValueError("The inorganic starter must retain five connected bearing groups")
+    for body in artifact["bodies"]:
+        body["name"] = names[body["name"]]
+    for joint in artifact["joints"]:
+        joint["a"], joint["b"] = names[joint["a"]], names[joint["b"]]
+    artifact["component_to_body"] = {part: names[body] for part, body in mapping.items()}
+    return artifact
+
+
+def compose(ground: dict, kind: str, yaw_rad: float = 0., *, inorganic: bool = False) -> dict:
     """The room: the post, the rover on the shore, its machine, its panel and
     its program, and the sun -- with the battery and the rest of `kind`."""
     battery = ROOM_KINDS[kind]
@@ -243,7 +295,7 @@ def compose(ground: dict, kind: str, yaw_rad: float = 0.) -> dict:
     dx,dz=.5*math.sin(yaw_rad),.5*math.cos(yaw_rad)
     fall = grounds.surface_at(ground, x+dx, z+dz) - grounds.surface_at(ground, x-dx, z-dz)
     pitch = math.atan(-fall)
-    artifact = rover_artifact()
+    artifact = inorganic_artifact() if inorganic else rover_artifact()
     flat = rigid_assembly.placed(artifact, [x, 0.0, z], yaw_rad, pitch)
     lift = max(grounds.ground_under(ground, lo, hi) - low for low, lo, hi in rigid_assembly.footprint(flat))
     rover = rigid_assembly.placed(artifact, [x, lift, z], yaw_rad, pitch)

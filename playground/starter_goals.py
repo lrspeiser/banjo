@@ -20,20 +20,18 @@ CHAIN = "first-camp-v1"
 OPENING_CHAIN = "first-tool-v1"
 STEPS = (
     ("bank-solar", "Collect your first energy", "Bank 500 J from the shared solar array.", 500, "J"),
-    ("stock-oak", "Gather building supplies", "Buy six oak lots: 3 kg for your own stock.", 3, "kg"),
-    ("build-camp", "Build your first camp item", "Make a small oak camp stool in the world.", 1, "build"),
+    ("stock-iron", "Gather building supplies", "Buy four iron lots: 4 kg for your own stock.", 4, "kg"),
+    ("build-camp", "Build your first camp item", "Make a small iron camp stool in the world.", 1, "build"),
     ("carry-camp", "Pack it for your next adventure", "Put your own camp stool in your bag.", 1, "item"),
 )
 
 
 @lru_cache(maxsize=1)
 def _recipe() -> tuple[dict[str, Any], str, float]:
-    design = workshop.assemble("stool", design_id="starter-camp-stool", parameters={
-        "width_m": .24, "depth_m": .24, "height_m": .24,
-        "top_profile": "square", "leg_section_m": .04, "top_thickness_m": .04,
-        "aprons": 0, "stretchers": 0, "splay_deg": 0, "material": "oak"})
-    design.parameters['primary_use']={'label':'Place stool','steps':[{'do':'place'}]}
-    overrides = {p.name: {"mechanics": {"model": "rigid"}} for p in design.parts}
+    import playable_recipes
+    from mcp import workshop_components
+    source=playable_recipes.recipe('stool',design_id='starter-camp-stool')
+    design,overrides=workshop_components.design_from_spec(source)
     artifact = workshop_rigid.compile_rigid(design, overrides)
     return ({"kind": design.kind, "design_id": design.design_id,
              "parameters": dict(design.parameters), "component_overrides": overrides},
@@ -95,7 +93,7 @@ def view(app: Any, owner: str, body: Any) -> dict[str, Any]:
         _schema(db)
         deposits = db.execute("SELECT COALESCE(SUM(joules),0) FROM market_deposits WHERE owner_id=?",
                               (owner,)).fetchone()[0]
-        oak_kg = .5 * db.execute("SELECT COUNT(*) FROM market_orders WHERE owner_id=? AND item_id='oak-stock'",
+        iron_kg = db.execute("SELECT COUNT(*) FROM market_orders WHERE owner_id=? AND item_id='iron-stock'",
                                 (owner,)).fetchone()[0]
         balance = market._balance(db, owner)
         completed = {r["goal_id"]: json.loads(r["evidence_json"]) for r in db.execute(
@@ -125,12 +123,12 @@ def view(app: Any, owner: str, body: Any) -> dict[str, Any]:
     standing = next((r for r in reversed(receipts) if r.get("root_body") in present), None)
     evidence = {
         "bank-solar": {"deposited_j": int(deposits)},
-        "stock-oak": {"purchased_kg": oak_kg},
+        "stock-iron": {"purchased_kg": iron_kg},
         "build-camp": {"request_id": receipts[-1]["request_id"], "body": receipts[-1]["root_body"],
                        "physics_hash": _recipe()[1]} if receipts else {},
         "carry-camp": {"body": packed["root_body"], "inventory_revision": record.get("revision")} if packed else {},
     }
-    values = [deposits, oak_kg, int(bool(receipts)), int(bool(packed))]
+    values = [deposits, iron_kg, int(bool(receipts)), int(bool(packed))]
     # Remember each demonstrated action even if performed out of order, then
     # the player can spend energy, use supplies, and unpack without losing it.
     with workshop_library._connect(app) as db:
@@ -145,7 +143,7 @@ def view(app: Any, owner: str, body: Any) -> dict[str, Any]:
             for i, (ident, title, instruction, target, unit) in enumerate(STEPS)]
     next_goal = next((r["id"] for r in rows if not r["complete"]), None)
     requirements=[{'kind':'energy-deposit','minimum_j':STEPS[0][3]},
-        {'kind':'stock-purchase','substance':'oak','remaining_kg':max(0,STEPS[1][3]-rows[1]['value'])},
+        {'kind':'stock-purchase','substance':'iron','remaining_kg':max(0,STEPS[1][3]-rows[1]['value'])},
         {'kind':'admitted-recipe','candidate':recipe()},
         {'kind':'bag-product','body':standing.get('root_body') if standing else None}]
     for row,requirement in zip(rows,requirements):row['requirement']=requirement
@@ -159,6 +157,6 @@ def view(app: Any, owner: str, body: Any) -> dict[str, Any]:
             "next_chain": next(iter(goal_chains.definitions())) if next_goal is None else None,
             "unlocked": True,
             "follow_up": "Next: study and use a tool, make a work surface, and learn from a working machine.",
-            "limits": ("Building spends wood and native battery energy at the workbench. The stool can be carried; sitting and strength are not tested yet."
+            "limits": ("Building spends iron and native battery energy at the workbench. The stool can be carried; sitting and strength are not tested yet."
                 if getattr(app.room,'fabrication_record',None) is not None else
-                "Building spends wood. The stool can be carried; sitting and strength are not tested yet. No fabrication energy is charged.")}
+                "Building spends iron. The stool can be carried; sitting and strength are not tested yet. No fabrication energy is charged.")}

@@ -48,6 +48,7 @@ TIMEOUT_S = 90
 # What one answer may spend, its thinking included.
 MAX_OUTPUT_TOKENS = 6000
 FUNDED_CHAT = ContextVar('banjo_funded_world_chat',default=False)
+GAME_CHAT = ContextVar('banjo_inorganic_world_chat',default=False)
 FUNDED_TOOLS = {'describe_world','use_action'}
 FUNDED_GUIDE = """You help a player in their current persistent Banjo world.
 Read describe_world for actual bodies, machine state and time. use_action runs
@@ -1128,12 +1129,15 @@ def unfinished(result: dict[str, Any], asked_again: bool = False) -> str:
 
 def payload(model: str, conversation: list[dict[str, Any]]) -> dict[str, Any]:
     """What is sent each round. The tools are the MCP's, via room_world."""
+    import game_materials
+    instructions = FUNDED_GUIDE if FUNDED_CHAT.get() else GUIDE
+    if GAME_CHAT.get(): instructions += "\n" + game_materials.instructions()
     return {"model": model, "store": False, "max_output_tokens": MAX_OUTPUT_TOKENS,
             "reasoning": {"effort": "low"},
             # Handed back each round with the calls it led to, so that a model
             # that planned a gate in round one still has the plan in round five.
             "include": ["reasoning.encrypted_content"],
-            "instructions": FUNDED_GUIDE if FUNDED_CHAT.get() else GUIDE,
+            "instructions": instructions,
             "tools": [t for t in room_world.chat_tools() if not FUNDED_CHAT.get() or t['name'] in FUNDED_TOOLS],
             "input": conversation}
 
@@ -1584,6 +1588,17 @@ def ask_funded(api_key,model,live_state,message,story,history,person,live,trace)
     finally:FUNDED_CHAT.reset(token)
 
 def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
+        message: str, story: list[str], trace=None, water_state=None, person=None,
+        history=None, journal=None, live=None, funded: bool = False) -> dict[str, Any]:
+    token = GAME_CHAT.set(getattr(room, "scene", None) == "new-game")
+    try:
+        return _ask(api_key, model, room, live_state, message, story, trace,
+                    water_state, person, history, journal, live, funded)
+    finally:
+        GAME_CHAT.reset(token)
+
+
+def _ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
         message: str, story: list[str],
         trace: list[dict[str, Any]] | None = None,
         water_state: dict[str, Any] | None = None,
@@ -1894,7 +1909,11 @@ def ask(api_key: str, model: str, room: Any, live_state: dict[str, Any],
             # What a motor was told is written into the room either way, so it
             # goes on doing it if the room is opened again; only a change to
             # what the room IS opens it again.
-            room.spec = room_world.export_spec(entry)
+            spec = room_world.export_spec(entry)
+            if GAME_CHAT.get():
+                import game_materials
+                game_materials.require_spec(spec)
+            room.spec = spec
         # And where the person was, as the model was told it -- with the
         # places it was given for new things -- for the turn's log.
         # And what was measured, for the page to show under the answer, and

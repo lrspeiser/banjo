@@ -6,7 +6,7 @@ of raw materials in the right locations such that a person could build
 anything." Two halves, and the second is the point:
 
   * PLACE. From a seed, put deposits and heaps on the ground -- ore in the high
-    ground, sand and clay by the water, timber where it fell -- each one dry,
+    ground, sand and clay by the water, finite recovered metal stock -- each one dry,
     flat enough to work, clear of the others, and somewhere a machine can
     actually drive to.
   * PROVE. Then walk it. From what a new game starts with, can you reach every
@@ -19,9 +19,9 @@ exactly how. The Workshop's rover -- the only thing that digs -- costs 2.3 kg
 of copper wire and 1.0 kg of copper, and copper wire is drawn from copper,
 which is smelted from copper ore, which has to be DUG. You need the digger to
 get the material to build the digger. A new player's goods rack holds nothing
-at all, so the loop never starts. Their material rack is short too: 12.4 kg of
-oak against the rover's 37.8, 6.2 kg of iron against 11.8, 0.6 kg of glass
-against 4.0.
+at all, so the loop never starts. Their material rack is also short of the
+actual iron/glass starter's matter. Playable worlds exclude organic resources;
+the historical Workshop presets remain available for laboratory comparisons.
 
 `progression/start.json` already forbids exactly this for the knowledge graph
 -- "a player must not need a pickaxe to obtain the only material capable of
@@ -32,9 +32,10 @@ HOW THE CIRCLE IS BROKEN. Not with new physics: by what the start HOLDS. A new
 game begins with one digger and one processor already standing, the way
 Factorio hands you a burner drill and a furnace. Everything after that is
 earned. The proof checks both directions -- that the start is ENOUGH (nothing
-is stranded) and that it is not MORE than enough (take any one thing out of it
-and something strands). A starting gift that quietly includes the whole game is
-not a bootstrap.
+is stranded). Removing dig or process strands the graph. Hauling is graph-spare
+now that recovered aluminum also has a bauxite route; the graph does not model
+delivery to a remote processor. Physical hauling is checked in the native
+starter experiment, rather than certified by the reachability graph.
 
 WHAT IS HONESTLY NOT HERE.
 
@@ -42,12 +43,12 @@ WHAT IS HONESTLY NOT HERE.
     whole program (machine_tools, the scoop), so a person on foot cannot pick
     up so much as a handful of sand. Every route in the proof runs through a
     machine, because every route in the game does.
-  * Nothing regrows. Timber is a heap that was there when you arrived, ore is
+  * Nothing regenerates. Recovered stock was there when you arrived, ore is
     a reserve that runs out. A world can be exhausted and this proof will still
     call it playable, because it proves you can REACH a material, not that you
     can have it forever.
-  * Rubber and ice have no source anywhere in the game's data, so no map can
-    supply them. That is not the map's fault and it does not make the map
+  * Ice has no source anywhere in the game's data, so no map can
+    supply it. Organic materials are outside playable policy. That does not make the map
     regenerate: the proof reports them as missing from the world rather than
     stranded in it, which is the difference between a bad roll and a to-do.
 """
@@ -191,9 +192,12 @@ GROUND_HOLDS: tuple[Seam, ...] = (
 HEAP_SPLIT = 4
 
 LIES_ABOUT: tuple[Heap, ...] = (
-    Heap("oak", "open", (120.0, 260.0),
-         "fallen timber. NOTHING REGROWS: this is the only oak the world will "
-         "ever have, and when it is gone it is gone"),
+    Heap("aluminum", "open", (120.0, 260.0),
+         "finite recovered aluminum stock, an explicit bootstrap gift; "
+         "replacement metal must be processed from the bauxite deposits"),
+    Heap("iron", "open", (12.0, 24.0),
+         "finite recovered iron stock for the first personal cutter; "
+         "replacement metal must be smelted from the iron ore deposits"),
 )
 
 #: One works per recipe, in the order they are laid out. The copper smelter
@@ -249,11 +253,12 @@ for _works in WORKS:
 
 def wants() -> dict[str, list[str]]:
     from workshop_library import DEFAULT_RACK, GOODS_PER
-    return {"materials": sorted(DEFAULT_RACK),
+    import game_materials
+    return {"materials": sorted(m for m in DEFAULT_RACK if game_materials.allowed(m)),
             "goods": sorted({substance for substance, *_ in GOODS_PER.values()})}
 
 
-#: Materials nothing in the game's data can make, at any price, from any map.
+#: Historical missing capabilities; playable wants() excludes organic entries.
 #: Kept as a named list rather than discovered, so that the day one of them
 #: gets a source the list is what fails.
 NO_SOURCE_ANYWHERE = {
@@ -287,8 +292,9 @@ def costs(kind: str) -> dict[str, dict[str, float]]:
     """What one of these takes to build: its matter, by material, and its
     goods, by substance.
 
-    Straight off the design where there is one, so these are the real numbers
-    the install gate charges and not a second copy of them that can drift.
+    Density times authored part volume where a design exists. This planning
+    envelope can double-count overlapping parts; it is not a native paid quote.
+    The builder's native-opening proof retains the actual overlap allocation.
     """
     import workshop_library as library
     from mcp import engine_materials, workshop as w
@@ -304,7 +310,13 @@ def costs(kind: str) -> dict[str, dict[str, float]]:
                  "copper wire": round(0.5 * 0.3 + 0.1, 4)}  # a 0.3 m2 panel, and its control
         return {"materials": {"concrete": round(concrete, 3)}, "goods": goods}
 
-    design = w.assemble(kind, design_id=f"start-{kind}")
+    if kind == "rover":
+        from tools import build_rover_room
+        from mcp import workshop_components
+        design, _ = workshop_components.design_from_spec(
+            build_rover_room.inorganic_recipe(design_id=f"start-{kind}"))
+    else:
+        design = w.assemble(kind, design_id=f"start-{kind}")
     materials: dict[str, float] = {}
     for part in design.parts:
         material = engine_materials.canonical(part.material)
@@ -798,7 +810,7 @@ def place(ground: dict[str, Any], seed: int, *,
     # step for ten minutes. A machine works between heaps, so the heaps are
     # laid out around where the machine will stand.
     #
-    # And it is FIRST for the same reason the timber is early: it has exactly
+    # And it is FIRST for the same reason recovered stock is early: it has exactly
     # one acceptable place. Laid down after the seams it fell back to the
     # player's own feet on every pile, because the veins and their clearances
     # had covered every workable patch within eight metres.
@@ -814,27 +826,28 @@ def place(ground: dict[str, Any], seed: int, *,
     yards = {WORKS[0].machine: (middle, "smelter intake", "smelter output")}
 
     # ORDER IS THE DIFFERENCE BETWEEN A PLAYABLE MAP AND A BAD ROLL. Laid down
-    # seam by seam, with the timber last, 25 of 60 seeds of the valley had no
-    # room left for the one oak pile in the world and stranded every wooden
-    # thing in the game; four more could not fit their clay. So everything
-    # takes its FIRST place before anything takes a second: the heaps first,
-    # because a heap is the only source of what is in it, then one vein of
-    # each seam, then the spares. A second copper vein is a convenience, a
-    # first clay seam is the whole of ceramics.
-    wanted = [(heap, 0) for heap in LIES_ABOUT]
-    wanted += [(seam, 0) for seam in GROUND_HOLDS]
+    # seam by seam, the historical timber map lost 25 of 60 unique supplies;
+    # four more could not fit their clay. Recovered stock uses the same rule:
+    # everything
+    # takes its FIRST place before anything takes a second. Required seams
+    # need a flat mining patch; recovered stock can sit on dry reachable
+    # ground without that mining-flatness requirement. Reserve one vein of
+    # each seam before found stock, then place the optional extra veins.
+    # A second copper vein is a convenience; the first clay seam is ceramics.
+    wanted = [(seam, 0) for seam in GROUND_HOLDS]
+    wanted += [(heap, 0) for heap in LIES_ABOUT]
     spares = [(seam, n) for seam in GROUND_HOLDS for n in range(1, roll.randint(*seam.veins))]
     wanted += spares
 
     # A click collects a whole pile (docs/automatic-excavation-piles-
-    # checkpoint.md), so one heap of all the timber went to whoever reached it
-    # first and left a second player none. The same finite timber now lies in
+    # checkpoint.md), so one heap of all the found stock goes to its first
+    # collector. The same finite stock is divided into
     # HEAP_SPLIT piles; the first takes its place as before and the rest are
     # laid last of all (below).
     later: list[tuple[Heap, dict, float]] = []
     for thing, n in wanted:
         if isinstance(thing, Heap):
-            got = pick(thing.ground, 1.0)
+            got = pick(None, 1.0, where=standing, least=0.3)
             if got is None:
                 continue
             x, z, radius = got
@@ -861,13 +874,13 @@ def place(ground: dict[str, Any], seed: int, *,
     for works in WORKS[1:]:
         a_works_yard(works, middle)
 
-    # The rest of the timber, last of all so it takes only room nothing
+    # The rest of the recovered stock, last of all so it takes only room nothing
     # else wanted: nearest the start, so a new player finds it, and without
     # a roll, so no other draw of a seeded map moves.
     for k, (heap, first, share) in enumerate(later, 2):
-        # A share of timber is a stack of logs, not a seam: it fits a
+        # A share of found stock is a pile, not a seam: it fits a
         # 0.3 m patch where a vein needs 0.6 m.
-        got = pick(heap.ground, 1.0, near=start_xz, least=0.3)
+        got = pick(None, 1.0, near=start_xz, least=0.3, where=standing)
         if got is None:                 # no room: it stays in the first pile
             first["holds"][heap.substance] = round(first["holds"][heap.substance] + share, 1)
             continue
@@ -914,11 +927,18 @@ def new_world(ground: dict[str, Any], seed: int = 1, *, tries: int = 12,
         goods = place(ground, seed + attempt, start_xz=start_xz)
         make = prove_you_can_make_it(goods, can=began["can"])
         get = prove_you_can_get_there(ground, goods, start_xz)
+        # Ore reachability cannot substitute for the finite personal-tool
+        # bootstrap. A compact map must retain each declared recovered total.
+        found = {heap.substance: round(sum(p.get("holds", {}).get(heap.substance, 0.)
+                    for p in goods["stockpiles"]), 1) for heap in LIES_ABOUT}
+        missing = {heap.substance: "no reachable recovered starter stock"
+                   for heap in LIES_ABOUT if found[heap.substance] < heap.kg[0]}
         last = {"schema": SEED_SCHEMA, "seed": seed + attempt, "tries": attempt + 1,
                 "start": began, "can make it": make, "can get there": get,
-                "ok": bool(make["ok"] and get["ok"])}
+                "found starter stock kg": found, "missing starter stock": missing,
+                "ok": bool(make["ok"] and get["ok"] and not missing)}
         if last["ok"]:
             return {"goods": goods, "proof": last}
     raise ValueError("no playable world in {} tries from seed {}: {}".format(
         tries, seed, last.get("can make it", {}).get("stranded") or
-        last.get("can get there", {}).get("cut off")))
+        last.get("can get there", {}).get("cut off") or last.get("missing starter stock")))

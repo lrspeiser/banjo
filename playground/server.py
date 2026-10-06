@@ -40,6 +40,7 @@ import physics_trial_planner
 import live_session
 import live_inprocess
 import world_chat
+import game_materials
 import world_clock
 import world_room
 import room_world
@@ -303,7 +304,7 @@ class Playground:
         self.player_journals = {}
         self.journal_lock = threading.RLock()
         self.journal_for = lambda owner: journal_of(self, owner)
-        self.registry = registry
+        self.registry = lambda: registry(self)
         self.reply_listeners = []
         self.on_live_reply = lambda session, reply: heard(self, session, reply)
         # What thinks for each machine's program on what it meets, and hears
@@ -338,11 +339,11 @@ class Playground:
             # until a native machine/observer attribution rule exists.
             journal = journal_of(app, shared=bool(getattr(app, "world_id", None)))
             if journal.add_evidence(evidence):
-                for learned in progression.earn(journal, registry(), at):
+                for learned in progression.earn(journal, registry(app), at):
                     log.info("banjo: learned %s by watching %s", learned, recipe)
         self.brains.on_made = made
         self.brains.on_machine_made = lambda recipe, out, used, **source: (
-            machine_witness.batch(self, recipe, out, used, registry=registry(), **source)
+            machine_witness.batch(self, recipe, out, used, registry=registry(self), **source)
             if getattr(self, "world_id", None) else None)
 
     def log_event(self, job_id, event, **fields):
@@ -1191,6 +1192,7 @@ class WorldHub:
             room = store.load("new-game")
             if room is None:
                 raise ValueError("The world's saved room is unreadable")
+            game_materials.require_spec(room.spec)
             app = Playground(self.base.engine_path, self.base.studio_path,
                              folder / "runs", planner=self.base.planner)
             app.store, app.world_id, app.world_name = store, world_id, meta["name"]
@@ -1270,6 +1272,7 @@ class WorldHub:
         else:
             raise ValueError("Could not generate reachable resources and clear starter sites: "+last_problem)
         validated = fracture_lab.validate(spec)
+        game_materials.require_spec(validated)
         # Admission must reach the native engine, not stop at Python schema.
         with tempfile.TemporaryDirectory() as temp:
             session = live_session.Session(self.base.engine_path, validated, Path(temp))
@@ -1285,6 +1288,7 @@ class WorldHub:
             proof = generated["proof"]
             meta = {"format": "banjo.world.v1", "id": world_id, "name": name,
                     "created_unix_s": time.time(), "terrain_seed": terrain_seed,
+                    "material_policy": game_materials.POLICY,
                     "goods_seed": proof["seed"], "reachability": proof,
                     "arrival_xz":list(new_game.ARRIVE_AT),"terrain_surface":surface,"terrain_cell_m":cell_m}
             declaration=fabrication_room.starter_settings()
@@ -1369,7 +1373,7 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/knowledge":
                 if getattr(app, "world_id", None):
                     owner = player_world.require(app, self.headers.get("X-Banjo-Player"))
-                    return self.send(progression.notebook(journal_of(app, owner), registry()))
+                    return self.send(progression.notebook(journal_of(app, owner), registry(app)))
                 return self.send(knowledge_view(app))
             if path=="/api/goal": return self.send({"markdown":(ROOT/"docs/project-goal-2026-09-06.md").read_text(encoding="utf-8") + "\n\n" + (ROOT/"docs/rules-engine-execution-plan.md").read_text(encoding="utf-8")})
             if path=="/api/goals": return self.send(strict_json((ROOT/"docs/execution-goals.json").read_text(encoding="utf-8")))
@@ -1501,7 +1505,7 @@ class Handler(BaseHTTPRequestHandler):
                 guest = player_world.require(self.app, self.headers.get("X-Banjo-Player"))
                 owner_scope = workshop_library.REQUEST_OWNER.set(guest)
             began=time.monotonic()
-            changes=_may_change_guidance(path,body)
+            changes=path != "/api/worlds" and _may_change_guidance(path,body)
             if changes:_guidance_moved(self.app)
             try:
                 return self._dispatch_POST(path,body)
@@ -1538,7 +1542,7 @@ class Handler(BaseHTTPRequestHandler):
             owner = player_world.require(app, self.headers.get("X-Banjo-Player"))
             with player_world.lock_of(app):
                 if getattr(app, "ai_players", None) is None:
-                    app.ai_players = ai_player.Manager(app, self.server.server_port, keep_world, journal_of, registry)
+                    app.ai_players = ai_player.Manager(app, self.server.server_port, keep_world, journal_of, lambda app=app: registry(app))
             # Control may start a worker that needs exclusive world access.
             # Never hold a shared world lease across start/pause.
             if isinstance(body, dict) and body.get("action") == "watch":
@@ -1555,7 +1559,7 @@ class Handler(BaseHTTPRequestHandler):
             import player_guidance
             with world_access.gate(app).enter(), world_access.state_lock(app):
                 app.knowledge=lambda app=app: knowledge_view(app)
-                app.registry=registry
+                app.registry=lambda app=app: registry(app)
                 app.journal_now=lambda app=app: journal_of(app)
                 context=player_guidance.resolve(app,player)
             with player_world.lock_of(app):
@@ -1570,7 +1574,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(voice_api.client_secret(self.app,player))
         if path == '/api/world/voice/ask':
             if not getattr(self.app,'world_id',None):raise ValueError('Join a named world for voice')
-            return self.send(voice_api.ask(self.app,player,body,journal_of(self.app,player),registry()))
+            return self.send(voice_api.ask(self.app,player,body,journal_of(self.app,player),registry(self.app)))
         if path == '/api/world/voice/memory':
             if not getattr(self.app,'world_id',None):raise ValueError('Join a named world for voice')
             return self.send(voice_api.memory_request(self.app,player,body))
@@ -1578,7 +1582,7 @@ class Handler(BaseHTTPRequestHandler):
             if not getattr(self.app, 'world_id', None): raise ValueError('Join a named world for game help')
             game_guidance.validate(body)
             if not body.get('history'):body={**body,'history':voice_api.history(self.app,player)}
-            context = game_guidance.snapshot(self.app, player, journal_of(self.app, player), registry(), body.get('focus'))
+            context = game_guidance.snapshot(self.app, player, journal_of(self.app, player), registry(self.app), body.get('focus'))
             answer=game_guidance.answer(self.app, body, context)
             voice_api._remember_exchange(self.app,player,body['message'],answer['reply'][:voice_api.MAX_TEXT],
                 focus=body.get('focus'),screen=body.get('screen','world'))
@@ -1599,7 +1603,7 @@ class Handler(BaseHTTPRequestHandler):
                 speaker={k:deepcopy(profile.get(k)) for k in ('id','name')}
                 speaker.update({k:deepcopy(profile['ai'].get(k)) for k in ('status','message','history','memory')})
             scope=workshop_library.REQUEST_OWNER.set(speaker['id'])
-            try:context=game_guidance.snapshot(self.app,speaker['id'],journal_of(self.app,speaker['id']),registry())
+            try:context=game_guidance.snapshot(self.app,speaker['id'],journal_of(self.app,speaker['id']),registry(self.app))
             finally:workshop_library.REQUEST_OWNER.reset(scope)
             context['speaker']=speaker
             return self.send({'name':speaker['name'],'game_chat':game_guidance.answer(self.app,question,context)})
@@ -1662,7 +1666,7 @@ class Handler(BaseHTTPRequestHandler):
                 app=self.app
                 if getattr(app,'world_id',None):
                     app.knowledge=lambda app=app: knowledge_view(app)
-                    app.registry=registry
+                    app.registry=lambda app=app: registry(app)
                     app.journal_now=lambda app=app: journal_of(app)
                 return self.send(workshop_api.candidates(app,body))
             if path=="/api/workshop/more": return self.send(workshop_api.more_like_this(self.app,body))
@@ -1681,7 +1685,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError('Use a guidance view, project selection or return to goals')
                 app=self.app
                 app.knowledge=lambda app=app: knowledge_view(app)
-                app.registry=registry
+                app.registry=lambda app=app: registry(app)
                 app.journal_now=lambda app=app: journal_of(app)
                 if action=='select-project':player_guidance.set_project(app,player,body['project'])
                 elif action=='clear-project':
@@ -1703,7 +1707,7 @@ class Handler(BaseHTTPRequestHandler):
             if path=="/api/workshop/market":
                 app = self.app
                 app.knowledge = lambda app=app: knowledge_view(app)
-                app.registry = registry
+                app.registry = lambda app=app: registry(app)
                 app.journal_now = lambda app=app: journal_of(app)
                 return self.send(market.request(app, workshop_library.REQUEST_OWNER.get() or player
                                                 or workshop_library.owner_id(app), body, keep_world))
@@ -1729,7 +1733,7 @@ class Handler(BaseHTTPRequestHandler):
                 import workshop_tabs
                 app=self.app
                 app.knowledge=lambda app=app: knowledge_view(app)
-                app.registry=registry
+                app.registry=lambda app=app: registry(app)
                 # The journal too: the tech tree says which of a technique's
                 # routes have been done, and only the journal knows that.
                 # NOT `app.journal` -- that name already holds the Journal
@@ -1877,6 +1881,8 @@ class Handler(BaseHTTPRequestHandler):
                             player_world.personalize_hand(rejoined,player)
                         return self.send(rejoined)
                 room,kept=room_store.room_for(app,scene,rooms.get(scene),bool(body.get("fresh")))
+                if getattr(app, "world_id", None) or room.scene == "new-game":
+                    game_materials.require_spec(room.spec)
                 rooms[scene]=app.room=room
                 if player: room.player_lock = player_world.lock_of(app)
                 funded_room = room_store.funded(room)
@@ -2122,7 +2128,7 @@ class Handler(BaseHTTPRequestHandler):
                 _this_pages_room(self.app,body)
                 if not player:
                     raise ValueError("Join a named world to keep a personal learning journal")
-                return self.send(machine_witness.request(self.app,player,body,registry()))
+                return self.send(machine_witness.request(self.app,player,body,registry(self.app)))
             if path=="/api/world/rover/talk":
                 # Talking to a machine from its panel (rover_talk): opened, it
                 # turns to the person; what they say is sorted and done; closed,
@@ -3066,8 +3072,8 @@ def keep_world(app,why=""):
         room.world_save_pending=False
         room.world_save_soon=False
         room.regions_unsaved=False
-        machine_witness.saved(app,journal_of,registry())
-        if getattr(app,'world_id',None): player_learning.saved(app,journal_of,registry())
+        machine_witness.saved(app,journal_of,registry(app))
+        if getattr(app,'world_id',None): player_learning.saved(app,journal_of,registry(app))
     market._settle(app)
     return True
 
@@ -3419,7 +3425,7 @@ def _core_hand_step(app, name, step, person):
     target = _live_body(app, name)
     if step["do"] == "inspect":
         state = {k: target[k] for k in ("position_m", "mass_kg", "dimensions_m", "anchored", "temperature_k") if k in target}
-        if player_learning.study(app,workshop_library.REQUEST_OWNER.get(),name,registry()):
+        if player_learning.study(app,workshop_library.REQUEST_OWNER.get(),name,registry(app)):
             saved=keep_world(app,'the held tool was studied')
             pending=any(r['owner']==workshop_library.REQUEST_OWNER.get() for r in player_learning.pending_of(app))
             state['study']='journal update pending' if not saved or pending else 'saved'
@@ -3813,9 +3819,12 @@ def _run_action(app,body,own_hold=False):
 _REGISTRY=None
 
 
-def registry():
+def registry(app=None):
     """The curated graph, loaded and checked once (mcp/progression.py)."""
     global _REGISTRY
+    if game_materials.active(app):
+        import playable_recipes
+        return playable_recipes.registry()
     if _REGISTRY is None: _REGISTRY=progression.Registry()
     return _REGISTRY
 
@@ -3832,10 +3841,10 @@ def journal_of(app, owner=None, *, shared=False):
                 if journals is None: journals = app.player_journals = {}
                 if owner not in journals:
                     journals[owner] = progression.Journal(Path(app.store.folder) / "players" / owner / "journal.json", owner=owner)
-                    progression.teach_the_start(journals[owner], registry(), time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+                    progression.teach_the_start(journals[owner], registry(app), time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
                     # Reconcile earlier saved successful digs with the current
                     # graph. No native result or inspection is fabricated.
-                    progression.earn(journals[owner], registry(), time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+                    progression.earn(journals[owner], registry(app), time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
                 return journals[owner]
     journal=getattr(app,"journal",None)
     if journal is None:
@@ -3844,7 +3853,7 @@ def journal_of(app, owner=None, *, shared=False):
         # What the starting area teaches, once, to a notebook that holds
         # nothing. start.json has had the field since the registries were
         # written and nothing read it.
-        progression.teach_the_start(journal,registry(),
+        progression.teach_the_start(journal,registry(app),
                                     time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()))
     return journal
 
@@ -3895,15 +3904,15 @@ def hear(app,session,reply):
         if why:
             journal.add_note(progression.result_key(session.id,record),why)
             continue
-        evidence=progression.evidence_from(record,session_id=session.id,spec=spec,registry=registry(),at=at)
+        evidence=progression.evidence_from(record,session_id=session.id,spec=spec,registry=registry(app),at=at)
         if evidence is not None:
-            if getattr(app,'world_id',None): player_learning.ground(app,owner,session,record,registry())
+            if getattr(app,'world_id',None): player_learning.ground(app,owner,session,record,registry(app))
             else: journal.add_evidence(evidence)
     # And what that has now earned them. Learning is the only thing here that
     # was missing: evidence has been piling up in the journal since increment 2
     # and no code path could turn any of it into a capability.
     for journal in journals.values():
-        for learned in progression.earn(journal,registry(),at):
+        for learned in progression.earn(journal,registry(app),at):
             logging.getLogger("banjo").info("banjo: learned %s",learned)
 
 
@@ -3933,7 +3942,7 @@ def note_strike(app,answer):
 
 def knowledge_view(app):
     """The person's notebook as read_knowledge says it (GET /api/knowledge)."""
-    book=progression.notebook(journal_of(app),registry())
+    book=progression.notebook(journal_of(app),registry(app))
     book['tool_skills']=[tool_learning_view(app,p.get('tool'))
                         for p in app.room.spec.get('interactions') or []
                         if p.get('template')=='swing-and-lever']
@@ -3946,7 +3955,7 @@ def tool_learning_view(app, tool):
     profile=next((p for p in app.room.spec.get('interactions') or []
                   if p.get('template')=='swing-and-lever' and p.get('tool')==tool),None)
     if not profile: return None
-    graph=registry()
+    graph=registry(app)
     construction=progression.construction_of(app.room.spec,profile)
     design=progression.design_of(graph,construction) or progression.own_design_key(construction)
     journal=journal_of(app)

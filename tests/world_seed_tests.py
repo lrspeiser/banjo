@@ -71,7 +71,7 @@ class WhatANewGameNeeds(unittest.TestCase):
         # recipe to the ore lying in the ground that nobody can lift.
         self.assertEqual("smelt copper would make it and nothing can process",
                          proof["stranded"]["copper"])
-        self.assertIn("nothing can haul", proof["stranded"]["oak"])
+        self.assertIn("nothing can haul", proof["stranded"]["aluminum"])
 
     def test_the_start_we_give_reaches_everything_the_workshop_spends(self):
         proof = ws.prove_you_can_make_it(self.goods, can=ws.start()["can"])
@@ -82,16 +82,17 @@ class WhatANewGameNeeds(unittest.TestCase):
                 self.assertTrue(substance in proof["reached"] or
                                 substance in proof["not in the world"])
 
-    def test_the_start_is_only_just_enough(self):
-        """Take one piece out and something strands.
+    def test_the_graph_requires_dig_and_process_but_does_not_prove_physical_hauling(self):
+        """Recovered aluminum also has a bauxite route: hauling is graph-spare.
 
-        A bootstrap that still works with a piece missing was never a
-        bootstrap, it was the finished game handed over at the door. This is
-        the check that stops the start quietly growing.
+        This graph does not require delivering ore to a remote machine.
+        Actual drive/dig/haul remains a native experiment below, not a claim
+        manufactured by making one material available only as a heap.
         """
         only = ws.prove_it_is_only_just_enough(self.goods, can=ws.start()["can"])
-        self.assertEqual({}, only["spare"], only["spare"])
-        self.assertEqual({"dig", "haul", "process"}, set(only["needed"]))
+        self.assertEqual({"haul": "everything is still reachable without it"}, only["spare"])
+        self.assertEqual({"dig", "process"}, set(only["needed"]))
+        self.assertFalse(only["ok"])
 
     def test_the_two_the_start_stands_are_a_digger_and_a_processor(self):
         began = ws.start()
@@ -107,17 +108,17 @@ class WhatANewGameNeeds(unittest.TestCase):
         """
         rover = ws.costs("rover")
         self.assertGreater(rover["goods"]["copper wire"], 0.0)
-        self.assertIn("oak", rover["materials"])
-        # It is more oak than a new player's rack holds, which is the other
-        # half of why a new game cannot start: even the matter is short.
+        self.assertNotIn("oak", rover["materials"])
+        self.assertIn("iron", rover["materials"])
+        # The actual iron starter remains more metal than a private rack holds.
         from workshop_library import DEFAULT_RACK
-        self.assertGreater(rover["materials"]["oak"], DEFAULT_RACK["oak"])
+        self.assertGreater(rover["materials"]["iron"], DEFAULT_RACK["iron"])
 
 
 class WhatIsMissingFromTheGame(unittest.TestCase):
     """A bad roll and a missing feature are different things."""
 
-    def test_rubber_and_ice_are_missing_from_the_world_not_stranded_in_it(self):
+    def test_ice_is_missing_and_organic_materials_are_outside_the_playable_policy(self):
         """No map can supply them, so no amount of re-rolling would help.
 
         Keeping these apart is what lets the generator terminate: it re-seeds
@@ -126,8 +127,26 @@ class WhatIsMissingFromTheGame(unittest.TestCase):
         """
         goods = ws.place(a_valley(), 7, start_xz=START)
         proof = ws.prove_you_can_make_it(goods, can=ws.start()["can"])
-        self.assertEqual({"rubber", "ice"}, set(proof["not in the world"]))
+        self.assertEqual({"ice"}, set(proof["not in the world"]))
+        self.assertNotIn("oak", ws.wants()["materials"])
+        self.assertNotIn("rubber", ws.wants()["materials"])
         self.assertTrue(proof["ok"])
+
+    def test_generated_resources_are_inorganic_and_found_stock_is_finite(self):
+        import game_materials
+        goods = ws.place(a_valley(), 7, start_xz=START)
+        for deposit in goods["deposits"]:
+            self.assertTrue(game_materials.allowed(deposit["substance"]))
+        recovered = {"aluminum": [], "iron": []}
+        for pile in goods["stockpiles"]:
+            for material, kg in (pile.get("holds") or {}).items():
+                self.assertTrue(game_materials.allowed(material), material)
+                if material in recovered: recovered[material].append(kg)
+        for material, low, high in (("aluminum", 120., 260.), ("iron", 12., 24.)):
+            self.assertEqual(ws.HEAP_SPLIT, len(recovered[material]))
+            self.assertGreaterEqual(sum(recovered[material]), low)
+            self.assertLessEqual(sum(recovered[material]), high)
+        self.assertTrue(any(d["substance"] == "bauxite" for d in goods["deposits"]))
 
     def test_a_map_that_lost_a_substance_is_stranded_and_says_which_recipe_wanted_it(self):
         goods = ws.place(a_valley(), 7, start_xz=START)
@@ -371,17 +390,69 @@ class EverythingInItCouldBeBuilt(unittest.TestCase):
         keeps a marker stone under the rock and this does the same. Buried is
         what makes it the world's footing rather than a thing in the world.
         """
+        sys.path.insert(0, str(ROOT / "tools"))
+        import build_new_world, playable_recipes, workshop_install
+        from mcp import workshop_components
+        design, overrides = workshop_components.design_from_spec(playable_recipes.recipe("field-pick"))
+        plan = workshop_install.fixed_lattice_plan(design, overrides, root="field pick",
+            cell_m=self.room["cell_m"], position_m=[0., 0.], floor_of=lambda _: 0.)
+        source = {b["name"]: b for b in plan["bodies"]}
         loose = self.room.get("bodies") or []
         for body in loose:
             with self.subTest(body.get("name")):
-                self.assertEqual("marker stone", body.get("name"),
-                                 "the only plain box in a new game is its marker stone")
-                self.assertLess(body["center_mm"][1], 0.0,
-                                "the marker stone is buried; anything above ground is a thing "
-                                "in the world and has to be buildable")
+                if body.get("name") in source:
+                    wanted = source[body["name"]]
+                    for key in ("shape", "material", "size_mm", "join", "part"):
+                        self.assertEqual(wanted.get(key), body.get(key),
+                            "A starter lattice tool must match its actual editable source")
+                else:
+                    self.assertEqual("marker stone", body.get("name"),
+                                     "only the source-built tool and buried marker may use lattice boxes")
+                    self.assertLess(body["center_mm"][1], 0.0,
+                                    "the marker stone is buried; anything above ground must be source-built")
 
 class TheRealValley(unittest.TestCase):
     """The engine's own ground, not one written here."""
+
+    @unittest.skipUnless(os.environ.get("BANJO_LIVE_ENGINE"), "needs BANJO_LIVE_ENGINE")
+    def test_compact_native_valleys_keep_required_seams_and_finite_personal_stock(self):
+        import tempfile
+        sys.path.insert(0, str(ROOT / "tools"))
+        import build_explore_world as builder, build_new_world, fracture_lab, live_session
+        engine = Path(os.environ["BANJO_LIVE_ENGINE"])
+        for terrain in (4, 7):
+            ground = builder.read_ground(engine, terrain, surface="smooth")
+            for seed in (1, 851269742, 1927918335):
+                with self.subTest(terrain=terrain, seed=seed):
+                    made = ws.new_world(ground, seed, start_xz=(0., 0.))
+                    self.assertTrue(made["proof"]["ok"])
+                    self.assertEqual(made, ws.new_world(ground, seed, start_xz=(0., 0.)))
+                    self.assertEqual({s.substance for s in ws.GROUND_HOLDS},
+                        {d["substance"] for d in made["goods"]["deposits"]})
+                    for heap in ws.LIES_ABOUT:
+                        total = sum(p.get("holds", {}).get(heap.substance, 0.)
+                                    for p in made["goods"]["stockpiles"])
+                        self.assertGreaterEqual(total, heap.kg[0])
+                        self.assertLessEqual(total, heap.kg[1])
+                    self.assertEqual({}, made["proof"]["can get there"]["cut off"])
+                    spec = fracture_lab.validate(build_new_world.compose(ground, made, terrain))
+                    with tempfile.TemporaryDirectory() as tmp:
+                        session = live_session.Session(engine, spec, Path(tmp))
+                        try:
+                            self.assertTrue(session.state["bodies"])
+                        finally:
+                            session.close()
+
+    def test_reachable_ore_does_not_replace_missing_personal_bootstrap_stock(self):
+        from unittest import mock
+        ground = a_valley()
+        goods = ws.place(ground, 7, start_xz=START)
+        for pile in goods["stockpiles"]:
+            pile.get("holds", {}).pop("iron", None)
+        self.assertTrue(ws.prove_you_can_make_it(goods, can=ws.start()["can"])["ok"])
+        with mock.patch.object(ws, "place", return_value=goods):
+            with self.assertRaisesRegex(ValueError, "iron.*no reachable recovered starter stock"):
+                ws.new_world(ground, 7, tries=1, start_xz=START)
 
     @unittest.skipUnless(os.environ.get("BANJO_LIVE_ENGINE"), "needs BANJO_LIVE_ENGINE")
     def test_a_new_game_in_the_valley_is_playable(self):
@@ -397,6 +468,136 @@ class TheRealValley(unittest.TestCase):
         # a rover can actually drive.
         got = {d["substance"] for d in made["goods"]["deposits"]}
         self.assertEqual({s.substance for s in ws.GROUND_HOLDS}, got)
+
+
+class InorganicStarter(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get("BANJO_LIVE_ENGINE"), "needs BANJO_LIVE_ENGINE")
+    def test_generated_room_has_actual_ore_delivery_and_collectible_processed_output(self):
+        sys.path.insert(0, str(ROOT / "tools"))
+        import build_new_world as builder
+        import build_explore_world, fracture_lab, game_materials, playable_recipes
+        from mcp import progression
+        engine = Path(os.environ["BANJO_LIVE_ENGINE"])
+        ground = build_explore_world.read_ground(engine)
+        world = ws.new_world(ground, 1, start_xz=builder.ARRIVE_AT)
+        spec = builder.compose(ground, world)
+        game_materials.require_spec(spec)
+        for body in spec["bodies"] + spec["precise_rigid_bodies"]:
+            self.assertTrue(game_materials.allowed(body["material"]))
+            for part in body.get("parts") or []:
+                self.assertTrue(game_materials.allowed(part.get("material", body["material"])))
+        profile = next(p for p in spec["interactions"] if p["tool"] == "field pick")
+        self.assertEqual("field-pick@2", progression.design_of(playable_recipes.registry(),
+            progression.construction_of(spec, profile)))
+        self.assertTrue(any(j["kind"] == "fixing" and {j["a"], j["b"]} ==
+            {"field pick", "field pick-g0"} for j in spec["joints"]))
+        rated = [store for store in spec["machines"]["stores"] if store.get("max_power_w", 0.) > 0.]
+        self.assertEqual(1, len(rated), "Generated parameters must bind the actual finite native store rating")
+        self.assertEqual(builder.STARTER_GRID_MAX_POWER_W, rated[0]["max_power_w"])
+        measured = {}
+        self.assertEqual([], builder.watch(engine, fracture_lab.validate(spec), evidence=measured))
+        self.assertGreaterEqual(measured["delivered"]["delivered_kg"], 40.)
+        self.assertEqual(0., measured["delivered"]["kg"])
+        self.assertGreaterEqual(measured["copper_kg"], 1.)
+        self.assertGreaterEqual(measured["copper_wire_kg"], 1.)
+        self.assertEqual([], measured["automatically_banked"])
+        self.assertLessEqual(measured["simulated_watch_s"], builder.WATCH_S)
+        self.assertEqual({"iron", "glass"}, set(measured["rover_matter"]["product_materials_kg"]))
+        self.assertLess(abs(measured["rover_matter"]["material_mass_residual_kg"]), 1e-8)
+        self.assertEqual({"iron", "glass"}, set(measured["solar_matter"]["product_materials_kg"]))
+        self.assertLess(abs(measured["solar_matter"]["material_mass_residual_kg"]), 1e-8)
+
+    @unittest.skipUnless(os.environ.get("BANJO_LIVE_ENGINE"), "needs BANJO_LIVE_ENGINE")
+    def test_compact_mixed_pick_native_fixed_grip_and_finite_work(self):
+        import tempfile
+        sys.path.insert(0, str(ROOT / "tools"))
+        import build_new_world, playable_recipes, workshop_install, fracture_lab, live_session
+        from mcp import workshop_components
+        design, overrides = workshop_components.design_from_spec(playable_recipes.recipe("field-pick"))
+        plan = workshop_install.fixed_lattice_plan(design, overrides, root="field pick", cell_m=.05,
+            position_m=[0., 0.], floor_of=lambda _: 1.)
+        self.assertEqual(11, len(plan["cells"]))
+        self.assertAlmostEqual(5.65125, plan["measured"]["measured"]["mass_kg"], places=9)
+        self.assertEqual(1, len(plan["matter"]["joints"]))
+        spec = fracture_lab.validate({"cell_m": .05, "bodies": plan["bodies"],
+            "joints": plan["matter"]["joints"], "tool_points": [plan["tool"]["point"]],
+            "terrain": {"surface": "columns", "generate": {"kind": "flat", "nx": 24, "nz": 24,
+                "cell_m": .25, "soil_m": 0., "sand_m": 0., "discharge_m3_s": 0.}}})
+        with tempfile.TemporaryDirectory() as tmp:
+            session = live_session.Session(Path(os.environ["BANJO_LIVE_ENGINE"]), spec, Path(tmp))
+            try:
+                self.assertFalse(live_session.Live._hang(session, spec["joints"]).get("joint_problems"))
+                self.assertFalse(live_session.Live._point(session, spec["tool_points"]).get("tool_point_problems"))
+                grip = [v/1000 for v in plan["tool"]["point"]["grip_mm"]]
+                session.send(op="wield", name="field pick", grip=grip)
+                refused = session.send(op="strike-cell", at_m=[0., -.01, 0.])
+                self.assertEqual(0., refused["ground_cut"]["consumed_work_j"])
+                self.assertEqual([], session.send(op="ground-debris")["ground_debris"]["bodies"])
+                cut = session.send(op="strike-cell", at_m=[0., -.01, 0.], work_j=500000.,
+                    work_source="fixture:inorganic-starter-cut")["ground_cut"]
+                self.assertTrue(cut["supported"], cut)
+                self.assertAlmostEqual(468750., cut["consumed_work_j"])
+                self.assertAlmostEqual(37.5, cut["mass_kg"])
+                saved = session.send(op="snapshot")["snapshot"]
+                self.assertEqual(1, len(saved["ground"]["debris"]["bodies"]))
+                again = session.send(op="strike-cell", at_m=[0., -.01, 0.], work_j=500000.,
+                    work_source="fixture:inorganic-starter-cut")["ground_cut"]
+                self.assertEqual(cut, again)
+            finally:
+                session.close()
+            reopened = live_session.Session(Path(os.environ["BANJO_LIVE_ENGINE"]), spec, Path(tmp), snapshot=saved)
+            try:
+                recovered = reopened.send(op="strike-cell", at_m=[0., -.01, 0.], work_j=500000.,
+                    work_source="fixture:inorganic-starter-cut")["ground_cut"]
+                self.assertEqual(cut, recovered)
+                self.assertEqual(saved["ground"]["debris"],
+                    reopened.send(op="snapshot")["snapshot"]["ground"]["debris"])
+            finally:
+                reopened.close()
+
+    def test_editable_rover_source_retains_real_catalog_materials_and_explicit_geometry(self):
+        sys.path.insert(0, str(ROOT / "tools"))
+        import build_rover_room as builder
+        import precise_rigid
+        from mcp import engine_materials, workshop_components, workshop_machines
+        source = builder.inorganic_recipe()
+        design, overrides = workshop_components.design_from_spec(source)
+        self.assertEqual({"iron", "glass"}, {part.material for part in design.parts})
+        self.assertEqual(7870., engine_materials.density("iron"))
+        self.assertEqual(700., engine_materials.density("oak"), "Historical wood physics stays available")
+        parts = {p.name: p for p in design.parts}
+        self.assertEqual((.7, .0035, 1.), parts["deck"].size_m)
+        self.assertEqual((.32, .0054, .32), parts["left wheel"].size_m)
+        artifact = builder.inorganic_artifact()
+        self.assertEqual(5, len(artifact["bodies"]))
+        self.assertEqual(4, len(artifact["joints"]))
+        self.assertTrue(all(b["material"] in precise_rigid.MATERIALS for b in artifact["bodies"]))
+        self.assertTrue(any(b["material"] == "oak" for b in builder.rover_artifact()["bodies"]))
+        motors = overrides[workshop_machines.MACHINES_KEY]["motors"]
+        self.assertTrue(all(m["stall_torque_n_m"] == 20. for m in motors))
+
+    @unittest.skipUnless(os.environ.get("BANJO_LIVE_ENGINE"), "needs BANJO_LIVE_ENGINE")
+    def test_native_iron_starter_mass_and_actual_dig_haul_opening(self):
+        import tempfile
+        sys.path.insert(0, str(ROOT / "tools"))
+        import build_rover_room as builder
+        import fracture_lab, live_session, rigid_assembly
+        engine = Path(os.environ["BANJO_LIVE_ENGINE"])
+        ground = builder.read_ground(engine)
+        spec = fracture_lab.validate(builder.compose(ground, "tests-dig", inorganic=True))
+        with tempfile.TemporaryDirectory() as tmp:
+            session = live_session.Session(engine, spec, Path(tmp))
+            try:
+                saved = session.send(op="snapshot")["snapshot"]
+                measured = rigid_assembly.material_measurement(builder.inorganic_artifact(), saved)
+                self.assertEqual({"iron", "glass"}, set(measured["product_materials_kg"]))
+                self.assertAlmostEqual(5., measured["product_materials_kg"]["glass"], places=9)
+                self.assertAlmostEqual(43.74162378779442, measured["product_materials_kg"]["iron"], places=7)
+                self.assertLess(abs(measured["material_mass_residual_kg"]), 1e-8)
+                self.assertLess(abs(measured["mechanical_mass_residual_kg"]), 1e-5)
+            finally:
+                session.close()
+        self.assertEqual([], builder.dig(engine, spec))
 
 
 if __name__ == "__main__":

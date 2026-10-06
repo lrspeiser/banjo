@@ -10,9 +10,8 @@
     "costs": {
       "rover": {
         "materials": {
-          "oak": 37.828,
-          "iron": 11.767,
-          "glass": 4.0
+          "iron": 43.847,
+          "glass": 5.0
         },
         "goods": {
           "copper wire": 2.3,
@@ -38,18 +37,16 @@
   "can make it": {
     "reached": {
       "alumina ceramic": "alumina ceramic <- fire ceramic <- dug from clay seam",
-      "aluminum": "aluminum <- smelt aluminium <- dug from bauxite seam",
+      "aluminum": "aluminum <- taken from aluminum pile",
       "concrete": "concrete <- mix concrete <- burn lime <- dug from limestone seam",
       "glass": "glass <- melt glass <- dug from sand seam",
-      "iron": "iron <- smelt iron <- dug from iron ore seam",
-      "oak": "oak <- taken from oak pile",
+      "iron": "iron <- taken from iron pile",
       "copper": "copper <- smelt copper <- dug from copper ore seam",
       "copper wire": "copper wire <- draw wire <- smelt copper <- dug from copper ore seam"
     },
     "stranded": {},
     "not in the world": {
-      "ice": "water freezes in the world (docs, melting) but nothing puts ice on a rack, so it cannot be built with",
-      "rubber": "no tree, no oil, and no recipe: rubber is on the rack at the start and can never be replaced"
+      "ice": "water freezes in the world (docs, melting) but nothing puts ice on a rack, so it cannot be built with"
     },
     "ok": true
   },
@@ -62,27 +59,97 @@
       "sand seam",
       "clay seam",
       "sand 2 seam",
-      "sand 3 seam",
       "smelter intake",
-      "workshop rack",
-      "oak pile",
+      "smelter output",
+      "aluminum pile",
+      "iron pile",
       "mill intake",
       "mill output",
       "clay kiln intake",
       "clay kiln output",
       "lime kiln intake",
       "lime kiln output",
-      "iron smelter intake",
-      "iron smelter output",
-      "glass furnace intake",
-      "glass furnace output",
-      "concrete mixer intake",
-      "concrete mixer output",
-      "aluminium cell intake",
-      "aluminium cell output"
+      "aluminum pile 2",
+      "aluminum pile 3",
+      "aluminum pile 4",
+      "iron pile 5",
+      "iron pile 6",
+      "iron pile 7"
     ],
     "cut off": {},
     "ok": true
   },
-  "ok": true
+  "found starter stock kg": {
+    "aluminum": 251.5,
+    "iron": 20.2
+  },
+  "missing starter stock": {},
+  "ok": true,
+  "native opening": {
+    "rover_matter": {
+      "product_materials_kg": {
+        "glass": 5.0,
+        "iron": 43.74162378779442
+      },
+      "mass_kg": 48.74162378779442,
+      "native_mass_kg": 48.7416221165532,
+      "material_mass_residual_kg": 2.9314328742202633e-12,
+      "mechanical_mass_residual_kg": -1.671244145295958e-06,
+      "matter_physics_hash": "03b7f5b9382590effdcc6c8c797d849935d9ad5acc4fc4c123b727b3442c9a8b",
+      "outputs": {
+        "rover": {
+          "glass": 5.0,
+          "iron": 25.150945999999998
+        },
+        "rover: caster wheel": {
+          "iron": 6.3294295510404295
+        },
+        "rover: left wheel": {
+          "iron": 4.500435447287927
+        },
+        "rover: right wheel": {
+          "iron": 4.500435447287927
+        },
+        "rover: caster": {
+          "iron": 3.260377342178139
+        }
+      }
+    },
+    "solar_matter": {
+      "product_materials_kg": {
+        "glass": 81.0,
+        "iron": 133.42640600000004
+      },
+      "mass_kg": 214.42640600000004,
+      "native_mass_kg": 214.42640355506208,
+      "material_mass_residual_kg": 0.0,
+      "mechanical_mass_residual_kg": -2.444937962309268e-06,
+      "matter_physics_hash": "ea689fd778ddb584d64fa33fcb57c03d856aa409f73c8bf088f906860e4706be",
+      "outputs": {
+        "solar farm": {
+          "glass": 81.0,
+          "iron": 133.42640600000004
+        }
+      }
+    },
+    "solver_dt_s": 0.004166666666666667,
+    "simulated_watch_s": 29.5,
+    "wall_watch_s": 2.0152917000232264,
+    "delivered": {
+      "kg": 0.0,
+      "sand_m3": 0.0,
+      "soil_m3": 0.0,
+      "goods_kg": {},
+      "capacity_kg": 40.0,
+      "full": false,
+      "empty": true,
+      "delivered_kg": 40.0,
+      "trips": 1
+    },
+    "copper_kg": 1.5,
+    "copper_wire_kg": 9.8,
+    "automatically_banked": [],
+    "faults": [],
+    "limits": "Existing bulk machine scoop and scaled processor work; no physical cargo packing, full conservation or combustion claim"
+  }
 }
