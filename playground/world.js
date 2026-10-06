@@ -27,6 +27,7 @@ import { gameNavigation, showSaveStatus, screenUrl, thumbnail, massLabel, useIte
 import { conditionPanel } from "/body_condition.js";
 import { renderChatActions, guideHistory, rememberGuide, actionUrl, finishChat, submitChatText } from '/chat_actions.js';
 import {createVoiceController} from '/voice.js';
+import {makePhysicalGround,looseGroundLabel} from '/physical_matter.js';
 import { GROUND_APPEARANCE, materialAppearance, terrainCellAt, terrainHitPoint, terrainTargetPath, exposedRunKind, toolTargetFeedback, toolTargetColor, collectedToolMaterials, toolOutcomeFeedback, makeTargetHover, cellWaterData, columnTopData, walkColumnFaces, columnChunkIds, columnChunkBox } from "/material_appearance.js";
 import { terrainMaterial } from "/terrain_material.js";
 import { makeRegions } from "/ground_regions.js";
@@ -2362,6 +2363,7 @@ function advanceGlides(now) {
 // A full reply (the scene opening, or one carrying geometry) is not partial,
 // and then anything it leaves out really has gone.
 function draw(state) {
+  physicalGround.follow(state.ground_debris);
   if (state.carried) carryGround(state.carried);
   const at = performance.now();
   if (lastStateAt) stateGapMs = Math.min(400, Math.max(16, at - lastStateAt));
@@ -4633,6 +4635,8 @@ function inventoryChange(op, item, options = {}) {
 
 async function changeInventory(op, item, options, again = false) {
   if (!world.session) return null;
+  const oldItem=[...Object.values(world.inventory?.hands || {}),...(world.inventory?.stowed || [])]
+    .find(thing=>thing && (thing.id===item || thing.name===item || thing.parts?.includes(item)));
   const revision = world.inventory && world.inventory.record ? world.inventory.record.revision : null;
   let answer;
   try {
@@ -4678,8 +4682,15 @@ async function changeInventory(op, item, options, again = false) {
   // are asked for: a pin left drawn where the cart stood is a pin to nothing.
   if (room.set_aside || room.brought_back) await refreshJoints();
   if (room.taken_up) await adoptGrip(room.by || room.taken_up, options.point);
-  remember(answer.did.replace(/\.$/, "").replace(/^./, (c) => c.toLowerCase()));
-  if (!options.quiet) lastAction(answer.did);
+  const namedItem=[...Object.values(world.inventory?.hands || {}),...(world.inventory?.stowed || [])]
+    .find(thing=>thing && (thing.id===item || thing.name===item || thing.parts?.includes(item))) || oldItem;
+  let did=answer.did;
+  // The inventory receipt identifies the native body. Show its authenticated
+  // product label in the notice, as the hand and bag already do.
+  if(namedItem?.label && namedItem.name && did.toLowerCase().startsWith(namedItem.name.toLowerCase()))
+    did=namedItem.label+did.slice(namedItem.name.length);
+  remember(did.replace(/\.$/, "").replace(/^./, (c) => c.toLowerCase()));
+  if (!options.quiet) lastAction(did);
   return answer;
 }
 
@@ -5064,8 +5075,8 @@ function showInventory() {
     meter.querySelector("progress").value = mass;
     const full = limit>0 && mass>=limit-.05;
     meter.dataset.full = String(full);
-    meter.querySelector("b").textContent = worldId ? "Dig → Pile → Inventory" : full ? "Full · digging stopped" : "Ground materials";
-    meter.querySelector("small").textContent = worldId ? "Click a nearby material pile to collect it" : full ? "Sand / soil → point at clear ground → H to heap" :
+    meter.querySelector("b").textContent = worldId ? "Loosen → Click → Inventory" : full ? "Full · digging stopped" : "Ground materials";
+    meter.querySelector("small").textContent = worldId ? "Click nearby loose material to collect it" : full ? "Sand / soil → point at clear ground → H to heap" :
       [...world.stock].filter(([,v])=>v.kg>0).map(([what,v])=>`${what} ${massLabel(v.kg)}`).join(" · ") || "Empty";
     meter.querySelector("[data-tool-guide]").hidden = !!world.held?.pick;
     meter.querySelector("[data-movement]").textContent = movementMode === "fly" ? "Flying · God mode · Space ↑ · Shift + Space ↓" :
@@ -7321,6 +7332,12 @@ canvas.addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
   if (e.altKey) return;          // inspect while carrying, without primary Use
   const from=camera.position.clone(),dir=aimVector();
+  const matterHit=!watchedId && physicalGround.pick(from,dir,4);
+  if(matterHit) {
+    resumeClick=true;primaryUsed=false;
+    void physicalGround.collect(matterHit).catch(error=>lastAction(error.message,'refused'));
+    return;
+  }
   // With a digging tool in hand a click digs; collecting a pile is for an
   // empty hand. Digging past a pile collected it instead (player regression).
   const pileHit=!watchedId && !world.held?.pick && resourceVisuals.pick(from,dir,4);
@@ -9653,17 +9670,20 @@ function showToolOutcome(answer,point) {
     {opacity:0,transform:`translate(-50%,-50%) scale(${reduced?1:2})`}],{duration:500}).finished.finally(()=>pulse.remove());
   if(!effect.collected)return;
   const tally=document.createElement('span');tally.className='tool-yield-label';
-  tally.textContent=`${worldId ? 'Dug ' : '+'}${massLabel(effect.collected.kg)} ${effect.collected.materials.map(titled).join(' + ')}${worldId ? ' → pile' : ''}`;
+  tally.textContent=looseGroundLabel(answer,effect.collected,massLabel,titled) ||
+    `${worldId ? 'Dug ' : '+'}${massLabel(effect.collected.kg)} ${effect.collected.materials.map(titled).join(' + ')}${worldId ? ' → pile' : ''}`;
   tally.style.left=`${Math.min(innerWidth-180,x+20)}px`;tally.style.top=`${Math.max(16,y-45)}px`;
   document.body.append(tally);tally.animate([{opacity:1},{opacity:1,offset:.7},{opacity:0}],{duration:1700}).finished.finally(()=>tally.remove());
 }
 function groundTargetPoint(point,eyes=camera.position.toArray()) {
   return terrainHitPoint(point,eyes,groundColumn(point[0],point[2])?.grid || ground.grid);
 }
+const physicalGround=makePhysicalGround({scene,camera,world,api,whereIAm,lastAction,showInventory});
 const tools = makeTools({ world, act, api, say, remember, showUse, camera, carryGround, scene, targetContext, groundTargetPoint, aimVector, showToolOutcome, followGoods,
+                          followMatter:packet=>physicalGround.follow(packet),
                           summarizeToolResult:answer=>{
                             const collected=collectedToolMaterials(answer);
-                            return collected ? `${answer.excavation_piles?.length ? 'Dug' : 'Collected'} ${massLabel(collected.kg)} · ${collected.materials.map(titled).join(" + ")}${answer.excavation_piles?.length ? ' → nearby pile' : ''}` : answer.said;
+                            return looseGroundLabel(answer,collected,massLabel,titled) || (collected ? `${answer.excavation_piles?.length ? 'Dug' : 'Collected'} ${massLabel(collected.kg)} · ${collected.materials.map(titled).join(" + ")}${answer.excavation_piles?.length ? ' → nearby pile' : ''}` : answer.said);
                           },
                           whereIAm, lastAction, takeIntoHand, showHolding,
                           showInventory, refreshInventory: refreshHeldInventory,
@@ -10838,6 +10858,7 @@ async function tick() {
     drawStrength(state.mechanics);
     drawHeat(state.heat);
     narrateCuts(state.cuts, say, remember);
+    physicalGround.follow(state.ground_debris);
     if (state.terrain) refreshTerrain(state.terrain);
     if (state.terrain_changed) patchTerrain(state.terrain_changed);
     followRegions(state);
@@ -11604,6 +11625,7 @@ function adoptRebuilt(answer) {
   // engine counts what came out of them all over again.
   carryGround(answer.state.terrain ? answer.state.terrain.carried : null);
   draw(answer.state);
+  physicalGround.follow(answer.state.ground_debris || {schema:'banjo.ground-debris.v1',bodies:[]});
   braceProfiles();
   // And its joints. The room that comes back can have hinges, ropes and
   // springs the chat just made -- and the list held here is the OLD room's,

@@ -204,6 +204,14 @@ class GoodsJourney(unittest.TestCase):
     def test_browser_rover_recovery_click_lift_readouts_reload_and_release(self):
         if not qa_browser.CHROME.is_file():self.skipTest('Chrome not installed')
         world,owner,app,program,request=self.recovery_fixture()
+        # Declare the UI recovery-needed predicate, as the routine regression
+        # does. Hand lifting/work remain measured by the real native assembly;
+        # this fixture does not claim to reproduce natural escape exhaustion.
+        brain=app.brains.of(program['name'])
+        brain.routine.recovery={'at_m':[program['at_m'][0],program['at_m'][2]],'since_s':0.,
+            'reason':'Controlled recovery-needed browser fixture'}
+        brain.routine.paused_by='recovery needed'
+        self.assertTrue(server.keep_world(app,'recovery UI fixture'))
         chrome=qa_browser.Chrome(1280,800);self.addCleanup(chrome.close)
         page=chrome.page;page.send('Page.enable');page.send('Runtime.enable')
         def wait(expression):
@@ -239,9 +247,9 @@ class GoodsJourney(unittest.TestCase):
         # Position the test observer beside the actual chassis; acquire through
         # the visible button and move it through ordinary hand targets/keys.
         page.evaluate('(()=>{const p=banjoRoom.world.bodies.get("rover").mesh.position;banjoRoom.standAt(p.x+.8,p.y+1.1,p.z+.5);banjoRoom.lookAt(p.x,p.y,p.z);banjoRoom.pick("rover");})()')
-        wait('!!document.querySelector("#picked [data-recovery-action=start]")')
+        wait('!!document.querySelector("#picked [data-rover-command=recover]")')
         details()
-        click('#picked [data-recovery-action=start]')
+        click('#picked [data-rover-command=recover]')
         wait('banjoRoom.world.held?.recovery')
         self.assertTrue(page.evaluate('banjoRoom.controls().cursorFree'),
                         'Clicking recovery safely leaves the player in Cursor mode')
@@ -249,7 +257,8 @@ class GoodsJourney(unittest.TestCase):
         initial=page.evaluate('banjoRoom.world.held.hand.grip_m')
         page.evaluate('(()=>{const p=banjoRoom.camera.position;banjoRoom.lookAt(p.x,p.y+1,p.z-.3);banjoRoom.resume();})()')
         wait(f'banjoRoom.world.held.hand.grip_m[1]>{initial[1]+.3}')
-        wait('document.querySelector("#picked [data-rover-recovery]").textContent.includes("Work") && banjoRoom.world.held.hand.work_j>0')
+        wait('banjoRoom.world.held.hand.work_j>0')
+        self.assertGreater(sum(v*v for v in page.evaluate('banjoRoom.world.held.hand.force_n')),0.)
         page.send('Input.dispatchKeyEvent',{'type':'keyDown','code':'KeyQ','key':'q'})
         page.send('Input.dispatchKeyEvent',{'type':'keyUp','code':'KeyQ','key':'q'})
         wait('document.querySelector("#details-last-text").textContent.includes("Release the rover before packing")')
@@ -265,13 +274,13 @@ class GoodsJourney(unittest.TestCase):
         self.assertFalse(page.evaluate('banjoRoom.world.held.guide || false'))
         self.assertAlmostEqual(held['work_j'],page.evaluate('banjoRoom.world.held.hand.work_j'),places=3)
         page.evaluate('(()=>{const p=banjoRoom.world.bodies.get("rover").mesh.position;banjoRoom.lookAt(p.x,p.y,p.z);banjoRoom.pick("rover");})()')
-        wait('!!document.querySelector("#picked [data-recovery-action=release]")')
+        wait('document.querySelector("#picked [data-rover-command=recover]")?.textContent==="Release rover"')
         details()
-        click('#picked .pk-reveal:not([data-recovery-action])')
+        self.assertFalse(page.evaluate('!!document.querySelector("#picked .pk-component-grid")'))
         import base64
         out=ROOT/'build/resource-flow';out.mkdir(parents=True,exist_ok=True)
         (out/'rover-recovery.png').write_bytes(base64.b64decode(page.send('Page.captureScreenshot',{'format':'png'})['data']))
-        click('#picked [data-recovery-action=release]')
+        click('#picked [data-rover-command=recover]')
         wait('!banjoRoom.world.held')
         self.assertFalse(page.evaluate('banjoRoom.world.machines.programs.find(p=>p.body==="rover").power'))
         self.assertEqual([],[e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
@@ -425,12 +434,12 @@ class GoodsJourney(unittest.TestCase):
             self.fail(expression+'; '+str(page.evaluate('document.querySelector("#picked")?.textContent')))
         wait('window.banjoRoom?.ready()')
         page.evaluate('banjoRoom.pick("rover")')
-        wait('document.querySelector("[data-rover-sensors]")')
+        wait('document.querySelector("#picked .rover-card")')
         probes=page.evaluate('banjoRoom.world.machines.programs.find(p=>p.body==="rover").sensors')
         self.assertEqual(10,len(probes));self.assertEqual(5,sum(p['kind']=='ground' for p in probes))
         self.assertEqual(2,sum(p['kind']=='ground' and p['stops']<0 for p in probes))
-        text=page.evaluate('document.querySelector("[data-rover-sensors]").textContent')
-        self.assertIn('Rear left · ground',text);self.assertIn('Front middle · ground',text)
+        self.assertFalse(page.evaluate('!!document.querySelector("[data-rover-sensors]")'))
+        self.assertTrue(all('reading_m' in p and 'sees' in p for p in probes))
         middle=next(p for p in probes if p['kind']=='ground' and p['side']==0 and p['stops']>0)
         x,y,z=middle['at_m']
         # The real native dig/report path, not injected sensor readings.
@@ -439,8 +448,14 @@ class GoodsJourney(unittest.TestCase):
         self.assertGreater((answer.get('dug') or {}).get('kg',0),0,'The native excavation must actually happen')
         page.evaluate('banjoRoom.resume()')
         wait('banjoRoom.world.machines.programs.find(p=>p.body==="rover").sensors.some(p=>p.kind==="ground"&&p.sees)')
-        wait('document.querySelector("[data-rover-sensors]").textContent.includes("⚠")')
+        self.assertGreater(max(abs(p['reading_m']) for p in page.evaluate('banjoRoom.world.machines.programs.find(p=>p.body==="rover").sensors') if p['kind']=='ground'),0.)
         page.evaluate('banjoRoom.hold()')
+        page.evaluate('document.querySelector("#panel-details").click()')
+        wait('!document.body.classList.contains("panel-away")')
+        page.evaluate('document.querySelector("#picked .rover-card button:not([data-rover-command])").click()')
+        wait('document.querySelector("#chat-recipient").value==="robot:rover"')
+        page.evaluate('document.querySelector("#ask-text").value="status";document.querySelector("#ask").requestSubmit()')
+        wait('document.querySelector("#chat").textContent.includes("My battery is at") && !document.querySelector("#ask-send").disabled')
         import base64
         out=ROOT/'build/resource-flow';out.mkdir(parents=True,exist_ok=True)
         (out/'rover-ground-sensors.png').write_bytes(base64.b64decode(page.send('Page.captureScreenshot',{'format':'png'})['data']))
@@ -468,19 +483,27 @@ class GoodsJourney(unittest.TestCase):
         self.assertEqual('field-pick',made['recipe']['kind'])
         self.assertGreaterEqual(len(made['bodies']),2)
         recipes=self.post('/api/workshop/recipes',{},world)
-        pick=next(r for r in recipes['templates'] if r['kind']=='field-pick')
+        pick=next(r for r in recipes['templates'] if r['name']=='Personal field pick')
         self.assertTrue(pick['readiness']['ready_as_drawn'],pick)
         chrome=qa_browser.Chrome(1280,800);self.addCleanup(chrome.close)
         page=chrome.page;page.send('Page.enable');page.send('Runtime.enable')
+        page.send('Page.addScriptToEvaluateOnNewDocument',{'source':
+            'if(location.origin==='+json.dumps(self.base)+')localStorage.setItem('+json.dumps('banjo.player.'+world)+','+json.dumps(owner['token'])+');'})
         def wait(expression):
             deadline=time.monotonic()+40
             while time.monotonic()<deadline:
                 if page.evaluate('Boolean('+expression+')'):return
                 time.sleep(.12)
             self.fail('Browser did not reach '+expression+'; '+str(page.evaluate('document.body.innerText.slice(-1200)')))
+        def click(selector):
+            target=json.dumps(selector)
+            under=f'(()=>{{const e=document.querySelector({target});if(!e||e.disabled)return false;e.scrollIntoView({{block:"center"}});const r=e.getBoundingClientRect(),h=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return r.width>0&&r.height>0&&!!h&&(h===e||e.contains(h))}})()'
+            wait(under)
+            point=page.evaluate(f'(()=>{{const r=document.querySelector({target}).getBoundingClientRect();return {{x:r.x+r.width/2,y:r.y+r.height/2}}}})()')
+            for kind in ('mousePressed','mouseReleased'):
+                page.send('Input.dispatchMouseEvent',{'type':kind,'button':'left','clickCount':1,**point})
         page.send('Page.navigate',{'url':self.base+f'/world?world={world}&workshop=1&tab=recipes'})
-        wait('document.querySelector("[data-open-recipe=\\"field-pick:field-pick\\"]")')
-        page.evaluate('document.querySelector("[data-open-recipe=\\"field-pick:field-pick\\"]").click()')
+        click('[data-open-recipe="field-pick:Personal field pick"]')
         wait('document.querySelectorAll("#ws-parts li").length===2 && !document.querySelector("#ws-component-chat-text").disabled')
         selected_url=page.evaluate('location.href')
         page.send('Page.navigate',{'url':'about:blank'})
@@ -488,18 +511,19 @@ class GoodsJourney(unittest.TestCase):
         page.send('Page.navigate',{'url':selected_url})
         wait('document.querySelectorAll("#ws-parts li").length===2 && !document.querySelector("#ws-component-chat-text").disabled')
         def chat(text):
-            page.evaluate('document.querySelector("#ws-component-chat-text").focus()')
+            if not page.evaluate('document.body.classList.contains("ws-chat-open")'):click('[data-customize-item]')
+            click('#ws-component-chat-text')
             page.send('Input.insertText',{'text':text})
+            self.assertEqual(text,page.evaluate('document.querySelector("#ws-component-chat-text").value'))
             page.evaluate('document.querySelector("#ws-component-chat").requestSubmit()')
             wait('!document.querySelector("#ws-component-chat-text").disabled && document.querySelector("#ws-component-chat-text").value===""')
         chat('make the head iron')
-        parts=page.evaluate('[...document.querySelectorAll("#ws-parts li")].map(e=>e.textContent)')
+        parts=page.evaluate('[...document.querySelectorAll("#ws-lab-components [data-component]")].map(e=>e.textContent)')
         self.assertTrue(any('haft' in p and 'oak' in p for p in parts),parts)
         self.assertTrue(any('arm' in p and 'iron' in p for p in parts),parts)
-        page.evaluate('document.querySelector("#ws-quick-save").click()')
-        wait('document.querySelector("#ws-save-status").textContent.includes("Saved")')
-        # Fused mixed material is deliberately refused by native admission;
-        # the supported monolithic oak source must really install and charge.
+        click('#ws-draft-save')
+        wait('document.querySelector("#ws-lab-draft").textContent.includes("Saved to Recipes")')
+        # Review the monolithic oak source and prove actual installation/debit.
         chat('make the whole object oak')
         before=workshop_library.rack(app)
         # New worlds start with generated installations (starter machines and
@@ -507,12 +531,17 @@ class GoodsJourney(unittest.TestCase):
         # leave those exactly as they were.
         installs=json.loads(json.dumps(app.room.workshop_installs))
         installed={r['root_body'] for r in installs}
-        page.evaluate('document.querySelector("#ws-make").click()')
+        page.evaluate('document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}))')
+        click('#ws-draft-build')
         def paid_click(selector):
             wait(f'document.querySelector({json.dumps(selector)}) && !document.querySelector({json.dumps(selector)}).disabled')
-            page.evaluate(f'document.querySelector({json.dumps(selector)}).click()')
+            if page.evaluate(f'document.querySelector({json.dumps(selector)}).closest("#ws-remake-supplies") && !document.querySelector("#ws-remake-supplies").open'):
+                click('#ws-remake-supplies summary')
+            click(selector)
         # Ordinary generated workbench, with explicit shared-stock selection
         # and an actual native battery debit; no seeded process supply.
+        wait('document.querySelector("#ws-remake-supplies summary")')
+        click('#ws-remake-supplies summary')
         paid_click('#ws-remake-stock-shared')
         paid_click('#ws-remake-connect')
         paid_click('#ws-remake-charge-wait')
@@ -571,9 +600,11 @@ class GoodsJourney(unittest.TestCase):
         self.assertEqual({b for b,p in native_parts},{c['body'] for c in components})
         self.assertGreater(len({c['body'] for c in components}),3,components)
         self.assertTrue(all(c['name'] and c['material'] for c in components))
-        self.assertEqual(len(components),page.evaluate('document.querySelectorAll("#picked .pk-component-grid figure").length'))
-        wait('[...document.querySelectorAll("#picked .pk-component-grid img")].every(i=>i.complete && i.naturalWidth>0)')
-        self.assertEqual(len(components),page.evaluate('document.querySelectorAll("#picked .pk-component-grid img").length'))
+        self.assertEqual(1,page.evaluate('document.querySelectorAll("#picked .rover-card").length'))
+        self.assertEqual(1,page.evaluate('document.querySelectorAll("#picked .rover-card > canvas, #picked .rover-card > img").length'))
+        self.assertIn('Energy',page.evaluate('document.querySelector("#picked .rover-card").textContent'))
+        self.assertTrue(page.evaluate('!!document.querySelector("#picked .rover-card [data-rover-command]")'))
+        self.assertFalse(page.evaluate('!!document.querySelector("#picked .pk-component-grid")'))
         self.assertIsNone(page.evaluate('banjoRoom.reveal()'))
         self.assertFalse(page.evaluate('!!banjoRoom.scene.getObjectByName("selection-structure-reveal")'))
         self.assertEqual(drawing,page.evaluate(geometry),'inspection moved or faded the world geometry')
@@ -581,12 +612,15 @@ class GoodsJourney(unittest.TestCase):
         import base64
         output=ROOT/'build/resource-flow';output.mkdir(parents=True,exist_ok=True)
         (output/'component-thumbnails.png').write_bytes(base64.b64decode(page.send('Page.captureScreenshot',{'format':'png'})['data']))
-        page.evaluate('document.querySelector("#picked .pk-reveal").click()')
+        self.assertFalse(page.evaluate('!!document.querySelector("#picked .pk-reveal")'))
         self.assertIsNone(page.evaluate('banjoRoom.reveal()'))
         inspect('field pick')
         wait('banjoRoom.components()?.length===2')
         parts=page.evaluate('banjoRoom.components()')
         self.assertEqual({'haft','arm'},{p['name'] for p in parts})
+        self.assertEqual(len(parts),page.evaluate('document.querySelectorAll("#picked .pk-component-grid figure").length'))
+        wait('[...document.querySelectorAll("#picked .pk-component-grid img")].every(i=>i.complete && i.naturalWidth>0)')
+        self.assertEqual(len(parts),page.evaluate('document.querySelectorAll("#picked .pk-component-grid img").length'))
         self.assertEqual(page.evaluate('banjoRoom.world.bodies.get("field pick").cells.length'),sum(p['cells'] for p in parts))
         self.assertIsNone(page.evaluate('banjoRoom.reveal()'))
         self.assertEqual(drawing,page.evaluate(geometry))
@@ -641,11 +675,11 @@ class GoodsJourney(unittest.TestCase):
         first=page.evaluate('new URL(location.href).searchParams.get("world")')
         self.assertTrue(self.app.hub.get(first).room.spec['sun']['day_s']>0)
         wait('document.querySelector("#world-load-meter")')
-        # In a world dug ground goes to nearby piles, so the meter shows that
-        # route and the unlimited raw store instead of a hand load (5af65746).
-        wait('document.querySelector("#world-load-meter b").textContent==="Dig → Pile → Inventory"')
+        # Paid native cuts create reachable physical material; collecting it
+        # is explicit. Raw storage retains its existing unlimited mass policy.
+        wait('document.querySelector("#world-load-meter b").textContent==="Loosen → Click → Inventory"')
         self.assertIn('Raw storage',page.evaluate('document.querySelector("#world-load-meter").textContent'))
-        self.assertIn('material pile',page.evaluate('document.querySelector("#world-load-meter").textContent'))
+        self.assertIn('loose material',page.evaluate('document.querySelector("#world-load-meter").textContent'))
         self.assertEqual(0,page.evaluate('banjoRoom.scene.getObjectByName("resource-packets").children.filter(c=>c.userData.resourceDeposit).length'))
         wait('document.querySelector("#material-preview details canvas")')
         self.assertIn('Nearby materials',page.evaluate('document.querySelector("#material-preview").textContent'))
@@ -901,8 +935,9 @@ class GoodsJourney(unittest.TestCase):
             while time.monotonic()<deadline:
                 if page.evaluate('Boolean('+expression+')'):return
                 time.sleep(.1)
-            self.fail(expression+'; '+str(page.evaluate('({picked:document.querySelector("#picked")?.textContent,programs:banjoRoom.world.machines?.programs,goods:banjoRoom.world.goods,position:banjoRoom.camera.position.toArray(),errors:document.querySelector("#panel-state")?.textContent})')))
+            self.fail(expression+'; '+str(page.evaluate('({picked:document.querySelector("#picked")?.textContent,programs:window.banjoRoom?.world.machines?.programs,goods:window.banjoRoom?.world.goods,position:window.banjoRoom?.camera.position.toArray(),errors:document.querySelector("#panel-state")?.textContent,notice:document.querySelector("#ws-notice")?.textContent,deliveries:document.querySelector("#ws-inv-deliveries")?.textContent})')))
         def click(selector):
+            wait('(()=>{const b=document.querySelector('+json.dumps(selector)+');if(!b||b.disabled)return false;b.scrollIntoView({block:"center"});const r=b.getBoundingClientRect(),e=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return r.width>0&&r.height>0&&!!e&&(e===b||b.contains(e))})()')
             spot=page.evaluate('(()=>{const b=document.querySelector('+json.dumps(selector)+');b.scrollIntoView({block:"center"});const r=b.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()')
             for kind in ('mousePressed','mouseReleased'):
                 page.send('Input.dispatchMouseEvent',{'type':kind,'button':'left','clickCount':1,**spot})

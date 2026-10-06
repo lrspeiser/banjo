@@ -1913,7 +1913,15 @@ int main(int argc, char **argv) {
                     if (command.contains("jump_m_s"))
                         world->setNativePlayerJump(command.value("actor", std::string{}), command.at("jump_m_s").get<double>());
                 } else if (op == "strike-cell") {
-                    (void)world->strikeCell(readVec(command, "at_m"));
+                    const auto cut=world->strikeCell(readVec(command, "at_m"),command.value("work_j",0.0),
+                        command.value("work_source",std::string{}));
+                    if(!cut.cut_receipt_json.empty())reply["ground_cut"]=nlohmann::json::parse(cut.cut_receipt_json);
+                } else if (op == "ground-debris" || op == "ground_debris") {
+                    reply["ground_debris"]=nlohmann::json::parse(world->groundDebrisJson());
+                } else if (op == "collect-ground-debris" || op == "collect_ground_debris") {
+                    reply["ground_matter_packet"]=nlohmann::json::parse(world->collectGroundDebris(
+                        command.at("id").get<banjo::MatterBodyId>(),readVec(command,"at_m"),
+                        command.value("maximum_distance_m",3.0)));
                 } else if (op == "ground-aim") {
                     world->setGroundAim(readVec(command, "at_m"));
                 } else if (op == "player-remove") {
@@ -3110,6 +3118,7 @@ int main(int argc, char **argv) {
                 // The ground whole only when the host asks for the scene whole;
                 // otherwise only what changed, and the water at its stride.
                 addEnvironment(*world, state, op == "poses");
+                if(world->environment()!=nullptr)state["ground_debris"]=nlohmann::json::parse(world->groundDebrisJson(false));
                 world->forgetDelays();
                 world->forgetCuts();
                 for (auto &[key, value] : reply.items()) state[key] = value;

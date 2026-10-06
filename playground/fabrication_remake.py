@@ -76,7 +76,8 @@ def minimum_quote(app,candidate,state,cell_m):
     """One read-only exact cost calculation for guidance and funded reviews."""
     import fabrication_room as api
     preliminary=api.compile_quote(candidate,10000.,cell_m,state,app=app)
-    return api.cost_quote(preliminary,state,minimum=True)
+    from mcp import matter_fabrication
+    return matter_fabrication.plan(state,_owner(app),api.cost_quote(preliminary,state,minimum=True))
 
 
 def plan(app,body,*,making=False):
@@ -110,12 +111,16 @@ def _describe(app,room,old,kind,binding,ident,quote,state,making):
     import fabrication_stock
     sources=fabrication_stock.sources(app)
     required=model.materials(quote,'stock')
-    missing={m:max(0.,kg-state['stock_kg'].get(m,0.)) for m,kg in required.items()}
-    available=sum(min(kg,state['stock_kg'].get(m,0.)) for m,kg in required.items())
+    raw=(quote.get('raw_matter') or {}).get('materials_kg',{})
+    missing={m:max(0.,kg-state['stock_kg'].get(m,0.)-raw.get(m,0.)) for m,kg in required.items()}
+    available=sum(min(kg,state['stock_kg'].get(m,0.)+raw.get(m,0.)) for m,kg in required.items())
     goods = quote.get('assembly_goods_kg', {})
     missing_goods = {n:max(0., kg-state.get('goods_stock_kg', {}).get(n,0.)) for n,kg in goods.items()}
     from player_guidance import build_readiness
     readiness=build_readiness(quote,state,sources,fabrication_stock.sources(app,'goods'))
+    from mcp import matter_fabrication
+    note=matter_fabrication.source_note(state,_owner(app),required)
+    if note:readiness['matter_source_note']=note
     return {'schema':'banjo.'+kind+'-plan.v1','plan_id':ident,'session':old.id,'scene':room.scene,
         'available':True,'source':deepcopy(binding),'quote':quote,'revision':state['revision'],
         'station_stock_kg':available,'station_energy_j':state['energy_j'],
@@ -125,7 +130,7 @@ def _describe(app,room,old,kind,binding,ident,quote,state,making):
         'missing_goods_kg':missing_goods,
         'goods_sources':[r for r in fabrication_stock.sources(app,'goods') if r['material'] in goods],
         'occupied':any(j['status']=='running' for j in state['jobs'].values()),
-        'build_readiness':readiness,'changes_world':False,'original_retained':not making}
+        'build_readiness':readiness,'matter_source_note':note,'changes_world':False,'original_retained':not making}
 
 
 def refresh(app,body):
@@ -145,6 +150,8 @@ def refresh(app,body):
         kind=entry['kind']
         if kind=='remake' and source(app,live,entry['source']['source_item'])['source_hash']!=entry['source']['source_hash']:
             raise ValueError('Selected item changed; review a new remake plan')
+        from mcp import matter_fabrication
+        entry['quote']=matter_fabrication.plan(state,_owner(app),{k:v for k,v in entry['quote'].items() if k!='raw_matter'})
         return _describe(app,room,old,kind,entry['source'],body['plan_id'],entry['quote'],state,kind=='make')
 
 

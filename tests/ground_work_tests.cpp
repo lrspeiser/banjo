@@ -31,6 +31,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <functional>
@@ -541,6 +542,7 @@ struct Swing {
     std::vector<LiveGroundWork> work;
     std::string ended;
     double carried_before_m3{};
+    double stroke_wall_ms{};
 };
 
 // Open a world with the pick in the air above the ground, take it by its grip
@@ -565,8 +567,10 @@ Swing swingAt(double soil, double sand, const std::string &material, bool cubes 
     strike.speed_m_s = 4.0;
     strike.raise_deg = 110.0;
     std::string why;
+    const auto wall_started=std::chrono::steady_clock::now();
     require(live.strike(strike, why), "the swing was refused: " + why);
     out.ended = finishStroke(live, 480, 120);
+    out.stroke_wall_ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-wall_started).count();
     out.work = live.groundWork();
     return out;
 }
@@ -728,11 +732,11 @@ void aPryBreaksGroundOutAndItIsCarried(bool limited = false) {
     require(worst == 0.0, "the ground opened again from its edits does not have the same hole");
 }
 
-// On cube ground a swing that breaks soil loose takes out the whole cube it
-// struck (the owner, 2026-10-04): that column a cell lower, its neighbours
-// untouched, and the cube carried at its real mass.
+// A measured stroke on column ground retains the passive-earth wedge law.
+// It cannot promote a small measured motion to an entire target cube.
 void aSwingTakesAWholeCubeOutOfCubeGround(std::optional<Vec3> aim = std::nullopt) {
     Swing swing = swingAt(0.75, 0.0, "oak", true, aim);
+    const auto follow_started=std::chrono::steady_clock::now();
     LiveWorld &live = *swing.live;
     const terrain::Environment &env = *live.environment();
     const terrain::TerrainField &field = env.terrain();
@@ -763,20 +767,25 @@ void aSwingTakesAWholeCubeOutOfCubeGround(std::optional<Vec3> aim = std::nullopt
     const LiveGroundWork w = live.groundWork().front();
     std::printf("  on cube ground: %s\n", said(w).c_str());
     require(w.kind == "broke out" && w.dug, "the swing broke nothing out");
-    std::size_t lowered = 0, struck = 0;
-    for (std::size_t c = 0; c < before.size(); ++c)
-        if (std::abs(field.height(c) - before[c]) > 1e-9) { ++lowered; struck = c; }
-    require(lowered == 1, "one swing lowered " + std::to_string(lowered) + " columns, not one");
-    near(before[struck] - field.height(struck), q, 1e-9, "the struck column is a whole cell lower");
-    near(w.loosened.total(), q * q * q, 1e-9, "the cube's volume came out");
-    near(env.carried().total() - carried_before, q * q * q, 1e-9, "and is carried");
-    if (aim) {
-        // The cube that came out is the one aimed at, not the one the point met.
-        const auto &g = field.grid();
-        const int i = static_cast<int>(std::floor((aim->x - g.x0) / q + 0.5));
-        const int j = static_cast<int>(std::floor((aim->z - g.z0) / q + 0.5));
-        require(struck == g.at(i, j), "the cube that came out is not the one aimed at");
+    double surface_volume=0;
+    for(std::size_t c=0;c<before.size();++c)surface_volume+=(before[c]-field.height(c))*q*q;
+    require(w.loosened.total()<q*q*q,"a small physical stroke cannot be promoted to a whole cube");
+    near(surface_volume,w.loosened.total(),1e-9,"the actual constitutive wedge equals the surface edit");
+    near(env.carried().total()-carried_before,0,1e-9,"measured column wedge is physical matter before collection");
+    const double wall_ms=swing.stroke_wall_ms+std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-follow_started).count();
+    const auto components=Json::parse(live.groundDebrisJson()).at("bodies");double matter=0;std::size_t cells=0;
+    for(const auto &body:components){matter+=body.at("volumes").at("soil_m3").get<double>();cells+=body.at("cells").size();}
+    near(matter,w.loosened.total(),1e-9,"actual reduced-model wedge remains in native components");
+    near(field.residual().total(),0,1e-10,"measured stroke volume ledger closes");
+    require(cells>0,"default measured stroke supplies native constituent cells");
+    for(const auto &body:components) {
+        const auto center=body.at("pose").at("center_m");
+        const auto packet=Json::parse(live.collectGroundDebris(body.at("id"),{center[0],center[1],center[2]},3));
+        require(packet.at("cells")==body.at("cells"),"default measured stroke returns its exact source cells");
     }
+    near(env.carried().total()-carried_before,matter,1e-9,"default measured pieces credit storage only upon collection");
+    std::printf("  measured column stroke: %.12g m3; %zu source cells in %zu native components; %.9g J ground work; %.9g s native elapsed at dt %.9g; %.9g ms native wall time excluding fixture setup and collection; collection residual %.12g m3\n",
+        matter,cells,components.size(),w.work_j,live.time_s(),kDt,wall_ms,env.carried().total()-carried_before-matter);
 }
 
 // ---- the grip ------------------------------------------------------------------
@@ -1057,8 +1066,8 @@ void toolMeetingKeepsItsOwner() {
     std::printf("  owned native stroke: %s; owner %s; terrain residual %.12g m3\n",said(work).c_str(),work.actor.c_str(),live->environment()->terrain().residual().total());
 }
 
-// The cube action is the game's fixed-work abstraction, not a calibrated wet
-// soil constitutive law. Test its real held-tool path and the water bed it edits.
+// Wet work-cut is explicitly refused. An authored hydraulic fixture and
+// funded dry cuts still test the water bed without claiming a wet soil law.
 void cubeStrikesOpenAWetChannel() {
     constexpr int nx = 20, nz = 20, first = 8, row = 10, length = 5;
     constexpr double q = .25, top = .75, waterVolume = .1 * q * q;
@@ -1082,8 +1091,18 @@ void cubeStrikesOpenAWetChannel() {
         near(live->environment()->water()->depth(g.at(first,row)), .1, 1e-12, "initial wet target");
         double kg = 0;
         for (int i = first; i < first + length; ++i) {
-            const auto receipt = live->strikeCell({g.xOf(i),top,g.zOf(row)});
-            require(receipt.dug && !receipt.open && receipt.actor == "alice", "owned closed channel receipt");
+            auto receipt = live->strikeCell({g.xOf(i),top,g.zOf(row)},1e6,"channel:"+std::to_string(i));
+            if(i==first) {
+                require(!receipt.supported && receipt.loosened.total()==0 && receipt.work_j==0,"wet tool cut explicitly refuses without mutation");
+                // Author a channel entry as the hydraulic fixture, not as a
+                // claim that the dry work-cut law supports submerged soil.
+                const auto edit=live->dig(g.xOf(i),g.zOf(row),g.xOf(i),g.zOf(row),.5*q,q);
+                receipt.loosened=edit.edit.moved;receipt.loosened_kg=edit.edit.mass_kg;
+            } else {
+                const auto cut=Json::parse(receipt.cut_receipt_json);
+                require(receipt.supported && !receipt.open && receipt.actor=="alice","funded dry channel receipt");
+                (void)live->collectGroundDebris(cut.at("body_id").get<MatterBodyId>(),{g.xOf(i),top,g.zOf(row)},3);
+            }
             near(receipt.loosened.total(), q*q*q, 1e-12, "one targeted cube removed");
             near(field.height(g.at(i,row)), top-q, 1e-12, "channel floor matches edit");
             near(field.height(g.at(i,row+1)), top, 1e-12, "neighboring bank unchanged");
@@ -1119,12 +1138,14 @@ void cubeStrikesOpenAnUnroofedPitToWater() {
         require(live->toolPoint("pick",{kTipX,top+.72,kTipZ},{0,-1,0},.04,.04,30,kPointLength,grip)!=0,"pit point");
         require(live->wield("pick",grip),"pit pick held");
         const auto &field=live->environment()->terrain();const auto &g=field.grid();const auto c=g.at(target,row);
-        const auto under=live->strikeCell({g.xOf(target),top-.375,g.zOf(row)});
+        const auto under=live->strikeCell({g.xOf(target),top-.375,g.zOf(row)},1e6,"pit-under");
+        (void)live->collectGroundDebris(Json::parse(under.cut_receipt_json).at("body_id").get<MatterBodyId>(),{g.xOf(target),top-.375,g.zOf(row)},3);
         near(under.loosened.total(),q*q*q,1e-12,"the clicked underground cube leaves");
         near(field.height(c),top,1e-12,"real cap remains until selected");
         for(int n=0;n<480;n++)stepOnce(*live);
         near(live->environment()->water()->terrain(c),top,0,"surface water remains above the real cap");
-        const auto roof=live->strikeCell({g.xOf(target),top,g.zOf(row)});
+        const auto roof=live->strikeCell({g.xOf(target),top,g.zOf(row)},1e6,"pit-roof");
+        (void)live->collectGroundDebris(Json::parse(roof.cut_receipt_json).at("body_id").get<MatterBodyId>(),{g.xOf(target),top,g.zOf(row)},3);
         near(roof.loosened.total(),q*q*q,1e-12,"only the roof cube is collected");
         near(field.height(c),top-2*q,1e-12,"open pit exposes its solid floor");
         near(live->environment()->water()->terrain(c),field.height(c),0,"water bed tracks the opened pit");
@@ -1152,7 +1173,7 @@ void cubeStrikesRemoveTheClickedRockWallCell() {
         const bool soft=ground!="rock";
         const double top=soft ? .75 : 0, y=soft ? .375 : -.375;
         const auto expected=ground=="soil" ? terrain::RunKind::Soil : ground=="sand" ? terrain::RunKind::Sand : terrain::RunKind::Rock;
-        const int strikes=soft ? 1 : 10;
+        const int strikes=1;
         auto live=open(Json{{"terrain",cubeGround(ground=="soil" ? top : 0,ground=="sand" ? top : 0)},{"bodies",pick(material,top)}});
         live->selectHand("alice");
         const Vec3 grip{kGripX,top+1.02,kTipZ};
@@ -1161,20 +1182,20 @@ void cubeStrikesRemoveTheClickedRockWallCell() {
         const auto &field=live->environment()->terrain();const auto &g=field.grid();
         const auto c=g.at(10,10),neighbor=g.at(11,10);
         double kg=0;
-        for(int n=1;n<=strikes;n++) {
-            const auto receipt=live->strikeCell({g.xOf(10),y,g.zOf(10)});
-            require(receipt.actor=="alice" && !receipt.open,"private closed wall receipt");
-            if(n<strikes) {
-                near(receipt.loosened.total(),0,0,"no early wall loot");
-                near(receipt.broken_share,n/10.0,1e-10,"each wall strike advances progress");
-                require(field.kindAt(c,y)==expected,"wall stays solid until paid");
-            } else {
-                near(receipt.loosened.total(),q*q*q,1e-12,"one full clicked material cube");
-                kg=receipt.loosened_kg;
-            }
-            near(field.height(c),top,1e-12,"wall strike retains roof above it");
-            require(field.kindAt(neighbor,y)==expected,"adjacent wall cube retained");
+        const auto unfunded=live->strikeCell({g.xOf(10),y,g.zOf(10)});
+        near(unfunded.loosened.total(),0,0,"unfunded cube never extracts");
+        const auto receipt=live->strikeCell({g.xOf(10),y,g.zOf(10)},1e6,"wall:"+material+":"+ground);
+        if(material=="oak" && !soft) {
+            require(!receipt.supported && receipt.work_j==0,"oak rock point remains unsupported");
+            require(field.kindAt(c,y)==expected,"hardness gate preserves rock");continue;
         }
+        require(receipt.actor=="alice"&&!receipt.open&&receipt.supported,"private funded wall receipt");
+        near(receipt.loosened.total(),q*q*q,1e-12,"one full paid clicked material cube");
+        kg=receipt.loosened_kg;
+        near(live->environment()->carriedKg(),0,0,"released physical wall component has no inventory credit");
+        (void)live->collectGroundDebris(Json::parse(receipt.cut_receipt_json).at("body_id").get<MatterBodyId>(),{g.xOf(10),y,g.zOf(10)},3);
+        near(field.height(c),top,1e-12,"wall strike retains roof above it");
+        require(field.kindAt(neighbor,y)==expected,"adjacent wall cube retained");
         require(field.kindAt(c,y)==terrain::RunKind::Void,"clicked vertical band becomes a void");
         require(field.kindAt(c,y-q)==expected,"floor below clicked band retained");
         near(live->environment()->carriedKg(),kg,1e-10,"wall mass credited once to owner");
@@ -1201,8 +1222,8 @@ int main() {
         {"soil against rock", soilAgainstRock},
         {"a pry breaks ground out, and it is carried", [] { aPryBreaksGroundOutAndItIsCarried(); }},
         {"a held tool shares the excavation budget", [] { aPryBreaksGroundOutAndItIsCarried(true); }},
-        {"a swing takes a whole cube out of cube ground", [] { aSwingTakesAWholeCubeOutOfCubeGround(); }},
-        {"a swing takes out the cube aimed at", [] { aSwingTakesAWholeCubeOutOfCubeGround(Vec3{0.3 + 0.25, 0.75, kTipZ}); }},
+        {"a measured swing retains its actual wedge on column ground", [] { aSwingTakesAWholeCubeOutOfCubeGround(); }},
+        {"a ground aim does not amplify the measured wedge", [] { aSwingTakesAWholeCubeOutOfCubeGround(Vec3{0.3 + 0.25, 0.75, kTipZ}); }},
         {"a grip off the body is refused", aGripOffTheBodyIsRefused},
         {"a broad end meets the ground from wherever it is swung", aBroadEndMeetsTheGroundFromWhereverItIsSwung},
         {"lattice ground tools share exact equipment", latticeGroundToolsCanShareExactEquipment},

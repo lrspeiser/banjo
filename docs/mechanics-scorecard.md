@@ -1,8 +1,23 @@
 # Banjo mechanics scorecard
 
+**Physical ground and raw tools, October 5 (integration checkpoint):** [Implementation, evidence and remaining gates](physical-ground-gameplay-checkpoint.md) replaces fixed-hit dry-column extraction with measured native hand work or explicitly funded work-cut requests. Exact small source cells move in native connected rigid components, collect into private raw Inventory and feed paid Stone field pick forming. The browser follows native poses rather than cosmetic flight/pile paths; save/retry and finite energy escrow prevent duplicate credit. This is an experimental cut reduction, not constitutive fracture, granular flow or complete conservation. Wet/smooth/machine lanes, affordable fresh-player rock progression, native read-only readiness, the 10 ft gameplay gate and human/mobile acceptance remain bounded or open; R3 stays paused. This entry supersedes historical fixed-click and unimplemented collection statements below.
+
+### October 5 integrated ground-matter boundary
+
+| Retained mechanic | Measured boundary | Next acceptance step |
+|---|---|---|
+| Dry hand excavation | Oak stroke: 9.452 kg / 100 exact cells / 26.321 J ground work; 77.3 ms native wall, 2.771 s simulated | Browser hand timing and complete reaction/work ledger |
+| Funded work cut | Glass/iron rock: 37.5 kg / 468,750 J; oak rock refused; actual native falling/settling | Native read-only quote, calibrated detachment and affordable harder-point progression |
+| Physical collection | Actual mesh click, native reach/occlusion, paired private source-cell receipt, failure/retry/reopen | Sustained excavation/history limits and human/mobile acceptance |
+| Raw tool formation | Stone source: 8.4992 kg at 40 mm, 12.8 kg at 50 mm; finite stock/work/offcuts; installed point survives reopen | Preserve resolved constitutive state through actual manufacturing; calibrate wear/fracture |
+| Ground volume account | Loose native component included; source/receiving volume residual zero in declared fixtures | Full holder/contact/environment momentum and energy closure |
+| Paid target strike regression | Unchanged main and final native produce identical contact under deterministic ticks; original one-hit threaded assertion remains timing-sensitive | Qualify a deterministic supported failure input; unsupported later fracture excluded |
+
+All entries describe the reductions and exclusions in the [integration checkpoint](physical-ground-gameplay-checkpoint.md) and [native evidence](native-ground-matter-checkpoint.md). Constitutive fracture, granular/wet motion, anchored-roof failure, the 10 ft gameplay gate and separately paused R3 are not qualified by these volume checks.
+
 **Shared press/hold voice, October 5:** [Host/UI and live-provider checkpoint](voice-shared-chat-checkpoint.md) routes visible microphone/Y input through the selected typed Guide, rover or Lab chat. Persistent Audio starts Off; cancellation stops capture and errors preserve typing. Synthetic Windows browser regressions and one live synthetic rover stop verify routing and returned audio; real phone/human audio acceptance remains open. Voice implementation `0d10f510` and typed checkpoint `1572c275` are published on main and installed in `C:/play`; native laws are unchanged.
 
-**Build and shared typed chat, October 5:** [Host/UI checkpoint](build-lab-chat-checkpoint.md) exposes source selection, reversible Lab edits, visible Save and paid Make review, material-context recipe navigation and a compact targeted rover chat. World guidance is explicit, with clean World URLs. Isolated Windows desktop/landscape checks cover draft reload, native paid collection and failed turns; native laws are unchanged. The separate voice checkpoint is linked above; the pre-existing process-input guidance priority failure remains open.
+**Build and shared typed chat, October 5:** [Host/UI checkpoint](build-lab-chat-checkpoint.md) exposes source selection, reversible Lab edits, visible Save and paid Make review, material-context recipe navigation and a compact targeted rover chat. World guidance is explicit, with clean World URLs. Isolated Windows desktop/landscape checks cover draft reload, native paid collection and failed turns; native laws are unchanged. The separate voice checkpoint is linked above; the process-input blocker display and its stale priority assertion are corrected in the [UI verification checkpoint](ui-chat-verification-checkpoint.md).
 
 **Constituent solid reference, October 5:** [Measured boundary](solid-matter-reference-checkpoint.md)
 qualifies a free 125-cell patch under bounded external traction, preserving

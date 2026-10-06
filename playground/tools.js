@@ -243,15 +243,35 @@ export function makeTools(ctx) {
     let answer = null;
     let struckAt=null;
     try {
+      const enabled=localStorage.getItem('banjo.energy-assist')==='on';
+      const pendingKey=`banjo.cut-pending.${new URLSearchParams(location.search).get('world') || 'lab'}`;
+      let pending;
+      try { pending=JSON.parse(localStorage.getItem(pendingKey) || 'null'); } catch { pending=null; }
+      if(pending && !enabled)throw Error('A cutting reply is pending. Turn Energy assist on to retry the same cut.');
       // Explicit taps retain their clicked ray even if the cursor moves while
       // another stroke finishes. Held repeats sample the current cursor ray.
       // Sidebar actions retain the displayed point, not the camera centre.
-      const hit = input.at_m ? {hit:true,point_m:input.at_m,name:input.target_name}
+      // A retained cut owns its target. A new ray must not turn an uncertain
+      // ground debit into an unrelated object-contact request.
+      const hit = pending ? {hit:true,point_m:pending.at_m,name:null}
+        : input.at_m ? {hit:true,point_m:input.at_m,name:input.target_name}
         : await act("pick", {...input,max_m:40,past_held:true});
-      if(hit.hit && !hit.name && ctx.groundTargetPoint)hit.point_m=ctx.groundTargetPoint(hit.point_m,input.from);
+      if(!pending && hit.hit && !hit.name && ctx.groundTargetPoint)hit.point_m=ctx.groundTargetPoint(hit.point_m,input.from);
       struckAt=hit.hit ? hit.point_m : null;
+      const assist=enabled && hit.hit && !hit.name;
+      // Retry exactly the retained target after a missing response. A second
+      // click cannot spend another reservation on an uncertain first cut.
+      if(assist && !pending) {
+        pending={request_id:crypto.randomUUID().replaceAll('-',''),at_m:hit.point_m.slice()};
+        localStorage.setItem(pendingKey,JSON.stringify(pending));
+      }
       answer = await api("/api/world/tool/use", { session: world.session, person: whereIAm(),
-        at_m: hit.hit ? hit.point_m : null, target_name: hit.hit ? hit.name || null : null });
+        at_m: assist?pending.at_m:(hit.hit?hit.point_m:null),
+        target_name: hit.hit ? hit.name || null : null,
+        energy_assist:assist,request_id:assist?pending.request_id:null });
+      // A preflight refusal may follow an uncertain paid attempt. Only an
+      // authoritative cut receipt resolves that retained request.
+      if(assist && answer.cut && typeof answer.cut==='object')localStorage.removeItem(pendingKey);
     } catch (error) {
       use.result = String(error.message || error);
       say("bad", String(error.message || error));
@@ -259,6 +279,7 @@ export function makeTools(ctx) {
     // A finished stroke can carry a newer personal journal, even if the
     // player has since put down the tool. Do not wait for another live step.
     if (answer?.notebook) showNotebook(answer.notebook, true);
+    if (answer?.ground_debris) ctx.followMatter?.(answer.ground_debris);
     if (answer?.goods) ctx.followGoods?.(answer.goods);
     if (answer?.inventory) {
       world.inventory = answer.inventory;

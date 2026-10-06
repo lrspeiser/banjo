@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <nlohmann/json.hpp>
 
 namespace banjo::fastlattice {
 namespace {
@@ -47,17 +48,6 @@ constexpr double kArrivingS = 0.05;
 constexpr double kOutM = 0.01;
 // The resistance of rock under the soil a point has gone through: it stops it.
 constexpr double kRockN = 1.0e7;
-// On cube ground: swings to take out a cell of clay, and of rock (anything
-// at least kHardRockPa hard). Soil and sand come out in one.
-constexpr double kClaySwingsPerCell = 3.0;
-constexpr double kRockSwingsPerCell = 10.0;
-constexpr double kHardRockPa = 1.0e7;
-// A struck cube's swing, recorded as a measured pick swing goes.
-constexpr double kStrikeSpeedM_S = 3.0;
-constexpr double kStrikeWorkJ = 26.0;
-// How many cells from where it broke ground a swing's aimed cube may be.
-constexpr double kAimNearCells = 1.5;
-
 [[nodiscard]] Quat qMul(const Quat &a, const Quat &b) {
     return {a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
             a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
@@ -601,7 +591,6 @@ void ToolTerrain::meet(const ToolTerrainHost &host, Point &p, MatterBodyId id, c
     p.at_rock = rock && breaks_here;
     p.breaks_rock = p.at_rock;
     p.broke_m3 = 0.0;
-    p.paid_cell = false;
     p.rock_hardness_pa = p.at_rock
         ? terrain::groundHardnessPa(field.kindAt(column, field.rockTop(column) - 0.01)) : 0.0;
     if (p.at_rock && !(p.rock_hardness_pa > 0.0)) { p.breaks_rock = false; p.at_rock = false; }
@@ -739,20 +728,30 @@ void ToolTerrain::settle(const ToolTerrainHost &host, double dt_s) {
             // been paid for. Nothing here is a rate or a guess -- the work is
             // the solver's own, as it is in soil.
             if (p.breaks_rock && host.environment != nullptr && work_in > 0.0) {
-                // On cube ground a swing pays a set share of the cell it
-                // meets, once: a third of clay, a tenth of rock (the owner,
-                // 2026-10-04: a cube should go "pretty fast so you can see your
-                // progress"). Paid from work, clay took about 800 swings.
-                const double q = host.environment->terrain().grid().dx;
-                const bool cubes = host.environment->terrain().columnSurface();
-                const double bought = cubes
-                    ? (p.paid_cell ? 0.0 : q * q * q / (p.rock_hardness_pa >= kHardRockPa ? kRockSwingsPerCell : kClaySwingsPerCell))
-                    : terrain::brokenVolumeM3(p.rock_hardness_pa, work_in);
-                if (cubes && bought > 0.0) p.paid_cell = true;
+                const double bought = terrain::brokenVolumeM3(p.rock_hardness_pa, work_in);
                 if (bought > 0.0) {
                     // At the tip's own height: a pick swung at a tunnel face
                     // takes the rock out in front of the miner, not off the top
                     // of the hill above them.
+                    if(host.environment->fieldAt(tip.x,tip.z).columnSurface()) {
+                        const auto cut=nlohmann::json::parse(host.environment->excavateCell(world,tip,work_in,
+                            "measured-rock:"+p.carrier+":"+std::to_string(p.id),false));
+                        r.model="work-cut-v2-measured-contact";
+                        r.broken_share=cut.at("broken_share").get<double>();
+                        r.supported=cut.at("supported").get<bool>();r.why=cut.value("why",std::string{});
+                        const auto &released=cut.at("loosened");
+                        r.loosened.rock_m3+=released.at("rock_m3").get<double>();
+                        r.loosened.soil_m3+=released.at("soil_m3").get<double>();
+                        r.loosened.sand_m3+=released.at("sand_m3").get<double>();
+                        r.loosened_kg+=cut.at("mass_kg").get<double>();
+                        if(!cut.at("body_id").is_null()) {
+                            r.kind="broke rock out";p.broke_out=true;p.broke_m3+=bought;
+                            // The old anchored ground has left. Its released
+                            // component now owns contact through the native
+                            // rigid solver, so remove the old ground bite.
+                            finish(host,p,true);
+                        } else if(r.supported)r.kind="breaking rock";
+                    } else {
                     const terrain::Environment::Chipped chipped =
                         [&]() {
                             CarrierScope account(*host.environment, p.carrier);
@@ -777,6 +776,7 @@ void ToolTerrain::settle(const ToolTerrainHost &host, double dt_s) {
                             r.kind = "breaking rock";
                         }
                     }
+                    }
                 }
             }
         }
@@ -788,84 +788,53 @@ void ToolTerrain::settle(const ToolTerrainHost &host, double dt_s) {
 }
 
 LiveGroundWork ToolTerrain::strikeCell(const ToolTerrainHost &host, const std::string &tool,
-                                      const std::string &carrier, const Vec3 &at) {
+                                      const std::string &carrier, const Vec3 &at,
+                                      double work_j, const std::string &work_source) {
     LiveGroundWork r;
-    r.tool = tool;
-    r.actor = carrier;
-    // Struck now, between steps: said at no later than the time the replies
-    // report, which they round to 1e-5 s -- a receipt read from the reply must
-    // not come before its own event.
-    r.at_s = std::floor(host.time_s * 1e5) / 1e5 - 1e-5;
-    r.at_m = at;
-    r.model = terrain::kGroundWorkModel;
-    r.open = false;
-    r.tool_whole = true;
-    if (host.environment == nullptr || !host.environment->terrain().columnSurface()) {
-        r.kind = "not supported";
-        r.supported = false;
-        r.why = "only cube ground is struck a cube at a time";
-        log_.push_back(r);
-        return r;
-    }
-    terrain::Environment &env = *host.environment;
-    if(!env.onTheGround(at.x,at.z)) {
-        r.kind="not supported";r.supported=false;r.why="there is no ground at that point";
+    r.tool=tool;r.actor=carrier;r.at_m=at;r.at_s=host.time_s;
+    r.model="work-cut-v2";r.open=false;
+    const Point *point=nullptr;
+    for(const auto &p:points_) if(p.attached && (p.grip_body.empty()?p.body:p.grip_body)==tool){point=&p;break;}
+    auto refused=[&](const std::string &why) {
+        r.kind="not supported";r.supported=false;r.why=why;
+        r.cut_receipt_json=nlohmann::json{{"model","work-cut-v2"},{"requested_work_j",work_j},
+            {"consumed_work_j",0},{"work_consumed_j",0},{"work_source",work_source},
+            {"supported",false},{"kind",r.kind},{"why",why}}.dump();
         log_.push_back(r);return r;
+    };
+    if(!host.environment || !point) return refused("a declared native point and terrain are required");
+    const auto point_id=host.id_of(point->body);
+    if(!point_id||!host.world->contains(*point_id))return refused("the native point body is unavailable");
+    if(!point->grip_body.empty()&&(!host.fixed_connected||!host.fixed_connected(point->body,tool)))
+        return refused("the point is no longer fixed to the held handle");
+    if(!std::isfinite(work_j)||work_j<0||work_j>1e6)return refused("funded work budget must be 0 to 1 MJ");
+    const auto &field=host.environment->fieldAt(at.x,at.z);const auto cell=field.cellAt(at.x,at.z);
+    if(!cell)return refused("there is no ground at that point");
+    const auto material=host.material_of(point->body);
+    if(!material)return refused("tool point material is unavailable");
+    const double q=field.grid().dx;
+    const double hi=std::min(std::ceil(std::min(at.y,field.height(*cell)-1e-9)/q)*q,field.height(*cell));
+    const double lo=hi-q;
+    // Admit every bed crossed by the cut, including a thin hard interface.
+    const auto &beds=field.beds();double bottom=field.floor();
+    for(std::uint32_t k=0;k<beds.count[*cell];++k) {
+        const auto ix=beds.start[*cell]+k;const double top=beds.top[ix];
+        const auto kind=static_cast<terrain::RunKind>(beds.kind[ix]);
+        if(std::min(top,hi)>std::max(bottom,lo) && !terrain::isVoid(kind) &&
+            terrain::groundHardnessPa(kind)>=material->hardness_pa)
+            return refused("point material hardness cannot admit this cut; supplied energy does not override the material gate");
+        bottom=top;
     }
-    const terrain::TerrainField &field = env.fieldAt(at.x,at.z);
-    const auto &g = field.grid();
-    const double q = g.dx;
-    const int i = std::clamp(static_cast<int>(std::floor((at.x - g.x0) / q + 0.5)), 0, g.nx - 1);
-    const int j = std::clamp(static_cast<int>(std::floor((at.z - g.z0) / q + 0.5)), 0, g.nz - 1);
-    const std::size_t c = g.at(i, j);
-    const double x = g.xOf(i), z = g.zOf(j);
-    const double carried = host.objects_of ? host.objects_of(carrier) : host.carried_objects_kg;
-    // A swing as the measured ones go: about 3 m/s at the point, and the work
-    // a pick puts into the ground (ground_work_tests: 26 J).
-    r.closing_speed_m_s = kStrikeSpeedM_S;
-    r.work_j = kStrikeWorkJ;
-    r.penetration_work_j = kStrikeWorkJ;
-    CarrierScope account(env, carrier);
-    if (at.y >= field.height(c)-0.01 && field.height(c) - field.rockTop(c) >= 0.01) {
-        r.ground = terrain::groundAt(field, c, 0.0).name;
-        const terrain::EditEffect effect = env.dig(*host.world, x, z, x, z, 0.5 * q, q, carried);
-        r.loosened = effect.edit.moved;
-        r.loosened_kg = effect.edit.mass_kg;
-        r.depth_m = effect.edit.depth_m;
-        r.dug = effect.edit.depth_m > 0.0;
-        r.dug_from_m[0] = r.dug_to_m[0] = x;
-        r.dug_from_m[1] = r.dug_to_m[1] = z;
-        r.dug_width_m = 0.5 * q;
-        r.dug_depth_m = effect.edit.depth_m;
-        r.kind = r.loosened.total() > 0.0 ? "broke out" : "cannot carry it";
-        if (r.kind == "cannot carry it") r.why = "nothing more can be carried";
-    } else {
-        // A wall hit belongs to the visible vertical cell, not the top of its
-        // column. Existing chip/breakOut retain the roof and account the void.
-        const double height = std::min(at.y, field.height(c) - 0.001);
-        const auto kind = field.kindAt(c, height);
-        const bool soft=kind==terrain::RunKind::Soil || kind==terrain::RunKind::Sand || kind==terrain::RunKind::LooseSoil;
-        const double hardness = terrain::groundHardnessPa(kind);
-        r.ground = soft ? (kind==terrain::RunKind::Sand ? "sand" : "soil") : hardness >= kHardRockPa ? "rock" : "clay";
-        const double share = q * q * q / (soft ? 1 : hardness >= kHardRockPa ? kRockSwingsPerCell : kClaySwingsPerCell);
-        const terrain::Environment::Chipped chipped =
-            env.chip(*host.world, x, z, height, share, carried);
-        r.broken_share = chipped.broken;
-        r.depth_m = 0.05;
-        if (chipped.full) {
-            r.kind = "cannot carry it";
-            r.why = "the next cell of rock is more than can be carried";
-        } else if (!chipped.effect.edit.cells.empty()) {
-            r.loosened = chipped.effect.edit.moved;
-            r.loosened_kg = chipped.effect.edit.mass_kg;
-            r.kind = r.loosened.total()>0 ? (soft ? "broke out" : "broke rock out") : "cleared empty surface";
-        } else {
-            r.kind = "breaking rock";
-        }
-    }
-    if (host.id_of) r.tool_whole = host.id_of(tool).has_value();
-    log_.push_back(r);
-    return r;
+    CarrierScope account(*host.environment,carrier);
+    auto cut=nlohmann::json::parse(host.environment->excavateCell(*host.world,at,work_j,work_source));
+    cut["work_consumed_j"]=cut.at("consumed_work_j");r.cut_receipt_json=cut.dump();
+    r.supported=cut.at("supported").get<bool>();r.kind=cut.at("kind").get<std::string>();
+    r.why=cut.value("why",std::string{});r.ground=cut.value("ground",std::string{});
+    r.work_j=cut.at("consumed_work_j").get<double>();r.breakout_work_j=r.work_j;
+    r.broken_share=cut.value("broken_share",0.0);
+    const auto &v=cut.at("loosened");r.loosened={v.at("rock_m3").get<double>(),v.at("soil_m3").get<double>(),v.at("sand_m3").get<double>()};
+    r.loosened_kg=cut.at("mass_kg").get<double>();
+    r.tool_whole=host.id_of(tool).has_value();log_.push_back(r);return r;
 }
 
 double ToolTerrain::leadingWidth(const Point &p) const {
@@ -908,7 +877,7 @@ void ToolTerrain::finish(const ToolTerrainHost &host, Point &p, bool tool_here) 
         return;
     }
     LiveGroundWork &r = log_[p.report];
-    const double volume = loosened(host, p);
+    const double volume = p.at_rock ? 0.0 : loosened(host, p);
     if (volume > 0.0 && host.environment != nullptr) {
         // What broke loose comes out through the ground's own dig, so it is
         // carried exactly as anything else dug is, and the ground's ledger
@@ -931,33 +900,14 @@ void ToolTerrain::finish(const ToolTerrainHost &host, Point &p, bool tool_here) 
         std::size_t columns = field.columnsAlong(ax, az, bx, bz, width).size();
         double depth = columns > 0 ? volume / (static_cast<double>(columns) * dx * dx) : 0.0;
         double dig_width = width;
-        // On cube ground a swing that breaks soil or sand loose takes out the
-        // whole cube it struck, a cell deep, rather than a thin layer spread
-        // over the wedge (the owner, 2026-10-04: "in minecraft an entire cube
-        // goes away pretty fast so you can see your progress"). What comes out
-        // is still carried at its real mass, and only what lies over the rock.
-        if (field.columnSurface()) {
-            ax = bx = field.grid().xOf(static_cast<int>(p.column % static_cast<std::size_t>(field.grid().nx)));
-            az = bz = field.grid().zOf(static_cast<int>(p.column / static_cast<std::size_t>(field.grid().nx)));
-            // The cube aimed at, when the swing broke ground beside it: once a
-            // hole is a cube deep the point often meets its rim first, and the
-            // hole grew sideways instead of down (the owner, 2026-10-04).
-            if (host.aim_of) {
-                if (const std::optional<Vec3> aim = host.aim_of(p.carrier);
-                    aim && std::hypot(aim->x - ax, aim->z - az) <= kAimNearCells * dx) {
-                    const auto &g = field.grid();
-                    const int i = std::clamp(static_cast<int>(std::floor((aim->x - g.x0) / dx + 0.5)), 0, g.nx - 1);
-                    const int j = std::clamp(static_cast<int>(std::floor((aim->z - g.z0) / dx + 0.5)), 0, g.nz - 1);
-                    ax = bx = g.xOf(i);
-                    az = bz = g.zOf(j);
-                }
-            }
-            dig_width = 0.5 * dx;
-            columns = field.columnsAlong(ax, az, bx, bz, dig_width).size();
-            depth = dx;
-        }
         if (columns > 0) {
-            const terrain::EditEffect effect = env.dig(world, ax, az, bx, bz, dig_width, depth,
+            terrain::EditEffect effect;
+            if(field.columnSurface()) {
+                try {effect=env.detachDig(world,ax,az,bx,bz,dig_width,depth,r.work_j,
+                    "measured-tool:"+p.carrier+":"+std::to_string(p.id)+":"+std::to_string(r.at_s));
+                    r.model="ground-work-v1-rigid-detachment";}
+                catch(const std::invalid_argument &error){r.supported=false;r.why=error.what();}
+            } else effect=env.dig(world, ax, az, bx, bz, dig_width, depth,
                 host.objects_of ? host.objects_of(p.carrier) : host.carried_objects_kg);
             r.loosened = effect.edit.moved;
             r.loosened_kg = effect.edit.mass_kg;

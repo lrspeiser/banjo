@@ -139,7 +139,7 @@ export function toolTargetFeedback({point, grid, tool, target, eyes, name=null, 
 export function toolTargetColor(feedback) {
   if(feedback.ready)return 0x62e595;
   if(feedback.state==='blocked')return 0xf17f79;
-  if(['checking','working'].includes(feedback.state))return 0xe7bf65;
+  if(['checking','working','warning'].includes(feedback.state))return 0xe7bf65;
   return 0xe7eff5;
 }
 

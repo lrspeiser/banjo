@@ -867,7 +867,7 @@ std::string Environment::groundStateJson() const {
     accounts.erase("");
     Json actors = Json::object();
     for (const auto &[actor, volume] : accounts) actors[actor] = volumesJson(volume);
-    Json out = Json{{"schema","banjo.ground-state.v5"},{"surface",terrain_->surfaceGeometry()},
+    Json out = Json{{"schema","banjo.ground-state.v6"},{"debris",Json::parse(debrisStateJson())},{"surface",terrain_->surfaceGeometry()},
         {"baseline",terrain_->cutSurface()?Json(packed(terrain_->baseline())):Json(nullptr)},
         {"exported",volumesJson(exported_)},{"returned",volumesJson(returned_)},
         {"grid",{s.grid.nx,s.grid.nz,s.grid.dx,s.grid.x0,s.grid.z0}},
@@ -880,6 +880,7 @@ std::string Environment::groundStateJson() const {
             {"slumped_m3",s.ledger.slumped_m3},{"loosened_m3",s.ledger.loosened_m3}}},
         {"frontier",s.frontier},{"dirty_chunks",s.dirty_chunks},{"changed",rect(s.changed)},
         {"checked_total",s.checked_total},{"frontier_peak",s.frontier_peak},
+        {"matter_revisions",s.matter_revisions},
         {"carried",volumesJson(legacy)},{"carriers",actors},{"carry_limit_kg",std::isfinite(carry_limit_kg_)?Json(carry_limit_kg_):Json(nullptr)},
         {"time_s",time_s_},{"ground_behind_s",ground_behind_s_},{"water_behind_s",water_behind_s_},
         {"since_rebuild_s",since_rebuild_s_},{"commits",commits_},
@@ -897,7 +898,7 @@ void Environment::restoreGroundState(const std::string &text) {
     const std::initializer_list<const char *> keys={"schema","exported","returned","grid","rock","beds","soil","sand","loose","moisture",
         "floor","ledger","frontier","dirty_chunks","changed","checked_total","frontier_peak","carried",
         "carriers","carry_limit_kg","time_s","ground_behind_s","water_behind_s","since_rebuild_s","commits",
-        "pending_chunks","pending_wake","colliders","surface","baseline","regions"};
+        "pending_chunks","pending_wake","colliders","surface","baseline","regions","debris","matter_revisions"};
     if (!d.is_object()) throw std::invalid_argument("ground state must be an object");
     onlyKeys(d,keys,"ground state");
     if(d.value("surface",std::string("smooth"))!=(terrain_->surfaceGeometry()))
@@ -906,14 +907,15 @@ void Environment::restoreGroundState(const std::string &text) {
         terrain_->baseline().data(),terrain_->baseline().size()*sizeof(float))))
         throw std::invalid_argument("saved cut baseline differs from generated landscape");
     const std::string schema=d.value("schema","");
-    const bool v5=schema=="banjo.ground-state.v5";
+    const bool v6=schema=="banjo.ground-state.v6";
+    const bool v5=schema=="banjo.ground-state.v5" || v6;
     if (!v5 && d.contains("carriers")) throw std::invalid_argument("ground carriers require v5 state");
     const bool v4=schema=="banjo.ground-state.v4" || v5;
     for (const char *key:keys) if (!d.contains(key) && !((std::string(key)=="exported" && schema=="banjo.ground-state.v1") ||
         (std::string(key)=="returned" && schema!="banjo.ground-state.v3" && !v4) ||
         (std::string(key)=="rock" && v4) || (std::string(key)=="beds" && !v4) ||
         (std::string(key)=="carriers" && !v5) || std::string(key)=="surface" || std::string(key)=="baseline" ||
-        std::string(key)=="regions"))
+        std::string(key)=="regions" || ((std::string(key)=="debris" || std::string(key)=="matter_revisions") && !v6)))
         throw std::invalid_argument(std::string("missing ground state ")+key);
     const auto integer=[](const Json &v,std::uint64_t maximum) {
         if (!v.is_number_integer() || (!v.is_number_unsigned() && v.get<std::int64_t>()<0) ||
@@ -1002,6 +1004,16 @@ void Environment::restoreGroundState(const std::string &text) {
     s.changed=rect(d.at("changed"));
     s.checked_total=static_cast<std::size_t>(integer(d.at("checked_total"),std::numeric_limits<std::size_t>::max()));
     s.frontier_peak=static_cast<std::size_t>(integer(d.at("frontier_peak"),s.grid.cells()));
+    s.matter_revisions.clear();
+    if(v6) {
+        const auto &revisions=d.at("matter_revisions");
+        if(!revisions.is_array()||revisions.size()>s.grid.cells())throw std::invalid_argument("invalid ground matter revisions");
+        for(const auto &entry:revisions) {
+            if(!entry.is_array()||entry.size()!=2)throw std::invalid_argument("invalid ground matter revision");
+            const auto c=integer(entry[0],s.grid.cells()-1),r=integer(entry[1],std::numeric_limits<std::uint64_t>::max());
+            if(r==0||!s.matter_revisions.emplace(static_cast<std::size_t>(c),r).second)throw std::invalid_argument("invalid ground matter revision");
+        }
+    }
     const auto carried=volumes(d.at("carried"));
     auto total_carried = carried;
     std::map<std::string, Volumes> accounts;
@@ -1044,6 +1056,20 @@ void Environment::restoreGroundState(const std::string &text) {
         throw std::invalid_argument("exported and carried ground exceed excavation");
     if ((v4 || v5) && exported.rock_m3-returned.rock_m3+total_carried.rock_m3>all_dug.rock_m3+s.ledger.cut.rock_m3+1e-9)
         throw std::invalid_argument("carried rock exceeds excavation and breakage");
+    if(v6) {
+        Volumes physical;
+        const auto &bodies=d.at("debris").at("bodies");
+        if(!bodies.is_array()||bodies.size()>256)throw std::invalid_argument("invalid physical ground matter count");
+        for(const auto &body:bodies) {
+            const auto v=volumes(body.at("volumes"));
+            for(double x:{v.rock_m3,v.soil_m3,v.sand_m3})if(!std::isfinite(x)||x<0)throw std::invalid_argument("invalid physical ground matter volume");
+            physical.rock_m3+=v.rock_m3;physical.soil_m3+=v.soil_m3;physical.sand_m3+=v.sand_m3;
+        }
+        if(exported.rock_m3-returned.rock_m3+total_carried.rock_m3+physical.rock_m3>all_dug.rock_m3+s.ledger.cut.rock_m3+1e-9 ||
+            exported.soil_m3-returned.soil_m3+total_carried.soil_m3+physical.soil_m3>all_dug.soil_m3+1e-9 ||
+            exported.sand_m3-returned.sand_m3+total_carried.sand_m3+physical.sand_m3>all_dug.sand_m3+1e-9)
+            throw std::invalid_argument("physical and stored ground matter exceed actual excavation");
+    }
     for (double v:{carried.rock_m3,carried.soil_m3,carried.sand_m3})
         if (!std::isfinite(v) || v<0) throw std::invalid_argument("invalid carried ground");
     const double limit=d.at("carry_limit_kg").is_null()?std::numeric_limits<double>::infinity():
@@ -1078,6 +1104,7 @@ void Environment::restoreGroundState(const std::string &text) {
     selected_carrier_.clear();carried_accounts_=std::move(accounts);
     time_s_=time;ground_behind_s_=ground;water_behind_s_=water;since_rebuild_s_=since;commits_=commits;
     pending_chunks_=chunks;pending_wake_=wake;collider_heights_=std::move(colliders);
+    if(v6)restoreDebrisState(d.at("debris").dump());
     for (std::size_t c=0;c<s.grid.cells();++c) water_->setTerrain(c,terrain_->height(c));
 }
 
@@ -1114,6 +1141,7 @@ void Environment::attach(JoltWorld &world) {
     if (!restored) (void)terrain_->takeDirtyChunks();
     // And every region already made: by the scene, or by a saved world.
     for (int k = 0; k < static_cast<int>(regions_.size()); ++k) attachRegion(world, k);
+    attachDebris(world);
 }
 
 double Environment::addWater(double x_m, double z_m, double volume_m3) {
@@ -1781,6 +1809,11 @@ std::string Environment::reportJson(bool full) const {
                     {"carried_all", carriedJson(carriedTotal())},
                     {"exported", carriedJson(exported_)},
                     {"returned", carriedJson(returned_)},
+                    {"physical_debris",[&]() { Volumes live;
+                        for(const auto &[id,text]:debris_) { (void)id;const auto record=Json::parse(text);const auto &v=record.at("volumes");
+                            live.rock_m3+=v.at("rock_m3").get<double>();live.soil_m3+=v.at("soil_m3").get<double>();live.sand_m3+=v.at("sand_m3").get<double>(); }
+                        return volumesJson(live); }()},
+                    {"work_cut_source_work_j",cut_source_work_j_},
                     {"residual", volumesJson(residual)},
                     {"unsettled_columns", terrain_->unsettled()},
                     {"bare_rock", bare}}},

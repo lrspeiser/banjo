@@ -272,6 +272,9 @@ public:
     [[nodiscard]] double looseSoil(std::size_t c) const { return loose_[c]; }
     [[nodiscard]] float moisture(std::size_t c) const { return moisture_[c]; }
     [[nodiscard]] Surface surface(std::size_t c) const;
+    [[nodiscard]] std::uint64_t matterRevision(std::size_t c) const {
+        const auto found=matter_revisions_.find(c);return found==matter_revisions_.end()?0:found->second;
+    }
     // The runs of one column, bottom to top, into a buffer of at least
     // kRunsMost. Returns how many it wrote; never none, because there is always
     // rock. The beds come first, then the soil that formed on them, then the
@@ -391,6 +394,7 @@ public:
         std::set<int> dirty_chunks;
         Rect changed;
         std::size_t checked_total{}, frontier_peak{};
+        std::map<std::size_t,std::uint64_t> matter_revisions;
     };
     [[nodiscard]] State state() const;
     // Same-grid restoration. Invalid input leaves every current field intact.
@@ -439,6 +443,7 @@ private:
     int chunks_x_{}, chunks_z_{};
     int changed_i0_{}, changed_j0_{}, changed_i1_{-1}, changed_j1_{-1};
     std::size_t checked_total_{}, frontier_peak_{};
+    std::map<std::size_t,std::uint64_t> matter_revisions_;
 };
 
 } // namespace banjo::terrain

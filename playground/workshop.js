@@ -2804,7 +2804,11 @@ function applyRecipeMaterialFilter() {
   for (const card of pane.querySelectorAll("[data-recipe], [data-recipe-source]")) {
     // A material click is context, never a dead-end catalog filter. Recipes
     // still expose selection and a supported supply or editing route.
-    const matches = !selected || JSON.parse(card.dataset.materials || "[]").includes(selected);
+    const materials = JSON.parse(card.dataset.materials || "[]");
+    // Native rock is the declared concrete constituent used by the stone
+    // forming recipe. Keep the Inventory source name while matching its law.
+    const matches = !selected || materials.includes(selected) ||
+      (selected === "rock" && materials.includes("concrete"));
     card.hidden = false; if (matches) count++;
   }
   for (const group of pane.querySelectorAll("#ws-rec-saved .ws-design-group"))
@@ -3010,6 +3014,7 @@ async function showRecipes() {
     // requirement from an item's name or a progression hint.
     li.append(recipeValue("Skill", "None required", "ws-recipe-skill"));
     li.append(recipeValue("Make uses", paidProcess ? "Reviewed workbench supplies" : "Yours first, then shared"));
+    if(t.matter_source_note)li.append(recipeValue('Rock source',t.matter_source_note));
     const uses = make("div", {class:"ws-recipe-uses", "aria-label":"What it can do"});
     uses.append(make("span", {}, "Can do"));
     if (t.capabilities) {
@@ -3744,6 +3749,7 @@ function renderRemake() {
   remakeRow(root,"Energy",energySaid(quote.supply_required_j));
   if(quote.output_energy_j>0)remakeRow(root,"Battery charge",energySaid(quote.output_energy_j));
   remakeRow(root,"Minimum time",`${quote.minimum_duration_s.toFixed(1)} s`);
+  if(plan?.matter_source_note)remakeRow(root,'Rock source',plan.matter_source_note);
   if(quote.fixed_interfaces?.length) {
     remakeRow(root,"Connections",`${quote.fixed_interfaces.length} · Fixed`);
     const details=make("details",{});details.append(make("summary",{},"Connection limits"));

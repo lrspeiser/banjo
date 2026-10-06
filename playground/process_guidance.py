@@ -161,9 +161,9 @@ def _next(row,pose=None):
         if order and order['substance']==name:
             if order['busy']:
                 return answer(f"Wait while {order['program']} brings {name} to {row['input']}",verb='await-delivery',
-                    destination={'screen':'world','focus':order['program']},rover=order)
+                    destination={'screen':'world','focus':order['program']},rover=order,blockers=[reason])
             return answer(f"Order {order['program']}: dig {name} at {order['seam']} and bring it to {row['input']}",
-                verb='order-rover',destination={'screen':'world','focus':order['program']},rover=order)
+                verb='order-rover',destination={'screen':'world','focus':order['program']},rover=order,blockers=[reason])
         if source:
             return answer('Find '+name+' · Mining rover',operation='find-source',
                 destination={'screen':'world','resource':source['name']},blockers=[reason])

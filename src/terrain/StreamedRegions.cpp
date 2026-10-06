@@ -587,6 +587,7 @@ std::string Environment::regionsStateJson() const {
                            {"cut", volumesJson(s.ledger.cut)}, {"deposited", volumesJson(s.ledger.deposited)},
                            {"slumped_m3", s.ledger.slumped_m3}, {"loosened_m3", s.ledger.loosened_m3}};
         entry["frontier"] = s.frontier;
+        entry["matter_revisions"] = s.matter_revisions;
         Json chunks = Json::array();
         for (const int chunk : r->edited_chunks) {
             int i0, j0, i1, j1;
@@ -733,6 +734,12 @@ void Environment::restoreRegionsState(const std::string &text) {
             s.frontier.insert(at);
         }
         s.dirty_chunks.clear();
+        s.matter_revisions.clear();
+        for(const auto &revision_entry:entry.value("matter_revisions",Json::array())) {
+            if(!revision_entry.is_array()||revision_entry.size()!=2)throw std::invalid_argument("invalid region matter revision");
+            const auto c=revision_entry[0].get<std::size_t>(),revision=revision_entry[1].get<std::uint64_t>();
+            if(c>=n||revision==0||!s.matter_revisions.emplace(c,revision).second)throw std::invalid_argument("invalid region matter revision");
+        }
         s.changed = {};
         // The floor is the generated one: a dig does not move it.
         r.field->restore(s);

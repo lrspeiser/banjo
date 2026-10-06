@@ -148,10 +148,8 @@ def _resolve(app: Any, body: dict[str, Any]) -> dict[str, Any]:
     level = math.hypot(at[0] - eyes[0], at[2] - eyes[2])
     least, most = use["reach_m"]
     if use.get("gesture") == "contact" and cube_ground(app):
-        # On cube ground a click strikes the cube at once (_strike_cell): no
-        # swing has to land, so any cube within reach of the hand will do,
-        # not only the 1.15 to 2 m band a pick comes down in (the owner,
-        # 2026-10-04: "why can't I use the pickaxe on most areas?").
+        # Keep the clicked cell within the shared hand interaction range.
+        # Native contact/work still decides whether any material comes out.
         least, most = CUBE_REACH_M
     ring = {"at_m": at, "state": "ok"}
     out["ring"] = ring
@@ -212,7 +210,16 @@ def _resolve(app: Any, body: dict[str, Any]) -> dict[str, Any]:
         if point and all(k in point for k in ('tip_local','grip_local','pointing_local')):
             out['ready']=tool_gestures.ready_pose(point,out['target']['at_m'],eyes)
     out["enabled"] = True
-    if wet > WET_M and not cell_strike:
+    if wet > WET_M and cell_strike:
+        out['enabled']=False
+        ring['state']='no'
+        out['reason']='Wet physical excavation is not supported yet. Try dry ground.'
+        return out
+    if cell_strike and out['target']['ground'] in ('rock','weathered rock','ore','oxide ore'):
+        ring['state']='warn'
+        out['gather']['state']='requires-work'
+        out['reason']='Rock needs a harder working point and enough cutting work. Click to try your tool.'
+    elif wet > WET_M and not cell_strike:
         ring["state"] = "warn"
         out["reason"] = "Under water: wet ground is not modelled, and the engine will say so."
     elif not cell_strike and (surface == "rock" or cover < BARE_ROCK_M):
@@ -258,7 +265,8 @@ def _resolve_object(app,body,profile,use,out):
 
 
 def run(app: Any, body: dict[str, Any],
-        note: Callable[[Any, dict[str, Any]], None] | None = None) -> dict[str, Any]:
+        note: Callable[[Any, dict[str, Any]], None] | None = None,
+        cut_persist: Callable | None = None) -> dict[str, Any]:
     """One use of the tool in hand where the person looks: the whole of it, as
     their one click asks. Refused, with why, where `resolve` says it cannot be
     done; otherwise the tool is held still, swung at the ground there, pried if
@@ -319,7 +327,9 @@ def run(app: Any, body: dict[str, Any],
         if said.get('gesture')=='object-contact':
             return _object_contact(app,said,use,tool,eyes,note)
         if use['gesture']=='contact':
-            struck=_strike_cell(app,said,use,tool,heard,note,eyes)
+            struck=_strike_cell(app,said,use,tool,heard,note,eyes,
+                energy_assist=body.get("energy_assist") is True,
+                request_id=body.get("request_id"),persist=cut_persist)
             if struck is not None:return struck
             return _contact(app,said,use,tool,eyes,heard,note)
         if _point_in(app, tool):
@@ -668,27 +678,34 @@ def cube_depth_m(app):
     return float(grid.get('cell_m',generated.get('cell_m',.25)))
 
 
-def _strike_cell(app,said,use,tool,heard,note,eyes=None):
-    """On cube ground a swing's outcome is decided, not worked through: a whole
-    cube of soil or sand, a share of clay or rock (ToolTerrain::strikeCell). So
-    it is done at once, in one engine call, rather than with the hand's lift,
-    turn, lower, settle and stroke -- 0.5 to 3 s a click that the owner felt as
-    lag (2026-10-04). None where the ground is not cubes: swing it instead."""
+def _strike_cell(app,said,use,tool,heard,note,eyes=None,*,energy_assist=False,request_id=None,persist=None):
+    """Explicit funded reduced cutting; ordinary tools use measured contact.
+
+    Native work resistance, partial cuts and constituent bodies determine this
+    outcome. It is not a per-click breaking share or a fracture simulation.
+    """
     session=app.live.session
-    if not cube_ground(app):
-        return None
+    if not cube_ground(app) or not energy_assist:return None
+    if persist is None:
+        return {'action':said['label'],'refused':'Energy-assisted cutting needs durable world storage.','done':[]}
+    import physical_matter
+    actor=getattr(getattr(session,'_actor_local',None),'actor','')
     since=float(session.state.get('t') or 0)
     if note:note(app,{'t':since})
     at=[float(v) for v in said['target']['at_m']]
-    # Straight to the engine, as the hand's own commands go: not a /api/live/act
-    # op a page could call without this route's reach and readiness checks.
-    session.send(op='strike-cell',at_m=at)
+    receipt=physical_matter.cut(app,at,request_id,actor,persist)
+    if not receipt.get('supported'):
+        return {'action':said['label'],'refused':receipt.get('reason') or receipt.get('why') or 'Cutting is unavailable here.',
+                'done':[],'cut':receipt,'request_id':request_id}
     record=_latest(app,tool,since,heard)
-    if record is None or record.get('kind')=='not supported':return None
-    carried=_carried(app);kg=sum(float(carried.get(k) or 0) for k in ('soil_kg','sand_kg','rock_kg'))
-    return {'action':said['label'],'did':[said['label']],'done':['struck the cube'],
-            'said':_said(record,use,kg),'detail':_detail(record),'result':record,
-            'carried':carried,'repeat':use['repeat'],'gesture':'contact','struck':True,
+    percent=100*float(receipt.get('broken_share') or 0)
+    text=(f"Cut {float(receipt.get('mass_kg') or 0):.1f} kg · click the loose block to collect"
+          if receipt.get('body_id') else f"Cut progress {percent:.0f}% · {float(receipt.get('required_work_j') or 0)/1000:.1f} kJ total")
+    text+=f" · {receipt.get('charged_j',0)/1000:g} kJ banked energy"
+    return {'action':said['label'],'did':[said['label']],'done':['applied funded native work'],
+            'said':text,'detail':_detail(record),'result':record,'cut':receipt,'request_id':request_id,
+            'ground_debris':session.state.get('ground_debris'),
+            'carried':_carried(app),'repeat':use['repeat'],'gesture':'contact','struck':True,
             'rest_hand_m':_grip(session),
             'results':[r for r in heard.values() if r.get('open') is False
                 and float(r.get('at_s',since) or since)>=since-.05]}

@@ -189,28 +189,31 @@ class WhatAToolDoesWhereYouLook(unittest.TestCase):
         app.live.session.state['terrain']={'grid':{'cell_m':.25,'x0_m':0,'z0_m':0}}
         at=[12.625,2.625,-5.5]
         answer=tool_use.resolve(app,{'person':PERSON,'at_m':at})
-        self.assertTrue(answer['feedback']['ready'])
+        self.assertFalse(answer['feedback']['ready'])
+        self.assertEqual('warning',answer['feedback']['state'])
+        self.assertEqual('warn',answer['ring']['state'])
         self.assertEqual('rock',answer['target']['material'])
         self.assertEqual(2.625,answer['target']['at_m'][1])
         self.assertAlmostEqual(12.623,answer['target']['at_m'][0])
         self.assertEqual(answer['target']['at_m'],tool_use.cube_target_point(app,answer['target']['at_m'],PERSON['eyes_m']))
 
-    def test_wet_cube_readiness_matches_existing_cell_strike_without_relaxing_smooth_ground(self):
+    def test_wet_cube_refuses_before_native_work_and_smooth_ground_retains_warning(self):
         for surface,materials in [('sand',['sand']),('soil',['soil']),('rock',['rock'])]:
             with self.subTest(surface=surface):
                 app=app_with(survey={'surface':surface,'water':{'depth_m':.1}})
                 app.live.session.room_spec={'terrain':{'surface':'columns'}}
                 answer=tool_use.resolve(app,{'person':PERSON,'at_m':IN_REACH})
-                self.assertTrue(answer['feedback']['ready'])
-                self.assertEqual(materials,answer['feedback']['materials'])
-                self.assertEqual('ok',answer['ring']['state'])
+                self.assertFalse(answer['feedback']['ready'])
+                self.assertFalse(answer['enabled'])
+                self.assertIn('Wet physical excavation',answer['reason'])
+                self.assertEqual('no',answer['ring']['state'])
                 self.assertFalse(set(app.live.asked)&{'strike-cell','stroke','dig'})
         app=app_with(survey={'water':{'depth_m':.1}})
         app.live.session.room_spec={'terrain':{'surface':'smooth'}}
         self.assertFalse(tool_use.resolve(app,{'person':PERSON,'at_m':IN_REACH})['feedback']['ready'])
 
     def test_cube_preview_uses_native_cell_depth_for_layers_not_the_point_length(self):
-        app=app_with(survey={'surface':'sand','sand_m':.22,'soil_m':.8,'water':{'depth_m':.1}})
+        app=app_with(survey={'surface':'sand','sand_m':.22,'soil_m':.8,'water':{'depth_m':0.}})
         app.live.session.room_spec={'terrain':{'surface':'columns','generate':{'cell_m':.25}}}
         answer=tool_use.resolve(app,{'person':PERSON,'at_m':IN_REACH})
         self.assertEqual(['sand','soil'],answer['feedback']['materials'])

@@ -5,8 +5,9 @@
 // A pick swung into soil is not a dig with a pick-shaped name. Its point goes
 // into the ground as far as its own momentum and the hand's push drive it
 // against what the soil resists with, and a pry breaks out as much ground as
-// the soil gives -- and only then is the terrain changed, through the ground's
-// own dig, so what came loose is carried like anything else dug.
+// the soil gives -- and only then is the terrain changed. Dry column-ground
+// removals become connected native rigid matter, credited only on collection.
+// Smooth-ground edits retain the older bulk carry path.
 //
 // This holds the points declared on bodies and each point's meeting with the
 // ground, and runs in the two halves of a step the cutting model runs in
@@ -15,7 +16,8 @@
 // has reached, the ground's contact with the point is left to the bite, and
 // the rest of the tool keeps meeting the ground as the surface it is. After
 // it: what the bite took is read back as work, and a point that has come out
-// takes the ground it broke out with it.
+// releases its actual removed geometry. Funded cell cuts use a separately
+// declared finite work supply and never infer energy from a hit counter.
 //
 // It never decides anything the solver does. It sets what the ground resists
 // with; the solver decides whether the tool overcomes it.
@@ -69,13 +71,11 @@ class ToolTerrain {
 public:
     // Declare a point on a body (LiveWorld::toolPoint). 0 and the reason when
     // it cannot be one.
-    // One swing of `tool` at the cube of cube ground under `at_world_m`, decided
-    // at once rather than worked through the stroke: soil or sand comes out a
-    // whole cube, clay a third of one, rock a tenth, carried by `carrier`. The
-    // meeting is recorded closed, as a worked one is. "not supported" where the
-    // ground is not cubes, so the host can swing the tool instead.
+    // Explicitly funded work-cut reduction with a declared point/material
+    // admission gate. No fixed swing work, hit threshold, or launch motion.
     LiveGroundWork strikeCell(const ToolTerrainHost &host, const std::string &tool,
-                              const std::string &carrier, const Vec3 &at_world_m);
+                              const std::string &carrier, const Vec3 &at_world_m,
+                              double work_j, const std::string &work_source);
     unsigned declare(const ToolTerrainHost &host, const std::string &body, const Vec3 &tip_world_m,
                      const Vec3 &pointing_world, const terrain::ToolPointShape &shape,
                      const Vec3 &grip_world_m, std::string &why,
@@ -158,7 +158,6 @@ private:
         bool breaks_rock{};
         double rock_hardness_pa{};
         double broke_m3{};      // what this meeting has broken out of the rock
-        bool paid_cell{};       // on cube ground, this swing's share of a cell is paid
         std::string ground;  // the layer the tip is in
         std::string carrier; // owner when this meeting began, even if the tool is later released
         // As the step began, for what the step did.

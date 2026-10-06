@@ -93,6 +93,11 @@ def audit(state):
         if packet.get("kind") == "goods": continue
         m = packet["material"]; imports[m] = imports.get(m, 0.)+packet["mass_kg"]
         inputs[m] = inputs.get(m, 0.)+packet["mass_kg"]
+    raw_imports = {}
+    for entry in state.get('raw_make_inputs', {}).values():
+        for m, kg in entry['materials_kg'].items():
+            raw_imports[m] = raw_imports.get(m, 0.) + kg
+            inputs[m] = inputs.get(m, 0.) + kg
     totals = deepcopy(state["stock_kg"])
     for key in ("waste_kg", "transferred_kg"):
         for material, mass in state[key].items():
@@ -119,6 +124,7 @@ def audit(state):
             "assembly_goods_residual_kg": {n: goods_in.get(n, 0.) - goods_stock.get(n, 0.) - goods_used.get(n, 0.)
                 for n in set(goods_in) | set(goods_stock) | set(goods_used)},
             "rack_material_received_kg": imports,
+            "native_matter_received_kg": raw_imports,
             "native_energy_received_j": imported,
             "reserved_output_energy_j":reserved_energy,
             "transferred_output_energy_j":transferred_energy,
@@ -167,6 +173,7 @@ def validate_state(state):
         token(ident); stock_packet(packet)
         if ident not in state["receipts"]: raise ValueError("Material import has no receipt")
     funded_materials = set(state["config"]["stock_kg"]) | {p["material"] for p in stocks.values() if p.get("kind") != "goods"}
+    funded_materials |= {m for entry in state.get('raw_make_inputs', {}).values() for m in entry['materials_kg']}
     goods_quantities(state.get("goods_stock_kg", {}))
     imports = state.get("energy_imports", {})
     if not isinstance(imports, dict) or len(imports) > 4096:
@@ -233,6 +240,8 @@ def validate_state(state):
         if job["status"] in ("ready", "installed") and abs(job["work_j"]-job["required_j"]) > 1e-7:
             raise ValueError("Incomplete saved output")
     if running > 1: raise ValueError("The station has one physical work position")
+    from mcp import matter_fabrication
+    matter_fabrication.validate(state)
     a = audit(state)
     if any(abs(v) > 1e-7 for v in a["assembly_goods_residual_kg"].values()):
         raise ValueError("Fabrication save fails its assembly goods ledger")
@@ -491,6 +500,8 @@ def raw_inventory(state):
             if density is None or not math.isclose(item["mass_kg"],item["volume_m3"]*density,rel_tol=1e-12,abs_tol=1e-10):
                 raise ValueError("Raw return mass does not match native volume")
             have["volume_m3"]-=item["volume_m3"];have["mass_kg"]-=item["mass_kg"]
+    from mcp import matter_fabrication
+    matter_fabrication.subtract_raw(state, remaining)
     return {ident:list(contents.values()) for ident,contents in remaining.items()}
 
 
@@ -619,11 +630,12 @@ def ground_audit(state, ground, transfers=None):
         number(abs(terrain_residual), "terrain residual", 0, 1e12)
         # Positive means net outside input is needed to explain these accounts;
         # negative means excavated material has no recorded destination.
-        external = deposited + carried + exported - returned - dug
+        physical = quantity(ground.get('physical_debris',{}))
+        external = deposited + carried + physical + exported - returned - dug
         tolerance = 1e-10 + 1e-12 * max(dug, deposited, carried, exported)
         closed = abs(transfer_residual) <= tolerance and abs(density_residual) <= 1e-10 + 1e-12*mass
         rows[substance] = {"excavated_m3": dug, "deposited_m3": deposited,
-            "carried_m3": carried, "exported_m3": exported, "returned_m3": returned,
+            "carried_m3": carried, "physical_debris_m3":physical, "exported_m3": exported, "returned_m3": returned,
             "stored_m3": volume, "stored_kg": mass,
             "transfer_residual_m3": transfer_residual,
             "density_residual_kg": density_residual,
@@ -632,9 +644,13 @@ def ground_audit(state, ground, transfers=None):
             "transfer_closed": closed,
             "collection_status": "balanced" if abs(external) <= tolerance else
                 "external_input_or_error" if external > 0 else "unaccounted_destination"}
+        forming = sum(p['volume_m3'] for entry in (state or {}).get('raw_make_inputs', {}).values()
+                      for p in entry['allocations']) if substance == 'rock' else 0.
+        rows[substance]['forming_input_m3'] = forming
+        rows[substance]['forming_input_kg'] = forming * GROUND_DENSITIES[substance]
     return {"status": "matched" if all(r["transfer_closed"] for r in rows.values()) else "mismatch",
         "substances": rows,
-        "boundary": "Native excavated sand/soil/broken rock, carried material, deposits and receiving raw lots; crafted objects, energy and thermal transport excluded",
+        "boundary": "Native excavated sand/soil/broken rock, carried material, deposits and net receiving accounts. Forming input leaves raw inventory and enters the separate fabrication ledger; stored figures are cumulative receiving receipts. Crafted-object mechanics, energy and thermal transport excluded",
         "qualification": "Matching exports and receipts is not whole-world conservation. Authored deposits lack independent import history; net external or untracked volume remains visible."}
 
 
@@ -709,6 +725,9 @@ def mutate(state, body, *, quote=None):
             raise ValueError("The station is occupied; pause its current job first")
         if len(out["jobs"]) >= MAX_JOBS: raise ValueError("Workpiece budget exhausted")
         if quote is None: raise ValueError("A trusted compiled quote is required")
+        if quote.get('raw_matter') is not None:
+            from mcp import matter_fabrication
+            matter_fabrication.reserve(out, quote, body['request_id'], body.get('requested_by'))
         stocks=materials(quote,"stock")
         if any(out["stock_kg"].get(material,0.)+1e-10 < stock for material,stock in stocks.items()):
             raise ValueError("Insufficient stock; no material was reserved")

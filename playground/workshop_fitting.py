@@ -329,8 +329,10 @@ def _one_piece_of_matter(design: Any, overrides: dict[str, Any], cell_m: float) 
         raise ValueError(f"It is drawn in {len(islands)} pieces that do not touch: " + "; ".join(apart))
     materials = sorted({engine_materials.canonical(c["material"]) for c in matter["cells"]})
     if len(materials) != 1:
-        raise ValueError("It is drawn in " + " and ".join(materials) +
-                         ", and nothing here says how the two meet")
+        from mcp import workshop_fixed_assembly
+        # The paid installer retains separate constituent bodies and finite
+        # fixed mounts. Readiness must admit exactly that same sampled graph.
+        workshop_fixed_assembly.layout(design, overrides, cell_m=cell_m, matter=matter)
 
 
 def _unworkable(overrides: dict[str, Any]) -> str | None:
@@ -708,12 +710,15 @@ def check_validity(design: Any, overrides: Any = None, *, cell_m: float = 0.04,
     """
     base = design
     overrides = dict(overrides or {})
-    if construction.CONSTRUCTION_KEY not in overrides:
+    from mcp import workshop_tools, workshop_material_support
+    implicit_tool = (workshop_tools.KEY in (base.parameters or {})
+                     and not workshop_articulation.has_bearings(base)
+                     and not workshop_machines.of(base))
+    if construction.CONSTRUCTION_KEY not in overrides and not implicit_tool:
         overrides = _readopt(base, overrides)
     current = _built(base, overrides)
-    from mcp import workshop_tools, workshop_material_support
 
-    blocker = workshop_material_support.fixed_lattice_blocker(current, overrides)
+    blocker = workshop_material_support.fixed_lattice_blocker(current, overrides, cell_m=cell_m)
     if blocker:
         return {"schema": SCHEMA, "ok": False, "stage": "drawing", "concepts": [],
                 "changes": [], "overrides": overrides, "blocker": blocker,

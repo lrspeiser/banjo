@@ -319,11 +319,39 @@ class PrivateGuidance(unittest.TestCase):
                          'requirement':{'kind':'personal-batch','technique':'smelting-copper'}}]}
         with mock.patch.object(starter_goals,'view',return_value=goals):
             reading=self.post('/api/world/guidance',{},world)
-        self.assertEqual('process-input',reading['next_action']['verb'])
+        # A declared rover can reach the known ore seam and this intake, so
+        # missing supplies offer its real bounded order rather than a generic
+        # process button. Reading guidance must not issue that order.
+        action=reading['next_action']
+        self.assertEqual('order-rover',action['verb'])
+        order=action['rover']
+        self.assertEqual(intake_name,reading['processing_readiness']['input'])
+        self.assertEqual(order['program'],action['destination']['focus'])
+        routine=app.brains.brains[order['program']].routine
+        self.assertIn(intake_name,routine.places)
+        self.assertIn('dig at ',order['said'])
+        self.assertIn('dump it at '+intake_name,order['said'])
+        self.assertFalse(app.brains.brains[order['program']].orders_given)
+        self.assertEqual(0,reading['processing_readiness']['input_batch_kg'])
         self.assertEqual('Available',reading['next_action']['status'])
         self.assertEqual('smelt copper',reading['processing_readiness']['recipe'])
         self.assertTrue(any('intake needs' in b for b in reading['next_action']['blockers']))
         self.assertNotIn('job',reading['next_action']['destination'])
+        # An already active compatible delivery keeps the same intake reason
+        # and remains read-only. With no compatible rover, known-source help
+        # retains the generic process-input lane.
+        import process_guidance
+        from copy import deepcopy
+        row=deepcopy(reading['processing_readiness'])
+        row['rover_order']['busy']=True
+        waiting=process_guidance._next(row)
+        self.assertEqual('await-delivery',waiting['verb'])
+        self.assertEqual(action['blockers'],waiting['blockers'])
+        row['rover_order']=None
+        source=process_guidance._next(row)
+        self.assertEqual('process-input',source['verb'])
+        self.assertEqual('find-source',source['operation'])
+        self.assertEqual(action['blockers'],source['blockers'])
 
     def test_help_reads_own_wallet_without_spending_and_releases_world_during_model(self):
         world,owner,app=self.setup_world();peer=self.join(world,'Other player')

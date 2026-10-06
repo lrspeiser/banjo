@@ -68,7 +68,7 @@ TerrainField::State TerrainField::state() const {
     if (changed_i1_ >= changed_i0_ && changed_j1_ >= changed_j0_)
         changed = {changed_i0_, changed_j0_, changed_i1_ - changed_i0_ + 1, changed_j1_ - changed_j0_ + 1};
     return {grid_, beds_, soil_, sand_, loose_, moisture_, floor_, ledger_, frontier_,
-            dirty_chunks_, changed, checked_total_, frontier_peak_};
+            dirty_chunks_, changed, checked_total_, frontier_peak_,matter_revisions_};
 }
 
 void TerrainField::restore(const State &s) {
@@ -103,6 +103,7 @@ void TerrainField::restore(const State &s) {
     for (double x : {s.ledger.slumped_m3, s.ledger.loosened_m3})
         if (!std::isfinite(x) || x < 0) refuse();
     for (auto c : s.frontier) if (c >= n) refuse();
+    for(const auto &[c,revision]:s.matter_revisions)if(c>=n||revision==0)refuse();
     for (int c : s.dirty_chunks) if (c < 0 || c >= chunks_x_ * chunks_z_) refuse();
     const auto &r = s.changed;
     if (r.i0 < 0 || r.j0 < 0 || r.i0 > grid_.nx || r.j0 > grid_.nz ||
@@ -128,6 +129,7 @@ void TerrainField::restore(const State &s) {
     candidate.changed_i1_ = r.i0 + r.ni - 1; candidate.changed_j1_ = r.j0 + r.nj - 1;
     candidate.checked_total_ = s.checked_total;
     candidate.frontier_peak_ = s.frontier_peak;
+    candidate.matter_revisions_=s.matter_revisions;
     *this = std::move(candidate);
 }
 
@@ -356,6 +358,7 @@ double TerrainField::highest() const {
 }
 
 void TerrainField::touched(std::size_t c) {
+    ++matter_revisions_[c];
     const int i = static_cast<int>(c % static_cast<std::size_t>(grid_.nx));
     const int j = static_cast<int>(c / static_cast<std::size_t>(grid_.nx));
     // A point on the edge between two chunks is a point of both of them.

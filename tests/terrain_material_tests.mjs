@@ -141,6 +141,7 @@ test('dig square is green only for a fresh ready observation; refusals are red',
     assert.notEqual(toolTargetColor(feedback(extra)),0x62e595);
   assert.equal(toolTargetColor({ready:false,state:'blocked'}),0xf17f79);
   assert.equal(toolTargetColor({ready:false,state:'checking'}),0xe7bf65);
+  assert.equal(toolTargetColor({ready:false,state:'warning'}),0xe7bf65);
 });
 import {terrainMaterial} from '../playground/terrain_material.js';
 import {baselineHeightAt,cutHeightAt,walkCutSurface,cutWallBands,cutRimSegments} from '../playground/cut_surface.js';

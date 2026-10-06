@@ -35,6 +35,7 @@
 #include "water/RiverNetwork.hpp"
 #include "water/ShallowWater.hpp"
 #include "water/WaterCoupling.hpp"
+#include "core/Types.hpp"
 
 #include <limits>
 #include <array>
@@ -155,6 +156,11 @@ public:
     // changed and wakes exactly what they held.
     EditEffect dig(JoltWorld &world, double ax, double az, double bx, double bz,
                    double width_m, double depth_m, double carried_objects_kg = 0);
+    // The existing measured dry passive-earth wedge, retained as actual rigid
+    // constituent matter on compatible column ground instead of bulk credit.
+    EditEffect detachDig(JoltWorld &world, double ax,double az,double bx,double bz,
+                         double width_m,double depth_m,double measured_work_j,
+                         const std::string &source);
     EditEffect deposit(JoltWorld &world, double x, double z, double radius_m,
                        double sand_m3, double soil_m3);
     // Rock broken out of a column between two heights: a working, which is a
@@ -174,6 +180,16 @@ public:
     };
     Chipped chip(JoltWorld &world, double x, double z, double at_height_m, double volume_m3,
                  double carried_objects_kg = 0.0);
+    // Bounded, explicitly funded work-cut-v2 reduction. Exact constituent
+    // volumes remain one connected native rigid cut component. This is not
+    // constitutive fracture, granular flow, or a finite tool collision.
+    [[nodiscard]] std::string excavateCell(JoltWorld &world, const Vec3 &at_m,
+                                         double work_j, const std::string &work_source,
+                                         bool record_request = true);
+    [[nodiscard]] std::string debrisJson(bool include_cells = true) const;
+    [[nodiscard]] std::string collectDebris(JoltWorld &world, MatterBodyId id,
+                                           const Vec3 &collector_m, double maximum_distance_m,
+                                           const std::vector<MatterBodyId> &ignored_bodies = {});
     // A cut out of bare rock; the host adds the block as a body.
     std::optional<CutBlock> cut(JoltWorld &world, double x, double z, int cells_x, int cells_z,
                                 double depth_m, std::string *why = nullptr);
@@ -443,6 +459,16 @@ private:
     double hang_from_{};
     std::vector<std::vector<float>> collider_heights_;
     bool attached_{};
+    JoltWorld *debris_world_{}; // borrowed only while this environment is attached
+    std::map<MatterBodyId, std::string> debris_; // exact source-cell records; poses read from Jolt
+    std::map<MatterBodyId, std::string> debris_display_; // same physical geometry; constituent payload queried explicitly
+    std::map<std::string, std::string> cut_progress_; // signature + supplied work, retained across saves
+    std::map<std::string, std::string> cut_receipts_; // unique funded source id -> immutable request/answer
+    MatterBodyId next_debris_id_{800000000};
+    double cut_source_work_j_{};
+    void attachDebris(JoltWorld &world);
+    [[nodiscard]] std::string debrisStateJson() const;
+    void restoreDebrisState(const std::string &saved);
     Volumes carried_{};
     std::string selected_carrier_;
     std::map<std::string, Volumes> carried_accounts_;

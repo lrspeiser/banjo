@@ -31,6 +31,7 @@ def opened(app, answer):
 PLAYER_ROUTES = {'/api/world/open','/api/world/ask','/api/world/action','/api/world/placement','/api/world/construction',
     '/api/world/putdown','/api/world/inventory','/api/world/inventory/shown',
     '/api/world/machine','/api/world/watch-machine','/api/world/tool','/api/world/tool/use',
+    '/api/world/matter/shown','/api/world/matter/collect',
     '/api/world/goods/collect','/api/world/goods/deliver','/api/world/process','/api/world/rover/talk','/api/world/rover/brain',
     '/api/world/workshop/context','/api/world/workshop/what_made','/api/world/workshop/fit_to_ground','/api/world/guidance',
     # A player's own native body (native_body): the host derives the actor.
@@ -54,8 +55,8 @@ def check_player_request(path,body):
 #: added to it (docs/earth-and-mining-plan.md); v5 adds private carrier stocks.
 #: Only v1, which counted neither,
 #: is refused.
-ACCOUNTED = ("banjo.ground-state.v2", "banjo.ground-state.v3", "banjo.ground-state.v4", "banjo.ground-state.v5")
-RETURNS = ("banjo.ground-state.v3", "banjo.ground-state.v4", "banjo.ground-state.v5")
+ACCOUNTED = ("banjo.ground-state.v2", "banjo.ground-state.v3", "banjo.ground-state.v4", "banjo.ground-state.v5", "banjo.ground-state.v6")
+RETURNS = ("banjo.ground-state.v3", "banjo.ground-state.v4", "banjo.ground-state.v5", "banjo.ground-state.v6")
 COMMAND_FIELDS = {
     "state": set(), "configure": {"settings", "request_id"},
     "quote": {"candidate", "stock_kg"},
@@ -177,6 +178,7 @@ def compile_quote(candidate, stock_kg, cell_m, state, *, app=None):
             'stock_materials_kg': {m: kg*stock/mass for m,kg in vector.items()},
             'cell_m': cell_m, 'cells': len(cells), 'matter_physics_hash': artifact['physics_hash'],
             'output_energy_j': output_energy, 'fixed_interfaces': artifact['connections'],
+            'formation_cells':deepcopy(matter['cells']),
             'native_constituents_verified': True,
             'interface_limits': artifact['limitations']}, state)
     material = next(iter(materials))
@@ -218,7 +220,7 @@ def _persist(app, room, saved, state, *, recover_ack=False):
         gameplay_record=deepcopy(getattr(room,"gameplay_record",None)),
         fabrication_record=state,
         world_upgrades=deepcopy(getattr(room, "world_upgrades", {})))
-    for field in ("player_records","player_inventories","player_lock","hand_owner","market_pending","ground_transfers","machine_evidence_pending","player_evidence_pending","goods_claims","goods_deliveries","goods_durable_deliveries"):
+    for field in ("player_records","player_inventories","player_lock","hand_owner","market_pending","energy_banks","ground_transfers","machine_evidence_pending","player_evidence_pending","goods_claims","goods_deliveries","goods_durable_deliveries"):
         if hasattr(room,field): setattr(record,field,getattr(room,field))
     brains=getattr(app,"brains",None)
     record.machine_runtime=brains.runtime() if brains is not None else getattr(room,"machine_runtime",None)
@@ -490,7 +492,7 @@ def transfer_ground(app,body,operation):
         before=install._snapshot(live)
         ground=before.get("ground") or {}
         if ground.get("schema") not in ACCOUNTED: raise ValueError("Native runtime needs accounted bulk transfers")
-        if quantities["rock_m3"] and ground["schema"] not in ("banjo.ground-state.v4", "banjo.ground-state.v5"):
+        if quantities["rock_m3"] and ground["schema"] not in ("banjo.ground-state.v4", "banjo.ground-state.v5", "banjo.ground-state.v6"):
             raise ValueError("Native runtime needs accounted broken-rock transfers")
         source_actor='' if recovering else actor
         carried=ground.get('carriers',{}).get(source_actor,{}) if source_actor else ground['carried']

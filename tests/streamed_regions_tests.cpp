@@ -398,8 +398,11 @@ void aPickSwungOutThereBreaksTheRegionsGround() {
               << " L carried, the region's ledger dug " << (ledger.dug.soil_m3 + ledger.dug.sand_m3) * 1000 << " L\n";
     require(in.depth_m > 0.0, "the point went into the region's ground");
     require(out.kind == "broke out" && out.loosened.total() > 0.0, "the pry broke the region's ground out");
-    require(std::abs(gained - out.loosened.total()) < 1e-12, "what came out is carried");
-    require(std::abs(ledger.dug.soil_m3 + ledger.dug.sand_m3 - gained) < 1e-12, "and came out of the region");
+    require(std::abs(gained) < 1e-12, "measured column material remains physical before collection");
+    double physical=0;for(const auto &body:Json::parse(world->groundDebrisJson()).at("bodies"))
+        physical+=body.at("volumes").at("soil_m3").get<double>()+body.at("volumes").at("sand_m3").get<double>();
+    require(std::abs(physical-out.loosened.total())<1e-12,"measured region wedge retains its actual native matter");
+    require(std::abs(ledger.dug.soil_m3 + ledger.dug.sand_m3 - physical) < 1e-12, "and came out of the region");
     // The browser's immediate cube route must use this region too, rather
     // than clamp the clicked point to the original valley's last column.
     const auto &field=*env.regions()[0]->field;
@@ -410,9 +413,12 @@ void aPickSwungOutThereBreaksTheRegionsGround() {
         if(field.height(c)-field.rockTop(c)<g.dx)continue;
         const double x=g.xOf(static_cast<int>(c%g.nx)),z=g.zOf(static_cast<int>(c/g.nx));
         const double before=field.height(c),carried=env.carriedTotal().total();
-        const auto receipt=world->strikeCell({x,before,z});
-        require(std::abs(receipt.loosened.total()-g.dx*g.dx*g.dx)<1e-10,"one full grown-region cube");
-        require(std::abs(field.height(c)-(before-g.dx))<1e-10,"clicked grown-region column lowers");
+        const auto receipt=world->strikeCell({x,before,z},1e6,"region-paid-cut");
+        require(receipt.supported && receipt.loosened.total()>0,"funded grown-region material band");
+        require(field.height(c)<before,"clicked grown-region column lowers by its exact clipped band");
+        require(std::abs(env.carriedTotal().total()-carried)<1e-10,"released region component is physical matter before collection");
+        const auto cut=Json::parse(receipt.cut_receipt_json);
+        (void)world->collectGroundDebris(cut.at("body_id").get<MatterBodyId>(),{x,before,z},3);
         require(std::abs(env.carriedTotal().total()-carried-receipt.loosened.total())<1e-10,"region cube credited once");
         struck=true;
     }

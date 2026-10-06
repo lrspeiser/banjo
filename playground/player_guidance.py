@@ -130,13 +130,16 @@ def build_readiness(quote, state, stock_sources=(), goods_sources=(), *, candida
     from mcp.fabrication import MAX_JOBS
     required=quote.get('stock_materials_kg') or {quote['material']:quote['stock_kg']}
     lines=[]
+    raw_materials=(quote.get('raw_matter') or {}).get('materials_kg',{})
     for needs,held,sources,kind in ((required,state['stock_kg'],stock_sources,'material'),
                                   (quote.get('assembly_goods_kg',{}),state.get('goods_stock_kg',{}),goods_sources,'goods')):
         for name,kg in needs.items():
-            gap=max(0.,kg-held.get(name,0.))
+            raw_kg=raw_materials.get(name,0.) if kind=='material' else 0.
+            gap=max(0.,kg-held.get(name,0.)-raw_kg)
             personal=sum(s['mass_kg'] for s in sources if s['material']==name and s['pool']=='personal')
             shared=sum(s['mass_kg'] for s in sources if s['material']==name and s['pool']=='shared')
             lines.append({'substance':name,'kind':kind,'needed_kg':kg,'station_kg':min(kg,held.get(name,0.)),
+                'native_raw_kg':raw_kg,
                 'fund_kg':gap,'personal_kg':personal,'shared_kg':shared,
                 'short_kg':max(0.,gap-personal-shared)})
     energy=max(0.,quote['supply_required_j']-state['energy_j'])
@@ -154,6 +157,7 @@ def build_readiness(quote, state, stock_sources=(), goods_sources=(), *, candida
         'minimum_duration_s':quote['minimum_duration_s'],
         'product_mass_kg':quote.get('product_kg'),'cell_m':quote.get('cell_m'),
         'occupied_cells':quote.get('cells'),
+        'raw_matter':deepcopy(quote.get('raw_matter')),
         'skills_required':[],'placement_checked':False,'functional_test_required':True}
     candidate=candidate if candidate is not None else quote.get('candidate')
     if candidate is not None:

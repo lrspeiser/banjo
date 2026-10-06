@@ -53,6 +53,7 @@ dialog.id = "game-menu";
 dialog.innerHTML = `<div class="game-menu-head"><h2>Game menu</h2><button type="button" id="game-menu-close" aria-label="Close menu">×</button></div>
   <p id="game-menu-current">Current world</p>
   <label id="game-menu-audio">Audio<select aria-label="Audio output"><option value="off">Off · text replies</option><option value="on">On · speak chat replies</option></select></label>
+  <label id="game-menu-cutting">Energy assist<select aria-label="Excavation energy assist"><option value="off">Off · hand tool</option><option value="on">On · spend banked energy cutting</option></select></label>
   <label id="game-menu-movement">Movement<select><option value="native">Body · walk, swim, carry</option><option value="fly">Fly · God mode</option><option value="gravity">Camera · walk without a body</option></select></label>
   <form id="game-menu-avatar" hidden><label>Your avatar name<input name="name" maxlength="32" required></label><button type="submit">Save avatar name</button></form>
   <form id="game-menu-new"><label>World name<input name="name" maxlength="80" value="New world" required></label><label>Ground<select name="surface"><option value="cuts">Smooth hills · sharp cuts · preview</option><option value="smooth">Smooth slopes</option><option value="columns" selected>Material cells · 25 cm</option><option value="columns-fine">Material cells · 12.5 cm · preview</option></select></label><button type="submit">New game · generate map</button></form>
@@ -65,6 +66,9 @@ const $ = (q) => dialog.querySelector(q);
 const message = (text) => { $("#game-menu-message").textContent = text; };
 const audioSelect=$('#game-menu-audio select');audioSelect.value=audioOutputEnabled()?'on':'off';
 audioSelect.addEventListener('change',()=>setAudioOutput(audioSelect.value==='on'));
+const cuttingSelect=$('#game-menu-cutting select');
+cuttingSelect.value=localStorage.getItem('banjo.energy-assist')==='on'?'on':'off';
+cuttingSelect.addEventListener('change',()=>localStorage.setItem('banjo.energy-assist',cuttingSelect.value));
 const movementSelect = $("#game-menu-movement select");
 movementSelect.value = localStorage.getItem("banjo.movement") || "native";
 movementSelect.addEventListener("change", () => {

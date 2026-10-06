@@ -1456,7 +1456,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/blades.js":"blades.js","/interaction.js":"interaction.js","/tools.js":"tools.js","/workbench.js":"workbench.js",
                 "/cellmesh.js":"cellmesh.js","/surfaces.js":"surfaces.js",
                 "/material_appearance.js":"material_appearance.js","/terrain_material.js":"terrain_material.js","/cut_surface.js":"cut_surface.js","/ground_regions.js":"ground_regions.js",
-                "/player_guidance.js":"player_guidance.js","/voice.js":"voice.js","/construction_ui.js":"construction_ui.js",
+                "/player_guidance.js":"player_guidance.js","/voice.js":"voice.js","/construction_ui.js":"construction_ui.js","/physical_matter.js":"physical_matter.js",
                 "/debug":"debug.html","/debug.js":"debug.js","/debug.css":"debug.css",
                 "/vendor/three.module.js":"vendor/three.module.js","/vendor/three.core.js":"vendor/three.core.js"}
             if path not in allowed: return self.send({"error":"Not found"},404)
@@ -1615,7 +1615,7 @@ class Handler(BaseHTTPRequestHandler):
         waits_for_steps = path in {"/api/world/action", "/api/world/tool/use", "/api/world/putdown", "/api/world/ask"}
         # Normal world calls share access; explicit installation is exclusive.
         # Keep ordinary requests concurrent and perform authentication first.
-        with (world_access.gate(self.app).enter(exclusive=path in ("/api/world/open", "/api/live/open", "/api/world/goods/deliver", "/api/world/process")) if world_call else nullcontext()), \
+        with (world_access.gate(self.app).enter(exclusive=path in ("/api/world/open", "/api/live/open", "/api/world/goods/deliver", "/api/world/process", "/api/world/matter/collect")) if world_call else nullcontext()), \
              (world_access.state_lock(self.app) if world_call and not waits_for_steps else nullcontext()), \
              (gameplay_room.LOCK if world_call and not waits_for_steps and (gameplay_room.active(self.app)
                  or fabrication_room.active(self.app)
@@ -2149,15 +2149,21 @@ class Handler(BaseHTTPRequestHandler):
                 # And doing it: the whole of it, with the bounded hand, while
                 # the page keeps the room running (tool_use.run). The swing is
                 # the person's, so what it does is credited to their notebook.
-                _this_pages_room(self.app,body)
                 player_world.update_pose(self.app,player,body.get('person'))
+                if body.get('energy_assist') is True:
+                    import physical_matter
+                    recovered=physical_matter.recover_cut(self.app,body.get('request_id'),player,keep_world)
+                    if recovered is not None:
+                        return self.send({'cut':recovered,'said':'Previous cut saved · energy charged once.',
+                                          'replayed':True,'action':'Cut'})
+                _this_pages_room(self.app,body)
                 player_learning.require_capacity(self.app)
                 with (self.app.live.as_actor(player) if player else nullcontext()):
                     import world_goods
                     # Recover earlier carried loads at the current dig site,
                     # then empty the measured output after the native stroke.
                     piles=world_goods.heap_excavation(self.app,body)
-                    answer=tool_use.run(self.app,body,note=note_strike)
+                    answer=tool_use.run(self.app,body,note=note_strike,cut_persist=keep_world)
                     piles+=world_goods.heap_excavation(self.app,body)
                     if piles:
                         answer['excavation_piles']=piles
@@ -2168,6 +2174,8 @@ class Handler(BaseHTTPRequestHandler):
                     if world_goods.auto_piles_enabled(self.app) and any(float(carried.get(s+'_m3') or 0)>0 for s in ('sand','soil','rock')) and not body.get('target_name'):
                         answer['excavation_blocked']=True
                         answer['said']=(answer.get('said') or '')+' No clear dry pile spot here. Move a few steps to keep digging; the remaining material is retained.'
+                answer['ground_debris']=(self.app.live.session.state or {}).get('ground_debris')
+                answer['physical_ground']=bool(tool_use.cube_ground(self.app) and not body.get('target_name'))
                 # Reconcile native separation before saving the paired world
                 # and return the current hand/bag even after refused readiness.
                 answer['inventory']=inventory_room.shown(self.app,player)
@@ -2183,6 +2191,18 @@ class Handler(BaseHTTPRequestHandler):
                     if answer.get('learning_pending'):
                         answer['said']=(answer.get('said') or '')+' Journal update pending.'
                     answer['notebook']=knowledge_view(self.app)
+                return self.send(answer)
+            if path=="/api/world/matter/shown":
+                _this_pages_room(self.app,body)
+                return self.send({'ground_debris':self.app.live.session.send(op='ground-debris')['ground_debris']})
+            if path=="/api/world/matter/collect":
+                import physical_matter
+                # The adapter authorizes an already saved private receipt
+                # before rejecting a stale session after a lost reply.
+                player_world.update_pose(self.app,player,body.get('person'))
+                with (self.app.live.as_actor(player) if player else nullcontext()):
+                    answer=physical_matter.collect(self.app,body,player)
+                answer['inventory']=inventory_room.shown(self.app,player)
                 return self.send(answer)
             if path=="/api/world/inventory":
                 # One change to what the person has (inventory_room.request):
@@ -2972,6 +2992,7 @@ KEEP_WORLD_PENDING_GAP_S=2.0
 GUIDANCE_KEEP_S=15.0
 # Requests that only look or move a body: they never change what to do next.
 _QUIET_POSTS={'/api/world/player/walk','/api/world/guidance','/api/world/tool',
+              '/api/world/matter/shown',
               '/api/workshop/inventory','/api/workshop/thumbnail','/api/workshop/thumbnails',
               '/api/trace','/api/status'}
 _QUIET_OPS={'step','pick','poses','survey','tool_points','place_check','condition'}

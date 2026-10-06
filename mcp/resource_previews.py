@@ -72,6 +72,9 @@ def tool_feedback(result):
         out['action'] = 'Aim at ground'
     elif not result.get('enabled'):
         pass
+    elif gather.get('state') == 'requires-work':
+        out.update(state='warning', action='Try tool on rock',
+                   materials=list(gather.get('materials') or []))
     elif gather.get('state') == 'possible' and gather.get('materials'):
         out.update(ready=True, state='ready', action=result.get('label') or 'Dig',
                    materials=list(gather['materials']), reason=None)

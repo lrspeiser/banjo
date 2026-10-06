@@ -70,7 +70,9 @@ def test_selection_edit_save_review_reload_and_landscape(self):
     self.screenshot('build-lab-desktop.png')
     self.page.send('Emulation.setDeviceMetricsOverride',{'width':844,'height':390,'deviceScaleFactor':1,'mobile':True})
     self.page.send('Emulation.setTouchEmulationEnabled',{'enabled':True})
-    self.click('[data-customize-item]');self.wait('document.body.classList.contains("ws-chat-open")')
+    if not self.page.evaluate('document.body.classList.contains("ws-chat-open")'):
+        self.click('[data-customize-item]')
+    self.wait('document.body.classList.contains("ws-chat-open")')
     self.click('#ws-component-chat-text')
     self.screenshot('build-lab-landscape-chat.png')
     self.page.evaluate('document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}))')
@@ -79,6 +81,16 @@ def test_selection_edit_save_review_reload_and_landscape(self):
     self.assertTrue(self.page.evaluate('document.querySelector("#next-step").hidden'))
     self.assertNotIn('recipe=',self.page.evaluate('document.querySelector("[data-screen=world]").href'))
     self.screenshot('world-landscape-clean.png')
+    # The paid collected item must be usable in the ordinary World hand, not
+    # merely visible in a Lab thumbnail.
+    carried=self.post('/api/workshop/inventory',{},world)['carried'][0]
+    self.click('.strip-item[title*="Bag"]')
+    self.wait('!!window.banjoRoom.world.held')
+    shown=self.post('/api/world/inventory/shown',{'session':app.live.session.id},world)
+    self.assertTrue(any(item and item['id']==carried['id'] for item in shown['hands'].values()))
+    self.assertNotIn('workshop-',self.page.evaluate('window.banjoRoom.world.last.text').lower())
+    self.assertIn('field-pick',self.page.evaluate('window.banjoRoom.world.last.text').lower())
+    self.screenshot('paid-pick-equipped-landscape.png')
     rover=self.page.evaluate('window.banjoRoom.world.machines.programs.find(p=>p.kind==="roam")?.body')
     self.assertIsNotNone(rover)
     self.page.evaluate(f'window.banjoRoom.pick({json.dumps(rover)})')
@@ -112,5 +124,43 @@ def test_game_chat_selects_real_recipe_and_failed_chat_keeps_controls(self):
 
 BuildLabChat.test_selection_edit_save_review_reload_and_landscape=test_selection_edit_save_review_reload_and_landscape
 BuildLabChat.test_game_chat_selects_real_recipe_and_failed_chat_keeps_controls=test_game_chat_selects_real_recipe_and_failed_chat_keeps_controls
+
+
+def test_world_help_is_explicit_and_refreshes_do_not_repeat_model_calls(self):
+    world,owner,app=self.setup_world();self.browser(world,owner)
+    app.api_key='guide-fixture'
+    calls=[]
+    def explain(app,context):
+        calls.append(context)
+        return {'text':'Follow the available next action.','model':'fixture','usage':{}}
+    import proactive_guidance
+    app.proactive_guide=proactive_guidance.Manager(app,explain)
+    self.addCleanup(app.proactive_guide.shutdown)
+    with mock.patch.object(app.proactive_guide,'provider',side_effect=explain):
+        self.page.send('Page.navigate',{'url':self.base+f'/world?world={world}'})
+        self.wait('window.banjoRoom?.ready()')
+        self.assertEqual('off',self.page.evaluate('document.querySelector("#game-menu-cutting select").value'))
+        self.assertTrue(self.page.evaluate('document.querySelector("#next-step").hidden'))
+        self.assertEqual([],calls)
+        self.page.send('Input.dispatchKeyEvent',{'type':'keyDown','key':'F1','code':'F1','windowsVirtualKeyCode':112})
+        self.page.send('Input.dispatchKeyEvent',{'type':'keyUp','key':'F1','code':'F1','windowsVirtualKeyCode':112})
+        self.wait('!document.querySelector("#next-step").hidden && !!document.querySelector("#next-step button")')
+        self.assertEqual([],calls,'Opening the next-action card is a status read')
+        self.open_rail()
+        self.click('#next-step button')
+        self.wait('document.querySelector("#next-step").textContent.includes("Follow the available next action")')
+        self.assertEqual(1,len(calls))
+        for _ in range(5):
+            self.post('/api/world/assist',{'action':'status'},world)
+        self.assertEqual(1,len(calls),'Status refreshes must not launch provider work')
+        self.screenshot('explicit-world-guide.png')
+        self.page.evaluate('document.querySelector("#game-menu-cutting select").value="on";document.querySelector("#game-menu-cutting select").dispatchEvent(new Event("change"))')
+        self.assertEqual('on',self.page.evaluate('localStorage.getItem("banjo.energy-assist")'))
+        self.page.send('Page.reload');self.wait('window.banjoRoom?.ready()')
+        self.assertEqual('on',self.page.evaluate('document.querySelector("#game-menu-cutting select").value'))
+        self.assertEqual(1,len(calls),'Persisting an explicit cutting preference cannot request model work')
+        self.assertEqual([], [e for e in self.page.events if e.get('method')=='Runtime.exceptionThrown'])
+
+BuildLabChat.test_world_help_is_explicit_and_refreshes_do_not_repeat_model_calls=test_world_help_is_explicit_and_refreshes_do_not_repeat_model_calls
 
 if __name__=='__main__':unittest.main()

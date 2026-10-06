@@ -14474,13 +14474,26 @@ void LiveWorld::setGroundAim(const Vec3 &at_world_m) {
     impl_->ground_aims[impl_->selected_hand] = at_world_m;
 }
 
-LiveGroundWork LiveWorld::strikeCell(const Vec3 &at_world_m) {
+LiveGroundWork LiveWorld::strikeCell(const Vec3 &at_world_m, double work_j, const std::string &work_source) {
     if (!std::isfinite(at_world_m.x) || !std::isfinite(at_world_m.y) || !std::isfinite(at_world_m.z))
         throw std::invalid_argument("a strike is at a finite point");
     if (impl_->holding == static_cast<std::size_t>(-1))
         throw std::invalid_argument("nothing is in the hand to strike with");
     const std::string tool = impl_->described[impl_->holding].name;
-    return impl_->tools.strikeCell(toolHost(), tool, impl_->selected_hand, at_world_m);
+    return impl_->tools.strikeCell(toolHost(), tool, impl_->selected_hand, at_world_m, work_j, work_source);
+}
+
+std::string LiveWorld::groundDebrisJson(bool include_cells) const {
+    return requireEnvironment(impl_->environment).debrisJson(include_cells);
+}
+
+std::string LiveWorld::collectGroundDebris(MatterBodyId id,const Vec3 &collector_m,double maximum_distance_m) {
+    std::vector<MatterBodyId> ignored;
+    if(impl_->holding<impl_->body_of.size())for(const auto member:impl_->jointedWith(impl_->holding,true))
+        if(member<impl_->body_of.size())ignored.push_back(impl_->body_of[member]);
+    if(const auto own=impl_->native_players.find(impl_->selected_hand);own!=impl_->native_players.end())
+        ignored.push_back(own->second.id);
+    return requireEnvironment(impl_->environment).collectDebris(*impl_->world,id,collector_m,maximum_distance_m,ignored);
 }
 
 bool LiveWorld::removeNativePlayer(const std::string &actor) {

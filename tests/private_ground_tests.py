@@ -406,11 +406,20 @@ class PrivateGround(unittest.TestCase):
                 facts=original(*args,**kwargs)
                 for line in facts['inputs']:
                     line.update(hopper_kg=0,mass_kg=0,carried_kg=0,
-                        stored_personal_kg=.5 if line['substance']=='sand' else 0)
+                        stored_personal_kg=.5 if line['substance']=='sand' else 0,
+                        pile_kg=0,piles=[])
                 return facts
-            with mock.patch.object(world_goods,'input_readiness',side_effect=partial):
+            # A fixture observation change must invalidate the same read cache
+            # that ordinary player mutations invalidate in the host.
+            with mock.patch.object(world_goods,'input_readiness',side_effect=partial) as observed:
+                flow.server._guidance_moved(app)
                 small=self.post('/api/world/guidance',{},world)
+                observed.assert_called()
+            flow.server._guidance_moved(app)
             self.assertEqual(.5,small['processing_readiness']['available_batch_kg'])
+            sand=next(r for r in small['processing_readiness']['inputs'] if r['substance']=='sand')
+            self.assertEqual(.5,sand['stored_personal_kg'])
+            self.assertEqual(0,sand['hopper_kg'])
             self.assertEqual([],small['processing_readiness']['missing'])
             self.assertEqual(before,app.room.fabrication_record)
             self.assertEqual('select-process',own['next_action']['verb'])
@@ -627,7 +636,8 @@ class PrivateGround(unittest.TestCase):
         self.assertAlmostEqual(80,carrying(bob['token'])['total_kg'],places=5)
         self.assertTrue(flow.server.keep_world(app,'save independent ground accounts'))
         saved=deepcopy(app.room.world_record)
-        self.assertEqual('banjo.ground-state.v5',saved['ground']['schema'])
+        self.assertEqual('banjo.ground-state.v6',saved['ground']['schema'])
+        self.assertEqual('banjo.ground-debris.v1',saved['ground']['debris']['schema'])
         self.assertGreater(saved['ground']['carriers'][alice['id']]['sand_m3'],0)
         self.assertGreater(sum(saved['ground']['carriers'][bob['id']].values()),0)
         self.stop();self.start()

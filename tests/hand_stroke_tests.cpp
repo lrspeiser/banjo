@@ -556,8 +556,12 @@ void refusedStepsRestoreEveryPlayersHand() {
         auto live=LiveWorld::open(request),control=LiveWorld::open(request);
         for (auto *world:{live.get(),control.get()}) {
             world->foreseeCollisions(0);
-            world->spawnNativePlayer("left",{-2,1,3});
-            world->spawnNativePlayer("right",{2,1,3});
+            // Keep the complete stroke within the native 1.8 m shoulder
+            // reach. The old positions put the initial grips >2.23 m away,
+            // so authoritative arm admission released both held tools before
+            // this fixture could accumulate the work it is meant to restore.
+            world->spawnNativePlayer("left",{-1,1,2});
+            world->spawnNativePlayer("right",{1,1,2});
             world->setNativePlayerActuator("left",{20,0,0},{},.25);
             world->setNativePlayerActuator("right",{-20,0,0},{},.25);
             for (auto actor:{std::string("left"),std::string("right")}) {

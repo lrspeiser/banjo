@@ -287,6 +287,10 @@ def recipes(app: Any) -> dict[str, Any]:
     stock = {r["material"]: r for r in workshop_library.rack(app)["materials"]}
     goods_stock = {r["substance"]: r for r in workshop_library.goods_rack(app)["goods"]}
     held = {name: float(r["mass_kg"]) for name,r in stock.items()}
+    from mcp import matter_fabrication
+    native_raw=matter_fabrication.available_materials(
+        getattr(getattr(app,'room',None),'fabrication_record',None) or {},workshop_library.rack_owner_id(app))
+    for material,kg in native_raw.items():held[material]=held.get(material,0.)+kg
     held_goods = {name: float(r["mass_kg"]) for name,r in goods_stock.items()}
     world_cell_m = workshop_recipe.world_cell_size(app)
     templates = []
@@ -296,7 +300,8 @@ def recipes(app: Any) -> dict[str, Any]:
         bom = workshop_library.bill_of_materials(app, design)
         materials = [{"material": r["material"], "kg": float(r["mass_kg"]),
                       "held_kg": held.get(r["material"], 0.0),
-                      "personal_kg": stock.get(r["material"],{}).get("personal_kg",0),
+                      "personal_kg": stock.get(r["material"],{}).get("personal_kg",0)+native_raw.get(r['material'],0.),
+                      "native_raw_kg":native_raw.get(r['material'],0.),
                       "shared_kg": stock.get(r["material"],{}).get("shared_kg",0),
                       "enough": held.get(r["material"], 0.0) + 5e-5 >= float(r["mass_kg"])} for r in bom["materials"]]
         goods = [{"substance": s, "kg": kg, "held_kg": held_goods.get(s, 0.0),
@@ -317,6 +322,9 @@ def recipes(app: Any) -> dict[str, Any]:
                               "installation", design, overrides, lambda: workshop_placement.for_design(design)),
                           "parts": len(design.parts), "families": sorted({p.family for p in design.parts if p.family}),
                           "materials": materials, "goods": goods,
+                          "matter_source_note":matter_fabrication.source_note(
+                              getattr(getattr(app,'room',None),'fabrication_record',None) or {},
+                              workshop_library.rack_owner_id(app),{r['material']:r['kg'] for r in materials}),
                           "enough": all(m["enough"] for m in materials) and all(g["enough"] for g in goods),
                           **_shortfall(materials, goods),
                           "can_do": _can_do(record, made, design),

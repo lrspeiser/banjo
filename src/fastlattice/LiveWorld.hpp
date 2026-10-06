@@ -1203,6 +1203,7 @@ struct LiveGroundWork {
     double work_j{};
     double penetration_work_j{};
     double breakout_work_j{};
+    std::string cut_receipt_json; // explicit funded work-cut receipt; empty for measured tool meetings
     // The model's own numbers at the deepest it went: what the ground resisted
     // the point going in with, and a pry with.
     double resistance_n{};
@@ -2310,12 +2311,17 @@ public:
     // the world, so it is not left standing in everyone's way. False if they
     // had none.
     bool removeNativePlayer(const std::string &actor);
-    // Where the selected hand's next swing into cube ground is aimed: the cube
-    // it takes out is the one aimed at, when the swing breaks ground next to it.
+    // Where the selected hand's next ground stroke is aimed. This does not
+    // enlarge its measured passive-earth wedge or supply extraction work.
     void setGroundAim(const Vec3 &at_world_m);
-    // The selected hand's tool struck at the cube under `at_world_m`, at once
-    // (ToolTerrain::strikeCell). Throws when the hand holds nothing.
-    LiveGroundWork strikeCell(const Vec3 &at_world_m);
+    // Admit a selected column band against a finite named work supply. Partial
+    // paid progress persists; only a fully paid band detaches as native matter.
+    // A zero budget does not extract. Throws when the hand holds nothing.
+    LiveGroundWork strikeCell(const Vec3 &at_world_m, double work_j = 0,
+                              const std::string &work_source = {});
+    [[nodiscard]] std::string groundDebrisJson(bool include_cells = true) const;
+    [[nodiscard]] std::string collectGroundDebris(MatterBodyId id, const Vec3 &collector_m,
+                                                double maximum_distance_m = 3);
     [[nodiscard]] std::string playerCarriedGround() const;
     // Previews, for aiming. Neither changes the world, and both are bounded:
     // at most ten seconds of flight, and a stroke at most its own give_up_s.
