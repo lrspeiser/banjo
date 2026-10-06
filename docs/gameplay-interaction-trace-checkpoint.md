@@ -93,3 +93,31 @@ owner's same world reloads with a closed chat rail and writes target-state
 events locally. A live ordinary pickup check refuses an out-of-reach handle;
 this motivates the added Inventory request/outcome coverage. The preserved
 world is not reset. Broader gameplay/physical qualification remains open.
+
+## Installed capture and remaining defect
+
+The complete pointer/Inventory extension is published and installed at main
+`c9eda1b6`; the same world and native binaries are preserved. The current server
+is a managed local process on port 18890, with its output in the Codex command
+session and per-world JSONL diagnostics on disk. The final four-suite extension
+gate passes in 54.58 s.
+
+One ordinary in-app-browser click at screen (450, 389) produced linked record
+`a6603370-a106-45f8-b080-2b1f8e2962ca`. The server admitted sand at
+[0.914720, 0.749490, -1.227070] m, horizontal range 1.18 m. Its desired hand
+was [0.703787, 1.008003, -0.995949] m. The request began holding Field pick;
+2.054 s later, the positioning refusal records an empty native hand and a
+point 0.840031 m from its intended clearance position. Native elapsed time
+is 2.029167 s. The avatar centre moves from [0.117840, 0.880282, -0.352373]
+to [-0.890290, 1.637353, 0.319898] m, with a changed orientation. The browser
+then shows “Field pick left your hand” and tool-needed, with chat closed.
+
+This is direct evidence of lost native grip during preparation, not evidence
+that the ground received cutting work or that the arm boundary was the sole
+cause. Investigate the native player/hand reaction and preparation controller,
+and make readiness include its actual body/grip reach. The present refusal
+text still says moving into position after grip loss; it needs an explicit
+phase-aware lost-grip response. This defect is **open**, not covered as a
+successful standing-player excavation by the passing logging/refusal tests.
+The local proof image is `build/resource-flow/gameplay-trace-repro.jpg`; raw
+owner gameplay records remain local rather than being committed.
