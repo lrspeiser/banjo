@@ -99,7 +99,9 @@ class RecipeGuidance(unittest.TestCase):
         # The catalog Table is listed under the recommended Work table's
         # "Other versions"; a player opens that first.
         p.evaluate(f'document.querySelector({json.dumps(card)}).closest(".ws-variants")?.setAttribute("open","")')
-        click(card+' canvas');wait(f'document.querySelector({json.dumps(card+" details")}).open')
+        # The canvas selects the item into Lab. Supply routes belong to the
+        # separate materials disclosure in the consolidated Build card.
+        click(card+' .ws-recipe-details > summary');wait(f'document.querySelector({json.dumps(card+" .ws-recipe-details")}).open')
         text=p.evaluate(f'document.querySelector({json.dumps(card)}).textContent')
         self.assertIn('Yours 0',text);self.assertIn('Shared 12.4',text);self.assertIn('None required',text)
         self.assertIn('oak pile',text);self.assertIn('Missing',text);shot('shortage')
@@ -129,7 +131,7 @@ class RecipeGuidance(unittest.TestCase):
         wait(f'document.querySelector({json.dumps(card+" .ws-recipe-acts button")}) && !document.querySelector({json.dumps(card+" .ws-recipe-acts button")}).disabled')
         # Back on Recipes the Table is under Work table's "Other versions" again.
         p.evaluate(f'document.querySelector({json.dumps(card)}).closest(".ws-variants")?.setAttribute("open","")')
-        click(card+' canvas');shot('supplied')
+        click(card+' .ws-recipe-details > summary');shot('supplied')
         installed=len(app.room.workshop_installs)        # new worlds start with their own
         click(card+' .ws-recipe-acts button')
         wait(f'document.querySelector({json.dumps(card+" .ws-recipe-result")}).textContent.includes("Made ✓")')
@@ -146,7 +148,7 @@ class RecipeGuidance(unittest.TestCase):
         # the next recipe's guidance is read or acted on.
         wait(f'document.querySelector({json.dumps(rover)}).textContent.includes("Yours "+(({after["personal_kg"]}).toLocaleString(undefined,{{maximumFractionDigits:2}}))+" kg")')
         shot('made')
-        click(rover+' canvas');wait(f'document.querySelector({json.dumps(rover+" details")}).open')
+        click(rover+' .ws-recipe-details > summary');wait(f'document.querySelector({json.dumps(rover+" .ws-recipe-details")}).open')
         text=p.evaluate(f'document.querySelector({json.dumps(rover)}).textContent')
         # Whichever is true here: no machine smelts copper, a furnace can be
         # switched to it, or (in a starter world) the furnace already does.
@@ -166,7 +168,7 @@ class RecipeGuidance(unittest.TestCase):
         shot('ore-source')
         p.send('Page.navigate',{'url':recipes_url})
         wait(f'document.querySelector({json.dumps(rover)})')
-        click(rover+' canvas');wait(f'document.querySelector({json.dumps(rover+" details")}).open')
+        click(rover+' .ws-recipe-details > summary');wait(f'document.querySelector({json.dumps(rover+" .ws-recipe-details")}).open')
         click(rover+' [data-supply-offer="wire-coil"]')
         wait('document.querySelector("[data-market-item=wire-coil].ws-goal-target") && !document.querySelector("#ws-pane-market").hidden')
         shot('market')

@@ -219,3 +219,70 @@ method passes both seeds in 1.773 s. Logs are
 revision, working diff and SHA-256 manifest are retained in
 `build/ui-regression-tracked-snapshot/`. These targeted checks do not establish
 that the broader full regression run has completed.
+
+### Recipe supply guidance follow-up
+
+The remaining ordinary recipe-guidance browser failure expected a canvas
+click to open a materials drawer. In the consolidated Build screen the canvas
+correctly selects that recipe into Lab; the separate **Materials & build
+details** summary owns its supply disclosure. The fixture now uses that
+summary at all four disclosure points, without a production change.
+
+Full tracked `tests/recipe_guidance_tests.py -v` passes **3/3 in 18.023 s**
+against published source `868d6c9b` plus this fixture correction, with
+`BANJO_BROWSER_TESTS=required`,
+`BANJO_LIVE_ENGINE=build/pickaxe-preview/Release/banjo_live_world_run.exe` and
+`BANJO_LIBRARY=build/pickaxe-preview/Release/banjo.dll`. The runner SHA-256 is
+`44f74c1729e8c2bb01b9448a64c76c314e00500e3129cb821f1582d84d404026`.
+The original legacy recipe-supply scope remains: actual shortage disclosure,
+World pile location without teleporting, collection into private stock,
+material-debited Make, unchanged shared stock, native installation count,
+hopper/yield/deposit guidance, targeted wire-coil market offer and absence of
+browser runtime exceptions. Exact transaction and provenance assertions were
+retained. Fresh finite-workbench formation remains covered by its separate
+fabrication and starter-goal suites.
+
+Evidence is `build/recipe-guidance-tracked-full-final.log`,
+`build/resource-flow/recipe-guidance.json` and its shortage, supplied, made,
+ore-source and market screenshots. The owner world and demo were untouched.
+
+### Private-ground browser fixture follow-up
+
+Both affected tracked browser methods in `tests/private_ground_tests.py`
+pass **2/2 in 11.089 s** with browser verification required and the current
+Release runner/DLL (runner SHA-256 `44f74c17…404026`). This is a targeted
+two-method result, not a new full-suite claim.
+
+The private account view now checks the actual **Ground load** section
+heading. It retains the exact per-material quantities, 80 kg total, Store
+controls, separate unassigned account and peer-privacy assertions. The old
+heading was sought inside the cards container, which contains material cards
+and quantities rather than a heading.
+
+The original Store test clicked during initial Inventory startup. An ignored
+diagnostic observed pointer down/up/click retargeted to `#ws-centre`, zero
+receiving Store HTTP requests, zero save-failure mock calls and no pending
+transfer. The fixture now waits for the declared page startup-ready flag,
+an enabled control without an inert ancestor, and a reachable real pointer
+target before clicking. This corrects the fixture's early click; no production
+storage or retry behavior was changed. Intermediate artifact attempts had
+mistakenly attached these helper waits to the separate glass-input method;
+the final tracked diff contains no change to that method.
+
+With the corrected actual Store click, the receiving save reports HTTP 503
+and the save-failure mock runs once. Retry appears, survives reload with the
+exact original operation, material, volume and request ID, then creates one
+stored lot with that request ID. The pending record clears after successful
+retry. Existing retrieve, anonymous-load recovery, private peer, quantity,
+rollback and browser-exception checks remain. A blank notice in the early
+503 audit was captured after Retry had appeared and before the guard finished
+its notice update; the subsequent reload/retry journey passes.
+
+Evidence: `build/private-ground-tracked-browser-final.log`,
+`build/private-ground-store-success-audit.json`,
+`build/private-ground-store-earlyclick-summary.json` (an explicit summary of
+the earlier diagnostic, not a raw replay), the retained failing
+`build/private-ground-store-audit.log`, and
+`build/resource-flow/raw-storage-inventory.png` /
+`build/resource-flow/private-ground-inventory.png`. No owner world or demo
+process was used.

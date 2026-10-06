@@ -562,24 +562,36 @@ class PrivateGround(unittest.TestCase):
                 time.sleep(.1)
             self.fail(expr+'; '+str(p.evaluate('document.querySelector("#ws-notice")?.textContent')))
         def click(selector):
+            wait('document.querySelector("#design-workshop")?.dataset.ready === "true"')
+            wait('(()=>{const b=document.querySelector('+json.dumps(selector)+');if(!b)return false;b.scrollIntoView({block:"center"});const r=b.getBoundingClientRect(),h=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return r.width>0 && r.height>0 && !b.disabled && !b.closest("[inert]") && !!h && (h===b || b.contains(h));})()')
             spot=p.evaluate('(()=>{const b=document.querySelector('+json.dumps(selector)+');b.scrollIntoView({block:"center"});const r=b.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()')
             for kind in ('mousePressed','mouseReleased'):
                 p.send('Input.dispatchMouseEvent',{'type':kind,'button':'left','clickCount':1,**spot})
         p.send('Page.navigate',{'url':self.base+f'/world?world={world}&workshop=1&tab=inventory&hold=1'})
-        wait('document.querySelector("[data-ground-action=store_ground]")')
+        wait('document.querySelector("#design-workshop")?.dataset.ready === "true" && document.querySelector("[data-ground-action=store_ground]")')
         material=p.evaluate('document.querySelector("[data-ground-action=store_ground]").closest("article").dataset.groundLoad')
         source_kg=a[material+'_kg']
         self.assertTrue(p.evaluate('Boolean(document.querySelector("[data-ground-load] canvas"))'))
         with mock.patch.object(app.store,'save',side_effect=OSError('disk full')):
             click('[data-ground-action=store_ground]')
             wait('document.querySelector("[data-ground-retry]")')
+        transfer_key='banjo.ground-transfer.'+world+'.'+alice['id']
+        pending=p.evaluate('JSON.parse(sessionStorage.getItem('+json.dumps(transfer_key)+'))')
+        self.assertEqual('store_ground',pending['operation'])
+        self.assertEqual(material,pending['material'])
+        self.assertTrue(pending['request']['request_id'])
+        self.assertAlmostEqual(a[material+'_m3'],pending['request'][material+'_m3'],places=9)
         self.assertAlmostEqual(a['total_kg'],self.post('/api/workshop/inventory',{},world)['ground_load']['total_kg'],places=5)
         p.send('Page.reload',{})
         wait('document.querySelector("[data-ground-retry]")')
+        self.assertEqual(pending,p.evaluate('JSON.parse(sessionStorage.getItem('+json.dumps(transfer_key)+'))'),
+            'Reload must preserve the exact uncertain Store request')
         self.assertTrue(p.evaluate('document.querySelector("[data-ground-action=store_ground]").disabled'))
         click('[data-ground-retry]')
         wait('document.querySelector("#ws-inv-stored-ground [data-ground-lot]") && !document.querySelector("[data-ground-retry]")')
+        self.assertIsNone(p.evaluate('sessionStorage.getItem('+json.dumps(transfer_key)+')'))
         own=self.post('/api/workshop/inventory',{},world)
+        self.assertEqual([pending['request']['request_id']],[v['lot_id'] for v in own['stored_ground']])
         self.assertAlmostEqual(source_kg,sum(v['mass_kg'] for v in own['stored_ground']),places=5)
         click('[data-ground-action=retrieve_ground]')
         wait('!document.querySelector("[data-ground-action=retrieve_ground]:disabled") && document.querySelector("#ws-inv-ground").textContent.includes("5 kg")')
@@ -714,7 +726,7 @@ class PrivateGround(unittest.TestCase):
         # material, each with its Store action, and adds up to the account.
         loaded=self.post('/api/workshop/inventory',{},world,peer['token'])
         self.assertAlmostEqual(80,loaded['ground_load']['total_kg'],places=5)
-        self.assertIn('Nearby material piles',p.evaluate('document.querySelector("#ws-inv-ground").textContent'))
+        self.assertEqual('Ground load',p.evaluate('document.querySelector("#ws-inv-ground").parentElement.querySelector("h3").textContent'))
         self.assertIn('Unassigned',p.evaluate('document.querySelector("#ws-inv-unassigned").textContent'))
         shown=p.evaluate('''Object.fromEntries([...document.querySelectorAll("#ws-inv-ground [data-ground-load]")].map(c=>
           [c.dataset.groundLoad,{kg:Number(c.textContent.match(/([0-9.]+) kg/)[1]),

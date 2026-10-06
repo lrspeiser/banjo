@@ -1055,7 +1055,8 @@ class AutonomousGuests(unittest.TestCase):
         import base64
         (output/'market.png').write_bytes(base64.b64decode(page.send('Page.captureScreenshot')['data']))
         page.evaluate('[...document.querySelectorAll("#ws-market-recipe button")].find(b=>b.textContent==="Open recipe").click()')
-        wait('new URLSearchParams(location.search).get("tab")==="recipes" && [...document.querySelectorAll("[data-recipe]")].some(c=>c.dataset.recipe === "field-pick:Personal field pick" && c.classList.contains("ws-goal-target"))')
+        # Opening a selected recipe loads its source into the shared Build/Lab.
+        wait('new URLSearchParams(location.search).get("tab")==="lab" && new URLSearchParams(location.search).get("recipe")==="field-pick:Personal field pick" && !document.querySelector("#ws-hub-build").hidden && document.querySelector("#ws-lab-draft")?.textContent.includes("Personal field pick") && document.querySelector("#ws-draft-save")?.offsetParent!==null && [...document.querySelectorAll("[data-recipe]")].some(c=>c.dataset.recipe === "field-pick:Personal field pick" && c.classList.contains("ws-goal-target"))')
         self.assertEqual(set(),server.journal_of(app,visitor).knows())
         self.assertFalse([e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
         (output/'receipt.json').write_text(json.dumps({'world_seed':self.app.hub.metadata(world)['terrain_seed'],
@@ -1230,7 +1231,15 @@ class AutonomousGuests(unittest.TestCase):
         self.assertEqual(before["record"], after["record"])
         self.assertGreaterEqual(sum(s['known'] for s in view['skills']),2)
         self.assertTrue(page.evaluate('document.querySelector("#watch-tech").textContent.includes("Gathering by hand")'))
-        self.assertIn('field pick',page.evaluate('document.querySelector("[data-hand=right]").textContent').lower())
+        # The current hand strip displays pictures; its accessible name,
+        # scoped to the strip, identifies the bot's item without selecting the
+        # older duplicate hand-slot markup or requiring visible label text.
+        self.assertEqual(bot_id,view['state']['hand_owner'])
+        bot_hand=view['state']['inventory']['hands']['right']
+        self.assertIn('field pick',bot_hand['label'].lower())
+        self.assertIn(view['state']['hand']['holding'],bot_hand.get('parts') or [bot_hand['name']],
+                      'The watched item must remain in the bot native grip')
+        self.assertIn('field pick',page.evaluate('document.querySelector("#inventory-strip [data-hand=right]").getAttribute("aria-label")').lower())
         # The last chapter, complete: as many goals done as it has.
         done,_,of=page.evaluate('document.querySelector("#watch-progress").textContent').split(' · ')[0].split(' ')[:3]
         self.assertEqual(done,of)

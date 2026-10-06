@@ -68,6 +68,35 @@ pass 4/4 each in 29.232 s and 43.743 s; the layout method passes both seeds in
 Inventory/Progress selector fixtures follow the consolidated navigation without
 restoring actions in Goals.
 
+## Ordinary and supplemental run follow-up
+
+All **230 ordinary registered groups** have now completed across the primary
+run and the separate remaining batch: **222 initial passes and eight initial
+failures**, deduplicated by test name. The remaining batch itself finished
+54/58 in 1,085.52 s. All eight failed groups now have verified affected reruns.
+The AI-player Market method passes in 4.979 s and its native-owned, read-only
+watched character journey passes in 120.166 s with corrected accessible-name
+and source-selection assertions. This is a repaired
+coverage record, not a fresh all-green run on a single published revision.
+
+Recipe guidance passes its full three cases in 18.023 s after following the
+explicit Materials & build details disclosure. The two affected private-ground
+browser cases pass in 11.089 s after waiting for finished page startup before
+clicking. Their original failures and the actual subsequent HTTP 503 are retained.
+The uncertain Store request keeps its exact ID, material and volume through
+reload, creates one matching lot on Retry and clears pending state only after
+success. The other seven private-ground cases passed in the original full group;
+the two-case rerun is not described as a new full nine-case run.
+
+One extended group, network-adaptive, passed in 713.78 s; other extended groups
+and the final performance gate are still pending. Supplemental coverage exposed
+additional older browser journey failures. The combined world-page journey hit
+its 900 s outer limit after attempting 104 of 105 discovered cases, including
+imported Workshop cases. Its failures and incomplete coverage are retained in
+`build/full-regression-extra/world-page-incomplete.json`; individual recovery
+runs retain their original per-method bounds. No timed-out suite is counted as
+a pass.
+
 ## Still pending
 
 - Final ordinary, supplemental and extended totals, including every skip,
