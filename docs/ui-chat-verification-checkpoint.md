@@ -162,3 +162,60 @@ Other suites execute their named files with `-v`; Node suites use
 `node --experimental-default-type=module --test` with
 `tests/voice_client_tests.mjs`, `tests/voice_controller_tests.mjs` and
 `tests/player_guidance_ui.mjs`.
+
+## Full regression follow-up — October 5, 2026
+
+The generated layout's two-seed horizontal-clearance failure was reproduced
+against source archive `249f350d` and current source `c25f53b6` using the same
+immutable final native runner `44f74c17…404026`. The generator deliberately
+places each mill/smelter over its own separately installed foundation pad.
+The test now identifies those exact generated source pairs and checks their
+vertical separation. The new support-pair check allows `1e-6 m`: the observed
+initial mill contact roundoff was `2.83585e-7 m`. Comparable signed-gap checks
+use `1e-6 m` in `tests/native_point_contact_tests.cpp:202`, `:207`, `:221`,
+`:271` and `:275`; restored position uses the same tolerance in
+`tests/precise_rigid_live_tests.py:500`. Unrelated `0.3499 m` horizontal
+clearance, hauling corridor and processor reach assertions are unchanged.
+Both generated seeds pass in 1.774 s (`build/generated-layout-prepared.log`).
+
+The menu fixture now enters the shared Inventory hub; the goal fixture uses
+Progress and opens the Chapters drawer with a real pointer click. Its actual
+banking, six oak purchases, paid stool preparation/build, World packing,
+labels, persisted completion and reload assertions remain. The updated
+journey exposed an actual Lab Make defect: its first sloped placement refused
+with 26 degrees of tipping during the unchanged native 2 s stability check.
+Lab Make now retries the existing eight candidate spots for the same explicit
+support refusal already handled by catalog Make. It commits only an accepted
+native preview; if all spots refuse, it returns the final error and retains
+the ready paid job.
+
+The actual fixed journey passed in 19.313 s. Native preview refused `[3, 0]`
+(26 degrees tipping), `[3, 1.6]` (154 cm sliding), and `[3, -1.6]` (19 degrees
+tipping), then accepted `[4.6, 0]`. No terrain pin, stability tolerance change,
+free material, or simulation-clock acceleration was added. Evidence is in
+`build/goal-placement-observations.json`, `build/starter-goals-prepared.log`
+and the `build/starter-goals/` milestone screenshots. The owner world and demo
+were not used.
+
+Two supplemental navigation runs had dynamic-import fetch failures under the
+broader concurrent run. In isolation, the empty Lab/missing item/reload case
+passed and neither module-fetch exception reproduced. Saved selection first
+failed to reach its real Save button, then passed its unchanged Save,
+restored draft, clear/reload and console checks in an isolated diagnostic run
+(11.330 s). These transient failures remain recorded in
+`build/workshop-module-fetch-isolated.log` and
+`build/workshop-save-probe.log`; no console assertion was removed and no
+production asset or layout repair is claimed from those results.
+
+The final checks ran the applied **tracked files**, with
+`BANJO_BROWSER_TESTS=required` and the immutable final native bundle under
+`build/ui-native-verification-bin/`, without request overrides. Full
+`tests/world_hub_tests.py` passes 4/4 in 29.232 s; full
+`tests/starter_goals_tests.py` passes 4/4 in 43.743 s. The generated layout
+method passes both seeds in 1.773 s. Logs are
+`build/world-hub-tracked-full-final.log`,
+`build/starter-goals-tracked-full-final.log` and
+`build/generated-layout-tracked-final.log`. The relevant source copy, base
+revision, working diff and SHA-256 manifest are retained in
+`build/ui-regression-tracked-snapshot/`. These targeted checks do not establish
+that the broader full regression run has completed.

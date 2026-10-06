@@ -14,6 +14,12 @@
 
 # Banjo roadmap and acceptance gates
 
+**Regression audit, October 5 (in progress):** [Audit and remaining gates](regression-audit-2026-10-05.md)
+records verified contract repairs and native stability-preserving Lab placement.
+Finish the ordinary/supplemental and extended runs, resolve exposed failures,
+then measure performance without competing test workloads. This is not a
+full-suite green result or completion of adaptive digging.
+
 **Adaptive ground speed requirement, October 5 (design):** [Plan and proposed
 usability gates](adaptive-ground-speed-plan.md) preserve local digging scale
 while grouping uniform solid ground. First measure preparation, repeat cuts and

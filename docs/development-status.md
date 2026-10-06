@@ -1,5 +1,11 @@
 # Development status and handoff
 
+**Regression audit, October 5 (in progress):** [Coverage, repairs and pending
+gates](regression-audit-2026-10-05.md) records the full Windows headless build,
+237-group run and additional CI/browser suites. Verified fixture/API repairs
+and a real Lab stability-refusal fallback are distinguished from the still
+running extended suite; no full-suite green or new physics-law claim is made.
+
 **Adaptive ground speed requirement, October 5 (design):** [Plan and proposed
 usability gates](adaptive-ground-speed-plan.md) require quick actual material
 removal while compressing uniform ground. Adaptive handoff and its speed gains

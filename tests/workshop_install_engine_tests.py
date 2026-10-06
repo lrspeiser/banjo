@@ -47,6 +47,13 @@ def _as_legacy(ground,schema):
     out["schema"]=schema
     out.pop("carriers",None)
     out.pop("beds",None)
+    # v1/v2 had aggregate quantities, without constituent or paid-cut state.
+    # A fixture must never erase real native provenance to simulate that age.
+    debris=out.get("debris",{})
+    if any(debris.get(key) for key in ("bodies","progress","receipts")) or debris.get("source_work_j",0)>0:
+        raise ValueError("A legacy fixture cannot discard native ground matter or paid work")
+    out.pop("debris",None)
+    out.pop("matter_revisions",None)
     out["rock"]=b64encode(array("d",_rock_tops(ground)).tobytes()).decode("ascii")
     return out
 
@@ -585,7 +592,13 @@ class NativeInstallation(unittest.TestCase):
         came_back=install._snapshot(resumed)["ground"]
         # What was dug and taken out of the world is still taken out of it; what
         # a v2 save could not say, that none of it went back, is said now.
-        self.assertEqual(came_back["schema"],"banjo.ground-state.v5")
+        self.assertEqual(came_back["schema"],"banjo.ground-state.v6")
+        self.assertEqual([],came_back["debris"]["bodies"],"Bulk history cannot invent source cells or poses")
+        self.assertEqual({},came_back["debris"]["progress"])
+        self.assertEqual({},came_back["debris"]["receipts"])
+        self.assertEqual(0,came_back["debris"]["source_work_j"])
+        self.assertEqual([],came_back["matter_revisions"])
+        self.assertEqual({},came_back["carriers"],"Legacy aggregate transfer cannot invent a private owner")
         self.assertEqual(original["ground"]["exported"],came_back["exported"])
         self.assertEqual(original["ground"]["carried"],came_back["carried"])
         self.assertEqual(came_back["returned"],{"rock_m3":0.,"sand_m3":0.,"soil_m3":0.})
@@ -611,7 +624,13 @@ class NativeInstallation(unittest.TestCase):
         migrated=install._snapshot(resumed)["ground"]
         # A save from before any of this is the ground it always was, with an
         # account that begins at nothing and the deep earth under it.
-        self.assertEqual(migrated["schema"],"banjo.ground-state.v5")
+        self.assertEqual(migrated["schema"],"banjo.ground-state.v6")
+        self.assertEqual([],migrated["debris"]["bodies"],"Bulk history cannot invent source cells or poses")
+        self.assertEqual({},migrated["debris"]["progress"])
+        self.assertEqual({},migrated["debris"]["receipts"])
+        self.assertEqual(0,migrated["debris"]["source_work_j"])
+        self.assertEqual([],migrated["matter_revisions"])
+        self.assertEqual({},migrated["carriers"],"Legacy aggregate save cannot invent a private owner")
         self.assertEqual(migrated["exported"],{"rock_m3":0.,"sand_m3":0.,"soil_m3":0.})
         self.assertEqual(migrated["returned"],{"rock_m3":0.,"sand_m3":0.,"soil_m3":0.})
         self.assertEqual(_rock_tops(migrated),rock,"the rock came back where it was")

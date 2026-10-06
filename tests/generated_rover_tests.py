@@ -31,6 +31,18 @@ class GeneratedRovers(unittest.TestCase):
                 world,owner,app=self.setup_world()
                 app.live.act({'session':app.live.session.id,'op':'poses'})
                 state=app.live.session.state;parts=[]
+                # Generated processor pads deliberately share the horizontal
+                # footprint of the machine they support. Identify only the
+                # foundation recipes installed by that generator contract;
+                # unrelated assemblies retain the original clearance check.
+                installs={r['root_body']:r for r in app.room.workshop_installs
+                    if r.get('source')=='Generated starter geometry'}
+                supports={frozenset((name.removesuffix(' foundation'),name))
+                    for name,r in installs.items()
+                    if r.get('recipe',{}).get('kind')=='foundation-pad'
+                    and name.endswith(' foundation') and name.removesuffix(' foundation') in installs}
+                self.assertTrue(supports,'Generated processors must retain their authored foundation sources')
+                seen_supports=set()
                 for b in state['bodies']:
                     for p in b.get('rigid_parts_local') or []:
                         lo,hi=precise_rigid.bounds([p],b['position_m'],b['orientation_wxyz'])
@@ -39,9 +51,19 @@ class GeneratedRovers(unittest.TestCase):
                 for i,(name,lo,hi) in enumerate(parts):
                     for other,low,high in parts[i+1:]:
                         if name==other:continue
+                        pair=frozenset((name,other))
+                        if pair in supports:
+                            # Initial native contact gave 2.83585e-7 m of
+                            # vertical roundoff at the mill foot. This new
+                            # support assertion allows 1 micrometre only;
+                            # unrelated horizontal/corridor margins stay exact.
+                            self.assertLessEqual(min(hi[1],high[1])-max(lo[1],low[1]),1e-6,
+                                (seed,name,other,'support vertical overlap exceeds initial contact roundoff',lo,hi,low,high))
+                            seen_supports.add(pair);continue
                         self.assertFalse(lo[0]<high[0]+.3499 and hi[0]>low[0]-.3499 and
                                          lo[2]<high[2]+.3499 and hi[2]>low[2]-.3499,
                                          (seed,name,other,lo,hi,low,high))
+                self.assertEqual(supports,seen_supports)
                 rover_program=next(p for p in state['machines']['programs'] if p['kind']=='roam')
                 self.assertFalse(any(s['sees'] for s in rover_program['sensors']),
                                  'Initial native ground/water probes must have clearance')

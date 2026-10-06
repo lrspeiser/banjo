@@ -3900,7 +3900,7 @@ async function placeRemake({toInventory=false}={}) {
   for(const position_m of MAKE_SPOTS) {
     try {preview=await api("/api/world/fabrication/preview",{session:ctx.session,scene:ctx.scene,
       job_id:pending.request_id,position_m});break;}
-    catch(err) {refused=err;if(!/claim .* of the same cells|placement error|placement overlaps(?: or touches)?/i.test(String(err.message)))throw err;}
+    catch(err) {refused=err;if(!/claim .* of the same cells|placement error|placement overlaps(?: or touches)?|would not stand here/i.test(String(err.message)))throw err;}
   }
   if(!preview)throw refused || Error("No clear placement available");
   request={session:ctx.session,scene:ctx.scene,

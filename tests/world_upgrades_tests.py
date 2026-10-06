@@ -60,6 +60,8 @@ class CubeUpgradeRecord(unittest.TestCase):
 @unittest.skipUnless(ENGINE.is_file(), "Build the native world runner")
 class NativeUpgrades(unittest.TestCase):
     def test_cube_wire_receipts_keep_progress_rock_volume_mass_and_owner(self):
+        # Static legacy wire calls supply no work. Paid reduced cuts use an
+        # explicit finite source; oak retains its native hardness refusal.
         for material in ('glass','oak','iron'):
             with self.subTest(material=material):
                 spec={'algorithm':'lattice','cell_m':.04,'duration_s':1,
@@ -68,23 +70,67 @@ class NativeUpgrades(unittest.TestCase):
                     'bodies':[{'name':'pick','shape':'box','material':material,
                         'size_mm':[900,40,40],'center_mm':[0,100,0]}]}
                 self.app.live.open(self.app,{'spec':spec})
-                session=self.app.live.session
-                with self.app.live.as_actor('alice'):
-                    session.send(op='tool_point',body='pick',tip=[.45,.1,0],pointing=[1,0,0],
-                        width_m=.04,thickness_m=.04,angle_deg=30,length_m=.04,grip=[-.4,.1,0])
-                    session.send(op='wield',name='pick',grip=[-.4,.1,0])
-                    for n in range(1,11):
-                        answer=session.send(op='strike-cell',at_m=[1,-.375,1])
-                        receipt=answer['ground_work'][-1]
-                        self.assertEqual('alice',receipt['actor'])
-                        self.assertFalse(receipt['open'])
-                        if n<10:
-                            self.assertAlmostEqual(n/10,receipt['broken_share'])
-                            self.assertEqual(0,receipt['loosened']['rock_m3'])
-                        else:
-                            self.assertAlmostEqual(.25**3,receipt['loosened']['rock_m3'])
-                            self.assertAlmostEqual(37.5,receipt['loosened_kg'])
-                            self.assertEqual('broke rock out',receipt['kind'])
+                def send(**request):
+                    with self.app.live.as_actor('alice'):
+                        return self.app.live.session.send(**request)
+                send(op='tool_point',body='pick',tip=[.45,.1,0],pointing=[1,0,0],
+                    width_m=.04,thickness_m=.04,angle_deg=30,length_m=.04,grip=[-.4,.1,0])
+                send(op='wield',name='pick',grip=[-.4,.1,0])
+                initial=self.snapshot()['ground']
+                for _ in range(10):
+                    answer=send(op='strike-cell',at_m=[1,-.375,1])
+                    receipt=answer['ground_work'][-1];cut=answer['ground_cut']
+                    self.assertEqual('alice',receipt['actor']);self.assertFalse(receipt['open'])
+                    self.assertEqual(0,receipt['broken_share']);self.assertEqual(0,receipt['loosened']['rock_m3'])
+                    self.assertEqual(0,cut['requested_work_j']);self.assertEqual(0,cut['consumed_work_j'])
+                    self.assertFalse(cut['supported'])
+                self.assertEqual(initial,self.snapshot()['ground'],'Legacy calls cannot invent paid work, progress or matter')
+                self.assertEqual([],send(op='ground-debris')['ground_debris']['bodies'])
+                spent=0.
+                for n in range(1,11):
+                    source=f'wire-reservoir:{material}:{n}'
+                    command={'op':'strike-cell','at_m':[1,-.375,1],'work_j':50000.,'work_source':source}
+                    answer=send(**command);cut=answer['ground_cut'];receipt=answer['ground_work'][-1]
+                    self.assertEqual('alice',receipt['actor']);self.assertFalse(receipt['open'])
+                    self.assertEqual(source,cut['work_source']);self.assertEqual(50000.,cut['requested_work_j'])
+                    if material=='oak':
+                        self.assertFalse(cut['supported']);self.assertEqual(0,cut['consumed_work_j'])
+                        self.assertEqual(0,receipt['broken_share']);self.assertEqual(0,receipt['loosened']['rock_m3'])
+                        continue
+                    self.assertTrue(cut['supported'],cut);self.assertAlmostEqual(468750.,cut['required_work_j'])
+                    self.assertAlmostEqual(min(50000.,468750.-spent),cut['consumed_work_j'])
+                    spent+=cut['consumed_work_j']
+                    self.assertAlmostEqual(min(1.,spent/468750.),cut['broken_share'])
+                    if n<10:self.assertEqual(0,cut['loosened']['rock_m3'])
+                    else:
+                        self.assertAlmostEqual(.25**3,cut['loosened']['rock_m3'])
+                        self.assertAlmostEqual(37.5,cut['mass_kg'])
+                        self.assertEqual('cut component released',cut['kind'])
+                    if n==5:
+                        partial=self.snapshot()
+                        reopened=self.app.live.open(self.app,{'spec':spec,'snapshot':partial})
+                        self.assertEqual('whole',reopened['restored']['tier'])
+                        self.assertEqual(partial['ground'],self.snapshot()['ground'])
+                        self.assertEqual(cut,send(**command)['ground_cut'],'Reopen must retain exact funded receipt')
+                        self.assertEqual(partial['ground'],self.snapshot()['ground'],'Replay cannot consume work twice')
+                if material=='oak':
+                    self.assertEqual(initial,self.snapshot()['ground'],'An inadmissible tool cannot spend work or change terrain')
+                    self.assertEqual([],send(op='ground-debris')['ground_debris']['bodies'])
+                    continue
+                self.assertAlmostEqual(468750.,spent)
+                bodies=send(op='ground-debris')['ground_debris']['bodies'];self.assertEqual(1,len(bodies))
+                component=bodies[0];self.assertEqual(125,len(component['cells']))
+                self.assertEqual(125,len({cell['id'] for cell in component['cells']}))
+                self.assertAlmostEqual(.25**3,sum(c['volume_m3'] for c in component['cells']))
+                self.assertAlmostEqual(37.5,sum(c['mass_kg'] for c in component['cells']))
+                self.assertAlmostEqual(spent,component['source_work_j'])
+                for cell in component['cells']:
+                    self.assertAlmostEqual(cell['density_kg_m3']*cell['volume_m3'],cell['mass_kg'])
+                complete=self.snapshot()
+                reopened=self.app.live.open(self.app,{'spec':spec,'snapshot':complete})
+                self.assertEqual('whole',reopened['restored']['tier'])
+                self.assertEqual(complete['ground'],self.snapshot()['ground'])
+                self.assertEqual(bodies,send(op='ground-debris')['ground_debris']['bodies'])
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

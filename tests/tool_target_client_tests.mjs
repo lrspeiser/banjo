@@ -1,11 +1,27 @@
 import assert from 'node:assert/strict';
-import {test} from 'node:test';
+import {test,beforeEach,afterEach} from 'node:test';
 import {readFile} from 'node:fs/promises';
 import * as THREE from '../playground/vendor/three.module.js';
 
 const source=(await readFile(new URL('../playground/tools.js',import.meta.url),'utf8'))
   .replace('"/vendor/three.module.js"',JSON.stringify(new URL('../playground/vendor/three.module.js',import.meta.url).href));
 const {makeTools}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+
+// The shipped browser client reads the explicit assist preference and its
+// per-world retry key. Give each extracted-function test a fresh browser
+// storage scope so an absent browser global cannot silently abort a use.
+let oldStorage,oldLocation;
+beforeEach(()=>{
+  oldStorage=globalThis.localStorage;oldLocation=globalThis.location;
+  const values=new Map();
+  globalThis.localStorage={getItem:key=>values.get(key)??null,
+    setItem:(key,value)=>values.set(key,String(value)),removeItem:key=>values.delete(key)};
+  globalThis.location={search:'?world=tool-target-fixture'};
+});
+afterEach(()=>{
+  if(oldStorage===undefined)delete globalThis.localStorage;else globalThis.localStorage=oldStorage;
+  if(oldLocation===undefined)delete globalThis.location;else globalThis.location=oldLocation;
+});
 
 test('a step requested before pickup cannot discard its new grip; a later genuine release can',()=>{
   const noop=()=>{};let refreshed=0;
@@ -61,23 +77,33 @@ test('an empty hand collects a pile, rechecking exact-ray occlusion and reach; a
   // A Windows checkout has CRLF line ends; the markers below are written with LF.
   const full=(await readFile(new URL('../playground/world.js',import.meta.url),'utf8')).replace(/\r\n/g,'\n');
   const code=full.slice(full.indexOf('canvas.addEventListener("pointerdown", (e) => {'),full.indexOf('canvas.addEventListener("pointermove", (e) => {'));
-  for(const mode of ['clear','occluded','far','input','pick']) {
-    let callback, collected=0, strokes=0;const requests=[],messages=[];
+  for(const mode of ['clear','occluded','far','input','pick','native']) {
+    let callback, collected=0, nativeCollected=0, strokes=0;const requests=[],messages=[];
     const camera=new THREE.PerspectiveCamera();camera.position.set(0,1.62,0);
     const direction=new THREE.Vector3(1,-1,0).normalize();
     const pile={name:'soil pile',at_m:mode==='far'?[3,0]:[1,0]};
     const visual={pick:()=>({pile,distance:1.8,role:mode==='input'?'input':'stock'}),collectPile:async()=>{collected++;}};
-    const install=new Function('canvas','camera','aimVector','resourceVisuals','act','THREE','pressPrimary','lastAction',
+    const nativeMatter={pick:(from,dir,max)=>{
+      assert.deepEqual(from.toArray(),camera.position.toArray());
+      assert.deepEqual(dir.toArray(),direction.toArray());assert.equal(max,4);
+      return mode==='native'?{id:8,distance:1}:null;
+    },collect:async hit=>{assert.equal(hit.id,8);nativeCollected++;}};
+    const install=new Function('canvas','camera','aimVector','resourceVisuals','act','THREE','pressPrimary','lastAction','physicalGround',
       'let cursorFree=false,resumeClick=false,primaryUsed=false,cursor,drag;const watchedId=null,looking=false;'+
       // With a digging tool in hand a click digs; a pile is for an empty hand
       // (the owner, 2026-10-04: digging past a pile collected it instead).
-      'const world={held:'+(mode==='pick'?'{pick:{}}':'null')+'};'+
+      'const world={held:'+(['pick','native'].includes(mode)?'{pick:{}}':'null')+'};'+
       'const cursorAt=e=>({px:e.clientX,py:e.clientY}),markAt=()=>{},offerStick=()=>{},setCursorFree=()=>{};'+code);
     install({addEventListener:(_,fn)=>{callback=fn;},setPointerCapture(){}},camera,()=>direction.clone(),visual,
       async(op,args)=>{requests.push(args);return mode==='occluded'?{hit:true,point_m:[.1,1.52,0]}:{hit:false};},THREE,
-      ()=>{strokes++;return true;},message=>messages.push(message));
+      ()=>{strokes++;return true;},message=>messages.push(message),nativeMatter);
     callback({button:0,clientX:100,clientY:200});await new Promise(setImmediate);
     assert.equal(collected,mode==='clear'?1:0);
+    assert.equal(nativeCollected,mode==='native'?1:0);
+    if(mode==='native'){
+      assert.equal(requests.length,0,'native collection does not use the legacy pile ray request');
+      assert.equal(strokes,0,'a native piece click collects before using an equipped pick');continue;
+    }
     if(mode==='pick'){assert.equal(requests.length,0,'a held pick does not stop at a pile');continue;}
     if(mode!=='input')assert.deepEqual(requests[0].dir,direction.toArray(),'native check uses the click ray');
     if(mode==='far')assert.match(messages[0],/within 2 m/);

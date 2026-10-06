@@ -250,9 +250,12 @@ class StarterGoals(unittest.TestCase):
             self.fail(f"Browser did not reach {expression}; status=" + str(page.evaluate(
                 'document.body.innerText.slice(-2200)')))
         def click(selector):
-            wait_for(f'!!document.querySelector({json.dumps(selector)}) && !document.querySelector({json.dumps(selector)}).disabled')
-            page.evaluate(f'document.querySelector({json.dumps(selector)}).scrollIntoView({{block:"center"}})')
-            point=page.evaluate(f'(()=>{{const r=document.querySelector({json.dumps(selector)}).getBoundingClientRect();return {{x:r.x+r.width/2,y:r.y+r.height/2}}}})()')
+            pick=f'[...document.querySelectorAll({json.dumps(selector)})].find(e=>e.offsetParent!==null)'
+            wait_for(f'!!({pick}) && !({pick}).disabled')
+            page.evaluate(f'({pick}).scrollIntoView({{block:"center"}})')
+            wait_for(f'(()=>{{const e={pick},r=e.getBoundingClientRect(),h=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return !!h&&(h===e||e.contains(h))}})()')
+            point=page.evaluate(f'(()=>{{const e={pick},r=e.getBoundingClientRect(),h=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {{x:r.x+r.width/2,y:r.y+r.height/2,reachable:!!h&&(h===e||e.contains(h))}}}})()')
+            self.assertTrue(point.pop('reachable'),'Click target must be reachable')
             for event in ("mousePressed", "mouseReleased"):
                 page.send("Input.dispatchMouseEvent", {"type":event, **point, "button":"left", "clickCount":1})
         def screenshot(name):
@@ -263,12 +266,13 @@ class StarterGoals(unittest.TestCase):
         wait_for('window.banjoRoom?.status().ready')
         self.assertIn('Ask about energy',page.evaluate('document.querySelector("#ask-text").placeholder'))
         player=page.evaluate(f'localStorage.getItem("banjo.player.{world}")')
-        click('.game-tabs [data-screen="goals"]')
+        click('.game-tabs [data-screen="progress"]')
         wait_for('!!document.querySelector("[data-goal=get-tool-wood]")')
+        click('#ws-goal-chapters > summary')
         click('[aria-label="Goal chapters"] button:last-child')
         wait_for('!!document.querySelector("[data-goal-go=bank-solar]")')
         self.assertEqual(0, page.evaluate('document.querySelectorAll("[data-goal-action],[data-goal-bank]").length'))
-        self.assertIn("In Market", page.evaluate('document.querySelector("[data-goal=bank-solar] .ws-goal-how").textContent'))
+        self.assertIn("In Inventory", page.evaluate('document.querySelector("[data-goal=bank-solar] .ws-goal-how").textContent'))
         self.assertTrue(page.evaluate('document.querySelector("[data-goal=bank-solar] details").open'))
         screenshot("guide.png")
         before=self.post("/api/workshop/goals", {"chain":starter_goals.CHAIN}, world, player)
@@ -279,7 +283,7 @@ class StarterGoals(unittest.TestCase):
         self.assertEqual(before["goals"], navigated["goals"], "A Goals link completed a goal")
         click('#ws-market-bank')
         wait_for('document.querySelector("#ws-market-balance").textContent === "500 J"')
-        click('.game-tabs [data-screen="goals"]')
+        click('.game-tabs [data-screen="progress"]')
         wait_for('document.querySelector("[data-goal=bank-solar]")?.dataset.complete === "true"')
         click('[data-goal-go="stock-oak"]')
         wait_for('document.querySelector("#ws-market-bank")?.textContent === "Bank 500 J · Shared farm"')
@@ -293,7 +297,7 @@ class StarterGoals(unittest.TestCase):
             wait_for('[...document.querySelectorAll("#ws-market-orders > li")]'
                      f'.filter(li => li.textContent.includes(" J · ")).length === {count+1}')
             wait_for('document.querySelector("[data-market-item=oak-stock] button").disabled === false')
-        click('.game-tabs [data-screen="goals"]')
+        click('.game-tabs [data-screen="progress"]')
         wait_for('document.querySelector("[data-goal=stock-oak]")?.dataset.complete === "true"')
         # An unrelated material filter must not hide the guided oak recipe.
         page.evaluate('(()=>{const u=new URL(location.href);u.searchParams.set("material","glass");window.history.replaceState(null,"",u)})()')
@@ -319,7 +323,7 @@ class StarterGoals(unittest.TestCase):
         wait_for('!!document.querySelector("#ws-remake-place")')
         click('#ws-remake-place')
         wait_for('document.querySelector("#ws-remake a")?.textContent === "Collect in World"')
-        click('.game-tabs [data-screen="goals"]')
+        click('.game-tabs [data-screen="progress"]')
         wait_for('document.querySelector("[data-goal=build-camp]")?.dataset.complete === "true"')
         click('[data-goal-go="carry-camp"]')
         wait_for('window.banjoRoom?.status().ready && window.banjoRoom.world.bodies.has(new URLSearchParams(location.search).get("focus"))')
@@ -335,12 +339,13 @@ class StarterGoals(unittest.TestCase):
         screenshot("packed-in-world.png")
         # Goals opens on the active chapter (f15cd75b); the camp is the
         # earlier one, chosen the same way as at the start.
-        click('.game-tabs [data-screen="goals"]')
+        click('.game-tabs [data-screen="progress"]')
+        click('#ws-goal-chapters > summary')
         click('[aria-label="Goal chapters"] button:last-child')
-        wait_for('document.querySelector("#ws-goals-progress")?.textContent.includes("First camp complete")')
+        wait_for('document.querySelector("#ws-goals-progress")?.textContent.includes("Chapter complete")')
         self.assertTrue(self.post("/api/workshop/goals", {"chain":starter_goals.CHAIN}, world, player)["complete"])
         page.send("Page.reload")
-        wait_for('document.querySelector("#ws-goals-progress")?.textContent.includes("First camp complete")')
+        wait_for('document.querySelector("#ws-goals-progress")?.textContent.includes("Chapter complete")')
         self.assertEqual(0, page.evaluate('document.querySelectorAll("[data-goal-action],[data-goal-bank]").length'))
         self.assertFalse([e for e in page.events if e.get("method") == "Runtime.exceptionThrown"])
         screenshot("completed.png")

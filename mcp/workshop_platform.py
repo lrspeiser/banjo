@@ -45,6 +45,10 @@ HTTP = {
     # The bench's other tabs (playground/workshop_tabs): read-only views of
     # what the person has, what each thing would take, and what they know.
     "inventory": "/api/workshop/inventory",
+    # Existing item-picture HTTP endpoints; store checks the item's holder or
+    # maker, while reads return requested pictures scoped to world and room.
+    "thumbnail": "/api/workshop/thumbnail",
+    "thumbnails": "/api/workshop/thumbnails",
     "recipes": "/api/workshop/recipes",
     "skills": "/api/workshop/skills",
     # Named-world player surfaces served by starter_goals/market on the

@@ -66,10 +66,40 @@ way as the rest of the sim. The Workshop page calls only these routes.
 | `POST` | `/api/workshop/feedback` | Save rating/note/selection feedback and optionally persist the design. |
 | `POST` | `/api/workshop/remembered` | Read saved feedback, designs, library items, pricebook and test presets. |
 | `POST` | `/api/workshop/inventory` | The Inventory tab: the material rack, the goods rack, the products standing in the world, the saved designs, the personal library, and every component family. Read-only. |
+| `POST` | `/api/workshop/thumbnail` | Save or replace an item's PNG picture. Exact body: `{item_id, png_data_url}`. Only its holder, or its maker while it remains unclaimed in the room, may write. Returns `{ok, item_id, thumbnail_rev}`. |
+| `POST` | `/api/workshop/thumbnails` | Read requested item pictures in the current world and room. Exact body: `{items: [item_id, ...]}`. Returns `{thumbnails: {item_id: {thumbnail_rev, png_data_url}}}`; missing pictures are omitted. Read-only. |
 | `POST` | `/api/workshop/recipes` | The Recipes tab: for each template, its parts, materials against the rack, the goods its machines take, whether the rack covers it and what it can do; the open room's recipes and deposits. Read-only. |
 | `POST` | `/api/workshop/drive` | Drive the design with the keys in a little world kept open: `{action: "start", candidate}` makes it and answers with the recording so far; `{action: "step", keys: {forward, back, left, right}, dt_s}` puts the keys to the thing (an ask on its program, or its wheels' controls) and runs that long, answering with the new frames and what it is doing; `{action: "stop"}` closes the room and answers with the whole recording. One drive at a time. |
 | `POST` | `/api/workshop/skills` | The Skills tab: the person's notebook as achievements -- each technique known, within reach or not yet, what it opens, what is demonstrated, what is blocked. Read-only. |
 | `POST` | `/api/workshop/progress` | Read what a chat turn has done so far, while it is still doing it. Takes `{"turn": "<the id sent with the request>"}` and changes nothing. |
+
+### Item pictures
+
+These existing HTTP capabilities are implemented by
+[`playground/item_pictures.py`](../../playground/item_pictures.py) and dispatched
+by the playground server. They do not manufacture an item or change its physics.
+Named-world requests require a valid `X-Banjo-Player`; both POST routes require
+the local session's `X-Banjo-Token` and `Content-Type: application/json`, with the
+server's existing host and access checks.
+
+A write accepts exactly `item_id` and `png_data_url`. The item identifier is a
+nonempty string of at most 160 characters and can identify the item or one of its
+body parts. The data URL must begin with `data:image/png;base64,`, contain valid
+base64 whose decoded bytes begin with the PNG signature, and contain at most
+65,536 characters in total. The HTTP request body is limited to 67,584 bytes.
+This validation checks the signature, not image dimensions or full PNG decoding.
+The item must exist in the open room and be held or bagged by the requesting
+player, or be an installed item made by that player which another player has not
+picked up. A replacement is stored under the same world, room and canonical
+item id. `thumbnail_rev` is the first 12 hex digits of the PNG bytes' SHA-256.
+
+A read accepts exactly `items`, a list of at most 40 nonempty item-id strings,
+each at most 160 characters. Duplicate identifiers are deduplicated; unknown
+or unpictured identifiers are omitted. Its HTTP body uses the ordinary 32,768
+byte bound. Reads are scoped to the open world and room, without a holder-only
+restriction. Inventory carries only `thumbnail_rev`, so clients can fetch a
+picture when its revision changes. See [Workshop item pictures](../workshop-mode.md)
+for the existing browser flow and storage behavior.
 
 A turn of the Workshop assistant is one `POST /api/workshop/candidates` that
 answers when the whole thing is finished, and the work inside it is several

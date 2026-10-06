@@ -197,12 +197,17 @@ class PlayerMaterials(unittest.TestCase):
         def survey(player=None):
             return self.post('/api/live/act',{'session':sid,'op':'survey','at':target},world,player)['survey']
         def inventory(player=None):return self.post('/api/workshop/inventory',{},world,player)
+        def stored_mass(substance):
+            if getattr(self,'surface','smooth')=='columns':
+                return sum(row['mass_kg'] for row in inventory()['stored_ground'] if row['substance']==substance)
+            return self.personal(app,owner).get(substance,0)
         before=survey();self.assertEqual('sand',before['runs'][-1]['material'])
         frame=self.post('/api/live/act',{'session':sid,'op':'step','dt':1/240,'n':1},world,peer['token'])
         peer_version=frame.get('terrain_version')
         self.assertEqual(getattr(self,'surface','smooth'),frame['terrain']['surface'])
         reserves=deepcopy(app.brains.goods.holders()['deposits'])
         reports=[];stored=[];saw_film=False;totals={'sand':0.,'soil':0.}
+        source_cells=set()
         for n in range(40):
             current=survey();self.assertEqual(current,survey(peer['token']))
             point=[target[0],current['ground_m'],target[1]]
@@ -217,7 +222,7 @@ class PlayerMaterials(unittest.TestCase):
                 saw_film=True;self.assertIn('sand',candidates)
             if current['runs'][-1]['material']=='soil':
                 self.assertEqual(['soil'],candidates)
-            load=inventory()['ground_load'];replies=[];errors=[]
+            stored_before=inventory()['stored_ground'];replies=[];errors=[]
             def use():
                 try:replies.append(self.post('/api/world/tool/use',{'session':sid,'person':person,'at_m':point},world))
                 except Exception as exc:errors.append(exc)
@@ -226,9 +231,24 @@ class PlayerMaterials(unittest.TestCase):
                 app.clock._tick(.05);time.sleep(.015)
             worker.join(1);self.assertFalse(worker.is_alive());self.assertEqual([],errors)
             result=replies[0]['result'];self.assertGreater(result['loosened_kg'],0,replies[0])
-            after=inventory()['ground_load']
+            private_after=inventory();after=private_after['ground_load']
+            self.assertEqual(stored_before,private_after['stored_ground'],'Detachment alone cannot credit private storage')
             self.assertEqual(0,sum(after[s+'_kg'] for s in totals),'Output goes to piles, not a filling hand load')
-            delta={s:sum(p['kg'] for p in replies[0].get('excavation_piles',[]) if p['material']==s) for s in totals}
+            components=[]
+            if getattr(self,'surface','smooth')=='columns':
+                matter=self.post('/api/world/matter/shown',{'session':sid},world)['ground_debris']
+                components=matter['bodies']
+                self.assertTrue(components,'Native detached matter must exist before collection')
+                delta={s:sum(c['mass_kg'] for b in components for c in b['cells']
+                    if c['material']==s) for s in totals}
+                for component in components:
+                    self.assertAlmostEqual(component['mass_kg'],sum(c['mass_kg'] for c in component['cells']),delta=1e-8)
+                    for cell in component['cells']:
+                        self.assertNotIn(cell['id'],source_cells,'A source cell must be detached only once')
+                        source_cells.add(cell['id'])
+                        self.assertAlmostEqual(cell['mass_kg'],cell['density_kg_m3']*cell['volume_m3'],delta=1e-10)
+            else:
+                delta={s:sum(p['kg'] for p in replies[0].get('excavation_piles',[]) if p['material']==s) for s in totals}
             for s,kg in delta.items():
                 if kg>1e-6:self.assertIn(s,candidates)
                 totals[s]+=kg
@@ -256,6 +276,21 @@ class PlayerMaterials(unittest.TestCase):
             reports.append({'before':current,'candidates':candidates,'result':result,'collected_kg':delta,
                 'peer_top_kind':top_kind,'peer_column_height_m':height,
                 'peer_geometry_bytes':len(json.dumps(block,separators=(',',':')).encode())})
+            # Collect native components after checking shared geometry. Each
+            # pickup removes its exact cells once and changes the live session.
+            # Clearing actual detached pieces lets the next stroke reach ground.
+            for component in components:
+                center=component['pose']['center_m']
+                request={'session':sid,'id':component['id'],'request_id':f'layer-matter-{n}-{component["id"]}',
+                    'person':{'eyes_m':[center[0],center[1]+1.7,center[2]],'facing':[1,0,0]}}
+                collected=self.post('/api/world/matter/collect',request,world)
+                self.assertTrue(collected['ok'],collected);stored.append(collected)
+                self.assertEqual(component['cells'],collected['packet']['cells'])
+                sid=collected['session']
+                repeated=self.post('/api/world/matter/collect',request,world)
+                self.assertTrue(repeated['replayed']);self.assertEqual(collected['packet'],repeated['packet'])
+                self.assertFalse(any(b['id']==component['id'] for b in
+                    self.post('/api/world/matter/shown',{'session':sid},world)['ground_debris']['bodies']))
             if sum(totals.values())>55 or current['runs'][-1]['material']=='soil':
                 for pile in app.brains.goods.stockpiles:
                     if not pile.get('excavated') or not pile['holds']:continue
@@ -268,8 +303,8 @@ class PlayerMaterials(unittest.TestCase):
             print(f'layer stroke {n+1}: {current["surface"]}, sand={current["sand_m"]:.6f} m, {delta}',flush=True)
             if current['runs'][-1]['material']=='soil':break
         else:self.fail('Actual repeated tool work did not expose soil within 40 strokes')
-        # On cube ground a swing takes a whole cube, film and all, so the thin
-        # film over soil is cut through in one stroke and never seen alone.
+        # Smooth/cut surface film exposure retains its existing acceptance.
+        # Column strokes now remove measured clipped slabs, not whole cubes.
         if getattr(self,'surface','smooth')!='columns':
             self.assertTrue(saw_film,'The run/coarse-contact boundary must actually be crossed')
         final=survey();own=inventory();other=inventory(peer['token'])
@@ -277,14 +312,14 @@ class PlayerMaterials(unittest.TestCase):
         self.assertEqual([],other['stored_ground']);self.assertEqual(0,other['ground_load']['total_kg'])
         self.assertEqual(reserves,app.brains.goods.holders()['deposits'],'Pick work must not consume ledger ore')
         for s,total in totals.items():
-            received=self.personal(app,owner).get(s,0)
+            received=stored_mass(s)
             self.assertAlmostEqual(total,received,delta=5e-5)
         self.assertTrue(fixture.server.keep_world(app,'save real exposed-layer acceptance'))
         self.stop();self.start();self.post('/api/world/open',{},world);app=self.app.hub.get(world);sid=app.live.session.id
         self.assertEqual(getattr(self,'surface','smooth'),app.room.spec['terrain'].get('surface','smooth'))
         self.assertEqual(final,survey());self.assertEqual(final,survey(peer['token']))
         self.assertEqual(own['stored_ground'],inventory()['stored_ground'])
-        for s,total in totals.items():self.assertAlmostEqual(total,self.personal(app,owner).get(s,0),delta=5e-5)
+        for s,total in totals.items():self.assertAlmostEqual(total,stored_mass(s),delta=5e-5)
         self.assertEqual(other['stored_ground'],inventory(peer['token'])['stored_ground'])
         reopened=self.post('/api/live/act',{'session':sid,'op':'step','dt':1/240,'n':1,
             'terrain_seen':peer_version},world,peer['token'])

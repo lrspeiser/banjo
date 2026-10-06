@@ -381,14 +381,15 @@ class NamedWorlds(unittest.TestCase):
         world_id = page.evaluate('new URLSearchParams(location.search).get("world")')
         self.assertEqual("Browser game", self.get(f"/api/worlds/{world_id}")["name"])
 
-        self.assertIn(world_id, page.evaluate('document.querySelector(".market-entry").href'))
-        page.evaluate('document.querySelector(".market-entry").click()')
+        self.assertIn(world_id, page.evaluate('document.querySelector(\'.game-tabs [data-screen="inventory"]\').href'))
+        page.evaluate('document.querySelector(\'.game-tabs [data-screen="inventory"]\').click()')
         wait_for('document.body.classList.contains("workshop-mode") && '
                  'document.querySelectorAll("[data-game-menu]").length === 2 && '
                  '!!document.querySelector("#game-menu")')
-        wait_for('document.querySelector("[data-tab=market]")?.getAttribute("aria-selected") === "true" && '
+        wait_for('document.querySelector(\'.game-tabs button[data-screen="inventory"]\')?.getAttribute("aria-selected") === "true" && '
                  'document.querySelector("#ws-market-offers")?.children.length > 0')
         self.assertEqual("0 J", page.evaluate('document.querySelector("#ws-market-balance").textContent'))
+        wait_for('document.querySelector("#ws-inv-energy .ws-energy-card")?.textContent.includes("Spendable0 J")')
         self.assertTrue(page.evaluate('getComputedStyle(document.querySelectorAll("[data-game-menu]")[1]).display !== "none"'))
         page.evaluate('document.querySelectorAll("[data-game-menu]")[1].click()')
         self.assertTrue(page.evaluate('document.querySelector("#game-menu").open'))

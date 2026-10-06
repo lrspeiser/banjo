@@ -1,5 +1,12 @@
 # Banjo mechanics scorecard
 
+**October 5 regression maintenance:** [Audit](regression-audit-2026-10-05.md)
+retains comparative glass/oak/iron finite-work, exact cell mass/volume and
+save/replay checks while retiring free ten-hit and legacy host-pile assertions.
+Native laws/binaries and conservation limitations are unchanged. Lab placement
+now retries a native stability refusal; complete-suite and performance results
+remain pending.
+
 **Physical ground and raw tools, October 5 (integration checkpoint):** [Implementation, evidence and remaining gates](physical-ground-gameplay-checkpoint.md) replaces fixed-hit dry-column extraction with measured native hand work or explicitly funded work-cut requests. Exact small source cells move in native connected rigid components, collect into private raw Inventory and feed paid Stone field pick forming. The browser follows native poses rather than cosmetic flight/pile paths; save/retry and finite energy escrow prevent duplicate credit. This is an experimental cut reduction, not constitutive fracture, granular flow or complete conservation. Wet/smooth/machine lanes, affordable fresh-player rock progression, native read-only readiness, the 10 ft gameplay gate and human/mobile acceptance remain bounded or open; R3 stays paused. This entry supersedes historical fixed-click and unimplemented collection statements below.
 
 ### October 5 integrated ground-matter boundary
