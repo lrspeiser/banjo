@@ -175,3 +175,17 @@ mouse/touch pickup and digging, unfamiliar/thin paid tools, private matter,
 raw crafting, inventory and restart. It does not establish a green full CTest
 regression, physical-phone performance, the raylib laboratory input loop,
 calibrated materials, or the remaining excavation-speed/conservation gates.
+
+## Published and installed checkpoint
+
+Implementation/evidence revision **`5267c818`** is published on GitHub main.
+`C:/play` was fetched and advanced to that exact revision. The old demo stopped
+with Ctrl+C before rooms and native binaries were backed up under
+`C:/play/backups/dig-controller-5267c818`. The rebuilt Release live runner,
+shared library and platform CLI were installed; live runner/shared-library
+SHA-256 hashes match the verified build outputs. Python restarted hidden on
+port 18890, `/api/status` reports `engine_ready: true`, and the owner's existing
+world `c7c8058545c1492eb69f4dbcbb86edfc` reloads with `Live.` and a closed rail.
+No provider call or player Inventory/terrain mutation was used for this reload
+verification. The local demo is an installed checkpoint, not a production
+deployment or completion of the remaining physics/speed work.
