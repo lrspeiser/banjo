@@ -288,9 +288,60 @@ test('a touch press disables edge looking immediately and releases its cursor af
   const start=full.indexOf('canvas.addEventListener("pointerup", (e) => {');
   const code=full.slice(start,full.indexOf('\n});',start)+4);
   let run,released=0;
-  const state=new Function('canvas','releasePrimary','markAt',
+  const state=new Function('canvas','releasePrimary','markAt','recordInteraction',
     'let resumeClick=false,cursorFree=false,primaryUsed=true,drag={},cursor={touch:true};'+code+';return ()=>({cursor,drag,primaryUsed});')(
-      {addEventListener:(_,fn)=>run=fn,releasePointerCapture(){}},()=>released++,()=>{});
+      {addEventListener:(_,fn)=>run=fn,releasePointerCapture(){}},()=>released++,()=>{},()=>{});
   run({button:0,pointerId:1,pointerType:'touch'});
   assert.equal(released,1);assert.deepEqual(state(),{cursor:null,drag:null,primaryUsed:false});
+});
+
+async function touchGestureHarness() {
+  const full=(await readFile(new URL('../playground/world.js',import.meta.url),'utf8')).replace(/\r\n/g,'\n');
+  const events={},turns=[],clicks=[];
+  const extract=type=>{const start=full.indexOf(`canvas.addEventListener("${type}", (e) => {`);
+    return start<0?'':full.slice(start,full.indexOf('\n});',start)+4);};
+  const initial={pointerId:1,touch:true,startX:100,startY:100,x:100,y:100,moved:false,
+    ray:{from:[0,1.6,0],dir:[0,-.5,-1]}};
+  const noop=()=>{};
+  const state=new Function('canvas','world','cursorAt','markAt','offerStick','$','groundTarget',
+    'turn','clickWorld','releasePrimary','tools','cancelWindUp','recordInteraction',
+    'let cursorFree=false,resumeClick=false,primaryUsed=false,cursor={touch:true};'+
+    `let drag=${JSON.stringify(initial)};`+
+    extract('pointermove')+extract('pointerup')+extract('pointercancel')+
+    ';return ()=>({drag,cursor,primaryUsed});')(
+    {addEventListener:(type,fn)=>events[type]=fn,releasePointerCapture:noop},
+    {held:null,use:{mode:'none'}},()=>({touch:true}),noop,noop,()=>({dataset:{}}),{},
+    (x,y)=>turns.push([x,y]),ray=>clicks.push(ray),noop,{stop:noop},noop,noop);
+  const event=(x,y,id=1)=>({clientX:x,clientY:y,pointerId:id,pointerType:'touch',button:0});
+  return {events,turns,clicks,state,event,initial};
+}
+
+test('finger jitter retains the press ray and does not rotate or cancel pickup',async()=>{
+  const h=await touchGestureHarness();
+  h.events.pointermove(h.event(105,104));
+  assert.deepEqual(h.turns,[],'normal finger movement within 12 CSS pixels must remain a tap');
+  h.events.pointerup(h.event(105,104));
+  assert.deepEqual(h.clicks,[h.initial.ray]);
+});
+
+test('slow cumulative touch dragging looks without picking up; another finger cannot end it',async()=>{
+  const h=await touchGestureHarness();
+  h.events.pointermove(h.event(190,180,2));
+  assert.deepEqual(h.turns,[],'another finger cannot turn the active drag');
+  assert.deepEqual(h.state().drag,h.initial);
+  for(let x=102;x<=116;x+=2)h.events.pointermove(h.event(x,100));
+  assert.equal(h.state().drag.moved,true,'small moves accumulate from the original press');
+  h.events.pointerup(h.event(116,100,2));
+  assert.ok(h.state().drag,'another pointer cannot release the active gesture');
+  h.events.pointerup(h.event(116,100));
+  assert.deepEqual(h.clicks,[]);
+  assert.ok(h.turns.length>0);
+});
+
+test('a cancelled touch does not leave an active gesture or pick anything up',async()=>{
+  const h=await touchGestureHarness();
+  assert.equal(typeof h.events.pointercancel,'function');
+  h.events.pointercancel(h.event(100,100,2));assert.ok(h.state().drag);
+  h.events.pointercancel(h.event(100,100));assert.equal(h.state().drag,null);
+  h.events.pointerup(h.event(100,100));assert.deepEqual(h.clicks,[]);
 });

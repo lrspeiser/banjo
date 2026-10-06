@@ -66,6 +66,10 @@ class Navigation(unittest.TestCase):
             self.assertIn('id="stage"',hit, {'point':point,'hit':hit})
             if touch:
                 self.page.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[point]})
+                # Real fingers move while tapping. This previously rotated
+                # the camera and cancelled pickup at just 3 CSS pixels.
+                self.page.send('Input.dispatchTouchEvent',{'type':'touchMove',
+                    'touchPoints':[{**point,'x':point['x']+5,'y':point['y']+4}]})
                 self.page.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
             else:
                 for kind in ('mousePressed','mouseReleased'):

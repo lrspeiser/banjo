@@ -7378,6 +7378,7 @@ function releasePrimary() {
 //
 // Looking around is dragging, which is what the drag handler was always for.
 canvas.addEventListener("pointerdown", (e) => {
+  if (drag && drag.pointerId !== e.pointerId) return;
   offerStick(e);
   if (cursorFree) {
     if (e.button !== 0) return;
@@ -7440,13 +7441,15 @@ canvas.addEventListener("pointerdown", (e) => {
   if (looking || world.held) primaryUsed = pressPrimary(world.held?.pick
     ? pointerToolTarget(e,from,dir) : null);
   if (looking) return;           // captured: the move handler has it
-  drag = { x: e.clientX, y: e.clientY, moved: false,
+  drag = { pointerId:e.pointerId, touch:e.pointerType !== 'mouse',
+           startX:e.clientX, startY:e.clientY, x:e.clientX, y:e.clientY, moved:false,
            ray: {from:from.toArray(),dir:dir.toArray()} };
   // Capture can be refused -- a pointer already gone, or one a test made up --
   // and dragging to look works without it.
   try { canvas.setPointerCapture(e.pointerId); } catch { /* look without it */ }
 });
 canvas.addEventListener("pointermove", (e) => {
+  if (drag && drag.pointerId !== undefined && drag.pointerId !== e.pointerId) return;
   if (cursorFree) return;
   cursor = cursorAt(e);
   groundTarget.visible=false; // an old ray's green square is not the new cursor target
@@ -7457,8 +7460,12 @@ canvas.addEventListener("pointermove", (e) => {
   markAt(cursor);
   if (!drag) return;
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-  if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+  // A finger is rarely perfectly still. Measure total displacement from the
+  // press, so small jitter stays a tap and slow deliberate drags still look.
+  const distance=Math.hypot(e.clientX-drag.startX,e.clientY-drag.startY);
+  if (distance > (drag.touch ? 12 : 3)) drag.moved=true;
   drag.x = e.clientX; drag.y = e.clientY;
+  if (drag.touch && !drag.moved) return;
   turn(dx, dy);
 });
 // The mouse off the view: back to the middle, so nothing is aimed at a place
@@ -7483,9 +7490,13 @@ function markAt(at) {
   mark.style.top = `${box.top + at.py}px`;
 }
 canvas.addEventListener("pointerup", (e) => {
+  if (drag && drag.pointerId !== undefined && drag.pointerId !== e.pointerId) return;
   if (resumeClick || cursorFree) return;
   if (e.button !== 0) return;
   if (e.altKey && !primaryUsed) return;
+  recordInteraction({event:'pointer-release',input:e.pointerType || 'mouse',
+    action:primaryUsed ? 'use' : drag?.moved ? 'look' : 'tap',
+    from_m:drag?.ray?.from,direction:drag?.ray?.dir});
   // Letting go of primary after a wind-up throws, however much the view was
   // turned while it was held.
   if (primaryUsed) {
@@ -7515,6 +7526,16 @@ canvas.addEventListener("pointerup", (e) => {
   // Resolve the press ray afresh: a delayed hover answer may name another
   // object, and a lifted finger has already cleared the hover cursor.
   if (was?.ray) void clickWorld(was.ray);
+});
+
+canvas.addEventListener("pointercancel", (e) => {
+  if (!drag || drag.pointerId !== e.pointerId) return;
+  recordInteraction({event:'pointer-cancel',input:e.pointerType || 'mouse',action:'cancel'});
+  drag=null;primaryUsed=false;resumeClick=false;
+  cursor=null;markAt(null);
+  tools.stop();
+  if (world.use.mode === 'preparing') cancelWindUp();
+  try { canvas.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
 });
 
 async function clickWorld(ray, picked=null) {
