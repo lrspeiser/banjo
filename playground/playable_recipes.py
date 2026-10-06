@@ -73,9 +73,16 @@ def recipe(kind, *, design_id=None, parameters=None):
 
 def stone_pick_recipe():
     # The same paid native constituent route, with a genuine aluminum haft.
-    from mcp import matter_fabrication
+    from mcp import matter_fabrication, workshop_local_cells, workshop_construction
     source = matter_fabrication.stone_pick_recipe()
     source['parameters']['material'] = 'aluminum'
+    # The 80 mm components cannot preserve their touching mount on a 50 mm
+    # world lattice. Explicit local cells retain the actual source and fixing.
+    source['component_overrides']['@local_cells'] = {
+        'schema': workshop_local_cells.SCHEMA, 'cell_size_m': .05}
+    source['component_overrides']['@construction'] = {
+        'schema': workshop_construction.CONSTRUCTION_SCHEMA, 'joints_authored': True,
+        'joints': [{'id': 'head-mount', 'kind': 'fixed', 'method': 'bonded', 'a': 'haft', 'b': 'arm'}]}
     return source
 
 

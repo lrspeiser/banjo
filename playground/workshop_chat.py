@@ -215,6 +215,22 @@ Important behavior:
   use follows the same validated schema as world interaction and recipes;
   gesture swing is only for an explicitly requested full-swing experiment.
   It creates no material, motor, energy, skill award or guaranteed result.
+  For every unfamiliar tool, inspect_design's recipe_contract.tool_authoring is
+  the capability boundary. Product/component names and appearance never select
+  behavior. Author real material geometry, actual connections and the appropriate
+  supported capability; inspect the resolved grip/use anchors, then check exact
+  native admission and ordinary pickup/equip/use/release/reload. The functional
+  ground_tool grip/tip override generic interaction_points grip/use coordinates;
+  surfaces and containers keep their own authored coordinates. Configuration is
+  not a passed trial. Report each missing capability instead of claiming success.
+  A bow/arrow needs energy-storing limbs, tension-only strings and a releasable
+  nock/projectile. The native draw-and-release laboratory exists, but Studio
+  cannot yet author those elastic/link/nock joints. Do not fake shooting using
+  define_ground_tool, inspect, arbitrary impulses or launch velocities. Keep it
+  a labelled draft and explain the missing Studio adapter. New mechanisms need
+  a supported engine adapter and regression journey before being called usable.
+  Portable two-hand bow control and separate arrow Inventory also need integration;
+  the anchored native laboratory is not a carryable player bow.
   Different head/handle materials use separate native bodies and reviewed fixed
   mounts. Preserve each material. The sampled mount must touch and remain connected;
   Make reviews every material debit and finite work/energy. Declared mount limits
@@ -1124,16 +1140,17 @@ class _State:
         raise ValueError("a power part is a store, a motor, a panel or a control")
 
     def execute(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
-        if not game_materials.active(self.app):
-            return self._execute(tool, args)
-        game_materials.require_payload(self.app, args)
-        game_materials.require_design(self.app, self.design)
+        active = game_materials.active(self.app)
+        if active:
+            game_materials.require_payload(self.app, args)
+            game_materials.require_design(self.app, self.design)
         before = deepcopy({name: getattr(self, name) for name in
-                           ("design", "base", "overrides", "changed")})
+                           ("design", "base", "overrides", "changed", "trace")})
         candidate = deepcopy(self.candidate)
         try:
             result = self._execute(tool, args)
-            game_materials.require_design(self.app, self.design)
+            if active:
+                game_materials.require_design(self.app, self.design)
             return result
         except Exception:
             for name, value in before.items(): setattr(self, name, value)
@@ -1757,6 +1774,13 @@ def _what_it_is_looking_at(state: _State) -> str:
             part.name, part.role, part.material,
             "x".join(f"{v * 1000:.0f}" for v in part.size_m),
             " ".join(f"{v * 1000:.0f}" for v in part.center_m)))
+    authority = workshop_tools.authoring_contract(state.design)
+    rows.append("SERVER TOOL CAPABILITIES AND RESOLVED ANCHORS: " + json.dumps({
+        "hand_anchor_authority": authority["hand_anchor_authority"],
+        "ground_work": {k: authority["ground_work"][k] for k in ("status", "declaration")},
+        "draw_and_release": authority["draw_and_release"]["status"],
+        "resolved_points": [p for p in authority["resolved_points"] if p["kind"] in ("grip", "use")],
+    }, allow_nan=False, separators=(",", ":")))
     rows.append("This is the design as it stands. Inspect further only when you need "
                 "something that is not here -- physics, joints, the library, the rack.")
     return "\n".join(rows)

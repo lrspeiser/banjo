@@ -7345,7 +7345,19 @@ canvas.addEventListener("pointerdown", (e) => {
   const matterHit=!watchedId && physicalGround.pick(from,dir,4);
   if(matterHit) {
     resumeClick=true;primaryUsed=false;
-    void physicalGround.collect(matterHit).catch(error=>lastAction(error.message,'refused'));
+    // A rendered loose cell behind a thin authored tool must not intercept
+    // pickup. Resolve physical occlusion with the same exact press ray.
+    void (async()=>{
+      try {
+        const ray={from:from.toArray(),dir:dir.toArray()};
+        const hit=await act('pick',{...ray,max_m:4,past_held:!!world.held});
+        if(hit.hit && hit.name && hit.distance_m < matterHit.distance-1e-5) {
+          if(!world.held)await clickWorld(ray,hit);
+          return;
+        }
+        await physicalGround.collect(matterHit);
+      } catch(error){lastAction(error.message,'refused');}
+    })();
     return;
   }
   // With a digging tool in hand a click digs; collecting a pile is for an
@@ -7449,11 +7461,11 @@ canvas.addEventListener("pointerup", (e) => {
   if (was?.ray) void clickWorld(was.ray);
 });
 
-async function clickWorld(ray) {
+async function clickWorld(ray, picked=null) {
   const session = world.session;
   if (!session || watchedId || world.held || world.acting) return;
   try {
-    const found = await act("pick", {...ray,max_m:40});
+    const found = picked || await act("pick", {...ray,max_m:40});
     if (world.session !== session || world.held || world.acting) return;
     intend(() => {
       if (world.session !== session || world.held || world.acting) return;
@@ -12076,6 +12088,10 @@ function adoptHold(name) {
 }
 
 function adoptNativeHold(name,state) {
+  // A saved/native carry observation can omit the grip mode. A configured
+  // product still takes its validated functional grip; its internal fixing
+  // does not turn it into a joint being hauled. pointOf rechecks connectivity.
+  if(tools.profileOf(name)) {adoptGrip(name,null);return;}
   const rover=(state.machines?.programs || []).find(p=>p.kind==="roam" && p.body===name);
   if(rover && state.hand?.mode==="grip") {adoptRecovery(rover,state.hand);return;}
   // A carried tool can contain native fixings. The native hand mode, rather

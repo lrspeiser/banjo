@@ -103,3 +103,30 @@ def installed(design, root, body_names, shift_m):
         "length_mm": 1000*point["length_m"]},
         "profile": {"object": design.purpose or "Ground tool", "template": "swing-and-lever",
                     "parts": list(body_names), "tool": root, "use": deepcopy(value["use"])}}
+
+
+def authoring_contract(design):
+    """Machine-readable Studio capability boundary, independent of tool names.
+
+    Configuration is not qualification. Native installation and a measured
+    ordinary-use trial still decide whether the authored tool actually works.
+    """
+    from . import interaction_points
+    value = frame(design)
+    return {"schema": "banjo.workshop-tool-authoring.v1",
+        "dispatch_basis": "validated capability declarations; never product or component names",
+        "hand_anchor_authority": "ground_tool component frames" if value else "interaction_points",
+        "resolved_points": interaction_points.for_design(design),
+        "ground_work": {"status": "configured-unqualified" if value else "not-configured",
+            "adapter": "swing-and-lever", "declaration_tool": "define_ground_tool",
+            "declaration": deepcopy(value),
+            "controls": "shared short contact; requested 4 Hz by default; native completion limits rate"},
+        "draw_and_release": {"status": "studio-adapter-unimplemented",
+            "native_model": "experimental hinged rigid limbs with elastic joints, tension-only links and a one-way nock",
+            "missing": "Studio construction emits fixed/bearing joints, not elastic joints, strings or a releasable nock; portable two-hand control and arrow inventory also need integration",
+            "instruction": "Do not substitute a ground_tool or an inspect action for shooting. Save a clearly labelled draft; report the missing adapter."},
+        "completion_gates": ["resolve actual geometry, materials, connections and functional anchors",
+            "native admission of this exact source in the destination representation",
+            "paid manufacture with actual stock and work",
+            "pickup of either component, equip, use, release and reload through shared player paths"],
+        "qualification": "not-granted-by-configuration"}

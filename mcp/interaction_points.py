@@ -112,8 +112,18 @@ def normalise(records, bodies):
 
 
 def for_design(design):
+    from mcp import workshop_tools
+    tool = workshop_tools.frame(design)
     if "interaction_points" in design.parameters:
-        return checked(design.parameters["interaction_points"])
+        points = checked(design.parameters["interaction_points"])
+        # Functional anchors have one authority: the component-frame tool
+        # declaration. Retain authored labels and receiving surfaces, but do
+        # not let an earlier generic/default grip change the physical hand.
+        if tool:
+            for point in points:
+                if point["kind"] in ("grip", "use"):
+                    point["position_m"] = list(tool["grip_m"] if point["kind"] == "grip" else tool["tip_m"])
+        return points
     points = []
     # Template surfaces are actual geometry. Never infer a cavity from a name.
     for part in design.parts:
@@ -130,8 +140,6 @@ def for_design(design):
     centre = (list(handle.center_m) if handle else
               [sum(p.center_m[a]*p.mass_kg() for p in design.parts)/total for a in range(3)]
               if total else [0,0,0])
-    from mcp import workshop_tools
-    tool = workshop_tools.frame(design)
     for kind in ("grip", "use"):
         at = (tool["grip_m"] if kind == "grip" else tool["tip_m"]) if tool else centre
         points.append({"id": kind, "kind": kind, "label": kind.title(), "position_m": at})

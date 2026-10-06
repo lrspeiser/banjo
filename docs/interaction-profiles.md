@@ -1,5 +1,7 @@
 # Interaction profiles
 
+**October 6:** [Tool authoring contract](tool-authoring-contract-checkpoint.md) documents the LLM configuration checklist, authoritative functional anchors, unfamiliar-tool gameplay regressions and current adapter boundaries. Ground products have a complete shared configuration path; Studio-generated portable bows still need elastic/string/nock authoring, two-hand controls and arrow Inventory integration.
+
 **October 3:** [Generic tool HUD](tool-hud-checkpoint.md) keeps authored/native tools independent of tool-specific animations. Contact reach defaults to 0.3–2 m; explicit bounds and the legacy swing minimum are preserved. Screen-edge thumbnails and deliberate hover details show held tools and readiness; only confirmed native receipts animate collection.
 
 **October 1 material preview update:** [Read-only collection contract](material-preview-checkpoint.md) replaces ground target/deposit/landing rings with right-panel thumbnails and methods. Earlier ring measurements below are historical. Existing API `ring` metadata remains a reach/status object; new tools inherit native survey candidates without authored loot fields.

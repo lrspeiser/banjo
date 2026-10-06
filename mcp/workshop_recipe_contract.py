@@ -13,7 +13,7 @@ import json
 from math import isfinite
 from typing import Any
 
-from mcp import engine_materials, workshop_graph, workshop_rigid, workshop_placement
+from mcp import engine_materials, workshop_graph, workshop_rigid, workshop_placement, workshop_tools
 
 SCHEMA = "banjo.workshop-recipe-contract.v1"
 EVIDENCE_SCHEMA = "banjo.workshop-recipe-evidence.v1"
@@ -170,6 +170,7 @@ def derive(design: Any, overrides: Any = None, *, manufacturing: Any = None,
                                    if k in {"primary_use", "primary_use_component", "ground_tool",
                                             "interaction_points", "interaction_point_components"}}),
             "manufacturing": settings,
+            "tool_authoring": _json(workshop_tools.authoring_contract(design)),
             "qualification": {"status": "unqualified", "requirements": requirements,
                               "declared_tests": _json(design.tests), "measured_evidence": observations,
                               "rejected_evidence": rejected, "skill_enforcement": "not_implemented_by_this_report"},

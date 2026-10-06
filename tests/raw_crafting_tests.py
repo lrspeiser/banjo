@@ -216,9 +216,9 @@ class NativeMatterTool(unittest.TestCase):
         return True
 
     def test_native_rock_private_collection_paid_pick_inventory_use_and_restart(self):
-        import physical_matter,inventory_room,workshop_library as library,tool_use,market
-        # Explicit experiment sources: a supplied iron cutter, finite 10 kg
-        # catalog wood, two 1 MJ cut budgets, 4 kJ native battery and 10 kJ
+        import physical_matter,inventory_room,workshop_library as library,tool_use,market,playable_recipes
+        # Explicit experiment sources: a supplied iron cutter, finite 20 kg
+        # catalog aluminum, two 1 MJ cut budgets, 4 kJ native battery and 10 kJ
         # later economic work reservoir. This is not a fresh-player opening.
         native_cuts=[]
         for n,y in enumerate((.24,-.01)):
@@ -246,22 +246,22 @@ class NativeMatterTool(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'another item or player'):physical_matter.collect(self.app,body,'bob')
             self.assertEqual([],self.live.session.send(op='ground-debris')['ground_debris']['bodies'])
         with library._connect(self.app) as db:
-            db.execute('INSERT INTO workshop_material_rack VALUES (?,?,?,?)',('alice','oak',10.,library._now()))
+            db.execute('INSERT INTO workshop_material_rack VALUES (?,?,?,?)',('alice','aluminum',20.,library._now()))
         import workshop_tabs
         stone=next(r for r in workshop_tabs.recipes(self.app)['templates'] if r['name']=='Stone field pick')
         self.assertTrue(stone['readiness']['ready_as_drawn'],stone['readiness'])
         self.assertEqual(self.WORLD_CELL_M,stone['readiness']['world']['cell_size_m'])
-        product=matter.stone_pick_recipe();plan=self.call('plan_make',candidate=product)
+        product=playable_recipes.stone_pick_recipe();plan=self.call('plan_make',candidate=product)
         self.assertEqual(self.WORLD_CELL_M,plan['quote']['cell_m'])
         self.assertGreater(plan['quote']['raw_matter']['materials_kg']['concrete'],0.)
         self.assertAlmostEqual(0.,plan['missing_materials_kg']['concrete'],delta=1e-10)
         peer=library.REQUEST_OWNER.set('bob')
         try:self.assertNotIn('raw_matter',self.call('plan_make',candidate=product)['quote'])
         finally:library.REQUEST_OWNER.reset(peer)
-        wood=plan['missing_materials_kg']['oak'];reading=self.call('state')
-        source=next(s for s in reading['stock_sources'] if s['material']=='oak' and s['pool']=='personal')
-        self.call('fund_stock',material='oak',mass_kg=wood,pool='personal',rack_hash=source['rack_hash'],
-            revision=self.room.fabrication_record['revision'],request_id='raw-pick-wood')
+        metal=plan['missing_materials_kg']['aluminum'];reading=self.call('state')
+        source=next(s for s in reading['stock_sources'] if s['material']=='aluminum' and s['pool']=='personal')
+        self.call('fund_stock',material='aluminum',mass_kg=metal,pool='personal',rack_hash=source['rack_hash'],
+            revision=self.room.fabrication_record['revision'],request_id='raw-pick-metal')
         reading=self.call('state');battery=reading['energy_sources'][0]
         self.call('connect_energy',store=battery['id'],store_hash=battery['store_hash'],power_w=250.,
             revision=self.room.fabrication_record['revision'],request_id='raw-pick-connect')
@@ -320,7 +320,7 @@ class NativeMatterTool(unittest.TestCase):
         evidence={'native_cuts':native_cuts,'formed_mass_kg':installed['mass_kg'],'raw_matter':installed['raw_matter'],
             'native_paid_use':used['cut'],'audit':audit,'private_collection_retry_and_failure':True,
             'inventory_equip_bag_whole_restart':True,'dt_s':1/240,'source_cell_m':.05,'product_cell_m':self.WORLD_CELL_M,
-            'limits':'Explicit supplied cutter/wood/work/battery experiment. Cold forming reduction; no calibrated stone fracture or complete fresh-player acceptance.'}
+            'limits':'Explicit supplied cutter/aluminum/work/battery experiment. Cold forming reduction; no calibrated stone fracture or complete fresh-player acceptance.'}
         out=ROOT/'build/resource-flow';out.mkdir(parents=True,exist_ok=True)
         name='raw-crafting-native.json' if self.WORLD_CELL_M==.04 else 'raw-crafting-native-50mm.json'
         (out/name).write_text(json.dumps(evidence,indent=2),encoding='utf-8')

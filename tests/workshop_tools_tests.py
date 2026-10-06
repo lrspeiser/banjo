@@ -37,6 +37,75 @@ def candidate(material='oak'):
 
 
 class ComponentFrames(unittest.TestCase):
+    def test_unfamiliar_names_and_explicit_points_share_the_physical_anchor_authority(self):
+        from mcp import interaction_points, workshop_recipe_contract
+        spec = candidate('iron')
+        spec.update(design_id='unlisted-surface-scraper', purpose='Unlisted surface scraper')
+        parts = spec['component_overrides']['@construction']['added']
+        parts[0]['name'], parts[1]['name'] = 'alpha-17', 'beta-29'
+        spec['parameters']['ground_tool']['grip']['component'] = 'alpha-17'
+        spec['parameters']['ground_tool']['point']['component'] = 'beta-29'
+        spec['parameters']['interaction_points'] = [
+            {'id':'left-hand', 'kind':'grip', 'position_m':[0,0,0], 'label':'Hold'},
+            {'id':'contact', 'kind':'use', 'position_m':[0,0,0]},
+            {'id':'rest', 'kind':'surface', 'position_m':[0,.1,0], 'size_m':[.1,.2,.1]}]
+        before = deepcopy(spec)
+        design, patches = workshop_components.design_from_spec(spec)
+        resolved = interaction_points.for_design(design)
+        self.assertEqual([-.35,.025,.175], resolved[0]['position_m'])
+        self.assertEqual([.375,.025,-.15], resolved[1]['position_m'])
+        self.assertEqual([0,.1,0], resolved[2]['position_m'])
+        self.assertEqual('Hold', resolved[0]['label'])
+        self.assertEqual(before, spec, 'resolution must not rewrite the saved source')
+        authority = workshop_recipe_contract.derive(design, patches)['tool_authoring']
+        self.assertEqual('ground_tool component frames', authority['hand_anchor_authority'])
+        self.assertEqual(resolved, authority['resolved_points'])
+        self.assertEqual('configured-unqualified', authority['ground_work']['status'])
+        # An unrelated new mechanism cannot acquire shooting by a product name.
+        design.purpose = 'Bow and arrow'
+        bow = workshop_tools.authoring_contract(design)['draw_and_release']
+        self.assertEqual('studio-adapter-unimplemented', bow['status'])
+
+    def test_failed_functional_chat_edits_keep_all_draft_state(self):
+        from unittest import mock
+        cases = [('define_ground_tool', candidate()['parameters']['ground_tool']),
+                 ('define_interaction_points', {'points':[]}),
+                 ('program_use', {'label':'Study', 'steps':[{'do':'inspect'}]})]
+        with tempfile.TemporaryDirectory() as tmp:
+            app = SimpleNamespace(workshop_store=Path(tmp), api_key='')
+            for tool, args in cases:
+                with self.subTest(tool=tool):
+                    spec = candidate()
+                    state = workshop_chat._State(app,spec,None,['oak'],[])
+                    before = deepcopy((state.design,state.base,state.overrides,state.changed,state.trace,spec))
+                    with mock.patch.object(workshop_chat,'_refresh',side_effect=ValueError('refresh refused')):
+                        with self.assertRaisesRegex(ValueError,'refresh refused'):
+                            state.execute(tool,args)
+                    self.assertEqual(before,(state.design,state.base,state.overrides,state.changed,state.trace,spec))
+
+    def test_model_turn_receives_capability_limits_and_can_configure_an_unlisted_tool(self):
+        import json
+        from unittest import mock
+        source = candidate('iron')
+        source.update(design_id='unlisted-cutter',purpose='Unlisted cutter')
+        declaration = source['parameters'].pop('ground_tool')
+        with tempfile.TemporaryDirectory() as tmp:
+            app = SimpleNamespace(workshop_store=Path(tmp),api_key='fake',model='fixture')
+            responses = [
+                {'output':[{'type':'function_call','call_id':'configure-1','name':'define_ground_tool',
+                            'arguments':json.dumps(declaration)}]},
+                {'output':[{'type':'message','content':[{'type':'output_text',
+                            'text':'Configured the cutter; native admission and a use trial remain.'}]}]}]
+            with mock.patch.object(workshop_chat,'_call_model',side_effect=responses) as provider:
+                result = workshop_chat.propose(app,message='Make this unlisted cutter usable',
+                    selected_part=None,candidate=source,materials=['iron'],library=[])
+            context = provider.call_args_list[0].args[1]['input']
+            self.assertIn('studio-adapter-unimplemented',context[-2]['content'])
+            self.assertIn('not-configured',context[-2]['content'])
+            self.assertEqual(['define_ground_tool'],[r['tool'] for r in result['tool_trace']])
+            design,_ = workshop_components.design_from_spec(source)
+            self.assertEqual(workshop_tools.checked(declaration),design.parameters['ground_tool'])
+
     def test_starter_recipe_has_the_same_geometry_and_declared_grip(self):
         from mcp import workshop, interaction_points
         design = workshop.assemble('field-pick', design_id='starter')

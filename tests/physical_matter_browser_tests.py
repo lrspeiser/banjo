@@ -21,7 +21,7 @@ def test_native_component_click_collection_and_real_pick_source(self):
     # Authored experiment fixture: flat 25 cm soil on rock, an iron cutter
     # and two declared 1 MJ native work budgets. This verifies the UI path;
     # it is not a fresh-player supply/energy acceptance experiment.
-    app.room.spec['terrain']={'surface':'columns','generate':{'kind':'flat','nx':24,'nz':24,
+    app.room.spec['terrain']={'surface':'columns','generate':{'kind':'flat','nx':160,'nz':160,
         'cell_m':.25,'soil_m':.25,'sand_m':0.,'discharge_m3_s':0.}}
     app.room.spec['bodies'].append({'name':'fixture cutter','shape':'box','material':'iron',
         'size_mm':[800,100,100],'center_mm':[0,1000,0]})
@@ -79,6 +79,14 @@ def test_native_component_click_collection_and_real_pick_source(self):
     peer=self.join(world,'Peer')
     peer_inv=self.post('/api/workshop/inventory',{},world,player=peer['token'])
     self.assertEqual([],peer_inv['stored_ground'],'Peer cannot access private collected lots')
+    # Stone head + inorganic handle: rock alone does not supply aluminum.
+    # Collect actual finite starter stock instead of asserting a free handle.
+    pile=next(p for p in app.brains.goods.stockpiles if p.get('holds',{}).get('aluminum',0)>=3)
+    x,z=pile['at_m']
+    floor=self.post('/api/live/act',{'session':app.live.session.id,'op':'survey','at':[x,z]},world)['survey']['ground_m']
+    stock=self.post('/api/world/goods/collect',{'session':app.live.session.id,'pile':pile['name'],
+        'request_id':'native-stone-pick-handle','person':{'eyes_m':[x,floor+1.62,z],'facing':[0,0,-1]}},world)
+    self.assertGreater(stock['collected']['aluminum'],0)
     self.click('.game-tabs [data-screen="inventory"]')
     self.wait('!!document.querySelector("[data-ground-material=rock]")')
     self.click('[data-ground-material="rock"] .ws-tile')
@@ -93,6 +101,8 @@ def test_native_component_click_collection_and_real_pick_source(self):
     self.assertIn('concrete',self.page.evaluate('document.querySelector("#ws-lab-draft").textContent').lower())
     self.screenshot('native-rock-pick-source-lab.png')
     self.click('#ws-draft-build')
+    self.wait('!!document.querySelector("#ws-remake-review")')
+    self.click('#ws-remake-review')
     self.wait('!!document.querySelector("#ws-remake-prepare")')
     self.assertFalse(self.page.evaluate('document.querySelector("#ws-remake-prepare").disabled'))
     self.screenshot('native-rock-pick-review-make.png')

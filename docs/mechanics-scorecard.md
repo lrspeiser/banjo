@@ -1,3 +1,5 @@
+**General tool authoring checkpoint, October 6:** [Shared contract and scoped evidence](tool-authoring-contract-checkpoint.md) resolves declared physical anchors across authoring, manufacture, pickup and reload, independent of product/component names. An uncatalogued aluminum/iron cutter and inorganic Stone pick paid 40/50 mm journeys pass; ledger residuals remain within 1e−7 kg/J, without a full-pipeline conservation claim. Nine CTest suites and 45 chat tests pass. Native laws/binaries are unchanged; bow Studio/portable controls, calibration, constitutive bending/fracture, wear/fatigue, fast excavation and physical-phone acceptance remain open.
+
 **World pickup/chat repair, October 6:** [Scoped implementation and evidence](world-pickup-chat-checkpoint.md) admits whole joined tools through ordinary click pickup, retains the exact desktop/touch press ray and makes the World rail deliberate chat only. Three browser navigation tests, native tool pickup/restore and the paid shovel journey pass. Native laws/binaries are unchanged; physical-phone acceptance and the broader regression audit remain open.
 
 # Banjo mechanics scorecard
