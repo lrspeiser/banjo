@@ -98,6 +98,37 @@ class Navigation(unittest.TestCase):
         time.sleep(1)
         self.assertEqual('field pick',self.page.evaluate('banjoRoom.held()?.name'))
         self.assertEqual('field pick',app.live.session.state['player_hands'][owner['id']]['holding'])
+        # Ordinary attempted use must leave linked intent/preflight/outcome
+        # traces, even when refused. Keep the real native body and clock;
+        # aim 6 m ahead, beyond shared reach, without modifying any tool pose.
+        self.page.evaluate('''(()=>{const r=banjoRoom,p=r.camera.position;
+            r.lookAt(p.x,r.groundAt(p.x,p.z-6),p.z-6);})()''')
+        self.wait('banjoRoom.use().target?.enabled===false && !!banjoRoom.world.groundAim')
+        x=self.page.evaluate('innerWidth/2');y=self.page.evaluate('innerHeight/2')
+        if touch:
+            self.page.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':x,'y':y}]})
+            self.page.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
+        else:
+            for kind in ('mousePressed','mouseReleased'):
+                self.page.send('Input.dispatchMouseEvent',{'type':kind,'x':x,'y':y,'button':'left','clickCount':1})
+        self.wait('!!banjoRoom.use().last?.refused')
+        self.assertIn('step closer',self.page.evaluate('banjoRoom.use().last.refused').lower())
+        until=time.monotonic()+10
+        rows=[]
+        while time.monotonic()<until:
+            log=app.runs_path/'interaction-events.jsonl'
+            rows=[json.loads(s) for s in log.read_text(encoding='utf-8').splitlines()] if log.exists() else []
+            results=[r for r in rows if r.get('event')=='tool-result']
+            if results and any(r.get('event')=='tool-reply' and r.get('id')==results[-1]['id'] for r in rows):break
+            time.sleep(.1)
+        self.assertTrue(results,rows)
+        linked=[r for r in rows if r.get('id')==results[-1]['id']]
+        self.assertEqual({r['event'] for r in linked},{'tool-press','tool-start','tool-request','tool-preflight','tool-result','tool-reply'})
+        self.assertEqual({r['actor'] for r in linked},{linked[0]['actor']})
+        self.assertEqual(next(r for r in linked if r['event']=='tool-press')['input'],'touch' if touch else 'mouse')
+        self.assertIn('step closer',results[-1]['refused'].lower())
+        self.assertEqual('field pick',results[-1]['hand']['holding'])
+        observation['interaction_trace']={'linked_events':len(linked),'refused':results[-1]['refused']}
         observation['touch']=touch
         observation['far_refused']=far['why']
         observation['reload_keeps_native_hand']=True

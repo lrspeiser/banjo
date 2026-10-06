@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {test,beforeEach,afterEach} from 'node:test';
 import {readFile} from 'node:fs/promises';
 import * as THREE from '../playground/vendor/three.module.js';
+import {toolTargetFeedback} from '../playground/material_appearance.js';
 
 const source=(await readFile(new URL('../playground/tools.js',import.meta.url),'utf8'))
   .replace('"/vendor/three.module.js"',JSON.stringify(new URL('../playground/vendor/three.module.js',import.meta.url).href));
@@ -93,7 +94,8 @@ test('an empty hand collects a pile, rechecking exact-ray occlusion and reach; a
       // With a digging tool in hand a click digs; a pile is for an empty hand
       // (the owner, 2026-10-04: digging past a pile collected it instead).
       'const world={held:'+(['pick','native'].includes(mode)?'{pick:{}}':'null')+'};'+
-      'const cursorAt=e=>({px:e.clientX,py:e.clientY}),markAt=()=>{},offerStick=()=>{},setCursorFree=()=>{};'+code);
+      'const cursorAt=e=>({px:e.clientX,py:e.clientY}),markAt=()=>{},offerStick=()=>{},setCursorFree=()=>{};'+
+      full.slice(full.indexOf('function pointerToolTarget('),full.indexOf('function pressPrimary('))+code);
     install({addEventListener:(_,fn)=>{callback=fn;},setPointerCapture(){}},camera,()=>direction.clone(),visual,
       async(op,args)=>{requests.push(args);return mode==='occluded'?{hit:true,point_m:[.1,1.52,0]}:{hit:false};},THREE,
       ()=>{strokes++;return true;},message=>messages.push(message),nativeMatter);
@@ -166,7 +168,7 @@ test('closed native outcomes are shown as they arrive and are not replayed by th
   } finally {globalThis.setTimeout=oldSet;globalThis.clearTimeout=oldClear;}
 });
 
-test('a waiting click aims where you look; taps during a use become one; sidebar targets and held repeats keep theirs',async()=>{
+test('queued keyboard actions follow sight; explicit pointer clicks retain their ray; all uses carry correlated diagnostics',async()=>{
   const oldSet=globalThis.setTimeout,oldClear=globalThis.clearTimeout;
   const timers=[];
   globalThis.setTimeout=run=>{const timer={run};timers.push(timer);return timer;};
@@ -177,9 +179,10 @@ test('a waiting click aims where you look; taps during a use become one; sidebar
     const camera=new THREE.PerspectiveCamera();camera.position.set(0,1.62,0);
     let direction=new THREE.Vector3(.4,-.7,-1).normalize(),finish=null;
     const world={session:'test',held:{pick:{},name:'pick'},use:{mode:'tool-ready',target:{cadence_hz:4}}};
-    const picks=[],uses=[];
+    const picks=[],uses=[],events=[];
     const noop=()=>{};
     const tools=makeTools({world,camera,aimVector:()=>direction.clone(),
+      recordInteraction:event=>events.push(event),
       whereIAm:()=>({eyes_m:camera.position.toArray()}),
       act:async(op,args)=>{assert.equal(op,'pick');picks.push(args);
         return {hit:true,point_m:[args.dir[0],0,args.dir[2]]};},
@@ -210,6 +213,21 @@ test('a waiting click aims where you look; taps during a use become one; sidebar
     assert.deepEqual(picks.at(-1).from,expectedTouch.from,'touch retains the finger ray origin');
     assert.deepEqual(picks.at(-1).dir,expectedTouch.dir,'lifting a finger cannot replace its ray with the crosshair');
     finish();await flush();
+    // The actual World pointer adapter must retain mouse as well as touch
+    // coordinates. Move both source vectors before the queued use runs.
+    const full=(await readFile(new URL('../playground/world.js',import.meta.url),'utf8')).replace(/\r\n/g,'\n');
+    const adapter=full.slice(full.indexOf('function pointerToolTarget('),full.indexOf('function pressPrimary('));
+    const pointer=new Function(adapter+';return pointerToolTarget;')()({pointerType:'mouse'},camera.position,direction);
+    const expectedMouse=structuredClone(pointer);
+    tools.press(pointer);tools.release();camera.position.x+=.1;direction.set(.1,-.9,.3);
+    await runTimer();assert.deepEqual(picks.at(-1).from,expectedMouse.from);
+    assert.deepEqual(picks.at(-1).dir,expectedMouse.dir);
+    finish();await flush();
+    const latest=uses.at(-1);
+    assert.ok(latest.interaction_id);
+    assert.equal(events.findLast(e=>e.event==='tool-press').id,latest.interaction_id);
+    assert.equal(events.findLast(e=>e.event==='tool-start').id,latest.interaction_id);
+    assert.equal(events.findLast(e=>e.event==='tool-reply').id,latest.interaction_id);
     tools.press();await runTimer();finish();await flush();
     direction.set(-.5,-.7,-1).normalize();const repeated=direction.toArray();
     await runTimer();assert.deepEqual(picks.at(-1).dir,repeated,'held repeat follows current cursor');
@@ -217,6 +235,47 @@ test('a waiting click aims where you look; taps during a use become one; sidebar
     const before=uses.length;tools.press();tools.release();tools.stop();await runTimer();
     assert.equal(uses.length,before,'Stop discards queued targets');
   } finally {globalThis.setTimeout=oldSet;globalThis.clearTimeout=oldClear;}
+});
+
+test('preview acceptance and green display share cell/layer and observer tolerances',async()=>{
+  const full=(await readFile(new URL('../playground/world.js',import.meta.url),'utf8')).replace(/\r\n/g,'\n');
+  const code=full.slice(full.indexOf('function targetCurrent('),full.indexOf('function showMaterialPreview('));
+  const camera=new THREE.PerspectiveCamera();camera.position.set(0,1.62,0);
+  const grid={nx:20,nz:20,x0:-2,z0:-2,dx:.25};
+  const world={session:'test',groundAim:[0,0,-1],held:{name:'novel cutter',pick:{}},
+    use:{name:'novel cutter',mode:'tool-ready',target:null}};
+  const targetCurrent=new Function('toolTargetFeedback','world','camera','groundColumn','groundMadeOf','targetContext',
+    code+';return targetCurrent;')(toolTargetFeedback,world,camera,()=>({grid}),()=> 'sand',()=> 'same layer');
+  let reply;const events=[];
+  const tools=makeTools({world,camera,whereIAm:()=>({eyes_m:camera.position.toArray()}),
+    targetCurrent,targetContext:()=> 'same layer',showUse(){},recordInteraction:e=>events.push(e),
+    api:()=>new Promise(resolve=>reply=resolve)});
+  await new Promise(resolve=>setTimeout(resolve,220));
+  tools.followAim();camera.position.x=.10;world.groundAim=[.04,0,-1];
+  reply({enabled:true,target:{material:'sand'},feedback:{state:'ready',ready:true}});
+  await new Promise(setImmediate);
+  assert.ok(world.use.target,'same-cell preview survives 10 cm body sway and 4 cm cursor shift');
+  assert.equal(targetCurrent(world.use.target,world.groundAim),true);
+  world.groundAim=[.3,0,-1];assert.equal(targetCurrent(world.use.target,world.groundAim),false,'another cell is checking');
+  world.groundAim=[.04,-.25,-1];assert.equal(targetCurrent(world.use.target,world.groundAim),false,'another layer is checking');
+  world.groundAim=[.04,0,-1];camera.position.x=.3;
+  assert.equal(targetCurrent(world.use.target,world.groundAim),false,'moving out of the observed range invalidates readiness');
+  assert.equal(events.at(-1).state,'ready');
+});
+
+test('interaction diagnostics are bounded and retain clicks ahead of hover chatter',async()=>{
+  const full=(await readFile(new URL('../playground/world.js',import.meta.url),'utf8')).replace(/\r\n/g,'\n');
+  const code=full.slice(full.indexOf('function recordInteraction('),full.indexOf('function traceFrame('));
+  const trace={interactions:[],droppedInteractions:0};
+  const record=new Function('trace','world',code+';return recordInteraction;')(trace,{clock:4});
+  for(let i=0;i<64;i++)record({event:'target-state',at_m:[i,0,0]});
+  record({event:'tool-reply',id:'important',result:{loosened_kg:1.25,cells:Array(40000).fill({id:1})},
+    reason:'x'.repeat(5000)});
+  assert.equal(trace.interactions.length,64);assert.equal(trace.droppedInteractions,1);
+  const last=trace.interactions.at(-1);
+  assert.equal(last.id,'important');assert.equal(last.result.loosened_kg,1.25);
+  assert.equal(last.result.cells,undefined);assert.equal(last.reason.length,360);
+  assert.ok(JSON.stringify(trace.interactions).length<12000,'large native topology stays off the telemetry transport');
 });
 
 test('a touch press disables edge looking immediately and releases its cursor after the tool captures the ray',async()=>{

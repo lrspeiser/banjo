@@ -186,6 +186,9 @@ export function makeTools(ctx) {
   // the crosshair meets the ground, and possible materials there. Asking never does
   // anything to the room.
   let asking = false, askedAt = 0, askedFor = null, askedName = null, askedEyes = null, askedContext = null;
+  const trace=(event,details={})=>ctx.recordInteraction?.({event,...details});
+  const interactionId=()=>globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  let previewTraceKey=null;
   function followAim() {
     const held = world.held, use = world.use;
     if (!held || !held.pick) { return; }
@@ -208,18 +211,27 @@ export function makeTools(ctx) {
     askedContext=context;
     api("/api/world/tool", { session: world.session, person, at_m: at || null, target_name: name })
       .then((answer) => {
-        if (world.held !== held) return;
+        if (world.held !== held) {trace('preview-discarded',{reason:'tool-changed'});return;}
         const currentName = world.aim?.name || null;
         const currentAt = currentName ? world.aim.point_m : world.groundAim;
-        if (currentName !== name || (!currentAt) !== (!at)
+        const candidate={...answer,observed_from_m:eyes.slice(),observed_at_m:at?.slice() || null,
+          observed_name:name,observed_context:context};
+        // Match the displayed cell/layer and 25 cm observer tolerance. The
+        // old additional 3 cm filter discarded otherwise valid observations.
+        const stale=ctx.targetCurrent ? !ctx.targetCurrent(candidate,currentAt,currentName) : (currentName !== name || (!currentAt) !== (!at)
           || (currentAt && at && Math.hypot(...currentAt.map((v, i) => v - at[i])) > 0.03)
           || Math.hypot(...whereIAm().eyes_m.map((v,i)=>v-eyes[i]))>.03
-          || (ctx.targetContext?.(currentAt,currentName) ?? null)!==context) return;
-        use.target = {...answer,observed_from_m:eyes.slice(),observed_at_m:at?.slice() || null,
-          observed_name:name,observed_context:context};
+          || (ctx.targetContext?.(currentAt,currentName) ?? null)!==context);
+        const state=stale ? 'discarded' : answer.feedback?.state;
+        const key=JSON.stringify([state,answer.reason,name,context]);
+        if(key!==previewTraceKey){previewTraceKey=key;trace('preview-result',{state,reason:answer.reason,
+          enabled:answer.enabled,at_m:at,eyes_m:eyes,target_name:name,tool:held.name,
+          elapsed_ms:performance.now()-now});}
+        if(stale)return;
+        use.target = candidate;
         showUse();
       })
-      .catch(() => { /* the next frame asks again */ })
+      .catch(error => {trace('preview-error',{reason:String(error.message || error)});})
       .finally(() => { asking = false; });
   }
 
@@ -234,6 +246,10 @@ export function makeTools(ctx) {
   async function useOnce(input) {
     const held = world.held, use = world.use;
     if (!held || !held.pick || use.mode !== "tool-ready") return;
+    const id=input.interaction_id || interactionId();
+    trace('tool-start',{id,tool:held.name,from_m:input.from,direction:input.dir,at_m:input.at_m,
+      preview:{state:use.target?.feedback?.state,enabled:use.target?.enabled,reason:use.target?.reason},
+      preview_age_ms:performance.now()-askedAt});
     use.mode = "tool-working";
     use.startedAt = performance.now();
     use.shownReceipts=new Set();
@@ -266,6 +282,7 @@ export function makeTools(ctx) {
         localStorage.setItem(pendingKey,JSON.stringify(pending));
       }
       answer = await api("/api/world/tool/use", { session: world.session, person: whereIAm(),
+        interaction_id:id,
         at_m: assist?pending.at_m:(hit.hit?hit.point_m:null),
         target_name: hit.hit ? hit.name || null : null,
         energy_assist:assist,request_id:assist?pending.request_id:null });
@@ -273,9 +290,13 @@ export function makeTools(ctx) {
       // authoritative cut receipt resolves that retained request.
       if(assist && answer.cut && typeof answer.cut==='object')localStorage.removeItem(pendingKey);
     } catch (error) {
+      trace('tool-error',{id,reason:String(error.message || error),elapsed_ms:performance.now()-use.startedAt});
       use.result = String(error.message || error);
       say("bad", String(error.message || error));
     }
+    if(answer)trace('tool-reply',{id,at_m:struckAt,refused:answer.refused,said:answer.said,
+      timing:answer.timing,diagnostics:answer.diagnostics,result:answer.result,
+      elapsed_ms:performance.now()-use.startedAt});
     // A finished stroke can carry a newer personal journal, even if the
     // player has since put down the tool. Do not wait for another live step.
     if (answer?.notebook) showNotebook(answer.notebook, true);
@@ -348,7 +369,11 @@ export function makeTools(ctx) {
   // the tool down: E does.
   function press(target=null) {
     const use = world.use;
-    if (!use || !world.held || !world.held.pick) return;
+    if (!use || !world.held || !world.held.pick) {trace('tool-press-ignored',{reason:'no-held-tool'});return;}
+    const id=interactionId();
+    trace('tool-press',{id,input:target?.input || (target?.from ? 'pointer' : target?.at_m ? 'action' : 'keyboard'),
+      from_m:target?.from,direction:target?.dir,at_m:target?.at_m,mode:use.mode,
+      queue_replaced:!!use.queued,tool:world.held.name,state:use.target?.feedback?.state});
     use.down = true;
     use.stop = false;
     // At most ONE click waits while a swing is in hand: a newer click
@@ -357,6 +382,7 @@ export function makeTools(ctx) {
     // up way behind me").
     use.inputs=[target?.at_m ? {at_m:target.at_m.slice(),target_name:target.target_name || null}
       : target?.from && target?.dir ? {from:target.from.slice(),dir:target.dir.slice()} : {sight:true}];
+    use.inputs[0].interaction_id=id;
     use.queued=1;
     if (use.mode === "tool-ready") schedule();
   }

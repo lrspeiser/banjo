@@ -56,6 +56,7 @@ import fabrication_room
 import fabrication_qa
 import gameplay_capabilities
 import tool_use
+import interaction_trace
 import placement
 import access_gate
 import workshop_api
@@ -916,7 +917,7 @@ class Playground:
             "native_cli_metadata":metadata,"inner_cases":inner_cases,"status":case_status,"native_scene":True,"playback_available":True}],
             status="complete",message=message)
 
-    def trace(self,body):
+    def trace(self,body,player=''):
         """What the room saw, from the room.
 
         Every lag in this engine so far has been invisible from this side: the
@@ -931,6 +932,8 @@ class Playground:
         if not isinstance(body,dict): raise ValueError("a frame report must be an object")
         raw=json.dumps(body,separators=(",",":"))
         if len(raw)>64*1024: raise ValueError("that frame report is too big")
+        body=dict(body)
+        interaction_trace.browser(self,player,body.pop('interactions',None))
         stamp=time.strftime("%Y-%m-%dT%H:%M:%S",time.gmtime())
         line=trace_line(body)
         # Said out loud when somebody pressed L, when the room was visibly not
@@ -1619,7 +1622,8 @@ class Handler(BaseHTTPRequestHandler):
         waits_for_steps = path in {"/api/world/action", "/api/world/tool/use", "/api/world/putdown", "/api/world/ask"}
         # Normal world calls share access; explicit installation is exclusive.
         # Keep ordinary requests concurrent and perform authentication first.
-        with (world_access.gate(self.app).enter(exclusive=path in ("/api/world/open", "/api/live/open", "/api/world/goods/deliver", "/api/world/process", "/api/world/matter/collect")) if world_call else nullcontext()), \
+        with (interaction_trace.attempt(self.app,player,body) if path=='/api/world/tool/use' else nullcontext()), \
+             (world_access.gate(self.app).enter(exclusive=path in ("/api/world/open", "/api/live/open", "/api/world/goods/deliver", "/api/world/process", "/api/world/matter/collect")) if world_call else nullcontext()), \
              (world_access.state_lock(self.app) if world_call and not waits_for_steps else nullcontext()), \
              (gameplay_room.LOCK if world_call and not waits_for_steps and (gameplay_room.active(self.app)
                  or fabrication_room.active(self.app)
@@ -2160,8 +2164,10 @@ class Handler(BaseHTTPRequestHandler):
                     import physical_matter
                     recovered=physical_matter.recover_cut(self.app,body.get('request_id'),player,keep_world)
                     if recovered is not None:
-                        return self.send({'cut':recovered,'said':'Previous cut saved · energy charged once.',
-                                          'replayed':True,'action':'Cut'})
+                        answer={'cut':recovered,'said':'Previous cut saved · energy charged once.',
+                                'replayed':True,'action':'Cut'}
+                        interaction_trace.outcome(answer)
+                        return self.send(answer)
                 _this_pages_room(self.app,body)
                 player_learning.require_capacity(self.app)
                 with (self.app.live.as_actor(player) if player else nullcontext()):
@@ -2197,6 +2203,7 @@ class Handler(BaseHTTPRequestHandler):
                     if answer.get('learning_pending'):
                         answer['said']=(answer.get('said') or '')+' Journal update pending.'
                     answer['notebook']=knowledge_view(self.app)
+                interaction_trace.outcome(answer)
                 return self.send(answer)
             if path=="/api/world/matter/shown":
                 _this_pages_room(self.app,body)
@@ -2361,7 +2368,9 @@ class Handler(BaseHTTPRequestHandler):
             # a file and cannot reach any other origin, so the one way a
             # result leaves the tab it was rendered in is through here.
             if path=="/api/capture": return self.send(self.app.capture(body))
-            if path=="/api/trace": return self.send(self.app.trace(body))
+            if path=="/api/trace":
+                trace_player=player_world.require(self.app,self.headers.get('X-Banjo-Player')) if getattr(self.app,'world_id',None) else ''
+                return self.send(self.app.trace(body,trace_player))
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/analyze",path)
             if match: return self.send(self.app.analyze(match[1],body))
             match=re.fullmatch(r"/api/jobs/([0-9a-f]{32})/rerun",path)

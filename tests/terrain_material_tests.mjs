@@ -32,10 +32,10 @@ test('the shipped world renders a green wall square with its fill on the face',(
   const camera=new THREE.PerspectiveCamera();camera.position.fromArray(eyes);
   const crosshair={dataset:{}};
   const run=new Function('THREE','scene','world','ground','groundColumn','groundSeen','camera','$',
-    'toolTargetFeedback','toolTargetColor','groundMadeOf','targetContext','terrainTargetPath','groundAt',code+
+    'toolTargetFeedback','toolTargetColor','groundMadeOf','targetContext','terrainTargetPath','groundAt','recordInteraction',code+
     ';showGroundTarget();return {groundTarget,groundTargetFill};');
   const {groundTarget,groundTargetFill}=run(THREE,new THREE.Scene(),world,{grid},()=>({c:12,grid}),()=>true,camera,
-    ()=>crosshair,toolTargetFeedback,toolTargetColor,()=> 'rock',()=> 'wall',terrainTargetPath,()=>2);
+    ()=>crosshair,toolTargetFeedback,toolTargetColor,()=> 'rock',()=> 'wall',terrainTargetPath,()=>2,()=>{});
   assert.equal(groundTarget.visible,true);assert.equal(crosshair.dataset.readiness,'ready');
   assert.equal(groundTarget.material.color.getHex(),0x62e595);
   assert.equal(groundTargetFill.material.opacity,.62);

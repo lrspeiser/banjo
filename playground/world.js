@@ -6451,6 +6451,11 @@ function targetContext(at,name=null) {
   }
   return JSON.stringify([col.grid.x0,col.grid.z0,col.grid.dx,c,col.heights[c],col.surfaces[c],runs]);
 }
+function targetCurrent(target,point,name=null) {
+  return toolTargetFeedback({point,grid:point ? groundColumn(point[0],point[2])?.grid : null,
+    tool:world.use.name,target,eyes:camera.position.toArray(),name,
+    surface:!name && point ? groundMadeOf(point) : null,context:targetContext(point,name)}).state!=='checking';
+}
 function showMaterialPreview() {
   const point=world.groundAim, pileHit=world.resourceAim;
   const target=world.use.target;
@@ -6863,6 +6868,7 @@ const SLOW_FRAME_MS = 60;        // a frame worth naming individually
 const KEEP_SLOW = 12;            // at most this many named per report
 
 const trace = {
+  interactions: [], droppedInteractions: 0,
   terrain: [],         // bounded CPU construction measurements, not GPU timings
   renders: [],         // CPU submission time, including uploads/draws, not GPU elapsed time
   frames: [],          // frame intervals since the last report
@@ -6879,6 +6885,28 @@ const trace = {
   // cannot be reached, and in every other number here that reads as a lag.
   link: { times: 0, longest_ms: 0, why: "", gave_up: false },
 };
+function recordInteraction(event) {
+  // Native replies may contain large cell arrays. Diagnostic transport keeps
+  // only coordinates, scalar receipts and phase/hand summaries, never meshes.
+  function compact(row) {
+    const out={};
+    for(const [key,value] of Object.entries(row || {})) {
+      if(['preview','timing','diagnostics','result'].includes(key) && value && typeof value==='object')out[key]=compact(value);
+      else if(typeof value==='string')out[key]=value.slice(0,360);
+      else if(typeof value==='number' && Number.isFinite(value) || typeof value==='boolean' || value===null)out[key]=value;
+      else if(Array.isArray(value) && value.length<=4 && value.every(Number.isFinite))out[key]=value.slice();
+    }
+    return out;
+  }
+  event=compact(event);
+  if(trace.interactions.length>=64){
+    trace.droppedInteractions++;
+    if(!event.event.startsWith('tool-') && !event.event.endsWith('-error'))return;
+    const low=trace.interactions.findIndex(row=>!row.event.startsWith('tool-') && !row.event.endsWith('-error'));
+    trace.interactions.splice(low<0 ? 0 : low,1);
+  }
+  trace.interactions.push({...event,client_ms:Math.round(performance.now()),native_s:world.clock});
+}
 
 function traceFrame(dt) {
   trace.frames.push(dt);
@@ -6973,11 +7001,23 @@ async function sendTrace(why) {
       ? +(trace.bytes.reduce((a, b) => a + b, 0) / trace.bytes.length / 1024).toFixed(2) : null,
     worst_reply_kb: trace.bytes.length ? +(Math.max(...trace.bytes) / 1024).toFixed(0) : null,
     breaks: trace.breaks.slice(),
+    interactions:trace.interactions.slice(),
     terrain_builds:trace.terrain.slice(),
     objects: world.bodies.size,
     ...(trace.link.times ? { lost_link: { ...trace.link } } : {}),
   };
+  // Ordinary POSTs are capped at 32 KiB. Keep room for the frame report, and
+  // prefer actual press/use/failure events over hover transitions when full.
+  let dropped=trace.droppedInteractions;
+  while(JSON.stringify(report.interactions).length>12000) {
+    const low=report.interactions.findIndex(row=>!row.event.startsWith('tool-') && !row.event.endsWith('-error'));
+    report.interactions.splice(low<0 ? 0 : low,1);dropped++;
+  }
   const link = trace.link;
+  const traceSession=world.session;
+  if(dropped){if(report.interactions.length===64){report.interactions.pop();dropped++;}
+    report.interactions.unshift({event:'events-dropped',dropped});}
+  trace.interactions.length=0;trace.droppedInteractions=0;
   trace.frames.length = 0; trace.slow.length = 0; trace.ticks.length = 0;
   trace.bytes.length = 0; trace.breaks.length = 0;
   trace.terrain.length=0;
@@ -6987,6 +7027,11 @@ async function sendTrace(why) {
   trace.startedWorld = world.clock;
   trace.sentAt = now;
   try { await api("/api/trace", report); } catch (e) {
+    if(world.session===traceSession) {
+      const retry=[...report.interactions,...trace.interactions];
+      trace.interactions=retry.slice(0,64);
+      trace.droppedInteractions+=Math.max(0,retry.length-64);
+    }
     // A lost report is not worth a bad frame -- but a lost connection is the
     // one thing a report sent while the server is away is sure to lose, so it
     // is kept for the next report, which reaches whichever server comes back
@@ -7027,6 +7072,7 @@ function traceNewWorld(t) {
   trace.bytes.length = 0; trace.breaks.length = 0;
   trace.terrain.length=0;
   trace.renders.length=0;
+  trace.interactions.length=0;trace.droppedInteractions=0;targetTraceKey=null;
   trace.awaiting.clear();
   trace.startedWall = performance.now();
   trace.startedWorld = world.clock;
@@ -7257,6 +7303,9 @@ function wouldOnlySetItDown(name) {
   return program.steps?.length === 1 && program.steps[0].do === "place";
 }
 
+function pointerToolTarget(e,from,dir) {
+  return {from:from.toArray(),dir:dir.toArray(),input:e.pointerType || 'mouse'};
+}
 function pressPrimary(target=null) {
   if (!world.session) return false;
   if (world.placing?.carrying || world.placing?.confirming) return true;
@@ -7381,8 +7430,8 @@ canvas.addEventListener("pointerdown", (e) => {
   }
   // Primary held with something throwable in the hand winds it up. Looking
   // still works while it does -- that is how a throw is aimed.
-  if (looking || world.held) primaryUsed = pressPrimary(e.pointerType !== "mouse" && world.held?.pick
-    ? {from:from.toArray(),dir:dir.toArray()} : null);
+  if (looking || world.held) primaryUsed = pressPrimary(world.held?.pick
+    ? pointerToolTarget(e,from,dir) : null);
   if (looking) return;           // captured: the move handler has it
   drag = { x: e.clientX, y: e.clientY, moved: false,
            ray: {from:from.toArray(),dir:dir.toArray()} };
@@ -8516,15 +8565,23 @@ groundTargetFillGeometry.setAttribute('position',new THREE.BufferAttribute(new F
 const groundTargetFill=new THREE.Mesh(groundTargetFillGeometry,new THREE.MeshBasicMaterial({color:0x62e595,
   transparent:true,opacity:.34,depthWrite:false,side:THREE.DoubleSide}));
 groundTargetFill.renderOrder=3;groundTarget.add(groundTargetFill);
+let targetTraceKey=null;
 function showGroundTarget() {
   const point=world.groundAim, col=point&&ground.grid?groundColumn(point[0],point[2]):null, g=col?.grid;
   const index=col?col.c:-1;
   groundTarget.visible=index>=0 && !world.resourceAim && !world.aim && (!col.valley || groundSeen(index))
     && camera.position.distanceTo(new THREE.Vector3(...point))<40;
-  if(!groundTarget.visible){delete $('crosshair').dataset.readiness;return;}
+  if(!groundTarget.visible){
+    if(targetTraceKey!==null){recordInteraction({event:'target-hidden',mode:world.use.mode});targetTraceKey=null;}
+    delete $('crosshair').dataset.readiness;return;
+  }
   const feedback=toolTargetFeedback({point,grid:g,tool:world.held?.pick ? world.use.name : null,
     target:world.use.target,eyes:camera.position.toArray(),surface:groundMadeOf(point),context:targetContext(point)});
   const shown=world.use.mode==='tool-working' ? {...feedback,ready:false,state:'working'} : feedback;
+  const traceKey=JSON.stringify([shown.state,shown.reason,world.use.name,targetContext(point)]);
+  if(traceKey!==targetTraceKey){targetTraceKey=traceKey;recordInteraction({event:'target-state',
+    state:shown.state,reason:shown.reason,ready:shown.ready,at_m:point,
+    eyes_m:camera.position.toArray(),tool:world.held?.name,material:groundMadeOf(point),mode:world.use.mode});}
   const color=toolTargetColor(shown);
   groundTarget.material.color.setHex(color);groundTargetFill.material.color.setHex(shown.ready ? 0x18ff63 : color);
   groundTargetFill.material.opacity=shown.ready ? .62 : .22;
@@ -9729,6 +9786,7 @@ function groundTargetPoint(point,eyes=camera.position.toArray()) {
 }
 const physicalGround=makePhysicalGround({scene,camera,world,api,whereIAm,lastAction,showInventory});
 const tools = makeTools({ world, act, api, say, remember, showUse, camera, carryGround, scene, targetContext, groundTargetPoint, aimVector, showToolOutcome, followGoods,
+                          recordInteraction,targetCurrent,
                           followMatter:packet=>physicalGround.follow(packet),
                           summarizeToolResult:answer=>{
                             const collected=collectedToolMaterials(answer);

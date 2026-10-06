@@ -284,6 +284,8 @@ def run(app: Any, body: dict[str, Any],
     {action, refused, done}: `said` in plain words, `detail` in the engine's
     numbers, `done` each stroke and how it ended, `result` the ground's record."""
     said = resolve(app, body)
+    import interaction_trace
+    interaction_trace.preflight(said)
     label = said.get("label") or "Use it"
     if not said.get("enabled"):
         return {"action": label, "refused": said.get("reason") or "It cannot be used there.",
@@ -724,8 +726,26 @@ def _contact(app,said,use,tool,eyes,heard,note):
     # must not be discarded by starting the receipt window after readiness.
     since=float(session.state.get('t') or 0)
     ready=said.get('ready')
+    def refused(phase, reason):
+        # Actual native coordinates, including failure before any cutting.
+        # This reports the bounded hand; it does not reposition the tool.
+        point=_native_point(app,tool) or {}
+        tip=point.get('tip')
+        grip=_grip(session)
+        wanted=(ready or {}).get('hand')
+        if phase=='turn' and wanted:wanted=[wanted[0],wanted[1]+.6,wanted[2]]
+        target=said.get('target',{}).get('at_m')
+        wanted_tip=[target[0],target[1]+tool_gestures.CLEARANCE_M,target[2]] if target else None
+        if phase=='turn' and wanted_tip:wanted_tip[1]+=.6
+        return {'action':said['label'],'refused':reason,'done':[],
+                'diagnostics':{'phase':phase,'tip_m':tip,'grip_m':grip,
+                    'wish_hand_m':wanted,'wish_tip_m':wanted_tip,'pointing':point.get('pointing'),
+                    'tip_gap_m':math.dist(tip,wanted_tip) if tip and wanted_tip else None,
+                    'grip_gap_m':math.dist(grip,wanted) if grip and wanted else None},
+                'timing':{'prepare_ms':1000*(time.monotonic()-began_at),
+                          'native_elapsed_s':float(session.state.get('t') or since)-since}}
     if not ready:
-        return {'action':said['label'],'refused':'This tool has no attached native point and grip frame','done':[]}
+        return refused('frame','This tool has no attached native point and grip frame')
     at=said['target']['at_m']
     point=_native_point(app,tool)
     path=tool_gestures.lift_path(_grip(session),point['tip'],point['pointing'],at) if point else None
@@ -755,7 +775,7 @@ def _contact(app,said,use,tool,eyes,heard,note):
                 math.dist(point['tip'],[at[0],at[1]+tool_gestures.CLEARANCE_M+.6,at[2]])<.035):break
             time.sleep(.005)
         else:
-            return {'action':said['label'],'refused':'The tool is still turning into position','done':[]}
+            return refused('turn','The tool is still turning into position')
         app.live.act({'session':session.id,'op':'stroke','path':[_grip(session),ready['hand']],
             'speed_m_s':1.0,'accel_m_s2':8.0,'lead_m':tool_gestures.LEAD_M,
             'give_up_s':2.0,'let_go':False})
@@ -784,7 +804,7 @@ def _contact(app,said,use,tool,eyes,heard,note):
                  or (math.dist(tip,ready_at)<.01 and _still(app,tool)))): break
         time.sleep(.005);point=_native_point(app,tool)
     else:
-        return {'action':said['label'],'refused':'The tool is still moving into position','done':[]}
+        return refused('position','The tool is still moving into position')
     grip=_grip(session)
     prepared_at=time.monotonic()
     # The cube this swing is for: on cube ground, the one taken out.

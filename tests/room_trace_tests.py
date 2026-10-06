@@ -23,6 +23,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "playground"))
 
 import server  # noqa: E402
+import interaction_trace
+from types import SimpleNamespace
+from unittest import mock
 
 
 class TheLineWrittenToTheLog(unittest.TestCase):
@@ -158,6 +161,80 @@ class TheEndpointThatReceivesThem(unittest.TestCase):
 
     def send(self, body):
         return server.Playground.trace(self.app, body)
+
+    def events(self):
+        return [json.loads(line) for line in (self.where/'interaction-events.jsonl').read_text(encoding='utf-8').splitlines()]
+
+    def test_click_and_refused_outcome_are_linked_and_keep_actual_native_coordinates(self):
+        self.app.world_id='test-world'
+        self.app.live=SimpleNamespace(session=SimpleNamespace(state={'t':12.5,
+            'player_hands':{'owner':{'holding':'authored hoe','grip_m':[1,2,3]}},
+            'native_players':{'owner':{'position_m':[1,1,3]}}}))
+        with interaction_trace.attempt(self.app,'owner',{'interaction_id':'pressed-target-1','at_m':[1,0,4]}):
+            interaction_trace.preflight({'enabled':True,'tool':'authored hoe','target':{'at_m':[1,0,4]},
+                'ready':{'hand':[1,.5,4]},'ring':{'state':'ok'}})
+            interaction_trace.outcome({'refused':'The tool is still moving into position',
+                'diagnostics':{'phase':'position','tip_m':[1,.2,3],'tip_gap_m':1.},
+                'timing':{'prepare_ms':2000}})
+        server.Playground.trace(self.app,{'interactions':[{'event':'tool-press','id':'pressed-target-1',
+            'input':'touch','from_m':[1,2,3],'direction':[0,-1,0]}]},'owner')
+        rows=self.events()
+        self.assertEqual([r['event'] for r in rows],['tool-request','tool-preflight','tool-result','tool-press'])
+        self.assertEqual({r['id'] for r in rows},{'pressed-target-1'})
+        self.assertEqual({r['actor'] for r in rows},{rows[0]['actor']})
+        self.assertEqual(rows[2]['diagnostics']['tip_m'],[1,.2,3])
+        self.assertEqual(rows[2]['hand']['holding'],'authored hoe')
+        self.assertEqual(rows[3]['source'],'browser')
+        self.assertEqual(rows[2]['source'],'server')
+
+    def test_exception_is_logged_even_when_no_browser_response_arrives(self):
+        with self.assertRaisesRegex(ValueError,'stale room'):
+            with interaction_trace.attempt(self.app,'owner',{'interaction_id':'failed-request'}):
+                raise ValueError('stale room')
+        rows=self.events()
+        self.assertEqual(rows[-1]['status'],'error')
+        self.assertEqual(rows[-1]['reason'],'stale room')
+        self.assertEqual(rows[-1]['id'],rows[0]['id'])
+
+    def test_disconnected_browser_preserves_finished_native_outcome(self):
+        with self.assertRaises(ConnectionAbortedError):
+            with interaction_trace.attempt(self.app,'owner',{'interaction_id':'lost-reply'}):
+                interaction_trace.outcome({'result':{'loosened_kg':1.25},'said':'Released'})
+                raise ConnectionAbortedError('browser closed')
+        rows=self.events()
+        self.assertEqual([r['event'] for r in rows],['tool-request','tool-result','tool-delivery-error'])
+        self.assertEqual(rows[1]['result']['loosened_kg'],1.25)
+        self.assertEqual(rows[2]['id'],rows[1]['id'])
+
+    def test_browser_fields_cannot_spoof_provenance_or_write_secrets(self):
+        self.send({'interactions':[{'event':'target-state','source':'server','actor':'spoof',
+            'world':'spoof','headers':{'Authorization':'fixture secret'},'token':'fixture token',
+            'reason':'Error sk-fixture-secret','diagnostics':{'token':'nested secret','tip_gap_m':.3},
+            'elapsed_ms':float('nan'),'at_m':[0,float('inf'),1]}]})
+        row=self.events()[0]
+        self.assertEqual(row['source'],'browser')
+        self.assertNotEqual(row['actor'],'spoof')
+        self.assertIsNone(row['world'])
+        self.assertEqual(row['reason'],'Error [redacted]')
+        self.assertEqual(row['diagnostics'],{'tip_gap_m':.3})
+        self.assertNotIn('elapsed_ms',row);self.assertNotIn('at_m',row)
+        raw=(self.where/'room-frames.jsonl').read_text(encoding='utf-8')
+        self.assertNotIn('interactions',raw);self.assertNotIn('secret',raw)
+
+    def test_event_count_and_file_retention_are_bounded(self):
+        self.send({'interactions':[{'event':'target-state','client_ms':i} for i in range(80)]})
+        self.assertEqual(len(self.events()),64)
+        with mock.patch.object(interaction_trace,'MAX_BYTES',1):
+            self.send({'interactions':[{'event':'tool-press','id':'after-rotation'}]})
+        self.assertEqual(len(self.events()),1)
+        self.assertTrue((self.where/'interaction-events.previous.jsonl').exists())
+
+    def test_failed_logging_does_not_cancel_gameplay_and_warns_once(self):
+        with mock.patch.object(Path,'mkdir',side_effect=OSError('read only')):
+            with self.assertLogs('banjo',level='WARNING') as logged:
+                with interaction_trace.attempt(self.app,'owner',{}):
+                    interaction_trace.outcome({'said':'Done'})
+        self.assertEqual(len(logged.output),1)
 
     def test_a_report_is_filed_where_it_can_be_read_back(self):
         self.assertEqual(self.send({"why": "routine", "frames": 10, "objects": 5}), {"ok": True})

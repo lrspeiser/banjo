@@ -658,6 +658,23 @@ class ObjectControls(unittest.TestCase):
 
 
 class StrokeAcknowledgement(unittest.TestCase):
+    def test_positioning_refusal_keeps_measured_tip_and_hand_gaps(self):
+        app=app_with()
+        before=deepcopy(app.live.session.state)
+        said={'label':'Dig','target':{'at_m':[1,0,2]},'ready':{'hand':[1,1,2],'hand_q':[1,0,0,0]}}
+        point={'tip':[1,.5,2],'pointing':[0,-1,0]}
+        with mock.patch.object(tool_use,'_native_point',return_value=point), \
+             mock.patch.object(app.live,'act',return_value={}), \
+             mock.patch.object(tool_use.tool_gestures,'lift_path',return_value=None), \
+             mock.patch.object(tool_use.time,'monotonic',side_effect=[0,0,3,3]):
+            answer=tool_use._contact(app,said,{},'pick haft',[0,2,0],{},None)
+        self.assertEqual(answer['diagnostics']['phase'],'position')
+        self.assertEqual(answer['diagnostics']['tip_m'],point['tip'])
+        self.assertAlmostEqual(answer['diagnostics']['tip_gap_m'],.5-tool_use.tool_gestures.CLEARANCE_M)
+        self.assertGreater(answer['diagnostics']['grip_gap_m'],1)
+        self.assertEqual(answer['timing']['prepare_ms'],3000)
+        self.assertEqual(app.live.session.state,before,'diagnostics add no simulated position/work')
+
     def test_completed_acknowledged_stroke_has_no_unseen_stroke_delay(self):
         app=app_with()
         app.live.session.state['hand'].update(stroking=False,stroke_ended='reached')
