@@ -241,6 +241,50 @@ impl ToolUse {
 /// Eligibility is an observation, never a promise of physical contact or yield.
 /// Missing hit/terrain data stays absent instead of inventing a target at zero.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
+pub enum EntryObstructionKind {
+    Ground,
+    Body,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EntryObstruction {
+    pub kind: EntryObstructionKind,
+    pub tool_part_id: u64,
+    pub blocking_body_id: Option<u64>,
+    pub witness_m: [f64; 3],
+    pub overlap_m: f64,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EntryClearance {
+    pub clear: bool,
+    pub parts_checked: u32,
+    pub obstruction: Option<EntryObstruction>,
+}
+impl EntryClearance {
+    fn validate(&self) -> Result<(), Refusal> {
+        if self.parts_checked == 0
+            || self.parts_checked > 64
+            || self.clear != self.obstruction.is_none()
+        {
+            return Err(Refusal::KernelUnavailable);
+        }
+        if let Some(o) = &self.obstruction
+            && (!o.overlap_m.is_finite()
+                || o.tool_part_id == 0
+                || o.blocking_body_id == Some(0)
+                || o.overlap_m <= 0.003
+                || o.overlap_m > 1e6
+                || o.witness_m.iter().any(|x| !x.is_finite() || x.abs() > 1e6)
+                || matches!(o.kind, EntryObstructionKind::Ground) != o.blocking_body_id.is_none())
+        {
+            return Err(Refusal::KernelUnavailable);
+        }
+        Ok(())
+    }
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ToolPreview {
     pub schema: String,
@@ -256,6 +300,7 @@ pub struct ToolPreview {
     pub ground_height_m: Option<f64>,
     pub desired_path_points: u32,
     pub measured_yield: bool,
+    pub entry_clearance: Option<EntryClearance>,
 }
 
 impl ToolPreview {
@@ -271,7 +316,11 @@ impl ToolPreview {
             && self.terrain_column.is_none()
             && self.matter_revision.is_none()
             && self.ground_height_m.is_none();
-        if self.schema != "banjo.tool-preview.v1"
+        if let Some(entry) = &self.entry_clearance {
+            entry.validate()?;
+        }
+
+        if self.schema != "banjo.tool-preview.v2"
             || self.actor.as_str() != actor
             || self.measured_yield
             || self.admitted == self.reason.is_some()
@@ -288,11 +337,15 @@ impl ToolPreview {
             || (terrain_complete && (self.target_m.is_none() || self.terrain_region.unwrap() < -1))
             || (self.admitted
                 && (self.target_m.is_none()
+                    || self.entry_clearance.is_none()
                     || !terrain_complete
                     || self.tool.is_empty()
                     || self.point_id == 0
                     || self.desired_path_points == 0))
         {
+            return Err(Refusal::KernelUnavailable);
+        }
+        if self.entry_clearance.is_some() && !terrain_complete {
             return Err(Refusal::KernelUnavailable);
         }
         Ok(())
@@ -484,7 +537,7 @@ mod tests {
     #[test]
     fn native_preview_is_typed_scoped_and_does_not_promise_yield() {
         let mut p = ToolPreview {
-            schema: "banjo.tool-preview.v1".into(),
+            schema: "banjo.tool-preview.v2".into(),
             actor: Id::new("alice").unwrap(),
             admitted: false,
             reason: Some(Refusal::NotHolding),
@@ -497,6 +550,7 @@ mod tests {
             ground_height_m: None,
             desired_path_points: 0,
             measured_yield: false,
+            entry_clearance: None,
         };
         assert_eq!(p.validate("alice"), Ok(()));
         assert_eq!(p.validate("bob"), Err(Refusal::KernelUnavailable));
@@ -511,10 +565,62 @@ mod tests {
         p.tool = "handle".into();
         p.point_id = 1;
         p.desired_path_points = 13;
+        p.entry_clearance = Some(EntryClearance {
+            clear: true,
+            parts_checked: 2,
+            obstruction: None,
+        });
         assert_eq!(p.validate("alice"), Ok(()));
         p.measured_yield = true;
         assert_eq!(p.validate("alice"), Err(Refusal::KernelUnavailable));
         p.measured_yield = false;
+        let good = p.clone();
+        p.entry_clearance = None;
+        assert_eq!(p.validate("alice"), Err(Refusal::KernelUnavailable));
+        p = good.clone();
+        p.entry_clearance = Some(EntryClearance {
+            clear: false,
+            parts_checked: 2,
+            obstruction: Some(EntryObstruction {
+                kind: EntryObstructionKind::Ground,
+                tool_part_id: 1,
+                blocking_body_id: None,
+                witness_m: [0.0, 0.7, 1.0],
+                overlap_m: 0.01,
+            }),
+        });
+        assert_eq!(p.validate("alice"), Ok(())); // a predicted meeting is not a proved failed stroke
+        let blocked = p.clone();
+        p.entry_clearance
+            .as_mut()
+            .unwrap()
+            .obstruction
+            .as_mut()
+            .unwrap()
+            .blocking_body_id = Some(2);
+        assert_eq!(p.validate("alice"), Err(Refusal::KernelUnavailable));
+        p = blocked.clone();
+        p.entry_clearance
+            .as_mut()
+            .unwrap()
+            .obstruction
+            .as_mut()
+            .unwrap()
+            .overlap_m = 0.001;
+        assert_eq!(p.validate("alice"), Err(Refusal::KernelUnavailable));
+        p = blocked.clone();
+        p.entry_clearance
+            .as_mut()
+            .unwrap()
+            .obstruction
+            .as_mut()
+            .unwrap()
+            .witness_m[0] = f64::NAN;
+        assert_eq!(p.validate("alice"), Err(Refusal::KernelUnavailable));
+        p = good;
+        p.schema = "banjo.tool-preview.v1".into();
+        assert_eq!(p.validate("alice"), Err(Refusal::KernelUnavailable));
+        p.schema = "banjo.tool-preview.v2".into();
         p.target_m = Some([f64::NAN, 0.0, 0.0]);
         assert_eq!(p.validate("alice"), Err(Refusal::KernelUnavailable));
     }

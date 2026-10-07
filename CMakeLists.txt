@@ -433,6 +433,7 @@ if(BANJO_BUILD_HEADLESS)
                                        src/fastlattice/LiveWorld.cpp
                                        src/fastlattice/ToolTerrain.cpp
                                        src/fastlattice/NativeToolUse.cpp
+                                       src/fastlattice/NativeToolClearance.cpp
     src/fastlattice/PreciseRigidScene.cpp)
     target_link_libraries(banjo_fastlattice_scene PUBLIC banjo_fastlattice banjo_runtime banjo_thermo banjo_environment banjo_circuits PRIVATE nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_fastlattice_scene)

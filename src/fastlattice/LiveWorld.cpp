@@ -16567,6 +16567,17 @@ LiveToolUseAdmission LiveWorld::toolUseAdmission(const Vec3 &from_world_m,
         !I.gripWithinNativeReach(I.selected_hand,planned->contact.path_m.back()+Vec3{0,.14,0}))
         return refuse("out_of_reach");
     result.desired_stroke=planned->contact;
+    // Inspect the actual joined geometry at first surface entry, not just the
+    // centre tip's column. No penetration/work is requested by this observation.
+    // This does not certify preparation/rotation/lateral motion or permit a
+    // different column to supply unmodelled work to the selected centre.
+    if(members.size()>64)return refuse("capacity_exceeded");
+    std::vector<MatterBodyId> assembly;assembly.reserve(members.size());
+    for(const auto member:members)assembly.push_back(I.body_of[member]);
+    result.entry_clearance=inspectToolEntry(*I.world,assembly,I.body_of[I.holding],I.grip_local,
+        planned->ready_grip_m-Vec3{0,.06,0},planned->facing);
+    // Overlap predicts a meeting, not a failed stroke: compliant/dynamic
+    // shapes can resolve it. Keep actual native work/yield authoritative.
     result.admitted=true;
     return result;
 }

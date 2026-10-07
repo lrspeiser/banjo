@@ -76,6 +76,12 @@ void nativeCycle(const std::string &material,const std::string &family) {
     std::cout<<"repeat target "<<f.target.x<<","<<f.target.y<<","<<f.target.z<<", hit="
         <<repeat_preview.target_m.x<<","<<repeat_preview.target_m.y<<","<<repeat_preview.target_m.z
         <<", column="<<repeat_preview.terrain_column<<"\n";
+    require(repeat_preview.entry_clearance.checked,"repeat omitted actual assembly entry observation");
+    const auto &entry=repeat_preview.entry_clearance;
+    std::cout<<"REPEAT_ENTRY_EVIDENCE "<<Json{{"material",material},{"family",family},
+        {"clear",entry.clear},{"parts_checked",entry.parts_checked},{"overlap_m",entry.overlap_m},
+        {"kind",entry.clear?"none":entry.ground?"ground":"body"},
+        {"witness_m",Json::array({entry.witness_m.x,entry.witness_m.y,entry.witness_m.z})}}.dump()<<"\n";
     require(world.beginToolUse(f.eye,f.direction(),2,why),"recovered tool could not start a second use");
     for(int i=0;i<1400 && world.toolUse().active;++i) {
         const auto phase=world.toolUse().phase;
@@ -139,6 +145,11 @@ void nativeDeclaredPitClearance(const std::string &material,double width) {
     f.target={.65,world.environment()->groundHeightAt(.65,.15),.15};
     require(std::abs(f.target.y-.69)<1e-8,"declared pit does not have its specified depth");
     std::string why;
+    const auto entry_before=world.snapshot(why);
+    const auto admission=world.toolUseAdmission(f.eye,f.direction(),2);
+    require(admission.admitted && admission.entry_clearance.checked &&
+        admission.entry_clearance.clear==(width<.1),"pit entry geometry observation is wrong");
+    require(world.snapshot(why)==entry_before && world.time_s()==0,"pit entry observation mutated physical state");
     require(world.beginToolUse(f.eye,f.direction(),2,why),"declared pit use admission refused");
     double lowest_tip=10;
     for(int i=0;i<1400 && world.toolUse().active;++i) {
@@ -168,6 +179,7 @@ void nativeDeclaredPitClearance(const std::string &material,double width) {
         {"scene_cell_m",.02},{"lowest_tip_m",lowest_tip},{"target_height_m",.69},
         {"tool_mass_kg",tool_mass},{"released_mass_kg",released_mass},
         {"released_m3",result.loosened.total()},{"contact_work_j",result.contact_work_j},
+        {"entry_clear",admission.entry_clearance.clear},{"entry_overlap_m",admission.entry_clearance.overlap_m},
         {"reason",result.reason},{"elapsed_s",world.time_s()}}.dump()<<"\n";
     if(width<.1)require(result.reason.empty() && result.loosened.total()>0,
         "narrow physical head could not cut the declared narrow pit");

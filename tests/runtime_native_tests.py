@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class Worker:
-    def __init__(self, native, runtime, material='iron', block_size=.1, prepared_tool=None):
+    def __init__(self, native, runtime, material='iron', block_size=.1, prepared_tool=None, prepared_pit=False):
         self.closed = False
         self.expected_returncode = 0
         self.temp = tempfile.TemporaryDirectory()
@@ -45,11 +45,12 @@ class Worker:
                 {'op':'tool_point','body':'head','tip':[.65,1.06,.2],'pointing':[0,-1,0],
                     'width_m':width,'thickness_m':.04,'angle_deg':30,'length_m':.1,
                     'grip':[.65,1.4,.2],'grip_body':'handle'}, {'op':'snapshot'}]
+            if prepared_pit:ops.insert(-1,{'op':'dig','from':[.65,.15],'width_m':.05,'depth_m':.06})
             seeded=subprocess.run([str(native),'--scene',str(scene),'--cell','.02'],
                 input=''.join(json.dumps(op)+'\n' for op in ops),capture_output=True,text=True,encoding='utf-8',timeout=30)
             if seeded.returncode:raise AssertionError(seeded.stderr)
             frames=[json.loads(line) for line in seeded.stdout.splitlines()]
-            if len(frames)!=4 or not all(frame.get('ok') for frame in frames) or 'snapshot' not in frames[-1]:
+            if len(frames)!=4+int(prepared_pit) or not all(frame.get('ok') for frame in frames) or 'snapshot' not in frames[-1]:
                 raise AssertionError('Native prepared-tool setup failed')
             snapshot=Path(self.temp.name)/'prepared-native.json'
             snapshot.write_text(json.dumps(frames[-1]['snapshot']),encoding='utf-8')
@@ -148,8 +149,8 @@ class NativeOwner(unittest.TestCase):
         if not cls.native.is_file() or not cls.runtime.is_file():
             raise AssertionError('Build both native and Rust targets and supply BANJO_LIVE_ENGINE/BANJO_RUNTIME_ENGINE; this gate cannot skip')
 
-    def worker(self, material='iron', block_size=.1, prepared_tool=None):
-        worker=Worker(self.native,self.runtime,material,block_size,prepared_tool)
+    def worker(self, material='iron', block_size=.1, prepared_tool=None, prepared_pit=False):
+        worker=Worker(self.native,self.runtime,material,block_size,prepared_tool,prepared_pit)
         self.addCleanup(worker.close)
         self.assertEqual(worker.ready['status'],'ready')
         return worker
@@ -167,6 +168,15 @@ class NativeOwner(unittest.TestCase):
                         self.assertEqual(pickup['outcome']['status'],'pending')
                         self.assertEqual(worker.completion()['outcome']['status'],'applied')
                         action=worker.use_action(worker.inspect()['outcome']['snapshot'])
+                        view_action=dict(action,kind='preview_tool_use')
+                        seen=worker.request(view_action)['outcome']
+                        preview=seen['snapshot']['own_tool_preview']
+                        self.assertEqual(preview['schema'],'banjo.tool-preview.v2')
+                        self.assertTrue(preview['admitted'])
+                        self.assertTrue(preview['entry_clearance']['clear'])
+                        self.assertEqual(preview['entry_clearance']['parts_checked'],2)
+                        self.assertIsNone(preview['entry_clearance']['obstruction'])
+                        self.assertFalse(preview['measured_yield'])
                         seq=worker.sequence+1
                         begin=worker.request(action,ident='use-command')
                         self.assertEqual(begin['outcome']['status'],'pending')
@@ -186,6 +196,33 @@ class NativeOwner(unittest.TestCase):
                             'native_file_sha256':worker.ready['native']['selected_file_sha256'],'dt_s':1/240,
                             'scene_cell_m':.02,'terrain_column_m':.1,'result':actual},sort_keys=True))
                     finally:worker.close()
+
+    def test_native_entry_observation_crosses_typed_owner_without_promising_yield(self):
+        for material in ('glass','oak','iron'):
+            with self.subTest(material=material):
+                worker=self.worker(material,prepared_tool='shovel',prepared_pit=True)
+                try:
+                    worker.join(feet=(0,.75,0))
+                    worker.request({'kind':'move','velocity_m_s':[0,0,0],'heading_rad':0,'jump':False})
+                    self.assertEqual(worker.pickup(worker.inspect()['outcome']['snapshot'],instance='handle')['outcome']['status'],'pending')
+                    self.assertEqual(worker.completion()['outcome']['status'],'applied')
+                    action=worker.use_action(worker.inspect()['outcome']['snapshot'],target=(.65,.69,.15))
+                    view=worker.request(dict(action,kind='preview_tool_use'))['outcome']
+                    preview=view['snapshot']['own_tool_preview']
+                    self.assertEqual(preview['schema'],'banjo.tool-preview.v2')
+                    self.assertTrue(preview['admitted']) # collision predicts a meeting, not failure
+                    entry=preview['entry_clearance'];self.assertFalse(entry['clear'])
+                    self.assertEqual(entry['parts_checked'],2)
+                    witness=entry['obstruction'];self.assertEqual(witness['kind'],'ground')
+                    self.assertIsNone(witness['blocking_body_id'])
+                    self.assertGreater(witness['overlap_m'],.003)
+                    self.assertTrue(all(math.isfinite(v) for v in witness['witness_m']))
+                    self.assertFalse(preview['measured_yield'])
+                    self.assertFalse(view['snapshot']['own_tool_use']['active'] if view['snapshot']['own_tool_use'] else False)
+                    self.assertEqual(view['snapshot']['own_hand']['holding'],'handle')
+                    worker.join('bob',(-1,.75,0))
+                    self.assertIsNone(worker.inspect('bob')['outcome']['snapshot']['own_tool_preview'])
+                finally:worker.close()
 
     def test_native_use_cancel_is_scoped_and_leave_waits_for_measured_completion(self):
         worker=self.worker('iron',prepared_tool='pick')
@@ -240,7 +277,7 @@ class NativeOwner(unittest.TestCase):
 
     def test_native_tool_preview_is_scoped_and_reports_unconfigured_tools(self):
         worker=self.worker()
-        self.assertEqual(worker.ready['native']['tool_use_admission_version'],1)
+        self.assertEqual(worker.ready['native']['tool_use_admission_version'],2)
         worker.join('alice');worker.join('bob',(2,.05,0))
         def preview(actor):
             snapshot=worker.inspect(actor)['outcome']['snapshot']

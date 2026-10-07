@@ -1257,7 +1257,7 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
         if (!impact.declined.empty()) said["declined"] = impact.declined;
         impacts.push_back(std::move(said));
     }
-    nlohmann::json state = {{"ok", true}, {"bulk_transfer_receipts", 1}, {"pickup_admission_version", 1}, {"native_carry_version", 1}, {"tool_use_admission_version", 1}, {"native_tool_use_version", 1}, {"t", world.time_s()}, {"stepped_back", world.steppedBack()},
+    nlohmann::json state = {{"ok", true}, {"bulk_transfer_receipts", 1}, {"pickup_admission_version", 1}, {"native_carry_version", 1}, {"tool_use_admission_version", 2}, {"native_tool_use_version", 1}, {"t", world.time_s()}, {"stepped_back", world.steppedBack()},
             {"cell_size_m", world.cellSize()}, {"geometry", with_geometry},
             // `partial` true means bodies missing from this reply are unchanged,
             // not gone; `gone` names the ones that really did go. `count` is how
@@ -1948,7 +1948,14 @@ int main(int argc, char **argv) {
                 } else if (op == "tool-use-preview") {
                     const auto seen=world->toolUseAdmission(readVec(command,"from"),readVec(command,"dir"),
                         command.value("max_m",2.0));
-                    reply["tool_use_preview"]={{"schema","banjo.tool-preview.v1"},{"admitted",seen.admitted},
+                    const auto &entry=seen.entry_clearance;
+                    nlohmann::json clearance=nullptr;
+                    if(entry.checked)clearance={{"clear",entry.clear},{"parts_checked",entry.parts_checked},
+                        {"obstruction",entry.clear?nlohmann::json(nullptr):nlohmann::json{
+                            {"kind",entry.ground?"ground":"body"},{"tool_part_id",entry.tool_part},
+                            {"blocking_body_id",entry.ground?nlohmann::json(nullptr):nlohmann::json(entry.blocking_body)},
+                            {"witness_m",vec(entry.witness_m)},{"overlap_m",entry.overlap_m}}}};
+                    reply["tool_use_preview"]={{"schema","banjo.tool-preview.v2"},{"admitted",seen.admitted},
                         {"actor",command.value("actor",std::string{})},
                         {"reason",seen.reason.empty()?nlohmann::json(nullptr):nlohmann::json(seen.reason)},
                         {"tool",seen.tool},{"point_id",seen.point},
@@ -1958,6 +1965,7 @@ int main(int argc, char **argv) {
                         {"matter_revision",seen.terrain_region==-2?nlohmann::json(nullptr):nlohmann::json(seen.matter_revision)},
                         {"ground_height_m",seen.terrain_region==-2?nlohmann::json(nullptr):nlohmann::json(seen.ground_height_m)},
                         {"desired_path_points",seen.desired_stroke.path_m.size()},
+                        {"entry_clearance",clearance},
                         {"measured_yield",false}};
                 } else if (op == "tool-use-begin") {
                     std::string why;

@@ -256,7 +256,7 @@ impl Kernel for NativeProcess {
         self.call(json!({"op":"player-remove","actor":actor}))
     }
     fn preview_tool_use(&mut self, actor: &str, ray: &Ray) -> Result<(), Refusal> {
-        if self.state["tool_use_admission_version"] != 1 {
+        if self.state["tool_use_admission_version"] != 2 {
             return Err(Refusal::UnsupportedCapability);
         }
         self.call(

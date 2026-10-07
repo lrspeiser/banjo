@@ -1,6 +1,7 @@
 #pragma once
 
 #include "fastlattice/TileImpactScene.hpp"
+#include "fastlattice/NativeToolClearance.hpp"
 #include "terrain/Environment.hpp"
 #include "thermo/ThermoWorld.hpp"
 
@@ -1280,6 +1281,7 @@ struct LiveToolUseAdmission {
     std::uint64_t matter_revision{};
     double ground_height_m{};
     LiveStroke desired_stroke;
+    NativeToolEntryClearance entry_clearance;
 };
 
 struct LiveToolContactPlan {

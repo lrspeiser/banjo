@@ -1,5 +1,8 @@
 #include "fastlattice/LiveWorld.hpp"
 #include "native_tool_fixture.hpp"
+#include "rigid/JoltWorld.hpp"
+#include "material/MaterialCompiler.hpp"
+#include "material/MaterialCatalog.hpp"
 #include <nlohmann/json.hpp>
 #include <chrono>
 #include <cmath>
@@ -24,6 +27,8 @@ void comparative(const std::string &material,const std::string &family) {
     require(length(result.target_m-f.target)<.001,"preview changed the actual selected ray target");
     require(result.tool=="handle"&&result.point!=0&&result.terrain_region==-1,"preview lost component or region identity");
     require(!result.desired_stroke.path_m.empty(),"eligible preview omitted its native actuator plan");
+    require(result.entry_clearance.checked && result.entry_clearance.clear && result.entry_clearance.parts_checked==2,
+        "eligible preview omitted actual whole-tool entry clearance");
     require(world.groundWork().empty(),"looking at a target performed cutting work");
     require(world.environment()->terrain().ledger().dug.total()==0,"looking removed material");
     require(Json::parse(world.groundDebrisJson()).at("bodies").empty(),"looking released native matter");
@@ -57,6 +62,40 @@ void refusals() {
         "wet ground was admitted by a dry constitutive law");
 }
 
+void nativeShapes(const MaterialDefinition &material) {
+    JoltWorld world;
+    RigidCompoundDescription fork;fork.body_id=1;fork.material=material;
+    const RigidPrimitive cube{PrimitiveKind::Box,0,{.04,.04,.04}};
+    fork.parts={{cube,{-.06,0,0},{},material},{cube,{.06,0,0},{},material}};
+    const double leaf_mass=cube.volume()*material.density_kg_m3;
+    fork.mass_kg=2*leaf_mass;fork.inertia_local_kg_m2=cube.inertia(fork.mass_kg);
+    fork.inertia_local_kg_m2.m[1][1]+=2*leaf_mass*.06*.06;
+    fork.inertia_local_kg_m2.m[2][2]+=2*leaf_mass*.06*.06;
+    fork.state.center_of_mass_world_m={3,1,0};world.addCompound(fork);
+    world.addBox({2,{.02,.02,.02},material,{{0,1,0},{},{},{}},true});
+    const std::array<MatterBodyId,1> assembly{1};
+    const auto original=world.snapshot(1);
+    const auto gap=inspectToolEntry(world,assembly,1,{}, {0,1,0},{});
+    require(gap.checked && gap.clear && gap.parts_checked==1,"compound void was filled by a bounds proxy");
+    const auto met=inspectToolEntry(world,assembly,1,{}, {.06,1,0},{});
+    require(!met.clear && !met.ground && met.tool_part==1 && met.blocking_body==2 && met.overlap_m>.003,
+        "actual compound leaf contact lost its external body witness");
+    const double r=std::sqrt(.5);const Quat quarter{r,0,0,r};
+    const auto rotated=inspectToolEntry(world,assembly,1,{.01,0,0},{0,1.07,0},quarter);
+    require(!rotated.clear && rotated.blocking_body==2,"rotated grip offset did not use the native local frame");
+    const std::array<MatterBodyId,2> internal{1,2};
+    require(inspectToolEntry(world,internal,1,{}, {3,1,0},{}).clear,
+        "internal assembly pair became an external obstruction");
+    const auto after=world.snapshot(1);
+    require(length(after.center_of_mass_world_m-original.center_of_mass_world_m)==0 &&
+        length(after.linear_velocity_m_s-original.linear_velocity_m_s)==0 &&
+        length(after.angular_velocity_rad_s-original.angular_velocity_rad_s)==0 &&
+        after.orientation_world.w==original.orientation_world.w,"native geometry query wrote physical state");
+    const std::array<MatterBodyId,2> duplicate{1,1};bool refused=false;
+    try {(void)inspectToolEntry(world,duplicate,1,{}, {0,1,0},{});}catch(const std::invalid_argument &) {refused=true;}
+    require(refused,"duplicate assembly members bypassed the query bound");
+}
+
 
 }
 int main() {
@@ -64,6 +103,8 @@ int main() {
         for(const auto &material:{"glass","oak","iron"})
             for(const auto &family:{"pick","shovel","hoe","unfamiliar"})comparative(material,family);
         refusals();
+        for(const auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})
+            nativeShapes(makeReferenceMaterial(preset,17));
         std::cout<<"native tool use admission checks passed\n";return 0;
     } catch(const std::exception &error) {std::cerr<<error.what()<<"\n";return 1;}
 }
