@@ -1277,11 +1277,20 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
     nlohmann::json player_hands = nlohmann::json::object();
     for (const auto &[player, own] : world.playerHands())
         player_hands[player] = handJson(own);
+    for(const auto &[actor,parts]:world.playerHeldParts())player_hands[actor]["held_parts"]=parts;
     if (!player_hands.empty()) state["player_hands"] = std::move(player_hands);
     nlohmann::json player_tool_uses=nlohmann::json::object();
     for(const auto &[actor,use]:world.playerToolUses())if(use.phase!="idle")
         player_tool_uses[actor]=toolUseJson(use);
     state["player_tool_uses"]=std::move(player_tool_uses);
+    state["physical_hit_version"]=1;
+    auto physical_hits=nlohmann::json::object();
+    for(const auto &[actor,hit]:world.playerPhysicalHits())physical_hits[actor]={
+        {"active",hit.active},{"contacted",hit.contacted},{"reason",hit.reason},{"tool",hit.tool},
+        {"target",hit.target},{"point_id",hit.point_id},{"target_m",vec(hit.target_m)},
+        {"target_displacement_m",vec(hit.target_displacement_m)},{"started_s",hit.started_s},
+        {"ended_s",hit.ended_s},{"hand_work_j",hit.hand_work_j},{"stroke_ended",hit.stroke_ended}};
+    state["player_physical_hits"]=std::move(physical_hits);
     auto native_players = nlohmann::json::object();
     // Native actor state and source accounts may feed later authoritative
     // controllers. Keep their precision; render-only body vectors use vec().
@@ -1945,6 +1954,18 @@ int main(int argc, char **argv) {
                     const auto &g=admission.grip_world_m;
                     reply["pickup"]={{"admitted",admission.admitted},{"reason",admission.reason},
                         {"grip_m",{g.x,g.y,g.z}},{"name",name}};
+                } else if (op == "physical-hit-preview" || op == "physical-hit-begin") {
+                    auto hit=world->physicalHitAdmission(readVec(command,"from"),readVec(command,"dir"),command.value("max_m",2.0));
+                    if(op=="physical-hit-begin"&&hit.admitted) {
+                        std::string why;
+                        if(!world->beginPhysicalHit(readVec(command,"from"),readVec(command,"dir"),command.value("max_m",2.0),why)) {
+                            hit.admitted=false;hit.reason=why;
+                        }
+                    }
+                    reply["physical_hit_preview"]={{"schema","banjo.physical-hit-preview.v1"},{"actor",command.value("actor",std::string{})},
+                        {"admitted",hit.admitted},{"reason",hit.reason.empty()?nlohmann::json(nullptr):nlohmann::json(hit.reason)},
+                        {"tool",hit.tool},{"point_id",hit.point_id},{"target",hit.target.empty()?"floor":hit.target},
+                        {"target_m",hit.admitted?vec(hit.target_m):nlohmann::json(nullptr)}};
                 } else if (op == "tool-use-preview") {
                     const auto seen=world->toolUseAdmission(readVec(command,"from"),readVec(command,"dir"),
                         command.value("max_m",2.0));

@@ -29,7 +29,7 @@ def vector(value, bound=20):
 
 
 class TestWorld:
-    def __init__(self, native, runtime, family, material):
+    def __init__(self, native, runtime, family, material, model="retained-soil", ground_material="concrete"):
         self.temp = tempfile.TemporaryDirectory(prefix="banjo-3d-")
         self.child = None
         self.closed = False
@@ -41,11 +41,12 @@ class TestWorld:
         self.world = "sandbox-" + uuid.uuid4().hex
         self.session = uuid.uuid4().hex
         self.family, self.material = family, material
+        self.model, self.ground_material = model, ground_material
         self.runtime_sha256 = hashlib.sha256(Path(runtime).read_bytes()).hexdigest()
         width = FAMILIES[family]
         root = Path(self.temp.name)
         scene = root / "scene.json"
-        scene.write_text(json.dumps({"terrain": {"surface": "columns", "generate": {
+        declaration={"terrain": {"surface": "columns", "generate": {
             "kind": "flat", "nx": 32, "nz": 32, "cell_m": .1,
             "soil_m": .75, "sand_m": 0, "discharge_m3_s": 0}}, "bodies": [
             {"name": "head", "shape": "box", "material": material,
@@ -58,13 +59,41 @@ class TestWorld:
              "dimensions_m": [.12]*3, "center_m": [-.65, .81, .5]},
             {"name": "iron-block", "shape": "box", "material": "iron",
              "dimensions_m": [.12]*3, "center_m": [-.65, .81, -.3]}
-        ]}), encoding="utf-8")
+        ]}
+        if model == "rigid-grains":
+            # A declared loose assembly of native collision bodies. No height
+            # field, soil work rule, dig op, fragment launch or hidden deletion.
+            del declaration["terrain"]
+            declaration["bodies"][2]["dimensions_m"]=[.40,.32,.40]
+            declaration["bodies"][2]["center_m"]=[.65,.90,.2]
+            declaration["bodies"].append({"name":"bedrock-base","shape":"box","material":"concrete",
+                "anchored":True,"dimensions_m":[2,.02,2],"center_m":[0,.01,0]})
+            for body in declaration["bodies"][:5]:
+                body["center_m"][1]-=.53
+            for layer in range(2):
+                for z in range(10):
+                    for x in range(10):
+                        declaration["bodies"].append({"name":f"grain-{layer}-{z}-{x}","shape":"box",
+                            "material":ground_material,"dimensions_m":[.1,.1,.1],
+                            "center_m":[-.54+x*.12,.07+layer*.1,-.54+z*.12]})
+        if model=="rigid-grains":
+            # Exact native collision primitives: no dormant lattice, fracture
+            # trigger, launch velocity or hidden material removal for a grain.
+            rigid=[b for b in declaration["bodies"] if b["name"].startswith("grain-") or b["name"] in {"glass-block","iron-block"}]
+            declaration["bodies"]=[b for b in declaration["bodies"] if b not in rigid]
+            for b in rigid:
+                if b["name"]=="glass-block":b["center_m"]=[-.42,.28,.42]
+                if b["name"]=="iron-block":b["center_m"]=[-.42,.28,-.42]
+            declaration["precise_rigid_bodies"]=[{"name":b["name"],"material":b["material"],
+                "position_m":b["center_m"],"parts":[{"shape":"box","dimensions_m":b["dimensions_m"],"center_local_m":[0,0,0]}]} for b in rigid]
+        scene.write_text(json.dumps(declaration),encoding="utf-8")
+        offset=-.53 if model=="rigid-grains" else 0
         ops = [
-            {"op": "fix", "a": "handle", "b": "head", "at": [.65, 1.14, .2],
+            {"op": "fix", "a": "handle", "b": "head", "at": [.65, 1.14+offset, .2],
              "axis": [0, 1, 0], "holds_tension_n": 5000, "holds_shear_n": 5000},
-            {"op": "tool_point", "body": "head", "tip": [.65, 1.06, .2],
+            {"op": "tool_point", "body": "head", "tip": [.65, 1.06+offset, .2],
              "pointing": [0, -1, 0], "width_m": width, "thickness_m": .04,
-             "angle_deg": 30, "length_m": .1, "grip": [.65, 1.4, .2], "grip_body": "handle"},
+             "angle_deg": 30, "length_m": .1, "grip": [.65, 1.4+offset, .2], "grip_body": "handle"},
             {"op": "snapshot"}]
         env = dict(os.environ)
         env.pop("OPENAI_API_KEY", None)
@@ -90,7 +119,7 @@ class TestWorld:
             self.ready = self.frames.get(timeout=15)
             if self.ready is None or self.ready.get("status") != "ready":
                 raise RuntimeError("Rust world owner did not start")
-            joined = self.command({"kind": "join", "feet_m": [0, .75, 0]}, host=True)
+            joined = self.command({"kind": "join", "feet_m": [0, .75+offset, 0]}, host=True)
             if joined["outcome"]["status"] != "applied":
                 raise RuntimeError("Native avatar admission refused")
             self.command({"kind": "move", "velocity_m_s": [0, 0, 0], "heading_rad": 0, "jump": False})
@@ -135,11 +164,13 @@ class TestWorld:
             raise RuntimeError("World observation refused")
         return {"session": self.session, "snapshot": frame["snapshot"], "clock": frame["clock"],
                 "events": list(self.events), "family": self.family, "material": self.material,
+                "model":self.model,"ground_material":self.ground_material,
                 "native": self.ready["native"], "runtime_sha256": self.runtime_sha256}
 
     def apply(self, request):
         action = request["action"]
         allowed = {"observe": {"action", "session"}, "preview": {"action", "session", "target"},
+                   "preview-hit":{"action","session","target"},"hit":{"action","session","id","target"},
                    "move": {"action", "session", "id", "velocity", "heading"},
                    "pickup": {"action", "session", "id", "instance"},
                    "use": {"action", "session", "id", "target"}, "drop": {"action", "session", "id"}}
@@ -149,7 +180,7 @@ class TestWorld:
             self.last_seen = time.monotonic()
             if action == "observe": return self.observe()
             ident = request.get("id")
-            if action != "preview":
+            if action not in {"preview","preview-hit"}:
                 if not isinstance(ident, str) or len(ident) != 32 or any(c not in "0123456789abcdef" for c in ident):
                     raise ValueError("Expected an input identity")
                 if ident in self.receipts:
@@ -170,7 +201,7 @@ class TestWorld:
                 payload = {"kind": "drop"}
             else:
                 if action == "pickup":
-                    if request["instance"] not in {"head", "handle", "glass-block", "iron-block"}:
+                    if request["instance"] not in {b["name"] for b in state["bodies"] if not b.get("anchored")}:
                         raise ValueError("Choose a body in the test world")
                     body = next(b for b in state["bodies"] if b["name"] == request["instance"])
                     target = body["position_m"]
@@ -183,7 +214,8 @@ class TestWorld:
                 direction = [b-a for a, b in zip(eye, target)]
                 length = math.sqrt(sum(v*v for v in direction))
                 if length < .001: raise ValueError("Target overlaps eye")
-                payload = {"kind": {"pickup": "pickup", "preview": "preview_tool_use", "use": "begin_tool_use"}[action],
+                payload = {"kind": {"pickup": "pickup", "preview": "preview_tool_use", "use": "begin_tool_use",
+                    "preview-hit":"preview_hit","hit":"hit"}[action],
                            "ray": {"from_m": eye, "direction": [v/length for v in direction], "max_distance_m": 2}}
                 if action == "pickup": payload["instance_id"] = request["instance"]
             result = self.command(payload)["outcome"]
@@ -193,6 +225,7 @@ class TestWorld:
             # native preview alongside the fresh, complete render observation.
             response = dict(self.observe(), outcome=summary)
             if action == "preview": response["preview"] = result["snapshot"]["own_tool_preview"]
+            if action == "preview-hit": response["preview"] = result["snapshot"]["own_hit_preview"]
             return response
 
     def close(self):
@@ -241,14 +274,19 @@ class WorldManager:
         if not isinstance(request, dict) or not isinstance(request.get("action"), str):
             raise ValueError("Expected a world intention")
         if request["action"] == "create":
-            if set(request) != {"action", "family", "material"} or request["family"] not in FAMILIES or request["material"] not in {"iron", "glass", "oak"}:
+            if (not {"action","family","material"} <= set(request) or
+                set(request)-{"action","family","material","model","ground_material"} or
+                request["family"] not in FAMILIES or request["material"] not in {"iron", "glass", "oak"} or
+                request.get("model","retained-soil") not in {"retained-soil","rigid-grains"} or
+                request.get("ground_material","concrete") not in {"concrete","glass","oak","iron"}):
                 raise ValueError("Choose a declared laboratory tool")
             with self.lock:
                 for ident, world in list(self.worlds.items()):
                     if time.monotonic()-world.last_seen > 90:
                         world.close(); del self.worlds[ident]
                 if len(self.worlds) >= 2: raise ValueError("Two test worlds are already open; close one first")
-                world = TestWorld(self.native, self.runtime, request["family"], request["material"])
+                world = TestWorld(self.native, self.runtime, request["family"], request["material"],
+                    request.get("model","retained-soil"),request.get("ground_material","concrete"))
                 self.worlds[world.session] = world
                 with world.lock: return world.observe()
         ident = request.get("session")

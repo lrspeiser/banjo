@@ -242,6 +242,19 @@ void malformedPartsAreRefused() {
 //    scene said and not the catalogue's own name, so a caller's own words still
 //    match it -- and the catalogue's name is not a second spelling a scene may
 //    use.
+// The laboratory may declare a bounded assembly of rigid grains. Increasing
+// body count does not increase the independently retained collision-part cap.
+void rigidGrainBudgetStaysBounded() {
+    std::string scene="[";
+    for(unsigned i=0;i<256;++i) {
+        if(i)scene+=",";
+        scene+="{\"name\":\"grain-"+std::to_string(i)+"\",\"material\":\"iron\",\"position_m\":[0,1,0],\"parts\":[{\"dimensions_m\":[0.1,0.1,0.1],\"center_local_m\":[0,0,0]}]}";
+    }
+    require(readPreciseRigidScene(scene+"]").size()==256,"bounded grain declaration was refused");
+    const std::string extra=",{\"name\":\"extra\",\"material\":\"iron\",\"position_m\":[0,1,0],\"parts\":[{\"dimensions_m\":[0.1,0.1,0.1],\"center_local_m\":[0,0,0]}]}]";
+    require(refused(scene+extra,"256 bodies"),"oversized grain declaration was admitted");
+}
+
 void aCeramicBodyIsMadeOfAlumina() {
     const PreciseRigidBody brick = one(
         R"([{"name":"brick","material":"ceramic","position_m":[0,0.6,0],)"
@@ -677,6 +690,7 @@ int main() {
         aBodyStandsAtItsCentreOfMass();
         partsThatDoNotMeetAreRefused();
         malformedPartsAreRefused();
+        rigidGrainBudgetStaysBounded();
         aCeramicBodyIsMadeOfAlumina();
         aWheelsetRollsDownARamp();
         aWheelsetHoldsWhereItsRollingResistanceCanAndRollsWhereItCannot();

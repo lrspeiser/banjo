@@ -93,6 +93,12 @@ pub enum Action {
     BeginToolUse {
         ray: Ray,
     },
+    PreviewHit {
+        ray: Ray,
+    },
+    Hit {
+        ray: Ray,
+    },
     CancelToolUse {
         use_command_id: Id,
     },
@@ -284,6 +290,41 @@ impl EntryClearance {
         Ok(())
     }
 }
+/// Admission is an actuator intention, never evidence of material removal.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HitPreview {
+    pub schema: String,
+    pub actor: Id,
+    pub admitted: bool,
+    pub reason: Option<Refusal>,
+    pub tool: String,
+    pub target: String,
+    pub point_id: u32,
+    pub target_m: Option<[f64; 3]>,
+}
+impl HitPreview {
+    pub fn validate(&self, actor: &str) -> Result<(), Refusal> {
+        if self.schema != "banjo.physical-hit-preview.v1"
+            || self.actor.as_str() != actor
+            || self.admitted == self.reason.is_some()
+            || self.tool.len() > 120
+            || self.target.len() > 120
+            || self
+                .target_m
+                .is_some_and(|p| p.iter().any(|v| !v.is_finite() || v.abs() > 1e6))
+            || (self.admitted
+                && (self.tool.is_empty()
+                    || self.target.is_empty()
+                    || self.point_id == 0
+                    || self.target_m.is_none()))
+        {
+            return Err(Refusal::KernelUnavailable);
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ToolPreview {
@@ -394,7 +435,10 @@ impl Command {
                     ray.validate()
                 }
             }
-            Action::PreviewToolUse { ray } | Action::BeginToolUse { ray } => ray.validate(),
+            Action::PreviewToolUse { ray }
+            | Action::BeginToolUse { ray }
+            | Action::PreviewHit { ray }
+            | Action::Hit { ray } => ray.validate(),
             Action::CancelToolUse { use_command_id } => use_command_id.validate(),
             _ => Ok(()),
         }
@@ -532,6 +576,24 @@ mod tests {
             Command::parse(&serde_json::to_vec(&encoded).unwrap()).unwrap_err(),
             Refusal::InvalidInput
         );
+    }
+
+    #[test]
+    fn physical_hit_preview_is_scoped_bounded_and_not_a_damage_receipt() {
+        let mut p: HitPreview = serde_json::from_value(serde_json::json!({
+            "schema":"banjo.physical-hit-preview.v1","actor":"alice","admitted":true,
+            "reason":null,"tool":"novel-tool","target":"grain","point_id":1,
+            "target_m":[0.,0.,0.]}))
+        .unwrap();
+        assert_eq!(p.validate("alice"), Ok(()));
+        assert_eq!(p.validate("bob"), Err(Refusal::KernelUnavailable));
+        p.target_m = Some([f64::INFINITY, 0., 0.]);
+        assert_eq!(p.validate("alice"), Err(Refusal::KernelUnavailable));
+        p.target_m = None;
+        assert_eq!(p.validate("alice"), Err(Refusal::KernelUnavailable));
+        p.admitted = false;
+        p.reason = Some(Refusal::NotHolding);
+        assert_eq!(p.validate("alice"), Ok(()));
     }
 
     #[test]

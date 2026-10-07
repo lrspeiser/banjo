@@ -13,19 +13,19 @@ const camera = new THREE.PerspectiveCamera(48,1,.02,60);
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 const bodies = new Map();
-const groundGroup = new THREE.Group();scene.add(groundGroup);
 const avatar = new THREE.Mesh(new THREE.CylinderGeometry(.12,.12,1.7,24),
     new THREE.MeshStandardMaterial({color:0x60aac7,transparent:true,opacity:.6,roughness:.55}));
 scene.add(avatar);
-const ring = new THREE.Mesh(new THREE.BoxGeometry(.101,.012,.101),
-    new THREE.MeshBasicMaterial({color:0x66e2a3,transparent:true,opacity:.6,depthTest:false}));
-ring.visible=false;ring.renderOrder=4;scene.add(ring);
-let session=null,state=null,terrain=null,ground=null,busy=false,closed=false;
-let azimuth=.68,elevation=.6,distance=4.8,drag=null,hover=null,hoverKey='',preview=null;
-let pollTimer=null,moveTimer=null,lastEvent='',removed=0,heading=0;
+let session=null,state=null,busy=false,closed=false;
+let azimuth=.68,elevation=.6,distance=3.4,drag=null,hover=null,hoverKey='',preview=null;
+let pollTimer=null,moveTimer=null,lastEvent='',heading=0;
 const keys=new Set();
 let noticeTimer=null;
-const colours={iron:0x929fab,glass:0x8ac8d9,oak:0xa67c45};
+const colours={concrete:0x9c9a86,iron:0x929fab,glass:0x8ac8d9,oak:0xa67c45};
+const outline=new THREE.BoxHelper(new THREE.Mesh(new THREE.BoxGeometry(1,1,1)),0x66e2a3);outline.visible=false;scene.add(outline);
+let lastHitEnd='';
+const refusal={out_of_reach:'Too far · move closer',not_holding:'Pick up a tool first',action_in_progress:'Tool is still working',no_contact:'The tool did not reach this target',unsupported_capability:'This item has no tool contact point',target_blocked:'Target blocks the tool path',insufficient_strength:'Too heavy for this hand',grip_released:'The grip was released'};
+const label=name=>names[name] || (name.startsWith('grain-')?'Ground grain':name==='bedrock-base'?'Fixed base':name);
 const names={handle:'Tool',head:'Tool head','glass-block':'Glass block','iron-block':'Iron block','tool-stand':'Tool stand'};
 
 function say(text){
@@ -41,42 +41,6 @@ async function api(request){
 function intent(action,extra={}){
     return {action,session,id:crypto.randomUUID().replaceAll('-',''),...extra};
 }
-function floats(encoded){
-    const raw=Uint8Array.from(atob(encoded),c=>c.charCodeAt(0));
-    const view=new DataView(raw.buffer), result=[];
-    for(let i=0;i<raw.length;i+=4)result.push(view.getFloat32(i,true));
-    return result;
-}
-function drawGround(value){
-    if(!value || value.heights_b64===terrain?.heights_b64)return;
-    const g=value.grid, heights=floats(value.heights_b64);
-    if(heights.length!==g.nx*g.nz)throw new Error('Incomplete native terrain geometry');
-    const materials=Uint8Array.from(atob(value.ground_b64),c=>c.charCodeAt(0));
-    if(!ground){
-        ground=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshStandardMaterial({roughness:1}),heights.length);
-        ground.userData.ground=true;groundGroup.add(ground);
-        const edges=new THREE.GridHelper(g.nx*g.cell_m,g.nx,0x73654f,0x73654f);
-        edges.position.set((g.x0_m+(g.nx-1)*g.cell_m/2),heights[0]+.001,(g.z0_m+(g.nz-1)*g.cell_m/2));
-        // This visual grid is removed after the first cut; native column edges
-        // then provide the excavation boundary without a stale top overlay.
-        edges.userData.initialGrid=true;groundGroup.add(edges);
-    }else{
-        const initial=groundGroup.children.find(c=>c.userData.initialGrid);
-        if(initial){groundGroup.remove(initial);initial.geometry.dispose();initial.material.dispose();}
-    }
-    const transform=new THREE.Object3D();
-    const floor=value.floor_m;
-    for(let i=0;i<heights.length;i++){
-        const h=Math.max(.001,heights[i]-floor);
-        transform.position.set(g.x0_m+(i%g.nx)*g.cell_m,floor+h/2,g.z0_m+Math.floor(i/g.nx)*g.cell_m);
-        transform.scale.set(g.cell_m,h,g.cell_m);transform.updateMatrix();ground.setMatrixAt(i,transform.matrix);
-        const palette=[0x596271,0x887052,0xc6a975,0x78838d,0x516671,0x797780];
-        const colour=new THREE.Color(palette[materials[i]] ?? 0x887052);
-        colour.multiplyScalar(.93+.07*((i*17)%7)/6);ground.setColorAt(i,colour);
-    }
-    ground.instanceMatrix.needsUpdate=true;ground.instanceColor.needsUpdate=true;
-    ground.computeBoundingSphere();terrain={...value,heights};
-}
 function disposeObject(object){
     object.traverse(child=>{child.geometry?.dispose();if(child.material)child.material.dispose();});
     scene.remove(object);
@@ -91,16 +55,24 @@ function shape(body){
     return new THREE.BoxGeometry(...d);
 }
 function consume(result){
+    const previousHolding=state?.own_hand?.holding,previousActive=state?.own_physical_hit?.active;
     state=result.snapshot;
+    if(previousHolding!==state?.own_hand?.holding || previousActive!==state?.own_physical_hit?.active){hoverKey='';preview=null;}
     if(!state)throw new Error('Missing native observation');
-    drawGround(state.terrain);
     const alive=new Set();
     for(const body of state.bodies){
         alive.add(body.name);
         let mesh=bodies.get(body.name);
         if(!mesh){
-            mesh=new THREE.Mesh(shape(body),new THREE.MeshStandardMaterial({color:colours[body.material] ?? 0x949ba0,
-                metalness:body.material==='iron'?.55:0,roughness:.45}));
+            const parts=body.shape==='compound'?body.rigid_parts_local:[{...body,center_local_m:[0,0,0],rotation_wxyz:[1,0,0,0]}];
+            if(!parts?.length)throw new Error('Missing native collision parts');
+            mesh=new THREE.Group();
+            for(const part of parts){
+                const child=new THREE.Mesh(shape(part),new THREE.MeshStandardMaterial({color:colours[part.material] ?? 0x949ba0,
+                    metalness:part.material==='iron'?.55:0,roughness:.65}));
+                child.position.fromArray(part.center_local_m);const [w,x,y,z]=part.rotation_wxyz;child.quaternion.set(x,y,z,w);
+                child.userData.instance=body.name;mesh.add(child);
+            }
             mesh.userData.instance=body.name;scene.add(mesh);bodies.set(body.name,mesh);
         }
         mesh.position.fromArray(body.position_m);
@@ -114,22 +86,25 @@ function consume(result){
     $('holding').textContent=holding ? (holding==='handle'||holding==='head' ? $('family').selectedOptions[0].textContent : names[holding] || holding) : 'Empty';
     $('drop').disabled=!holding;
     $('clock').textContent=result.clock.simulation_s.toFixed(2)+' s';
-    $('step').textContent=holding ? '2 · Click soil to use your tool' : '1 · Click the tool to pick it up';
-    $('help').textContent=holding ? 'Click clear soil beside the stand. Green marks native reach and entry clearance, not guaranteed removal.' : 'The tool is on the stand to your right. Blocks can also be picked up and dropped.';
+    $('step').textContent=holding ? '2 · Click a grain or object to strike' : '1 · Click the tool to pick it up';
+    $('help').textContent=holding ? 'Green means the hand can attempt this hit. Grains move through collision; solid fracture is unfinished.' : 'The tool is on the stand to your right. Loose grains and blocks can also be picked up.';
+    const physical=state.own_physical_hit;
+    if(physical){
+        $('removed').textContent=physical.active?'Working…':physical.contacted?'Confirmed':'Missed';
+        $('travel').textContent=(Math.hypot(...physical.target_displacement_m)*100).toFixed(1)+' cm';
+        $('work').textContent=physical.hand_work_j.toFixed(2)+' J';
+        const end=physical.started_s+':'+physical.ended_s;
+        if(!physical.active && end!==lastHitEnd){lastHitEnd=end;say(physical.contacted?'Native contact · '+label(physical.target):refusal[physical.reason] || physical.reason || 'No contact measured');}
+    }
     for(const event of result.events || []){
         if(event.command_id===lastEvent)continue;
         // Events are returned cumulatively. Process each exactly once.
         if(seenEvents.has(event.command_id))continue;seenEvents.add(event.command_id);lastEvent=event.command_id;
-        const tool=event.tool_use_result;
-        if(tool){
-            const litres=Object.values(tool.loosened_m3).reduce((a,b)=>a+b,0)*1000;
-            removed+=litres;$('removed').textContent=removed.toFixed(2)+' L';
-            say(litres>0 ? `Removed ${litres.toFixed(2)} L · ground updated from native geometry` : `No material removed · ${tool.reason || event.reason || tool.phase}`);
-        }else say(event.status==='applied' ? 'Grip confirmed · tool is in your hand' : `Pickup refused · ${event.reason}`);
+        say(event.status==='applied' ? 'Grip confirmed · item is in your hand' : `Pickup refused · ${refusal[event.reason] || event.reason}`);
     }
     const outcome=result.outcome;
-    if(outcome?.reason)say('Native response: '+outcome.reason);
-    else if(outcome?.status==='pending')say(holding ? 'Tool working · waiting for measured result…' : 'Picking up · waiting for grip confirmation…');
+    if(outcome?.reason)say(refusal[outcome.reason] || outcome.reason);
+    else if(outcome?.status==='pending')say('Picking up · waiting for native grip confirmation…');
     preview=result.preview ?? preview;
 }
 const seenEvents=new Set();
@@ -152,11 +127,10 @@ async function start(){
     busy=true;clearTimeout(pollTimer);clearTimeout(moveTimer);keys.clear();
     try{
         if(session)await api({action:'close',session});session=null;
-        const result=await api({action:'create',family:$('family').value,material:$('material').value});
+        const result=await api({action:'create',family:$('family').value,material:$('material').value,model:'rigid-grains',ground_material:$('ground-material').value});
         for(const mesh of bodies.values())disposeObject(mesh);bodies.clear();
-        for(const child of [...groundGroup.children]){groundGroup.remove(child);child.geometry.dispose();child.material.dispose();}
-        ground=null;terrain=null;hover=null;preview=null;hoverKey='';ring.visible=false;
-        seenEvents.clear();removed=0;$('removed').textContent='0 L';
+        hover=null;preview=null;hoverKey='';
+        seenEvents.clear();lastHitEnd='';$('removed').textContent='—';$('travel').textContent='—';$('work').textContent='—';outline.visible=false;
         session=result.session;consume(result);$('setup').hidden=true;$('settings').setAttribute('aria-expanded','false');
         say('Native world running · pick up the tool on the ground');
     }catch(error){say(error.message);$('step').textContent='World unavailable';}
@@ -169,6 +143,7 @@ async function poll(){
         try{consume(await api({action:'observe',session}));}
         catch(error){say(error.message);session=null;$('step').textContent='World stopped · choose New world';}
         finally{busy=false;}
+        if(hover && !preview)updateTarget();
     }
     pollTimer=setTimeout(poll,120);
 }
@@ -191,35 +166,35 @@ function hit(event){
     const rect=canvas.getBoundingClientRect();
     pointer.set((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1);
     raycaster.setFromCamera(pointer,camera);
-    const hits=raycaster.intersectObjects([...bodies.values(),...(ground?[ground]:[])]);
+    const held=state?.own_hand?.holding;
+    const ignored=new Set(state?.own_hand?.held_parts || (held?[held]:[]));
+    const hits=raycaster.intersectObjects([...bodies.entries()].filter(([name])=>!ignored.has(name)).map(([,mesh])=>mesh));
     if(!hits.length)return null;
     const h=hits[0];
     if(h.object.userData.instance)return {instance:h.object.userData.instance,point:h.point.toArray()};
-    const i=h.instanceId,g=terrain.grid;
-    return {cell:i,point:[g.x0_m+i%g.nx*g.cell_m,terrain.heights[i],g.z0_m+Math.floor(i/g.nx)*g.cell_m]};
+    return null;
 }
-async function hoverAt(event){
-    hover=hit(event);
-    if(!hover){ring.visible=false;$('target').hidden=true;return;}
+async function hoverAt(event){hover=hit(event);return updateTarget();}
+async function updateTarget(){
+    if(!hover){outline.visible=false;$('target').hidden=true;return;}
     $('target').hidden=false;
-    if(hover.instance){
-        ring.visible=false;$('target').textContent=names[hover.instance]+(hover.instance==='tool-stand'?' · Fixed support':' · Click to pick up');return;
-    }
-    ring.visible=true;ring.position.set(hover.point[0],hover.point[1]+.008,hover.point[2]);
-    const key=String(hover.cell);
-    if(key===hoverKey)return;
-    if(busy)return;
-    hoverKey=key;preview=null;ring.material.color.setHex(0x99a8b0);
-    if(!state?.own_hand?.holding){$('target').textContent='Soil · pick up a tool first';return;}
-    busy=true;
+    const body=state.bodies.find(b=>b.name===hover.instance);
+    if(hover.instance){outline.setFromObject(bodies.get(hover.instance));outline.visible=true;outline.material.color.setHex(0x99a8b0);}
+    const prefix=label(hover.instance || 'Ground')+' · '+(body?.material || 'soil')+(hover.instance?.startsWith('grain-')?' · 1 L':'');
+    if(!state?.own_hand?.holding){$('target').textContent=prefix+(body?.anchored?' · Fixed support':' · Click to pick up');return;}
+    const key=hover.instance || String(hover.cell);
+    if(key!==hoverKey)preview=null;
+    const verdict=preview?.admitted?'Click to strike':refusal[preview?.reason] || preview?.reason || 'Checking reach…';
+    $('target').textContent=prefix+' · '+verdict;
+    if(key===hoverKey && preview){outline.material.color.setHex(preview.admitted?0x66e2a3:0xf4a36a);return;}
+    if(busy){$('target').textContent=prefix+' · Checking reach…';return;}
+    hoverKey=key;preview=null;
+    const target=hover.point;busy=true;
     try{
-        const result=await api({action:'preview',session,target:hover.point});
-        consume(result);
-        if(hover?.cell!==Number(key))return;
-        preview=result.preview;
-        const ok=preview?.admitted && preview?.entry_clearance?.clear;
-        ring.material.color.setHex(ok?0x66e2a3:0xf4a36a);
-        $('target').textContent=ok ? 'Soil · reachable · Click to use' : 'Soil · '+(preview?.reason || preview?.entry_clearance?.obstruction?.kind || 'not ready');
+        const result=await api({action:'preview-hit',session,target});consume(result);
+        if((hover?.instance || String(hover?.cell))!==key){preview=null;return;}
+        preview=result.preview;outline.material.color.setHex(preview?.admitted?0x66e2a3:0xf4a36a);
+        $('target').textContent=prefix+' · '+(preview?.admitted?'Click to strike':refusal[preview?.reason] || preview?.reason || 'Not ready');
     }catch(error){say(error.message);hoverKey='';}
     finally{busy=false;}
 }
@@ -237,11 +212,14 @@ canvas.addEventListener('pointerup',event=>{
     // Use this pointer's screen hit, including touch, never a crosshair.
     const selected=hit(event);
     if(!selected)return;
-    if(selected.instance==='tool-stand'){say('Fixed tool stand · click the tool above it');return;}
-    if(selected.instance)act('pickup',{instance:selected.instance==='head'?'handle':selected.instance});
-    else if(state?.own_hand?.holding)act('use',{target:selected.point});
-    else say('Pick up a tool before using the ground');
+    if(state?.own_hand?.holding)act('hit',{target:selected.point});
+    else if(selected.instance){
+        const body=state.bodies.find(b=>b.name===selected.instance);
+        if(body?.anchored){say('Fixed support · pick up a tool to hit it');return;}
+        act('pickup',{instance:selected.instance==='head'?'handle':selected.instance});
+    }else say('Pick up a tool first');
 });
+canvas.addEventListener('pointerleave',()=>{outline.visible=false;$('target').hidden=true;hoverKey='';preview=null;});
 canvas.addEventListener('pointercancel',()=>{drag=null;keys.clear();});
 canvas.addEventListener('wheel',event=>{event.preventDefault();distance=Math.max(1.8,Math.min(9,distance+event.deltaY*.003));},{passive:false});
 const binding={w:'forward',ArrowUp:'forward',s:'back',ArrowDown:'back',a:'left',ArrowLeft:'left',d:'right',ArrowRight:'right'};

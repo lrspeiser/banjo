@@ -688,6 +688,7 @@ struct LiveWorld::Impl {
     // decision are about: a body that has already been answered for must not be
     // re-offered on the strength of a contact from three steps ago.
     std::vector<LiveImpact> last_impacts;
+    std::vector<std::pair<std::string,std::string>> native_contact_pairs;
     // Every contact since the host last said it had read them. The hardest of
     // each pair survives, because a landing reports the same pair many times as
     // it settles and the one that matters is the one that arrived.
@@ -3351,6 +3352,13 @@ struct LiveWorld::Impl {
         Vec3 walk_impulse_n_s{}, walk_angular_impulse_kg_m2_s{}, support_reaction_n_s{};
     };
     std::map<std::string, NativePlayer> native_players;
+    struct PhysicalHit {
+        std::size_t next_waypoint{1}; LivePhysicalHit state;
+        std::vector<std::string> parts;
+        Vec3 target_before{};
+        double work_before{};
+    };
+    std::map<std::string,PhysicalHit> physical_hits;
     [[nodiscard]] bool gripWithinNativeReach(const std::string &actor, const Vec3 &grip) const {
         const auto own = native_players.find(actor);
         if (own == native_players.end()) return true; // editor/laboratory hand
@@ -6622,6 +6630,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
 // and answers whether any of them would break something.
 bool LiveWorld::judgeStep() {
     impl_->last_impacts.clear();
+    impl_->native_contact_pairs.clear();
     impl_->partner_of.clear();
     std::unordered_map<MatterBodyId, std::size_t> index_of_body;
     for (std::size_t i = 0; i < impl_->body_of.size(); ++i)
@@ -6657,6 +6666,11 @@ bool LiveWorld::judgeStep() {
     std::vector<ImpactEvent> events = impl_->world->drainImpacts();
     std::sort(events.begin(), events.end(), hardestContactFirst);
     for (const ImpactEvent &event : events) {
+        const auto contactName=[&](MatterBodyId id) {
+            const auto at=index_of_body.find(id);
+            return at==index_of_body.end()?std::string("the ground"):impl_->described[at->second].name;
+        };
+        impl_->native_contact_pairs.emplace_back(contactName(event.body_a),contactName(event.body_b));
         // A blade's own contacts are kept for the cutting model, which reports
         // the ones that did not bite -- a flat strike, a glance -- from them.
         if (blade_bodies.count(event.body_a) || blade_bodies.count(event.body_b))
@@ -7205,6 +7219,7 @@ void LiveWorld::step(double dt_s) {
                 [&](const HandPush &h) { return h.actor == actor; });
             endHandStep(push->force, push->torque, dt_s);
             endToolUseStep();
+            endPhysicalHitStep();
         });
         return;
     }
@@ -7259,6 +7274,7 @@ void LiveWorld::step(double dt_s) {
             [&](const HandPush &h) { return h.actor == actor; });
         endHandStep(push->force, push->torque, dt_s);
         endToolUseStep();
+        endPhysicalHitStep();
     });
     } catch (...) {
         if (!actor_step_kept && !actor_step_restored) restoreActorStep(false);
@@ -14712,6 +14728,7 @@ bool LiveWorld::removeNativePlayer(const std::string &actor) {
     release();
     impl_->selectHand(caller);
     impl_->ground_actions.erase(actor);
+    impl_->physical_hits.erase(actor);
     impl_->ground_aims.erase(actor);
     if (impl_->world->contains(found->second.id)) impl_->world->removeAndDestroy(found->second.id);
     impl_->native_players.erase(found);
@@ -14737,6 +14754,16 @@ void LiveWorld::setNativePlayerWalk(const std::string &actor, const Vec3 &veloci
     player.walk_velocity = velocity_m_s;
     player.walk_heading = heading_rad;
     player.walk_remaining_s = duration_s;
+}
+
+std::map<std::string,std::vector<std::string>> LiveWorld::playerHeldParts() const {
+    const Impl &I=*impl_;std::map<std::string,std::vector<std::string>> out;
+    for(const auto &[actor,hand]:I.hands) {
+        if(actor.empty())continue;
+        const auto root=actor==I.selected_hand?I.holding:hand.holding;
+        for(const auto member:I.jointedWith(root,true))out[actor].push_back(I.described[member].name);
+    }
+    return out;
 }
 
 std::map<std::string, LiveHand> LiveWorld::playerHands() {
@@ -16715,6 +16742,100 @@ bool LiveWorld::strike(const LiveStrike &asked, std::string &why) {
     const std::optional<LiveStroke> planned = I.tools.plan(toolHost(), asked, held, I.grip_local, why);
     if (!planned) return false;
     return stroke(*planned, why);
+}
+
+LivePhysicalHit LiveWorld::physicalHitAdmission(const Vec3 &from,const Vec3 &direction,double maximum) const {
+    const Impl &I=*impl_;LivePhysicalHit out;
+    const auto refuse=[&](const std::string &reason){out.reason=reason;return out;};
+    const auto ray=I.nativeRayRefusal(from,direction,maximum);if(!ray.empty())return refuse(ray);
+    if(I.holding==static_cast<std::size_t>(-1)||!I.wielding)return refuse("not_holding");
+    if(I.stroke||(I.native_use&&I.native_use->controller.state().active))return refuse("action_in_progress");
+    if(const auto previous=I.physical_hits.find(I.selected_hand);previous!=I.physical_hits.end()&&previous->second.state.active)
+        return refuse("action_in_progress");
+    out.tool=I.described[I.holding].name;
+    const auto members=I.jointedWith(I.holding,true);
+    if(!I.nativeCarryLoadSupported(I.selected_hand,members))return refuse("insufficient_strength");
+    const auto points=toolPoints();const LiveToolPoint *point=nullptr;
+    for(const auto &candidate:points) {
+        const auto found=I.index_of.find(candidate.body);
+        if(candidate.attached&&candidate.grip_connected&&found!=I.index_of.end()&&
+            std::find(members.begin(),members.end(),found->second)!=members.end()&&
+            (candidate.grip_body.empty()?candidate.body:candidate.grip_body)==out.tool) {
+            if(point)return refuse("ambiguous_capability");point=&candidate;
+        }
+    }
+    if(!point)return refuse("unsupported_capability");out.point_id=point->id;
+    const auto hit=pick(from,direction,maximum,true);if(!hit.hit)return refuse("no_contact");
+    out.target=hit.name;out.target_m=hit.point_world_m;
+    const auto actual=hand();const Vec3 contact_grip=actual.grip_m+(out.target_m-point->tip_m);
+    // Lift the actual held assembly clear of its support before translating.
+    // This is a desired actuator path, subject to the same native forces,
+    // arm reach and contacts as every subsequent segment.
+    const Vec3 up{0,1,0};
+    Vec3 outward{out.target_m.x-from.x,0,out.target_m.z-from.z};
+    if(length(outward)<.001)outward={1,0,0};else outward=normalized(outward);
+    out.stroke.path_m={actual.grip_m,actual.grip_m+.22*up,contact_grip+.24*up,
+        contact_grip+.04*outward-.025*up,contact_grip+.18*outward-.025*up,contact_grip+.24*up,
+        actual.grip_m+.22*up,actual.grip_m};
+    out.stroke.speed_m_s=2;out.stroke.accel_m_s2=30;out.stroke.lead_m=.025;out.stroke.give_up_s=2;
+    for(const auto &p:out.stroke.path_m)if(!I.gripWithinNativeReach(I.selected_hand,p))return refuse("out_of_reach");
+    out.admitted=true;return out;
+}
+bool LiveWorld::beginPhysicalHit(const Vec3 &from,const Vec3 &direction,double maximum,std::string &why) {
+    auto state=physicalHitAdmission(from,direction,maximum);
+    if(!state.admitted){why=state.reason;return false;}
+    Impl &I=*impl_;Impl::PhysicalHit hit;hit.state=state;hit.work_before=I.hand_work_j;
+    for(const auto member:I.jointedWith(I.holding,true))hit.parts.push_back(I.described[member].name);
+    if(!state.target.empty())hit.target_before=I.world->snapshot(I.body_of[I.index_of.at(state.target)]).center_of_mass_world_m;
+    auto first=state.stroke;first.path_m={state.stroke.path_m[0],state.stroke.path_m[1]};
+    if(!stroke(first,why))return false;
+    hit.state.active=true;hit.state.started_s=I.time_s;I.physical_hits[I.selected_hand]=std::move(hit);return true;
+}
+void LiveWorld::endPhysicalHitStep() {
+    Impl &I=*impl_;const auto found=I.physical_hits.find(I.selected_hand);
+    if(found==I.physical_hits.end()||!found->second.state.active)return;
+    auto &hit=found->second;auto &state=hit.state;
+    for(const auto &[a,b]:I.native_contact_pairs) {
+        const auto part=[&](const std::string &name){return std::find(hit.parts.begin(),hit.parts.end(),name)!=hit.parts.end();};
+        const auto target=state.target.empty()?std::string("the ground"):state.target;
+        if((a==target&&part(b))||(b==target&&part(a)))state.contacted=true;
+    }
+    state.hand_work_j=I.hand_work_j-hit.work_before;
+    if(!state.target.empty()) {
+        const auto at=I.index_of.find(state.target);
+        if(at!=I.index_of.end()&&I.inWorld(at->second))
+            state.target_displacement_m=I.world->snapshot(I.body_of[at->second]).center_of_mass_world_m-hit.target_before;
+    }
+    if(I.stroke)return;
+    state.stroke_ended=I.stroke_ended;
+    // Each straight segment has its own actual-progress measurement. A
+    // nearest point on a self-crossing return path cannot skip the impact.
+    if(I.holding!=static_cast<std::size_t>(-1)) {
+        if(I.stroke_ended=="reached" && hit.next_waypoint+1<state.stroke.path_m.size()) {
+            ++hit.next_waypoint;
+        } else if(hit.next_waypoint==3 && state.contacted) {
+            hit.next_waypoint=4; // push only after measured native contact
+        } else if(hit.next_waypoint<5) {
+            hit.next_waypoint=5; // recover physically after a blocked approach
+        } else {
+            hit.next_waypoint=state.stroke.path_m.size();
+        }
+        if(hit.next_waypoint<state.stroke.path_m.size()) {
+            auto next=state.stroke;next.path_m={hand().grip_m,state.stroke.path_m[hit.next_waypoint]};
+            std::string why;
+            if(length(next.path_m[1]-next.path_m[0])>.001 && stroke(next,why))return;
+        }
+    }
+    state.active=false;state.ended_s=I.time_s;
+    if(I.holding==static_cast<std::size_t>(-1))state.reason="grip_released";
+    else if(!state.contacted)state.reason="no_contact";
+    // The tool's actual recovered pose defines carry. Never return it by
+    // assigning a pose/velocity or by suppressing any of its collisions.
+    if(I.wielding&&I.holding!=static_cast<std::size_t>(-1))(void)carryWithNativePlayer();
+}
+std::map<std::string,LivePhysicalHit> LiveWorld::playerPhysicalHits() const {
+    std::map<std::string,LivePhysicalHit> out;
+    for(const auto &[actor,hit]:impl_->physical_hits)out.emplace(actor,hit.state);return out;
 }
 
 std::vector<LiveGroundWork> LiveWorld::groundWork() const { return impl_->tools.reports(); }

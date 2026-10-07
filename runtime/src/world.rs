@@ -365,6 +365,18 @@ impl<K: Kernel> World<K> {
             }
         }
         visible.insert("own_hand".into(), state["player_hands"][actor].clone());
+        visible.insert(
+            "own_physical_hit".into(),
+            state["player_physical_hits"][actor].clone(),
+        );
+        visible.insert(
+            "own_hit_preview".into(),
+            if state["physical_hit_preview"]["actor"] == actor {
+                state["physical_hit_preview"].clone()
+            } else {
+                Value::Null
+            },
+        );
         // Terrain's native wire also embeds carried accounts. Only geometry
         // needed to draw the actual collision columns crosses this boundary.
         if let Some(terrain) = state["terrain"].as_object() {
@@ -523,7 +535,7 @@ impl<K: Kernel> World<K> {
             Ok(())
                 if matches!(
                     command.payload,
-                    Action::Inspect | Action::PreviewToolUse { .. }
+                    Action::Inspect | Action::PreviewToolUse { .. } | Action::PreviewHit { .. }
                 ) =>
             {
                 (Status::Observed, None)
@@ -603,6 +615,15 @@ impl<K: Kernel> World<K> {
             _ if !self.joined.contains(actor) => Err(Refusal::NotJoined),
             Action::Inspect => self.kernel.observe(),
             Action::PreviewToolUse { ray } => self.kernel.preview_tool_use(actor, ray),
+            Action::PreviewHit { ray } => self.kernel.physical_hit(actor, ray, false),
+            Action::Hit { ray } => {
+                if self.pending_tool_uses.keys().any(|(a, _)| a == actor)
+                    || self.pending_pickups.keys().any(|(a, _)| a == actor)
+                {
+                    return Err(Refusal::ActionInProgress);
+                }
+                self.kernel.physical_hit(actor, ray, true)
+            }
             Action::BeginToolUse { ray } => {
                 if self.pending_tool_uses.keys().any(|(a, _)| a == actor)
                     || self.pending_pickups.keys().any(|(a, _)| a == actor)
@@ -1177,6 +1198,35 @@ mod tests {
         assert!(w.pending_tool_uses.is_empty());
         assert_eq!(w.advance(), Err(Refusal::KernelUnavailable));
         assert!(w.take_completions().is_empty());
+    }
+
+    #[test]
+    fn physical_hit_intentions_keep_actor_privacy_and_require_native_support() {
+        let mut w = world();
+        w.execute(request("join", 1, Action::Join { feet_m: [0.; 3] }));
+        w.kernel.state["player_physical_hits"] =
+            json!({"alice":{"target":"own"},"bob":{"target":"private"}});
+        w.kernel.state["physical_hit_preview"] = json!({"actor":"bob","target":"private"});
+        let before = w.clock.tick;
+        let ray = crate::contracts::Ray {
+            from_m: [0.; 3],
+            direction: [0., -1., 0.],
+            max_distance_m: 2.,
+        };
+        let result = w.execute(request(
+            "preview",
+            2,
+            Action::PreviewHit { ray: ray.clone() },
+        ));
+        assert_eq!(result.reason, Some(Refusal::UnsupportedCapability));
+        assert_eq!(result.snapshot["own_physical_hit"]["target"], "own");
+        assert!(result.snapshot["own_hit_preview"].is_null());
+        assert!(result.snapshot.get("player_physical_hits").is_none());
+        assert_eq!(
+            w.execute(request("hit", 3, Action::Hit { ray })).reason,
+            Some(Refusal::UnsupportedCapability)
+        );
+        assert_eq!(w.clock.tick, before);
     }
 
     #[test]

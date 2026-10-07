@@ -1265,6 +1265,14 @@ struct LiveStrike {
     double lever_deg{40.0};
     double give_up_s{2.0};
 };
+struct LivePhysicalHit {
+    bool admitted{},active{},contacted{};
+    std::string reason,tool,target,stroke_ended;
+    unsigned point_id{};
+    Vec3 target_m{},target_displacement_m{};
+    double started_s{},ended_s{},hand_work_j{};
+    LiveStroke stroke; // Desired grip path only; never a body pose or velocity.
+};
 
 // Read-only eligibility and desired actuator path for a native player's ground
 // action. This is not simulated contact, paid work or a promised material yield.
@@ -2290,6 +2298,11 @@ public:
     // to be WIELDED -- held by its grip. Returns false with the reason when it
     // cannot be made: nothing wielded, no point on it, nothing to lever.
     [[nodiscard]] bool strike(const LiveStrike &strike, std::string &why);
+    [[nodiscard]] LivePhysicalHit physicalHitAdmission(const Vec3 &from_world_m,
+        const Vec3 &direction,double max_distance_m) const;
+    [[nodiscard]] bool beginPhysicalHit(const Vec3 &from_world_m,const Vec3 &direction,
+        double max_distance_m,std::string &why);
+    [[nodiscard]] std::map<std::string,LivePhysicalHit> playerPhysicalHits() const;
     [[nodiscard]] LiveToolUseAdmission toolUseAdmission(const Vec3 &from_world_m,
         const Vec3 &direction, double max_distance_m) const;
     // The optional preview is only a revision/target token. Its planned path
@@ -2348,6 +2361,7 @@ public:
     // Select the hand controlled by one player in a shared world. Empty means
     // the original single-user hand. Selection changes no body pose or time.
     void selectHand(const std::string &player);
+    [[nodiscard]] std::map<std::string,std::vector<std::string>> playerHeldParts() const;
     [[nodiscard]] std::map<std::string, LiveHand> playerHands();
     // One body per stable actor, at most 32. Spawn is one-time admission; it
     // cannot teleport an existing player. Feet are the initial cylinder base.
@@ -2619,6 +2633,7 @@ private:
     void beginHandStep(double dt_s);
     void endHandStep(const Vec3 &grip_force_n, const Vec3 &grip_torque_n_m, double dt_s);
     void endToolUseStep();
+    void endPhysicalHitStep();
     void beginToolUseStep(double dt_s);
     void interruptToolUse(const std::string &reason);
     [[nodiscard]] NativeToolFeedback toolUseFeedback() const;

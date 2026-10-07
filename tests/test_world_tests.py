@@ -149,6 +149,69 @@ class TestWorldGateway(unittest.TestCase):
             self.assertLess(masses['oak',family],masses['glass',family]);self.assertLess(masses['glass',family],masses['iron',family])
         print('SANDBOX_MASS_EVIDENCE '+json.dumps({f'{m}/{f}':v for (m,f),v in masses.items()},sort_keys=True))
 
+    def granular(self,family='pick',material='iron',ground='concrete'):
+        world=self.post({'action':'create','family':family,'material':material,
+                         'model':'rigid-grains','ground_material':ground})
+        return world
+
+    def physical_hit(self,world,target):
+        session=world['session']
+        self.act(session,'pickup',instance='handle')
+        held=self.wait(session,lambda r:r['snapshot']['own_hand']['holding']=='handle' and bool(r['events']))
+        preview=self.post({'action':'preview-hit','session':session,'target':target})['preview']
+        self.assertTrue(preview['admitted'],preview)
+        request={'action':'hit','session':session,'id':uuid.uuid4().hex,'target':target}
+        begun=self.post(request)
+        self.assertEqual(begun['outcome']['status'],'applied') # actuator intent, not completion
+        initial=begun['snapshot']['own_physical_hit']['started_s']
+        done=self.wait(session,lambda r:r['snapshot']['own_physical_hit'] and not r['snapshot']['own_physical_hit']['active'],seconds=12)
+        hit=done['snapshot']['own_physical_hit']
+        self.assertEqual(hit['target'],preview['target']);self.assertTrue(hit['contacted'],hit)
+        self.assertTrue(math.isfinite(hit['hand_work_j']))
+        self.assertGreater(hit['ended_s'],hit['started_s'])
+        self.assertEqual(self.post(request)['snapshot']['own_physical_hit']['started_s'],initial)
+        self.assertEqual(done['snapshot']['own_hand']['holding'],'handle')
+        return done
+
+    def test_rigid_grains_use_native_mass_contacts_and_preserve_all_material(self):
+        masses={};records=[]
+        for material in ('glass','oak','iron'):
+            world=self.granular(ground=material);session=world['session']
+            try:
+                self.assertNotIn('terrain',world['snapshot'])
+                grains=[b for b in world['snapshot']['bodies'] if b['name'].startswith('grain-')]
+                self.assertEqual(len(grains),200)
+                self.assertTrue(all(b['mechanical_model']=='precise-rigid-v1' for b in grains))
+                masses[material]=grains[0]['mass_kg']
+                before={b['name']:b['mass_kg'] for b in world['snapshot']['bodies']}
+                done=self.physical_hit(world,[.42,.22,.54])
+                after={b['name']:b['mass_kg'] for b in done['snapshot']['bodies']}
+                self.assertEqual(before.keys(),after.keys())
+                self.assertAlmostEqual(sum(before.values()),sum(after.values()),places=6)
+                self.assertTrue(all(e.get('tool_use_result') is None for e in done['events']))
+                records.append({'material':material,'grain_kg':masses[material],'dt_s':done['clock']['dt_s'],
+                    'grain_m':.1,'packing_spacing_m':.12,'mass_residual_kg':sum(after.values())-sum(before.values()),
+                    'hit':done['snapshot']['own_physical_hit'],'native':world['native']})
+            finally:self.post({'action':'close','session':session})
+        self.assertLess(masses['oak'],masses['glass']);self.assertLess(masses['glass'],masses['iron'])
+        print('RIGID_GRAIN_EVIDENCE '+json.dumps(records,sort_keys=True))
+
+    def test_all_configured_families_can_hit_grains_and_solid_targets_use_the_same_path(self):
+        records=[]
+        for family in WORLD.FAMILIES:
+            world=self.granular(family=family)
+            try:
+                done=self.physical_hit(world,[.42,.22,.54])
+                records.append({'family':family,'hit':done['snapshot']['own_physical_hit']})
+            finally:self.post({'action':'close','session':world['session']})
+        for target in ([-.42,.34,.42],[-.42,.34,-.42],[.65,.53,.2]):
+            world=self.granular()
+            try:
+                done=self.physical_hit(world,target)
+                records.append({'family':'pick','hit':done['snapshot']['own_physical_hit']})
+            finally:self.post({'action':'close','session':world['session']})
+        print('PHYSICAL_TARGET_EVIDENCE '+json.dumps(records,sort_keys=True))
+
     def test_origin_session_allowlist_limits_and_retry_cannot_grant_authority(self):
         with self.assertRaises(urllib.error.HTTPError) as refused:
             self.post({'action':'create','family':'pick','material':'iron'},'http://untrusted.invalid')

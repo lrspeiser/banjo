@@ -149,7 +149,7 @@ void takeBackWhatEarlierPartsClaim(const std::vector<Solid> &solids, Moments &mo
 std::vector<PreciseRigidBody> readPreciseRigidScene(const std::string &text) {
     if (text.empty()) return {};
     const json source = json::parse(text);
-    require(source.is_array() && source.size() <= 32, "precise rigid scene allows at most 32 bodies");
+    require(source.is_array() && source.size() <= 256, "precise rigid scene allows at most 256 bodies");
     std::vector<PreciseRigidBody> bodies;
     std::set<std::string> names;
     std::size_t shape_count = 0;

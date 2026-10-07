@@ -1,6 +1,6 @@
 //! Transitional adapter to the existing native JSON process. Only the world
 //! owner calls it; no browser/native operation pass-through is exposed.
-use crate::contracts::{Ray, Refusal, ToolPhase, ToolPreview, ToolUse};
+use crate::contracts::{HitPreview, Ray, Refusal, ToolPhase, ToolPreview, ToolUse};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -32,6 +32,9 @@ pub trait Kernel {
         Err(Refusal::UnsupportedCapability)
     }
     fn begin_tool_use(&mut self, _actor: &str, _ray: &Ray) -> Result<(), Refusal> {
+        Err(Refusal::UnsupportedCapability)
+    }
+    fn physical_hit(&mut self, _actor: &str, _ray: &Ray, _begin: bool) -> Result<(), Refusal> {
         Err(Refusal::UnsupportedCapability)
     }
     fn cancel_tool_use(&mut self, _actor: &str) -> Result<(), Refusal> {
@@ -213,6 +216,34 @@ impl NativeProcess {
 }
 
 impl Kernel for NativeProcess {
+    fn physical_hit(&mut self, actor: &str, ray: &Ray, begin: bool) -> Result<(), Refusal> {
+        if self.state["physical_hit_version"] != 1 {
+            return Err(Refusal::UnsupportedCapability);
+        }
+        self.call(
+            json!({"op":if begin {"physical-hit-begin"} else {"physical-hit-preview"},
+            "actor":actor,"from":ray.from_m,"dir":ray.direction,"max_m":ray.max_distance_m}),
+        )?;
+        let preview: HitPreview =
+            serde_json::from_value(self.state["physical_hit_preview"].clone())
+                .map_err(|_| Refusal::KernelUnavailable)?;
+        preview.validate(actor)?;
+        if begin && preview.admitted {
+            let hit = &self.state["player_physical_hits"][actor];
+            if hit["active"] != true
+                || hit["tool"] != preview.tool
+                || hit["point_id"] != preview.point_id
+                || hit["started_s"].as_f64() != self.state["t"].as_f64()
+            {
+                return Err(Refusal::KernelUnavailable);
+            }
+        }
+        if !begin || preview.admitted {
+            Ok(())
+        } else {
+            Err(preview.reason.unwrap_or(Refusal::NativeRefused))
+        }
+    }
     fn observe(&mut self) -> Result<(), Refusal> {
         self.call(json!({"op":"poses"})).map(|_| ())
     }
