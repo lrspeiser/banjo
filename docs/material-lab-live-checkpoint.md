@@ -5,6 +5,11 @@ October 6, 2026; source base main `ae7abe1e`. This extends the
 viewer to deliberate, freshly computed CPU experiments. It advances the staged
 UI and authoring boundaries in W12/W13; the full W00–W17 rewrite remains active.
 
+Implementation/evidence were pushed to GitHub main as
+`03deb8798df261fc0281d230971523b72ca9893a`. This publication note adds no new
+physical validation. The local lab runs this compiled recorder and client; the
+retained World demo is not migrated or restarted.
+
 ## Try it
 
 Open `http://127.0.0.1:18891/`, choose **Load strength**, then **Run experiment**.
