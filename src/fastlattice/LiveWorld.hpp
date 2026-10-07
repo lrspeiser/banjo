@@ -1263,6 +1263,23 @@ struct LiveStrike {
     double give_up_s{2.0};
 };
 
+// Read-only eligibility and desired actuator path for a native player's ground
+// action. This is not simulated contact, paid work or a promised material yield.
+// The target is the first native ray hit, never a client-supplied terrain cell.
+struct LiveToolUseAdmission {
+    bool admitted{};
+    bool has_target{};
+    std::string reason;
+    std::string tool;
+    unsigned point{};
+    Vec3 target_m{};
+    int terrain_region{-2};
+    std::size_t terrain_column{};
+    std::uint64_t matter_revision{};
+    double ground_height_m{};
+    LiveStroke desired_stroke;
+};
+
 // A moment where the world was made to wait, or was saved from waiting.
 //
 // Working out a fracture costs between a third of a second and a second, and
@@ -2251,6 +2268,8 @@ public:
     // to be WIELDED -- held by its grip. Returns false with the reason when it
     // cannot be made: nothing wielded, no point on it, nothing to lever.
     [[nodiscard]] bool strike(const LiveStrike &strike, std::string &why);
+    [[nodiscard]] LiveToolUseAdmission toolUseAdmission(const Vec3 &from_world_m,
+        const Vec3 &direction, double max_distance_m) const;
     // Every meeting of a point with the ground since forgetGroundWork(), in
     // the order they began. Open ones are still going.
     [[nodiscard]] std::vector<LiveGroundWork> groundWork() const;

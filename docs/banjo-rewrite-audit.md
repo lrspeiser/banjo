@@ -1039,6 +1039,10 @@ Verification covers the focused native/Rust gates and the host/browser checks re
 
 ## References and reproduction
 
+### W06 tool-target follow-up, October 6
+
+[The native admission checkpoint](runtime-tool-admission-checkpoint.md) adds an exactly read-only shared target query, material-law/refusal checks and a typed actor-private Rust preview. Fifteen Rust checks, thirteen real-native checks and four native suites pass. It plans the existing swing targets; it does not implement preparing/acting/recovering, sweeping obstacle clearance, retained action events, new product import or productive family behavior. C02 remains open. No D01–D06 or R01–R12 retirement is claimed, and the full W00–W17 scope remains active.
+
 ### Current intent and qualification
 
 - [Project master plan](project-master-plan.md)

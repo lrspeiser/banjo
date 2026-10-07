@@ -1246,7 +1246,7 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
         if (!impact.declined.empty()) said["declined"] = impact.declined;
         impacts.push_back(std::move(said));
     }
-    nlohmann::json state = {{"ok", true}, {"bulk_transfer_receipts", 1}, {"pickup_admission_version", 1}, {"native_carry_version", 1}, {"t", world.time_s()}, {"stepped_back", world.steppedBack()},
+    nlohmann::json state = {{"ok", true}, {"bulk_transfer_receipts", 1}, {"pickup_admission_version", 1}, {"native_carry_version", 1}, {"tool_use_admission_version", 1}, {"t", world.time_s()}, {"stepped_back", world.steppedBack()},
             {"cell_size_m", world.cellSize()}, {"geometry", with_geometry},
             // `partial` true means bodies missing from this reply are unchanged,
             // not gone; `gone` names the ones that really did go. `count` is how
@@ -1930,6 +1930,20 @@ int main(int argc, char **argv) {
                     const auto &g=admission.grip_world_m;
                     reply["pickup"]={{"admitted",admission.admitted},{"reason",admission.reason},
                         {"grip_m",{g.x,g.y,g.z}},{"name",name}};
+                } else if (op == "tool-use-preview") {
+                    const auto seen=world->toolUseAdmission(readVec(command,"from"),readVec(command,"dir"),
+                        command.value("max_m",2.0));
+                    reply["tool_use_preview"]={{"schema","banjo.tool-preview.v1"},{"admitted",seen.admitted},
+                        {"actor",command.value("actor",std::string{})},
+                        {"reason",seen.reason.empty()?nlohmann::json(nullptr):nlohmann::json(seen.reason)},
+                        {"tool",seen.tool},{"point_id",seen.point},
+                        {"target_m",seen.has_target?vec(seen.target_m):nlohmann::json(nullptr)},
+                        {"terrain_region",seen.terrain_region==-2?nlohmann::json(nullptr):nlohmann::json(seen.terrain_region)},
+                        {"terrain_column",seen.terrain_region==-2?nlohmann::json(nullptr):nlohmann::json(seen.terrain_column)},
+                        {"matter_revision",seen.terrain_region==-2?nlohmann::json(nullptr):nlohmann::json(seen.matter_revision)},
+                        {"ground_height_m",seen.terrain_region==-2?nlohmann::json(nullptr):nlohmann::json(seen.ground_height_m)},
+                        {"desired_path_points",seen.desired_stroke.path_m.size()},
+                        {"measured_yield",false}};
                 } else if (op == "ground-debris" || op == "ground_debris") {
                     reply["ground_debris"]=nlohmann::json::parse(world->groundDebrisJson());
                 } else if (op == "collect-ground-debris" || op == "collect_ground_debris") {

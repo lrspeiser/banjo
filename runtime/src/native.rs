@@ -1,6 +1,6 @@
 //! Transitional adapter to the existing native JSON process. Only the world
 //! owner calls it; no browser/native operation pass-through is exposed.
-use crate::contracts::{Ray, Refusal};
+use crate::contracts::{Ray, Refusal, ToolPreview};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -25,6 +25,9 @@ pub trait Kernel {
     ) -> Result<(), Refusal>;
     fn release(&mut self, actor: &str) -> Result<(), Refusal>;
     fn pickup(&mut self, actor: &str, instance: &str, ray: &Ray) -> Result<(), Refusal>;
+    fn preview_tool_use(&mut self, _actor: &str, _ray: &Ray) -> Result<(), Refusal> {
+        Err(Refusal::UnsupportedCapability)
+    }
     fn remove(&mut self, actor: &str) -> Result<(), Refusal>;
     fn advance(&mut self, dt: f64, steps: u32) -> Result<(), Refusal>;
 }
@@ -128,7 +131,8 @@ impl NativeProcess {
         json!({"pid":self.child.id(),"selected_file_sha256":self.selected_file_sha256,
             "build_provenance":"unrecorded","actual_abi":null,
             "pickup_admission_version":self.state["pickup_admission_version"],
-            "native_carry_version":self.state["native_carry_version"]})
+            "native_carry_version":self.state["native_carry_version"],
+            "tool_use_admission_version":self.state["tool_use_admission_version"]})
     }
 
     fn receive(&mut self) -> Result<Value, Refusal> {
@@ -217,6 +221,18 @@ impl Kernel for NativeProcess {
     }
     fn remove(&mut self, actor: &str) -> Result<(), Refusal> {
         self.call(json!({"op":"player-remove","actor":actor}))
+    }
+    fn preview_tool_use(&mut self, actor: &str, ray: &Ray) -> Result<(), Refusal> {
+        if self.state["tool_use_admission_version"] != 1 {
+            return Err(Refusal::UnsupportedCapability);
+        }
+        self.call(
+            json!({"op":"tool-use-preview","actor":actor,"from":ray.from_m,
+            "dir":ray.direction,"max_m":ray.max_distance_m}),
+        )?;
+        let preview: ToolPreview = serde_json::from_value(self.state["tool_use_preview"].clone())
+            .map_err(|_| Refusal::KernelUnavailable)?;
+        preview.validate(actor)
     }
     fn advance(&mut self, dt: f64, steps: u32) -> Result<(), Refusal> {
         self.call(json!({"op":"step","dt":dt,"n":steps}))

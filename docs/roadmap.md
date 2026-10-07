@@ -32,6 +32,8 @@
 
 ## Codebase rewrite: October 6 current checkpoint and remaining order
 
+[Native tool-target admission](runtime-tool-admission-checkpoint.md) now provides the W06 read-only query and typed private Rust preview. Native preparing/acting/recovering phases and useful physical results are still next. Retain the existing host until shared actual-state journeys qualify its replacement.
+
 Implemented in scoped checkpoints: [W00/W01 build/test discovery and W03 contracts](runtime-rewrite-checkpoint.md), [W02 retained diagnostic history](interaction-history-checkpoint.md), [W04 native-backed Rust clock/actors](runtime-worker-checkpoint.md), and [W05 native pickup admission plus pending grip confirmation](runtime-pickup-checkpoint.md). These form an isolated experimental worker; the playable browser host is still the existing implementation. Full W02 viewer/native-readiness work and W04 event/coalescing/durable-state work remain open.
 
 The [native carry checkpoint](runtime-carry-checkpoint.md) adds a measured W05/W06 slice: physical actor-relative carry, actual moving turns, load admission, private per-actor controller state and whole native reopen. Safe floor acquisition/carry posture, standing yaw, stored custody and complete conservation remain required. Next **W06 native preview/use/recovery and actual event retention**, while closing those W05 boundaries. Then migrate stable product identities, custody, authoring declarations and saves; qualify finite-work constitutive terrain, typed client/LLM integration and ordinary phone/multiplayer play. Full regression and sustained excavation-speed gates remain separate. Do not retire the old controllers before equivalent ordinary-player, persistence and performance gates pass.

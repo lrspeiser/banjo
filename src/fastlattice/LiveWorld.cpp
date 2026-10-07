@@ -3351,6 +3351,15 @@ struct LiveWorld::Impl {
         const Vec3 shoulder = body.center_of_mass_world_m + body.orientation_world.rotate(Vec3{0, kShoulderAboveCenterM, 0});
         return length(grip-shoulder) <= kArmReachM;
     }
+    [[nodiscard]] std::string nativeRayRefusal(const Vec3 &from, const Vec3 &direction, double maximum) const {
+        const auto own = native_players.find(selected_hand);
+        if (own == native_players.end()) return "not_joined";
+        if (!finitePlayerVec(from) || !finitePlayerVec(direction) || !std::isfinite(maximum) ||
+            maximum <= 0 || maximum > 2 || std::abs(length(direction)-1) > 1e-6) return "invalid_input";
+        const auto actor = world->snapshot(own->second.id);
+        const Vec3 eyes = actor.center_of_mass_world_m + actor.orientation_world.rotate(Vec3{0,.77,0});
+        return length(from-eyes) > .2 ? "invalid_input" : "";
+    }
     void updateNativeCarry() {
         if (!native_carry) return;
         const auto own = native_players.find(selected_hand);
@@ -14358,17 +14367,8 @@ LivePickupAdmission LiveWorld::pickupAdmission(const std::string &name,
     const Vec3 &from_world_m, const Vec3 &direction, double max_distance_m) const {
     const Impl &I=*impl_;
     const auto refuse=[](const char *reason) { return LivePickupAdmission{false,reason,{}}; };
-    const auto own=I.native_players.find(I.selected_hand);
-    if(own==I.native_players.end())return refuse("not_joined");
-    const auto finite=[](const Vec3 &v) { return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z); };
-    if(!finite(from_world_m)||!finite(direction)||!std::isfinite(max_distance_m)||
-       max_distance_m<=0||max_distance_m>2||std::abs(length(direction)-1)>1e-6)
-        return refuse("invalid_input");
-    const auto actor=I.world->snapshot(own->second.id);
-    // The existing 1.7 m avatar has its eye 0.08 m below the top (1.62 m
-    // above its feet). This origin is checked against actual native pose.
-    const Vec3 eyes=actor.center_of_mass_world_m+actor.orientation_world.rotate(Vec3{0,.77,0});
-    if(length(from_world_m-eyes)>.2)return refuse("invalid_input");
+    const auto ray_refusal=I.nativeRayRefusal(from_world_m,direction,max_distance_m);
+    if(!ray_refusal.empty())return refuse(ray_refusal.c_str());
     if(I.holding!=static_cast<std::size_t>(-1))return refuse("already_holding");
     const auto found=I.index_of.find(name);
     if(found==I.index_of.end()||!I.inWorld(found->second))return refuse("target_changed");
@@ -14401,7 +14401,7 @@ LivePickupAdmission LiveWorld::pickupAdmission(const std::string &name,
             grip=blade.grip_m;break; // shared declared functional grip, not tool name
         }
     }
-    if(!finite(grip)||!I.gripWithinNativeReach(I.selected_hand,grip))return refuse("out_of_reach");
+    if(!finitePlayerVec(grip)||!I.gripWithinNativeReach(I.selected_hand,grip))return refuse("out_of_reach");
     return {true,{},grip};
 }
 
@@ -16474,6 +16474,70 @@ unsigned LiveWorld::toolPoint(const std::string &body, const Vec3 &tip_world_m, 
 const std::string &LiveWorld::toolPointRefusal() const { return impl_->tool_point_refusal; }
 
 std::vector<LiveToolPoint> LiveWorld::toolPoints() const { return impl_->tools.points(toolHost()); }
+
+LiveToolUseAdmission LiveWorld::toolUseAdmission(const Vec3 &from_world_m,
+    const Vec3 &direction, double max_distance_m) const {
+    const Impl &I = *impl_;
+    LiveToolUseAdmission result;
+    const auto refuse = [&](const char *reason) { result.reason=reason;return result; };
+    const auto ray_refusal=I.nativeRayRefusal(from_world_m,direction,max_distance_m);
+    if(!ray_refusal.empty())return refuse(ray_refusal.c_str());
+    if(I.holding==static_cast<std::size_t>(-1)||!I.wielding)return refuse("not_holding");
+    result.tool=I.described[I.holding].name;
+    if(I.stroke)return refuse("action_in_progress");
+    if(!I.environment)return refuse("unsupported_capability");
+    const auto members=I.jointedWith(I.holding,true);
+    if(!I.nativeCarryLoadSupported(I.selected_hand,members))return refuse("insufficient_strength");
+    const auto points=toolPoints();
+    const LiveToolPoint *point=nullptr;
+    for(const auto &candidate:points) {
+        const auto root=I.index_of.find(candidate.body);
+        if(candidate.attached && candidate.grip_connected && root!=I.index_of.end() &&
+           std::find(members.begin(),members.end(),root->second)!=members.end() &&
+           (candidate.grip_body.empty()?candidate.body:candidate.grip_body)==result.tool) {
+            if(point)return refuse("ambiguous_capability");
+            point=&candidate;
+        }
+    }
+    if(!point)return refuse("unsupported_capability");
+    result.point=point->id;
+    const auto hit=pick(from_world_m,direction,max_distance_m,true);
+    if(!hit.hit)return refuse("no_contact");
+    if(!hit.name.empty())return refuse("target_blocked");
+    result.target_m=hit.point_world_m;
+    result.has_target=true;
+    auto &environment=*I.environment;
+    if(!environment.onTheGround(result.target_m.x,result.target_m.z))return refuse("unsupported_capability");
+    const auto &field=environment.fieldAt(result.target_m.x,result.target_m.z);
+    const auto column=field.cellAt(result.target_m.x,result.target_m.z);
+    if(!column)return refuse("target_changed");
+    result.terrain_region=environment.regionAt(result.target_m.x,result.target_m.z);
+    result.terrain_column=*column;
+    result.matter_revision=field.matterRevision(*column);
+    result.ground_height_m=field.heightAt(result.target_m.x,result.target_m.z);
+    // This first controller supports exposed tops. A wall/tunnel hit is a real
+    // target, but it cannot be relabelled as its column's unrelated top.
+    if(std::abs(result.target_m.y-result.ground_height_m)>.025)return refuse("unsupported_capability");
+    const auto host=toolHost();
+    const auto material=host.material_of(point->body);
+    if(!material)return refuse("unsupported_capability");
+    const bool rock=field.height(*column)-field.rockTop(*column)<.01;
+    const auto verdict=terrain::judgeGround(rock,environment.waterDepthAt(result.target_m.x,result.target_m.z),
+        material->hardness_pa,point->material);
+    if(verdict.answer==terrain::GroundAnswer::NotSupported)return refuse("unsupported_law");
+    if(verdict.answer==terrain::GroundAnswer::TooHard)return refuse("material_too_hard");
+    const auto actor=I.world->snapshot(I.native_players.at(I.selected_hand).id);
+    LiveStrike asked;asked.target_m=result.target_m;
+    asked.shoulder_m=actor.center_of_mass_world_m+actor.orientation_world.rotate(Vec3{0,kShoulderAboveCenterM,0});
+    std::string why;
+    const auto planned=I.tools.plan(host,asked,result.tool,I.grip_local,why);
+    if(!planned)return refuse("unsupported_capability");
+    for(const auto &at:planned->path_m)
+        if(!I.gripWithinNativeReach(I.selected_hand,at))return refuse("out_of_reach");
+    result.desired_stroke=*planned;
+    result.admitted=true;
+    return result;
+}
 
 bool LiveWorld::strike(const LiveStrike &asked, std::string &why) {
     Impl &I = *impl_;

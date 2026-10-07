@@ -138,6 +138,30 @@ class NativeOwner(unittest.TestCase):
         self.assertEqual(after['clock']['dt_s'],1/240)
         self.assertEqual(after['clock']['steps_per_batch'],4)
 
+    def test_native_tool_preview_is_scoped_and_reports_unconfigured_tools(self):
+        worker=self.worker()
+        self.assertEqual(worker.ready['native']['tool_use_admission_version'],1)
+        worker.join('alice');worker.join('bob',(2,.05,0))
+        def preview(actor):
+            snapshot=worker.inspect(actor)['outcome']['snapshot']
+            player=snapshot['native_players'][actor]
+            w,x,y,z=player['orientation_wxyz']
+            up=[2*(x*y-w*z),1-2*(x*x+z*z),2*(y*z+w*x)]
+            eye=[a+.77*b for a,b in zip(player['position_m'],up)]
+            return worker.request({'kind':'preview_tool_use','ray':{
+                'from_m':eye,'direction':[0,-1,0],'max_distance_m':2}},actor=actor)['outcome']
+        seen=preview('alice')
+        self.assertEqual(seen['status'],'observed')
+        self.assertEqual(seen['snapshot']['own_tool_preview']['reason'],'not_holding')
+        self.assertIsNone(seen['snapshot']['own_tool_preview']['target_m'])
+        self.assertFalse(seen['snapshot']['own_tool_preview']['measured_yield'])
+        taken=worker.pickup(worker.inspect()['outcome']['snapshot'])
+        self.assertEqual(taken['outcome']['status'],'pending')
+        self.assertEqual(worker.completion()['outcome']['status'],'applied')
+        self.assertEqual(preview('alice')['snapshot']['own_tool_preview']['reason'],'unsupported_capability')
+        self.assertEqual(preview('bob')['snapshot']['own_tool_preview']['actor'],'bob')
+        self.assertIsNone(worker.inspect('alice')['outcome']['snapshot']['own_tool_preview'])
+
     def test_shutdown_reaps_owned_native_and_preserves_unrelated_process(self):
         unrelated=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)'])
         def close_unrelated():

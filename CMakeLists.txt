@@ -1107,6 +1107,10 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_pickup_admission_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_pickup_admission_tests)
             add_test(NAME banjo_pickup_admission_tests COMMAND banjo_pickup_admission_tests)
+            add_executable(banjo_tool_use_admission_tests tests/tool_use_admission_tests.cpp)
+            target_link_libraries(banjo_tool_use_admission_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_tool_use_admission_tests)
+            add_test(NAME banjo_tool_use_admission_tests COMMAND banjo_tool_use_admission_tests)
 
             # The same world twice, with the threads on: a contact order that is
             # a function of the contacts and not of which worker finished first.

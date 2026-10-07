@@ -234,6 +234,14 @@ impl<K: Kernel> World<K> {
             }
         }
         visible.insert("own_hand".into(), state["player_hands"][actor].clone());
+        visible.insert(
+            "own_tool_preview".into(),
+            if state["tool_use_preview"]["actor"] == actor {
+                state["tool_use_preview"].clone()
+            } else {
+                Value::Null
+            },
+        );
         visible.insert("observed_tick".into(), self.clock.tick.into());
         visible.insert(
             "observed_simulation_s".into(),
@@ -348,7 +356,14 @@ impl<K: Kernel> World<K> {
         self.sequences.insert(actor.into(), command.input_sequence);
         let result = self.apply(actor, &command.payload, request.host_action);
         let (status, reason) = match result {
-            Ok(()) if matches!(command.payload, Action::Inspect) => (Status::Observed, None),
+            Ok(())
+                if matches!(
+                    command.payload,
+                    Action::Inspect | Action::PreviewToolUse { .. }
+                ) =>
+            {
+                (Status::Observed, None)
+            }
             Ok(()) if matches!(command.payload, Action::Pickup { .. }) => {
                 self.revision += 1;
                 if let Action::Pickup { instance_id, .. } = &command.payload {
@@ -404,6 +419,7 @@ impl<K: Kernel> World<K> {
             }
             _ if !self.joined.contains(actor) => Err(Refusal::NotJoined),
             Action::Inspect => Ok(()),
+            Action::PreviewToolUse { ray } => self.kernel.preview_tool_use(actor, ray),
             Action::Move {
                 velocity_m_s,
                 heading_rad,
@@ -471,6 +487,17 @@ mod tests {
             self.state["player_hands"][actor] = json!({"holding":instance});
             Ok(())
         }
+        fn preview_tool_use(
+            &mut self,
+            actor: &str,
+            _: &crate::contracts::Ray,
+        ) -> Result<(), Refusal> {
+            let queries = self.state["preview_queries"].as_u64().unwrap_or(0);
+            self.state["preview_queries"] = json!(queries + 1);
+            self.state["tool_use_preview"] =
+                json!({"actor":actor,"admitted":false,"reason":"not_holding"});
+            Ok(())
+        }
         fn remove(&mut self, a: &str) -> Result<(), Refusal> {
             self.state["native_players"]
                 .as_object_mut()
@@ -531,6 +558,43 @@ mod tests {
         let result = w.execute(bad);
         assert_eq!(result.reason, Some(Refusal::WrongActor));
         assert!(result.snapshot.is_null());
+    }
+
+    #[test]
+    fn preview_is_read_only_idempotent_and_private_to_its_actor() {
+        let mut w = world();
+        w.execute(request("join", 1, Action::Join { feet_m: [0.0; 3] }));
+        let action = Action::PreviewToolUse {
+            ray: crate::contracts::Ray {
+                from_m: [0.0, 1.62, 0.0],
+                direction: [0.0, -1.0, 0.0],
+                max_distance_m: 2.0,
+            },
+        };
+        let preview = w.execute(request("preview", 2, action.clone()));
+        assert!(matches!(preview.status, Status::Observed));
+        assert_eq!(
+            preview.snapshot["own_tool_preview"]["reason"],
+            "not_holding"
+        );
+        assert_eq!(w.clock.tick, 0);
+        assert_eq!(w.revision, 1);
+        assert_eq!(w.kernel.steps, 0);
+        w.execute(request("preview", 2, action.clone()));
+        assert_eq!(w.kernel.state["preview_queries"], 1);
+        let mut bob_join = request("join", 1, Action::Join { feet_m: [0.0; 3] });
+        bob_join.principal = Id::new("bob").unwrap();
+        bob_join.command.actor_id = Id::new("bob").unwrap();
+        w.execute(bob_join);
+        let mut bob_preview = request("preview", 2, action);
+        bob_preview.principal = Id::new("bob").unwrap();
+        bob_preview.command.actor_id = Id::new("bob").unwrap();
+        let seen = w.execute(bob_preview);
+        assert_eq!(seen.snapshot["own_tool_preview"]["actor"], "bob");
+        let alice = w.execute(request("inspect", 3, Action::Inspect));
+        assert!(alice.snapshot["own_tool_preview"].is_null());
+        assert_eq!(w.revision, 2);
+        assert_eq!(w.clock.tick, 0);
     }
     #[test]
     fn client_join_and_stale_inputs_are_explicitly_refused() {
