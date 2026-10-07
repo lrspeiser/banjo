@@ -3329,10 +3329,34 @@ std::pair<Vec3, Vec3> JoltWorld::shapeBoundsTurned(MatterBodyId body_id,
 
 PointShapeQuery JoltWorld::pointShapeContacts(MatterBodyId body_id,Vec3 point,
     double radius,double separation,unsigned maximum_contacts) const {
+    auto shapes=materialShapeContacts(body_id,point,{PrimitiveKind::Sphere,radius,{}},{},separation,maximum_contacts);
+    return {shapes.geometry.radius_m,shapes.separation_limit_m,std::move(shapes.contacts)};
+}
+
+MaterialShapeQuery JoltWorld::materialShapeContacts(MatterBodyId body_id,Vec3 point,
+    const RigidPrimitive &geometry,Quat orientation,double separation,unsigned maximum_contacts) const {
     const auto finite=[](Vec3 value){return std::isfinite(value.x)&&std::isfinite(value.y)&&std::isfinite(value.z);};
-    if(!finite(point)||!std::isfinite(radius)||radius<1e-6||radius>100||
+    const double q2=orientation.w*orientation.w+orientation.x*orientation.x+orientation.y*orientation.y+orientation.z*orientation.z;
+    if(!finite(point)||!std::isfinite(q2)||std::abs(q2-1)>1e-6||
         !std::isfinite(separation)||separation<0||separation>1||maximum_contacts==0||maximum_contacts>256)
-        throw std::invalid_argument("invalid material-point native shape query or budget");
+        throw std::invalid_argument("invalid material native shape query or budget");
+    MaterialShapeQuery result;result.geometry=geometry;
+    const auto envelope_turn=joltTurn(orientation);
+    result.orientation_world={double(envelope_turn.GetW()),double(envelope_turn.GetX()),
+        double(envelope_turn.GetY()),double(envelope_turn.GetZ())};
+    JPH::RefConst<JPH::Shape> envelope;
+    if(geometry.kind==PrimitiveKind::Sphere) {
+        if(!std::isfinite(geometry.radius_m)||geometry.radius_m<1e-6||geometry.radius_m>100)
+            throw std::invalid_argument("invalid material sphere envelope");
+        result.geometry.radius_m=double(float(geometry.radius_m));
+        envelope=new JPH::SphereShape(float(result.geometry.radius_m));
+    } else if(geometry.kind==PrimitiveKind::Box) {
+        const auto d=geometry.dimensions_m;
+        if(!finite(d)||std::min({d.x,d.y,d.z})<2e-6||std::max({d.x,d.y,d.z})>200)
+            throw std::invalid_argument("invalid material cuboid envelope");
+        const auto half=toJolt(d/2);result.geometry.dimensions_m=2*fromJoltVector(half);
+        envelope=new JPH::BoxShape(half,0); // Occupied sharp cell, not an inscribed sphere.
+    } else throw std::invalid_argument("unsupported material envelope kind");
     const auto found=impl_->bodies_.find(body_id);
     if(found==impl_->bodies_.end())throw std::invalid_argument("point shape query body is missing");
     JPH::TransformedShape source;
@@ -3348,12 +3372,9 @@ PointShapeQuery JoltWorld::pointShapeContacts(MatterBodyId body_id,Vec3 point,
     const double relative_limit=std::sqrt(double(std::numeric_limits<float>::max()))/8;
     if(!finite(offset)||std::hypot(offset.x,offset.y,offset.z)>relative_limit)
         throw std::invalid_argument("point shape query exceeds native relative range");
-    PointShapeQuery result;
-    result.envelope_radius_m=double(float(radius));
     float search=float(separation);
     if(double(search)<separation)search=std::nextafter(search,std::numeric_limits<float>::infinity());
     result.separation_limit_m=double(search);
-    JPH::RefConst<JPH::Shape> envelope=new JPH::SphereShape(float(result.envelope_radius_m));
     JPH::CollideShapeSettings settings;
     settings.mMaxSeparationDistance=search;
     settings.mActiveEdgeMode=JPH::EActiveEdgeMode::CollideWithAll;
@@ -3371,7 +3392,7 @@ PointShapeQuery JoltWorld::pointShapeContacts(MatterBodyId body_id,Vec3 point,
         unsigned limit_;
     } collector(maximum_contacts);
     JPH::CollisionDispatch::sCollideShapeVsShape(envelope.GetPtr(),source.mShape.GetPtr(),
-        JPH::Vec3::sReplicate(1),source.GetShapeScale(),JPH::Mat44::sIdentity(),
+        JPH::Vec3::sReplicate(1),source.GetShapeScale(),JPH::Mat44::sRotation(envelope_turn),
         JPH::Mat44::sRotationTranslation(source.mShapeRotation,toJolt(offset)),
         JPH::SubShapeIDCreator(),source.mSubShapeIDCreator,settings,collector);
     if(collector.overflow)throw std::length_error("material-point native contact witness budget exceeded");

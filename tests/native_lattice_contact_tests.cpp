@@ -21,11 +21,11 @@ void near(double value,double expected,double bound,const char *why){if(!std::is
 struct Target {
     MaterialDefinition material;LatticeAsset asset;ActiveMatter matter;LatticeSchedule schedule;LatticeState state;
     StepSettings<double> settings{};
-    explicit Target(MaterialPreset preset,bool bonded=true,double timestep=dt,std::uint8_t integrator=kBondXpbd):material(makeReferenceMaterial(preset,17)) {
+    explicit Target(MaterialPreset preset,bool bonded=true,double timestep=dt,std::uint8_t integrator=kBondXpbd,Vec3 initial_origin={.095,0,0}):material(makeReferenceMaterial(preset,17)) {
         const auto compiled=withPlasticFlow(withStrengthDerivedFailure(compileElasticLatticeReference(material,cell,1),material),material);
         asset=generateBoxTileLattice({{.12,.12,.12},cell,1},compiled);
         matter.asset=&asset;matter.material=compiled;
-        const Vec3 origin{.095,0,0};
+        const Vec3 origin=initial_origin;
         for(const auto &n:asset.nodes) {
             const Vec3 at=origin+n.local_position_m;
             matter.nodes.push_back({at,at,{},n.represented_volume_m3*material.density_kg_m3,{}});
@@ -417,7 +417,7 @@ void coupledMatchedTargets() {
     }
     }
 }
-void partitionContactedTarget(Target &target,LatticeBackend &parent,const LatticeState &state,double width) {
+void partitionContactedTarget(Target &target,LatticeBackend &parent,const LatticeState &state,double width,bool occupied_cuboids=false) {
     // Material-only continuation after the coupled experiment ends. The native
     // source is paused; this does not claim live-world contact/handoff coverage.
     const auto before=parent.status();
@@ -463,11 +463,11 @@ void partitionContactedTarget(Target &target,LatticeBackend &parent,const Lattic
     }
     near(position_error,0,1e-10,"contacted component continuation position");
     near(velocity_error,0,1e-8,"contacted component continuation velocity");near(plastic_error,0,1e-12,"contacted plastic continuation");
-    std::cout<<"CONTACT_PARTITION_EVIDENCE {\"material\":\""<<target.material.name<<"\",\"width_m\":"<<width
+    std::cout<<"CONTACT_PARTITION_EVIDENCE {\"geometry\":\""<<(occupied_cuboids?"cuboid":"sphere")<<"\",\"material\":\""<<target.material.name<<"\",\"width_m\":"<<width
         <<",\"dt_s\":"<<target.settings.dt<<",\"components\":"<<prepared.components.size()<<",\"dead_interfaces\":"<<prepared.severed_interfaces.size()
         <<",\"position_difference_m\":"<<position_error<<",\"velocity_difference_m_s\":"<<velocity_error<<",\"plastic_difference\":"<<plastic_error<<"}\n";
 }
-void coupledClampedFootprints() {
+void coupledClampedFootprints(bool occupied_cuboids=false) {
     // Same finite 6 m/s tool assembly, 40 mm cells, material laws and physical
     // duration. Only the actual head width changes. Its inertia/mass are not
     // artificially held constant. The far face is an explicit ideal stationary
@@ -475,10 +475,20 @@ void coupledClampedFootprints() {
     for (double width:{.04,.12}) for (auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
         double coarse_error=0;
         for (double timestep:{dt,.5*dt}) {
-            Tool tool(6,width);Target target(preset,true,timestep,kBondVelocityVerlet);
+            Tool tool(6,width);Target target(preset,true,timestep,kBondVelocityVerlet,occupied_cuboids?Vec3{.1,0,0}:Vec3{.095,0,0});
             for (unsigned i=0;i<target.state.node_count;++i)
                 if (target.state.x0[3*i]>.039) target.state.inv_mass[i]=0;
             auto backend=target.backend();const auto initial=totals(target.state,tool.world);
+            std::set<unsigned> initial_forward_cells;
+            for(unsigned i=0;i<target.state.node_count;++i) {
+                const Vec3 at=target.state.origin+Vec3{target.state.x0[3*i],target.state.x0[3*i+1],target.state.x0[3*i+2]};
+                const auto witnesses=occupied_cuboids?tool.world.materialShapeContacts(1,at,
+                    {PrimitiveKind::Box,0,{cell,cell,cell}},{},.00001).contacts:
+                    tool.world.pointShapeContacts(1,at,.016,.00001).contacts;
+                for(const auto &hit:witnesses)
+                    if(hit.normal_world.x>.99 && hit.gap_m<.00001)initial_forward_cells.insert(i);
+            }
+            require(initial_forward_cells.size()==(width==.04?3U:9U),"initial occupied forward-face footprint disagrees with physical head width");
             double loss=0,reconcile=0,native_transfer_error=0,native_step_energy=0;
             Vec3 transfer_p{},transfer_l{},geometry_couple{},native_step_p{},native_step_l{};
             std::uint64_t contacts=0;std::set<unsigned> contacted_nodes;
@@ -488,13 +498,18 @@ void coupledClampedFootprints() {
                 const auto current=target.download(*backend);
                 for (unsigned i=0;i<target.state.node_count;++i) {
                     const Vec3 at=current.origin+Vec3{current.x0[3*i]+current.u[3*i],current.x0[3*i+1]+current.u[3*i+1],current.x0[3*i+2]+current.u[3*i+2]};
-                    require(tool.world.pointShapeContacts(10,at,.016,.00001).contacts.empty(),"clamped fixture omitted handle witness");
-                    const auto query=tool.world.pointShapeContacts(1,at,.016,.00001);
+                    const auto queryContacts=[&](MatterBodyId id) {
+                        if(occupied_cuboids)return tool.world.materialShapeContacts(id,at,
+                            {PrimitiveKind::Box,0,{cell,cell,cell}},{},.00001).contacts;
+                        return tool.world.pointShapeContacts(id,at,.016,.00001).contacts;
+                    };
+                    require(queryContacts(10).empty(),"clamped fixture omitted handle witness");
+                    const auto witnesses=queryContacts(1);
                     if (current.inv_mass[i]==0) {
-                        require(query.contacts.empty(),"finite contact adapter cannot own direct tool/clamp contact");
+                        require(witnesses.empty(),"finite contact adapter cannot own direct tool/clamp contact");
                         continue;
                     }
-                    for (const auto &hit:query.contacts) {
+                    for (const auto &hit:witnesses) {
                         const auto law=combineContactMaterials(compileContactMaterial(target.material),hit.body_contact);
                         const auto r=applyNativeFixedPointTransfer(tool.world,*backend,i,2,1,hit.normal_world,hit.gap_m,
                             {law.static_friction,law.dynamic_friction,law.restitution},budget);
@@ -543,7 +558,10 @@ void coupledClampedFootprints() {
             near(final.mass_kg,initial.mass_kg,1e-12,"clamped coupling lost constituent mass");
             require(contacts>0&&s.external_point_transfer.transfers==contacts&&length(support.impulse_n_s)>0,
                 "finite tool failed to load material and boundary");
-            require(contacted_nodes.size()==(width==.04?3U:9U),"actual physical width did not select its own contact footprint");
+            if(!occupied_cuboids)require(contacted_nodes.size()==(width==.04?3U:9U),
+                "retained spherical footprint changed");
+            for(const auto i:contacted_nodes)require(target.state.x0[3*i]<-.039,
+                "tool contact jumped to a non-exposed material layer");
             require(length(s.bond_kick_roundoff_impulse_n_s)<1e-12&&length(s.bond_kick_roundoff_angular_kg_m2_s)<1e-12,
                 "clamp reaction disappeared into numerical roundoff");
             for (unsigned i=0;i<target.state.node_count;++i) if (target.state.inv_mass[i]==0) {
@@ -556,18 +574,19 @@ void coupledClampedFootprints() {
             if (timestep==dt)coarse_error=std::abs(s.integration_numerical_energy_j);
             else require(std::abs(s.integration_numerical_energy_j)<.27*coarse_error,"clamped finite contact timestep refinement failed");
             const double wall=std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count();
-            std::cout<<"BOUNDARY_CONTACT_EVIDENCE {\"material\":\""<<materialPresetName(preset)<<"\",\"width_m\":"<<width
-                <<",\"cell_m\":"<<cell<<",\"dt_s\":"<<timestep<<",\"steps\":"<<count<<",\"contacts\":"<<contacts
-                <<",\"contacted_nodes\":"<<contacted_nodes.size()<<",\"support_impulse_n_s\":"<<length(support.impulse_n_s)
+            std::cout<<(occupied_cuboids?"CUBOID_CONTACT_EVIDENCE ":"BOUNDARY_CONTACT_EVIDENCE ")
+                <<"{\"material\":\""<<materialPresetName(preset)<<"\",\"width_m\":"<<width
+                <<",\"target_origin_x_m\":"<<target.state.origin.x<<",\"cell_m\":"<<cell<<",\"dt_s\":"<<timestep<<",\"steps\":"<<count<<",\"contacts\":"<<contacts
+                <<",\"contacted_nodes\":"<<contacted_nodes.size()<<",\"initial_forward_cells\":"<<initial_forward_cells.size()<<",\"support_impulse_n_s\":"<<length(support.impulse_n_s)
                 <<",\"support_angular_kg_m2_s\":"<<length(support.angular_impulse_kg_m2_s)<<",\"broken_bonds\":"<<s.broken_bonds
                 <<",\"p_residual_n_s\":"<<length(p)<<",\"l_residual_kg_m2_s\":"<<length(l)<<",\"unallocated_energy_j\":"<<unallocated
                 <<",\"native_step_energy_j\":"<<native_step_energy<<",\"integration_error_j\":"<<s.integration_numerical_energy_j
                 <<",\"mass_kg\":"<<final.mass_kg<<",\"wall_s\":"<<wall<<"}\n";
-            partitionContactedTarget(target,*backend,final_state,width);
+            partitionContactedTarget(target,*backend,final_state,width,occupied_cuboids);
         }
     }
 }
 }
-int main(){try{std::cout.precision(12);targetTransferPreservesHistoryAndAccounts(kBondXpbd);targetTransferPreservesHistoryAndAccounts(kBondVelocityVerlet);preparedContactIsImmutableAndInvalidates();trialAdmissionAndAbandonedPlans();pairedTrialsRestoreAndReplay();coupledMatchedTargets();coupledClampedFootprints();
+int main(){try{std::cout.precision(12);targetTransferPreservesHistoryAndAccounts(kBondXpbd);targetTransferPreservesHistoryAndAccounts(kBondVelocityVerlet);preparedContactIsImmutableAndInvalidates();trialAdmissionAndAbandonedPlans();pairedTrialsRestoreAndReplay();coupledMatchedTargets();coupledClampedFootprints();coupledClampedFootprints(true);
     std::cout<<"[PASS] checked native/CPU contact transfer and continuous target integration\n";return 0;}
     catch(const std::exception &e){std::cerr<<"[FAIL] "<<e.what()<<'\n';return 1;}}

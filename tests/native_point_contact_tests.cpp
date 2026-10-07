@@ -177,7 +177,7 @@ void repeatedContactRetainsNativeState() {
 void nearVec(Vec3 value,Vec3 expected,double tolerance,const char *message) {
     near(length(value-expected),0,tolerance,message);
 }
-const PointShapeContact &single(const PointShapeQuery &query) {
+const PointShapeContact &single(const auto &query) {
     require(query.contacts.size()==1,"expected one complete native leaf witness");return query.contacts.front();
 }
 void materialMatches(const CompiledContactMaterial &actual,const MaterialDefinition &material) {
@@ -549,6 +549,66 @@ void orderedNativeFixedContactsRetainAllAccounts() {
         first.numerical_energy_change_j+next.numerical_energy_change_j,1e-12,"cumulative fixed contact kinetic/work receipts");
     std::cout<<"ordered fixed contacts preserve actual native recoil and separate joint/work accounts\n";
 }
+void nativeOccupiedCuboidWitnesses() {
+    const RigidPrimitive cell_box{PrimitiveKind::Box,0,{.04,.04,.04}};
+    const Quat turn{std::cos(std::numbers::pi/8),0,0,std::sin(std::numbers::pi/8)};
+    for(const auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        const auto material=makeReferenceMaterial(preset,17);JoltWorld world;
+        world.addBox({1,{.08,.08,.08},material,{{},{},{},{}},false});
+        const auto original=world.snapshot(1);
+        for(const double gap:{-.002,.001,.003}) {
+            const auto q=world.materialShapeContacts(1,{.06+gap,0,0},cell_box,{},.004);
+            const auto &hit=single(q);
+            near(hit.gap_m,gap,1e-6,"cuboid occupied face gap");
+            nearVec(hit.normal_world,{1,0,0},2e-6,"cuboid face normal");
+            near(dot(hit.point_on_envelope_world_m-hit.point_on_body_world_m,hit.normal_world),gap,1e-6,
+                "cuboid witnesses disagree with signed separation");
+            near(hit.point_on_envelope_world_m.x,.04+gap,1e-6,"native occupied cell face witness");
+            materialMatches(hit.body_contact,material);
+        }
+        // The cube's corner enters occupied matter although its 16 mm sphere
+        // does not. This is the missing geometric coverage, without a force.
+        const Vec3 corner{.057,.057,0};
+        require(world.pointShapeContacts(1,corner,.016).contacts.empty(),"corner fixture sphere unexpectedly contacts");
+        require(!world.materialShapeContacts(1,corner,cell_box).contacts.empty(),"actual occupied cube corner was omitted");
+        const double extent=.02*std::sqrt(2.);
+        const auto turned_query=world.materialShapeContacts(1,{.04+extent+.001,0,0},cell_box,turn,.003);
+        const auto &rotated=single(turned_query);
+        near(rotated.gap_m,.001,2e-6,"turned cuboid used unturned lengths");
+        JoltWorld sphere;sphere.addBall({1,.08,material,{},{},{}});
+        const auto sphere_query=sphere.materialShapeContacts(1,{.101,0,0},cell_box,{},.003);
+        near(single(sphere_query).gap_m,.001,2e-6,"occupied cuboid missed native sphere surface");
+        JoltWorld rotated_source;rotated_source.addBox({1,{.4,.08,.06},material,{{},turn,{},{}},false});
+        const Vec3 face=turn.rotate({.221,0,0});
+        const auto turned_pair=rotated_source.materialShapeContacts(1,face,cell_box,turn,.003);
+        near(single(turned_pair).gap_m,.001,2e-6,"turned source/cell face gap");
+        nearVec(single(turned_pair).normal_world,turn.rotate({1,0,0}),3e-6,"turned source/cell normal");
+        same(original,world.snapshot(1));require(world.drainImpacts().empty(),"occupied geometry query generated physical impact");
+        // Actual compound leaves preserve the hole and native per-leaf material.
+        JoltWorld hollow;const RigidPrimitive leaf{PrimitiveKind::Box,0,{.04,.04,.04}};
+        hollow.addCompound(compound({{leaf,{-.06,0,0},{},material},{leaf,{.06,0,0},{},material}}));
+        require(hollow.materialShapeContacts(1,{},cell_box).contacts.empty(),"compound hole replaced by bounds");
+        const auto leaf_query=hollow.materialShapeContacts(1,{.091,0,0},cell_box,{},.002);
+        const auto &leaf_hit=single(leaf_query);
+        require(leaf_hit.shape_user_data==2,"cuboid query lost compound leaf identity");materialMatches(leaf_hit.body_contact,material);
+        bool refused=false;
+        try {(void)hollow.materialShapeContacts(1,{}, {PrimitiveKind::Box,0,{.2,.04,.04}},{},0,1);}
+        catch(const std::length_error &) {refused=true;}
+        require(refused,"cuboid witness overflow silently truncated leaves");
+    }
+    JoltWorld world;const auto iron=makeReferenceMaterial(MaterialPreset::Iron,17);
+    const Vec3 shift{1e8,-2e8,3e8};world.addBox({1,{.08,.08,.08},iron,{shift,{},{},{}},false});
+    const auto far_query=world.materialShapeContacts(1,shift+Vec3{.061,0,0},cell_box,{},.003);
+    const auto &far=single(far_query);
+    near(far.gap_m,.001,1e-6,"cuboid query lost local precision at distant origin");
+    for(const auto geometry:std::vector<RigidPrimitive>{{PrimitiveKind::Box,0,{0,.04,.04}},
+            {PrimitiveKind::Box,0,{201,.04,.04}},{PrimitiveKind::Cylinder,0,{.04,.04,.04}}}) {
+        bool refused=false;try {(void)world.materialShapeContacts(1,shift,geometry);}
+        catch(const std::invalid_argument &) {refused=true;}require(refused,"unsupported cell geometry admitted");
+    }
+    bool refused=false;try {(void)world.materialShapeContacts(1,shift,cell_box,{2,0,0,0});}
+    catch(const std::invalid_argument &) {refused=true;}require(refused,"nonunit cuboid orientation admitted");
+}
 void invalidQueriesRefuse() {
     Fixture f;const auto before=f.world.snapshot(1);
     for(const auto values:std::vector<std::pair<double,double>>{{0,0},{1e-7,0},{101,0},{.01,-1},{.01,1.01},
@@ -572,7 +632,7 @@ void invalidQueriesRefuse() {
 int main() {
     try { std::cout.precision(12);materialReactionAndRounding();atomicRefusal();repeatedContactRetainsNativeState();
         nativeSphereAndRotatedBoxWitnesses();compoundMaterialsVoidsAndBudgets();turnedCylinderAndConvexWitnesses();
-        actualWitnessFeedsNativeReaction();invalidQueriesRefuse();
+        actualWitnessFeedsNativeReaction();invalidQueriesRefuse();nativeOccupiedCuboidWitnesses();
         nativeFixedToolRetainsItsLoadPath();
         nativeFixedContactUsesActualConstraintInertia();nativeFixedContactRefusesAtomically();
         orderedNativeFixedContactsRetainAllAccounts();

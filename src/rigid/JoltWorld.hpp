@@ -151,6 +151,12 @@ struct PointShapeQuery {
     double envelope_radius_m{},separation_limit_m{}; // Actual native float inputs.
     std::vector<PointShapeContact> contacts;
 };
+struct MaterialShapeQuery {
+    RigidPrimitive geometry; // Actual float geometry used by the native query.
+    Quat orientation_world{};
+    double separation_limit_m{};
+    std::vector<PointShapeContact> contacts;
+};
 struct CohesiveTensionKick {
     CohesiveInterfaceIncrement interface_increment;
     PairImpulseAudit transfer;
@@ -491,6 +497,15 @@ public:
     [[nodiscard]] PointShapeQuery pointShapeContacts(MatterBodyId body,
         Vec3 point_world_m,double envelope_radius_m,double separation_limit_m=0,
         unsigned maximum_contacts=64) const;
+    // Occupied sphere or cuboid envelope against every actual source leaf.
+    // Cuboid full lengths are 2 um..200 m, with zero edge rounding; arbitrary
+    // unit orientation is allowed. No enclosing sphere/AABB substitutes for a
+    // cuboid. Cylinder envelopes are currently refused. Same read-only witness,
+    // local precision and overflow semantics as pointShapeContacts. This is
+    // geometry, not a finite-cell rotational/contact/constitutive law.
+    [[nodiscard]] MaterialShapeQuery materialShapeContacts(MatterBodyId body,
+        Vec3 center_world_m,const RigidPrimitive &geometry,Quat orientation_world={},
+        double separation_limit_m=0,unsigned maximum_contacts=64) const;
     // Central tensile connector between body-local points; Jolt retains every
     // surface contact. Compression stiffness must be zero. Requires double
     // positions and Jolt pair ownership; material-activation deferral rejects.
