@@ -21,7 +21,7 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 ROOTS = {"src", "include", "playground", "mcp", "bindings", "tools",
          "scripts", "tests", "examples", "cmake", "runtime", "progression",
-         "assets", "voice"}
+         "assets", "voice", "client"}
 EXTENSIONS = {".py", ".js", ".mjs", ".ts", ".tsx", ".rs", ".cpp", ".hpp", ".h",
               ".c", ".cu", ".inl", ".sh", ".ps1", ".cmake", ".html", ".css",
               ".toml", ".yml", ".yaml", ".json", ".csv", ".txt"}

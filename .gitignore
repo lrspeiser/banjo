@@ -37,6 +37,7 @@ __pycache__/
 # of the system interpreter, which runs the engine's suites in other worktrees:
 # a transitive numpy upgrade there would break a lane nobody was working on.
 .venv*/
+/client/node_modules/
 
 # Local credentials
 .env

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Banjo · Material lab</title>
+    <link rel="stylesheet" href="lab.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <a class="brand" href="/">BANJO <span>Material lab</span></a
+        ><span class="tag">Experiment 01</span>
+      </header>
+      <section class="intro">
+        <p class="eyebrow">Matter, under your control</p>
+        <h1>Same input. Different response.</h1>
+        <p>
+          Explore how a supported block responds to a load. Every position and
+          break comes from the CPU solver.
+        </p>
+      </section>
+      <section class="controls" aria-label="Experiment controls">
+        <div class="choices" role="group" aria-label="Interaction">
+          <button data-interaction="load" aria-pressed="true">
+            <strong>Load &amp; release</strong
+            ><span>Watch the block respond, then unload</span>
+          </button>
+          <button data-interaction="pull" aria-pressed="false">
+            <strong>Pull apart</strong
+            ><span>A strong upward pull on one cell</span>
+          </button>
+        </div>
+        <div class="toolbar">
+          <label
+            >Show
+            <select id="material">
+              <option value="all">Compare all three</option>
+              <option value="glass">Glass</option>
+              <option value="oak">Oak · laboratory only</option>
+              <option value="iron">Iron</option>
+            </select></label
+          >
+          <label
+            >Displacement
+            <select id="magnification">
+              <option value="1">Actual size · 1×</option>
+              <option value="100">Enlarge · 100×</option>
+              <option value="1000" selected>Enlarge · 1000×</option>
+            </select></label
+          >
+          <button id="play" class="primary" disabled>
+            Play recorded response
+          </button>
+        </div>
+      </section>
+      <div id="status" role="status">Loading solver recordings…</div>
+      <section
+        id="scenes"
+        class="scenes"
+        aria-label="Material comparisons"
+      ></section>
+      <section class="timeline" aria-label="Recorded physical time">
+        <label for="frame">Physical time <strong id="time">0 μs</strong></label>
+        <input
+          id="frame"
+          type="range"
+          min="0"
+          max="20"
+          value="0"
+          step="1"
+          aria-label="Recorded frame"
+          disabled
+        />
+        <div class="timeline-notes">
+          <span id="phase">Load applied</span
+          ><span>Load removed at 51.2 μs · ends at 64 μs</span>
+        </div>
+      </section>
+      <div class="legend">
+        <span><i class="dot blue"></i>Attached cells</span
+        ><span><i class="dot amber"></i>Free cells</span
+        ><span><i class="dot white"></i>Fixed support</span
+        ><span>Lines = surviving bonds</span>
+      </div>
+      <details>
+        <summary>Experiment conditions &amp; measurements</summary>
+        <div id="conditions"></div>
+        <div id="measurements"></div>
+      </details>
+      <footer>
+        <strong>Recorded solver experiment.</strong> Playback is slowed for
+        inspection. Magnification changes only the view. Cell centres and bonds
+        are shown; these are not solved collision surfaces. Gravity,
+        self-contact, settling, grain and wear are not simulated here.
+      </footer>
+    </main>
+    <script type="module" src="lab.js"></script>
+  </body>
+</html>

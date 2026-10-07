@@ -25,6 +25,23 @@ concurrency:
   cancel-in-progress: ${{ github.ref_name != 'main' }}
 
 jobs:
+  material-lab-client:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - name: Compile strict experiment client and validate recording contracts
+        run: |
+          cd client
+          npm ci --ignore-scripts
+          npm run check
+          npm run build
+          cd ..
+          node --test tests/material_lab_client_tests.mjs
   runtime-contracts:
     runs-on: ubuntu-24.04
     steps:

@@ -1,0 +1,267 @@
+{
+  "schema": "banjo.material-lab-acceptance.v1",
+  "date": "2026-10-06",
+  "identity": {
+    "schema": "banjo.material-lab-manifest.v1",
+    "source_revision": "886f475a17bc87de04ab2bf9716e38144ccbae75",
+    "kind": "recorded CPU experiments; read-only replay",
+    "identity_note": "Checkout revision/workspace hashes and actual binary fingerprint; revision alone does not prove artifact/source equivalence.",
+    "native_sha256": "fe9a477d098606093b497786004c55f00f9c57ac77e1df89b6735d7403645407",
+    "source_sha256": {
+      "tools/material_lab_record.cpp": "0a81d83dd68e3d006f7b234f87139d81dfc47259fc777354a3b4a9f5b0d4ab47",
+      "src/fastlattice/SolidMatterPatch.cpp": "f0bb067cbe6ff124a4275b758dcf1029a61281a8c810808ef8c5487e6ce13fd7",
+      "src/fastlattice/ConstituentPartition.cpp": "2113aace8071b8c49e9e3ec93c1c27a6a37a55d2304602f09476cab0f9c94ac6",
+      "src/fastlattice/CpuLatticeBackend.cpp": "1fb8d610d9999604780b5f1975529aa616cd1172bd683b0bedffe703e40a2d6a",
+      "src/material/MaterialCatalog.cpp": "672fdaf689cc608aea4b3e1c1642aa4dade5cd5ac687cd20576f953b793ec651",
+      "client/experiments/lab.ts": "313b411aceb283783b4f1f62157e686b6303ecf67f0a9f564e1d46d32381f6cd",
+      "client/experiments/contract.ts": "744d31925eefdf9331d8c5c77297dc522f3ad7884e508daf7648a12b0073821b"
+    },
+    "assets_sha256": {
+      "lab.css": "009210f03c99af7781ba7addc93cf47bd6746b0b3bda8438bf6fcda6b1fcfc83",
+      "material.json": "4e9de28e45a046aa3fe146524b64f34eff369f46e9374bf340bc35fcef12ef32",
+      "contract.js": "da6966b1ff54bccd9dd00719fcfcf863f2dd56f55a63153077866cc0cf59b3c0",
+      "index.html": "fc560e912910549be508615136863eac770be2ffb3bb8d9228b3d3fcac6c5541",
+      "lab.js": "3356e26499ab0077fc96f8983ab6eef0f7cb04a722b2d776669e6baa67917dd3"
+    }
+  },
+  "environment": {
+    "os": "Windows x64",
+    "compiler": "MSVC 19.44.35228",
+    "sdk": "10.0.26100",
+    "python": "3.13.5",
+    "node": "22.18.0",
+    "typescript": "5.9.3",
+    "build": "Release",
+    "backend": "serial-double CPU Verlet",
+    "fp_profile": "banjo-cpu-precise-v1"
+  },
+  "cases": [
+    {
+      "id": "glass:load",
+      "material": "glass",
+      "interaction": "load",
+      "dt_s": 1e-07,
+      "cell_m": 0.05,
+      "density_kg_m3": 2500.0,
+      "young_modulus_pa": 70000000000.0,
+      "force_n": [
+        10000.0,
+        -20000.0,
+        30000.0
+      ],
+      "solver_wall_s": 0.1646836,
+      "mass_kg": 39.06250000000003,
+      "volume_m3": 0.01562500000000001,
+      "work_j": 0.33053471201155693,
+      "kinetic_j": 0.19678584275729918,
+      "elastic_j": 0.13375305649662939,
+      "broken_bonds": 0,
+      "components": 1,
+      "removed_bond_energy_j": 0.0,
+      "integration_error_j": 4.187242260145225e-06,
+      "free_cells": 0,
+      "max_energy_residual_j": 2.0194957495557955e-13,
+      "max_momentum_residual_n_s": 1.4914655751787097e-14,
+      "max_angular_residual_kg_m2_s": 2.536554122639109e-16
+    },
+    {
+      "id": "oak:load",
+      "material": "oak",
+      "interaction": "load",
+      "dt_s": 1e-07,
+      "cell_m": 0.05,
+      "density_kg_m3": 700.0,
+      "young_modulus_pa": 12000000000.0,
+      "force_n": [
+        10000.0,
+        -20000.0,
+        30000.0
+      ],
+      "solver_wall_s": 0.1465189,
+      "mass_kg": 10.937500000000007,
+      "volume_m3": 0.01562500000000001,
+      "work_j": 1.7640625443473625,
+      "kinetic_j": 1.079241846063058,
+      "elastic_j": 0.6848287224006281,
+      "broken_bonds": 0,
+      "components": 1,
+      "removed_bond_energy_j": 0.0,
+      "integration_error_j": 8.02411632006006e-06,
+      "free_cells": 0,
+      "max_energy_residual_j": 3.1885605267234496e-13,
+      "max_momentum_residual_n_s": 1.306734962055354e-14,
+      "max_angular_residual_kg_m2_s": 1.5106106307240636e-16
+    },
+    {
+      "id": "iron:load",
+      "material": "iron",
+      "interaction": "load",
+      "dt_s": 1e-07,
+      "cell_m": 0.05,
+      "density_kg_m3": 7870.0,
+      "young_modulus_pa": 211000000000.0,
+      "force_n": [
+        10000.0,
+        -20000.0,
+        30000.0
+      ],
+      "solver_wall_s": 0.1364603,
+      "mass_kg": 122.96875000000009,
+      "volume_m3": 0.01562500000000001,
+      "work_j": 0.10753583878031615,
+      "kinetic_j": 0.06535296048163487,
+      "elastic_j": 0.042184025024005804,
+      "broken_bonds": 0,
+      "components": 1,
+      "removed_bond_energy_j": 0.0,
+      "integration_error_j": 1.1467254489999566e-06,
+      "free_cells": 0,
+      "max_energy_residual_j": 2.4497071715980437e-13,
+      "max_momentum_residual_n_s": 1.8118689632371663e-14,
+      "max_angular_residual_kg_m2_s": 1.9161502498635626e-16
+    },
+    {
+      "id": "glass:pull",
+      "material": "glass",
+      "interaction": "pull",
+      "dt_s": 1e-07,
+      "cell_m": 0.05,
+      "density_kg_m3": 2500.0,
+      "young_modulus_pa": 70000000000.0,
+      "force_n": [
+        0.0,
+        1000000.0,
+        0.0
+      ],
+      "solver_wall_s": 0.1415581,
+      "mass_kg": 39.06250000000003,
+      "volume_m3": 0.01562500000000001,
+      "work_j": 4110.255487156803,
+      "kinetic_j": 4101.635491757277,
+      "elastic_j": 0.06617626066087343,
+      "broken_bonds": 96,
+      "components": 2,
+      "removed_bond_energy_j": 8.554048474168772,
+      "integration_error_j": 0.0002293353051121584,
+      "free_cells": 1,
+      "max_energy_residual_j": 2.0905534248161217e-12,
+      "max_momentum_residual_n_s": 5.93618253914359e-13,
+      "max_angular_residual_kg_m2_s": 6.7929938720039884e-18
+    },
+    {
+      "id": "oak:pull",
+      "material": "oak",
+      "interaction": "pull",
+      "dt_s": 1e-07,
+      "cell_m": 0.05,
+      "density_kg_m3": 700.0,
+      "young_modulus_pa": 12000000000.0,
+      "force_n": [
+        0.0,
+        1000000.0,
+        0.0
+      ],
+      "solver_wall_s": 0.1346639,
+      "mass_kg": 10.937500000000007,
+      "volume_m3": 0.01562500000000001,
+      "work_j": 13728.972517719823,
+      "kinetic_j": 13462.410090869078,
+      "elastic_j": 5.2925103530637685,
+      "broken_bonds": 56,
+      "components": 2,
+      "removed_bond_energy_j": 261.2738947030467,
+      "integration_error_j": 0.00397820536861105,
+      "free_cells": 1,
+      "max_energy_residual_j": 4.973806089214605e-12,
+      "max_momentum_residual_n_s": 7.643732120176451e-13,
+      "max_angular_residual_kg_m2_s": 5.921632544403586e-17
+    },
+    {
+      "id": "iron:pull",
+      "material": "iron",
+      "interaction": "pull",
+      "dt_s": 1e-07,
+      "cell_m": 0.05,
+      "density_kg_m3": 7870.0,
+      "young_modulus_pa": 211000000000.0,
+      "force_n": [
+        0.0,
+        1000000.0,
+        0.0
+      ],
+      "solver_wall_s": 0.1463351,
+      "mass_kg": 122.96875000000009,
+      "volume_m3": 0.01562500000000001,
+      "work_j": 197.68941362002994,
+      "kinetic_j": 106.34096354304383,
+      "elastic_j": 47.01658813980535,
+      "broken_bonds": 2,
+      "components": 1,
+      "removed_bond_energy_j": 44.33481409156957,
+      "integration_error_j": 0.0029521543848431975,
+      "free_cells": 0,
+      "max_energy_residual_j": 1.3301360013429075e-11,
+      "max_momentum_residual_n_s": 9.656164788078057e-13,
+      "max_angular_residual_kg_m2_s": 5.967413231531715e-16
+    }
+  ],
+  "recording_bytes": 6614095,
+  "conditions": {
+    "cells": 125,
+    "bonds": 1261,
+    "clamps": 25,
+    "dt_s": 1e-07,
+    "frames": 21,
+    "steps_per_frame": 32,
+    "load_steps": 512,
+    "total_steps": 640,
+    "gravity_m_s2": [
+      0,
+      0,
+      0
+    ],
+    "damping": 0,
+    "work_ceiling_j": 50000
+  },
+  "verification": {
+    "actual_export_and_host_checks": "4/4 pass",
+    "focused_ctest": "3/3 pass",
+    "strict_typescript": "pass",
+    "client_contract_groups": "3/3 pass",
+    "source_registration": "311/311 pass; separate exporter target compiled",
+    "ordinary_browser": "selection, keyboard scrub, completed replay, single material, no final console warnings/errors",
+    "viewport_checks": {
+      "desktop": "default IAB viewport",
+      "landscape": [
+        844,
+        390
+      ],
+      "portrait": [
+        390,
+        844
+      ],
+      "horizontal_overflow": "none"
+    },
+    "physical_phone": "not tested",
+    "full_regression": "not green",
+    "strict_iron_repeat": "four existing failures remain; no controller/law change in this checkpoint"
+  },
+  "scope": "read-only replay of exact CPU samples, not live-world simulation or outcome cache",
+  "limits": [
+    "No self/contact/settling solver in this experiment",
+    "No grain, plasticity, fatigue or calibrated crack work in this wrapper",
+    "High laboratory force, not hand/tool calibration",
+    "Recorded replay, not live world physics"
+  ],
+  "next": [
+    "bounded live experiments",
+    "qualified finite contact/settling",
+    "new shared game shell and auth gateway",
+    "durable manufacturing and ordinary pickup/use/restart",
+    "physical phone and full regression"
+  ],
+  "screenshot_sha256": {
+    "desktop-pull.jpg": "14ca67002e8881db8a51fcc24a97f46e02ef32f23ff10d37110a829890da0464",
+    "portrait-iron.jpg": "9eb12b2fa392cbda3966d2ad0109076d8d63c17fa0721dd42df966bfe9227a2c"
+  }
+}
