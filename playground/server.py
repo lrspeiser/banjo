@@ -26,7 +26,7 @@ import tempfile
 import threading
 import time
 from urllib import error, request
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs
 import uuid
 
 from experiment_language import ROOT, KINDS, LIMITATIONS, SCHEMA, PLANNER_SCHEMA, lower_proposal, lower_and_admit, SYSTEM, compile_plan, validate_plan, request_blockers, admit_plan, plan_cost
@@ -57,6 +57,7 @@ import fabrication_qa
 import gameplay_capabilities
 import tool_use
 import interaction_trace
+import interaction_journal
 import build_manifest
 import placement
 import access_gate
@@ -1377,6 +1378,15 @@ class Handler(BaseHTTPRequestHandler):
             app=self.app
             if path=="/api/build": return self.send(build_manifest.for_app(app))
             if path=="/api/status": return self.send(app.status())
+            if path=="/api/world/interaction-history":
+                owner = player_world.require(app, self.headers.get("X-Banjo-Player")) if getattr(app,"world_id",None) else None
+                query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+                if set(query)-{'before','limit','attempt'} or any(len(v)!=1 for v in query.values()):
+                    raise ValueError('History accepts before, limit and attempt once each')
+                actor = hashlib.sha256(str(owner or 'laboratory').encode()).hexdigest()[:16]
+                return self.send(interaction_journal.history(app,actor,
+                    before=int(query['before'][0]) if 'before' in query else None,
+                    limit=int(query.get('limit',['100'])[0]), attempt=query.get('attempt',[None])[0]))
             if path=="/api/runs": return self.send(app.runs())
             if path=="/api/knowledge":
                 if getattr(app, "world_id", None):

@@ -17,6 +17,8 @@ import threading
 import time
 import uuid
 import build_manifest
+import interaction_journal
+import sqlite3
 
 MAX_BYTES = 8 * 1024 * 1024
 MAX_EVENTS = 64
@@ -100,8 +102,9 @@ def write(app, player, source, event):
                 where.replace(where.with_suffix('.previous.jsonl'))
             with where.open('a', encoding='utf-8') as stream:
                 stream.write(json.dumps(row, separators=(',', ':'), allow_nan=False) + '\n')
+            interaction_journal.append(app, row)
         return True
-    except OSError:
+    except (OSError, sqlite3.Error, ValueError):
         # Limit notices as well as the file. A missing/unwritable diagnostics
         # directory must not flood the normal gameplay log or fail a stroke.
         now=time.monotonic()

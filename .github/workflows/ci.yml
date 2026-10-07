@@ -45,6 +45,7 @@ jobs:
         run: |
           python3 tests/regression_runner_tests.py -v
           python3 tests/build_manifest_tests.py -v
+          python3 tests/interaction_journal_tests.py -v
 
   workshop-fast:
     runs-on: ubuntu-24.04

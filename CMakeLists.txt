@@ -1999,6 +1999,8 @@ if(BANJO_BUILD_TESTS)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/regression_runner_tests.py)
         add_test(NAME banjo_build_manifest_tests
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/build_manifest_tests.py)
+        add_test(NAME banjo_interaction_journal_tests
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/interaction_journal_tests.py)
     endif()
 endif()
 option(BANJO_BUILD_RUST_RUNTIME "Build and test the replacement application runtime" OFF)
