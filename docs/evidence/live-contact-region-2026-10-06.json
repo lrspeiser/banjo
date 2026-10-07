@@ -981,5 +981,7 @@
       "target_angular_error_kg_m2_s": 3.10316769156e-17,
       "wall_s": 0.0070299
     }
-  ]
+  ],
+  "published_implementation_revision": "6e52e6cf8a3106a04794898063541fe83d980ce9",
+  "published_branch": "main"
 }

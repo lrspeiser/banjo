@@ -2,7 +2,7 @@
 
 ## Scope and publication
 
-Experimental CPU reference prepared against main `b58da692151edd649e8b829d94a516fd32a76ac7`. Publication is recorded below. [Pinned source/executable hashes and all 36 comparative records](evidence/live-contact-region-2026-10-06.json) cover this checkpoint. It extends [surface traction transfer](material-surface-contact-checkpoint.md), while retaining the original declared-support and centre-point tests. Gameplay terrain is not migrated and neither demo process is replaced.
+Experimental CPU reference prepared against main `b58da692151edd649e8b829d94a516fd32a76ac7`. Implementation `6e52e6cf8a3106a04794898063541fe83d980ce9` is published on GitHub main; passing boundaries and failing strict gates are distinguished below. [Pinned source/executable hashes and all 36 comparative records](evidence/live-contact-region-2026-10-06.json) cover this checkpoint. It extends [surface traction transfer](material-surface-contact-checkpoint.md), while retaining the original declared-support and centre-point tests. Gameplay terrain is not migrated and neither demo process is replaced.
 
 **Previous-turn classification: progress.** Main gained compiled surface-transfer code, comparative evidence and a verified publication. This turn adds actual live graph selection and exposes a sustained convergence defect; it does not relabel that defect as completed terrain physics.
 
