@@ -2,6 +2,8 @@
 
 October 6, 2026. Baseline main `5d15a10f`. This advances W08 contact geometry and its CPU reference, not terrain activation or a gameplay replacement. PR #2 is merged at its retained `138260d2` head; its checkpoint and remaining conservation/calibration requirements were reviewed. Current main's runtime and frame-control changes are preserved.
 
+Implementation, comparative tests and evidence are published on GitHub main at `84a13604bc6721388f0e87d536131077d24544d3`. This publication note adds no new physical validation.
+
 ## Native query and response boundaries
 
 `JoltWorld::materialShapeContacts` queries an occupied cuboid or sphere against the body's actual native shape. Cuboid faces/corners use their full declared lengths and unit orientation, with zero envelope edge rounding. Existing source-shape rounding remains unchanged. Dimensions, radius, orientation and separation returned by the query reflect the float geometry used by Jolt. The spherical `pointShapeContacts` delegates to the same search/collection/material path, avoiding a second collision implementation.
