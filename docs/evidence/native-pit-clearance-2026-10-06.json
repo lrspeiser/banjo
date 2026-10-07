@@ -1,0 +1,169 @@
+{
+  "schema": "banjo.native-pit-clearance-evidence.v1",
+  "date": "2026-10-06",
+  "source_baseline": "f88abc7df8dfa92b0336934f471a96f2a5d56960",
+  "source_state": "test-only changes against baseline",
+  "environment": {
+    "os": "Windows",
+    "compiler": "MSVC 19.44.35228",
+    "sdk": "10.0.26100",
+    "native_configuration": "Release"
+  },
+  "file_sha256": {
+    "tests/native_tool_fixture.hpp": "b81c02578f8e61a7f08939ceb6efe1990375131c11135258789f1b3619bceb4a",
+    "tests/native_tool_use_tests.cpp": "45488781a72800a312b220a629d80e3a744327a607ca5a0518f184d167f8d157",
+    "tests/workshop_tabs_tests.py": "dab45f2acf835c520a6df5f80120db98687877ed51d1bb7a2c92941cfd665ac6",
+    "build/local-cell-tools/Release/banjo_native_tool_use_tests.exe": "4383450f6952a899dcb865e869d18c92a37b52543d49a13434dff87d2b4363b6",
+    "build/local-cell-tools/Release/banjo_live_world_run.exe": "041099fdb98f38b0d179ceb855bda1033b1b30d9892d65e4c9be0b2cdfa44f5f",
+    "build/local-cell-tools/Release/banjo.dll": "d9034b6d0bc0e3d0e259308f74df647751d98e9f41ad140f42557eff98e42f84",
+    "tests/knowledge_tests.py": "df038b9ad89faa4698cc81e8a56ef0291f137dfa2eb224547742f34c408a75ca"
+  },
+  "setup": "One column initially 60 mm below neighbours, prepared with existing dig API at t=0; setup quantity excluded from tool result; not a physical excavation claim.",
+  "results": [
+    {
+      "column_width_m": 0.1,
+      "contact_work_j": 0.8836910890552122,
+      "dt_s": 0.004166666666666667,
+      "elapsed_s": 0.16666666666666677,
+      "head_width_m": 0.04,
+      "initial_pit_depth_m": 0.06,
+      "lowest_tip_m": 0.6674033189246593,
+      "material": "glass",
+      "reason": "",
+      "released_m3": 2.336324901387024e-05,
+      "released_mass_kg": 0.03738119842219235,
+      "scene_cell_m": 0.02,
+      "target_height_m": 0.69,
+      "tool_mass_kg": 1.6
+    },
+    {
+      "column_width_m": 0.1,
+      "contact_work_j": 0.0,
+      "dt_s": 0.004166666666666667,
+      "elapsed_s": 1.129166666666664,
+      "head_width_m": 0.28,
+      "initial_pit_depth_m": 0.06,
+      "lowest_tip_m": 0.7499990783224605,
+      "material": "glass",
+      "reason": "no_contact",
+      "released_m3": 0.0,
+      "released_mass_kg": 0.0,
+      "scene_cell_m": 0.02,
+      "target_height_m": 0.69,
+      "tool_mass_kg": 3.5200000213623053
+    },
+    {
+      "column_width_m": 0.1,
+      "contact_work_j": 0.6042644745689952,
+      "dt_s": 0.004166666666666667,
+      "elapsed_s": 0.1625000000000001,
+      "head_width_m": 0.04,
+      "initial_pit_depth_m": 0.06,
+      "lowest_tip_m": 0.6718959773768444,
+      "material": "oak",
+      "reason": "",
+      "released_m3": 9.86753951483536e-06,
+      "released_mass_kg": 0.01578806322373794,
+      "scene_cell_m": 0.02,
+      "target_height_m": 0.69,
+      "tool_mass_kg": 0.4479999671875024
+    },
+    {
+      "column_width_m": 0.1,
+      "contact_work_j": 0.0,
+      "dt_s": 0.004166666666666667,
+      "elapsed_s": 1.141666666666664,
+      "head_width_m": 0.28,
+      "initial_pit_depth_m": 0.06,
+      "lowest_tip_m": 0.7499928884552409,
+      "material": "oak",
+      "reason": "no_contact",
+      "released_m3": 0.0,
+      "released_mass_kg": 0.0,
+      "scene_cell_m": 0.02,
+      "target_height_m": 0.69,
+      "tool_mass_kg": 0.9855999680078145
+    },
+    {
+      "column_width_m": 0.1,
+      "contact_work_j": 2.30646706198695,
+      "dt_s": 0.004166666666666667,
+      "elapsed_s": 0.27500000000000024,
+      "head_width_m": 0.04,
+      "initial_pit_depth_m": 0.06,
+      "lowest_tip_m": 0.6475580579778835,
+      "material": "iron",
+      "reason": "",
+      "released_m3": 0.00013856443386616973,
+      "released_mass_kg": 0.22170309418586956,
+      "scene_cell_m": 0.02,
+      "target_height_m": 0.69,
+      "tool_mass_kg": 5.036799959266602
+    },
+    {
+      "column_width_m": 0.1,
+      "contact_work_j": 0.0,
+      "dt_s": 0.004166666666666667,
+      "elapsed_s": 1.154166666666664,
+      "head_width_m": 0.28,
+      "initial_pit_depth_m": 0.06,
+      "lowest_tip_m": 0.7500000906969386,
+      "material": "iron",
+      "reason": "no_contact",
+      "released_m3": 0.0,
+      "released_mass_kg": 0.0,
+      "scene_cell_m": 0.02,
+      "target_height_m": 0.69,
+      "tool_mass_kg": 11.080959910386525
+    }
+  ],
+  "verification": {
+    "native_ctest": {
+      "count": 2,
+      "elapsed_s": 1.79,
+      "exit_code": 0
+    },
+    "strict_repeat_yield": {
+      "exit_code": 1,
+      "failed_fixtures": [
+        "iron pick",
+        "iron shovel",
+        "iron hoe",
+        "iron unfamiliar"
+      ]
+    },
+    "workshop_tabs": {
+      "count": 11,
+      "exit_code": 0,
+      "reproduced_original_failure": true
+    },
+    "source_registration": {
+      "registered": 309,
+      "total": 309,
+      "exclusions": 0,
+      "exit_code": 0
+    },
+    "knowledge_tests": {
+      "count": 54,
+      "exit_code": 0,
+      "native_library": "d9034b6d0bc0e3d0e259308f74df647751d98e9f41ad140f42557eff98e42f84",
+      "original_ci_errors": 4,
+      "original_ci_failures": 1
+    }
+  },
+  "ci_observation": {
+    "run": 37562441113,
+    "source": "f85666f024caf9d11015bafe5f220a9a705e5443",
+    "workshop": "stale Camp stool expected 2.5088 kg, actual inorganic iron source 3.9311 kg",
+    "core": "124 recorded passes and one failed knowledge entry; exit 143 while banjo_valley_live_tests starting; process-termination cause not established",
+    "full_regression_pass": false,
+    "knowledge": "Three guidance fixtures lacked native session.state; repaired fixtures and added a grid-centre advice test."
+  },
+  "limitations": [
+    "No production law/controller or demo change.",
+    "Width changes mass/inertia as well; no artificial fixed-mass comparison.",
+    "Quantity checks do not close energy/momentum/reaction pipeline.",
+    "Three narrow successes and three broad obstructions qualify this prepared dry-soil experiment only.",
+    "Original four iron repeats and complete W00\u2013W17 acceptance remain open."
+  ]
+}

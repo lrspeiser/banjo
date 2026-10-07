@@ -732,6 +732,26 @@ class PersonalToolSourceReceipts(unittest.TestCase):
 
 
 class WorldLearningRouteBoundaries(unittest.TestCase):
+    def test_column_guidance_uses_native_grid_centres_before_survey(self):
+        import learning_routes
+        queried=[]
+        def survey(request):
+            queried.append(request)
+            x,z=request['at']
+            return {'survey':{'on_the_ground':True,'x_m':x,'z_m':z,'ground_m':3,
+                'surface':'sand','sand_m':.4,'water':{'depth_m':0}}}
+        session=types.SimpleNamespace(id='native',room_spec={'terrain':{'surface':'columns'}},
+            state={'terrain':{'grid':{'cell_m':.1,'x0_m':.05,'z0_m':.05}}})
+        app=types.SimpleNamespace(live=types.SimpleNamespace(session=session,act=survey))
+        target=learning_routes._dry_ground(app,[99,0,99],{'reach_m':[1.15,2.0],'lever':{}},
+            {'eyes_m':[4,4.62,7],'facing':[1,0,0]})
+        self.assertAlmostEqual(5.55,target[0]);self.assertAlmostEqual(7.05,target[2])
+        self.assertEqual(3,target[1]);self.assertEqual(1,len(queried))
+        self.assertEqual('native',queried[0]['session'])
+        # The chosen centre, rather than the unsnapped 5.575 m request, is
+        # checked against native resource/water facts before advice is returned.
+        self.assertEqual(queried[0]['at'],[target[0],target[2]])
+
     def test_held_ground_target_uses_player_pose_and_declared_reach(self):
         import learning_routes
         queried=[]
@@ -741,7 +761,7 @@ class WorldLearningRouteBoundaries(unittest.TestCase):
             return {'survey':{'on_the_ground':True,'x_m':x,'z_m':z,'ground_m':3,
                 'surface':'sand','sand_m':.4,'soil_m':1,'water':{'depth_m':0}}}
         app=types.SimpleNamespace(live=types.SimpleNamespace(
-            session=types.SimpleNamespace(id='native'),act=survey))
+            session=types.SimpleNamespace(id='native',state={}),act=survey))
         for reach in ([1.15,2.0],[.4,.8]):
             with self.subTest(reach=reach):
                 target=learning_routes._dry_ground(app,[99,0,99],
@@ -767,7 +787,7 @@ class WorldLearningRouteBoundaries(unittest.TestCase):
                 'survey':{'on_the_ground':True,'x_m':x,'z_m':z,'ground_m':0,
                     'surface':'rock','soil_m':1,'water':{'depth_m':0}}}
         app=types.SimpleNamespace(live=types.SimpleNamespace(
-            session=types.SimpleNamespace(id='native'),act=survey))
+            session=types.SimpleNamespace(id='native',state={}),act=survey))
         use={'reach_m':[1.15,2.0],'lever':{}}
         pose={'eyes_m':[0,1.62,0],'facing':[0,0,1]}
         target=learning_routes._dry_ground(app,[0,0,0],use,pose)
@@ -793,7 +813,7 @@ class WorldLearningRouteBoundaries(unittest.TestCase):
             return {'survey':{'on_the_ground':True,'x_m':x,'z_m':z,'ground_m':0,
                 'surface':'sand' if len(queried)>16 else 'clay','sand_m':.2,'soil_m':1}}
         app=types.SimpleNamespace(live=types.SimpleNamespace(
-            session=types.SimpleNamespace(id='native'),act=survey))
+            session=types.SimpleNamespace(id='native',state={}),act=survey))
         target=learning_routes._dry_ground(app,[0,0,0],
             {'reach_m':[1.15,2.0],'lever':{}},{'eyes_m':[0,1.62,0],'facing':[0,0,1]})
         self.assertEqual(17,len(queried));self.assertEqual([0,0,3.],target)

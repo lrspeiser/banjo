@@ -2,6 +2,8 @@
 
 October 6, 2026. Experimental implementation following main `020e4f5d` and the [native controller checkpoint](runtime-tool-use-checkpoint.md). The isolated Rust worker now owns typed begin/cancel requests, waits for accepted native completion, and retains each original command's measured result. The browser remains on the retained host. Useful repeated excavation, durable state and the complete W00–W17 rewrite remain open.
 
+Implementation, tests and structured evidence are published on GitHub main at `f88abc7df8dfa92b0336934f471a96f2a5d56960`. The subsequent [matched pit experiment](native-pit-clearance-checkpoint.md) records a controlled physical-width contrast and the remaining coupled-contact requirement.
+
 ## Command ownership and completion
 
 `begin_tool_use` accepts only a bounded eye ray. Native code recomputes actor, grip, working-point, material, reach and target eligibility; clients cannot supply a tool point, motion path, work quantity, physics step or snapshot path. The native process must advertise `native_tool_use_version: 1`. The Rust adapter validates the typed `banjo.native-tool-use.v1` state, including phase, time, quantities and refusal vocabulary.

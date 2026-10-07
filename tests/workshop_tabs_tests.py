@@ -152,7 +152,15 @@ class TheTabs(unittest.TestCase):
         self.app.room = SimpleNamespace(spec={"cell_m": 0.05})
         recipes = {t["name"]: t for t in workshop_tabs.recipes(self.app)["templates"]}
         self.assertTrue(recipes["Camp stool"]["readiness"]["ready_as_drawn"])
-        self.assertAlmostEqual(2.5088, recipes["Camp stool"]["materials"][0]["kg"], places=4)
+        camp = recipes["Camp stool"]
+        self.assertEqual(["iron"], [line["material"] for line in camp["materials"]])
+        self.assertEqual((.24, .24, .24, .005, .015), tuple(camp["parameters"][key] for key in
+                         ("width_m", "depth_m", "height_m", "top_thickness_m", "leg_section_m")))
+        # The inorganic opening has a 240 mm square / 5 mm iron top and four
+        # 15 mm square / 235 mm legs. Preserve actual thin rigid dimensions;
+        # the 50 mm installation grid must not thicken them or reuse oak mass.
+        volume_m3 = .24 * .24 * .005 + 4 * .015 * .015 * .235
+        self.assertAlmostEqual(volume_m3 * 7870, camp["materials"][0]["kg"], places=4)
         stool = recipes["stool"]
         self.assertEqual((0.05, 0.06),
                          (stool["parameters"]["top_thickness_m"], stool["parameters"]["leg_section_m"]))

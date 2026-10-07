@@ -126,6 +126,55 @@ void nativeCancellationAndStalePreview() {
         dropped.world->hand().holding.empty(),"drop retained an active physical tool action");
 }
 
+// Declared initial geometry, not a simulated excavation claim: an isolated
+// 100 mm column is already 60 mm below its neighbours. Only physical head
+// width varies. Retain ordinary collision and record actual native outcomes.
+void nativeDeclaredPitClearance(const std::string &material,double width) {
+    auto f=fixture(material,"unfamiliar",false,.75,false,true,width);
+    auto &world=*f.world;
+    const auto setup=world.dig(.65,.15,.65,.15,.05,.06);
+    require(setup.edit.cells.size()==1,"declared pit setup changed neighbouring columns");
+    const double initial_dug=world.environment()->terrain().ledger().dug.total();
+    double tool_mass=0;for(const auto &part:world.poses())tool_mass+=part.mass_kg;
+    f.target={.65,world.environment()->groundHeightAt(.65,.15),.15};
+    require(std::abs(f.target.y-.69)<1e-8,"declared pit does not have its specified depth");
+    std::string why;
+    require(world.beginToolUse(f.eye,f.direction(),2,why),"declared pit use admission refused");
+    double lowest_tip=10;
+    for(int i=0;i<1400 && world.toolUse().active;++i) {
+        world.setNativePlayerWalk("alice",{},0,.5);world.step(1.0/240);
+        for(const auto &point:world.toolPoints())lowest_tip=std::min(lowest_tip,point.tip_m.y);
+    }
+    const auto result=world.toolUse();
+    require(!result.active && world.hand().holding=="handle","declared pit lost grip or failed bounded termination");
+    require(std::abs(world.environment()->terrain().ledger().dug.total()-initial_dug-result.loosened.total())<1e-9,
+        "declared setup material was credited as tool release");
+    double retained_mass=0;for(const auto &part:world.poses())retained_mass+=part.mass_kg;
+    require(std::abs(retained_mass-tool_mass)<1e-10,"declared pit changed tool material mass");
+    double released_volume=0,released_mass=0;
+    const auto released_debris=Json::parse(world.groundDebrisJson());
+    for(const auto &body:released_debris.at("bodies")) {
+        double cell_mass=0;
+        for(const auto &cell:body.at("cells")) {
+            released_volume+=cell.at("volume_m3").get<double>();cell_mass+=cell.at("mass_kg").get<double>();
+        }
+        require(std::abs(cell_mass-body.at("mass_kg").get<double>())<1e-8,"declared pit debris lost constituent mass");
+        released_mass+=cell_mass;
+    }
+    require(std::abs(released_volume-result.loosened.total())<1e-9,"declared pit result differs from actual released cells");
+    require(std::abs(world.environment()->terrain().residual().total())<1e-9,"declared pit terrain quantity ledger failed closure");
+    std::cout<<"CLEARANCE_EVIDENCE "<<Json{{"material",material},{"head_width_m",width},
+        {"column_width_m",.1},{"initial_pit_depth_m",.06},{"dt_s",1.0/240},
+        {"scene_cell_m",.02},{"lowest_tip_m",lowest_tip},{"target_height_m",.69},
+        {"tool_mass_kg",tool_mass},{"released_mass_kg",released_mass},
+        {"released_m3",result.loosened.total()},{"contact_work_j",result.contact_work_j},
+        {"reason",result.reason},{"elapsed_s",world.time_s()}}.dump()<<"\n";
+    if(width<.1)require(result.reason.empty() && result.loosened.total()>0,
+        "narrow physical head could not cut the declared narrow pit");
+    else require(result.loosened.total()==0 && !result.reason.empty(),
+        "wide physical head passed through untouched neighbouring terrain");
+}
+
 void nativeBuriedInterruption(const std::string &material,bool drop) {
     auto f=fixture(material,"pick",false,.75,false,true);auto &world=*f.world;std::string why;
     require(world.beginToolUse(f.eye,f.direction(),2,why),"buried interruption did not start");
@@ -215,6 +264,7 @@ int main(int argc,char **argv) {
         controllerOracles();nativeCancellationAndStalePreview();
         for(const auto &material:{"glass","oak","iron"}) {
             nativeBuriedInterruption(material,false);nativeBuriedInterruption(material,true);
+            nativeDeclaredPitClearance(material,.04);nativeDeclaredPitClearance(material,.28);
         }
         for(const auto &material:{"glass","oak","iron"})
             for(const auto &family:{"pick","shovel","hoe","unfamiliar"})nativeCycle(material,family);

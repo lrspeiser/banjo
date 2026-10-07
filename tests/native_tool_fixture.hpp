@@ -12,8 +12,8 @@ struct Fixture {
     Vec3 eye{0,2.37,0},target{.65,.75,.2};
     Vec3 direction() const { return normalized(target-eye); }
 };
-inline Fixture fixture(const std::string &material,const std::string &family,bool obstruction=false,double soil=.75,bool wet=false,bool physical=false) {
-    const double width=family=="shovel"?.28:family=="hoe"?.20:family=="unfamiliar"?.16:.12;
+inline Fixture fixture(const std::string &material,const std::string &family,bool obstruction=false,double soil=.75,bool wet=false,bool physical=false,double declared_width_m=0) {
+    const double width=declared_width_m>0?declared_width_m:family=="shovel"?.28:family=="hoe"?.20:family=="unfamiliar"?.16:.12;
     Json scene={{"terrain",{{"surface","columns"},{"generate",{{"kind","flat"},{"nx",32},{"nz",32},
         {"cell_m",.1},{"soil_m",soil},{"sand_m",0},{"discharge_m3_s",0}}}}},
         {"bodies",Json::array({{{"name","head"},{"shape","box"},{"material",material},
