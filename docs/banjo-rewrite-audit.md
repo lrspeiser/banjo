@@ -1,6 +1,6 @@
 # Banjo codebase audit and rewrite specification
 
-**Audit date:** October 6, 2026. **Original source baseline:** `5988f8b970b4e165216cdaaf42599836e064cdf6` on main. **Current review baseline:** `fbeb020517e5c560089950054e63e1d0a1910bfd`. Sections 1–22 preserve the original architecture audit; [section 23](#23-current-review-rewrite-progress-and-remaining-defects) reviews the implementation added since then and supersedes its next-step/status statements. This document update changes no simulation law and deletes no production code.
+**Audit date:** October 6, 2026. **Original source baseline:** `5988f8b970b4e165216cdaaf42599836e064cdf6` on main. **Expanded inventory baseline:** `fbeb020517e5c560089950054e63e1d0a1910bfd`. Sections 1–22 preserve the original architecture audit; [section 23](#23-current-review-rewrite-progress-and-remaining-defects) reviews the subsequent foundations. [Section 24](#24-carry-and-player-start-review-follow-up) updates the carry/startup findings against source baseline `3a9df0f1`. Inventory reports remain frozen evidence; no production code is deleted by this audit.
 
 This document answers three questions: why the current gameplay remains unreliable despite many repairs, what the replacement must change, and which code can be removed without losing useful capabilities. It covers the browser, Python host, native C++ engine, authoring, persistence, multiplayer, AI, tests and operations. The [original machine-readable inventory](evidence/rewrite-audit-2026-10-06.json) preserves the first baseline. The [expanded current inventory](evidence/rewrite-audit-current-2026-10-06.json) includes Rust, browser templates/styles, build/deployment configuration and textual fixtures/declarations. Both contain file hashes, line counts, Python imports, duplicate function bodies and static reference candidates. The [audit tool](../scripts/audit-codebase.py) regenerates an inventory without starting or stopping a server.
 
@@ -9,6 +9,7 @@ This document answers three questions: why the current gameplay remains unreliab
 ### Reading guide
 
 - [Current review and executable backlog](#23-current-review-rewrite-progress-and-remaining-defects): what exists now, what remains and what is safe to remove
+- [Carry and player-start follow-up](#24-carry-and-player-start-review-follow-up): measured carry progress, the startup race and remaining controller boundaries
 - [Decisions](#1-decisions), [scope/evidence](#2-scope-and-evidence) and [priorities](#5-findings-and-priorities)
 - [Tool/input rewrite](#6-tool-pickup-and-input-rewrite) and [matter/physics rewrite](#7-matter-ground-thin-geometry-and-contact)
 - [Removal ledger](#8-code-removal-ledger): six small cleanup candidates, consolidation and twelve gated retirement paths
@@ -1007,6 +1008,34 @@ The [CI concurrency comments](../.github/workflows/ci.yml#L3) promise a verdict 
 - Ran source registration (306/306) and current CTest discovery (252 listed, 148 unresolved); did not build/run native physics or browser regressions for this document.
 - Validated the refreshed inventory selection/reproducibility, local links/line bounds, Python syntax and changed-file scope before publication.
 - Preserved the original evidence report and existing simulation/demo/player data. No deletion, new law, performance measurement or complete rewrite claim is made here.
+
+## 24. Carry and player-start review follow-up
+
+This implementation review follows the expanded audit published at `3a9df0f1`. It changes the status of C01 and adds a concrete browser authority failure. The [carry checkpoint](runtime-carry-checkpoint.md) records the model, material comparison, exact build artifacts, negative cases and verification commands. The original inventory counts and earlier test results describe their recorded baselines rather than these later files.
+
+### C01: carry is partially implemented; retirement stays blocked
+
+The isolated worker now captures the actual grip/wrist frame relative to its physical actor and transforms desired controller targets inside native stepping. Bounded grip forces and wrist torques, with actor reactions, move the assembly. The controller never writes held-body position or velocity. Desired angular velocity follows actual actor spin rather than damping every tool against a stationary world frame. The heading controller uses the measured assembly yaw inertia about the actor while retaining the previous total torque cap.
+
+Read-only pickup also checks necessary weight and load-moment bounds before acquiring custody. An overweight or overleveraged item returns `insufficient_strength`; successful pickup still needs accepted physical stepping before its pending command completes. Whole native reopen retains a versioned carry frame; invalid/unknown frames fail exact restore. Old world-relative hands remain readable. Separate actors retain separate carry controllers through travel and one actor's removal.
+
+Matched glass/oak/iron joined fixtures at 40 mm and dt 1/240 s now walk and turn while walking, with actual tool orientation checked. This qualifies an intact rigid carry slice. It does **not** qualify bending, fracture, fatigue, zero idle excavation in an excavatable worker scene, full conservation, safe floor-tool acquisition posture, collision clearance, in-place yaw, private stowing, durable Rust restart or ordinary browser use of the new worker. The smaller pick/shovel/hoe/unfamiliar pickup fixtures remain admission tests; their names do not establish productive tool-family behavior. C02 and the remaining W05–W17 work still apply. R02/R03 cannot retire on this evidence.
+
+### C14: browser startup and silent locomotion substitution
+
+The retained client could call `/api/world/player/walk` before its first stance report reached the authenticated host. The host correctly refused a player with no reported stance. The client then spent its retry interval moving the camera through a different controller, although the Menu continued to say native body. A camera-distance assertion could therefore pass while the server had no physical actor. This is another example of duplicated authority hiding a refused command.
+
+The regression initially failed intermittently: four host cases passed, while the new-player browser journey moved its eye without a native actor. Passing repeats alone did not resolve that failure. A deterministic browser fixture then held the first stance request. Serving the original `3a9df0f1` client against the same current native engine produced a premature native request and failed the new assertion. This isolates the startup ordering defect from the new carry forces.
+
+The retained-client repair gates native admission on an acknowledged stance for the current session, prevents stepping while a replacement room is opening, discards old-session walk results, exposes the actual refusal, and keeps native movement bound to the physical body during refusal/retry. Explicit Menu camera modes remain available. The strengthened journey delays the first stance, injects a refused body response, verifies zero unbodied camera travel, restores the real endpoint, and requires the actual actor to move before testing God mode. No delay or numerical tolerance was relaxed to mask the original failure.
+
+For the replacement client, make these invariants part of the protocol: Join must return an admitted or explicit pending actor; observations must name their session/epoch; a native fault cannot change locomotion laws; camera movement alone is never proof of actor travel. Reconnect, lost-body recovery, world replacement, delayed replies and touch use require the same ownership checks. Initial actor placement should become a server-owned spawn/resume decision under C07, replacing the retained host's reported-stance bootstrap when browser migration is complete.
+
+### Deletion and remaining rewrite scope
+
+No D01–D06 definition or R01–R12 subsystem has been removed in this checkpoint. The six small unused helpers remain the only immediate removal candidates after their focused gates. The browser fallback branch has been replaced because its authority conflict is reproduced; this does not authorize deleting explicitly selectable camera modes, the old host, reference laboratories or saved data. The full W00–W17 rewrite, C02–C13 gaps, material qualification and sustained excavation-speed acceptance remain required.
+
+Verification covers the focused native/Rust gates and the host/browser checks recorded in the carry checkpoint. It is not a full regression result, deployment, physical-phone acceptance, or a claim that the user's `C:/play` demo contains these changes.
 
 ## References and reproduction
 

@@ -80,7 +80,8 @@ namespace {
                                 const Vec3 &wanted_at, const Vec3 &wanted_velocity,
                                 const Quat &wanted_facing, double strength_n,
                                 double torque_n_m, const Vec3 &gravity,
-                                double movement_rad_s, double wrist_rad_s) {
+                                double movement_rad_s, double wrist_rad_s,
+                                const Vec3 &wanted_angular_velocity_rad_s) {
     const RigidSnapshot &now = held.motion;
     const Vec3 arm = now.orientation_world.rotate(grip_local);
     const Vec3 grip = now.center_of_mass_world_m + arm;
@@ -126,8 +127,11 @@ namespace {
     // answer the turn the grip force itself puts about the centre of mass:
     // what the wrist supplies is what is left after the grip's own moment.
     const Vec3 turn = gripTurnBetween(now.orientation_world, wanted_facing);
-    const Vec3 wanted = (wrist_rad_s * wrist_rad_s) * turn -
-                        (2.0 * kDamping * wrist_rad_s) * now.angular_velocity_rad_s;
+    // Damping follows the desired frame's spin. A body-relative carry must
+    // not brake the actor's actual turning as if the wrist were world-fixed.
+    // World-fixed hands/strokes retain their existing zero-spin default.
+    const Vec3 wanted = (wrist_rad_s * wrist_rad_s) * turn +
+                        (2.0 * kDamping * wrist_rad_s) * (wanted_angular_velocity_rad_s - now.angular_velocity_rad_s);
     Vec3 torque = held.inertia_world_kg_m2 * wanted - cross(arm, force);
     const double twist = length(torque);
     if (twist > torque_n_m && twist > 0.0) torque = (torque_n_m / twist) * torque;

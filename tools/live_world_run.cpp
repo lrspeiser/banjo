@@ -254,7 +254,8 @@ nlohmann::json handJson(const LiveHand &hand) {
                        {"target_m", vec(hand.target_m)}, {"grip_m", vec(hand.grip_m)},
                        {"grip_velocity_m_s", vec(hand.grip_velocity_m_s)},
                        {"force_n", vec(hand.force_n)}, {"work_j", tidy(hand.work_j)},
-                       {"stroking", hand.stroking}, {"stroke_ended", hand.stroke_ended}};
+                       {"stroking", hand.stroking}, {"stroke_ended", hand.stroke_ended},
+                       {"carrying_with_native_player", hand.carrying_with_native_player}};
     if (hand.stroking) {
         out["stroke_along_m"] = tidy(hand.stroke_along_m);
         out["stroke_length_m"] = tidy(hand.stroke_length_m);
@@ -1245,7 +1246,7 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
         if (!impact.declined.empty()) said["declined"] = impact.declined;
         impacts.push_back(std::move(said));
     }
-    nlohmann::json state = {{"ok", true}, {"bulk_transfer_receipts", 1}, {"pickup_admission_version", 1}, {"t", world.time_s()}, {"stepped_back", world.steppedBack()},
+    nlohmann::json state = {{"ok", true}, {"bulk_transfer_receipts", 1}, {"pickup_admission_version", 1}, {"native_carry_version", 1}, {"t", world.time_s()}, {"stepped_back", world.steppedBack()},
             {"cell_size_m", world.cellSize()}, {"geometry", with_geometry},
             // `partial` true means bodies missing from this reply are unchanged,
             // not gone; `gone` names the ones that really did go. `count` is how
@@ -1922,6 +1923,9 @@ int main(int argc, char **argv) {
                         command.at("max_m").get<double>());
                     if(op=="pickup" && admission.admitted && !world->wield(name,admission.grip_world_m)) {
                         admission.admitted=false;admission.reason="native_refused";
+                    }
+                    if(op=="pickup" && admission.admitted && !world->carryWithNativePlayer()) {
+                        world->release();admission.admitted=false;admission.reason="native_refused";
                     }
                     const auto &g=admission.grip_world_m;
                     reply["pickup"]={{"admitted",admission.admitted},{"reason",admission.reason},

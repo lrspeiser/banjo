@@ -60,6 +60,12 @@ void sharedGripAnalyticalOracles() {
         "point effective mass does not match translation plus rotational response");
     const auto pull=gripPull(body,{},{.01,0,0},{},{},800,60,{});
     require(std::abs(pull.force.x-160)<1e-12&&length(pull.torque)==0,"centre grip spring force oracle");
+    body.motion.angular_velocity_rad_s={0,2,0};
+    const auto turning=gripPull(body,{},{},{},{},800,60,{},100,100,{0,2,0});
+    require(length(turning.force)==0&&length(turning.torque)==0,"co-moving wrist frame invented a braking torque");
+    const auto fixed=gripPull(body,{},{},{},{},800,60,{},100,100);
+    require(fixed.torque.y==-60,"world-fixed wrist lost its bounded damping");
+    body.motion.angular_velocity_rad_s={};
     const auto full=gripPull(body,{},{2,0,0},{},{},800,60,{});
     require(std::abs(full.force.x-800)<1e-12,"hand force cap");
     const Quat facing{std::cos(.05),0,0,std::sin(.05)};

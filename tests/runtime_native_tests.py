@@ -15,12 +15,13 @@ import tempfile
 import threading
 import time
 import unittest
+import math
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class Worker:
-    def __init__(self, native, runtime, material='iron'):
+    def __init__(self, native, runtime, material='iron', block_size=.1):
         self.closed = False
         self.expected_returncode = 0
         self.temp = tempfile.TemporaryDirectory()
@@ -30,7 +31,7 @@ class Worker:
         scene.write_text(json.dumps({'bodies':[
             {'name':'floor','shape':'box','material':'iron','dimensions_m':[8,.2,8],
              'center_m':[0,-.1,0],'anchored':True},
-            {'name':'test-block','shape':'box','material':material,'dimensions_m':[.2,.2,.2],
+            {'name':'test-block','shape':'box','material':material,'dimensions_m':[block_size]*3,
              'center_m':[0,.3,1],'anchored':False}]}),encoding='utf-8')
         self.child = subprocess.Popen([str(runtime),'--native',str(native),'--scene',str(scene),
             '--cell','0.05','--world','test-world','--actors','alice,bob'],
@@ -119,8 +120,8 @@ class NativeOwner(unittest.TestCase):
         if not cls.native.is_file() or not cls.runtime.is_file():
             raise AssertionError('Build both native and Rust targets and supply BANJO_LIVE_ENGINE/BANJO_RUNTIME_ENGINE; this gate cannot skip')
 
-    def worker(self, material='iron'):
-        worker=Worker(self.native,self.runtime,material)
+    def worker(self, material='iron', block_size=.1):
+        worker=Worker(self.native,self.runtime,material,block_size)
         self.addCleanup(worker.close)
         self.assertEqual(worker.ready['status'],'ready')
         return worker
@@ -236,11 +237,43 @@ class NativeOwner(unittest.TestCase):
         self.assertEqual(worker.pickup(other,'bob')['outcome']['status'],'pending')
         self.assertEqual(worker.completion()['outcome']['status'],'applied')
 
+    def test_pickup_carries_actual_matter_with_native_actor_travel(self):
+        for material in ('glass','oak','iron'):
+            with self.subTest(material=material):
+                worker=self.worker(material);worker.join()
+                self.assertEqual(worker.ready['native']['native_carry_version'],1)
+                time.sleep(.1)
+                before=worker.inspect()['outcome']['snapshot']
+                self.assertEqual(worker.pickup(before)['outcome']['status'],'pending')
+                held=worker.completion()['outcome']
+                self.assertEqual(held['status'],'applied')
+                start=held['snapshot'];since=start['observed_simulation_s']
+                deadline=time.monotonic()+8
+                current=start
+                while current['observed_simulation_s']-since<1.5 and time.monotonic()<deadline:
+                    result=worker.request({'kind':'move','velocity_m_s':[1.5,0,0],'heading_rad':0,'jump':False})['outcome']
+                    self.assertEqual(result['status'],'applied')
+                    current=result['snapshot']
+                    self.assertEqual(current['own_hand']['holding'],'test-block')
+                    self.assertTrue(current['own_hand']['carrying_with_native_player'])
+                    time.sleep(.08)
+                self.assertGreaterEqual(current['observed_simulation_s']-since,1.5)
+                self.assertEqual(worker.request({'kind':'move','velocity_m_s':[0,0,0],'heading_rad':0,'jump':False})['outcome']['status'],'applied')
+                travel=current['native_players']['alice']['position_m'][0]-start['native_players']['alice']['position_m'][0]
+                self.assertGreater(travel,1.5)
+                old=next(b for b in start['bodies'] if b['name']=='test-block')
+                new=next(b for b in current['bodies'] if b['name']=='test-block')
+                self.assertGreater(new['position_m'][0]-old['position_m'][0],1.5)
+                self.assertEqual(new['mass_kg'],old['mass_kg'])
+                hand=current['own_hand']
+                self.assertLess(math.dist(hand['grip_m'],hand['target_m']),.1)
+                self.assertFalse(worker.request({'kind':'drop'})['outcome']['snapshot']['own_hand']['carrying_with_native_player'])
+                worker.close()
     def test_matched_material_fixture_retains_native_mass_and_same_timestep(self):
         masses={}
         for material in ('glass','oak','iron'):
             with self.subTest(material=material):
-                worker=self.worker(material);worker.join()
+                worker=self.worker(material,block_size=.2);worker.join()
                 observed=worker.inspect()
                 block=next(b for b in observed['outcome']['snapshot']['bodies'] if b['name']=='test-block')
                 self.assertEqual(block['material'],material)
@@ -251,6 +284,14 @@ class NativeOwner(unittest.TestCase):
                 # close is idempotent for addCleanup below.
         self.assertLess(masses['oak'],masses['glass']);self.assertLess(masses['glass'],masses['iron'])
         print('Matched fixture masses kg:',json.dumps(masses,sort_keys=True))
+
+    def test_overloaded_physical_carry_is_refused_before_custody_changes(self):
+        worker=self.worker('iron',block_size=.2);worker.join()
+        time.sleep(.1)
+        result=worker.pickup(worker.inspect()['outcome']['snapshot'])['outcome']
+        self.assertEqual(result['status'],'rejected')
+        self.assertEqual(result['reason'],'insufficient_strength')
+        self.assertEqual(result['snapshot']['own_hand']['holding'],'')
 
 
 if __name__=='__main__':unittest.main()

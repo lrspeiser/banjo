@@ -153,6 +153,7 @@ async function api(path, body, renewed = false) {
 
 const world = {
   session: null,
+  poseReportedSession: null, // first acknowledged stance before native-body admission
   bodies: new Map(),      // name -> { mesh, material, dims, anchored }
   fading: [],             // pieces on their way out, being collected
   stock: new Map(),       // material -> { kg, pieces }
@@ -8331,7 +8332,10 @@ function walkNatively(direction, running, jump, dt = 1 / 60) {
   if (jump && !nativeBody.jumpAsked) nativeBody.jump = true;
   nativeBody.jumpAsked = !!jump;          // one jump per press of Space
   const speed = running ? NATIVE_RUN_M_S : NATIVE_WALK_M_S;
-  if (!nativeBody.pending && now - nativeBody.sent > NATIVE_SEND_S * 1000 && world.session) {
+  const session = world.session;
+  const retryAfter = nativeBody.refused ? NATIVE_RETRY_MS : NATIVE_SEND_S * 1000;
+  if (!world.opening && world.poseReportedSession === session && session
+      && !nativeBody.pending && now - nativeBody.sent > retryAfter) {
     nativeBody.pending = true; nativeBody.sent = now;
     const v = direction.lengthSq() > 0 ? direction.clone().normalize().multiplyScalar(speed) : new THREE.Vector3();
     // The body's heading is its own +z; the eye's forward is -z, turned by yaw.
@@ -8339,9 +8343,14 @@ function walkNatively(direction, running, jump, dt = 1 / 60) {
     api("/api/world/player/walk", { session: world.session, velocity_m_s: [v.x, 0, v.z],
                                     heading_rad: Math.atan2(-Math.sin(yaw), -Math.cos(yaw)),
                                     ...(leap ? { jump: true } : {}) })
-      .then((reply) => { nativeBody.state = reply.native; nativeBody.at = performance.now();
+      .then((reply) => { if (world.session !== session) return;
+                         if (!reply.native?.position_m) throw new Error("No native body was returned");
+                         nativeBody.state = reply.native; nativeBody.at = performance.now();
                          nativeBody.eyes = reply.eyes_above_center_m ?? .77; nativeBody.refused = null; })
-      .catch((error) => { nativeBody.refused = String(error.message || error); })
+      .catch((error) => { if (world.session !== session) return;
+                         const reason = String(error.message || error);
+                         if (nativeBody.refused !== reason) lastAction(reason, "refused");
+                         nativeBody.refused = reason; })
       .finally(() => { nativeBody.pending = false; });
   }
   const body = nativeBody.state;
@@ -8409,9 +8418,9 @@ function walk(dt) {
   const shifted = keys.has("ShiftLeft") || keys.has("ShiftRight");
   const jump = BINDINGS.up.keys.some((k) => keys.has(k));
   if (movementMode === "fly" && jump) move.y += shifted ? -speed : speed;
-  // A body the server will not give (a room without one, a lost reply) is
-  // not a frozen view: walk as the camera and ask again in a few seconds.
-  if (movementMode === "native" && !(nativeBody.refused && performance.now() - nativeBody.sent < NATIVE_RETRY_MS)) {
+  // Native mode always follows the physical body. A refused or pending spawn
+  // cannot silently switch to camera movement with different collision laws.
+  if (movementMode === "native") {
     walkNatively(move, running, jump, dt); return;
   }
   // And where the water is going, as far as it has hold of them.
@@ -10796,7 +10805,7 @@ async function tickWatchedCharacter() {
 async function tick() {
   if (watchedId) { await tickWatchedCharacter(); return; }
   if (document.hidden) { world.lastTick = 0; return; }
-  if (!world.session || world.busy || world.paused) return;
+  if (!world.session || world.opening || world.busy || world.paused) return;
   // Waiting out a request that got no answer before asking again.
   if (performance.now() < world.retryAt) return;
   world.busy = true;
@@ -10878,6 +10887,7 @@ async function tick() {
       ask.person = whereIAm();
     const heldAtRequest = world.held;
     let state = await act("step", ask);
+    if (ask.person && world.session === driving) world.poseReportedSession = driving;
     if (worldId) showPlayers(state.players);
     // The pins too: they only come with a step when their set changes, and
     // the change may have been in the reply that was lost.
@@ -12582,6 +12592,8 @@ async function open({ again = false } = {}) {
   // What the room being replaced did since its last report, as its own.
   traceOldWorld();
   world.opening = true;
+  world.poseReportedSession = null;
+  nativeBody.state = null; nativeBody.eye = null; nativeBody.refused = null;
   $("panel-state").textContent = "Opening the room…";
   const qa = qaBuild();
   showBuild(qa);
@@ -13007,6 +13019,8 @@ window.banjoRoom = {
     session: world.session,
     player_id: playerId,
     player_name: playerName,
+    movement: { mode: movementMode, pending: nativeBody.pending,
+                refused: nativeBody.refused, native: nativeBody.state },
     avatars: avatars.size,
     paused: !!world.paused,
     scene: world.scene || null,

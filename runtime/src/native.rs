@@ -127,7 +127,8 @@ impl NativeProcess {
     pub fn identity(&self) -> Value {
         json!({"pid":self.child.id(),"selected_file_sha256":self.selected_file_sha256,
             "build_provenance":"unrecorded","actual_abi":null,
-            "pickup_admission_version":self.state["pickup_admission_version"]})
+            "pickup_admission_version":self.state["pickup_admission_version"],
+            "native_carry_version":self.state["native_carry_version"]})
     }
 
     fn receive(&mut self) -> Result<Value, Refusal> {
@@ -196,7 +197,7 @@ impl Kernel for NativeProcess {
         self.call(json!({"op":"release","actor":actor}))
     }
     fn pickup(&mut self, actor: &str, instance: &str, ray: &Ray) -> Result<(), Refusal> {
-        if self.state["pickup_admission_version"] != 1 {
+        if self.state["pickup_admission_version"] != 1 || self.state["native_carry_version"] != 1 {
             return Err(Refusal::UnsupportedCapability);
         }
         self.call(json!({"op":"pickup","actor":actor,"name":instance,

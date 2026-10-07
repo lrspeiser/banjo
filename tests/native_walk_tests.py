@@ -208,7 +208,22 @@ class NativeWalk(unittest.TestCase):
         # As a new player: nothing chosen yet, so the game's own default.
         page.send('Page.addScriptToEvaluateOnNewDocument', {'source':
             f'localStorage.setItem("banjo.player.{world}",{json.dumps(me["token"])});'
-            'localStorage.removeItem("banjo.movement");'})
+            'localStorage.removeItem("banjo.movement");'
+            # Hold the first stance report, then refuse walking explicitly.
+            # Neither condition may substitute a nonphysical camera walk.
+            'window.__walkRequests=0;window.__walkRefusals=0;window.__forceWalkRefusal=true;'
+            'window.__initialPoseWaiting=false;'
+            'const poseGate=new Promise(resolve=>window.__releaseInitialPose=resolve);'
+            'const originalFetch=window.fetch;let gated=false;'
+            'window.fetch=async(...args)=>{const path=String(args[0]);'
+            'if(path==="/api/live/act" && !gated && args[1]?.body'
+            ' && JSON.parse(args[1].body).op==="step"){'
+            'gated=true;window.__initialPoseWaiting=true;await poseGate;}'
+            'if(path==="/api/world/player/walk"){window.__walkRequests++;'
+            'if(window.__forceWalkRefusal){window.__walkRefusals++;'
+            'return new Response(JSON.stringify({error:"Body admission temporarily refused"}),'
+            '{status:400,headers:{"Content-Type":"application/json"}});}}'
+            'return originalFetch(...args);};'})
         page.send('Page.navigate', {'url': self.base + f'/world?world={world}'})
         def wait(expression, seconds=40):
             until = time.monotonic() + seconds
@@ -223,14 +238,35 @@ class NativeWalk(unittest.TestCase):
         wait('window.banjoRoom?.ready()')
         self.assertEqual('native', page.evaluate('document.querySelector("#game-menu-movement select").value'))
         self.assertIn('Body', page.evaluate('document.querySelector("#game-menu-movement select").selectedOptions[0].textContent'))
-        # Walking moves the body, and the eye goes with it.
+        wait('window.__initialPoseWaiting')
         page.evaluate('window.__from=banjoRoom.camera.position.clone();'
                       'dispatchEvent(new KeyboardEvent("keydown",{code:"KeyW",key:"w"}))')
+        time.sleep(.4)
+        self.assertEqual(0, page.evaluate('window.__walkRequests'), 'native spawn raced the unacknowledged stance')
+        self.assertLess(page.evaluate('banjoRoom.camera.position.distanceTo(__from)'), .001,
+                        'waiting for the first stance moved an unbodied camera')
+        self.assertIsNone((app.live.session.state.get('native_players') or {}).get(me['id']))
+        page.evaluate('window.__releaseInitialPose()')
+        wait('banjoRoom.status().movement.refused')
+        self.assertEqual('Body admission temporarily refused', page.evaluate('banjoRoom.status().movement.refused'))
+        time.sleep(.4)
+        self.assertLess(page.evaluate('banjoRoom.camera.position.distanceTo(__from)'), .001,
+                        'refused native admission fell back to camera walking')
+        self.assertIsNone((app.live.session.state.get('native_players') or {}).get(me['id']))
+        page.evaluate('window.__forceWalkRefusal=false')
+        wait('banjoRoom.status().movement.native?.position_m', 10)
+        native_start = (app.live.session.state.get('native_players') or {}).get(me['id'])
+        self.assertIsNotNone(native_start, 'the recovered page acquired the real native body')
+        page.evaluate('window.__from=banjoRoom.camera.position.clone()')
+        # Walking moves the body, and the eye goes with it.
         time.sleep(3)
         page.evaluate('dispatchEvent(new KeyboardEvent("keyup",{code:"KeyW",key:"w"}))')
         wait('Math.hypot(banjoRoom.camera.position.x-__from.x,banjoRoom.camera.position.z-__from.z)>1', 10)
         native = (app.live.session.state.get('native_players') or {}).get(me['id'])
         self.assertIsNotNone(native, 'the page walked a native body')
+        self.assertGreater(math.hypot(native['position_m'][0]-native_start['position_m'][0],
+                                      native['position_m'][2]-native_start['position_m'][2]), 1,
+                           'the native actor itself moved, not only its rendered eye')
         # God mode, from the Menu: the camera flies free of the body.
         page.evaluate('(s=>{s.value="fly";s.dispatchEvent(new Event("change",{bubbles:true}))})'
                       '(document.querySelector("#game-menu-movement select"))')

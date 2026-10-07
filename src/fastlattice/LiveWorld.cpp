@@ -3308,6 +3308,11 @@ struct LiveWorld::Impl {
     // one working set per player and selects it around commands and each step.
     // This keeps the established stroke, haul and work laws identical for all
     // players while the rigid world itself is stepped only once.
+    struct NativeCarry {
+        Vec3 grip_actor_local_m{};
+        Quat facing_actor_local{};
+    };
+    std::optional<NativeCarry> native_carry;
     struct HandContext {
         std::size_t holding{static_cast<std::size_t>(-1)};
         Vec3 held_at{}, held_velocity{}, grip_local{}, hand_force{};
@@ -3319,6 +3324,7 @@ struct LiveWorld::Impl {
         double hand_work_j{}, let_go_at_s{-1.0}, let_go_work_j{};
         Vec3 hand_applied_n{}, haul_pushed{}, let_go_velocity{};
         HandStep hand_step;
+        std::optional<NativeCarry> native_carry;
     };
     std::map<std::string, HandContext> hands;
     std::string selected_hand;
@@ -3345,11 +3351,42 @@ struct LiveWorld::Impl {
         const Vec3 shoulder = body.center_of_mass_world_m + body.orientation_world.rotate(Vec3{0, kShoulderAboveCenterM, 0});
         return length(grip-shoulder) <= kArmReachM;
     }
+    void updateNativeCarry() {
+        if (!native_carry) return;
+        const auto own = native_players.find(selected_hand);
+        if (own == native_players.end() || !wielding || holding == static_cast<std::size_t>(-1)) {
+            native_carry.reset();
+            return;
+        }
+        const auto body = world->snapshot(own->second.id);
+        const Vec3 offset = body.orientation_world.rotate(native_carry->grip_actor_local_m);
+        // Desired hand frames, never a rigid-body pose/velocity assignment.
+        // The existing grip force/torque and its equal reaction do the work.
+        held_at = body.center_of_mass_world_m + offset;
+        held_velocity = body.linear_velocity_m_s + cross(body.angular_velocity_rad_s, offset);
+        held_facing = composeTurns(body.orientation_world, native_carry->facing_actor_local);
+    }
+    [[nodiscard]] bool nativeCarryLoadSupported(const std::string &actor, const std::vector<std::size_t> &members) const {
+        const auto own = native_players.find(actor);
+        if (own == native_players.end()) return false;
+        const auto body = world->snapshot(own->second.id);
+        Vec3 load{}, moment{};
+        for (const auto member : members) {
+            const auto part = world->mechanicalState(body_of[member]);
+            const Vec3 weight = part.mass_kg * request.gravity_m_s2;
+            load = load + weight;
+            moment = moment + cross(part.motion.center_of_mass_world_m - body.center_of_mass_world_m, weight);
+        }
+        // Necessary quasi-static limits, not a certificate of dynamic balance.
+        // Use the actual assembly mass/lever and existing actor/hand caps.
+        return length(load) <= hand_strength_n && std::hypot(moment.x, moment.z) <= kWalkMostTorqueNm;
+    }
     std::map<std::string, Vec3> ground_aims;   // by actor: setGroundAim
     std::map<std::string, std::optional<Vec3>> ground_actions;
     // The walk controller (setNativePlayerWalk), worked out for one step from
     // where the body is now. Sets its contacts frictionless while it drives.
-    void walkPlayer(NativePlayer &player, const RigidSnapshot &now, double load_y_n, Vec3 &force, Vec3 &torque,
+    void walkPlayer(NativePlayer &player, const RigidSnapshot &now, double load_y_n, double carry_yaw_inertia,
+                    Vec3 &force, Vec3 &torque,
                     std::optional<MatterBodyId> &under, Vec3 &under_at) {
         force = {}; torque = {}; under.reset();
         player.supported = false; player.swimming = false; player.support.clear(); player.traction_used = 0;
@@ -3494,8 +3531,13 @@ struct LiveWorld::Impl {
                 const Vec3 ahead = now.orientation_world.rotate(Vec3{0, 0, 1});
                 const double yaw = std::atan2(ahead.x, ahead.z);
                 const double turn = std::remainder(player.walk_heading - yaw, 2 * 3.14159265358979323846);
+                const double own_yaw_inertia = world->mechanicalState(player.id).inertia_world_kg_m2.m[1][1];
+                const double yaw_scale = own_yaw_inertia > 0 ? 1 + carry_yaw_inertia / own_yaw_inertia : 1;
+                // A body-relative carried assembly adds its actual yaw inertia
+                // about the actor. Preserve the unloaded response rate, within
+                // the same torque cap; no body pose/spin is prescribed.
                 torque = kWalkUprightGain * tilt - kWalkUprightDamping * Vec3{w.x, 0, w.z} +
-                         Vec3{0, kWalkYawGain * turn - kWalkYawDamping * w.y, 0};
+                         Vec3{0, yaw_scale * (kWalkYawGain * turn - kWalkYawDamping * w.y), 0};
                 const double most = length(torque);
                 if (most > kWalkMostTorqueNm) torque = (kWalkMostTorqueNm / most) * torque;
             } else if (environment) {
@@ -3570,7 +3612,7 @@ struct LiveWorld::Impl {
         return {holding, held_at, held_velocity, grip_local, hand_force, held_facing,
                 hand_strength_n, hand_torque_n_m, hand_mass_kg, wielding, stroke,
                 stroke_ended, let_go_body, hand_work_j, let_go_at_s, let_go_work_j,
-                hand_applied_n, haul_pushed, let_go_velocity, hand_step};
+                hand_applied_n, haul_pushed, let_go_velocity, hand_step, native_carry};
     }
     void loadHand(HandContext h) {
         holding = h.holding; held_at = h.held_at; held_velocity = h.held_velocity;
@@ -3582,6 +3624,7 @@ struct LiveWorld::Impl {
         let_go_at_s = h.let_go_at_s; let_go_work_j = h.let_go_work_j;
         hand_applied_n = h.hand_applied_n; haul_pushed = h.haul_pushed;
         let_go_velocity = h.let_go_velocity; hand_step = h.hand_step;
+        native_carry = h.native_carry;
     }
     void selectHand(const std::string &player) {
         if (environment) environment->selectCarrier(player);
@@ -6370,9 +6413,26 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     // Anything still attached with nothing standing in for it as it was saved
     // is hung now, as after any rearrangement of the bodies.
     live->rehangJoints();
+    const auto readNativeCarry = [](const nlohmann::json &hand) -> std::optional<Impl::NativeCarry> {
+        if (!hand.contains("native_carry")) return std::nullopt;
+        const auto &saved = hand.at("native_carry");
+        if (!saved.is_object() || saved.at("model") != "native-actor-carry-v1")
+            throw std::invalid_argument("saved native carry model is unsupported");
+        Impl::NativeCarry carry{vecFrom(saved.at("grip_actor_local_m")),
+                                quatFrom(saved.at("facing_actor_local_wxyz"))};
+        const auto &q = carry.facing_actor_local;
+        if (!finitePlayerVec(carry.grip_actor_local_m) ||
+            length(carry.grip_actor_local_m - Vec3{0, kShoulderAboveCenterM, 0}) > kArmReachM ||
+            !std::isfinite(q.w) || !std::isfinite(q.x) || !std::isfinite(q.y) || !std::isfinite(q.z) ||
+            std::abs(q.w*q.w + q.x*q.x + q.y*q.y + q.z*q.z - 1) > 1e-5)
+            throw std::invalid_argument("saved native carry frame is invalid");
+        return carry;
+    };
     // The hand: what it holds, how, and where it wants it.
     {
         const nlohmann::json &hand = doc.at("hand");
+        if (hand.contains("native_carry"))
+            throw std::invalid_argument("native carry requires a named actor hand");
         impl.hand_strength_n = numberFrom(hand.at("strength_n"));
         impl.hand_torque_n_m = numberFrom(hand.at("torque_n_m"));
         impl.hand_mass_kg = numberFrom(hand.at("mass_kg"));
@@ -6416,6 +6476,9 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             } else if (!name.empty()) {
                 lost.push_back("the hand of " + it.key() + ": what it held did not come back");
             }
+            const auto carry_frame = readNativeCarry(player_hand);
+            if (carry_frame && own.wielding && own.holding != static_cast<std::size_t>(-1)) own.native_carry = carry_frame;
+            else if (carry_frame && !carrying) throw std::invalid_argument("saved native carry has no physical grip");
             impl.hands[it.key()] = std::move(own);
         }
     }
@@ -6527,6 +6590,12 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             }
             if (!row.at("awake").get<bool>()) impl.world->sleep(player.id);
         }
+    }
+    for (const auto &[actor, hand] : impl.hands) {
+        if (!hand.native_carry) continue;
+        if (!impl.native_players.contains(actor))
+            throw std::invalid_argument("saved native carry has no actor body");
+        impl.ground_actions[actor] = std::nullopt; // reopen is idle, never a cutting authorization
     }
     impl.restored = std::move(said);
     return live;
@@ -6771,7 +6840,7 @@ void LiveWorld::step(double dt_s) {
     // the work the step does. Before the grip's pull below, which is towards
     // exactly that.
     try {
-    forHands([&](const std::string &) { beginHandStep(dt_s); });
+    forHands([&](const std::string &) { impl_->updateNativeCarry(); beginHandStep(dt_s); });
 
     // The hand on a wielded grip: pulling AT the grip with a bounded force and
     // turning with a bounded torque, both towards where the hand wants the body
@@ -6785,6 +6854,7 @@ void LiveWorld::step(double dt_s) {
         bool on{};
         MatterBodyId id{};
         Vec3 force{}, torque{}, grip{};
+        double carry_yaw_inertia{};
     };
     const auto handPush = [&](const std::string &actor) {
         HandPush out;
@@ -6806,7 +6876,8 @@ void LiveWorld::step(double dt_s) {
                                        impl_->hand_strength_n, impl_->hand_torque_n_m,
                                        impl_->request.gravity_m_s2,
                                        fixed_group && !impl_->stroke ? 20.0 : 100.0,
-                                       fixed_group ? 20.0 : 100.0);
+                                       fixed_group ? 20.0 : 100.0,
+                                       impl_->native_carry ? impl_->world->snapshot(impl_->native_players.at(actor).id).angular_velocity_rad_s : Vec3{});
         // An arm reaches so far. A grip further from a body's shoulder than
         // that is not in its hand: it lets go. Pulling on, against something
         // that would not give, slid the body away for as long as the pull
@@ -6817,6 +6888,14 @@ void LiveWorld::step(double dt_s) {
             return out;
         }
         out.on = true;
+        if (impl_->native_carry) {
+            const auto actor_body = impl_->world->snapshot(impl_->native_players.at(actor).id);
+            for (const auto member : impl_->jointedWith(impl_->holding, true)) {
+                const auto part = impl_->world->mechanicalState(impl_->body_of[member]);
+                const auto offset = part.motion.center_of_mass_world_m - actor_body.center_of_mass_world_m;
+                out.carry_yaw_inertia += part.inertia_world_kg_m2.m[1][1] + part.mass_kg * (offset.x*offset.x + offset.z*offset.z);
+            }
+        }
         out.id = id;
         out.force = pull.force;
         out.torque = pull.torque;
@@ -6867,7 +6946,9 @@ void LiveWorld::step(double dt_s) {
             push.load_torque = -1.0 * held->torque;
             push.load_at = held->grip;
         }
-        impl_->walkPlayer(player, push.before, push.load_force.y, push.walk_force, push.walk_torque, push.under, push.under_at);
+        impl_->walkPlayer(player, push.before, push.load_force.y,
+                         held != hands.end() ? held->carry_yaw_inertia : 0,
+                         push.walk_force, push.walk_torque, push.under, push.under_at);
         // A jump is its legs pushing on what it stands on, for this one step:
         // the change of its upward speed, as a force, into the walk account,
         // and back onto a body it stands on. Asked off the ground, it is gone.
@@ -9005,6 +9086,7 @@ void LiveWorld::moveHeld(const Vec3 &to_world_m) {
     // Whoever moves the hand is driving it, so a stroke stops here -- and the
     // hand is being PUT somewhere, not moved along something.
     cancelStroke();
+    impl_->native_carry.reset(); // explicit editor/controller takes hand authority
     impl_->held_velocity = {};
     impl_->held_at = to_world_m;
     // And put it there now, rather than waiting for the next step: a host that
@@ -9209,6 +9291,7 @@ void LiveWorld::carryOrHaul(double dt_s) {
 }
 
 void LiveWorld::release() {
+    impl_->native_carry.reset();
     if (impl_->holding == static_cast<std::size_t>(-1)) return;
     // The hold was only the pose being re-asserted, so there is nothing to undo
     // -- but the object has spent the whole hold perfectly still, which is the
@@ -14300,6 +14383,7 @@ LivePickupAdmission LiveWorld::pickupAdmission(const std::string &name,
     }
     if(I.environment && I.carriedObjectsKg(false)+mass+I.environment->carriedKg()>I.environment->carryLimitKg())
         return refuse("native_refused");
+    if(!I.nativeCarryLoadSupported(I.selected_hand,members))return refuse("insufficient_strength");
     Vec3 grip=hit.point_world_m; // unconfigured props use their physical surface
     bool have_grip=false;
     for(const auto &point:toolPoints()) {
@@ -14340,12 +14424,33 @@ bool LiveWorld::wield(const std::string &name, const Vec3 &grip_world_m) {
     return true;
 }
 
+bool LiveWorld::carryWithNativePlayer() {
+    Impl &I = *impl_;
+    const auto own = I.native_players.find(I.selected_hand);
+    if (own == I.native_players.end() || !I.wielding || I.holding == static_cast<std::size_t>(-1) || I.stroke)
+        return false;
+    if (!I.nativeCarryLoadSupported(I.selected_hand, I.jointedWith(I.holding, true))) return false;
+    const auto actor = I.world->snapshot(own->second.id);
+    const auto held = I.world->snapshot(I.body_of[I.holding]);
+    const Vec3 grip = held.center_of_mass_world_m + held.orientation_world.rotate(I.grip_local);
+    if (!I.gripWithinNativeReach(I.selected_hand, grip)) return false;
+    const auto inverse = conjugateOf(actor.orientation_world);
+    I.native_carry = Impl::NativeCarry{inverse.rotate(grip - actor.center_of_mass_world_m),
+                                      composeTurns(inverse, held.orientation_world)};
+    // Opt-in native players are idle until a separately admitted action.
+    setGroundAction(std::nullopt);
+    return true;
+}
+
+bool LiveWorld::carryingWithNativePlayer() const { return impl_->native_carry.has_value(); }
+
 void LiveWorld::aimHeld(const Quat &orientation_world) {
     const double size = std::sqrt(orientation_world.w * orientation_world.w +
                                   orientation_world.x * orientation_world.x +
                                   orientation_world.y * orientation_world.y +
                                   orientation_world.z * orientation_world.z);
     if (!(size > 1e-9) || !std::isfinite(size)) return;
+    impl_->native_carry.reset(); // an explicit orientation controller takes authority
     // Asked of the body as poses() says it faces. The hand turns its rigid
     // frame, so the turn its shape carries (shapeTurn) comes off first:
     // otherwise taking hold of a thing built turned and asking it to stay as it
@@ -14444,6 +14549,7 @@ bool LiveWorld::stroke(const LiveStroke &asked, std::string &why) {
                    0.0, asked.speed_m_s);
     made.began_s = I.time_s;
     I.stroke = std::move(made);
+    I.native_carry.reset(); // the admitted stroke is the sole desired-frame owner
     I.stroke_ended.clear();
     why.clear();
     return true;
@@ -14459,6 +14565,7 @@ void LiveWorld::cancelStroke() {
 LiveHand LiveWorld::hand() const {
     const Impl &I = *impl_;
     LiveHand out;
+    out.carrying_with_native_player = I.native_carry.has_value();
     out.work_j = I.hand_work_j;
     out.stroke_ended = I.stroke_ended;
     out.let_go_body = I.let_go_body;
@@ -14581,6 +14688,12 @@ std::string LiveWorld::collectGroundDebris(MatterBodyId id,const Vec3 &collector
 bool LiveWorld::removeNativePlayer(const std::string &actor) {
     const auto found = impl_->native_players.find(actor);
     if (found == impl_->native_players.end()) return false;
+    const auto caller = impl_->selected_hand;
+    impl_->selectHand(actor);
+    release();
+    impl_->selectHand(caller);
+    impl_->ground_actions.erase(actor);
+    impl_->ground_aims.erase(actor);
     if (impl_->world->contains(found->second.id)) impl_->world->removeAndDestroy(found->second.id);
     impl_->native_players.erase(found);
     return true;
@@ -17254,7 +17367,7 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
     const auto saveHand = [&](const Impl::HandContext &hand) {
         const bool holding = hand.holding != static_cast<std::size_t>(-1) &&
                              hand.holding < I.described.size();
-        return nlohmann::json{{"holding", holding ? I.described[hand.holding].name : std::string{}},
+        auto saved = nlohmann::json{{"holding", holding ? I.described[hand.holding].name : std::string{}},
                               {"wielding", holding && hand.wielding},
                               {"grip_local_m", savedVec(hand.grip_local)},
                               {"held_at_m", savedVec(hand.held_at)},
@@ -17263,6 +17376,11 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                               {"torque_n_m", savedNumber(hand.hand_torque_n_m)},
                               {"mass_kg", savedNumber(hand.hand_mass_kg)},
                               {"work_j", savedNumber(hand.hand_work_j)}};
+        if (holding && hand.wielding && hand.native_carry)
+            saved["native_carry"] = {{"model", "native-actor-carry-v1"},
+                {"grip_actor_local_m", savedVec(hand.native_carry->grip_actor_local_m)},
+                {"facing_actor_local_wxyz", savedQuat(hand.native_carry->facing_actor_local)}};
+        return saved;
     };
     doc["hand"] = saveHand(saved_hands.count("") ? saved_hands.at("") : Impl::HandContext{});
     nlohmann::json players = nlohmann::json::object();

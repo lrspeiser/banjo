@@ -88,6 +88,7 @@ pub enum Refusal {
     HeldByAnotherActor,
     TargetChanged,
     OutOfReach,
+    InsufficientStrength,
     UnsupportedCapability,
     NativeRefused,
     KernelUnavailable,

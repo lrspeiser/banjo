@@ -231,6 +231,7 @@ struct LiveStroke {
 
 // What the hand is doing, and what it has done.
 struct LiveHand {
+    bool carrying_with_native_player{};
     std::string holding;          // "" for nothing
     // How it holds it: "carry" (placed exactly where it is put -- an editor's
     // move, with no force and so no work), "haul" (pulled with a bounded force
@@ -2267,6 +2268,13 @@ public:
     [[nodiscard]] bool wield(const std::string &name, const Vec3 &grip_world_m);
     [[nodiscard]] LivePickupAdmission pickupAdmission(const std::string &name,
         const Vec3 &from_world_m, const Vec3 &direction, double max_distance_m) const;
+    // Capture the current actual grip/wrist relative to the selected native
+    // actor. Subsequent steps update desired hand frames through the existing
+    // bounded grip force/reaction, never by placing the held body. Explicit
+    // move/aim/stroke, release and actor removal relinquish this authority.
+    // Editor/laboratory wield stays world-relative unless explicitly opted in.
+    [[nodiscard]] bool carryWithNativePlayer();
+    [[nodiscard]] bool carryingWithNativePlayer() const;
     // In the frame poses() reports: asking a thing to face the way it is said
     // to face leaves it as it is, however it was built turned.
     void aimHeld(const Quat &orientation_world);
