@@ -310,7 +310,8 @@
     "source_registration": 309,
     "runtime_native_integration_tests": 16,
     "runtime_native_wall_s": 25.623,
-    "tiny_nonzero_clamp_regression": "A 1e-200 velocity was accepted before the component-wise fix; final Verlet/solid CTest and full native contact command pass after the fix."
+    "tiny_nonzero_clamp_regression": "A 1e-200 velocity was accepted before the component-wise fix; final Verlet/solid CTest and full native contact command pass after the fix.",
+    "focused_ctest_wall_s": 33.79
   },
   "limitations": [
     "Ideal stationary far boundary, not finite solved neighbours.",
@@ -741,5 +742,6 @@
       "scene_cell_m": 0.02,
       "terrain_column_m": 0.1
     }
-  ]
+  ],
+  "implementation_commit": "d7e4bd45d81a7a1b645c6eb720857c8ae9c76350"
 }

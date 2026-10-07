@@ -5,6 +5,10 @@ explicit attachment to a stationary boundary and native tool contact across the
 actual head width. It is a prerequisite for W08/W09, not the live terrain
 replacement. The browser demo and its player worlds are unchanged.
 
+Implementation, comparative evidence and verification are published on GitHub
+main at `d7e4bd45d81a7a1b645c6eb720857c8ae9c76350`. This publication note changes
+documentation only; the rebuilt artifact identities remain in the evidence file.
+
 ## Implemented boundary contract
 
 Serial-double Verlet now accepts explicitly clamped nodes: positive physical
