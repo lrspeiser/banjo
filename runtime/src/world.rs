@@ -333,6 +333,19 @@ impl<K: Kernel> World<K> {
         }
     }
 
+    /// Trusted host read: no receipt, sequence, world revision or physical step.
+    /// Uses the same actor projection as command responses.
+    pub fn observe(&mut self, actor: &str) -> Result<Value, Refusal> {
+        if !self.joined.contains(actor) {
+            return Err(Refusal::InvalidInput);
+        }
+        if let Some(fault) = self.clock.fault {
+            return Err(fault);
+        }
+        self.kernel.observe()?;
+        Ok(self.observation(actor))
+    }
+
     fn observation(&self, actor: &str) -> Value {
         let state = self.kernel.state();
         // Explicit projection: never return another actor's hands, cargo,
@@ -352,6 +365,24 @@ impl<K: Kernel> World<K> {
             }
         }
         visible.insert("own_hand".into(), state["player_hands"][actor].clone());
+        // Terrain's native wire also embeds carried accounts. Only geometry
+        // needed to draw the actual collision columns crosses this boundary.
+        if let Some(terrain) = state["terrain"].as_object() {
+            let mut public = serde_json::Map::new();
+            for key in [
+                "grid",
+                "surface",
+                "heights_b64",
+                "ground_b64",
+                "runs_b64",
+                "floor_m",
+            ] {
+                if let Some(value) = terrain.get(key) {
+                    public.insert(key.into(), value.clone());
+                }
+            }
+            visible.insert("terrain".into(), Value::Object(public));
+        }
         visible.insert(
             "own_tool_use".into(),
             self.kernel
@@ -570,7 +601,7 @@ impl<K: Kernel> World<K> {
                 Ok(())
             }
             _ if !self.joined.contains(actor) => Err(Refusal::NotJoined),
-            Action::Inspect => Ok(()),
+            Action::Inspect => self.kernel.observe(),
             Action::PreviewToolUse { ray } => self.kernel.preview_tool_use(actor, ray),
             Action::BeginToolUse { ray } => {
                 if self.pending_tool_uses.keys().any(|(a, _)| a == actor)
@@ -751,6 +782,26 @@ mod tests {
             },
         }
     }
+    #[test]
+    fn host_observation_is_private_and_does_not_fill_mutation_receipts() {
+        let mut w = world();
+        assert_eq!(w.observe("alice"), Err(Refusal::InvalidInput));
+        w.execute(request("join", 1, Action::Join { feet_m: [0.0; 3] }));
+        w.kernel.state["terrain"] = json!({"grid":{"nx":32},"heights_b64":"geometry",
+            "carried":{"secret":19},"regions":[{"secret":23}],"view":{"secret":29}});
+        for _ in 0..5000 {
+            let observed = w.observe("alice").unwrap();
+            assert_eq!(observed["terrain"]["heights_b64"], "geometry");
+            assert!(!observed.to_string().contains("secret"));
+            assert!(!observed.to_string().contains("private-fixture"));
+        }
+        assert_eq!(w.receipts.len(), 1);
+        assert_eq!(w.sequences["alice"], 1);
+        assert_eq!(w.clock.tick, 0);
+        assert_eq!(w.kernel.steps, 0);
+        assert_eq!(w.revision, 1);
+    }
+
     #[test]
     fn requests_do_not_advance_time_and_retries_do_not_mutate() {
         let mut w = world();

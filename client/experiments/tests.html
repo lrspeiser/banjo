@@ -2,8 +2,9 @@
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Banjo · Test Hub</title><link rel="stylesheet" href="lab.css"><link rel="stylesheet" href="hub.css"></head>
 <body><main>
-<header><a class="brand" href="tests.html">BANJO <span>Test Hub</span></a><nav aria-label="Test areas"><a href="/">Material lab</a><a href="http://127.0.0.1:18890/world">Playable World ↗</a></nav></header>
+<header><a class="brand" href="tests.html">BANJO <span>Test Hub</span></a><nav aria-label="Test areas"><a href="world.html">3D test world</a><a href="index.html">Material diagnostics</a></nav></header>
 <section class="intro"><p class="eyebrow">Rewrite checkpoint</p><h1>Run it. Inspect the response.</h1><p>These checks run the compiled reference on your computer. The playable World still uses the retained engine.</p></section>
+<section class="run-controls"><a class="primary" href="world.html">Open interactive 3D world →</a><span>Move, pick up a tool, click soil and inspect actual native cuts.</span></section>
 <section class="run-controls"><button id="all" class="primary" disabled>Run checkpoint checks</button><span id="progress" role="status">Opening test catalog…</span><a id="jump" href="#replay" hidden>Inspect contact response ↓</a></section>
 <p class="scope">Includes native physics, tool families, Rust integration and build registration. Strict failures stay visible. This is the checkpoint set, not the entire repository regression suite.</p>
 <section id="checks" class="test-grid" aria-label="Available checks"></section>

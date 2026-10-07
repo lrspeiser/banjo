@@ -1,0 +1,112 @@
+{
+  "schema": "banjo.3d-world-checkpoint.v1",
+  "date": "2026-10-07",
+  "environment": "Windows MSVC Release native; Rust debug; Codex in-app browser",
+  "base_revision": "93ef465e5cbe735a8d1e26eee7f98d7134bc7f1d",
+  "physics_changed": false,
+  "full_regression_run": false,
+  "checks": {
+    "rust": 24,
+    "actual_native_worker": 17,
+    "sandbox_gateway": 5,
+    "registered_gateway_ctest": "pass",
+    "existing_lab": 10,
+    "existing_hub_host": 3,
+    "material_client_contract_groups": 4,
+    "source_registration": "315/315"
+  },
+  "native_sha256": "9d709d66fb186438fdaba4f5ce0c3c773ab88bbca87d2dbc745a6a9cc92c72c4",
+  "runtime_sha256": "aac77d9b0f4e4d474cf069b3595fbdf1700fd1c20505f5a7f9796faafbc0bb12",
+  "source_sha256": {
+    "client/experiments/world.html": "2b5eddb848d46d3b1f03af5ff3b7494f20764f18ca301144c1d152df3d1431f9",
+    "client/experiments/world.css": "67e7e959c36b69ffe6ebf404cb6b8b7c6f93511b0ce89ae9ede572a850f06335",
+    "client/experiments/world.js": "6ea9335acf67e999e785c5281a3d52d828f88c9e4be59501d313e32610dc9d69",
+    "scripts/test-world.py": "1b9a86228a80e11b1736a4d1db37c248a6763dc73a1f604b2c8b2d9179d832f5",
+    "scripts/material-lab.py": "47db9e5d9d746e171f4832a495914314fe1593ca68d71ea0204923b8580ab024",
+    "runtime/src/main.rs": "70caf09e91fc945b96027de08530d65cbad2ae6141f8e7c06627e02f21253ad3",
+    "runtime/src/native.rs": "68c0979f721d9d5e0e82692bd25d9cb9e4fa1ba5f69bb43ecd52a7ec8bb47bc7",
+    "runtime/src/world.rs": "5c53917377b0f679773a6b99b4bb86ec848ad56c013a6ba72824e00467f5a3b3",
+    "tests/test_world_tests.py": "21c1ea26ad4d6079a7be1efef50978797345e50f6e8e4707e5d35a72af9650f5"
+  },
+  "native_records": [
+    {
+      "kind": "SANDBOX_MASS_EVIDENCE",
+      "data": {
+        "glass/custom": 1.28,
+        "glass/hoe": 1.6,
+        "glass/pick": 0.96,
+        "glass/shovel": 2.24,
+        "iron/custom": 4.02944,
+        "iron/hoe": 5.0368,
+        "iron/pick": 3.02208,
+        "iron/shovel": 7.05152,
+        "oak/custom": 0.3584,
+        "oak/hoe": 0.448,
+        "oak/pick": 0.2688,
+        "oak/shovel": 0.6272
+      }
+    },
+    {
+      "kind": "SANDBOX_STROKE_EVIDENCE",
+      "data": {
+        "dt_s": 0.004166666666666667,
+        "family": "pick",
+        "material": "iron",
+        "native": {
+          "actual_abi": null,
+          "build_provenance": "unrecorded",
+          "native_carry_version": 1,
+          "native_tool_use_version": 1,
+          "pickup_admission_version": 1,
+          "pid": 29792,
+          "selected_file_sha256": "9d709d66fb186438fdaba4f5ce0c3c773ab88bbca87d2dbc745a6a9cc92c72c4",
+          "tool_use_admission_version": 2
+        },
+        "result": {
+          "active": false,
+          "contact_impulse_n_s": 4.383886456489563,
+          "contact_pending": false,
+          "contact_work_j": 7.643000606766925,
+          "contacted": true,
+          "ended_s": 1.237499999999997,
+          "hand_work_j": 74.89107853206043,
+          "loosened_m3": {
+            "rock": 0.0,
+            "sand": 0.0,
+            "soil": 0.00033548364101254423
+          },
+          "peak_contact_force_n": 254.536714553833,
+          "phase": "finished",
+          "phase_started_s": 1.1083333333333307,
+          "point_id": 1,
+          "reason": "",
+          "schema": "banjo.native-tool-use.v1",
+          "started_s": 0.11666666666666664,
+          "target_m": [
+            0.65,
+            0.75,
+            0.65
+          ],
+          "tool": "handle"
+        },
+        "terrain_cell_m": 0.1,
+        "tool_cell_m": 0.02
+      }
+    }
+  ],
+  "browser": {
+    "desktop": "pickup confirmed; cut reported 0.25 L",
+    "landscape_844x390": "pickup; soil use 0.38 L; drop cleared hand",
+    "physical_phone": "not verified"
+  },
+  "open": [
+    "conservative material/terrain integration",
+    "full P/L/E accounting",
+    "arbitrary resting-pose preparation",
+    "useful repeated digging",
+    "three strict contact convergence failures",
+    "four strict iron repeat failures",
+    "durable state/public hosting",
+    "W00-W17"
+  ]
+}

@@ -1,0 +1,174 @@
+"""3D sandbox HTTP -> Rust owner -> actual native integration; no fake engine.
+
+Qualifies transport, actual geometry, custody and honest response presentation.
+Does not certify useful digging speed or the unconnected material-contact law.
+"""
+import base64
+import functools
+import importlib.util
+import json
+import math
+import os
+from pathlib import Path
+import struct
+import tempfile
+import threading
+import time
+import unittest
+import urllib.error
+import urllib.request
+import uuid
+from http.server import ThreadingHTTPServer
+
+ROOT = Path(__file__).resolve().parents[1]
+
+def module(name, path):
+    spec=importlib.util.spec_from_file_location(name,path)
+    result=importlib.util.module_from_spec(spec);spec.loader.exec_module(result);return result
+
+WORLD=module('sandbox',ROOT/'scripts/test-world.py')
+LAB=module('lab',ROOT/'scripts/material-lab.py')
+
+class TestWorldGateway(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        native=Path(os.environ.get('BANJO_LIVE_ENGINE','missing-native'))
+        runtime=Path(os.environ.get('BANJO_RUNTIME_ENGINE','missing-runtime'))
+        if not native.is_file() or not runtime.is_file():
+            raise AssertionError('Supply actual BANJO_LIVE_ENGINE and BANJO_RUNTIME_ENGINE; cannot skip')
+        cls.manager=WORLD.WorldManager(native,runtime)
+        cls.temp=tempfile.TemporaryDirectory()
+        cls.server=ThreadingHTTPServer(('127.0.0.1',0),functools.partial(LAB.LabHandler,directory=cls.temp.name))
+        cls.server.world_manager=cls.manager
+        cls.thread=threading.Thread(target=cls.server.serve_forever,daemon=True);cls.thread.start()
+        cls.base=f'http://127.0.0.1:{cls.server.server_port}'
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown();cls.server.server_close();cls.manager.close();cls.thread.join(5);cls.temp.cleanup()
+
+    def post(self,value,origin=None):
+        request=urllib.request.Request(self.base+'/api/world',data=json.dumps(value).encode(),headers={
+            'Content-Type':'application/json','Origin':origin or self.base})
+        with urllib.request.urlopen(request,timeout=20) as response:return json.load(response)
+
+    def create(self,family='pick',material='iron'):
+        result=self.post({'action':'create','family':family,'material':material})
+        session=result['session']
+        self.addCleanup(lambda:self.post({'action':'close','session':session}))
+        return result
+
+    def act(self,session,action,**extra):
+        return self.post({'session':session,'action':action,'id':uuid.uuid4().hex,**extra})
+
+    def observe(self,session):return self.post({'session':session,'action':'observe'})
+
+    def wait(self,session,predicate,seconds=6):
+        deadline=time.monotonic()+seconds
+        while time.monotonic()<deadline:
+            self.act(session,'move',velocity=[0,0,0],heading=0)
+            result=self.observe(session)
+            if predicate(result):return result
+            time.sleep(.14)
+        self.fail('Native pending state did not close within the sandbox test budget')
+
+    def test_ground_geometry_is_native_complete_private_and_readable_without_receipts(self):
+        world=self.create();session=world['session']
+        terrain=world['snapshot']['terrain'];grid=terrain['grid']
+        self.assertEqual(grid['cell_m'],.1)
+        self.assertEqual(len(base64.b64decode(terrain['heights_b64'])),grid['nx']*grid['nz']*4)
+        self.assertEqual(set(terrain),{'grid','surface','heights_b64','ground_b64','runs_b64','floor_m'})
+        self.assertNotIn('player_hands',world['snapshot'])
+        self.assertEqual(world['clock']['dt_s'],1/240)
+        for _ in range(20):world=self.observe(session)
+        self.assertEqual(self.manager.worlds[session].sequence,2,'Read polls must not allocate command receipts')
+        self.assertGreater(world['clock']['simulation_s'],0)
+
+    def test_pickup_drop_and_worlds_have_independent_actual_avatars_and_hands(self):
+        a=self.create();b=self.create();first=a['session'];second=b['session']
+        time.sleep(.3) # ordinary pickup after the item has settled on its stand
+        picked=self.act(first,'pickup',instance='handle')
+        self.assertEqual(picked['outcome']['status'],'pending')
+        held=self.wait(first,lambda r:any(e['status']=='applied' for e in r['events']))
+        self.assertEqual(held['snapshot']['own_hand']['holding'],'handle')
+        self.assertEqual(self.observe(second)['snapshot']['own_hand']['holding'],'')
+        before=held['snapshot']['native_players']['player']['position_m']
+        for _ in range(4):
+            self.act(first,'move',velocity=[.5,0,0],heading=math.pi/2);time.sleep(.14)
+        after=self.observe(first)['snapshot']['native_players']['player']['position_m']
+        self.assertGreater(math.dist(before,after),.1)
+        dropped=self.act(first,'drop')
+        self.assertEqual(dropped['snapshot']['own_hand']['holding'],'')
+        self.assertTrue(any(b['name']=='handle' for b in dropped['snapshot']['bodies']))
+        self.assertLess(abs(self.observe(second)['snapshot']['native_players']['player']['position_m'][0]),.01)
+
+    def test_native_preview_and_completion_report_actual_yield_or_refusal(self):
+        world=self.create();session=world['session']
+        self.act(session,'pickup',instance='handle')
+        self.wait(session,lambda r:any(e['status']=='applied' for e in r['events']))
+        target=[.65,.75,.65]
+        preview=self.post({'action':'preview','session':session,'target':target})['preview']
+        self.assertTrue(preview['admitted']);self.assertFalse(preview['measured_yield'])
+        self.assertTrue(preview['entry_clearance']['clear'])
+        initial=self.observe(session)['snapshot']['terrain']['heights_b64']
+        request={'action':'use','session':session,'id':uuid.uuid4().hex,'target':target}
+        begun=self.post(request);self.assertEqual(begun['outcome']['status'],'pending')
+        done=self.wait(session,lambda r:any(e.get('tool_use_result') is not None for e in r['events']),seconds=10)
+        event=next(e for e in done['events'] if e.get('tool_use_result') is not None)
+        actual=event['tool_use_result']
+        self.assertFalse(actual['active']);self.assertFalse(actual['contact_pending'])
+        self.assertEqual(actual['target_m'],target)
+        self.assertTrue(all(v>=0 for v in actual['loosened_m3'].values()))
+        # A controller refusal is a real failed test stroke, never fabricated
+        # visible progress. Deeper/sustained use has a separate failing gate.
+        if sum(actual['loosened_m3'].values())>0:
+            self.assertNotEqual(initial,done['snapshot']['terrain']['heights_b64'])
+        else:
+            self.assertEqual(event['status'],'rejected');self.assertIsNotNone(event['reason'])
+        retry=self.post(request)
+        self.assertEqual(retry['outcome']['command_id'],begun['outcome']['command_id'])
+        self.assertEqual(len([e for e in retry['events'] if e.get('tool_use_result')]),1)
+        print('SANDBOX_STROKE_EVIDENCE '+json.dumps({'family':'pick','material':'iron','native':world['native'],
+            'dt_s':world['clock']['dt_s'],'terrain_cell_m':.1,'tool_cell_m':.02,'result':actual},sort_keys=True))
+
+    def test_matched_tool_families_have_real_geometry_material_mass_and_generic_pickup(self):
+        masses={}
+        for material in ('glass','oak','iron'):
+            for family,width in WORLD.FAMILIES.items():
+                with self.subTest(material=material,family=family):
+                    world=self.post({'action':'create','family':family,'material':material});session=world['session']
+                    try:
+                        head=next(b for b in world['snapshot']['bodies'] if b['name']=='head')
+                        self.assertEqual(head['dimensions_m'],[width,.08,.04]);self.assertEqual(head['material'],material)
+                        self.assertEqual(world['clock']['dt_s'],1/240)
+                        masses[material,family]=head['mass_kg']
+                        self.act(session,'pickup',instance='handle')
+                        self.wait(session,lambda r:r['snapshot']['own_hand']['holding']=='handle' and bool(r['events']))
+                    finally:self.post({'action':'close','session':session})
+        for family in WORLD.FAMILIES:
+            self.assertLess(masses['oak',family],masses['glass',family]);self.assertLess(masses['glass',family],masses['iron',family])
+        print('SANDBOX_MASS_EVIDENCE '+json.dumps({f'{m}/{f}':v for (m,f),v in masses.items()},sort_keys=True))
+
+    def test_origin_session_allowlist_limits_and_retry_cannot_grant_authority(self):
+        with self.assertRaises(urllib.error.HTTPError) as refused:
+            self.post({'action':'create','family':'pick','material':'iron'},'http://untrusted.invalid')
+        self.assertEqual(refused.exception.code,403)
+        world=self.create();session=world['session']
+        invalid=[{'action':'observe','session':session,'actor':'someone-else'},
+                 {'action':'step','session':session,'dt':100},
+                 {'action':'pickup','session':session,'id':uuid.uuid4().hex,'instance':'tool-stand'},
+                 {'action':'move','session':session,'id':uuid.uuid4().hex,'velocity':[0,1,0],'heading':0},
+                 {'action':'observe','session':'missing'},
+                 {'action':'create','family':'bow','material':'iron'}]
+        for value in invalid:
+            with self.assertRaises(urllib.error.HTTPError) as refused:self.post(value)
+            self.assertEqual(refused.exception.code,400)
+        request={'action':'move','session':session,'id':uuid.uuid4().hex,'velocity':[0,0,0],'heading':0}
+        original=self.post(request);retry=self.post(request)
+        self.assertEqual(original['outcome'],retry['outcome'])
+        with self.assertRaises(urllib.error.HTTPError):self.post(dict(request,heading=1))
+        other=self.create()
+        with self.assertRaises(urllib.error.HTTPError):self.post({'action':'create','family':'pick','material':'iron'})
+        self.assertNotEqual(session,other['session'])
+
+if __name__=='__main__':unittest.main()

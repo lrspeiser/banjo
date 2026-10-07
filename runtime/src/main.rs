@@ -12,6 +12,19 @@ use std::time::{Duration, Instant};
 
 const MAX_OUTPUT_BYTES: usize = 2 * 1024 * 1024;
 
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ObserveRequest {
+    observe_actor: Id,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum HostInput {
+    Observe(ObserveRequest),
+    Command(TrustedRequest),
+}
+
 struct Configuration {
     native: PathBuf,
     scene: PathBuf,
@@ -101,7 +114,7 @@ fn run() -> Result<(), String> {
                     let request = if invalid {
                         Err(Refusal::InvalidInput)
                     } else {
-                        serde_json::from_slice::<TrustedRequest>(&line)
+                        serde_json::from_slice::<HostInput>(&line)
                             .map_err(|_| Refusal::InvalidInput)
                     };
                     if sender.send(request).is_err() {
@@ -171,7 +184,18 @@ fn run() -> Result<(), String> {
             }
         }
         match input.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-            Ok(Ok(request)) => {
+            Ok(Ok(HostInput::Observe(request))) => {
+                let frame = match world.observe(request.observe_actor.as_str()) {
+                    Ok(snapshot) => {
+                        json!({"schema":"banjo.worker-observation.v1", "snapshot":snapshot,"clock":world.clock()})
+                    }
+                    Err(reason) => {
+                        json!({"schema":"banjo.worker-input-refusal.v1","reason":reason})
+                    }
+                };
+                send(frame)?;
+            }
+            Ok(Ok(HostInput::Command(request))) => {
                 let result = world.execute(request);
                 send(json!({"schema":"banjo.worker-result.v1","outcome":result,
                     "clock":world.clock(),"missed_deadlines":missed_deadlines}))?;

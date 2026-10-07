@@ -2068,6 +2068,11 @@ if(BANJO_BUILD_RUST_RUNTIME)
                 BANJO_RUNTIME_ENGINE=${CMAKE_CURRENT_SOURCE_DIR}/build/rust-runtime/debug/banjo-runtime${CMAKE_EXECUTABLE_SUFFIX}
                 ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/runtime_native_tests.py -v)
             set_tests_properties(banjo_runtime_native_tests PROPERTIES TIMEOUT 90 LABELS "runtime;native")
+            add_test(NAME banjo_test_world_gateway_tests COMMAND ${CMAKE_COMMAND} -E env
+                BANJO_LIVE_ENGINE=${_banjo_runtime_native}
+                BANJO_RUNTIME_ENGINE=${CMAKE_CURRENT_SOURCE_DIR}/build/rust-runtime/debug/banjo-runtime${CMAKE_EXECUTABLE_SUFFIX}
+                ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_world_tests.py -v)
+            set_tests_properties(banjo_test_world_gateway_tests PROPERTIES TIMEOUT 90 LABELS "runtime;native;client")
         endif()
     endif()
 endif()

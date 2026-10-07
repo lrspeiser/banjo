@@ -15,6 +15,9 @@ const REPLY_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub trait Kernel {
     fn state(&self) -> &Value;
+    fn observe(&mut self) -> Result<(), Refusal> {
+        Ok(())
+    }
     fn spawn(&mut self, actor: &str, feet: [f64; 3]) -> Result<(), Refusal>;
     fn walk(
         &mut self,
@@ -210,6 +213,9 @@ impl NativeProcess {
 }
 
 impl Kernel for NativeProcess {
+    fn observe(&mut self) -> Result<(), Refusal> {
+        self.call(json!({"op":"poses"})).map(|_| ())
+    }
     fn state(&self) -> &Value {
         &self.state
     }

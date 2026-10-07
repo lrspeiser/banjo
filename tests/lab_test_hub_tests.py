@@ -95,7 +95,7 @@ class TestHub(unittest.TestCase):
                 if key!="wall_s":self.assertEqual(a[key],b[key],f"Recording changed {key}")
 
     def test_named_commands_only_origin_and_result_isolation(self):
-        self.assertEqual(len(json.loads(self.get("/api/tests"))["checks"]),13)
+        self.assertEqual(len(json.loads(self.get("/api/tests"))["checks"]),14)
         for request in ({"check":"cmd.exe"},{"check":"all","args":["--anything"]},{"check":[]},{}):
             with self.assertRaises(urllib.error.HTTPError) as e:self.post(request)
             self.assertEqual(e.exception.code,400)

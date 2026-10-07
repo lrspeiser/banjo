@@ -37,6 +37,7 @@ class TestRunner:
             {"id": "contact-gate", "name": "Sustained contact convergence + replay", "kind": "strict acceptance"},
             {"id": "repeat-gate", "name": "Repeated excavation", "kind": "strict acceptance"},
             {"id": "worker", "name": "Rust owner → actual native engine", "kind": "integration"},
+            {"id": "sandbox", "name": "3D world intentions, geometry & pickup", "kind": "integration"},
             {"id": "rust", "name": "Rust command / state contracts", "kind": "contracts"},
             {"id": "registration", "name": "Every C++ source has a build target", "kind": "build guard"},
         ]
@@ -81,8 +82,9 @@ class TestRunner:
         if key=="repeat-gate":
             return [str(self.directory/(native["tools"]+extension)),"--require-repeat-yield"], {}
         runtime = ROOT/"build/rust-runtime/debug"/("banjo-runtime"+extension)
-        if key=="worker":
-            return [sys.executable,str(ROOT/"tests/runtime_native_tests.py"),"-v"], {
+        if key in {"worker", "sandbox"}:
+            test="runtime_native_tests.py" if key=="worker" else "test_world_tests.py"
+            return [sys.executable,str(ROOT/"tests"/test),"-v"], {
                 "BANJO_LIVE_ENGINE":str(self.directory/("banjo_live_world_run"+extension)),"BANJO_RUNTIME_ENGINE":str(runtime)}
         if key=="rust":
             cargo = Path.home()/".cargo/bin"/("cargo"+extension)
@@ -104,7 +106,7 @@ class TestRunner:
                         artifact=Path(command[0])
                         if not artifact.is_file(): raise FileNotFoundError("Required executable is not built")
                         dependencies=[artifact]
-                        if entry["id"]=="worker": dependencies.extend(Path(v) for v in variables.values())
+                        if entry["id"] in {"worker", "sandbox"}: dependencies.extend(Path(v) for v in variables.values())
                         before={str(p.relative_to(ROOT)) if p.is_relative_to(ROOT) else p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in dependencies}
                         env=os.environ.copy();env.update(variables)
                         # Log to a temporary file instead of accumulating unbounded pipe output.

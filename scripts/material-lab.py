@@ -1,4 +1,4 @@
-"""Serve isolated CPU material experiments, with deliberate bounded execution.
+"""Serve a native 3D test world and isolated CPU material diagnostics.
 
 The browser replays exact samples; a run starts a fresh isolated CPU experiment,
 never a game world or LLM. Named assets and bounded experiment/test endpoints exist. Run the
@@ -7,6 +7,8 @@ TypeScript build first; native build/output stay in build/, not the repository.
 from __future__ import annotations
 
 import argparse
+import os
+import queue
 import functools
 import hashlib
 import importlib.util
@@ -23,7 +25,8 @@ import re
 
 ROOT = Path(__file__).resolve().parents[1]
 FILES = {"index.html", "lab.css", "lab.js", "contract.js", "material.json", "manifest.json",
-         "tests.html", "hub.css", "hub.js", "hub-contract.js"}
+         "tests.html", "hub.css", "hub.js", "hub-contract.js", "world.html", "world.css", "world.js",
+         "three.module.js", "three.core.js", "three-LICENSE.txt"}
 SCALES = (.25, .5, 1, 1.25)
 MAX_RECORDING_BYTES = 10_000_000
 
@@ -96,8 +99,10 @@ def prepare(native: Path, output: Path):
     if not compiled.is_file():
         raise RuntimeError("Build the client first: npm ci && npm run build in client/")
     subprocess.run([str(native), str(output / "material.json")], check=True, timeout=120)
-    for name in ("index.html", "lab.css", "tests.html", "hub.css"):
+    for name in ("index.html", "lab.css", "tests.html", "hub.css", "world.html", "world.css", "world.js"):
         shutil.copyfile(ROOT / "client/experiments" / name, output / name)
+    for name in ("three.module.js", "three.core.js", "three-LICENSE.txt"):
+        shutil.copyfile(ROOT / "playground/vendor" / name, output / name)
     if compiled.resolve() != (output / "lab.js").resolve():
         shutil.copyfile(compiled, output / "lab.js")
         shutil.copyfile(compiled.with_name("contract.js"), output / "contract.js")
@@ -109,7 +114,9 @@ def prepare(native: Path, output: Path):
                "src/material/MaterialCatalog.cpp", "client/experiments/lab.ts", "client/experiments/contract.ts",
                "tests/material_surface_contact_tests.cpp", "src/fastlattice/NativeFixedContact.cpp",
                "src/fastlattice/MaterialContactRegion.cpp", "src/physics/MaterialContactStencil.cpp",
-               "client/experiments/hub.ts", "client/experiments/hub-contract.ts", "scripts/lab-test-runner.py"]
+               "client/experiments/hub.ts", "client/experiments/hub-contract.ts", "scripts/lab-test-runner.py",
+               "client/experiments/world.html", "client/experiments/world.css", "client/experiments/world.js",
+               "scripts/test-world.py", "runtime/src/main.rs", "runtime/src/world.rs", "runtime/src/native.rs"]
     manifest = {
         "schema": "banjo.material-lab-manifest.v1",
         "source_revision": subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip(),
@@ -126,7 +133,7 @@ def prepare(native: Path, output: Path):
 class LabHandler(SimpleHTTPRequestHandler):
     def do_POST(self):
         self.close_connection = True
-        if self.path not in {"/api/experiments", "/api/tests"}:
+        if self.path not in {"/api/experiments", "/api/tests", "/api/world"}:
             return self.reply(404, {"error": "No experiment endpoint at this path"})
         origin = f"http://127.0.0.1:{self.server.server_port}"
         if (self.headers.get("Host") != origin.removeprefix("http://")
@@ -148,6 +155,15 @@ class LabHandler(SimpleHTTPRequestHandler):
             if self.path == "/api/experiments": request = validate_request(request)
         except (ValueError, UnicodeError, TimeoutError):
             return self.reply(400, {"error": "Invalid experiment request; choose one of the four loads"})
+        if self.path == "/api/world":
+            runner = getattr(self.server, "world_manager", None)
+            if runner is None: return self.reply(503, {"error": "Build the Rust runtime and native world target first"})
+            try: result = runner.request(request)
+            except (ValueError, TypeError, KeyError, StopIteration):
+                return self.reply(400, {"error": "Invalid or expired test world intention"})
+            except (RuntimeError, OSError, subprocess.SubprocessError, queue.Empty):
+                return self.reply(502, {"error": "Native world stopped or refused observation; start a fresh test world"})
+            return self.reply(200, result)
         if self.path == "/api/tests":
             runner = getattr(self.server, "test_runner", None)
             if runner is None: return self.reply(503, {"error": "Test execution unavailable"})
@@ -207,7 +223,7 @@ class LabHandler(SimpleHTTPRequestHandler):
         # No directory listing, arbitrary workspace paths or legacy world routes.
         name = self.path.split("?", 1)[0]
         if name == "/":
-            self.path = "/index.html"
+            self.path = "/world.html"
         elif name not in {"/" + item for item in FILES}:
             self.send_error(404, "No lab asset at this path")
             return None
@@ -226,6 +242,7 @@ def main():
     parser.add_argument("--output", type=Path, default=ROOT / "build/material-lab/ui")
     parser.add_argument("--port", type=int, default=18891)
     parser.add_argument("--generate-only", action="store_true")
+    parser.add_argument("--runtime", type=Path, default=ROOT / "build/rust-runtime/debug" / ("banjo-runtime.exe" if os.name == "nt" else "banjo-runtime"))
     args = parser.parse_args()
     output = args.output.resolve()
     prepare(args.native, output)
@@ -237,12 +254,18 @@ def main():
     spec=importlib.util.spec_from_file_location("lab_tests",ROOT/"scripts/lab-test-runner.py")
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
     server.test_runner=module.TestRunner(args.native.resolve().parent,server.experiment_runner.gate)
-    print(f"Material lab: http://127.0.0.1:{server.server_port}/ (isolated CPU experiments)", flush=True)
+    live = args.native.resolve().with_name("banjo_live_world_run.exe" if os.name == "nt" else "banjo_live_world_run")
+    if live.is_file() and args.runtime.is_file():
+        spec=importlib.util.spec_from_file_location("test_world", ROOT/"scripts/test-world.py")
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        server.world_manager=module.WorldManager(live,args.runtime)
+    print(f"3D test world: http://127.0.0.1:{server.server_port}/world.html; diagnostics: /tests.html", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        if hasattr(server,"world_manager"): server.world_manager.close()
         server.server_close()
 
 

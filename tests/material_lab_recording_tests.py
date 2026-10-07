@@ -137,14 +137,14 @@ class ReadOnlyServer(unittest.TestCase):
         spec.loader.exec_module(lab)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "index.html").write_text("lab", encoding="utf-8")
+            (root / "world.html").write_text("world", encoding="utf-8")
             (root / "private.txt").write_text("unserved", encoding="utf-8")
             server = ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(lab.LabHandler, directory=directory))
             thread = threading.Thread(target=server.serve_forever, daemon=True);thread.start()
             base = f"http://127.0.0.1:{server.server_port}"
             try:
                 with urllib.request.urlopen(base + "/") as response:
-                    self.assertEqual(response.read(), b"lab")
+                    self.assertEqual(response.read(), b"world")
                     self.assertEqual(response.headers["Cache-Control"], "no-store")
                     self.assertIn("charset=utf-8", response.headers["Content-Type"])
                 for path in ("/private.txt", "/../AGENTS.md", "/%2e%2e/AGENTS.md", "/api/step"):
