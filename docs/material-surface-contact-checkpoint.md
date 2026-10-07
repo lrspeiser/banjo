@@ -2,7 +2,7 @@
 
 ## Scope and implementation
 
-Experimental CPU reference, prepared against main `b49e51a5c4163484c2f8246e8779fe8533c3bcc8`. Publication is recorded below. [Exact source/executable hashes and per-material results](evidence/material-surface-contact-2026-10-06.json) pin the measurements. This extends the [occupied cuboid query](occupied-cell-contact-checkpoint.md); the retained spherical and centre-point fixtures remain regression tests.
+Experimental CPU reference, prepared against main `b49e51a5c4163484c2f8246e8779fe8533c3bcc8`. Implementation `d7163571520764e9327561d4c8ffc26cc3d9c3ca` is published on GitHub main; the measurements below qualify that source scope. [Exact source/executable hashes and per-material results](evidence/material-surface-contact-2026-10-06.json) pin the measurements. This extends the [occupied cuboid query](occupied-cell-contact-checkpoint.md); the retained spherical and centre-point fixtures remain regression tests.
 
 The terrain audit found that `ToolTerrain` funds a centre-point bite while a wide native head meets neighbouring ground through ordinary collision. Removing the selected-column bound or widening the collision exemption would give those neighbours no corresponding material work/reaction. This checkpoint supplies the surface-to-material transfer needed before replacing that reduction. Gameplay terrain is not switched over.
 

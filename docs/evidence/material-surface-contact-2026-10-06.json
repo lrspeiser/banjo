@@ -368,5 +368,7 @@
       "density_kg_m3": 7870,
       "young_modulus_pa": 211000000000.0
     }
-  }
+  },
+  "published_implementation_revision": "d7163571520764e9327561d4c8ffc26cc3d9c3ca",
+  "published_branch": "main"
 }
