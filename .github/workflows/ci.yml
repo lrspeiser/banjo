@@ -143,6 +143,17 @@ jobs:
       - name: Build
         run: cmake --build build/ci --parallel 2
 
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Test native contact recordings and browser execution contracts
+        run: |
+          npm ci --ignore-scripts --prefix client
+          npm run build --prefix client
+          python3 tests/lab_test_hub_tests.py build/ci -v
+          python3 tests/material_lab_recording_tests.py build/ci/banjo_material_lab_record -v
+          node --test tests/material_lab_client_tests.mjs
+
       - name: Test core and material laws
         run: >-
           ctest --test-dir build/ci --output-on-failure --no-tests=error

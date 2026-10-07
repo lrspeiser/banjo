@@ -1072,7 +1072,7 @@ if(BANJO_BUILD_TESTS)
         banjo_enable_warnings(banjo_native_lattice_contact_tests)
         add_test(NAME banjo_native_lattice_contact_tests COMMAND banjo_native_lattice_contact_tests)
         add_executable(banjo_material_surface_contact_tests tests/material_surface_contact_tests.cpp)
-        target_link_libraries(banjo_material_surface_contact_tests PRIVATE banjo_lattice_native_contact)
+        target_link_libraries(banjo_material_surface_contact_tests PRIVATE banjo_lattice_native_contact nlohmann_json::nlohmann_json)
         banjo_enable_warnings(banjo_material_surface_contact_tests)
         add_test(NAME banjo_material_surface_contact_tests COMMAND banjo_material_surface_contact_tests)
 

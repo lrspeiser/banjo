@@ -1,7 +1,7 @@
 """Serve isolated CPU material experiments, with deliberate bounded execution.
 
 The browser replays exact samples; a run starts a fresh isolated CPU experiment,
-never a game world or LLM. Only six named assets and one bounded endpoint exist. Run the
+never a game world or LLM. Named assets and bounded experiment/test endpoints exist. Run the
 TypeScript build first; native build/output stay in build/, not the repository.
 """
 from __future__ import annotations
@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import functools
 import hashlib
+import importlib.util
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
@@ -18,9 +19,11 @@ import tempfile
 import threading
 import time
 import uuid
+import re
 
 ROOT = Path(__file__).resolve().parents[1]
-FILES = {"index.html", "lab.css", "lab.js", "contract.js", "material.json", "manifest.json"}
+FILES = {"index.html", "lab.css", "lab.js", "contract.js", "material.json", "manifest.json",
+         "tests.html", "hub.css", "hub.js", "hub-contract.js"}
 SCALES = (.25, .5, 1, 1.25)
 MAX_RECORDING_BYTES = 10_000_000
 
@@ -93,14 +96,20 @@ def prepare(native: Path, output: Path):
     if not compiled.is_file():
         raise RuntimeError("Build the client first: npm ci && npm run build in client/")
     subprocess.run([str(native), str(output / "material.json")], check=True, timeout=120)
-    for name in ("index.html", "lab.css"):
+    for name in ("index.html", "lab.css", "tests.html", "hub.css"):
         shutil.copyfile(ROOT / "client/experiments" / name, output / name)
     if compiled.resolve() != (output / "lab.js").resolve():
         shutil.copyfile(compiled, output / "lab.js")
         shutil.copyfile(compiled.with_name("contract.js"), output / "contract.js")
+    for name in ("hub.js", "hub-contract.js"):
+        source = compiled.with_name(name)
+        if source.resolve() != (output / name).resolve(): shutil.copyfile(source, output / name)
     sources = ["tools/material_lab_record.cpp", "src/fastlattice/SolidMatterPatch.cpp",
                "src/fastlattice/ConstituentPartition.cpp", "src/fastlattice/CpuLatticeBackend.cpp",
-               "src/material/MaterialCatalog.cpp", "client/experiments/lab.ts", "client/experiments/contract.ts"]
+               "src/material/MaterialCatalog.cpp", "client/experiments/lab.ts", "client/experiments/contract.ts",
+               "tests/material_surface_contact_tests.cpp", "src/fastlattice/NativeFixedContact.cpp",
+               "src/fastlattice/MaterialContactRegion.cpp", "src/physics/MaterialContactStencil.cpp",
+               "client/experiments/hub.ts", "client/experiments/hub-contract.ts", "scripts/lab-test-runner.py"]
     manifest = {
         "schema": "banjo.material-lab-manifest.v1",
         "source_revision": subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip(),
@@ -117,7 +126,7 @@ def prepare(native: Path, output: Path):
 class LabHandler(SimpleHTTPRequestHandler):
     def do_POST(self):
         self.close_connection = True
-        if self.path != "/api/experiments":
+        if self.path not in {"/api/experiments", "/api/tests"}:
             return self.reply(404, {"error": "No experiment endpoint at this path"})
         origin = f"http://127.0.0.1:{self.server.server_port}"
         if (self.headers.get("Host") != origin.removeprefix("http://")
@@ -135,9 +144,17 @@ class LabHandler(SimpleHTTPRequestHandler):
             raw = self.rfile.read(length)
             if len(raw) != length:
                 raise ValueError("Incomplete request")
-            request = validate_request(json.loads(raw, object_pairs_hook=unique_object))
+            request = json.loads(raw, object_pairs_hook=unique_object)
+            if self.path == "/api/experiments": request = validate_request(request)
         except (ValueError, UnicodeError, TimeoutError):
             return self.reply(400, {"error": "Invalid experiment request; choose one of the four loads"})
+        if self.path == "/api/tests":
+            runner = getattr(self.server, "test_runner", None)
+            if runner is None: return self.reply(503, {"error": "Test execution unavailable"})
+            try: result = runner.start(request)
+            except (ValueError, TypeError): return self.reply(400, {"error": "Choose a named test"})
+            if result is None: return self.reply(429, {"error": "Another experiment or test is running"})
+            return self.reply(202, result)
         runner = getattr(self.server, "experiment_runner", None)
         if runner is None:
             return self.reply(503, {"error": "Experiment execution is unavailable"})
@@ -151,8 +168,24 @@ class LabHandler(SimpleHTTPRequestHandler):
             return self.reply(502, {"error": "Solver did not return a complete experiment"})
         return self.reply(200, result)
 
+    def do_GET(self):
+        if self.path == "/api/tests":
+            runner = getattr(self.server,"test_runner",None)
+            return self.reply(200,{"checks":runner.catalog}) if runner else self.reply(503,{"error":"Tests unavailable"})
+        match = re.fullmatch(r"/api/tests/([0-9a-f]{32})(/recording)?",self.path)
+        if match:
+            runner=getattr(self.server,"test_runner",None)
+            if runner is None: return self.reply(503,{"error":"Tests unavailable"})
+            value=runner.recorded(match[1]) if match[2] else runner.snapshot(match[1])
+            if value is None: return self.reply(404,{"error":"No current result for this execution"})
+            return self.reply_bytes(200,value) if match[2] else self.reply(200,value)
+        return super().do_GET()
+
     def reply(self, code, value):
         encoded = json.dumps(value, separators=(",", ":"), allow_nan=False).encode("utf-8")
+        return self.reply_bytes(code,encoded)
+
+    def reply_bytes(self,code,encoded):
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(encoded)))
@@ -201,6 +234,9 @@ def main():
         return
     server = ThreadingHTTPServer(("127.0.0.1", args.port), functools.partial(LabHandler, directory=str(output)))
     server.experiment_runner = ExperimentRunner(args.native)
+    spec=importlib.util.spec_from_file_location("lab_tests",ROOT/"scripts/lab-test-runner.py")
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    server.test_runner=module.TestRunner(args.native.resolve().parent,server.experiment_runner.gate)
     print(f"Material lab: http://127.0.0.1:{server.server_port}/ (isolated CPU experiments)", flush=True)
     try:
         server.serve_forever()

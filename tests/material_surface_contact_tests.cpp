@@ -9,6 +9,8 @@
 #include <iostream>
 #include <limits>
 #include <stdexcept>
+#include <fstream>
+#include <nlohmann/json.hpp>
 
 namespace {
 using namespace banjo;using namespace banjo::fastlattice;
@@ -206,7 +208,34 @@ void authoritativeTopologyAdmission() {
     require(before.nodes==after.nodes&&after.target_step==0&&backend->status().external_point_transfer.transfers==0,"rolled back contact reused changed graph clock");
     near(length(tool.world.snapshot(1).linear_velocity_m_s-source.linear_velocity_m_s),0,0,"local rollback failed source");
 }
-unsigned sustainedLocalContact() {
+// Capture is read-only, sampled after accepted physical steps. No render clock,
+// interpolation, fragment templates or extra impulses enter the experiment.
+nlohmann::json vectorJson(Vec3 v){return {v.x,v.y,v.z};}
+nlohmann::json contactFrame(const Target &target,LatticeBackend &backend,Tool &tool,unsigned step,double dt) {
+    const auto state=target.download(backend);
+    const auto partition=partitionConstituents(target.asset,target.schedule,state);
+    nlohmann::json nodes=nlohmann::json::array(),bonds=nlohmann::json::array(),source=nlohmann::json::array();
+    std::vector<unsigned> component(state.node_count);std::vector<bool> attached(state.node_count);
+    for(unsigned c=0;c<partition.components.size();++c)for(auto n:partition.components[c].parent_nodes){component[n]=c;attached[n]=partition.components[c].attached_to_boundary;}
+    for(unsigned i=0;i<state.node_count;++i){
+        const Vec3 displacement{state.u[3*i],state.u[3*i+1],state.u[3*i+2]};
+        const Vec3 p=state.origin+Vec3{state.x0[3*i],state.x0[3*i+1],state.x0[3*i+2]}+displacement;
+        nodes.push_back({{"id",i},{"position_m",vectorJson(p)},{"displacement_m",vectorJson(displacement)},
+            {"velocity_m_s",vectorJson({state.v[3*i],state.v[3*i+1],state.v[3*i+2]})},{"mass_kg",state.mass[i]},
+            {"component",component[i]},{"attached",static_cast<bool>(attached[i])},{"clamped",state.inv_mass[i]==0}});
+    }
+    for(unsigned k=0;k<state.bond_count;++k)bonds.push_back({state.alive[k]!=0,state.damage[k]});
+    for(auto id:{1U,10U}){
+        const auto body=tool.world.snapshot(id);const auto q=body.orientation_world;
+        source.push_back({{"id",id},{"position_m",vectorJson(body.center_of_mass_world_m)},
+            {"orientation_wxyz",{q.w,q.x,q.y,q.z}},{"velocity_m_s",vectorJson(body.linear_velocity_m_s)},
+            {"angular_velocity_rad_s",vectorJson(body.angular_velocity_rad_s)}});
+    }
+    return {{"step",step},{"time_s",step*dt},{"nodes",nodes},{"bond_state",bonds},{"source",source},
+        {"components",partition.components.size()},{"broken_bonds",backend.status().broken_bonds},
+        {"integration_error_j",backend.status().integration_numerical_energy_j}};
+}
+unsigned sustainedLocalContact(nlohmann::json *recording=nullptr) {
     unsigned open_gates=0;
     for(double width:{.04,.12})for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
         std::vector<std::uint8_t> coarse_alive;double coarse_error=0;
@@ -221,6 +250,8 @@ unsigned sustainedLocalContact() {
             } sum;
             std::string refusal;unsigned attempted=0,accepted=0;const unsigned count=dt==1e-7?2048:4096;
             const auto started=std::chrono::steady_clock::now();
+            nlohmann::json frames=nlohmann::json::array();
+            if(recording)frames.push_back(contactFrame(target,*backend,tool,0,dt));
             for(unsigned k=0;k<count;++k) {
                 ++attempted;Ledger delta;const auto before=target.download(*backend);const auto old=backend->status();
                 const auto head=tool.world.snapshot(1),handle=tool.world.snapshot(10);
@@ -273,6 +304,7 @@ unsigned sustainedLocalContact() {
                 ++accepted;sum.contacts+=delta.contacts;sum.minimum_nodes=std::min(sum.minimum_nodes,delta.minimum_nodes);sum.maximum_nodes=std::max(sum.maximum_nodes,delta.maximum_nodes);
                 sum.loss+=delta.loss;sum.reconcile+=delta.reconcile;sum.transfer_energy+=delta.transfer_energy;sum.native_energy+=delta.native_energy;
                 sum.transfer_p+=delta.transfer_p;sum.transfer_l+=delta.transfer_l;sum.geometry_couple+=delta.geometry_couple;sum.native_p+=delta.native_p;sum.native_l+=delta.native_l;
+                if(recording&&accepted%(count/32)==0)frames.push_back(contactFrame(target,*backend,tool,accepted,dt));
             }
             const auto state=target.download(*backend);const auto final=totals(state,tool.world);const auto &s=backend->status();
             const Vec3 p=final.linear_momentum_kg_m_s-initial.linear_momentum_kg_m_s-sum.transfer_p-s.fixed_boundary.impulse_n_s-s.bond_kick_roundoff_impulse_n_s;
@@ -297,6 +329,17 @@ unsigned sustainedLocalContact() {
             for(const auto &component:partition.components) {
                 if(component.attached_to_boundary)++attached;
                 else for(double mass:component.state.mass)detached_mass+=mass;
+            }
+            if(recording){
+                if(frames.back().at("step").get<unsigned>()!=accepted)frames.push_back(contactFrame(target,*backend,tool,accepted,dt));
+                nlohmann::json topology=nlohmann::json::array();
+                for(unsigned k=0;k<state.bond_count;++k)topology.push_back({state.bond_a[k],state.bond_b[k]});
+                recording->at("experiments").push_back({{"material",materialPresetName(preset)},{"width_m",width},{"dt_s",dt},{"cell_m",.04},
+                    {"density_kg_m3",target.material.density_kg_m3},{"young_modulus_pa",target.material.young_modulus_pa},
+                    {"accepted_steps",accepted},{"attempted_steps",attempted},{"unsupported_region",refusal},
+                    {"bond_topology",topology},{"frames",frames},{"detached_mass_kg",detached_mass},{"contacts",sum.contacts},
+                    {"attributed_linear_error_n_s",length(p-sum.native_p)},{"attributed_angular_error_kg_m2_s",length(l-sum.native_l)},
+                    {"attributed_energy_error_j",energy-sum.native_energy-s.integration_numerical_energy_j}});
             }
             std::cout<<"LIVE_GRAPH_CONTACT_EVIDENCE {\"material\":\""<<materialPresetName(preset)<<"\",\"width_m\":"<<width<<",\"cell_m\":0.04,\"dt_s\":"<<dt
                 <<",\"accepted_steps\":"<<accepted<<",\"attempted_steps\":"<<attempted<<",\"accepted_time_s\":"<<accepted*dt<<",\"contacts\":"<<sum.contacts
@@ -379,10 +422,20 @@ void matchedNativeSurfaceTrajectories(bool local=false) {
 }
 }
 int main(int argc,char **argv){try{
-    const bool strict=argc==2&&std::string(argv[1])=="--require-live-contact-convergence";
-    require(argc==1||strict,"unknown surface-contact test option");
+    bool strict=false;std::string output;
+    for(int i=1;i<argc;++i){const std::string option=argv[i];
+        if(option=="--require-live-contact-convergence"&&!strict)strict=true;
+        else if(option=="--record"&&output.empty()&&i+1<argc)output=argv[++i];
+        else require(false,"unknown surface-contact test option");
+    }
+    nlohmann::json recording={{"schema","banjo.contact-recording.v1"},{"kind","solver-recording"},{"experiments",nlohmann::json::array()}};
     std::cout.precision(12);liveGraphSelectionOracles();analyticalSurfaceOracles();bulkAtomicity();authoritativeTopologyAdmission();
-    matchedNativeSurfaceTrajectories();matchedNativeSurfaceTrajectories(true);const auto open=sustainedLocalContact();
+    matchedNativeSurfaceTrajectories();matchedNativeSurfaceTrajectories(true);const auto open=sustainedLocalContact(output.empty()?nullptr:&recording);
+    if(!output.empty()){
+        recording["open_convergence_gates"]=open;
+        std::ofstream file(output,std::ios::binary);require(static_cast<bool>(file),"cannot open recording output");
+        file<<recording.dump();file.flush();require(static_cast<bool>(file),"cannot write complete recording");
+    }
     std::cout<<"[PASS] bounded material surface transfer; open sustained convergence gates: "<<open<<'\n';
     if(strict&&open){std::cerr<<"[FAIL] sustained surface-contact acceptance remains open\n";return 1;}
     return 0;

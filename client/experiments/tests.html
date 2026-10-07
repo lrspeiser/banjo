@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Banjo · Test Hub</title><link rel="stylesheet" href="lab.css"><link rel="stylesheet" href="hub.css"></head>
+<body><main>
+<header><a class="brand" href="tests.html">BANJO <span>Test Hub</span></a><nav aria-label="Test areas"><a href="/">Material lab</a><a href="http://127.0.0.1:18890/world">Playable World ↗</a></nav></header>
+<section class="intro"><p class="eyebrow">Rewrite checkpoint</p><h1>Run it. Inspect the response.</h1><p>These checks run the compiled reference on your computer. The playable World still uses the retained engine.</p></section>
+<section class="run-controls"><button id="all" class="primary" disabled>Run checkpoint checks</button><span id="progress" role="status">Opening test catalog…</span><a id="jump" href="#replay" hidden>Inspect contact response ↓</a></section>
+<p class="scope">Includes native physics, tool families, Rust integration and build registration. Strict failures stay visible. This is the checkpoint set, not the entire repository regression suite.</p>
+<section id="checks" class="test-grid" aria-label="Available checks"></section>
+<section id="replay" hidden aria-label="Actual contact response">
+<div class="intro"><h2>Tool ↔ material contact</h2><p>Recorded physics, slowed for inspection. Glass, oak and iron receive the same tool input. Oak is laboratory only.</p></div>
+<div class="toolbar">
+<label>Material<select id="material"><option value="glass">Glass</option><option value="oak">Oak · lab only</option><option value="iron">Iron</option></select></label>
+<label>Head width<select id="width"><option value="0.04">40 mm</option><option value="0.12">120 mm</option></select></label>
+<label>Physical step<select id="dt"><option value="1e-7">100 ns</option><option value="5e-8">50 ns</option></select></label>
+<label>Displacement view<select id="magnify"><option value="1">Actual · 1×</option><option value="100">Enlarge · 100×</option></select></label>
+<button id="play">Play response</button></div>
+<article class="scene"><canvas id="contact" role="img" aria-label="Actual source poses and material cell centres"></canvas><div id="metrics" class="metrics"></div></article>
+<section class="timeline"><label for="frame">Physical time <strong id="time">0 μs</strong></label><input id="frame" type="range" min="0" max="32" value="0" step="1" aria-label="Contact recording frame"><div class="timeline-notes"><span id="view">Actual dimensions · 1×</span><span>33 solver samples · no motion interpolation</span></div></section>
+<div class="legend"><span><i class="dot blue"></i>Attached cells</span><span><i class="dot amber"></i>Detached cells</span><span><i class="dot white"></i>Fixed support</span><span>Lines = surviving bonds · outlined boxes = native tool</span></div>
+<p class="scope">120 mm block · 40 mm translational cells · 9 fixed cells · initial tool velocity (6, 0.2, 0.1) m/s · no gravity or damping. Displayed cells are centres, not solved debris collision surfaces. Cell spin, self-contact and settling are unsupported. Contact convergence is still failing; replay is evidence, not certification.</p>
+</section>
+<footer id="identity">Results have executable fingerprints. Recordings are produced by a fresh run; each new test job replaces the previous local result.</footer>
+</main><script type="module" src="hub.js"></script></body></html>
