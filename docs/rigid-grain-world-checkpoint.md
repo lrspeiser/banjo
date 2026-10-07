@@ -47,3 +47,7 @@ Mass/body retention is measured. **Full momentum/angular-momentum/energy closure
 Cohesive solid ground, intrinsic glass/metal/tool fracture, finite material self/neighbor contact, conservative topology handoff, calibrated granular/soil laws, durable hit-completion receipts/state, production terrain scale and physical-phone/full-repository regression remain open. The [coupled manifold checkpoint](coupled-manifold-checkpoint.md) and original strict sustained-contact / four iron same-column repeat gates are retained and still unresolved. This scenario does not close them by replacing their experiments with rigid cubes.
 
 Next: qualify physical targeting/clearance and bounded actor/hand recovery under long repeated use; close the full transfer ledger; then connect the converged conservative solid solver to native target activation and topology replacement. Calibrate cohesion/packing and prove excavation throughput before calling it a playable material-ground engine.
+
+### Published follow-up
+
+Core scope is published on main as `b3b8dd5d`. A subsequent ordinary-browser check caught New world discarding a click during an observation. The control now waits briefly for the active request, prevents duplicate starts and reports a timeout; a successful fresh world replaces the session and resets the native clock. This follow-up changes browser scheduling only. Native/worker/gateway physical evidence above remains the same; no physical gate is reclassified.

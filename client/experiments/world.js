@@ -20,7 +20,7 @@ let session=null,state=null,busy=false,closed=false;
 let azimuth=.68,elevation=.6,distance=3.4,drag=null,hover=null,hoverKey='',preview=null;
 let pollTimer=null,moveTimer=null,lastEvent='',heading=0;
 const keys=new Set();
-let noticeTimer=null;
+let noticeTimer=null,starting=false;
 const colours={concrete:0x9c9a86,iron:0x929fab,glass:0x8ac8d9,oak:0xa67c45};
 const outline=new THREE.BoxHelper(new THREE.Mesh(new THREE.BoxGeometry(1,1,1)),0x66e2a3);outline.visible=false;scene.add(outline);
 let lastHitEnd='';
@@ -123,7 +123,11 @@ async function act(action,extra={}){
     finally{busy=false;}
 }
 async function start(){
-    if(busy)return;
+    if(starting)return;
+    starting=true;$('restart').disabled=true;
+    const deadline=performance.now()+2000;
+    while(busy && performance.now()<deadline)await new Promise(resolve=>setTimeout(resolve,15));
+    if(busy){starting=false;$('restart').disabled=false;say('World is busy · try New world again');return;}
     busy=true;clearTimeout(pollTimer);clearTimeout(moveTimer);keys.clear();
     try{
         if(session)await api({action:'close',session});session=null;
@@ -134,7 +138,7 @@ async function start(){
         session=result.session;consume(result);$('setup').hidden=true;$('settings').setAttribute('aria-expanded','false');
         say('Native world running · pick up the tool on the ground');
     }catch(error){say(error.message);$('step').textContent='World unavailable';}
-    finally{busy=false;pollTimer=setTimeout(poll,120);moveTimer=setTimeout(move,140);}
+    finally{busy=false;starting=false;$('restart').disabled=false;pollTimer=setTimeout(poll,120);moveTimer=setTimeout(move,140);}
 }
 async function poll(){
     if(closed)return;
