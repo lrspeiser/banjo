@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class Worker:
-    def __init__(self, native, runtime, material='iron', block_size=.1):
+    def __init__(self, native, runtime, material='iron', block_size=.1, prepared_tool=None):
         self.closed = False
         self.expected_returncode = 0
         self.temp = tempfile.TemporaryDirectory()
@@ -33,8 +33,29 @@ class Worker:
              'center_m':[0,-.1,0],'anchored':True},
             {'name':'test-block','shape':'box','material':material,'dimensions_m':[block_size]*3,
              'center_m':[0,.3,1],'anchored':False}]}),encoding='utf-8')
+        cell='0.05';extra=[]
+        if prepared_tool:
+            width={'pick':.12,'shovel':.28,'hoe':.20,'unfamiliar':.16}[prepared_tool]
+            scene.write_text(json.dumps({'terrain':{'surface':'columns','generate':{'kind':'flat',
+                'nx':32,'nz':32,'cell_m':.1,'soil_m':.75,'sand_m':0,'discharge_m3_s':0}},'bodies':[
+                {'name':'head','shape':'box','material':material,'dimensions_m':[width,.08,.04],'center_m':[.65,1.1,.2]},
+                {'name':'handle','shape':'box','material':material,'dimensions_m':[.04,.32,.04],'center_m':[.65,1.29,.2]}]}),encoding='utf-8')
+            ops=[{'op':'fix','a':'handle','b':'head','at':[.65,1.14,.2],'axis':[0,1,0],
+                    'holds_tension_n':5000,'holds_shear_n':5000},
+                {'op':'tool_point','body':'head','tip':[.65,1.06,.2],'pointing':[0,-1,0],
+                    'width_m':width,'thickness_m':.04,'angle_deg':30,'length_m':.1,
+                    'grip':[.65,1.4,.2],'grip_body':'handle'}, {'op':'snapshot'}]
+            seeded=subprocess.run([str(native),'--scene',str(scene),'--cell','.02'],
+                input=''.join(json.dumps(op)+'\n' for op in ops),capture_output=True,text=True,encoding='utf-8',timeout=30)
+            if seeded.returncode:raise AssertionError(seeded.stderr)
+            frames=[json.loads(line) for line in seeded.stdout.splitlines()]
+            if len(frames)!=4 or not all(frame.get('ok') for frame in frames) or 'snapshot' not in frames[-1]:
+                raise AssertionError('Native prepared-tool setup failed')
+            snapshot=Path(self.temp.name)/'prepared-native.json'
+            snapshot.write_text(json.dumps(frames[-1]['snapshot']),encoding='utf-8')
+            cell='.02';extra=['--initial-snapshot',str(snapshot)]
         self.child = subprocess.Popen([str(runtime),'--native',str(native),'--scene',str(scene),
-            '--cell','0.05','--world','test-world','--actors','alice,bob'],
+            '--cell',cell,'--world','test-world','--actors','alice,bob',*extra],
             stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding='utf-8')
         self.frames = queue.Queue()
         def reader():
@@ -83,6 +104,13 @@ class Worker:
         return self.request({'kind':'pickup','instance_id':instance,'ray':{
             'from_m':eye,'direction':[v/norm for v in direction],'max_distance_m':2}},actor=actor)
 
+    def use_action(self,snapshot,target=(.65,.75,.2),actor='alice'):
+        p=snapshot['native_players'][actor];w,x,y,z=p['orientation_wxyz']
+        up=[2*(x*y-w*z),1-2*(x*x+z*z),2*(y*z+w*x)]
+        eye=[a+.77*b for a,b in zip(p['position_m'],up)]
+        d=[b-a for a,b in zip(eye,target)];n=sum(v*v for v in d)**.5
+        return {'kind':'begin_tool_use','ray':{'from_m':eye,'direction':[v/n for v in d],'max_distance_m':2}}
+
     def completion(self):
         if self.events:return self.events.pop(0)
         return self.receive()
@@ -120,11 +148,83 @@ class NativeOwner(unittest.TestCase):
         if not cls.native.is_file() or not cls.runtime.is_file():
             raise AssertionError('Build both native and Rust targets and supply BANJO_LIVE_ENGINE/BANJO_RUNTIME_ENGINE; this gate cannot skip')
 
-    def worker(self, material='iron', block_size=.1):
-        worker=Worker(self.native,self.runtime,material,block_size)
+    def worker(self, material='iron', block_size=.1, prepared_tool=None):
+        worker=Worker(self.native,self.runtime,material,block_size,prepared_tool)
         self.addCleanup(worker.close)
         self.assertEqual(worker.ready['status'],'ready')
         return worker
+
+    def test_prepared_tools_use_real_native_phases_and_retain_retry_results(self):
+        for material in ['glass','oak','iron']:
+            for family in ['pick','shovel','hoe','unfamiliar']:
+                with self.subTest(material=material,family=family):
+                    worker=self.worker(material,prepared_tool=family)
+                    try:
+                        self.assertEqual(worker.ready['native']['native_tool_use_version'],1)
+                        worker.join(feet=(0,.75,0))
+                        worker.request({'kind':'move','velocity_m_s':[0,0,0],'heading_rad':0,'jump':False})
+                        pickup=worker.pickup(worker.inspect()['outcome']['snapshot'],instance='handle')
+                        self.assertEqual(pickup['outcome']['status'],'pending')
+                        self.assertEqual(worker.completion()['outcome']['status'],'applied')
+                        action=worker.use_action(worker.inspect()['outcome']['snapshot'])
+                        seq=worker.sequence+1
+                        begin=worker.request(action,ident='use-command')
+                        self.assertEqual(begin['outcome']['status'],'pending')
+                        self.assertEqual(begin['outcome']['snapshot']['own_tool_use']['phase'],'preparing')
+                        done=worker.completion()['outcome']
+                        self.assertEqual(done['command_id'],'use-command')
+                        self.assertEqual(done['status'],'applied',done)
+                        actual=done['tool_use_result']
+                        self.assertFalse(actual['active']);self.assertFalse(actual['contact_pending'])
+                        self.assertEqual(actual['phase'],'finished')
+                        self.assertGreater(sum(actual['loosened_m3'].values()),0)
+                        self.assertEqual(done['snapshot']['own_hand']['holding'],'handle')
+                        retry=worker.request(action,ident='use-command',sequence=seq)['outcome']
+                        self.assertEqual(retry['status'],'already_applied')
+                        self.assertEqual(retry['tool_use_result'],actual)
+                        print('RUNTIME_TOOL_EVIDENCE '+json.dumps({'material':material,'family':family,
+                            'native_file_sha256':worker.ready['native']['selected_file_sha256'],'dt_s':1/240,
+                            'scene_cell_m':.02,'terrain_column_m':.1,'result':actual},sort_keys=True))
+                    finally:worker.close()
+
+    def test_native_use_cancel_is_scoped_and_leave_waits_for_measured_completion(self):
+        worker=self.worker('iron',prepared_tool='pick')
+        worker.join(feet=(0,.75,0));worker.join('bob',(-1,.75,0))
+        self.assertEqual(worker.pickup(worker.inspect()['outcome']['snapshot'],instance='handle')['outcome']['status'],'pending')
+        self.assertEqual(worker.completion()['outcome']['status'],'applied')
+        action=worker.use_action(worker.inspect()['outcome']['snapshot'])
+        self.assertEqual(worker.request(action,ident='use-command')['outcome']['status'],'pending')
+        cancel={'kind':'cancel_tool_use','use_command_id':'use-command'}
+        self.assertEqual(worker.request(cancel,actor='bob')['outcome']['reason'],'target_changed')
+        self.assertIsNone(worker.inspect('bob')['outcome']['snapshot']['own_tool_use'])
+        self.assertEqual(worker.request({'kind':'leave'})['outcome']['reason'],'action_in_progress')
+        stopped=worker.request(cancel)['outcome']
+        self.assertEqual(stopped['status'],'applied')
+        self.assertEqual(stopped['snapshot']['own_tool_use']['phase'],'recovering')
+        done=worker.completion()['outcome']
+        self.assertEqual(done['reason'],'cancelled');self.assertFalse(done['tool_use_result']['active'])
+        self.assertFalse(done['tool_use_result']['contact_pending'])
+        self.assertEqual(worker.request({'kind':'leave'})['outcome']['status'],'applied')
+
+    def test_drop_during_native_contact_waits_for_its_final_measured_report(self):
+        worker=self.worker('iron',prepared_tool='pick');worker.join(feet=(0,.75,0))
+        worker.request({'kind':'move','velocity_m_s':[0,0,0],'heading_rad':0,'jump':False})
+        worker.pickup(worker.inspect()['outcome']['snapshot'],instance='handle')
+        self.assertEqual(worker.completion()['outcome']['status'],'applied')
+        self.assertEqual(worker.request(worker.use_action(worker.inspect()['outcome']['snapshot']),ident='use-command')['outcome']['status'],'pending')
+        deadline=time.monotonic()+3
+        buried=None
+        while time.monotonic()<deadline:
+            s=worker.inspect()['outcome']['snapshot']['own_tool_use']
+            if s and s['active'] and s['contact_pending'] and s['contact_work_j']>0:
+                buried=s;break
+            if s and not s['active']:break
+        self.assertIsNotNone(buried,'Ordinary worker journey never reached a measured open bite')
+        dropped=worker.request({'kind':'drop'})['outcome'];self.assertEqual(dropped['status'],'applied')
+        self.assertEqual(dropped['snapshot']['own_hand']['holding'],'')
+        done=worker.completion()['outcome'];self.assertEqual(done['command_id'],'use-command')
+        self.assertEqual(done['reason'],'grip_released');self.assertFalse(done['tool_use_result']['contact_pending'])
+        self.assertGreater(done['tool_use_result']['contact_work_j'],0)
 
     def test_owned_clock_runs_without_client_steps_and_identity_matches_file(self):
         worker=self.worker()

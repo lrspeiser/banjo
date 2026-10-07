@@ -90,6 +90,12 @@ pub enum Action {
     PreviewToolUse {
         ray: Ray,
     },
+    BeginToolUse {
+        ray: Ray,
+    },
+    CancelToolUse {
+        use_command_id: Id,
+    },
     Drop,
     Leave,
 }
@@ -123,6 +129,113 @@ pub enum Refusal {
     CapacityExceeded,
     HostActionRequired,
     Cancelled,
+    BlockedPath,
+    InsufficientWork,
+    GripReleased,
+    CapabilityChanged,
+    RecoveryBlocked,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolPhase {
+    Preparing,
+    Acting,
+    Recovering,
+    Finished,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReleasedVolumes {
+    pub rock: f64,
+    pub soil: f64,
+    pub sand: f64,
+}
+
+impl ReleasedVolumes {
+    pub fn total(&self) -> f64 {
+        self.rock + self.soil + self.sand
+    }
+}
+
+/// Native measurements, not client-supplied tool settings or a yield promise.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolUse {
+    pub schema: String,
+    pub active: bool,
+    pub phase: ToolPhase,
+    pub reason: String,
+    pub tool: String,
+    pub point_id: u32,
+    pub target_m: [f64; 3],
+    pub started_s: f64,
+    pub phase_started_s: f64,
+    pub ended_s: f64,
+    pub hand_work_j: f64,
+    pub contact_work_j: f64,
+    pub contact_impulse_n_s: f64,
+    pub peak_contact_force_n: f64,
+    pub contacted: bool,
+    pub contact_pending: bool,
+    pub loosened_m3: ReleasedVolumes,
+}
+
+impl ToolUse {
+    pub fn refusal(&self) -> Result<Option<Refusal>, Refusal> {
+        if self.reason.is_empty() {
+            Ok(None)
+        } else {
+            serde_json::from_value(serde_json::Value::String(self.reason.clone()))
+                .map(Some)
+                .map_err(|_| Refusal::KernelUnavailable)
+        }
+    }
+
+    pub fn validate(&self, native_s: f64) -> Result<(), Refusal> {
+        let positive = |v: f64| v.is_finite() && (0.0..=1e12).contains(&v);
+        if self.schema != "banjo.native-tool-use.v1"
+            || self.active == (self.phase == ToolPhase::Finished)
+            || self.tool.is_empty()
+            || self.tool.len() > 120
+            || self.tool.chars().any(char::is_control)
+            || self.point_id == 0
+            || self
+                .target_m
+                .iter()
+                .any(|x| !x.is_finite() || x.abs() > 1e6)
+            || !native_s.is_finite()
+            || !positive(self.started_s)
+            || !positive(self.phase_started_s)
+            || self.phase_started_s < self.started_s
+            || self.phase_started_s > native_s + 1e-6
+            || !positive(self.ended_s)
+            || (self.active && self.ended_s != 0.0)
+            || (!self.active
+                && (self.ended_s < self.phase_started_s || self.ended_s > native_s + 1e-6))
+            || !self.hand_work_j.is_finite()
+            || self.hand_work_j.abs() > 1e12
+            || [
+                self.contact_work_j,
+                self.contact_impulse_n_s,
+                self.peak_contact_force_n,
+                self.loosened_m3.rock,
+                self.loosened_m3.soil,
+                self.loosened_m3.sand,
+            ]
+            .iter()
+            .any(|v| !positive(*v))
+            || ((!self.contacted)
+                && (self.contact_pending
+                    || self.contact_work_j != 0.0
+                    || self.loosened_m3.total() != 0.0))
+        {
+            return Err(Refusal::KernelUnavailable);
+        }
+        self.refusal()?;
+        Ok(())
+    }
 }
 
 /// Eligibility is an observation, never a promise of physical contact or yield.
@@ -228,7 +341,8 @@ impl Command {
                     ray.validate()
                 }
             }
-            Action::PreviewToolUse { ray } => ray.validate(),
+            Action::PreviewToolUse { ray } | Action::BeginToolUse { ray } => ray.validate(),
+            Action::CancelToolUse { use_command_id } => use_command_id.validate(),
             _ => Ok(()),
         }
     }
@@ -268,6 +382,8 @@ pub struct Outcome {
     pub tick: u64,
     pub simulation_s: f64,
     pub snapshot: serde_json::Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_use_result: Option<ToolUse>,
 }
 
 #[cfg(test)]
@@ -401,5 +517,70 @@ mod tests {
         p.measured_yield = false;
         p.target_m = Some([f64::NAN, 0.0, 0.0]);
         assert_eq!(p.validate("alice"), Err(Refusal::KernelUnavailable));
+    }
+
+    #[test]
+    fn use_and_cancel_cannot_supply_physics_settings_or_snapshot_paths() {
+        let mut c = command();
+        c.payload = Action::BeginToolUse {
+            ray: Ray {
+                from_m: [0.0, 1.62, 0.0],
+                direction: [0.0, -1.0, 0.0],
+                max_distance_m: 2.0,
+            },
+        };
+        assert_eq!(c.validate(), Ok(()));
+        for field in ["work_j", "tool_point", "initial_snapshot", "path_m"] {
+            let mut encoded = serde_json::to_value(&c).unwrap();
+            encoded["payload"][field] = serde_json::json!(1000);
+            assert_eq!(
+                Command::parse(&serde_json::to_vec(&encoded).unwrap()).unwrap_err(),
+                Refusal::InvalidInput
+            );
+        }
+        c.payload = Action::CancelToolUse {
+            use_command_id: Id::new("use-1").unwrap(),
+        };
+        let mut encoded = serde_json::to_value(&c).unwrap();
+        encoded["payload"]["use_command_id"] = serde_json::json!("../other");
+        assert_eq!(
+            Command::parse(&serde_json::to_vec(&encoded).unwrap()).unwrap_err(),
+            Refusal::InvalidInput
+        );
+    }
+
+    #[test]
+    fn tool_measurements_reject_inconsistent_phase_quantity_time_and_unrecognized_reason() {
+        let encoded = serde_json::json!({"schema":"banjo.native-tool-use.v1","active":true,"phase":"preparing",
+            "reason":"","tool":"unfamiliar-tool","point_id":1,"target_m":[0.0,0.0,1.0],
+            "started_s":1.0,"phase_started_s":1.0,"ended_s":0.0,"hand_work_j":-2.0,
+            "contact_work_j":0.0,"contact_impulse_n_s":0.0,"peak_contact_force_n":0.0,
+            "contacted":false,"contact_pending":false,"loosened_m3":{"rock":0.0,"soil":0.0,"sand":0.0}});
+        let valid: ToolUse = serde_json::from_value(encoded.clone()).unwrap();
+        assert_eq!(valid.validate(1.0), Ok(()));
+        for (field, value) in [
+            ("active", serde_json::json!(false)),
+            ("phase_started_s", serde_json::json!(2.0)),
+            ("contact_pending", serde_json::json!(true)),
+            ("reason", serde_json::json!("invented_success")),
+            ("contact_work_j", serde_json::json!(-1.0)),
+        ] {
+            let mut bad = encoded.clone();
+            bad[field] = value;
+            assert_eq!(
+                serde_json::from_value::<ToolUse>(bad)
+                    .unwrap()
+                    .validate(1.0),
+                Err(Refusal::KernelUnavailable)
+            );
+        }
+        let mut bad = encoded;
+        bad["loosened_m3"]["soil"] = serde_json::json!(-1.0);
+        assert_eq!(
+            serde_json::from_value::<ToolUse>(bad)
+                .unwrap()
+                .validate(1.0),
+            Err(Refusal::KernelUnavailable)
+        );
     }
 }

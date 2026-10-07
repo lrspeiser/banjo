@@ -1177,6 +1177,7 @@ struct LiveToolPoint {
 // loosened nothing, and the ones the model does not cover: "not supported" is
 // an answer, and it is never "your tool failed".
 struct LiveGroundWork {
+    std::uint64_t meeting_id{}; // stable until native-process restart; never a vector index
     unsigned point{};          // the tool point
     std::string tool;          // the body carrying it
     std::string actor;         // native owner of material loosened by this meeting
@@ -1296,7 +1297,7 @@ struct LiveToolUse {
     double started_s{}, phase_started_s{}, ended_s{}, hand_work_j{};
     double contact_work_j{}, contact_impulse_n_s{}, peak_contact_force_n{};
     terrain::Volumes loosened;
-    bool contacted{};
+    bool contacted{}, contact_pending{};
 };
 
 // A moment where the world was made to wait, or was saved from waiting.

@@ -652,6 +652,7 @@ void ToolTerrain::meet(const ToolTerrainHost &host, Point &p, MatterBodyId id, c
     opened.resistance_n = r.into;
     opened.model = terrain::kGroundWorkModel;
     opened.open = true;
+    opened.meeting_id=next_meeting_id_++;
     log_.push_back(std::move(opened));
     p.report = log_.size() - 1;
     p.tip_before = tip;
@@ -837,7 +838,7 @@ LiveGroundWork ToolTerrain::strikeCell(const ToolTerrainHost &host, const std::s
         r.cut_receipt_json=nlohmann::json{{"model","work-cut-v2"},{"requested_work_j",work_j},
             {"consumed_work_j",0},{"work_consumed_j",0},{"work_source",work_source},
             {"supported",false},{"kind",r.kind},{"why",why}}.dump();
-        log_.push_back(r);return r;
+        r.meeting_id=next_meeting_id_++;log_.push_back(r);return r;
     };
     if(!host.environment || !point) return refused("a declared native point and terrain are required");
     const auto point_id=host.id_of(point->body);
@@ -871,7 +872,7 @@ LiveGroundWork ToolTerrain::strikeCell(const ToolTerrainHost &host, const std::s
     r.broken_share=cut.value("broken_share",0.0);
     const auto &v=cut.at("loosened");r.loosened={v.at("rock_m3").get<double>(),v.at("soil_m3").get<double>(),v.at("sand_m3").get<double>()};
     r.loosened_kg=cut.at("mass_kg").get<double>();
-    r.tool_whole=host.id_of(tool).has_value();log_.push_back(r);return r;
+    r.tool_whole=host.id_of(tool).has_value();r.meeting_id=next_meeting_id_++;log_.push_back(r);return r;
 }
 
 double ToolTerrain::leadingWidth(const Point &p) const {
@@ -1002,6 +1003,7 @@ void ToolTerrain::note(const ToolTerrainHost &host, Point &p, const std::string 
     said.closing_speed_m_s = std::max(0.0, closing);
     said.model = terrain::kGroundWorkModel;
     said.open = true;
+    said.meeting_id=next_meeting_id_++;
     log_.push_back(std::move(said));
     p.note = log_.size() - 1;
     p.note_kind = kind;

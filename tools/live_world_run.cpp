@@ -274,7 +274,7 @@ nlohmann::json toolUseJson(const banjo::fastlattice::LiveToolUse &use) {
         {"started_s",use.started_s},{"phase_started_s",use.phase_started_s},{"ended_s",use.ended_s},
         {"hand_work_j",use.hand_work_j},{"contact_work_j",use.contact_work_j},
         {"contact_impulse_n_s",use.contact_impulse_n_s},{"peak_contact_force_n",use.peak_contact_force_n},
-        {"contacted",use.contacted},{"loosened_m3",{{"rock",use.loosened.rock_m3},
+        {"contacted",use.contacted},{"contact_pending",use.contact_pending},{"loosened_m3",{{"rock",use.loosened.rock_m3},
             {"soil",use.loosened.soil_m3},{"sand",use.loosened.sand_m3}}}};
 }
 
@@ -1000,6 +1000,7 @@ nlohmann::json groundWorkFields(const LiveGroundWork &w);
 nlohmann::json groundWorkJson(const LiveGroundWork &w) {
     nlohmann::json out = groundWorkFields(w);
     out["actor"] = w.actor;
+    out["meeting_id"] = w.meeting_id;
     // Where what came loose went out through the ground's dig, as a dig edit
     // says it, and not rounded: a host that keeps the ground's edits makes it
     // again from these numbers and has to get the same hole.
@@ -1256,7 +1257,7 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
         if (!impact.declined.empty()) said["declined"] = impact.declined;
         impacts.push_back(std::move(said));
     }
-    nlohmann::json state = {{"ok", true}, {"bulk_transfer_receipts", 1}, {"pickup_admission_version", 1}, {"native_carry_version", 1}, {"tool_use_admission_version", 1}, {"t", world.time_s()}, {"stepped_back", world.steppedBack()},
+    nlohmann::json state = {{"ok", true}, {"bulk_transfer_receipts", 1}, {"pickup_admission_version", 1}, {"native_carry_version", 1}, {"tool_use_admission_version", 1}, {"native_tool_use_version", 1}, {"t", world.time_s()}, {"stepped_back", world.steppedBack()},
             {"cell_size_m", world.cellSize()}, {"geometry", with_geometry},
             // `partial` true means bodies missing from this reply are unchanged,
             // not gone; `gone` names the ones that really did go. `count` is how

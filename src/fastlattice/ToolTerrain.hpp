@@ -190,6 +190,7 @@ private:
     [[nodiscard]] std::optional<HeldPointFrame> heldFrame(const ToolTerrainHost &host,
         const Point &point, const std::string &held, const Vec3 &grip_local, std::string &why) const;
     std::vector<LiveGroundWork> log_;
+    std::uint64_t next_meeting_id_{1};
     unsigned next_{1};
 
     void follow(const ToolTerrainHost &host, Point &p, MatterBodyId now);

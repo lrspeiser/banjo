@@ -12,13 +12,31 @@ use std::time::{Duration, Instant};
 
 const MAX_OUTPUT_BYTES: usize = 2 * 1024 * 1024;
 
-fn configuration() -> Result<(PathBuf, PathBuf, f64, Id, Vec<Id>), String> {
+struct Configuration {
+    native: PathBuf,
+    scene: PathBuf,
+    cell: f64,
+    world: Id,
+    actors: Vec<Id>,
+    initial_snapshot: Option<PathBuf>,
+}
+
+fn configuration() -> Result<Configuration, String> {
     let mut options = std::collections::BTreeMap::new();
     let mut args = std::env::args().skip(1);
     while let Some(key) = args.next() {
-        if !["--native", "--scene", "--cell", "--world", "--actors"].contains(&key.as_str()) {
+        if ![
+            "--native",
+            "--scene",
+            "--cell",
+            "--world",
+            "--actors",
+            "--initial-snapshot",
+        ]
+        .contains(&key.as_str())
+        {
             return Err(
-                "Use --native PATH --scene PATH --cell METRES --world ID --actors ID,ID".into(),
+                "Use --native PATH --scene PATH --cell METRES --world ID --actors ID,ID [--initial-snapshot PATH]".into(),
             );
         }
         let value = args.next().ok_or("Missing option value")?;
@@ -38,13 +56,27 @@ fn configuration() -> Result<(PathBuf, PathBuf, f64, Id, Vec<Id>), String> {
         .map(Id::new)
         .collect::<Result<Vec<_>, _>>()
         .map_err(|_| "Invalid actors")?;
-    Ok((native, scene, cell, world, actors))
+    Ok(Configuration {
+        native,
+        scene,
+        cell,
+        world,
+        actors,
+        initial_snapshot: options.get("--initial-snapshot").map(PathBuf::from),
+    })
 }
 
 fn run() -> Result<(), String> {
-    let (native, scene, cell, id, actors) = configuration()?;
-    let kernel =
-        NativeProcess::open(&native, &scene, cell).map_err(|r| format!("Native open: {r:?}"))?;
+    let Configuration {
+        native,
+        scene,
+        cell,
+        world: id,
+        actors,
+        initial_snapshot,
+    } = configuration()?;
+    let kernel = NativeProcess::open(&native, &scene, cell, initial_snapshot.as_deref())
+        .map_err(|r| format!("Native open: {r:?}"))?;
     let native_identity = kernel.identity();
     let mut world = World::new(id, actors, kernel).map_err(|r| format!("World open: {r:?}"))?;
     let (sender, input) = mpsc::sync_channel(COMMAND_CAPACITY);

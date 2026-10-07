@@ -1,6 +1,6 @@
 //! Transitional adapter to the existing native JSON process. Only the world
 //! owner calls it; no browser/native operation pass-through is exposed.
-use crate::contracts::{Ray, Refusal, ToolPreview};
+use crate::contracts::{Ray, Refusal, ToolPhase, ToolPreview, ToolUse};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -28,6 +28,26 @@ pub trait Kernel {
     fn preview_tool_use(&mut self, _actor: &str, _ray: &Ray) -> Result<(), Refusal> {
         Err(Refusal::UnsupportedCapability)
     }
+    fn begin_tool_use(&mut self, _actor: &str, _ray: &Ray) -> Result<(), Refusal> {
+        Err(Refusal::UnsupportedCapability)
+    }
+    fn cancel_tool_use(&mut self, _actor: &str) -> Result<(), Refusal> {
+        Err(Refusal::UnsupportedCapability)
+    }
+    fn tool_use(&self, actor: &str) -> Result<Option<ToolUse>, Refusal> {
+        let value = &self.state()["player_tool_uses"][actor];
+        if value.is_null() {
+            return Ok(None);
+        }
+        let use_state: ToolUse =
+            serde_json::from_value(value.clone()).map_err(|_| Refusal::KernelUnavailable)?;
+        use_state.validate(
+            self.state()["t"]
+                .as_f64()
+                .ok_or(Refusal::KernelUnavailable)?,
+        )?;
+        Ok(Some(use_state))
+    }
     fn remove(&mut self, actor: &str) -> Result<(), Refusal>;
     fn advance(&mut self, dt: f64, steps: u32) -> Result<(), Refusal>;
 }
@@ -43,7 +63,12 @@ pub struct NativeProcess {
 }
 
 impl NativeProcess {
-    pub fn open(executable: &Path, scene: &Path, cell_m: f64) -> Result<Self, Refusal> {
+    pub fn open(
+        executable: &Path,
+        scene: &Path,
+        cell_m: f64,
+        initial_snapshot: Option<&Path>,
+    ) -> Result<Self, Refusal> {
         if !cell_m.is_finite() || !(0.01..=1.0).contains(&cell_m) {
             return Err(Refusal::InvalidInput);
         }
@@ -61,13 +86,17 @@ impl NativeProcess {
             hash.update(&buffer[..count]);
         }
         let selected_file_sha256 = format!("{:x}", hash.finalize());
-        let mut child = Command::new(executable)
-            .args([
-                "--scene",
-                &scene.to_string_lossy(),
-                "--cell",
-                &cell_m.to_string(),
-            ])
+        let mut command = Command::new(executable);
+        command.args([
+            "--scene",
+            &scene.to_string_lossy(),
+            "--cell",
+            &cell_m.to_string(),
+        ]);
+        if let Some(snapshot) = initial_snapshot {
+            command.arg("--snapshot").arg(snapshot);
+        }
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -124,6 +153,9 @@ impl NativeProcess {
         if process.state["ok"] != true || !process.state["t"].is_number() {
             return Err(Refusal::KernelUnavailable);
         }
+        if initial_snapshot.is_some() && process.state["restored"]["tier"] != "whole" {
+            return Err(Refusal::NativeRefused);
+        }
         Ok(process)
     }
 
@@ -132,7 +164,8 @@ impl NativeProcess {
             "build_provenance":"unrecorded","actual_abi":null,
             "pickup_admission_version":self.state["pickup_admission_version"],
             "native_carry_version":self.state["native_carry_version"],
-            "tool_use_admission_version":self.state["tool_use_admission_version"]})
+            "tool_use_admission_version":self.state["tool_use_admission_version"],
+            "native_tool_use_version":self.state["native_tool_use_version"]})
     }
 
     fn receive(&mut self) -> Result<Value, Refusal> {
@@ -236,6 +269,51 @@ impl Kernel for NativeProcess {
     }
     fn advance(&mut self, dt: f64, steps: u32) -> Result<(), Refusal> {
         self.call(json!({"op":"step","dt":dt,"n":steps}))
+    }
+    fn begin_tool_use(&mut self, actor: &str, ray: &Ray) -> Result<(), Refusal> {
+        if self.state["native_tool_use_version"] != 1 {
+            return Err(Refusal::UnsupportedCapability);
+        }
+        self.call(
+            json!({"op":"tool-use-begin","actor":actor,"from":ray.from_m,
+            "dir":ray.direction,"max_m":ray.max_distance_m}),
+        )?;
+        match self.state["tool_use_start"]["started"].as_bool() {
+            Some(false) => Err(serde_json::from_value(
+                self.state["tool_use_start"]["reason"].clone(),
+            )
+            .unwrap_or(Refusal::NativeRefused)),
+            Some(true) => {
+                let use_state = self.tool_use(actor)?.ok_or(Refusal::KernelUnavailable)?;
+                if use_state.phase != ToolPhase::Preparing
+                    || !use_state.active
+                    || use_state.started_s
+                        != self.state["t"].as_f64().ok_or(Refusal::KernelUnavailable)?
+                {
+                    return Err(Refusal::KernelUnavailable);
+                }
+                Ok(())
+            }
+            None => Err(Refusal::KernelUnavailable),
+        }
+    }
+    fn cancel_tool_use(&mut self, actor: &str) -> Result<(), Refusal> {
+        if self.state["native_tool_use_version"] != 1 {
+            return Err(Refusal::UnsupportedCapability);
+        }
+        let before = self.tool_use(actor)?.ok_or(Refusal::TargetChanged)?;
+        if !before.active {
+            return Err(Refusal::TargetChanged);
+        }
+        self.call(json!({"op":"tool-use-cancel","actor":actor}))?;
+        let after = self.tool_use(actor)?.ok_or(Refusal::KernelUnavailable)?;
+        if after.phase != ToolPhase::Recovering
+            || after.started_s != before.started_s
+            || after.point_id != before.point_id
+        {
+            return Err(Refusal::KernelUnavailable);
+        }
+        Ok(())
     }
 }
 

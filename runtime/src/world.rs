@@ -1,7 +1,7 @@
 //! Single mutable world owner. Time advances only through its fixed native
 //! batch, never through player requests. This is an experimental host slice;
 //! durable economy/inventory operations are deliberately not admitted yet.
-use crate::contracts::{Action, Command, Id, Outcome, Refusal, Status};
+use crate::contracts::{Action, Command, Id, Outcome, Refusal, Status, ToolUse};
 use crate::native::Kernel;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -31,11 +31,28 @@ struct Receipt {
     revision: u64,
     tick: u64,
     simulation_s: f64,
+    tool_use_result: Option<ToolUse>,
 }
 
 struct PendingPickup {
     instance: String,
     started_attempted_ticks: u64,
+}
+
+#[derive(Clone)]
+struct PendingToolUse {
+    tool: String,
+    point_id: u32,
+    started_s: f64,
+    started_attempted_ticks: u64,
+}
+
+impl PendingToolUse {
+    fn matches(&self, state: &ToolUse) -> bool {
+        state.tool == self.tool
+            && state.point_id == self.point_id
+            && state.started_s == self.started_s
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -55,6 +72,7 @@ pub struct World<K: Kernel> {
     sequences: BTreeMap<String, u64>,
     receipts: BTreeMap<(String, String), Receipt>,
     pending_pickups: BTreeMap<(String, String), PendingPickup>,
+    pending_tool_uses: BTreeMap<(String, String), PendingToolUse>,
     completions: Vec<Outcome>,
     kernel: K,
     revision: u64,
@@ -66,7 +84,14 @@ impl<K: Kernel> World<K> {
         let time = kernel.state()["t"]
             .as_f64()
             .ok_or(Refusal::KernelUnavailable)?;
-        if !time.is_finite() || time != 0.0 || allowed.is_empty() || allowed.len() > 64 {
+        if !time.is_finite()
+            || time != 0.0
+            || allowed.is_empty()
+            || allowed.len() > 64
+            || kernel.state()["native_players"]
+                .as_object()
+                .is_some_and(|p| !p.is_empty())
+        {
             return Err(Refusal::InvalidInput);
         }
         Ok(Self {
@@ -76,6 +101,7 @@ impl<K: Kernel> World<K> {
             sequences: BTreeMap::new(),
             receipts: BTreeMap::new(),
             pending_pickups: BTreeMap::new(),
+            pending_tool_uses: BTreeMap::new(),
             completions: Vec::new(),
             kernel,
             revision: 0,
@@ -175,11 +201,102 @@ impl<K: Kernel> World<K> {
                         tick: self.clock.tick,
                         simulation_s: self.clock.simulation_s,
                         snapshot,
+                        tool_use_result: None,
                     });
                 }
             }
         }
-        result
+        if let Err(fault) = result {
+            self.fault_tool_uses(fault);
+            return Err(fault);
+        }
+        self.resolve_tool_uses(before_tick)
+    }
+
+    fn resolve_tool_uses(&mut self, before_tick: u64) -> Result<(), Refusal> {
+        let keys: Vec<_> = self.pending_tool_uses.keys().cloned().collect();
+        for key in keys {
+            let pending = self
+                .pending_tool_uses
+                .get(&key)
+                .expect("pending tool key")
+                .clone();
+            let state = self
+                .kernel
+                .tool_use(&key.0)
+                .and_then(|s| s.ok_or(Refusal::KernelUnavailable));
+            let state = match state {
+                Ok(s) if pending.matches(&s) => s,
+                _ => {
+                    self.clock.fault = Some(Refusal::KernelUnavailable);
+                    self.fault_tool_uses(Refusal::KernelUnavailable);
+                    return Err(Refusal::KernelUnavailable);
+                }
+            };
+            if self.clock.attempted_ticks - pending.started_attempted_ticks >= 2400 {
+                // No synthetic completion or recovery pose on a stalled solver.
+                self.pending_tool_uses.remove(&key);
+                self.complete_tool_use(key, Some(Refusal::NativeRefused), Some(state));
+                self.clock.fault = Some(Refusal::NativeRefused);
+                self.fault_tool_uses(Refusal::NativeRefused);
+                return Err(Refusal::NativeRefused);
+            }
+            if state.active
+                || state.contact_pending
+                || self.clock.tick == before_tick
+                || self.kernel.state()["stepped_back"] == true
+            {
+                continue;
+            }
+            let reason = state.refusal()?.or_else(|| {
+                (state.loosened_m3.total() == 0.0).then_some(if state.contacted {
+                    Refusal::InsufficientWork
+                } else {
+                    Refusal::NoContact
+                })
+            });
+            self.pending_tool_uses.remove(&key);
+            self.complete_tool_use(key, reason, Some(state));
+        }
+        Ok(())
+    }
+
+    fn fault_tool_uses(&mut self, reason: Refusal) {
+        for (key, _) in std::mem::take(&mut self.pending_tool_uses) {
+            self.complete_tool_use(key, Some(reason), None);
+        }
+    }
+
+    fn complete_tool_use(
+        &mut self,
+        key: (String, String),
+        reason: Option<Refusal>,
+        result: Option<ToolUse>,
+    ) {
+        self.revision += 1;
+        let receipt = self.receipts.get_mut(&key).expect("pending tool receipt");
+        receipt.status = if reason.is_some() {
+            Status::Rejected
+        } else {
+            Status::Applied
+        };
+        receipt.reason = reason;
+        receipt.revision = self.revision;
+        receipt.tick = self.clock.tick;
+        receipt.simulation_s = self.clock.simulation_s;
+        receipt.tool_use_result = result.clone();
+        self.completions.push(Outcome {
+            schema: "banjo.outcome.v1".into(),
+            command_id: Id::new(key.1).expect("validated command"),
+            actor_id: Id::new(key.0.clone()).expect("validated actor"),
+            status: receipt.status.clone(),
+            reason,
+            revision: self.revision,
+            tick: self.clock.tick,
+            simulation_s: self.clock.simulation_s,
+            snapshot: self.observation(&key.0),
+            tool_use_result: result,
+        });
     }
 
     pub fn take_completions(&mut self) -> Vec<Outcome> {
@@ -211,6 +328,7 @@ impl<K: Kernel> World<K> {
                 tick: self.clock.tick,
                 simulation_s: self.clock.simulation_s,
                 snapshot: self.observation(actor),
+                tool_use_result: None,
             });
         }
     }
@@ -236,7 +354,12 @@ impl<K: Kernel> World<K> {
         visible.insert("own_hand".into(), state["player_hands"][actor].clone());
         visible.insert(
             "own_tool_use".into(),
-            state["player_tool_uses"][actor].clone(),
+            self.kernel
+                .tool_use(actor)
+                .ok()
+                .flatten()
+                .map(|s| serde_json::to_value(s).expect("validated tool state"))
+                .unwrap_or(Value::Null),
         );
         visible.insert(
             "own_tool_preview".into(),
@@ -292,6 +415,7 @@ impl<K: Kernel> World<K> {
             revision: self.revision,
             tick: self.clock.tick,
             simulation_s: self.clock.simulation_s,
+            tool_use_result: None,
             snapshot: if authorized {
                 self.observation(command.actor_id.as_str())
             } else {
@@ -339,6 +463,7 @@ impl<K: Kernel> World<K> {
             result.revision = receipt.revision;
             result.tick = receipt.tick;
             result.simulation_s = receipt.simulation_s;
+            result.tool_use_result = receipt.tool_use_result.clone();
             // Receipt time is original; snapshot explicitly observes now.
             return result;
         }
@@ -359,6 +484,10 @@ impl<K: Kernel> World<K> {
         }
         self.sequences.insert(actor.into(), command.input_sequence);
         let result = self.apply(actor, &command.payload, request.host_action);
+        if result == Err(Refusal::KernelUnavailable) {
+            self.clock.fault = Some(Refusal::KernelUnavailable);
+            self.fault_tool_uses(Refusal::KernelUnavailable);
+        }
         let (status, reason) = match result {
             Ok(())
                 if matches!(
@@ -381,6 +510,24 @@ impl<K: Kernel> World<K> {
                 }
                 (Status::Pending, None)
             }
+            Ok(()) if matches!(command.payload, Action::BeginToolUse { .. }) => {
+                self.revision += 1;
+                let state = self
+                    .kernel
+                    .tool_use(actor)
+                    .expect("validated native use")
+                    .expect("started use");
+                self.pending_tool_uses.insert(
+                    key.clone(),
+                    PendingToolUse {
+                        tool: state.tool,
+                        point_id: state.point_id,
+                        started_s: state.started_s,
+                        started_attempted_ticks: self.clock.attempted_ticks,
+                    },
+                );
+                (Status::Pending, None)
+            }
             Ok(()) => {
                 self.revision += 1;
                 (Status::Applied, None)
@@ -397,6 +544,7 @@ impl<K: Kernel> World<K> {
                 revision: outcome.revision,
                 tick: outcome.tick,
                 simulation_s: outcome.simulation_s,
+                tool_use_result: None,
             },
         );
         outcome
@@ -424,13 +572,54 @@ impl<K: Kernel> World<K> {
             _ if !self.joined.contains(actor) => Err(Refusal::NotJoined),
             Action::Inspect => Ok(()),
             Action::PreviewToolUse { ray } => self.kernel.preview_tool_use(actor, ray),
+            Action::BeginToolUse { ray } => {
+                if self.pending_tool_uses.keys().any(|(a, _)| a == actor)
+                    || self.pending_pickups.keys().any(|(a, _)| a == actor)
+                {
+                    return Err(Refusal::ActionInProgress);
+                }
+                if self.completions.len()
+                    + self.pending_pickups.len()
+                    + self.pending_tool_uses.len()
+                    >= 64
+                {
+                    return Err(Refusal::CapacityExceeded);
+                }
+                self.kernel.begin_tool_use(actor, ray)?;
+                let state = self
+                    .kernel
+                    .tool_use(actor)?
+                    .ok_or(Refusal::KernelUnavailable)?;
+                if !state.active {
+                    return Err(Refusal::KernelUnavailable);
+                }
+                Ok(())
+            }
+            Action::CancelToolUse { use_command_id } => {
+                let pending = self
+                    .pending_tool_uses
+                    .get(&(actor.to_owned(), use_command_id.as_str().to_owned()))
+                    .ok_or(Refusal::TargetChanged)?;
+                let state = self
+                    .kernel
+                    .tool_use(actor)?
+                    .ok_or(Refusal::KernelUnavailable)?;
+                if !pending.matches(&state) {
+                    return Err(Refusal::TargetChanged);
+                }
+                self.kernel.cancel_tool_use(actor)
+            }
             Action::Move {
                 velocity_m_s,
                 heading_rad,
                 jump,
             } => self.kernel.walk(actor, *velocity_m_s, *heading_rad, *jump),
             Action::Pickup { instance_id, ray } => {
-                if self.completions.len() + self.pending_pickups.len() >= 64 {
+                if self.completions.len()
+                    + self.pending_pickups.len()
+                    + self.pending_tool_uses.len()
+                    >= 64
+                {
                     return Err(Refusal::CapacityExceeded);
                 }
                 self.kernel.pickup(actor, instance_id, ray)
@@ -445,6 +634,11 @@ impl<K: Kernel> World<K> {
                 }
             }
             Action::Leave => {
+                // Keep this actor's contact result until the accepted-step
+                // closure is observed. Cancel/drop then leave after completion.
+                if self.pending_tool_uses.keys().any(|(a, _)| a == actor) {
+                    return Err(Refusal::ActionInProgress);
+                }
                 self.kernel.release(actor)?;
                 self.kernel.remove(actor)?;
                 self.cancel_pending(actor);
@@ -500,6 +694,28 @@ mod tests {
             self.state["preview_queries"] = json!(queries + 1);
             self.state["tool_use_preview"] =
                 json!({"actor":actor,"admitted":false,"reason":"not_holding"});
+            Ok(())
+        }
+        fn begin_tool_use(
+            &mut self,
+            actor: &str,
+            _: &crate::contracts::Ray,
+        ) -> Result<(), Refusal> {
+            let t = self.state["t"].as_f64().unwrap();
+            let count = self.state["use_requests"].as_u64().unwrap_or(0);
+            self.state["use_requests"] = json!(count + 1);
+            self.state["player_tool_uses"][actor] = json!({
+                "schema":"banjo.native-tool-use.v1","active":true,"phase":"preparing","reason":"",
+                "tool":"fixture-tool","point_id":3,"target_m":[0.65,0.75,0.2],"started_s":t,
+                "phase_started_s":t,"ended_s":0,"hand_work_j":0,"contact_work_j":0,
+                "contact_impulse_n_s":0,"peak_contact_force_n":0,"contacted":false,
+                "contact_pending":false,"loosened_m3":{"rock":0,"soil":0,"sand":0}
+            });
+            Ok(())
+        }
+        fn cancel_tool_use(&mut self, actor: &str) -> Result<(), Refusal> {
+            self.state["player_tool_uses"][actor]["phase"] = json!("recovering");
+            self.state["player_tool_uses"][actor]["reason"] = json!("cancelled");
             Ok(())
         }
         fn remove(&mut self, a: &str) -> Result<(), Refusal> {
@@ -713,5 +929,241 @@ mod tests {
         }
         assert_eq!(w.take_completions()[0].reason, Some(Refusal::NativeRefused));
         assert_eq!(w.kernel.state["player_hands"]["alice"]["holding"], "");
+    }
+
+    fn use_request(id: &str, n: u64) -> TrustedRequest {
+        request(
+            id,
+            n,
+            Action::BeginToolUse {
+                ray: crate::contracts::Ray {
+                    from_m: [0., 2.37, 0.],
+                    direction: [0., -1., 0.],
+                    max_distance_m: 2.,
+                },
+            },
+        )
+    }
+    fn finish_use(w: &mut World<Reference>, reason: &str, volume: f64, pending: bool) {
+        let t = w.kernel.state["t"].clone();
+        let s = &mut w.kernel.state["player_tool_uses"]["alice"];
+        s["active"] = json!(false);
+        s["phase"] = json!("finished");
+        s["ended_s"] = t;
+        s["reason"] = json!(reason);
+        s["contacted"] = json!(true);
+        s["contact_pending"] = json!(pending);
+        s["contact_work_j"] = json!(3);
+        s["loosened_m3"]["soil"] = json!(volume);
+    }
+
+    #[test]
+    fn use_waits_for_native_closure_and_retries_keep_the_original_result() {
+        let mut w = world();
+        w.execute(request("join", 1, Action::Join { feet_m: [0.; 3] }));
+        let first = use_request("first-use", 2);
+        assert!(matches!(
+            w.execute(use_request("first-use", 2)).status,
+            Status::Pending
+        ));
+        assert!(matches!(w.execute(first).status, Status::Pending));
+        assert_eq!(w.kernel.state["use_requests"], 1);
+        assert_eq!(
+            w.execute(use_request("tap", 3)).reason,
+            Some(Refusal::ActionInProgress)
+        );
+        w.kernel.accepted = 0;
+        w.advance().unwrap();
+        assert!(w.take_completions().is_empty());
+        w.kernel.accepted = 4;
+        w.advance().unwrap();
+        finish_use(&mut w, "", 0.001, true);
+        w.advance().unwrap();
+        assert!(w.take_completions().is_empty());
+        w.kernel.state["player_tool_uses"]["alice"]["contact_pending"] = json!(false);
+        w.advance().unwrap();
+        let finished = w.take_completions();
+        assert_eq!(finished.len(), 1);
+        assert!(matches!(finished[0].status, Status::Applied));
+        assert_eq!(
+            finished[0]
+                .tool_use_result
+                .as_ref()
+                .unwrap()
+                .loosened_m3
+                .soil,
+            0.001
+        );
+        w.execute(use_request("later-use", 4));
+        let retry = w.execute(use_request("first-use", 2));
+        assert!(matches!(retry.status, Status::AlreadyApplied));
+        assert_eq!(retry.tool_use_result.unwrap().loosened_m3.soil, 0.001);
+        assert_eq!(retry.snapshot["own_tool_use"]["phase"], "preparing");
+    }
+
+    #[test]
+    fn cancel_is_scoped_to_the_original_use_and_completion_reports_native_failure() {
+        let mut w = world();
+        w.execute(request("join", 1, Action::Join { feet_m: [0.; 3] }));
+        w.execute(use_request("first-use", 2));
+        let mut peer = request(
+            "peer-cancel",
+            1,
+            Action::CancelToolUse {
+                use_command_id: Id::new("first-use").unwrap(),
+            },
+        );
+        peer.principal = Id::new("bob").unwrap();
+        peer.command.actor_id = peer.principal.clone();
+        w.execute(TrustedRequest {
+            principal: peer.principal.clone(),
+            host_action: true,
+            command: Command {
+                schema: crate::contracts::PROTOCOL.into(),
+                world_id: Id::new("world").unwrap(),
+                actor_id: peer.principal.clone(),
+                command_id: Id::new("bob-join").unwrap(),
+                input_sequence: 1,
+                expected_revision: None,
+                payload: Action::Join {
+                    feet_m: [1., 0., 0.],
+                },
+            },
+        });
+        peer.command.input_sequence = 2;
+        assert_eq!(w.execute(peer).reason, Some(Refusal::TargetChanged));
+        assert_eq!(
+            w.execute(request("leave", 3, Action::Leave)).reason,
+            Some(Refusal::ActionInProgress)
+        );
+        assert!(matches!(
+            w.execute(request(
+                "cancel",
+                4,
+                Action::CancelToolUse {
+                    use_command_id: Id::new("first-use").unwrap()
+                }
+            ))
+            .status,
+            Status::Applied
+        ));
+        assert!(w.take_completions().is_empty());
+        assert_eq!(
+            w.kernel.state["player_tool_uses"]["alice"]["phase"],
+            "recovering"
+        );
+        w.advance().unwrap();
+        finish_use(&mut w, "cancelled", 0.001, false);
+        w.advance().unwrap();
+        let done = w.take_completions();
+        assert_eq!(done[0].reason, Some(Refusal::Cancelled));
+        assert_eq!(
+            done[0].tool_use_result.as_ref().unwrap().loosened_m3.soil,
+            0.001
+        );
+        w.execute(use_request("second-use", 5));
+        assert_eq!(
+            w.execute(request(
+                "stale-cancel",
+                6,
+                Action::CancelToolUse {
+                    use_command_id: Id::new("first-use").unwrap()
+                }
+            ))
+            .reason,
+            Some(Refusal::TargetChanged)
+        );
+        assert_eq!(
+            w.kernel.state["player_tool_uses"]["alice"]["phase"],
+            "preparing"
+        );
+    }
+
+    #[test]
+    fn malformed_or_overwritten_native_use_faults_instead_of_granting_yield() {
+        let mut w = world();
+        w.execute(request("join", 1, Action::Join { feet_m: [0.; 3] }));
+        w.execute(use_request("use", 2));
+        w.kernel.state["player_tool_uses"]["alice"]["point_id"] = json!(9);
+        assert_eq!(w.advance(), Err(Refusal::KernelUnavailable));
+        assert_eq!(
+            w.take_completions()[0].reason,
+            Some(Refusal::KernelUnavailable)
+        );
+        assert_eq!(
+            w.execute(use_request("use", 2)).reason,
+            Some(Refusal::KernelUnavailable)
+        );
+    }
+
+    #[test]
+    fn a_native_fault_completes_every_actors_pending_use() {
+        let mut w = world();
+        w.execute(request("join", 1, Action::Join { feet_m: [0.; 3] }));
+        let mut peer = request(
+            "bob-join",
+            1,
+            Action::Join {
+                feet_m: [1., 0., 0.],
+            },
+        );
+        peer.principal = Id::new("bob").unwrap();
+        peer.command.actor_id = peer.principal.clone();
+        w.execute(peer);
+        w.execute(use_request("alice-use", 2));
+        let mut peer_use = use_request("bob-use", 2);
+        peer_use.principal = Id::new("bob").unwrap();
+        peer_use.command.actor_id = peer_use.principal.clone();
+        assert!(matches!(w.execute(peer_use).status, Status::Pending));
+        w.kernel.state["player_tool_uses"]["alice"]["point_id"] = json!(9);
+        assert_eq!(w.advance(), Err(Refusal::KernelUnavailable));
+        let done = w.take_completions();
+        assert_eq!(done.len(), 2);
+        for outcome in done {
+            assert_eq!(outcome.reason, Some(Refusal::KernelUnavailable));
+            assert!(outcome.tool_use_result.is_none());
+        }
+        assert!(w.pending_tool_uses.is_empty());
+        assert_eq!(w.advance(), Err(Refusal::KernelUnavailable));
+        assert!(w.take_completions().is_empty());
+    }
+
+    #[test]
+    fn prepared_initialization_does_not_resume_time_or_existing_actors() {
+        let mut w = world();
+        w.kernel.state["t"] = json!(1.0);
+        assert!(matches!(
+            World::new(
+                Id::new("world").unwrap(),
+                vec![Id::new("alice").unwrap()],
+                w.kernel
+            ),
+            Err(Refusal::InvalidInput)
+        ));
+        let mut w = world();
+        w.kernel.state["native_players"]["alice"] = json!({"body_id":1});
+        assert!(matches!(
+            World::new(
+                Id::new("world").unwrap(),
+                vec![Id::new("alice").unwrap()],
+                w.kernel
+            ),
+            Err(Refusal::InvalidInput)
+        ));
+    }
+
+    #[test]
+    fn a_stalled_use_has_a_bounded_fault_not_a_simulated_success() {
+        let mut w = world();
+        w.execute(request("join", 1, Action::Join { feet_m: [0.; 3] }));
+        w.execute(use_request("use", 2));
+        w.kernel.accepted = 0;
+        for _ in 0..599 {
+            w.advance().unwrap();
+        }
+        assert_eq!(w.advance(), Err(Refusal::NativeRefused));
+        let done = w.take_completions();
+        assert_eq!(done[0].reason, Some(Refusal::NativeRefused));
+        assert!(done[0].tool_use_result.as_ref().unwrap().active);
     }
 }

@@ -81,3 +81,7 @@ python scripts/check-source-registration.py
 Verified after final linking: 15 Rust tests, 13 actual-native worker integration cases (18.907 s), five focused native CTest suites (8.24 s) and 309/309 source registration pass. Formatting, Clippy and local document-link targets also pass. The strict repeat command exits 1 for four iron cases, as recorded above. The worker integration exercises existing typed actions/private state; native functional tool cycles are the compiled C++ suite, not Rust/browser end-to-end gameplay. Real native-window/input, physical phone, full regression and replacement browser acceptance remain unverified. No D01–D06 helper or R01–R12 subsystem is retired. Main publishing does not install into `C:/play` or reset the owner's world.
 
 Local rebuilt artifact SHA256: native runner `26effa78d291d6012bc699adf5f3d0845a691d6e8c9d820bf1d052b0452ec821`; shared library `12230fff44f34ed8ea1714606420afed02e2b7c1a7527fc7a491f1837ec61248`. These identify files, not complete compiled-source/ABI provenance.
+
+## Rust protocol follow up
+
+The subsequent [typed use and retained-result checkpoint](runtime-tool-use-protocol-checkpoint.md) replaces this checkpoint's earlier Rust begin/cancel gap with pending physical completion, actor-scoped cancellation and real worker functional tests. It also repairs loss of closed contact measurements between native runner replies. The measurements and four failed repeat cases above remain their recorded baseline; browser migration, conservative terrain and full accounting are still open.

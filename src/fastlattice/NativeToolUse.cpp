@@ -28,7 +28,9 @@ void NativeToolUseController::recover(double native_s,const std::string &reason)
     requested_speed_m_s_=0;
 }
 void NativeToolUseController::cancel(double native_s,const std::string &reason) {
-    if(state_.active)recover(native_s,reason);
+    if(!state_.active)return;
+    if(state_.phase=="recovering" && state_.reason.empty())state_.reason=reason;
+    recover(native_s,reason);
 }
 
 NativeToolWish NativeToolUseController::wish(const NativeToolFeedback &actual,double native_s,
@@ -76,11 +78,15 @@ void NativeToolUseController::accepted(const NativeToolFeedback &actual,double n
     // already-started contact without charging later hand work to this action.
     if(!state_.active && !pending_contact_close_)return;
     if(state_.active)state_.hand_work_j=actual.hand_work_j-initial_work_j_;
-    state_.contact_work_j=state_.contact_impulse_n_s=state_.peak_contact_force_n=0;
-    state_.loosened={};state_.contacted=false;pending_contact_close_=false;
     for(const auto &meeting:contacts) {
         if(meeting.actor!=actor||meeting.point!=state_.point||meeting.at_s<state_.started_s||
             (!state_.active && meeting.at_s>=state_.ended_s))continue;
+        contacts_.insert_or_assign(meeting.meeting_id,meeting);
+    }
+    state_.contact_work_j=state_.contact_impulse_n_s=state_.peak_contact_force_n=0;
+    state_.loosened={};state_.contacted=false;pending_contact_close_=false;
+    for(const auto &[id,meeting]:contacts_) {
+        (void)id;
         state_.contacted=true;state_.contact_work_j+=meeting.work_j;
         pending_contact_close_=pending_contact_close_||meeting.open;
         state_.contact_impulse_n_s+=meeting.impulse_n_s;
@@ -88,6 +94,8 @@ void NativeToolUseController::accepted(const NativeToolFeedback &actual,double n
         state_.loosened.soil_m3+=meeting.loosened.soil_m3;state_.loosened.sand_m3+=meeting.loosened.sand_m3;
         state_.loosened.rock_m3+=meeting.loosened.rock_m3;
     }
+    state_.contact_pending=pending_contact_close_;
+    if(state_.active && contacts_.size()>1024)finish(native_s,"capacity_exceeded");
     if(!state_.active)return;
     if(!actual.connected) { finish(native_s,actual.grip_present?"capability_changed":"grip_released");return; }
     if(!actual.reachable) { finish(native_s,"out_of_reach");return; }

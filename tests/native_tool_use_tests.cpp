@@ -175,7 +175,7 @@ void controllerOracles() {
     controller=rollback;
     const auto retry=controller.wish(actual,.02,1.0/240,80);
     require(length(first.grip_velocity_m_s-retry.grip_velocity_m_s)==0,"reversible retry changed the actuator wish");
-    LiveGroundWork own;own.actor="alice";own.point=17;own.at_s=.03;own.work_j=2;own.loosened.soil_m3=.001;
+    LiveGroundWork own;own.meeting_id=1;own.actor="alice";own.point=17;own.at_s=.03;own.work_j=2;own.loosened.soil_m3=.001;
     auto peer=own;peer.actor="bob";peer.work_j=100;peer.loosened.soil_m3=1;
     actual.hand_work_j=9;controller.accepted(actual,.04,{own,peer},"alice");
     require(controller.state().contact_work_j==2 && controller.state().hand_work_j==4 &&
@@ -195,12 +195,19 @@ void controllerOracles() {
     controller=copied;actual.connected=true;actual.target_matches=true;
     own.open=true;controller.accepted(actual,.04,{own},"alice");controller.interrupt(.05,"grip_released");
     const auto frozen_work=controller.state().hand_work_j;
-    own.open=false;own.loosened.soil_m3=.002;auto later=own;later.at_s=.05;later.loosened.soil_m3=1;
+    own.open=false;own.loosened.soil_m3=.002;auto later=own;later.meeting_id=2;later.at_s=.05;later.loosened.soil_m3=1;
     actual.hand_work_j=100;controller.accepted(actual,.06,{own,later,peer},"alice");
     require(controller.state().loosened.soil_m3==.002 && controller.state().hand_work_j==frozen_work &&
         controller.state().ended_s==.05,"terminal refresh erased a closing bite or credited later work");
     controller.accepted(actual,.07,{},"alice");
     require(controller.state().loosened.soil_m3==.002,"clearing closed native reports erased the final action outcome");
+    controller=copied;controller.accepted(actual,.04,{own},"alice");controller.cancel(.04);
+    controller.accepted(actual,.045,{},"alice");
+    require(controller.state().loosened.soil_m3==.002 && controller.state().contact_work_j==2,
+        "a runner reply cleared measured work while recovery was still active");
+    controller.accepted(actual,.046,{own},"alice");
+    require(controller.state().loosened.soil_m3==.002 && controller.state().contact_work_j==2,
+        "repeated observation of one meeting duplicated measured work");
 }
 }
 int main(int argc,char **argv) {

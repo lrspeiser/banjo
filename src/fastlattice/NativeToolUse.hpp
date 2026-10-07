@@ -39,6 +39,7 @@ private:
     bool lifting_{};
     bool recovery_from_current_{};
     bool pending_contact_close_{};
+    std::map<std::uint64_t,LiveGroundWork> contacts_;
     Quat recovery_facing_{};
     std::size_t contact_waypoint_{1};
     double requested_speed_m_s_{}, initial_work_j_{};

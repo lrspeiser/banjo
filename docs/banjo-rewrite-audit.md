@@ -1076,3 +1076,7 @@ ctest --test-dir build/local-cell-tools -C Release --show-only=json-v1
 ```
 
 The inventory is a static aid and has no server/build/test side effects. Future runs include subsequently committed code and therefore need not match the baseline counts. CTest JSON is discovery, not test execution. Use the configured build directory appropriate to the environment and verify executable availability before interpreting its suite.
+
+### W06 Rust tool use follow up October 6
+
+[Typed use and retained native results](runtime-tool-use-protocol-checkpoint.md) implements actor-scoped begin/cancel, original-command measurement retention and accepted-step closure. Actual Rust/native first-use tests cover twelve matched glass/oak/iron tool geometries plus cancellation/drop. Stable process-local contact IDs repair erased results during recovery; they are not the durable C06 event journal. Trusted zero-time whole snapshots enable prepared functional fixtures, not a C10 product registry or world restart. Twenty-three Rust checks, sixteen native worker cases and five focused native suites pass. Four iron repeats remain a strict failing gate. C02, C03–C13, W05–W17 and all retirement gates remain open; the browser demo is unchanged.
