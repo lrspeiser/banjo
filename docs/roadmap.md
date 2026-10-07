@@ -36,7 +36,7 @@ Implemented in scoped checkpoints: [W00/W01 build/test discovery and W03 contrac
 
 Next **W06 native carry/preview/use and actual event retention**. Then migrate stable product identities, custody, authoring declarations and saves; qualify finite-work constitutive terrain, typed client/LLM integration and ordinary phone/multiplayer play. Full regression and sustained excavation-speed gates remain separate. Do not retire the old controllers before equivalent ordinary-player, persistence and performance gates pass.
 
-[The detailed rewrite audit](banjo-rewrite-audit.md#20-ordered-migration-and-deletion-checkpoints) defines W00–W17 with acceptance and retirement gates. Its source inventory is the recorded audit baseline. Small private helper cleanup is separate from large controller/adapter retirements; preserve physical reference suites and saved quantities.
+[The detailed rewrite audit](banjo-rewrite-audit.md#20-ordered-migration-and-deletion-checkpoints) defines W00–W17 with acceptance and retirement gates. Its [current-head review](banjo-rewrite-audit.md#23-current-review-rewrite-progress-and-remaining-defects) preserves the original inventory and adds expanded Rust/client/configuration evidence, a thirteen-item runtime gap register and rechecked deletion candidates. Before browser migration, complete body-relative carry/use, durable receipt/event handling, topology/resync and gateway authority; a configured clock and pickup fixture are partial gates. Small private helper cleanup is separate from large controller/adapter retirements; preserve physical reference suites and saved quantities.
 
 # Banjo roadmap and acceptance gates
 

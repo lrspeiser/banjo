@@ -20,8 +20,24 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 ROOTS = {"src", "include", "playground", "mcp", "bindings", "tools",
-         "scripts", "tests", "examples", "cmake"}
-EXTENSIONS = {".py", ".js", ".mjs", ".cpp", ".hpp", ".h", ".sh", ".cmake"}
+         "scripts", "tests", "examples", "cmake", "runtime", "progression",
+         "assets", "voice"}
+EXTENSIONS = {".py", ".js", ".mjs", ".ts", ".tsx", ".rs", ".cpp", ".hpp", ".h",
+              ".c", ".cu", ".inl", ".sh", ".ps1", ".cmake", ".html", ".css",
+              ".toml", ".yml", ".yaml", ".json", ".csv", ".txt"}
+ROOT_FILES = {"CMakeLists.txt", "CMakePresets.json", "Cargo.toml", "Cargo.lock",
+              "rust-toolchain.toml", "Dockerfile", "fly.toml", ".dockerignore",
+              ".gitignore", ".gitattributes", ".clang-format", ".cargo/config.toml"}
+
+
+def selected_path(name):
+    """Explicit tracked-source/config/data allowlist; never read local secrets."""
+    path = Path(name)
+    if "vendor" in path.parts or path.name.startswith(".env"):
+        return False
+    return (name in ROOT_FILES or path.name == "CMakeLists.txt" or
+            (path.parts[0] in ROOTS and path.suffix in EXTENSIONS) or
+            (name.startswith(".github/workflows/") and path.suffix in {".yml", ".yaml"}))
 
 
 def git(*args):
@@ -30,9 +46,7 @@ def git(*args):
 
 def inventory():
     names = git("ls-files").splitlines()
-    selected = [name for name in names if "vendor" not in Path(name).parts and
-                ((Path(name).parts[0] in ROOTS and Path(name).suffix in EXTENSIONS)
-                 or Path(name).name == "CMakeLists.txt")]
+    selected = [name for name in names if selected_path(name)]
     contents = {name: (ROOT / name).read_text(encoding="utf-8", errors="replace")
                 for name in selected}
     identifiers = Counter(token for content in contents.values()
@@ -87,14 +101,20 @@ def inventory():
                                        "requires_export_and_dynamic_lookup_review": True})
     return {
         "schema": "banjo.static-audit.v1", "baseline_commit": git("rev-parse", "HEAD"),
+        "source_state": {"modified_tracked_selected_paths":
+                         [name for name in git("diff", "--name-only", "HEAD").splitlines()
+                          if selected_path(name)]},
         "method": {"tracked_files_only": True, "roots": sorted(ROOTS),
                    "extensions": sorted(EXTENSIONS),
+                   "explicit_files": sorted(ROOT_FILES),
+                   "additional_scope": [".github/workflows/*.yml", ".github/workflows/*.yaml"],
                    "excluded_path_components": ["vendor"],
                    "limitations": ["Static inventory, not executed coverage or proof of dead code.",
                        "Identifier references include comments and strings; counts are global, not resolved symbols.",
                        "Python duplicate bodies exclude docstrings and do not compare signatures or caller contracts.",
                        "Python import graph records syntax, including imports inside functions; it omits dynamic loading.",
-                       "Untracked audit script is excluded until committed; recorded hashes describe scanned file contents.",
+                       "Tracked source, client assets, config and textual fixtures/declarations are counted separately by root; line totals are not executable-code counts.",
+                       "Untracked files are excluded; modified tracked selected paths are listed and hashes describe the scanned working tree, not necessarily baseline_commit.",
                        "No simulation, performance, browser or platform qualification is performed."]},
         "totals": {"files": len(files), "lines": sum(f["lines"] for f in files)},
         "by_root": {key: {"files": len(value), "lines": sum(f["lines"] for f in value)}

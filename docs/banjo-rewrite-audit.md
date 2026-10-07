@@ -1,11 +1,14 @@
 # Banjo codebase audit and rewrite specification
 
-**Audit date:** October 6, 2026. **Source baseline:** `5988f8b970b4e165216cdaaf42599836e064cdf6` on main. **Status:** source audit and proposed architecture; no runtime rewrite or production deletion is included in this checkpoint.
+**Audit date:** October 6, 2026. **Original source baseline:** `5988f8b970b4e165216cdaaf42599836e064cdf6` on main. **Current review baseline:** `fbeb020517e5c560089950054e63e1d0a1910bfd`. Sections 1–22 preserve the original architecture audit; [section 23](#23-current-review-rewrite-progress-and-remaining-defects) reviews the implementation added since then and supersedes its next-step/status statements. This document update changes no simulation law and deletes no production code.
 
-This document answers three questions: why the current gameplay remains unreliable despite many repairs, what the replacement must change, and which code can be removed without losing useful capabilities. It covers the browser, Python host, native C++ engine, authoring, persistence, multiplayer, AI, tests and operations. The [machine-readable inventory](evidence/rewrite-audit-2026-10-06.json) contains file hashes, line counts, Python imports, duplicate function bodies and static reference candidates. The [audit tool](../scripts/audit-codebase.py) reproduces that inventory without starting or stopping a server.
+This document answers three questions: why the current gameplay remains unreliable despite many repairs, what the replacement must change, and which code can be removed without losing useful capabilities. It covers the browser, Python host, native C++ engine, authoring, persistence, multiplayer, AI, tests and operations. The [original machine-readable inventory](evidence/rewrite-audit-2026-10-06.json) preserves the first baseline. The [expanded current inventory](evidence/rewrite-audit-current-2026-10-06.json) includes Rust, browser templates/styles, build/deployment configuration and textual fixtures/declarations. Both contain file hashes, line counts, Python imports, duplicate function bodies and static reference candidates. The [audit tool](../scripts/audit-codebase.py) regenerates an inventory without starting or stopping a server.
+
+**Recommendation:** keep C++/Jolt and the independent physics tests; replace gameplay control around one Rust world owner, one native tool controller and one durable transfer protocol. Six private helpers are immediate deletion candidates after focused verification. Larger reductions require migrating live callers and old saves. Rust clock/pickup foundations now exist, but the current browser still uses the older host and cannot yet test the replacement gameplay loop.
 
 ### Reading guide
 
+- [Current review and executable backlog](#23-current-review-rewrite-progress-and-remaining-defects): what exists now, what remains and what is safe to remove
 - [Decisions](#1-decisions), [scope/evidence](#2-scope-and-evidence) and [priorities](#5-findings-and-priorities)
 - [Tool/input rewrite](#6-tool-pickup-and-input-rewrite) and [matter/physics rewrite](#7-matter-ground-thin-geometry-and-contact)
 - [Removal ledger](#8-code-removal-ledger): six small cleanup candidates, consolidation and twelve gated retirement paths
@@ -23,7 +26,7 @@ This document answers three questions: why the current gameplay remains unreliab
 6. **Remove proven dead helpers in small checkpoints; retire larger paths only after migrating their callers and saved data.** This audit finds a handful of strong local deletion candidates. It does not support deleting thousands of lines immediately on an “unused” assumption. The large reduction comes from retiring overlapping controllers, adapters and persistence protocols after replacement.
 7. **Make ordinary gameplay a required regression gate.** A source guard, mocked API response or scripted free camera cannot certify that a native player can tap a pick, retain it, aim at rock, remove material and retrieve the result on a phone.
 
-The next implementation checkpoint should deliver the authoritative command/snapshot contract, complete interaction recording and a minimal native-player pickup/use slice. It should not add more progression, construction or catalog content before that slice passes.
+That was the original opening checkpoint recommendation. Contracts, retained diagnostics, an isolated native-backed clock and native pickup admission have since been added; their limits and the current carry/use priority are recorded in section 23. More progression, construction or catalog content should wait until the complete ordinary pickup/use slice passes.
 
 ## 2. Scope and evidence
 
@@ -166,7 +169,7 @@ The architectural problem is that input delivery, visibility, network stalls and
 | F03 | High | Browser/page and fallback clock ownership complicate input, replay and multiplayer | [world clock](../playground/world_clock.py#L60), [live session](../playground/live_session.py) | One authoritative scheduler and command queue per world |
 | F04 | High | Diagnostics cannot reconstruct long or pre-install sessions | [trace implementation](../playground/interaction_trace.py#L24), [client queue](../playground/world.js#L6906) | Durable indexed interaction journal with full build/config identity and retained outcomes |
 | F05 | High | Save correctness spans native state, room JSON and SQLite compensating transactions | [room writes](../playground/room_store.py#L197), [stock reservation](../playground/fabrication_stock.py), [market](../playground/market.py) | Journal/checkpoint transaction protocol with crash injection and idempotency archival |
-| F06 | High | Regression discovery and focused passing suites do not certify the whole installed demo | [CI](../.github/workflows/ci.yml), [regression wrapper](../scripts/regression.sh#L60) | Build manifest, required ordinary journeys, explicit full-suite results and isolated process ownership |
+| F06 | High | Regression discovery and focused passing suites do not certify the whole installed demo | [CI](../.github/workflows/ci.yml), [current regression runner](../scripts/regression.py) | Build manifest, required ordinary journeys, explicit full-suite results and isolated process ownership |
 | F07 | High | Thin local tools preserve shape but do not gain all lattice laws | [local tool checkpoint](local-cell-tools-checkpoint.md), [authoring contract](tool-authoring-contract-checkpoint.md) | Capability/law admission matrix shared by runtime and authoring |
 | F08 | High | Long-lived histories hit caps or lose old idempotency detail | [learning cap](../playground/player_learning.py#L22), [goods claims](../playground/world_goods.py#L19), [native cut receipts](../src/terrain/GroundExcavation.cpp) | Archive without forgetting paid operations; bounded hot cache backed by durable indexed records |
 | F09 | Medium | Workshop facades and core modules rely on implicit re-export/override behavior | [Workshop API](../playground/workshop_api.py), [trials](../playground/workshop_trials.py) | Explicit compiler, authoring, trials and instance service interfaces |
@@ -342,9 +345,9 @@ Expected large simplification is concentrated in R01–R03, R06–R08 and R11. T
 
 ### Tooling to change immediately
 
-[scripts/regression.sh](../scripts/regression.sh#L60) force-kills all matching native Banjo processes and then broadly kills compiler processes. This occurs before its `--list` branch. It can kill the user's demo or another developer's build during what appears to be discovery. Do not run this wrapper as a read-only inventory tool.
+At the original baseline, [scripts/regression.sh](https://github.com/lrspeiser/banjo/blob/5988f8b970b4e165216cdaaf42599836e064cdf6/scripts/regression.sh#L60) force-killed all matching native Banjo processes and then broadly killed compiler processes, before its `--list` branch. That behavior was removed in `7997bc19`: the current wrapper delegates to [regression.py](../scripts/regression.py), whose list mode is read-only and cleanup owns its children. Retain this correction in the rewrite.
 
-Delete global process-name cleanup after introducing a per-run process registry, isolated build directory, timeout/child-tree cleanup and an early side-effect-free `--list`. Never kill a process the runner did not start. If a binary is busy, report its owner or use another build directory. Keep the explicit long-test tier and exit-code propagation.
+Never reintroduce global process-name cleanup. If a binary is busy, report its owner or use another build directory. Keep the explicit long-test tier, artifact availability checks and exit-code propagation. The six helper removals listed above remain unperformed.
 
 ### Whole directories not authorized for deletion
 
@@ -389,7 +392,7 @@ Use a modular monolith first. A separate network service for every concept would
 | `persistence` | Journal/checkpoint indexes and migration state | Append/commit/load/recover/archive |
 | `diagnostics` | Attempt traces, manifests and export indexes | Correlate intent/admission/outcome; bounded export |
 
-These are proposed module boundaries, not existing Rust source or committed engine behavior.
+These are target module boundaries. Current `runtime/src/contracts.rs`, `world.rs`, `native.rs` and `main.rs` implement only the bounded contract/clock/actor/pickup subset described in section 23; most services in this table remain proposed.
 
 ### C++ kernel decomposition
 
@@ -494,6 +497,8 @@ Replace unbounded active arrays with indexed durable records and bounded working
 ## 12. Diagnostics and replay
 
 ### Present limitation
+
+The following describes the original trace path. Indexed retention and broader build identity were subsequently added; section 23 distinguishes those implementations from the still-missing native event journal and incident viewer/export.
 
 [interaction_trace.py](../playground/interaction_trace.py#L24) allowlists diagnostic fields, separates browser observations from server outcomes, hashes actor identity and redacts credential-shaped strings. Those are good properties to keep. It rotates an 8 MB current file to one previous file. The client has a 64-event bound and a 12,000-character send batch, with periodic delivery and bounded retry. Historical targets before logging existed cannot be reconstructed.
 
@@ -817,7 +822,7 @@ A “full regression” report records exact commit/build/native hashes, configu
 
 ## 20. Ordered migration and deletion checkpoints
 
-The rows below are implementation tickets, not a completed-work list. Publish verified coherent checkpoints to main regularly after fetch/integration. Each checkpoint updates current status and the mechanics scorecard if physical behavior changes. Keep native numerical changes separate from client/host restructuring wherever possible.
+The rows below define the full acceptance scope, not a completed-work list. Partial W00–W05 implementation is mapped in section 23. Publish verified coherent checkpoints to main regularly after fetch/integration. Each checkpoint updates current status and the mechanics scorecard if physical behavior changes. Keep native numerical changes separate from client/host restructuring wherever possible.
 
 | Order | Work | Acceptance before publishing/retiring code |
 |---|---|---|
@@ -906,7 +911,102 @@ Performed on Windows, Python 3.13, source baseline `5988f8b9`:
 - Reviewed current source/tests and CI around ordinary player journeys, old pile assumptions, long-test exclusion and process cleanup.
 - Validated this document's local links/source line bounds and changed-file whitespace/scope before publication.
 
-No numerical law changed, no native binary was rebuilt, no new physical experiment or full regression run was performed, no player's world was reset, and none of D01–D06 or R01–R12 is deleted by this audit. The report and evidence are a usable implementation specification. The next verified checkpoint is W00–W03: trustworthy build/test identity, safe runner ownership, durable interaction recording and shared contracts, followed by the native pickup/use slice.
+In that original audit checkpoint, no numerical law changed, no native binary was rebuilt, no new physical experiment or full regression run was performed, no player's world was reset, and none of D01–D06 or R01–R12 was deleted. Subsequent implementation and the present documentation-only recheck are separated below.
+
+## 23. Current review, rewrite progress and remaining defects
+
+### Review identity and scope
+
+Main was fetched and was clean at `fbeb020517e5c560089950054e63e1d0a1910bfd`, with no divergence from `origin/main`. PR #2 remains merged at `29254bd0a0f8287ac6470f5c1d5af5fad32d6161`. No simulation, browser server or player save was changed for this review.
+
+The original scan omitted the newly introduced Rust tree, HTML/CSS, PowerShell, CUDA/include fragments, deployment/CI manifests and text data. The expanded allowlist now inventories **1,074 tracked files / 427,043 text lines**. Of these, `runtime` contributes six files / 1,316 lines; `assets` contributes 67 text declarations/fixtures / 46,962 lines; `progression` contributes seven declarations / 1,825 lines; and three workflows contribute 520 lines. Counts include tests, data, configuration, comments and whitespace; they are not counts of executable production code or proposed deletions. They cannot be compared to the original narrower total as a measure of code growth.
+
+The report identifies its HEAD baseline, file hashes and modified selected tracked paths. Its only modified selected path is the expanded audit script itself. Documentation changes are outside this selected source scope. Untracked files, `.env*`, local rooms/logs/builds, vendor code, images/audio and historical Markdown are excluded from content scanning. Exclusion from this static report does **not** authorize deleting those assets or archives. Static names omit dynamic/external consumers and do not prove runtime reachability.
+
+The large original findings remain relevant. The source review is strongest on pickup/use/time, ownership, matter, transfer, diagnostics and their tests. It is not an assertion that every numerical line or scene fixture was independently rederived.
+
+### Implemented foundations versus the complete rewrite
+
+| Scope | Present implementation on main | Acceptance still required |
+|---|---|---|
+| W00/W01 | `7997bc19`: manifest plus isolated regression discovery/execution; old global process kills removed | Complete required profile execution, served client/native compatibility, six helper cleanup checks |
+| W02 | `abd3b152`: indexed SQLite diagnostic history, actor/world scope and bounded cursor pages | Viewer/redacted incident export, exact native readiness/action fields, delivery-gap records and worker event integration |
+| W03 | `7997bc19` and later: validated Rust command IDs, units in field names, typed actions/refusals and revision/sequence checks | Generated TypeScript/native mappings, entity/artifact identity, versioned snapshot/event schemas and old-data fixtures |
+| W04 | `4db96843`: one native-backed Rust clock, trusted pipe, bounded queues, actual two-actor movement and owned shutdown | Browser gateway, input coalescing, durable state/events, observer isolation, world lifecycle and measured sustained load |
+| W05 | `e8b43ca3`: native ray/assembly/grip/reach admission; pending pickup becomes applied only after accepted stepping | Body-relative carry, ordinary touch, travel/turn, cancel/store/retrieve/reload, authored products and end-to-end two-player journeys |
+| W06 | State machine specified; existing native bounded grip and tool/terrain work primitives available | Generic native preview/use/recovery controller, typed use/cancel commands, contact/result events and required tool-family scenarios |
+| W07–W17 | Existing host/native components provide migration inputs and bounded laboratory evidence | Durable transfers/imports; conservative terrain qualification; manufacture/water; compiler/client/LLM/progress/jobs; capacity and release gates |
+
+Detailed prior evidence is in the [foundation](runtime-rewrite-checkpoint.md), [diagnostic retention](interaction-history-checkpoint.md), [worker](runtime-worker-checkpoint.md) and [pickup](runtime-pickup-checkpoint.md) checkpoints. Their focused passes do not qualify the entire browser game. The replacement currently opens a supplied native scene and speaks a local trusted-host pipe; it is not a new playable web build. Main publishing and the `C:/play` browser demo are separate states.
+
+### Concrete changes required in the new runtime
+
+These are source-derived gaps, not newly reproduced user-session failures. Each row has a replacement and a test that must pass before related old code retires.
+
+| ID / priority | Present boundary and source | Required implementation and acceptance |
+|---|---|---|
+| C01 / critical | [Native wield](../src/fastlattice/LiveWorld.cpp#L14324) captures a desired grip in world space; [grip force](../src/fastlattice/LiveWorld.cpp#L6804) follows that target. Rust Move updates the avatar, without a body-relative carry target | Capture grip/wrist relative to the actor at acquisition. Update **desired controller frames** from actual actor state inside native stepping; retain bounded force/torque and reactions, never overwrite held-body pose/velocity. Walk and turn with glass/oak/iron assemblies, verify custody/mass and zero idle excavation. Drop and lost grip cancel controller ownership |
+| C02 / critical | [Action contract](../runtime/src/contracts.rs) has Join/Inspect/Move/Pickup/Drop/Leave; no aim/use/cancel operation | Implement native read-only target/path admission plus Preparing/Acting/Recovering phases on accepted native time. Revalidate entity/topology revision at begin. Expose measured no-contact/blocked/unsupported/released/cancelled outcomes. Test pick, shovel, hoe and unfamiliar geometry with repeated intended input, no stale tap queue and zero wrong-target removal |
+| C03 / high | [World receipts](../runtime/src/world.rs#L333) cap at 4,096 in-memory entries. Every admitted Inspect and Move consumes a receipt too | Separate latest movement/aim observations from durable effect commands. Use monotonic sequence/session epochs and a bounded working set backed by durable keys/results. Do not evict paid effects or raise the cap as the fix. Arithmetic illustration: 4,096 unique commands at 60/s exhaust in about 68 s; this is not a measured gameplay rate. Test activity past the cap, conflicting/retried commands, restart and two-player fairness |
+| C04 / high | [Observation projection](../runtime/src/world.rs#L218) copies selected native fields; pose-only replies can omit geometry, and no retained topology store/event cursor exists | Maintain revisioned geometry/topology plus pose deltas, tombstones and full resync. A missing field is not deletion. Subscriber reconnect after topology change must reconstruct the same scene/target/collision revisions and retain exact product identity |
+| C05 / high | [Native identity](../runtime/src/native.rs) records executable SHA256, but build provenance is `unrecorded` and actual ABI is null | Embed source/build/toolchain/Jolt/numeric/model/schema identity in native artifacts; negotiate required capability versions on open. Never infer compiled provenance from checkout HEAD. Test incompatible artifacts fail before world admission; incident bundles identify application, client and actual kernel independently |
+| C06 / high | [Worker completions](../runtime/src/main.rs) leave through stdout; retained diagnostic history belongs to the older Python host | Add one ordered native/command/result event adapter and bounded retained diagnostics. Distinguish accepted command, completed physical action and committed transfer. Preserve refusal and grip-loss causes across restart/export; a diagnostic database is not the authoritative financial/matter journal |
+| C07 / high | `TrustedRequest.principal` and `host_action` arrive on trusted stdin; there is no public authentication service | Add an authenticated gateway which supplies trusted actor/world authority and rejects client-supplied host grants. Restrict Join to safe server-chosen spawn/resume. Test payload actor spoofing, peer inventory/draft access, cross-world grants and developer-only operations |
+| C08 / high | [Output path](../runtime/src/main.rs#L82) has eight frames and a 2 MiB frame limit; stalled output stops this experimental worker | Keep one reliable internal gateway consumer; give each browser its own bounded subscription and resync policy. A slow observer must not terminate or indefinitely block the shared world. Test stalled/disconnected observer while another actor moves and uses a tool |
+| C09 / high | [Native adapter](../runtime/src/native.rs#L14) permits a ten-second synchronous reply wait; input/output are bounded but tick latency is not qualified | Measure actual command, batch and snapshot cost. Bound expensive jobs outside the mutation owner; make native stalls a visible world fault, not fake success. Test provider/compile/storage stalls independently from native computation and record missed deadlines. Do not claim 60 Hz simulation throughput from a configured 60 Hz deadline |
+| C10 / high | Worker opens `--scene`; its command service lacks the existing host's complete design/configuration installation and recovery transaction | Import immutable compiled artifacts with explicit grips, edges, joints, matter and model versions exactly once. Existing [Session._arm](../playground/live_session.py#L1178) is evidence of separate configuration work. Do not blindly arm bootstrap scene fields twice. Verify a paid newly authored tool, whole-component custody and exact lamp identity through import/use/save/reload |
+| C11 / high | Output/native reply byte limits differ (2 MiB / 32 MiB); actor count is bounded, but supported world/body/geometry capacity is not demonstrated | Establish per-world body/active-cell/job/geometry budgets, interest-managed observations and chunked resync. Measure encoding/copy/queue memory under declared scenes; never truncate authoritative topology without a continuation protocol. Test oversize geometry gives an explicit refusal/resync rather than a partly usable world |
+| C12 / high | Rust has no world checkpoint/import, private Inventory/wallet/progress, source transfer or durable effect API | Complete W07 and W10 before admitting paid manufacture or energy/matter operations. Inject crashes before/after each reserve/debit/native mutation/credit/commit/checkpoint phase. Recover each effect once, preserve old unassigned loads and never duplicate starter grants |
+| C13 / medium | Rust types validate actions, but native state still travels as `serde_json::Value`; TypeScript bindings and artifact/entity contracts are absent | Define typed supported snapshot/event subsets and generated client DTOs, with explicit SI quantities and local/world frame conventions. Preserve unknown legacy data in import diagnostics; refuse unknown active protocol fields. Test schema drift, IDs, finite bounds, quaternion order and version upgrades |
+
+The immediate implementation priority is **C01/C02**, while C03/C04/C06/C07/C12 gate connecting ordinary gameplay to this worker. Build the native carry/use slice with real physical results before adding more progression content. Its tests must cover actual tool-family behavior, rather than different names attached to an identical fixture. Keep W08/W09 constitutive qualification distinct from controller correctness.
+
+### What can be deleted now
+
+The expanded scan and repository symbol search still find **one identifier occurrence each**, the definition itself, for all six D01–D06 helpers. Manual inspection found no export/registration/decorator or string-based dispatch for them. Together their function bodies are under 100 lines; removal will reduce clutter but will not repair gameplay control.
+
+| Candidate | Delete exactly | Preserve |
+|---|---|---|
+| D01 | `fracture_lab._overlap_mm` | Scene compilation, shape overlap/admission used by the actual compiler |
+| D02 | `machine_tools._how_hot` | Current chamber/process temperature readiness and energy calculations |
+| D03 | `workshop.js: drawDesignMatterFallback` | Actual local-cell/rigid previews, failed-compilation state and component selection |
+| D04 | `workshop.js: missingRemakeGoods` | Paid remake requirements, finite stock and reservations |
+| D05 | `world.js: openTalk` | `talkTo`, `talkToTarget`, deliberate shared chat, rover actions and voice routing |
+| D06 | `world.js: groundUnderfoot` | Terrain material runs, native survey, target preview and exposed-layer rendering |
+
+Use the focused checks listed in section 8, then remove only those definitions in a separate cleanup checkpoint. No helper is removed by this document. Static absence of a name in the report alone is insufficient for a wider deletion.
+
+Two quaternion helpers still have live callers, and their AST bodies remain identical: `machine_ports._turn` and `vessels._turn`. Consolidate into one shared routine **after** matching argument conventions, normalization and bad-input behavior; then remove one copy. The nested numeric validators also retain active callers. Those are consolidation tasks, not dead-code deletion. `makePickedCard` remains an immediately invoked function expression and must not be removed as a false positive. Public adapters, independent experiments, oak comparison fixtures and tracked vendor/assets remain outside immediate deletion scope.
+
+### What can be removed only after replacement
+
+Each R01–R12 row in section 8 remains open. The new worker does not retire the old browser clock or Python preparation code because the browser has not migrated. Use the following evidence bundle to close each retirement:
+
+1. Exact old symbols/routes/state fields, known callers and saved-data versions.
+2. Replacement module/API and supported model/capability scope.
+3. Equivalent ordinary player journey, negative/cancel/retry cases and peer/restart behavior.
+4. Importer/rollback for persistent state, including unknown or pending legacy objects.
+5. Required reference/scenario tests and measured residuals/performance where behavior changes.
+6. Search showing retired callers/registrations are gone; build and source-registration pass.
+7. Published revision, installed-demo identity and remaining defects in current status.
+
+For R02/R03, the bundle must prove pickup → carry → preview → use → recover/drop with the native actor on desktop and touch, with useful refusals and no simultaneous old/new hand owner. For R04/R05, it must prove finite constituent release/settle/collect/manufacture and conservative boundary/work accounting; cosmetic replacement does not qualify. For R08, replay outside any hot receipt window and crash recovery are required. For R06/R07/R11, retain external toolkit and laboratory consumers through versioned adapters, then remove duplicated mappings/dispatch. For R12, replace obsolete expected outcomes while retaining their original failure scenarios; do not delete assertions merely to obtain green CI.
+
+### Regression and publishing findings
+
+Current source registration passes **306/306**, with no intentional exclusions. The partial `build/local-cell-tools` Release discovery now lists **252 CTest entries**, **148 without a resolved executable command**. This is discovery only; it does not establish that the other 104 entries all have their required secondary artifacts, nor that any tests passed during this review. The newer safe runner performs additional artifact checks before execution.
+
+The most recent published pickup checkpoint reports twelve Rust checks, ten real-native integration checks and three focused native suites passing on Windows/MSVC. Those are prior results, linked above. No full regression was run for this documentation/tooling update. The earlier Workshop CI Camp stool mass assertion remains unresolved in that recorded run; it must be investigated with current source/material geometry rather than changing a tolerance arbitrarily.
+
+The [CI concurrency comments](../.github/workflows/ci.yml#L3) promise a verdict for every main commit, but the recent GitHub state does not show that: `e8b43ca3`, `4db96843` and `abd3b152` runs are cancelled, `fbeb0205` is pending and `7997bc19` is still in progress at this review. Cancelled/pending is not green. The shared main concurrency group with `cancel-in-progress: false` does not by itself provide an unlimited FIFO for pending runs. Rework main-run identity/job concurrency or add an explicit verified-checkpoint queue, preserving limited resources and required long gates. A current release report must identify the revision actually completed by CI, not assume every push inherited its predecessor's result.
+
+### Verification of this refresh
+
+- Fetched main; inspected current PR #2 and recent CI state; read current intent/status/roadmap/scorecard and audited the new runtime sources.
+- Regenerated the expanded tracked inventory with file hashes, explicit scope and modified-source provenance; Python parsing has zero errors. Rechecked candidate references and the quaternion duplicate against source.
+- Ran source registration (306/306) and current CTest discovery (252 listed, 148 unresolved); did not build/run native physics or browser regressions for this document.
+- Validated the refreshed inventory selection/reproducibility, local links/line bounds, Python syntax and changed-file scope before publication.
+- Preserved the original evidence report and existing simulation/demo/player data. No deletion, new law, performance measurement or complete rewrite claim is made here.
 
 ## References and reproduction
 
