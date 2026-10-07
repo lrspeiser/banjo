@@ -1,5 +1,10 @@
 # First replacement UI stage: material response lab
 
+**Current follow-up:** [Bounded fresh experiment commands](material-lab-live-checkpoint.md)
+now extend this published baseline. This document retains the original replay-only
+scope/evidence; the follow-up changes the disposable recording schema and lab
+endpoint, without changing the retained World or material laws.
+
 October 6, 2026. Source base main `886f475a`. The owner explicitly supports
 small physical simulations and rebuilding the UI in stages. This checkpoint
 adds a strict TypeScript experiment view and compiled CPU recording exporter.

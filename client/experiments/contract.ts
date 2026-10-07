@@ -45,7 +45,25 @@ export type Recording = {
   kind: string;
   backend: string;
   fp_profile: string;
+  request: ExperimentRequest;
   experiments: Run[];
+};
+export type ExperimentRequest = {
+  schema: "banjo.material-lab-request.v1";
+  force_scale: number;
+};
+export type ExperimentResult = {
+  schema: "banjo.material-lab-result.v1";
+  status: "completed";
+  execution_id: string;
+  elapsed_wall_s: number;
+  request: ExperimentRequest;
+  identity: {
+    native_sha256: string;
+    request_sha256: string;
+    recording_sha256: string;
+  };
+  recording: Recording;
 };
 const finite = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
@@ -56,10 +74,22 @@ const object = (v: unknown): Record<string, unknown> => {
 };
 const vec = (v: unknown): v is Vec =>
   Array.isArray(v) && v.length === 3 && v.every(finite);
+export function validateRequest(value: unknown): ExperimentRequest {
+  const request = object(value);
+  if (
+    Object.keys(request).length !== 2 ||
+    request.schema !== "banjo.material-lab-request.v1" ||
+    !finite(request.force_scale) ||
+    ![0.25, 0.5, 1, 1.25].includes(request.force_scale)
+  )
+    throw new Error("Unsupported experiment load");
+  return value as ExperimentRequest;
+}
 export function validateRecording(value: unknown): Recording {
   const root = object(value);
+  const request = validateRequest(root.request);
   if (
-    root.schema !== "banjo.material-lab-recording.v1" ||
+    root.schema !== "banjo.material-lab-recording.v2" ||
     root.kind !== "solver-recording" ||
     root.backend !== "serial-double CPU Verlet" ||
     typeof root.fp_profile !== "string" ||
@@ -94,7 +124,11 @@ export function validateRecording(value: unknown): Recording {
       throw new Error("Invalid matched experiment");
     const expectedForce =
       run.interaction === "pull" ? [0, 1e6, 0] : [10000, -20000, 30000];
-    if (!run.force_n.every((v, i) => v === expectedForce[i]))
+    if (
+      !run.force_n.every(
+        (v, i) => v === (expectedForce[i] ?? NaN) * request.force_scale,
+      )
+    )
       throw new Error("Unexpected laboratory force");
     if (!Array.isArray(run.bond_topology) || run.bond_topology.length !== 1261)
       throw new Error("Incomplete bond topology");
@@ -178,4 +212,30 @@ export function validateRecording(value: unknown): Recording {
     }
   }
   return value as Recording;
+}
+export function validateResult(
+  value: unknown,
+  expected: ExperimentRequest,
+): ExperimentResult {
+  const result = object(value);
+  const request = validateRequest(result.request);
+  const recording = validateRecording(result.recording);
+  const identity = object(result.identity);
+  if (
+    result.schema !== "banjo.material-lab-result.v1" ||
+    result.status !== "completed" ||
+    typeof result.execution_id !== "string" ||
+    !/^[a-f0-9]{32}$/.test(result.execution_id) ||
+    !finite(result.elapsed_wall_s) ||
+    result.elapsed_wall_s <= 0 ||
+    request.force_scale !== expected.force_scale ||
+    recording.request.force_scale !== request.force_scale ||
+    ![
+      identity.native_sha256,
+      identity.request_sha256,
+      identity.recording_sha256,
+    ].every((v) => typeof v === "string" && /^[a-f0-9]{64}$/.test(v))
+  )
+    throw new Error("Incomplete or mismatched experiment result");
+  return value as ExperimentResult;
 }

@@ -1,5 +1,7 @@
 import {
   validateRecording,
+  validateRequest,
+  validateResult,
   type Cell,
   type Frame,
   type Run,
@@ -16,6 +18,9 @@ const scenes = element("scenes"),
 const play = element<HTMLButtonElement>("play"),
   material = element<HTMLSelectElement>("material");
 const magnification = element<HTMLSelectElement>("magnification");
+const runButton = element<HTMLButtonElement>("run"),
+  forceScale = element<HTMLSelectElement>("force-scale"),
+  runStatus = element("run-status");
 let recording: Recording | null = null,
   interaction = "load",
   index = 0,
@@ -199,7 +204,8 @@ function render() {
   element("time").textContent = `${fmt(index * 3.2, 1)} μs`;
   element("phase").textContent =
     index <= 16 ? "Load applied" : "Load removed · motion continues";
-  status.textContent = `${interaction === "pull" ? "Upward pull: 1 MN" : "Force: (10, −20, 30) kN"} · 25 cm block · 125 cells · ${magnification.value}× displacement`;
+  const load = recording?.request.force_scale ?? 1;
+  status.textContent = `${interaction === "pull" ? `Upward pull: ${fmt(load)} MN` : `Force: (${fmt(10 * load)}, ${fmt(-20 * load)}, ${fmt(30 * load)}) kN`} · 25 cm block · 125 cells · ${magnification.value}× displacement`;
   const conditions = element("conditions");
   conditions.textContent =
     "50 mm cells · 100 ns steps · 25 fixed bottom cells · no gravity or damping. Same input, geometry and time for all materials. The existing isotropic elastic/strength reference drives damage. Grain, plasticity and calibrated crack work are unsupported in this wrapper. The laboratory force is not a human tool rating.";
@@ -283,6 +289,69 @@ window.addEventListener("resize", () => {
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) stop();
 });
+forceScale.addEventListener("change", () => {
+  runStatus.textContent = `Ready to run at ${Number(forceScale.value) * 100}%. Displayed results stay unchanged until completion.`;
+});
+runButton.addEventListener("click", async () => {
+  const request = validateRequest({
+    schema: "banjo.material-lab-request.v1",
+    force_scale: Number(forceScale.value),
+  });
+  stop();
+  runButton.disabled = true;
+  forceScale.disabled = true;
+  runStatus.textContent = "Running six fresh CPU experiments…";
+  document.body.dataset["execution"] = "running";
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch("api/experiments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const error: unknown = await response.json();
+      const message =
+        typeof error === "object" &&
+        error !== null &&
+        "error" in error &&
+        typeof error.error === "string"
+          ? error.error
+          : `Experiment unavailable (${response.status})`;
+      throw new Error(message);
+    }
+    const text = await response.text();
+    if (text.length > 10_000_000)
+      throw new Error("Experiment exceeds viewer budget");
+    const result = validateResult(JSON.parse(text), request);
+    recording = result.recording;
+    index = 0;
+    stop();
+    render();
+    play.disabled = false;
+    slider.disabled = false;
+    runStatus.textContent = `Completed · ${fmt(request.force_scale * 100)}% load · ${fmt(result.elapsed_wall_s, 2)} s. Play or scrub the response.`;
+    runStatus.title = `Execution ${result.execution_id}\nNative ${result.identity.native_sha256}\nRequest ${result.identity.request_sha256}\nRecording ${result.identity.recording_sha256}`;
+    document.body.dataset["execution"] = "completed";
+    document.body.dataset["executionId"] = result.execution_id;
+    document.body.dataset["state"] = "ready";
+  } catch (error) {
+    const reason =
+      error instanceof Error && error.name === "AbortError"
+        ? "Request timed out"
+        : error instanceof Error
+          ? error.message
+          : "Experiment failed";
+    runStatus.textContent = `${reason}. Previous results retained. Try again.`;
+    document.body.dataset["execution"] = "refused";
+  } finally {
+    clearTimeout(timeout);
+    runButton.disabled = false;
+    forceScale.disabled = false;
+  }
+});
 async function load() {
   try {
     const response = await fetch("material.json", { cache: "no-store" });
@@ -296,11 +365,17 @@ async function load() {
     play.disabled = false;
     slider.disabled = false;
     document.body.dataset["state"] = "ready";
+    runStatus.textContent =
+      "Baseline · 100% load. Choose a strength and run a fresh experiment.";
   } catch (error) {
     document.body.dataset["state"] = "error";
     status.textContent = `Cannot open experiment: ${error instanceof Error ? error.message : "invalid recording"}`;
     play.disabled = true;
     slider.disabled = true;
+    runStatus.textContent =
+      "Baseline unavailable. You can still run a fresh experiment.";
+  } finally {
+    runButton.disabled = false;
   }
 }
 void load();

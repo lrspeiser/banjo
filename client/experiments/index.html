@@ -53,6 +53,19 @@
             Play recorded response
           </button>
         </div>
+        <div class="run-controls">
+          <label
+            >Load strength
+            <select id="force-scale">
+              <option value="0.25">25%</option>
+              <option value="0.5">50%</option>
+              <option value="1" selected>100%</option>
+              <option value="1.25">125%</option>
+            </select>
+          </label>
+          <button id="run" class="primary" disabled>Run experiment</button>
+          <span id="run-status" role="status">Opening baseline results…</span>
+        </div>
       </section>
       <div id="status" role="status">Loading solver recordings…</div>
       <section
@@ -89,10 +102,11 @@
         <div id="measurements"></div>
       </details>
       <footer>
-        <strong>Recorded solver experiment.</strong> Playback is slowed for
-        inspection. Magnification changes only the view. Cell centres and bonds
-        are shown; these are not solved collision surfaces. Gravity,
-        self-contact, settling, grain and wear are not simulated here.
+        <strong>Isolated solver experiment.</strong> Run computes fresh results;
+        playback shows their exact samples, slowed for inspection. Magnification
+        changes only the view. Cell centres and bonds are shown; these are not
+        solved collision surfaces. Gravity, self-contact, settling, grain and
+        wear are not simulated here.
       </footer>
     </main>
     <script type="module" src="lab.js"></script>

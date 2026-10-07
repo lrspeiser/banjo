@@ -6,7 +6,7 @@ const code = readFileSync(
   new URL("../build/material-lab/ui/contract.js", import.meta.url),
   "utf8",
 );
-const { validateRecording } = await import(
+const { validateRecording, validateRequest, validateResult } = await import(
   `data:text/javascript;base64,${Buffer.from(code).toString("base64")}`
 );
 // Contract-only fixture. Actual native trajectories are independently required
@@ -14,10 +14,11 @@ const { validateRecording } = await import(
 const vec = () => [0, 0, 0];
 function fixture() {
   return {
-    schema: "banjo.material-lab-recording.v1",
+    schema: "banjo.material-lab-recording.v2",
     kind: "solver-recording",
     backend: "serial-double CPU Verlet",
     fp_profile: "test",
+    request: { schema: "banjo.material-lab-request.v1", force_scale: 1 },
     experiments: ["load", "pull"].flatMap((interaction) =>
       ["glass", "oak", "iron"].map((material) => ({
         id: `${material}:${interaction}`,
@@ -66,6 +67,56 @@ function fixture() {
 test("fixed experiment contract admits its complete shape without changing it", () => {
   const f = fixture();
   assert.equal(validateRecording(f), f);
+});
+test("live loads and result identity must agree with the submitted request", () => {
+  for (const scale of [0.25, 0.5, 1, 1.25]) {
+    const f = fixture();
+    f.request.force_scale = scale;
+    for (const run of f.experiments)
+      run.force_n = run.force_n.map((v) => v * scale);
+    assert.equal(validateRecording(f), f);
+    const response = {
+      schema: "banjo.material-lab-result.v1",
+      status: "completed",
+      execution_id: "a".repeat(32),
+      elapsed_wall_s: 1,
+      request: f.request,
+      recording: f,
+      identity: {
+        native_sha256: "a".repeat(64),
+        request_sha256: "b".repeat(64),
+        recording_sha256: "c".repeat(64),
+      },
+    };
+    assert.equal(validateResult(response, f.request), response);
+    assert.throws(() =>
+      validateResult(response, { ...f.request, force_scale: 2 }),
+    );
+    for (const edit of [
+      (r) => (r.status = "running"),
+      (r) => (r.execution_id = "missing"),
+      (r) => (r.identity.native_sha256 = "old"),
+    ]) {
+      const bad = structuredClone(response);
+      edit(bad);
+      assert.throws(() => validateResult(bad, f.request));
+    }
+  }
+  for (const scale of [0, 2, true, NaN, Infinity, "1"]) {
+    assert.throws(() =>
+      validateRequest({
+        schema: "banjo.material-lab-request.v1",
+        force_scale: scale,
+      }),
+    );
+  }
+  assert.throws(() =>
+    validateRequest({
+      schema: "banjo.material-lab-request.v1",
+      force_scale: 1,
+      world: "unsafe",
+    }),
+  );
 });
 test("reject unsupported schema, duplicate experiment and incompatible input/time", () => {
   for (const edit of [

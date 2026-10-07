@@ -3,9 +3,11 @@
 #include "numeric/FpProfile.hpp"
 #include <nlohmann/json.hpp>
 #include <chrono>
+#include <cmath>
 #include <fstream>
 #include <iostream>
 #include <numeric>
+#include <set>
 #include <stdexcept>
 
 namespace {
@@ -47,12 +49,32 @@ Json frame(const SolidMatterPatch &patch) {
         {"momentum_residual_n_s",vector(r.momentum_residual_kg_m_s)},
         {"angular_residual_kg_m2_s",vector(r.angular_residual_kg_m2_s)}};
 }
-Json experiment(MaterialPreset preset,bool strong) {
+double requestScale(const char *path) {
+    std::ifstream input(path,std::ios::binary|std::ios::ate);
+    if(!input || input.tellg()<0 || input.tellg()>1024)
+        throw std::invalid_argument("request must be an accessible JSON file of at most 1024 bytes");
+    input.seekg(0);
+    std::set<std::string> keys;
+    const Json request=Json::parse(input,[&keys](int depth,Json::parse_event_t event,Json &value) {
+        if(depth==1 && event==Json::parse_event_t::key && !keys.insert(value.get<std::string>()).second)
+            throw std::invalid_argument("repeated request field");
+        return true;
+    });
+    if(!request.is_object() || request.size()!=2 ||
+       request.value("schema",std::string{})!="banjo.material-lab-request.v1" ||
+       !request.contains("force_scale") || !request["force_scale"].is_number())
+        throw std::invalid_argument("unsupported experiment request fields/schema");
+    const auto scale=request["force_scale"].get<double>();
+    if(!std::isfinite(scale) || (scale!=.25 && scale!=.5 && scale!=1 && scale!=1.25))
+        throw std::invalid_argument("force_scale must be 0.25, 0.5, 1 or 1.25");
+    return scale;
+}
+Json experiment(MaterialPreset preset,bool strong,double scale) {
     const auto material=makeReferenceMaterial(preset,17);
     std::vector<unsigned> clamps;
     for(unsigned z=0;z<5;++z)for(unsigned x=0;x<5;++x)clamps.push_back(x+25*z);
     SolidMatterPatch patch("material-lab:block",{.25,.25,.25},.05,material,{},.1,1e-7,clamps);
-    const Vec3 force=strong?Vec3{0,1e6,0}:Vec3{10000,-20000,30000};
+    const Vec3 force=(strong?Vec3{0,1e6,0}:Vec3{10000,-20000,30000})*scale;
     std::vector<Vec3> input(125);input[72]=force; // top-centre source cell
     Json frames=Json::array();frames.push_back(frame(patch));
     const auto started=std::chrono::steady_clock::now();
@@ -79,18 +101,22 @@ Json experiment(MaterialPreset preset,bool strong) {
 }
 int main(int argc,char **argv) {
     try {
-        if(argc!=2)throw std::invalid_argument("usage: banjo_material_lab_record OUTPUT.json");
+        if(argc!=2 && !(argc==4 && std::string(argv[1])=="--request"))
+            throw std::invalid_argument("usage: banjo_material_lab_record [--request REQUEST.json] OUTPUT.json");
+        const double scale=argc==4?requestScale(argv[2]):1;
+        const char *output=argv[argc-1];
         Json runs=Json::array();
         for(bool strong:{false,true})for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})
-            runs.push_back(experiment(material,strong));
-        Json out={{"schema","banjo.material-lab-recording.v1"},{"kind","solver-recording"},
+            runs.push_back(experiment(material,strong,scale));
+        Json out={{"schema","banjo.material-lab-recording.v2"},{"kind","solver-recording"},
+            {"request",{{"schema","banjo.material-lab-request.v1"},{"force_scale",scale}}},
             {"backend","serial-double CPU Verlet"},{"fp_profile",fp::profile()},
             {"model","existing isotropic elastic central-bond strength reference"},
             {"boundary","25 positive-mass stationary bottom-face clamps"},
             {"gravity_m_s2",vector({})},{"damping",0},{"seed",17},
             {"limits",Json::array({"No self/contact/settling solver in this experiment", "No grain, plasticity, fatigue or calibrated crack work in this wrapper", "High laboratory force, not hand/tool calibration", "Recorded replay, not live world physics"})},
             {"experiments",std::move(runs)}};
-        std::ofstream file(argv[1],std::ios::binary|std::ios::trunc);
+        std::ofstream file(output,std::ios::binary|std::ios::trunc);
         if(!file)throw std::runtime_error("cannot open experiment recording output");
         file<<out.dump();file.close();if(!file)throw std::runtime_error("experiment recording write failed");
         std::cout<<"Recorded six matched material experiments, 21 frames each.\n";
