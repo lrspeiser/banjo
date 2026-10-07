@@ -1,6 +1,7 @@
 #pragma once
 #include "fastlattice/FastLattice.hpp"
 #include "rigid/JoltWorld.hpp"
+#include "physics/MaterialContactStencil.hpp"
 
 namespace banjo::fastlattice {
 // Trusted serial host callback. False/exception restores native state and the
@@ -26,4 +27,22 @@ struct NativeFixedPointTransfer {
     JoltWorld &world,LatticeBackend &target,std::uint32_t node,MatterBodyId target_proxy,
     MatterBodyId striker,Vec3 normal_world,double gap_m,
     const PointRigidContactSettings &settings,const PointContactRoundoffBudget &budget);
+struct NativeFixedSurfaceTransfer {
+    FixedPointContactKick source;
+    ExternalPointTransferLedger target;
+    MaterialContactStencil stencil;
+    Vec3 target_impulse_error_n_s{},target_angular_error_kg_m2_s{};
+    double target_work_error_j{},horizon_s{};
+    std::uint64_t target_step{};
+};
+// One common surface point for source and target reactions. Caller must supply
+// an actual geometry witness and a current connected 3D support (4..64 unique
+// movable nodes); this function does not discover topology or certify support.
+// Refuses planar/singular support. Signed affine traction weights are not
+// granular masses or a cell-spin law. No time, pose, strain or damage reset.
+[[nodiscard]] NativeFixedSurfaceTransfer applyNativeFixedSurfaceTransfer(
+    JoltWorld &world,LatticeBackend &target,std::span<const std::uint32_t> support,
+    MatterBodyId target_proxy,MatterBodyId striker,Vec3 surface_world_m,
+    Vec3 normal_world,double gap_m,const PointRigidContactSettings &settings,
+    const PointContactRoundoffBudget &budget);
 }

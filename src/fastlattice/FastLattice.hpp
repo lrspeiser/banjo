@@ -18,6 +18,7 @@
 #include <functional>
 #include <limits>
 #include <memory>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -152,6 +153,11 @@ struct ExternalPointTransferLedger {
     std::uint64_t transfers{}; // Instantaneous transfers, not elapsed substeps.
     Vec3 impulse_n_s{},angular_impulse_kg_m2_s{};
     double work_j{}; // Signed target kinetic change, not total contact loss.
+};
+struct ExternalPointVelocity {
+    std::uint32_t node{};
+    ActiveNodeState expected;
+    Vec3 velocity_m_s{};
 };
 
 // Serial-double Verlet only. An explicitly clamped node keeps its physical
@@ -288,6 +294,17 @@ public:
     }
     virtual ExternalPointTransferLedger applyExternalPointVelocity(std::uint32_t,const ActiveNodeState &,Vec3) {
         throw std::invalid_argument("this lattice backend does not implement external point contact");
+    }
+    // One atomic instantaneous contact distributed over 1..64 distinct nodes.
+    // Every expected state and cumulative ledger is checked before any write.
+    // One transfer is counted, regardless of stencil size. No pose/history/time
+    // change; serial double CPU only, other backends explicitly refuse.
+    [[nodiscard]] virtual ExternalPointTransferLedger validateExternalPointVelocities(
+        std::span<const ExternalPointVelocity>) const {
+        throw std::invalid_argument("this lattice backend does not implement regional contact");
+    }
+    virtual ExternalPointTransferLedger applyExternalPointVelocities(std::span<const ExternalPointVelocity>) {
+        throw std::invalid_argument("this lattice backend does not implement regional contact");
     }
     // Continue from the current state; the status accumulates across calls.
     virtual RunStatus run(const RunControl &control) = 0;

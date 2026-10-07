@@ -1107,3 +1107,8 @@ The inventory is a static aid and has no server/build/test side effects. Future 
 ### W08 occupied-cell geometry, October 6
 
 [The cuboid contact checkpoint](occupied-cell-contact-checkpoint.md) adds actual oriented occupied-cell geometry and twelve matched finite native tool/anchored-target comparisons, retaining the earlier spherical reference and full fixture error attribution. Initially touching cuboids load three/nine forward cells with material-derived response and canonical post-contact continuation. Four native suites, seventeen real-native worker tests and 312/312 registration pass. Static entry overlap remains observational. The nodal reduction still lacks independent cell spin/surface traction, self-contact, finite neighbours, native handoff and supported terrain activation. Performance remains over 1,000 times slower than realtime and four iron repeats still fail; no gameplay migration, deletion or W00–W17 completion is claimed.
+
+
+### W08 material surface transfer, October 6
+
+**Material surface transfer, October 6 (experimental):** [Bounded surface traction and comparative evidence](material-surface-contact-checkpoint.md) distribute actual native surface impulses over connected translational material nodes with force, torque and kinetic-work reproduction. Eight rebuilt native suites, 17 real-native worker tests and 314/314 registration pass; twelve short glass/oak/iron timestep cases retain all accounting/refinement bounds. This is a pre-fracture CPU reference with caller-declared support, not terrain activation or a converged continuum face. Four iron repeats, local topology selection, full terrain/release accounting, useful digging speed, durable state, UI migration and W00–W17 remain open. Running demos are unchanged.

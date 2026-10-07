@@ -126,26 +126,45 @@ public:
         }else throw std::invalid_argument("external point contact requires serial double CPU");
     }
     [[nodiscard]] ExternalPointTransferLedger validateExternalPointVelocity(std::uint32_t i,const ActiveNodeState &expected,Vec3 velocity) const override {
+        const ExternalPointVelocity entry{i,expected,velocity};
+        return validateExternalPointVelocities({&entry,1});
+    }
+    [[nodiscard]] ExternalPointTransferLedger validateExternalPointVelocities(std::span<const ExternalPointVelocity> entries) const override {
         if constexpr(std::is_same_v<Real,double>) {
-        const auto current=externalContactPoint(i);
+        if(entries.empty()||entries.size()>64)throw std::invalid_argument("external contact transfer needs 1..64 nodes");
+        ExternalPointTransferLedger out;out.transfers=1;
         const auto equal=[](Vec3 a,Vec3 b){return a.x==b.x&&a.y==b.y&&a.z==b.z;};
+        for(std::size_t j=0;j<entries.size();++j) {
+        const auto &[i,expected,velocity]=entries[j];
+        for(std::size_t k=0;k<j;++k)if(entries[k].node==i)throw std::invalid_argument("duplicate external contact node");
+        const auto current=externalContactPoint(i);
         if(!equal(expected.position_world_m,current.position_world_m)||!equal(expected.previous_position_world_m,current.previous_position_world_m)||
             !equal(expected.velocity_m_s,current.velocity_m_s)||expected.mass_kg!=current.mass_kg||
             !equal(expected.spin_angular_velocity_rad_s,{})||!finite(velocity))
             throw std::invalid_argument("external point transfer has stale or invalid state");
-        ExternalPointTransferLedger out;out.transfers=1;
-        out.impulse_n_s=current.mass_kg*(velocity-current.velocity_m_s);
-        out.angular_impulse_kg_m2_s=cross(current.position_world_m,out.impulse_n_s);
-        out.work_j=.5*current.mass_kg*dot(velocity-current.velocity_m_s,velocity+current.velocity_m_s);
+        const Vec3 impulse=current.mass_kg*(velocity-current.velocity_m_s);
+        out.impulse_n_s+=impulse;
+        out.angular_impulse_kg_m2_s+=cross(current.position_world_m,impulse);
+        out.work_j+=.5*current.mass_kg*dot(velocity-current.velocity_m_s,velocity+current.velocity_m_s);
+        if(!finite(impulse)||!finite(out.impulse_n_s)||!finite(out.angular_impulse_kg_m2_s)||!std::isfinite(out.work_j))
+            throw std::overflow_error("external contact region ledger overflow");
+        }
         (void)combinedPointLedger(status_.external_point_transfer,out);
         return out;
         }else throw std::invalid_argument("external point contact requires serial double CPU");
     }
     ExternalPointTransferLedger applyExternalPointVelocity(std::uint32_t i,const ActiveNodeState &expected,Vec3 velocity) override {
+        const ExternalPointVelocity entry{i,expected,velocity};
+        return applyExternalPointVelocities({&entry,1});
+    }
+    ExternalPointTransferLedger applyExternalPointVelocities(std::span<const ExternalPointVelocity> entries) override {
         if constexpr(std::is_same_v<Real,double>) {
-        const auto receipt=validateExternalPointVelocity(i,expected,velocity);
+        const auto receipt=validateExternalPointVelocities(entries);
         const auto total=combinedPointLedger(status_.external_point_transfer,receipt);
+        for(const auto &[i,expected,velocity]:entries) {
+        (void)expected;
         L_.v[3*i]=static_cast<Real>(velocity.x);L_.v[3*i+1]=static_cast<Real>(velocity.y);L_.v[3*i+2]=static_cast<Real>(velocity.z);
+        }
         status_.external_point_transfer=total;return receipt;
         }else throw std::invalid_argument("external point contact requires serial double CPU");
     }

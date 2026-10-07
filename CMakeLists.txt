@@ -99,6 +99,7 @@ add_library(
     src/physics/RollingKinematics.cpp
     src/physics/SphereMaterialContact.cpp
     src/physics/PointRigidContact.cpp
+    src/physics/MaterialContactStencil.cpp
     src/physics/FixedAssemblyContact.cpp
     src/physics/GripPull.cpp
     src/fracture/ActivationPolicy.cpp
@@ -1069,6 +1070,10 @@ if(BANJO_BUILD_TESTS)
         target_link_libraries(banjo_native_lattice_contact_tests PRIVATE banjo_lattice_native_contact)
         banjo_enable_warnings(banjo_native_lattice_contact_tests)
         add_test(NAME banjo_native_lattice_contact_tests COMMAND banjo_native_lattice_contact_tests)
+        add_executable(banjo_material_surface_contact_tests tests/material_surface_contact_tests.cpp)
+        target_link_libraries(banjo_material_surface_contact_tests PRIVATE banjo_lattice_native_contact)
+        banjo_enable_warnings(banjo_material_surface_contact_tests)
+        add_test(NAME banjo_material_surface_contact_tests COMMAND banjo_material_surface_contact_tests)
 
     # Two wheels that turn together at a ratio: gears in mesh, a chain between
     # sprockets, and teeth that strip when too much goes through them.
