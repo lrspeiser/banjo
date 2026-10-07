@@ -5,6 +5,12 @@ small physical simulations and rebuilding the UI in stages. This checkpoint
 adds a strict TypeScript experiment view and compiled CPU recording exporter.
 The full rewrite remains active; the retained World demo on port 18890 is unchanged.
 
+Implementation and evidence were published to GitHub main as
+`55378ac49d13903ef1b1b882e3bfa0c84a7dd36b` on October 6. The evidence records
+the tested workspace and actual binary/asset hashes before publication; its
+base revision is provenance, not a claim that unmodified base main contains this UI.
+This publication note adds no physical validation.
+
 ## What can be tried
 
 Run [the launcher](../scripts/material-lab.py) and open
