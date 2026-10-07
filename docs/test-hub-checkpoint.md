@@ -66,4 +66,4 @@ The native CI build now runs the new host/client recording checks immediately af
 
 Next: isolate sustained contact refinement defects without relaxing the gates; qualify repeated useful excavation and full actor/environment transfers; implement finite-cell/neighbour/debris response and durable state; migrate the shared Rust gateway/player UI in stages. W00–W17 is still active. This checkpoint makes the implemented references testable and does not declare the rewrite complete.
 
-Prepared against main `18507c6f`. Publication revision and measured artifact/source hashes are recorded in [checkpoint evidence](evidence/test-hub-2026-10-06.json).
+Prepared against main `18507c6f`; implementation `2ccb38fa` is published on GitHub main. The full publication revision and measured artifact/source hashes are recorded in [checkpoint evidence](evidence/test-hub-2026-10-06.json).

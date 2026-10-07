@@ -1,7 +1,7 @@
 {
   "schema": "banjo.test-hub-evidence.v1",
   "source_baseline": "18507c6fb0f1bd0840b6fc2f97f3b236eff784cb",
-  "published_implementation_revision": null,
+  "published_implementation_revision": "2ccb38fa4b56ee48191e2ccf3f0c3c74d7c60c2a",
   "environment": {
     "platform": "Windows x64, MSVC Release, headless reference plus ordinary in-app browser",
     "python": "3.13.5"
