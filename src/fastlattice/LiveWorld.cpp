@@ -1,6 +1,7 @@
 #include "fastlattice/LiveWorld.hpp"
 #include "machines/Circuit.hpp"
 #include "fastlattice/ToolTerrain.hpp"
+#include "fastlattice/NativeToolUse.hpp"
 #include "fastlattice/PreciseRigidScene.hpp"
 
 #include "core/Plane.hpp"
@@ -3313,6 +3314,11 @@ struct LiveWorld::Impl {
         Quat facing_actor_local{};
     };
     std::optional<NativeCarry> native_carry;
+    struct NativeUse {
+        NativeToolUseController controller;
+        LiveToolUseAdmission admission;
+    };
+    std::optional<NativeUse> native_use;
     struct HandContext {
         std::size_t holding{static_cast<std::size_t>(-1)};
         Vec3 held_at{}, held_velocity{}, grip_local{}, hand_force{};
@@ -3325,6 +3331,7 @@ struct LiveWorld::Impl {
         Vec3 hand_applied_n{}, haul_pushed{}, let_go_velocity{};
         HandStep hand_step;
         std::optional<NativeCarry> native_carry;
+        std::optional<NativeUse> native_use;
     };
     std::map<std::string, HandContext> hands;
     std::string selected_hand;
@@ -3621,7 +3628,7 @@ struct LiveWorld::Impl {
         return {holding, held_at, held_velocity, grip_local, hand_force, held_facing,
                 hand_strength_n, hand_torque_n_m, hand_mass_kg, wielding, stroke,
                 stroke_ended, let_go_body, hand_work_j, let_go_at_s, let_go_work_j,
-                hand_applied_n, haul_pushed, let_go_velocity, hand_step, native_carry};
+                hand_applied_n, haul_pushed, let_go_velocity, hand_step, native_carry, native_use};
     }
     void loadHand(HandContext h) {
         holding = h.holding; held_at = h.held_at; held_velocity = h.held_velocity;
@@ -3634,6 +3641,7 @@ struct LiveWorld::Impl {
         hand_applied_n = h.hand_applied_n; haul_pushed = h.haul_pushed;
         let_go_velocity = h.let_go_velocity; hand_step = h.hand_step;
         native_carry = h.native_carry;
+        native_use = std::move(h.native_use);
     }
     void selectHand(const std::string &player) {
         if (environment) environment->selectCarrier(player);
@@ -6811,6 +6819,7 @@ void LiveWorld::step(double dt_s) {
     impl_->hands[caller] = impl_->handContext();
     auto hands_before = impl_->hands;
     auto active_hand_before = impl_->handContext();
+    const auto ground_actions_before = impl_->ground_actions;
     const auto steps_before = impl_->steps_taken;
     const double horizon_before = impl_->last_dt_s;
     bool actor_step_kept = false, actor_step_restored = false;
@@ -6821,6 +6830,7 @@ void LiveWorld::step(double dt_s) {
         impl_->hands = std::move(hands_before);
         impl_->loadHand(std::move(active_hand_before));
         impl_->selected_hand = caller;
+        impl_->ground_actions = ground_actions_before;
         impl_->steps_taken = steps_before;
         // A material offer still needs the duration of its refused rigid step
         // to size the fracture window; an exceptional step creates no offer.
@@ -6849,7 +6859,9 @@ void LiveWorld::step(double dt_s) {
     // the work the step does. Before the grip's pull below, which is towards
     // exactly that.
     try {
-    forHands([&](const std::string &) { impl_->updateNativeCarry(); beginHandStep(dt_s); });
+    forHands([&](const std::string &) {
+        impl_->updateNativeCarry();beginToolUseStep(dt_s);beginHandStep(dt_s);
+    });
 
     // The hand on a wielded grip: pulling AT the grip with a bounded force and
     // turning with a bounded torque, both towards where the hand wants the body
@@ -6880,11 +6892,12 @@ void LiveWorld::step(double dt_s) {
         // The free-body preview uses the unchanged single-body controller;
         // jointed projections are explicitly refused below.
         const bool fixed_group = impl_->jointedWith(impl_->holding,true).size()>1;
+        const bool bounded_motion=impl_->stroke || (impl_->native_use && impl_->native_use->controller.state().active);
         const GripPull pull = gripPull(held, grip_local, impl_->held_at,
                                        impl_->held_velocity, impl_->held_facing,
                                        impl_->hand_strength_n, impl_->hand_torque_n_m,
                                        impl_->request.gravity_m_s2,
-                                       fixed_group && !impl_->stroke ? 20.0 : 100.0,
+                                       fixed_group && !bounded_motion ? 20.0 : 100.0,
                                        fixed_group ? 20.0 : 100.0,
                                        impl_->native_carry ? impl_->world->snapshot(impl_->native_players.at(actor).id).angular_velocity_rad_s : Vec3{});
         // An arm reaches so far. A grip further from a body's shoulder than
@@ -7191,6 +7204,7 @@ void LiveWorld::step(double dt_s) {
             const auto push = std::find_if(hands.begin(), hands.end(),
                 [&](const HandPush &h) { return h.actor == actor; });
             endHandStep(push->force, push->torque, dt_s);
+            endToolUseStep();
         });
         return;
     }
@@ -7244,6 +7258,7 @@ void LiveWorld::step(double dt_s) {
         const auto push = std::find_if(hands.begin(), hands.end(),
             [&](const HandPush &h) { return h.actor == actor; });
         endHandStep(push->force, push->torque, dt_s);
+        endToolUseStep();
     });
     } catch (...) {
         if (!actor_step_kept && !actor_step_restored) restoreActorStep(false);
@@ -9092,6 +9107,7 @@ bool LiveWorld::grab(const std::string &name) {
 
 void LiveWorld::moveHeld(const Vec3 &to_world_m) {
     if (impl_->holding == static_cast<std::size_t>(-1)) return;
+    interruptToolUse("cancelled");
     // Whoever moves the hand is driving it, so a stroke stops here -- and the
     // hand is being PUT somewhere, not moved along something.
     cancelStroke();
@@ -9300,6 +9316,7 @@ void LiveWorld::carryOrHaul(double dt_s) {
 }
 
 void LiveWorld::release() {
+    interruptToolUse("grip_released");
     impl_->native_carry.reset();
     if (impl_->holding == static_cast<std::size_t>(-1)) return;
     // The hold was only the pose being re-asserted, so there is nothing to undo
@@ -14450,6 +14467,7 @@ void LiveWorld::aimHeld(const Quat &orientation_world) {
                                   orientation_world.y * orientation_world.y +
                                   orientation_world.z * orientation_world.z);
     if (!(size > 1e-9) || !std::isfinite(size)) return;
+    interruptToolUse("cancelled");
     impl_->native_carry.reset(); // an explicit orientation controller takes authority
     // Asked of the body as poses() says it faces. The hand turns its rigid
     // frame, so the turn its shape carries (shapeTurn) comes off first:
@@ -14535,6 +14553,7 @@ bool LiveWorld::stroke(const LiveStroke &asked, std::string &why) {
         why = std::move(problem);
         return false;
     }
+    interruptToolUse("cancelled");
     Impl::Stroke made;
     made.asked = asked;
     made.at_m = arcLengths(asked.path_m);
@@ -16394,6 +16413,14 @@ ToolTerrainHost LiveWorld::toolHost() const {
         if (found == impl_->ground_actions.end()) return std::nullopt;
         return std::optional<std::optional<Vec3>>{std::in_place, found->second};
     };
+    host.recovering_contact = [this](const std::string &actor) {
+        const auto recovering=[](const auto &use) {
+            return use && use->controller.state().active && use->controller.state().phase=="recovering";
+        };
+        if(actor==impl_->selected_hand)return recovering(impl_->native_use);
+        const auto found=impl_->hands.find(actor);
+        return found!=impl_->hands.end() && recovering(found->second.native_use);
+    };
     host.aim_of = [this](const std::string &actor) -> std::optional<Vec3> {
         const auto found = impl_->ground_aims.find(actor);
         if (found == impl_->ground_aims.end()) return std::nullopt;
@@ -16484,7 +16511,7 @@ LiveToolUseAdmission LiveWorld::toolUseAdmission(const Vec3 &from_world_m,
     if(!ray_refusal.empty())return refuse(ray_refusal.c_str());
     if(I.holding==static_cast<std::size_t>(-1)||!I.wielding)return refuse("not_holding");
     result.tool=I.described[I.holding].name;
-    if(I.stroke)return refuse("action_in_progress");
+    if(I.stroke || (I.native_use && I.native_use->controller.state().active))return refuse("action_in_progress");
     if(!I.environment)return refuse("unsupported_capability");
     const auto members=I.jointedWith(I.holding,true);
     if(!I.nativeCarryLoadSupported(I.selected_hand,members))return refuse("insufficient_strength");
@@ -16527,16 +16554,144 @@ LiveToolUseAdmission LiveWorld::toolUseAdmission(const Vec3 &from_world_m,
     if(verdict.answer==terrain::GroundAnswer::NotSupported)return refuse("unsupported_law");
     if(verdict.answer==terrain::GroundAnswer::TooHard)return refuse("material_too_hard");
     const auto actor=I.world->snapshot(I.native_players.at(I.selected_hand).id);
-    LiveStrike asked;asked.target_m=result.target_m;
-    asked.shoulder_m=actor.center_of_mass_world_m+actor.orientation_world.rotate(Vec3{0,kShoulderAboveCenterM,0});
     std::string why;
-    const auto planned=I.tools.plan(host,asked,result.tool,I.grip_local,why);
+    const auto planned=I.tools.planContact(host,result.point,result.tool,I.grip_local,result.target_m,
+        actor.center_of_mass_world_m+actor.orientation_world.rotate(Vec3{0,kShoulderAboveCenterM,0}),why);
     if(!planned)return refuse("unsupported_capability");
-    for(const auto &at:planned->path_m)
+    for(const auto &at:planned->contact.path_m)
         if(!I.gripWithinNativeReach(I.selected_hand,at))return refuse("out_of_reach");
-    result.desired_stroke=*planned;
+    NativeToolFeedback actual;const auto [grip,velocity]=gripNow();actual.grip_m=grip;actual.grip_velocity_m_s=velocity;
+    actual.tip_m=point->tip_m;actual.pointing=point->pointing;
+    const NativeToolUseController candidate(result,*planned,actual,I.time_s);
+    if(!I.gripWithinNativeReach(I.selected_hand,candidate.liftGrip()) ||
+        !I.gripWithinNativeReach(I.selected_hand,planned->contact.path_m.back()+Vec3{0,.14,0}))
+        return refuse("out_of_reach");
+    result.desired_stroke=planned->contact;
     result.admitted=true;
     return result;
+}
+
+NativeToolFeedback LiveWorld::toolUseFeedback() const {
+    const Impl &I=*impl_;NativeToolFeedback out;
+    out.hand_work_j=I.hand_work_j;
+    out.grip_present=I.wielding && I.holding<I.body_of.size() && I.inWorld(I.holding);
+    if(!I.native_use || !I.wielding || I.holding>=I.body_of.size() || !I.inWorld(I.holding))return out;
+    const auto &state=I.native_use->controller.state();
+    const auto [grip,velocity]=gripNow();out.grip_m=grip;out.grip_velocity_m_s=velocity;
+    out.facing=I.world->snapshot(I.body_of[I.holding]).orientation_world;
+    out.reachable=I.native_players.count(I.selected_hand) && I.gripWithinNativeReach(I.selected_hand,grip);
+    for(const auto &point:toolPoints())if(point.id==state.point) {
+        out.tip_m=point.tip_m;out.pointing=point.pointing;out.point_depth_m=point.depth_m;
+        out.connected=point.attached && point.grip_connected &&
+            (point.grip_body.empty()?point.body:point.grip_body)==state.tool && I.described[I.holding].name==state.tool;
+        break;
+    }
+    const auto &expected=I.native_use->admission;
+    out.target_matches=false;
+    if(I.environment && I.environment->onTheGround(state.target_m.x,state.target_m.z)) {
+        const auto &field=I.environment->fieldAt(state.target_m.x,state.target_m.z);
+        const auto column=field.cellAt(state.target_m.x,state.target_m.z);
+        out.ground_height_m=field.heightAt(state.target_m.x,state.target_m.z);
+        out.target_matches=column && *column==expected.terrain_column &&
+            I.environment->regionAt(state.target_m.x,state.target_m.z)==expected.terrain_region &&
+            field.matterRevision(*column)==expected.matter_revision &&
+            std::abs(out.ground_height_m-expected.ground_height_m)<1e-6 &&
+            I.environment->waterDepthAt(state.target_m.x,state.target_m.z)<=.005;
+    }
+    return out;
+}
+
+bool LiveWorld::beginToolUse(const Vec3 &from,const Vec3 &direction,double maximum,
+    std::string &why,const LiveToolUseAdmission *preview) {
+    Impl &I=*impl_;
+    const auto admitted=toolUseAdmission(from,direction,maximum);
+    if(!admitted.admitted) { why=admitted.reason;return false; }
+    if(preview && (!preview->admitted || preview->tool!=admitted.tool || preview->point!=admitted.point ||
+        preview->terrain_region!=admitted.terrain_region || preview->terrain_column!=admitted.terrain_column ||
+        preview->matter_revision!=admitted.matter_revision || length(preview->target_m-admitted.target_m)>.001 ||
+        std::abs(preview->ground_height_m-admitted.ground_height_m)>1e-6)) {
+        why="target_changed";return false;
+    }
+    const auto actor=I.world->snapshot(I.native_players.at(I.selected_hand).id);
+    const Vec3 shoulder=actor.center_of_mass_world_m+actor.orientation_world.rotate(Vec3{0,kShoulderAboveCenterM,0});
+    const auto plan=I.tools.planContact(toolHost(),admitted.point,admitted.tool,I.grip_local,admitted.target_m,shoulder,why);
+    if(!plan) { why="unsupported_capability";return false; }
+    Impl::NativeUse made;made.admission=admitted;
+    NativeToolFeedback actual;const auto [grip,velocity]=gripNow();actual.grip_m=grip;actual.grip_velocity_m_s=velocity;
+    actual.facing=I.world->snapshot(I.body_of[I.holding]).orientation_world;actual.hand_work_j=I.hand_work_j;
+    for(const auto &point:toolPoints())if(point.id==admitted.point) {
+        actual.tip_m=point.tip_m;actual.pointing=point.pointing;actual.point_depth_m=point.depth_m;
+        actual.connected=point.attached && point.grip_connected;break;
+    }
+    if(!actual.connected || actual.point_depth_m>0) { why="action_in_progress";return false; }
+    made.controller=NativeToolUseController(admitted,*plan,actual,I.time_s);
+    const auto reachable=[&](const Vec3 &p) {return I.gripWithinNativeReach(I.selected_hand,p);};
+    if(!reachable(made.controller.liftGrip()) || !reachable(plan->ready_grip_m) ||
+        !reachable(plan->contact.path_m.back()+Vec3{0,.14,0}) ||
+        std::any_of(plan->contact.path_m.begin(),plan->contact.path_m.end(),[&](const auto &p) {return !reachable(p);})) {
+        why="out_of_reach";return false;
+    }
+    I.native_use=std::move(made);I.native_carry.reset();setGroundAction(std::nullopt);
+    I.held_velocity={};why.clear();return true;
+}
+
+void LiveWorld::beginToolUseStep(double dt_s) {
+    Impl &I=*impl_;
+    if(!I.native_use || !I.native_use->controller.state().active)return;
+    const auto actual=toolUseFeedback();
+    const double mass=I.holding<I.body_of.size()?I.gripMatter().first.mass_kg:0;
+    const auto desired=I.native_use->controller.wish(actual,I.time_s,dt_s,
+        handAcceleration(I.hand_strength_n,I.hand_mass_kg,mass,I.request.gravity_m_s2));
+    I.held_at=desired.grip_m;I.held_velocity=desired.grip_velocity_m_s;I.held_facing=desired.facing;
+    setGroundAction(desired.cuts?std::optional<Vec3>{I.native_use->controller.state().target_m}:std::nullopt);
+}
+
+void LiveWorld::endToolUseStep() {
+    Impl &I=*impl_;
+    if(!I.native_use)return;
+    const bool was_active=I.native_use->controller.state().active;
+    const auto before=I.native_use->controller.state().phase;
+    const auto actual=toolUseFeedback();
+    I.native_use->controller.accepted(actual,I.time_s,I.tools.reports(),I.selected_hand);
+    if(!was_active)return;
+    auto &admitted=I.native_use->admission;
+    // A kept step's own physical removal is the next native baseline. A change
+    // between steps is detected by wish() before it can authorize another cut.
+    if(before=="acting" && I.environment) {
+        const auto &field=I.environment->fieldAt(admitted.target_m.x,admitted.target_m.z);
+        admitted.matter_revision=field.matterRevision(admitted.terrain_column);
+        admitted.ground_height_m=field.heightAt(admitted.target_m.x,admitted.target_m.z);
+    }
+    const auto &state=I.native_use->controller.state();
+    if(state.phase!="acting")setGroundAction(std::nullopt);
+    if(!state.active) {
+        I.held_velocity={};
+        if(before=="recovering" && state.reason!="recovery_blocked") (void)carryWithNativePlayer();
+    }
+}
+
+void LiveWorld::cancelToolUse() {
+    if(impl_->native_use && impl_->native_use->controller.state().active) {
+        impl_->native_use->controller.cancel(impl_->time_s);setGroundAction(std::nullopt);
+    }
+}
+void LiveWorld::interruptToolUse(const std::string &reason) {
+    if(impl_->native_use && impl_->native_use->controller.state().active) {
+        impl_->native_use->controller.interrupt(impl_->time_s,reason);setGroundAction(std::nullopt);
+        impl_->held_velocity={};
+    }
+}
+LiveToolUse LiveWorld::toolUse() const {
+    return impl_->native_use?impl_->native_use->controller.state():LiveToolUse{};
+}
+std::map<std::string,LiveToolUse> LiveWorld::playerToolUses() {
+    const auto caller=impl_->selected_hand;impl_->hands[caller]=impl_->handContext();
+    std::map<std::string,LiveToolUse> out;
+    for(const auto &[actor,unused]:impl_->hands) {
+        (void)unused;if(actor.empty())continue;
+        impl_->selectHand(actor);out.emplace(actor,toolUse());
+    }
+    impl_->selectHand(caller);return out;
 }
 
 bool LiveWorld::strike(const LiveStrike &asked, std::string &why) {
@@ -16933,6 +17088,8 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
     for (const auto &[actor, hand] : saved_hands) {
         (void)actor;
         if (hand.stroke) return refuse("a hand is making a stroke: the world is saved once it is over");
+        if (hand.native_use && hand.native_use->controller.state().active)
+            return refuse("a native tool action is active: cancel and recover before saving");
     }
 
     nlohmann::json doc;

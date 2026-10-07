@@ -428,6 +428,7 @@ if(BANJO_BUILD_HEADLESS)
     add_library(banjo_fastlattice_scene src/fastlattice/TileImpactScene.cpp
                                        src/fastlattice/LiveWorld.cpp
                                        src/fastlattice/ToolTerrain.cpp
+                                       src/fastlattice/NativeToolUse.cpp
     src/fastlattice/PreciseRigidScene.cpp)
     target_link_libraries(banjo_fastlattice_scene PUBLIC banjo_fastlattice banjo_runtime banjo_thermo banjo_environment banjo_circuits PRIVATE nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_fastlattice_scene)
@@ -1111,6 +1112,10 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_tool_use_admission_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_tool_use_admission_tests)
             add_test(NAME banjo_tool_use_admission_tests COMMAND banjo_tool_use_admission_tests)
+            add_executable(banjo_native_tool_use_tests tests/native_tool_use_tests.cpp)
+            target_link_libraries(banjo_native_tool_use_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_native_tool_use_tests)
+            add_test(NAME banjo_native_tool_use_tests COMMAND banjo_native_tool_use_tests)
 
             # The same world twice, with the threads on: a contact order that is
             # a function of the contacts and not of which worker finished first.

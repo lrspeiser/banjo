@@ -2,6 +2,10 @@
 
 October 6, 2026, source baseline `02a764bb`. This is a W06 prerequisite in the isolated Rust/native worker. The browser demo still uses the retained host. Preparation, acting, recovery and their physical outcome events are not implemented by this checkpoint.
 
+## Subsequent controller checkpoint
+
+Admission was published on main at `08a05c2b`. [The subsequent native-use checkpoint](runtime-tool-use-checkpoint.md) replaces the thirteen-point desired preview with a three-point short contact plan and implements native phases. Historical tables below describe the frozen earlier experiment. Repeat clearance, typed Rust use/import and browser migration remain open.
+
 ## Implemented behavior
 
 `LiveWorld::toolUseAdmission` is a read-only native query. It shares pickup's ray validation: a joined native actor, finite normalized direction, maximum two-metre ray and origin within 0.2 m of the actual actor's eyes. It requires a wielded assembly, necessary actual weight/load-moment support, no competing stroke and exactly one attached, connected tool point belonging to its held root. Tool display names select no behavior.

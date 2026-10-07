@@ -32,7 +32,7 @@
 
 ## Codebase rewrite: October 6 current checkpoint and remaining order
 
-[Native tool-target admission](runtime-tool-admission-checkpoint.md) now provides the W06 read-only query and typed private Rust preview. Native preparing/acting/recovering phases and useful physical results are still next. Retain the existing host until shared actual-state journeys qualify its replacement.
+[Native tool-target admission](runtime-tool-admission-checkpoint.md) provides the W06 read-only query and typed private Rust preview. [Native tool use](runtime-tool-use-checkpoint.md) now implements Preparing/Acting/Recovering and measured shallow outcomes. The strict same-column repeat gate still fails all four iron fixtures: actual head/patch clearance and supported terrain contact must be resolved before claiming useful sustained digging. Next typed Rust begin/cancel/import and retained outcomes; preserve the existing host until shared actual-state desktop/touch journeys qualify its replacement.
 
 Implemented in scoped checkpoints: [W00/W01 build/test discovery and W03 contracts](runtime-rewrite-checkpoint.md), [W02 retained diagnostic history](interaction-history-checkpoint.md), [W04 native-backed Rust clock/actors](runtime-worker-checkpoint.md), and [W05 native pickup admission plus pending grip confirmation](runtime-pickup-checkpoint.md). These form an isolated experimental worker; the playable browser host is still the existing implementation. Full W02 viewer/native-readiness work and W04 event/coalescing/durable-state work remain open.
 

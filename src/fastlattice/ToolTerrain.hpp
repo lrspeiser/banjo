@@ -71,6 +71,9 @@ struct ToolTerrainHost {
     // Outer absence: physical laboratory contact. Inner absence: controlled
     // player is idle. Inner target: active selected-column contact.
     std::function<std::optional<std::optional<Vec3>>(const std::string &)> work_control;
+    // Withdrawal may retain an already authorized bite until the actual point
+    // is clear. This never admits a new meeting or another selected column.
+    std::function<bool(const std::string &)> recovering_contact;
 };
 
 class ToolTerrain {
@@ -106,6 +109,9 @@ public:
     [[nodiscard]] std::optional<LiveStroke> plan(const ToolTerrainHost &host, const LiveStrike &strike,
                                                  const std::string &held, const Vec3 &grip_local,
                                                  std::string &why) const;
+    [[nodiscard]] std::optional<LiveToolContactPlan> planContact(const ToolTerrainHost &host,
+        unsigned point, const std::string &held, const Vec3 &grip_local, const Vec3 &target,
+        const Vec3 &shoulder, std::string &why) const;
     [[nodiscard]] bool empty() const { return points_.empty(); }
 
     // A point as a saved world keeps it (LiveWorld::snapshot): what it is and
@@ -177,6 +183,12 @@ private:
         std::string note_kind;
     };
     std::vector<Point> points_;
+    struct HeldPointFrame {
+        Vec3 tip_local{}, pointing_local{}, width_local{}, grip_world{};
+        Quat facing{};
+    };
+    [[nodiscard]] std::optional<HeldPointFrame> heldFrame(const ToolTerrainHost &host,
+        const Point &point, const std::string &held, const Vec3 &grip_local, std::string &why) const;
     std::vector<LiveGroundWork> log_;
     unsigned next_{1};
 

@@ -1,0 +1,167 @@
+buried cancel glass, released m3=0
+buried drop glass, released m3=0.000629784
+buried cancel oak, released m3=0
+buried drop oak, released m3=0.000292492
+buried cancel iron, released m3=0
+buried drop iron, released m3=0.000579316
+native cycle glass pick, t=0.183333, wall s=0.010298, acted=1, recovered=1, reason=, hand work J=-1.98003, contact work J=3.27504, removal m3=4.05063e-05, holding=handle
+final tip=0.647005,0.811865,0.145127, direction y=-0.999459, depth=0
+final grip speed=0.330313, target error=0.00205818
+mass kg=2.24, fragment kg=0.0648102, raw unclosed mechanical/work J=-1.74765
+repeat target 0.65,0.745949,0.15, hit=0.649998,0.745954,0.15, column=566
+repeat phase preparing -> acting, t=1.1875
+repeat tip=0.647341,0.810656,0.1456, depth=0, pointing y=-0.999452
+repeat phase acting -> recovering, t=1.22917
+repeat tip=0.646213,0.721321,0.149089, depth=0.0245726, pointing y=-0.99957
+repeat phase recovering -> finished, t=1.275
+repeat tip=0.64609,0.807842,0.148984, depth=0, pointing y=-0.999553
+repeat glass pick, phase=finished, reason=, holding=handle, removal m3=4.71967e-05
+repeat glass pick, removal m3=4.71967e-05
+native cycle glass shovel, t=0.208333, wall s=0.0121455, acted=1, recovered=1, reason=, hand work J=0.633386, contact work J=8.6127, removal m3=7.73705e-05, holding=handle
+final tip=0.646975,0.816899,0.138235, direction y=-0.999684, depth=0
+final grip speed=0.410159, target error=0.00695137
+mass kg=3.52, fragment kg=0.123793, raw unclosed mechanical/work J=-4.85644
+repeat target 0.65,0.742263,0.15, hit=0.650002,0.742259,0.15, column=566
+repeat phase preparing -> acting, t=1.2125
+repeat tip=0.647792,0.815987,0.138337, depth=0, pointing y=-0.999643
+repeat phase acting -> recovering, t=1.2625
+repeat tip=0.647457,0.717358,0.14417, depth=0.0248786, pointing y=-0.999745
+repeat phase recovering -> finished, t=1.3125
+repeat tip=0.645741,0.80849,0.144947, depth=0, pointing y=-0.999679
+repeat glass shovel, phase=finished, reason=, holding=handle, removal m3=4.49202e-05
+repeat glass shovel, removal m3=4.49202e-05
+native cycle glass hoe, t=0.191667, wall s=0.0127521, acted=1, recovered=1, reason=, hand work J=-3.0976, contact work J=3.67905, removal m3=2.26174e-05, holding=handle
+final tip=0.647056,0.814204,0.142529, direction y=-0.99975, depth=0
+final grip speed=0.205453, target error=0.00428349
+mass kg=2.88, fragment kg=0.0361878, raw unclosed mechanical/work J=-1.68411
+repeat target 0.65,0.747738,0.15, hit=0.649998,0.747743,0.15, column=566
+repeat phase preparing -> acting, t=1.19583
+repeat tip=0.64777,0.813639,0.143293, depth=0, pointing y=-0.999725
+repeat phase acting -> recovering, t=1.24167
+repeat tip=0.645852,0.728037,0.147475, depth=0.0196632, pointing y=-0.999755
+repeat phase recovering -> finished, t=1.2875
+repeat tip=0.64381,0.81127,0.147804, depth=0, pointing y=-0.999664
+repeat glass hoe, phase=finished, reason=, holding=handle, removal m3=3.89336e-05
+repeat glass hoe, removal m3=3.89336e-05
+native cycle glass unfamiliar, t=0.1875, wall s=0.0101514, acted=1, recovered=1, reason=, hand work J=-2.28543, contact work J=3.7451, removal m3=2.89828e-05, holding=handle
+final tip=0.64716,0.812948,0.143593, direction y=-0.999639, depth=0
+final grip speed=0.254825, target error=0.00302199
+mass kg=2.56, fragment kg=0.0463724, raw unclosed mechanical/work J=-1.95307
+repeat target 0.65,0.747102,0.15, hit=0.650002,0.747098,0.15, column=566
+repeat phase preparing -> acting, t=1.19167
+repeat tip=0.647719,0.812093,0.144096, depth=0, pointing y=-0.999624
+repeat phase acting -> recovering, t=1.2375
+repeat tip=0.64515,0.725374,0.148232, depth=0.0216684, pointing y=-0.999644
+repeat phase recovering -> finished, t=1.28333
+repeat tip=0.644093,0.80976,0.148439, depth=0, pointing y=-0.99946
+repeat glass unfamiliar, phase=finished, reason=, holding=handle, removal m3=4.7292e-05
+repeat glass unfamiliar, removal m3=4.7292e-05
+native cycle oak pick, t=0.154167, wall s=0.0084851, acted=1, recovered=1, reason=, hand work J=-0.0640301, contact work J=1.44714, removal m3=1.00275e-05, holding=handle
+final tip=0.649276,0.811322,0.144697, direction y=-0.999922, depth=0
+final grip speed=0.206163, target error=0.00135366
+mass kg=0.6272, fragment kg=0.0160439, raw unclosed mechanical/work J=-1.2785
+repeat target 0.65,0.748997,0.15, hit=0.649997,0.749004,0.149999, column=566
+repeat phase preparing -> acting, t=1.15833
+repeat tip=0.649343,0.810577,0.145193, depth=0, pointing y=-0.99992
+repeat phase acting -> recovering, t=1.19167
+repeat tip=0.64853,0.736172,0.148626, depth=0.01282, pointing y=-0.99991
+repeat phase recovering -> finished, t=1.22917
+repeat tip=0.648618,0.810287,0.148774, depth=0, pointing y=-0.999809
+repeat oak pick, phase=finished, reason=, holding=handle, removal m3=5.59427e-06
+repeat oak pick, removal m3=5.59427e-06
+native cycle oak shovel, t=0.158333, wall s=0.0093503, acted=1, recovered=1, reason=, hand work J=0.495289, contact work J=2.76637, removal m3=1.5272e-05, holding=handle
+final tip=0.64761,0.811286,0.142114, direction y=-0.999967, depth=0
+final grip speed=0.266198, target error=0.00151644
+mass kg=0.9856, fragment kg=0.0244353, raw unclosed mechanical/work J=-2.46051
+repeat target 0.65,0.748473,0.15, hit=0.649999,0.748476,0.15, column=566
+repeat phase preparing -> acting, t=1.1625
+repeat tip=0.648215,0.810403,0.142081, depth=0, pointing y=-0.999968
+repeat phase acting -> recovering, t=1.19583
+repeat tip=0.648653,0.73716,0.146455, depth=0.0113149, pointing y=-0.99996
+repeat phase recovering -> finished, t=1.23333
+repeat tip=0.648085,0.809714,0.146884, depth=0, pointing y=-0.999932
+repeat oak shovel, phase=finished, reason=, holding=handle, removal m3=7.91976e-06
+repeat oak shovel, removal m3=7.91976e-06
+native cycle oak hoe, t=0.158333, wall s=0.0093758, acted=1, recovered=1, reason=, hand work J=0.269969, contact work J=2.17502, removal m3=1.20382e-05, holding=handle
+final tip=0.64875,0.811277,0.144519, direction y=-0.999952, depth=0
+final grip speed=0.273743, target error=0.00135255
+mass kg=0.8064, fragment kg=0.0192611, raw unclosed mechanical/work J=-1.95875
+repeat target 0.65,0.748796,0.15, hit=0.649999,0.748798,0.15, column=566
+repeat phase preparing -> acting, t=1.1625
+repeat tip=0.649034,0.81036,0.144786, depth=0, pointing y=-0.999953
+repeat phase acting -> recovering, t=1.19583
+repeat tip=0.648789,0.736947,0.148213, depth=0.011849, pointing y=-0.999942
+repeat phase recovering -> finished, t=1.23333
+repeat tip=0.648556,0.810052,0.148493, depth=0, pointing y=-0.999879
+repeat oak hoe, phase=finished, reason=, holding=handle, removal m3=2.81829e-06
+repeat oak hoe, removal m3=2.81829e-06
+native cycle oak unfamiliar, t=0.154167, wall s=0.0090873, acted=1, recovered=1, reason=, hand work J=0.132437, contact work J=1.83961, removal m3=1.1017e-05, holding=handle
+final tip=0.649037,0.8113,0.142416, direction y=-0.999942, depth=0
+final grip speed=0.253335, target error=0.00133918
+mass kg=0.7168, fragment kg=0.0176271, raw unclosed mechanical/work J=-1.65371
+repeat target 0.65,0.748898,0.15, hit=0.649999,0.748901,0.15, column=566
+repeat phase preparing -> acting, t=1.15833
+repeat tip=0.649164,0.810653,0.142902, depth=0, pointing y=-0.999941
+repeat phase acting -> recovering, t=1.19167
+repeat tip=0.648647,0.736863,0.147383, depth=0.0120351, pointing y=-0.99993
+repeat phase recovering -> finished, t=1.22917
+repeat tip=0.648515,0.810158,0.14754, depth=0, pointing y=-0.999879
+repeat oak unfamiliar, phase=finished, reason=, holding=handle, removal m3=3.59011e-06
+repeat oak unfamiliar, removal m3=3.59011e-06
+native cycle iron pick, t=0.395833, wall s=0.0185248, acted=1, recovered=1, reason=, hand work J=-5.61101, contact work J=9.84505, removal m3=0.000424898, holding=handle
+final tip=0.645129,0.829395,0.142351, direction y=-0.998525, depth=0
+final grip speed=0.359903, target error=0.0194161
+mass kg=7.05152, fragment kg=0.679838, raw unclosed mechanical/work J=29.4727
+repeat target 0.65,0.70751,0.15, hit=0.650001,0.707508,0.15, column=566
+repeat phase preparing -> acting, t=1.45417
+repeat tip=0.648914,0.753474,0.150975, depth=0, pointing y=-0.999254
+repeat phase acting -> recovering, t=2.45417
+repeat tip=0.648631,0.749819,0.151087, depth=0, pointing y=-0.999997
+repeat phase recovering -> finished, t=2.50833
+repeat tip=0.648631,0.824309,0.151091, depth=0, pointing y=-0.999997
+repeat iron pick, phase=finished, reason=no_contact, holding=handle, removal m3=0
+OPEN repeat clearance gate: iron pick
+repeat iron pick, removal m3=0
+native cycle iron shovel, t=0.533333, wall s=0.0245605, acted=1, recovered=1, reason=, hand work J=-11.7246, contact work J=12.8478, removal m3=0.000396865, holding=handle
+final tip=0.647676,0.826959,0.128262, direction y=-0.998602, depth=0
+final grip speed=0.40119, target error=0.017467
+mass kg=11.081, fragment kg=0.634983, raw unclosed mechanical/work J=66.0836
+repeat target 0.65,0.710314,0.15, hit=0.650002,0.710309,0.15, column=566
+repeat phase preparing -> acting, t=1.63333
+repeat tip=0.648997,0.772706,0.160523, depth=0, pointing y=-0.99907
+repeat phase acting -> recovering, t=2.63333
+repeat tip=0.651767,0.750004,0.164179, depth=0, pointing y=-1
+repeat phase recovering -> finished, t=2.7
+repeat tip=0.651771,0.825115,0.164177, depth=0, pointing y=-1
+repeat iron shovel, phase=finished, reason=no_contact, holding=handle, removal m3=0
+OPEN repeat clearance gate: iron shovel
+repeat iron shovel, removal m3=0
+native cycle iron hoe, t=0.475, wall s=0.0232699, acted=1, recovered=1, reason=, hand work J=-8.14234, contact work J=11.9801, removal m3=0.000450987, holding=handle
+final tip=0.644323,0.82697,0.132798, direction y=-0.998291, depth=0
+final grip speed=0.399061, target error=0.0172653
+mass kg=9.06624, fragment kg=0.721579, raw unclosed mechanical/work J=64.215
+repeat target 0.65,0.704901,0.15, hit=0.650001,0.704898,0.15, column=566
+repeat phase preparing -> acting, t=1.5375
+repeat tip=0.650844,0.754782,0.139984, depth=0, pointing y=-0.998553
+repeat phase acting -> recovering, t=2.5375
+repeat tip=0.652522,0.749983,0.137308, depth=0, pointing y=-1
+repeat phase recovering -> finished, t=2.6
+repeat tip=0.65252,0.825272,0.13731, depth=0, pointing y=-1
+repeat iron hoe, phase=finished, reason=no_contact, holding=handle, removal m3=0
+OPEN repeat clearance gate: iron hoe
+repeat iron hoe, removal m3=0
+native cycle iron unfamiliar, t=0.429167, wall s=0.0205165, acted=1, recovered=1, reason=, hand work J=-9.35587, contact work J=8.24432, removal m3=0.000333592, holding=handle
+final tip=0.644646,0.828369,0.135335, direction y=-0.999022, depth=0
+final grip speed=0.414783, target error=0.0184305
+mass kg=8.05888, fragment kg=0.533748, raw unclosed mechanical/work J=57.3834
+repeat target 0.65,0.716641,0.15, hit=0.649999,0.716643,0.15, column=566
+repeat phase preparing -> acting, t=1.50833
+repeat tip=0.650447,0.779557,0.149234, depth=0, pointing y=-0.999558
+repeat phase acting -> recovering, t=2.50833
+repeat tip=0.651057,0.749989,0.149148, depth=0, pointing y=-1
+repeat phase recovering -> finished, t=2.56667
+repeat tip=0.651057,0.825087,0.149139, depth=0, pointing y=-1
+repeat iron unfamiliar, phase=finished, reason=no_contact, holding=handle, removal m3=0
+OPEN repeat clearance gate: iron unfamiliar
+repeat iron unfamiliar, removal m3=0
+repeat gameplay acceptance remains open: 4 fixtures

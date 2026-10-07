@@ -437,6 +437,10 @@ void ToolTerrain::prepare(const ToolTerrainHost &host, double dt_s) {
             }
         }
         if (!enabled) {
+            if(p.joint!=0 && host.recovering_contact && host.recovering_contact(carrier)) {
+                holdIn(host,p,*id,tip,v,dt_s);
+                continue;
+            }
             // Withdraw the cutting adapter, not the body's ordinary collision.
             // Finish any already measured authorized bite before restoring it.
             if (p.joint != 0) finish(host, p, true);
@@ -1014,26 +1018,9 @@ void ToolTerrain::closeNote(const ToolTerrainHost &host, Point &p) {
 
 // ---- the motion of a tool action ----------------------------------------------
 
-std::optional<LiveStroke> ToolTerrain::plan(const ToolTerrainHost &host, const LiveStrike &strike,
-                                            const std::string &held, const Vec3 &grip_local,
-                                            std::string &why) const {
-    const Point *p = nullptr;
-    for (const Point &candidate : points_)
-        if (candidate.attached && (candidate.grip_body.empty() ? candidate.body : candidate.grip_body) == held) {
-            p = &candidate;
-            break;
-        }
-    if (p == nullptr) {
-        why = held + " has no point that can go into the ground: give it one first (tool_point)";
-        return std::nullopt;
-    }
-    const auto finite = [](const Vec3 &v) {
-        return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
-    };
-    if (!finite(strike.target_m) || !finite(strike.shoulder_m)) {
-        why = "the target and the shoulder are places: three finite numbers each";
-        return std::nullopt;
-    }
+std::optional<ToolTerrain::HeldPointFrame> ToolTerrain::heldFrame(const ToolTerrainHost &host,
+    const Point &point, const std::string &held, const Vec3 &grip_local, std::string &why) const {
+    const Point *p=&point;
     const std::optional<MatterBodyId> id = host.id_of(held);
     if (!id || !host.world->contains(*id)) {
         why = "the tool is not in the world";
@@ -1057,9 +1044,38 @@ std::optional<LiveStroke> ToolTerrain::plan(const ToolTerrainHost &host, const L
         point_pose.orientation_world.rotate(p->tip_local) - s.center_of_mass_world_m);
     const Vec3 pointing_local = p->body == held ? p->pointing_local : back.rotate(point_pose.orientation_world.rotate(p->pointing_local));
     const Vec3 width_local = p->body == held ? p->width_local : back.rotate(point_pose.orientation_world.rotate(p->width_local));
-    const Vec3 up{0.0, 1.0, 0.0};
-    const Vec3 g0 = s.center_of_mass_world_m + s.orientation_world.rotate(grip_local);
-    const Quat r0 = s.orientation_world;
+    return HeldPointFrame{tip_local,pointing_local,width_local,
+        s.center_of_mass_world_m+s.orientation_world.rotate(grip_local),s.orientation_world};
+}
+
+std::optional<LiveStroke> ToolTerrain::plan(const ToolTerrainHost &host, const LiveStrike &strike,
+                                            const std::string &held, const Vec3 &grip_local,
+                                            std::string &why) const {
+    const Point *p = nullptr;
+    for (const Point &candidate : points_)
+        if (candidate.attached && (candidate.grip_body.empty() ? candidate.body : candidate.grip_body) == held) {
+            p = &candidate;
+            break;
+        }
+    if (p == nullptr) {
+        why = held + " has no point that can go into the ground: give it one first (tool_point)";
+        return std::nullopt;
+    }
+    const auto finite = [](const Vec3 &v) {
+        return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+    };
+    if (!finite(strike.target_m) || !finite(strike.shoulder_m)) {
+        why = "the target and the shoulder are places: three finite numbers each";
+        return std::nullopt;
+    }
+    const auto frame=heldFrame(host,*p,held,grip_local,why);
+    if(!frame)return std::nullopt;
+    const auto &tip_local=frame->tip_local;
+    const auto &pointing_local=frame->pointing_local;
+    const auto &width_local=frame->width_local;
+    const Vec3 up{0.0,1.0,0.0};
+    const Vec3 g0=frame->grip_world;
+    const Quat r0=frame->facing;
     LiveStroke out;
     out.lead_m = 0.05;
     out.let_go_at_end = false;
@@ -1077,7 +1093,7 @@ std::optional<LiveStroke> ToolTerrain::plan(const ToolTerrainHost &host, const L
         const Vec3 pivot = p->entry;
         Vec3 u = level(pivot - strike.shoulder_m);
         if (!(length(u) > 1e-3)) u = level(pivot - g0);
-        if (!(length(u) > 1e-3)) u = level(s.orientation_world.rotate(cross(pointing_local, width_local)));
+        if (!(length(u) > 1e-3)) u = level(r0.rotate(cross(pointing_local, width_local)));
         u = normalized(u, Vec3{1.0, 0.0, 0.0});
         const Vec3 k = normalized(cross(up, u));
         const double turn = std::clamp(strike.lever_deg, 5.0, 80.0) * kPi / 180.0;
@@ -1216,6 +1232,51 @@ std::optional<LiveStroke> ToolTerrain::plan(const ToolTerrainHost &host, const L
         out.facings_wxyz.push_back(plan.r_hit);
     }
     return out;
+}
+
+std::optional<LiveToolContactPlan> ToolTerrain::planContact(const ToolTerrainHost &host,
+    unsigned point, const std::string &held, const Vec3 &grip_local, const Vec3 &target,
+    const Vec3 &shoulder, std::string &why) const {
+    const auto found=std::find_if(points_.begin(),points_.end(),[&](const Point &p) {
+        return p.id==point && p.attached && (p.grip_body.empty()?p.body:p.grip_body)==held;
+    });
+    if(found==points_.end()) { why="unsupported_capability";return std::nullopt; }
+    const auto frame=heldFrame(host,*found,held,grip_local,why);
+    if(!frame)return std::nullopt;
+    const Vec3 down{0,-1,0},up{0,1,0};
+    Vec3 forward=level(target-shoulder);
+    if(length(forward)<1e-6)forward=level(frame->facing.rotate(cross(frame->pointing_local,frame->width_local)));
+    forward=normalized(forward,Vec3{0,0,-1});
+    const Vec3 side=normalized(cross(up,forward));
+    Vec3 local_side=cross(frame->pointing_local,grip_local-frame->tip_local);
+    local_side=length(local_side)>1e-6?normalized(local_side):frame->width_local;
+    LiveToolContactPlan plan;
+    plan.facing=qFromBases(cross(frame->pointing_local,local_side),frame->pointing_local,local_side,
+        cross(down,side),down,side);
+    Vec3 contact_target=target;
+    if(host.environment) {
+        const auto &field=host.environment->fieldAt(target.x,target.z);
+        const auto column=field.cellAt(target.x,target.z);
+        if(column && field.columnSurface()) {
+            // A selected cell is an area. Work inside it, where finite servo
+            // error cannot switch a boundary hit to its neighbouring cell.
+            contact_target.x=field.grid().xOf(static_cast<int>(*column%static_cast<std::size_t>(field.grid().nx)));
+            contact_target.z=field.grid().zOf(static_cast<int>(*column/static_cast<std::size_t>(field.grid().nx)));
+            contact_target.y=field.heightAt(contact_target.x,contact_target.z);
+        }
+    }
+    plan.ready_tip_m=contact_target+.06*up;
+    plan.ready_grip_m=plan.ready_tip_m+plan.facing.rotate(grip_local-frame->tip_local);
+    const Vec3 bottom=plan.ready_grip_m-.14*up;
+    // Short linear contact and lateral work, followed by a separate withdrawal.
+    // These are bounded actuator wishes, never fragment launch or paid yield.
+    plan.contact.path_m={plan.ready_grip_m,bottom,bottom-.04*forward};
+    plan.contact.facings_wxyz.assign(plan.contact.path_m.size(),plan.facing);
+    plan.contact.speed_m_s=4;
+    plan.contact.accel_m_s2=80;
+    plan.contact.lead_m=.025;
+    plan.contact.give_up_s=1;
+    return plan;
 }
 
 } // namespace banjo::fastlattice

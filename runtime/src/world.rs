@@ -235,6 +235,10 @@ impl<K: Kernel> World<K> {
         }
         visible.insert("own_hand".into(), state["player_hands"][actor].clone());
         visible.insert(
+            "own_tool_use".into(),
+            state["player_tool_uses"][actor].clone(),
+        );
+        visible.insert(
             "own_tool_preview".into(),
             if state["tool_use_preview"]["actor"] == actor {
                 state["tool_use_preview"].clone()
@@ -514,7 +518,7 @@ mod tests {
     }
     fn world() -> World<Reference> {
         World::new(Id::new("world").unwrap(),vec![Id::new("alice").unwrap(),Id::new("bob").unwrap()],
-        Reference{state:json!({"t":0.0,"native_players":{},"player_hands":{"bob":{"holding":"private-fixture"}},"player_carried":{"bob":{"secret":17}}}),steps:0,accepted:4}).unwrap()
+        Reference{state:json!({"t":0.0,"native_players":{},"player_hands":{"bob":{"holding":"private-fixture"}},"player_tool_uses":{"bob":{"tool":"private-fixture"}},"player_carried":{"bob":{"secret":17}}}),steps:0,accepted:4}).unwrap()
     }
     fn request(id: &str, n: u64, action: Action) -> TrustedRequest {
         TrustedRequest {

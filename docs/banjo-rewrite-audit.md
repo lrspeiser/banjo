@@ -935,7 +935,7 @@ The large original findings remain relevant. The source review is strongest on p
 | W03 | `7997bc19` and later: validated Rust command IDs, units in field names, typed actions/refusals and revision/sequence checks | Generated TypeScript/native mappings, entity/artifact identity, versioned snapshot/event schemas and old-data fixtures |
 | W04 | `4db96843`: one native-backed Rust clock, trusted pipe, bounded queues, actual two-actor movement and owned shutdown | Browser gateway, input coalescing, durable state/events, observer isolation, world lifecycle and measured sustained load |
 | W05 | `e8b43ca3`: native ray/assembly/grip/reach admission; pending pickup becomes applied only after accepted stepping | Body-relative carry, ordinary touch, travel/turn, cancel/store/retrieve/reload, authored products and end-to-end two-player journeys |
-| W06 | State machine specified; existing native bounded grip and tool/terrain work primitives available | Generic native preview/use/recovery controller, typed use/cancel commands, contact/result events and required tool-family scenarios |
+| W06 | Native read-only preview plus Preparing/Acting/Recovering shallow controller implemented; strict repeated excavation gate fails four iron fixtures | Actual head/patch clearance, typed use/cancel/import, retained contact/result events, complete authored tool families and sustained input |
 | W07–W17 | Existing host/native components provide migration inputs and bounded laboratory evidence | Durable transfers/imports; conservative terrain qualification; manufacture/water; compiler/client/LLM/progress/jobs; capacity and release gates |
 
 Detailed prior evidence is in the [foundation](runtime-rewrite-checkpoint.md), [diagnostic retention](interaction-history-checkpoint.md), [worker](runtime-worker-checkpoint.md) and [pickup](runtime-pickup-checkpoint.md) checkpoints. Their focused passes do not qualify the entire browser game. The replacement currently opens a supplied native scene and speaks a local trusted-host pipe; it is not a new playable web build. Main publishing and the `C:/play` browser demo are separate states.
@@ -1042,6 +1042,10 @@ Verification covers the focused native/Rust gates and the host/browser checks re
 ### W06 tool-target follow-up, October 6
 
 [The native admission checkpoint](runtime-tool-admission-checkpoint.md) adds an exactly read-only shared target query, material-law/refusal checks and a typed actor-private Rust preview. Fifteen Rust checks, thirteen real-native checks and four native suites pass. It plans the existing swing targets; it does not implement preparing/acting/recovering, sweeping obstacle clearance, retained action events, new product import or productive family behavior. C02 remains open. No D01–D06 or R01–R12 retirement is claimed, and the full W00–W17 scope remains active.
+
+### W06 physical controller follow-up, October 6
+
+[Native tool use](runtime-tool-use-checkpoint.md) implements actual-tip Preparing/Acting/Recovering, isolated actor authority and measured cancellation/drop reporting. Twelve matched first shallow cycles cut/recover, but the strict same-column repeat gate still fails four iron fixtures because wide heads collide with the narrow patch surroundings. This is a retained failing acceptance command, not complete generic gameplay. Rust begin/cancel/pending results, authored import, durable events, full swept clearance and conservative terrain remain open; C02 and W05–W17 are not closed, and R02/R03 cannot retire. No helper/subsystem deletion or demo replacement occurs.
 
 ### Current intent and qualification
 

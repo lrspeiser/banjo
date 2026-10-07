@@ -268,6 +268,16 @@ nlohmann::json handJson(const LiveHand &hand) {
     return out;
 }
 
+nlohmann::json toolUseJson(const banjo::fastlattice::LiveToolUse &use) {
+    return {{"schema","banjo.native-tool-use.v1"},{"active",use.active},{"phase",use.phase},
+        {"reason",use.reason},{"tool",use.tool},{"point_id",use.point},{"target_m",vec(use.target_m)},
+        {"started_s",use.started_s},{"phase_started_s",use.phase_started_s},{"ended_s",use.ended_s},
+        {"hand_work_j",use.hand_work_j},{"contact_work_j",use.contact_work_j},
+        {"contact_impulse_n_s",use.contact_impulse_n_s},{"peak_contact_force_n",use.peak_contact_force_n},
+        {"contacted",use.contacted},{"loosened_m3",{{"rock",use.loosened.rock_m3},
+            {"soil",use.loosened.soil_m3},{"sand",use.loosened.sand_m3}}}};
+}
+
 // What opening from a saved world gave back (LiveRestore), on the opening reply
 // of a world started with --snapshot. Unrounded: a thing set aside is brought
 // back where it was put away, to the last digit.
@@ -1267,6 +1277,10 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
     for (const auto &[player, own] : world.playerHands())
         player_hands[player] = handJson(own);
     if (!player_hands.empty()) state["player_hands"] = std::move(player_hands);
+    nlohmann::json player_tool_uses=nlohmann::json::object();
+    for(const auto &[actor,use]:world.playerToolUses())if(use.phase!="idle")
+        player_tool_uses[actor]=toolUseJson(use);
+    state["player_tool_uses"]=std::move(player_tool_uses);
     auto native_players = nlohmann::json::object();
     // Native actor state and source accounts may feed later authoritative
     // controllers. Keep their precision; render-only body vectors use vec().
@@ -1944,6 +1958,13 @@ int main(int argc, char **argv) {
                         {"ground_height_m",seen.terrain_region==-2?nlohmann::json(nullptr):nlohmann::json(seen.ground_height_m)},
                         {"desired_path_points",seen.desired_stroke.path_m.size()},
                         {"measured_yield",false}};
+                } else if (op == "tool-use-begin") {
+                    std::string why;
+                    const bool started=world->beginToolUse(readVec(command,"from"),readVec(command,"dir"),
+                        command.value("max_m",2.0),why);
+                    reply["tool_use_start"]={{"started",started},{"reason",why}};
+                } else if (op == "tool-use-cancel") {
+                    world->cancelToolUse();
                 } else if (op == "ground-debris" || op == "ground_debris") {
                     reply["ground_debris"]=nlohmann::json::parse(world->groundDebrisJson());
                 } else if (op == "collect-ground-debris" || op == "collect_ground_debris") {

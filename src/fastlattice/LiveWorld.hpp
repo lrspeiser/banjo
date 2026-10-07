@@ -16,6 +16,7 @@
 namespace banjo::fastlattice {
 
 struct ToolTerrainHost;
+struct NativeToolFeedback;
 
 // A declared rigid avatar proxy, separate from editable products and hands.
 // Its free native body owns collision and fluid response. Actuator inputs are
@@ -1280,6 +1281,24 @@ struct LiveToolUseAdmission {
     LiveStroke desired_stroke;
 };
 
+struct LiveToolContactPlan {
+    Vec3 ready_grip_m{}, ready_tip_m{};
+    Quat facing{};
+    LiveStroke contact;
+};
+
+// Actual native action state; ending an action never promises positive yield.
+struct LiveToolUse {
+    bool active{};
+    std::string phase{"idle"}, reason, tool;
+    unsigned point{};
+    Vec3 target_m{};
+    double started_s{}, phase_started_s{}, ended_s{}, hand_work_j{};
+    double contact_work_j{}, contact_impulse_n_s{}, peak_contact_force_n{};
+    terrain::Volumes loosened;
+    bool contacted{};
+};
+
 // A moment where the world was made to wait, or was saved from waiting.
 //
 // Working out a fracture costs between a third of a second and a second, and
@@ -2270,6 +2289,13 @@ public:
     [[nodiscard]] bool strike(const LiveStrike &strike, std::string &why);
     [[nodiscard]] LiveToolUseAdmission toolUseAdmission(const Vec3 &from_world_m,
         const Vec3 &direction, double max_distance_m) const;
+    // The optional preview is only a revision/target token. Its planned path
+    // is never trusted: admission and actual-frame planning are recomputed.
+    [[nodiscard]] bool beginToolUse(const Vec3 &from_world_m, const Vec3 &direction,
+        double max_distance_m, std::string &why, const LiveToolUseAdmission *preview = nullptr);
+    void cancelToolUse();
+    [[nodiscard]] LiveToolUse toolUse() const;
+    [[nodiscard]] std::map<std::string,LiveToolUse> playerToolUses();
     // Every meeting of a point with the ground since forgetGroundWork(), in
     // the order they began. Open ones are still going.
     [[nodiscard]] std::vector<LiveGroundWork> groundWork() const;
@@ -2589,6 +2615,10 @@ private:
     // taken back undoes the first half and never gets the second.
     void beginHandStep(double dt_s);
     void endHandStep(const Vec3 &grip_force_n, const Vec3 &grip_torque_n_m, double dt_s);
+    void endToolUseStep();
+    void beginToolUseStep(double dt_s);
+    void interruptToolUse(const std::string &reason);
+    [[nodiscard]] NativeToolFeedback toolUseFeedback() const;
     // Whether what the hand holds is attached to something, which makes holding
     // it a haul rather than a carry.
     [[nodiscard]] bool hauling() const;
