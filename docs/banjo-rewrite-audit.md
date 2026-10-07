@@ -1011,7 +1011,7 @@ The [CI concurrency comments](../.github/workflows/ci.yml#L3) promise a verdict 
 
 ## 24. Carry and player-start review follow-up
 
-This implementation review follows the expanded audit published at `3a9df0f1`. It changes the status of C01 and adds a concrete browser authority failure. The [carry checkpoint](runtime-carry-checkpoint.md) records the model, material comparison, exact build artifacts, negative cases and verification commands. The original inventory counts and earlier test results describe their recorded baselines rather than these later files.
+This implementation review follows the expanded audit published at `3a9df0f1`; the reviewed carry/startup implementation is published on GitHub main at `ddcc584b636e2de0c3903fe06927b4bf9dc4ed8f`. It changes the status of C01 and adds a concrete browser authority failure. The [carry checkpoint](runtime-carry-checkpoint.md) records the model, material comparison, exact build artifacts, negative cases and verification commands. The original inventory counts and earlier test results describe their recorded baselines rather than these later files.
 
 ### C01: carry is partially implemented; retirement stays blocked
 

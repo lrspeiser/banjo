@@ -1,6 +1,6 @@
 # Native actor-relative carry: experimental rewrite checkpoint
 
-October 6, 2026. Source baseline `3a9df0f1` follows the [audit](banjo-rewrite-audit.md#23-current-review-rewrite-progress-and-remaining-defects) and [native pickup](runtime-pickup-checkpoint.md). This implements another W05/W06 slice in the isolated Rust/native worker. The browser demo and old controllers remain in place.
+October 6, 2026. Implementation published to GitHub main at **`ddcc584b636e2de0c3903fe06927b4bf9dc4ed8f`**, after source baseline `3a9df0f1`, follows the [audit](banjo-rewrite-audit.md#23-current-review-rewrite-progress-and-remaining-defects) and [native pickup](runtime-pickup-checkpoint.md). This implements another W05/W06 slice in the isolated Rust/native worker. The browser demo and old controller subsystems remain in place.
 
 ## Implemented model
 
@@ -76,4 +76,4 @@ Local artifact SHA256:
 - `build/local-cell-tools/Release/banjo_live_world_run.exe`: `df987e7d33665c26b34e61e22c6b45c520284e0dda899ca6548b947907d5afe7`
 - `build/local-cell-tools/Release/banjo.dll`: `45b2894c68dba6edfa5c293035a81ad4257786050cf70e27008e93f128f68835`
 
-The source revision is this checkpoint's Git commit, recorded after publication. The `C:/play` demo is unchanged; main publication does not install this native build there.
+Implementation/source revision: `ddcc584b636e2de0c3903fe06927b4bf9dc4ed8f`, pushed by ordinary fast-forward to GitHub main. This publication note is a subsequent documentation commit. The `C:/play` demo is unchanged; main publication does not install this native build there. Local passes do not assert that hosted CI has finished this revision.
