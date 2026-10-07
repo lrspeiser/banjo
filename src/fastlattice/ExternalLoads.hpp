@@ -25,7 +25,7 @@ public:
     void reset(const Vec3 &origin) { origin_=origin; nodes_.clear(); wrenches_.clear(); remaining_=0; }
 
     void set(const std::vector<Vec3> &forces, std::uint64_t substeps,
-             const LatticeArrays<Real> &lattice) {
+             const LatticeArrays<Real> &lattice, bool allow_fixed_boundary=false) {
         if (forces.empty()) {
             if (substeps != 0) throw std::invalid_argument("empty external load needs zero substeps");
             nodes_.clear(); wrenches_.clear(); remaining_=0; return;
@@ -39,7 +39,8 @@ public:
             if (!finite(force) || !std::isfinite(std::hypot(force.x,force.y,force.z)) ||
                 !finite(converted)) throw std::invalid_argument("external force is not finite in backend precision");
             if (force.x==0 && force.y==0 && force.z==0) continue;
-            if (!(lattice.mass[i]>0) || !(lattice.inv_mass[i]>0) ||
+            if (!(lattice.mass[i]>0) || !(lattice.inv_mass[i]>0 ||
+                (allow_fixed_boundary&&lattice.inv_mass[i]==0)) ||
                 !std::isfinite(lattice.mass[i]) || !std::isfinite(lattice.inv_mass[i]))
                 throw std::invalid_argument("external force needs a finite positive movable node mass");
             staged.push_back({i,force,converted,{}});
@@ -75,7 +76,8 @@ public:
     }
 
     void kick(const LatticeArrays<Real> &lattice, Real dt, ExternalLoadLedger &ledger,
-              std::vector<ExternalWrenchLedger> *source_ledgers=nullptr, bool finish_step=true) {
+              std::vector<ExternalWrenchLedger> *source_ledgers=nullptr, bool finish_step=true,
+              FixedBoundaryLedger *fixed_boundary=nullptr) {
         if (!remaining_) return;
         if (!(dt>0) || !std::isfinite(dt)) throw std::invalid_argument("external load needs a finite positive timestep");
         if (!wrenches_.empty()) {
@@ -85,14 +87,25 @@ public:
         ExternalLoadLedger change;
         change.steps=finish_step?1:0;change.elapsed_s=static_cast<double>(dt);
         std::vector<ExternalLoadLedger> source_changes(wrenches_.size(),change);
+        FixedBoundaryLedger boundary_change{};
         // Validate every kick and its ledger before changing any velocity.
         for (Node &node:nodes_) {
             const auto before=load3(lattice.v,node.index);
             node.after=before+(dt*lattice.inv_mass[node.index])*node.applied;
             if (!finite(node.after)) throw std::overflow_error("external force kick exceeds backend precision");
             const Vec3 old=widen(before), next=widen(node.after);
-            const Vec3 impulse=static_cast<double>(lattice.mass[node.index])*(next-old);
+            const bool fixed=lattice.inv_mass[node.index]==0;
+            if (fixed&&(!fixed_boundary||norm(old)!=0))
+                throw std::invalid_argument("fixed load requires a stationary audited boundary");
+            // A load applied to a clamp is delivered to its support, not lost.
+            // Retain the source impulse and the cancelling support reaction.
+            const Vec3 impulse=fixed?static_cast<double>(dt)*widen(node.applied):
+                static_cast<double>(lattice.mass[node.index])*(next-old);
             const Vec3 where=origin_+widen(position(lattice,node.index));
+            if (fixed) {
+                boundary_change.impulse_n_s-=impulse;
+                boundary_change.angular_impulse_kg_m2_s-=cross(where,impulse);
+            }
             change.requested_impulse_n_s+=static_cast<double>(dt)*node.requested;
             change.requested_angular_impulse_kg_m2_s+=cross(where,static_cast<double>(dt)*node.requested);
             change.impulse_n_s+=impulse;
@@ -107,6 +120,13 @@ public:
             }
         }
         const auto total=added(ledger,change);
+        FixedBoundaryLedger boundary_total{};
+        if (fixed_boundary) {
+            boundary_total.impulse_n_s=fixed_boundary->impulse_n_s+boundary_change.impulse_n_s;
+            boundary_total.angular_impulse_kg_m2_s=fixed_boundary->angular_impulse_kg_m2_s+boundary_change.angular_impulse_kg_m2_s;
+            if (!finite(boundary_total.impulse_n_s)||!finite(boundary_total.angular_impulse_kg_m2_s))
+                throw std::overflow_error("external boundary reaction overflow");
+        }
         // Preflight source totals and allocations before any velocity/ledger write.
         std::vector<ExternalWrenchLedger> source_totals;
         if (!wrenches_.empty()) {
@@ -121,6 +141,7 @@ public:
         }
         for (const Node &node:nodes_) store3(lattice.v,node.index,node.after);
         ledger=total;
+        if (fixed_boundary) *fixed_boundary=boundary_total;
         if (!wrenches_.empty()) *source_ledgers=std::move(source_totals);
         if (finish_step) --remaining_;
     }

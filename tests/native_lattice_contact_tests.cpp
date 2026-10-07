@@ -8,6 +8,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <set>
 #include <stdexcept>
 
 namespace {
@@ -42,9 +43,9 @@ struct Target {
 };
 struct Tool {
     JoltWorld world;unsigned fixing{};
-    explicit Tool(double speed=2) {
+    explicit Tool(double speed=2,double head_width_m=.08) {
         world.setGravity({});const auto iron=makeReferenceMaterial(MaterialPreset::Iron,17),oak=makeReferenceMaterial(MaterialPreset::Oak,17);
-        world.addBox({1,{.08,.08,.08},iron,{{},{},{speed,0,0},{}},false});
+        world.addBox({1,{.08,head_width_m,.08},iron,{{},{},{speed,0,0},{}},false});
         world.addBox({10,{.24,.04,.04},oak,{{-.16,0,0},{},{speed,0,0},{}},false});
         world.addBox({2,{.01,.01,.01},oak,{{5,5,5},{},{},{}},true});
         fixing=world.addFixing({10,1,{-.04,0,0},{1,0,0},0,0,0}); // Declared ideal weld, no failure-strength claim.
@@ -415,7 +416,106 @@ void coupledMatchedTargets() {
     }
     }
 }
+void coupledClampedFootprints() {
+    // Same finite 6 m/s tool assembly, 40 mm cells, material laws and physical
+    // duration. Only the actual head width changes. Its inertia/mass are not
+    // artificially held constant. The far face is an explicit ideal stationary
+    // boundary; it is not a finite solved neighbouring-world approximation.
+    for (double width:{.04,.12}) for (auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        double coarse_error=0;
+        for (double timestep:{dt,.5*dt}) {
+            Tool tool(6,width);Target target(preset,true,timestep,kBondVelocityVerlet);
+            for (unsigned i=0;i<target.state.node_count;++i)
+                if (target.state.x0[3*i]>.039) target.state.inv_mass[i]=0;
+            auto backend=target.backend();const auto initial=totals(target.state,tool.world);
+            double loss=0,reconcile=0,native_transfer_error=0,native_step_energy=0;
+            Vec3 transfer_p{},transfer_l{},geometry_couple{},native_step_p{},native_step_l{};
+            std::uint64_t contacts=0;std::set<unsigned> contacted_nodes;
+            const auto started=std::chrono::steady_clock::now();
+            const unsigned count=timestep==dt?2048:4096;
+            const auto step=[&](bool record) {
+                const auto current=target.download(*backend);
+                for (unsigned i=0;i<target.state.node_count;++i) {
+                    const Vec3 at=current.origin+Vec3{current.x0[3*i]+current.u[3*i],current.x0[3*i+1]+current.u[3*i+1],current.x0[3*i+2]+current.u[3*i+2]};
+                    require(tool.world.pointShapeContacts(10,at,.016,.00001).contacts.empty(),"clamped fixture omitted handle witness");
+                    const auto query=tool.world.pointShapeContacts(1,at,.016,.00001);
+                    if (current.inv_mass[i]==0) {
+                        require(query.contacts.empty(),"finite contact adapter cannot own direct tool/clamp contact");
+                        continue;
+                    }
+                    for (const auto &hit:query.contacts) {
+                        const auto law=combineContactMaterials(compileContactMaterial(target.material),hit.body_contact);
+                        const auto r=applyNativeFixedPointTransfer(tool.world,*backend,i,2,1,hit.normal_world,hit.gap_m,
+                            {law.static_friction,law.dynamic_friction,law.restitution},budget);
+                        if (!record||!r.source.contact.modal_contact.applied) continue;
+                        ++contacts;contacted_nodes.insert(i);
+                        loss+=r.source.contact.modal_contact.dissipated_energy_j;reconcile+=r.source.contact.reconciliation_loss_j;
+                        native_transfer_error+=r.source.numerical_energy_change_j;
+                        transfer_p+=r.source.momentum_error_kg_m_s;transfer_l+=r.source.angular_momentum_error_kg_m2_s;
+                        geometry_couple+=r.source.contact.geometry_couple_kg_m2_s;
+                        near(r.source.contact.work_residual_j,0,1e-12,"clamped contact instantaneous work account");
+                    }
+                }
+                const auto before=tool.world.mechanicalTotals();tool.world.step(timestep);
+                const auto after=tool.world.mechanicalTotals();backend->run({.max_steps=1});
+                if (record) {
+                    native_step_energy+=after.kinetic_energy_j-before.kinetic_energy_j;
+                    native_step_p+=after.linear_momentum_kg_m_s-before.linear_momentum_kg_m_s;
+                    native_step_l+=after.angular_momentum_kg_m2_s-before.angular_momentum_kg_m2_s;
+                }
+            };
+            const auto original=tool.world.mechanicalState(1);
+            require(!runNativeFixedTargetTrial(tool.world,*backend,[&]{
+                for(unsigned i=0;i<32;++i)step(false);
+                require(length(backend->status().fixed_boundary.impulse_n_s)>0&&backend->status().external_point_transfer.transfers>0,
+                    "rollback fixture never generated contact and support reaction");
+                return false;
+            }),"clamped paired trial failed refusal");
+            const auto restored=target.download(*backend);
+            require(restored.u==target.state.u&&restored.v==target.state.v&&restored.inv_mass==target.state.inv_mass&&
+                restored.alive==target.state.alive&&restored.damage==target.state.damage&&restored.prev_tensile==target.state.prev_tensile&&
+                restored.plastic_extension==target.state.plastic_extension&&restored.plastic_strain==target.state.plastic_strain&&
+                backend->status().total_steps==0&&length(backend->status().fixed_boundary.impulse_n_s)==0&&
+                length(backend->status().fixed_boundary.angular_impulse_kg_m2_s)==0&&backend->status().external_point_transfer.transfers==0&&
+                length(tool.world.mechanicalState(1).motion.linear_velocity_m_s-original.motion.linear_velocity_m_s)==0,
+                "clamped paired trial leaked state, time or support reaction");
+            for (unsigned i=0;i<count;++i)step(true);
+            const auto final_state=target.download(*backend);const auto final=totals(final_state,tool.world);const auto &s=backend->status();
+            const auto support=s.fixed_boundary;
+            const Vec3 p=final.linear_momentum_kg_m_s-initial.linear_momentum_kg_m_s-transfer_p-support.impulse_n_s-s.bond_kick_roundoff_impulse_n_s;
+            const Vec3 l=final.angular_momentum_kg_m2_s-initial.angular_momentum_kg_m2_s-transfer_l-geometry_couple-support.angular_impulse_kg_m2_s-s.bond_kick_roundoff_angular_kg_m2_s;
+            const double unallocated=final.mechanicalEnergy()-initial.mechanicalEnergy()+loss+reconcile+s.removed_energy_j+
+                s.plastic_work_j+s.plastic_return_numerical_loss_j-native_transfer_error;
+            near(length(p-native_step_p),0,1e-9,"clamped full trajectory linear attribution");
+            near(length(l-native_step_l),0,1e-9,"clamped full trajectory angular attribution");
+            near(unallocated-native_step_energy,s.integration_numerical_energy_j,1e-10,"clamped full trajectory energy attribution");
+            near(final.mass_kg,initial.mass_kg,1e-12,"clamped coupling lost constituent mass");
+            require(contacts>0&&s.external_point_transfer.transfers==contacts&&length(support.impulse_n_s)>0,
+                "finite tool failed to load material and boundary");
+            require(contacted_nodes.size()==(width==.04?3U:9U),"actual physical width did not select its own contact footprint");
+            require(length(s.bond_kick_roundoff_impulse_n_s)<1e-12&&length(s.bond_kick_roundoff_angular_kg_m2_s)<1e-12,
+                "clamp reaction disappeared into numerical roundoff");
+            for (unsigned i=0;i<target.state.node_count;++i) if (target.state.inv_mass[i]==0) {
+                for (unsigned axis=0;axis<3;++axis)
+                    require(final_state.u[3*i+axis]==target.state.u[3*i+axis]&&final_state.v[3*i+axis]==0,
+                        "tool moved ideal material boundary");
+            }
+            if (preset==MaterialPreset::Oak)require(s.broken_bonds==0,"clamped oak became brittle preset");
+            require(std::abs(s.integration_numerical_energy_j)<.001*initial.mechanicalEnergy(),"clamped integrator exceeds declared 0.1% reference bound");
+            if (timestep==dt)coarse_error=std::abs(s.integration_numerical_energy_j);
+            else require(std::abs(s.integration_numerical_energy_j)<.27*coarse_error,"clamped finite contact timestep refinement failed");
+            const double wall=std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count();
+            std::cout<<"BOUNDARY_CONTACT_EVIDENCE {\"material\":\""<<materialPresetName(preset)<<"\",\"width_m\":"<<width
+                <<",\"cell_m\":"<<cell<<",\"dt_s\":"<<timestep<<",\"steps\":"<<count<<",\"contacts\":"<<contacts
+                <<",\"contacted_nodes\":"<<contacted_nodes.size()<<",\"support_impulse_n_s\":"<<length(support.impulse_n_s)
+                <<",\"support_angular_kg_m2_s\":"<<length(support.angular_impulse_kg_m2_s)<<",\"broken_bonds\":"<<s.broken_bonds
+                <<",\"p_residual_n_s\":"<<length(p)<<",\"l_residual_kg_m2_s\":"<<length(l)<<",\"unallocated_energy_j\":"<<unallocated
+                <<",\"native_step_energy_j\":"<<native_step_energy<<",\"integration_error_j\":"<<s.integration_numerical_energy_j
+                <<",\"mass_kg\":"<<final.mass_kg<<",\"wall_s\":"<<wall<<"}\n";
+        }
+    }
 }
-int main(){try{std::cout.precision(12);targetTransferPreservesHistoryAndAccounts(kBondXpbd);targetTransferPreservesHistoryAndAccounts(kBondVelocityVerlet);preparedContactIsImmutableAndInvalidates();trialAdmissionAndAbandonedPlans();pairedTrialsRestoreAndReplay();coupledMatchedTargets();
+}
+int main(){try{std::cout.precision(12);targetTransferPreservesHistoryAndAccounts(kBondXpbd);targetTransferPreservesHistoryAndAccounts(kBondVelocityVerlet);preparedContactIsImmutableAndInvalidates();trialAdmissionAndAbandonedPlans();pairedTrialsRestoreAndReplay();coupledMatchedTargets();coupledClampedFootprints();
     std::cout<<"[PASS] checked native/CPU contact transfer and continuous target integration\n";return 0;}
     catch(const std::exception &e){std::cerr<<"[FAIL] "<<e.what()<<'\n';return 1;}}

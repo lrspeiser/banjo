@@ -123,6 +123,9 @@ constexpr unsigned kPhaseCount = 16;
 // CPU external-load phase only. World-space angular impulse is about the
 // world origin. The source must receive the opposite delivered impulse;
 // recording it here does not add that source to a live world.
+// In the clamped Verlet reference, delivered impulses include loads on fixed
+// nodes, cancelled by fixed_boundary. Their work is zero. Wrench regions and
+// finite external point transfers still require movable nodes.
 struct ExternalLoadLedger {
     std::uint64_t steps{};
     double elapsed_s{};
@@ -151,12 +154,22 @@ struct ExternalPointTransferLedger {
     double work_j{}; // Signed target kinetic change, not total contact loss.
 };
 
+// Serial-double Verlet only. An explicitly clamped node keeps its physical
+// mass, has zero inverse mass and zero velocity, and stays at its declared
+// position. These are impulses ON the patch from the ideal stationary support;
+// the support receives their negatives. Its work is exactly zero. Do not count
+// these physical boundary reactions as floating-point bond error.
+struct FixedBoundaryLedger {
+    Vec3 impulse_n_s{}, angular_impulse_kg_m2_s{};
+};
+
 struct RunStatus {
     std::uint8_t bond_integrator{};
     // Verlet reference only: signed measured integration error, not heat or
     // corrective work. Plastic return overshoot is separately accounted.
     double integration_numerical_energy_j{}, plastic_return_numerical_loss_j{};
     ExternalLoadLedger gravity_load{};
+    FixedBoundaryLedger fixed_boundary{};
     Vec3 bond_kick_roundoff_impulse_n_s{}, bond_kick_roundoff_angular_kg_m2_s{};
     ExternalLoadLedger external_load{};
     std::vector<ExternalWrenchLedger> external_sources;

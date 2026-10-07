@@ -119,6 +119,49 @@ void plasticOvershootIdentity() {
         near(before-storedBondEnergy(L,0,false)-work,overshoot,2e-15,"plastic overstress numerical loss identity");
     }
 }
+void fixedSpringOracleAndRollback() {
+    double old_error=0;
+    for (unsigned n:{100U,200U,400U}) {
+        Spring spring(.5/n);spring.state.inv_mass[0]=0;
+        spring.state.origin={2,3,-4};
+        auto backend=spring.backend();backend->run({.max_steps=n});
+        const auto after=spring.download(*backend);const auto &s=backend->status();
+        const double omega=std::sqrt(100/3.0);
+        const double error=std::abs(after.u[3]-.02*std::cos(omega*.5))+
+            std::abs(after.v[3]+.02*omega*std::sin(omega*.5))/omega;
+        require(after.u[0]==spring.state.u[0]&&after.v[0]==0&&after.inv_mass[0]==0&&after.mass[0]==2,
+            "declared clamp moved or lost physical mass");
+        near(length(momentum(after)-s.fixed_boundary.impulse_n_s-s.bond_kick_roundoff_impulse_n_s),0,1e-14,"fixed spring support momentum");
+        near(length(angular(after)-s.fixed_boundary.angular_impulse_kg_m2_s-s.bond_kick_roundoff_angular_kg_m2_s),0,5e-14,"fixed spring support angular momentum");
+        near(length(s.bond_kick_roundoff_impulse_n_s),0,1e-14,"physical support reaction hidden as roundoff");
+        near(energy(after)-energy(spring.state),s.integration_numerical_energy_j,3e-15,"stationary boundary invented work");
+        if (old_error) require(error<.26*old_error,"clamped harmonic trajectory does not refine at second order");
+        old_error=error;
+        const auto before=s;const auto state=after;
+        require(!backend->runReversibleTrial([&]{backend->run({.max_steps=7});return false;}),"boundary trial accepted refusal");
+        const auto restored=spring.download(*backend);
+        require(restored.u==state.u&&restored.v==state.v&&restored.inv_mass==state.inv_mass&&
+            backend->status().total_steps==before.total_steps&&
+            length(backend->status().fixed_boundary.impulse_n_s-before.fixed_boundary.impulse_n_s)==0&&
+            length(backend->status().fixed_boundary.angular_impulse_kg_m2_s-before.fixed_boundary.angular_impulse_kg_m2_s)==0,
+            "refused trial leaked clamp reaction or state");
+    }
+    Spring spring(.01);spring.state.alive[0]=0;spring.state.nbr_alive.assign(spring.state.nbr_alive.size(),0);
+    spring.state.inv_mass={0,0};spring.state.u_prev=spring.state.u;spring.settings.gravity={0,-9.81,0};
+    spring.state.origin={2,3,-4};auto backend=spring.backend();
+    backend->setExternalForces({{4,0,0},{6,0,0}},3);backend->run({.max_steps=5});
+    const auto &s=backend->status();const auto after=spring.download(*backend);
+    require(after.u==spring.state.u&&after.v==spring.state.v,"loads moved clamped nodes");
+    near(s.external_load.impulse_n_s.x,.3,1e-15,"force on clamp lost source reaction");
+    near(s.gravity_load.impulse_n_s.y,-5*9.81*.05,1e-14,"gravity on clamp lost weight");
+    near(length(s.fixed_boundary.impulse_n_s+s.external_load.impulse_n_s+s.gravity_load.impulse_n_s),0,1e-14,"clamp external support reaction");
+    near(length(s.fixed_boundary.angular_impulse_kg_m2_s+s.external_load.angular_impulse_kg_m2_s+s.gravity_load.angular_impulse_kg_m2_s),0,3e-14,"clamp external support torque");
+    near(s.external_load.work_j+s.gravity_load.work_j,0,0,"stationary force produced work");
+    near(s.integration_numerical_energy_j,0,0,"stationary clamp produced integration energy");
+    require(s.external_load.steps==3,"clamp load expiry changed");
+    bool refused=false;try {(void)backend->externalContactPoint(0);}catch(const std::invalid_argument &){refused=true;}
+    require(refused,"finite point transfer accepted infinite clamp mobility");
+}
 void refusalPreservesUpload() {
     Spring spring;auto backend=spring.backend();backend->run({.max_steps=1});const auto before=spring.download(*backend);
     const auto rejects=[&](const LatticeState &state,const StepSettings<double> &settings) {
@@ -130,7 +173,12 @@ void refusalPreservesUpload() {
     settings=spring.settings;settings.sphere_enabled=1;rejects(spring.state,settings);
     settings=spring.settings;settings.support.plane_count=1;rejects(spring.state,settings);
     settings=spring.settings;settings.node_contact.mode=1;rejects(spring.state,settings);
-    auto bad=spring.state;bad.inv_mass[0]=0;rejects(bad,spring.settings);
+    auto bad=spring.state;bad.inv_mass[0]=-1;rejects(bad,spring.settings);
+    bad=spring.state;bad.inv_mass[0]=0;bad.v[0]=1;rejects(bad,spring.settings);
+    bad=spring.state;bad.inv_mass[0]=0;bad.v[0]=1e-200;rejects(bad,spring.settings);
+    bad=spring.state;bad.inv_mass[0]=0;bad.u_prev[0]=.001;rejects(bad,spring.settings);
+    bad=spring.state;bad.inv_mass[0]=0;bad.u_prev[0]=1e-200;rejects(bad,spring.settings);
+    bad=spring.state;bad.inv_mass[0]=0;settings=spring.settings;settings.damping_fraction=.1;rejects(bad,settings);
     bad=spring.state;bad.compliance[0]=0;rejects(bad,spring.settings);
     bad=spring.state;bad.u[3]=-1;rejects(bad,spring.settings);
     bad=spring.state;bad.v.pop_back();rejects(bad,spring.settings);
@@ -145,5 +193,5 @@ void refusalPreservesUpload() {
 }
 }
 int main() {try {std::cout.precision(12);backwardEulerOracle();harmonicConvergence();rotatingSpring();loadsGravityAndExpiry();
-    plasticOvershootIdentity();refusalPreservesUpload();std::cout<<"[PASS] explicit spring reference analytical and refusal gates\n";return 0;
+    plasticOvershootIdentity();fixedSpringOracleAndRollback();refusalPreservesUpload();std::cout<<"[PASS] explicit spring reference analytical and refusal gates\n";return 0;
     }catch(const std::exception &e) {std::cerr<<"[FAIL] "<<e.what()<<'\n';return 1;}}

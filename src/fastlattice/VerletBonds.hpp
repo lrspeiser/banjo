@@ -18,7 +18,7 @@ void validate(const LatticeArrays<Real> &L, const StepSettings<Real> &S) {
     if constexpr (sizeof(Real)!=sizeof(double))
         throw std::invalid_argument("Verlet reference requires double precision");
     if (S.sphere_enabled||S.support.plane_count||S.node_contact.mode!=kNodeContactOff)
-        throw std::invalid_argument("Verlet reference requires serial double free nodes without internal contacts");
+        throw std::invalid_argument("Verlet reference requires serial double nodes without internal contacts");
     if (!(S.dt>0)||!std::isfinite(S.dt)||!finite(widen(S.gravity))||
         !std::isfinite(S.damping_fraction)||S.damping_fraction<0||S.damping_fraction>1||
         !std::isfinite(S.plastic_yield_stretch)||S.plastic_yield_stretch<0||
@@ -26,12 +26,17 @@ void validate(const LatticeArrays<Real> &L, const StepSettings<Real> &S) {
         !std::isfinite(S.plate_half_thickness)||S.plate_half_thickness<0)
         throw std::invalid_argument("Verlet reference needs finite physical settings");
     for (std::uint32_t i=0;i<L.node_count;++i) {
-        if (!(L.mass[i]>0)||!(L.inv_mass[i]>0)||!std::isfinite(L.mass[i])||!std::isfinite(L.inv_mass[i])||
-            std::abs(L.mass[i]*L.inv_mass[i]-1)>1e-12||
+        const bool fixed=L.inv_mass[i]==0;
+        if (!(L.mass[i]>0)||L.inv_mass[i]<0||!std::isfinite(L.mass[i])||!std::isfinite(L.inv_mass[i])||
+            (!fixed&&std::abs(L.mass[i]*L.inv_mass[i]-1)>1e-12)||
             !finite(double(L.mass[i])*widen(S.gravity))||
             !finite(widen(load3(L.x0,i)))||!finite(widen(load3(L.u,i)))||
             !finite(widen(load3(L.u_prev,i)))||!finite(widen(load3(L.v,i))))
-            throw std::invalid_argument("Verlet reference needs finite freely movable reciprocal node masses");
+            throw std::invalid_argument("Verlet reference needs physical masses with reciprocal or clamped inverse masses");
+        const auto v=load3(L.v,i),u=load3(L.u,i),previous=load3(L.u_prev,i);
+        if (fixed&&(v.x!=0||v.y!=0||v.z!=0||
+            previous.x!=u.x||previous.y!=u.y||previous.z!=u.z||S.damping_fraction!=0))
+            throw std::invalid_argument("Verlet clamp requires stationary history and no unaccounted bond damping");
     }
     for (std::uint32_t j=0;j<L.bond_count;++j) if (L.alive[j]) {
         if (L.bond_a[j]>=L.node_count||L.bond_b[j]>=L.node_count||L.bond_a[j]==L.bond_b[j]||
@@ -77,20 +82,29 @@ void kick(const LatticeArrays<Real> &L,const StepSettings<Real> &S,Vec3 origin,R
         const auto a=L.bond_a[j],b=L.bond_b[j];
         impulses[a]=impulses[a]+impulse;impulses[b]=impulses[b]-impulse;
     }
-    Vec3 p{},angular{};
+    Vec3 p{},angular{},support{},support_angular{};
     for (std::uint32_t i=0;i<L.node_count;++i) {
         const auto before=load3(L.v,i);
         after[i]=before+L.inv_mass[i]*impulses[i];
         if (!finite(widen(after[i]))) throw std::overflow_error("Verlet bond kick velocity overflow");
         const Vec3 actual=double(L.mass[i])*(widen(after[i])-widen(before));
-        p+=actual;angular+=cross(origin+widen(position(L,i)),actual);
+        const Vec3 where=origin+widen(position(L,i));
+        p+=actual;angular+=cross(where,actual);
+        if (L.inv_mass[i]==0) {
+            support-=widen(impulses[i]);
+            support_angular-=cross(where,widen(impulses[i]));
+        }
     }
-    const Vec3 total_p=status.bond_kick_roundoff_impulse_n_s+p;
-    const Vec3 total_l=status.bond_kick_roundoff_angular_kg_m2_s+angular;
-    if (!finite(total_p)||!finite(total_l)) throw std::overflow_error("Verlet bond arithmetic ledger overflow");
+    const Vec3 total_p=status.bond_kick_roundoff_impulse_n_s+p-support;
+    const Vec3 total_l=status.bond_kick_roundoff_angular_kg_m2_s+angular-support_angular;
+    const Vec3 boundary=status.fixed_boundary.impulse_n_s+support;
+    const Vec3 boundary_angular=status.fixed_boundary.angular_impulse_kg_m2_s+support_angular;
+    if (!finite(total_p)||!finite(total_l)||!finite(boundary)||!finite(boundary_angular))
+        throw std::overflow_error("Verlet bond/boundary ledger overflow");
     for (std::uint32_t i=0;i<L.node_count;++i) store3(L.v,i,after[i]);
     status.bond_kick_roundoff_impulse_n_s=total_p;
     status.bond_kick_roundoff_angular_kg_m2_s=total_l;
+    status.fixed_boundary={boundary,boundary_angular};
 }
 
 template <typename Real>

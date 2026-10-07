@@ -18,9 +18,11 @@ Vec3 vectorAt(const std::vector<double> &a, std::uint32_t i) {
 
 SolidMatterPatch::SolidMatterPatch(std::string source, Vec3 dimensions_m, double cell_m,
                                  const MaterialDefinition &material, Vec3 center_m,
-                                 double timestep_fraction, double maximum_timestep_s)
+                                 double timestep_fraction, double maximum_timestep_s,
+                                 const std::vector<std::uint32_t> &fixed_source_nodes)
     : source_(std::move(source)), cell_m_(cell_m) {
-    if (source_.empty() || source_.size()>160 || !finite(center_m) || !finite(dimensions_m) ||
+    if (source_.empty() || source_.size()>160 || fixed_source_nodes.size()>1024 ||
+        !finite(center_m) || !finite(dimensions_m) ||
         !(cell_m>0) || !std::isfinite(cell_m) ||
         !(timestep_fraction>0 && timestep_fraction<=.2) ||
         !(maximum_timestep_s>0) || !std::isfinite(maximum_timestep_s))
@@ -43,6 +45,14 @@ SolidMatterPatch::SolidMatterPatch(std::string source, Vec3 dimensions_m, double
     matter.bonds.resize(asset_.bonds.size());
     schedule_=buildLatticeSchedule(asset_);
     state_=buildLatticeState(matter,schedule_,center_m);
+    // Nodes retain source numbering; only bonds are schedule-permuted. Keep
+    // physical mass and all constitutive histories, declare only mobility.
+    auto fixed=fixed_source_nodes;
+    std::sort(fixed.begin(),fixed.end());
+    if (std::adjacent_find(fixed.begin(),fixed.end())!=fixed.end()||
+        (!fixed.empty()&&fixed.back()>=state_.node_count))
+        throw std::invalid_argument("solid boundary nodes repeat or exceed the source patch");
+    for (const auto node:fixed) state_.inv_mass[node]=0;
     timestep_s_=std::min(maximum_timestep_s,timestep_fraction*latticeStateSubstepLimit(state_));
     if (!(timestep_s_>0) || !std::isfinite(timestep_s_)) throw std::invalid_argument("invalid solid stable step");
     StepSettings<double> settings{};
@@ -96,14 +106,16 @@ SolidPatchReport SolidMatterPatch::report() const {
     out.energy_residual_j=out.kinetic_j+out.elastic_j+out.removed_bond_energy_j-out.source_work_j-out.integration_error_j;
     out.source_impulse_n_s=s.external_load.impulse_n_s;
     out.source_angular_impulse_kg_m2_s=s.external_load.angular_impulse_kg_m2_s;
+    out.boundary_impulse_n_s=s.fixed_boundary.impulse_n_s;
+    out.boundary_angular_impulse_kg_m2_s=s.fixed_boundary.angular_impulse_kg_m2_s;
     out.broken_bonds=s.broken_bonds;
     for (std::uint32_t i=0;i<state_.node_count;++i) {
         const Vec3 p=state_.mass[i]*vectorAt(state_.v,i);
         out.momentum_kg_m_s+=p;
         out.angular_momentum_kg_m2_s+=cross(state_.origin+vectorAt(state_.x0,i)+vectorAt(state_.u,i),p);
     }
-    out.momentum_residual_kg_m_s=out.momentum_kg_m_s-out.source_impulse_n_s-s.bond_kick_roundoff_impulse_n_s;
-    out.angular_residual_kg_m2_s=out.angular_momentum_kg_m2_s-out.source_angular_impulse_kg_m2_s-s.bond_kick_roundoff_angular_kg_m2_s;
+    out.momentum_residual_kg_m_s=out.momentum_kg_m_s-out.source_impulse_n_s-out.boundary_impulse_n_s-s.bond_kick_roundoff_impulse_n_s;
+    out.angular_residual_kg_m2_s=out.angular_momentum_kg_m2_s-out.source_angular_impulse_kg_m2_s-out.boundary_angular_impulse_kg_m2_s-s.bond_kick_roundoff_angular_kg_m2_s;
     return out;
 }
 
@@ -119,6 +131,7 @@ std::vector<SolidComponent> SolidMatterPatch::components() const {
             part.cells.push_back({source_,i,rest.grid,cell_m_,rest.represented_volume_m3,
                                   rest.represented_volume_m3*compiled_.density_kg_m3,now.position_world_m,now.velocity_m_s});
             part.mass_kg+=rest.represented_volume_m3*compiled_.density_kg_m3;
+            part.attached_to_boundary=part.attached_to_boundary||state_.inv_mass[i]==0;
         }
         out.push_back(std::move(part));
     }

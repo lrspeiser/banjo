@@ -1,5 +1,6 @@
 #include "fastlattice/SolidMatterPatch.hpp"
 #include "material/MaterialCatalog.hpp"
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <set>
@@ -121,9 +122,67 @@ void nonzeroSourceReactionAndUnloading() {
         balance(patch);
     }
 }
+void boundaryAttachmentAndReaction() {
+    std::vector<std::uint32_t> fixed;
+    for (unsigned z=0;z<5;++z) for (unsigned x=0;x<5;++x) fixed.push_back(x+5*(5*z));
+    for (const auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        const auto material=makeReferenceMaterial(preset,17);
+        SolidMatterPatch patch("terrain:0:0:0",{.25,.25,.25},.05,material,{2,.6,-1},.1,1e-7,fixed);
+        require(patch.components().size()==1&&patch.components()[0].attached_to_boundary,
+            "whole anchored source is incorrectly transferable debris");
+        const auto before=patch.state();std::vector<Vec3> forces(125);
+        forces[2+5*(4+5*2)]={10000,-20000,30000};
+        const auto no_work=patch.pulse(forces,1,0);
+        require(no_work.accepted_steps==0&&no_work.work_budget_reached&&patch.state().u==before.u&&
+            patch.state().v==before.v&&length(patch.report().boundary_impulse_n_s)==0,
+            "refused anchored pulse leaked state or reaction");
+        const auto loaded=patch.pulse(forces,512,100);
+        balance(patch);
+        require(loaded.accepted_steps==512&&length(loaded.state.boundary_impulse_n_s)>0,
+            "material traction never reaches declared boundary");
+        for (const auto i:fixed) {
+            require(patch.state().mass[i]==before.mass[i]&&patch.state().inv_mass[i]==0,
+                "anchoring erased physical source mass");
+            for (unsigned axis=0;axis<3;++axis)
+                require(patch.state().u[3*i+axis]==before.u[3*i+axis]&&patch.state().v[3*i+axis]==0,
+                    "declared boundary moved");
+        }
+        const auto &r=loaded.state;
+        std::cout<<"Anchored "<<material.name<<": dt="<<r.timestep_s<<" mass="<<r.mass_kg
+            <<" work="<<r.source_work_j<<" support impulse="<<length(r.boundary_impulse_n_s)
+            <<" support angular="<<length(r.boundary_angular_impulse_kg_m2_s)
+            <<" P/L residual="<<length(r.momentum_residual_kg_m_s)<<"/"<<length(r.angular_residual_kg_m2_s)
+            <<" energy residual="<<r.energy_residual_j<<" integration="<<r.integration_error_j
+            <<" broken="<<r.broken_bonds<<" components="<<patch.components().size()<<" wall="<<loaded.wall_s<<'\n';
+    }
+    for (const auto nodes:{std::vector<std::uint32_t>{125},std::vector<std::uint32_t>{0,0}}) {
+        bool refused=false;
+        try {SolidMatterPatch patch("bad",{.25,.25,.25},.05,makeReferenceMaterial(MaterialPreset::Iron),{},.1,1e-7,nodes);}
+        catch (const std::invalid_argument &) {refused=true;}
+        require(refused,"invalid boundary declaration accepted");
+    }
+    // Declared high laboratory traction exercises actual disconnection. This
+    // is not a calibrated hand force, ground law or prescribed shard pattern.
+    SolidMatterPatch separating("terrain:0:0:0",{.25,.25,.25},.05,
+        makeReferenceMaterial(MaterialPreset::Glass,17),{},.1,1e-7,fixed);
+    std::vector<Vec3> pull(125);pull[2+5*(4+5*2)]={0,1e6,0};
+    const auto detached=separating.pulse(pull,512,50000);
+    balance(separating);bool free=false,attached=false;
+    for (const auto &part:separating.components()) {
+        bool touches=false;
+        for (const auto &cell:part.cells)
+            touches=touches||std::find(fixed.begin(),fixed.end(),cell.source_node)!=fixed.end();
+        require(part.attached_to_boundary==touches,"component attachment does not follow surviving source connectivity");
+        free=free||!touches;attached=attached||touches;
+    }
+    require(detached.state.broken_bonds>0&&free&&attached,
+        "material failure did not separate free matter from retained boundary");
+    std::cout<<"Anchored glass disconnection: work="<<detached.state.source_work_j
+        <<" broken="<<detached.state.broken_bonds<<" components="<<separating.components().size()<<'\n';
+}
 }
 int main() {
-    try {materialsAndRetainedState();workBudgetAndInvalidInputsAreTransactional();nonzeroSourceReactionAndUnloading();}
+    try {materialsAndRetainedState();workBudgetAndInvalidInputsAreTransactional();nonzeroSourceReactionAndUnloading();boundaryAttachmentAndReaction();}
     catch (const std::exception &e) {std::cerr<<e.what()<<'\n';return 1;}
-    std::cout<<"constituent solid reference passed (terrain/contact/soil adapters remain unqualified)\n";
+    std::cout<<"constituent solid reference passed (live terrain and soil adapters remain unqualified)\n";
 }

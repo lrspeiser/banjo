@@ -11,8 +11,9 @@
 namespace banjo::fastlattice {
 
 // CPU constituent-matter reference for a finite, initially whole solid block.
-// This is a free patch with explicitly applied forces, not terrain activation,
-// a soil law, an anchored boundary, or a live tool/contact adapter. It uses the
+// Optional source-node clamps model an ideal stationary far boundary with
+// audited reactions. This is not terrain activation, a soil law, a finite
+// neighbouring-world solver, or a live gameplay adapter. It uses the
 // existing isotropic central-bond strength surface, not preset-name fracture.
 struct SolidCell {
     std::string source;
@@ -25,6 +26,7 @@ struct SolidCell {
 struct SolidComponent {
     std::vector<SolidCell> cells;
     double mass_kg{};
+    bool attached_to_boundary{};
 };
 
 struct SolidPatchReport {
@@ -33,6 +35,7 @@ struct SolidPatchReport {
     double source_work_j{}, integration_error_j{}, energy_residual_j{};
     Vec3 momentum_kg_m_s{}, angular_momentum_kg_m2_s{};
     Vec3 source_impulse_n_s{}, source_angular_impulse_kg_m2_s{};
+    Vec3 boundary_impulse_n_s{}, boundary_angular_impulse_kg_m2_s{};
     Vec3 momentum_residual_kg_m_s{}, angular_residual_kg_m2_s{};
     std::uint32_t broken_bonds{};
 };
@@ -48,7 +51,8 @@ class SolidMatterPatch {
 public:
     SolidMatterPatch(std::string source, Vec3 dimensions_m, double cell_m,
                     const MaterialDefinition &material, Vec3 center_m = {},
-                    double timestep_fraction = .1, double maximum_timestep_s = 1e-7);
+                    double timestep_fraction = .1, double maximum_timestep_s = 1e-7,
+                    const std::vector<std::uint32_t> &fixed_source_nodes = {});
     ~SolidMatterPatch();
     SolidMatterPatch(const SolidMatterPatch &) = delete;
     SolidMatterPatch &operator=(const SolidMatterPatch &) = delete;

@@ -81,7 +81,7 @@ public:
             if (!finite(state.origin)) throw std::invalid_argument("Verlet reference needs a finite world origin");
             std::vector<Vec3> forces(arrays.node_count);
             for (std::uint32_t i=0;i<arrays.node_count;++i) forces[i]=double(arrays.mass[i])*verlet::widen(converted.gravity);
-            staged_gravity.set(forces,std::numeric_limits<std::uint64_t>::max(),arrays);
+            staged_gravity.set(forces,std::numeric_limits<std::uint64_t>::max(),arrays,true);
         }
         working_ = std::move(staged);
         L_ = working_.arrays();
@@ -100,7 +100,7 @@ public:
     }
 
     void setExternalForces(const std::vector<Vec3> &forces, std::uint64_t substeps) override {
-        external_.set(forces,substeps,L_);
+        external_.set(forces,substeps,L_,S_.bond_integrator==kBondVelocityVerlet);
     }
     void setExternalWrenches(const std::vector<ExternalWrench> &wrenches, std::uint64_t substeps) override {
         external_.setWrenches(wrenches,substeps,L_);
@@ -387,13 +387,13 @@ private:
         }
         // Two half kicks consume one load substep. All spring forces at a
         // kick use the same positions; no position projection or v rebuild.
-        external_.kick(L_,Real(.5)*S_.dt,status_.external_load,&status_.external_sources,false);
-        gravity_.kick(L_,Real(.5)*S_.dt,status_.gravity_load,nullptr,false);mark(3);
+        external_.kick(L_,Real(.5)*S_.dt,status_.external_load,&status_.external_sources,false,&status_.fixed_boundary);
+        gravity_.kick(L_,Real(.5)*S_.dt,status_.gravity_load,nullptr,false,&status_.fixed_boundary);mark(3);
         verlet::kick(L_,S_,origin_,status_);mark(4);
         verlet::drift(L_,S_.dt);mark(5);
         verlet::kick(L_,S_,origin_,status_);mark(8);
-        external_.kick(L_,Real(.5)*S_.dt,status_.external_load,&status_.external_sources,true);
-        gravity_.kick(L_,Real(.5)*S_.dt,status_.gravity_load,nullptr,true);mark(10);
+        external_.kick(L_,Real(.5)*S_.dt,status_.external_load,&status_.external_sources,true,&status_.fixed_boundary);
+        gravity_.kick(L_,Real(.5)*S_.dt,status_.gravity_load,nullptr,true,&status_.fixed_boundary);mark(10);
         if (S_.damping_fraction>Real(0)) {
             const double kinetic=latticeKineticEnergy(L_);
             sweepAll([&](std::uint32_t j){bondDamp(L_,j,S_.damping_fraction,direct);});

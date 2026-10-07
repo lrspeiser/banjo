@@ -1,0 +1,745 @@
+{
+  "schema": "banjo.solid-boundary-contact-evidence.v1",
+  "date": "2026-10-06",
+  "source_base": "15273e3f73293aaa79f5a9b2d13911cf984d0aa7",
+  "source_identity": "Base plus the source hashes below; publication revision is recorded in the checkpoint document.",
+  "environment": {
+    "os": "Windows x64",
+    "compiler": "MSVC 19.44.35228",
+    "sdk": "10.0.26100",
+    "build": "Release",
+    "backend": "serial double CPU Verlet",
+    "fp_model": "banjo-cpu-precise-v1"
+  },
+  "source_sha256": {
+    "src/fastlattice/FastLattice.hpp": "3ae57b0f74f391d01b28a9d96ad0855da87d9c8b64bc9afbbc0225b94e6bedfe",
+    "src/fastlattice/VerletBonds.hpp": "ad6774e54b5c6210cf8e52c333e4c537b52352ad73e42ff4faceeaf36254a4dd",
+    "src/fastlattice/ExternalLoads.hpp": "fa4765e002100c9f146839a871bb31ef841c12bb07b43d9cef846689c0db5dd6",
+    "src/fastlattice/CpuLatticeBackend.cpp": "1fb8d610d9999604780b5f1975529aa616cd1172bd683b0bedffe703e40a2d6a",
+    "src/fastlattice/SolidMatterPatch.hpp": "6c7ac92002563c2480a0f92c2471e4e51295c43e68530373a2b58ba094cea2b0",
+    "src/fastlattice/SolidMatterPatch.cpp": "854c35bfb30d42e2f5e0176fc03a9c85b3902d12ede948cfc3088d365d3a6872",
+    "tests/lattice_verlet_tests.cpp": "cc8ade3b9564c8ea6f42a54cd8f1c8e8510d5c8a654346d2b120b93f4cb93e57",
+    "tests/solid_matter_patch_tests.cpp": "3233cf66aa7fb5b91bfcb917f827de6fe433c6fb042d8c4dde16e148d1e59781",
+    "tests/native_lattice_contact_tests.cpp": "05222d5ea19df35395482fefc90847cbd536e94a159b70cb5348a1c7481f82ff"
+  },
+  "artifact_sha256": {
+    "banjo_lattice_verlet_tests.exe": "1a67e17b5a15dd722667ee568704483b49732b9cf6ef640a0d65b3c11a4b5fcf",
+    "banjo_solid_matter_patch_tests.exe": "5a691396427565dcc9998d1efef676e7dd6eca3cba95ae12b942ba052527d920",
+    "banjo_native_lattice_contact_tests.exe": "57a5d78f30aabca50b542c7e25e682b62afd4f5e3a9b073cbc3b5bb5d06e2b06",
+    "banjo_live_world_run.exe": "c313ba7560831d3036b7eafec03d772858b94a3e141ba19364530d7425302252",
+    "banjo.dll": "fca6c00c309bc7467eb1ac5c1ebc200b320782db3d0acaf9e89816f23e449752",
+    "banjo-runtime.exe": "9dfa60c41c283c5e2b95c5d0245bcdc8d9d230a7b6abe6d0c977b0364153d402"
+  },
+  "conditions": {
+    "target_dimensions_m": [
+      0.12,
+      0.12,
+      0.12
+    ],
+    "target_cell_m": 0.04,
+    "target_horizon_cells": 1,
+    "target_nodes": 27,
+    "boundary": "9 nodes on far x face, ideal stationary clamp with positive physical mass and zero inverse mass",
+    "tool_head_dimensions_m": "[.08,width,.08]",
+    "tool_head_material": "iron",
+    "tool_handle_dimensions_m": [
+      0.24,
+      0.04,
+      0.04
+    ],
+    "tool_handle_material": "oak (laboratory only)",
+    "tool_initial_velocity_m_s": [
+      6,
+      0,
+      0
+    ],
+    "tool_internal_connection": "ideal fixing, finite assembled mass/inertia",
+    "gravity_m_s2": [
+      0,
+      0,
+      0
+    ],
+    "damping": 0,
+    "contact_envelope_radius_m": 0.016,
+    "physical_duration_s": 0.0002048,
+    "dt_s": [
+      1e-07,
+      5e-08
+    ],
+    "point_contact_roundoff_budget": {
+      "energy_j": 1e-05,
+      "linear_impulse_n_s": 1e-05,
+      "angular_impulse_kg_m2_s": 1e-05
+    }
+  },
+  "cases": [
+    {
+      "material": "glass",
+      "width_m": 0.04,
+      "cell_m": 0.04,
+      "dt_s": 1e-07,
+      "steps": 2048,
+      "contacts": 2137,
+      "contacted_nodes": 3,
+      "support_impulse_n_s": 27.4577948971,
+      "support_angular_kg_m2_s": 0.0433643842826,
+      "broken_bonds": 13,
+      "p_residual_n_s": 7.73853509093e-07,
+      "l_residual_kg_m2_s": 7.74665072538e-08,
+      "unallocated_energy_j": 0.000244412861047,
+      "native_step_energy_j": 1.60769631739e-07,
+      "integration_error_j": 0.00024425209136,
+      "mass_kg": 6.6035199755,
+      "wall_s": 0.2221901
+    },
+    {
+      "material": "glass",
+      "width_m": 0.04,
+      "cell_m": 0.04,
+      "dt_s": 5e-08,
+      "steps": 4096,
+      "contacts": 4269,
+      "contacted_nodes": 3,
+      "support_impulse_n_s": 27.5547283726,
+      "support_angular_kg_m2_s": 0.0433385628486,
+      "broken_bonds": 13,
+      "p_residual_n_s": 7.65881562747e-06,
+      "l_residual_kg_m2_s": 2.65724798203e-08,
+      "unallocated_energy_j": 6.07623014923e-05,
+      "native_step_energy_j": -2.09756874647e-08,
+      "integration_error_j": 6.07832771906e-05,
+      "mass_kg": 6.6035199755,
+      "wall_s": 0.4429266
+    },
+    {
+      "material": "oak",
+      "width_m": 0.04,
+      "cell_m": 0.04,
+      "dt_s": 1e-07,
+      "steps": 2048,
+      "contacts": 5400,
+      "contacted_nodes": 3,
+      "support_impulse_n_s": 24.8129672193,
+      "support_angular_kg_m2_s": 0.00108583801702,
+      "broken_bonds": 0,
+      "p_residual_n_s": 3.98689368247e-10,
+      "l_residual_kg_m2_s": 8.79973034963e-09,
+      "unallocated_energy_j": 9.19273839073e-05,
+      "native_step_energy_j": 1.06201116835e-09,
+      "integration_error_j": 9.1926322134e-05,
+      "mass_kg": 3.4931199755,
+      "wall_s": 0.2433756
+    },
+    {
+      "material": "oak",
+      "width_m": 0.04,
+      "cell_m": 0.04,
+      "dt_s": 5e-08,
+      "steps": 4096,
+      "contacts": 10799,
+      "contacted_nodes": 3,
+      "support_impulse_n_s": 24.8948058755,
+      "support_angular_kg_m2_s": 0.00093897174949,
+      "broken_bonds": 0,
+      "p_residual_n_s": 3.29492905737e-08,
+      "l_residual_kg_m2_s": 1.94778667004e-08,
+      "unallocated_energy_j": 2.40314016514e-05,
+      "native_step_energy_j": 2.31261306628e-09,
+      "integration_error_j": 2.40290890767e-05,
+      "mass_kg": 3.4931199755,
+      "wall_s": 0.4772231
+    },
+    {
+      "material": "iron",
+      "width_m": 0.04,
+      "cell_m": 0.04,
+      "dt_s": 1e-07,
+      "steps": 2048,
+      "contacts": 1316,
+      "contacted_nodes": 3,
+      "support_impulse_n_s": 24.6425205044,
+      "support_angular_kg_m2_s": 0.0106752276629,
+      "broken_bonds": 0,
+      "p_residual_n_s": 2.68556114313e-08,
+      "l_residual_kg_m2_s": 7.43489087431e-08,
+      "unallocated_energy_j": 0.000660161113733,
+      "native_step_energy_j": 1.78544991437e-07,
+      "integration_error_j": 0.000659982569097,
+      "mass_kg": 15.8828799755,
+      "wall_s": 0.228351
+    },
+    {
+      "material": "iron",
+      "width_m": 0.04,
+      "cell_m": 0.04,
+      "dt_s": 5e-08,
+      "steps": 4096,
+      "contacts": 2628,
+      "contacted_nodes": 3,
+      "support_impulse_n_s": 24.6455648825,
+      "support_angular_kg_m2_s": 0.00992428084538,
+      "broken_bonds": 0,
+      "p_residual_n_s": 4.34570557291e-08,
+      "l_residual_kg_m2_s": 9.63191494328e-08,
+      "unallocated_energy_j": 0.000165428260014,
+      "native_step_energy_j": 2.41892354633e-07,
+      "integration_error_j": 0.000165186367642,
+      "mass_kg": 15.8828799755,
+      "wall_s": 0.4386084
+    },
+    {
+      "material": "glass",
+      "width_m": 0.12,
+      "cell_m": 0.04,
+      "dt_s": 1e-07,
+      "steps": 2048,
+      "contacts": 6303,
+      "contacted_nodes": 9,
+      "support_impulse_n_s": 76.9782431141,
+      "support_angular_kg_m2_s": 0.112068432904,
+      "broken_bonds": 9,
+      "p_residual_n_s": 3.86856353795e-07,
+      "l_residual_kg_m2_s": 4.49286693212e-06,
+      "unallocated_energy_j": 0.000559450001451,
+      "native_step_energy_j": 6.24433440038e-07,
+      "integration_error_j": 0.000558825568017,
+      "mass_kg": 10.6329599429,
+      "wall_s": 0.2747421
+    },
+    {
+      "material": "glass",
+      "width_m": 0.12,
+      "cell_m": 0.04,
+      "dt_s": 5e-08,
+      "steps": 4096,
+      "contacts": 12598,
+      "contacted_nodes": 9,
+      "support_impulse_n_s": 77.2360021315,
+      "support_angular_kg_m2_s": 0.111458735753,
+      "broken_bonds": 9,
+      "p_residual_n_s": 1.56314742212e-06,
+      "l_residual_kg_m2_s": 4.4874064419e-06,
+      "unallocated_energy_j": 0.000139182576503,
+      "native_step_energy_j": 1.15938832115e-06,
+      "integration_error_j": 0.000138023188329,
+      "mass_kg": 10.6329599429,
+      "wall_s": 0.5471847
+    },
+    {
+      "material": "oak",
+      "width_m": 0.12,
+      "cell_m": 0.04,
+      "dt_s": 1e-07,
+      "steps": 2048,
+      "contacts": 15568,
+      "contacted_nodes": 9,
+      "support_impulse_n_s": 67.3261423945,
+      "support_angular_kg_m2_s": 0.00147102718847,
+      "broken_bonds": 0,
+      "p_residual_n_s": 2.90530125975e-08,
+      "l_residual_kg_m2_s": 7.31671247043e-08,
+      "unallocated_energy_j": 0.000219960111662,
+      "native_step_energy_j": 5.73573754453e-09,
+      "integration_error_j": 0.000219954376064,
+      "mass_kg": 7.52255994292,
+      "wall_s": 0.3313562
+    },
+    {
+      "material": "oak",
+      "width_m": 0.12,
+      "cell_m": 0.04,
+      "dt_s": 5e-08,
+      "steps": 4096,
+      "contacts": 31108,
+      "contacted_nodes": 9,
+      "support_impulse_n_s": 67.5394652972,
+      "support_angular_kg_m2_s": 0.00112375793113,
+      "broken_bonds": 0,
+      "p_residual_n_s": 1.16451294357e-07,
+      "l_residual_kg_m2_s": 1.46981905672e-07,
+      "unallocated_energy_j": 5.809515436e-05,
+      "native_step_energy_j": 1.06178251505e-08,
+      "integration_error_j": 5.80845365103e-05,
+      "mass_kg": 7.52255994292,
+      "wall_s": 0.6444753
+    },
+    {
+      "material": "iron",
+      "width_m": 0.12,
+      "cell_m": 0.04,
+      "dt_s": 1e-07,
+      "steps": 2048,
+      "contacts": 3743,
+      "contacted_nodes": 9,
+      "support_impulse_n_s": 70.430871202,
+      "support_angular_kg_m2_s": 0.0426883687948,
+      "broken_bonds": 0,
+      "p_residual_n_s": 2.96532071595e-07,
+      "l_residual_kg_m2_s": 1.97013839674e-06,
+      "unallocated_energy_j": 0.00201252474964,
+      "native_step_energy_j": -7.7792477593e-07,
+      "integration_error_j": 0.00201330267431,
+      "mass_kg": 19.9123199429,
+      "wall_s": 0.2765889
+    },
+    {
+      "material": "iron",
+      "width_m": 0.12,
+      "cell_m": 0.04,
+      "dt_s": 5e-08,
+      "steps": 4096,
+      "contacts": 7477,
+      "contacted_nodes": 9,
+      "support_impulse_n_s": 70.4458217647,
+      "support_angular_kg_m2_s": 0.0406359491912,
+      "broken_bonds": 0,
+      "p_residual_n_s": 5.28928910584e-07,
+      "l_residual_kg_m2_s": 1.93881867623e-06,
+      "unallocated_energy_j": 0.000503615996882,
+      "native_step_energy_j": -1.78164265896e-07,
+      "integration_error_j": 0.000503794161045,
+      "mass_kg": 19.9123199429,
+      "wall_s": 0.5399356
+    }
+  ],
+  "verification": {
+    "focused_ctest_suites": 9,
+    "final_native_contact_direct_exit": 0,
+    "strict_gameplay_repeat_exit": 1,
+    "strict_gameplay_repeat_failures": 4,
+    "source_registration": 309,
+    "runtime_native_integration_tests": 16,
+    "runtime_native_wall_s": 25.623,
+    "tiny_nonzero_clamp_regression": "A 1e-200 velocity was accepted before the component-wise fix; final Verlet/solid CTest and full native contact command pass after the fix."
+  },
+  "limitations": [
+    "Ideal stationary far boundary, not finite solved neighbours.",
+    "Nodal envelopes, not exact constituent cube contact faces.",
+    "Existing isotropic central-bond/plastic reference; no calibrated stone, soil, grain or fracture-energy claim.",
+    "Native force-step and integration errors are measured, not silently heat or corrective work.",
+    "Reference loop is far slower than real time; no fast excavation gate.",
+    "No live terrain activation, constituent handoff, browser migration or complete rewrite claim."
+  ],
+  "retained_worker_tool_cases": [
+    {
+      "dt_s": 0.004166666666666667,
+      "family": "pick",
+      "material": "glass",
+      "native_file_sha256": "c313ba7560831d3036b7eafec03d772858b94a3e141ba19364530d7425302252",
+      "result": {
+        "active": false,
+        "contact_impulse_n_s": 1.5069646090269089,
+        "contact_pending": false,
+        "contact_work_j": 3.275048430174088,
+        "contacted": true,
+        "ended_s": 0.2000000000000002,
+        "hand_work_j": -1.9799831042228988,
+        "loosened_m3": {
+          "rock": 0.0,
+          "sand": 0.0,
+          "soil": 4.0507413646132765e-05
+        },
+        "peak_contact_force_n": 158.2221508026123,
+        "phase": "finished",
+        "phase_started_s": 0.15416666666666673,
+        "point_id": 1,
+        "reason": "",
+        "schema": "banjo.native-tool-use.v1",
+        "started_s": 0.016666666666666666,
+        "target_m": [
+          0.65,
+          0.75,
+          0.15
+        ],
+        "tool": "handle"
+      },
+      "scene_cell_m": 0.02,
+      "terrain_column_m": 0.1
+    },
+    {
+      "dt_s": 0.004166666666666667,
+      "family": "shovel",
+      "material": "glass",
+      "native_file_sha256": "c313ba7560831d3036b7eafec03d772858b94a3e141ba19364530d7425302252",
+      "result": {
+        "active": false,
+        "contact_impulse_n_s": 3.980158716440201,
+        "contact_pending": false,
+        "contact_work_j": 8.612854047488387,
+        "contacted": true,
+        "ended_s": 0.22500000000000028,
+        "hand_work_j": 0.6336989099451884,
+        "loosened_m3": {
+          "rock": 0.0,
+          "sand": 0.0,
+          "soil": 7.736879295866568e-05
+        },
+        "peak_contact_force_n": 396.4292335510254,
+        "phase": "finished",
+        "phase_started_s": 0.17500000000000013,
+        "point_id": 1,
+        "reason": "",
+        "schema": "banjo.native-tool-use.v1",
+        "started_s": 0.016666666666666666,
+        "target_m": [
+          0.65,
+          0.75,
+          0.15
+        ],
+        "tool": "handle"
+      },
+      "scene_cell_m": 0.02,
+      "terrain_column_m": 0.1
+    },
+    {
+      "dt_s": 0.004166666666666667,
+      "family": "hoe",
+      "material": "glass",
+      "native_file_sha256": "c313ba7560831d3036b7eafec03d772858b94a3e141ba19364530d7425302252",
+      "result": {
+        "active": false,
+        "contact_impulse_n_s": 1.7354273051023483,
+        "contact_pending": false,
+        "contact_work_j": 3.679099431270558,
+        "contacted": true,
+        "ended_s": 0.20833333333333356,
+        "hand_work_j": -3.097478301166332,
+        "loosened_m3": {
+          "rock": 0.0,
+          "sand": 0.0,
+          "soil": 2.261683300843415e-05
+        },
+        "peak_contact_force_n": 207.13688850402832,
+        "phase": "finished",
+        "phase_started_s": 0.1625000000000001,
+        "point_id": 1,
+        "reason": "",
+        "schema": "banjo.native-tool-use.v1",
+        "started_s": 0.016666666666666666,
+        "target_m": [
+          0.65,
+          0.75,
+          0.15
+        ],
+        "tool": "handle"
+      },
+      "scene_cell_m": 0.02,
+      "terrain_column_m": 0.1
+    },
+    {
+      "dt_s": 0.004166666666666667,
+      "family": "unfamiliar",
+      "material": "glass",
+      "native_file_sha256": "c313ba7560831d3036b7eafec03d772858b94a3e141ba19364530d7425302252",
+      "result": {
+        "active": false,
+        "contact_impulse_n_s": 1.7263316586613655,
+        "contact_pending": false,
+        "contact_work_j": 3.745124963194381,
+        "contacted": true,
+        "ended_s": 0.20416666666666689,
+        "hand_work_j": -2.285359472151016,
+        "loosened_m3": {
+          "rock": 0.0,
+          "sand": 0.0,
+          "soil": 2.8984346434694993e-05
+        },
+        "peak_contact_force_n": 184.41965103149417,
+        "phase": "finished",
+        "phase_started_s": 0.1583333333333334,
+        "point_id": 1,
+        "reason": "",
+        "schema": "banjo.native-tool-use.v1",
+        "started_s": 0.016666666666666666,
+        "target_m": [
+          0.65,
+          0.75,
+          0.15
+        ],
+        "tool": "handle"
+      },
+      "scene_cell_m": 0.02,
+      "terrain_column_m": 0.1
+    },
+    {
+      "dt_s": 0.004166666666666667,
+      "family": "pick",
+      "material": "oak",
+      "native_file_sha256": "c313ba7560831d3036b7eafec03d772858b94a3e141ba19364530d7425302252",
+      "result": {
+        "active": false,
+        "contact_impulse_n_s": 0.638049304485321,
+        "contact_pending": false,
+        "contact_work_j": 1.447133140586046,
+        "contacted": true,
+        "ended_s": 0.17083333333333345,
+        "hand_work_j": -0.06402220748468038,
+        "loosened_m3": {
+          "rock": 0.0,
+          "sand": 0.0,
+          "soil": 1.002816441095843e-05
+        },
+        "peak_contact_force_n": 102.68783569335938,
+        "phase": "finished",
+        "phase_started_s": 0.13333333333333333,
+        "point_id": 1,
+        "reason": "",
+        "schema": "banjo.native-tool-use.v1",
+        "started_s": 0.016666666666666666,
+        "target_m": [
+          0.65,
+          0.75,
+          0.15
+        ],
+        "tool": "handle"
+      },
+      "scene_cell_m": 0.02,
+      "terrain_column_m": 0.1
+    },
+    {
+      "dt_s": 0.004166666666666667,
+      "family": "shovel",
+      "material": "oak",
+      "native_file_sha256": "c313ba7560831d3036b7eafec03d772858b94a3e141ba19364530d7425302252",
+      "result": {
+        "active": false,
+        "contact_impulse_n_s": 1.256840497255325,
+        "contact_pending": false,
+        "contact_work_j": 2.7664029554972585,
+        "contacted": true,
+        "ended_s": 0.17500000000000013,
+        "hand_work_j": 0.4953439012777262,
+        "loosened_m3": {
+          "rock": 0.0,
+          "sand": 0.0,
+          "soil": 1.5273575303764738e-05
+        },
+        "peak_contact_force_n": 190.7741546630859,
+        "phase": "finished",
+        "phase_started_s": 0.1375,
+        "point_id": 1,
+        "reason": "",
+        "schema": "banjo.native-tool-use.v1",
+        "started_s": 0.016666666666666666,
+        "target_m": [
+          0.65,
+          0.75,
+          0.15
+        ],
+        "tool": "handle"
+      },
+      "scene_cell_m": 0.02,
+      "terrain_column_m": 0.1
+    },
+    {
+      "dt_s": 0.004166666666666667,
+      "family": "hoe",
+      "material": "oak",
+      "native_file_sha256": "c313ba7560831d3036b7eafec03d772858b94a3e141ba19364530d7425302252",
+      "result": {
+        "active": false,
+        "contact_impulse_n_s": 0.9955248087644576,
+        "contact_pending": false,
+        "contact_work_j": 2.1750383909787,
+        "contacted": true,
+        "ended_s": 0.17500000000000013,
+        "hand_work_j": 0.270007210216436,
+        "loosened_m3": {
+          "rock": 0.0,
+          "sand": 0.0,
+          "soil": 1.2039072518574778e-05
+        },
+        "peak_contact_force_n": 158.59713077545166,
+        "phase": "finished",
+        "phase_started_s": 0.1375,
+        "point_id": 1,
+        "reason": "",
+        "schema": "banjo.native-tool-use.v1",
+        "started_s": 0.016666666666666666,
+        "target_m": [
+          0.65,
+          0.75,
+          0.15
+        ],
+        "tool": "handle"
+      },
+      "scene_cell_m": 0.02,
+      "terrain_column_m": 0.1
+    },
+    {
+      "dt_s": 0.004166666666666667,
+      "family": "unfamiliar",
+      "material": "oak",
+      "native_file_sha256": "c313ba7560831d3036b7eafec03d772858b94a3e141ba19364530d7425302252",
+      "result": {
+        "active": false,
+        "contact_impulse_n_s": 0.8364480808377266,
+        "contact_pending": false,
+        "contact_work_j": 1.839604795422742,
+        "contacted": true,
+        "ended_s": 0.17083333333333345,
+        "hand_work_j": 0.13244587653039436,
+        "loosened_m3": {
+          "rock": 0.0,
+          "sand": 0.0,
+          "soil": 1.1017846960119056e-05
+        },
+        "peak_contact_force_n": 134.34316635131836,
+        "phase": "finished",
+        "phase_started_s": 0.13333333333333333,
+        "point_id": 1,
+        "reason": "",
+        "schema": "banjo.native-tool-use.v1",
+        "started_s": 0.016666666666666666,
+        "target_m": [
+          0.65,
+          0.75,
+          0.15
+        ],
+        "tool": "handle"
+      },
+      "scene_cell_m": 0.02,
+      "terrain_column_m": 0.1
+    },
+    {
+      "dt_s": 0.004166666666666667,
+      "family": "pick",
+      "material": "iron",
+      "native_file_sha256": "c313ba7560831d3036b7eafec03d772858b94a3e141ba19364530d7425302252",
+      "result": {
+        "active": false,
+        "contact_impulse_n_s": 5.7249168660491705,
+        "contact_pending": false,
+        "contact_work_j": 9.844919162705263,
+        "contacted": true,
+        "ended_s": 0.41249999999999976,
+        "hand_work_j": -5.61076773843258,
+        "loosened_m3": {
+          "rock": 0.0,
+          "sand": 0.0,
+          "soil": 0.0004249040438520294
+        },
+        "peak_contact_force_n": 298.37047576904297,
+        "phase": "finished",
+        "phase_started_s": 0.3458333333333333,
+        "point_id": 1,
+        "reason": "",
+        "schema": "banjo.native-tool-use.v1",
+        "started_s": 0.016666666666666666,
+        "target_m": [
+          0.65,
+          0.75,
+          0.15
+        ],
+        "tool": "handle"
+      },
+      "scene_cell_m": 0.02,
+      "terrain_column_m": 0.1
+    },
+    {
+      "dt_s": 0.004166666666666667,
+      "family": "shovel",
+      "material": "iron",
+      "native_file_sha256": "c313ba7560831d3036b7eafec03d772858b94a3e141ba19364530d7425302252",
+      "result": {
+        "active": false,
+        "contact_impulse_n_s": 9.856266409158708,
+        "contact_pending": false,
+        "contact_work_j": 12.847007151334529,
+        "contacted": true,
+        "ended_s": 0.5499999999999993,
+        "hand_work_j": -11.724598440659374,
+        "loosened_m3": {
+          "rock": 0.0,
+          "sand": 0.0,
+          "soil": 0.000396849566759836
+        },
+        "peak_contact_force_n": 503.0657958984375,
+        "phase": "finished",
+        "phase_started_s": 0.47499999999999953,
+        "point_id": 1,
+        "reason": "",
+        "schema": "banjo.native-tool-use.v1",
+        "started_s": 0.016666666666666666,
+        "target_m": [
+          0.65,
+          0.75,
+          0.15
+        ],
+        "tool": "handle"
+      },
+      "scene_cell_m": 0.02,
+      "terrain_column_m": 0.1
+    },
+    {
+      "dt_s": 0.004166666666666667,
+      "family": "hoe",
+      "material": "iron",
+      "native_file_sha256": "c313ba7560831d3036b7eafec03d772858b94a3e141ba19364530d7425302252",
+      "result": {
+        "active": false,
+        "contact_impulse_n_s": 8.402104258537292,
+        "contact_pending": false,
+        "contact_work_j": 11.979625944000302,
+        "contacted": true,
+        "ended_s": 0.49166666666666614,
+        "hand_work_j": -8.142273664371729,
+        "loosened_m3": {
+          "rock": 0.0,
+          "sand": 0.0,
+          "soil": 0.0004509755034381557
+        },
+        "peak_contact_force_n": 417.97645568847656,
+        "phase": "finished",
+        "phase_started_s": 0.42083333333333306,
+        "point_id": 1,
+        "reason": "",
+        "schema": "banjo.native-tool-use.v1",
+        "started_s": 0.016666666666666666,
+        "target_m": [
+          0.65,
+          0.75,
+          0.15
+        ],
+        "tool": "handle"
+      },
+      "scene_cell_m": 0.02,
+      "terrain_column_m": 0.1
+    },
+    {
+      "dt_s": 0.004166666666666667,
+      "family": "unfamiliar",
+      "material": "iron",
+      "native_file_sha256": "c313ba7560831d3036b7eafec03d772858b94a3e141ba19364530d7425302252",
+      "result": {
+        "active": false,
+        "contact_impulse_n_s": 5.839583538472652,
+        "contact_pending": false,
+        "contact_work_j": 8.244239958116008,
+        "contacted": true,
+        "ended_s": 0.44583333333333297,
+        "hand_work_j": -9.35552452606776,
+        "loosened_m3": {
+          "rock": 0.0,
+          "sand": 0.0,
+          "soil": 0.00033365937100440156
+        },
+        "peak_contact_force_n": 306.4188766479492,
+        "phase": "finished",
+        "phase_started_s": 0.37916666666666654,
+        "point_id": 1,
+        "reason": "",
+        "schema": "banjo.native-tool-use.v1",
+        "started_s": 0.016666666666666666,
+        "target_m": [
+          0.65,
+          0.75,
+          0.15
+        ],
+        "tool": "handle"
+      },
+      "scene_cell_m": 0.02,
+      "terrain_column_m": 0.1
+    }
+  ]
+}
