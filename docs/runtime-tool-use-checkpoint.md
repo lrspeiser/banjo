@@ -2,6 +2,8 @@
 
 October 6, 2026. Source baseline/main before this work: `08a05c2b`, which published [read-only admission](runtime-tool-admission-checkpoint.md). The isolated native controller is implemented; browser migration and useful sustained digging remain open. This is a partial W06 checkpoint, not completion of the W00–W17 rewrite.
 
+Controller, tests and evidence published on GitHub main as `f85666f0`. The recorded local runner/library were built from that checkpoint's source changes; the trusted native protocol still does not attest compiled-source provenance. `C:/play` remains `c29d8ade` on port 18890.
+
 ## Implementation and ownership
 
 `NativeToolUseController` consumes actual grip, tip, direction, connection, reach, target revision and native contact reports. It emits only desired actuator frames. Existing bounded hand force/torque, equal actor reactions, fixed joints and ground contacts determine actual motion. There are no body-pose/velocity assignments, cosmetic shards, fragment launch impulses, free work or material-name branches in this controller.
