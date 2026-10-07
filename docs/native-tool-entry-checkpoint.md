@@ -1,6 +1,6 @@
 # Whole-tool entry observation: experimental rewrite checkpoint
 
-October 6, 2026. Source baseline `2195a948`. This advances native target inspection for W06; it does **not** resolve repeated excavation or replace the browser engine. The retained World on 18890 and material laboratory on 18891 continue running their earlier binaries. Published revision is recorded below after verification.
+October 6, 2026. Source baseline `2195a948`. Implementation, tests and evidence are published on GitHub main at `7e523cbe975ddfb825a833131f14d201375df5a9`. This advances native target inspection for W06; it does **not** resolve repeated excavation or replace the browser engine. The retained World on 18890 and material laboratory on 18891 continue running their earlier binaries.
 
 ## Implementation and physical meaning
 
