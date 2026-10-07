@@ -12,6 +12,7 @@
 
 #include "fastlattice/LatticePhysics.hpp"
 #include "fastlattice/LatticeSchedule.hpp"
+#include "fastlattice/MaterialContactRegion.hpp"
 #include "fracture/ActiveMatter.hpp"
 
 #include <cstdint>
@@ -305,6 +306,12 @@ public:
     }
     virtual ExternalPointTransferLedger applyExternalPointVelocities(std::span<const ExternalPointVelocity>) {
         throw std::invalid_argument("this lattice backend does not implement regional contact");
+    }
+    // Select from actual current mobility, positions and surviving canonical
+    // bonds. No full state download or caller-provided connectivity snapshot.
+    [[nodiscard]] virtual MaterialContactRegion externalContactRegion(
+        std::uint32_t,const MaterialContactRegionSettings &) const {
+        throw std::invalid_argument("this lattice backend does not implement live contact regions");
     }
     // Continue from the current state; the status accumulates across calls.
     virtual RunStatus run(const RunControl &control) = 0;

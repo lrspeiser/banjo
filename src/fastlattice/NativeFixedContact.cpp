@@ -60,4 +60,11 @@ NativeFixedSurfaceTransfer applyNativeFixedSurfaceTransfer(JoltWorld &world,Latt
     out.target=target.applyExternalPointVelocities(updates);
     return out;
 }
+NativeFixedSurfaceTransfer applyNativeFixedLocalSurfaceTransfer(JoltWorld &world,LatticeBackend &target,
+    std::uint32_t seed,const MaterialContactRegionSettings &region_settings,MatterBodyId proxy,MatterBodyId striker,
+    Vec3 surface,Vec3 normal,double gap,const PointRigidContactSettings &settings,const PointContactRoundoffBudget &budget) {
+    auto region=target.externalContactRegion(seed,region_settings);
+    auto out=applyNativeFixedSurfaceTransfer(world,target,region.nodes,proxy,striker,surface,normal,gap,settings,budget);
+    out.region=std::move(region);return out;
+}
 }

@@ -160,6 +160,7 @@ add_library(
     src/fastlattice/LatticeSchedule.cpp
     src/fastlattice/FastLattice.cpp
     src/fastlattice/CpuLatticeBackend.cpp
+    src/fastlattice/MaterialContactRegion.cpp
     src/fastlattice/ParallelCpuLatticeBackend.cpp
     src/fastlattice/Refracture.cpp
     src/fastlattice/SolidMatterPatch.cpp

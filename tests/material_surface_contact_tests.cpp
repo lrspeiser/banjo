@@ -1,4 +1,5 @@
 #include "fastlattice/NativeFixedContact.hpp"
+#include "fastlattice/ConstituentPartition.hpp"
 #include "material/MaterialCatalog.hpp"
 #include "material/MaterialCompiler.hpp"
 #include "matter/BoxLattice.hpp"
@@ -21,6 +22,37 @@ std::vector<ActiveNodeState> cube(double mass=2,Vec3 origin={}) {
         out.push_back({p,p,Vec3{1,-2,.3}+cross(Vec3{.2,.5,-.7},p-origin),mass,{}});
     }
     return out;
+}
+void liveGraphSelectionOracles() {
+    const auto nodes=cube();std::vector<std::uint32_t> a,b;
+    for(unsigned i=0;i<nodes.size();++i)for(unsigned j=i+1;j<nodes.size();++j)
+        if(std::abs(length(nodes[i].position_world_m-nodes[j].position_world_m)-.04)<1e-15){a.push_back(i);b.push_back(j);}
+    MaterialContactTopology graph(8,a,b);std::vector<std::uint8_t> alive(a.size(),1);
+    const auto position=[&](unsigned i){return nodes[i].position_world_m;};
+    const auto mobile=[](unsigned){return true;};
+    const auto region=graph.select(0,alive,{.08,3,64,4096},position,mobile);
+    require(region.nodes==std::vector<std::uint32_t>{0,1,2,4,3,5,6,7}&&region.maximum_hop==3,"deterministic breadth-first support oracle");
+    require(graph.select(0,alive,{.045,3,64,4096},position,mobile).nodes==std::vector<std::uint32_t>{0,1,2,4},"physical support radius oracle");
+    require(graph.select(0,alive,{.08,1,64,4096},position,mobile).nodes==std::vector<std::uint32_t>{0,1,2,4},"bounded graph depth oracle");
+    for(unsigned k=0;k<a.size();++k)if(nodes[a[k]].position_world_m.x!=nodes[b[k]].position_world_m.x)alive[k]=0;
+    require(graph.select(0,alive,{.08,3,64,4096},position,mobile).nodes==std::vector<std::uint32_t>{0,1,2,3},"cut plane still spread contact into other piece");
+    auto nearby=nodes;
+    for(auto &n:nearby)if(n.position_world_m.x>0)n.position_world_m.x=-.019; // Near/overlap does not heal topology.
+    require(graph.select(0,alive,{.08,3,64,4096},[&](unsigned i){return nearby[i].position_world_m;},mobile).nodes.size()==4,"touching disconnected pieces healed graph");
+    std::fill(alive.begin(),alive.end(),std::uint8_t{0});
+    require(graph.select(0,alive,{.08,3,64,4096},position,mobile).nodes==std::vector<std::uint32_t>{0},"isolated material borrowed surrounding support");
+    std::fill(alive.begin(),alive.end(),std::uint8_t{1});
+    const auto clamped=graph.select(0,alive,{.08,3,64,4096},position,[](unsigned i){return i!=1&&i!=2&&i!=4;});
+    require(clamped.nodes==std::vector<std::uint32_t>{0}&&clamped.clamped_edge_visits==3,"region traversed clamps to remote cells");
+    rejects([&]{(void)graph.select(0,alive,{.08,3,3,4096},position,mobile);},"node overflow silently truncated support");
+    rejects([&]{(void)graph.select(0,alive,{.08,3,64,1},position,mobile);},"edge overflow silently truncated support");
+    rejects([&]{(void)graph.select(8,alive,{.08,3,64,4096},position,mobile);},"invalid region seed admitted");
+    rejects([&]{(void)graph.select(0,alive,{.08,3,64,4096},position,[](unsigned){return false;});},"clamped seed admitted");
+    alive[0]=2;rejects([&]{(void)graph.select(0,alive,{.08,3,64,4096},position,mobile);},"invalid live bond flag admitted");
+    rejects([&]{(void)graph.select(0,{}, {.08,3,64,4096},position,mobile);},"stale topology dimensions admitted");
+    rejects([&]{(void)graph.select(0,alive,{.08,0,64,4096},position,mobile);},"unbounded/zero hop setting admitted");
+    rejects([&]{(void)graph.select(0,alive,{.08,3,64,4096},[](unsigned){return Vec3{std::numeric_limits<double>::infinity(),0,0};},mobile);},"nonfinite current geometry admitted");
+    const std::uint32_t invalid[]{8};rejects([&]{(void)MaterialContactTopology(8,invalid,invalid);},"invalid immutable endpoints admitted");
 }
 void analyticalSurfaceOracles() {
     const Vec3 p{-.04,.01,.015},j{.4,.3,-.2};const auto nodes=cube();
@@ -73,16 +105,16 @@ void analyticalSurfaceOracles() {
 }
 struct Target {
     MaterialDefinition material;LatticeAsset asset;ActiveMatter matter;LatticeSchedule schedule;LatticeState state;StepSettings<double> settings{};
-    Target(MaterialPreset preset,double dt=1e-7):material(makeReferenceMaterial(preset,17)) {
+    Target(MaterialPreset preset,double dt=1e-7,double extent=.08,Vec3 origin={.08,0,0}):material(makeReferenceMaterial(preset,17)) {
         const auto law=withPlasticFlow(withStrengthDerivedFailure(compileElasticLatticeReference(material,.04,1),material),material);
-        asset=generateBoxTileLattice({{.08,.08,.08},.04,1},law);matter.asset=&asset;matter.material=law;
+        asset=generateBoxTileLattice({{extent,extent,extent},.04,1},law);matter.asset=&asset;matter.material=law;
         for(const auto &n:asset.nodes) {
-            const Vec3 p=Vec3{.08,0,0}+n.local_position_m;
+            const Vec3 p=origin+n.local_position_m;
             matter.nodes.push_back({p,p,{},n.represented_volume_m3*material.density_kg_m3,{}});
             matter.reference_positions_world_m.push_back(p);
         }
         matter.bonds.resize(asset.bonds.size());schedule=buildLatticeSchedule(asset);
-        state=buildLatticeState(matter,schedule,{.08,0,0});
+        state=buildLatticeState(matter,schedule,origin);
         settings.dt=dt;settings.audit_energy=1;settings.bond_integrator=kBondVelocityVerlet;
         settings.plastic_yield_stretch=law.yield_stretch;settings.plastic_hardening=law.plastic_hardening_ratio;
     }
@@ -146,7 +178,141 @@ void bulkAtomicity() {
     require(target.download(*fresh).v==pristine.v&&fresh->status().external_point_transfer.transfers==0,"refused native candidate changed target");
     near(length(tool.world.snapshot(1).linear_velocity_m_s-source.linear_velocity_m_s),0,0,"refused native candidate changed head");
 }
-void matchedNativeSurfaceTrajectories() {
+void authoritativeTopologyAdmission() {
+    Target target(MaterialPreset::Glass);Tool tool;const auto source=tool.world.snapshot(1);
+    auto disconnected=target.state;
+    // A prescribed damaged initial state, not a fracture result. This tests
+    // ownership safety; the sustained cases below generate their own failures.
+    for(unsigned k=0;k<disconnected.bond_count;++k)
+        if(disconnected.x0[3*disconnected.bond_a[k]]!=disconnected.x0[3*disconnected.bond_b[k]])disconnected.alive[k]=0;
+    auto backend=target.backend();backend->upload(disconnected,target.settings,{});
+    const auto region=backend->externalContactRegion(0,{.08,3,64,4096});require(region.nodes.size()==4,"backend reused stale intact support");
+    rejects([&]{(void)applyNativeFixedLocalSurfaceTransfer(tool.world,*backend,0,{.08,3,64,4096},2,1,{.04,.01,.01},{1,0,0},0,{}, {1e-5,1e-5,1e-5});},"planar damaged support silently accepted surface torque");
+    require(target.download(*backend).v==disconnected.v&&backend->status().external_point_transfer.transfers==0,"unsupported damaged support changed target");
+    near(length(tool.world.snapshot(1).linear_velocity_m_s-source.linear_velocity_m_s),0,0,"unsupported damaged support changed source");
+    auto changed=target.state;
+    for(unsigned i=1;i<changed.node_count;++i)changed.u[3*i]+=1;
+    backend->upload(changed,target.settings,{});
+    require(backend->externalContactRegion(0,{.08,3,64,4096}).nodes.size()==1,"backend selected reference rather than current positions");
+    backend->upload(target.state,target.settings,{});
+    const auto before=backend->externalContactRegion(0,{.08,3,64,4096});
+    require(before.nodes.size()==8,"restored upload failed contact topology refresh");
+    require(!runNativeFixedTargetTrial(tool.world,*backend,[&]{
+        const auto r=applyNativeFixedLocalSurfaceTransfer(tool.world,*backend,0,{.08,3,64,4096},2,1,{.04,.01,.01},{1,0,0},0,{}, {1e-5,1e-5,1e-5});
+        require(r.region.nodes.size()==8&&r.source.contact.modal_contact.applied,"local transfer never exercised graph");
+        tool.world.step(target.settings.dt);backend->run({.max_steps=1});return false;
+    }),"local graph trial unexpectedly accepted");
+    const auto after=backend->externalContactRegion(0,{.08,3,64,4096});
+    require(before.nodes==after.nodes&&after.target_step==0&&backend->status().external_point_transfer.transfers==0,"rolled back contact reused changed graph clock");
+    near(length(tool.world.snapshot(1).linear_velocity_m_s-source.linear_velocity_m_s),0,0,"local rollback failed source");
+}
+unsigned sustainedLocalContact() {
+    unsigned open_gates=0;
+    for(double width:{.04,.12})for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        std::vector<std::uint8_t> coarse_alive;double coarse_error=0;
+        for(double dt:{1e-7,5e-8}) {
+            Target target(preset,dt,.12,{.1,0,0});Tool tool(width);
+            for(unsigned i=0;i<target.state.node_count;++i)if(target.state.x0[3*i]>.039)target.state.inv_mass[i]=0;
+            auto backend=target.backend();const auto initial=totals(target.state,tool.world);
+            struct Ledger {
+                double loss{},reconcile{},transfer_energy{},native_energy{};
+                Vec3 transfer_p{},transfer_l{},geometry_couple{},native_p{},native_l{};
+                unsigned contacts{},minimum_nodes{64},maximum_nodes{};
+            } sum;
+            std::string refusal;unsigned attempted=0,accepted=0;const unsigned count=dt==1e-7?2048:4096;
+            const auto started=std::chrono::steady_clock::now();
+            for(unsigned k=0;k<count;++k) {
+                ++attempted;Ledger delta;const auto before=target.download(*backend);const auto old=backend->status();
+                const auto head=tool.world.snapshot(1),handle=tool.world.snapshot(10);
+                const bool ok=runNativeFixedTargetTrial(tool.world,*backend,[&] {
+                    for(unsigned i=0;i<before.node_count;++i) {
+                        const Vec3 at=before.origin+Vec3{before.x0[3*i]+before.u[3*i],before.x0[3*i+1]+before.u[3*i+1],before.x0[3*i+2]+before.u[3*i+2]};
+                        require(tool.world.materialShapeContacts(10,at,{PrimitiveKind::Box,0,{.04,.04,.04}},{},1e-5).contacts.empty(),"sustained fixture omitted handle contact");
+                        const auto hits=tool.world.materialShapeContacts(1,at,{PrimitiveKind::Box,0,{.04,.04,.04}},{},1e-5).contacts;
+                        if(before.inv_mass[i]==0){require(hits.empty(),"sustained fixture omitted direct clamp contact");continue;}
+                        for(const auto &hit:hits) {
+                            // Only support admission can end this bounded experiment.
+                            // Any source-law or integrator failure still fails the test.
+                            try {
+                                const auto region=backend->externalContactRegion(i,{.1,3,64,4096});
+                                std::vector<ActiveNodeState> points;
+                                for(const auto n:region.nodes)points.push_back(backend->externalContactPoint(n));
+                                (void)makeMaterialContactStencil(points,hit.point_on_body_world_m);
+                            }catch(const std::invalid_argument &e){refusal=e.what();return false;}
+                            const auto law=combineContactMaterials(compileContactMaterial(target.material),hit.body_contact);
+                            const auto r=applyNativeFixedLocalSurfaceTransfer(tool.world,*backend,i,{.1,3,64,4096},2,1,
+                                hit.point_on_body_world_m,hit.normal_world,hit.gap_m,
+                                {law.static_friction,law.dynamic_friction,law.restitution},{1e-5,1e-5,1e-5});
+                            if(!r.source.contact.modal_contact.applied)continue;
+                            ++delta.contacts;delta.minimum_nodes=std::min(delta.minimum_nodes,static_cast<unsigned>(r.region.nodes.size()));
+                            delta.maximum_nodes=std::max(delta.maximum_nodes,static_cast<unsigned>(r.region.nodes.size()));
+                            delta.loss+=r.source.contact.modal_contact.dissipated_energy_j;delta.reconcile+=r.source.contact.reconciliation_loss_j;
+                            delta.transfer_energy+=r.source.numerical_energy_change_j;delta.transfer_p+=r.source.momentum_error_kg_m_s;
+                            delta.transfer_l+=r.source.angular_momentum_error_kg_m2_s;delta.geometry_couple+=r.source.contact.geometry_couple_kg_m2_s;
+                        }
+                    }
+                    const auto a=tool.world.mechanicalTotals();tool.world.step(dt);const auto b=tool.world.mechanicalTotals();backend->run({.max_steps=1});
+                    delta.native_energy=b.kinetic_energy_j-a.kinetic_energy_j;delta.native_p=b.linear_momentum_kg_m_s-a.linear_momentum_kg_m_s;
+                    delta.native_l=b.angular_momentum_kg_m2_s-a.angular_momentum_kg_m2_s;return true;
+                });
+                if(!ok) {
+                    const auto restored=target.download(*backend);
+                    require(!refusal.empty()&&restored.u==before.u&&restored.u_prev==before.u_prev&&restored.v==before.v&&
+                        restored.alive==before.alive&&restored.damage==before.damage&&restored.plastic_strain==before.plastic_strain&&
+                        restored.prev_tensile==before.prev_tensile&&restored.prev_compressive==before.prev_compressive&&restored.prev_shear==before.prev_shear&&
+                        backend->status().total_steps==old.total_steps&&backend->status().external_point_transfer.transfers==old.external_point_transfer.transfers&&
+                        backend->status().fixed_boundary.impulse_n_s.x==old.fixed_boundary.impulse_n_s.x,"unsupported live region leaked tentative target state/accounts");
+                    for(const auto &[id,snapshot]:{std::pair{1U,head},std::pair{10U,handle}}) {
+                        const auto now=tool.world.snapshot(id);
+                        near(length(now.center_of_mass_world_m-snapshot.center_of_mass_world_m),0,0,"unsupported live region moved source");
+                        near(length(now.linear_velocity_m_s-snapshot.linear_velocity_m_s),0,0,"unsupported live region kicked source");
+                        near(length(now.angular_velocity_rad_s-snapshot.angular_velocity_rad_s),0,0,"unsupported live region spun source");
+                    }
+                    break;
+                }
+                ++accepted;sum.contacts+=delta.contacts;sum.minimum_nodes=std::min(sum.minimum_nodes,delta.minimum_nodes);sum.maximum_nodes=std::max(sum.maximum_nodes,delta.maximum_nodes);
+                sum.loss+=delta.loss;sum.reconcile+=delta.reconcile;sum.transfer_energy+=delta.transfer_energy;sum.native_energy+=delta.native_energy;
+                sum.transfer_p+=delta.transfer_p;sum.transfer_l+=delta.transfer_l;sum.geometry_couple+=delta.geometry_couple;sum.native_p+=delta.native_p;sum.native_l+=delta.native_l;
+            }
+            const auto state=target.download(*backend);const auto final=totals(state,tool.world);const auto &s=backend->status();
+            const Vec3 p=final.linear_momentum_kg_m_s-initial.linear_momentum_kg_m_s-sum.transfer_p-s.fixed_boundary.impulse_n_s-s.bond_kick_roundoff_impulse_n_s;
+            const Vec3 l=final.angular_momentum_kg_m2_s-initial.angular_momentum_kg_m2_s-sum.transfer_l-sum.geometry_couple-s.fixed_boundary.angular_impulse_kg_m2_s-s.bond_kick_roundoff_angular_kg_m2_s;
+            const double energy=final.mechanicalEnergy()-initial.mechanicalEnergy()+sum.loss+sum.reconcile+s.removed_energy_j+s.plastic_work_j+s.plastic_return_numerical_loss_j-sum.transfer_energy;
+            near(length(p-sum.native_p),0,1e-9,"live graph full linear attribution");near(length(l-sum.native_l),0,1e-9,"live graph full angular attribution");
+            near(energy-sum.native_energy,s.integration_numerical_energy_j,1e-10,"live graph full energy attribution");near(final.mass_kg,initial.mass_kg,1e-12,"live graph changed material mass");
+            require(sum.contacts>0&&s.external_point_transfer.transfers==sum.contacts&&s.total_steps==accepted,"live graph lost accepted transfer/time identity");
+            require(std::abs(s.integration_numerical_energy_j)<.001*initial.mechanicalEnergy(),"live graph exceeded retained integration bound");
+            if(preset==MaterialPreset::Oak)require(s.broken_bonds==0,"live graph made oak brittle");
+            if(dt==1e-7){coarse_alive=state.alive;coarse_error=std::abs(s.integration_numerical_energy_j);}
+            else {
+                if(coarse_alive!=state.alive) {
+                    ++open_gates;std::cout<<"OPEN live-contact topology refinement: "<<materialPresetName(preset)<<", width "<<width<<'\n';
+                }
+                if(std::abs(s.integration_numerical_energy_j)>=.27*coarse_error) {
+                    ++open_gates;std::cout<<"OPEN live-contact integration refinement: "<<materialPresetName(preset)<<", width "<<width<<'\n';
+                }
+            }
+            const auto partition=partitionConstituents(target.asset,target.schedule,state);
+            unsigned attached=0;double detached_mass=0;
+            for(const auto &component:partition.components) {
+                if(component.attached_to_boundary)++attached;
+                else for(double mass:component.state.mass)detached_mass+=mass;
+            }
+            std::cout<<"LIVE_GRAPH_CONTACT_EVIDENCE {\"material\":\""<<materialPresetName(preset)<<"\",\"width_m\":"<<width<<",\"cell_m\":0.04,\"dt_s\":"<<dt
+                <<",\"accepted_steps\":"<<accepted<<",\"attempted_steps\":"<<attempted<<",\"accepted_time_s\":"<<accepted*dt<<",\"contacts\":"<<sum.contacts
+                <<",\"minimum_support_nodes\":"<<sum.minimum_nodes<<",\"maximum_support_nodes\":"<<sum.maximum_nodes<<",\"broken_bonds\":"<<s.broken_bonds
+                <<",\"components\":"<<partition.components.size()<<",\"attached_components\":"<<attached<<",\"detached_mass_kg\":"<<detached_mass
+                <<",\"unsupported_region\":\""<<refusal<<"\",\"total_mass_kg\":"<<final.mass_kg
+                <<",\"p_residual_n_s\":"<<length(p)<<",\"l_residual_kg_m2_s\":"<<length(l)<<",\"unallocated_energy_j\":"<<energy
+                <<",\"attributed_linear_error_n_s\":"<<length(p-sum.native_p)<<",\"attributed_angular_error_kg_m2_s\":"<<length(l-sum.native_l)
+                <<",\"attributed_energy_error_j\":"<<energy-sum.native_energy-s.integration_numerical_energy_j
+                <<",\"native_step_energy_j\":"<<sum.native_energy<<",\"integration_error_j\":"<<s.integration_numerical_energy_j
+                <<",\"wall_s\":"<<std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count()<<"}\n";
+        }
+    }
+    return open_gates;
+}
+void matchedNativeSurfaceTrajectories(bool local=false) {
     // A short pre-fracture experiment: all eight actual cells stay connected.
     // Never spread a stencil over separated debris. Long-time contact/topology
     // selection is a later gate. No damping, gravity, clamps or artificial spin.
@@ -166,8 +332,12 @@ void matchedNativeSurfaceTrajectories() {
                     for(const auto &hit:tool.world.materialShapeContacts(1,at,{PrimitiveKind::Box,0,{.04,.04,.04}},{},1e-5).contacts) {
                         const auto law=combineContactMaterials(compileContactMaterial(target.material),hit.body_contact);
                         // Common source-surface reaction point, with current native gap/normal.
-                        const auto r=applyNativeFixedSurfaceTransfer(tool.world,*b,ids,2,1,hit.point_on_body_world_m,
-                            hit.normal_world,hit.gap_m,{law.static_friction,law.dynamic_friction,law.restitution},{1e-5,1e-5,1e-5});
+                        const PointRigidContactSettings settings{law.static_friction,law.dynamic_friction,law.restitution};
+                        const PointContactRoundoffBudget budget{1e-5,1e-5,1e-5};
+                        const auto r=local?applyNativeFixedLocalSurfaceTransfer(tool.world,*b,i,{.08,3,64,4096},2,1,
+                            hit.point_on_body_world_m,hit.normal_world,hit.gap_m,settings,budget):
+                            applyNativeFixedSurfaceTransfer(tool.world,*b,ids,2,1,hit.point_on_body_world_m,hit.normal_world,hit.gap_m,settings,budget);
+                        if(local)require(r.region.nodes.size()==8&&r.region.target_step==b->status().total_steps,"local comparison stale region");
                         if(!record||!r.source.contact.modal_contact.applied)continue;
                         ++contacts;loss+=r.source.contact.modal_contact.dissipated_energy_j;reconcile+=r.source.contact.reconciliation_loss_j;
                         transfer_e+=r.source.numerical_energy_change_j;transfer_p+=r.source.momentum_error_kg_m_s;
@@ -198,7 +368,7 @@ void matchedNativeSurfaceTrajectories() {
             require(std::abs(s.integration_numerical_energy_j)<.001*initial.mechanicalEnergy(),"surface integration exceeded retained 0.1% bound");
             if(dt==1e-7)coarse_error=std::abs(s.integration_numerical_energy_j);
             else require(std::abs(s.integration_numerical_energy_j)<.27*coarse_error,"surface timestep refinement failed");
-            std::cout<<"SURFACE_CONTACT_EVIDENCE {\"material\":\""<<materialPresetName(preset)<<"\",\"width_m\":"<<width<<",\"cell_m\":0.04,\"dt_s\":"<<dt
+            std::cout<<(local?"LOCAL_SURFACE_EVIDENCE ":"SURFACE_CONTACT_EVIDENCE ")<<"{\"material\":\""<<materialPresetName(preset)<<"\",\"width_m\":"<<width<<",\"cell_m\":0.04,\"dt_s\":"<<dt
                 <<",\"steps\":"<<count<<",\"support_nodes\":"<<ids.size()<<",\"contacts\":"<<contacts<<",\"target_mass_kg\":"<<target.material.density_kg_m3*.000512
                 <<",\"total_mass_kg\":"<<final.mass_kg<<",\"broken_bonds\":"<<s.broken_bonds<<",\"p_residual_n_s\":"<<length(p)<<",\"l_residual_kg_m2_s\":"<<length(l)
                 <<",\"unallocated_energy_j\":"<<e<<",\"integration_error_j\":"<<s.integration_numerical_energy_j<<",\"native_step_energy_j\":"<<native_e
@@ -208,4 +378,12 @@ void matchedNativeSurfaceTrajectories() {
     }
 }
 }
-int main(){try{std::cout.precision(12);analyticalSurfaceOracles();bulkAtomicity();matchedNativeSurfaceTrajectories();std::cout<<"[PASS] bounded material surface transfer\n";return 0;}catch(const std::exception &e){std::cerr<<"[FAIL] "<<e.what()<<'\n';return 1;}}
+int main(int argc,char **argv){try{
+    const bool strict=argc==2&&std::string(argv[1])=="--require-live-contact-convergence";
+    require(argc==1||strict,"unknown surface-contact test option");
+    std::cout.precision(12);liveGraphSelectionOracles();analyticalSurfaceOracles();bulkAtomicity();authoritativeTopologyAdmission();
+    matchedNativeSurfaceTrajectories();matchedNativeSurfaceTrajectories(true);const auto open=sustainedLocalContact();
+    std::cout<<"[PASS] bounded material surface transfer; open sustained convergence gates: "<<open<<'\n';
+    if(strict&&open){std::cerr<<"[FAIL] sustained surface-contact acceptance remains open\n";return 1;}
+    return 0;
+}catch(const std::exception &e){std::cerr<<"[FAIL] "<<e.what()<<'\n';return 1;}}

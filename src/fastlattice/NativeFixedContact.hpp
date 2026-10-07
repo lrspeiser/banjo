@@ -31,6 +31,7 @@ struct NativeFixedSurfaceTransfer {
     FixedPointContactKick source;
     ExternalPointTransferLedger target;
     MaterialContactStencil stencil;
+    MaterialContactRegion region; // Populated by the live local-region wrapper.
     Vec3 target_impulse_error_n_s{},target_angular_error_kg_m2_s{};
     double target_work_error_j{},horizon_s{};
     std::uint64_t target_step{};
@@ -45,4 +46,12 @@ struct NativeFixedSurfaceTransfer {
     MatterBodyId target_proxy,MatterBodyId striker,Vec3 surface_world_m,
     Vec3 normal_world,double gap_m,const PointRigidContactSettings &settings,
     const PointContactRoundoffBudget &budget);
+// Authoritative graph selection immediately before this contact. Does not
+// accept a cached region; broken bonds and moved cells are read now. A valid
+// graph region may still refuse affine contact if thin/singular/isolated.
+[[nodiscard]] NativeFixedSurfaceTransfer applyNativeFixedLocalSurfaceTransfer(
+    JoltWorld &world,LatticeBackend &target,std::uint32_t seed,
+    const MaterialContactRegionSettings &region_settings,MatterBodyId target_proxy,
+    MatterBodyId striker,Vec3 surface_world_m,Vec3 normal_world,double gap_m,
+    const PointRigidContactSettings &settings,const PointContactRoundoffBudget &budget);
 }

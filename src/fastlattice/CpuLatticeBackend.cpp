@@ -74,6 +74,16 @@ public:
                 throw std::invalid_argument("Verlet reference needs complete node/bond arrays");
         }
         auto staged=WorkingLattice<Real>::fromState(state,schedule_);
+        // Contact selection is qualified only in this bounded reference. Larger
+        // lattices keep their existing backend support; the contact API refuses.
+        std::unique_ptr<MaterialContactTopology> staged_topology;
+        if constexpr(std::is_same_v<Real,double>) {
+            if(settings.bond_integrator==kBondVelocityVerlet&&state.node_count&&state.node_count<=1024&&state.bond_count<=65536) {
+                if(state.bond_a.size()!=state.bond_count||state.bond_b.size()!=state.bond_count)
+                    throw std::invalid_argument("live contact topology needs complete canonical bonds");
+                staged_topology=std::make_unique<MaterialContactTopology>(state.node_count,state.bond_a,state.bond_b);
+            }
+        }
         CpuExternalLoads<Real> staged_gravity;staged_gravity.reset(state.origin);
         if (settings.bond_integrator==kBondVelocityVerlet) {
             const auto arrays=staged.arrays();const auto converted=convertSettings<Real>(settings);
@@ -84,6 +94,7 @@ public:
             staged_gravity.set(forces,std::numeric_limits<std::uint64_t>::max(),arrays,true);
         }
         working_ = std::move(staged);
+        contact_topology_=std::move(staged_topology);
         L_ = working_.arrays();
         S_ = convertSettings<Real>(settings);
         sphere_ = convertSphere<Real>(sphere);
@@ -168,6 +179,16 @@ public:
         status_.external_point_transfer=total;return receipt;
         }else throw std::invalid_argument("external point contact requires serial double CPU");
     }
+    [[nodiscard]] MaterialContactRegion externalContactRegion(std::uint32_t seed,const MaterialContactRegionSettings &settings) const override {
+        if constexpr(std::is_same_v<Real,double>) {
+            (void)externalContactTimestep();
+            if(!contact_topology_)throw std::invalid_argument("live contact regions need bounded serial-double Verlet");
+            auto out=contact_topology_->select(seed,working_.alive,settings,
+                [&](std::uint32_t i){return externalContactPoint(i).position_world_m;},
+                [&](std::uint32_t i){return working_.inv_mass[i]>0;});
+            out.target_step=status_.total_steps;return out;
+        }else throw std::invalid_argument("live material contact requires serial double CPU");
+    }
 
     RunStatus run(const RunControl &control) override {
         energy_flat_fraction_ = control.energy_flat_fraction;
@@ -223,6 +244,8 @@ public:
     [[nodiscard]] std::vector<std::uint32_t> firstFailureBonds() const override { return first_failure_bonds_; }
 
 private:
+    // Immutable across every trial; upload/configuration are forbidden in trials.
+    std::unique_ptr<MaterialContactTopology> contact_topology_;
     static bool finite(Vec3 v) {return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z);}
     static ExternalPointTransferLedger combinedPointLedger(const ExternalPointTransferLedger &a,const ExternalPointTransferLedger &b) {
         if(a.transfers>std::numeric_limits<std::uint64_t>::max()-b.transfers)throw std::overflow_error("external point count overflow");
