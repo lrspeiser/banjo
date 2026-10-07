@@ -1289,7 +1289,10 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
         {"active",hit.active},{"contacted",hit.contacted},{"reason",hit.reason},{"tool",hit.tool},
         {"target",hit.target},{"point_id",hit.point_id},{"target_m",vec(hit.target_m)},
         {"target_displacement_m",vec(hit.target_displacement_m)},{"started_s",hit.started_s},
-        {"ended_s",hit.ended_s},{"hand_work_j",hit.hand_work_j},{"stroke_ended",hit.stroke_ended}};
+        {"ended_s",hit.ended_s},{"hand_work_j",hit.hand_work_j},{"stroke_ended",hit.stroke_ended},
+        {"phase",hit.phase},{"contact_part",hit.contact_part},{"contact_speed_m_s",hit.contact_speed_m_s},{"swing_rotation_rad",hit.swing_rotation_rad},
+        {"peak_tip_speed_m_s",hit.peak_tip_speed_m_s},{"intrinsic_fracture_supported",false},
+        {"obstruction",hit.obstruction},{"obstruction_speed_m_s",hit.obstruction_speed_m_s}};
     state["player_physical_hits"]=std::move(physical_hits);
     auto native_players = nlohmann::json::object();
     // Native actor state and source accounts may feed later authoritative

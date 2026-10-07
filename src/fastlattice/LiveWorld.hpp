@@ -1267,10 +1267,10 @@ struct LiveStrike {
 };
 struct LivePhysicalHit {
     bool admitted{},active{},contacted{};
-    std::string reason,tool,target,stroke_ended;
+    std::string reason,tool,target,stroke_ended,phase,contact_part,obstruction;
     unsigned point_id{};
     Vec3 target_m{},target_displacement_m{};
-    double started_s{},ended_s{},hand_work_j{};
+    double started_s{},ended_s{},hand_work_j{},contact_speed_m_s{},swing_rotation_rad{},peak_tip_speed_m_s{},obstruction_speed_m_s{};
     LiveStroke stroke; // Desired grip path only; never a body pose or velocity.
 };
 

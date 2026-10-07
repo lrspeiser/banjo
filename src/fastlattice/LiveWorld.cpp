@@ -688,7 +688,7 @@ struct LiveWorld::Impl {
     // decision are about: a body that has already been answered for must not be
     // re-offered on the strength of a contact from three steps ago.
     std::vector<LiveImpact> last_impacts;
-    std::vector<std::pair<std::string,std::string>> native_contact_pairs;
+    std::vector<std::tuple<std::string,std::string,double>> native_contact_pairs;
     // Every contact since the host last said it had read them. The hardest of
     // each pair survives, because a landing reports the same pair many times as
     // it settles and the one that matters is the one that arrived.
@@ -3353,12 +3353,37 @@ struct LiveWorld::Impl {
     };
     std::map<std::string, NativePlayer> native_players;
     struct PhysicalHit {
-        std::size_t next_waypoint{1}; LivePhysicalHit state;
+        unsigned stage{}; LivePhysicalHit state;
+        Quat swing_from{};
+        double stage_started_s{};
         std::vector<std::string> parts;
-        Vec3 target_before{};
+        Vec3 target_before{},target_contact_local{};
         double work_before{};
     };
     std::map<std::string,PhysicalHit> physical_hits;
+    [[nodiscard]] std::pair<Vec3,Vec3> physicalHitTracking(const std::string &actor) const {
+        const auto hit=physical_hits.find(actor);
+        if(hit==physical_hits.end() || !hit->second.state.active || hit->second.stage!=2)return {};
+        const auto target=index_of.find(hit->second.state.target);
+        if(target==index_of.end() || !inWorld(target->second))return {};
+        const auto p=world->snapshot(body_of[target->second]);
+        const Vec3 arm=p.orientation_world.rotate(hit->second.target_contact_local);
+        return {p.center_of_mass_world_m+arm-hit->second.state.target_m,
+                p.linear_velocity_m_s+cross(p.angular_velocity_rad_s,arm)};
+    }
+    [[nodiscard]] double physicalHitStrength(const std::string &actor) const {
+        const auto hit=physical_hits.find(actor), own_hit=physical_hits.end();
+        const auto own=native_players.find(actor);
+        if(hit==own_hit || !hit->second.state.active || own==native_players.end() || holding>=body_of.size())
+            return hand_strength_n;
+        const auto body=world->snapshot(own->second.id), tool=world->snapshot(body_of[holding]);
+        const Vec3 grip=tool.center_of_mass_world_m+tool.orientation_world.rotate(grip_local);
+        // A finite player has to oppose the actual hand wrench. Reserve its
+        // wrist-torque budget and cap the force by the remaining posture torque
+        // at this grip lever arm. Do not prescribe player/tool poses or spin.
+        const double reserve=std::max(0.0,kWalkMostTorqueNm-hand_torque_n_m);
+        return std::min(hand_strength_n,reserve/std::max(.3,length(grip-body.center_of_mass_world_m)));
+    }
     [[nodiscard]] bool gripWithinNativeReach(const std::string &actor, const Vec3 &grip) const {
         const auto own = native_players.find(actor);
         if (own == native_players.end()) return true; // editor/laboratory hand
@@ -6668,9 +6693,11 @@ bool LiveWorld::judgeStep() {
     for (const ImpactEvent &event : events) {
         const auto contactName=[&](MatterBodyId id) {
             const auto at=index_of_body.find(id);
-            return at==index_of_body.end()?std::string("the ground"):impl_->described[at->second].name;
+            if(at!=index_of_body.end())return impl_->described[at->second].name;
+            for(const auto &[actor,player]:impl_->native_players)if(player.id==id)return "native-player:"+actor;
+            return std::string("the ground");
         };
-        impl_->native_contact_pairs.emplace_back(contactName(event.body_a),contactName(event.body_b));
+        impl_->native_contact_pairs.emplace_back(contactName(event.body_a),contactName(event.body_b),event.closing_speed_m_s);
         // A blade's own contacts are kept for the cutting model, which reports
         // the ones that did not bite -- a flat strike, a glance -- from them.
         if (blade_bodies.count(event.body_a) || blade_bodies.count(event.body_b))
@@ -6901,19 +6928,33 @@ void LiveWorld::step(double dt_s) {
         if (!(held.mass_kg > 0.0)) return out;
         // A fixed group's large idle wishes retain the stable 20 rad/s law.
         // Bounded strokes track their continuous path at 100 rad/s while the
-        // wrist remains at 20 rad/s. Slowing both stalled short strokes;
-        // speeding idle position jumps instead destabilized heavy tools.
+        // wrist remains at 20 rad/s for idle carry. A continuous configured
+        // angular stroke uses 60 rad/s with spin feed-forward; 20 rad/s lagged
+        // the short tool arc enough to hit neighbouring matter. Torque stays
+        // capped at the declared hand limit. Idle position jumps remain slow.
         // The free-body preview uses the unchanged single-body controller;
         // jointed projections are explicitly refused below.
         const bool fixed_group = impl_->jointedWith(impl_->holding,true).size()>1;
         const bool bounded_motion=impl_->stroke || (impl_->native_use && impl_->native_use->controller.state().active);
+        Vec3 desired_spin{};
+        if (impl_->native_carry) desired_spin=impl_->world->snapshot(impl_->native_players.at(actor).id).angular_velocity_rad_s;
+        else if (impl_->stroke && !impl_->stroke->asked.facings_wxyz.empty()) {
+            // Angular feed-forward follows the desired path, as translational
+            // feed-forward already does. This is a bounded torque wish, not
+            // an assigned tool spin. Opposite wrist reaction still acts on the actor.
+            const auto &s=*impl_->stroke;
+            const double along=impl_->hand_step.target_along_m;
+            const double end=std::min(s.length_m,along+1e-4);
+            if(end>along)desired_spin=(impl_->hand_step.target_speed_m_s/(end-along))*
+                gripTurnBetween(impl_->held_facing,facingAlong(s.asked.facings_wxyz,s.at_m,end));
+        }
         const GripPull pull = gripPull(held, grip_local, impl_->held_at,
                                        impl_->held_velocity, impl_->held_facing,
-                                       impl_->hand_strength_n, impl_->hand_torque_n_m,
+                                       impl_->physicalHitStrength(actor), impl_->hand_torque_n_m,
                                        impl_->request.gravity_m_s2,
                                        fixed_group && !bounded_motion ? 20.0 : 100.0,
-                                       fixed_group ? 20.0 : 100.0,
-                                       impl_->native_carry ? impl_->world->snapshot(impl_->native_players.at(actor).id).angular_velocity_rad_s : Vec3{});
+                                       fixed_group ? (impl_->stroke && !impl_->stroke->asked.facings_wxyz.empty() ? 60.0 : 20.0) : 100.0,
+                                       desired_spin);
         // An arm reaches so far. A grip further from a body's shoulder than
         // that is not in its hand: it lets go. Pulling on, against something
         // that would not give, slid the body away for as long as the pull
@@ -14834,16 +14875,17 @@ void LiveWorld::beginHandStep(double dt_s) {
         const Vec3 way = pathDirection(s.asked.path_m, s.at_m, s.target_along_m);
         bearing = dot(bearing, way) * way;
     }
-    const double most = handAcceleration(I.hand_strength_n, I.hand_mass_kg,
+    const double most = handAcceleration(I.physicalHitStrength(I.selected_hand), I.hand_mass_kg,
                                          I.wielding?I.gripMatter().first.mass_kg:I.world->mechanicalState(id).mass_kg, bearing);
+    const auto [target_offset,target_speed]=I.physicalHitTracking(I.selected_hand);
     const StrokeHand next = advanceStrokeHand(s.asked, s.length_m, s.target_along_m,
                                               s.target_speed_m_s,
-                                              alongNearest(s.asked.path_m, s.at_m, grip), most,
+                                              alongNearest(s.asked.path_m, s.at_m, grip-target_offset), most,
                                               dt_s);
     I.hand_step.target_along_m = next.along;
     I.hand_step.target_speed_m_s = next.speed;
-    I.held_at = pointAlong(s.asked.path_m, s.at_m, next.along);
-    I.held_velocity = next.speed * pathDirection(s.asked.path_m, s.at_m, next.along);
+    I.held_at = pointAlong(s.asked.path_m, s.at_m, next.along)+target_offset;
+    I.held_velocity = next.speed * pathDirection(s.asked.path_m, s.at_m, next.along)+target_speed;
     // A stroke that turns as it goes -- a swing -- turns the wrist's wish with
     // the hand; the wrist turns the thing towards it with what it has.
     if (!s.asked.facings_wxyz.empty())
@@ -14872,7 +14914,7 @@ void LiveWorld::endHandStep(const Vec3 &grip_force_n, const Vec3 &grip_torque_n_
     Impl::Stroke &s = *I.stroke;
     s.target_along_m = was.target_along_m;
     s.target_speed_m_s = was.target_speed_m_s;
-    s.grip_along_m = alongNearest(s.asked.path_m, s.at_m, grip);
+    s.grip_along_m = alongNearest(s.asked.path_m, s.at_m, grip-I.physicalHitTracking(I.selected_hand).first);
     s.recent.emplace_back(I.time_s, s.grip_along_m);
     while (s.recent.size() > 2 && s.recent.front().first < I.time_s - 0.25) s.recent.pop_front();
     const auto finish = [&I](const char *how) {
@@ -16770,18 +16812,23 @@ LivePhysicalHit LiveWorld::physicalHitAdmission(const Vec3 &from,const Vec3 &dir
     if(!point)return refuse("unsupported_capability");out.point_id=point->id;
     const auto hit=pick(from,direction,maximum,true);if(!hit.hit)return refuse("no_contact");
     out.target=hit.name;out.target_m=hit.point_world_m;
-    const auto actual=hand();const Vec3 contact_grip=actual.grip_m+(out.target_m-point->tip_m);
-    // Lift the actual held assembly clear of its support before translating.
-    // This is a desired actuator path, subject to the same native forces,
-    // arm reach and contacts as every subsequent segment.
-    const Vec3 up{0,1,0};
-    Vec3 outward{out.target_m.x-from.x,0,out.target_m.z-from.z};
-    if(length(outward)<.001)outward={1,0,0};else outward=normalized(outward);
-    out.stroke.path_m={actual.grip_m,actual.grip_m+.22*up,contact_grip+.24*up,
-        contact_grip+.04*outward-.025*up,contact_grip+.18*outward-.025*up,contact_grip+.24*up,
-        actual.grip_m+.22*up,actual.grip_m};
-    out.stroke.speed_m_s=2;out.stroke.accel_m_s2=30;out.stroke.lead_m=.025;out.stroke.give_up_s=2;
-    for(const auto &p:out.stroke.path_m)if(!I.gripWithinNativeReach(I.selected_hand,p))return refuse("out_of_reach");
+    const auto player=I.native_players.find(I.selected_hand);
+    if(player==I.native_players.end())return refuse("native_player_required");
+    const auto pose=I.world->snapshot(player->second.id);
+    LiveStrike desired;
+    desired.target_m=out.target_m;
+    desired.shoulder_m=pose.center_of_mass_world_m+pose.orientation_world.rotate(Vec3{0,kShoulderAboveCenterM,0});
+    desired.raise_deg=60;desired.speed_m_s=3;desired.give_up_s=2;
+    std::string why;
+    const auto planned=I.tools.plan(toolHost(),desired,out.tool,I.grip_local,why);
+    if(!planned)return refuse(why);
+    out.stroke=*planned;out.stroke.accel_m_s2=20;
+    // Limit the acceleration wish as well as speed: the finite wrist must
+    // oppose the moment of the translating hand force on broad/heavy heads.
+    // A real arc and wrist orientation are actuator wishes. Native bounded
+    // hand forces/torques, finite player reactions and contact own the motion.
+    for(const auto &p:out.stroke.path_m)if(length(p-desired.shoulder_m)>kArmReachM-.15)return refuse("out_of_reach");
+    if(!I.gripWithinNativeReach(I.selected_hand,hand().grip_m+Vec3{0,.22,0}))return refuse("out_of_reach");
     out.admitted=true;return out;
 }
 bool LiveWorld::beginPhysicalHit(const Vec3 &from,const Vec3 &direction,double maximum,std::string &why) {
@@ -16789,19 +16836,34 @@ bool LiveWorld::beginPhysicalHit(const Vec3 &from,const Vec3 &direction,double m
     if(!state.admitted){why=state.reason;return false;}
     Impl &I=*impl_;Impl::PhysicalHit hit;hit.state=state;hit.work_before=I.hand_work_j;
     for(const auto member:I.jointedWith(I.holding,true))hit.parts.push_back(I.described[member].name);
-    if(!state.target.empty())hit.target_before=I.world->snapshot(I.body_of[I.index_of.at(state.target)]).center_of_mass_world_m;
-    auto first=state.stroke;first.path_m={state.stroke.path_m[0],state.stroke.path_m[1]};
+    if(!state.target.empty()) {
+        const auto target=I.world->snapshot(I.body_of[I.index_of.at(state.target)]);
+        hit.target_before=target.center_of_mass_world_m;
+        hit.target_contact_local=conjugateOf(target.orientation_world).rotate(state.target_m-hit.target_before);
+    }
+    auto first=state.stroke;first.path_m={hand().grip_m,hand().grip_m+Vec3{0,.22,0}};
+    first.facings_wxyz.assign(2,I.world->snapshot(I.body_of[I.holding]).orientation_world);
+    first.speed_m_s=2;first.accel_m_s2=30;
     if(!stroke(first,why))return false;
-    hit.state.active=true;hit.state.started_s=I.time_s;I.physical_hits[I.selected_hand]=std::move(hit);return true;
+    hit.stage_started_s=I.time_s;
+    hit.state.active=true;hit.state.phase="lifting";hit.state.started_s=I.time_s;
+    I.physical_hits[I.selected_hand]=std::move(hit);return true;
 }
 void LiveWorld::endPhysicalHitStep() {
     Impl &I=*impl_;const auto found=I.physical_hits.find(I.selected_hand);
     if(found==I.physical_hits.end()||!found->second.state.active)return;
-    auto &hit=found->second;auto &state=hit.state;
-    for(const auto &[a,b]:I.native_contact_pairs) {
+    auto &hit=found->second;auto &state=hit.state;bool swing_contact=false;
+    for(const auto &[a,b,speed]:I.native_contact_pairs) {
         const auto part=[&](const std::string &name){return std::find(hit.parts.begin(),hit.parts.end(),name)!=hit.parts.end();};
         const auto target=state.target.empty()?std::string("the ground"):state.target;
-        if((a==target&&part(b))||(b==target&&part(a)))state.contacted=true;
+        if((a==target&&part(b))||(b==target&&part(a))) {
+            state.contacted=true;
+            if(state.contact_part.empty() || speed>state.contact_speed_m_s)state.contact_part=a==target?b:a;
+            state.contact_speed_m_s=std::max(state.contact_speed_m_s,speed);
+            swing_contact=swing_contact || hit.stage==2;
+        } else if(hit.stage==2 && part(a)!=part(b) && speed>state.obstruction_speed_m_s) {
+            state.obstruction=part(a)?b:a;state.obstruction_speed_m_s=speed;
+        }
     }
     state.hand_work_j=I.hand_work_j-hit.work_before;
     if(!state.target.empty()) {
@@ -16809,33 +16871,73 @@ void LiveWorld::endPhysicalHitStep() {
         if(at!=I.index_of.end()&&I.inWorld(at->second))
             state.target_displacement_m=I.world->snapshot(I.body_of[at->second]).center_of_mass_world_m-hit.target_before;
     }
-    if(I.stroke)return;
-    state.stroke_ended=I.stroke_ended;
-    // Each straight segment has its own actual-progress measurement. A
-    // nearest point on a self-crossing return path cannot skip the impact.
-    if(I.holding!=static_cast<std::size_t>(-1)) {
-        if(I.stroke_ended=="reached" && hit.next_waypoint+1<state.stroke.path_m.size()) {
-            ++hit.next_waypoint;
-        } else if(hit.next_waypoint==3 && state.contacted) {
-            hit.next_waypoint=4; // push only after measured native contact
-        } else if(hit.next_waypoint<5) {
-            hit.next_waypoint=5; // recover physically after a blocked approach
-        } else {
-            hit.next_waypoint=state.stroke.path_m.size();
-        }
-        if(hit.next_waypoint<state.stroke.path_m.size()) {
-            auto next=state.stroke;next.path_m={hand().grip_m,state.stroke.path_m[hit.next_waypoint]};
-            std::string why;
-            if(length(next.path_m[1]-next.path_m[0])>.001 && stroke(next,why))return;
+    if(I.holding!=static_cast<std::size_t>(-1) && hit.stage==2) {
+        const auto pose=I.world->snapshot(I.body_of[I.holding]);
+        const double qdot=pose.orientation_world.w*hit.swing_from.w+pose.orientation_world.x*hit.swing_from.x+
+            pose.orientation_world.y*hit.swing_from.y+pose.orientation_world.z*hit.swing_from.z;
+        state.swing_rotation_rad=std::max(state.swing_rotation_rad,2*std::acos(std::clamp(std::abs(qdot),0.0,1.0)));
+        for(const auto &point:toolPoints())if(point.id==state.point_id) {
+            const auto body=I.index_of.find(point.body);
+            if(body!=I.index_of.end()) {
+                const auto p=I.world->snapshot(I.body_of[body->second]);
+                const auto speed=p.linear_velocity_m_s+cross(p.angular_velocity_rad_s,point.tip_m-p.center_of_mass_world_m);
+                state.peak_tip_speed_m_s=std::max(state.peak_tip_speed_m_s,length(speed));
+            }
         }
     }
-    state.active=false;state.ended_s=I.time_s;
+    if(swing_contact) {
+        // The accepted native impact ends the strike. Withdraw instead of
+        // continuing to ram the intact target. Only controller wishes change.
+        I.stroke.reset();I.stroke_ended="contact";I.held_velocity={};
+    }
+    if(I.stroke)return;
+    state.stroke_ended=I.stroke_ended;
+    if(I.holding!=static_cast<std::size_t>(-1)) {
+        LiveStroke next=state.stroke;const auto actual=I.world->snapshot(I.body_of[I.holding]);
+        bool ready=I.stroke_ended=="reached";
+        if(hit.stage==1 && ready) {
+            const auto &q=state.stroke.facings_wxyz[3];
+            const auto &r=actual.orientation_world;
+            const double error=2*std::acos(std::clamp(std::abs(q.w*r.w+q.x*r.x+q.y*r.y+q.z*r.z),0.0,1.0));
+            ready=error<.08 && length(hand().grip_velocity_m_s)<.3;
+            if(!ready && I.time_s-hit.stage_started_s<3.5)return;
+            if(!ready)state.reason="windup_blocked";
+        }
+        if(hit.stage<2 && ready) {
+            ++hit.stage;hit.stage_started_s=I.time_s;
+            if(hit.stage==1) {
+                // Wind up clear of the stand, then run one continuous arc.
+                next.path_m={hand().grip_m,state.stroke.path_m[3]};
+                next.facings_wxyz={actual.orientation_world,state.stroke.facings_wxyz[3]};
+                next.speed_m_s=2;next.accel_m_s2=30;
+                next.give_up_s=std::clamp(length(next.path_m[1]-next.path_m[0])/next.speed_m_s+.7,1.0,3.0);
+                state.phase="winding-up";
+            } else {
+                next.path_m.assign(state.stroke.path_m.begin()+3,state.stroke.path_m.end());
+                next.facings_wxyz.assign(state.stroke.facings_wxyz.begin()+3,state.stroke.facings_wxyz.end());
+                next.path_m[0]=hand().grip_m-I.physicalHitTracking(I.selected_hand).first;next.facings_wxyz[0]=actual.orientation_world;
+                hit.swing_from=actual.orientation_world;state.phase="swinging";
+            }
+        } else if(hit.stage<3) {
+            if(hit.stage<2 && state.reason.empty())state.reason="windup_blocked";
+            hit.stage=3;state.phase="recovering";
+            next.path_m={hand().grip_m,hand().grip_m+Vec3{0,.22,0}};
+            next.facings_wxyz.assign(2,actual.orientation_world);next.speed_m_s=2;next.accel_m_s2=30;
+        } else hit.stage=4;
+        if(hit.stage<4) {
+            std::string why;
+            if(stroke(next,why))return;
+            state.reason=why;
+        }
+    }
+    state.active=false;state.phase="ended";state.ended_s=I.time_s;
     if(I.holding==static_cast<std::size_t>(-1))state.reason="grip_released";
-    else if(!state.contacted)state.reason="no_contact";
-    // The tool's actual recovered pose defines carry. Never return it by
-    // assigning a pose/velocity or by suppressing any of its collisions.
+    else if(!state.contacted && state.reason.empty())state.reason=state.obstruction.empty()?"no_contact":"target_blocked";
+    // Carry adopts the actual recovered pose. No assigned pose, velocity or
+    // imposed fragment motion; unsupported intrinsic fracture stays refused.
     if(I.wielding&&I.holding!=static_cast<std::size_t>(-1))(void)carryWithNativePlayer();
 }
+
 std::map<std::string,LivePhysicalHit> LiveWorld::playerPhysicalHits() const {
     std::map<std::string,LivePhysicalHit> out;
     for(const auto &[actor,hit]:impl_->physical_hits)out.emplace(actor,hit.state);return out;

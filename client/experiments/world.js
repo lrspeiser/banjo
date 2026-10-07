@@ -32,9 +32,9 @@ function highlight(parts,colour=0x66e2a3){
     outline.visible=!outline.box.isEmpty();outline.material.color.setHex(colour);
 }
 let lastHitEnd='';
-const refusal={out_of_reach:'Too far · move closer',not_holding:'Pick up a tool first',action_in_progress:'Tool is still working',no_contact:'The tool did not reach this target',unsupported_capability:'This item has no tool contact point',target_blocked:'Target blocks the tool path',insufficient_strength:'Too heavy for this hand',grip_released:'The grip was released'};
+const refusal={out_of_reach:'Too far · move closer',not_holding:'Pick up a tool first',action_in_progress:'Tool is still working',no_contact:'The tool did not reach this target',unsupported_capability:'This item has no tool contact point',target_blocked:'Target blocks the tool path',insufficient_strength:'Too heavy for this hand',grip_released:'The grip was released',windup_blocked:'The tool could not wind up safely'};
 const label=name=>names[name] || (name.startsWith('grain-')?'Ground grain':name==='bedrock-base'?'Fixed base':name);
-const names={handle:'Tool',head:'Tool head','glass-block':'Glass block','iron-block':'Iron block','tool-stand':'Tool stand'};
+const names={handle:'Tool',head:'Tool head','glass-block':'Glass block','iron-block':'Iron block','tool-stand':'Tool stand','ground-slab':'Ground slab'};
 
 function say(text,persistent=false){
     clearTimeout(noticeTimer);$('notice').hidden=false;$('notice').textContent=text;
@@ -89,7 +89,7 @@ function consume(result){
         // Equipped custody is shown in the hand slot. The real native body
         // still collides; show its actual pose only during the contact action.
         mesh.visible=!heldParts.has(body.name) || !!state.own_physical_hit?.active;
-        mesh.traverse(child=>{if(child.material){child.material.transparent=heldParts.has(body.name);child.material.opacity=heldParts.has(body.name)?.28:1;}});
+        mesh.traverse(child=>{if(child.material){const glass=body.material==='glass';child.material.transparent=heldParts.has(body.name)||glass;child.material.opacity=heldParts.has(body.name)?.4:glass?.65:1;}});
         const [w,x,y,z]=body.orientation_wxyz;mesh.quaternion.set(x,y,z,w);
     }
     for(const [name,mesh] of bodies){if(!alive.has(name)){disposeObject(mesh);bodies.delete(name);}}
@@ -99,16 +99,16 @@ function consume(result){
     $('drop').disabled=!holding;
     $('holding').parentElement.dataset.equipped=String(!!holding);
     $('clock').textContent=result.clock.simulation_s.toFixed(2)+' s';
-    $('step').textContent=holding ? '2 · Click a grain or object to strike' : '1 · Click the tool to pick it up';
-    $('help').textContent=holding ? 'Green means the hand can attempt this hit. Grains move through collision; solid fracture is unfinished.' : 'The tool is on the stand to your right. Loose grains and blocks can also be picked up.';
+    $('step').textContent=state.own_physical_hit?.active ? 'Swing · '+state.own_physical_hit.phase : holding ? '2 · Click the ground or object to swing' : '1 · Click the tool to pick it up';
+    $('help').textContent=holding ? ($('ground-model').value==='rigid-slab' ? 'Green allows a physical swing. This slab cannot fracture yet.' : 'Green allows a physical swing. Loose grains collide; they are not fractured solid ground.') : 'The tool is on the stand to your right. Loose grains and blocks can also be picked up.';
     const physical=state.own_physical_hit;
     if(physical){
         if(physical.active && !previousActive)say('Striking · native contact in progress');
-        $('removed').textContent=physical.active?'Working…':physical.contacted?'Confirmed':'Missed';
+        $('removed').textContent=physical.active?'Working…':physical.contacted?'Confirmed':physical.reason==='target_blocked'?'Blocked':'Missed';
         $('travel').textContent=(Math.hypot(...physical.target_displacement_m)*100).toFixed(1)+' cm';
-        $('work').textContent=physical.hand_work_j.toFixed(2)+' J';
+        $('impact-speed').textContent=physical.contact_speed_m_s.toFixed(2)+' m/s';
         const end=physical.started_s+':'+physical.ended_s;
-        if(!physical.active && end!==lastHitEnd){lastHitEnd=end;say(physical.contacted?'Native contact · '+label(physical.target):refusal[physical.reason] || physical.reason || 'No contact measured');}
+        if(!physical.active && end!==lastHitEnd){lastHitEnd=end;say(physical.contacted?'Contact · '+label(physical.target)+' · no fracture model connected':physical.reason==='target_blocked'?'Blocked by '+label(physical.obstruction)+' · the tool could not reach the selected point':refusal[physical.reason] || physical.reason || 'No contact measured');}
     }
     for(const event of result.events || []){
         if(event.command_id===lastEvent)continue;
@@ -157,10 +157,10 @@ async function start(){
     busy=true;clearTimeout(pollTimer);clearTimeout(moveTimer);keys.clear();
     try{
         if(session)await api({action:'close',session});session=null;
-        const result=await api({action:'create',family:$('family').value,material:$('material').value,model:'rigid-grains',ground_material:$('ground-material').value});
+        const result=await api({action:'create',family:$('family').value,material:$('material').value,model:$('ground-model').value,ground_material:$('ground-material').value});
         for(const mesh of bodies.values())disposeObject(mesh);bodies.clear();
         hover=null;preview=null;hoverKey='';
-        seenEvents.clear();lastHitEnd='';$('removed').textContent='—';$('travel').textContent='—';$('work').textContent='—';outline.visible=false;
+        seenEvents.clear();lastHitEnd='';$('removed').textContent='—';$('travel').textContent='—';$('impact-speed').textContent='—';outline.visible=false;
         session=result.session;stopped=false;$('paused').hidden=true;consume(result);$('setup').hidden=true;$('settings').setAttribute('aria-expanded','false');
         say('Native world running · pick up the tool on the ground');
     }catch(error){stopWorld(error);}

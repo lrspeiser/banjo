@@ -9,3 +9,5 @@
 
 @media(max-width:740px){.metrics{gap:8px}.metrics span{font-size:10px}.metrics strong{font-size:12px}}
 @media(max-width:450px){.metrics span:first-child{display:none}.zoom{display:none}footer{gap:7px}.metrics{gap:7px}}
+
+#setup{max-height:calc(100dvh - 80px);overflow-y:auto}

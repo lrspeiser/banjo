@@ -67,7 +67,7 @@ class TestWorld:
             {"name": "iron-block", "shape": "box", "material": "iron",
              "dimensions_m": [.12]*3, "center_m": [-.65, .81, -.3]}
         ]}
-        if model == "rigid-grains":
+        if model in {"rigid-grains","rigid-slab"}:
             # A declared loose assembly of native collision bodies. No height
             # field, soil work rule, dig op, fragment launch or hidden deletion.
             del declaration["terrain"]
@@ -77,30 +77,38 @@ class TestWorld:
                 "anchored":True,"dimensions_m":[2,.02,2],"center_m":[0,.01,0]})
             for body in declaration["bodies"][:5]:
                 body["center_m"][1]-=.53
-            for layer in range(2):
-                for z in range(10):
-                    for x in range(10):
-                        declaration["bodies"].append({"name":f"grain-{layer}-{z}-{x}","shape":"box",
-                            "material":ground_material,"dimensions_m":[.1,.1,.1],
-                            "center_m":[-.54+x*.12,.07+layer*.1,-.54+z*.12]})
-        if model=="rigid-grains":
+            # Keep the acquisition stand behind the sample, out of the swing.
+            for body in declaration["bodies"][:3]:body["center_m"][2]=.85
+            if model == "rigid-slab":
+                # One intact body, not a prefragmented plate or a fracture claim.
+                declaration["bodies"].append({"name":"ground-slab","shape":"box",
+                    "material":ground_material,"dimensions_m":[1.2,.1,1.2],"center_m":[0,.07,0]})
+            else:
+                for layer in range(2):
+                    for z in range(10):
+                        for x in range(10):
+                            declaration["bodies"].append({"name":f"grain-{layer}-{z}-{x}","shape":"box",
+                                "material":ground_material,"dimensions_m":[.1,.1,.1],
+                                "center_m":[-.54+x*.12,.07+layer*.1,-.54+z*.12]})
+        if model in {"rigid-grains","rigid-slab"}:
             # Exact native collision primitives: no dormant lattice, fracture
             # trigger, launch velocity or hidden material removal for a grain.
-            rigid=[b for b in declaration["bodies"] if b["name"].startswith("grain-") or b["name"] in {"glass-block","iron-block"}]
+            rigid=[b for b in declaration["bodies"] if b["name"].startswith("grain-") or b["name"] in {"glass-block","iron-block","ground-slab"}]
             declaration["bodies"]=[b for b in declaration["bodies"] if b not in rigid]
             for b in rigid:
                 if b["name"]=="glass-block":b["center_m"]=[-.42,.28,.42]
-                if b["name"]=="iron-block":b["center_m"]=[-.42,.28,-.42]
+                if b["name"]=="iron-block":b["center_m"]=[-.42,.28,0]
             declaration["precise_rigid_bodies"]=[{"name":b["name"],"material":b["material"],
                 "position_m":b["center_m"],"parts":[{"shape":"box","dimensions_m":b["dimensions_m"],"center_local_m":[0,0,0]}]} for b in rigid]
         scene.write_text(json.dumps(declaration),encoding="utf-8")
-        offset=-.53 if model=="rigid-grains" else 0
+        tool_z=.85 if model in {"rigid-grains","rigid-slab"} else .2
+        offset=-.53 if model in {"rigid-grains","rigid-slab"} else 0
         ops = [
-            {"op": "fix", "a": "handle", "b": "head", "at": [.65, 1.14+offset, .2],
+            {"op": "fix", "a": "handle", "b": "head", "at": [.65, 1.14+offset, tool_z],
              "axis": [0, 1, 0], "holds_tension_n": 5000, "holds_shear_n": 5000},
-            {"op": "tool_point", "body": "head", "tip": [.65, 1.06+offset, .2],
+            {"op": "tool_point", "body": "head", "tip": [.65, 1.06+offset, tool_z],
              "pointing": [0, -1, 0], "width_m": width, "thickness_m": .04,
-             "angle_deg": 30, "length_m": .1, "grip": [.65, 1.4+offset, .2], "grip_body": "handle"},
+             "angle_deg": 30, "length_m": .1, "grip": [.65, 1.4+offset, tool_z], "grip_body": "handle"},
             {"op": "snapshot"}]
         env = dict(os.environ)
         env.pop("OPENAI_API_KEY", None)
@@ -129,7 +137,7 @@ class TestWorld:
             # Start on the declared fixed base beside the loose test bed.
             # Standing on loose grains coupled the avatar's balance actuator
             # into the very sample being tested before any deliberate strike.
-            feet = [0, .022, .82] if model == "rigid-grains" else [0, .75, 0]
+            feet = [0, .022, .82] if model in {"rigid-grains","rigid-slab"} else [0, .75, 0]
             joined = self.command({"kind": "join", "feet_m": feet}, host=True)
             if joined["outcome"]["status"] != "applied":
                 raise RuntimeError("Native avatar admission refused")
@@ -288,7 +296,7 @@ class WorldManager:
             if (not {"action","family","material"} <= set(request) or
                 set(request)-{"action","family","material","model","ground_material"} or
                 request["family"] not in FAMILIES or request["material"] not in {"iron", "glass", "oak"} or
-                request.get("model","retained-soil") not in {"retained-soil","rigid-grains"} or
+                request.get("model","retained-soil") not in {"retained-soil","rigid-grains","rigid-slab"} or
                 request.get("ground_material","concrete") not in {"concrete","glass","oak","iron"}):
                 raise ValueError("Choose a declared laboratory tool")
             with self.lock:

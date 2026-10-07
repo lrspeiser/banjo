@@ -1055,9 +1055,11 @@ std::optional<LiveStroke> ToolTerrain::plan(const ToolTerrainHost &host, const L
                                             std::string &why) const {
     const Point *p = nullptr;
     for (const Point &candidate : points_)
-        if (candidate.attached && (candidate.grip_body.empty() ? candidate.body : candidate.grip_body) == held) {
+        if (candidate.attached && ((candidate.grip_body.empty() ? candidate.body : candidate.grip_body) == held ||
+            (host.fixed_connected && host.fixed_connected(candidate.body, held) &&
+             host.fixed_connected(candidate.grip_body.empty() ? candidate.body : candidate.grip_body, held)))) {
+            if (p) { why = "ambiguous_capability"; return std::nullopt; }
             p = &candidate;
-            break;
         }
     if (p == nullptr) {
         why = held + " has no point that can go into the ground: give it one first (tool_point)";
