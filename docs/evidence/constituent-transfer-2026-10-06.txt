@@ -1,0 +1,280 @@
+Canonical ownership transfer:
+TRANSFER_EVIDENCE material=glass cells=125 steps=640 components=2 dead_interfaces=22 work_j=4110.25548716 kinetic_j=4101.62401561 elastic_j=0.0776528369298 position_difference_m=7.48681294068e-22 velocity_difference_m_s=5.55115840611e-17 energy_residual_j=-3.63439833784e-12 momentum_residual_n_s=9.87598057856e-14 angular_residual_kg_m2_s=2.36810501166e-13 mass_kg=39.0625 volume_m3=0.015625 broken_bonds=96 removed_energy_j=8.55404847417 integration_error_j=0.000229763023638 transfer_wall_s=0.0005827
+TRANSFER_EVIDENCE material=oak cells=125 steps=640 components=2 dead_interfaces=22 work_j=13728.9725177 kinetic_j=13462.4931529 elastic_j=5.2094198485 position_difference_m=6.78237651851e-21 velocity_difference_m_s=8.88216354114e-16 energy_residual_j=6.89578949498e-12 momentum_residual_n_s=7.39219018396e-13 angular_residual_kg_m2_s=1.66857087583e-12 mass_kg=10.9375 volume_m3=0.015625 broken_bonds=56 removed_energy_j=261.273894703 integration_error_j=0.00394971573348 transfer_wall_s=0.0005353
+TRANSFER_EVIDENCE material=iron cells=125 steps=640 components=1 dead_interfaces=0 work_j=197.68941362 kinetic_j=12.4754866385 elastic_j=140.883767614 position_difference_m=0 velocity_difference_m_s=0 energy_residual_j=-3.66640138388e-12 momentum_residual_n_s=9.18945579565e-13 angular_residual_kg_m2_s=2.01492408524e-12 mass_kg=122.96875 volume_m3=0.015625 broken_bonds=2 removed_energy_j=44.3348140916 integration_error_j=0.00465472409851 transfer_wall_s=0.0004783
+PLASTIC_TRANSFER_EVIDENCE material=glass cells=27 dt_s=1e-07 steps=640 components=3 max_plastic_strain=0 position_difference_m=0 velocity_difference_m_s=0 plastic_difference=0
+PLASTIC_TRANSFER_EVIDENCE material=oak cells=27 dt_s=1e-07 steps=640 components=3 max_plastic_strain=0 position_difference_m=0 velocity_difference_m_s=0 plastic_difference=0
+PLASTIC_TRANSFER_EVIDENCE material=iron cells=27 dt_s=1e-07 steps=640 components=3 max_plastic_strain=2.57069328426e-06 position_difference_m=0 velocity_difference_m_s=0 plastic_difference=0
+[PASS] canonical constituent ownership and history transfer
+
+Finite contact and target-only continuation:
+Rollback XPBD glass: retry=exact steps=2049 fracture=16 plastic=0 J
+Rollback XPBD oak: retry=exact steps=2049 fracture=0 plastic=0 J
+Rollback XPBD iron: retry=exact steps=2049 fracture=0 plastic=1.41309827927 J
+Rollback Verlet glass: retry=exact steps=2049 fracture=15 plastic=0 J
+Rollback Verlet oak: retry=exact steps=2049 fracture=0 plastic=0 J
+Rollback Verlet iron: retry=exact steps=2049 fracture=0 plastic=2.28595725833 J
+XPBD glass: cells=27 h=0.04 dt=1e-07 elapsed=0.0002048 s; contacts=1941 broken=16 damage=1 strain=0.000655054755043; plastic=0 J; contact loss=8.316543712 J; reconcile=1.9655388428e-12 J; numerical=8.2536864228e-06 J; phase work=1.35984973282e-14 J; p residual=1.24612423563e-07 N s; L residual=5.19787351837e-08 kg m2/s; unallocated energy=-2.86799327101 J; plastic return numerical=0 J; integrator measured=0 J; native step=1.01661040475e-07 J; target step=-2.86799337267 J; native step p/L=1.24612247119e-07/4.67520946321e-08; target step p/L=1.50113793015e-11/9.84387700636e-08; max native step p/L=4.38009223975e-08/4.93624373633e-09; hand work=0 J; max hand force/torque=0/0; hand impulse=0; max contact joint impulse=0.277498855227; max native force-step error=1.03837436427e-08 J; native fixing tension/shear=0/0.330601420436 N
+  audited reference loop wall=0.2805732 s; wall/sim=1369.98632813
+XPBD oak: cells=27 h=0.04 dt=1e-07 elapsed=0.0002048 s; contacts=3505 broken=0 damage=0 strain=0.00114974554162; plastic=0 J; contact loss=5.1941050442 J; reconcile=1.26689769786e-11 J; numerical=0.0001822025319 J; phase work=4.65729614162e-14 J; p residual=8.44312147122e-09 N s; L residual=2.57651108825e-08 kg m2/s; unallocated energy=-1.60146458362 J; plastic return numerical=0 J; integrator measured=0 J; native step=7.06116054516e-10 J; target step=-1.60146458432 J; native step p/L=8.44310440561e-09/4.19018931903e-09; target step p/L=5.87886728301e-12/2.99283185716e-08; max native step p/L=2.65760391343e-09/2.39629049166e-10; hand work=0 J; max hand force/torque=0/0; hand impulse=0; max contact joint impulse=0.0724358715729; max native force-step error=4.3634429403e-11 J; native fixing tension/shear=0/0.0223857912097 N
+  audited reference loop wall=0.2943351 s; wall/sim=1437.18310547
+XPBD iron: cells=27 h=0.04 dt=1e-07 elapsed=0.0002048 s; contacts=1466 broken=0 damage=0.0539541617036 strain=0.00096030900022; plastic=1.41572197266 J; contact loss=19.4884703591 J; reconcile=1.27087229629e-12 J; numerical=1.74454613655e-06 J; phase work=1.73194791842e-14 J; p residual=4.13432579118e-07 N s; L residual=2.9154194397e-06 kg m2/s; unallocated energy=-10.280268819 J; plastic return numerical=0 J; integrator measured=0 J; native step=1.84194960773e-06 J; target step=-10.2802706609 J; native step p/L=4.13430997507e-07/2.35442394233e-07; target step p/L=9.02471096375e-12/3.14050029642e-06; max native step p/L=1.34260977597e-07/9.37852540169e-09; hand work=0 J; max hand force/torque=0/0; hand impulse=0; max contact joint impulse=0.663397762572; max native force-step error=8.04472302107e-08 J; native fixing tension/shear=0.150198982141/1.12382333324 N
+  audited reference loop wall=0.2674235 s; wall/sim=1305.77880859
+XPBD glass: cells=27 h=0.04 dt=5e-08 elapsed=0.0002048 s; contacts=3889 broken=12 damage=1 strain=0.000646407250315; plastic=0 J; contact loss=8.24075159674 J; reconcile=3.70725672383e-12 J; numerical=1.78813986853e-05 J; phase work=1.4531798887e-14 J; p residual=1.99778580182e-07 N s; L residual=1.37082547881e-08 kg m2/s; unallocated energy=-1.61118170835 J; plastic return numerical=0 J; integrator measured=0 J; native step=2.02506908131e-07 J; target step=-1.61118191086 J; native step p/L=1.99774165362e-07/9.90819745591e-08; target step p/L=2.32870283907e-11/1.05820643691e-07; max native step p/L=4.51639548445e-08/4.93167631042e-09; hand work=0 J; max hand force/torque=0/0; hand impulse=0; max contact joint impulse=0.277498855227; max native force-step error=1.0515986304e-08 J; native fixing tension/shear=0/0.74814800325 N
+  audited reference loop wall=0.5347567 s; wall/sim=2611.11669922
+XPBD oak: cells=27 h=0.04 dt=5e-08 elapsed=0.0002048 s; contacts=7267 broken=0 damage=0 strain=0.0011773383012; plastic=0 J; contact loss=5.13494873948 J; reconcile=2.6922464258e-11 J; numerical=5.82533873962e-05 J; phase work=4.35281778205e-14 J; p residual=3.97271371537e-09 N s; L residual=2.78269742922e-10 kg m2/s; unallocated energy=-0.856792543599 J; plastic return numerical=0 J; integrator measured=0 J; native step=2.45377407282e-09 J; target step=-0.856792546052 J; native step p/L=3.9725396323e-09/1.45423531931e-08; target step p/L=4.46435380106e-11/1.48131701208e-08; max native step p/L=2.85199954452e-09/2.68401103604e-10; hand work=0 J; max hand force/torque=0/0; hand impulse=0; max contact joint impulse=0.0724358715729; max native force-step error=4.74003059026e-11 J; native fixing tension/shear=0/0.0460693654717 N
+  audited reference loop wall=0.5532644 s; wall/sim=2701.48632812
+XPBD iron: cells=27 h=0.04 dt=5e-08 elapsed=0.0002048 s; contacts=3035 broken=0 damage=0.0316583923995 strain=0.000979898613878; plastic=1.76179765982 J; contact loss=19.4932813784 J; reconcile=1.11682885162e-12 J; numerical=1.06569069498e-06 J; phase work=1.73194791842e-14 J; p residual=1.4827460229e-06 N s; L residual=9.32322129663e-07 kg m2/s; unallocated energy=-5.72257696451 J; plastic return numerical=0 J; integrator measured=0 J; native step=5.15635606757e-06 J; target step=-5.72258212086 J; native step p/L=1.48274568934e-06/7.67136340328e-07; target step p/L=1.9382093773e-10/1.6485981823e-06; max native step p/L=1.34260977597e-07/1.21523737236e-08; hand work=0 J; max hand force/torque=0/0; hand impulse=0; max contact joint impulse=0.663397762572; max native force-step error=1.0358585012e-07 J; native fixing tension/shear=0/2.39834737117 N
+  audited reference loop wall=0.5379988 s; wall/sim=2626.94726562
+Verlet glass: cells=27 h=0.04 dt=1e-07 elapsed=0.0002048 s; contacts=2012 broken=15 damage=1 strain=0.000651576789096; plastic=0 J; contact loss=8.33260931609 J; reconcile=1.87760917925e-12 J; numerical=2.01768040923e-05 J; phase work=1.29897720184e-14 J; p residual=1.92622101652e-07 N s; L residual=5.2221747443e-08 kg m2/s; unallocated energy=0.000665302014296 J; plastic return numerical=0 J; integrator measured=0.000665196107709 J; native step=1.05906687864e-07 J; target step=0.000665196107803 J; native step p/L=1.92622101378e-07/5.22217484602e-08; target step p/L=7.20718442755e-15/1.4273786264e-15; max native step p/L=4.17163037408e-08/3.71871599497e-09; hand work=0 J; max hand force/torque=0/0; hand impulse=0; max contact joint impulse=0.277498855227; max native force-step error=8.4490974217e-09 J; native fixing tension/shear=0/0.357025541286 N
+  audited reference loop wall=0.2703698 s; wall/sim=1320.16503906
+Verlet oak: cells=27 h=0.04 dt=1e-07 elapsed=0.0002048 s; contacts=3732 broken=0 damage=0 strain=0.00120146689005; plastic=0 J; contact loss=5.20861995156 J; reconcile=1.36743949497e-11 J; numerical=0.000133131398838 J; phase work=3.9974778045e-14 J; p residual=2.16618368236e-08 N s; L residual=4.67159369608e-09 kg m2/s; unallocated energy=0.000130763285983 J; plastic return numerical=0 J; integrator measured=0.00013076237275 J; native step=9.13257025559e-10 J; target step=0.000130762372717 J; native step p/L=2.16618367592e-08/4.67159346922e-09; target step p/L=8.88178913654e-14/1.14349871516e-15; max native step p/L=2.73755764936e-09/2.69242428131e-10; hand work=0 J; max hand force/torque=0/0; hand impulse=0; max contact joint impulse=0.0724358715729; max native force-step error=4.43876047029e-11 J; native fixing tension/shear=0/0.0224229509777 N
+  audited reference loop wall=0.2834621 s; wall/sim=1384.09228516
+Verlet iron: cells=27 h=0.04 dt=1e-07 elapsed=0.0002048 s; contacts=1628 broken=0 damage=0 strain=0.00100038549863; plastic=2.28794376385 J; contact loss=19.5690413738 J; reconcile=1.40926159631e-12 J; numerical=4.91416768662e-06 J; phase work=1.73194791842e-14 J; p residual=1.03161381421e-06 N s; L residual=3.33088669759e-07 kg m2/s; unallocated energy=0.00131184021474 J; plastic return numerical=0.00537611473306 J; integrator measured=0.00130887119529 J; native step=2.96901651459e-06 J; target step=0.00130887119842 J; native step p/L=1.03161381621e-06/3.33088668263e-07; target step p/L=4.34360305596e-15/2.43308839743e-15; max native step p/L=1.52130124942e-07/1.47079928086e-08; hand work=0 J; max hand force/torque=0/0; hand impulse=0; max contact joint impulse=0.663397762572; max native force-step error=1.31772182943e-07 J; native fixing tension/shear=0.15019892885/1.38554048353 N
+  audited reference loop wall=0.2732227 s; wall/sim=1334.09521484
+Verlet glass: cells=27 h=0.04 dt=5e-08 elapsed=0.0002048 s; contacts=4013 broken=16 damage=1 strain=0.000647030596156; plastic=0 J; contact loss=8.25052303208 J; reconcile=3.7871927816e-12 J; numerical=4.92003636887e-06 J; phase work=1.53852625084e-14 J; p residual=2.77138748588e-07 N s; L residual=1.03593522353e-07 kg m2/s; unallocated energy=0.00016719631009 J; plastic return numerical=0 J; integrator measured=0.000166978438234 J; native step=2.17871713559e-07 J; target step=0.000166978438392 J; native step p/L=2.77138749504e-07/1.0359352228e-07; target step p/L=4.97550259977e-14/8.56913550121e-16; max native step p/L=4.17163037408e-08/4.95642832309e-09; hand work=0 J; max hand force/torque=0/0; hand impulse=0; max contact joint impulse=0.277498855227; max native force-step error=1.11496660793e-08 J; native fixing tension/shear=0/0.66605785054 N
+  audited reference loop wall=0.5678536 s; wall/sim=2772.72265625
+Verlet oak: cells=27 h=0.04 dt=5e-08 elapsed=0.0002048 s; contacts=7448 broken=0 damage=0 strain=0.00120363675524; plastic=0 J; contact loss=5.14182514887 J; reconcile=2.80664380625e-11 J; numerical=-8.94920625573e-05 J; phase work=4.09057112998e-14 J; p residual=6.34196395814e-09 N s; L residual=1.25255555579e-08 kg m2/s; unallocated energy=3.28357685277e-05 J; plastic return numerical=0 J; integrator measured=3.28336161015e-05 J; native step=2.15230144818e-09 J; target step=3.28336159896e-05 J; native step p/L=6.34196385166e-09/1.25255556494e-08; target step p/L=6.39489168904e-14/6.94505641931e-16; max native step p/L=2.82274717714e-09/3.12072878458e-10; hand work=0 J; max hand force/torque=0/0; hand impulse=0; max contact joint impulse=0.0724358715729; max native force-step error=5.64241986467e-11 J; native fixing tension/shear=0/0.0457247716153 N
+  audited reference loop wall=0.6174814 s; wall/sim=3015.04589844
+Verlet iron: cells=27 h=0.04 dt=5e-08 elapsed=0.0002048 s; contacts=3237 broken=0 damage=0 strain=0.00100043020211; plastic=2.28931292917 J; contact loss=19.5382494076 J; reconcile=1.19732002091e-12 J; numerical=-5.3296443627e-07 J; phase work=1.73194791842e-14 J; p residual=1.84017163141e-06 N s; L residual=4.11057523859e-07 kg m2/s; unallocated energy=0.000330314901892 J; plastic return numerical=0.00272548964852 J; integrator measured=0.000327509496884 J; native step=2.8054035891e-06 J; target step=0.000327509498229 J; native step p/L=1.84017162554e-06/4.11057524123e-07; target step p/L=3.83607911276e-15/1.28719667269e-15; max native step p/L=1.34260977597e-07/1.4935783428e-08; hand work=0 J; max hand force/torque=0/0; hand impulse=0; max contact joint impulse=0.663397762572; max native force-step error=1.48671974731e-07 J; native fixing tension/shear=0/2.87108361779 N
+  audited reference loop wall=0.5589174 s; wall/sim=2729.08886719
+Held Verlet glass: cells=27 h=0.04 dt=1e-07 elapsed=0.0002048 s; contacts=2034 broken=15 damage=1 strain=0.000651143142022; plastic=0 J; contact loss=8.33626480329 J; reconcile=2.00106597958e-12 J; numerical=-1.94794697378e-06 J; phase work=1.39207222138e-14 J; p residual=0.000135031689166 N s; L residual=6.63110145896e-07 kg m2/s; unallocated energy=0.000429387457888 J; plastic return numerical=0 J; integrator measured=0.000658627886249 J; native step=-0.000229240428829 J; target step=0.000658627886632 J; native step p/L=0.000135031689187/6.63110146098e-07; target step p/L=7.10546005366e-14/8.22625326988e-16; max native step p/L=7.86420555921e-08/4.61410543126e-09; hand work=0.279333515719 J; max hand force/torque=800/0.729042162433; hand impulse=0.16383996303; max contact joint impulse=0.277498855227; max native force-step error=2.29521597098e-07 J; native fixing tension/shear=750.087565393/3.24035856619 N
+  audited reference loop wall=0.2780958 s; wall/sim=1357.88964844
+Held Verlet oak: cells=27 h=0.04 dt=1e-07 elapsed=0.0002048 s; contacts=3744 broken=0 damage=0 strain=0.00120128784329; plastic=0 J; contact loss=5.20942504191 J; reconcile=1.37347910822e-11 J; numerical=-4.13982805894e-05 J; phase work=4.57373396968e-14 J; p residual=7.15742905672e-05 N s; L residual=1.37843317535e-08 kg m2/s; unallocated energy=-7.22901523804e-05 J; plastic return numerical=0 J; integrator measured=0.000129675585132 J; native step=-0.000201965737545 J; target step=0.000129675585026 J; native step p/L=7.15742905226e-05/1.37843315832e-08; target step p/L=1.42108549221e-13/4.50493636138e-17; max native step p/L=1.21677029795e-06/2.67223624733e-10; hand work=0.624502092675 J; max hand force/torque=800/0.168693340507; hand impulse=0.156002184514; max contact joint impulse=0.0724358715729; max native force-step error=5.70608826416e-06 J; native fixing tension/shear=749.787941459/0.764573153072 N
+  audited reference loop wall=0.2867749 s; wall/sim=1400.26806641
+Held Verlet iron: cells=27 h=0.04 dt=1e-07 elapsed=0.0002048 s; contacts=1640 broken=0 damage=0 strain=0.0010001687333; plastic=2.28597105444 J; contact loss=19.5740447591 J; reconcile=1.34925404183e-12 J; numerical=1.68816213839e-06 J; phase work=1.73194791842e-14 J; p residual=8.22334322153e-05 N s; L residual=3.72045762918e-06 kg m2/s; unallocated energy=0.00135866886552 J; plastic return numerical=0.00536483286272 J; integrator measured=0.00130316364669 J; native step=5.55052158327e-05 J; target step=0.00130316364978 J; native step p/L=8.22334322172e-05/3.72045763021e-06; target step p/L=3.93880330829e-14/7.63324521286e-16; max native step p/L=1.47187523031e-07/2.02027553437e-08; hand work=-0.0390395354253 J; max hand force/torque=800/1.1472090344; hand impulse=0.163839970552; max contact joint impulse=0.663397762572; max native force-step error=2.06275080462e-07 J; native fixing tension/shear=749.997998355/7.19950627717 N
+  audited reference loop wall=0.2808551 s; wall/sim=1371.36279297
+Held Verlet glass: cells=27 h=0.04 dt=5e-08 elapsed=0.0002048 s; contacts=4053 broken=15 damage=1 strain=0.000646594038699; plastic=0 J; contact loss=8.25407045031 J; reconcile=3.85114162782e-12 J; numerical=-7.65306621388e-06 J; phase work=1.33893547291e-14 J; p residual=0.000135095100596 N s; L residual=7.54632953254e-07 kg m2/s; unallocated energy=-6.17445802137e-05 J; plastic return numerical=0 J; integrator measured=0.000166713085569 J; native step=-0.000228457666133 J; target step=0.000166713085993 J; native step p/L=0.000135095100572/7.54632952168e-07; target step p/L=1.38558390365e-13/2.30884411165e-15; max native step p/L=5.50073796141e-08/5.06590350186e-09; hand work=0.278876767364 J; max hand force/torque=800/0.729041515605; hand impulse=0.163839962924; max contact joint impulse=0.277498855227; max native force-step error=1.14114093344e-07 J; native fixing tension/shear=749.787141103/3.52703382352 N
+  audited reference loop wall=0.5562012 s; wall/sim=2715.82617188
+Held Verlet oak: cells=27 h=0.04 dt=5e-08 elapsed=0.0002048 s; contacts=7474 broken=0 damage=0 strain=0.00120343570597; plastic=0 J; contact loss=5.14249056391 J; reconcile=2.80806489172e-11 J; numerical=0.000272928259758 J; phase work=4.01946339168e-14 J; p residual=0.000155750617613 N s; L residual=5.12969806026e-08 kg m2/s; unallocated energy=0.000782976991163 J; plastic return numerical=0 J; integrator measured=3.2560558191e-05 J; native step=0.0007504164324 J; target step=3.25605586293e-05 J; native step p/L=0.000155750617601/5.12969801565e-08; target step p/L=6.3949591721e-14/4.0179962135e-16; max native step p/L=1.03442263499e-06/2.98914426665e-10; hand work=0.624224153113 J; max hand force/torque=800/0.168138780572; hand impulse=0.156017731516; max contact joint impulse=0.0724358715729; max native force-step error=5.20020387218e-06 J; native fixing tension/shear=749.789178371/0.777549334745 N
+  audited reference loop wall=0.5878576 s; wall/sim=2870.3984375
+Held Verlet iron: cells=27 h=0.04 dt=5e-08 elapsed=0.0002048 s; contacts=3262 broken=0 damage=0 strain=0.00100021157414; plastic=2.28732432953 J; contact loss=19.542944799 J; reconcile=1.23973054045e-12 J; numerical=2.29813776482e-06 J; phase work=1.73194791842e-14 J; p residual=8.87057636002e-05 N s; L residual=1.36359540231e-06 kg m2/s; unallocated energy=0.000353933284997 J; plastic return numerical=0.00272090426595 J; integrator measured=0.000326083690541 J; native step=2.78495953808e-05 J; target step=0.000326083689664 J; native step p/L=8.8705763607e-05/1.36359540051e-06; target step p/L=3.20970683028e-14/2.63039477997e-15; max native step p/L=1.83830425232e-07/1.73017170208e-08; hand work=-0.0391675211668 J; max hand force/torque=800/1.14720366223; hand impulse=0.163839970727; max contact joint impulse=0.663397762572; max native force-step error=1.73906076227e-07 J; native fixing tension/shear=749.923783587/8.51465631233 N
+  audited reference loop wall=0.5676353 s; wall/sim=2771.65673828
+BOUNDARY_CONTACT_EVIDENCE {"material":"glass","width_m":0.04,"cell_m":0.04,"dt_s":1e-07,"steps":2048,"contacts":2137,"contacted_nodes":3,"support_impulse_n_s":27.4577948971,"support_angular_kg_m2_s":0.0433643842826,"broken_bonds":13,"p_residual_n_s":7.73853509093e-07,"l_residual_kg_m2_s":7.74665072538e-08,"unallocated_energy_j":0.000244412861047,"native_step_energy_j":1.60769631739e-07,"integration_error_j":0.00024425209136,"mass_kg":6.6035199755,"wall_s":0.2307499}
+CONTACT_PARTITION_EVIDENCE {"material":"soda_lime_glass","width_m":0.04,"dt_s":1e-07,"components":2,"dead_interfaces":9,"position_difference_m":5.16987882846e-26,"velocity_difference_m_s":6.77631527663e-21,"plastic_difference":0}
+BOUNDARY_CONTACT_EVIDENCE {"material":"glass","width_m":0.04,"cell_m":0.04,"dt_s":5e-08,"steps":4096,"contacts":4269,"contacted_nodes":3,"support_impulse_n_s":27.5547283726,"support_angular_kg_m2_s":0.0433385628486,"broken_bonds":13,"p_residual_n_s":7.65881562747e-06,"l_residual_kg_m2_s":2.65724798203e-08,"unallocated_energy_j":6.07623014923e-05,"native_step_energy_j":-2.09756874647e-08,"integration_error_j":6.07832771906e-05,"mass_kg":6.6035199755,"wall_s":0.4968884}
+CONTACT_PARTITION_EVIDENCE {"material":"soda_lime_glass","width_m":0.04,"dt_s":5e-08,"components":2,"dead_interfaces":9,"position_difference_m":0,"velocity_difference_m_s":5.29395592034e-23,"plastic_difference":0}
+BOUNDARY_CONTACT_EVIDENCE {"material":"oak","width_m":0.04,"cell_m":0.04,"dt_s":1e-07,"steps":2048,"contacts":5400,"contacted_nodes":3,"support_impulse_n_s":24.8129672193,"support_angular_kg_m2_s":0.00108583801702,"broken_bonds":0,"p_residual_n_s":3.98689368247e-10,"l_residual_kg_m2_s":8.79973034963e-09,"unallocated_energy_j":9.19273839073e-05,"native_step_energy_j":1.06201116835e-09,"integration_error_j":9.1926322134e-05,"mass_kg":3.4931199755,"wall_s":0.2671978}
+CONTACT_PARTITION_EVIDENCE {"material":"oak","width_m":0.04,"dt_s":1e-07,"components":1,"dead_interfaces":0,"position_difference_m":0,"velocity_difference_m_s":0,"plastic_difference":0}
+BOUNDARY_CONTACT_EVIDENCE {"material":"oak","width_m":0.04,"cell_m":0.04,"dt_s":5e-08,"steps":4096,"contacts":10799,"contacted_nodes":3,"support_impulse_n_s":24.8948058755,"support_angular_kg_m2_s":0.00093897174949,"broken_bonds":0,"p_residual_n_s":3.29492905737e-08,"l_residual_kg_m2_s":1.94778667004e-08,"unallocated_energy_j":2.40314016514e-05,"native_step_energy_j":2.31261306628e-09,"integration_error_j":2.40290890767e-05,"mass_kg":3.4931199755,"wall_s":0.5181479}
+CONTACT_PARTITION_EVIDENCE {"material":"oak","width_m":0.04,"dt_s":5e-08,"components":1,"dead_interfaces":0,"position_difference_m":0,"velocity_difference_m_s":0,"plastic_difference":0}
+BOUNDARY_CONTACT_EVIDENCE {"material":"iron","width_m":0.04,"cell_m":0.04,"dt_s":1e-07,"steps":2048,"contacts":1316,"contacted_nodes":3,"support_impulse_n_s":24.6425205044,"support_angular_kg_m2_s":0.0106752276629,"broken_bonds":0,"p_residual_n_s":2.68556114313e-08,"l_residual_kg_m2_s":7.43489087431e-08,"unallocated_energy_j":0.000660161113733,"native_step_energy_j":1.78544991437e-07,"integration_error_j":0.000659982569097,"mass_kg":15.8828799755,"wall_s":0.2303889}
+CONTACT_PARTITION_EVIDENCE {"material":"iron","width_m":0.04,"dt_s":1e-07,"components":1,"dead_interfaces":0,"position_difference_m":0,"velocity_difference_m_s":0,"plastic_difference":0}
+BOUNDARY_CONTACT_EVIDENCE {"material":"iron","width_m":0.04,"cell_m":0.04,"dt_s":5e-08,"steps":4096,"contacts":2628,"contacted_nodes":3,"support_impulse_n_s":24.6455648825,"support_angular_kg_m2_s":0.00992428084538,"broken_bonds":0,"p_residual_n_s":4.34570557291e-08,"l_residual_kg_m2_s":9.63191494328e-08,"unallocated_energy_j":0.000165428260014,"native_step_energy_j":2.41892354633e-07,"integration_error_j":0.000165186367642,"mass_kg":15.8828799755,"wall_s":0.4479233}
+CONTACT_PARTITION_EVIDENCE {"material":"iron","width_m":0.04,"dt_s":5e-08,"components":1,"dead_interfaces":0,"position_difference_m":0,"velocity_difference_m_s":0,"plastic_difference":0}
+BOUNDARY_CONTACT_EVIDENCE {"material":"glass","width_m":0.12,"cell_m":0.04,"dt_s":1e-07,"steps":2048,"contacts":6303,"contacted_nodes":9,"support_impulse_n_s":76.9782431141,"support_angular_kg_m2_s":0.112068432904,"broken_bonds":9,"p_residual_n_s":3.86856353795e-07,"l_residual_kg_m2_s":4.49286693212e-06,"unallocated_energy_j":0.000559450001451,"native_step_energy_j":6.24433440038e-07,"integration_error_j":0.000558825568017,"mass_kg":10.6329599429,"wall_s":0.2951573}
+CONTACT_PARTITION_EVIDENCE {"material":"soda_lime_glass","width_m":0.12,"dt_s":1e-07,"components":2,"dead_interfaces":9,"position_difference_m":0,"velocity_difference_m_s":0,"plastic_difference":0}
+BOUNDARY_CONTACT_EVIDENCE {"material":"glass","width_m":0.12,"cell_m":0.04,"dt_s":5e-08,"steps":4096,"contacts":12598,"contacted_nodes":9,"support_impulse_n_s":77.2360021315,"support_angular_kg_m2_s":0.111458735753,"broken_bonds":9,"p_residual_n_s":1.56314742212e-06,"l_residual_kg_m2_s":4.4874064419e-06,"unallocated_energy_j":0.000139182576503,"native_step_energy_j":1.15938832115e-06,"integration_error_j":0.000138023188329,"mass_kg":10.6329599429,"wall_s":0.5686364}
+CONTACT_PARTITION_EVIDENCE {"material":"soda_lime_glass","width_m":0.12,"dt_s":5e-08,"components":2,"dead_interfaces":9,"position_difference_m":0,"velocity_difference_m_s":0,"plastic_difference":0}
+BOUNDARY_CONTACT_EVIDENCE {"material":"oak","width_m":0.12,"cell_m":0.04,"dt_s":1e-07,"steps":2048,"contacts":15568,"contacted_nodes":9,"support_impulse_n_s":67.3261423945,"support_angular_kg_m2_s":0.00147102718847,"broken_bonds":0,"p_residual_n_s":2.90530125975e-08,"l_residual_kg_m2_s":7.31671247043e-08,"unallocated_energy_j":0.000219960111662,"native_step_energy_j":5.73573754453e-09,"integration_error_j":0.000219954376064,"mass_kg":7.52255994292,"wall_s":0.3400642}
+CONTACT_PARTITION_EVIDENCE {"material":"oak","width_m":0.12,"dt_s":1e-07,"components":1,"dead_interfaces":0,"position_difference_m":0,"velocity_difference_m_s":0,"plastic_difference":0}
+BOUNDARY_CONTACT_EVIDENCE {"material":"oak","width_m":0.12,"cell_m":0.04,"dt_s":5e-08,"steps":4096,"contacts":31108,"contacted_nodes":9,"support_impulse_n_s":67.5394652972,"support_angular_kg_m2_s":0.00112375793113,"broken_bonds":0,"p_residual_n_s":1.16451294357e-07,"l_residual_kg_m2_s":1.46981905672e-07,"unallocated_energy_j":5.809515436e-05,"native_step_energy_j":1.06178251505e-08,"integration_error_j":5.80845365103e-05,"mass_kg":7.52255994292,"wall_s":0.6480546}
+CONTACT_PARTITION_EVIDENCE {"material":"oak","width_m":0.12,"dt_s":5e-08,"components":1,"dead_interfaces":0,"position_difference_m":0,"velocity_difference_m_s":0,"plastic_difference":0}
+BOUNDARY_CONTACT_EVIDENCE {"material":"iron","width_m":0.12,"cell_m":0.04,"dt_s":1e-07,"steps":2048,"contacts":3743,"contacted_nodes":9,"support_impulse_n_s":70.430871202,"support_angular_kg_m2_s":0.0426883687948,"broken_bonds":0,"p_residual_n_s":2.96532071595e-07,"l_residual_kg_m2_s":1.97013839674e-06,"unallocated_energy_j":0.00201252474964,"native_step_energy_j":-7.7792477593e-07,"integration_error_j":0.00201330267431,"mass_kg":19.9123199429,"wall_s":0.2779586}
+CONTACT_PARTITION_EVIDENCE {"material":"iron","width_m":0.12,"dt_s":1e-07,"components":1,"dead_interfaces":0,"position_difference_m":0,"velocity_difference_m_s":0,"plastic_difference":0}
+BOUNDARY_CONTACT_EVIDENCE {"material":"iron","width_m":0.12,"cell_m":0.04,"dt_s":5e-08,"steps":4096,"contacts":7477,"contacted_nodes":9,"support_impulse_n_s":70.4458217647,"support_angular_kg_m2_s":0.0406359491912,"broken_bonds":0,"p_residual_n_s":5.28928910584e-07,"l_residual_kg_m2_s":1.93881867623e-06,"unallocated_energy_j":0.000503615996882,"native_step_energy_j":-1.78164265896e-07,"integration_error_j":0.000503794161045,"mass_kg":19.9123199429,"wall_s":0.5386473}
+CONTACT_PARTITION_EVIDENCE {"material":"iron","width_m":0.12,"dt_s":5e-08,"components":1,"dead_interfaces":0,"position_difference_m":0,"velocity_difference_m_s":0,"plastic_difference":0}
+[PASS] checked native/CPU contact transfer and continuous target integration
+
+Focused CTest:
+Test project C:/Users/henry/Documents/ChatGPT/Banjo/build/local-cell-tools
+      Start 109: banjo_native_lattice_contact_tests
+ 1/10 Test #109: banjo_native_lattice_contact_tests ...   Passed   19.20 sec
+      Start 113: banjo_fast_lattice_tests
+ 2/10 Test #113: banjo_fast_lattice_tests .............   Passed    5.81 sec
+      Start 114: banjo_lattice_external_load_tests
+ 3/10 Test #114: banjo_lattice_external_load_tests ....   Passed    0.09 sec
+      Start 115: banjo_solid_matter_patch_tests
+ 4/10 Test #115: banjo_solid_matter_patch_tests .......   Passed    1.83 sec
+      Start 116: banjo_constituent_partition_tests
+ 5/10 Test #116: banjo_constituent_partition_tests ....   Passed    0.90 sec
+      Start 120: banjo_native_tool_use_tests
+ 6/10 Test #120: banjo_native_tool_use_tests ..........   Passed    1.66 sec
+      Start 148: banjo_hand_stroke_tests
+ 7/10 Test #148: banjo_hand_stroke_tests ..............   Passed    0.48 sec
+      Start 149: banjo_ground_work_tests
+ 8/10 Test #149: banjo_ground_work_tests ..............   Passed    2.77 sec
+      Start 160: banjo_lattice_plasticity_tests
+ 9/10 Test #160: banjo_lattice_plasticity_tests .......   Passed    2.78 sec
+      Start 161: banjo_lattice_verlet_tests
+10/10 Test #161: banjo_lattice_verlet_tests ...........   Passed    0.04 sec
+
+100% tests passed, 0 tests failed out of 10
+
+Total Test time (real) =  35.72 sec
+
+Actual native worker: 16 tests passed (full ignored log: build/constituent-native-worker-tests.txt).
+Strict repeated-use gate (exit 1):
+buried cancel glass, released m3=0
+buried drop glass, released m3=0.000629784
+CLEARANCE_EVIDENCE {"column_width_m":0.1,"contact_work_j":0.8836910890552122,"dt_s":0.004166666666666667,"elapsed_s":0.16666666666666677,"head_width_m":0.04,"initial_pit_depth_m":0.06,"lowest_tip_m":0.6674033189246593,"material":"glass","reason":"","released_m3":2.336324901387024e-05,"released_mass_kg":0.03738119842219235,"scene_cell_m":0.02,"target_height_m":0.69,"tool_mass_kg":1.6}
+CLEARANCE_EVIDENCE {"column_width_m":0.1,"contact_work_j":0.0,"dt_s":0.004166666666666667,"elapsed_s":1.129166666666664,"head_width_m":0.28,"initial_pit_depth_m":0.06,"lowest_tip_m":0.7499990783224605,"material":"glass","reason":"no_contact","released_m3":0.0,"released_mass_kg":0.0,"scene_cell_m":0.02,"target_height_m":0.69,"tool_mass_kg":3.5200000213623053}
+buried cancel oak, released m3=0
+buried drop oak, released m3=0.000292492
+CLEARANCE_EVIDENCE {"column_width_m":0.1,"contact_work_j":0.6042644745689952,"dt_s":0.004166666666666667,"elapsed_s":0.1625000000000001,"head_width_m":0.04,"initial_pit_depth_m":0.06,"lowest_tip_m":0.6718959773768444,"material":"oak","reason":"","released_m3":9.86753951483536e-06,"released_mass_kg":0.01578806322373794,"scene_cell_m":0.02,"target_height_m":0.69,"tool_mass_kg":0.4479999671875024}
+CLEARANCE_EVIDENCE {"column_width_m":0.1,"contact_work_j":0.0,"dt_s":0.004166666666666667,"elapsed_s":1.141666666666664,"head_width_m":0.28,"initial_pit_depth_m":0.06,"lowest_tip_m":0.7499928884552409,"material":"oak","reason":"no_contact","released_m3":0.0,"released_mass_kg":0.0,"scene_cell_m":0.02,"target_height_m":0.69,"tool_mass_kg":0.9855999680078145}
+buried cancel iron, released m3=0
+buried drop iron, released m3=0.000579316
+CLEARANCE_EVIDENCE {"column_width_m":0.1,"contact_work_j":2.30646706198695,"dt_s":0.004166666666666667,"elapsed_s":0.27500000000000024,"head_width_m":0.04,"initial_pit_depth_m":0.06,"lowest_tip_m":0.6475580579778835,"material":"iron","reason":"","released_m3":0.00013856443386616973,"released_mass_kg":0.22170309418586956,"scene_cell_m":0.02,"target_height_m":0.69,"tool_mass_kg":5.036799959266602}
+CLEARANCE_EVIDENCE {"column_width_m":0.1,"contact_work_j":0.0,"dt_s":0.004166666666666667,"elapsed_s":1.154166666666664,"head_width_m":0.28,"initial_pit_depth_m":0.06,"lowest_tip_m":0.7500000906969386,"material":"iron","reason":"no_contact","released_m3":0.0,"released_mass_kg":0.0,"scene_cell_m":0.02,"target_height_m":0.69,"tool_mass_kg":11.080959910386525}
+native cycle glass pick, t=0.183333, wall s=0.0107987, acted=1, recovered=1, reason=, hand work J=-1.98003, contact work J=3.27504, removal m3=4.05063e-05, holding=handle
+final tip=0.647005,0.811865,0.145127, direction y=-0.999459, depth=0
+final grip speed=0.330313, target error=0.00205818
+mass kg=2.24, fragment kg=0.0648102, raw unclosed mechanical/work J=-1.74765
+repeat target 0.65,0.745949,0.15, hit=0.649998,0.745954,0.15, column=566
+repeat phase preparing -> acting, t=1.1875
+repeat tip=0.647341,0.810656,0.1456, depth=0, pointing y=-0.999452
+repeat phase acting -> recovering, t=1.22917
+repeat tip=0.646213,0.721321,0.149089, depth=0.0245726, pointing y=-0.99957
+repeat phase recovering -> finished, t=1.275
+repeat tip=0.64609,0.807842,0.148984, depth=0, pointing y=-0.999553
+repeat glass pick, phase=finished, reason=, holding=handle, removal m3=4.71967e-05
+repeat glass pick, removal m3=4.71967e-05
+native cycle glass shovel, t=0.208333, wall s=0.0132181, acted=1, recovered=1, reason=, hand work J=0.633386, contact work J=8.6127, removal m3=7.73705e-05, holding=handle
+final tip=0.646975,0.816899,0.138235, direction y=-0.999684, depth=0
+final grip speed=0.410159, target error=0.00695137
+mass kg=3.52, fragment kg=0.123793, raw unclosed mechanical/work J=-4.85644
+repeat target 0.65,0.742263,0.15, hit=0.650002,0.742259,0.15, column=566
+repeat phase preparing -> acting, t=1.2125
+repeat tip=0.647792,0.815987,0.138337, depth=0, pointing y=-0.999643
+repeat phase acting -> recovering, t=1.2625
+repeat tip=0.647457,0.717358,0.14417, depth=0.0248786, pointing y=-0.999745
+repeat phase recovering -> finished, t=1.3125
+repeat tip=0.645741,0.80849,0.144947, depth=0, pointing y=-0.999679
+repeat glass shovel, phase=finished, reason=, holding=handle, removal m3=4.49202e-05
+repeat glass shovel, removal m3=4.49202e-05
+native cycle glass hoe, t=0.191667, wall s=0.010985, acted=1, recovered=1, reason=, hand work J=-3.0976, contact work J=3.67905, removal m3=2.26174e-05, holding=handle
+final tip=0.647056,0.814204,0.142529, direction y=-0.99975, depth=0
+final grip speed=0.205453, target error=0.00428349
+mass kg=2.88, fragment kg=0.0361878, raw unclosed mechanical/work J=-1.68411
+repeat target 0.65,0.747738,0.15, hit=0.649998,0.747743,0.15, column=566
+repeat phase preparing -> acting, t=1.19583
+repeat tip=0.64777,0.813639,0.143293, depth=0, pointing y=-0.999725
+repeat phase acting -> recovering, t=1.24167
+repeat tip=0.645852,0.728037,0.147475, depth=0.0196632, pointing y=-0.999755
+repeat phase recovering -> finished, t=1.2875
+repeat tip=0.64381,0.81127,0.147804, depth=0, pointing y=-0.999664
+repeat glass hoe, phase=finished, reason=, holding=handle, removal m3=3.89336e-05
+repeat glass hoe, removal m3=3.89336e-05
+native cycle glass unfamiliar, t=0.1875, wall s=0.0113667, acted=1, recovered=1, reason=, hand work J=-2.28543, contact work J=3.7451, removal m3=2.89828e-05, holding=handle
+final tip=0.64716,0.812948,0.143593, direction y=-0.999639, depth=0
+final grip speed=0.254825, target error=0.00302199
+mass kg=2.56, fragment kg=0.0463724, raw unclosed mechanical/work J=-1.95307
+repeat target 0.65,0.747102,0.15, hit=0.650002,0.747098,0.15, column=566
+repeat phase preparing -> acting, t=1.19167
+repeat tip=0.647719,0.812093,0.144096, depth=0, pointing y=-0.999624
+repeat phase acting -> recovering, t=1.2375
+repeat tip=0.64515,0.725374,0.148232, depth=0.0216684, pointing y=-0.999644
+repeat phase recovering -> finished, t=1.28333
+repeat tip=0.644093,0.80976,0.148439, depth=0, pointing y=-0.99946
+repeat glass unfamiliar, phase=finished, reason=, holding=handle, removal m3=4.7292e-05
+repeat glass unfamiliar, removal m3=4.7292e-05
+native cycle oak pick, t=0.154167, wall s=0.0083363, acted=1, recovered=1, reason=, hand work J=-0.0640301, contact work J=1.44714, removal m3=1.00275e-05, holding=handle
+final tip=0.649276,0.811322,0.144697, direction y=-0.999922, depth=0
+final grip speed=0.206163, target error=0.00135366
+mass kg=0.6272, fragment kg=0.0160439, raw unclosed mechanical/work J=-1.2785
+repeat target 0.65,0.748997,0.15, hit=0.649997,0.749004,0.149999, column=566
+repeat phase preparing -> acting, t=1.15833
+repeat tip=0.649343,0.810577,0.145193, depth=0, pointing y=-0.99992
+repeat phase acting -> recovering, t=1.19167
+repeat tip=0.64853,0.736172,0.148626, depth=0.01282, pointing y=-0.99991
+repeat phase recovering -> finished, t=1.22917
+repeat tip=0.648618,0.810287,0.148774, depth=0, pointing y=-0.999809
+repeat oak pick, phase=finished, reason=, holding=handle, removal m3=5.59427e-06
+repeat oak pick, removal m3=5.59427e-06
+native cycle oak shovel, t=0.158333, wall s=0.0093658, acted=1, recovered=1, reason=, hand work J=0.495289, contact work J=2.76637, removal m3=1.5272e-05, holding=handle
+final tip=0.64761,0.811286,0.142114, direction y=-0.999967, depth=0
+final grip speed=0.266198, target error=0.00151644
+mass kg=0.9856, fragment kg=0.0244353, raw unclosed mechanical/work J=-2.46051
+repeat target 0.65,0.748473,0.15, hit=0.649999,0.748476,0.15, column=566
+repeat phase preparing -> acting, t=1.1625
+repeat tip=0.648215,0.810403,0.142081, depth=0, pointing y=-0.999968
+repeat phase acting -> recovering, t=1.19583
+repeat tip=0.648653,0.73716,0.146455, depth=0.0113149, pointing y=-0.99996
+repeat phase recovering -> finished, t=1.23333
+repeat tip=0.648085,0.809714,0.146884, depth=0, pointing y=-0.999932
+repeat oak shovel, phase=finished, reason=, holding=handle, removal m3=7.91976e-06
+repeat oak shovel, removal m3=7.91976e-06
+native cycle oak hoe, t=0.158333, wall s=0.0090444, acted=1, recovered=1, reason=, hand work J=0.269969, contact work J=2.17502, removal m3=1.20382e-05, holding=handle
+final tip=0.64875,0.811277,0.144519, direction y=-0.999952, depth=0
+final grip speed=0.273743, target error=0.00135255
+mass kg=0.8064, fragment kg=0.0192611, raw unclosed mechanical/work J=-1.95875
+repeat target 0.65,0.748796,0.15, hit=0.649999,0.748798,0.15, column=566
+repeat phase preparing -> acting, t=1.1625
+repeat tip=0.649034,0.81036,0.144786, depth=0, pointing y=-0.999953
+repeat phase acting -> recovering, t=1.19583
+repeat tip=0.648789,0.736947,0.148213, depth=0.011849, pointing y=-0.999942
+repeat phase recovering -> finished, t=1.23333
+repeat tip=0.648556,0.810052,0.148493, depth=0, pointing y=-0.999879
+repeat oak hoe, phase=finished, reason=, holding=handle, removal m3=2.81829e-06
+repeat oak hoe, removal m3=2.81829e-06
+native cycle oak unfamiliar, t=0.154167, wall s=0.0089499, acted=1, recovered=1, reason=, hand work J=0.132437, contact work J=1.83961, removal m3=1.1017e-05, holding=handle
+final tip=0.649037,0.8113,0.142416, direction y=-0.999942, depth=0
+final grip speed=0.253335, target error=0.00133918
+mass kg=0.7168, fragment kg=0.0176271, raw unclosed mechanical/work J=-1.65371
+repeat target 0.65,0.748898,0.15, hit=0.649999,0.748901,0.15, column=566
+repeat phase preparing -> acting, t=1.15833
+repeat tip=0.649164,0.810653,0.142902, depth=0, pointing y=-0.999941
+repeat phase acting -> recovering, t=1.19167
+repeat tip=0.648647,0.736863,0.147383, depth=0.0120351, pointing y=-0.99993
+repeat phase recovering -> finished, t=1.22917
+repeat tip=0.648515,0.810158,0.14754, depth=0, pointing y=-0.999879
+repeat oak unfamiliar, phase=finished, reason=, holding=handle, removal m3=3.59011e-06
+repeat oak unfamiliar, removal m3=3.59011e-06
+native cycle iron pick, t=0.395833, wall s=0.0195676, acted=1, recovered=1, reason=, hand work J=-5.61101, contact work J=9.84505, removal m3=0.000424898, holding=handle
+final tip=0.645129,0.829395,0.142351, direction y=-0.998525, depth=0
+final grip speed=0.359903, target error=0.0194161
+mass kg=7.05152, fragment kg=0.679838, raw unclosed mechanical/work J=29.4727
+repeat target 0.65,0.70751,0.15, hit=0.650001,0.707508,0.15, column=566
+repeat phase preparing -> acting, t=1.45417
+repeat tip=0.648914,0.753474,0.150975, depth=0, pointing y=-0.999254
+repeat phase acting -> recovering, t=2.45417
+repeat tip=0.648631,0.749819,0.151087, depth=0, pointing y=-0.999997
+repeat phase recovering -> finished, t=2.50833
+repeat tip=0.648631,0.824309,0.151091, depth=0, pointing y=-0.999997
+repeat iron pick, phase=finished, reason=no_contact, holding=handle, removal m3=0
+OPEN repeat clearance gate: iron pick
+repeat iron pick, removal m3=0
+native cycle iron shovel, t=0.533333, wall s=0.0262268, acted=1, recovered=1, reason=, hand work J=-11.7246, contact work J=12.8478, removal m3=0.000396865, holding=handle
+final tip=0.647676,0.826959,0.128262, direction y=-0.998602, depth=0
+final grip speed=0.40119, target error=0.017467
+mass kg=11.081, fragment kg=0.634983, raw unclosed mechanical/work J=66.0836
+repeat target 0.65,0.710314,0.15, hit=0.650002,0.710309,0.15, column=566
+repeat phase preparing -> acting, t=1.63333
+repeat tip=0.648997,0.772706,0.160523, depth=0, pointing y=-0.99907
+repeat phase acting -> recovering, t=2.63333
+repeat tip=0.651767,0.750004,0.164179, depth=0, pointing y=-1
+repeat phase recovering -> finished, t=2.7
+repeat tip=0.651771,0.825115,0.164177, depth=0, pointing y=-1
+repeat iron shovel, phase=finished, reason=no_contact, holding=handle, removal m3=0
+OPEN repeat clearance gate: iron shovel
+repeat iron shovel, removal m3=0
+native cycle iron hoe, t=0.475, wall s=0.0235468, acted=1, recovered=1, reason=, hand work J=-8.14234, contact work J=11.9801, removal m3=0.000450987, holding=handle
+final tip=0.644323,0.82697,0.132798, direction y=-0.998291, depth=0
+final grip speed=0.399061, target error=0.0172653
+mass kg=9.06624, fragment kg=0.721579, raw unclosed mechanical/work J=64.215
+repeat target 0.65,0.704901,0.15, hit=0.650001,0.704898,0.15, column=566
+repeat phase preparing -> acting, t=1.5375
+repeat tip=0.650844,0.754782,0.139984, depth=0, pointing y=-0.998553
+repeat phase acting -> recovering, t=2.5375
+repeat tip=0.652522,0.749983,0.137308, depth=0, pointing y=-1
+repeat phase recovering -> finished, t=2.6
+repeat tip=0.65252,0.825272,0.13731, depth=0, pointing y=-1
+repeat iron hoe, phase=finished, reason=no_contact, holding=handle, removal m3=0
+OPEN repeat clearance gate: iron hoe
+repeat iron hoe, removal m3=0
+native cycle iron unfamiliar, t=0.429167, wall s=0.0203142, acted=1, recovered=1, reason=, hand work J=-9.35587, contact work J=8.24432, removal m3=0.000333592, holding=handle
+final tip=0.644646,0.828369,0.135335, direction y=-0.999022, depth=0
+final grip speed=0.414783, target error=0.0184305
+mass kg=8.05888, fragment kg=0.533748, raw unclosed mechanical/work J=57.3834
+repeat target 0.65,0.716641,0.15, hit=0.649999,0.716643,0.15, column=566
+repeat phase preparing -> acting, t=1.50833
+repeat tip=0.650447,0.779557,0.149234, depth=0, pointing y=-0.999558
+repeat phase acting -> recovering, t=2.50833
+repeat tip=0.651057,0.749989,0.149148, depth=0, pointing y=-1
+repeat phase recovering -> finished, t=2.56667
+repeat tip=0.651057,0.825087,0.149139, depth=0, pointing y=-1
+repeat iron unfamiliar, phase=finished, reason=no_contact, holding=handle, removal m3=0
+OPEN repeat clearance gate: iron unfamiliar
+repeat iron unfamiliar, removal m3=0
+repeat gameplay acceptance remains open: 4 fixtures

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "fastlattice/FastLattice.hpp"
+#include "fastlattice/ConstituentPartition.hpp"
 #include "material/Material.hpp"
 #include "matter/Lattice.hpp"
 
@@ -30,15 +31,21 @@ struct SolidComponent {
 };
 
 struct SolidPatchReport {
+    std::uint64_t accepted_steps{};
+    bool owns_constituents{true};
     double time_s{}, timestep_s{}, positive_source_work_j{};
     double mass_kg{}, volume_m3{}, kinetic_j{}, elastic_j{}, removed_bond_energy_j{};
     double source_work_j{}, integration_error_j{}, energy_residual_j{};
+    double initial_mechanical_j{}; // inherited at activation, not supplied work
     Vec3 momentum_kg_m_s{}, angular_momentum_kg_m2_s{};
     Vec3 source_impulse_n_s{}, source_angular_impulse_kg_m2_s{};
     Vec3 boundary_impulse_n_s{}, boundary_angular_impulse_kg_m2_s{};
+    Vec3 bond_roundoff_impulse_n_s{}, bond_roundoff_angular_kg_m2_s{};
     Vec3 momentum_residual_kg_m_s{}, angular_residual_kg_m2_s{};
     std::uint32_t broken_bonds{};
 };
+
+struct SolidPatchTransfer;
 
 struct SolidPulseResult {
     unsigned accepted_steps{};
@@ -68,8 +75,21 @@ public:
     [[nodiscard]] std::vector<SolidComponent> components() const;
     [[nodiscard]] const LatticeState &state() const { return state_; }
     [[nodiscard]] const LatticeAsset &asset() const { return asset_; }
+    [[nodiscard]] const LatticeSchedule &schedule() const { return schedule_; }
+    [[nodiscard]] const std::vector<std::uint32_t> &sourceNodeIds() const {return source_nodes_;}
+    [[nodiscard]] const std::vector<std::uint32_t> &sourceBondIds() const {return source_bonds_;}
+    [[nodiscard]] bool ownsConstituents() const { return backend_!=nullptr; }
+    // Stage full constitutive components, then retire this solver atomically.
+    // Past global work/loss receipts remain in `before`, never distributed or
+    // duplicated between children. Children retain absolute accepted time and
+    // start incremental accounts at their inherited physical state. No rigid
+    // coarsening, body creation or unsupported soil activation occurs here.
+    [[nodiscard]] SolidPatchTransfer transferToComponents();
 
 private:
+    SolidMatterPatch(std::string source,double cell_m,const CompiledBrittleMaterial &,
+                     ConstituentComponent component,std::vector<std::uint32_t> source_nodes,
+                     std::vector<std::uint32_t> source_bonds,std::uint64_t accepted_steps,double dt);
     std::string source_;
     double cell_m_{}, timestep_s_{}, positive_work_j_{};
     LatticeAsset asset_;
@@ -77,6 +97,15 @@ private:
     LatticeSchedule schedule_;
     LatticeState state_;
     std::unique_ptr<LatticeBackend> backend_;
+    std::vector<std::uint32_t> source_nodes_,source_bonds_;
+    std::uint64_t initial_steps_{};
+    SolidPatchReport initial_,retired_;
+};
+
+struct SolidPatchTransfer {
+    SolidPatchReport before;
+    std::vector<std::unique_ptr<SolidMatterPatch>> components;
+    std::vector<SeveredConstituentBond> severed_interfaces;
 };
 
 } // namespace banjo::fastlattice

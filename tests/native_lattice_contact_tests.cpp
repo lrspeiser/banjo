@@ -1,4 +1,5 @@
 #include "fastlattice/NativeFixedContact.hpp"
+#include "fastlattice/ConstituentPartition.hpp"
 #include "material/MaterialCatalog.hpp"
 #include "material/MaterialCompiler.hpp"
 #include "matter/BoxLattice.hpp"
@@ -416,6 +417,56 @@ void coupledMatchedTargets() {
     }
     }
 }
+void partitionContactedTarget(Target &target,LatticeBackend &parent,const LatticeState &state,double width) {
+    // Material-only continuation after the coupled experiment ends. The native
+    // source is paused; this does not claim live-world contact/handoff coverage.
+    const auto before=parent.status();
+    const auto prepared=partitionConstituents(target.asset,target.schedule,state);
+    std::vector<std::unique_ptr<LatticeBackend>> children;
+    double kinetic=0,elastic=0;
+    for(const auto &part:prepared.components) {
+        for(unsigned i=0;i<part.parent_nodes.size();++i) {
+            const auto old=part.parent_nodes[i];
+            for(unsigned axis=0;axis<3;++axis)
+                require(part.state.u[3*i+axis]==state.u[3*old+axis]&&part.state.u_prev[3*i+axis]==state.u_prev[3*old+axis]&&
+                    part.state.v[3*i+axis]==state.v[3*old+axis],"native-contact partition changed material motion");
+        }
+        for(unsigned o=0;o<part.parent_bonds.size();++o) {
+            const auto k=part.schedule.bond_schedule_index[o],old=target.schedule.bond_schedule_index[part.parent_bonds[o]];
+            require(part.state.plastic_extension[k]==state.plastic_extension[old]&&part.state.plastic_strain[k]==state.plastic_strain[old]&&
+                part.state.prev_tensile[k]==state.prev_tensile[old]&&part.state.damage[k]==state.damage[old],"native-contact history reset during partition");
+        }
+        kinetic+=latticeStateKineticEnergy(part.state);elastic+=latticeStateElasticEnergy(part.state);
+        auto child=makeCpuLatticeBackend(part.schedule,Precision::Double);child->upload(part.state,target.settings,{});
+        children.push_back(std::move(child));
+    }
+    near(kinetic,latticeStateKineticEnergy(state),1e-12,"contacted partition kinetic energy");
+    near(elastic,latticeStateElasticEnergy(state),1e-12,"contacted partition stored energy");
+    require(parent.status().total_steps==before.total_steps&&parent.status().external_point_transfer.transfers==before.external_point_transfer.transfers,
+        "read-only partition advanced contacted source clock or receipts");
+    parent.run({.max_steps=128});const auto control=target.download(parent);
+    double position_error=0,velocity_error=0,plastic_error=0;
+    for(unsigned c=0;c<children.size();++c) {
+        children[c]->run({.max_steps=128});LatticeState resumed;SphereState<double> unused{};children[c]->download(resumed,unused);
+        const auto &part=prepared.components[c];
+        for(unsigned i=0;i<part.parent_nodes.size();++i) {
+            const auto old=part.parent_nodes[i];Vec3 dx{},dv{};
+            dx={resumed.u[3*i]-control.u[3*old],resumed.u[3*i+1]-control.u[3*old+1],resumed.u[3*i+2]-control.u[3*old+2]};
+            dv={resumed.v[3*i]-control.v[3*old],resumed.v[3*i+1]-control.v[3*old+1],resumed.v[3*i+2]-control.v[3*old+2]};
+            position_error=std::max(position_error,length(dx));velocity_error=std::max(velocity_error,length(dv));
+        }
+        for(unsigned o=0;o<part.parent_bonds.size();++o) {
+            const auto k=part.schedule.bond_schedule_index[o],old=target.schedule.bond_schedule_index[part.parent_bonds[o]];
+            plastic_error=std::max(plastic_error,std::abs(resumed.plastic_strain[k]-control.plastic_strain[old]));
+            require(resumed.alive[k]==control.alive[old]&&resumed.failure_mode[k]==control.failure_mode[old],"contacted continuation changed failure");
+        }
+    }
+    near(position_error,0,1e-10,"contacted component continuation position");
+    near(velocity_error,0,1e-8,"contacted component continuation velocity");near(plastic_error,0,1e-12,"contacted plastic continuation");
+    std::cout<<"CONTACT_PARTITION_EVIDENCE {\"material\":\""<<target.material.name<<"\",\"width_m\":"<<width
+        <<",\"dt_s\":"<<target.settings.dt<<",\"components\":"<<prepared.components.size()<<",\"dead_interfaces\":"<<prepared.severed_interfaces.size()
+        <<",\"position_difference_m\":"<<position_error<<",\"velocity_difference_m_s\":"<<velocity_error<<",\"plastic_difference\":"<<plastic_error<<"}\n";
+}
 void coupledClampedFootprints() {
     // Same finite 6 m/s tool assembly, 40 mm cells, material laws and physical
     // duration. Only the actual head width changes. Its inertia/mass are not
@@ -512,6 +563,7 @@ void coupledClampedFootprints() {
                 <<",\"p_residual_n_s\":"<<length(p)<<",\"l_residual_kg_m2_s\":"<<length(l)<<",\"unallocated_energy_j\":"<<unallocated
                 <<",\"native_step_energy_j\":"<<native_step_energy<<",\"integration_error_j\":"<<s.integration_numerical_energy_j
                 <<",\"mass_kg\":"<<final.mass_kg<<",\"wall_s\":"<<wall<<"}\n";
+            partitionContactedTarget(target,*backend,final_state,width);
         }
     }
 }
