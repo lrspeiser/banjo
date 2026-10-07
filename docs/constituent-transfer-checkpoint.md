@@ -4,6 +4,10 @@ October 6, 2026. Experimental CPU reference on source base main `cb1d3f71`.
 This advances W08/W09 state transfer. It does not activate terrain or install the
 replacement in the browser. The complete W00–W17 rewrite remains open.
 
+Implementation, tests and evidence are published on GitHub main at
+`5b6097d7ee83716f7f11a88670c4e7bfb50d648c`. This publication note changes
+documentation only; measured source/artifact hashes remain in the evidence.
+
 ## Representation and ownership
 
 `partitionConstituents` prepares components from the **live bond graph** of a
