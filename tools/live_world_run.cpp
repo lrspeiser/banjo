@@ -1245,7 +1245,7 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
         if (!impact.declined.empty()) said["declined"] = impact.declined;
         impacts.push_back(std::move(said));
     }
-    nlohmann::json state = {{"ok", true}, {"bulk_transfer_receipts", 1}, {"t", world.time_s()}, {"stepped_back", world.steppedBack()},
+    nlohmann::json state = {{"ok", true}, {"bulk_transfer_receipts", 1}, {"pickup_admission_version", 1}, {"t", world.time_s()}, {"stepped_back", world.steppedBack()},
             {"cell_size_m", world.cellSize()}, {"geometry", with_geometry},
             // `partial` true means bodies missing from this reply are unchanged,
             // not gone; `gone` names the ones that really did go. `count` is how
@@ -1916,6 +1916,16 @@ int main(int argc, char **argv) {
                     const auto cut=world->strikeCell(readVec(command, "at_m"),command.value("work_j",0.0),
                         command.value("work_source",std::string{}));
                     if(!cut.cut_receipt_json.empty())reply["ground_cut"]=nlohmann::json::parse(cut.cut_receipt_json);
+                } else if (op == "pickup-check" || op == "pickup") {
+                    const std::string name=command.at("name").get<std::string>();
+                    auto admission=world->pickupAdmission(name,readVec(command,"from"),readVec(command,"dir"),
+                        command.at("max_m").get<double>());
+                    if(op=="pickup" && admission.admitted && !world->wield(name,admission.grip_world_m)) {
+                        admission.admitted=false;admission.reason="native_refused";
+                    }
+                    const auto &g=admission.grip_world_m;
+                    reply["pickup"]={{"admitted",admission.admitted},{"reason",admission.reason},
+                        {"grip_m",{g.x,g.y,g.z}},{"name",name}};
                 } else if (op == "ground-debris" || op == "ground_debris") {
                     reply["ground_debris"]=nlohmann::json::parse(world->groundDebrisJson());
                 } else if (op == "collect-ground-debris" || op == "collect_ground_debris") {

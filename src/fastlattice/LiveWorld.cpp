@@ -3338,6 +3338,13 @@ struct LiveWorld::Impl {
         Vec3 walk_impulse_n_s{}, walk_angular_impulse_kg_m2_s{}, support_reaction_n_s{};
     };
     std::map<std::string, NativePlayer> native_players;
+    [[nodiscard]] bool gripWithinNativeReach(const std::string &actor, const Vec3 &grip) const {
+        const auto own = native_players.find(actor);
+        if (own == native_players.end()) return true; // editor/laboratory hand
+        const RigidSnapshot body = world->snapshot(own->second.id);
+        const Vec3 shoulder = body.center_of_mass_world_m + body.orientation_world.rotate(Vec3{0, kShoulderAboveCenterM, 0});
+        return length(grip-shoulder) <= kArmReachM;
+    }
     std::map<std::string, Vec3> ground_aims;   // by actor: setGroundAim
     std::map<std::string, std::optional<Vec3>> ground_actions;
     // The walk controller (setNativePlayerWalk), worked out for one step from
@@ -6805,13 +6812,9 @@ void LiveWorld::step(double dt_s) {
         // that would not give, slid the body away for as long as the pull
         // lasted and twisted it at the grip -- a player digging was flung
         // 184 m off the map (2026-10-04).
-        if (const auto own = impl_->native_players.find(actor); own != impl_->native_players.end()) {
-            const RigidSnapshot body = impl_->world->snapshot(own->second.id);
-            const Vec3 shoulder = body.center_of_mass_world_m + body.orientation_world.rotate(Vec3{0, kShoulderAboveCenterM, 0});
-            if (length(pull.grip - shoulder) > kArmReachM) {
-                release();
-                return out;
-            }
+        if (!impl_->gripWithinNativeReach(actor, pull.grip)) {
+            release();
+            return out;
         }
         out.on = true;
         out.id = id;
@@ -14268,10 +14271,61 @@ void LiveWorld::forgetCuts() {
     }
 }
 
+LivePickupAdmission LiveWorld::pickupAdmission(const std::string &name,
+    const Vec3 &from_world_m, const Vec3 &direction, double max_distance_m) const {
+    const Impl &I=*impl_;
+    const auto refuse=[](const char *reason) { return LivePickupAdmission{false,reason,{}}; };
+    const auto own=I.native_players.find(I.selected_hand);
+    if(own==I.native_players.end())return refuse("not_joined");
+    const auto finite=[](const Vec3 &v) { return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z); };
+    if(!finite(from_world_m)||!finite(direction)||!std::isfinite(max_distance_m)||
+       max_distance_m<=0||max_distance_m>2||std::abs(length(direction)-1)>1e-6)
+        return refuse("invalid_input");
+    const auto actor=I.world->snapshot(own->second.id);
+    // The existing 1.7 m avatar has its eye 0.08 m below the top (1.62 m
+    // above its feet). This origin is checked against actual native pose.
+    const Vec3 eyes=actor.center_of_mass_world_m+actor.orientation_world.rotate(Vec3{0,.77,0});
+    if(length(from_world_m-eyes)>.2)return refuse("invalid_input");
+    if(I.holding!=static_cast<std::size_t>(-1))return refuse("already_holding");
+    const auto found=I.index_of.find(name);
+    if(found==I.index_of.end()||!I.inWorld(found->second))return refuse("target_changed");
+    if(I.heldByOther(found->second))return refuse("held_by_another_actor");
+    const auto hit=pick(from_world_m,direction,max_distance_m);
+    if(!hit.hit||hit.name!=name)return refuse("target_changed");
+    const auto members=I.jointedWith(found->second,true);
+    double mass=0;
+    for(const auto member:members) {
+        if(I.described[member].anchored)return refuse("unsupported_capability");
+        mass+=I.world->mechanicalState(I.body_of[member]).mass_kg;
+    }
+    if(I.environment && I.carriedObjectsKg(false)+mass+I.environment->carriedKg()>I.environment->carryLimitKg())
+        return refuse("native_refused");
+    Vec3 grip=hit.point_world_m; // unconfigured props use their physical surface
+    bool have_grip=false;
+    for(const auto &point:toolPoints()) {
+        if(!point.attached || !point.grip_connected)continue;
+        const auto part=I.index_of.find(point.body);
+        if(part!=I.index_of.end()&&std::find(members.begin(),members.end(),part->second)!=members.end()) {
+            grip=point.grip_m;have_grip=true;break;
+        }
+    }
+    for(const auto &blade:blades()) {
+        if(have_grip)break;
+        if(!blade.attached)continue;
+        const auto part=I.index_of.find(blade.body);
+        if(part!=I.index_of.end()&&std::find(members.begin(),members.end(),part->second)!=members.end()) {
+            grip=blade.grip_m;break; // shared declared functional grip, not tool name
+        }
+    }
+    if(!finite(grip)||!I.gripWithinNativeReach(I.selected_hand,grip))return refuse("out_of_reach");
+    return {true,{},grip};
+}
+
 bool LiveWorld::wield(const std::string &name, const Vec3 &grip_world_m) {
     if (!std::isfinite(grip_world_m.x) || !std::isfinite(grip_world_m.y) ||
         !std::isfinite(grip_world_m.z))
         return false;
+    if (!impl_->gripWithinNativeReach(impl_->selected_hand, grip_world_m)) return false;
     if (!grab(name)) return false;
     Impl &I = *impl_;
     const RigidSnapshot now = I.world->snapshot(I.body_of[I.holding]);

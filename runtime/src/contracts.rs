@@ -93,6 +93,7 @@ pub enum Refusal {
     KernelUnavailable,
     CapacityExceeded,
     HostActionRequired,
+    Cancelled,
 }
 
 impl Command {
@@ -165,6 +166,7 @@ impl Command {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Status {
+    Pending,
     Applied,
     Observed,
     Rejected,

@@ -163,6 +163,14 @@ struct LivePick {
     Vec3 point_world_m{};
 };
 
+// Read-only physical pickup eligibility for the selected native actor. Names
+// are transitional scene-instance references; they do not grant authority.
+struct LivePickupAdmission {
+    bool admitted{};
+    std::string reason;
+    Vec3 grip_world_m{};
+};
+
 // Where a thing would go set down on a surface at a point, turned about the
 // vertical -- its underside on the surface, its middle over the point -- and
 // whether it fits there. Asked of the engine's own shapes; nothing moves. See
@@ -2257,6 +2265,8 @@ public:
     // This is not grab(). grab() carries a loose body exactly where it is put,
     // which is placement -- an editor's move -- and stays exactly that.
     [[nodiscard]] bool wield(const std::string &name, const Vec3 &grip_world_m);
+    [[nodiscard]] LivePickupAdmission pickupAdmission(const std::string &name,
+        const Vec3 &from_world_m, const Vec3 &direction, double max_distance_m) const;
     // In the frame poses() reports: asking a thing to face the way it is said
     // to face leaves it as it is, however it was built turned.
     void aimHeld(const Quat &orientation_world);

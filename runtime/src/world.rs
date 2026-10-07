@@ -33,6 +33,11 @@ struct Receipt {
     simulation_s: f64,
 }
 
+struct PendingPickup {
+    instance: String,
+    started_attempted_ticks: u64,
+}
+
 #[derive(Debug, Serialize)]
 pub struct ClockState {
     pub tick: u64,
@@ -49,6 +54,8 @@ pub struct World<K: Kernel> {
     joined: BTreeSet<String>,
     sequences: BTreeMap<String, u64>,
     receipts: BTreeMap<(String, String), Receipt>,
+    pending_pickups: BTreeMap<(String, String), PendingPickup>,
+    completions: Vec<Outcome>,
     kernel: K,
     revision: u64,
     clock: ClockState,
@@ -68,6 +75,8 @@ impl<K: Kernel> World<K> {
             joined: BTreeSet::new(),
             sequences: BTreeMap::new(),
             receipts: BTreeMap::new(),
+            pending_pickups: BTreeMap::new(),
+            completions: Vec::new(),
             kernel,
             revision: 0,
             clock: ClockState {
@@ -89,6 +98,7 @@ impl<K: Kernel> World<K> {
         if let Some(fault) = self.clock.fault {
             return Err(fault);
         }
+        let before_tick = self.clock.tick;
         self.clock.attempted_ticks += u64::from(STEPS_PER_BATCH);
         let result = self.kernel.advance(DT_S, STEPS_PER_BATCH).and_then(|()| {
             let time = self.kernel.state()["t"]
@@ -109,8 +119,100 @@ impl<K: Kernel> World<K> {
         });
         if let Err(reason) = result {
             self.clock.fault = Some(reason);
+        } else if !self.pending_pickups.is_empty() {
+            // Confirm after an accepted physical batch, not wield's boolean.
+            // A rollback keeps the request pending instead of granting it.
+            {
+                for ((actor, command_id), pending) in std::mem::take(&mut self.pending_pickups) {
+                    if (self.clock.tick == before_tick
+                        || self.kernel.state()["stepped_back"] == true)
+                        && self.clock.attempted_ticks - pending.started_attempted_ticks < 480
+                    {
+                        self.pending_pickups.insert((actor, command_id), pending);
+                        continue;
+                    }
+                    let confirmed = self.kernel.state()["player_hands"][&actor]["holding"].as_str()
+                        == Some(pending.instance.as_str())
+                        && self.clock.tick > before_tick
+                        && self.kernel.state()["stepped_back"] != true;
+                    let status = if confirmed {
+                        Status::Applied
+                    } else {
+                        Status::Rejected
+                    };
+                    let mut reason = if confirmed {
+                        None
+                    } else {
+                        Some(Refusal::NativeRefused)
+                    };
+                    if !confirmed
+                        && self.kernel.state()["player_hands"][&actor]["holding"].as_str()
+                            == Some(pending.instance.as_str())
+                    {
+                        // An expired unconfirmed hold cannot retain custody.
+                        if let Err(fault) = self.kernel.release(&actor) {
+                            reason = Some(fault);
+                            self.clock.fault = Some(fault);
+                        }
+                    }
+                    let receipt = self
+                        .receipts
+                        .get_mut(&(actor.clone(), command_id.clone()))
+                        .expect("pending receipt");
+                    receipt.status = status.clone();
+                    receipt.reason = reason;
+                    receipt.tick = self.clock.tick;
+                    receipt.simulation_s = self.clock.simulation_s;
+                    let revision = receipt.revision;
+                    let snapshot = self.observation(&actor);
+                    self.completions.push(Outcome {
+                        schema: "banjo.outcome.v1".into(),
+                        command_id: Id::new(command_id).expect("validated id"),
+                        actor_id: Id::new(actor).expect("validated actor"),
+                        status,
+                        reason,
+                        revision,
+                        tick: self.clock.tick,
+                        simulation_s: self.clock.simulation_s,
+                        snapshot,
+                    });
+                }
+            }
         }
         result
+    }
+
+    pub fn take_completions(&mut self) -> Vec<Outcome> {
+        std::mem::take(&mut self.completions)
+    }
+
+    fn cancel_pending(&mut self, actor: &str) {
+        let keys: Vec<_> = self
+            .pending_pickups
+            .keys()
+            .filter(|(a, _)| a == actor)
+            .cloned()
+            .collect();
+        for key in keys {
+            self.pending_pickups.remove(&key);
+            let receipt = self.receipts.get_mut(&key).expect("pending receipt");
+            receipt.status = Status::Rejected;
+            receipt.reason = Some(Refusal::Cancelled);
+            receipt.tick = self.clock.tick;
+            receipt.simulation_s = self.clock.simulation_s;
+            let revision = receipt.revision;
+            self.completions.push(Outcome {
+                schema: "banjo.outcome.v1".into(),
+                command_id: Id::new(key.1).expect("validated id"),
+                actor_id: Id::new(actor).expect("validated actor"),
+                status: Status::Rejected,
+                reason: Some(Refusal::Cancelled),
+                revision,
+                tick: self.clock.tick,
+                simulation_s: self.clock.simulation_s,
+                snapshot: self.observation(actor),
+            });
+        }
     }
 
     fn observation(&self, actor: &str) -> Value {
@@ -217,6 +319,7 @@ impl<K: Kernel> World<K> {
                     Status::Applied | Status::AlreadyApplied => Status::AlreadyApplied,
                     Status::Observed => Status::Observed,
                     Status::Rejected => Status::Rejected,
+                    Status::Pending => Status::Pending,
                 },
                 receipt.reason,
                 true,
@@ -246,6 +349,19 @@ impl<K: Kernel> World<K> {
         let result = self.apply(actor, &command.payload, request.host_action);
         let (status, reason) = match result {
             Ok(()) if matches!(command.payload, Action::Inspect) => (Status::Observed, None),
+            Ok(()) if matches!(command.payload, Action::Pickup { .. }) => {
+                self.revision += 1;
+                if let Action::Pickup { instance_id, .. } = &command.payload {
+                    self.pending_pickups.insert(
+                        key.clone(),
+                        PendingPickup {
+                            instance: instance_id.clone(),
+                            started_attempted_ticks: self.clock.attempted_ticks,
+                        },
+                    );
+                }
+                (Status::Pending, None)
+            }
             Ok(()) => {
                 self.revision += 1;
                 (Status::Applied, None)
@@ -293,11 +409,15 @@ impl<K: Kernel> World<K> {
                 heading_rad,
                 jump,
             } => self.kernel.walk(actor, *velocity_m_s, *heading_rad, *jump),
-            // Native read-only admission and grip confirmation are W05.
-            // Forwarding wield blindly would recreate the false pickup ack.
-            Action::Pickup { .. } => Err(Refusal::UnsupportedCapability),
+            Action::Pickup { instance_id, ray } => {
+                if self.completions.len() + self.pending_pickups.len() >= 64 {
+                    return Err(Refusal::CapacityExceeded);
+                }
+                self.kernel.pickup(actor, instance_id, ray)
+            }
             Action::Drop => {
                 self.kernel.release(actor)?;
+                self.cancel_pending(actor);
                 if self.kernel.state()["player_hands"][actor]["holding"].as_str() == Some("") {
                     Ok(())
                 } else {
@@ -307,6 +427,7 @@ impl<K: Kernel> World<K> {
             Action::Leave => {
                 self.kernel.release(actor)?;
                 self.kernel.remove(actor)?;
+                self.cancel_pending(actor);
                 if self.kernel.state()["native_players"][actor].is_object() {
                     return Err(Refusal::NativeRefused);
                 }
@@ -337,7 +458,17 @@ mod tests {
         fn walk(&mut self, _: &str, _: [f64; 3], _: f64, _: bool) -> Result<(), Refusal> {
             Ok(())
         }
-        fn release(&mut self, _: &str) -> Result<(), Refusal> {
+        fn release(&mut self, actor: &str) -> Result<(), Refusal> {
+            self.state["player_hands"][actor] = json!({"holding":""});
+            Ok(())
+        }
+        fn pickup(
+            &mut self,
+            actor: &str,
+            instance: &str,
+            _: &crate::contracts::Ray,
+        ) -> Result<(), Refusal> {
+            self.state["player_hands"][actor] = json!({"holding":instance});
             Ok(())
         }
         fn remove(&mut self, a: &str) -> Result<(), Refusal> {
@@ -463,5 +594,56 @@ mod tests {
             Status::AlreadyApplied
         ));
         assert_eq!(w.revision, 1);
+    }
+    fn take_request(n: u64) -> TrustedRequest {
+        request(
+            &format!("pickup-{n}"),
+            n,
+            Action::Pickup {
+                instance_id: "fixture-tool".into(),
+                ray: crate::contracts::Ray {
+                    from_m: [0.0, 1.62, 0.0],
+                    direction: [0.0, 0.0, 1.0],
+                    max_distance_m: 2.0,
+                },
+            },
+        )
+    }
+    #[test]
+    fn pickup_requires_accepted_time_and_cancellation_cannot_be_acknowledged_as_success() {
+        let mut w = world();
+        w.execute(request("join", 1, Action::Join { feet_m: [0.0; 3] }));
+        assert!(matches!(w.execute(take_request(2)).status, Status::Pending));
+        w.kernel.accepted = 0;
+        w.advance().unwrap();
+        assert!(w.take_completions().is_empty());
+        w.kernel.accepted = 4;
+        w.advance().unwrap();
+        let done = w.take_completions();
+        assert!(matches!(done[0].status, Status::Applied));
+        w.execute(request("drop", 3, Action::Drop));
+        assert!(matches!(w.execute(take_request(4)).status, Status::Pending));
+        w.execute(request("cancel", 5, Action::Drop));
+        let done = w.take_completions();
+        assert_eq!(done[0].reason, Some(Refusal::Cancelled));
+        w.advance().unwrap();
+        assert!(w.take_completions().is_empty());
+        assert_eq!(w.execute(take_request(4)).reason, Some(Refusal::Cancelled));
+    }
+    #[test]
+    fn a_lost_grip_or_repeated_rollback_ends_in_refusal() {
+        let mut w = world();
+        w.execute(request("join", 1, Action::Join { feet_m: [0.0; 3] }));
+        w.execute(take_request(2));
+        w.kernel.state["player_hands"]["alice"]["holding"] = Value::String("".into());
+        w.advance().unwrap();
+        assert_eq!(w.take_completions()[0].reason, Some(Refusal::NativeRefused));
+        w.execute(take_request(3));
+        w.kernel.accepted = 0;
+        for _ in 0..120 {
+            w.advance().unwrap();
+        }
+        assert_eq!(w.take_completions()[0].reason, Some(Refusal::NativeRefused));
+        assert_eq!(w.kernel.state["player_hands"]["alice"]["holding"], "");
     }
 }

@@ -25,6 +25,7 @@ class Worker:
         self.expected_returncode = 0
         self.temp = tempfile.TemporaryDirectory()
         self.sequence = 0
+        self.events = []
         scene = Path(self.temp.name)/'scene.json'
         scene.write_text(json.dumps({'bodies':[
             {'name':'floor','shape':'box','material':'iron','dimensions_m':[8,.2,8],
@@ -56,7 +57,10 @@ class Worker:
             'expected_revision':None,'payload':action}
         message={'principal':principal or actor,'host_action':host,'command':command}
         self.raw(json.dumps(message))
-        return self.receive()
+        while True:
+            frame=self.receive()
+            if frame['schema']=='banjo.worker-completion.v1':self.events.append(frame)
+            else:return frame
 
     def raw(self,line):
         self.child.stdin.write(line+'\n');self.child.stdin.flush()
@@ -66,6 +70,21 @@ class Worker:
 
     def inspect(self,actor='alice'):
         return self.request({'kind':'inspect'},actor=actor)
+
+    def pickup(self, snapshot, actor='alice', instance='test-block'):
+        body=next(b for b in snapshot['bodies'] if b['name']==instance)
+        player=snapshot['native_players'][actor]
+        w,x,y,z=player['orientation_wxyz']
+        up=[2*(x*y-w*z),1-2*(x*x+z*z),2*(y*z+w*x)]
+        eye=[a+.77*b for a,b in zip(player['position_m'],up)]
+        direction=[b-a for a,b in zip(eye,body['position_m'])]
+        norm=sum(v*v for v in direction)**.5
+        return self.request({'kind':'pickup','instance_id':instance,'ray':{
+            'from_m':eye,'direction':[v/norm for v in direction],'max_distance_m':2}},actor=actor)
+
+    def completion(self):
+        if self.events:return self.events.pop(0)
+        return self.receive()
 
     def close(self):
         if self.closed:return
@@ -176,12 +195,46 @@ class NativeOwner(unittest.TestCase):
         self.assertEqual(worker.inspect()['outcome']['status'],'observed')
         self.assertIsNone(worker.inspect()['clock']['fault'])
 
-    def test_unimplemented_pickup_is_an_explicit_refusal_not_false_success(self):
+    def test_wrong_ray_is_an_explicit_refusal_not_false_success(self):
         worker=self.worker();worker.join()
         result=worker.request({'kind':'pickup','instance_id':'test-block','ray':{
             'from_m':[0,1.67,0],'direction':[0,0,1],'max_distance_m':2}})['outcome']
-        self.assertEqual(result['status'],'rejected');self.assertEqual(result['reason'],'unsupported_capability')
+        self.assertEqual(result['status'],'rejected');self.assertEqual(result['reason'],'target_changed')
         self.assertEqual(result['snapshot']['own_hand']['holding'],'')
+
+    def test_generic_pickup_is_pending_until_native_batch_then_drop_is_confirmed(self):
+        for material in ('glass','oak','iron'):
+            with self.subTest(material=material):
+                worker=self.worker(material);worker.join()
+                time.sleep(.1)
+                snapshot=worker.inspect()['outcome']['snapshot']
+                pending=worker.pickup(snapshot)['outcome']
+                self.assertEqual(pending['status'],'pending')
+                complete=worker.completion()['outcome']
+                self.assertEqual(complete['command_id'],pending['command_id'])
+                self.assertEqual(complete['status'],'applied')
+                self.assertGreater(complete['tick'],pending['tick'])
+                self.assertEqual(complete['snapshot']['own_hand']['holding'],'test-block')
+                time.sleep(.05)
+                self.assertEqual(worker.inspect()['outcome']['snapshot']['own_hand']['holding'],'test-block')
+                drop=worker.request({'kind':'drop'})['outcome']
+                self.assertEqual(drop['status'],'applied');self.assertEqual(drop['snapshot']['own_hand']['holding'],'')
+                worker.close()
+
+    def test_two_players_cannot_take_each_others_held_object_but_can_retrieve_after_drop(self):
+        worker=self.worker();worker.join();worker.join('bob',(.5,.05,0))
+        time.sleep(.1)
+        pending=worker.pickup(worker.inspect()['outcome']['snapshot'])['outcome']
+        self.assertEqual(pending['status'],'pending')
+        self.assertEqual(worker.completion()['outcome']['status'],'applied')
+        other=worker.inspect('bob')['outcome']['snapshot']
+        blocked=worker.pickup(other,'bob')['outcome']
+        self.assertEqual(blocked['reason'],'held_by_another_actor')
+        self.assertEqual(blocked['snapshot']['own_hand']['holding'],'')
+        self.assertEqual(worker.request({'kind':'drop'})['outcome']['status'],'applied')
+        other=worker.inspect('bob')['outcome']['snapshot']
+        self.assertEqual(worker.pickup(other,'bob')['outcome']['status'],'pending')
+        self.assertEqual(worker.completion()['outcome']['status'],'applied')
 
     def test_matched_material_fixture_retains_native_mass_and_same_timestep(self):
         masses={}

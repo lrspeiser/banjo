@@ -1,6 +1,6 @@
 //! Transitional adapter to the existing native JSON process. Only the world
 //! owner calls it; no browser/native operation pass-through is exposed.
-use crate::contracts::Refusal;
+use crate::contracts::{Ray, Refusal};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -24,6 +24,7 @@ pub trait Kernel {
         jump: bool,
     ) -> Result<(), Refusal>;
     fn release(&mut self, actor: &str) -> Result<(), Refusal>;
+    fn pickup(&mut self, actor: &str, instance: &str, ray: &Ray) -> Result<(), Refusal>;
     fn remove(&mut self, actor: &str) -> Result<(), Refusal>;
     fn advance(&mut self, dt: f64, steps: u32) -> Result<(), Refusal>;
 }
@@ -125,7 +126,8 @@ impl NativeProcess {
 
     pub fn identity(&self) -> Value {
         json!({"pid":self.child.id(),"selected_file_sha256":self.selected_file_sha256,
-            "build_provenance":"unrecorded","actual_abi":null})
+            "build_provenance":"unrecorded","actual_abi":null,
+            "pickup_admission_version":self.state["pickup_admission_version"]})
     }
 
     fn receive(&mut self) -> Result<Value, Refusal> {
@@ -192,6 +194,25 @@ impl Kernel for NativeProcess {
     }
     fn release(&mut self, actor: &str) -> Result<(), Refusal> {
         self.call(json!({"op":"release","actor":actor}))
+    }
+    fn pickup(&mut self, actor: &str, instance: &str, ray: &Ray) -> Result<(), Refusal> {
+        if self.state["pickup_admission_version"] != 1 {
+            return Err(Refusal::UnsupportedCapability);
+        }
+        self.call(json!({"op":"pickup","actor":actor,"name":instance,
+            "from":ray.from_m,"dir":ray.direction,"max_m":ray.max_distance_m}))?;
+        if self.state["pickup"]["admitted"] == true {
+            if self.state["player_hands"][actor]["holding"].as_str() == Some(instance) {
+                Ok(())
+            } else {
+                Err(Refusal::NativeRefused)
+            }
+        } else {
+            Err(
+                serde_json::from_value(self.state["pickup"]["reason"].clone())
+                    .unwrap_or(Refusal::NativeRefused),
+            )
+        }
     }
     fn remove(&mut self, actor: &str) -> Result<(), Refusal> {
         self.call(json!({"op":"player-remove","actor":actor}))

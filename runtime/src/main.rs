@@ -110,7 +110,7 @@ fn run() -> Result<(), String> {
     send(
         json!({"schema":"banjo.worker.v1","status":"ready","clock":world.clock(),
         "authority":"trusted-host-stdin","queue_capacity":COMMAND_CAPACITY,"native":native_identity,
-        "pickup":"unsupported until W05 admission/grip confirmation"}),
+        "pickup":"requires native pickup_admission_version=1; pending until a physical batch confirms the grip"}),
     )?;
     let period = Duration::from_secs_f64(DT_S * f64::from(STEPS_PER_BATCH));
     let mut deadline = Instant::now() + period;
@@ -124,6 +124,11 @@ fn run() -> Result<(), String> {
             world
                 .advance()
                 .map_err(|r| format!("World clock fault: {r:?}"))?;
+            for completion in world.take_completions() {
+                send(
+                    json!({"schema":"banjo.worker-completion.v1","outcome":completion,"clock":world.clock()}),
+                )?;
+            }
             deadline += period;
             // No large-dt jump or unbounded catch-up loop on a slow kernel.
             let after = Instant::now();
