@@ -2,6 +2,8 @@
 
 October 6, 2026. Source baseline `f88abc7d` on main. This comparative native regression identifies why the current tool controller can admit a target and then perform no work. A 40 mm head reaches and cuts a prepared 100 mm wide pit; a 280 mm head stops on its untouched surroundings in glass, oak and iron. Production laws, controllers and the demo are unchanged. The full-width physical contact and terrain rewrite remain required.
 
+Tests, evidence and CI fixture repairs are published on GitHub main at `5aa3c7a8`. Native production artifacts remain those recorded by the Rust tool-use checkpoint; only the two affected native test targets are rebuilt here.
+
 ## Declared experiment
 
 Windows/MSVC 19.44.35228, SDK 10.0.26100; native Release, dt 1/240 s, 20 mm tool cells and 100 mm dry-soil columns. Start with the existing upright fixed head/handle fixture on 0.75 m flat soil, no water/discharge. The initial pit is one column 60 mm below its neighbours, at x 0.65 m, z 0.15 m. This is explicitly prepared geometry via the existing native dig API, not a claim that a tool physically excavated the setup. Its removed quantity enters the existing bulk ledger and is excluded from the measured action result.
