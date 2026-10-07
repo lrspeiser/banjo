@@ -23,6 +23,14 @@ struct PointRigidContactResult {
     unsigned friction_iterations{};
 };
 
+// Local block law for a coupled manifold. The target speed is computed once
+// from the pre-impact state, rather than applying restitution on every sweep.
+// This does not audit isolated-block energy: the manifold must audit the total
+// kinetic work, including off-diagonal shared material/source responses.
+[[nodiscard]] Vec3 solveCoulombContactImpulse(Vec3 relative_velocity_m_s,
+    Vec3 normal_world,const Mat3 &inverse_contact_mass,double target_normal_speed_m_s,
+    double static_friction,double dynamic_friction);
+
 // One instantaneous finite rigid body / translational material-point response.
 // Geometry supplies signed gap and a unit normal pointing FROM rigid TO point.
 // Both reactions act at the point's centre: its contact envelope has no spin

@@ -36,6 +36,25 @@ struct NativeFixedSurfaceTransfer {
     double target_work_error_j{},horizon_s{};
     std::uint64_t target_step{};
 };
+struct NativeSurfaceWitness {
+    std::uint32_t seed{};
+    Vec3 surface_world_m{},normal_world{};
+    double gap_m{};
+    PointRigidContactSettings settings;
+};
+struct NativeFixedManifoldTransfer {
+    FixedSurfaceManifoldKick source;
+    ExternalPointTransferLedger target;
+    std::vector<MaterialContactRegion> regions;
+    std::uint64_t target_step{};
+    double horizon_s{};
+};
+// Current graph support, bounded union, coupled response and both preflights
+// precede either write. One atomic target transfer counts one manifold.
+[[nodiscard]] NativeFixedManifoldTransfer applyNativeFixedLocalSurfaceManifold(
+    JoltWorld &world,LatticeBackend &target,std::span<const NativeSurfaceWitness> witnesses,
+    const MaterialContactRegionSettings &region_settings,MatterBodyId target_proxy,
+    MatterBodyId striker,const PointContactRoundoffBudget &budget);
 // One common surface point for source and target reactions. Caller must supply
 // an actual geometry witness and a current connected 3D support (4..64 unique
 // movable nodes); this function does not discover topology or certify support.

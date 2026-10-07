@@ -151,6 +151,21 @@ struct PointShapeQuery {
     double envelope_radius_m{},separation_limit_m{}; // Actual native float inputs.
     std::vector<PointShapeContact> contacts;
 };
+struct FixedSurfaceManifoldKick {
+    FixedSurfaceManifoldResult contact;
+    std::vector<MatterBodyId> body_ids;
+    std::vector<RigidMechanicalState> delivered_bodies;
+    double numerical_energy_change_j{};
+    Vec3 momentum_error_kg_m_s{},angular_momentum_error_kg_m2_s{};
+};
+class PreparedFixedSurfaceManifold {
+public:
+    [[nodiscard]] const FixedSurfaceManifoldKick &receipt() const;
+private:
+    friend class JoltWorld;
+    struct Data;
+    std::shared_ptr<const Data> data_;
+};
 struct MaterialShapeQuery {
     RigidPrimitive geometry; // Actual float geometry used by the native query.
     Quat orientation_world{};
@@ -486,6 +501,10 @@ public:
         const PointRigidContactSettings &settings,const PointContactRoundoffBudget &budget) const;
     [[nodiscard]] FixedPointContactKick commitExternalFixedPointContact(
         const PreparedFixedPointContact &prepared,ActiveNodeState &point);
+    [[nodiscard]] PreparedFixedSurfaceManifold prepareExternalFixedSurfaceManifold(
+        MatterBodyId target_proxy,MatterBodyId striker,std::span<const ActiveNodeState> nodes,
+        const std::vector<FixedSurfaceContact> &contacts,double dt_s,const PointContactRoundoffBudget &budget) const;
+    [[nodiscard]] FixedSurfaceManifoldKick commitExternalFixedSurfaceManifold(const PreparedFixedSurfaceManifold &prepared);
     // Read-only native shape query for a material point's spherical contact
     // envelope. All native leaf witnesses within the separation limit, ordered
     // by leaf identity; no AABB substitution, closest-only truncation or pair

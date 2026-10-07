@@ -5,6 +5,8 @@
 #include <limits>
 #include <stdexcept>
 #include <utility>
+#include <sstream>
+#include <tuple>
 
 namespace banjo {
 namespace {
@@ -22,7 +24,7 @@ struct ReactionAudit {
 ReactionAudit reactions(const std::vector<RigidMechanicalState> &before,
     const std::vector<RigidMechanicalState> &after,const std::vector<FixedVelocityLink> &links,
     const std::vector<std::uint32_t> &order,const std::vector<std::uint32_t> &parent,
-    const std::vector<std::uint32_t> &edge,std::uint32_t striker,Vec3 contact_point,Vec3 contact_j) {
+    const std::vector<std::uint32_t> &edge,std::uint32_t striker,Vec3 contact_j,Vec3 contact_moment) {
     const auto count=before.size();
     std::vector<Vec3> force(count),moment(count);
     ReactionAudit out;out.impulses.resize(links.size());
@@ -32,8 +34,8 @@ ReactionAudit reactions(const std::vector<RigidMechanicalState> &before,
             (after[i].motion.angular_velocity_rad_s-before[i].motion.angular_velocity_rad_s);
         out.momentum+=force[i];out.angular+=moment[i];
     }
-    force[striker]-=contact_j;moment[striker]-=cross(contact_point,contact_j);
-    out.momentum-=contact_j;out.angular-=cross(contact_point,contact_j);
+    force[striker]-=contact_j;moment[striker]-=contact_moment;
+    out.momentum-=contact_j;out.angular-=contact_moment;
     for(std::size_t k=order.size();k-->1;) {
         const auto child=order[k],up=parent[child],link_id=edge[child];
         const auto &link=links[link_id];
@@ -62,14 +64,18 @@ ReactionAudit reactions(const std::vector<RigidMechanicalState> &before,
     }
     out.angular-=out.couple;
     if(!finite(force[0])||!finite(moment[0])||norm(force[0])>1e-10*(1+norm(contact_j))||
-        norm(moment[0])>1e-10*(1+norm(cross(contact_point,contact_j))))
+        norm(moment[0])>1e-10*(1+norm(contact_moment)))
         throw std::domain_error("fixed tree reaction does not close at its root");
     return out;
 }
-} // namespace
-FixedAssemblyContactResult evaluatePointFixedAssemblyContact(const ActiveNodeState &point,
-    const std::vector<RigidMechanicalState> &bodies,const std::vector<FixedVelocityLink> &links,
-    std::uint32_t striker,Vec3 normal,double gap,double duration,const PointRigidContactSettings &settings) {
+struct FixedReduction {
+    RigidMechanicalState modal;
+    std::vector<RigidMechanicalState> reconciled;
+    std::vector<Vec3> radius;
+    std::vector<std::uint32_t> order,parent,edge;
+};
+FixedReduction reduceFixed(const std::vector<RigidMechanicalState> &bodies,
+    const std::vector<FixedVelocityLink> &links,std::uint32_t striker) {
     const auto count=bodies.size();
     require(count>=1&&count<=256&&striker<count&&links.size()==count-1,"fixed contact needs a 1..256 body tree");
     const auto unseen=std::numeric_limits<std::uint32_t>::max();
@@ -125,9 +131,244 @@ FixedAssemblyContactResult evaluatePointFixedAssemblyContact(const ActiveNodeSta
     }
     RigidMechanicalState modal;
     modal.mass_kg=mass;modal.inertia_world_kg_m2=inertia;
-    const Vec3 arm=radius[striker]+point.position_world_m-bodies[striker].motion.center_of_mass_world_m;
-    modal.motion.center_of_mass_world_m=point.position_world_m-arm;
+    modal.motion.center_of_mass_world_m=bodies[striker].motion.center_of_mass_world_m-radius[striker];
     modal.motion.linear_velocity_m_s=velocity;modal.motion.angular_velocity_rad_s=spin;
+    return {modal,reconciled,radius,order,parent,edge};
+}
+} // namespace
+FixedSurfaceManifoldResult evaluateFixedSurfaceManifold(std::span<const ActiveNodeState> nodes,
+    const std::vector<FixedSurfaceContact> &contacts,const std::vector<RigidMechanicalState> &bodies,
+    const std::vector<FixedVelocityLink> &links,std::uint32_t striker,double dt) {
+    require(nodes.size()>=4&&nodes.size()<=64&&contacts.size()<=64&&std::isfinite(dt)&&dt>0,
+        "fixed material manifold exceeds its bounded node/contact domain");
+    for(const auto &n:nodes)require(std::isfinite(n.mass_kg)&&n.mass_kg>0&&finite(n.position_world_m)&&
+        finite(n.previous_position_world_m)&&finite(n.velocity_m_s)&&norm(n.spin_angular_velocity_rad_s)==0,
+        "invalid actual translational manifold node");
+    const auto reduction=reduceFixed(bodies,links,striker);
+    const auto &modal=reduction.modal;const auto inverse_inertia=inverseContactTensor(modal.inertia_world_kg_m2);
+    FixedSurfaceManifoldResult out;out.bodies=bodies;
+    for(const auto &n:nodes)out.node_velocities_m_s.push_back(n.velocity_m_s);
+    out.impulses_n_s.resize(contacts.size());
+    struct Block {std::size_t original;Vec3 normal,arm,relative;double wanted;std::vector<double> weights;};
+    std::vector<Block> blocks;
+    std::vector<std::size_t> order;
+    for(std::size_t k=0;k<contacts.size();++k)order.push_back(k);
+    std::sort(order.begin(),order.end(),[&](auto a,auto b) {
+        const auto &x=contacts[a];const auto &y=contacts[b];
+        return std::tie(x.surface_world_m.x,x.surface_world_m.y,x.surface_world_m.z,
+            x.normal_world.x,x.normal_world.y,x.normal_world.z,x.gap_m,x.nodes)<
+            std::tie(y.surface_world_m.x,y.surface_world_m.y,y.surface_world_m.z,
+            y.normal_world.x,y.normal_world.y,y.normal_world.z,y.gap_m,y.nodes);
+    });
+    double speed_scale=1;
+    for(const auto k:order) {
+        const auto &c=contacts[k];std::vector<ActiveNodeState> support;
+        require(c.nodes.size()>=4&&c.nodes.size()<=64,"invalid manifold material support");
+        for(std::size_t j=0;j<c.nodes.size();++j) {
+            require(c.nodes[j]<nodes.size(),"manifold support node outside actual state");
+            for(std::size_t i=0;i<j;++i)require(c.nodes[i]!=c.nodes[j],"duplicate manifold support node");
+            support.push_back(nodes[c.nodes[j]]);
+        }
+        const auto stencil=makeMaterialContactStencil(support,c.surface_world_m);
+        // Reuse the single-contact admission validation, but freeze its target
+        // from the reconciled PRE-impact source and target velocities.
+        const auto admitted=evaluatePointRigidContact(stencil.point,modal,c.normal_world,c.gap_m,dt,c.settings);
+        const Vec3 relative=stencil.point.velocity_m_s-modal.motion.linear_velocity_m_s-
+            cross(modal.motion.angular_velocity_rad_s,c.surface_world_m-modal.motion.center_of_mass_world_m);
+        const double vn=dot(relative,c.normal_world);
+        if(c.gap_m>std::max(c.settings.contact_margin_m,-vn*dt))continue;
+        const double e=-vn>c.settings.restitution_speed_threshold_m_s?c.settings.restitution:0;
+        const double wanted=c.gap_m>c.settings.contact_margin_m?-c.gap_m/dt:-e*std::min(vn,0.);
+        (void)admitted;
+        Block b{k,c.normal_world,c.surface_world_m-modal.motion.center_of_mass_world_m,relative,wanted,
+            std::vector<double>(nodes.size())};
+        for(std::size_t j=0;j<c.nodes.size();++j)b.weights[c.nodes[j]]=stencil.weights[j];
+        speed_scale=std::max({speed_scale,norm(relative),std::abs(wanted)});blocks.push_back(std::move(b));
+    }
+    if(blocks.empty())return out;
+    const auto count=blocks.size();
+    std::vector<std::vector<Mat3>> response(count,std::vector<Mat3>(count));
+    const Vec3 axes[]{{1,0,0},{0,1,0},{0,0,1}};
+    for(std::size_t a=0;a<count;++a)for(std::size_t b=0;b<count;++b) {
+        double inverse_mass=1/modal.mass_kg;
+        for(std::size_t n=0;n<nodes.size();++n)inverse_mass+=blocks[a].weights[n]*blocks[b].weights[n]/nodes[n].mass_kg;
+        for(unsigned axis=0;axis<3;++axis) {
+            const Vec3 v=inverse_mass*axes[axis]+cross(inverse_inertia*cross(blocks[b].arm,axes[axis]),blocks[a].arm);
+            response[a][b].m[0][axis]=v.x;response[a][b].m[1][axis]=v.y;response[a][b].m[2][axis]=v.z;
+        }
+    }
+    std::vector<Vec3> impulses(count);std::vector<bool> sliding(count,false);
+    const auto without=[&](std::size_t a) {
+        Vec3 v=blocks[a].relative;
+        for(std::size_t b=0;b<count;++b)if(b!=a)v+=response[a][b]*impulses[b];
+        return v;
+    };
+    const auto update=[&](std::size_t a) {
+        const auto &c=contacts[blocks[a].original];
+        return solveCoulombContactImpulse(without(a),blocks[a].normal,response[a][a],blocks[a].wanted,
+            sliding[a]?c.settings.dynamic_friction:c.settings.static_friction,
+            sliding[a]?c.settings.dynamic_friction:c.settings.static_friction);
+    };
+    // Checking all blocks after each sweep prevents accepting an early contact
+    // that was invalidated by a later shared-cell/source impulse.
+    const double tolerance=1e-10*speed_scale;
+    bool converged=false;double last_residual=0;
+        for(std::size_t phase=0;phase<=count;++phase) {
+    converged=false;
+    for(unsigned iteration=1;iteration<=32;++iteration) {
+        for(std::size_t a=0;a<count;++a)impulses[a]=.5*(impulses[a]+update(a));
+        double residual=0;
+        for(std::size_t a=0;a<count;++a)residual=std::max(residual,norm(response[a][a]*(update(a)-impulses[a])));
+        out.iterations=iteration;
+        last_residual=residual;
+        if(residual<=tolerance){converged=true;break;}
+    }
+    // Rank-deficient overlapping supports can make block sweeps arbitrarily
+    // slow or cycle at a stick/slip switch. Solve the same fixed-point residual
+    // with a damped least-squares Newton correction; damping affects the search
+    // direction only, never the admitted physical response or acceptance bound.
+    const auto residual_vector=[&]() {
+        std::vector<double> r(3*count);
+        for(std::size_t a=0;a<count;++a) {
+            const auto v=response[a][a]*(impulses[a]-update(a));
+            r[3*a]=v.x;r[3*a+1]=v.y;r[3*a+2]=v.z;
+        }
+        return r;
+    };
+    const auto squared=[](const std::vector<double> &r){double value=0;for(const auto x:r)value+=x*x;return value;};
+    const auto maximum=[](const std::vector<double> &r){double value=0;for(std::size_t k=0;k<r.size();k+=3)
+        value=std::max(value,std::hypot(r[k],r[k+1],r[k+2]));return value;};
+    double damping=1e-8;
+    for(unsigned attempt=0;!converged&&attempt<96;++attempt) {
+        const auto base=impulses;const auto r=residual_vector();last_residual=maximum(r);
+        if(last_residual<=tolerance){converged=true;break;}
+        const std::size_t dimension=r.size();std::vector<std::vector<double>> jacobian(dimension,std::vector<double>(dimension));
+        for(std::size_t col=0;col<dimension;++col) {
+            const auto a=col/3;const unsigned axis=static_cast<unsigned>(col%3);
+            const double h=1e-7*std::max(1e-3,norm(base[a]));
+            impulses=base;impulses[a]+=h*axes[axis];const auto plus=residual_vector();
+            impulses=base;impulses[a]-=h*axes[axis];const auto minus=residual_vector();
+            for(std::size_t row=0;row<dimension;++row)jacobian[row][col]=(plus[row]-minus[row])/(2*h);
+        }
+        impulses=base;
+        // Pivoted, reorthogonalized QR avoids squaring the condition number of
+        // nearly redundant affine supports (normal equations lose their small
+        // physical modes before the unchanged contact residual is satisfied).
+        double scale=0;
+        for(std::size_t col=0;col<dimension;++col) {
+            double norm2=0;for(std::size_t row=0;row<dimension;++row)norm2+=jacobian[row][col]*jacobian[row][col];
+            scale=std::max(scale,norm2);
+        }
+        std::vector<std::vector<double>> columns(dimension,std::vector<double>(2*dimension));
+        std::vector<std::vector<double>> triangular(dimension,std::vector<double>(dimension));
+        std::vector<double> projected(dimension);std::vector<std::size_t> permutation(dimension);
+        for(std::size_t col=0;col<dimension;++col) {
+            permutation[col]=col;
+            for(std::size_t row=0;row<dimension;++row)columns[col][row]=jacobian[row][col];
+            columns[col][dimension+col]=std::sqrt(damping*std::max(scale,1e-30));
+        }
+        std::size_t rank=dimension;
+        for(std::size_t col=0;col<dimension;++col) {
+            std::size_t pivot=col;for(std::size_t k=col+1;k<dimension;++k)
+                if(squared(columns[k])>squared(columns[pivot]))pivot=k;
+            std::swap(columns[pivot],columns[col]);std::swap(permutation[pivot],permutation[col]);
+            for(std::size_t row=0;row<col;++row)std::swap(triangular[row][pivot],triangular[row][col]);
+            const double diagonal=std::sqrt(squared(columns[col]));
+            if(!std::isfinite(diagonal)||diagonal<=1e-14*std::sqrt(scale)){rank=col;break;}
+            triangular[col][col]=diagonal;
+            for(auto &x:columns[col])x/=diagonal;
+            for(std::size_t row=0;row<dimension;++row)projected[col]-=columns[col][row]*r[row];
+            for(std::size_t k=col+1;k<dimension;++k)for(unsigned pass=0;pass<2;++pass) {
+                double coefficient=0;for(std::size_t row=0;row<2*dimension;++row)coefficient+=columns[col][row]*columns[k][row];
+                triangular[col][k]+=coefficient;
+                for(std::size_t row=0;row<2*dimension;++row)columns[k][row]-=coefficient*columns[col][row];
+            }
+        }
+        std::vector<double> pivoted_step(dimension),step(dimension);
+        for(std::size_t a=rank;a-->0;) {
+            double value=projected[a];for(std::size_t b=a+1;b<rank;++b)value-=triangular[a][b]*pivoted_step[b];
+            pivoted_step[a]=value/triangular[a][a];
+        }
+        for(std::size_t a=0;a<dimension;++a)step[permutation[a]]=pivoted_step[a];
+        bool accepted=false;
+        for(unsigned backtrack=0;backtrack<16;++backtrack) {
+            const double fraction=std::ldexp(1.,-static_cast<int>(backtrack));impulses=base;
+            for(std::size_t a=0;a<count;++a)impulses[a]+=fraction*Vec3{step[3*a],step[3*a+1],step[3*a+2]};
+            const auto candidate=residual_vector();
+            if(squared(candidate)<squared(r)){accepted=true;last_residual=maximum(candidate);break;}
+        }
+        ++out.iterations;
+        if(accepted){damping=std::max(1e-24,damping*.1);converged=last_residual<=tolerance;}
+        else {impulses=base;damping*=10;if(damping>1e8)break;}
+    }
+    if(!converged)break;
+    bool changed=false;
+    for(std::size_t a=0;a<count;++a)if(!sliding[a]) {
+        Vec3 final_relative=blocks[a].relative;
+        for(std::size_t b=0;b<count;++b)final_relative+=response[a][b]*impulses[b];
+        const auto tangent=final_relative-dot(final_relative,blocks[a].normal)*blocks[a].normal;
+        if(norm(tangent)>tolerance&&norm(impulses[a])>0&&
+            contacts[blocks[a].original].settings.static_friction!=contacts[blocks[a].original].settings.dynamic_friction) {
+            sliding[a]=true;changed=true;
+        }
+    }
+    if(!changed)break;
+    }
+    if(!converged){std::ostringstream message;message<<"coupled material manifold did not converge within its search budget: residual "
+        <<last_residual<<" m/s, tolerance "<<tolerance<<", blocks "<<count;
+        for(std::size_t a=0;a<count;++a)message<<" [p="<<contacts[blocks[a].original].surface_world_m.x<<","<<contacts[blocks[a].original].surface_world_m.y<<","<<contacts[blocks[a].original].surface_world_m.z<<" n="<<blocks[a].normal.x<<","<<blocks[a].normal.y<<","<<blocks[a].normal.z<<" v="<<blocks[a].relative.x<<","<<blocks[a].relative.y<<","<<blocks[a].relative.z<<" target="<<blocks[a].wanted<<"]";
+        throw std::domain_error(message.str());}
+    Vec3 total_j{},total_moment{},modal_moment{};double work=0;
+    for(std::size_t a=0;a<count;++a) {
+        const auto &b=blocks[a];const auto j=impulses[a];out.impulses_n_s[b.original]=j;
+        if(norm(j)>0)++out.active_contacts;
+        total_j+=j;modal_moment+=cross(b.arm,j);total_moment+=cross(contacts[b.original].surface_world_m,j);
+        Vec3 final_relative=b.relative;
+        for(std::size_t k=0;k<count;++k)final_relative+=response[a][k]*impulses[k];
+        work+=dot(j,.5*(b.relative+final_relative));
+        for(std::size_t n=0;n<nodes.size();++n)out.node_velocities_m_s[n]+=(b.weights[n]/nodes[n].mass_kg)*j;
+    }
+    if(!out.active_contacts)return out; // No joint-only projection is published.
+    auto final_modal=modal;
+    final_modal.motion.linear_velocity_m_s-=total_j/modal.mass_kg;
+    final_modal.motion.angular_velocity_rad_s-=inverse_inertia*modal_moment;
+    out.bodies=reduction.reconciled;
+    for(std::size_t i=0;i<bodies.size();++i) {
+        out.bodies[i].motion.linear_velocity_m_s=final_modal.motion.linear_velocity_m_s+
+            cross(final_modal.motion.angular_velocity_rad_s,reduction.radius[i]);
+        out.bodies[i].motion.angular_velocity_rad_s=final_modal.motion.angular_velocity_rad_s;
+    }
+    const double before=kinetic(bodies),projected=kinetic(reduction.reconciled);
+    const double bound=1e-12+1e-10*(std::abs(before)+std::abs(projected)+std::abs(work));
+    if(!std::isfinite(work)||work>bound||projected>before+bound)
+        throw std::domain_error("coupled material manifold gained kinetic energy");
+    out.reconciliation_loss_j=std::max(0.,before-projected);out.dissipated_energy_j=std::max(0.,-work);
+    const auto reconcile=reactions(bodies,reduction.reconciled,links,reduction.order,reduction.parent,reduction.edge,striker,{},{});
+    const auto contact=reactions(reduction.reconciled,out.bodies,links,reduction.order,reduction.parent,reduction.edge,striker,-total_j,-total_moment);
+    out.reconciliation=reconcile.impulses;out.contact_reactions=contact.impulses;
+    out.geometry_couple_kg_m2_s=reconcile.couple+contact.couple;
+    out.momentum_residual_kg_m_s=reconcile.momentum+contact.momentum;
+    out.angular_residual_kg_m2_s=reconcile.angular+contact.angular;
+    out.kinetic_change_j=kinetic(out.bodies)-before;
+    for(std::size_t n=0;n<nodes.size();++n) {
+        require(finite(out.node_velocities_m_s[n]),"coupled manifold node velocity overflow");
+        out.kinetic_change_j+=.5*nodes[n].mass_kg*dot(out.node_velocities_m_s[n]-nodes[n].velocity_m_s,
+            out.node_velocities_m_s[n]+nodes[n].velocity_m_s);
+    }
+    out.work_residual_j=out.kinetic_change_j+out.reconciliation_loss_j+out.dissipated_energy_j;
+    if(!std::isfinite(out.work_residual_j)||std::abs(out.work_residual_j)>bound||
+        std::abs(reconcile.work+out.reconciliation_loss_j)>bound||std::abs(contact.work)>bound)
+        throw std::domain_error("coupled material manifold failed its whole-system work audit");
+    return out;
+}
+FixedAssemblyContactResult evaluatePointFixedAssemblyContact(const ActiveNodeState &point,
+    const std::vector<RigidMechanicalState> &bodies,const std::vector<FixedVelocityLink> &links,
+    std::uint32_t striker,Vec3 normal,double gap,double duration,const PointRigidContactSettings &settings) {
+    const auto count=bodies.size();
+    const auto reduction=reduceFixed(bodies,links,striker);
+    const auto &reconciled=reduction.reconciled;const auto &radius=reduction.radius;
+    const auto &order=reduction.order;const auto &parent=reduction.parent;const auto &edge=reduction.edge;
+    const auto &modal=reduction.modal;
     FixedAssemblyContactResult out;
     out.modal_contact=evaluatePointRigidContact(point,modal,normal,gap,duration,settings);
     out.bodies=bodies;
@@ -143,9 +384,9 @@ FixedAssemblyContactResult evaluatePointFixedAssemblyContact(const ActiveNodeSta
         out.bodies[i].motion.linear_velocity_m_s=result.linear_velocity_m_s+cross(result.angular_velocity_rad_s,radius[i]);
         out.bodies[i].motion.angular_velocity_rad_s=result.angular_velocity_rad_s;
     }
-    const auto reconcile=reactions(bodies,reconciled,links,order,parent,edge,striker,point.position_world_m,{});
-    const auto contact=reactions(reconciled,out.bodies,links,order,parent,edge,striker,point.position_world_m,
-                                -out.modal_contact.impulse_to_node_n_s);
+    const auto reconcile=reactions(bodies,reconciled,links,order,parent,edge,striker,{},{});
+    const auto contact=reactions(reconciled,out.bodies,links,order,parent,edge,striker,-out.modal_contact.impulse_to_node_n_s,
+                                cross(point.position_world_m,-out.modal_contact.impulse_to_node_n_s));
     out.reconciliation=reconcile.impulses;out.contact_reactions=contact.impulses;
     out.geometry_couple_kg_m2_s=reconcile.couple+contact.couple;
     out.momentum_residual_kg_m_s=reconcile.momentum+contact.momentum;

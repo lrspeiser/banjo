@@ -93,6 +93,21 @@ Vec3 slidingImpulse(Vec3 relative,Vec3 normal,const Mat3 &effective,
 }
 } // namespace
 
+Vec3 solveCoulombContactImpulse(Vec3 relative,Vec3 normal,const Mat3 &effective,
+    double wanted,double static_friction,double dynamic_friction) {
+    require(finite(relative)&&finite(normal)&&std::abs(norm(normal)-1)<=1e-10&&
+        std::isfinite(wanted)&&std::isfinite(static_friction)&&std::isfinite(dynamic_friction)&&
+        dynamic_friction>=0&&static_friction>=dynamic_friction,"invalid Coulomb manifold block");
+    const auto inverse_effective=inverseContactTensor(effective);
+    if(dot(relative,normal)>=wanted)return {};
+    Vec3 impulse=inverse_effective*(wanted*normal-relative);
+    const double jn=dot(impulse,normal);
+    if(jn>0&&norm(tangentPart(impulse,normal))<=static_friction*jn)return impulse;
+    unsigned iterations=0;
+    impulse=slidingImpulse(relative,normal,effective,wanted,dynamic_friction,iterations);
+    require(finite(impulse),"Coulomb manifold impulse overflow");return impulse;
+}
+
 PointRigidContactResult evaluatePointRigidContact(const ActiveNodeState &node,
     const RigidMechanicalState &rigid,Vec3 normal,double gap,double timestep,
     const PointRigidContactSettings &settings) {

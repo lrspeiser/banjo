@@ -1075,6 +1075,7 @@ if(BANJO_BUILD_TESTS)
         target_link_libraries(banjo_material_surface_contact_tests PRIVATE banjo_lattice_native_contact nlohmann_json::nlohmann_json)
         banjo_enable_warnings(banjo_material_surface_contact_tests)
         add_test(NAME banjo_material_surface_contact_tests COMMAND banjo_material_surface_contact_tests)
+        add_test(NAME banjo_material_manifold_oracles COMMAND banjo_material_surface_contact_tests --manifold-oracles-only)
 
     # Two wheels that turn together at a ratio: gears in mesh, a chain between
     # sprockets, and teeth that strip when too much goes through them.

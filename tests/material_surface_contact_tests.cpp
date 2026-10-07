@@ -147,6 +147,78 @@ MechanicalTotals totals(const LatticeState &s,JoltWorld &w) {
     }
     return out;
 }
+void manifoldOracles() {
+    for(const auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        Target target(preset,1e-7,.08,{.08,0,0});Tool tool;
+        auto backend=target.backend();std::vector<ActiveNodeState> nodes;
+        for(const auto id:target.support())nodes.push_back(backend->externalContactPoint(id));
+        const std::vector<FixedSurfaceContact> contacts{
+            {target.support(),{.04,-.01,0},{1,0,0},0,{0,0,1}},
+            {target.support(),{.04,.01,0},{1,0,0},0,{0,0,1}}};
+        const auto first=makeMaterialContactStencil(nodes,contacts[0].surface_world_m);
+        const auto prepared=tool.world.prepareExternalFixedPointContact(2,1,first.point,{1,0,0},0,1e-7,{0,0,1},{1e-5,1e-5,1e-5});
+        const auto &metadata=prepared.receipt();std::vector<RigidMechanicalState> source;
+        for(const auto id:metadata.body_ids)source.push_back(tool.world.mechanicalState(id));
+        const auto index=static_cast<std::uint32_t>(std::find(metadata.body_ids.begin(),metadata.body_ids.end(),1)-metadata.body_ids.begin());
+        const auto result=evaluateFixedSurfaceManifold(nodes,contacts,source,metadata.links,index,1e-7);
+        double material_mass=0,source_mass=0;
+        for(const auto &n:nodes)material_mass+=n.mass_kg;for(const auto &body:source)source_mass+=body.mass_kg;
+        const double expected=12/(5/material_mass+1/source_mass);
+        const Vec3 total=result.impulses_n_s[0]+result.impulses_n_s[1];
+        near(length(total-Vec3{expected,0,0}),0,1e-9,"simultaneous symmetric elastic normal impulse oracle");
+        near(result.dissipated_energy_j,0,1e-9,"elastic manifold invented contact loss");
+        near(result.reconciliation_loss_j,0,1e-12,"compatible fixed source lost energy");
+        near(result.work_residual_j,0,1e-10,"whole manifold kinetic work audit");
+        auto reversed=contacts;std::reverse(reversed.begin(),reversed.end());
+        const auto reverse=evaluateFixedSurfaceManifold(nodes,reversed,source,metadata.links,index,1e-7);
+        for(std::size_t n=0;n<nodes.size();++n)
+            near(length(result.node_velocities_m_s[n]-reverse.node_velocities_m_s[n]),0,0,"manifold depended on input contact order");
+        Vec3 p{},l{};
+        for(std::size_t n=0;n<nodes.size();++n) {
+            const Vec3 j=nodes[n].mass_kg*(result.node_velocities_m_s[n]-nodes[n].velocity_m_s);
+            p+=j;l+=cross(nodes[n].position_world_m,j);
+        }
+        for(std::size_t k=0;k<source.size();++k) {
+            const auto &before=source[k],&after=result.bodies[k];
+            const Vec3 j=before.mass_kg*(after.motion.linear_velocity_m_s-before.motion.linear_velocity_m_s);
+            p+=j;l+=cross(before.motion.center_of_mass_world_m,j)+before.inertia_world_kg_m2*
+                (after.motion.angular_velocity_rad_s-before.motion.angular_velocity_rad_s);
+        }
+        near(length(p),0,1e-10,"manifold full material/source momentum");
+        near(length(l-result.geometry_couple_kg_m2_s),0,1e-10,"manifold full material/source angular momentum");
+        for(const auto law:{PointRigidContactSettings{.4,.3,.5},PointRigidContactSettings{.001,.0005,.5}}) {
+            FixedSurfaceContact contact{target.support(),{.04,.01,.015},{1,0,0},0,law};
+            const auto stencil=makeMaterialContactStencil(nodes,contact.surface_world_m);
+            const auto isolated=evaluatePointFixedAssemblyContact(stencil.point,source,metadata.links,index,{1,0,0},0,1e-7,law);
+            const auto batch=evaluateFixedSurfaceManifold(nodes,{contact},source,metadata.links,index,1e-7);
+            near(length(batch.impulses_n_s[0]-isolated.modal_contact.impulse_to_node_n_s),0,1e-9,"single-manifold sticking/slipping law changed");
+            near(batch.dissipated_energy_j,isolated.modal_contact.dissipated_energy_j,1e-9,"single-manifold friction work changed");
+        }
+        auto invalid=contacts;invalid.back().nodes.push_back(999);
+        rejects([&]{(void)evaluateFixedSurfaceManifold(nodes,invalid,source,metadata.links,index,1e-7);},"late manifold endpoint admitted");
+        auto invalid_nodes=nodes;invalid_nodes.back().mass_kg=0;
+        rejects([&]{(void)evaluateFixedSurfaceManifold(invalid_nodes,contacts,source,metadata.links,index,1e-7);},"invalid shared node admitted");
+        std::vector<NativeSurfaceWitness> witnesses;
+        for(const auto &c:contacts)witnesses.push_back({0,c.surface_world_m,c.normal_world,c.gap_m,c.settings});
+        const auto initial=target.download(*backend);const auto old=tool.world.snapshot(1);
+        require(!runNativeFixedTargetTrial(tool.world,*backend,[&]{
+            const auto applied=applyNativeFixedLocalSurfaceManifold(tool.world,*backend,witnesses,{.1,3,64,4096},2,1,{1e-5,1e-5,1e-5});
+            require(applied.source.contact.active_contacts==2&&applied.target.transfers==1,"manifold transfer ownership/count");
+            return false;
+        }),"false native manifold trial committed");
+        const auto restored=target.download(*backend);
+        require(restored.v==initial.v&&restored.u==initial.u&&restored.alive==initial.alive&&
+            backend->status().external_point_transfer.transfers==0,"failed manifold trial leaked material state/account");
+        near(length(tool.world.snapshot(1).linear_velocity_m_s-old.linear_velocity_m_s),0,0,"failed manifold trial kicked source");
+        const auto plan=tool.world.prepareExternalFixedSurfaceManifold(2,1,nodes,contacts,1e-7,{1e-5,1e-5,1e-5});
+        Tool another;
+        rejects([&]{(void)another.world.commitExternalFixedSurfaceManifold(plan);},"another world committed a manifold plan");
+        tool.world.step(1e-7);
+        rejects([&]{(void)tool.world.commitExternalFixedSurfaceManifold(plan);},"elapsed native tick committed stale manifold");
+        std::cout<<"MANIFOLD_ORACLE {\"material\":\""<<materialPresetName(preset)<<"\",\"target_mass_kg\":"<<material_mass
+            <<",\"normal_impulse_n_s\":"<<total.x<<",\"work_residual_j\":"<<result.work_residual_j<<",\"iterations\":"<<result.iterations<<"}\n";
+    }
+}
 void bulkAtomicity() {
     Target target(MaterialPreset::Oak);auto b=target.backend();const auto original=target.download(*b);
     std::vector<ExternalPointVelocity> updates;
@@ -235,7 +307,7 @@ nlohmann::json contactFrame(const Target &target,LatticeBackend &backend,Tool &t
         {"components",partition.components.size()},{"broken_bonds",backend.status().broken_bonds},
         {"integration_error_j",backend.status().integration_numerical_energy_j}};
 }
-unsigned sustainedLocalContact(nlohmann::json *recording=nullptr) {
+unsigned sustainedLocalContact(nlohmann::json *recording=nullptr, bool reverse=false, bool manifold=false) {
     unsigned open_gates=0;
     for(double width:{.04,.12})for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
         std::vector<std::uint8_t> coarse_alive;double coarse_error=0;
@@ -256,7 +328,42 @@ unsigned sustainedLocalContact(nlohmann::json *recording=nullptr) {
                 ++attempted;Ledger delta;const auto before=target.download(*backend);const auto old=backend->status();
                 const auto head=tool.world.snapshot(1),handle=tool.world.snapshot(10);
                 const bool ok=runNativeFixedTargetTrial(tool.world,*backend,[&] {
-                    for(unsigned i=0;i<before.node_count;++i) {
+                    if(manifold) {
+                    std::vector<NativeSurfaceWitness> witnesses;
+                    for(unsigned order=0;order<before.node_count;++order) {
+                        const unsigned i=reverse?before.node_count-1-order:order;
+                        const Vec3 at=before.origin+Vec3{before.x0[3*i]+before.u[3*i],before.x0[3*i+1]+before.u[3*i+1],before.x0[3*i+2]+before.u[3*i+2]};
+                        require(tool.world.materialShapeContacts(10,at,{PrimitiveKind::Box,0,{.04,.04,.04}},{},1e-5).contacts.empty(),"sustained fixture omitted handle contact");
+                        const auto hits=tool.world.materialShapeContacts(1,at,{PrimitiveKind::Box,0,{.04,.04,.04}},{},1e-5).contacts;
+                        if(before.inv_mass[i]==0){require(hits.empty(),"sustained fixture omitted direct clamp contact");continue;}
+                        for(const auto &hit:hits) {
+                            // Only support admission can end this bounded experiment.
+                            // Any source-law or integrator failure still fails the test.
+                            try {
+                                const auto region=backend->externalContactRegion(i,{.1,3,64,4096});
+                                std::vector<ActiveNodeState> points;
+                                for(const auto n:region.nodes)points.push_back(backend->externalContactPoint(n));
+                                (void)makeMaterialContactStencil(points,hit.point_on_body_world_m);
+                            }catch(const std::invalid_argument &e){refusal=e.what();return false;}
+                            const auto law=combineContactMaterials(compileContactMaterial(target.material),hit.body_contact);
+                            witnesses.push_back({i,hit.point_on_body_world_m,hit.normal_world,hit.gap_m,
+                                {law.static_friction,law.dynamic_friction,law.restitution}});
+                        }
+                    }
+                    const auto r=applyNativeFixedLocalSurfaceManifold(tool.world,*backend,witnesses,{.1,3,64,4096},2,1,{1e-5,1e-5,1e-5});
+                    if(r.source.contact.active_contacts) {
+                        ++delta.contacts;
+                        for(const auto &region:r.regions) {
+                            delta.minimum_nodes=std::min(delta.minimum_nodes,static_cast<unsigned>(region.nodes.size()));
+                            delta.maximum_nodes=std::max(delta.maximum_nodes,static_cast<unsigned>(region.nodes.size()));
+                        }
+                        delta.loss+=r.source.contact.dissipated_energy_j;delta.reconcile+=r.source.contact.reconciliation_loss_j;
+                        delta.transfer_energy+=r.source.numerical_energy_change_j;delta.transfer_p+=r.source.momentum_error_kg_m_s;
+                        delta.transfer_l+=r.source.angular_momentum_error_kg_m2_s;delta.geometry_couple+=r.source.contact.geometry_couple_kg_m2_s;
+                    }
+                    } else {
+                    for(unsigned order=0;order<before.node_count;++order) {
+                        const unsigned i=reverse?before.node_count-1-order:order;
                         const Vec3 at=before.origin+Vec3{before.x0[3*i]+before.u[3*i],before.x0[3*i+1]+before.u[3*i+1],before.x0[3*i+2]+before.u[3*i+2]};
                         require(tool.world.materialShapeContacts(10,at,{PrimitiveKind::Box,0,{.04,.04,.04}},{},1e-5).contacts.empty(),"sustained fixture omitted handle contact");
                         const auto hits=tool.world.materialShapeContacts(1,at,{PrimitiveKind::Box,0,{.04,.04,.04}},{},1e-5).contacts;
@@ -281,6 +388,7 @@ unsigned sustainedLocalContact(nlohmann::json *recording=nullptr) {
                             delta.transfer_energy+=r.source.numerical_energy_change_j;delta.transfer_p+=r.source.momentum_error_kg_m_s;
                             delta.transfer_l+=r.source.angular_momentum_error_kg_m2_s;delta.geometry_couple+=r.source.contact.geometry_couple_kg_m2_s;
                         }
+                    }
                     }
                     const auto a=tool.world.mechanicalTotals();tool.world.step(dt);const auto b=tool.world.mechanicalTotals();backend->run({.max_steps=1});
                     delta.native_energy=b.kinetic_energy_j-a.kinetic_energy_j;delta.native_p=b.linear_momentum_kg_m_s-a.linear_momentum_kg_m_s;
@@ -422,17 +530,23 @@ void matchedNativeSurfaceTrajectories(bool local=false) {
 }
 }
 int main(int argc,char **argv){try{
-    bool strict=false;std::string output;
+    bool strict=false,reverse=false,manifold=false,oracles_only=false;std::string output;
     for(int i=1;i<argc;++i){const std::string option=argv[i];
         if(option=="--require-live-contact-convergence"&&!strict)strict=true;
+        else if(option=="--coupled-manifold")manifold=true;
+        else if(option=="--manifold-oracles-only")oracles_only=true;
+        else if(option=="--reverse-contact-order")reverse=true;
         else if(option=="--record"&&output.empty()&&i+1<argc)output=argv[++i];
         else require(false,"unknown surface-contact test option");
     }
     nlohmann::json recording={{"schema","banjo.contact-recording.v1"},{"kind","solver-recording"},{"experiments",nlohmann::json::array()}};
     std::cout.precision(12);liveGraphSelectionOracles();analyticalSurfaceOracles();bulkAtomicity();authoritativeTopologyAdmission();
-    matchedNativeSurfaceTrajectories();matchedNativeSurfaceTrajectories(true);const auto open=sustainedLocalContact(output.empty()?nullptr:&recording);
+    require(!(oracles_only&&(strict||manifold||reverse||!output.empty())),"oracle-only mode cannot imply sustained acceptance");
+    manifoldOracles();
+    if(oracles_only){std::cout<<"[PASS] coupled manifold analytical/native atomicity oracles\n";return 0;}
+    matchedNativeSurfaceTrajectories();matchedNativeSurfaceTrajectories(true);const auto open=sustainedLocalContact(output.empty()?nullptr:&recording,reverse,manifold);
     if(!output.empty()){
-        recording["open_convergence_gates"]=open;
+        recording["open_convergence_gates"]=open;recording["coupled_manifold"]=manifold;
         std::ofstream file(output,std::ios::binary);require(static_cast<bool>(file),"cannot open recording output");
         file<<recording.dump();file.flush();require(static_cast<bool>(file),"cannot write complete recording");
     }

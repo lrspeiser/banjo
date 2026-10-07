@@ -3130,6 +3130,112 @@ FixedPointContactKick JoltWorld::commitExternalFixedPointContact(const PreparedF
     point.velocity_m_s=out.contact.modal_contact.node_velocity_m_s;
     return out;
 }
+struct PreparedFixedSurfaceManifold::Data {
+    PreparedFixedPointContact assembly;
+    std::vector<ActiveNodeState> nodes;
+    std::vector<FixedSurfaceContact> contacts;
+    PointContactRoundoffBudget budget;
+    FixedSurfaceManifoldKick receipt;
+};
+const FixedSurfaceManifoldKick &PreparedFixedSurfaceManifold::receipt() const {
+    if(!data_)throw std::invalid_argument("empty prepared fixed manifold");return data_->receipt;
+}
+PreparedFixedSurfaceManifold JoltWorld::prepareExternalFixedSurfaceManifold(MatterBodyId proxy,MatterBodyId striker,
+    std::span<const ActiveNodeState> nodes,const std::vector<FixedSurfaceContact> &contacts,double dt,
+    const PointContactRoundoffBudget &budget) const {
+    impl_->requireFixedContactMutable();
+    if(contacts.empty()||contacts.size()>64||nodes.size()<4||nodes.size()>64)
+        throw std::invalid_argument("invalid native manifold node/contact count");
+    const auto &first=contacts.front();std::vector<ActiveNodeState> support;
+    for(const auto index:first.nodes) {
+        if(index>=nodes.size())throw std::invalid_argument("native manifold node outside actual support");
+        support.push_back(nodes[index]);
+    }
+    const auto stencil=makeMaterialContactStencil(support,first.surface_world_m);
+    // Reuse native ownership/tree/shape and velocity-limit admission for a
+    // genuine first witness. This plan is read-only and is never committed:
+    // the coupled response below replaces its isolated contact candidate.
+    auto data=std::make_shared<PreparedFixedSurfaceManifold::Data>();
+    data->assembly=prepareExternalFixedPointContact(proxy,striker,stencil.point,first.normal_world,first.gap_m,dt,first.settings,budget);
+    data->nodes.assign(nodes.begin(),nodes.end());data->contacts=contacts;data->budget=budget;
+    const auto &assembly=*data->assembly.data_;
+    auto source=assembly.before;
+    for(auto &body:source)for(unsigned a=0;a<3;++a)for(unsigned b=a+1;b<3;++b)
+        body.inertia_world_kg_m2.m[a][b]=body.inertia_world_kg_m2.m[b][a]=
+            .5*(body.inertia_world_kg_m2.m[a][b]+body.inertia_world_kg_m2.m[b][a]);
+    auto &out=data->receipt;out.body_ids=assembly.receipt.body_ids;
+    const auto at=std::find(out.body_ids.begin(),out.body_ids.end(),striker)-out.body_ids.begin();
+    out.contact=evaluateFixedSurfaceManifold(nodes,contacts,source,assembly.receipt.links,static_cast<std::uint32_t>(at),dt);
+    out.delivered_bodies=assembly.before;
+    if(out.contact.active_contacts)for(std::size_t i=0;i<out.body_ids.size();++i) {
+        const auto &candidate=out.contact.bodies[i].motion;
+        const auto velocity=toJolt(candidate.linear_velocity_m_s),spin=toJolt(candidate.angular_velocity_rad_s);
+        JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(),impl_->bodies_.at(out.body_ids[i]));
+        if(!lock.Succeeded())throw std::runtime_error("cannot lock manifold source candidate");
+        const auto *motion=lock.GetBody().GetMotionProperties();
+        if(!std::isfinite(velocity.LengthSq())||!std::isfinite(spin.LengthSq())||
+            velocity.LengthSq()>motion->GetMaxLinearVelocity()*motion->GetMaxLinearVelocity()||
+            spin.LengthSq()>motion->GetMaxAngularVelocity()*motion->GetMaxAngularVelocity())
+            throw std::invalid_argument("manifold exceeds runtime velocity limits");
+        out.delivered_bodies[i].motion.linear_velocity_m_s=fromJoltVector(velocity);
+        out.delivered_bodies[i].motion.angular_velocity_rad_s=fromJoltVector(spin);
+    }
+    double energy=out.contact.dissipated_energy_j+out.contact.reconciliation_loss_j;
+    for(std::size_t i=0;i<nodes.size();++i) {
+        const auto j=nodes[i].mass_kg*(out.contact.node_velocities_m_s[i]-nodes[i].velocity_m_s);
+        out.momentum_error_kg_m_s+=j;out.angular_momentum_error_kg_m2_s+=cross(nodes[i].position_world_m,j);
+        energy+=.5*dot(j,out.contact.node_velocities_m_s[i]+nodes[i].velocity_m_s);
+    }
+    out.angular_momentum_error_kg_m2_s-=out.contact.geometry_couple_kg_m2_s;
+    for(std::size_t i=0;i<source.size();++i) {
+        const auto &old=assembly.before[i];const auto &body=out.delivered_bodies[i];
+        const auto j=old.mass_kg*(body.motion.linear_velocity_m_s-old.motion.linear_velocity_m_s);
+        out.momentum_error_kg_m_s+=j;
+        out.angular_momentum_error_kg_m2_s+=cross(old.motion.center_of_mass_world_m,j)+
+            old.inertia_world_kg_m2*(body.motion.angular_velocity_rad_s-old.motion.angular_velocity_rad_s);
+        energy+=measureRigidMechanics(body).kinetic_energy_j-measureRigidMechanics(old).kinetic_energy_j;
+    }
+    out.numerical_energy_change_j=energy;
+    if(!std::isfinite(energy)||std::abs(energy)>budget.energy_j||
+        length(out.momentum_error_kg_m_s)>budget.linear_impulse_n_s||
+        length(out.angular_momentum_error_kg_m2_s)>budget.angular_impulse_kg_m2_s)
+        throw std::invalid_argument("manifold exceeds native roundoff budget");
+    PreparedFixedSurfaceManifold prepared;prepared.data_=std::move(data);return prepared;
+}
+FixedSurfaceManifoldKick JoltWorld::commitExternalFixedSurfaceManifold(const PreparedFixedSurfaceManifold &prepared) {
+    impl_->requireFixedContactMutable();
+    if(!prepared.data_)throw std::invalid_argument("empty prepared native manifold");
+    const auto &saved=*prepared.data_;const auto &before=*saved.assembly.data_;
+    if(before.identity!=impl_->contact_plan_identity_||before.tick!=impl_->tick_.load(std::memory_order_relaxed)||
+        before.epoch!=impl_->contact_plan_epoch_)throw std::invalid_argument("stale native manifold owner/tick/trial");
+    const auto checked=prepareExternalFixedSurfaceManifold(before.proxy,before.striker,saved.nodes,saved.contacts,before.duration,saved.budget);
+    const auto &now=*checked.data_->assembly.data_;
+    if(before.native_proxy!=now.native_proxy||before.native_bodies!=now.native_bodies||
+        before.receipt.joint_ids!=now.receipt.joint_ids||before.receipt.body_ids!=now.receipt.body_ids)
+        throw std::invalid_argument("prepared manifold topology changed");
+    const auto equal=[](Vec3 a,Vec3 b){return a.x==b.x&&a.y==b.y&&a.z==b.z;};
+    for(std::size_t i=0;i<before.before.size();++i) {
+        const auto &a=before.before[i],&b=now.before[i];const auto &qa=a.motion.orientation_world,&qb=b.motion.orientation_world;
+        if(before.shapes[i].GetPtr()!=now.shapes[i].GetPtr()||a.mass_kg!=b.mass_kg||a.inertia_world_kg_m2.m!=b.inertia_world_kg_m2.m||
+            !equal(a.motion.center_of_mass_world_m,b.motion.center_of_mass_world_m)||!equal(a.motion.linear_velocity_m_s,b.motion.linear_velocity_m_s)||
+            !equal(a.motion.angular_velocity_rad_s,b.motion.angular_velocity_rad_s)||qa.w!=qb.w||qa.x!=qb.x||qa.y!=qb.y||qa.z!=qb.z)
+            throw std::invalid_argument("prepared manifold source/shape changed");
+    }
+    for(std::size_t i=0;i<before.receipt.links.size();++i) {
+        const auto &a=before.receipt.links[i],&b=now.receipt.links[i];
+        if(a.a!=b.a||a.b!=b.b||!equal(a.point_a_world_m,b.point_a_world_m)||!equal(a.point_b_world_m,b.point_b_world_m))
+            throw std::invalid_argument("prepared manifold attachment changed");
+    }
+    auto out=checked.receipt();
+    if(out.contact.active_contacts) {
+        auto &native=impl_->physics_->GetBodyInterface();
+        for(std::size_t i=0;i<out.body_ids.size();++i)
+            native.SetLinearAndAngularVelocity(impl_->bodies_.at(out.body_ids[i]),
+                toJolt(out.delivered_bodies[i].motion.linear_velocity_m_s),toJolt(out.delivered_bodies[i].motion.angular_velocity_rad_s));
+        for(std::size_t i=0;i<out.body_ids.size();++i)out.delivered_bodies[i]=mechanicalState(out.body_ids[i]);
+    }
+    return out;
+}
 FixedPointContactKick JoltWorld::applyExternalFixedPointContact(MatterBodyId proxy,MatterBodyId striker,
     ActiveNodeState &point,Vec3 normal,double gap,double duration,
     const PointRigidContactSettings &settings,const PointContactRoundoffBudget &budget) {

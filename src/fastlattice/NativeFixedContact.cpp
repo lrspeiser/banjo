@@ -1,7 +1,46 @@
 #include "fastlattice/NativeFixedContact.hpp"
 #include <cmath>
+#include <algorithm>
 
 namespace banjo::fastlattice {
+NativeFixedManifoldTransfer applyNativeFixedLocalSurfaceManifold(JoltWorld &world,LatticeBackend &target,
+    std::span<const NativeSurfaceWitness> witnesses,const MaterialContactRegionSettings &settings,
+    MatterBodyId proxy,MatterBodyId striker,const PointContactRoundoffBudget &budget) {
+    NativeFixedManifoldTransfer out;out.target_step=target.status().total_steps;
+    out.horizon_s=target.externalContactTimestep();
+    if(witnesses.empty())return out;
+    if(witnesses.size()>64)throw std::invalid_argument("native manifold witness budget exceeded");
+    std::vector<std::uint32_t> ids;
+    for(const auto &w:witnesses) {
+        out.regions.push_back(target.externalContactRegion(w.seed,settings));
+        for(const auto id:out.regions.back().nodes)ids.push_back(id);
+    }
+    std::sort(ids.begin(),ids.end());ids.erase(std::unique(ids.begin(),ids.end()),ids.end());
+    if(ids.size()>64)throw std::invalid_argument("native manifold material union exceeds 64 nodes");
+    std::vector<ActiveNodeState> nodes;
+    for(const auto id:ids)nodes.push_back(target.externalContactPoint(id));
+    std::vector<FixedSurfaceContact> contacts;
+    for(std::size_t k=0;k<witnesses.size();++k) {
+        const auto &w=witnesses[k];FixedSurfaceContact c;
+        c.surface_world_m=w.surface_world_m;c.normal_world=w.normal_world;c.gap_m=w.gap_m;c.settings=w.settings;
+        for(const auto id:out.regions[k].nodes)c.nodes.push_back(static_cast<std::uint32_t>(std::lower_bound(ids.begin(),ids.end(),id)-ids.begin()));
+        contacts.push_back(std::move(c));
+    }
+    const auto prepared=world.prepareExternalFixedSurfaceManifold(proxy,striker,nodes,contacts,out.horizon_s,budget);
+    if(!prepared.receipt().contact.active_contacts){out.source=prepared.receipt();return out;}
+    std::vector<ExternalPointVelocity> updates;
+    for(std::size_t k=0;k<ids.size();++k)updates.push_back({ids[k],nodes[k],prepared.receipt().contact.node_velocities_m_s[k]});
+    const auto delta=target.validateExternalPointVelocities(updates);
+    Vec3 impulse{},moment{};
+    for(std::size_t k=0;k<witnesses.size();++k) {
+        const auto j=prepared.receipt().contact.impulses_n_s[k];impulse+=j;moment+=cross(witnesses[k].surface_world_m,j);
+    }
+    if(length(delta.impulse_n_s-impulse)>1e-10*(1+length(impulse))||
+        length(delta.angular_impulse_kg_m2_s-moment)>1e-10*(1+length(moment)))
+        throw std::invalid_argument("native manifold target force/moment reproduction failed");
+    out.source=world.commitExternalFixedSurfaceManifold(prepared);
+    out.target=target.applyExternalPointVelocities(updates);return out;
+}
 bool runNativeFixedTargetTrial(JoltWorld &world,LatticeBackend &target,const std::function<bool()> &trial) {
     if (!trial) throw std::invalid_argument("empty native/target trial");
     return target.runReversibleTrial([&] {return world.runExternalFixedTrial(trial);});

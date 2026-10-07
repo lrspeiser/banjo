@@ -1,5 +1,6 @@
 #pragma once
 #include "physics/PointRigidContact.hpp"
+#include "physics/MaterialContactStencil.hpp"
 #include <cstdint>
 #include <vector>
 
@@ -21,6 +22,28 @@ struct FixedAssemblyContactResult {
     double reconciliation_loss_j{},kinetic_change_j{},work_residual_j{};
     Vec3 momentum_residual_kg_m_s{},geometry_couple_kg_m2_s{},angular_residual_kg_m2_s{};
 };
+struct FixedSurfaceContact {
+    std::vector<std::uint32_t> nodes; // Indices into the shared actual node array.
+    Vec3 surface_world_m{},normal_world{};
+    double gap_m{};
+    PointRigidContactSettings settings;
+};
+struct FixedSurfaceManifoldResult {
+    std::vector<RigidMechanicalState> bodies;
+    std::vector<Vec3> node_velocities_m_s,impulses_n_s;
+    std::vector<FixedVelocityImpulse> reconciliation,contact_reactions;
+    double reconciliation_loss_j{},dissipated_energy_j{},kinetic_change_j{},work_residual_j{};
+    Vec3 momentum_residual_kg_m_s{},geometry_couple_kg_m2_s{},angular_residual_kg_m2_s{};
+    unsigned iterations{},active_contacts{};
+};
+// One simultaneous Coulomb manifold over overlapping affine material supports
+// and one finite fixed source tree. Restitution targets are frozen at admission.
+// Bounded block iteration may remove an earlier tentative impulse; only the
+// converged, whole-system audited result is returned. No state/time mutation.
+[[nodiscard]] FixedSurfaceManifoldResult evaluateFixedSurfaceManifold(
+    std::span<const ActiveNodeState> nodes,const std::vector<FixedSurfaceContact> &contacts,
+    const std::vector<RigidMechanicalState> &bodies,const std::vector<FixedVelocityLink> &links,
+    std::uint32_t striker,double dt_s);
 // Instantaneous ideal six-DOF fixed-tree velocity solve plus one point contact.
 // 1..256 finite dynamic bodies, exactly N-1 links forming a tree. A link equates
 // attachment-point velocities and angular velocities; position/orientation
