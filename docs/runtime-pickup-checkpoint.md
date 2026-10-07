@@ -1,6 +1,6 @@
 # Native admission and confirmed Rust pickup
 
-October 6, 2026; source parent `4db96843`. Extends the [Rust worker](runtime-worker-checkpoint.md) with an experimental W05 physical pickup slice. Browser integration, carry/use control and save/reload remain open. The running `C:/play` demo is unchanged.
+October 6, 2026; source parent `4db96843`. Published implementation on main: `e8b43ca3537920e2055006afee31f5417e11e840`. Extends the [Rust worker](runtime-worker-checkpoint.md) with an experimental W05 physical pickup slice. Browser integration, carry/use control and save/reload remain open. The running `C:/play` demo is unchanged.
 
 ## Changes
 
