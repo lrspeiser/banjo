@@ -121,6 +121,7 @@ jobs:
           -DBANJO_BUILD_HEADLESS=ON
           -DBANJO_BUILD_PRECOMPUTE=ON
           -DBANJO_BUILD_TESTS=ON
+          -DBANJO_BUILD_RUST_RUNTIME=ON
 
       - name: Build
         run: cmake --build build/ci --parallel 2

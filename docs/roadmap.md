@@ -32,6 +32,8 @@
 
 ## Codebase rewrite: October 6 audit and proposed order
 
+[Native-backed Rust worker checkpoint](runtime-worker-checkpoint.md) implements W04's fixed clock, bounded commands, scoped observations and independent native actor movement. Next W05 native pickup admission/grip confirmation, then W06 use; browser/persistence/ordinary phone acceptance gates precede retiring the old runtimes.
+
 [Retained diagnostics checkpoint](interaction-history-checkpoint.md) adds W02 indexed, authenticated cursor history and explicit retention across rotation/restart. Native readiness expansion, viewer/export UI and durable replay remain open. Next implement W04 one-clock native worker; then W05/W06 pickup/use.
 
 [First implementation checkpoint](runtime-rewrite-checkpoint.md): W00/W01 discovery/build identity and W03 Rust contracts compile and pass focused gates. W02 indexed history is implemented; next W04's native-backed authoritative world worker, then W05/W06 pickup/use. The Rust crate does not yet replace the playable host. Constitutive terrain and full regression/phone acceptance remain separate requirements.

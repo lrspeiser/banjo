@@ -2004,19 +2004,37 @@ if(BANJO_BUILD_TESTS)
     endif()
 endif()
 option(BANJO_BUILD_RUST_RUNTIME "Build and test the replacement application runtime" OFF)
+set(BANJO_RUNTIME_NATIVE_EXECUTABLE "" CACHE FILEPATH "Existing native runner for isolated Rust integration checks when native targets are disabled")
 if(BANJO_BUILD_RUST_RUNTIME)
     find_program(BANJO_CARGO_EXECUTABLE cargo
         HINTS "$ENV{USERPROFILE}/.cargo/bin" "$ENV{HOME}/.cargo/bin" REQUIRED)
     add_custom_target(banjo_rust_runtime ALL
         COMMAND ${BANJO_CARGO_EXECUTABLE} build --workspace --locked
+                --target-dir ${CMAKE_CURRENT_SOURCE_DIR}/build/rust-runtime
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         SOURCES Cargo.toml Cargo.lock rust-toolchain.toml runtime/Cargo.toml
-                runtime/src/lib.rs runtime/src/contracts.rs
+                runtime/src/lib.rs runtime/src/contracts.rs runtime/src/native.rs
+                runtime/src/world.rs runtime/src/main.rs
         VERBATIM)
     if(BANJO_BUILD_TESTS)
         add_test(NAME banjo_rust_runtime_tests
             COMMAND ${BANJO_CARGO_EXECUTABLE} test --workspace --locked)
         set_tests_properties(banjo_rust_runtime_tests PROPERTIES
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 180 LABELS "runtime;contracts")
+        if(TARGET banjo_live_world_run)
+            set(_banjo_runtime_native $<TARGET_FILE:banjo_live_world_run>)
+        elseif(BANJO_RUNTIME_NATIVE_EXECUTABLE)
+            if(NOT EXISTS "${BANJO_RUNTIME_NATIVE_EXECUTABLE}")
+                message(FATAL_ERROR "BANJO_RUNTIME_NATIVE_EXECUTABLE does not exist")
+            endif()
+            set(_banjo_runtime_native "${BANJO_RUNTIME_NATIVE_EXECUTABLE}")
+        endif()
+        if(_banjo_runtime_native AND Python3_FOUND)
+            add_test(NAME banjo_runtime_native_tests COMMAND ${CMAKE_COMMAND} -E env
+                BANJO_LIVE_ENGINE=${_banjo_runtime_native}
+                BANJO_RUNTIME_ENGINE=${CMAKE_CURRENT_SOURCE_DIR}/build/rust-runtime/debug/banjo-runtime${CMAKE_EXECUTABLE_SUFFIX}
+                ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/runtime_native_tests.py -v)
+            set_tests_properties(banjo_runtime_native_tests PROPERTIES TIMEOUT 90 LABELS "runtime;native")
+        endif()
     endif()
 endif()

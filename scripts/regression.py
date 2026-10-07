@@ -21,7 +21,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 LEGACY_LONG = {"banjo_material_showcase_tests", "banjo_contact_capacity_tests",
                "banjo_network_runtime_tests", "banjo_network_skin_tests"}
-ARTIFACT_ENV = {"BANJO_LIBRARY", "BANJO_LIVE_ENGINE", "BANJO_TRIAL_ENGINE"}
+ARTIFACT_ENV = {"BANJO_LIBRARY", "BANJO_LIVE_ENGINE", "BANJO_TRIAL_ENGINE", "BANJO_RUNTIME_ENGINE"}
 
 
 def properties(test):

@@ -91,6 +91,8 @@ pub enum Refusal {
     UnsupportedCapability,
     NativeRefused,
     KernelUnavailable,
+    CapacityExceeded,
+    HostActionRequired,
 }
 
 impl Command {
