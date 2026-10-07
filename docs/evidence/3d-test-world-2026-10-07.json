@@ -19,10 +19,10 @@
   "runtime_sha256": "aac77d9b0f4e4d474cf069b3595fbdf1700fd1c20505f5a7f9796faafbc0bb12",
   "source_sha256": {
     "client/experiments/world.html": "2b5eddb848d46d3b1f03af5ff3b7494f20764f18ca301144c1d152df3d1431f9",
-    "client/experiments/world.css": "67e7e959c36b69ffe6ebf404cb6b8b7c6f93511b0ce89ae9ede572a850f06335",
+    "client/experiments/world.css": "5f91febc21b8e94a53ab0ac0f9e24f7f93c7ac6431e03cb7a87ab3ba5003541f",
     "client/experiments/world.js": "6ea9335acf67e999e785c5281a3d52d828f88c9e4be59501d313e32610dc9d69",
     "scripts/test-world.py": "1b9a86228a80e11b1736a4d1db37c248a6763dc73a1f604b2c8b2d9179d832f5",
-    "scripts/material-lab.py": "47db9e5d9d746e171f4832a495914314fe1593ca68d71ea0204923b8580ab024",
+    "scripts/material-lab.py": "44740d17c67914cc3b6601430676fd4c8347ba729a1bbfac1e9476862fe6e5a9",
     "runtime/src/main.rs": "70caf09e91fc945b96027de08530d65cbad2ae6141f8e7c06627e02f21253ad3",
     "runtime/src/native.rs": "68c0979f721d9d5e0e82692bd25d9cb9e4fa1ba5f69bb43ecd52a7ec8bb47bc7",
     "runtime/src/world.rs": "5c53917377b0f679773a6b99b4bb86ec848ad56c013a6ba72824e00467f5a3b3",
@@ -97,7 +97,9 @@
   "browser": {
     "desktop": "pickup confirmed; cut reported 0.25 L",
     "landscape_844x390": "pickup; soil use 0.38 L; drop cleared hand",
-    "physical_phone": "not verified"
+    "physical_phone": "not verified",
+    "portrait_390x844": "no horizontal overflow; movement/navigation/footer fit; separated target and guidance",
+    "installed_18891": "published implementation: pickup confirmed; cut reported 0.27 L; no browser warnings/errors"
   },
   "open": [
     "conservative material/terrain integration",
@@ -108,5 +110,6 @@
     "four strict iron repeat failures",
     "durable state/public hosting",
     "W00-W17"
-  ]
+  ],
+  "published_implementation_revision": "5c7b504e"
 }

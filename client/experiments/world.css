@@ -3,3 +3,4 @@
 .zoom{display:flex;gap:4px}.zoom button{padding:6px 10px;min-width:32px}
 @media(max-width:740px),(max-height:470px){.pad{display:block}.zoom button{padding:5px 8px}.zoom{gap:2px}}
 @media(max-width:450px){footer{gap:9px}.metrics span{font-size:10px}.hand strong{min-width:30px}.hand button{padding:7px 9px}details{max-width:45px}.guide{max-width:185px}.metrics{gap:8px}}
+@media(max-width:450px) and (min-height:471px){.target{top:265px}.guide .controls{display:none}}

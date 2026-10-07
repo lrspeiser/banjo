@@ -52,7 +52,8 @@ Native laws/binary are unchanged by this checkpoint. Rust is rebuilt through
 the named CMake target. The running host reports the native and Rust executable
 fingerprints; these do not prove native source/artifact equivalence. Implementation
 is based on main `93ef465e5cbe735a8d1e26eee7f98d7134bc7f1d`; published revision
-is recorded in the companion evidence update.
+is `5c7b504e` on GitHub main; [companion evidence](evidence/3d-test-world-2026-10-07.json)
+pins measurements, executable hashes and installation checks.
 
 Checks performed:
 
@@ -71,8 +72,9 @@ Checks performed:
 - Ordinary browser: desktop pickup confirmed, soil cut reported 0.25 L,
   landscape 844 × 390 pickup/use reported 0.38 L, and Drop emptied the hand.
   Native cuts were rendered from returned heights. Virtual viewport checks do
-  not certify a physical phone. Portrait layout and final installed host are
-  verified in the companion evidence.
+  not certify a physical phone. Portrait 390 × 844 has no horizontal overflow;
+  target details and guidance are separated. The installed 18891 version also
+  confirms pickup and a 0.27 L native cut, with no browser warnings/errors.
 
 The matched fixture checks retain all four families × glass/oak/iron and one
 shared timestep/resolution. Pick head geometry is 120 × 80 × 40 mm; measured
