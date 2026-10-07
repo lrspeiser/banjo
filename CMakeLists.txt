@@ -1989,3 +1989,32 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/every_room_tests.py -v)
     set_tests_properties(banjo_every_room_tests PROPERTIES TIMEOUT 300)
 endif()
+
+# The replacement runtime is compiled by Cargo through a named CMake target;
+# existing native builds opt in while its authoritative worker is developed.
+if(BANJO_BUILD_TESTS)
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_FOUND)
+        add_test(NAME banjo_regression_runner_tests
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/regression_runner_tests.py)
+        add_test(NAME banjo_build_manifest_tests
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/build_manifest_tests.py)
+    endif()
+endif()
+option(BANJO_BUILD_RUST_RUNTIME "Build and test the replacement application runtime" OFF)
+if(BANJO_BUILD_RUST_RUNTIME)
+    find_program(BANJO_CARGO_EXECUTABLE cargo
+        HINTS "$ENV{USERPROFILE}/.cargo/bin" "$ENV{HOME}/.cargo/bin" REQUIRED)
+    add_custom_target(banjo_rust_runtime ALL
+        COMMAND ${BANJO_CARGO_EXECUTABLE} build --workspace --locked
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        SOURCES Cargo.toml Cargo.lock rust-toolchain.toml runtime/Cargo.toml
+                runtime/src/lib.rs runtime/src/contracts.rs
+        VERBATIM)
+    if(BANJO_BUILD_TESTS)
+        add_test(NAME banjo_rust_runtime_tests
+            COMMAND ${BANJO_CARGO_EXECUTABLE} test --workspace --locked)
+        set_tests_properties(banjo_rust_runtime_tests PROPERTIES
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 180 LABELS "runtime;contracts")
+    endif()
+endif()

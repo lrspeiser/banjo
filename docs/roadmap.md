@@ -32,6 +32,8 @@
 
 ## Codebase rewrite: October 6 audit and proposed order
 
+[First implementation checkpoint](runtime-rewrite-checkpoint.md): W00/W01 discovery/build identity and W03 Rust contracts compile and pass focused gates. Next complete W02 retained history and W04's native-backed authoritative world worker, then W05/W06 pickup/use. The Rust crate does not yet replace the playable host. Constitutive terrain and full regression/phone acceptance remain separate requirements.
+
 [The detailed rewrite audit](banjo-rewrite-audit.md#20-ordered-migration-and-deletion-checkpoints) defines W00–W17 with acceptance and retirement gates. Begin with build/test manifests, safe process ownership, durable interaction diagnostics and shared contracts; then move clock/actor/tool control into one authoritative worker. Constituent terrain qualification, transfer/save migration, typed client/LLM integration and ordinary phone/multiplayer play follow. This is a design checkpoint, not an implemented Rust runtime or a full regression pass. Small proven helper cleanup is separate from the large controller/adapter retirements. Preserve the physical reference suites and saved quantities.
 
 # Banjo roadmap and acceptance gates

@@ -25,12 +25,26 @@ concurrency:
   cancel-in-progress: ${{ github.ref_name != 'main' }}
 
 jobs:
+  runtime-contracts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Compile, test and lint Rust runtime
+        run: |
+          cargo test --workspace --locked
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+
   source-registration:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - name: Check every source under src/ and tests/ is in a CMake target
         run: python3 scripts/check-source-registration.py
+      - name: Rewrite discovery and build identity contracts
+        run: |
+          python3 tests/regression_runner_tests.py -v
+          python3 tests/build_manifest_tests.py -v
 
   workshop-fast:
     runs-on: ubuntu-24.04

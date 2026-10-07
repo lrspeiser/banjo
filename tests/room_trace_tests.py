@@ -223,6 +223,7 @@ class TheEndpointThatReceivesThem(unittest.TestCase):
             'elapsed_ms':float('nan'),'at_m':[0,float('inf'),1]}]})
         row=self.events()[0]
         self.assertEqual(row['source'],'browser')
+        self.assertEqual(row['build_id'], self.app.build_manifest['id'])
         self.assertNotEqual(row['actor'],'spoof')
         self.assertIsNone(row['world'])
         self.assertEqual(row['reason'],'Error [redacted]')

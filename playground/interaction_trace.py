@@ -16,6 +16,7 @@ import re
 import threading
 import time
 import uuid
+import build_manifest
 
 MAX_BYTES = 8 * 1024 * 1024
 MAX_EVENTS = 64
@@ -92,6 +93,7 @@ def write(app, player, source, event):
                        source=source, world=getattr(app, 'world_id', None),
                        actor=hashlib.sha256(str(player or 'laboratory').encode()).hexdigest()[:16],
                        code_id=_code_id)
+            row['build_id'] = build_manifest.for_app(app)['id']
             where = app.runs_path / 'interaction-events.jsonl'
             where.parent.mkdir(parents=True, exist_ok=True)
             if where.exists() and where.stat().st_size >= MAX_BYTES:

@@ -57,6 +57,7 @@ import fabrication_qa
 import gameplay_capabilities
 import tool_use
 import interaction_trace
+import build_manifest
 import placement
 import access_gate
 import workshop_api
@@ -346,6 +347,8 @@ class Playground:
         self.brains.on_machine_made = lambda recipe, out, used, **source: (
             machine_witness.batch(self, recipe, out, used, registry=registry(self), **source)
             if getattr(self, "world_id", None) else None)
+        # Capture source/native file identity outside stepping or interaction.
+        self.build_manifest = build_manifest.for_app(self)
 
     def log_event(self, job_id, event, **fields):
         directory = self.runs_path / job_id
@@ -358,6 +361,7 @@ class Playground:
 
     def status(self):
         return {"key_configured": bool(self.api_key), "model": self.model,
+            "build": build_manifest.for_app(self),
             "world_id": getattr(self, "world_id", None),
             "world_name": getattr(self, "world_name", None),
             "jev_configured": bool(rover_brain.environment_key(_environment_files())),
@@ -1371,6 +1375,7 @@ class Handler(BaseHTTPRequestHandler):
             match=re.fullmatch(r"/api/worlds/([0-9a-f]{32})", path)
             if match: return self.send(self.server.app.hub.metadata(match[1]))
             app=self.app
+            if path=="/api/build": return self.send(build_manifest.for_app(app))
             if path=="/api/status": return self.send(app.status())
             if path=="/api/runs": return self.send(app.runs())
             if path=="/api/knowledge":
