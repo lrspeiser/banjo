@@ -16759,8 +16759,11 @@ LivePhysicalHit LiveWorld::physicalHitAdmission(const Vec3 &from,const Vec3 &dir
     for(const auto &candidate:points) {
         const auto found=I.index_of.find(candidate.body);
         if(candidate.attached&&candidate.grip_connected&&found!=I.index_of.end()&&
-            std::find(members.begin(),members.end(),found->second)!=members.end()&&
-            (candidate.grip_body.empty()?candidate.body:candidate.grip_body)==out.tool) {
+            std::find(members.begin(),members.end(),found->second)!=members.end()) {
+            // Custody may begin on any component. The live fixed assembly,
+            // attached point and connected declared grip identify capability.
+            // Requiring the clicked body to equal grip_body disabled valid
+            // tools picked up by their head or another connected component.
             if(point)return refuse("ambiguous_capability");point=&candidate;
         }
     }

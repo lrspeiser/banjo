@@ -25,7 +25,7 @@ import re
 
 ROOT = Path(__file__).resolve().parents[1]
 FILES = {"index.html", "lab.css", "lab.js", "contract.js", "material.json", "manifest.json",
-         "tests.html", "hub.css", "hub.js", "hub-contract.js", "world.html", "world.css", "world.js",
+         "tests.html", "hub.css", "hub.js", "hub-contract.js", "world.html", "world.css", "world.js", "world-input.js",
          "three.module.js", "three.core.js", "three-LICENSE.txt"}
 SCALES = (.25, .5, 1, 1.25)
 MAX_RECORDING_BYTES = 10_000_000
@@ -99,7 +99,7 @@ def prepare(native: Path, output: Path):
     if not compiled.is_file():
         raise RuntimeError("Build the client first: npm ci && npm run build in client/")
     subprocess.run([str(native), str(output / "material.json")], check=True, timeout=120)
-    for name in ("index.html", "lab.css", "tests.html", "hub.css", "world.html", "world.css", "world.js"):
+    for name in ("index.html", "lab.css", "tests.html", "hub.css", "world.html", "world.css", "world.js", "world-input.js"):
         shutil.copyfile(ROOT / "client/experiments" / name, output / name)
     for name in ("three.module.js", "three.core.js", "three-LICENSE.txt"):
         shutil.copyfile(ROOT / "playground/vendor" / name, output / name)
@@ -115,7 +115,7 @@ def prepare(native: Path, output: Path):
                "tests/material_surface_contact_tests.cpp", "src/fastlattice/NativeFixedContact.cpp",
                "src/fastlattice/MaterialContactRegion.cpp", "src/physics/MaterialContactStencil.cpp",
                "client/experiments/hub.ts", "client/experiments/hub-contract.ts", "scripts/lab-test-runner.py",
-               "client/experiments/world.html", "client/experiments/world.css", "client/experiments/world.js",
+               "client/experiments/world.html", "client/experiments/world.css", "client/experiments/world.js", "client/experiments/world-input.js",
                "scripts/test-world.py", "runtime/src/main.rs", "runtime/src/world.rs", "runtime/src/native.rs"]
     manifest = {
         "schema": "banjo.material-lab-manifest.v1",
@@ -159,10 +159,16 @@ class LabHandler(SimpleHTTPRequestHandler):
             runner = getattr(self.server, "world_manager", None)
             if runner is None: return self.reply(503, {"error": "Build the Rust runtime and native world target first"})
             try: result = runner.request(request)
-            except (ValueError, TypeError, KeyError, StopIteration):
+            except (ValueError, TypeError, KeyError, StopIteration) as error:
+                messages = {"expired":"This test world expired while inactive. Start a fresh test world.",
+                            "stopped":"The native test world stopped. Start a fresh test world.",
+                            "input_budget":"This bounded test session reached its input limit. Start a fresh test world."}
+                code = getattr(error, "code", None)
+                if code in messages:
+                    return self.reply(409, {"code": code, "error": messages[code]})
                 return self.reply(400, {"error": "Invalid or expired test world intention"})
             except (RuntimeError, OSError, subprocess.SubprocessError, queue.Empty):
-                return self.reply(502, {"error": "Native world stopped or refused observation; start a fresh test world"})
+                return self.reply(502, {"code":"stopped", "error": "Native world stopped or refused observation; start a fresh test world"})
             return self.reply(200, result)
         if self.path == "/api/tests":
             runner = getattr(self.server, "test_runner", None)

@@ -715,6 +715,8 @@ endif()
 if(BANJO_BUILD_TESTS)
     find_program(BANJO_NODE_EXECUTABLE node)
     if(BANJO_NODE_EXECUTABLE)
+        add_test(NAME banjo_test_world_input_tests COMMAND ${BANJO_NODE_EXECUTABLE}
+            --experimental-default-type=module --test ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_world_input_tests.mjs)
         add_test(NAME banjo_terrain_material_tests COMMAND ${BANJO_NODE_EXECUTABLE}
             --experimental-default-type=module --test ${CMAKE_CURRENT_SOURCE_DIR}/tests/terrain_material_tests.mjs)
         add_test(NAME banjo_tool_target_client_tests COMMAND ${BANJO_NODE_EXECUTABLE}
@@ -2073,7 +2075,7 @@ if(BANJO_BUILD_RUST_RUNTIME)
                 BANJO_LIVE_ENGINE=${_banjo_runtime_native}
                 BANJO_RUNTIME_ENGINE=${CMAKE_CURRENT_SOURCE_DIR}/build/rust-runtime/debug/banjo-runtime${CMAKE_EXECUTABLE_SUFFIX}
                 ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_world_tests.py -v)
-            set_tests_properties(banjo_test_world_gateway_tests PROPERTIES TIMEOUT 90 LABELS "runtime;native;client")
+            set_tests_properties(banjo_test_world_gateway_tests PROPERTIES TIMEOUT 120 LABELS "runtime;native;client")
         endif()
     endif()
 endif()

@@ -359,6 +359,10 @@ impl<K: Kernel> World<K> {
             "gone",
             "count",
             "stepped_back",
+            // Public physical topology/capabilities let clients select and
+            // highlight whole connected objects without product-name rules.
+            "joints",
+            "tool_points",
         ] {
             if let Some(value) = state.get(key) {
                 visible.insert(key.into(), value.clone());

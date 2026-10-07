@@ -31,7 +31,9 @@ class TestRunner:
         self.lock = threading.Lock()
         self.job = None
         self.recording = None
-        self.timeout_s = 60
+        # The sandbox includes comparative stance and paired physical cycles.
+        # Match its registered CTest wall budget; this is not a law tolerance.
+        self.timeout_s = 120
         self.catalog = [{"id": key, "name": name, "kind": "bounded checks"} for key,name,_ in NATIVE_CHECKS]
         self.catalog += [
             {"id": "contact-gate", "name": "Sustained contact convergence + replay", "kind": "strict acceptance"},

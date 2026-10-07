@@ -51,3 +51,42 @@ Next: qualify physical targeting/clearance and bounded actor/hand recovery under
 ### Published follow-up
 
 Core scope is published on main as `b3b8dd5d`. A subsequent ordinary-browser check caught New world discarding a click during an observation. The control now waits briefly for the active request, prevents duplicate starts and reports a timeout; a successful fresh world replaces the session and resets the native clock. This follow-up changes browser scheduling only. Native/worker/gateway physical evidence above remains the same; no physical gate is reclassified.
+
+
+## Pickup and selection follow-up
+
+User reproduction found a frozen scene labelled "World stopped" at native time 761.65 s. The last frame remained clickable-looking and `act()` silently returned after loss of session. The original stopped/expired cause cannot be reconstructed from old generic HTTP logs. A new world admitted clicking the head as well as the earlier tested handle. This was an application failure, not evidence of incorrect user input.
+
+The replacement interface now retains the press's body/point through modest finger drift (16 px touch, 8 px mouse), assigns one pointer owner, and rejects deliberate orbit gestures. It highlights/tints all visible components linked by attached fixing topology, with a 10 px mouse / 18 px touch halo around a configured assembly's projected bounds. Foreground unanchored targets take precedence; native visibility/load/reach admission remains authoritative. Public joints/tool points are explicitly projected by Rust; other actors' custody/cargo are still private. This presentation does not authorize arbitrary topology or grant pickup through native obstacles.
+
+A native physical-hit capability incorrectly required the selected custody body to equal the declared `grip_body`. Physical pickup can legitimately start on the head or another fixed member. Physical-hit admission now finds the attached point and connected declared grip in the actual fixed assembly, retaining ambiguity, strength, reach and action-in-progress refusals. Four configured families now acquire by head, confirm native custody, strike a grain, retain the whole tool and drop. The legacy terrain-use planning path still has stricter grip-root assumptions; it is not silently qualified by this change.
+
+Equipped items appear in a highlighted hand slot. Their native bodies remain present and colliding, but the client hides them between actions and shows their actual poses as faint ghosts during the force-controlled stroke. The confusing player-cylinder drawing is removed; the native player and finite hand/player reactions remain. This is equipped physical custody, **not implemented Inventory parking/material transfer**. Native mass, pose and impact are not synthesized or teleported.
+
+The rigid-grain fixture now starts with feet at [0, 0.022, 0.82] m on its declared fixed base beside the sample, instead of standing on the loose grains. This bounds the pickup experiment's footing and avoids driving initial balance into the sample before a strike. It does not solve general balance on loose ground or long repeated recovery. The old retained-soil comparison fixture is unchanged.
+
+Expired, native-stopped and input-budget-exhausted worlds return bounded lifecycle codes. The client stops input, labels the frame frozen and keeps a persistent restart control. Closing an already expired disposable session is idempotent, so restart can create a fresh native world. The existing 90 s inactivity lease, two-world cap and 4,000 browser input-receipt cap remain. Generic refused requests still reveal no arbitrary exception text.
+
+### Verification
+
+Base main `415b24fd`; Windows/MSVC Release `build/local-cell-tools`, Rust debug `build/rust-runtime`. Native SHA-256 `d1334f075ab4b78a88c04ab3ad3bde89e297720b86e93a96d37ea5cfba2ce3f7`; owner SHA-256 `220c06eb2410ca5dbce44cfed81da7319de5f1a777fa536591c8b14b018fe266`.
+
+- Ten actual HTTP/Rust/native gateway groups pass in 64.721 s, including head pickup followed by impact for all four declared widths, whole connected custody, expiry/idempotent-close recovery and input-limit refusal.
+- Seventeen actual-native worker checks pass in 25.669 s; 26 Rust tests pass, retaining privacy/clock/receipt assertions.
+- Rebuilt `banjo_pickup_admission_tests` and `banjo_native_tool_use_tests` pass. Registered `banjo_test_world_input_tests` passes four input/whole-topology groups. The CTest gateway timeout increases from 90 to 120 s and the Test Hub job budget from 60 to 120 s to admit the additional physical cycles and stance intervals; no physical acceptance tolerance changes.
+- Matched configured picks, same native 1/240 s timestep / 20 mm tool resolution, same fixed footing and two-second stationary observation after grip confirmation:
+
+| Material | Peak tilt rad | Peak horizontal drift m |
+|---|---:|---:|
+| Glass | 0.000106168 | 0.000403772 |
+| Oak, laboratory only | 0.000097662 | 0.000213166 |
+| Iron | 0.000158583 | 0.000395017 |
+
+These are bounded balance observations, not constitutive law, grain/plasticity or full-system conservation qualification. The existing mass/body-retention tests continue to pass; full P/L/E closure is still open. No spring/contact/fracture law or conservation tolerance is changed.
+
+Ordinary desktop browser verification: a click beside the narrow handle equips the pick, the next grain click records actual contact (0.3 cm target travel / 20.70 J signed hand work in one run), and the restart prompt recovers a stopped session. Native scheduling affects measurements; these are not deterministic cross-platform values. JS syntax/Python compile and 315/315 source registration pass. Local logs: `build/material-lab/pickup-recovery-gateway-tests.log` and `pickup-recovery-worker-tests.log`. The refreshed server is on 18891.
+
+Remaining: intrinsic solid fracture/cohesive excavation, useful displacement and digging speed, full transfer ledger, repeated-hit locality/stability, general stance on loose ground, actual Inventory parking, retained-soil grip-root generalization, physical-phone acceptance, production-scale hosting and full repository regression. Original strict contact/four-repeat gates are unchanged and remain unresolved.
+
+
+The head-pickup follow-up also executes **two consecutive native contacts for each of four configured families**. This registered group passes in 24.668 s with native sampled up-vector above cos(0.6), the existing controller's fallen-posture boundary, through each action/recovery. This is a bounded loose-grain paired-contact test, not the failing retained-soil four-repeat excavation gate. A second desktop journey picks the head, strikes a grain and reports actual contact (2.9 cm target travel, −15.11 J signed net hand work); negative net hand work is recovery/actuator exchange, not an inventory energy credit. Whole-object highlighting, slight-drift orbit cancellation, expanded handle acquisition and persistent stopped-session restart are visibly verified. Landscape emulation at CSS 844 × 390 keeps 48 × 45 px movement buttons clear of the top menu and footer; no physical phone is certified. Proof captures are ignored local files `build/material-lab/whole-tool-highlight-tested.jpg` and `equip-and-impact-tested.jpg`.

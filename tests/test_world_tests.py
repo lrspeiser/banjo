@@ -221,7 +221,6 @@ class TestWorldGateway(unittest.TestCase):
                  {'action':'step','session':session,'dt':100},
                  {'action':'pickup','session':session,'id':uuid.uuid4().hex,'instance':'tool-stand'},
                  {'action':'move','session':session,'id':uuid.uuid4().hex,'velocity':[0,1,0],'heading':0},
-                 {'action':'observe','session':'missing'},
                  {'action':'create','family':'bow','material':'iron'}]
         for value in invalid:
             with self.assertRaises(urllib.error.HTTPError) as refused:self.post(value)
@@ -233,5 +232,74 @@ class TestWorldGateway(unittest.TestCase):
         other=self.create()
         with self.assertRaises(urllib.error.HTTPError):self.post({'action':'create','family':'pick','material':'iron'})
         self.assertNotEqual(session,other['session'])
+
+    def test_expired_and_exhausted_sessions_report_recovery_and_can_restart(self):
+        world=self.granular();session=world['session']
+        # Host lease clock only; native physical time/geometry are unchanged.
+        self.manager.worlds[session].last_seen=time.monotonic()-91
+        fresh=self.granular();new_session=fresh['session']
+        try:
+            with self.assertRaises(urllib.error.HTTPError) as refused:self.observe(session)
+            self.assertEqual(refused.exception.code,409)
+            self.assertEqual(json.load(refused.exception)['code'],'expired')
+            self.assertEqual(self.post({'action':'close','session':session}),{'closed':True})
+            self.assertEqual(self.post({'action':'close','session':session}),{'closed':True})
+            native_world=self.manager.worlds[new_session]
+            native_world.receipts.update({f'{i:032x}':({}, {}) for i in range(4000)})
+            with self.assertRaises(urllib.error.HTTPError) as refused:
+                self.act(new_session,'pickup',instance='handle')
+            self.assertEqual(refused.exception.code,409)
+            self.assertEqual(json.load(refused.exception)['code'],'input_budget')
+            self.assertEqual(self.observe(new_session)['snapshot']['own_hand']['holding'],'')
+        finally:self.post({'action':'close','session':new_session})
+
+    def test_clicked_component_acquires_the_whole_native_tool_for_each_family(self):
+        for family in WORLD.FAMILIES:
+            world=self.granular(family=family);session=world['session']
+            try:
+                outcome=self.act(session,'pickup',instance='head')['outcome']
+                self.assertTrue(any(j['attached'] and {j['a'],j['b']}=={'head','handle'}
+                                    for j in world['snapshot']['joints']))
+                self.assertTrue(any(p['body']=='head' and p['grip_body']=='handle'
+                                    for p in world['snapshot']['tool_points']))
+                self.assertEqual(outcome['status'],'pending',outcome)
+                held=self.wait(session,lambda r:any(e['status']=='applied' for e in r['events']))
+                self.assertEqual(held['snapshot']['own_hand']['holding'],'head')
+                self.assertEqual(set(held['snapshot']['own_hand']['held_parts']),{'head','handle'})
+                def recovered(r):
+                    w,x,y,z=r['snapshot']['native_players']['player']['orientation_wxyz']
+                    self.assertGreater(1-2*(x*x+z*z),math.cos(.6),'Strike knocked the native player into fallen posture')
+                    return r['snapshot']['own_physical_hit'] and not r['snapshot']['own_physical_hit']['active']
+                for _ in range(2):
+                    preview=self.post({'action':'preview-hit','session':session,'target':[.42,.22,.54]})['preview']
+                    self.assertTrue(preview['admitted'],preview)
+                    self.act(session,'hit',target=[.42,.22,.54])
+                    done=self.wait(session,recovered,seconds=12)
+                    self.assertTrue(done['snapshot']['own_physical_hit']['contacted'])
+                    self.assertEqual(done['snapshot']['own_hand']['holding'],'head')
+                self.assertEqual(self.act(session,'drop')['snapshot']['own_hand']['holding'],'')
+            finally:self.post({'action':'close','session':session})
+
+    def test_matched_pickup_has_stable_native_stance_beside_the_sample(self):
+        for material in ('glass','oak','iron'):
+            world=self.granular(material=material);session=world['session']
+            try:
+                self.act(session,'pickup',instance='handle')
+                self.wait(session,lambda r:any(e['status']=='applied' for e in r['events']))
+                until=time.monotonic()+2
+                peak_tilt=0;peak_drift=0
+                while time.monotonic()<until:
+                    self.act(session,'move',velocity=[0,0,0],heading=0)
+                    observation=self.observe(session);player=observation['snapshot']['native_players']['player']
+                    w,x,y,z=player['orientation_wxyz']
+                    peak_tilt=max(peak_tilt,math.acos(max(-1,min(1,1-2*(x*x+z*z)))))
+                    peak_drift=max(peak_drift,math.hypot(player['position_m'][0],player['position_m'][2]-.82))
+                    self.assertEqual(observation['snapshot']['own_hand']['holding'],'handle')
+                    time.sleep(.14)
+                self.assertLess(peak_tilt,.15,'Pickup tipped the native avatar more than 8.6 degrees')
+                self.assertLess(peak_drift,.05,'Stationary pickup moved the native avatar over 5 cm')
+                print('PICKUP_STANCE_EVIDENCE '+json.dumps({'material':material,'dt_s':world['clock']['dt_s'],
+                    'peak_tilt_rad':peak_tilt,'peak_drift_m':peak_drift,'native':world['native']}))
+            finally:self.post({'action':'close','session':session})
 
 if __name__=='__main__':unittest.main()

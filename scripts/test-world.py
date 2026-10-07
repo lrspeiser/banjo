@@ -21,6 +21,13 @@ import uuid
 FAMILIES = {"pick": .12, "shovel": .28, "hoe": .20, "custom": .16}
 
 
+class WorldUnavailable(ValueError):
+    """Public, bounded lifecycle refusal; never includes native exception text."""
+    def __init__(self, code):
+        self.code = code
+        super().__init__(code)
+
+
 def vector(value, bound=20):
     if (not isinstance(value, list) or len(value) != 3 or
             any(type(v) not in (float, int) or not math.isfinite(v) or abs(v) > bound for v in value)):
@@ -119,7 +126,11 @@ class TestWorld:
             self.ready = self.frames.get(timeout=15)
             if self.ready is None or self.ready.get("status") != "ready":
                 raise RuntimeError("Rust world owner did not start")
-            joined = self.command({"kind": "join", "feet_m": [0, .75+offset, 0]}, host=True)
+            # Start on the declared fixed base beside the loose test bed.
+            # Standing on loose grains coupled the avatar's balance actuator
+            # into the very sample being tested before any deliberate strike.
+            feet = [0, .022, .82] if model == "rigid-grains" else [0, .75, 0]
+            joined = self.command({"kind": "join", "feet_m": feet}, host=True)
             if joined["outcome"]["status"] != "applied":
                 raise RuntimeError("Native avatar admission refused")
             self.command({"kind": "move", "velocity_m_s": [0, 0, 0], "heading_rad": 0, "jump": False})
@@ -139,13 +150,13 @@ class TestWorld:
 
     def rpc(self, request):
         if self.closed or self.child.poll() is not None:
-            raise RuntimeError("World stopped; start a fresh test world")
+            raise WorldUnavailable("stopped")
         self.child.stdin.write(json.dumps(request, allow_nan=False)+"\n")
         self.child.stdin.flush()
         while True:
             frame = self.frames.get(timeout=15)
             if frame is None:
-                raise RuntimeError("Native world ended; start a fresh test world")
+                raise WorldUnavailable("stopped")
             if frame["schema"] == "banjo.worker-completion.v1":
                 self.events.append(frame["outcome"])
             else:
@@ -188,7 +199,7 @@ class TestWorld:
                     if original != request: raise ValueError("Input identity reused with different intention")
                     return dict(self.observe(), outcome=result)
                 if len(self.receipts) >= 4000:
-                    raise ValueError("Sandbox input budget reached; start a new test world")
+                    raise WorldUnavailable("input_budget")
             state = self.observe()["snapshot"]
             if action == "move":
                 velocity = vector(request["velocity"], 2)
@@ -293,7 +304,12 @@ class WorldManager:
         if not isinstance(ident, str): raise ValueError("Expected a test world session")
         with self.lock:
             world = self.worlds.get(ident)
-            if world is None: raise ValueError("Test world expired; start a new world")
+            if world is None:
+                # Closing an already expired disposable session is safe and
+                # lets a fresh-world request recover instead of getting stuck.
+                if request["action"] == "close" and set(request) == {"action","session"}:
+                    return {"closed": True}
+                raise WorldUnavailable("expired")
             if request["action"] == "close":
                 if set(request) != {"action", "session"}: raise ValueError("Invalid close intention")
                 with world.lock: world.close()
