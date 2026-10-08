@@ -507,10 +507,11 @@ public:
     };
     unsigned addFaceSpring(const FaceSpringDescription &description);
     FaceSpringObservation faceSpringObservation(unsigned joint) const;
-    struct ContactImpulsePoint {Vec3 point_world_m{};double normal_impulse_n_s{};double initial_gap_m{};};
+    struct ContactImpulsePoint {Vec3 point_world_m{};double normal_impulse_n_s{};double initial_gap_m{};double friction_radius_m{};};
     struct ContactImpulseObservation {
         MatterBodyId a{},b{};
         Vec3 normal_a_to_b{},friction_point_world_m{},friction_impulse_on_b_n_s{},twist_impulse_on_b_n_m_s{};
+        double combined_friction{};
         std::vector<ContactImpulsePoint> points;
     };
     // Opt-in actual discrete solver impulses, not collision-response estimates.

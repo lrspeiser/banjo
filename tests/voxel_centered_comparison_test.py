@@ -3,6 +3,15 @@ A completed or safely refused comparison is not a passing conservation gate.
 """
 import json,math,subprocess,sys,time
 from pathlib import Path
+def verify_rejected_twist(rejected,masses):
+    worst=rejected['worst_twist_contact']
+    assert worst and worst['twist_stationarity_gap_j']>0,'remaining failure lost its final-twist diagnosis'
+    assert worst['a'] in masses and worst['b'] in masses,'failure witnesses do not name original constituent cells'
+    assert worst['twist_cap_n_m_s']>=0 and worst['points']>1
+    calculated=worst['twist_impulse_n_m_s']*worst['midpoint_spin_rad_s']
+    assert abs(calculated-worst['twist_work_j'])<1e-12
+    assert abs(calculated+worst['twist_cap_n_m_s']*abs(worst['midpoint_spin_rad_s'])-worst['twist_stationarity_gap_j'])<1e-12
+
 native=Path(sys.argv[1]).resolve()
 contact_law=sys.argv[2] if len(sys.argv)>2 else "resolved-deformation"
 assert contact_law in ["resolved-deformation","midpoint-unilateral"]
@@ -35,6 +44,8 @@ for sheet,ball in [(m,'iron') for m in ['glass','oak','iron','ice']]+[('glass','
             if not reply['ok']:
                 refused=reply['error'];assert 'energy gate refused' in refused
                 rejected=state['step_work']['last_rejected_trial'];assert rejected and rejected['depth']==14
+                if contact_law=='midpoint-unilateral':
+                    verify_rejected_twist(rejected,masses)
                 assert request({'op':'snapshot'})['state']==state,'refused candidate leaked into accepted state'
                 break
         assert state['time_s']>1.4 and state['contact_audit']['point_samples']>0,'comparison missed impact'

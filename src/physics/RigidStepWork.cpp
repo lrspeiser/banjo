@@ -49,4 +49,20 @@ RigidStepWork auditRigidStepWork(std::span<const RigidStepWorkInput> states,Vec3
         if(!std::isfinite(x))throw std::invalid_argument("rigid work audit overflow");
     return out;
 }
+ContactFrictionStationarity auditContactFrictionStationarity(Vec3 impulse,Vec3 slip,double cap,
+    double twist,double spin,double twist_cap){
+    if(!finite(impulse)||!finite(slip)||!std::isfinite(cap)||cap<0||!std::isfinite(twist)
+        ||!std::isfinite(spin)||!std::isfinite(twist_cap)||twist_cap<0)
+        throw std::invalid_argument("invalid contact friction stationarity domain");
+    ContactFrictionStationarity out;
+    out.friction_work_j=dot(impulse,slip);out.twist_work_j=twist*spin;
+    out.friction_gap_j=out.friction_work_j+cap*length(slip);
+    out.twist_gap_j=out.twist_work_j+twist_cap*std::abs(spin);
+    out.friction_cap_excess_n_s=std::max(0.,length(impulse)-cap);
+    out.twist_cap_excess_n_m_s=std::max(0.,std::abs(twist)-twist_cap);
+    for(double x:{out.friction_work_j,out.twist_work_j,out.friction_gap_j,out.twist_gap_j,
+        out.friction_cap_excess_n_s,out.twist_cap_excess_n_m_s})
+        if(!std::isfinite(x))throw std::invalid_argument("contact friction stationarity overflow");
+    return out;
+}
 }

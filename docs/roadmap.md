@@ -1,6 +1,6 @@
 # Remaining active goals: what you will test
 
-Updated October 8, 2026 from [the latest measured checkpoint](midpoint-contact-friction-checkpoint.md). These are the five active goals, rewritten as user acceptance tests. Historical checkpoints and the wider platform roadmap follow below; they are not additional completed capabilities.
+Updated October 8, 2026 from [the latest contact convergence audit](contact-stationarity-checkpoint.md). These are the five active goals, rewritten as user acceptance tests. Historical checkpoints and the wider platform roadmap follow below; they are not additional completed capabilities.
 
 ## 1. Trust the collision and its aftermath — in progress
 
@@ -8,7 +8,7 @@ Updated October 8, 2026 from [the latest measured checkpoint](midpoint-contact-f
 
 **Done when:** Supported cases finish without unexplained solver stops; fragments retain their source material and mass; measured energy and momentum transfers account for gravity, supports, friction and implemented damage. Smaller timesteps and finer cells give acceptably consistent results. Cracks and debris come from the calculation.
 
-**Still missing:** Coupled contact/friction convergence, unexplained energy losses and full transfer/refinement qualification. The experimental glass-ball case fractures into 20 components but stops at 1.470365 simulated seconds. A completed drop alone does not establish accuracy.
+**Still missing:** Coupled contact/friction convergence, unexplained energy losses and full transfer/refinement qualification. The new final-slip audit identifies positive twist work within a feasible impulse cap; 16/96/256 iteration probes all still fail. The experimental glass-ball case fractures into 20 components but stops at 1.470365 simulated seconds. A completed drop alone does not establish accuracy.
 
 ## 2. Interact while the physics keeps up — in progress
 

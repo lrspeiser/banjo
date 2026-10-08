@@ -52,7 +52,8 @@ struct VoxelImpactWorld::Impl {
     unsigned ticks{},broken{},substeps{},rejected{};Vec3 gravity;MechanicalTotals initial,totals;
     bool log_faces{},resolved_deformation{},centered_faces{},midpoint_contact{};
     RigidStepWork work_total{};double elastic_change_j{},ledger_change_j{};Vec3 full_angular_residual{};
-    Json refused_work=nullptr,boundary_total={{"normal_midpoint_work_j",0.},{"friction_midpoint_work_j",0.},{"twist_midpoint_work_j",0.},{"positive_normal_work_j",0.},{"max_velocity_violation_m_s",0.},{"max_complementarity_error_j",0.}};
+    Json refused_work=nullptr,boundary_total={{"normal_midpoint_work_j",0.},{"friction_midpoint_work_j",0.},{"twist_midpoint_work_j",0.},{"positive_normal_work_j",0.},{"max_velocity_violation_m_s",0.},{"max_complementarity_error_j",0.},
+        {"max_friction_stationarity_gap_j",0.},{"max_twist_stationarity_gap_j",0.},{"max_friction_cap_excess_n_s",0.},{"max_twist_cap_excess_n_m_s",0.}};
     static Json workJson(const RigidStepWork &w){return {
         {"gravity_work_j",w.gravity_work_j},{"gyro_kick_j",w.gyro_kick_j},{"other_force_work_j",w.other_force_work_j},
         {"spring_work_j",w.spring_work_j},{"contact_work_j",w.contact_work_j},{"solver_residual_work_j",w.solver_residual_work_j},
@@ -95,8 +96,10 @@ struct VoxelImpactWorld::Impl {
         for(unsigned i=0;i<cells.size();++i)if(!cells[i].fixed){if(indexed[i].before.mass_kg<=0)throw std::runtime_error("native force phase observation missing");dynamic.push_back(indexed[i]);}
         return auditRigidStepWork(dynamic,gravity);
     }
-    Json measureBoundary(const std::vector<RigidSnapshot> &before,double h)const{
+    Json measureBoundary(const std::vector<RigidSnapshot> &before,double h,Json &worst_twist)const{
         double normal=0,positive=0,friction=0,twist=0,velocity_violation=0,complementarity=0;
+        double friction_gap=0,twist_gap=0,friction_excess=0,twist_excess=0;
+        worst_twist=nullptr;
         std::vector<RigidSnapshot> solver=before;
         for(const auto &phase:world.forcePhaseObservations()){
             auto &s=solver.at(std::size_t(phase.body-100));
@@ -108,6 +111,7 @@ struct VoxelImpactWorld::Impl {
                 return states[b].linear_velocity_m_s+cross(states[b].angular_velocity_rad_s,point-before[b].center_of_mass_world_m)
                     -states[a].linear_velocity_m_s-cross(states[a].angular_velocity_rad_s,point-before[a].center_of_mass_world_m);
             };
+            double cap=0,twist_cap=0;
             for(const auto &p:c.points){
                 const double v0=dot(c.normal_a_to_b,speed(p.point_world_m,before)),v1=dot(c.normal_a_to_b,speed(p.point_world_m,solver));
                 const double residual=v0+v1+2*std::max(0.,p.initial_gap_m)/h;
@@ -116,11 +120,28 @@ struct VoxelImpactWorld::Impl {
                 positive+=std::max(0.,work);
                 velocity_violation=std::max(velocity_violation,std::max(0.,-residual));
                 complementarity=std::max(complementarity,std::abs(p.normal_impulse_n_s*residual));
+                cap+=p.normal_impulse_n_s;twist_cap+=p.normal_impulse_n_s*p.friction_radius_m;
             }
-            friction+=dot(c.friction_impulse_on_b_n_s,(speed(c.friction_point_world_m,before)+speed(c.friction_point_world_m,solver))/2);
+            cap*=c.combined_friction;twist_cap*=c.combined_friction;
+            const Vec3 relative=(speed(c.friction_point_world_m,before)+speed(c.friction_point_world_m,solver))/2;
+            const Vec3 slip=relative-dot(relative,c.normal_a_to_b)*c.normal_a_to_b;
+            const double spin=dot(c.normal_a_to_b,(before[b].angular_velocity_rad_s-before[a].angular_velocity_rad_s+solver[b].angular_velocity_rad_s-solver[a].angular_velocity_rad_s)/2);
+            const double impulse=dot(c.normal_a_to_b,c.twist_impulse_on_b_n_m_s);
+            const auto row=auditContactFrictionStationarity(c.friction_impulse_on_b_n_s,slip,cap,impulse,spin,twist_cap);
+            friction+=dot(c.friction_impulse_on_b_n_s,relative);
             twist+=dot(c.twist_impulse_on_b_n_m_s,(before[b].angular_velocity_rad_s-before[a].angular_velocity_rad_s+solver[b].angular_velocity_rad_s-solver[a].angular_velocity_rad_s)/2);
+            friction_gap=std::max(friction_gap,row.friction_gap_j);
+            if(row.twist_gap_j>twist_gap){twist_gap=row.twist_gap_j;
+                worst_twist={{"a",c.a},{"b",c.b},{"point_m",v(c.friction_point_world_m)},{"normal",v(c.normal_a_to_b)},
+                    {"coefficient",c.combined_friction},{"points",c.points.size()},{"twist_impulse_n_m_s",impulse},{"twist_cap_n_m_s",twist_cap},
+                    {"midpoint_spin_rad_s",spin},{"twist_work_j",row.twist_work_j},{"twist_stationarity_gap_j",row.twist_gap_j},
+                    {"before_spin_a_rad_s",v(before[a].angular_velocity_rad_s)},{"before_spin_b_rad_s",v(before[b].angular_velocity_rad_s)},
+                    {"solver_spin_a_rad_s",v(solver[a].angular_velocity_rad_s)},{"solver_spin_b_rad_s",v(solver[b].angular_velocity_rad_s)}};
+            }
+            friction_excess=std::max(friction_excess,row.friction_cap_excess_n_s);twist_excess=std::max(twist_excess,row.twist_cap_excess_n_m_s);
         }
-        return {{"normal_midpoint_work_j",normal},{"friction_midpoint_work_j",friction},{"twist_midpoint_work_j",twist},{"positive_normal_work_j",positive},{"max_velocity_violation_m_s",velocity_violation},{"max_complementarity_error_j",complementarity}};
+        return {{"normal_midpoint_work_j",normal},{"friction_midpoint_work_j",friction},{"twist_midpoint_work_j",twist},{"positive_normal_work_j",positive},{"max_velocity_violation_m_s",velocity_violation},{"max_complementarity_error_j",complementarity},
+            {"max_friction_stationarity_gap_j",friction_gap},{"max_twist_stationarity_gap_j",twist_gap},{"max_friction_cap_excess_n_s",friction_excess},{"max_twist_cap_excess_n_m_s",twist_excess}};
     }
     std::vector<unsigned> components() const {
         std::vector<unsigned> p(cells.size());std::iota(p.begin(),p.end(),0);
@@ -224,7 +245,7 @@ struct VoxelImpactWorld::Impl {
         for(unsigned i=0;i<bonds.size();++i)if(bonds[i].live){const auto &b=bonds[i];faces_before[i]=world.faceSpringObservation(b.joint);before_elastic+=quadratic(b.k,faces_before[i].displacement_cs_m)+quadratic(b.r,faces_before[i].rotation_cs_rad);}
         observation_wall_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-observation_start).count();
         const double before=totals.mechanicalEnergy()+before_elastic;
-        double candidateEnergy=0,after_elastic=0;MechanicalTotals candidateTotals;RigidStepWork candidateWork;Json candidateBoundary;
+        double candidateEnergy=0,after_elastic=0;MechanicalTotals candidateTotals;RigidStepWork candidateWork;Json candidateBoundary,candidateTwist;
         std::vector<RigidMechanicalState> candidate_states;
         const auto trial_start=std::chrono::steady_clock::now();
         const bool accepted=world.runReversibleTrial([&]{
@@ -240,11 +261,11 @@ struct VoxelImpactWorld::Impl {
             candidate_faces_wall_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-faces_start).count();
             const double after=candidateTotals.mechanicalEnergy()+after_elastic;candidateEnergy=after;
             candidateWork=measureWork(before_states,candidate_states,faces_before,faces_after);
-            if(midpoint_contact)candidateBoundary=measureBoundary(before_states,h);
+            if(midpoint_contact)candidateBoundary=measureBoundary(before_states,h,candidateTwist);
             return std::isfinite(after)&&after-before<=1e-5*std::max(1.,std::abs(before))+1e-6&&after+fracture+discarded_elastic-initial_energy<=.1;
         });
         trial_wall_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-trial_start).count();
-        if(!accepted){++rejected;refused_work={{"time_s",time},{"dt_s",h},{"depth",depth},{"before_j",before},{"candidate_j",candidateEnergy},{"elastic_change_j",after_elastic-before_elastic},{"work",workJson(candidateWork)}};if(midpoint_contact)refused_work["midpoint_boundary"]=candidateBoundary;if(depth>=14)throw std::runtime_error("native integration energy gate refused at "+std::to_string(time)+" s: before="+std::to_string(before)+", candidate="+std::to_string(candidateEnergy)+", h="+std::to_string(h)+"; last accepted state retained");interval(h/2,depth+1);interval(h/2,depth+1);return;}
+        if(!accepted){++rejected;refused_work={{"time_s",time},{"dt_s",h},{"depth",depth},{"before_j",before},{"candidate_j",candidateEnergy},{"elastic_change_j",after_elastic-before_elastic},{"work",workJson(candidateWork)}};if(midpoint_contact){refused_work["midpoint_boundary"]=candidateBoundary;refused_work["worst_twist_contact"]=candidateTwist;}if(depth>=14)throw std::runtime_error("native integration energy gate refused at "+std::to_string(time)+" s: before="+std::to_string(before)+", candidate="+std::to_string(candidateEnergy)+", h="+std::to_string(h)+"; last accepted state retained");interval(h/2,depth+1);interval(h/2,depth+1);return;}
         if(midpoint_contact)for(auto it=candidateBoundary.begin();it!=candidateBoundary.end();++it){
             const double value=it.value().get<double>();
             boundary_total[it.key()]=it.key().starts_with("max_")?std::max(boundary_total[it.key()].get<double>(),value):boundary_total[it.key()].get<double>()+value;

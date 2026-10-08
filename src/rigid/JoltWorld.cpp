@@ -351,7 +351,7 @@ bool readContactImpulses(const std::string &data,
 
 struct ContactImpulseGeometry {
     JPH::SubShapeIDPair key;MatterBodyId a{},b{};
-    JPH::Vec3 normal;std::vector<Vec3> points;std::vector<double> gaps;
+    JPH::Vec3 normal;std::vector<Vec3> points;std::vector<double> gaps,radii;double friction{};
 };
 
 // Saves only the contact pairs a round body is in, so reading the impulses
@@ -593,10 +593,17 @@ private:
             std::scoped_lock lock(contact_mutex_);contact_swept_=true;return;
         }
         ContactImpulseGeometry geometry{JPH::SubShapeIDPair(a.GetID(),manifold.mSubShapeID1,b.GetID(),manifold.mSubShapeID2),a.GetUserData(),b.GetUserData(),manifold.mWorldSpaceNormal,{}};
+        geometry.friction=settings.mCombinedFriction;
+        JPH::RVec3 friction_point=JPH::RVec3::sZero();
+        for(JPH::uint i=0;i<manifold.mRelativeContactPointsOn1.size();++i)
+            friction_point+=.5_r*(manifold.GetWorldSpaceContactPointOn1(i)+manifold.GetWorldSpaceContactPointOn2(i));
+        friction_point/=JPH::Real(manifold.mRelativeContactPointsOn1.size());
         for(JPH::uint i=0;i<manifold.mRelativeContactPointsOn1.size();++i){
             const auto p1=manifold.GetWorldSpaceContactPointOn1(i),p2=manifold.GetWorldSpaceContactPointOn2(i);
             geometry.points.push_back(fromJoltPosition(.5_r*(p1+p2)));
             geometry.gaps.push_back(-double(JPH::Vec3(p1-p2).Dot(manifold.mWorldSpaceNormal)));
+            const JPH::Vec3 delta=JPH::Vec3(.5_r*(p1+p2)-friction_point);
+            geometry.radii.push_back(double((delta-delta.Dot(manifold.mWorldSpaceNormal)*manifold.mWorldSpaceNormal).Length()));
         }
         std::scoped_lock lock(contact_mutex_);
         if(contact_geometry_.size()>=65536){contact_overflow_=true;return;}
@@ -983,14 +990,15 @@ public:
         const bool parsed=readContactRecords(recorder.GetData(),[&](const RecordedContactManifold &record){
             const auto found=current.find(record.key);if(found==current.end())return;
             const auto &frame=found->second;
-            if(frame.points.size()!=record.points.size()||frame.gaps.size()!=record.points.size())throw std::runtime_error("native contact geometry/impulse point count differs");
+            if(frame.points.size()!=record.points.size()||frame.gaps.size()!=record.points.size()||frame.radii.size()!=record.points.size())throw std::runtime_error("native contact geometry/impulse point count differs");
             JoltWorld::ContactImpulseObservation out;out.a=frame.a;out.b=frame.b;
+            out.combined_friction=frame.friction;
             out.normal_a_to_b=fromJoltVector(frame.normal);
             const auto tangent=frame.normal.GetNormalizedPerpendicular();
             out.friction_impulse_on_b_n_s=fromJoltVector(record.friction[0]*tangent+record.friction[1]*frame.normal.Cross(tangent));
             out.twist_impulse_on_b_n_m_s=fromJoltVector(record.twist*frame.normal);
             for(unsigned i=0;i<record.points.size();++i){
-                out.points.push_back({frame.points[i],record.points[i].lambda,frame.gaps[i]});out.friction_point_world_m+=frame.points[i];
+                out.points.push_back({frame.points[i],record.points[i].lambda,frame.gaps[i],frame.radii[i]});out.friction_point_world_m+=frame.points[i];
             }
             if(!out.points.empty())out.friction_point_world_m*=1./out.points.size();
             contact_impulses_.push_back(std::move(out));current.erase(found);

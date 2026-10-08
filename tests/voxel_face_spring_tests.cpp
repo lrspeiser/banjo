@@ -2,6 +2,7 @@
 #include "material/MaterialCatalog.hpp"
 #include "material/MaterialCompiler.hpp"
 #include "physics/RotationStrain.hpp"
+#include "physics/RigidStepWork.hpp"
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -423,8 +424,24 @@ void midpoint_twist_reversal_oracle(MaterialPreset preset,bool repaired,bool sli
     const auto potential=[](Vec3 stiffness,Vec3 value){return .5*(stiffness.x*value.x*value.x+stiffness.y*value.y*value.y+stiffness.z*value.z*value.z);};
     const double elastic=potential(kt,face.displacement_cs_m)+potential(kr,face.rotation_cs_rad);
     const double e1=.5*dot(a.motion.angular_velocity_rad_s,a.inertia_world_kg_m2*a.motion.angular_velocity_rad_s)+.5*a.mass_kg*(a.motion.linear_velocity_m_s.y*a.motion.linear_velocity_m_s.y+a.motion.linear_velocity_m_s.z*a.motion.linear_velocity_m_s.z)+elastic;
+    double twist_gap=0,slide_gap=0;
+    for(const auto &c:world.contactImpulseObservations()){
+        check(c.a==1&&c.b==2,"controlled friction observes the intended complete body pair");
+        check(std::abs(c.combined_friction-.4)<1e-7,"observed friction is the coefficient supplied to the native solver");
+        double cap=0,twist_cap=0;for(const auto &p:c.points){cap+=p.normal_impulse_n_s;twist_cap+=p.normal_impulse_n_s*p.friction_radius_m;}
+        cap*=c.combined_friction;twist_cap*=c.combined_friction;
+        const auto velocity=[&](const RigidMechanicalState &s){return s.motion.linear_velocity_m_s+cross(s.motion.angular_velocity_rad_s,c.friction_point_world_m-a0.motion.center_of_mass_world_m);};
+        const auto relative=(velocity(a0)+velocity(a))/2;
+        const auto slip=relative-dot(relative,c.normal_a_to_b)*c.normal_a_to_b;
+        const auto stationarity=auditContactFrictionStationarity(c.friction_impulse_on_b_n_s,slip,cap,
+            dot(c.twist_impulse_on_b_n_m_s,c.normal_a_to_b),dot((a0.motion.angular_velocity_rad_s+a.motion.angular_velocity_rad_s)/2,c.normal_a_to_b),twist_cap);
+        twist_gap=std::max(twist_gap,stationarity.twist_gap_j);slide_gap=std::max(slide_gap,stationarity.friction_gap_j);
+        if(repaired)check(stationarity.twist_cap_excess_n_m_s<1e-7&&stationarity.friction_cap_excess_n_s<1e-6,"controlled matched friction retains native Coulomb caps");
+    }
     std::cout<<"material="<<materialSceneName(preset)<<(sliding?" midpoint-slide repaired=":" midpoint-twist repaired=")<<repaired<<" coupled_energy_change_j="<<e1-e0<<" spin_x_rad_s="<<a.motion.angular_velocity_rad_s.x<<'\n';
+    std::cout<<"stationarity material="<<materialSceneName(preset)<<" repaired="<<repaired<<" sliding="<<sliding<<" twist_gap_j="<<twist_gap<<" friction_gap_j="<<slide_gap<<'\n';
     if(repaired){
+        check(twist_gap<5e-6&&slide_gap<5e-6,"controlled midpoint contact agrees with final slip and twist");
         check(e1-e0<4e-7,"midpoint friction cannot create energy in a coupled direction reversal");
         if(!sliding)check(std::abs(a.motion.angular_velocity_rad_s.x+1)<3e-5,"midpoint twist satisfies the shared trajectory constraint");
         check(world.mechanicalTotals({}).kinetic_energy_j+elastic-before.kinetic_energy_j<5e-6,"coupled midpoint contact creates no energy beyond native float bound");

@@ -59,7 +59,12 @@ function draw(s){if(!s)return;
  $('native-cost').textContent=Number.isFinite(d.profile?.native_step_ms)?(d.profile.native_step_ms/1000).toFixed(2)+' s wall time':'Unavailable in this build';
  $('law-status').textContent=(s.qualification?.model??'Model identity unavailable')+(s.qualification?.contact_law==='midpoint-unilateral'?' Midpoint normal and friction constraints match centered pose integration. Hard contact, not compliant indentation; full geometry and physical accuracy remain unqualified.':s.qualification?.contact_law==='resolved-deformation'?' Unilateral contact: inelastic normal constraints; recovery only from interfaces. No compliant contact indentation or calibrated energy accuracy.':' Material-derived instantaneous restitution remains the reference contact response.');
  const boundary=s.midpoint_boundary;$('boundary-audit').hidden=!boundary;
- if(boundary)$('boundary-audit').textContent='Midpoint contact · normal '+boundary.normal_midpoint_work_j.toFixed(4)+' J · friction '+boundary.friction_midpoint_work_j.toFixed(4)+' J · twist '+boundary.twist_midpoint_work_j.toFixed(4)+' J · largest constraint error '+boundary.max_complementarity_error_j.toPrecision(4)+' J. These are measured solver terms, not calibrated heat.';
+ if(boundary){
+  const gap=(key)=>Number.isFinite(boundary[key])?boundary[key].toPrecision(4)+' J':'Unavailable in this build';
+  $('boundary-audit').textContent='Midpoint contact · normal '+boundary.normal_midpoint_work_j.toFixed(4)+' J · friction '+boundary.friction_midpoint_work_j.toFixed(4)+' J · twist '+boundary.twist_midpoint_work_j.toFixed(4)+' J. Largest constraint disagreement: normal '+gap('max_complementarity_error_j')+' · sliding '+gap('max_friction_stationarity_gap_j')+' · twisting '+gap('max_twist_stationarity_gap_j')+'. These are measured solver terms, not calibrated heat.';
+ }
+ const failedTwist=rejected?.worst_twist_contact;
+ if(failedTwist)$('rejected-work').textContent+=' Largest rejected twist disagreement: cells '+failedTwist.a+' / '+failedTwist.b+' · work '+failedTwist.twist_work_j.toPrecision(5)+' J · midpoint slip '+failedTwist.midpoint_spin_rad_s.toPrecision(5)+' rad/s · impulse '+failedTwist.twist_impulse_n_m_s.toPrecision(5)+' / ±'+failedTwist.twist_cap_n_m_s.toPrecision(5)+' N·m·s. Full contact details are in Download record.';
  canvas.dataset.time=s.time_s;canvas.dataset.nativeCells=s.cells.length;canvas.dataset.sheetPieces=sheet.pieces;
 }
 function updateCamera(){target.set(0,whole?4.8:.43,0);const r=whole?13:radius;camera.position.set(target.x+r*Math.cos(pitch)*Math.sin(yaw),target.y+r*Math.sin(pitch),target.z+r*Math.cos(pitch)*Math.cos(yaw));camera.lookAt(target);}

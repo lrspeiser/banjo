@@ -21,4 +21,15 @@ struct RigidStepWork {
 // Signed residual/gyro/drift terms remain numerical or unexplained; not heat.
 // The identity does not by itself prove an accurate force/contact/material law.
 [[nodiscard]] RigidStepWork auditRigidStepWork(std::span<const RigidStepWorkInput>,Vec3 gravity_m_s2);
+struct ContactFrictionStationarity {
+    double friction_work_j{},twist_work_j{},friction_gap_j{},twist_gap_j{};
+    double friction_cap_excess_n_s{},twist_cap_excess_n_m_s{};
+};
+// Read-only maximum-dissipation variational gaps for a tangent impulse disk
+// and a separate twist interval. At a feasible converged row, each gap is zero.
+// Positive work/gap exposes disagreement with final slip, not material heat.
+// Slip must use the same frozen geometry/time operator as the native row.
+[[nodiscard]] ContactFrictionStationarity auditContactFrictionStationarity(
+    Vec3 tangent_impulse_n_s,Vec3 tangent_slip_m_s,double friction_cap_n_s,
+    double twist_impulse_n_m_s,double twist_slip_rad_s,double twist_cap_n_m_s);
 }
