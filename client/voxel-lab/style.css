@@ -3,3 +3,6 @@
 footer details[open]{position:absolute;right:0;bottom:0;width:min(430px,calc(100vw - 36px))}@media(max-width:850px){footer details[open]{width:min(390px,calc(100vw - 20px))}}
 
 .fields .contact-field{grid-column:1/-1}
+
+/* Keep the collapsed inspection drawer clear of Before/Live controls. */
+footer{flex-direction:row-reverse}

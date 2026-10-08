@@ -1,12 +1,13 @@
 {
-  "title": "Coupled friction implemented; full accuracy still open",
+  "title": "Glass-ball drop completes; accuracy and speed open",
   "date": "2026-10-08",
   "physics_revision": "7371898757c47f6c02d6a9eb5389f156c4c382e9",
   "native_sha256": "a99ebdde07748148f36537225457ba76087a59a894518fffe1ea86f3826ac2e1",
   "changes": [
     "New experimental Coupled friction option solves sliding and twisting together with the full 3 by 3 inverse mass and original impulse caps.",
     "Reference response remains the default. Existing geometry, material laws and energy refusal gates are retained.",
-    "The new native anisotropic support-patch oracles pass for glass, oak and iron in both CPU runners. Full drop measurements are in progress."
+    "All five final-build drops finish. Browser glass-ball completes at 2 s: 34 sheet / 19 ball components; downloaded final work matches native CLI exactly.",
+    "Exact replacement journals retain all published poses within existing storage limits. Before/Live controls are clear of the inspection drawer."
   ],
   "checks": [
     {
@@ -15,9 +16,19 @@
       "value": "128 analytical cap/stationarity cases, basis invariance and invalid inputs; native glass/oak/iron partial support tests"
     },
     {
+      "label": "Matched material drops",
+      "status": "passed",
+      "value": "Glass/oak/iron/ice iron-ball + glass/glass complete; retained energy refusal gate. This is benchmark completion, not physics admission"
+    },
+    {
+      "label": "Full browser / journal",
+      "status": "passed",
+      "value": "Glass-ball 2 s, 1,661 records, all 1,920 native ticks; exact final measured work parity and no console errors"
+    },
+    {
       "label": "Scoped regression",
       "status": "passed",
-      "value": "6 focused CTests / 8.37 s; actual gateway, exact journal/pipeline and playback checks"
+      "value": "6 focused CTests / 7.74 s; actual gateway, exact journal/pipeline and playback checks"
     },
     {
       "label": "Compiled sources",
@@ -27,19 +38,19 @@
     {
       "label": "Full conservation / refinement",
       "status": "blocked",
-      "value": "Energy losses, normal/contact-island convergence, momentum and refinement remain unqualified"
+      "value": "Glass-ball still has normal disagreement 0.048818 J, nonzero final friction gaps, numerical fracture overshoot and unqualified energy/momentum/refinement"
     },
     {
       "label": "Simulation speed",
       "status": "blocked",
-      "value": "No qualified speed fix; full measurements are in progress"
+      "value": "No speed fix: experimental final drops 71\u2013177 wall s / 2 physical s under concurrent verification load; reference about 39 s"
     }
   ],
   "next": [
     {
       "label": "Energy / accuracy",
       "status": "in progress",
-      "value": "Qualify coupled friction in full drops; resolve normal/island convergence and numerical energy losses"
+      "value": "Resolve normal/island convergence, force/pose consistency and fracture overshoot; qualify timestep/spatial accuracy"
     },
     {
       "label": "Calculation speed",
