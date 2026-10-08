@@ -13,6 +13,17 @@ import uuid
 MATERIALS = ('iron', 'aluminum', 'glass', 'ceramic', 'oak', 'rubber', 'ice', 'concrete')
 
 class SheetManager:
+    observation_limit = 80
+    advance_steps = 1000
+
+    def validate_create(self, request):
+        if set(request) != {'op', 'material', 'pick', 'point_m'}: raise ValueError('Invalid sheet declaration')
+        if request['material'] not in MATERIALS or request['pick'] not in MATERIALS: raise ValueError('Unknown material')
+        p = request['point_m']
+        if (not isinstance(p,list) or len(p)!=3 or any(type(x) not in (int,float) or not math.isfinite(x) for x in p)
+            or p[1]!=0 or abs(p[0])>.008 or abs(p[2])>.012): raise ValueError('Hit the central working area')
+        return dict(request, speed_m_s=6.0)
+
     def __init__(self, native, log_root=None):
         self.native = Path(native).resolve(strict=True)
         self.fingerprint = hashlib.sha256(self.native.read_bytes()).hexdigest()
@@ -29,11 +40,7 @@ class SheetManager:
                 if time.monotonic() - session['seen'] > 180:
                     self._stop(session); del self.sessions[key]
             if op == 'create':
-                if set(request) != {'op', 'material', 'pick', 'point_m'}: raise ValueError('Invalid sheet declaration')
-                if request['material'] not in MATERIALS or request['pick'] not in MATERIALS: raise ValueError('Unknown material')
-                p = request['point_m']
-                if (not isinstance(p,list) or len(p)!=3 or any(type(x) not in (int,float) or not math.isfinite(x) for x in p)
-                    or p[1]!=0 or abs(p[0])>.008 or abs(p[2])>.012): raise ValueError('Hit the central working area')
+                command = self.validate_create(request)
                 if len(self.sessions)>=8: raise ValueError('Eight active specimens maximum; reset an existing specimen')
                 child = subprocess.Popen([str(self.native), '--serve'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                          stderr=subprocess.DEVNULL, text=True, bufsize=1)
@@ -47,7 +54,6 @@ class SheetManager:
                 session = {'child':child, 'output':output, 'seen':time.monotonic(), 'sequence':0,
                            'log':self.log_root/(key+'.jsonl')}
                 self.sessions[key] = session
-                command = dict(request, speed_m_s=6.0)
             else:
                 if set(request)!={'op','session'} or op not in ('advance','close'): raise ValueError('Invalid sheet intention')
                 key=request['session']
@@ -55,8 +61,8 @@ class SheetManager:
                 session=self.sessions[key]
                 if op=='close':
                     self._stop(session);del self.sessions[key];return {'ok':True,'closed':True}
-                if session['sequence']>=80: raise ValueError('Specimen observation limit; reset it')
-                command={'op':'advance','steps':1000}
+                if session['sequence']>=self.observation_limit: raise ValueError('Specimen observation limit; reset it')
+                command={'op':'advance','steps':self.advance_steps}
             try:
                 session['child'].stdin.write(json.dumps(command, allow_nan=False)+'\n');session['child'].stdin.flush()
                 line=session['output'].get(timeout=15)

@@ -95,7 +95,7 @@ class TestHub(unittest.TestCase):
                 if key!="wall_s":self.assertEqual(a[key],b[key],f"Recording changed {key}")
 
     def test_named_commands_only_origin_and_result_isolation(self):
-        self.assertEqual(len(json.loads(self.get("/api/tests"))["checks"]),14)
+        self.assertEqual(len(json.loads(self.get("/api/tests"))["checks"]),15)
         for request in ({"check":"cmd.exe"},{"check":"all","args":["--anything"]},{"check":[]},{}):
             with self.assertRaises(urllib.error.HTTPError) as e:self.post(request)
             self.assertEqual(e.exception.code,400)
@@ -125,5 +125,16 @@ class TestHub(unittest.TestCase):
             self.assertEqual(job["checks"][0]["status"],"unavailable")
         job=self.wait(self.post({"check":"registration"})["id"])
         self.assertEqual(job["checks"][0]["status"],"pass")
+
+    def test_drop_world_executes_native_suite_and_returns_complete_fingerprinted_job(self):
+        job=self.wait(self.post({"check":"drop-world"})["id"])
+        self.assertEqual(job["total"],1)
+        self.assertEqual(len(job["checks"]),1)
+        check=job["checks"][0]
+        self.assertEqual(check["id"],"drop-world")
+        self.assertEqual(check["status"],"pass",check["output"])
+        native=DIRECTORY/("banjo_drop_world_run"+SUFFIX)
+        self.assertEqual(check["dependencies_sha256"][str(native.relative_to(ROOT))],
+                         hashlib.sha256(native.read_bytes()).hexdigest())
 
 if __name__=="__main__":unittest.main()

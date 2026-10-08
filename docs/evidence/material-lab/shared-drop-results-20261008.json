@@ -1,0 +1,5129 @@
+{
+  "integration_passed": true,
+  "release_ready": false,
+  "experiments": [
+    {
+      "case": "glass/iron",
+      "wall_s": 4.103750800015405,
+      "report": {
+        "angular_momentum_kg_m2_s": [
+          3.120642714445882e-05,
+          -2.151741025438194e-07,
+          0.0003885649365072963
+        ],
+        "broken_links": 44,
+        "cells": 106,
+        "connected_components": 4,
+        "contact_budget": {
+          "body_pairs": 4096,
+          "constraints": 2048,
+          "impact_event_estimation": false,
+          "initial_envelope_only": true,
+          "initial_pair_upper_bound": 1030,
+          "last_manifolds": 766,
+          "last_points": 772,
+          "last_speculative_manifolds": 766,
+          "observations_are_allocator_occupancy": false,
+          "peak_manifolds": 766,
+          "peak_points": 772,
+          "peak_speculative_manifolds": 766,
+          "speculative_distance_m": 0.019999999552965164,
+          "temporary_arena_bytes": 34668544
+        },
+        "contact_materials": [
+          {
+            "contact_damping_ratio": 0.18,
+            "defaulted": false,
+            "id": "iron",
+            "self_contact_restitution": 0.5627744474671608
+          },
+          {
+            "contact_damping_ratio": 0.08,
+            "defaulted": false,
+            "id": "glass",
+            "self_contact_restitution": 0.7771393966011861
+          }
+        ],
+        "damage_integration": {
+          "accepted_brittle_threshold_overshoot_j": 0.0,
+          "accepted_maximum_brittle_opening_overshoot": 0.0,
+          "accepted_maximum_damage_increment": 0.0,
+          "accepted_maximum_plastic_strain_increment": 0.0,
+          "accepted_substeps": 0,
+          "configured_limits_are_targets_in_report_mode": true,
+          "deepest_trial": 0,
+          "detects_intra_substep_peaks": false,
+          "discarded_substeps": 0,
+          "endpoint_acceptance_criteria": true,
+          "maximum_brittle_opening_overshoot": 0.05,
+          "maximum_damage_increment": 0.05,
+          "maximum_depth": 4,
+          "maximum_plastic_strain_increment": 0.002,
+          "maximum_solver_trials_per_tick": 1,
+          "mode": "single-step",
+          "on_limit": "reject",
+          "overshoot_is_not_an_additional_energy_store": true,
+          "rejected_trials": 0,
+          "rejected_trials_meaning": "bisected coarse trials",
+          "resolves_contact_or_elastic_wave_error": false,
+          "rolled_back_ticks": 0,
+          "smallest_accepted_step_s": 0.0,
+          "solver_trials": 0,
+          "stability_substeps_per_tick": 692,
+          "terminal_limit_rejections": 0,
+          "unresolved_substeps": 0,
+          "world_tick_transactional": false
+        },
+        "damaged_links": 0,
+        "elapsed_s": 0.0008333333333333334,
+        "elastic_energy_j": 5.054939304671292,
+        "energy_residual_j": null,
+        "fault": "",
+        "fracture_events": [
+          {
+            "a": 20,
+            "b": 26,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              -0.040003541184386385,
+              0.5399484038015795,
+              -0.020004301209189213
+            ],
+            "time_s": 0.00047236271676301633
+          },
+          {
+            "a": 21,
+            "b": 27,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              -0.04000354118712876,
+              0.539948403854597,
+              0.020004301215624545
+            ],
+            "time_s": 0.00047236271676301633
+          },
+          {
+            "a": 26,
+            "b": 31,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              -0.020004301111303666,
+              0.5399484037827276,
+              -0.04000354123679581
+            ],
+            "time_s": 0.00047236271676301633
+          },
+          {
+            "a": 27,
+            "b": 34,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              -0.02000430109796322,
+              0.5399484038274718,
+              0.040003541240585146
+            ],
+            "time_s": 0.00047236271676301633
+          },
+          {
+            "a": 38,
+            "b": 43,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              0.020004301145885903,
+              0.5399484037412995,
+              -0.040003541211548484
+            ],
+            "time_s": 0.00047236271676301633
+          },
+          {
+            "a": 38,
+            "b": 56,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              0.04000354120966249,
+              0.5399484037665765,
+              -0.020004301205033992
+            ],
+            "time_s": 0.00047236271676301633
+          },
+          {
+            "a": 39,
+            "b": 46,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              0.02000430108989537,
+              0.5399484038217301,
+              0.0400035412374538
+            ],
+            "time_s": 0.00047236271676301633
+          },
+          {
+            "a": 39,
+            "b": 57,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              0.040003541182838664,
+              0.5399484038195698,
+              0.020004301205128062
+            ],
+            "time_s": 0.00047236271676301633
+          },
+          {
+            "a": 14,
+            "b": 25,
+            "fracture_work_j": 0.0021333333333333347,
+            "object_id": 1,
+            "position_m": [
+              -0.04001767732532776,
+              0.5198961552993059,
+              -0.04001767702312915
+            ],
+            "time_s": 0.0005250481695568472
+          },
+          {
+            "a": 15,
+            "b": 28,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              -0.04001767769445453,
+              0.5198961571002427,
+              0.04001767300632979
+            ],
+            "time_s": 0.0005250481695568472
+          },
+          {
+            "a": 37,
+            "b": 50,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              0.040017673480456276,
+              0.5198961571179217,
+              -0.040017677250745495
+            ],
+            "time_s": 0.0005250481695568472
+          },
+          {
+            "a": 40,
+            "b": 51,
+            "fracture_work_j": 0.0021333333333333347,
+            "object_id": 1,
+            "position_m": [
+              0.04001767415512707,
+              0.5198961578583743,
+              0.040017673746472915
+            ],
+            "time_s": 0.0005250481695568472
+          },
+          {
+            "a": 14,
+            "b": 26,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              -0.04002242189037,
+              0.5198039026831103,
+              -0.020006439766269157
+            ],
+            "time_s": 0.0005361873795761136
+          },
+          {
+            "a": 15,
+            "b": 27,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              -0.040022423980467105,
+              0.5198039005873529,
+              0.02000643340049539
+            ],
+            "time_s": 0.0005361873795761136
+          },
+          {
+            "a": 25,
+            "b": 26,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              -0.020006439625950452,
+              0.5198039025200263,
+              -0.04002242186831598
+            ],
+            "time_s": 0.0005361873795761136
+          },
+          {
+            "a": 27,
+            "b": 28,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              -0.02000644008529112,
+              0.5198039016346035,
+              0.040022415733422245
+            ],
+            "time_s": 0.0005361873795761136
+          },
+          {
+            "a": 37,
+            "b": 38,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              0.020006433415135156,
+              0.5198039011203766,
+              -0.040022423699026796
+            ],
+            "time_s": 0.0005361873795761136
+          },
+          {
+            "a": 38,
+            "b": 50,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              0.04002241605659268,
+              0.5198039022034865,
+              -0.020006440104208184
+            ],
+            "time_s": 0.0005361873795761136
+          },
+          {
+            "a": 39,
+            "b": 40,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              0.020006434013333022,
+              0.5198038995633498,
+              0.04002241764746054
+            ],
+            "time_s": 0.0005361873795761136
+          },
+          {
+            "a": 39,
+            "b": 51,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              0.040022417937389636,
+              0.5198038996039842,
+              0.020006433889669877
+            ],
+            "time_s": 0.0005361873795761136
+          },
+          {
+            "a": 26,
+            "b": 32,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              -0.019993430737168277,
+              0.5397157101339665,
+              -0.01999343052995245
+            ],
+            "time_s": 0.0005482297687861314
+          },
+          {
+            "a": 27,
+            "b": 33,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              -0.019993430709783884,
+              0.5397157024281052,
+              0.019993428758116924
+            ],
+            "time_s": 0.0005482297687861314
+          },
+          {
+            "a": 38,
+            "b": 44,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              0.019993428806367577,
+              0.5397157037467853,
+              -0.019993430520495625
+            ],
+            "time_s": 0.0005482297687861314
+          },
+          {
+            "a": 39,
+            "b": 45,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              0.019993429379074466,
+              0.5397156954163578,
+              0.019993429184144908
+            ],
+            "time_s": 0.0005482297687861314
+          },
+          {
+            "a": 14,
+            "b": 27,
+            "fracture_work_j": 0.0021333333333333347,
+            "object_id": 1,
+            "position_m": [
+              -0.04002242763387474,
+              0.5197662195944497,
+              -3.147766266236446e-06
+            ],
+            "time_s": 0.000558766859344897
+          },
+          {
+            "a": 15,
+            "b": 26,
+            "fracture_work_j": 0.0021333333333333347,
+            "object_id": 1,
+            "position_m": [
+              -0.040022428479421696,
+              0.5197662272341022,
+              3.139628914773651e-06
+            ],
+            "time_s": 0.000558766859344897
+          },
+          {
+            "a": 25,
+            "b": 38,
+            "fracture_work_j": 0.0021333333333333347,
+            "object_id": 1,
+            "position_m": [
+              -3.1475384061740302e-06,
+              0.5197662203731882,
+              -0.04002242754154836
+            ],
+            "time_s": 0.000558766859344897
+          },
+          {
+            "a": 26,
+            "b": 37,
+            "fracture_work_j": 0.0021333333333333347,
+            "object_id": 1,
+            "position_m": [
+              3.1400764429027894e-06,
+              0.5197662275044259,
+              -0.040022428542484154
+            ],
+            "time_s": 0.000558766859344897
+          },
+          {
+            "a": 27,
+            "b": 40,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              3.1408695127903286e-06,
+              0.5197662175505169,
+              0.04002242068144278
+            ],
+            "time_s": 0.000558766859344897
+          },
+          {
+            "a": 28,
+            "b": 39,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              -3.1479962176172993e-06,
+              0.5197662103046125,
+              0.04002241998066274
+            ],
+            "time_s": 0.000558766859344897
+          },
+          {
+            "a": 38,
+            "b": 51,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              0.04002242094127516,
+              0.5197662185910108,
+              3.1407136830002846e-06
+            ],
+            "time_s": 0.000558766859344897
+          },
+          {
+            "a": 39,
+            "b": 50,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              0.0400224200387136,
+              0.5197662107592989,
+              -3.148265378546955e-06
+            ],
+            "time_s": 0.000558766859344897
+          },
+          {
+            "a": 2,
+            "b": 3,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              -0.10005930451955067,
+              0.5198784217054688,
+              -5.573533396960317e-09
+            ],
+            "time_s": 0.0005840558766859345
+          },
+          {
+            "a": 24,
+            "b": 36,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              -5.5142128588953065e-09,
+              0.5198784221122208,
+              -0.1000593041797011
+            ],
+            "time_s": 0.0005840558766859345
+          },
+          {
+            "a": 29,
+            "b": 41,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              -5.202388899880339e-09,
+              0.5198784257623349,
+              0.10005930337949015
+            ],
+            "time_s": 0.0005840558766859345
+          },
+          {
+            "a": 62,
+            "b": 63,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              0.10005930301815466,
+              0.5198784258444274,
+              -5.112457063596865e-09
+            ],
+            "time_s": 0.0005840558766859345
+          },
+          {
+            "a": 14,
+            "b": 32,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              -0.03998618602425359,
+              0.53967390245573,
+              -0.020005848404244624
+            ],
+            "time_s": 0.0008243015414257899
+          },
+          {
+            "a": 15,
+            "b": 33,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              -0.039986187073897304,
+              0.5396739000798461,
+              0.020005835245301182
+            ],
+            "time_s": 0.0008243015414257899
+          },
+          {
+            "a": 44,
+            "b": 50,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              0.03998617420970166,
+              0.5396738987849217,
+              -0.020005847115973877
+            ],
+            "time_s": 0.0008243015414257899
+          },
+          {
+            "a": 45,
+            "b": 51,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              0.03998617460552604,
+              0.5396738962127549,
+              0.020005834208226624
+            ],
+            "time_s": 0.0008243015414257899
+          },
+          {
+            "a": 25,
+            "b": 32,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              -0.020005483456794405,
+              0.5396681094204783,
+              -0.03998428488033204
+            ],
+            "time_s": 0.0008255057803467917
+          },
+          {
+            "a": 28,
+            "b": 33,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              -0.02000548175723249,
+              0.5396681038806643,
+              0.03998427632254932
+            ],
+            "time_s": 0.0008255057803467917
+          },
+          {
+            "a": 37,
+            "b": 44,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              0.020005468378946747,
+              0.5396681077880544,
+              -0.0399842860015242
+            ],
+            "time_s": 0.0008255057803467917
+          },
+          {
+            "a": 40,
+            "b": 45,
+            "fracture_work_j": 0.0021333333333333343,
+            "object_id": 1,
+            "position_m": [
+              0.020005467583058,
+              0.5396681019930266,
+              0.03998427731942043
+            ],
+            "time_s": 0.0008255057803467917
+          }
+        ],
+        "fracture_work_j": 0.09386666666666671,
+        "initial_energy_j": 512.4422194750773,
+        "limitations": [
+          "Experimental central-force directional cohesive lattice; not a calibrated continuum or real tomato/wood prediction",
+          "Cohesive state updates after each coupled spring/contact step; integration and damping/contact losses are not fully separated",
+          "Cell sphere collision proxies leave subcell gaps; wedge sharpness below cell spacing unresolved",
+          "All cells remain active representations; no automatic local refinement or rigid re-coarsening",
+          "No fluid/pulp, skin pressure, full orthotropic shear/compression damage, hinge failure or live-state save",
+          "Cell intrinsic spin is not coupled by center-to-center springs; finite-cell bending requires a richer connector"
+        ],
+        "linear_momentum_kg_m_s": [
+          -0.0010766554633410141,
+          -2.266777521766528,
+          6.001647590116838e-05
+        ],
+        "links": 532,
+        "material_results": [
+          {
+            "broken_links": 44,
+            "cells": 72,
+            "components": 1,
+            "damaged_links": 44,
+            "first_break_s": 0.00047236271676301633,
+            "first_damage_s": 0.00047236271676301633,
+            "id": 1,
+            "largest_component_cells": 72,
+            "links": 376,
+            "mass_kg": 11.520000000000008,
+            "material": "glass",
+            "max_isolated_pair_frequency_rad_s": 76376.26158259736,
+            "name": "Sheet",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -6.995074136778496e-09,
+              0.5396153655418235,
+              -5.952948246289107e-09
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 15.911721163041118,
+            "velocity_m_s": [
+              -2.1222338546065867e-05,
+              -0.2142792509144378,
+              -6.893132295877388e-06
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 32,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 2,
+            "largest_component_cells": 32,
+            "links": 156,
+            "mass_kg": 1.0000000000000002,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 188785.2840317344,
+            "name": "Ball",
+            "plastic_work_j": 46.504606578051884,
+            "position_m": [
+              7.845887793969662e-08,
+              0.6045385799804097,
+              7.20252623769295e-08
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 39.330267506611335,
+            "velocity_m_s": [
+              0.00016252085879386952,
+              0.20172394486144182,
+              0.0001393905204167822
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 3,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Left post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -0.10000011626154408,
+              0.25000000089838376,
+              2.497519723024521e-14
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              -0.004244064912199974,
+              -3.1697059199586874e-08,
+              5.384959700371894e-10
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 4,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Right post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              0.10000011487042043,
+              0.25000000089787633,
+              -5.886651963592126e-13
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              0.004230021499097347,
+              -3.178018914695713e-08,
+              -4.6620610150149844e-11
+            ]
+          }
+        ],
+        "maximum_observed_axial_strain": 0.020016369958477446,
+        "maximum_reaction_geometric_extension_discrepancy_m": 8.497296578119404e-09,
+        "mechanical_energy_j": 421.2856370104414,
+        "model": "material-network-v2",
+        "network_substepping": {
+          "internal_step_s": 3.010597302504817e-07,
+          "limited_by_budget": false,
+          "meaning": "The constraint solver runs on the network's own stability clock, not the package's host cadence. When required_substeps exceeds the budget the run is still under-resolved and its material state is not trustworthy.",
+          "required_substeps": 692,
+          "substeps_per_host_tick": 692
+        },
+        "objects": [
+          {
+            "broken_links": 44,
+            "cells": 72,
+            "components": 1,
+            "damaged_links": 44,
+            "first_break_s": 0.00047236271676301633,
+            "first_damage_s": 0.00047236271676301633,
+            "id": 1,
+            "largest_component_cells": 72,
+            "links": 376,
+            "mass_kg": 11.520000000000008,
+            "material": "glass",
+            "max_isolated_pair_frequency_rad_s": 76376.26158259736,
+            "name": "Sheet",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -6.995074136778496e-09,
+              0.5396153655418235,
+              -5.952948246289107e-09
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 15.911721163041118,
+            "velocity_m_s": [
+              -2.1222338546065867e-05,
+              -0.2142792509144378,
+              -6.893132295877388e-06
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 32,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 2,
+            "largest_component_cells": 32,
+            "links": 156,
+            "mass_kg": 1.0000000000000002,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 188785.2840317344,
+            "name": "Ball",
+            "plastic_work_j": 46.504606578051884,
+            "position_m": [
+              7.845887793969662e-08,
+              0.6045385799804097,
+              7.20252623769295e-08
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 39.330267506611335,
+            "velocity_m_s": [
+              0.00016252085879386952,
+              0.20172394486144182,
+              0.0001393905204167822
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 3,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Left post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -0.10000011626154408,
+              0.25000000089838376,
+              2.497519723024521e-14
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              -0.004244064912199974,
+              -3.1697059199586874e-08,
+              5.384959700371894e-10
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 4,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Right post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              0.10000011487042043,
+              0.25000000089787633,
+              -5.886651963592126e-13
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              0.004230021499097347,
+              -3.178018914695713e-08,
+              -4.6620610150149844e-11
+            ]
+          }
+        ],
+        "performance": {
+          "includes_package_load": false,
+          "includes_rendering": false,
+          "realtime_ratio": 0.00020395130693547515,
+          "sample_count": 4,
+          "sample_window": "last 4096 steps",
+          "step_max_ms": 1092.14,
+          "step_p50_ms": 973.5905,
+          "step_p95_ms": 1092.14,
+          "step_wall_total_ms": 4085.9426
+        },
+        "physical_response_validated": false,
+        "pinned_cells": 0,
+        "plastic_work_j": 46.50460657805192,
+        "position_bits": 64,
+        "reaction_reconstruction": {
+          "admissible": true,
+          "inadmissible_bond_updates": 0,
+          "maximum_residual_over_irreversible_extension": 0.00023782306577292795,
+          "meaning": "Bond extensions are reconstructed from the solver's applied reaction. An update is refused when that reconstruction's residual exceeds the smallest extension that changes the bond irreversibly, because breakage and solver non-convergence are then indistinguishable. A nonzero count means reported damage, fracture and plastic state are incomplete for this run."
+        },
+        "runtime_limits": {
+          "cells": 1024,
+          "links": 20000,
+          "objects": 32
+        },
+        "skin": {
+          "asynchronous_patches": false,
+          "contact_surface_matches_skin": false,
+          "exposed_faces": 0,
+          "fracture_faces": 0,
+          "last_query_ms": 0.0,
+          "max_query_ms": 0.0,
+          "mode": "blocky-cell-surface-v1",
+          "object_topology_rebuilds": 0,
+          "physical_mutation": false,
+          "queries": 0,
+          "rank_deficient_frame_fallbacks": 0,
+          "smooth_surface": false,
+          "triangles": 0
+        },
+        "state_valid": true,
+        "summed_spring_impulse_n_s": 452.6471476797615,
+        "temporal_resolution": {
+          "fits_256_substep_budget": false,
+          "includes_contact_stiffness": false,
+          "material_validation": false,
+          "maximum_frequency_bound_rad_s": 663814.8313522505,
+          "maximum_step_s": 3.012888392273219e-07,
+          "required_substeps": 692,
+          "resolved": false
+        },
+        "ticks": 4,
+        "unreleased_fracture_energy_j": 8.544566987511756,
+        "unseparated_energy_change_j": -30.95860292773432
+      }
+    },
+    {
+      "case": "glass/iron gravity-only control",
+      "report": {
+        "angular_momentum_kg_m2_s": [
+          -6.400008037937773e-13,
+          -2.7680258976827047e-13,
+          -3.346216281400936e-12
+        ],
+        "broken_links": 0,
+        "cells": 106,
+        "connected_components": 4,
+        "contact_budget": {
+          "body_pairs": 4096,
+          "constraints": 2048,
+          "impact_event_estimation": false,
+          "initial_envelope_only": true,
+          "initial_pair_upper_bound": 1030,
+          "last_manifolds": 754,
+          "last_points": 760,
+          "last_speculative_manifolds": 754,
+          "observations_are_allocator_occupancy": false,
+          "peak_manifolds": 754,
+          "peak_points": 760,
+          "peak_speculative_manifolds": 754,
+          "speculative_distance_m": 0.019999999552965164,
+          "temporary_arena_bytes": 34668544
+        },
+        "contact_materials": [
+          {
+            "contact_damping_ratio": 0.18,
+            "defaulted": false,
+            "id": "iron",
+            "self_contact_restitution": 0.5627744474671608
+          },
+          {
+            "contact_damping_ratio": 0.08,
+            "defaulted": false,
+            "id": "glass",
+            "self_contact_restitution": 0.7771393966011861
+          }
+        ],
+        "damage_integration": {
+          "accepted_brittle_threshold_overshoot_j": 0.0,
+          "accepted_maximum_brittle_opening_overshoot": 0.0,
+          "accepted_maximum_damage_increment": 0.0,
+          "accepted_maximum_plastic_strain_increment": 0.0,
+          "accepted_substeps": 0,
+          "configured_limits_are_targets_in_report_mode": true,
+          "deepest_trial": 0,
+          "detects_intra_substep_peaks": false,
+          "discarded_substeps": 0,
+          "endpoint_acceptance_criteria": true,
+          "maximum_brittle_opening_overshoot": 0.05,
+          "maximum_damage_increment": 0.05,
+          "maximum_depth": 4,
+          "maximum_plastic_strain_increment": 0.002,
+          "maximum_solver_trials_per_tick": 1,
+          "mode": "single-step",
+          "on_limit": "reject",
+          "overshoot_is_not_an_additional_energy_store": true,
+          "rejected_trials": 0,
+          "rejected_trials_meaning": "bisected coarse trials",
+          "resolves_contact_or_elastic_wave_error": false,
+          "rolled_back_ticks": 0,
+          "smallest_accepted_step_s": 0.0,
+          "solver_trials": 0,
+          "stability_substeps_per_tick": 692,
+          "terminal_limit_rejections": 0,
+          "unresolved_substeps": 0,
+          "world_tick_transactional": false
+        },
+        "damaged_links": 0,
+        "elapsed_s": 0.0008333333333333334,
+        "elastic_energy_j": 0.0,
+        "energy_residual_j": null,
+        "fault": "",
+        "fracture_events": [],
+        "fracture_work_j": 0.0,
+        "initial_energy_j": 414.44221947507725,
+        "limitations": [
+          "Experimental central-force directional cohesive lattice; not a calibrated continuum or real tomato/wood prediction",
+          "Cohesive state updates after each coupled spring/contact step; integration and damping/contact losses are not fully separated",
+          "Cell sphere collision proxies leave subcell gaps; wedge sharpness below cell spacing unresolved",
+          "All cells remain active representations; no automatic local refinement or rigid re-coarsening",
+          "No fluid/pulp, skin pressure, full orthotropic shear/compression damage, hinge failure or live-state save",
+          "Cell intrinsic spin is not coupled by center-to-center springs; finite-cell bending requires a richer connector"
+        ],
+        "linear_momentum_kg_m_s": [
+          1.0002638199418562e-11,
+          -0.10234817344695327,
+          -1.761471025798083e-12
+        ],
+        "links": 532,
+        "material_results": [
+          {
+            "broken_links": 0,
+            "cells": 72,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 1,
+            "largest_component_cells": 72,
+            "links": 376,
+            "mass_kg": 11.520000000000008,
+            "material": "glass",
+            "max_isolated_pair_frequency_rad_s": 76376.26158259736,
+            "name": "Sheet",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              6.023345402697243e-19,
+              0.5399965925639262,
+              1.0842021724855037e-17
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 15.911721163041118,
+            "velocity_m_s": [
+              0.0,
+              -0.008174774236977092,
+              0.0
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 32,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 2,
+            "largest_component_cells": 32,
+            "links": 156,
+            "mass_kg": 1.0000000000000002,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 188785.2840317344,
+            "name": "Ball",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -2.1684043449710084e-19,
+              0.6111087525606163,
+              9.757819552369538e-19
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 39.330267506611335,
+            "velocity_m_s": [
+              0.0,
+              -0.0081747742369771,
+              0.0
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 3,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Left post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -0.10000000000000006,
+              0.25,
+              -1.3994943205446313e-17
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              1.6164845883289564e-13,
+              0.0,
+              -3.197442310920451e-14
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 4,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Right post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              0.09999999999999995,
+              0.25,
+              1.656653459492626e-17
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              -2.0428101959036986e-14,
+              0.0,
+              7.105427357601002e-15
+            ]
+          }
+        ],
+        "maximum_observed_axial_strain": 0.0,
+        "maximum_reaction_geometric_extension_discrepancy_m": 4.163336342344337e-17,
+        "mechanical_energy_j": 414.44221930629556,
+        "model": "material-network-v2",
+        "network_substepping": {
+          "internal_step_s": 3.010597302504817e-07,
+          "limited_by_budget": false,
+          "meaning": "The constraint solver runs on the network's own stability clock, not the package's host cadence. When required_substeps exceeds the budget the run is still under-resolved and its material state is not trustworthy.",
+          "required_substeps": 692,
+          "substeps_per_host_tick": 692
+        },
+        "objects": [
+          {
+            "broken_links": 0,
+            "cells": 72,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 1,
+            "largest_component_cells": 72,
+            "links": 376,
+            "mass_kg": 11.520000000000008,
+            "material": "glass",
+            "max_isolated_pair_frequency_rad_s": 76376.26158259736,
+            "name": "Sheet",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              6.023345402697243e-19,
+              0.5399965925639262,
+              1.0842021724855037e-17
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 15.911721163041118,
+            "velocity_m_s": [
+              0.0,
+              -0.008174774236977092,
+              0.0
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 32,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 2,
+            "largest_component_cells": 32,
+            "links": 156,
+            "mass_kg": 1.0000000000000002,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 188785.2840317344,
+            "name": "Ball",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -2.1684043449710084e-19,
+              0.6111087525606163,
+              9.757819552369538e-19
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 39.330267506611335,
+            "velocity_m_s": [
+              0.0,
+              -0.0081747742369771,
+              0.0
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 3,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Left post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -0.10000000000000006,
+              0.25,
+              -1.3994943205446313e-17
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              1.6164845883289564e-13,
+              0.0,
+              -3.197442310920451e-14
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 4,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Right post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              0.09999999999999995,
+              0.25,
+              1.656653459492626e-17
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              -2.0428101959036986e-14,
+              0.0,
+              7.105427357601002e-15
+            ]
+          }
+        ],
+        "performance": {
+          "includes_package_load": false,
+          "includes_rendering": false,
+          "realtime_ratio": 0.00021687762309689779,
+          "sample_count": 4,
+          "sample_window": "last 4096 steps",
+          "step_max_ms": 969.856,
+          "step_p50_ms": 957.0328,
+          "step_p95_ms": 969.856,
+          "step_wall_total_ms": 3842.4127
+        },
+        "physical_response_validated": false,
+        "pinned_cells": 0,
+        "plastic_work_j": 0.0,
+        "position_bits": 64,
+        "reaction_reconstruction": {
+          "admissible": true,
+          "inadmissible_bond_updates": 0,
+          "maximum_residual_over_irreversible_extension": 1.6190752442450204e-12,
+          "meaning": "Bond extensions are reconstructed from the solver's applied reaction. An update is refused when that reconstruction's residual exceeds the smallest extension that changes the bond irreversibly, because breakage and solver non-convergence are then indistinguishable. A nonzero count means reported damage, fracture and plastic state are incomplete for this run."
+        },
+        "runtime_limits": {
+          "cells": 1024,
+          "links": 20000,
+          "objects": 32
+        },
+        "skin": {
+          "asynchronous_patches": false,
+          "contact_surface_matches_skin": false,
+          "exposed_faces": 0,
+          "fracture_faces": 0,
+          "last_query_ms": 0.0,
+          "max_query_ms": 0.0,
+          "mode": "blocky-cell-surface-v1",
+          "object_topology_rebuilds": 0,
+          "physical_mutation": false,
+          "queries": 0,
+          "rank_deficient_frame_fallbacks": 0,
+          "smooth_surface": false,
+          "triangles": 0
+        },
+        "state_valid": true,
+        "summed_spring_impulse_n_s": 0.0,
+        "temporal_resolution": {
+          "fits_256_substep_budget": false,
+          "includes_contact_stiffness": false,
+          "material_validation": false,
+          "maximum_frequency_bound_rad_s": 663814.8313522505,
+          "maximum_step_s": 3.012888392273219e-07,
+          "required_substeps": 692,
+          "resolved": false
+        },
+        "ticks": 4,
+        "unreleased_fracture_energy_j": 0.0,
+        "unseparated_energy_change_j": -1.6878169617484673e-07
+      }
+    },
+    {
+      "case": "oak/iron",
+      "wall_s": 4.294678999984171,
+      "report": {
+        "angular_momentum_kg_m2_s": [
+          -8.384850934702433e-06,
+          6.8174121911687925e-06,
+          -6.1685290780322255e-06
+        ],
+        "broken_links": 0,
+        "cells": 106,
+        "connected_components": 4,
+        "contact_budget": {
+          "body_pairs": 4096,
+          "constraints": 2048,
+          "impact_event_estimation": false,
+          "initial_envelope_only": true,
+          "initial_pair_upper_bound": 1030,
+          "last_manifolds": 766,
+          "last_points": 772,
+          "last_speculative_manifolds": 762,
+          "observations_are_allocator_occupancy": false,
+          "peak_manifolds": 766,
+          "peak_points": 772,
+          "peak_speculative_manifolds": 766,
+          "speculative_distance_m": 0.019999999552965164,
+          "temporary_arena_bytes": 34668544
+        },
+        "contact_materials": [
+          {
+            "contact_damping_ratio": 0.18,
+            "defaulted": false,
+            "id": "iron",
+            "self_contact_restitution": 0.5627744474671608
+          },
+          {
+            "contact_damping_ratio": 0.24,
+            "defaulted": false,
+            "id": "oak",
+            "self_contact_restitution": 0.45992933493839055
+          }
+        ],
+        "damage_integration": {
+          "accepted_brittle_threshold_overshoot_j": 0.0,
+          "accepted_maximum_brittle_opening_overshoot": 0.0,
+          "accepted_maximum_damage_increment": 0.0,
+          "accepted_maximum_plastic_strain_increment": 0.0,
+          "accepted_substeps": 0,
+          "configured_limits_are_targets_in_report_mode": true,
+          "deepest_trial": 0,
+          "detects_intra_substep_peaks": false,
+          "discarded_substeps": 0,
+          "endpoint_acceptance_criteria": true,
+          "maximum_brittle_opening_overshoot": 0.05,
+          "maximum_damage_increment": 0.05,
+          "maximum_depth": 4,
+          "maximum_plastic_strain_increment": 0.002,
+          "maximum_solver_trials_per_tick": 1,
+          "mode": "single-step",
+          "on_limit": "reject",
+          "overshoot_is_not_an_additional_energy_store": true,
+          "rejected_trials": 0,
+          "rejected_trials_meaning": "bisected coarse trials",
+          "resolves_contact_or_elastic_wave_error": false,
+          "rolled_back_ticks": 0,
+          "smallest_accepted_step_s": 0.0,
+          "solver_trials": 0,
+          "stability_substeps_per_tick": 692,
+          "terminal_limit_rejections": 0,
+          "unresolved_substeps": 0,
+          "world_tick_transactional": false
+        },
+        "damaged_links": 0,
+        "elapsed_s": 0.0008333333333333334,
+        "elastic_energy_j": 19.332983795484612,
+        "energy_residual_j": null,
+        "fault": "",
+        "fracture_events": [],
+        "fracture_work_j": 0.0,
+        "initial_energy_j": 468.50346366356655,
+        "limitations": [
+          "Experimental central-force directional cohesive lattice; not a calibrated continuum or real tomato/wood prediction",
+          "Cohesive state updates after each coupled spring/contact step; integration and damping/contact losses are not fully separated",
+          "Cell sphere collision proxies leave subcell gaps; wedge sharpness below cell spacing unresolved",
+          "All cells remain active representations; no automatic local refinement or rigid re-coarsening",
+          "No fluid/pulp, skin pressure, full orthotropic shear/compression damage, hinge failure or live-state save",
+          "Cell intrinsic spin is not coupled by center-to-center springs; finite-cell bending requires a richer connector"
+        ],
+        "linear_momentum_kg_m_s": [
+          6.147650440907482e-06,
+          3.542153409103134,
+          -1.2407011328253656e-05
+        ],
+        "links": 532,
+        "material_results": [
+          {
+            "broken_links": 0,
+            "cells": 72,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 1,
+            "largest_component_cells": 72,
+            "links": 376,
+            "mass_kg": 3.2255999999999974,
+            "material": "oak",
+            "max_isolated_pair_frequency_rad_s": 59761.43046671971,
+            "name": "Sheet",
+            "plastic_work_j": 5.5818446079950235,
+            "position_m": [
+              7.570851350982196e-10,
+              0.5393324113432616,
+              -4.82622469256867e-10
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 12.450298013899939,
+            "velocity_m_s": [
+              5.070534017375036e-06,
+              0.5010623808211682,
+              -6.033547429572972e-06
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 32,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 2,
+            "largest_component_cells": 32,
+            "links": 156,
+            "mass_kg": 1.0000000000000002,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 188785.2840317344,
+            "name": "Ball",
+            "plastic_work_j": 11.405953067615787,
+            "position_m": [
+              -1.0396861245196008e-09,
+              0.6043580055486041,
+              5.25697136104404e-10
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 39.330267506611335,
+            "velocity_m_s": [
+              -5.697466349374296e-06,
+              1.9255376569926737,
+              7.042925290079382e-06
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 3,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Left post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -0.09999995616891098,
+              0.2500000008115482,
+              -1.051312525625978e-12
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              0.0018404512666165829,
+              2.7461173885967582e-06,
+              -1.0896389693315633e-11
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 4,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Right post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              0.09999995602797988,
+              0.25000000081155055,
+              -1.143974532763284e-12
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              -0.0018405149457976222,
+              2.7466808205645066e-06,
+              1.7851667366564072e-10
+            ]
+          }
+        ],
+        "maximum_observed_axial_strain": 0.007140623111312113,
+        "maximum_reaction_geometric_extension_discrepancy_m": 8.286538967795776e-09,
+        "mechanical_energy_j": 384.6026521627328,
+        "model": "material-network-v2",
+        "network_substepping": {
+          "internal_step_s": 3.010597302504817e-07,
+          "limited_by_budget": false,
+          "meaning": "The constraint solver runs on the network's own stability clock, not the package's host cadence. When required_substeps exceeds the budget the run is still under-resolved and its material state is not trustworthy.",
+          "required_substeps": 692,
+          "substeps_per_host_tick": 692
+        },
+        "objects": [
+          {
+            "broken_links": 0,
+            "cells": 72,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 1,
+            "largest_component_cells": 72,
+            "links": 376,
+            "mass_kg": 3.2255999999999974,
+            "material": "oak",
+            "max_isolated_pair_frequency_rad_s": 59761.43046671971,
+            "name": "Sheet",
+            "plastic_work_j": 5.5818446079950235,
+            "position_m": [
+              7.570851350982196e-10,
+              0.5393324113432616,
+              -4.82622469256867e-10
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 12.450298013899939,
+            "velocity_m_s": [
+              5.070534017375036e-06,
+              0.5010623808211682,
+              -6.033547429572972e-06
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 32,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 2,
+            "largest_component_cells": 32,
+            "links": 156,
+            "mass_kg": 1.0000000000000002,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 188785.2840317344,
+            "name": "Ball",
+            "plastic_work_j": 11.405953067615787,
+            "position_m": [
+              -1.0396861245196008e-09,
+              0.6043580055486041,
+              5.25697136104404e-10
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 39.330267506611335,
+            "velocity_m_s": [
+              -5.697466349374296e-06,
+              1.9255376569926737,
+              7.042925290079382e-06
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 3,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Left post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -0.09999995616891098,
+              0.2500000008115482,
+              -1.051312525625978e-12
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              0.0018404512666165829,
+              2.7461173885967582e-06,
+              -1.0896389693315633e-11
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 4,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Right post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              0.09999995602797988,
+              0.25000000081155055,
+              -1.143974532763284e-12
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              -0.0018405149457976222,
+              2.7466808205645066e-06,
+              1.7851667366564072e-10
+            ]
+          }
+        ],
+        "performance": {
+          "includes_package_load": false,
+          "includes_rendering": false,
+          "realtime_ratio": 0.00019465533598200075,
+          "sample_count": 4,
+          "sample_window": "last 4096 steps",
+          "step_max_ms": 1102.8778,
+          "step_p50_ms": 1081.0888,
+          "step_p95_ms": 1102.8778,
+          "step_wall_total_ms": 4281.071099999999
+        },
+        "physical_response_validated": false,
+        "pinned_cells": 0,
+        "plastic_work_j": 16.987797675610818,
+        "position_bits": 64,
+        "reaction_reconstruction": {
+          "admissible": true,
+          "inadmissible_bond_updates": 0,
+          "maximum_residual_over_irreversible_extension": 0.00022297562632339214,
+          "meaning": "Bond extensions are reconstructed from the solver's applied reaction. An update is refused when that reconstruction's residual exceeds the smallest extension that changes the bond irreversibly, because breakage and solver non-convergence are then indistinguishable. A nonzero count means reported damage, fracture and plastic state are incomplete for this run."
+        },
+        "runtime_limits": {
+          "cells": 1024,
+          "links": 20000,
+          "objects": 32
+        },
+        "skin": {
+          "asynchronous_patches": false,
+          "contact_surface_matches_skin": false,
+          "exposed_faces": 0,
+          "fracture_faces": 0,
+          "last_query_ms": 0.0,
+          "max_query_ms": 0.0,
+          "mode": "blocky-cell-surface-v1",
+          "object_topology_rebuilds": 0,
+          "physical_mutation": false,
+          "queries": 0,
+          "rank_deficient_frame_fallbacks": 0,
+          "smooth_surface": false,
+          "triangles": 0
+        },
+        "state_valid": true,
+        "summed_spring_impulse_n_s": 398.2191385011401,
+        "temporal_resolution": {
+          "fits_256_substep_budget": false,
+          "includes_contact_stiffness": false,
+          "material_validation": false,
+          "maximum_frequency_bound_rad_s": 663814.8313522505,
+          "maximum_step_s": 3.012888392273219e-07,
+          "required_substeps": 692,
+          "resolved": false
+        },
+        "ticks": 4,
+        "unreleased_fracture_energy_j": 0.0,
+        "unseparated_energy_change_j": -47.58003002973834
+      }
+    },
+    {
+      "case": "oak/iron gravity-only control",
+      "report": {
+        "angular_momentum_kg_m2_s": [
+          -6.400009664241032e-13,
+          -2.7680258976827047e-13,
+          -3.346216010350393e-12
+        ],
+        "broken_links": 0,
+        "cells": 106,
+        "connected_components": 4,
+        "contact_budget": {
+          "body_pairs": 4096,
+          "constraints": 2048,
+          "impact_event_estimation": false,
+          "initial_envelope_only": true,
+          "initial_pair_upper_bound": 1030,
+          "last_manifolds": 754,
+          "last_points": 760,
+          "last_speculative_manifolds": 754,
+          "observations_are_allocator_occupancy": false,
+          "peak_manifolds": 754,
+          "peak_points": 760,
+          "peak_speculative_manifolds": 754,
+          "speculative_distance_m": 0.019999999552965164,
+          "temporary_arena_bytes": 34668544
+        },
+        "contact_materials": [
+          {
+            "contact_damping_ratio": 0.18,
+            "defaulted": false,
+            "id": "iron",
+            "self_contact_restitution": 0.5627744474671608
+          },
+          {
+            "contact_damping_ratio": 0.24,
+            "defaulted": false,
+            "id": "oak",
+            "self_contact_restitution": 0.45992933493839055
+          }
+        ],
+        "damage_integration": {
+          "accepted_brittle_threshold_overshoot_j": 0.0,
+          "accepted_maximum_brittle_opening_overshoot": 0.0,
+          "accepted_maximum_damage_increment": 0.0,
+          "accepted_maximum_plastic_strain_increment": 0.0,
+          "accepted_substeps": 0,
+          "configured_limits_are_targets_in_report_mode": true,
+          "deepest_trial": 0,
+          "detects_intra_substep_peaks": false,
+          "discarded_substeps": 0,
+          "endpoint_acceptance_criteria": true,
+          "maximum_brittle_opening_overshoot": 0.05,
+          "maximum_damage_increment": 0.05,
+          "maximum_depth": 4,
+          "maximum_plastic_strain_increment": 0.002,
+          "maximum_solver_trials_per_tick": 1,
+          "mode": "single-step",
+          "on_limit": "reject",
+          "overshoot_is_not_an_additional_energy_store": true,
+          "rejected_trials": 0,
+          "rejected_trials_meaning": "bisected coarse trials",
+          "resolves_contact_or_elastic_wave_error": false,
+          "rolled_back_ticks": 0,
+          "smallest_accepted_step_s": 0.0,
+          "solver_trials": 0,
+          "stability_substeps_per_tick": 692,
+          "terminal_limit_rejections": 0,
+          "unresolved_substeps": 0,
+          "world_tick_transactional": false
+        },
+        "damaged_links": 0,
+        "elapsed_s": 0.0008333333333333334,
+        "elastic_energy_j": 0.0,
+        "energy_residual_j": null,
+        "fault": "",
+        "fracture_events": [],
+        "fracture_work_j": 0.0,
+        "initial_energy_j": 370.50346366356655,
+        "limitations": [
+          "Experimental central-force directional cohesive lattice; not a calibrated continuum or real tomato/wood prediction",
+          "Cohesive state updates after each coupled spring/contact step; integration and damping/contact losses are not fully separated",
+          "Cell sphere collision proxies leave subcell gaps; wedge sharpness below cell spacing unresolved",
+          "All cells remain active representations; no automatic local refinement or rigid re-coarsening",
+          "No fluid/pulp, skin pressure, full orthotropic shear/compression damage, hinge failure or live-state save",
+          "Cell intrinsic spin is not coupled by center-to-center springs; finite-cell bending requires a richer connector"
+        ],
+        "linear_momentum_kg_m_s": [
+          1.0002638199418562e-11,
+          -0.03454332408448016,
+          -1.761471025798083e-12
+        ],
+        "links": 532,
+        "material_results": [
+          {
+            "broken_links": 0,
+            "cells": 72,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 1,
+            "largest_component_cells": 72,
+            "links": 376,
+            "mass_kg": 3.2255999999999974,
+            "material": "oak",
+            "max_isolated_pair_frequency_rad_s": 59761.43046671971,
+            "name": "Sheet",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              5.0015278790253966e-17,
+              0.5399965925639266,
+              6.45358436003277e-18
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 12.450298013899939,
+            "velocity_m_s": [
+              0.0,
+              -0.008174774236977118,
+              0.0
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 32,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 2,
+            "largest_component_cells": 32,
+            "links": 156,
+            "mass_kg": 1.0000000000000002,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 188785.2840317344,
+            "name": "Ball",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -2.1684043449710084e-19,
+              0.6111087525606163,
+              9.757819552369538e-19
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 39.330267506611335,
+            "velocity_m_s": [
+              0.0,
+              -0.0081747742369771,
+              0.0
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 3,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Left post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -0.10000000000000006,
+              0.25,
+              -1.3994943205446313e-17
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              1.6164845883289564e-13,
+              0.0,
+              -3.197442310920451e-14
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 4,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Right post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              0.09999999999999995,
+              0.25,
+              1.656653459492626e-17
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              -2.0428101959036986e-14,
+              0.0,
+              7.105427357601002e-15
+            ]
+          }
+        ],
+        "maximum_observed_axial_strain": 0.0,
+        "maximum_reaction_geometric_extension_discrepancy_m": 4.163336342344337e-17,
+        "mechanical_energy_j": 370.5034636066013,
+        "model": "material-network-v2",
+        "network_substepping": {
+          "internal_step_s": 3.010597302504817e-07,
+          "limited_by_budget": false,
+          "meaning": "The constraint solver runs on the network's own stability clock, not the package's host cadence. When required_substeps exceeds the budget the run is still under-resolved and its material state is not trustworthy.",
+          "required_substeps": 692,
+          "substeps_per_host_tick": 692
+        },
+        "objects": [
+          {
+            "broken_links": 0,
+            "cells": 72,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 1,
+            "largest_component_cells": 72,
+            "links": 376,
+            "mass_kg": 3.2255999999999974,
+            "material": "oak",
+            "max_isolated_pair_frequency_rad_s": 59761.43046671971,
+            "name": "Sheet",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              5.0015278790253966e-17,
+              0.5399965925639266,
+              6.45358436003277e-18
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 12.450298013899939,
+            "velocity_m_s": [
+              0.0,
+              -0.008174774236977118,
+              0.0
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 32,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 2,
+            "largest_component_cells": 32,
+            "links": 156,
+            "mass_kg": 1.0000000000000002,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 188785.2840317344,
+            "name": "Ball",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -2.1684043449710084e-19,
+              0.6111087525606163,
+              9.757819552369538e-19
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 39.330267506611335,
+            "velocity_m_s": [
+              0.0,
+              -0.0081747742369771,
+              0.0
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 3,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Left post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -0.10000000000000006,
+              0.25,
+              -1.3994943205446313e-17
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              1.6164845883289564e-13,
+              0.0,
+              -3.197442310920451e-14
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 4,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Right post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              0.09999999999999995,
+              0.25,
+              1.656653459492626e-17
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              -2.0428101959036986e-14,
+              0.0,
+              7.105427357601002e-15
+            ]
+          }
+        ],
+        "performance": {
+          "includes_package_load": false,
+          "includes_rendering": false,
+          "realtime_ratio": 0.00021946269825437174,
+          "sample_count": 4,
+          "sample_window": "last 4096 steps",
+          "step_max_ms": 952.1475,
+          "step_p50_ms": 948.8345,
+          "step_p95_ms": 952.1475,
+          "step_wall_total_ms": 3797.1525
+        },
+        "physical_response_validated": false,
+        "pinned_cells": 0,
+        "plastic_work_j": 0.0,
+        "position_bits": 64,
+        "reaction_reconstruction": {
+          "admissible": true,
+          "inadmissible_bond_updates": 0,
+          "maximum_residual_over_irreversible_extension": 9.245866235820372e-13,
+          "meaning": "Bond extensions are reconstructed from the solver's applied reaction. An update is refused when that reconstruction's residual exceeds the smallest extension that changes the bond irreversibly, because breakage and solver non-convergence are then indistinguishable. A nonzero count means reported damage, fracture and plastic state are incomplete for this run."
+        },
+        "runtime_limits": {
+          "cells": 1024,
+          "links": 20000,
+          "objects": 32
+        },
+        "skin": {
+          "asynchronous_patches": false,
+          "contact_surface_matches_skin": false,
+          "exposed_faces": 0,
+          "fracture_faces": 0,
+          "last_query_ms": 0.0,
+          "max_query_ms": 0.0,
+          "mode": "blocky-cell-surface-v1",
+          "object_topology_rebuilds": 0,
+          "physical_mutation": false,
+          "queries": 0,
+          "rank_deficient_frame_fallbacks": 0,
+          "smooth_surface": false,
+          "triangles": 0
+        },
+        "state_valid": true,
+        "summed_spring_impulse_n_s": 0.0,
+        "temporal_resolution": {
+          "fits_256_substep_budget": false,
+          "includes_contact_stiffness": false,
+          "material_validation": false,
+          "maximum_frequency_bound_rad_s": 663814.8313522505,
+          "maximum_step_s": 3.012888392273219e-07,
+          "required_substeps": 692,
+          "resolved": false
+        },
+        "ticks": 4,
+        "unreleased_fracture_energy_j": 0.0,
+        "unseparated_energy_change_j": -5.6965234307426726e-08
+      }
+    },
+    {
+      "case": "iron/iron",
+      "wall_s": 4.156038200017065,
+      "report": {
+        "angular_momentum_kg_m2_s": [
+          -2.614582546623104e-06,
+          2.282563468685139e-07,
+          -2.9403217113563613e-06
+        ],
+        "broken_links": 0,
+        "cells": 106,
+        "connected_components": 4,
+        "contact_budget": {
+          "body_pairs": 4096,
+          "constraints": 2048,
+          "impact_event_estimation": false,
+          "initial_envelope_only": true,
+          "initial_pair_upper_bound": 1030,
+          "last_manifolds": 766,
+          "last_points": 772,
+          "last_speculative_manifolds": 766,
+          "observations_are_allocator_occupancy": false,
+          "peak_manifolds": 766,
+          "peak_points": 772,
+          "peak_speculative_manifolds": 766,
+          "speculative_distance_m": 0.019999999552965164,
+          "temporary_arena_bytes": 34668544
+        },
+        "contact_materials": [
+          {
+            "contact_damping_ratio": 0.18,
+            "defaulted": false,
+            "id": "iron",
+            "self_contact_restitution": 0.5627744474671608
+          }
+        ],
+        "damage_integration": {
+          "accepted_brittle_threshold_overshoot_j": 0.0,
+          "accepted_maximum_brittle_opening_overshoot": 0.0,
+          "accepted_maximum_damage_increment": 0.0,
+          "accepted_maximum_plastic_strain_increment": 0.0,
+          "accepted_substeps": 0,
+          "configured_limits_are_targets_in_report_mode": true,
+          "deepest_trial": 0,
+          "detects_intra_substep_peaks": false,
+          "discarded_substeps": 0,
+          "endpoint_acceptance_criteria": true,
+          "maximum_brittle_opening_overshoot": 0.05,
+          "maximum_damage_increment": 0.05,
+          "maximum_depth": 4,
+          "maximum_plastic_strain_increment": 0.002,
+          "maximum_solver_trials_per_tick": 1,
+          "mode": "single-step",
+          "on_limit": "reject",
+          "overshoot_is_not_an_additional_energy_store": true,
+          "rejected_trials": 0,
+          "rejected_trials_meaning": "bisected coarse trials",
+          "resolves_contact_or_elastic_wave_error": false,
+          "rolled_back_ticks": 0,
+          "smallest_accepted_step_s": 0.0,
+          "solver_trials": 0,
+          "stability_substeps_per_tick": 692,
+          "terminal_limit_rejections": 0,
+          "unresolved_substeps": 0,
+          "world_tick_transactional": false
+        },
+        "damaged_links": 0,
+        "elapsed_s": 0.0008333333333333334,
+        "elastic_energy_j": 1.7339294095158855,
+        "energy_residual_j": null,
+        "fault": "",
+        "fracture_events": [],
+        "fracture_work_j": 0.0,
+        "initial_energy_j": 643.5261690254531,
+        "limitations": [
+          "Experimental central-force directional cohesive lattice; not a calibrated continuum or real tomato/wood prediction",
+          "Cohesive state updates after each coupled spring/contact step; integration and damping/contact losses are not fully separated",
+          "Cell sphere collision proxies leave subcell gaps; wedge sharpness below cell spacing unresolved",
+          "All cells remain active representations; no automatic local refinement or rigid re-coarsening",
+          "No fluid/pulp, skin pressure, full orthotropic shear/compression damage, hinge failure or live-state save",
+          "Cell intrinsic spin is not coupled by center-to-center springs; finite-cell bending requires a richer connector"
+        ],
+        "linear_momentum_kg_m_s": [
+          7.062536268462908e-06,
+          -14.304951167889858,
+          -3.143778549935029e-06
+        ],
+        "links": 532,
+        "material_results": [
+          {
+            "broken_links": 0,
+            "cells": 72,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 1,
+            "largest_component_cells": 72,
+            "links": 376,
+            "mass_kg": 36.26495999999999,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 74736.5838621669,
+            "name": "Sheet",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              3.162990324295943e-09,
+              0.5398379268420395,
+              3.03469452081935e-09
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 15.570121637951438,
+            "velocity_m_s": [
+              1.2564214153427764e-05,
+              -0.45063941253142265,
+              1.2124319457348618e-05
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 32,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 2,
+            "largest_component_cells": 32,
+            "links": 156,
+            "mass_kg": 1.0000000000000002,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 188785.2840317344,
+            "name": "Ball",
+            "plastic_work_j": 57.39368671181171,
+            "position_m": [
+              -1.1387526413888027e-07,
+              0.6051960903211349,
+              -1.1054734826642599e-07
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 39.330267506611335,
+            "velocity_m_s": [
+              -0.0004485781937546596,
+              2.03746896982193,
+              -0.00044283173338044435
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 3,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Left post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -0.10000000000000006,
+              0.25,
+              -1.3994943205446313e-17
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              1.6164845883289564e-13,
+              0.0,
+              -3.197442310920451e-14
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 4,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Right post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              0.09999999999999995,
+              0.25,
+              1.656653459492626e-17
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              -2.0428101959036986e-14,
+              0.0,
+              7.105427357601002e-15
+            ]
+          }
+        ],
+        "maximum_observed_axial_strain": 0.020042457273530465,
+        "maximum_reaction_geometric_extension_discrepancy_m": 8.349541052641001e-09,
+        "mechanical_energy_j": 555.563970395753,
+        "model": "material-network-v2",
+        "network_substepping": {
+          "internal_step_s": 3.010597302504817e-07,
+          "limited_by_budget": false,
+          "meaning": "The constraint solver runs on the network's own stability clock, not the package's host cadence. When required_substeps exceeds the budget the run is still under-resolved and its material state is not trustworthy.",
+          "required_substeps": 692,
+          "substeps_per_host_tick": 692
+        },
+        "objects": [
+          {
+            "broken_links": 0,
+            "cells": 72,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 1,
+            "largest_component_cells": 72,
+            "links": 376,
+            "mass_kg": 36.26495999999999,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 74736.5838621669,
+            "name": "Sheet",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              3.162990324295943e-09,
+              0.5398379268420395,
+              3.03469452081935e-09
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 15.570121637951438,
+            "velocity_m_s": [
+              1.2564214153427764e-05,
+              -0.45063941253142265,
+              1.2124319457348618e-05
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 32,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 2,
+            "largest_component_cells": 32,
+            "links": 156,
+            "mass_kg": 1.0000000000000002,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 188785.2840317344,
+            "name": "Ball",
+            "plastic_work_j": 57.39368671181171,
+            "position_m": [
+              -1.1387526413888027e-07,
+              0.6051960903211349,
+              -1.1054734826642599e-07
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 39.330267506611335,
+            "velocity_m_s": [
+              -0.0004485781937546596,
+              2.03746896982193,
+              -0.00044283173338044435
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 3,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Left post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -0.10000000000000006,
+              0.25,
+              -1.3994943205446313e-17
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              1.6164845883289564e-13,
+              0.0,
+              -3.197442310920451e-14
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 4,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Right post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              0.09999999999999995,
+              0.25,
+              1.656653459492626e-17
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              -2.0428101959036986e-14,
+              0.0,
+              7.105427357601002e-15
+            ]
+          }
+        ],
+        "performance": {
+          "includes_package_load": false,
+          "includes_rendering": false,
+          "realtime_ratio": 0.00020118213333984847,
+          "sample_count": 4,
+          "sample_window": "last 4096 steps",
+          "step_max_ms": 1104.2341,
+          "step_p50_ms": 970.2901,
+          "step_p95_ms": 1104.2341,
+          "step_wall_total_ms": 4142.183599999999
+        },
+        "physical_response_validated": false,
+        "pinned_cells": 0,
+        "plastic_work_j": 57.39368671181169,
+        "position_bits": 64,
+        "reaction_reconstruction": {
+          "admissible": true,
+          "inadmissible_bond_updates": 0,
+          "maximum_residual_over_irreversible_extension": 0.0002315831796002502,
+          "meaning": "Bond extensions are reconstructed from the solver's applied reaction. An update is refused when that reconstruction's residual exceeds the smallest extension that changes the bond irreversibly, because breakage and solver non-convergence are then indistinguishable. A nonzero count means reported damage, fracture and plastic state are incomplete for this run."
+        },
+        "runtime_limits": {
+          "cells": 1024,
+          "links": 20000,
+          "objects": 32
+        },
+        "skin": {
+          "asynchronous_patches": false,
+          "contact_surface_matches_skin": false,
+          "exposed_faces": 0,
+          "fracture_faces": 0,
+          "last_query_ms": 0.0,
+          "max_query_ms": 0.0,
+          "mode": "blocky-cell-surface-v1",
+          "object_topology_rebuilds": 0,
+          "physical_mutation": false,
+          "queries": 0,
+          "rank_deficient_frame_fallbacks": 0,
+          "smooth_surface": false,
+          "triangles": 0
+        },
+        "state_valid": true,
+        "summed_spring_impulse_n_s": 574.4291758167117,
+        "temporal_resolution": {
+          "fits_256_substep_budget": false,
+          "includes_contact_stiffness": false,
+          "material_validation": false,
+          "maximum_frequency_bound_rad_s": 663814.8313522505,
+          "maximum_step_s": 3.012888392273219e-07,
+          "required_substeps": 692,
+          "resolved": false
+        },
+        "ticks": 4,
+        "unreleased_fracture_energy_j": 0.0,
+        "unseparated_energy_change_j": -28.834582508372478
+      }
+    },
+    {
+      "case": "iron/iron gravity-only control",
+      "report": {
+        "angular_momentum_kg_m2_s": [
+          -6.400010206342118e-13,
+          -2.7680258976827047e-13,
+          -3.3462166608716965e-12
+        ],
+        "broken_links": 0,
+        "cells": 106,
+        "connected_components": 4,
+        "contact_budget": {
+          "body_pairs": 4096,
+          "constraints": 2048,
+          "impact_event_estimation": false,
+          "initial_envelope_only": true,
+          "initial_pair_upper_bound": 1030,
+          "last_manifolds": 754,
+          "last_points": 760,
+          "last_speculative_manifolds": 754,
+          "observations_are_allocator_occupancy": false,
+          "peak_manifolds": 754,
+          "peak_points": 760,
+          "peak_speculative_manifolds": 754,
+          "speculative_distance_m": 0.019999999552965164,
+          "temporary_arena_bytes": 34668544
+        },
+        "contact_materials": [
+          {
+            "contact_damping_ratio": 0.18,
+            "defaulted": false,
+            "id": "iron",
+            "self_contact_restitution": 0.5627744474671608
+          }
+        ],
+        "damage_integration": {
+          "accepted_brittle_threshold_overshoot_j": 0.0,
+          "accepted_maximum_brittle_opening_overshoot": 0.0,
+          "accepted_maximum_damage_increment": 0.0,
+          "accepted_maximum_plastic_strain_increment": 0.0,
+          "accepted_substeps": 0,
+          "configured_limits_are_targets_in_report_mode": true,
+          "deepest_trial": 0,
+          "detects_intra_substep_peaks": false,
+          "discarded_substeps": 0,
+          "endpoint_acceptance_criteria": true,
+          "maximum_brittle_opening_overshoot": 0.05,
+          "maximum_damage_increment": 0.05,
+          "maximum_depth": 4,
+          "maximum_plastic_strain_increment": 0.002,
+          "maximum_solver_trials_per_tick": 1,
+          "mode": "single-step",
+          "on_limit": "reject",
+          "overshoot_is_not_an_additional_energy_store": true,
+          "rejected_trials": 0,
+          "rejected_trials_meaning": "bisected coarse trials",
+          "resolves_contact_or_elastic_wave_error": false,
+          "rolled_back_ticks": 0,
+          "smallest_accepted_step_s": 0.0,
+          "solver_trials": 0,
+          "stability_substeps_per_tick": 692,
+          "terminal_limit_rejections": 0,
+          "unresolved_substeps": 0,
+          "world_tick_transactional": false
+        },
+        "damaged_links": 0,
+        "elapsed_s": 0.0008333333333333334,
+        "elastic_energy_j": 0.0,
+        "energy_residual_j": null,
+        "fault": "",
+        "fracture_events": [],
+        "fracture_work_j": 0.0,
+        "initial_energy_j": 545.5261690254531,
+        "limitations": [
+          "Experimental central-force directional cohesive lattice; not a calibrated continuum or real tomato/wood prediction",
+          "Cohesive state updates after each coupled spring/contact step; integration and damping/contact losses are not fully separated",
+          "Cell sphere collision proxies leave subcell gaps; wedge sharpness below cell spacing unresolved",
+          "All cells remain active representations; no automatic local refinement or rigid re-coarsening",
+          "No fluid/pulp, skin pressure, full orthotropic shear/compression damage, hinge failure or live-state save",
+          "Cell intrinsic spin is not coupled by center-to-center springs; finite-cell bending requires a richer connector"
+        ],
+        "linear_momentum_kg_m_s": [
+          1.0002638199418562e-11,
+          -0.30463263255248063,
+          -1.761471025798083e-12
+        ],
+        "links": 532,
+        "material_results": [
+          {
+            "broken_links": 0,
+            "cells": 72,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 1,
+            "largest_component_cells": 72,
+            "links": 376,
+            "mass_kg": 36.26495999999999,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 74736.5838621669,
+            "name": "Sheet",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              2.6787431905260953e-18,
+              0.5399965925639272,
+              8.992923568194749e-18
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 15.570121637951438,
+            "velocity_m_s": [
+              0.0,
+              -0.00817477423697709,
+              0.0
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 32,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 2,
+            "largest_component_cells": 32,
+            "links": 156,
+            "mass_kg": 1.0000000000000002,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 188785.2840317344,
+            "name": "Ball",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -2.1684043449710084e-19,
+              0.6111087525606163,
+              9.757819552369538e-19
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 39.330267506611335,
+            "velocity_m_s": [
+              0.0,
+              -0.0081747742369771,
+              0.0
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 3,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Left post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -0.10000000000000006,
+              0.25,
+              -1.3994943205446313e-17
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              1.6164845883289564e-13,
+              0.0,
+              -3.197442310920451e-14
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 4,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Right post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              0.09999999999999995,
+              0.25,
+              1.656653459492626e-17
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              -2.0428101959036986e-14,
+              0.0,
+              7.105427357601002e-15
+            ]
+          }
+        ],
+        "maximum_observed_axial_strain": 0.0,
+        "maximum_reaction_geometric_extension_discrepancy_m": 4.163336342344337e-17,
+        "mechanical_energy_j": 545.5261685230856,
+        "model": "material-network-v2",
+        "network_substepping": {
+          "internal_step_s": 3.010597302504817e-07,
+          "limited_by_budget": false,
+          "meaning": "The constraint solver runs on the network's own stability clock, not the package's host cadence. When required_substeps exceeds the budget the run is still under-resolved and its material state is not trustworthy.",
+          "required_substeps": 692,
+          "substeps_per_host_tick": 692
+        },
+        "objects": [
+          {
+            "broken_links": 0,
+            "cells": 72,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 1,
+            "largest_component_cells": 72,
+            "links": 376,
+            "mass_kg": 36.26495999999999,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 74736.5838621669,
+            "name": "Sheet",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              2.6787431905260953e-18,
+              0.5399965925639272,
+              8.992923568194749e-18
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 15.570121637951438,
+            "velocity_m_s": [
+              0.0,
+              -0.00817477423697709,
+              0.0
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 32,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 2,
+            "largest_component_cells": 32,
+            "links": 156,
+            "mass_kg": 1.0000000000000002,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 188785.2840317344,
+            "name": "Ball",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -2.1684043449710084e-19,
+              0.6111087525606163,
+              9.757819552369538e-19
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 39.330267506611335,
+            "velocity_m_s": [
+              0.0,
+              -0.0081747742369771,
+              0.0
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 3,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Left post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -0.10000000000000006,
+              0.25,
+              -1.3994943205446313e-17
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              1.6164845883289564e-13,
+              0.0,
+              -3.197442310920451e-14
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 4,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Right post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              0.09999999999999995,
+              0.25,
+              1.656653459492626e-17
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              -2.0428101959036986e-14,
+              0.0,
+              7.105427357601002e-15
+            ]
+          }
+        ],
+        "performance": {
+          "includes_package_load": false,
+          "includes_rendering": false,
+          "realtime_ratio": 0.0002193430435445864,
+          "sample_count": 4,
+          "sample_window": "last 4096 steps",
+          "step_max_ms": 956.2639,
+          "step_p50_ms": 950.093,
+          "step_p95_ms": 956.2639,
+          "step_wall_total_ms": 3799.2239
+        },
+        "physical_response_validated": false,
+        "pinned_cells": 0,
+        "plastic_work_j": 0.0,
+        "position_bits": 64,
+        "reaction_reconstruction": {
+          "admissible": true,
+          "inadmissible_bond_updates": 0,
+          "maximum_residual_over_irreversible_extension": 1.0980799602933189e-12,
+          "meaning": "Bond extensions are reconstructed from the solver's applied reaction. An update is refused when that reconstruction's residual exceeds the smallest extension that changes the bond irreversibly, because breakage and solver non-convergence are then indistinguishable. A nonzero count means reported damage, fracture and plastic state are incomplete for this run."
+        },
+        "runtime_limits": {
+          "cells": 1024,
+          "links": 20000,
+          "objects": 32
+        },
+        "skin": {
+          "asynchronous_patches": false,
+          "contact_surface_matches_skin": false,
+          "exposed_faces": 0,
+          "fracture_faces": 0,
+          "last_query_ms": 0.0,
+          "max_query_ms": 0.0,
+          "mode": "blocky-cell-surface-v1",
+          "object_topology_rebuilds": 0,
+          "physical_mutation": false,
+          "queries": 0,
+          "rank_deficient_frame_fallbacks": 0,
+          "smooth_surface": false,
+          "triangles": 0
+        },
+        "state_valid": true,
+        "summed_spring_impulse_n_s": 0.0,
+        "temporal_resolution": {
+          "fits_256_substep_budget": false,
+          "includes_contact_stiffness": false,
+          "material_validation": false,
+          "maximum_frequency_bound_rad_s": 663814.8313522505,
+          "maximum_step_s": 3.012888392273219e-07,
+          "required_substeps": 692,
+          "resolved": false
+        },
+        "ticks": 4,
+        "unreleased_fracture_energy_j": 0.0,
+        "unseparated_energy_change_j": -5.023674702897551e-07
+      }
+    },
+    {
+      "case": "iron/glass",
+      "wall_s": 2.377951000002213,
+      "report": {
+        "angular_momentum_kg_m2_s": [
+          -1.9241382898502998e-06,
+          2.617277002053782e-07,
+          -1.188909817039324e-06
+        ],
+        "broken_links": 124,
+        "cells": 106,
+        "connected_components": 10,
+        "contact_budget": {
+          "body_pairs": 4096,
+          "constraints": 2048,
+          "impact_event_estimation": false,
+          "initial_envelope_only": true,
+          "initial_pair_upper_bound": 746,
+          "last_manifolds": 578,
+          "last_points": 584,
+          "last_speculative_manifolds": 578,
+          "observations_are_allocator_occupancy": false,
+          "peak_manifolds": 622,
+          "peak_points": 628,
+          "peak_speculative_manifolds": 622,
+          "speculative_distance_m": 0.019999999552965164,
+          "temporary_arena_bytes": 34668544
+        },
+        "contact_materials": [
+          {
+            "contact_damping_ratio": 0.18,
+            "defaulted": false,
+            "id": "iron",
+            "self_contact_restitution": 0.5627744474671608
+          },
+          {
+            "contact_damping_ratio": 0.08,
+            "defaulted": false,
+            "id": "glass",
+            "self_contact_restitution": 0.7771393966011861
+          }
+        ],
+        "damage_integration": {
+          "accepted_brittle_threshold_overshoot_j": 0.0,
+          "accepted_maximum_brittle_opening_overshoot": 0.0,
+          "accepted_maximum_damage_increment": 0.0,
+          "accepted_maximum_plastic_strain_increment": 0.0,
+          "accepted_substeps": 0,
+          "configured_limits_are_targets_in_report_mode": true,
+          "deepest_trial": 0,
+          "detects_intra_substep_peaks": false,
+          "discarded_substeps": 0,
+          "endpoint_acceptance_criteria": true,
+          "maximum_brittle_opening_overshoot": 0.05,
+          "maximum_damage_increment": 0.05,
+          "maximum_depth": 4,
+          "maximum_plastic_strain_increment": 0.002,
+          "maximum_solver_trials_per_tick": 1,
+          "mode": "single-step",
+          "on_limit": "reject",
+          "overshoot_is_not_an_additional_energy_store": true,
+          "rejected_trials": 0,
+          "rejected_trials_meaning": "bisected coarse trials",
+          "resolves_contact_or_elastic_wave_error": false,
+          "rolled_back_ticks": 0,
+          "smallest_accepted_step_s": 0.0,
+          "solver_trials": 0,
+          "stability_substeps_per_tick": 483,
+          "terminal_limit_rejections": 0,
+          "unresolved_substeps": 0,
+          "world_tick_transactional": false
+        },
+        "damaged_links": 0,
+        "elapsed_s": 0.0008333333333333334,
+        "elastic_energy_j": 7.0316154348084305,
+        "energy_residual_j": null,
+        "fault": "",
+        "fracture_events": [
+          {
+            "a": 79,
+            "b": 80,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              -0.011611586993537135,
+              0.6117236086752134,
+              1.7283952047364437e-12
+            ],
+            "time_s": 0.00017814009661835652
+          },
+          {
+            "a": 79,
+            "b": 91,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              2.169819879327406e-12,
+              0.6117236087205744,
+              -0.011611586972976248
+            ],
+            "time_s": 0.00017814009661835652
+          },
+          {
+            "a": 79,
+            "b": 92,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              1.155964213239713e-12,
+              0.6117236087006792,
+              -3.05044878246008e-12
+            ],
+            "time_s": 0.00017814009661835652
+          },
+          {
+            "a": 80,
+            "b": 91,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              7.30526750203353e-13,
+              0.6117236087247808,
+              1.8136603330276557e-12
+            ],
+            "time_s": 0.00017814009661835652
+          },
+          {
+            "a": 80,
+            "b": 92,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              -2.8332891588433995e-13,
+              0.6117236087048856,
+              0.01161158697173946
+            ],
+            "time_s": 0.00017814009661835652
+          },
+          {
+            "a": 91,
+            "b": 92,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              0.011611586995423626,
+              0.6117236087502467,
+              -2.965183654168868e-12
+            ],
+            "time_s": 0.00017814009661835652
+          },
+          {
+            "a": 72,
+            "b": 78,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              -0.023216675682536297,
+              0.611642097842712,
+              -0.02321667554660868
+            ],
+            "time_s": 0.0001824534161490673
+          },
+          {
+            "a": 73,
+            "b": 81,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              -0.02321667568501298,
+              0.6116420978443036,
+              0.023216675561148127
+            ],
+            "time_s": 0.0001824534161490673
+          },
+          {
+            "a": 90,
+            "b": 100,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              0.023216675682335042,
+              0.6116420978536259,
+              -0.023216675557612466
+            ],
+            "time_s": 0.0001824534161490673
+          },
+          {
+            "a": 93,
+            "b": 101,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              0.023216675684166816,
+              0.611642097854308,
+              0.023216675561632562
+            ],
+            "time_s": 0.0001824534161490673
+          },
+          {
+            "a": 72,
+            "b": 80,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              -0.02323559993571408,
+              0.6116435556262947,
+              1.2698040062384189e-05
+            ],
+            "time_s": 0.00018633540372670702
+          },
+          {
+            "a": 73,
+            "b": 79,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              -0.02323559992317655,
+              0.6116435556311832,
+              -1.2698014179787775e-05
+            ],
+            "time_s": 0.00018633540372670702
+          },
+          {
+            "a": 78,
+            "b": 91,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              1.2698038317431048e-05,
+              0.6116435555048771,
+              -0.02323559979761721
+            ],
+            "time_s": 0.00018633540372670702
+          },
+          {
+            "a": 79,
+            "b": 90,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              -1.2698053556877906e-05,
+              0.6116435555077193,
+              -0.023235599795820426
+            ],
+            "time_s": 0.00018633540372670702
+          },
+          {
+            "a": 80,
+            "b": 93,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              -1.269807265125416e-05,
+              0.611643555473727,
+              0.023235599806207007
+            ],
+            "time_s": 0.00018633540372670702
+          },
+          {
+            "a": 81,
+            "b": 92,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              1.2698042078426036e-05,
+              0.6116435554633246,
+              0.023235599791503657
+            ],
+            "time_s": 0.00018633540372670702
+          },
+          {
+            "a": 91,
+            "b": 101,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              0.023235599909143777,
+              0.6116435556438025,
+              -1.2698014275776964e-05
+            ],
+            "time_s": 0.00018633540372670702
+          },
+          {
+            "a": 92,
+            "b": 100,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              0.023235599908741654,
+              0.6116435555813315,
+              1.2698000739250898e-05
+            ],
+            "time_s": 0.00018633540372670702
+          },
+          {
+            "a": 83,
+            "b": 84,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              -0.011611470458642727,
+              0.6348090081068496,
+              -3.697809419778153e-12
+            ],
+            "time_s": 0.0001867667356797781
+          },
+          {
+            "a": 83,
+            "b": 95,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              -2.672736164333056e-12,
+              0.6348090081656257,
+              -0.011611470533142158
+            ],
+            "time_s": 0.0001867667356797781
+          },
+          {
+            "a": 83,
+            "b": 96,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              -7.997075224253081e-16,
+              0.6348090081514148,
+              3.2223711546319755e-12
+            ],
+            "time_s": 0.0001867667356797781
+          },
+          {
+            "a": 84,
+            "b": 95,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              8.77576657176693e-13,
+              0.6348090081294733,
+              -4.859369850951367e-12
+            ],
+            "time_s": 0.0001867667356797781
+          },
+          {
+            "a": 84,
+            "b": 96,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              3.5495131139873237e-12,
+              0.6348090081152624,
+              0.011611470531505158
+            ],
+            "time_s": 0.0001867667356797781
+          },
+          {
+            "a": 95,
+            "b": 96,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              0.011611470459519505,
+              0.6348090081740385,
+              2.0608107234587614e-12
+            ],
+            "time_s": 0.0001867667356797781
+          },
+          {
+            "a": 72,
+            "b": 83,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              -0.023228908608785997,
+              0.6231955225981882,
+              -0.011609152873879388
+            ],
+            "time_s": 0.00018762939958592026
+          },
+          {
+            "a": 73,
+            "b": 84,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              -0.023228908605875617,
+              0.6231955225428227,
+              0.011609152897628035
+            ],
+            "time_s": 0.00018762939958592026
+          },
+          {
+            "a": 78,
+            "b": 83,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              -0.011609152888548979,
+              0.6231955224535786,
+              -0.023228908606182437
+            ],
+            "time_s": 0.00018762939958592026
+          },
+          {
+            "a": 81,
+            "b": 84,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              -0.01160915288454658,
+              0.623195522427999,
+              0.02322890861019335
+            ],
+            "time_s": 0.00018762939958592026
+          },
+          {
+            "a": 90,
+            "b": 95,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              0.011609152885800444,
+              0.6231955224867751,
+              -0.023228908602221873
+            ],
+            "time_s": 0.00018762939958592026
+          },
+          {
+            "a": 93,
+            "b": 96,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              0.011609152879159736,
+              0.623195522461764,
+              0.02322890861478828
+            ],
+            "time_s": 0.00018762939958592026
+          },
+          {
+            "a": 95,
+            "b": 100,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              0.023228908604719486,
+              0.6231955225993251,
+              -0.011609152901052286
+            ],
+            "time_s": 0.00018762939958592026
+          },
+          {
+            "a": 96,
+            "b": 101,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              0.02322890861277667,
+              0.6231955225990977,
+              0.011609152903725918
+            ],
+            "time_s": 0.00018762939958592026
+          },
+          {
+            "a": 74,
+            "b": 82,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              -0.023217442192031035,
+              0.6347720510286128,
+              -0.023217442211046553
+            ],
+            "time_s": 0.0001889233954451335
+          },
+          {
+            "a": 75,
+            "b": 85,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              -0.023217442179860673,
+              0.6347720510379351,
+              0.02321744217275113
+            ],
+            "time_s": 0.0001889233954451335
+          },
+          {
+            "a": 94,
+            "b": 102,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              0.02321744219796315,
+              0.6347720510477122,
+              -0.023217442211557582
+            ],
+            "time_s": 0.0001889233954451335
+          },
+          {
+            "a": 97,
+            "b": 103,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              0.023217442197284163,
+              0.6347720510618093,
+              0.02321744220967821
+            ],
+            "time_s": 0.0001889233954451335
+          },
+          {
+            "a": 74,
+            "b": 84,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              -0.023231356162712685,
+              0.6347578802287264,
+              8.389213656227398e-06
+            ],
+            "time_s": 0.00019237405106970214
+          },
+          {
+            "a": 75,
+            "b": 83,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              -0.02323135618575457,
+              0.6347578802562386,
+              -8.389258796776683e-06
+            ],
+            "time_s": 0.00019237405106970214
+          },
+          {
+            "a": 82,
+            "b": 95,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              8.389210594514189e-06,
+              0.6347578802763612,
+              -0.02323135623699236
+            ],
+            "time_s": 0.00019237405106970214
+          },
+          {
+            "a": 83,
+            "b": 94,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              -8.389218783019618e-06,
+              0.6347578802307727,
+              -0.02323135623853905
+            ],
+            "time_s": 0.00019237405106970214
+          },
+          {
+            "a": 84,
+            "b": 97,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              -8.389197276270112e-06,
+              0.6347578802056479,
+              0.02323135621512078
+            ],
+            "time_s": 0.00019237405106970214
+          },
+          {
+            "a": 85,
+            "b": 96,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              8.3892316279097e-06,
+              0.6347578802061027,
+              0.023231356228735706
+            ],
+            "time_s": 0.00019237405106970214
+          },
+          {
+            "a": 95,
+            "b": 103,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              0.023231356165008283,
+              0.6347578803096714,
+              -8.389227678548897e-06
+            ],
+            "time_s": 0.00019237405106970214
+          },
+          {
+            "a": 96,
+            "b": 102,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              0.0232313561818712,
+              0.6347578802886393,
+              8.389234489591078e-06
+            ],
+            "time_s": 0.00019237405106970214
+          },
+          {
+            "a": 72,
+            "b": 79,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              -0.023271510583179077,
+              0.6115818326157911,
+              -0.01163263483636704
+            ],
+            "time_s": 0.0001949620427881286
+          },
+          {
+            "a": 73,
+            "b": 80,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              -0.023271510555671303,
+              0.611581832622726,
+              0.011632634902025152
+            ],
+            "time_s": 0.0001949620427881286
+          },
+          {
+            "a": 78,
+            "b": 79,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              -0.011632634928473044,
+              0.6115818326294336,
+              -0.02327151058914164
+            ],
+            "time_s": 0.0001949620427881286
+          },
+          {
+            "a": 80,
+            "b": 81,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              -0.011632634919652097,
+              0.6115818326466003,
+              0.02327151059226914
+            ],
+            "time_s": 0.0001949620427881286
+          },
+          {
+            "a": 90,
+            "b": 91,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              0.011632634856308688,
+              0.61158183267866,
+              -0.02327151058359319
+            ],
+            "time_s": 0.0001949620427881286
+          },
+          {
+            "a": 91,
+            "b": 100,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              0.023271510541095185,
+              0.6115818326729756,
+              -0.01163263485597905
+            ],
+            "time_s": 0.0001949620427881286
+          },
+          {
+            "a": 92,
+            "b": 93,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              0.011632634865065588,
+              0.6115818326385853,
+              0.0232715106552814
+            ],
+            "time_s": 0.0001949620427881286
+          },
+          {
+            "a": 92,
+            "b": 101,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              0.023271510551406714,
+              0.6115818326313094,
+              0.011632634927558439
+            ],
+            "time_s": 0.0001949620427881286
+          },
+          {
+            "a": 74,
+            "b": 83,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              -0.023254776352359244,
+              0.6347249643665056,
+              -0.011624514705939002
+            ],
+            "time_s": 0.00019841269841269725
+          },
+          {
+            "a": 75,
+            "b": 84,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              -0.023254776305545368,
+              0.6347249643786701,
+              0.011624514682944294
+            ],
+            "time_s": 0.00019841269841269725
+          },
+          {
+            "a": 82,
+            "b": 83,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              -0.011624514642838818,
+              0.6347249642876638,
+              -0.02325477639853598
+            ],
+            "time_s": 0.00019841269841269725
+          },
+          {
+            "a": 84,
+            "b": 85,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              -0.011624514564343862,
+              0.6347249641900636,
+              0.02325477638196275
+            ],
+            "time_s": 0.00019841269841269725
+          },
+          {
+            "a": 94,
+            "b": 95,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              0.011624514603277186,
+              0.6347249642957924,
+              -0.02325477641667349
+            ],
+            "time_s": 0.00019841269841269725
+          },
+          {
+            "a": 95,
+            "b": 102,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              0.023254776326471455,
+              0.6347249643887882,
+              -0.011624514687372476
+            ],
+            "time_s": 0.00019841269841269725
+          },
+          {
+            "a": 96,
+            "b": 97,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              0.011624514601637149,
+              0.63472496423929,
+              0.023254776365874124
+            ],
+            "time_s": 0.00019841269841269725
+          },
+          {
+            "a": 96,
+            "b": 103,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              0.023254776250889876,
+              0.6347249643121633,
+              0.011624514688578225
+            ],
+            "time_s": 0.00019841269841269725
+          },
+          {
+            "a": 79,
+            "b": 84,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              -0.011663143805979288,
+              0.6231700014658021,
+              -1.343376644808228e-05
+            ],
+            "time_s": 0.00020013802622498156
+          },
+          {
+            "a": 79,
+            "b": 95,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              -1.3433893735838136e-05,
+              0.6231700014398815,
+              -0.01166314387770458
+            ],
+            "time_s": 0.00020013802622498156
+          },
+          {
+            "a": 80,
+            "b": 83,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              -0.011663143806165625,
+              0.6231700014908133,
+              1.3433804553278361e-05
+            ],
+            "time_s": 0.00020013802622498156
+          },
+          {
+            "a": 80,
+            "b": 96,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              -1.3433859619276997e-05,
+              0.6231700014445427,
+              0.01166314388672338
+            ],
+            "time_s": 0.00020013802622498156
+          },
+          {
+            "a": 83,
+            "b": 91,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              1.3433783127219517e-05,
+              0.6231700015365154,
+              -0.01166314383197778
+            ],
+            "time_s": 0.00020013802622498156
+          },
+          {
+            "a": 84,
+            "b": 92,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              1.3433879540582921e-05,
+              0.6231700015291257,
+              0.011663144001415698
+            ],
+            "time_s": 0.00020013802622498156
+          },
+          {
+            "a": 91,
+            "b": 96,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              0.011663143729673567,
+              0.6231700014902448,
+              -1.343374980767708e-05
+            ],
+            "time_s": 0.00020013802622498156
+          },
+          {
+            "a": 92,
+            "b": 95,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              0.011663143791784032,
+              0.6231700015032051,
+              1.3433890159200018e-05
+            ],
+            "time_s": 0.00020013802622498156
+          },
+          {
+            "a": 74,
+            "b": 86,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              -0.02324633368731978,
+              0.6462854793288888,
+              -0.011607088644368924
+            ],
+            "time_s": 0.0002014320220841948
+          },
+          {
+            "a": 75,
+            "b": 87,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              -0.02324633372536181,
+              0.6462854793492956,
+              0.01160708861846274
+            ],
+            "time_s": 0.0002014320220841948
+          },
+          {
+            "a": 82,
+            "b": 86,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              -0.011607088629320035,
+              0.6462854792802308,
+              -0.023246333732216694
+            ],
+            "time_s": 0.0002014320220841948
+          },
+          {
+            "a": 85,
+            "b": 87,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              -0.0116070886524569,
+              0.646285479167283,
+              0.02324633369244955
+            ],
+            "time_s": 0.0002014320220841948
+          },
+          {
+            "a": 94,
+            "b": 98,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              0.01160708862450872,
+              0.6462854793263877,
+              -0.02324633375234307
+            ],
+            "time_s": 0.0002014320220841948
+          },
+          {
+            "a": 97,
+            "b": 99,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              0.011607088646353356,
+              0.6462854792806287,
+              0.023246333702729778
+            ],
+            "time_s": 0.0002014320220841948
+          },
+          {
+            "a": 98,
+            "b": 102,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              0.023246333697308517,
+              0.6462854793764099,
+              -0.011607088616866667
+            ],
+            "time_s": 0.0002014320220841948
+          },
+          {
+            "a": 99,
+            "b": 103,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              0.02324633360805023,
+              0.6462854793108126,
+              0.011607088619727446
+            ],
+            "time_s": 0.0002014320220841948
+          },
+          {
+            "a": 72,
+            "b": 74,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              -0.03496101502331886,
+              0.6230726217207168,
+              -0.011602299916418205
+            ],
+            "time_s": 0.000207902001380261
+          },
+          {
+            "a": 73,
+            "b": 75,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              -0.034961014991893385,
+              0.6230726218218128,
+              0.011602299918361616
+            ],
+            "time_s": 0.000207902001380261
+          },
+          {
+            "a": 78,
+            "b": 82,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              -0.011602299978019643,
+              0.6230726218272413,
+              -0.03496101536868991
+            ],
+            "time_s": 0.000207902001380261
+          },
+          {
+            "a": 81,
+            "b": 85,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              -0.011602300054007596,
+              0.62307262167942,
+              0.0349610152625693
+            ],
+            "time_s": 0.000207902001380261
+          },
+          {
+            "a": 90,
+            "b": 94,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              0.011602299975961693,
+              0.6230726218486144,
+              -0.034961015427638506
+            ],
+            "time_s": 0.000207902001380261
+          },
+          {
+            "a": 93,
+            "b": 97,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              0.011602300049487806,
+              0.6230726217990186,
+              0.03496101535188842
+            ],
+            "time_s": 0.000207902001380261
+          },
+          {
+            "a": 100,
+            "b": 102,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              0.034961015096423874,
+              0.623072621867117,
+              -0.011602299844623467
+            ],
+            "time_s": 0.000207902001380261
+          },
+          {
+            "a": 101,
+            "b": 103,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              0.03496101491674682,
+              0.6230726217507585,
+              0.011602299844170506
+            ],
+            "time_s": 0.000207902001380261
+          },
+          {
+            "a": 83,
+            "b": 87,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              -0.01164491212368017,
+              0.6462732224614958,
+              -4.122077412762985e-05
+            ],
+            "time_s": 0.00021048999309868747
+          },
+          {
+            "a": 83,
+            "b": 98,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              -4.1220735648642495e-05,
+              0.6462732224434906,
+              -0.011644912133105484
+            ],
+            "time_s": 0.00021048999309868747
+          },
+          {
+            "a": 84,
+            "b": 86,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              -0.011644912063234073,
+              0.6462732224518182,
+              4.1220801522821e-05
+            ],
+            "time_s": 0.00021048999309868747
+          },
+          {
+            "a": 84,
+            "b": 99,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              -4.122064607272203e-05,
+              0.6462732224260965,
+              0.011644912236187296
+            ],
+            "time_s": 0.00021048999309868747
+          },
+          {
+            "a": 86,
+            "b": 95,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              4.1220591150816464e-05,
+              0.6462732224886101,
+              -0.011644912222064312
+            ],
+            "time_s": 0.00021048999309868747
+          },
+          {
+            "a": 87,
+            "b": 96,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              4.122050122930005e-05,
+              0.646273222533488,
+              0.011644912096568143
+            ],
+            "time_s": 0.00021048999309868747
+          },
+          {
+            "a": 95,
+            "b": 99,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              0.011644912008312167,
+              0.6462732224628884,
+              -4.122078739983784e-05
+            ],
+            "time_s": 0.00021048999309868747
+          },
+          {
+            "a": 96,
+            "b": 98,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              0.011644911889260829,
+              0.6462732225154828,
+              4.1220737590288124e-05
+            ],
+            "time_s": 0.00021048999309868747
+          },
+          {
+            "a": 72,
+            "b": 76,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              -0.023366441622389954,
+              0.5999826818269752,
+              -0.011598466926956352
+            ],
+            "time_s": 0.00022127329192546445
+          },
+          {
+            "a": 73,
+            "b": 77,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              -0.02336644147864316,
+              0.5999826818688287,
+              0.011598467088523523
+            ],
+            "time_s": 0.00022127329192546445
+          },
+          {
+            "a": 76,
+            "b": 78,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              -0.011598466936786393,
+              0.5999826815520805,
+              -0.023366441814029325
+            ],
+            "time_s": 0.00022127329192546445
+          },
+          {
+            "a": 77,
+            "b": 81,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              -0.01159846696335003,
+              0.5999826816317348,
+              0.023366441883681387
+            ],
+            "time_s": 0.00022127329192546445
+          },
+          {
+            "a": 88,
+            "b": 90,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              0.011598466904558092,
+              0.5999826816323774,
+              -0.023366441974703465
+            ],
+            "time_s": 0.00022127329192546445
+          },
+          {
+            "a": 88,
+            "b": 100,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              0.023366441604071052,
+              0.5999826819703684,
+              -0.011598467119021526
+            ],
+            "time_s": 0.00022127329192546445
+          },
+          {
+            "a": 89,
+            "b": 93,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              0.011598467012256735,
+              0.5999826815779261,
+              0.023366441974098838
+            ],
+            "time_s": 0.00022127329192546445
+          },
+          {
+            "a": 89,
+            "b": 101,
+            "fracture_work_j": 0.0007181448966772949,
+            "object_id": 2,
+            "position_m": [
+              0.023366441624329735,
+              0.5999826818492682,
+              0.011598467068839203
+            ],
+            "time_s": 0.00022127329192546445
+          },
+          {
+            "a": 76,
+            "b": 80,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              -0.011677746878997017,
+              0.600078103213476,
+              6.99803196799742e-05
+            ],
+            "time_s": 0.00022688060731538849
+          },
+          {
+            "a": 76,
+            "b": 91,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              6.998002470393061e-05,
+              0.6000781031418781,
+              -0.011677747228171928
+            ],
+            "time_s": 0.00022688060731538849
+          },
+          {
+            "a": 77,
+            "b": 79,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              -0.011677747138294045,
+              0.6000781031654707,
+              -6.998022167481466e-05
+            ],
+            "time_s": 0.00022688060731538849
+          },
+          {
+            "a": 77,
+            "b": 92,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              6.997997227964348e-05,
+              0.6000781032025966,
+              0.011677747433465044
+            ],
+            "time_s": 0.00022688060731538849
+          },
+          {
+            "a": 79,
+            "b": 88,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              -6.99801720749349e-05,
+              0.600078103139507,
+              -0.011677747319219098
+            ],
+            "time_s": 0.00022688060731538849
+          },
+          {
+            "a": 80,
+            "b": 89,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              -6.997994897384174e-05,
+              0.6000781032360532,
+              0.011677747292158966
+            ],
+            "time_s": 0.00022688060731538849
+          },
+          {
+            "a": 88,
+            "b": 92,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              0.011677746938498754,
+              0.6000781031766329,
+              6.99803359207607e-05
+            ],
+            "time_s": 0.00022688060731538849
+          },
+          {
+            "a": 89,
+            "b": 91,
+            "fracture_work_j": 0.0007181448966772951,
+            "object_id": 2,
+            "position_m": [
+              0.011677746954727106,
+              0.6000781031644553,
+              -6.998025569293631e-05
+            ],
+            "time_s": 0.00022688060731538849
+          },
+          {
+            "a": 76,
+            "b": 79,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              -0.011702617310955662,
+              0.600129842362367,
+              -0.011702617080112651
+            ],
+            "time_s": 0.0002493098688750849
+          },
+          {
+            "a": 77,
+            "b": 80,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              -0.011702617116112632,
+              0.6001298422517358,
+              0.011702617055673756
+            ],
+            "time_s": 0.0002493098688750849
+          },
+          {
+            "a": 88,
+            "b": 91,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              0.011702617213799268,
+              0.6001298423197667,
+              -0.011702617132580681
+            ],
+            "time_s": 0.0002493098688750849
+          },
+          {
+            "a": 89,
+            "b": 92,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              0.011702617105227117,
+              0.6001298423198611,
+              0.011702617269304202
+            ],
+            "time_s": 0.0002493098688750849
+          },
+          {
+            "a": 79,
+            "b": 83,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              -0.01182838236641848,
+              0.6233799797266362,
+              -0.011828382107491736
+            ],
+            "time_s": 0.0002549171842650093
+          },
+          {
+            "a": 80,
+            "b": 84,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              -0.011828382281799239,
+              0.6233799797509978,
+              0.011828382527499442
+            ],
+            "time_s": 0.0002549171842650093
+          },
+          {
+            "a": 91,
+            "b": 95,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              0.011828382006437783,
+              0.6233799798871478,
+              -0.011828382767468521
+            ],
+            "time_s": 0.0002549171842650093
+          },
+          {
+            "a": 92,
+            "b": 96,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              0.011828381659446755,
+              0.6233799798200907,
+              0.011828382221833664
+            ],
+            "time_s": 0.0002549171842650093
+          },
+          {
+            "a": 83,
+            "b": 86,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              -0.01171969072278053,
+              0.6466329556719477,
+              -0.011719690799454955
+            ],
+            "time_s": 0.00025793650793650704
+          },
+          {
+            "a": 84,
+            "b": 87,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              -0.01171969101382575,
+              0.6466329558334458,
+              0.011719691234766015
+            ],
+            "time_s": 0.00025793650793650704
+          },
+          {
+            "a": 95,
+            "b": 98,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              0.011719690536358018,
+              0.6466329558609663,
+              -0.0117196913406235
+            ],
+            "time_s": 0.00025793650793650704
+          },
+          {
+            "a": 96,
+            "b": 99,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              0.011719690115639163,
+              0.6466329556971457,
+              0.011719690681097062
+            ],
+            "time_s": 0.00025793650793650704
+          },
+          {
+            "a": 72,
+            "b": 73,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              -0.03564435799507443,
+              0.6114089768197741,
+              -1.1604326353997774e-10
+            ],
+            "time_s": 0.0002695824706694269
+          },
+          {
+            "a": 78,
+            "b": 90,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              1.3511278901257029e-11,
+              0.6114089760521164,
+              -0.035644357565355944
+            ],
+            "time_s": 0.0002695824706694269
+          },
+          {
+            "a": 81,
+            "b": 93,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              -2.023577616236394e-10,
+              0.6114089765569413,
+              0.03564435822990836
+            ],
+            "time_s": 0.0002695824706694269
+          },
+          {
+            "a": 100,
+            "b": 101,
+            "fracture_work_j": 0.000718144896677295,
+            "object_id": 2,
+            "position_m": [
+              0.035644358547560706,
+              0.6114089770158365,
+              6.172442244822829e-11
+            ],
+            "time_s": 0.0002695824706694269
+          }
+        ],
+        "fracture_work_j": 0.08904996718798434,
+        "initial_energy_j": 643.6700979011403,
+        "limitations": [
+          "Experimental central-force directional cohesive lattice; not a calibrated continuum or real tomato/wood prediction",
+          "Cohesive state updates after each coupled spring/contact step; integration and damping/contact losses are not fully separated",
+          "Cell sphere collision proxies leave subcell gaps; wedge sharpness below cell spacing unresolved",
+          "All cells remain active representations; no automatic local refinement or rigid re-coarsening",
+          "No fluid/pulp, skin pressure, full orthotropic shear/compression damage, hinge failure or live-state save",
+          "Cell intrinsic spin is not coupled by center-to-center springs; finite-cell bending requires a richer connector"
+        ],
+        "linear_momentum_kg_m_s": [
+          1.7515136083325623e-07,
+          -14.304050508579376,
+          -7.035657970680222e-06
+        ],
+        "links": 532,
+        "material_results": [
+          {
+            "broken_links": 0,
+            "cells": 72,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 1,
+            "largest_component_cells": 72,
+            "links": 376,
+            "mass_kg": 36.26495999999999,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 74736.5838621669,
+            "name": "Sheet",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              2.219085726056525e-11,
+              0.5397007981731914,
+              -1.280662238961757e-10
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 15.570121637951438,
+            "velocity_m_s": [
+              4.863573444471956e-09,
+              -0.47294962320787215,
+              -2.2938992414111326e-07
+            ]
+          },
+          {
+            "broken_links": 124,
+            "cells": 32,
+            "components": 7,
+            "damaged_links": 124,
+            "first_break_s": 0.00017814009661835652,
+            "first_damage_s": 0.00017814009661835652,
+            "id": 2,
+            "largest_component_cells": 20,
+            "links": 156,
+            "mass_kg": 1.0000000000000002,
+            "material": "glass",
+            "max_isolated_pair_frequency_rad_s": 131638.13395879776,
+            "name": "Ball",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              2.241404154293413e-11,
+              0.6248409455648081,
+              8.717737059039767e-10
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 27.4246112414162,
+            "velocity_m_s": [
+              -1.1932571597483841e-09,
+              2.847448520362377,
+              1.2831515049938067e-06
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 3,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Left post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -0.10000000000000012,
+              0.25,
+              3.052485673942751e-17
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              -4.4408221674605003e-13,
+              0.0,
+              9.156714151021053e-14
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 4,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Right post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              0.0999999999999999,
+              0.25,
+              2.6206768490550034e-17
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              -1.7263376803924e-14,
+              -1.1039765801556297e-15,
+              5.572866082178326e-15
+            ]
+          }
+        ],
+        "maximum_observed_axial_strain": 0.006416970340388595,
+        "maximum_reaction_geometric_extension_discrepancy_m": 8.492489767550096e-09,
+        "mechanical_energy_j": 597.9409198317709,
+        "model": "material-network-v2",
+        "network_substepping": {
+          "internal_step_s": 4.313319530710835e-07,
+          "limited_by_budget": false,
+          "meaning": "The constraint solver runs on the network's own stability clock, not the package's host cadence. When required_substeps exceeds the budget the run is still under-resolved and its material state is not trustworthy.",
+          "required_substeps": 483,
+          "substeps_per_host_tick": 483
+        },
+        "objects": [
+          {
+            "broken_links": 0,
+            "cells": 72,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 1,
+            "largest_component_cells": 72,
+            "links": 376,
+            "mass_kg": 36.26495999999999,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 74736.5838621669,
+            "name": "Sheet",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              2.219085726056525e-11,
+              0.5397007981731914,
+              -1.280662238961757e-10
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 15.570121637951438,
+            "velocity_m_s": [
+              4.863573444471956e-09,
+              -0.47294962320787215,
+              -2.2938992414111326e-07
+            ]
+          },
+          {
+            "broken_links": 124,
+            "cells": 32,
+            "components": 7,
+            "damaged_links": 124,
+            "first_break_s": 0.00017814009661835652,
+            "first_damage_s": 0.00017814009661835652,
+            "id": 2,
+            "largest_component_cells": 20,
+            "links": 156,
+            "mass_kg": 1.0000000000000002,
+            "material": "glass",
+            "max_isolated_pair_frequency_rad_s": 131638.13395879776,
+            "name": "Ball",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              2.241404154293413e-11,
+              0.6248409455648081,
+              8.717737059039767e-10
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 27.4246112414162,
+            "velocity_m_s": [
+              -1.1932571597483841e-09,
+              2.847448520362377,
+              1.2831515049938067e-06
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 3,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Left post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -0.10000000000000012,
+              0.25,
+              3.052485673942751e-17
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              -4.4408221674605003e-13,
+              0.0,
+              9.156714151021053e-14
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 4,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Right post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              0.0999999999999999,
+              0.25,
+              2.6206768490550034e-17
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              -1.7263376803924e-14,
+              -1.1039765801556297e-15,
+              5.572866082178326e-15
+            ]
+          }
+        ],
+        "performance": {
+          "includes_package_load": false,
+          "includes_rendering": false,
+          "realtime_ratio": 0.0003533053603107696,
+          "sample_count": 4,
+          "sample_window": "last 4096 steps",
+          "step_max_ms": 629.0097,
+          "step_p50_ms": 578.3836,
+          "step_p95_ms": 629.0097,
+          "step_wall_total_ms": 2358.6773000000003
+        },
+        "physical_response_validated": false,
+        "pinned_cells": 0,
+        "plastic_work_j": 0.0,
+        "position_bits": 64,
+        "reaction_reconstruction": {
+          "admissible": true,
+          "inadmissible_bond_updates": 0,
+          "maximum_residual_over_irreversible_extension": 0.0002634007522439895,
+          "meaning": "Bond extensions are reconstructed from the solver's applied reaction. An update is refused when that reconstruction's residual exceeds the smallest extension that changes the bond irreversibly, because breakage and solver non-convergence are then indistinguishable. A nonzero count means reported damage, fracture and plastic state are incomplete for this run."
+        },
+        "runtime_limits": {
+          "cells": 1024,
+          "links": 20000,
+          "objects": 32
+        },
+        "skin": {
+          "asynchronous_patches": false,
+          "contact_surface_matches_skin": false,
+          "exposed_faces": 0,
+          "fracture_faces": 0,
+          "last_query_ms": 0.0,
+          "max_query_ms": 0.0,
+          "mode": "blocky-cell-surface-v1",
+          "object_topology_rebuilds": 0,
+          "physical_mutation": false,
+          "queries": 0,
+          "rank_deficient_frame_fallbacks": 0,
+          "smooth_surface": false,
+          "triangles": 0
+        },
+        "state_valid": true,
+        "summed_spring_impulse_n_s": 1148.7518969761534,
+        "temporal_resolution": {
+          "fits_256_substep_budget": false,
+          "includes_contact_stiffness": false,
+          "material_validation": false,
+          "maximum_frequency_bound_rad_s": 462871.5958532835,
+          "maximum_step_s": 4.320852733063233e-07,
+          "required_substeps": 483,
+          "resolved": false
+        },
+        "ticks": 4,
+        "unreleased_fracture_energy_j": 4.8384237932985705,
+        "unseparated_energy_change_j": -33.770088874074304
+      }
+    },
+    {
+      "case": "10m rigid native drop",
+      "wall_s": 0.25458100001560524,
+      "report": {
+        "angular_momentum_kg_m2_s": [
+          7.068567326230602e-05,
+          1.0733611180618566e-08,
+          0.0003154304018822715
+        ],
+        "broken_links": 0,
+        "cells": 4,
+        "connected_components": 4,
+        "contact_budget": {
+          "body_pairs": 4096,
+          "constraints": 2048,
+          "impact_event_estimation": false,
+          "initial_envelope_only": true,
+          "initial_pair_upper_bound": 4,
+          "last_manifolds": 4,
+          "last_points": 16,
+          "last_speculative_manifolds": 0,
+          "observations_are_allocator_occupancy": false,
+          "peak_manifolds": 5,
+          "peak_points": 17,
+          "peak_speculative_manifolds": 3,
+          "speculative_distance_m": 0.019999999552965164,
+          "temporary_arena_bytes": 34668544
+        },
+        "contact_materials": [
+          {
+            "contact_damping_ratio": 0.18,
+            "defaulted": false,
+            "id": "iron",
+            "self_contact_restitution": 0.5627744474671608
+          },
+          {
+            "contact_damping_ratio": 0.08,
+            "defaulted": false,
+            "id": "glass",
+            "self_contact_restitution": 0.7771393966011861
+          }
+        ],
+        "damage_integration": {
+          "accepted_brittle_threshold_overshoot_j": 0.0,
+          "accepted_maximum_brittle_opening_overshoot": 0.0,
+          "accepted_maximum_damage_increment": 0.0,
+          "accepted_maximum_plastic_strain_increment": 0.0,
+          "accepted_substeps": 0,
+          "configured_limits_are_targets_in_report_mode": true,
+          "deepest_trial": 0,
+          "detects_intra_substep_peaks": false,
+          "discarded_substeps": 0,
+          "endpoint_acceptance_criteria": true,
+          "maximum_brittle_opening_overshoot": 0.05,
+          "maximum_damage_increment": 0.05,
+          "maximum_depth": 4,
+          "maximum_plastic_strain_increment": 0.002,
+          "maximum_solver_trials_per_tick": 1,
+          "mode": "single-step",
+          "on_limit": "reject",
+          "overshoot_is_not_an_additional_energy_store": true,
+          "rejected_trials": 0,
+          "rejected_trials_meaning": "bisected coarse trials",
+          "resolves_contact_or_elastic_wave_error": false,
+          "rolled_back_ticks": 0,
+          "smallest_accepted_step_s": 0.0,
+          "solver_trials": 0,
+          "stability_substeps_per_tick": 1,
+          "terminal_limit_rejections": 0,
+          "unresolved_substeps": 0,
+          "world_tick_transactional": false
+        },
+        "damaged_links": 0,
+        "elapsed_s": 1.6,
+        "elastic_energy_j": 0.0,
+        "energy_residual_j": null,
+        "fault": "",
+        "fracture_events": [],
+        "fracture_work_j": 0.0,
+        "initial_energy_j": 512.5429597071698,
+        "limitations": [
+          "Experimental central-force directional cohesive lattice; not a calibrated continuum or real tomato/wood prediction",
+          "Cohesive state updates after each coupled spring/contact step; integration and damping/contact losses are not fully separated",
+          "Cell sphere collision proxies leave subcell gaps; wedge sharpness below cell spacing unresolved",
+          "All cells remain active representations; no automatic local refinement or rigid re-coarsening",
+          "No fluid/pulp, skin pressure, full orthotropic shear/compression damage, hinge failure or live-state save",
+          "Cell intrinsic spin is not coupled by center-to-center springs; finite-cell bending requires a richer connector"
+        ],
+        "linear_momentum_kg_m_s": [
+          -0.0008191636343987627,
+          8.389285643680903,
+          0.00017309058397444626
+        ],
+        "links": 0,
+        "material_results": [
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 1,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 11.519999999999998,
+            "material": "glass",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Sheet",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -1.7578430721826128e-06,
+              0.5399999657259767,
+              4.5273446325281826e-07
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              -9.17040142667247e-06,
+              -2.878510940718115e-08,
+              2.1366211058193585e-06
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 2,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 1.0000000000000002,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Ball",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -8.733781612590974e-06,
+              2.2366009213078826,
+              1.4829008634364982e-06
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              -4.99073212267831e-05,
+              8.389289855957031,
+              8.473718480672687e-06
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 3,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Left post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -0.10000090208057341,
+              0.24999998130555492,
+              2.0885077011094497e-07
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              -4.6865811782481615e-06,
+              -2.5527867819619132e-08,
+              9.890939054457704e-07
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 4,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Right post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              0.09999909731898075,
+              0.24999998072066834,
+              2.0507422053858508e-07
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              -4.68251755592064e-06,
+              -2.9260661449370673e-08,
+              9.875118394120364e-07
+            ]
+          }
+        ],
+        "maximum_observed_axial_strain": 0.0,
+        "maximum_reaction_geometric_extension_discrepancy_m": 0.0,
+        "mechanical_energy_j": 465.57832844465463,
+        "model": "material-network-v2",
+        "network_substepping": {
+          "internal_step_s": 0.004166666666666667,
+          "limited_by_budget": false,
+          "meaning": "The constraint solver runs on the network's own stability clock, not the package's host cadence. When required_substeps exceeds the budget the run is still under-resolved and its material state is not trustworthy.",
+          "required_substeps": 1,
+          "substeps_per_host_tick": 1
+        },
+        "objects": [
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 1,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 11.519999999999998,
+            "material": "glass",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Sheet",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -1.7578430721826128e-06,
+              0.5399999657259767,
+              4.5273446325281826e-07
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              -9.17040142667247e-06,
+              -2.878510940718115e-08,
+              2.1366211058193585e-06
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 2,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 1.0000000000000002,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Ball",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -8.733781612590974e-06,
+              2.2366009213078826,
+              1.4829008634364982e-06
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              -4.99073212267831e-05,
+              8.389289855957031,
+              8.473718480672687e-06
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 3,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Left post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              -0.10000090208057341,
+              0.24999998130555492,
+              2.0885077011094497e-07
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              -4.6865811782481615e-06,
+              -2.5527867819619132e-08,
+              9.890939054457704e-07
+            ]
+          },
+          {
+            "broken_links": 0,
+            "cells": 1,
+            "components": 1,
+            "damaged_links": 0,
+            "first_break_s": -1.0,
+            "first_damage_s": -1.0,
+            "id": 4,
+            "largest_component_cells": 1,
+            "links": 0,
+            "mass_kg": 70.83,
+            "material": "iron",
+            "max_isolated_pair_frequency_rad_s": 0.0,
+            "name": "Right post",
+            "plastic_work_j": 0.0,
+            "position_m": [
+              0.09999909731898075,
+              0.24999998072066834,
+              2.0507422053858508e-07
+            ],
+            "spin_rad_s": null,
+            "step_times_pair_frequency": 0.0,
+            "velocity_m_s": [
+              -4.68251755592064e-06,
+              -2.9260661449370673e-08,
+              9.875118394120364e-07
+            ]
+          }
+        ],
+        "performance": {
+          "includes_package_load": false,
+          "includes_rendering": false,
+          "realtime_ratio": 364.1080490635591,
+          "sample_count": 384,
+          "sample_window": "last 4096 steps",
+          "step_max_ms": 0.1423,
+          "step_p50_ms": 0.0076,
+          "step_p95_ms": 0.0281,
+          "step_wall_total_ms": 4.394300000000006
+        },
+        "physical_response_validated": false,
+        "pinned_cells": 0,
+        "plastic_work_j": 0.0,
+        "position_bits": 64,
+        "reaction_reconstruction": {
+          "admissible": true,
+          "inadmissible_bond_updates": 0,
+          "maximum_residual_over_irreversible_extension": 0.0,
+          "meaning": "Bond extensions are reconstructed from the solver's applied reaction. An update is refused when that reconstruction's residual exceeds the smallest extension that changes the bond irreversibly, because breakage and solver non-convergence are then indistinguishable. A nonzero count means reported damage, fracture and plastic state are incomplete for this run."
+        },
+        "runtime_limits": {
+          "cells": 1024,
+          "links": 20000,
+          "objects": 32
+        },
+        "skin": {
+          "asynchronous_patches": false,
+          "contact_surface_matches_skin": false,
+          "exposed_faces": 0,
+          "fracture_faces": 0,
+          "last_query_ms": 0.0,
+          "max_query_ms": 0.0,
+          "mode": "blocky-cell-surface-v1",
+          "object_topology_rebuilds": 0,
+          "physical_mutation": false,
+          "queries": 0,
+          "rank_deficient_frame_fallbacks": 0,
+          "smooth_surface": false,
+          "triangles": 0
+        },
+        "state_valid": true,
+        "summed_spring_impulse_n_s": 0.0,
+        "temporal_resolution": {
+          "fits_256_substep_budget": true,
+          "includes_contact_stiffness": false,
+          "material_validation": false,
+          "maximum_frequency_bound_rad_s": 0.0,
+          "maximum_step_s": 0.004166666666666667,
+          "required_substeps": 1,
+          "resolved": true
+        },
+        "ticks": 384,
+        "unreleased_fracture_energy_j": 0.0,
+        "unseparated_energy_change_j": -46.96463126251513
+      }
+    }
+  ]
+}

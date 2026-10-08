@@ -81,7 +81,7 @@ for(const el of [material,width,dt,magnify])el.addEventListener("change",()=>{st
 slider.addEventListener("input",()=>{stop();frame=Number(slider.value);renderReplay();});
 play.addEventListener("click",()=>{if(timer!==null){stop();return;}if(frame===Number(slider.max))frame=0;play.textContent="Pause response";renderReplay();timer=setInterval(()=>{frame++;renderReplay();if(frame>=Number(slider.max))stop();},180);});
 window.addEventListener("resize",renderReplay);document.addEventListener("visibilitychange",()=>{if(document.hidden)stop();});
-async function load(){try{const r=await response("api/tests"),v:unknown=await r.json();if(!v||typeof v!=="object"||!("checks"in v)||!Array.isArray(v.checks)||v.checks.length!==13)throw Error("Incomplete test catalog");
+async function load(){try{const r=await response("api/tests"),v:unknown=await r.json();if(!v||typeof v!=="object"||!("checks"in v)||!Array.isArray(v.checks)||v.checks.length!==15)throw Error("Incomplete test catalog");
   catalog=v.checks.map((c:unknown)=>{if(!c||typeof c!=="object"||!("id"in c)||!("name"in c)||!("kind"in c)||typeof c.id!=="string"||typeof c.name!=="string"||typeof c.kind!=="string")throw Error("Invalid catalog entry");return {id:c.id,name:c.name,kind:c.kind};});
   renderChecks();progress.textContent="Choose Run checkpoint checks, or run one check below.";const id=localStorage.getItem("banjo.testJob");if(id&&/^[0-9a-f]{32}$/.test(id))void poll(id);
 }catch(error){progress.textContent=error instanceof Error?error.message:"Tests unavailable";}}

@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Banjo · shared drop world</title><link rel="stylesheet" href="sheets.css"></head>
+<body><header><a href="world.html">World</a><strong>Drop world · live native physics</strong><a href="sheets.html">Sheet reference</a><a href="tests.html">Tests</a></header>
+<main><section id="scene"><canvas id="view" aria-label="Interactive three dimensional drop world"></canvas><div id="view-controls"><button id="overview">Whole drop</button><button id="impact">Impact closeup</button><button id="follow">Follow ball</button></div></section>
+<aside><p class="gate" id="gate">Pipeline integration · material qualification pending</p>
+<label>Physics <select id="mode"><option value="rigid">Rigid drop · fast baseline</option><option value="deformable">Deformable cells · slow experiment</option></select></label>
+<label>Sheet <select id="sheet"></select></label><label>Ball <select id="ball"></select></label>
+<label>Mass <select id="mass"><option value=".1">0.1 kg</option><option value="1" selected>1 kg</option><option value="5">5 kg</option></select></label>
+<label>Surface clearance <select id="height"><option value="10">10 m</option><option value="1">1 m</option><option value=".1">10 cm</option><option value="0">Contact</option></select></label>
+<label>Initial downward speed <select id="speed"><option value="0">0 m/s · release from rest</option><option value="14">14 m/s · declared impact experiment</option></select></label>
+<label>Offset <select id="offset"><option value="0">Centre</option><option value=".04">4 cm</option><option value="-.04">−4 cm</option></select></label>
+<button id="prepare">Prepare / reset</button><button id="run">Drop / continue</button><button id="pause">Pause</button><button id="step">One batch</button>
+<p id="message" role="status">Prepare a world, then release the ball. Drag to orbit; scroll to zoom.</p><div id="metrics"></div><button id="download">Download observed log</button>
+<details><summary>Model and remaining work</summary><p>One native world owns the ball, sheet, posts and floor. Gravity and collisions drive all motion. Rigid baseline objects stay intact. The deformable experiment uses 72 sheet cells and 32 occupied ball cells connected by axial material bonds. The visible spheres are the actual collision shapes, with gaps between them; represented material volume determines mass.</p><p>Deformable stiffness requires very small substeps and is currently much slower than real time. A declared 14 m/s contact experiment skips the fall by starting with that velocity; it does not claim to simulate the preceding 10 m drop.</p><p>Glass uses the existing brittle law; metals use axial plasticity without fracture. Oak is an isotropic laboratory comparison without grain; rubber is not hyperelastic. Cell-frame bending, continuum calibration, contact/time refinement and a complete support/contact/damping/numerical energy ledger remain open. No precut shards or scripted fragment motion.</p></details>
+</aside></main><script type="module" src="drop.js"></script></body></html>

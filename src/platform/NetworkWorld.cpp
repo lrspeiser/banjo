@@ -199,7 +199,7 @@ std::unique_ptr<NetworkWorld> NetworkWorld::load(const std::string &text){
         require(o.at("name").is_string()&&o["name"].get<std::string>().size()<=100,"invalid network object name");
         require(o.at("material").is_string()&&materialIds.contains(o["material"].get<std::string>()),"unknown network material");
         const auto material=materialIds.at(o["material"].get<std::string>());const auto &law=w.materials[material].law;
-        const auto d=vector(o.at("dimensions_m"),.004,2);const auto p=vector(o.at("position_m"),-10,10);const auto q=quaternion(o.at("orientation_wxyz"));
+        const auto d=vector(o.at("dimensions_m"),.004,2);const auto p=vector(o.at("position_m"),-30,30);const auto q=quaternion(o.at("orientation_wxyz"));
         const auto velocity=vector(o.at("velocity_m_s"),-30,30),spin=vector(o.at("spin_rad_s"),-100,100);
         const auto shape=o.at("shape").get<std::string>(),representation=o.at("representation").get<std::string>();
         require(shape=="sphere"||shape=="box"||shape=="ellipsoid"||shape=="wedge","unsupported network shape");
