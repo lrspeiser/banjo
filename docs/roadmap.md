@@ -1,3 +1,51 @@
+# Remaining active goals: what you will test
+
+Updated October 8, 2026 from [the latest measured checkpoint](midpoint-contact-friction-checkpoint.md). These are the five active goals, rewritten as user acceptance tests. Historical checkpoints and the wider platform roadmap follow below; they are not additional completed capabilities.
+
+## 1. Trust the collision and its aftermath — in progress
+
+**You test:** Drop selectable balls onto sheets supported at their edges. Change the material, mass, height and impact location. Watch contact, breakage, falling pieces and subsequent collisions in the same 3D world. Pause and inspect actual voxel positions and before/after records.
+
+**Done when:** Supported cases finish without unexplained solver stops; fragments retain their source material and mass; measured energy and momentum transfers account for gravity, supports, friction and implemented damage. Smaller timesteps and finer cells give acceptably consistent results. Cracks and debris come from the calculation.
+
+**Still missing:** Coupled contact/friction convergence, unexplained energy losses and full transfer/refinement qualification. The experimental glass-ball case fractures into 20 components but stops at 1.470365 simulated seconds. A completed drop alone does not establish accuracy.
+
+## 2. Interact while the physics keeps up — in progress
+
+**You test:** Run, pause, reset and adjust an experiment without waiting minutes to see a short collision. Watch multiple objects respond as fresh calculated states arrive.
+
+**Done when:** A published, bounded reference scene sustains at least one simulated second per wall second on the declared test machine, with responsive controls and the same accuracy gates. Display simulation progress separately from rendering frame rate.
+
+**Still missing:** Reduced active solve/substep cost. Two simulated seconds of glass impact currently take about 39 wall seconds in the reference model and 124 in the latest experimental model.
+
+## 3. Leave a real, permanent dent in metal — planned for this lab
+
+**You test:** Drop a ball onto a metal sheet, remove the load, inspect the retained dent, then hit it again. Compare a light elastic impact with a stronger yielding impact and eventual tearing under sufficient loading.
+
+**Done when:** Permanent shape and material history survive subsequent steps and supported save/reload; plastic work and tearing are measured. The rendered dent is the actual deformed geometry.
+
+**Still missing:** Integration and qualification of persistent metal plasticity and tearing in this shared scene. Separate reference models do not make the current iron sheet capable of this.
+
+## 4. Preserve thin features without simulating everything finely — planned for this lab
+
+**You test:** Inspect a thin blade or sheet beside a large block. Strike different locations and use a voxel overlay to see fine cells around the interaction and larger cells in eligible intact regions.
+
+**Done when:** Adaptive results agree within declared bounds with a uniformly fine reference; refinement preserves mass, geometry, damage and material history, and shows a measured cost reduction. Detail does not disappear when resolution changes.
+
+**Still missing:** Automatic local refinement and safe coarsening in the shared impact pipeline. Choosing a fixed cell size is not this capability.
+
+## 5. Create an unfamiliar object and test it immediately — planned extension
+
+**You test:** Ask chat for a new sheet, ball or supported assembly; edit dimensions and implemented material properties; preview the proposed changes; run the resulting object through the same collision pipeline. Try an unsupported request and see a specific explanation.
+
+**Done when:** People and LLMs use one validated, unit-bearing authoring contract. Supported changes affect the actual geometry and physics; unsupported laws are refused; revisions can be inspected, saved and reopened. An unfamiliar object needs no special engine code.
+
+**Still missing:** General authoring and revision integration in the replacement lab. Existing bounded authoring paths are foundations, not completion of this goal.
+
+**After these foundations:** The wider roadmap still includes construction projects, structural connections and stress tests, player tools/terrain, durable worlds and multiplayer. House/castle/airport design is a subsequent application milestone; earthquake, meteor and fire buttons each require their corresponding physical model and verification.
+
+---
+
 **Centered contact/friction, October 8 (implemented experimental correction; full gates OPEN):** [Native failure, matched rows and comparative evidence](midpoint-contact-friction-checkpoint.md) remove reproduced endpoint-friction energy injection in controlled glass/oak/iron tests. All four iron-ball sheet comparisons complete; glass-ball gets farther and fractures, but still refuses at 1.470365 s with positive twist work. Full energy/P/L, refinement and useful speed remain unqualified. Reference physics is preserved. Metal plasticity, adaptive cells and custom authoring remain required.
 
 **Centered small rotations, October 8 (numerical correction; full physics gates OPEN):** [Refinement, matched impacts and failures](centered-rotation-checkpoint.md) remove the one-microradian cutoff only from centered pose integration. Glass/oak/iron refined free spin and retained torsion oracles pass. Centered glass-sheet/iron-ball completes, but ice now refuses at 1.935725 s and glass-ball at 1.428182 s; unresolved energy/P/L and calculation cost remain. Eight scoped CTests pass reporting/refusal checks, not full physics admission. Default behavior remains unchanged. Contact/geometry accuracy, speed, metal plasticity, adaptive cells and authoring remain required.
