@@ -4,6 +4,19 @@ October 7, 2026. Source baseline on main: `f413326a8f56420e269ae08386e1c3b360fc6
 
 The first deliverable must be ordinary pickup and a physical swing that actually damages a bonded glass target. Collision-only success cannot complete that milestone. The existing fracture implementation is retained and tested while its missing world coupling is completed.
 
+## Free form live simulation requirement
+
+Owner clarification, October 7: the player must choose actions freely and see reactions computed from the current world. This requirement applies to every A01–A48 capability as it becomes supported. A scenario supplies editable starting conditions; it cannot prescribe the player's targets, sequence, impact time, failed bonds, shards or final state.
+
+- The sandbox stays live after loading. Players can move, select any reachable supported object or surface, acquire a whole tool, place or reposition objects, change the arrangement and use supported actions in any order. Contact is queried against actual current geometry, including fresh fragments and newly excavated surfaces.
+- One shared interaction interface exposes context-appropriate actions and bounded force/work controls. The same physics handles the same action on any admitted geometry/material/state; a scene name, object ID or recipe name cannot choose a response. New authored tools require supported grip, working geometry, actuation and capability declarations, then enter that interface.
+- A strike calculates motion/contact, damage and topology from the actual tool, actor, target, support and accepted histories. Subsequent strikes start from the state the previous interaction left. Players can interrupt, drop, change target, remove a support, hit a fragment or return later; the engine must preserve physical continuity.
+- Rendering follows accepted simulated states. There is no predetermined reaction playback, fixed shard layout, cosmetic cut, assigned launch motion or hidden input script in the playable mode. Automatic cached simulation-outcome reuse is disabled for this acceptance mode. Compiled geometry, material parameters and solver setup may be reused as inputs; they do not contain the reaction.
+- Sandbox authoring can insert or edit declared matter as an explicit external state change with provenance and accounting. Ordinary gameplay manufacturing still consumes resources/work. Creation mode must not silently become a free physical-work source during an action.
+- In unsupported regimes, the interface names the missing law or numerical limit. That refusal is an unfinished capability, never a substitute reaction. The live sim must meet the interaction performance gates; a delayed recording cannot qualify as free form play.
+
+**Manual acceptance:** start a fresh live world; pick an arbitrary reachable point; vary angle/strength and target support; repeat on the actual changed object; interact with the resulting matter; then save/reload and continue. Repeat with an edited arrangement and an unfamiliar authored tool. The player can perform these steps independently without an agent preparing the exact click or initiating a hidden experiment. Automated tests use varied positions, orientations, action order, materials and prior damage through the same public commands, and compare physical invariants and supported response trends. Their fixtures are reproducible starting states, not precomputed outcomes.
+
 ## Present boundary
 
 - [The rewrite audit](banjo-rewrite-audit.md) recommends one Rust world owner around the existing C++/Jolt engine, with renderer-independent simulations and one command protocol.
@@ -224,7 +237,7 @@ Each case has six layers:
 5. Ordinary native worker/API/browser interaction, desktop and real touch input, ownership/cancellation/failure/retry/restart. Automated browser landscape testing does not establish physical-phone acceptance.
 6. Sustained gameplay and performance: repeated use, neighbouring effects, simultaneous users and collecting/building from the actual output. No scripted direct-force shortcut substitutes for a player journey.
 
-Add a single visible scenario selector containing glass strike, metal bend, digging pit, support collapse, tool workshop, channel/dam, bucket, powered rover, heat/ice and pressure vessel. Each loads a real 3D world and displays only held item, target readiness and the last measured result by default. Optional inspection shows actual damage/constituents and accounts. Screenshots/video derive from accepted native geometry and time. Keep headless replay and diagnostics available beside the playable scene.
+Add a single visible starting-world selector containing glass strike, metal bend, digging pit, support collapse, tool workshop, channel/dam, bucket, powered rover, heat/ice and pressure vessel. Each supplies an editable real 3D starting world and immediately permits free form live interaction under the contract above. It displays only held item, target readiness and the last measured result by default. Optional inspection shows actual damage/constituents and accounts. Screenshots/video derive from accepted native geometry and time. Keep headless replay and diagnostics available separately from the playable live mode; they cannot satisfy any stage's free form acceptance.
 
 Before publishing source changes, register every new C++ source/test in CMake and run `python scripts/check-source-registration.py`, rebuild the affected targets, execute their tests and the production-path regression, and perform ordinary interactive verification. Update status/roadmap/scorecard with exact revision, measurements and remaining limits. Do not report full regression when only selected suites ran.
 
@@ -249,7 +262,7 @@ Keep independent fracture/contact/material experiments and their tests: they pro
 
 ## First three main checkpoints
 
-1. Coverage manifest and one reproducible ordinary held-tool/glass scene, exposing the real failed integration gate without a rigid substitute.
+1. Coverage manifest and one editable live held-tool/glass starting world, exposing the real failed integration gate without a rigid substitute and permitting arbitrary supported targets/actions.
 2. Coupled accepted hand/actor/target contact and fracture commit, with matched material, no-contact, low-energy, rollback and conservation/refinement tests.
 3. Fragment contact/custody/restart plus repeated normal swings, then the measured physical excavation milestone.
 
