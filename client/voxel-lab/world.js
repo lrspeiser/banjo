@@ -57,7 +57,7 @@ function draw(s){if(!s)return;
  for(const [id,value] of [['support-impulse',contact?.support_reaction_impulse_n_s],['momentum-residual',contact?.linear_momentum_residual_n_s]])$(id).textContent=Array.isArray(value)?Math.hypot(...value).toPrecision(4)+' N·s':'Unavailable in this build';
  $('contact-points').textContent=contact?.point_samples??'Unavailable in this build';
  $('native-cost').textContent=Number.isFinite(d.profile?.native_step_ms)?(d.profile.native_step_ms/1000).toFixed(2)+' s wall time':'Unavailable in this build';
- $('law-status').textContent=(s.qualification?.model??'Model identity unavailable')+(s.qualification?.contact_law==='midpoint-unilateral'?' Midpoint normal and friction constraints match centered pose integration. Hard contact, not compliant indentation; full geometry and physical accuracy remain unqualified.':s.qualification?.contact_law==='resolved-deformation'?' Unilateral contact: inelastic normal constraints; recovery only from interfaces. No compliant contact indentation or calibrated energy accuracy.':' Material-derived instantaneous restitution remains the reference contact response.');
+ $('law-status').textContent=(s.qualification?.model??'Model identity unavailable')+(s.qualification?.contact_law==='midpoint-block-friction'?' Coupled sliding/twisting block with original impulse caps; global contact convergence and full accuracy remain unqualified.':s.qualification?.contact_law==='midpoint-unilateral'?' Midpoint normal and friction constraints match centered pose integration. Hard contact, not compliant indentation; full geometry and physical accuracy remain unqualified.':s.qualification?.contact_law==='resolved-deformation'?' Unilateral contact: inelastic normal constraints; recovery only from interfaces. No compliant contact indentation or calibrated energy accuracy.':' Material-derived instantaneous restitution remains the reference contact response.');
  const boundary=s.midpoint_boundary;$('boundary-audit').hidden=!boundary;
  if(boundary){
   const gap=(key)=>Number.isFinite(boundary[key])?boundary[key].toPrecision(4)+' J':'Unavailable in this build';
@@ -110,8 +110,8 @@ $('drop').onclick=async()=>{busy=true;controls();try{const r=await request({op:'
 $('before').onclick=()=>{showBefore=true;draw(initial);$('phase').textContent='Before · starting state';controls();};$('live').onclick=()=>{showBefore=false;draw(state);$('phase').textContent=state.time_s>=2?'Drop complete':'Live · accepted native state';controls();};
 $('view').onclick=()=>{whole=!whole;$('view').textContent=whole?'Impact close-up':'Whole rig';};
 for(const id of ['sheet','thickness','resolution','gap','ball','mass','height','face_law','contact_law'])$(id).onchange=()=>{
- if(id==='contact_law'&&$('contact_law').value==='midpoint-unilateral')$('face_law').value='centered-log-gradient';
- if(id==='face_law'&&$('face_law').value!=='centered-log-gradient'&&$('contact_law').value==='midpoint-unilateral')$('contact_law').value='resolved-deformation';
+ if(id==='contact_law'&&['midpoint-unilateral','midpoint-block-friction'].includes($('contact_law').value))$('face_law').value='centered-log-gradient';
+ if(id==='face_law'&&$('face_law').value!=='centered-log-gradient'&&['midpoint-unilateral','midpoint-block-friction'].includes($('contact_law').value))$('contact_law').value='resolved-deformation';
  reset();
 };
 let press=null;canvas.addEventListener('pointerdown',e=>{press={x:e.clientX,y:e.clientY,yaw,pitch,moved:false};canvas.setPointerCapture(e.pointerId);});canvas.addEventListener('pointermove',e=>{if(!press)return;const dx=e.clientX-press.x,dy=e.clientY-press.y;if(Math.hypot(dx,dy)>5)press.moved=true;if(press.moved){yaw=press.yaw-dx*.008;pitch=Math.max(.04,Math.min(1.4,press.pitch+dy*.006));}});

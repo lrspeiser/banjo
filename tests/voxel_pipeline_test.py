@@ -5,6 +5,23 @@ spec=importlib.util.spec_from_file_location('voxel_pipeline',Path(__file__).reso
 def physical(state):
  state=copy.deepcopy(state);state['diagnostics'].pop('profile');state['diagnostics'].pop('max_step_wall_ms');return state
 with tempfile.TemporaryDirectory() as folder:
+ # Exact archival codec: types, signed zero, deletions and list resizing are
+ # retained; a long repeated history must not exhaust the old full-row bound.
+ old={'removed':1,'zero':-0.0,'kind':1,'cells':[{'id':i,'v':[1.,2.,3.]} for i in range(8)]}
+ new={'zero':0.0,'kind':True,'cells':[{'id':i,'v':[1.,float(i),3.]} for i in range(8)],'added':[1,2]}
+ assert not m.same_record(old,new)
+ assert m.same_record(m.apply_record_patch(old,m.record_patch(old,new)),new)
+ resized=dict(new,cells=new['cells'][:3])
+ assert m.same_record(m.apply_record_patch(new,m.record_patch(new,resized)),resized)
+ journal=object.__new__(m.Session);journal.record_lock=threading.Lock();journal.path=Path(folder)/'codec.jsonl.gz';journal.bytes=journal.uncompressed_bytes=0;journal.previous_record=None
+ payload={'retained':'x'*3_000_000,'tick':0};journal.write(payload)
+ for tick in range(1,101):payload['tick']=tick;journal.write(payload)
+ assert journal.uncompressed_bytes<3_100_000 and journal.bytes<100_000,'repeated full states exhausted bounded archive'
+ count=0
+ for line in journal.iter_log():
+  row=json.loads(line);assert row=={'retained':'x'*3_000_000,'tick':count};count+=1
+ assert count==101,'lossless streaming export lost records'
+ print('PASS exact archival replacements: typed/signed-zero history and 303 MB streamed under storage bounds',flush=True)
  server=m.Server(('127.0.0.1',0),Path(sys.argv[1]).resolve(),Path(folder));threading.Thread(target=server.serve_forever,daemon=True).start();base='http://127.0.0.1:'+str(server.server_port)
  def req(data):
   try:

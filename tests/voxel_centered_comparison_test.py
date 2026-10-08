@@ -14,7 +14,7 @@ def verify_rejected_twist(rejected,masses):
 
 native=Path(sys.argv[1]).resolve()
 contact_law=sys.argv[2] if len(sys.argv)>2 else "resolved-deformation"
-assert contact_law in ["resolved-deformation","midpoint-unilateral"]
+assert contact_law in ["resolved-deformation","midpoint-unilateral","midpoint-block-friction"]
 rows=[]
 for sheet,ball in [(m,'iron') for m in ['glass','oak','iron','ice']]+[('glass','glass')]:
     declaration={'sheet':sheet,'ball':ball,'contact_law':contact_law,'face_law':'centered-log-gradient'}
@@ -38,13 +38,13 @@ for sheet,ball in [(m,'iron') for m in ['glass','oak','iron','ice']]+[('glass','
             assert all(math.isfinite(x) for c in state['cells'] for key in ['position_m','velocity_m_s','spin_rad_s'] for x in c[key])
             assert abs(state['step_work']['closure_residual_j'])<1e-7
             assert state['diagnostics']['spring_implicit_elastic_loss_j']==0
-            if contact_law=='midpoint-unilateral':
+            if contact_law in ['midpoint-unilateral','midpoint-block-friction']:
                 assert all(math.isfinite(x) for x in state['midpoint_boundary'].values())
                 assert state['midpoint_boundary']['positive_normal_work_j']>=0
             if not reply['ok']:
                 refused=reply['error'];assert 'energy gate refused' in refused
                 rejected=state['step_work']['last_rejected_trial'];assert rejected and rejected['depth']==14
-                if contact_law=='midpoint-unilateral':
+                if contact_law in ['midpoint-unilateral','midpoint-block-friction']:
                     verify_rejected_twist(rejected,masses)
                 assert request({'op':'snapshot'})['state']==state,'refused candidate leaked into accepted state'
                 break

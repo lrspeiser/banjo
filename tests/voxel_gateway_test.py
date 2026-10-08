@@ -51,6 +51,12 @@ with tempfile.TemporaryDirectory() as folder:
   assert midpoint['ok'] and midpoint['state']['qualification']['contact_law']=='midpoint-unilateral'
   assert not midpoint['state']['qualification']['calibrated']
   assert req({'op':'close','session':midpoint['session']})[1]['ok']
+  assert req({'op':'create','declaration':{'contact_law':'midpoint-block-friction'}})[1]['ok'] is False
+  _,block=req({'op':'create','declaration':{'contact_law':'midpoint-block-friction','face_law':'centered-log-gradient','ball_enabled':False}})
+  assert block['ok'] and block['state']['qualification']['contact_law']=='midpoint-block-friction'
+  assert not block['state']['qualification']['calibrated']
+  assert req({'op':'advance','session':block['session'],'steps':16})[1]['ok']
+  assert req({'op':'close','session':block['session']})[1]['ok']
   _,unchanged=req({'op':'snapshot','session':key});assert unchanged['state']==moved['state'],'refusal mutated native state'
   with urllib.request.urlopen(base+'/api/log/'+key) as r:rows=[json.loads(x) for x in r.read().decode().splitlines()]
   assert rows[0]['native_sha256'] and rows[0]['assets'];assert any(r.get('response',{}).get('state')==moved['state'] for r in rows),'record differs from rendered response'

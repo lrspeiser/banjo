@@ -1,66 +1,45 @@
 {
-  "title": "Final contact convergence measured; accuracy open",
+  "title": "Coupled friction implemented; full accuracy still open",
   "date": "2026-10-08",
-  "physics_revision": "30c9158d3b59a36cd22fd7805c705821e066778b",
-  "native_sha256": "6fdfee11ea7643c35d161ac84a81dd64b8430c7626e44a47f4ca725a10a88f8d",
+  "physics_revision": "local verification in progress",
+  "native_sha256": "a99ebdde07748148f36537225457ba76087a59a894518fffe1ea86f3826ac2e1",
   "changes": [
-    "Physics & record now shows final normal, sliding and twisting disagreement; Download record retains the worst rejected cell contact.",
-    "The glass-ball failure is localized to cells 175/176: twisting adds 0.070003 J despite a feasible impulse cap. Rejected motion is not rendered.",
-    "16, 96 and 256 iteration probes all still refuse, with different fracture histories. Increasing the iteration count alone is not a verified fix.",
-    "This checkpoint changes measurement and reporting only. Previous physical/work records, response laws and energy gates are preserved."
+    "New experimental Coupled friction option solves sliding and twisting together with the full 3 by 3 inverse mass and original impulse caps.",
+    "Reference response remains the default. Existing geometry, material laws and energy refusal gates are retained.",
+    "The new native anisotropic support-patch oracles pass for glass, oak and iron in both CPU runners. Full drop measurements are in progress."
   ],
   "checks": [
     {
-      "label": "Controlled contact regressions",
+      "label": "Coupled friction oracles",
       "status": "passed",
-      "value": "Retained 96 normal + 24 coupled controls/corrections; actual coefficient, cap and final-slip checks in both CPU runners"
-    },
-    {
-      "label": "Matched material reporting",
-      "status": "passed",
-      "value": "Four iron-ball sheets complete; glass-ball still refuses. All five prior final physical/work records preserved; accuracy OPEN"
-    },
-    {
-      "label": "Reference preservation",
-      "status": "passed",
-      "value": "Glass/oak/iron/ice: every reference physical/work record matches at 16-tick intervals through 2 s"
+      "value": "128 analytical cap/stationarity cases, basis invariance and invalid inputs; native glass/oak/iron partial support tests"
     },
     {
       "label": "Scoped regression",
       "status": "passed",
-      "value": "5 focused CTests / 3.73 s; actual material, iteration and browser-journal witness verification"
+      "value": "5 focused CTests / 4.31 s; actual gateway verification pending"
     },
     {
       "label": "Compiled sources",
       "status": "passed",
-      "value": "331 / 331 registered; no exclusions"
-    },
-    {
-      "label": "Coupled glass-ball accuracy",
-      "status": "blocked",
-      "value": "Glass-ball still refuses at 1.470365 s; cells 175/176 add +0.070003 J twist work inside their impulse cap"
+      "value": "333 / 333 registered; no exclusions"
     },
     {
       "label": "Full conservation / refinement",
       "status": "blocked",
-      "value": "Final friction convergence, full energy/momentum, finite geometry and calibration remain unqualified"
+      "value": "Energy losses, normal/contact-island convergence, momentum and refinement remain unqualified"
     },
     {
       "label": "Simulation speed",
       "status": "blocked",
-      "value": "No speed fix: experimental glass/iron about 125 wall s / 2 simulated s; reference about 39 s"
-    },
-    {
-      "label": "Reference glass-ball gate",
-      "status": "blocked",
-      "value": "Original reference refusal near 1.427663 s retained; reference remains default"
+      "value": "No qualified speed fix; full measurements are in progress"
     }
   ],
   "next": [
     {
       "label": "Energy / accuracy",
       "status": "in progress",
-      "value": "Repair coupled tangent/twist/normal and contact-island convergence; preserve full energy, momentum and refinement gates"
+      "value": "Qualify coupled friction in full drops; resolve normal/island convergence and numerical energy losses"
     },
     {
       "label": "Calculation speed",

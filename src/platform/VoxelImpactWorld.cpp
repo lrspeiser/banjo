@@ -200,10 +200,10 @@ struct VoxelImpactWorld::Impl {
         log_faces=face_law!="native-motor";centered_faces=face_law=="centered-log-gradient";
         world.setCenteredIntegration(centered_faces);
         const auto contact_law=d.value("contact_law",std::string("material-restitution"));
-        if(contact_law!="material-restitution"&&contact_law!="resolved-deformation"&&contact_law!="midpoint-unilateral")throw std::invalid_argument("unsupported contact law");
-        midpoint_contact=contact_law=="midpoint-unilateral";
+        if(contact_law!="material-restitution"&&contact_law!="resolved-deformation"&&contact_law!="midpoint-unilateral"&&contact_law!="midpoint-block-friction")throw std::invalid_argument("unsupported contact law");
+        midpoint_contact=contact_law=="midpoint-unilateral"||contact_law=="midpoint-block-friction";
         resolved_deformation=contact_law!="material-restitution";
-        world.setContactRestitutionModel(midpoint_contact?RigidContactRestitution::MidpointUnilateral:resolved_deformation?RigidContactRestitution::ResolvedDeformation:RigidContactRestitution::MaterialCombination);
+        world.setContactRestitutionModel(contact_law=="midpoint-block-friction"?RigidContactRestitution::MidpointBlockFriction:midpoint_contact?RigidContactRestitution::MidpointUnilateral:resolved_deformation?RigidContactRestitution::ResolvedDeformation:RigidContactRestitution::MaterialCombination);
         const auto sheet=preset(d.value("sheet",std::string("glass"))),ball=preset(d.value("ball",std::string("iron")));
         const double requested=scalar(d,"resolution",8,4,16);const unsigned n=unsigned(requested);
         if(n!=requested||(n!=4&&n!=8&&n!=12&&n!=16))throw std::invalid_argument("resolution must be 4, 8, 12 or 16");
@@ -389,7 +389,7 @@ std::string VoxelImpactWorld::snapshotJson() const {
             {"closure_residual_j",w.ledger_change_j-w.work_total.kinetic_change_j-w.work_total.potential_change_j-w.elastic_change_j},
             {"full_angular_residual_n_m_s",v(w.full_angular_residual)},{"last_rejected_trial",w.refused_work},
             {"scope","Actual native force-phase velocities and shared-phase spring/contact work. Residual, gyro and rotation drift are signed numerical/unexplained terms, not heat. Algebraic closure is not material realism or solver conservation."}}},
-        {"qualification",{{"calibrated",false},{"contact_law",impl_->midpoint_contact?"midpoint-unilateral":impl_->resolved_deformation?"resolved-deformation":"material-restitution"},{"face_law",impl_->centered_faces?"centered-log-gradient":impl_->log_faces?"log-gradient":"native-motor"},{"model",impl_->midpoint_contact?
+        {"qualification",{{"calibrated",false},{"contact_law",impl_->declaration.value("contact_law",std::string("material-restitution"))=="midpoint-block-friction"?"midpoint-block-friction":impl_->midpoint_contact?"midpoint-unilateral":impl_->resolved_deformation?"resolved-deformation":"material-restitution"},{"face_law",impl_->centered_faces?"centered-log-gradient":impl_->log_faces?"log-gradient":"native-motor"},{"model",impl_->midpoint_contact?
             "Experimental frozen-normal unilateral midpoint boundary and centered interfaces. Not compliant indentation or calibrated material contact. Finite rotations/friction/full energy remain unqualified.":impl_->centered_faces?
             "Experimental centered elastic rows and midpoint pose velocities. Linear energy oracles pass; coupled contact and finite rotations remain unqualified. Not compliant surface contact.":impl_->log_faces?
             "Experimental SO(3) energy-gradient interfaces. Analytical torque gradients pass; full impacts still have unresolved energy refusals/losses. Not a realtime or calibrated material model.":

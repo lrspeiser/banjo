@@ -96,7 +96,7 @@ enum class RigidJobExecution { ThreadPool, Inline };
 // Explicit model choice, not a display-material preset. ResolvedDeformation
 // leaves rebound to the deforming assembly and uses an inelastic unilateral
 // surface constraint. It does not implement compliant contact indentation.
-enum class RigidContactRestitution { MaterialCombination, ResolvedDeformation, MidpointUnilateral };
+enum class RigidContactRestitution { MaterialCombination, ResolvedDeformation, MidpointUnilateral, MidpointBlockFriction };
 
 struct RigidContactCapacity {
     unsigned body_pairs{16384};

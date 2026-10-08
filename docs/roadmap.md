@@ -1,3 +1,5 @@
+**Coupled friction block, October 8 (implemented experimental repair; full gates OPEN):** [Solver, native oracles and journal repair](coupled-friction-block-checkpoint.md) add a full 3 by 3 sliding/twisting solve with the original impulse caps. Glass/oak/iron anisotropic contact controls pass in both CPU runners; six focused CTests and four-material reference parity pass. Full final-build impacts and the repaired browser archive are being measured. Normal/island convergence, energy losses, speed, plasticity, adaptive cells and authoring remain unfinished.
+
 # Remaining active goals: what you will test
 
 Updated October 8, 2026 from [the latest contact convergence audit](contact-stationarity-checkpoint.md). These are the five active goals, rewritten as user acceptance tests. Historical checkpoints and the wider platform roadmap follow below; they are not additional completed capabilities.

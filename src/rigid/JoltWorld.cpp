@@ -575,8 +575,9 @@ public:
 
 private:
     void configureMidpointContact(const JPH::Body &a,const JPH::Body &b,JPH::ContactSettings &settings) const {
-        if(restitution_model!=RigidContactRestitution::MidpointUnilateral||settings.mIsSensor)return;
+        if((restitution_model!=RigidContactRestitution::MidpointUnilateral&&restitution_model!=RigidContactRestitution::MidpointBlockFriction)||settings.mIsSensor)return;
         settings.mBanjoMidpointContact=true;
+        settings.mBanjoBlockFriction=restitution_model==RigidContactRestitution::MidpointBlockFriction;
         const auto assign=[&](const JPH::Body &body,JPH::Vec3 &v,JPH::Vec3 &w){
             if(body.IsStatic()){v=w=JPH::Vec3::sZero();return;}
             const auto found=initial_contact_motion.find(body.GetID().GetIndexAndSequenceNumber());
@@ -3063,15 +3064,15 @@ JoltWorld::FaceSpringObservation JoltWorld::faceSpringObservation(unsigned id) c
 void JoltWorld::setContactRestitutionModel(RigidContactRestitution model) {
     impl_->requireConfigurationMutable();
     if(!impl_->bodies_.empty()||!impl_->floor_id_.IsInvalid())throw std::logic_error("configure restitution model before creating bodies");
-    if(model!=RigidContactRestitution::MaterialCombination&&model!=RigidContactRestitution::ResolvedDeformation&&model!=RigidContactRestitution::MidpointUnilateral)
+    if(model!=RigidContactRestitution::MaterialCombination&&model!=RigidContactRestitution::ResolvedDeformation&&model!=RigidContactRestitution::MidpointUnilateral&&model!=RigidContactRestitution::MidpointBlockFriction)
         throw std::invalid_argument("unsupported contact restitution model");
-    if(model==RigidContactRestitution::MidpointUnilateral&&!impl_->centered_integration_)throw std::invalid_argument("midpoint contact requires centered integration");
+    if((model==RigidContactRestitution::MidpointUnilateral||model==RigidContactRestitution::MidpointBlockFriction)&&!impl_->centered_integration_)throw std::invalid_argument("midpoint contact requires centered integration");
     impl_->impact_collector_.restitution_model=model;
 }
 void JoltWorld::setCenteredIntegration(bool enabled){
     impl_->requireConfigurationMutable();
     if(!impl_->bodies_.empty()||!impl_->floor_id_.IsInvalid())throw std::logic_error("configure centered integration before bodies");
-    if(!enabled&&impl_->impact_collector_.restitution_model==RigidContactRestitution::MidpointUnilateral)throw std::logic_error("midpoint contact requires centered integration");
+    if(!enabled&&(impl_->impact_collector_.restitution_model==RigidContactRestitution::MidpointUnilateral||impl_->impact_collector_.restitution_model==RigidContactRestitution::MidpointBlockFriction))throw std::logic_error("midpoint contact requires centered integration");
     impl_->centered_integration_=enabled;
     // Native displacement-based sleep can zero a still-oscillating elastic
     // body after 0.5 s; the centered reference retains that mechanical energy.
@@ -4875,7 +4876,7 @@ void JoltWorld::step(double fixed_dt_s) {
         }
     }
     collector.initial_contact_motion.clear();
-    if(collector.restitution_model==RigidContactRestitution::MidpointUnilateral){
+    if((collector.restitution_model==RigidContactRestitution::MidpointUnilateral||collector.restitution_model==RigidContactRestitution::MidpointBlockFriction)){
         for(const auto &phase:impl_->force_phase_)
             collector.initial_contact_motion.emplace(impl_->bodies_.at(phase.body).GetIndexAndSequenceNumber(),
                 std::pair{phase.before.motion.linear_velocity_m_s,phase.before.motion.angular_velocity_rad_s});

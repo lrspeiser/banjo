@@ -1,10 +1,39 @@
 """Local, bounded native voxel world. No old website routes or simulation cache."""
-import argparse, gzip, hashlib, json, queue, subprocess, threading, time, uuid
+import argparse, copy, gzip, hashlib, io, json, queue, struct, subprocess, threading, time, uuid
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 ASSETS={'/':'client/voxel-lab/index.html','/world.js':'client/voxel-lab/world.js','/playback.mjs':'client/voxel-lab/playback.mjs','/style.css':'client/voxel-lab/style.css','/three.module.js':'playground/vendor/three.module.js','/three.core.js':'playground/vendor/three.core.js'}
+
+def same_record(previous,current):
+ if type(previous) is not type(current):return False
+ if isinstance(current,float):return struct.pack('!d',previous)==struct.pack('!d',current)
+ if isinstance(current,dict):return previous.keys()==current.keys() and all(same_record(previous[k],v) for k,v in current.items())
+ if isinstance(current,list):return len(previous)==len(current) and all(same_record(a,b) for a,b in zip(previous,current))
+ return previous==current
+
+def record_patch(previous,current):
+ # Exact replacements, never rounded numeric differences. Small coordinate
+ # arrays replace together; large cell/event arrays retain unchanged fields.
+ if type(previous) is not type(current):return {'r':current}
+ if isinstance(current,dict):
+  changed={k:record_patch(previous[k],v) if k in previous else {'r':v} for k,v in current.items() if k not in previous or not same_record(previous[k],v)}
+  return {'d':changed,'x':[k for k in previous if k not in current]}
+ if isinstance(current,list) and len(current)>4 and len(previous)==len(current):
+  return {'a':{str(i):record_patch(a,b) for i,(a,b) in enumerate(zip(previous,current)) if not same_record(a,b)}}
+ return {'r':current}
+
+def apply_record_patch(previous,patch):
+ if 'r' in patch:return patch['r']
+ if 'd' in patch:
+  result=dict(previous)
+  for k in patch['x']:del result[k]
+  for k,v in patch['d'].items():result[k]=apply_record_patch(result.get(k),v)
+  return result
+ result=list(previous)
+ for i,v in patch['a'].items():result[int(i)]=apply_record_patch(result[int(i)],v)
+ return result
 def repository_state():
  try:
   revision=subprocess.check_output(['git','-C',str(ROOT),'rev-parse','HEAD'],text=True,timeout=3).strip()
@@ -15,6 +44,7 @@ class Session:
  def __init__(self,native,logs,checkpoint=None):
   self.proc=subprocess.Popen([str(native),'--serve'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,bufsize=1)
   self.output=queue.Queue(maxsize=2);self.lock=threading.Lock();self.record_lock=threading.Lock();self.last=time.monotonic();self.path=logs/(uuid.uuid4().hex+'.jsonl.gz');self.bytes=0;self.uncompressed_bytes=0
+  self.previous_record=None
   self.condition=threading.Condition();self.closed=False;self.playing=False;self.calculating=False;self.latest=None;self.current=None;self.frame_id=0
   self.target_ticks=0;self.started=0.;self.started_time=0.;self.elapsed_s=0.;self.batch_cost_s=.001;self.max_batch_s=0.;self.pending_commands=[];self.last_publish=0.
   self.batch_samples=deque(maxlen=256);self.current_at=0.;self.latest_at=0.
@@ -25,14 +55,31 @@ class Session:
   self.write({'native_sha256':hashlib.sha256(native.read_bytes()).hexdigest(),'assets':{k:hashlib.sha256((ROOT/v).read_bytes()).hexdigest() for k,v in ASSETS.items()},'checkpoint':checkpoint})
   threading.Thread(target=self.simulate,daemon=True).start()
  def write(self,data):
-  row=(json.dumps(data,separators=(',',':'))+'\n').encode('utf8');compressed=gzip.compress(row,compresslevel=1,mtime=0)
   with self.record_lock:
+   stored=data if self.previous_record is None else {'record_codec':'banjo.exact-replacements.v1','patch':record_patch(self.previous_record,data)}
+   row=(json.dumps(stored,separators=(',',':'))+'\n').encode('utf8');compressed=gzip.compress(row,compresslevel=1,mtime=0)
    if self.bytes+len(compressed)>32_000_000 or self.uncompressed_bytes+len(row)>256_000_000:raise ValueError('Session record limit reached; reset to continue')
    with self.path.open('ab') as f:f.write(compressed)
    self.bytes+=len(compressed);self.uncompressed_bytes+=len(row)
- def read_log(self):
+   self.previous_record=copy.deepcopy(data)
+ def iter_log(self):
+  # Snapshot at most the existing 32 MB compressed bound. Expand one exact
+  # record at a time, so downloads need not allocate the whole replay history.
   with self.record_lock:data=self.path.read_bytes()
-  return gzip.decompress(data)
+  previous=None
+  with gzip.GzipFile(fileobj=io.BytesIO(data)) as archive:
+   for line in archive:
+    row=json.loads(line)
+    previous=apply_record_patch(previous,row['patch']) if row.get('record_codec')=='banjo.exact-replacements.v1' else row
+    yield (json.dumps(previous,separators=(',',':'))+'\n').encode('utf8')
+ def read_log(self):
+  # Small inspection/test helper; production download uses iter_log directly.
+  parts=[];size=0
+  for row in self.iter_log():
+   size+=len(row)
+   if size>256_000_000:raise ValueError('Expanded record requires streaming download')
+   parts.append(row)
+  return b''.join(parts)
  def call(self,command,record=True):
   with self.lock:
    self.last=time.monotonic();self.proc.stdin.write(json.dumps(command)+'\n');self.proc.stdin.flush()
@@ -159,8 +206,14 @@ class Handler(BaseHTTPRequestHandler):
   if path in ['/world.html','/sheets.html','/drop.html','/tests.html','/status.html','/index.html']:
    self.send_response(303);self.send_header('Location','/');self.send_header('Cache-Control','no-store');self.end_headers();return
   if path.startswith('/api/log/'):
-   try:s=self.server.session(path.removeprefix('/api/log/'));self.send(200,s.read_log(),'application/x-ndjson');return
+   try:
+    s=self.server.session(path.removeprefix('/api/log/'))
    except ValueError as e:self.send(404,json.dumps({'error':str(e)}).encode());return
+   self.send_response(200);self.send_header('Content-Type','application/x-ndjson');self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.send_header('Connection','close');self.end_headers()
+   try:
+    for row in s.iter_log():self.wfile.write(row)
+   except (BrokenPipeError,ConnectionResetError):pass
+   return
   if path not in ASSETS:self.send(404,b'{}');return
   kind={'html':'text/html; charset=utf-8','js':'text/javascript; charset=utf-8','mjs':'text/javascript; charset=utf-8','css':'text/css; charset=utf-8'}[ASSETS[path].rsplit('.',1)[1]]
   self.send(200,(ROOT/ASSETS[path]).read_bytes(),kind)

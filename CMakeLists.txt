@@ -48,6 +48,10 @@ function(banjo_enable_warnings target)
     endif()
 endfunction()
 
+add_library(banjo_friction_block src/physics/ContactFrictionBlock.cpp)
+target_include_directories(banjo_friction_block PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+banjo_enable_warnings(banjo_friction_block)
+
 add_library(
     banjo_core
     src/material/MaterialCompiler.cpp
@@ -127,6 +131,7 @@ add_library(
     src/numeric/FpProfile.cpp)
 
 target_include_directories(banjo_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(banjo_core PUBLIC banjo_friction_block)
 # The profile's name, for what the engine reports and what its numerical caches
 # are keyed by (src/numeric/FpProfile.hpp). Public, so every object sees the same.
 target_compile_definitions(banjo_core PUBLIC BANJO_FP_PROFILE="${BANJO_FP_PROFILE}")
@@ -238,8 +243,11 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
         GIT_SHALLOW TRUE
         SOURCE_SUBDIR Build)
     FetchContent_MakeAvailable(JoltPhysics)
+    target_link_libraries(Jolt PRIVATE banjo_friction_block)
     include(cmake/JoltForceObservation.cmake)
+    include(cmake/JoltFrictionBlock.cmake)
     banjo_jolt_force_observation(Jolt "${joltphysics_SOURCE_DIR}")
+    banjo_jolt_friction_block(Jolt "${joltphysics_SOURCE_DIR}")
     if(BANJO_JOLT_CONTINUOUS_SMALL_ROTATION)
         include(cmake/JoltSmallRotation.cmake)
         banjo_jolt_continuous_small_rotation(Jolt "${joltphysics_SOURCE_DIR}")
@@ -317,6 +325,10 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
         add_executable(banjo_voxel_face_spring_tests tests/voxel_face_spring_tests.cpp)
         add_executable(banjo_rotation_strain_tests tests/rotation_strain_tests.cpp)
         add_executable(banjo_rigid_step_work_tests tests/rigid_step_work_tests.cpp)
+        add_executable(banjo_contact_friction_block_tests tests/contact_friction_block_tests.cpp)
+        target_link_libraries(banjo_contact_friction_block_tests PRIVATE banjo_friction_block)
+        banjo_enable_warnings(banjo_contact_friction_block_tests)
+        add_test(NAME banjo_contact_friction_block_tests COMMAND banjo_contact_friction_block_tests)
         target_link_libraries(banjo_rigid_step_work_tests PRIVATE banjo_core)
         banjo_enable_warnings(banjo_rigid_step_work_tests)
         add_test(NAME banjo_rigid_step_work_tests COMMAND banjo_rigid_step_work_tests)
