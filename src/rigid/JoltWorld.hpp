@@ -1076,6 +1076,10 @@ public:
 
     [[nodiscard]] std::vector<ImpactEvent> drainImpacts();
     [[nodiscard]] RigidSnapshot snapshot(MatterBodyId body_id) const;
+    // Sorted currently participating logical bodies; parked bodies are absent.
+    // Read-only host queries for comparing complete native trial motion.
+    [[nodiscard]] std::vector<MatterBodyId> activeBodyIds() const;
+    [[nodiscard]] std::uint64_t stepCount() const;
     [[nodiscard]] RigidMechanicalState mechanicalState(MatterBodyId body_id) const;
     // The damping a body carries, per second, on its speed and on its spin: the
     // solver multiplies each by (1 - damping * dt) every step. A preview of a
@@ -1099,6 +1103,8 @@ public:
     [[nodiscard]] bool parked(MatterBodyId body_id) const;
 
 private:
+    [[nodiscard]] std::shared_ptr<PreparedFixedPointContact::Data> prepareExternalFixedAssembly(
+        MatterBodyId proxy,MatterBodyId striker,double duration,const PointContactRoundoffBudget &budget) const;
     [[nodiscard]] PairImpulseAudit applyAuditedPairImpulses(MatterBodyId a,MatterBodyId b,
         const std::vector<AttachmentImpulse> &impulses,double maximum_roundoff_energy_j);
     friend bool fastlattice::runNativeFixedTargetTrial(JoltWorld &,fastlattice::LatticeBackend &,const std::function<bool()> &);

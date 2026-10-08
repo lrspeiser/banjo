@@ -10,6 +10,45 @@ namespace banjo::fastlattice {
 // hand/controller state and must not publish tentative receipts from the callback.
 [[nodiscard]] bool runNativeFixedTargetTrial(JoltWorld &world,LatticeBackend &target,
     const std::function<bool()> &trial);
+// SI, absolute local error bounds. These control numerical approximation, not
+// material strength or contact law. Exact surviving-bond/mode agreement is also
+// required. Every trial interval commits two half steps or commits nothing.
+struct NativeContactAccuracySettings {
+    double minimum_step_s{1e-12};
+    unsigned maximum_halvings{12};
+    double position_m{1e-8},velocity_m_s{1e-4};
+    double orientation_rad{1e-5},angular_velocity_rad_s{1e-4};
+    double damage_fraction{1e-5},history_strain{1e-5};
+    double plastic_extension_m{1e-8},plastic_strain{1e-5};
+    double energy_j{1e-6},impulse_n_s{1e-6},angular_impulse_kg_m2_s{1e-7};
+};
+// Actual receipt aggregates, not guessed work or a source of applied impulses.
+// Callback returns only contact fields; the controller measures native stepping.
+struct NativeContactStepAudit {
+    double contact_loss_j{},reconciliation_loss_j{},source_numerical_energy_j{};
+    Vec3 source_numerical_impulse_n_s{},source_numerical_angular_kg_m2_s{},geometry_couple_kg_m2_s{};
+    double native_step_energy_j{};
+    Vec3 native_step_impulse_n_s{},native_step_angular_kg_m2_s{};
+    std::uint64_t active_manifolds{};
+};
+struct NativeContactAccuracyResult {
+    bool accepted{},topology_agrees{};
+    unsigned attempted_intervals{},rejected_intervals{};
+    double accepted_interval_s{},suggested_interval_s{},normalized_error{};
+    std::string error_metric;
+    NativeContactStepAudit accepted_audit{};
+};
+// Compare a restored full-step trial with a two-half-step trial from the same
+// current state. Refine on disagreement; bounds/budgets refuse without advancing.
+// Trusted callback reads actual geometry, applies contact, and returns receipts.
+// It must not step the native world/target, publish receipts, or mutate external
+// controller histories. This function owns both clocks and steps every currently
+// participating native body; geometry/configuration remain fixed during trials.
+// Serial double Verlet and the paired trial's bounded state budgets apply.
+[[nodiscard]] NativeContactAccuracyResult advanceNativeFixedTargetControlled(
+    JoltWorld &world,LatticeBackend &target,double proposed_interval_s,
+    const NativeContactAccuracySettings &settings,
+    const std::function<NativeContactStepAudit(double)> &contact);
 struct NativeFixedPointTransfer {
     FixedPointContactKick source;
     ExternalPointTransferLedger target;

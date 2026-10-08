@@ -500,6 +500,211 @@ void variableContactStepOracles() {
             <<",\"attributed_e_residual_j\":"<<e_residual<<"}\n";
     }
 }
+NativeContactStepAudit surfaceAudit(const NativeFixedSurfaceTransfer &r) {
+    NativeContactStepAudit a;
+    a.contact_loss_j=r.source.contact.modal_contact.dissipated_energy_j;
+    a.reconciliation_loss_j=r.source.contact.reconciliation_loss_j;
+    a.source_numerical_energy_j=r.source.numerical_energy_change_j;
+    a.source_numerical_impulse_n_s=r.source.momentum_error_kg_m_s;
+    a.source_numerical_angular_kg_m2_s=r.source.angular_momentum_error_kg_m2_s;
+    a.geometry_couple_kg_m2_s=r.source.contact.geometry_couple_kg_m2_s;
+    a.active_manifolds=r.source.contact.modal_contact.applied?1:0;return a;
+}
+void simultaneousAdmissionOracle() {
+    Tool tool;
+    for(auto id:{1U,10U}) {
+        auto pose=tool.world.snapshot(id);pose.linear_velocity_m_s={};pose.angular_velocity_rad_s={};
+        tool.world.applyRigidState(id,pose);
+    }
+    auto nodes=cube();
+    for(auto &node:nodes)node.velocity_m_s={-50*node.position_world_m.x,0,0};
+    std::vector<std::uint32_t> ids;for(unsigned i=0;i<nodes.size();++i)ids.push_back(i);
+    const PointRigidContactSettings frictionless{0,0,0};const PointContactRoundoffBudget budget{1e-12,1e-12,1e-12};
+    const Vec3 left{-.04,0,0},right{.04,0,0};
+    const auto isolated=makeMaterialContactStencil(nodes,left);
+    rejects([&]{(void)tool.world.prepareExternalFixedPointContact(2,1,isolated.point,{-1,0,0},0,1e-7,frictionless,budget);},
+        "isolated witness unexpectedly met strict native rounding budget");
+    std::vector<FixedSurfaceContact> contacts{{ids,left,{-1,0,0},0,frictionless},{ids,right,{1,0,0},0,frictionless}};
+    const auto full=tool.world.prepareExternalFixedSurfaceManifold(2,1,nodes,contacts,1e-7,budget).receipt();
+    require(full.contact.active_contacts==2,"coupled symmetric admission omitted a contact");
+    near(length(full.momentum_error_kg_m_s),0,1e-12,"symmetric coupled admission linear budget");
+    near(full.numerical_energy_change_j,0,1e-12,"symmetric coupled admission energy budget");
+    std::reverse(contacts.begin(),contacts.end());
+    const auto reverse=tool.world.prepareExternalFixedSurfaceManifold(2,1,nodes,contacts,1e-7,budget).receipt();
+    for(unsigned i=0;i<nodes.size();++i)
+        near(length(full.contact.node_velocities_m_s[i]-reverse.contact.node_velocities_m_s[i]),0,1e-14,
+            "first witness selected coupled native admission");
+    std::cout<<"[PASS] coupled admission evaluates the actual manifold instead of its isolated first witness\n";
+}
+void controlledContactOracles() {
+    for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        Target target(preset);Tool tool;auto b=target.backend();const auto ids=target.support();
+        const auto initial_totals=totals(target.state,tool.world);
+        require(tool.world.activeBodyIds()==std::vector<MatterBodyId>{1,2,10},"native participant inventory is not sorted/current");
+        unsigned calls=0;
+        const auto contact=[&](double dt) {
+            ++calls;near(b->externalContactTimestep(),dt,0,"controlled contact used wrong horizon");
+            return surfaceAudit(applyNativeFixedSurfaceTransfer(tool.world,*b,ids,2,1,
+                {.04,.01,.01},{1,0,0},0,{}, {1e-5,1e-5,1e-5}));
+        };
+        const NativeContactAccuracySettings settings;
+        const auto result=advanceNativeFixedTargetControlled(tool.world,*b,1e-7,settings,contact);
+        require(result.accepted&&result.topology_agrees&&result.normalized_error<=1,"controlled contact failed to find an accurate interval");
+        require(result.attempted_intervals==result.rejected_intervals+1&&calls==3*result.attempted_intervals,
+            "controlled contact skipped full/half comparison");
+        require(b->status().total_steps==2&&tool.world.stepCount()==2,"controlled trial leaked discarded coarse steps");
+        near(b->externalContactElapsedTime(),result.accepted_interval_s,1e-22,"controlled contact committed incorrect time");
+        require(result.accepted_audit.active_manifolds>0,"controlled contact lost accepted receipts");
+        const auto final_totals=totals(target.download(*b),tool.world);const auto &s=b->status();const auto &a=result.accepted_audit;
+        const double p_error=length(final_totals.linear_momentum_kg_m_s-initial_totals.linear_momentum_kg_m_s-
+            a.source_numerical_impulse_n_s-a.native_step_impulse_n_s-s.fixed_boundary.impulse_n_s-s.bond_kick_roundoff_impulse_n_s);
+        const double l_error=length(final_totals.angular_momentum_kg_m2_s-initial_totals.angular_momentum_kg_m2_s-
+            a.source_numerical_angular_kg_m2_s-a.native_step_angular_kg_m2_s-a.geometry_couple_kg_m2_s-
+            s.fixed_boundary.angular_impulse_kg_m2_s-s.bond_kick_roundoff_angular_kg_m2_s);
+        const double e_error=final_totals.mechanicalEnergy()-initial_totals.mechanicalEnergy()+a.contact_loss_j+a.reconciliation_loss_j+
+            s.removed_energy_j+s.plastic_work_j+s.plastic_return_numerical_loss_j-a.source_numerical_energy_j-a.native_step_energy_j-
+            s.integration_numerical_energy_j;
+        near(p_error,0,1e-9,"controlled contact linear attribution");near(l_error,0,1e-9,"controlled contact angular attribution");
+        near(e_error,0,1e-10,"controlled contact energy attribution");near(final_totals.mass_kg,initial_totals.mass_kg,1e-12,"controlled contact changed mass");
+        const auto original=target.download(*b);const auto previous=b->status();
+        const auto head=tool.world.snapshot(1);const double clock=b->externalContactElapsedTime();const auto tick=tool.world.stepCount();
+        const auto unchanged=[&] {
+            const auto now=target.download(*b);
+            require(now.u==original.u&&now.u_prev==original.u_prev&&now.v==original.v&&now.alive==original.alive&&
+                now.damage==original.damage&&now.prev_tensile==original.prev_tensile&&now.prev_compressive==original.prev_compressive&&
+                now.prev_shear==original.prev_shear&&now.plastic_strain==original.plastic_strain&&now.plastic_extension==original.plastic_extension,
+                "refused accuracy trial leaked material history");
+            require(b->status().total_steps==previous.total_steps&&b->status().external_point_transfer.transfers==previous.external_point_transfer.transfers,
+                "refused accuracy trial leaked status");
+            near(b->externalContactElapsedTime(),clock,0,"refused accuracy trial leaked time");
+            require(tool.world.stepCount()==tick,"refused accuracy trial leaked native ticks");
+            near(length(tool.world.snapshot(1).linear_velocity_m_s-head.linear_velocity_m_s),0,0,"refused accuracy trial kicked native source");
+            near(length(tool.world.snapshot(1).center_of_mass_world_m-head.center_of_mass_world_m),0,0,"refused accuracy trial moved native source");
+        };
+        auto tight=settings;tight.maximum_halvings=0;
+        tight.position_m=tight.velocity_m_s=tight.orientation_rad=tight.angular_velocity_rad_s=1e-30;
+        tight.damage_fraction=tight.history_strain=tight.plastic_extension_m=tight.plastic_strain=1e-30;
+        tight.energy_j=tight.impulse_n_s=tight.angular_impulse_kg_m2_s=1e-30;
+        const auto refused=advanceNativeFixedTargetControlled(tool.world,*b,1e-7,tight,contact);
+        require(!refused.accepted&&refused.rejected_intervals==1&&refused.accepted_interval_s==0&&
+            refused.accepted_audit.active_manifolds==0,"accuracy exhaustion silently committed a candidate");unchanged();
+        unsigned throwing_calls=0;
+        rejects([&]{(void)advanceNativeFixedTargetControlled(tool.world,*b,1e-7,settings,[&](double dt) {
+            auto audit=contact(dt);if(++throwing_calls==3)throw std::runtime_error("intentional second-half failure");return audit;
+        });},"second half exception accepted");unchanged();
+        rejects([&]{(void)advanceNativeFixedTargetControlled(tool.world,*b,1e-7,settings,[&](double dt) {
+            tool.world.step(dt);return NativeContactStepAudit{};
+        });},"callback native double step accepted");unchanged();
+        auto invalid=settings;invalid.energy_j=std::numeric_limits<double>::quiet_NaN();
+        const auto old_calls=calls;
+        rejects([&]{(void)advanceNativeFixedTargetControlled(tool.world,*b,1e-7,invalid,contact);},"nonfinite accuracy accepted");
+        invalid=settings;invalid.maximum_halvings=21;
+        rejects([&]{(void)advanceNativeFixedTargetControlled(tool.world,*b,1e-7,invalid,contact);},"unbounded accuracy search accepted");
+        rejects([&]{(void)advanceNativeFixedTargetControlled(tool.world,*b,2e-7,settings,contact);},"oversized accuracy horizon accepted");
+        require(calls==old_calls,"invalid accuracy request invoked contact");unchanged();
+        rejects([&]{(void)advanceNativeFixedTargetControlled(tool.world,*b,1e-7,settings,[](double) {
+            NativeContactStepAudit a;a.contact_loss_j=-1;return a;
+        });},"negative contact dissipation accepted");unchanged();
+        std::vector<Vec3> queued(target.state.node_count,{1,0,0});b->setExternalForces(queued,2);
+        rejects([&]{(void)advanceNativeFixedTargetControlled(tool.world,*b,1e-7,settings,contact);},"accuracy control shortened finite force duration");
+        unchanged();b->setExternalForces({},0);
+        std::cout<<"CONTROLLED_CONTACT {\"material\":\""<<materialPresetName(preset)<<"\",\"accepted_interval_s\":"<<result.accepted_interval_s
+            <<",\"attempted_intervals\":"<<result.attempted_intervals<<",\"normalized_error\":"<<result.normalized_error
+            <<",\"attributed_p_residual_n_s\":"<<p_error<<",\"attributed_l_residual_kg_m2_s\":"<<l_error
+            <<",\"attributed_e_residual_j\":"<<e_error<<"}\n";
+    }
+}
+NativeContactStepAudit queriedManifoldAudit(const Target &target,LatticeBackend &b,Tool &tool) {
+    const auto state=target.download(b);std::vector<NativeSurfaceWitness> witnesses;
+    for(unsigned i=0;i<state.node_count;++i) {
+        const Vec3 at=state.origin+Vec3{state.x0[3*i]+state.u[3*i],state.x0[3*i+1]+state.u[3*i+1],state.x0[3*i+2]+state.u[3*i+2]};
+        require(tool.world.materialShapeContacts(10,at,{PrimitiveKind::Box,0,{.04,.04,.04}},{},1e-5).contacts.empty(),"controlled fixture omitted handle contact");
+        const auto hits=tool.world.materialShapeContacts(1,at,{PrimitiveKind::Box,0,{.04,.04,.04}},{},1e-5).contacts;
+        if(state.inv_mass[i]==0){require(hits.empty(),"controlled fixture omitted direct clamp contact");continue;}
+        for(const auto &hit:hits) {
+            const auto law=combineContactMaterials(compileContactMaterial(target.material),hit.body_contact);
+            witnesses.push_back({i,hit.point_on_body_world_m,hit.normal_world,hit.gap_m,
+                {law.static_friction,law.dynamic_friction,law.restitution}});
+        }
+    }
+    const auto r=applyNativeFixedLocalSurfaceManifold(tool.world,b,witnesses,{.1,3,64,4096},2,1,{1e-5,1e-5,1e-5});
+    NativeContactStepAudit a;
+    a.contact_loss_j=r.source.contact.dissipated_energy_j;a.reconciliation_loss_j=r.source.contact.reconciliation_loss_j;
+    a.source_numerical_energy_j=r.source.numerical_energy_change_j;a.source_numerical_impulse_n_s=r.source.momentum_error_kg_m_s;
+    a.source_numerical_angular_kg_m2_s=r.source.angular_momentum_error_kg_m2_s;a.geometry_couple_kg_m2_s=r.source.contact.geometry_couple_kg_m2_s;
+    a.active_manifolds=r.source.contact.active_contacts?1:0;return a;
+}
+unsigned controlledSustainedContact() {
+    unsigned open=0;
+    for(double width:{.04,.12})for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        Target target(preset,1e-7,.12,{.1,0,0});Tool tool(width);
+        for(unsigned i=0;i<target.state.node_count;++i)if(target.state.x0[3*i]>.039)target.state.inv_mass[i]=0;
+        auto b=target.backend();const auto initial=totals(target.state,tool.world);NativeContactStepAudit sum;
+        NativeContactAccuracySettings settings;settings.maximum_halvings=20;
+        const double duration=2048e-7;double proposal=1e-7;
+        unsigned accepted=0,rejected=0;double smallest=proposal,last_error=0;std::string refusal,metric;bool compared=false;
+        const auto started=std::chrono::steady_clock::now();
+        while(b->externalContactElapsedTime()<duration-1e-18&&accepted<100000) {
+            const double remaining=duration-b->externalContactElapsedTime();
+            compared=false;metric.clear();
+            try {
+                const auto r=advanceNativeFixedTargetControlled(tool.world,*b,std::min(proposal,remaining),settings,
+                    [&](double){return queriedManifoldAudit(target,*b,tool);});
+                rejected+=r.rejected_intervals;
+                last_error=r.normalized_error;metric=r.error_metric;compared=true;
+                if(!r.accepted) {refusal=r.topology_agrees?"accuracy budget exhausted":"topology comparison unresolved";break;}
+                ++accepted;smallest=std::min(smallest,r.accepted_interval_s);proposal=r.suggested_interval_s;
+                const auto &a=r.accepted_audit;
+                sum.contact_loss_j+=a.contact_loss_j;sum.reconciliation_loss_j+=a.reconciliation_loss_j;
+                sum.source_numerical_energy_j+=a.source_numerical_energy_j;sum.source_numerical_impulse_n_s+=a.source_numerical_impulse_n_s;
+                sum.source_numerical_angular_kg_m2_s+=a.source_numerical_angular_kg_m2_s;sum.geometry_couple_kg_m2_s+=a.geometry_couple_kg_m2_s;
+                sum.native_step_energy_j+=a.native_step_energy_j;sum.native_step_impulse_n_s+=a.native_step_impulse_n_s;
+                sum.native_step_angular_kg_m2_s+=a.native_step_angular_kg_m2_s;sum.active_manifolds+=a.active_manifolds;
+            }catch(const std::exception &e){refusal=e.what();break;}
+        }
+        if(accepted==100000&&b->externalContactElapsedTime()<duration-1e-18)refusal="accepted interval budget exhausted";
+        if(!refusal.empty())for(double interval:{1e-7,1e-10,1e-12}) {
+            // Isolate native stepping after the refused state. No new contact
+            // impulse is applied. Both full and half experiments roll back.
+            std::vector<RigidSnapshot> full,half;double full_energy=0,half_energy=0;
+            const auto native_ids=tool.world.activeBodyIds();const auto frozen_time=b->externalContactElapsedTime();
+            const auto trial=[&](unsigned steps,std::vector<RigidSnapshot> &poses,double &energy) {
+                require(!runNativeFixedTargetTrial(tool.world,*b,[&] {
+                    for(unsigned k=0;k<steps;++k)b->advanceExternalContactStep(interval/steps,[&]{tool.world.step(interval/steps);});
+                    for(auto id:native_ids)poses.push_back(tool.world.snapshot(id));
+                    energy=tool.world.mechanicalTotals().mechanicalEnergy();return false;
+                }),"native refinement isolation committed");
+            };
+            trial(1,full,full_energy);trial(2,half,half_energy);double position=0,velocity=0;
+            for(std::size_t i=0;i<full.size();++i) {
+                position=std::max(position,length(full[i].center_of_mass_world_m-half[i].center_of_mass_world_m));
+                velocity=std::max(velocity,length(full[i].linear_velocity_m_s-half[i].linear_velocity_m_s));
+            }
+            near(b->externalContactElapsedTime(),frozen_time,0,"native isolation changed accepted clock");
+            std::cout<<"NATIVE_STEP_REFINEMENT "<<nlohmann::json{{"material",materialPresetName(preset)},{"width_m",width},
+                {"interval_s",interval},{"maximum_position_difference_m",position},{"maximum_velocity_difference_m_s",velocity},
+                {"energy_difference_j",full_energy-half_energy}}.dump()<<std::endl;
+        }
+        const auto state=target.download(*b);const auto final=totals(state,tool.world);const auto &s=b->status();
+        const double p=length(final.linear_momentum_kg_m_s-initial.linear_momentum_kg_m_s-sum.source_numerical_impulse_n_s-
+            sum.native_step_impulse_n_s-s.fixed_boundary.impulse_n_s-s.bond_kick_roundoff_impulse_n_s);
+        const double l=length(final.angular_momentum_kg_m2_s-initial.angular_momentum_kg_m2_s-sum.source_numerical_angular_kg_m2_s-
+            sum.native_step_angular_kg_m2_s-sum.geometry_couple_kg_m2_s-s.fixed_boundary.angular_impulse_kg_m2_s-s.bond_kick_roundoff_angular_kg_m2_s);
+        const double e=final.mechanicalEnergy()-initial.mechanicalEnergy()+sum.contact_loss_j+sum.reconciliation_loss_j+s.removed_energy_j+
+            s.plastic_work_j+s.plastic_return_numerical_loss_j-sum.source_numerical_energy_j-sum.native_step_energy_j-s.integration_numerical_energy_j;
+        near(p,0,1e-9,"controlled sustained linear attribution");near(l,0,1e-9,"controlled sustained angular attribution");
+        near(e,0,1e-10,"controlled sustained energy attribution");near(final.mass_kg,initial.mass_kg,1e-12,"controlled sustained changed mass");
+        require(s.total_steps==2*accepted&&tool.world.stepCount()==2*accepted,"controlled sustained leaked trial steps");
+        if(!refusal.empty()||std::abs(b->externalContactElapsedTime()-duration)>1e-18)++open;
+        std::cout<<"CONTROLLED_SUSTAINED "<<nlohmann::json{{"material",materialPresetName(preset)},{"width_m",width},
+            {"accepted_time_s",b->externalContactElapsedTime()},{"accepted_intervals",accepted},{"rejected_intervals",rejected},
+            {"minimum_interval_s",smallest},{"broken_bonds",s.broken_bonds},{"refusal",refusal},{"attributed_p_residual_n_s",p},
+            {"last_normalized_error",compared?nlohmann::json(last_error):nlohmann::json(nullptr)},{"error_metric",metric},
+            {"attributed_l_residual_kg_m2_s",l},{"attributed_e_residual_j",e},{"integration_error_j",s.integration_numerical_energy_j},
+            {"wall_s",std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count()}}.dump()<<std::endl;
+    }
+    return open;
+}
 // Capture is read-only, sampled after accepted physical steps. No render clock,
 // interpolation, fragment templates or extra impulses enter the experiment.
 nlohmann::json vectorJson(Vec3 v){return {v.x,v.y,v.z};}
@@ -755,11 +960,12 @@ void matchedNativeSurfaceTrajectories(bool local=false) {
 }
 }
 int main(int argc,char **argv){try{
-    bool strict=false,reverse=false,manifold=false,oracles_only=false;std::string output;unsigned refinement_levels=2;bool refinement_requested=false;
+    bool strict=false,reverse=false,manifold=false,oracles_only=false,controlled=false;std::string output;unsigned refinement_levels=2;bool refinement_requested=false;
     for(int i=1;i<argc;++i){const std::string option=argv[i];
         if(option=="--require-live-contact-convergence"&&!strict)strict=true;
         else if(option=="--coupled-manifold")manifold=true;
         else if(option=="--manifold-oracles-only")oracles_only=true;
+        else if(option=="--controlled-manifold")controlled=true;
         else if(option=="--reverse-contact-order")reverse=true;
         else if(option=="--refinement-levels"&&!refinement_requested&&i+1<argc) {
             const std::string value=argv[++i];require(value.size()==1&&value[0]>='2'&&value[0]<='5',"refinement levels must be 2..5");
@@ -774,10 +980,12 @@ int main(int argc,char **argv){try{
         recording["kind"]="solver-refinement-recording";
     }
     std::cout.precision(12);liveGraphSelectionOracles();analyticalSurfaceOracles();bulkAtomicity();authoritativeTopologyAdmission();
-    require(!(oracles_only&&(strict||manifold||reverse||refinement_requested||!output.empty())),"oracle-only mode cannot imply sustained acceptance");
+    require(!(oracles_only&&(strict||manifold||reverse||refinement_requested||!output.empty()||controlled)),"oracle-only mode cannot imply sustained acceptance");
+    require(!controlled||(!strict&&!manifold&&!reverse&&!refinement_requested&&output.empty()),"controlled experiment uses its separate live accuracy gate");
     require(!refinement_requested||manifold,"extended refinement requires the explicit coupled manifold experiment");
-    manifoldOracles();variableContactStepOracles();
+    manifoldOracles();variableContactStepOracles();simultaneousAdmissionOracle();controlledContactOracles();
     if(oracles_only){std::cout<<"[PASS] coupled manifold analytical/native atomicity oracles\n";return 0;}
+    if(controlled){const auto open=controlledSustainedContact();std::cout<<"Controlled sustained open gates: "<<open<<'\n';return open?1:0;}
     matchedNativeSurfaceTrajectories();matchedNativeSurfaceTrajectories(true);const auto open=sustainedLocalContact(output.empty()?nullptr:&recording,reverse,manifold,refinement_levels);
     if(!output.empty()){
         recording["open_convergence_gates"]=open;recording["coupled_manifold"]=manifold;recording["refinement_levels"]=refinement_levels;

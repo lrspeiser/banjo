@@ -2952,10 +2952,10 @@ const FixedPointContactKick &PreparedFixedPointContact::receipt() const {
     if(!data_)throw std::invalid_argument("empty prepared fixed contact");
     return data_->receipt;
 }
-PreparedFixedPointContact JoltWorld::prepareExternalFixedPointContact(MatterBodyId proxy,MatterBodyId striker,
-    const ActiveNodeState &point,Vec3 normal,double gap,double duration,
-    const PointRigidContactSettings &settings,const PointContactRoundoffBudget &budget) const {
+std::shared_ptr<PreparedFixedPointContact::Data> JoltWorld::prepareExternalFixedAssembly(
+    MatterBodyId proxy,MatterBodyId striker,double duration,const PointContactRoundoffBudget &budget) const {
     impl_->requireFixedContactMutable();
+    if(!std::isfinite(duration)||duration<=0)throw std::invalid_argument("invalid fixed assembly contact duration");
     if(!contains(proxy)||!contains(striker)||proxy==striker)
         throw std::invalid_argument("fixed point contact needs distinct existing source and target proxy");
     for(double limit:{budget.energy_j,budget.linear_impulse_n_s,budget.angular_impulse_kg_m2_s})
@@ -2989,7 +2989,7 @@ PreparedFixedPointContact JoltWorld::prepareExternalFixedPointContact(MatterBody
     FixedPointContactKick out;out.body_ids.assign(members.begin(),members.end());
     out.joint_ids.assign(joint_ids.begin(),joint_ids.end());
     std::unordered_map<MatterBodyId,std::uint32_t> index;
-    std::vector<RigidMechanicalState> before,symmetric;
+    std::vector<RigidMechanicalState> before;
     for(std::uint32_t i=0;i<out.body_ids.size();++i) {
         const auto id=out.body_ids[i];index.emplace(id,i);
         if(pairContactOwner(proxy,id)!=PairContactOwner::External||impl_->pins_.contains(id))
@@ -3001,14 +3001,12 @@ PreparedFixedPointContact JoltWorld::prepareExternalFixedPointContact(MatterBody
             if(!body.IsDynamic()||body.GetMotionProperties()->GetAllowedDOFs()!=JPH::EAllowedDOFs::All)
                 throw std::invalid_argument("fixed contact requires unrestricted dynamic members");
         }
-        before.push_back(mechanicalState(id));auto state=before.back();
+        before.push_back(mechanicalState(id));const auto &state=before.back();
         double scale=0;for(const auto &row:state.inertia_world_kg_m2.m)for(double entry:row)scale=std::max(scale,std::abs(entry));
         for(unsigned a=0;a<3;++a)for(unsigned b=a+1;b<3;++b) {
             const double x=state.inertia_world_kg_m2.m[a][b],y=state.inertia_world_kg_m2.m[b][a];
             if(std::abs(x-y)>1e-6*scale)throw std::invalid_argument("fixed contact runtime tensor skew exceeds float tolerance");
-            state.inertia_world_kg_m2.m[a][b]=state.inertia_world_kg_m2.m[b][a]=.5*(x+y);
         }
-        symmetric.push_back(state);
     }
     for(auto id:out.joint_ids) {
         const auto &joint=impl_->joints_.at(id);
@@ -3020,24 +3018,36 @@ PreparedFixedPointContact JoltWorld::prepareExternalFixedPointContact(MatterBody
         out.links.push_back({a,b,attachment(before[a],fixed->GetConstraintToBody1Matrix().GetTranslation()),
             attachment(before[b],fixed->GetConstraintToBody2Matrix().GetTranslation())});
     }
-    out.contact=evaluatePointFixedAssemblyContact(point,symmetric,out.links,index.at(striker),normal,gap,duration,settings);
+    auto data=std::make_shared<PreparedFixedPointContact::Data>();
+    data->identity=impl_->contact_plan_identity_;data->tick=impl_->tick_.load(std::memory_order_relaxed);
+    data->epoch=impl_->contact_plan_epoch_;data->proxy=proxy;data->striker=striker;
+    data->native_proxy=impl_->bodies_.at(proxy);data->before=before;data->duration=duration;
+    data->budget=budget;data->receipt=out;
+    for(auto id:out.body_ids) {
+        data->native_bodies.push_back(impl_->bodies_.at(id));
+        JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(),impl_->bodies_.at(id));
+        if(!lock.Succeeded())throw std::runtime_error("cannot lock prepared fixed assembly shape");
+        data->shapes.emplace_back(lock.GetBody().GetShape());
+    }
+    return data;
+}
+PreparedFixedPointContact JoltWorld::prepareExternalFixedPointContact(MatterBodyId proxy,MatterBodyId striker,
+    const ActiveNodeState &point,Vec3 normal,double gap,double duration,
+    const PointRigidContactSettings &settings,const PointContactRoundoffBudget &budget) const {
+    auto data=prepareExternalFixedAssembly(proxy,striker,duration,budget);
+    const auto &before=data->before;auto out=data->receipt;auto symmetric=before;
+    for(auto &body:symmetric)for(unsigned a=0;a<3;++a)for(unsigned b=a+1;b<3;++b)
+        body.inertia_world_kg_m2.m[a][b]=body.inertia_world_kg_m2.m[b][a]=
+            .5*(body.inertia_world_kg_m2.m[a][b]+body.inertia_world_kg_m2.m[b][a]);
+    const auto striker_index=static_cast<std::uint32_t>(std::find(out.body_ids.begin(),out.body_ids.end(),striker)-out.body_ids.begin());
+    out.contact=evaluatePointFixedAssemblyContact(point,symmetric,out.links,striker_index,normal,gap,duration,settings);
     out.delivered_bodies=before;
     out.delivered_normal_speed_m_s=out.contact.modal_contact.relative_normal_after_m_s;
     out.delivered_slip_m_s=out.contact.modal_contact.slip_after_m_s;
     const auto finish=[&]() {
-        auto data=std::make_shared<PreparedFixedPointContact::Data>();
-        data->identity=impl_->contact_plan_identity_;data->tick=impl_->tick_.load(std::memory_order_relaxed);
-        data->epoch=impl_->contact_plan_epoch_;
-        data->proxy=proxy;data->striker=striker;data->native_proxy=impl_->bodies_.at(proxy);
-        data->before=before;data->point=point;data->normal=normal;data->gap=gap;data->duration=duration;
-        data->settings=settings;data->budget=budget;data->receipt=out;
-        for(auto id:out.body_ids) {
-            data->native_bodies.push_back(impl_->bodies_.at(id));
-            JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(),impl_->bodies_.at(id));
-            if(!lock.Succeeded())throw std::runtime_error("cannot lock prepared fixed contact shape");
-            data->shapes.emplace_back(lock.GetBody().GetShape());
-        }
-        PreparedFixedPointContact prepared;prepared.data_=std::move(data);return prepared;
+        data->point=point;data->normal=normal;data->gap=gap;
+        data->settings=settings;data->receipt=out;
+        PreparedFixedPointContact prepared;prepared.data_=data;return prepared;
     };
     if(!out.contact.modal_contact.applied)return finish();
     const auto representable=[](Vec3 v) {
@@ -3077,7 +3087,7 @@ PreparedFixedPointContact JoltWorld::prepareExternalFixedPointContact(MatterBody
             out.contact.modal_contact.node_velocity_m_s+point.velocity_m_s);
         out.numerical_energy_change_j=source_change+point_change+out.contact.reconciliation_loss_j+
             out.contact.modal_contact.dissipated_energy_j;
-        const auto &source=out.delivered_bodies[index.at(striker)].motion;
+        const auto &source=out.delivered_bodies[striker_index].motion;
         const Vec3 relative=out.contact.modal_contact.node_velocity_m_s-source.linear_velocity_m_s-
             cross(source.angular_velocity_rad_s,point.position_world_m-source.center_of_mass_world_m);
         const Vec3 unit=normal/length(normal);out.delivered_normal_speed_m_s=dot(relative,unit);
@@ -3146,17 +3156,11 @@ PreparedFixedSurfaceManifold JoltWorld::prepareExternalFixedSurfaceManifold(Matt
     impl_->requireFixedContactMutable();
     if(contacts.empty()||contacts.size()>64||nodes.size()<4||nodes.size()>64)
         throw std::invalid_argument("invalid native manifold node/contact count");
-    const auto &first=contacts.front();std::vector<ActiveNodeState> support;
-    for(const auto index:first.nodes) {
-        if(index>=nodes.size())throw std::invalid_argument("native manifold node outside actual support");
-        support.push_back(nodes[index]);
-    }
-    const auto stencil=makeMaterialContactStencil(support,first.surface_world_m);
-    // Reuse native ownership/tree/shape and velocity-limit admission for a
-    // genuine first witness. This plan is read-only and is never committed:
-    // the coupled response below replaces its isolated contact candidate.
+    // Inspect actual ownership/tree/shape metadata without inventing an
+    // isolated first-contact response. Only the full manifold is solved.
     auto data=std::make_shared<PreparedFixedSurfaceManifold::Data>();
-    data->assembly=prepareExternalFixedPointContact(proxy,striker,stencil.point,first.normal_world,first.gap_m,dt,first.settings,budget);
+    auto assembly_data=prepareExternalFixedAssembly(proxy,striker,dt,budget);
+    data->assembly.data_=std::move(assembly_data);
     data->nodes.assign(nodes.begin(),nodes.end());data->contacts=contacts;data->budget=budget;
     const auto &assembly=*data->assembly.data_;
     auto source=assembly.before;
@@ -4537,6 +4541,14 @@ RigidSnapshot JoltWorld::snapshot(MatterBodyId body_id) const {
     };
 }
 
+std::vector<MatterBodyId> JoltWorld::activeBodyIds() const {
+    std::vector<MatterBodyId> ids;ids.reserve(impl_->bodies_.size());
+    for(const auto &[id,body]:impl_->bodies_) {(void)body;ids.push_back(id);}
+    std::sort(ids.begin(),ids.end());return ids;
+}
+std::uint64_t JoltWorld::stepCount() const {
+    return impl_->tick_.load(std::memory_order_relaxed);
+}
 RigidMechanicalState JoltWorld::mechanicalState(MatterBodyId body_id) const {
     const auto found = impl_->bodies_.find(body_id);
     if (found == impl_->bodies_.end()) throw std::out_of_range("mechanical body is missing");
