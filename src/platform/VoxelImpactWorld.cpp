@@ -80,6 +80,8 @@ struct VoxelImpactWorld::Impl {
                 ia.contact_couple_n_m_s-=cross(point-before[a].center_of_mass_world_m,impulse);ib.contact_couple_n_m_s+=cross(point-before[b].center_of_mass_world_m,impulse);}
         };
         for(unsigned i=0;i<bonds.size();++i)if(bonds[i].live){const auto &b=bonds[i];const auto &g=faces_before[i],&s=faces_after[i];
+            if(!s.solver_scheduled.has_value())throw std::runtime_error("native spring schedule observation missing");
+            if(!*s.solver_scheduled)continue;
             const Vec3 linear=g.translation_axes_world[0]*s.linear_impulse_cs_n_s.x+g.translation_axes_world[1]*s.linear_impulse_cs_n_s.y+g.translation_axes_world[2]*s.linear_impulse_cs_n_s.z;
             const Vec3 angular=g.rotation_axes_world[0]*s.angular_impulse_cs_n_m_s.x+g.rotation_axes_world[1]*s.angular_impulse_cs_n_m_s.y+g.rotation_axes_world[2]*s.angular_impulse_cs_n_m_s.z;
             push(b.a,b.b,g.anchor_b_world_m,linear,true);indexed[b.a].spring_couple_n_m_s-=angular;indexed[b.b].spring_couple_n_m_s+=angular;
@@ -243,6 +245,7 @@ struct VoxelImpactWorld::Impl {
         momentum_residual+=candidateTotals.linear_momentum_kg_m_s-totals.linear_momentum_kg_m_s-scheduled_gravity+reaction;
         for(unsigned i=0;i<bonds.size();++i)if(bonds[i].live){
             const auto &b=bonds[i];const auto &geometry=faces_before[i],&response=faces_after[i];
+            if(!response.solver_scheduled.value())continue;
             const auto &a=before_states[b.a],&c=before_states[b.b],&aa=after_states[b.a],&cc=after_states[b.b];
             // SixDOF applies equal/opposite linear impulses at B's anchor.
             const auto arm_a=geometry.anchor_b_world_m-a.center_of_mass_world_m,arm_b=geometry.anchor_b_world_m-c.center_of_mass_world_m;
@@ -274,6 +277,9 @@ struct VoxelImpactWorld::Impl {
         bool changed=false;
         for(unsigned i=0;i<bonds.size();++i)if(bonds[i].live){
             auto &b=bonds[i];const auto &s=faces_after[i];b.energy=quadratic(b.k,s.displacement_cs_m)+quadratic(b.r,s.rotation_cs_rad);
+            // No new strain/impulse while dormant. Dividing a cached lambda by
+            // an unrelated fragment's smaller dt would invent a new stress.
+            if(!s.solver_scheduled.value())continue;
             const auto f=s.linear_impulse_cs_n_s/h;auto m=s.angular_impulse_cs_n_m_s/h;
             if(log_faces){
                 // Generalized log-strain impulses are not physical torque components.

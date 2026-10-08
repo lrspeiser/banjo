@@ -1468,6 +1468,7 @@ public:
         std::vector<JoltWorld::ContactImpulseObservation> contact_impulses;
         Vec3 gravity_impulse{};
         std::vector<JoltWorld::ForcePhaseObservation> force_phase;
+        std::unordered_map<JPH::uint32,std::size_t> force_phase_slot;
     };
     TrialConfiguration captureTrialConfiguration() const {
         TrialConfiguration out{physics_->GetConstraints(),joints_,gear_strength_,stripped_gears_,{},last_dt_s,before_step_,cache_readable_};
@@ -1477,6 +1478,7 @@ public:
         out.contact_impulses=contact_impulses_;
         out.gravity_impulse=observed_gravity_impulse_;
         out.force_phase=force_phase_;
+        out.force_phase_slot=force_phase_slot_;
         for (const auto &[id,joint]:joints_) {
             (void)id;
             if (joint.kind!=JointKind::Link) continue;
@@ -1498,6 +1500,7 @@ public:
         impact_collector_.clearContactGeometry();contact_impulses_=std::move(saved.contact_impulses);
         observed_gravity_impulse_=saved.gravity_impulse;
         force_phase_=std::move(saved.force_phase);
+        force_phase_slot_=std::move(saved.force_phase_slot);
     }
 };
 
@@ -2992,7 +2995,18 @@ unsigned JoltWorld::addFaceSpring(const FaceSpringDescription &d) {
 JoltWorld::FaceSpringObservation JoltWorld::faceSpringObservation(unsigned id) const {
     const auto fromJoltVector=[](JPH::Vec3Arg x){return Vec3{x.GetX(),x.GetY(),x.GetZ()};};
     const auto &j=impl_->joints_.at(id);if(j.kind!=JointKind::FaceSpring)throw std::invalid_argument("not a face spring");
-    if(j.log_face)return observeLogFaceSpring(*j.constraint.GetPtr());
+    const auto observed=[&](FaceSpringObservation out){
+        if(impl_->force_phase_enabled_){
+            bool scheduled=false;
+            for(const auto body:{j.a,j.b}){
+                const auto slot=impl_->force_phase_slot_.find(impl_->bodies_.at(body).GetIndexAndSequenceNumber());
+                if(slot!=impl_->force_phase_slot_.end())scheduled|=impl_->force_phase_[slot->second].integration_scheduled;
+            }
+            out.solver_scheduled=j.constraint->GetEnabled()&&scheduled;
+        }
+        return out;
+    };
+    if(j.log_face)return observed(observeLogFaceSpring(*j.constraint.GetPtr()));
     const auto *c=static_cast<const JPH::SixDOFConstraint*>(j.constraint.GetPtr());
     // Between Updates the constraint holds the native bodies the solver uses.
     // Read each transform once, rather than taking eight BodyInterface locks
@@ -3005,9 +3019,9 @@ JoltWorld::FaceSpringObservation JoltWorld::faceSpringObservation(unsigned id) c
     const double angle=2*std::atan2(std::sqrt(double(q.GetX())*q.GetX()+double(q.GetY())*q.GetY()+double(q.GetZ())*q.GetZ()),std::abs(double(q.GetW())));
     const auto axis=Vec3{q.GetX(),q.GetY(),q.GetZ()}*(q.GetW()<0?-1.:1.);
     const auto rotation=length(axis)>1e-12?axis*(angle/length(axis)):Vec3{};
-    return {{dot(delta,x),dot(delta,y),dot(delta,z)},rotation,fromJoltVector(c->GetTotalLambdaMotorTranslation()),fromJoltVector(c->GetTotalLambdaMotorRotation()),
+    return observed({{dot(delta,x),dot(delta,y),dot(delta,z)},rotation,fromJoltVector(c->GetTotalLambdaMotorTranslation()),fromJoltVector(c->GetTotalLambdaMotorRotation()),
         pb,Vec3{q.GetX(),q.GetY(),q.GetZ()}*(q.GetW()>0?2.:-2.),{x,y,z},
-        {fromJoltVector(b.GetAxisX()),fromJoltVector(b.GetAxisY()),fromJoltVector(b.GetAxisZ())}};
+        {fromJoltVector(b.GetAxisX()),fromJoltVector(b.GetAxisY()),fromJoltVector(b.GetAxisZ())}});
 }
 void JoltWorld::setContactImpulseObservationsEnabled(bool enabled){
     impl_->requireConfigurationMutable();impl_->impact_collector_.contact_impulses_enabled=enabled;

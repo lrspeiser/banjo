@@ -142,3 +142,105 @@ links pass. Native SHA256:
 Source/published revision is pinned in the website's checkpoint manifest after
 the verified source commit. Local evidence is in `build/voxel-phase-results.json`
 and the scoped CTest log; build artifacts are excluded from Git.
+
+
+## Dormant spring follow-up
+
+The CPU reference now distinguishes an actual scheduled spring solve from a
+retained native lambda. A spring whose two dynamic endpoints are asleep keeps
+its nonzero cached impulse. That cache is not a newly applied impulse, so it
+must not enter this interval's work or source-residual audit. Nor may dividing
+that old lambda by a smaller interval selected for an unrelated fast fragment
+create a new fracture stress. Stored strain energy is still measured; a real
+solve on waking restores ordinary stress evaluation. This changes no force,
+velocity, constitutive coefficient, tolerance or energy admission expression.
+
+Schedule observations are optional when native phase observation is disabled.
+The voxel world requires them explicitly. Enabled constraints are considered
+scheduled when either endpoint participates in the observed native integration
+phase. The scope is the wrapper's unchanged enabled face constraints, with no
+mid-Update authoring/listener geometry changes or additional contact owner.
+
+A native first-step refusal exposed a rollback defect in the new observation
+lookup: restoring an empty phase vector without its populated trial lookup
+could access freed/out-of-range storage before the next Update. Trials now
+restore the lookup with its vector. Native oracles exercise first-step refusal,
+nonzero dormant cache, wake, and rejection after waking, in both execution
+runners and both interface laws. This regression must pass before publication;
+the crashing candidate was never installed in the live lab or published.
+
+The baseline comparison excludes only profiler fields and three corrected
+diagnostics: maximum spring equation residual, solver linear-source residual
+and solver angular-source residual. All cell poses/velocities/spins, masses,
+IDs, topology, fracture events, clocks, adaptive substeps, rejected counts,
+energies, remaining audit fields and precise rejected-candidate records must
+match at every 16 host ticks through glass/oak/iron/ice impacts. Tiny changes
+to the summed linear-source diagnostic follow removing cancelling dormant
+pairs; the physical linear momentum remains compared exactly.
+
+The losses remain a solver/model problem. The shared-phase glass balance can
+be separated into spring work plus elastic change, contact work, gravity plus
+potential change, gyro/other-force terms, and the small remaining signed
+numerical/source terms. Fracture work and discarded elastic energy enter the
+same balance through the accumulated pre-fracture elastic change. This
+identifies where the approximately 93 J deficit occurs; it does not establish
+that those losses are valid material heat. Earlier endpoint estimates of
+implicit elastic loss are still numerical diagnostics, not extra losses to
+add to the shared-phase ledger. The next solver change must address coupled
+contact/material evolution without suppressing the energy gate or inventing
+heat. Glass-ball refusal, useful calculation speed, permanent metal dents,
+adaptive spatial resolution and validated custom authoring remain open.
+
+
+### Verified follow-up evidence
+
+Windows x64/MSVC Release, continuous-small-rotation OFF; same geometry,
+material catalog, host dt 1/960 s, 96 velocity iterations, 10 m / 1 kg iron
+ball and 8 × 8 / 4 mm sheet declared above. No tolerance changes.
+
+| Sheet | Wall s | Substeps | Pieces | Corrected solver angular-source residual N·m·s | Unclosed E J |
+|---|---:|---:|---:|---:|---:|
+| Glass | 39.209 | 41,823 | 12 | 1.44983e-5 | -92.923298 |
+| Oak | 7.807 | 6,410 | 1 | 1.06481e-5 | -44.166886 |
+| Iron | 6.633 | 5,224 | 1 | 4.80849e-5 | -82.828571 |
+| Ice | 41.300 | 73,631 | 62 | 8.52462e-7 | -103.151846 |
+
+The prior residual norms were 0.03219 / 0.02334 / 0.10562 / 0.002115 N·m·s.
+The corrected values remain visible and nonzero. Full-world angular residuals,
+energies, actual trajectories and fracture outcomes are unchanged in the
+four-material baseline comparison. Smaller audit residuals are not an
+improvement in the physical trajectory or a conservation certificate.
+Comparative checks ran concurrently; their wall timings establish no speedup.
+The glass calculation is still approximately 39 s for two physical seconds.
+
+Glass's shared-phase energy change decomposes as follows (J): spring work plus
+elastic change **-48.542372**, contact work **-44.380105**, gravity plus
+potential change **-0.029277**, gyro plus other-force terms **+0.029693**,
+and remaining solver/rotation/limit/post-integration terms **-0.001237**.
+The sum is -92.923298 J. The approximately 48.75 J earlier implicit-elastic
+estimate and 1.41 J material-damping estimate are endpoint diagnostics under
+a locally linear spring interpretation. They are not independently additive
+to this balance, and finite-rotation/contact convergence is unqualified.
+
+Six scoped CTests pass in **215.89 s**: rigid work, 44 native interface/contact/
+phase scenarios, eleven completed comparative/control/refinement worlds plus
+the retained glass-ball refusal, gateway, pipeline and playback. Fine glass
+sheets complete to 1.5 s with 18 pieces / 144 cells and 37 pieces / 256 cells,
+retaining all original IDs and material-derived masses. First-step rollback
+now works instead of crashing. The four-material prior-executable comparison
+passes all 120 observations through two physical seconds with only the stated
+three corrected audit fields and profiler fields excluded. This is not the
+full repository regression, phone qualification or another OS/GPU test.
+
+Glass-ball refusal is exactly retained: 1.427663485209286 s, depth 14,
+dt 6.357828776041667e-8 s, before 94.22713012520605 J and candidate
+94.2289499333797 J. Rejected contact work remains +0.00179938643 J.
+No admission tolerance, gate, fracture energy or native contact law is relaxed.
+
+Source registration: **331/331**, no exclusions. CMake compiles the affected
+sources/tests. Native SHA256:
+`4b082084fdb9fcfa0d586710b7c86a3b8cf0545a7f450821198669238cbc3ac9`.
+Local evidence: `build/voxel-schedule-fixed-results.json`,
+`build/voxel-schedule-fixed-ctest.log` and
+`build/voxel-schedule-fixed-baseline.log`; artifacts stay out of Git.
+The website manifest pins the verified source revision and executable hash.

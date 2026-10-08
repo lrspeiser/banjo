@@ -492,6 +492,9 @@ public:
         // With the log-gradient law rotation axes are differential rows (not
         // necessarily unit vectors), and angular impulses are work conjugates.
         std::array<Vec3,3> translation_axes_world{},rotation_axes_world{};
+        // Known only with native phase observation enabled. Cached lambda is
+        // retained while asleep; it is not a new impulse in an unscheduled step.
+        std::optional<bool> solver_scheduled;
     };
     unsigned addFaceSpring(const FaceSpringDescription &description);
     FaceSpringObservation faceSpringObservation(unsigned joint) const;

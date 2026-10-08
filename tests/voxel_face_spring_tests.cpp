@@ -205,5 +205,26 @@ void limit_observation_oracle(){
     check(length(world.forcePhaseObservations().front().spin_after_solver_rad_s-saved.spin_after_solver_rad_s)==0,"actual pre-limit velocities roll back");
     std::cout<<"native angular cap observed and restored\n";
 }
+void sleeping_spring_oracle(){
+    JoltWorld world(0,{},execution);world.setGravity({});world.setForcePhaseObservationsEnabled(true);
+    auto material=makeReferenceMaterial(MaterialPreset::Iron);material.model=MaterialModel::RigidOnly;
+    world.addBox({1,{.1,.1,.1},material,{{-.06,0,0},{},{-.1,0,0},{}},false});
+    world.addBox({2,{.1,.1,.1},material,{{ .06,0,0},{},{ .1,0,0},{}},false});
+    world.setPairContactOwner(1,2,PairContactOwner::External);
+    const auto joint=world.addFaceSpring({1,2,{},{1,0,0},{0,1,0},{1000,1000,1000},{10,10,10},{},{},log_gradient});
+    check(world.faceSpringObservation(joint).solver_scheduled==false,"new spring has no accepted solve yet");
+    check(!world.runReversibleTrial([&]{world.step(1./240);return false;}),"first native step can reject");
+    check(world.forcePhaseObservations().empty()&&world.faceSpringObservation(joint).solver_scheduled==false,
+        "first-step rollback restores both empty observation storage and its lookup map");
+    world.step(1./240);const auto solved=world.faceSpringObservation(joint);
+    check(solved.solver_scheduled==true&&length(solved.linear_impulse_cs_n_s)>1e-4,"spring oracle exercises an actual solve");
+    world.sleep(1);world.sleep(2);world.step(1./3840);const auto dormant=world.faceSpringObservation(joint);
+    check(dormant.solver_scheduled==false,"both sleeping endpoints exclude a new spring solve");
+    check(length(dormant.linear_impulse_cs_n_s-solved.linear_impulse_cs_n_s)==0,"native retains nonzero old spring lambda while asleep");
+    auto awake=world.snapshot(1);awake.linear_velocity_m_s.x=-.1;world.applyRigidState(1,awake);
+    check(!world.runReversibleTrial([&]{world.step(1./960);check(world.faceSpringObservation(joint).solver_scheduled==true,"waking a connected body schedules the spring");return false;}),"wake trial refuses");
+    check(world.faceSpringObservation(joint).solver_scheduled==false,"rollback restores accepted dormant schedule");
+    std::cout<<"sleeping spring cached impulse excluded, waking and rollback observed\n";
 }
-int main(){try{for(auto policy:{RigidJobExecution::ThreadPool,RigidJobExecution::Inline}){execution=policy;std::cout<<"execution="<<(policy==RigidJobExecution::Inline?"inline":"thread-pool")<<'\n';for(bool law:{false,true}){log_gradient=law;for(double extension:{0.,.01}){oracle(0,extension);oracle(20,extension);}torsion(0);torsion(.005);}nearest_orientation();for(bool fixed:{false,true})for(double friction:{0.,.4})contact_oracle(fixed,friction);gravity_oracle();log_gradient_impulse_oracle();limit_observation_oracle();}return 0;}catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}
+}
+int main(){try{for(auto policy:{RigidJobExecution::ThreadPool,RigidJobExecution::Inline}){execution=policy;std::cout<<"execution="<<(policy==RigidJobExecution::Inline?"inline":"thread-pool")<<'\n';for(bool law:{false,true}){log_gradient=law;for(double extension:{0.,.01}){oracle(0,extension);oracle(20,extension);}torsion(0);torsion(.005);sleeping_spring_oracle();}nearest_orientation();for(bool fixed:{false,true})for(double friction:{0.,.4})contact_oracle(fixed,friction);gravity_oracle();log_gradient_impulse_oracle();limit_observation_oracle();}return 0;}catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}
