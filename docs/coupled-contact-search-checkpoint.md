@@ -1,5 +1,9 @@
 # Coupled contact search checkpoint — October 7, 2026
 
+**Follow-up investigation:** [Finer timesteps and accepted fracture events](contact-time-refinement-checkpoint.md)
+find a stable 25/12.5 ns pair under the same fixture. The original 100/50 ns
+strict failure is retained; production stepping and running demos are unchanged.
+
 ## Scope and implementation
 
 Experimental CPU reference on Windows x64 / MSVC Release, based on main

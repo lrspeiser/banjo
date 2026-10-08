@@ -374,11 +374,12 @@ nlohmann::json contactFrame(const Target &target,LatticeBackend &backend,Tool &t
         {"components",partition.components.size()},{"broken_bonds",backend.status().broken_bonds},
         {"integration_error_j",backend.status().integration_numerical_energy_j}};
 }
-unsigned sustainedLocalContact(nlohmann::json *recording=nullptr, bool reverse=false, bool manifold=false) {
+unsigned sustainedLocalContact(nlohmann::json *recording=nullptr, bool reverse=false, bool manifold=false,unsigned refinement_levels=2) {
     unsigned open_gates=0;
     for(double width:{.04,.12})for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
         std::vector<std::uint8_t> coarse_alive;double coarse_error=0;
-        for(double dt:{1e-7,5e-8}) {
+        for(unsigned level=0;level<refinement_levels;++level) {
+            const double dt=std::ldexp(1e-7,-static_cast<int>(level));
             Target target(preset,dt,.12,{.1,0,0});Tool tool(width);
             for(unsigned i=0;i<target.state.node_count;++i)if(target.state.x0[3*i]>.039)target.state.inv_mass[i]=0;
             auto backend=target.backend();const auto initial=totals(target.state,tool.world);
@@ -387,9 +388,10 @@ unsigned sustainedLocalContact(nlohmann::json *recording=nullptr, bool reverse=f
                 Vec3 transfer_p{},transfer_l{},geometry_couple{},native_p{},native_l{};
                 unsigned contacts{},minimum_nodes{64},maximum_nodes{};
             } sum;
-            std::string refusal;unsigned attempted=0,accepted=0;const unsigned count=dt==1e-7?2048:4096;
+            std::string refusal;unsigned attempted=0,accepted=0;const unsigned count=2048U<<level;
             const auto started=std::chrono::steady_clock::now();
             nlohmann::json frames=nlohmann::json::array();
+            nlohmann::json fracture_events=nlohmann::json::array();
             if(recording)frames.push_back(contactFrame(target,*backend,tool,0,dt));
             for(unsigned k=0;k<count;++k) {
                 ++attempted;Ledger delta;const auto before=target.download(*backend);const auto old=backend->status();
@@ -480,6 +482,8 @@ unsigned sustainedLocalContact(nlohmann::json *recording=nullptr, bool reverse=f
                 sum.loss+=delta.loss;sum.reconcile+=delta.reconcile;sum.transfer_energy+=delta.transfer_energy;sum.native_energy+=delta.native_energy;
                 sum.transfer_p+=delta.transfer_p;sum.transfer_l+=delta.transfer_l;sum.geometry_couple+=delta.geometry_couple;sum.native_p+=delta.native_p;sum.native_l+=delta.native_l;
                 if(recording&&accepted%(count/32)==0)frames.push_back(contactFrame(target,*backend,tool,accepted,dt));
+                if(recording&&backend->status().broken_bonds!=old.broken_bonds)
+                    fracture_events.push_back(contactFrame(target,*backend,tool,accepted,dt));
             }
             const auto state=target.download(*backend);const auto final=totals(state,tool.world);const auto &s=backend->status();
             const Vec3 p=final.linear_momentum_kg_m_s-initial.linear_momentum_kg_m_s-sum.transfer_p-s.fixed_boundary.impulse_n_s-s.bond_kick_roundoff_impulse_n_s;
@@ -490,15 +494,15 @@ unsigned sustainedLocalContact(nlohmann::json *recording=nullptr, bool reverse=f
             require(sum.contacts>0&&s.external_point_transfer.transfers==sum.contacts&&s.total_steps==accepted,"live graph lost accepted transfer/time identity");
             require(std::abs(s.integration_numerical_energy_j)<.001*initial.mechanicalEnergy(),"live graph exceeded retained integration bound");
             if(preset==MaterialPreset::Oak)require(s.broken_bonds==0,"live graph made oak brittle");
-            if(dt==1e-7){coarse_alive=state.alive;coarse_error=std::abs(s.integration_numerical_energy_j);}
-            else {
+            if(level>0) {
                 if(coarse_alive!=state.alive) {
-                    ++open_gates;std::cout<<"OPEN live-contact topology refinement: "<<materialPresetName(preset)<<", width "<<width<<'\n';
+                    ++open_gates;std::cout<<"OPEN live-contact topology refinement: "<<materialPresetName(preset)<<", width "<<width<<", dt "<<dt<<'\n';
                 }
                 if(std::abs(s.integration_numerical_energy_j)>=.27*coarse_error) {
-                    ++open_gates;std::cout<<"OPEN live-contact integration refinement: "<<materialPresetName(preset)<<", width "<<width<<'\n';
+                    ++open_gates;std::cout<<"OPEN live-contact integration refinement: "<<materialPresetName(preset)<<", width "<<width<<", dt "<<dt<<'\n';
                 }
             }
+            coarse_alive=state.alive;coarse_error=std::abs(s.integration_numerical_energy_j);
             const auto partition=partitionConstituents(target.asset,target.schedule,state);
             unsigned attached=0;double detached_mass=0;
             for(const auto &component:partition.components) {
@@ -506,13 +510,14 @@ unsigned sustainedLocalContact(nlohmann::json *recording=nullptr, bool reverse=f
                 else for(double mass:component.state.mass)detached_mass+=mass;
             }
             if(recording){
+                require(fracture_events.size()==s.failure_rounds,"fracture event capture lost an accepted failure round");
                 if(frames.back().at("step").get<unsigned>()!=accepted)frames.push_back(contactFrame(target,*backend,tool,accepted,dt));
                 nlohmann::json topology=nlohmann::json::array();
                 for(unsigned k=0;k<state.bond_count;++k)topology.push_back({state.bond_a[k],state.bond_b[k]});
                 recording->at("experiments").push_back({{"material",materialPresetName(preset)},{"width_m",width},{"dt_s",dt},{"cell_m",.04},
                     {"density_kg_m3",target.material.density_kg_m3},{"young_modulus_pa",target.material.young_modulus_pa},
                     {"accepted_steps",accepted},{"attempted_steps",attempted},{"unsupported_region",refusal},
-                    {"bond_topology",topology},{"frames",frames},{"detached_mass_kg",detached_mass},{"contacts",sum.contacts},
+                    {"bond_topology",topology},{"frames",frames},{"fracture_events",fracture_events},{"detached_mass_kg",detached_mass},{"contacts",sum.contacts},
                     {"attributed_linear_error_n_s",length(p-sum.native_p)},{"attributed_angular_error_kg_m2_s",length(l-sum.native_l)},
                     {"attributed_energy_error_j",energy-sum.native_energy-s.integration_numerical_energy_j}});
             }
@@ -597,23 +602,32 @@ void matchedNativeSurfaceTrajectories(bool local=false) {
 }
 }
 int main(int argc,char **argv){try{
-    bool strict=false,reverse=false,manifold=false,oracles_only=false;std::string output;
+    bool strict=false,reverse=false,manifold=false,oracles_only=false;std::string output;unsigned refinement_levels=2;bool refinement_requested=false;
     for(int i=1;i<argc;++i){const std::string option=argv[i];
         if(option=="--require-live-contact-convergence"&&!strict)strict=true;
         else if(option=="--coupled-manifold")manifold=true;
         else if(option=="--manifold-oracles-only")oracles_only=true;
         else if(option=="--reverse-contact-order")reverse=true;
+        else if(option=="--refinement-levels"&&!refinement_requested&&i+1<argc) {
+            const std::string value=argv[++i];require(value.size()==1&&value[0]>='2'&&value[0]<='5',"refinement levels must be 2..5");
+            refinement_levels=static_cast<unsigned>(value[0]-'0');refinement_requested=true;
+        }
         else if(option=="--record"&&output.empty()&&i+1<argc)output=argv[++i];
         else require(false,"unknown surface-contact test option");
     }
     nlohmann::json recording={{"schema","banjo.contact-recording.v1"},{"kind","solver-recording"},{"experiments",nlohmann::json::array()}};
+    if(refinement_levels>2) {
+        recording["schema"]="banjo.contact-refinement.v1";
+        recording["kind"]="solver-refinement-recording";
+    }
     std::cout.precision(12);liveGraphSelectionOracles();analyticalSurfaceOracles();bulkAtomicity();authoritativeTopologyAdmission();
-    require(!(oracles_only&&(strict||manifold||reverse||!output.empty())),"oracle-only mode cannot imply sustained acceptance");
+    require(!(oracles_only&&(strict||manifold||reverse||refinement_requested||!output.empty())),"oracle-only mode cannot imply sustained acceptance");
+    require(!refinement_requested||manifold,"extended refinement requires the explicit coupled manifold experiment");
     manifoldOracles();
     if(oracles_only){std::cout<<"[PASS] coupled manifold analytical/native atomicity oracles\n";return 0;}
-    matchedNativeSurfaceTrajectories();matchedNativeSurfaceTrajectories(true);const auto open=sustainedLocalContact(output.empty()?nullptr:&recording,reverse,manifold);
+    matchedNativeSurfaceTrajectories();matchedNativeSurfaceTrajectories(true);const auto open=sustainedLocalContact(output.empty()?nullptr:&recording,reverse,manifold,refinement_levels);
     if(!output.empty()){
-        recording["open_convergence_gates"]=open;recording["coupled_manifold"]=manifold;
+        recording["open_convergence_gates"]=open;recording["coupled_manifold"]=manifold;recording["refinement_levels"]=refinement_levels;
         std::ofstream file(output,std::ios::binary);require(static_cast<bool>(file),"cannot open recording output");
         file<<recording.dump();file.flush();require(static_cast<bool>(file),"cannot write complete recording");
     }
