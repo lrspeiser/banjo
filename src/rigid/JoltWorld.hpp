@@ -93,6 +93,10 @@ struct RigidConvexDescription {
 
 enum class PairContactOwner { Jolt, External };
 enum class RigidJobExecution { ThreadPool, Inline };
+// Explicit model choice, not a display-material preset. ResolvedDeformation
+// leaves rebound to the deforming assembly and uses an inelastic unilateral
+// surface constraint. It does not implement compliant contact indentation.
+enum class RigidContactRestitution { MaterialCombination, ResolvedDeformation };
 
 struct RigidContactCapacity {
     unsigned body_pairs{16384};
@@ -247,6 +251,7 @@ public:
     // Disables only cached narrow-phase body-pair results, not contacts/forces.
     void setBodyPairContactCacheEnabled(bool enabled);
     void setContactSolverIterations(unsigned velocity,unsigned position);
+    void setContactRestitutionModel(RigidContactRestitution);
     // Explicit small-cell contact scale; existing worlds retain their settings.
     void configureVoxelContacts(double minimum_feature_m);
     void setContinuousCollision(MatterBodyId body, bool enabled);

@@ -33,6 +33,13 @@ with tempfile.TemporaryDirectory() as folder:
   assert not experimental['state']['qualification']['calibrated']
   assert req({'op':'close','session':experimental['session']})[1]['ok']
   assert initial['qualification']['face_law']=='native-motor','default silently changed to experimental law'
+  assert initial['qualification']['contact_law']=='material-restitution','default contact response silently changed'
+  for law in ['invented',True,96,None]:
+   assert req({'op':'create','declaration':{'contact_law':law}})[1]['ok'] is False
+  _,unilateral=req({'op':'create','declaration':{'contact_law':'resolved-deformation','ball':'glass'}})
+  assert unilateral['ok'] and unilateral['state']['qualification']['contact_law']=='resolved-deformation'
+  assert not unilateral['state']['qualification']['calibrated']
+  assert req({'op':'close','session':unilateral['session']})[1]['ok']
   _,unchanged=req({'op':'snapshot','session':key});assert unchanged['state']==moved['state'],'refusal mutated native state'
   with urllib.request.urlopen(base+'/api/log/'+key) as r:rows=[json.loads(x) for x in r.read().decode().splitlines()]
   assert rows[0]['native_sha256'] and rows[0]['assets'];assert any(r.get('response',{}).get('state')==moved['state'] for r in rows),'record differs from rendered response'

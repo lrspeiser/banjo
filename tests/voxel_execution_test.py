@@ -7,15 +7,21 @@ parser.add_argument('native')
 parser.add_argument('baseline',nargs='?')
 parser.add_argument('--dormant-spring-baseline',action='store_true',
     help='Exclude only the impulse-source diagnostics corrected by dormant spring scheduling')
+parser.add_argument('--contact-model-baseline',action='store_true',
+    help='Exclude only the new contact model qualification label, retaining every work field')
 args=parser.parse_args()
 if args.dormant_spring_baseline and not args.baseline:
     parser.error('--dormant-spring-baseline requires a baseline executable')
+if args.contact_model_baseline and (not args.baseline or args.dormant_spring_baseline):
+    parser.error('--contact-model-baseline requires a baseline and cannot combine with dormant audit exclusion')
 
 def physical(reply):
     result=copy.deepcopy(reply)
     result['state']['diagnostics'].pop('profile')
     result['state']['diagnostics'].pop('max_step_wall_ms')
-    if args.dormant_spring_baseline:
+    if args.contact_model_baseline:
+        result['state']['qualification'].pop('contact_law',None)
+    elif args.dormant_spring_baseline:
         result['state']['diagnostics'].pop('max_spring_solver_residual_n')
         result['state']['step_work']['measured'].pop('solver_angular_residual_n_m_s')
         result['state']['step_work']['measured'].pop('solver_linear_residual_n_s')
@@ -62,7 +68,7 @@ for material in ['glass','oak','iron','ice']:
             'parity':'exact at every 16 host ticks; profiler excluded'}),flush=True)
         if args.baseline:print(json.dumps({'material':material,'new_step_work':state['step_work'],
             'excluded_corrected_diagnostics':(['max_spring_solver_residual_n','solver_angular_residual_n_m_s','solver_linear_residual_n_s']
-                if args.dormant_spring_baseline else ['step_work'])}),flush=True)
+                if args.dormant_spring_baseline else ['qualification/contact_law'] if args.contact_model_baseline else ['step_work'])}),flush=True)
     finally:
         for proc in processes:proc.terminate();proc.wait(timeout=5)
 print('PASS glass/oak/iron/ice execution parity through 2 s native impacts',flush=True)

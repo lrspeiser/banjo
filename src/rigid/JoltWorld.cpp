@@ -494,6 +494,7 @@ struct GroundSuspension {
 
 class ImpactCollector final : public JPH::ContactListener {
 public:
+    RigidContactRestitution restitution_model{RigidContactRestitution::MaterialCombination};
     bool contact_impulses_enabled{};
     bool detailed_observations{};
     bool observations_enabled{true};
@@ -633,7 +634,7 @@ private:
                                             : combined.dynamic_friction;
         settings.mCombinedFriction = static_cast<float>(applied_friction);
         settings.mCombinedRestitution =
-            static_cast<float>(combined.restitution);
+            restitution_model==RigidContactRestitution::ResolvedDeformation?0.0F:static_cast<float>(combined.restitution);
 
         // A tool's point in the ground is held by its bite, not by the height
         // field: the height field is a surface and lets nothing in. The rest of
@@ -739,7 +740,7 @@ private:
         event.combined_static_friction = combined.static_friction;
         event.combined_dynamic_friction = combined.dynamic_friction;
         event.applied_friction = applied_friction;
-        event.combined_restitution = combined.restitution;
+        event.combined_restitution = restitution_model==RigidContactRestitution::ResolvedDeformation?0.0:combined.restitution;
         event.effective_contact_modulus_pa = combined.effective_modulus_pa;
 
         // The callback changes contact settings only; body lifetime/motion is
@@ -3022,6 +3023,14 @@ JoltWorld::FaceSpringObservation JoltWorld::faceSpringObservation(unsigned id) c
     return observed({{dot(delta,x),dot(delta,y),dot(delta,z)},rotation,fromJoltVector(c->GetTotalLambdaMotorTranslation()),fromJoltVector(c->GetTotalLambdaMotorRotation()),
         pb,Vec3{q.GetX(),q.GetY(),q.GetZ()}*(q.GetW()>0?2.:-2.),{x,y,z},
         {fromJoltVector(b.GetAxisX()),fromJoltVector(b.GetAxisY()),fromJoltVector(b.GetAxisZ())}});
+}
+
+void JoltWorld::setContactRestitutionModel(RigidContactRestitution model) {
+    impl_->requireConfigurationMutable();
+    if(!impl_->bodies_.empty()||!impl_->floor_id_.IsInvalid())throw std::logic_error("configure restitution model before creating bodies");
+    if(model!=RigidContactRestitution::MaterialCombination&&model!=RigidContactRestitution::ResolvedDeformation)
+        throw std::invalid_argument("unsupported contact restitution model");
+    impl_->impact_collector_.restitution_model=model;
 }
 void JoltWorld::setContactImpulseObservationsEnabled(bool enabled){
     impl_->requireConfigurationMutable();impl_->impact_collector_.contact_impulses_enabled=enabled;

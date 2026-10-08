@@ -1,5 +1,6 @@
 #include "rigid/JoltWorld.hpp"
 #include "material/MaterialCatalog.hpp"
+#include "material/MaterialCompiler.hpp"
 #include "physics/RotationStrain.hpp"
 #include <cmath>
 #include <iostream>
@@ -226,5 +227,52 @@ void sleeping_spring_oracle(){
     check(world.faceSpringObservation(joint).solver_scheduled==false,"rollback restores accepted dormant schedule");
     std::cout<<"sleeping spring cached impulse excluded, waking and rollback observed\n";
 }
+void restitution_model_oracle(MaterialPreset preset,bool resolved){
+    JoltWorld world(0,{},execution);world.setGravity({});world.configureVoxelContacts(.004);
+    world.setContactSolverIterations(96,4);world.setContactImpulseObservationsEnabled(true);
+    world.setContactRestitutionModel(resolved?RigidContactRestitution::ResolvedDeformation:RigidContactRestitution::MaterialCombination);
+    auto material=makeReferenceMaterial(preset);material.model=MaterialModel::RigidOnly;
+    material.static_friction=material.dynamic_friction=material.friction=material.rolling_resistance=0;
+    world.addBox({1,{.1,.1,.1},material,{{-.05,0,0},{},{1,0,0},{}},false});
+    world.addBox({2,{.1,.1,.1},material,{{ .05,0,0},{},{-1,0,0},{}},false});
+    world.setContinuousCollision(1,false);world.setContinuousCollision(2,false);
+    const auto before=world.mechanicalTotals({});world.step(1./960);const auto after=world.mechanicalTotals({});
+    const auto combined=combineContactMaterials(compileContactMaterial(material),compileContactMaterial(material));
+    const double e=resolved?0:combined.restitution,mass=.001*material.density_kg_m3;
+    check(std::abs(world.snapshot(2).linear_velocity_m_s.x-e)<2e-6,"declared restitution model has analytical separating speed");
+    check(std::abs(after.kinetic_energy_j-mass*e*e)<1e-5,"declared normal impact has analytical energy loss");
+    check(length(after.linear_momentum_kg_m_s-before.linear_momentum_kg_m_s)<2e-6,"normal impact retains momentum");
+    check(length(after.angular_momentum_kg_m2_s-before.angular_momentum_kg_m2_s)<2e-6,"normal impact retains angular momentum");
+    bool late=false;try{world.setContactRestitutionModel(RigidContactRestitution::MaterialCombination);}catch(const std::logic_error&){late=true;}
+    check(late,"contact model cannot change with live bodies/history");
+    std::cout<<"material="<<materialSceneName(preset)<<" resolved="<<resolved<<" e="<<e<<" loss_j="<<before.kinetic_energy_j-after.kinetic_energy_j<<'\n';
 }
-int main(){try{for(auto policy:{RigidJobExecution::ThreadPool,RigidJobExecution::Inline}){execution=policy;std::cout<<"execution="<<(policy==RigidJobExecution::Inline?"inline":"thread-pool")<<'\n';for(bool law:{false,true}){log_gradient=law;for(double extension:{0.,.01}){oracle(0,extension);oracle(20,extension);}torsion(0);torsion(.005);sleeping_spring_oracle();}nearest_orientation();for(bool fixed:{false,true})for(double friction:{0.,.4})contact_oracle(fixed,friction);gravity_oracle();log_gradient_impulse_oracle();limit_observation_oracle();}return 0;}catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}
+void resolved_assembly_recovery_oracle(MaterialPreset preset){
+    JoltWorld world(0,{},execution);world.setGravity({});world.configureVoxelContacts(.004);
+    world.setContactSolverIterations(96,4);world.setContactImpulseObservationsEnabled(true);
+    world.setContactRestitutionModel(RigidContactRestitution::ResolvedDeformation);
+    auto material=makeReferenceMaterial(preset);material.model=MaterialModel::RigidOnly;
+    material.static_friction=material.dynamic_friction=material.friction=material.rolling_resistance=0;
+    world.addBox({1,{.1,.1,.1},material,{{0,.05,0},{},{0,-1,0},{}},false});
+    world.addBox({2,{.1,.1,.1},material,{{0,.15,0},{},{0,-1,0},{}},false});
+    world.addBox({3,{.4,.1,.4},material,{{0,-.05,0},{},{},{}},true});
+    world.setContinuousCollision(1,false);world.setContinuousCollision(2,false);
+    world.setPairContactOwner(1,2,PairContactOwner::External);
+    // Declared linear-spring oracle, not a calibrated material stiffness.
+    const auto joint=world.addFaceSpring({1,2,{0,.1,0},{0,1,0},{1,0,0},{1000,1000,1000},{1,1,1},{},{}});
+    const double initial=world.mechanicalTotals({}).kinetic_energy_j;
+    double peak_elastic=0,peak_energy=initial,upward=0;unsigned contacts=0;
+    for(unsigned i=0;i<400;++i){
+        world.step(1./960);const auto s=world.faceSpringObservation(joint);
+        const double elastic=500*lengthSquared(s.displacement_cs_m)+.5*lengthSquared(s.rotation_cs_rad);
+        peak_elastic=std::max(peak_elastic,elastic);peak_energy=std::max(peak_energy,world.mechanicalTotals({}).kinetic_energy_j+elastic);
+        upward=std::max(upward,world.snapshot(2).linear_velocity_m_s.y);
+        contacts+=unsigned(world.contactImpulseObservations().size());
+    }
+    check(contacts>0&&peak_elastic>.01,"assembly has actual contact and stores elastic energy");
+    check(upward>.1,"inelastic surface constraints allow actual elastic assembly recovery");
+    check(peak_energy-initial<1e-5,"declared one-dimensional recovery creates no energy beyond native float tolerance");
+    std::cout<<"material="<<materialSceneName(preset)<<" assembly_recovery="<<upward<<" peak_elastic_j="<<peak_elastic<<" peak_energy_excess_j="<<peak_energy-initial<<'\n';
+}
+}
+int main(){try{for(auto policy:{RigidJobExecution::ThreadPool,RigidJobExecution::Inline}){execution=policy;std::cout<<"execution="<<(policy==RigidJobExecution::Inline?"inline":"thread-pool")<<'\n';for(bool law:{false,true}){log_gradient=law;for(double extension:{0.,.01}){oracle(0,extension);oracle(20,extension);}torsion(0);torsion(.005);sleeping_spring_oracle();}nearest_orientation();for(bool fixed:{false,true})for(double friction:{0.,.4})contact_oracle(fixed,friction);gravity_oracle();log_gradient_impulse_oracle();limit_observation_oracle();for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(bool resolved:{false,true})restitution_model_oracle(material,resolved);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})resolved_assembly_recovery_oracle(material);}return 0;}catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}

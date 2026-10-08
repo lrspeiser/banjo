@@ -50,7 +50,7 @@ struct VoxelImpactWorld::Impl {
     double sweep_wall_ms{},trial_wall_ms{},observation_wall_ms{},native_step_wall_ms{},totals_wall_ms{},candidate_faces_wall_ms{};
     double feature{},dt{},time{},initial_energy{},fracture{},discarded_elastic{},max_wall_ms{},peak_stress_ratio{};
     unsigned ticks{},broken{},substeps{},rejected{};Vec3 gravity;MechanicalTotals initial,totals;
-    bool log_faces{};
+    bool log_faces{},resolved_deformation{};
     RigidStepWork work_total{};double elastic_change_j{},ledger_change_j{};Vec3 full_angular_residual{};
     Json refused_work=nullptr;
     static Json workJson(const RigidStepWork &w){return {
@@ -145,11 +145,15 @@ struct VoxelImpactWorld::Impl {
     }
     explicit Impl(const Json &d,VoxelExecution storage):world(0,contactCapacity(d,storage),
         storage==VoxelExecution::Reference?RigidJobExecution::ThreadPool:RigidJobExecution::Inline),declaration(d){
-        const std::set<std::string> keys{"sheet","ball","mass_kg","height_m","thickness_m","resolution","support_gap_m","offset_x_m","offset_z_m","dt_s","ball_enabled","gravity_m_s2","solver_iterations","face_law"};
+        const std::set<std::string> keys{"sheet","ball","mass_kg","height_m","thickness_m","resolution","support_gap_m","offset_x_m","offset_z_m","dt_s","ball_enabled","gravity_m_s2","solver_iterations","face_law","contact_law"};
         for(auto i=d.begin();i!=d.end();++i)if(!keys.contains(i.key()))throw std::invalid_argument("unknown voxel experiment field");
         const auto face_law=d.value("face_law",std::string("native-motor"));
         if(face_law!="native-motor"&&face_law!="log-gradient")throw std::invalid_argument("unsupported face law");
         log_faces=face_law=="log-gradient";
+        const auto contact_law=d.value("contact_law",std::string("material-restitution"));
+        if(contact_law!="material-restitution"&&contact_law!="resolved-deformation")throw std::invalid_argument("unsupported contact law");
+        resolved_deformation=contact_law=="resolved-deformation";
+        world.setContactRestitutionModel(resolved_deformation?RigidContactRestitution::ResolvedDeformation:RigidContactRestitution::MaterialCombination);
         const auto sheet=preset(d.value("sheet",std::string("glass"))),ball=preset(d.value("ball",std::string("iron")));
         const double requested=scalar(d,"resolution",8,4,16);const unsigned n=unsigned(requested);
         if(n!=requested||(n!=4&&n!=8&&n!=12&&n!=16))throw std::invalid_argument("resolution must be 4, 8, 12 or 16");
@@ -325,7 +329,7 @@ std::string VoxelImpactWorld::snapshotJson() const {
             {"closure_residual_j",w.ledger_change_j-w.work_total.kinetic_change_j-w.work_total.potential_change_j-w.elastic_change_j},
             {"full_angular_residual_n_m_s",v(w.full_angular_residual)},{"last_rejected_trial",w.refused_work},
             {"scope","Actual native force-phase velocities and shared-phase spring/contact work. Residual, gyro and rotation drift are signed numerical/unexplained terms, not heat. Algebraic closure is not material realism or solver conservation."}}},
-        {"qualification",{{"calibrated",false},{"face_law",impl_->log_faces?"log-gradient":"native-motor"},{"model",impl_->log_faces?
+        {"qualification",{{"calibrated",false},{"contact_law",impl_->resolved_deformation?"resolved-deformation":"material-restitution"},{"face_law",impl_->log_faces?"log-gradient":"native-motor"},{"model",impl_->log_faces?
             "Experimental SO(3) energy-gradient interfaces. Analytical torque gradients pass; full impacts still have unresolved energy refusals/losses. Not a realtime or calibrated material model.":
             "Passive finite-box native six-axis elastic interfaces. Finite-rotation/integration/full energy and angular momentum accounts remain unqualified."},
             {"limits","Brittle strength AND stored fracture-work admission. Metals/oak remain elastic, not brittle; plasticity/grain are unsupported."}}}}.dump();
