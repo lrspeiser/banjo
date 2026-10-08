@@ -1,49 +1,54 @@
 {
-  "title": "Physics audit: dormant impulses and rollback",
+  "title": "Contact comparison: glass constituent ball",
   "date": "2026-10-08",
-  "physics_revision": "6fd06a39272b9fa16c0cc59bfa9b530e4b53e172",
-  "native_sha256": "4b082084fdb9fcfa0d586710b7c86a3b8cf0545a7f450821198669238cbc3ac9",
+  "physics_revision": "d4af41a91d7b10c2ed06003394698771c26b62dc",
+  "native_sha256": "adfeda1cb18ec7b741b5160a730c9cbbf35fb34a5d69798ebc72201cd4b11560",
   "changes": [
-    "Sleeping spring caches are excluded from fresh work and damage.",
-    "First-step rejection restores the native observation lookup safely.",
-    "Glass/oak/iron/ice physical outputs match the prior build; corrected audit fields are compared separately.",
-    "Force laws and energy gates are unchanged. Major energy losses and calculation speed remain open."
+    "Explicit unilateral contact alternative; reference behavior and gates unchanged.",
+    "Experimental glass-ball drops complete at two timesteps, with different fragment counts.",
+    "Surface constraints are inelastic; existing interfaces can recover elastic energy. No compliant indentation.",
+    "Large losses and useful calculation speed remain unresolved; this is a comparison, not an accuracy fix."
   ],
   "checks": [
     {
-      "label": "World regression",
+      "label": "Reference worlds",
       "status": "passed",
-      "value": "11 completed cases, including fine sheets; glass-ball refusal retained"
+      "value": "11 completed cases; original glass-ball refusal retained"
     },
     {
-      "label": "Native phases and interfaces",
+      "label": "Native contact and interfaces",
       "status": "passed",
-      "value": "44 scenarios, including first refusal, sleep, wake and rollback"
+      "value": "62 scenarios; analytical impacts and assembly recovery"
     },
     {
-      "label": "Prior-build comparison",
+      "label": "Experimental worlds",
       "status": "passed",
-      "value": "4 materials / 2 physical s; 3 corrected audit fields excluded"
+      "value": "6 cases: glass/oak/iron/ice, glass ball at two timesteps"
+    },
+    {
+      "label": "Default-build parity",
+      "status": "passed",
+      "value": "4 materials / 2 physical s; physical and work fields match"
     },
     {
       "label": "Scoped regression",
       "status": "passed",
-      "value": "6 CTests / 215.89 s; not full repository"
-    },
-    {
-      "label": "Calculation speed",
-      "status": "blocked",
-      "value": "Glass: 39.21 wall s per 2 physical s; no speedup"
+      "value": "7 CTests / 373.01 s plus rebuilt recovery oracles; not full repository"
     },
     {
       "label": "Energy accuracy",
       "status": "blocked",
-      "value": "Glass loses 92.92 J; losses attributed but constitutive validity open"
+      "value": "Experimental glass ball loses ~96 J; differing piece counts, convergence unqualified"
     },
     {
-      "label": "Glass ball",
+      "label": "Calculation speed",
       "status": "blocked",
-      "value": "Still refuses at 1.427663 s; admission unchanged"
+      "value": "Iron/glass: reference 39.69 s, alternative 68.52 s per 2 physical s; no speedup"
+    },
+    {
+      "label": "Reference glass ball",
+      "status": "blocked",
+      "value": "Still refuses at 1.427663 s; experimental completion is a separate model"
     }
   ],
   "next": [
