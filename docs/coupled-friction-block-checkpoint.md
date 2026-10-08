@@ -82,8 +82,7 @@ The complete ordinary-browser drop with this repair is being verified.
 
 ## Build and evidence
 
-Implementation revision: local verification in progress; publication recorded
-after the checked source commit. Final native SHA256:
+Implementation revision: `7371898757c47f6c02d6a9eb5389f156c4c382e9`; published to main with the checkpoint metadata. Final native SHA256:
 `a99ebdde07748148f36537225457ba76087a59a894518fffe1ea86f3826ac2e1`.
 Output: `build/voxel-coupled-friction-final/Release/banjo_voxel_world_run.exe`;
 CMake tree `build/voxel-contact-audit`.

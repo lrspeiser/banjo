@@ -1,7 +1,7 @@
 {
   "title": "Coupled friction implemented; full accuracy still open",
   "date": "2026-10-08",
-  "physics_revision": "local verification in progress",
+  "physics_revision": "7371898757c47f6c02d6a9eb5389f156c4c382e9",
   "native_sha256": "a99ebdde07748148f36537225457ba76087a59a894518fffe1ea86f3826ac2e1",
   "changes": [
     "New experimental Coupled friction option solves sliding and twisting together with the full 3 by 3 inverse mass and original impulse caps.",
@@ -17,7 +17,7 @@
     {
       "label": "Scoped regression",
       "status": "passed",
-      "value": "5 focused CTests / 4.31 s; actual gateway verification pending"
+      "value": "6 focused CTests / 8.37 s; actual gateway, exact journal/pipeline and playback checks"
     },
     {
       "label": "Compiled sources",
