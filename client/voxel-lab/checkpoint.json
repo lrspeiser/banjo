@@ -1,13 +1,13 @@
 {
-  "title": "Realtime pipeline: measured limits",
+  "title": "Realtime pipeline: actual work phases",
   "date": "2026-10-08",
-  "physics_revision": "a2895042cfe29c1b886832028f5714b66931495b",
-  "native_sha256": "e9736ab634bc6e40ea2049221d4c6c674f3833fc5e7985d20badd2da12438c62",
+  "physics_revision": "4026f1db3146ee6204aa8db0d43b6dc2a2ab4e5a",
+  "native_sha256": "c536066952a088fb90c42d51c49a489900c3378ff4d2ead26ff622f7e8d3cae0",
   "changes": [
-    "Live batch p95, accepted-pose age, control round trip and compressed record size.",
-    "Physics & record offers an explicit finite-rotation experiment; reference stays default.",
-    "Native energy-gradient torque/reaction checks pass; full energy and speed remain open.",
-    "The continuous-rotation build regressed a default drop and was not promoted."
+    "Actual native force, solver and velocity-limit phases are recorded without changing the material laws.",
+    "Physics & record shows shared spring/contact work and the precise rejected trial.",
+    "Accepted frames still stream independently to 3D; rendering does not invent impacts.",
+    "Local coupled solves and adaptive detail are next; calculation speed and accuracy remain open."
   ],
   "checks": [
     {
@@ -16,34 +16,34 @@
       "value": "11 completed cases + retained glass-ball refusal"
     },
     {
-      "label": "Analytical/native interfaces",
+      "label": "Native phases and interfaces",
       "status": "passed",
-      "value": "38 native cases; 4 gradients + 2 refusals"
+      "value": "40 native scenarios + analytical work oracles"
+    },
+    {
+      "label": "Full runner comparison",
+      "status": "passed",
+      "value": "Glass/oak/iron/ice match through 2 physical s"
     },
     {
       "label": "Scoped regression",
       "status": "passed",
-      "value": "7 CTests / 282.56 s; not full repository"
-    },
-    {
-      "label": "Delayed-worker Pause",
-      "status": "passed",
-      "value": "1.68 ms acknowledgement / injected 300 ms batch"
+      "value": "8 CTests / 490.50 s; not full repository"
     },
     {
       "label": "Realtime calculation",
       "status": "blocked",
-      "value": "Default glass: 36.01 s per 2 physical s"
+      "value": "Glass: 38.43 s per 2 physical s"
     },
     {
-      "label": "Full energy balance",
+      "label": "Full energy accuracy",
       "status": "blocked",
-      "value": "Default glass deficit -92.923 J unresolved"
+      "value": "Spring/contact work measured; angular sources unresolved"
     },
     {
       "label": "Glass ball",
       "status": "blocked",
-      "value": "Finite rotation still refuses at 1.428 s"
+      "value": "Refuses a 63.6 ns trial at 1.427663 s"
     }
   ],
   "next": [
