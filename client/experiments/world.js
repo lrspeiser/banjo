@@ -1,5 +1,6 @@
 import * as THREE from './three.module.js';
 import {worldGesture,moveWorldGesture,finishWorldGesture,worldUnavailable,connectedWorldParts} from './world-input.js';
+import {impactRows} from './world-impact.js';
 
 const $ = id => document.getElementById(id);
 const canvas = $('world');
@@ -32,6 +33,53 @@ function highlight(parts,colour=0x66e2a3){
     outline.visible=!outline.box.isEmpty();outline.material.color.setHex(colour);
 }
 let lastHitEnd='';
+let latestReport=null,reportCount=0,reportHistory=[],historyLoading=false,historyWorld=null;
+function showReport(report){
+    if(!report)return;
+    $('impact-explanation').textContent=report.explanation;
+    $('impact-id').textContent='Impact '+report.impact_id+' · '+report.status;
+    $('impact-rows').replaceChildren(...impactRows(report).map(([name,value])=>{
+        const row=document.createElement('tr'),key=document.createElement('th'),cell=document.createElement('td');
+        key.scope='row';key.textContent=name;cell.textContent=value;row.append(key,cell);return row;
+    }));
+    $('impact-limits').textContent=(report.limitations || ['No calibrated breakage or energy prediction is available.']).join(' ');
+}
+async function loadHistory(){
+    if(historyLoading || !session)return;
+    historyLoading=true;const selectedSession=session;
+    try{
+        let offset=reportHistory.length;
+        while(true){
+            const page=await api({action:'impact-history',session:selectedSession,offset});
+            if(session!==selectedSession)return;
+            reportHistory.push(...page.reports);offset=page.next_offset;
+            if(page.complete)break;
+        }
+        $('impact-history').replaceChildren(...reportHistory.map((report,i)=>{
+            const option=document.createElement('option');option.value=String(i);
+            option.textContent=(i+1)+' · '+(report.actual?.physical_hit?.target || report.status);return option;
+        }));
+        $('impact-history').value=String(reportHistory.length-1);showReport(reportHistory.at(-1));
+    }catch(error){say(error.message,true);}finally{historyLoading=false;}
+}
+$('impact-report-button').addEventListener('click',()=>{
+    $('impact-report').hidden=false;$('impact-report').scrollTop=0;$('impact-report-button').setAttribute('aria-expanded','true');showReport(latestReport);loadHistory();
+});
+$('impact-close').addEventListener('click',()=>{$('impact-report').hidden=true;$('impact-report-button').setAttribute('aria-expanded','false');});
+$('impact-history').addEventListener('change',()=>showReport(reportHistory[Number($('impact-history').value)]));
+$('impact-download').addEventListener('click',async()=>{
+    const selectedSession=session;let offset=0;const lines=[];$('impact-download').disabled=true;
+    try{
+        while(true){
+            const page=await api({action:'impact-log',session:selectedSession,offset});
+            lines.push(...page.records.map(row=>JSON.stringify(row)));offset=page.next_offset;
+            if(page.complete){if(page.log_error)say(page.log_error,true);break;}
+        }
+        const url=URL.createObjectURL(new Blob([lines.join('\n')+'\n'],{type:'application/x-ndjson'}));
+        const anchor=document.createElement('a');anchor.href=url;anchor.download=historyWorld+'.jsonl';anchor.click();
+        setTimeout(()=>URL.revokeObjectURL(url),1000);
+    }catch(error){say(error.message,true);}finally{$('impact-download').disabled=false;}
+});
 const refusal={out_of_reach:'Too far · move closer',not_holding:'Pick up a tool first',action_in_progress:'Tool is still working',no_contact:'The tool did not reach this target',unsupported_capability:'This item has no tool contact point',target_blocked:'Target blocks the tool path',insufficient_strength:'Too heavy for this hand',grip_released:'The grip was released',windup_blocked:'The tool could not wind up safely'};
 const label=name=>names[name] || (name.startsWith('grain-')?'Ground grain':name==='bedrock-base'?'Fixed base':name);
 const names={handle:'Tool',head:'Tool head','glass-block':'Glass block','iron-block':'Iron block','tool-stand':'Tool stand','ground-slab':'Ground slab'};
@@ -68,6 +116,14 @@ function consume(result){
     if(previousHolding!==state?.own_hand?.holding || previousActive!==state?.own_physical_hit?.active){hoverKey='';preview=null;}
     if(previousHolding!==state?.own_hand?.holding){hover=null;highlight([]);$('target').hidden=true;}
     if(!state)throw new Error('Missing native observation');
+    if(result.impact_report && result.impact_count!==reportCount){
+        latestReport=result.impact_report;reportCount=result.impact_count;historyWorld=latestReport.world_id;
+        $('impact-report-button').disabled=false;$('impact-report-button').textContent='Impact report · '+reportCount;
+        if(!$('impact-report').hidden)loadHistory();
+    }
+    if(result.log_error && $('impact-log-warning').textContent!==result.log_error){
+        $('impact-log-warning').textContent=result.log_error;$('impact-log-warning').hidden=false;say(result.log_error,true);
+    }
     const alive=new Set();
     const heldParts=new Set(state.own_hand?.held_parts || []);
     for(const body of state.bodies){
@@ -161,6 +217,9 @@ async function start(){
         for(const mesh of bodies.values())disposeObject(mesh);bodies.clear();
         hover=null;preview=null;hoverKey='';
         seenEvents.clear();lastHitEnd='';$('removed').textContent='—';$('travel').textContent='—';$('impact-speed').textContent='—';outline.visible=false;
+        latestReport=null;reportCount=0;reportHistory=[];historyWorld=null;$('impact-report').hidden=true;
+        $('impact-report-button').disabled=true;$('impact-report-button').textContent='Impact report';$('impact-report-button').setAttribute('aria-expanded','false');
+        $('impact-log-warning').textContent='';$('impact-log-warning').hidden=true;
         session=result.session;stopped=false;$('paused').hidden=true;consume(result);$('setup').hidden=true;$('settings').setAttribute('aria-expanded','false');
         say('Native world running · pick up the tool on the ground');
     }catch(error){stopWorld(error);}

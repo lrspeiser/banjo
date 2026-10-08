@@ -36,8 +36,8 @@ class TestWorldGateway(unittest.TestCase):
         runtime=Path(os.environ.get('BANJO_RUNTIME_ENGINE','missing-runtime'))
         if not native.is_file() or not runtime.is_file():
             raise AssertionError('Supply actual BANJO_LIVE_ENGINE and BANJO_RUNTIME_ENGINE; cannot skip')
-        cls.manager=WORLD.WorldManager(native,runtime)
         cls.temp=tempfile.TemporaryDirectory()
+        cls.manager=WORLD.WorldManager(native,runtime,Path(cls.temp.name)/'impact-logs')
         cls.server=ThreadingHTTPServer(('127.0.0.1',0),functools.partial(LAB.LabHandler,directory=cls.temp.name))
         cls.server.world_manager=cls.manager
         cls.thread=threading.Thread(target=cls.server.serve_forever,daemon=True);cls.thread.start()
@@ -195,9 +195,37 @@ class TestWorldGateway(unittest.TestCase):
                 self.assertEqual(hit['phase'],'ended')
                 after={b['name']:b['mass_kg'] for b in done['snapshot']['bodies']}
                 self.assertEqual(before,after,'rigid slab contact fabricated fragments or removed mass')
+                report=done['impact_report']
+                self.assertEqual(report['actual']['physical_hit'],hit)
+                self.assertTrue(report['expectation']['native_preview']['admitted'])
+                self.assertIsNone(report['expectation']['fracture_prediction'])
+                self.assertFalse(report['expectation']['fracture_supported'])
+                self.assertEqual(report['actual']['observed_new_bodies'],[])
+                self.assertEqual(report['actual']['observed_removed_bodies'],[])
+                self.assertEqual(report['actual']['observed_body_mass_change_kg'],0)
+                self.assertIsNone(report['actual']['broken_bonds'])
+                self.assertEqual(done['impact_count'],1,'retry fabricated an additional impact report')
+                logs=[];offset=0
+                while True:
+                    page=self.post({'action':'impact-log','session':session,'offset':offset})
+                    logs.extend(page['records']);offset=page['next_offset']
+                    if page['complete']:break
+                completed=[r for r in logs if r['stage']=='impact-completed']
+                self.assertEqual(len(completed),1)
+                self.assertEqual(completed[0]['report'],report)
+                self.assertTrue(any(r['stage']=='impact-requested' and 'snapshot' in r for r in logs))
+                self.assertTrue(any(r['stage']=='worker-completion' for r in logs),'pickup completion was lost from the archive')
+                self.assertNotIn(session,json.dumps(logs),'session capability leaked into evidence')
+                path=self.manager.worlds[session].log_path
+                self.assertEqual([json.loads(line) for line in path.read_text().splitlines()],logs)
+                history=self.post({'action':'impact-history','session':session,'offset':0})
+                self.assertEqual(history['reports'],[report])
                 records.append({'material':material,'mass_kg':slab['mass_kg'],
                     'dt_s':done['clock']['dt_s'],'hit':hit,'mass_residual_kg':sum(after.values())-sum(before.values())})
-            finally:self.post({'action':'close','session':session})
+            finally:
+                path=self.manager.worlds[session].log_path
+                self.post({'action':'close','session':session})
+                self.assertTrue(path.is_file(),'closing a disposable world erased impact evidence')
         print('INTACT_SLAB_SWING_EVIDENCE '+json.dumps(records,sort_keys=True))
 
     def test_repeated_clear_slab_swings_use_all_configured_tool_heads(self):
@@ -219,6 +247,35 @@ class TestWorldGateway(unittest.TestCase):
                     self.assertEqual(set(done['snapshot']['own_hand']['held_parts']),{'head','handle'})
                     print('PAIRED_SLAB_SWING '+json.dumps({'family':family,'attempt':attempt,'hit':hit},sort_keys=True))
             finally:self.post({'action':'close','session':session})
+
+    def test_refused_hits_history_pagination_and_explicit_archive_failure(self):
+        world=self.granular();session=world['session']
+        try:
+            native_world=self.manager.worlds[session]
+            for i in range(35):
+                result=self.act(session,'hit',target=[.3,.12,.3])
+                self.assertEqual(result['impact_report']['status'],'refused')
+                self.assertEqual(result['impact_report']['command_outcome']['reason'],'not_holding')
+                self.assertIsNone(result['impact_report']['actual'])
+            first=self.post({'action':'impact-history','session':session,'offset':0})
+            self.assertEqual(len(first['reports']),32);self.assertFalse(first['complete'])
+            rest=self.post({'action':'impact-history','session':session,'offset':first['next_offset']})
+            self.assertEqual(len(rest['reports']),3);self.assertTrue(rest['complete'])
+            self.assertEqual(len(set(r['impact_id'] for r in first['reports']+rest['reports'])),35)
+            for action,offset in [('impact-history',-1),('impact-history',True),('impact-log',1),('impact-log',-1)]:
+                with self.assertRaises(urllib.error.HTTPError) as refused:
+                    self.post({'action':action,'session':session,'offset':offset})
+                self.assertEqual(refused.exception.code,400)
+            old_bytes=native_world.log_bytes
+            native_world.log_bytes=128*1024*1024
+            result=self.act(session,'hit',target=[.3,.12,.3])
+            self.assertIn('128 MiB',result['log_error']);self.assertEqual(result['impact_count'],36)
+            native_world.log_bytes=old_bytes
+            native_world.log_error=None
+            native_world.log_path=Path(self.temp.name)/'nonexistent'/'fail.jsonl'
+            result=self.act(session,'hit',target=[.3,.12,.3])
+            self.assertIn('could not be written',result['log_error'])
+        finally:self.post({'action':'close','session':session})
 
     def test_rigid_grains_use_native_mass_contacts_and_preserve_all_material(self):
         masses={};records=[]

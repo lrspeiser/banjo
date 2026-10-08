@@ -1,0 +1,330 @@
+{
+  "schema": "banjo.impact-diagnostic-evidence.v1",
+  "tested_base_revision": "0589bf43b485a68af941ee9fa96938f3712a38fe",
+  "environment": "Windows / MSVC Release native worker / Python 3.13 / local Rust runtime",
+  "native_sha256": "50510f0f0b8cfd6f853b6ddc22678d3c80e8a29695f01f7c3613b7c05a0fd48a",
+  "runtime_sha256": "220c06eb2410ca5dbce44cfed81da7319de5f1a777fa536591c8b14b018fe266",
+  "matched_conditions": {
+    "tool": "iron pick",
+    "slab_dimensions_m": [
+      1.2,
+      0.1,
+      1.2
+    ],
+    "requested_target_m": [
+      0.3,
+      0.12,
+      0.3
+    ],
+    "native_dt_s": 0.004166666666666667,
+    "tool_initial_cell_m": 0.02,
+    "target_model": "precise-rigid-v1",
+    "fracture_supported": false
+  },
+  "matched_materials": [
+    {
+      "dt_s": 0.004166666666666667,
+      "hit": {
+        "active": false,
+        "contact_part": "head",
+        "contact_speed_m_s": 1.9142552614212036,
+        "contacted": true,
+        "ended_s": 1.5333333333333292,
+        "hand_work_j": 17.37764516125852,
+        "intrinsic_fracture_supported": false,
+        "obstruction": "",
+        "obstruction_speed_m_s": 0.0,
+        "peak_tip_speed_m_s": 4.107547835081234,
+        "phase": "ended",
+        "point_id": 1,
+        "reason": "",
+        "started_s": 0.1833333333333335,
+        "stroke_ended": "reached",
+        "swing_rotation_rad": 0.8162214466997948,
+        "target": "ground-slab",
+        "target_displacement_m": [
+          -0.0,
+          -1e-05,
+          0.0
+        ],
+        "target_m": [
+          0.3,
+          0.12,
+          0.3
+        ],
+        "tool": "handle"
+      },
+      "mass_kg": 359.99999,
+      "mass_residual_kg": 0.0,
+      "material": "glass"
+    },
+    {
+      "dt_s": 0.004166666666666667,
+      "hit": {
+        "active": false,
+        "contact_part": "head",
+        "contact_speed_m_s": 1.7759464979171753,
+        "contacted": true,
+        "ended_s": 1.5541666666666625,
+        "hand_work_j": 16.75201318403732,
+        "intrinsic_fracture_supported": false,
+        "obstruction": "",
+        "obstruction_speed_m_s": 0.0,
+        "peak_tip_speed_m_s": 4.102958360730919,
+        "phase": "ended",
+        "point_id": 1,
+        "reason": "",
+        "started_s": 0.2000000000000002,
+        "stroke_ended": "reached",
+        "swing_rotation_rad": 0.8376365662455035,
+        "target": "ground-slab",
+        "target_displacement_m": [
+          -1e-05,
+          -4e-05,
+          1e-05
+        ],
+        "target_m": [
+          0.3,
+          0.12,
+          0.3
+        ],
+        "tool": "handle"
+      },
+      "mass_kg": 100.80001,
+      "mass_residual_kg": 0.0,
+      "material": "oak"
+    },
+    {
+      "dt_s": 0.004166666666666667,
+      "hit": {
+        "active": false,
+        "contact_part": "head",
+        "contact_speed_m_s": 1.9207299947738647,
+        "contacted": true,
+        "ended_s": 1.3958333333333297,
+        "hand_work_j": 18.642020132349295,
+        "intrinsic_fracture_supported": false,
+        "obstruction": "",
+        "obstruction_speed_m_s": 0.0,
+        "peak_tip_speed_m_s": 4.113323258232061,
+        "phase": "ended",
+        "point_id": 1,
+        "reason": "",
+        "started_s": 0.05,
+        "stroke_ended": "reached",
+        "swing_rotation_rad": 0.813220270090644,
+        "target": "ground-slab",
+        "target_displacement_m": [
+          -0.0,
+          -0.0,
+          0.0
+        ],
+        "target_m": [
+          0.3,
+          0.12,
+          0.3
+        ],
+        "tool": "handle"
+      },
+      "mass_kg": 1133.28004,
+      "mass_residual_kg": 0.0,
+      "material": "iron"
+    }
+  ],
+  "browser_report": {
+    "schema": "banjo.impact-report.v1",
+    "impact_id": "a5003ebe061949a889b9bdecc254515a",
+    "world_id": "sandbox-f4d7d881175145a9908da54cfd200a7b",
+    "requested_target_m": [
+      -0.04981826668591882,
+      0.12000000074505807,
+      0.08736936285996988
+    ],
+    "ray": {
+      "from_m": [
+        0.00033257263138207715,
+        1.639998313129921,
+        0.8197961467497354
+      ],
+      "direction": [
+        -0.029710134819140237,
+        -0.9004705684006562,
+        -0.4339009833282561
+      ],
+      "max_distance_m": 2
+    },
+    "before_clock": {
+      "attempted_ticks": 4028,
+      "dt_s": 0.004166666666666667,
+      "fault": null,
+      "simulation_s": 16.783333333332703,
+      "steps_per_batch": 4,
+      "tick": 4028
+    },
+    "expectation": {
+      "native_preview": {
+        "actor": "player",
+        "admitted": true,
+        "point_id": 1,
+        "reason": null,
+        "schema": "banjo.physical-hit-preview.v1",
+        "target": "ground-slab",
+        "target_m": [
+          -0.04982,
+          0.12,
+          0.08737
+        ],
+        "tool": "handle"
+      },
+      "prediction_kind": "admission-only",
+      "fracture_supported": false,
+      "fracture_prediction": null,
+      "description": "A reachable target permits a native swing; contact is not guaranteed. Intact rigid bodies cannot fracture in this world."
+    },
+    "command_outcome": {
+      "actor_id": "player",
+      "command_id": "input-120",
+      "reason": null,
+      "revision": 118,
+      "schema": "banjo.outcome.v1",
+      "simulation_s": 16.783333333332703,
+      "status": "applied",
+      "tick": 4028
+    },
+    "status": "completed",
+    "started_s": 16.783333333332703,
+    "actual": {
+      "physical_hit": {
+        "active": false,
+        "contact_part": "head",
+        "contact_speed_m_s": 1.6202046871185305,
+        "contacted": true,
+        "ended_s": 18.40833333333261,
+        "hand_work_j": 13.258415878720472,
+        "intrinsic_fracture_supported": false,
+        "obstruction": "",
+        "obstruction_speed_m_s": 0,
+        "peak_tip_speed_m_s": 3.960790156176783,
+        "phase": "ended",
+        "point_id": 1,
+        "reason": "",
+        "started_s": 16.783333333332703,
+        "stroke_ended": "reached",
+        "swing_rotation_rad": 0.910342480005704,
+        "target": "ground-slab",
+        "target_displacement_m": [
+          0,
+          0,
+          0
+        ],
+        "target_m": [
+          -0.04982,
+          0.12,
+          0.08737
+        ],
+        "tool": "handle"
+      },
+      "target_body": {
+        "anchored": false,
+        "color_rgba": "9fd3ffff",
+        "dent_at_m": [
+          0,
+          0,
+          0
+        ],
+        "dent_mm": 0,
+        "dimensions_m": [
+          1.2,
+          0.1,
+          1.2
+        ],
+        "held": false,
+        "internal_failure_supported": false,
+        "mass_kg": 359.99999,
+        "material": "glass",
+        "mechanical_model": "precise-rigid-v1",
+        "name": "ground-slab",
+        "orientation_wxyz": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "position_m": [
+          0,
+          0.07,
+          0
+        ],
+        "revision": 0,
+        "rigid_parts_local": [
+          {
+            "center_local_m": [
+              0,
+              0,
+              0
+            ],
+            "dimensions_m": [
+              1.2,
+              0.1,
+              1.2
+            ],
+            "material": "glass",
+            "rotation_wxyz": [
+              1,
+              0,
+              0,
+              0
+            ],
+            "shape": "box"
+          }
+        ],
+        "shape": "compound",
+        "velocity_m_s": [
+          0,
+          0,
+          0
+        ]
+      },
+      "observed_new_bodies": [],
+      "observed_removed_bodies": [],
+      "observed_body_mass_change_kg": 0,
+      "broken_bonds": null,
+      "fracture_energy_j": null,
+      "contact_impulse_n_s": null,
+      "full_energy_balance_j": null
+    },
+    "clock": {
+      "attempted_ticks": 4432,
+      "dt_s": 0.004166666666666667,
+      "fault": null,
+      "simulation_s": 18.46666666666594,
+      "steps_per_batch": 4,
+      "tick": 4432
+    },
+    "explanation": "The selected target was contacted. It is an intact rigid body: no fracture law is connected.",
+    "limitations": [
+      "Hand work is signed actuator work, not energy deposited in the target.",
+      "No calibrated breakage prediction, bond damage or whole-system energy balance is available.",
+      "Pose/mass observations and native contact detection do not certify conservation or material realism."
+    ]
+  },
+  "downloaded_log": {
+    "bytes": 359811,
+    "records": 632,
+    "sha256": "276c8bc5b8ed944aa33c737b5611602afffbc09f133c5f6f5868c6b8ed6482c3",
+    "matches_archive_record_prefix": true
+  },
+  "checks": {
+    "gateway_suite": "13 groups passed, CTest 93.22 s",
+    "input_suite": "5 groups passed",
+    "material_recording_suite": "10 groups passed, CTest 12.82 s",
+    "runtime_native_suite": "17 groups passed, CTest 26.66 s",
+    "final_diagnostic_subset": "2 groups passed; three matched materials, refusal/history/archive failure"
+  },
+  "limitations": [
+    "Native observations are sampled at gateway observations, not a complete per-substep solver trace.",
+    "No fracture law is connected in the browser world.",
+    "No whole-system momentum, angular momentum or energy validation added.",
+    "Viewport check is not a physical-phone test; full regression suite not run."
+  ]
+}
