@@ -25,6 +25,7 @@ import re
 
 ROOT = Path(__file__).resolve().parents[1]
 FILES = {"index.html", "lab.css", "lab.js", "contract.js", "material.json", "manifest.json",
+         "sheets.html", "sheets.js", "sheets.css",
          "tests.html", "hub.css", "hub.js", "hub-contract.js", "world.html", "world.css", "world.js", "world-input.js", "world-impact.js",
          "three.module.js", "three.core.js", "three-LICENSE.txt"}
 SCALES = (.25, .5, 1, 1.25)
@@ -99,7 +100,7 @@ def prepare(native: Path, output: Path):
     if not compiled.is_file():
         raise RuntimeError("Build the client first: npm ci && npm run build in client/")
     subprocess.run([str(native), str(output / "material.json")], check=True, timeout=120)
-    for name in ("index.html", "lab.css", "tests.html", "hub.css", "world.html", "world.css", "world.js", "world-input.js", "world-impact.js"):
+    for name in ("sheets.html", "sheets.js", "sheets.css", "index.html", "lab.css", "tests.html", "hub.css", "world.html", "world.css", "world.js", "world-input.js", "world-impact.js"):
         shutil.copyfile(ROOT / "client/experiments" / name, output / name)
     for name in ("three.module.js", "three.core.js", "three-LICENSE.txt"):
         shutil.copyfile(ROOT / "playground/vendor" / name, output / name)
@@ -109,7 +110,7 @@ def prepare(native: Path, output: Path):
     for name in ("hub.js", "hub-contract.js"):
         source = compiled.with_name(name)
         if source.resolve() != (output / name).resolve(): shutil.copyfile(source, output / name)
-    sources = ["tools/material_lab_record.cpp", "src/fastlattice/SolidMatterPatch.cpp",
+    sources = ["tools/sheet_world_run.cpp", "src/fastlattice/SheetImpact.cpp", "src/fastlattice/SheetImpact.hpp", "scripts/sheet-world.py", "client/experiments/sheets.js", "client/experiments/sheets.html", "client/experiments/sheets.css", "tests/sheet_impact_tests.py", "tests/sheet_gateway_tests.py", "tools/material_lab_record.cpp", "src/fastlattice/SolidMatterPatch.cpp",
                "src/fastlattice/ConstituentPartition.cpp", "src/fastlattice/CpuLatticeBackend.cpp",
                "src/material/MaterialCatalog.cpp", "client/experiments/lab.ts", "client/experiments/contract.ts",
                "tests/material_surface_contact_tests.cpp", "src/fastlattice/NativeFixedContact.cpp",
@@ -133,7 +134,7 @@ def prepare(native: Path, output: Path):
 class LabHandler(SimpleHTTPRequestHandler):
     def do_POST(self):
         self.close_connection = True
-        if self.path not in {"/api/experiments", "/api/tests", "/api/world"}:
+        if self.path not in {"/api/experiments", "/api/tests", "/api/world", "/api/sheets"}:
             return self.reply(404, {"error": "No experiment endpoint at this path"})
         origin = f"http://127.0.0.1:{self.server.server_port}"
         if (self.headers.get("Host") != origin.removeprefix("http://")
@@ -155,6 +156,13 @@ class LabHandler(SimpleHTTPRequestHandler):
             if self.path == "/api/experiments": request = validate_request(request)
         except (ValueError, UnicodeError, TimeoutError):
             return self.reply(400, {"error": "Invalid experiment request; choose one of the four loads"})
+        if self.path == "/api/sheets":
+            runner = getattr(self.server, "sheet_manager", None)
+            if runner is None: return self.reply(503, {"error":"Build banjo_sheet_world_run first"})
+            try: result = runner.request(request)
+            except (ValueError,TypeError,KeyError): return self.reply(400,{"error":"Invalid or expired specimen; hit the central working area or reset"})
+            except (RuntimeError,OSError,subprocess.SubprocessError): return self.reply(502,{"error":"Native specimen stopped; reset to try again"})
+            return self.reply(200,result)
         if self.path == "/api/world":
             runner = getattr(self.server, "world_manager", None)
             if runner is None: return self.reply(503, {"error": "Build the Rust runtime and native world target first"})
@@ -260,6 +268,11 @@ def main():
     spec=importlib.util.spec_from_file_location("lab_tests",ROOT/"scripts/lab-test-runner.py")
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
     server.test_runner=module.TestRunner(args.native.resolve().parent,server.experiment_runner.gate)
+    sheet = args.native.resolve().with_name("banjo_sheet_world_run.exe" if os.name == "nt" else "banjo_sheet_world_run")
+    if sheet.is_file():
+        spec=importlib.util.spec_from_file_location("sheet_world",ROOT/"scripts/sheet-world.py")
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        server.sheet_manager=module.SheetManager(sheet)
     live = args.native.resolve().with_name("banjo_live_world_run.exe" if os.name == "nt" else "banjo_live_world_run")
     if live.is_file() and args.runtime.is_file():
         spec=importlib.util.spec_from_file_location("test_world", ROOT/"scripts/test-world.py")
@@ -272,6 +285,7 @@ def main():
         pass
     finally:
         if hasattr(server,"world_manager"): server.world_manager.close()
+        if hasattr(server,"sheet_manager"): server.sheet_manager.close()
         server.server_close()
 
 

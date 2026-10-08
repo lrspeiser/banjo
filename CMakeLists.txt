@@ -278,6 +278,7 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
     banjo_enable_warnings(banjo_runtime)
 
     add_library(banjo_lattice_native_contact src/fastlattice/NativeFixedContact.cpp)
+    target_sources(banjo_lattice_native_contact PRIVATE src/fastlattice/SheetImpact.cpp)
     target_link_libraries(banjo_lattice_native_contact PUBLIC banjo_runtime banjo_fastlattice)
     banjo_enable_warnings(banjo_lattice_native_contact)
 
@@ -336,6 +337,9 @@ if(BANJO_BUILD_HEADLESS)
     target_link_libraries(banjo_material_behavior_probe PRIVATE banjo_core nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_material_behavior_probe)
     add_executable(banjo_material_lab_record tools/material_lab_record.cpp)
+    add_executable(banjo_sheet_world_run tools/sheet_world_run.cpp)
+    target_link_libraries(banjo_sheet_world_run PRIVATE banjo_lattice_native_contact nlohmann_json::nlohmann_json)
+    banjo_enable_warnings(banjo_sheet_world_run)
     target_link_libraries(banjo_material_lab_record PRIVATE banjo_fastlattice nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_material_lab_record)
     add_executable(banjo_dynamic_material_cli tools/dynamic_material_cli.cpp)
@@ -517,6 +521,14 @@ if(BANJO_BUILD_HEADLESS)
     # C++ tree should not stop building for the want of an interpreter.
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_FOUND)
+        if(TARGET banjo_sheet_world_run)
+            add_test(NAME banjo_sheet_gateway_tests
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sheet_gateway_tests.py $<TARGET_FILE:banjo_sheet_world_run>)
+            set_tests_properties(banjo_sheet_gateway_tests PROPERTIES TIMEOUT 30 LABELS "native;sheet;client")
+            add_test(NAME banjo_sheet_diagnostics_tests
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sheet_impact_tests.py $<TARGET_FILE:banjo_sheet_world_run>)
+            set_tests_properties(banjo_sheet_diagnostics_tests PROPERTIES TIMEOUT 240 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} LABELS "native;sheet;experimental")
+        endif()
         add_test(NAME banjo_ffi_tests
                  COMMAND ${Python3_EXECUTABLE}
                          ${CMAKE_CURRENT_SOURCE_DIR}/tests/banjo_ffi_tests.py)
