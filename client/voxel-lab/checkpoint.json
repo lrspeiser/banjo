@@ -1,26 +1,66 @@
 {
-  "title": "Spring energy audit",
+  "title": "Contact work & support reactions",
   "date": "2026-10-08",
-  "physics_revision": "20d6e597c42e8ef1945efe8ca7b4759b4dc51afe",
-  "native_sha256": "e46c7afabbaf117f6d0a94946a94fa0875817837be8d088062910494b6bc1660",
+  "physics_revision": "5e01124f4401cb9e412e51a2c9953f75163f73c3",
+  "native_sha256": "6b22cfb5171602946ebc25759bfb09a2b763bc9683a1d388fc148a52a6c580bc",
   "changes": [
-    "Visible build status, test results and live energy diagnostics.",
-    "Separate spring damping from numerical energy loss.",
-    "Measure native stepping cost and solver residuals.",
-    "Keep the glass-ball failure visible until it is repaired."
+    "Measure actual contact and friction work, plus support reactions.",
+    "Count gravity on active native bodies; exclude sleeping cached impulses.",
+    "Show contact measurements in Physics & record and the downloadable log.",
+    "Glass-ball energy failure remains blocked; metal dents and adaptive cells remain next."
   ],
   "checks": [
-    {"label": "Spring oracles", "status": "passed", "value": "7 checks"},
-    {"label": "Drop regression", "status": "passed", "value": "11 completed experiments"},
-    {"label": "Materials compared", "status": "passed", "value": "Glass · oak · iron · ice"},
-    {"label": "Gateway & joints", "status": "passed", "value": "5 scoped suites, including spring oracles"},
-    {"label": "Glass ball", "status": "blocked", "value": "Energy gate refuses impact"}
+    {
+      "label": "Spring/contact oracles",
+      "status": "passed",
+      "value": "12 checks"
+    },
+    {
+      "label": "Drop regression",
+      "status": "passed",
+      "value": "11 completed experiments"
+    },
+    {
+      "label": "Materials compared",
+      "status": "passed",
+      "value": "Glass · oak · iron · ice"
+    },
+    {
+      "label": "Scoped CTest",
+      "status": "passed",
+      "value": "6 suites, including rolling & gateway"
+    },
+    {
+      "label": "Browser drop",
+      "status": "passed",
+      "value": "40 broken faces · 12 pieces · 107 cells"
+    },
+    {
+      "label": "Glass ball",
+      "status": "blocked",
+      "value": "Energy gate refuses impact"
+    }
   ],
   "next": [
-    {"label": "Energy accuracy", "status": "in progress"},
-    {"label": "Simulation speed", "status": "in progress"},
-    {"label": "Permanent metal dents", "status": "planned"},
-    {"label": "Adaptive cell sizes", "status": "planned"},
-    {"label": "Custom materials & objects", "status": "planned"}
+    {
+      "label": "Energy accuracy",
+      "status": "in progress"
+    },
+    {
+      "label": "Simulation speed",
+      "status": "in progress"
+    },
+    {
+      "label": "Permanent metal dents",
+      "status": "planned"
+    },
+    {
+      "label": "Adaptive cell sizes",
+      "status": "planned"
+    },
+    {
+      "label": "Custom materials & objects",
+      "status": "planned"
+    }
   ]
 }

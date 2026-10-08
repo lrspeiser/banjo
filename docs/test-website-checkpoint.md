@@ -1,3 +1,5 @@
+**Latest delivery, October 8:** The [contact audit](voxel-contact-audit-checkpoint.md) supersedes the original native checkpoint below. The live website now exposes actual normal/friction contact work, anchored support impulse, linear momentum residual and contact count. The manifest pins physics `5e01124f4401cb9e412e51a2c9953f75163f73c3`, SHA256 `6b22cfb5171602946ebc25759bfb09a2b763bc9683a1d388fc148a52a6c580bc`. Twelve analytical checks, eleven completed native experiments and six scoped CTest entries pass; the glass-ball refusal remains visible. The ordinary browser drop and archived contact diagnostics agree. This measurement update does not implement plasticity or close the full energy/angular momentum accounts.
+
 # Test website delivery — October 8, 2026
 
 ## Implemented interface
@@ -5,7 +7,7 @@
 The owner's checkpoint contract is recorded in [AGENTS.md](../AGENTS.md): each
 user-facing update must reach the actual local test website with browser proof.
 
-[Checkpoint evidence](../client/voxel-lab/checkpoint.json) pins native physics
+The original [checkpoint evidence](../client/voxel-lab/checkpoint.json) pinned native physics
 revision `20d6e597c42e8ef1945efe8ca7b4759b4dc51afe` and the final verified executable
 SHA256 `e46c7afabbaf117f6d0a94946a94fa0875817837be8d088062910494b6bc1660`.
 This UI/gateway checkpoint adds no constitutive model or dynamics change.
