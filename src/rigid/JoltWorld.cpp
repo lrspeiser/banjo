@@ -2827,6 +2827,62 @@ void JoltWorld::removeDistanceSpring(unsigned id) {
     impl_->physics_->RemoveConstraint(it->second.constraint);impl_->springs_.erase(it);
 }
 double JoltWorld::distanceSpringImpulse(unsigned id) const {return impl_->springs_.at(id).constraint->GetTotalLambdaPosition();}
+void JoltWorld::configureVoxelContacts(double feature) {
+    impl_->requireConfigurationMutable();
+    if(!std::isfinite(feature)||feature<1e-5||feature>1)throw std::invalid_argument("invalid voxel contact scale");
+    auto settings=impl_->physics_->GetPhysicsSettings();
+    settings.mSpeculativeContactDistance=float(feature*.1);
+    settings.mPenetrationSlop=float(feature*.01);
+    settings.mManifoldTolerance=float(feature*.05);
+    settings.mMaxPenetrationDistance=float(feature*.25);
+    settings.mContactPointPreserveLambdaMaxDistSq=float(feature*feature*.0625);
+    // Do not project contact positions behind the material solver's back:
+    // that projection stretches stiff interfaces without supplying work.
+    settings.mBaumgarte=0;
+    impl_->physics_->SetPhysicsSettings(settings);
+}
+void JoltWorld::setContinuousCollision(MatterBodyId id,bool enabled) {
+    impl_->requireConfigurationMutable();
+    impl_->physics_->GetBodyInterface().SetMotionQuality(impl_->bodies_.at(id),enabled?JPH::EMotionQuality::LinearCast:JPH::EMotionQuality::Discrete);
+}
+unsigned JoltWorld::addFaceSpring(const FaceSpringDescription &d) {
+    impl_->requireConfigurationMutable();
+    const auto valid=[](Vec3 v,bool positive){return std::isfinite(v.x+v.y+v.z)&&std::min({v.x,v.y,v.z})>=(positive?1e-12:0);};
+    if(d.a==d.b||!contains(d.a)||!contains(d.b)||impl_->joints_.size()>=4096||
+       !valid(d.translation_stiffness_n_m,true)||!valid(d.rotation_stiffness_n_m_rad,true)||
+       !valid(d.translation_damping_n_s_m,false)||!valid(d.rotation_damping_n_m_s_rad,false)||
+       !std::isfinite(lengthSquared(d.anchor_world_m))||std::abs(length(d.normal_world)-1)>1e-8||
+       std::abs(length(d.tangent_world)-1)>1e-8||std::abs(dot(d.normal_world,d.tangent_world))>1e-8)
+        throw std::invalid_argument("invalid passive face spring");
+    JPH::SixDOFConstraintSettings s;s.mSpace=JPH::EConstraintSpace::WorldSpace;
+    s.mPosition1=s.mPosition2=toJoltPosition(d.anchor_world_m);
+    s.mAxisX1=s.mAxisX2=toJolt(d.normal_world);s.mAxisY1=s.mAxisY2=toJolt(d.tangent_world);
+    const double k[]{d.translation_stiffness_n_m.x,d.translation_stiffness_n_m.y,d.translation_stiffness_n_m.z,
+        d.rotation_stiffness_n_m_rad.x,d.rotation_stiffness_n_m_rad.y,d.rotation_stiffness_n_m_rad.z};
+    const double c[]{d.translation_damping_n_s_m.x,d.translation_damping_n_s_m.y,d.translation_damping_n_s_m.z,
+        d.rotation_damping_n_m_s_rad.x,d.rotation_damping_n_m_s_rad.y,d.rotation_damping_n_m_s_rad.z};
+    for(unsigned i=0;i<6;++i)s.mMotorSettings[i].mSpringSettings={JPH::ESpringMode::StiffnessAndDamping,float(k[i]),float(c[i])};
+    auto *raw=static_cast<JPH::SixDOFConstraint*>(impl_->physics_->GetBodyInterface().CreateConstraint(&s,impl_->bodies_.at(d.a),impl_->bodies_.at(d.b)));
+    if(!raw)throw std::runtime_error("face spring creation failed");
+    for(unsigned i=0;i<6;++i)raw->SetMotorState(static_cast<JPH::SixDOFConstraint::EAxis>(i),JPH::EMotorState::Position);
+    raw->SetTargetPositionCS(JPH::Vec3::sZero());raw->SetTargetOrientationCS(JPH::Quat::sIdentity());
+    const auto id=impl_->next_joint_++;impl_->joints_.emplace(id,Impl::Joint{d.a,d.b,JointKind::FaceSpring,raw});
+    impl_->physics_->AddConstraint(raw);return id;
+}
+JoltWorld::FaceSpringObservation JoltWorld::faceSpringObservation(unsigned id) const {
+    const auto fromJoltVector=[](JPH::Vec3Arg x){return Vec3{x.GetX(),x.GetY(),x.GetZ()};};
+    const auto &j=impl_->joints_.at(id);if(j.kind!=JointKind::FaceSpring)throw std::invalid_argument("not a face spring");
+    const auto *c=static_cast<const JPH::SixDOFConstraint*>(j.constraint.GetPtr());
+    const auto a=snapshot(j.a),b=snapshot(j.b);const auto frame=c->GetConstraintToBody1Matrix();
+    const auto pa=a.center_of_mass_world_m+a.orientation_world.rotate(fromJoltVector(frame.GetTranslation()));
+    const auto pb=b.center_of_mass_world_m+b.orientation_world.rotate(fromJoltVector(c->GetConstraintToBody2Matrix().GetTranslation()));
+    const auto x=a.orientation_world.rotate(fromJoltVector(frame.GetAxisX())),y=a.orientation_world.rotate(fromJoltVector(frame.GetAxisY())),z=cross(x,y);
+    const auto delta=pb-pa;const auto q=c->GetRotationInConstraintSpace();
+    const double angle=2*std::atan2(std::sqrt(double(q.GetX())*q.GetX()+double(q.GetY())*q.GetY()+double(q.GetZ())*q.GetZ()),std::abs(double(q.GetW())));
+    const auto axis=Vec3{q.GetX(),q.GetY(),q.GetZ()}*(q.GetW()<0?-1.:1.);
+    const auto rotation=length(axis)>1e-12?axis*(angle/length(axis)):Vec3{};
+    return {{dot(delta,x),dot(delta,y),dot(delta,z)},rotation,fromJoltVector(c->GetTotalLambdaMotorTranslation()),fromJoltVector(c->GetTotalLambdaMotorRotation())};
+}
 
 PairContactOwner JoltWorld::pairContactOwner(MatterBodyId a,MatterBodyId b) const {
     if(a==b||!contains(a)||!contains(b))throw std::invalid_argument("contact ownership requires two distinct registered bodies");

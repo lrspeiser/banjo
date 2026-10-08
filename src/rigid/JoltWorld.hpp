@@ -245,6 +245,9 @@ public:
     // Disables only cached narrow-phase body-pair results, not contacts/forces.
     void setBodyPairContactCacheEnabled(bool enabled);
     void setContactSolverIterations(unsigned velocity,unsigned position);
+    // Explicit small-cell contact scale; existing worlds retain their settings.
+    void configureVoxelContacts(double minimum_feature_m);
+    void setContinuousCollision(MatterBodyId body, bool enabled);
     // Resource capacity and observations do not alter contact laws/settings.
     // Deferred material contacts still require their activation observations.
     void setImpactObservationsEnabled(bool enabled);
@@ -469,6 +472,20 @@ public:
         double damping_n_s_m);
     void removeDistanceSpring(unsigned spring);
     double distanceSpringImpulse(unsigned spring) const;
+    // Passive six-axis elastic connector with fixed rest targets. Jolt's
+    // position-spring solver integrates force/torque, not assigned velocities.
+    struct FaceSpringDescription {
+        MatterBodyId a{},b{};
+        Vec3 anchor_world_m{},normal_world{1,0,0},tangent_world{0,1,0};
+        Vec3 translation_stiffness_n_m{},rotation_stiffness_n_m_rad{};
+        Vec3 translation_damping_n_s_m{},rotation_damping_n_m_s_rad{};
+    };
+    struct FaceSpringObservation {
+        Vec3 displacement_cs_m{},rotation_cs_rad{};
+        Vec3 linear_impulse_cs_n_s{},angular_impulse_cs_n_m_s{};
+    };
+    unsigned addFaceSpring(const FaceSpringDescription &description);
+    FaceSpringObservation faceSpringObservation(unsigned joint) const;
     // Opt-in observation only. Includes support/persisted contacts for reduced
     // fracture experiments; impulses remain estimates, not measured reactions.
     void setDetailedImpactObservations(bool enabled);
@@ -924,7 +941,8 @@ public:
         // Two wheels that turn together at a fixed ratio: a pair of gears in
         // mesh, or two sprockets with a chain between them. It is a coupling
         // between two PINS, not a contact between teeth -- see GearDescription.
-        Gear = 9
+        Gear = 9,
+        FaceSpring = 10
     };
 
     // An edge engaged in matter, as the solver sees it.
