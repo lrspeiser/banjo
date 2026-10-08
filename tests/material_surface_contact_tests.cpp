@@ -708,6 +708,33 @@ NativeContactStepAudit queriedManifoldAudit(const Target &target,LatticeBackend 
     a.source_numerical_angular_kg_m2_s=r.source.angular_momentum_error_kg_m2_s;a.geometry_couple_kg_m2_s=r.source.contact.geometry_couple_kg_m2_s;
     a.active_manifolds=r.source.contact.active_contacts?1:0;return a;
 }
+struct ReapplicationInput {
+    std::vector<ActiveNodeState> nodes;
+    std::vector<FixedSurfaceContact> contacts;
+};
+ReapplicationInput reapplicationInput(LatticeBackend &b,const std::vector<NativeSurfaceWitness> &witnesses,
+    const std::vector<MaterialContactRegion> &regions) {
+    require(witnesses.size()==regions.size(),"reapplication lost witness/support identity");
+    std::vector<std::uint32_t> ids;
+    for(const auto &region:regions)ids.insert(ids.end(),region.nodes.begin(),region.nodes.end());
+    std::sort(ids.begin(),ids.end());ids.erase(std::unique(ids.begin(),ids.end()),ids.end());
+    ReapplicationInput out;for(auto id:ids)out.nodes.push_back(b.externalContactPoint(id));
+    for(std::size_t k=0;k<witnesses.size();++k) {
+        const auto &w=witnesses[k];FixedSurfaceContact c;
+        c.surface_world_m=w.surface_world_m;c.normal_world=w.normal_world;c.gap_m=w.gap_m;c.settings=w.settings;
+        for(auto id:regions[k].nodes)c.nodes.push_back(static_cast<std::uint32_t>(std::lower_bound(ids.begin(),ids.end(),id)-ids.begin()));
+        out.contacts.push_back(std::move(c));
+    }
+    return out;
+}
+double reapplicationWork(const ReapplicationInput &input,const FixedSurfaceManifoldResult &result) {
+    double work=0;require(input.nodes.size()==result.node_velocities_m_s.size(),"reapplication node count changed");
+    for(std::size_t k=0;k<input.nodes.size();++k) {
+        const auto &n=input.nodes[k];const auto v=result.node_velocities_m_s[k];
+        work+=.5*n.mass_kg*dot(v-n.velocity_m_s,v+n.velocity_m_s);
+    }
+    return work;
+}
 void facePatchImpactOracles() {
     for(double width:{.04,.12})for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
         Target target(preset,1e-7,.12,{.1,0,0});Tool tool(width);
@@ -718,6 +745,13 @@ void facePatchImpactOracles() {
         const auto r=applyNativeFixedLocalSurfaceManifold(tool.world,*b,witnesses,{.1,3,64,4096},2,1,{1e-5,1e-5,1e-5});
         require(r.source.contact.active_contacts>0&&r.source.contact.impulses_n_s.size()==witnesses.size(),
             "face impact discarded original contact equations");
+        require(r.source.links.size()==1&&r.source.joint_ids.size()==r.source.links.size()&&r.source.body_ids.size()==2,
+            "face impact omitted actual fixed attachment identity");
+        const auto repeat_input=reapplicationInput(*b,witnesses,r.regions);
+        const auto striker=static_cast<std::uint32_t>(std::find(r.source.body_ids.begin(),r.source.body_ids.end(),1)-r.source.body_ids.begin());
+        const auto exact_repeat=evaluateFixedSurfaceManifold(repeat_input.nodes,repeat_input.contacts,
+            r.source.contact.bodies,r.source.links,striker,1e-7);
+        near(reapplicationWork(repeat_input,exact_repeat),0,1e-8,"unrounded zero-time impact reapplication changed target energy");
         const auto state=target.download(*b);const auto after=totals(state,tool.world);
         const double p=length(after.linear_momentum_kg_m_s-initial.linear_momentum_kg_m_s-r.source.momentum_error_kg_m_s);
         const double l=length(after.angular_momentum_kg_m2_s-initial.angular_momentum_kg_m2_s-
@@ -814,6 +848,92 @@ unsigned controlledSustainedContact(MaterialContactGeometry geometry) {
                 {"width_m",width},{"contact_geometry",geometry==MaterialContactGeometry::ClippedFace?"clipped-face-v1":"closest-point-v1"},{"interval_s",interval},{"full",full},{"half",half},
                 {"fixed_witness_half",fixed_half},{"fixed_witness_half_error",fixed_half_error},
                 {"full_error",full_error},{"half_error",half_error}}.dump()<<std::endl;
+        }
+        if(!refusal.empty()) {
+            // Diagnostic factorial experiment: hold queried geometry fixed and
+            // independently advance native constraints and material forces.
+            // Never feeds the accepted controller or substitutes for a step.
+            const auto witnesses=queriedManifoldWitnesses(target,*b,tool,geometry);
+            for(const auto &w:witnesses)require(w.gap_m<=w.settings.contact_margin_m,
+                "operator isolation cannot change a predictive contact horizon");
+            const auto frozen=target.download(*b);const auto clock=b->externalContactElapsedTime();
+            const auto tick=tool.world.stepCount();
+            constexpr double half_dt=5e-13;
+            for(bool material_step:{false,true})for(bool native_step:{false,true}) {
+                nlohmann::json trace=nlohmann::json::array();std::string error;
+                double native_energy=0;Vec3 native_impulse{},native_angular{};
+                try {
+                    require(!runNativeFixedTargetTrial(tool.world,*b,[&] {
+                        for(unsigned k=0;k<2;++k) {
+                            const auto contact=[&] {
+                                (void)queriedManifoldAudit(target,*b,tool,&trace,&witnesses,geometry);
+                                if(native_step) {
+                                    const auto before=tool.world.mechanicalTotals();tool.world.step(half_dt);
+                                    const auto after=tool.world.mechanicalTotals();
+                                    native_energy+=after.mechanicalEnergy()-before.mechanicalEnergy();
+                                    native_impulse+=after.linear_momentum_kg_m_s-before.linear_momentum_kg_m_s;
+                                    native_angular+=after.angular_momentum_kg_m2_s-before.angular_momentum_kg_m2_s;
+                                }
+                            };
+                            if(material_step)b->advanceExternalContactStep(half_dt,contact);else contact();
+                        }
+                        return false;
+                    }),"operator isolation committed");
+                }catch(const std::exception &e){error=e.what();}
+                const auto restored=target.download(*b);
+                require(restored.u==frozen.u&&restored.u_prev==frozen.u_prev&&restored.v==frozen.v&&
+                    restored.damage==frozen.damage&&restored.alive==frozen.alive,"operator isolation changed target state");
+                near(b->externalContactElapsedTime(),clock,0,"operator isolation changed target time");
+                require(tool.world.stepCount()==tick,"operator isolation changed native time");
+                std::cout<<"CONTACT_OPERATOR_ISOLATION "<<nlohmann::json{{"material",materialPresetName(preset)},
+                    {"width_m",width},{"contact_geometry",geometry==MaterialContactGeometry::ClippedFace?"clipped-face-v1":"closest-point-v1"},
+                    {"fixed_witnesses",true},{"material_step",material_step},{"native_step",native_step},{"half_interval_s",half_dt},
+                    {"native_step_energy_j",native_energy},{"native_step_impulse_n_s",length(native_impulse)},
+                    {"native_step_angular_kg_m2_s",length(native_angular)},{"error",error},{"steps",trace}}.dump()<<std::endl;
+            }
+        }
+        if(!refusal.empty()) {
+            const auto witnesses=queriedManifoldWitnesses(target,*b,tool,geometry);
+            for(const auto &w:witnesses)require(w.gap_m<=w.settings.contact_margin_m,
+                "source precision isolation cannot change predictive contact horizon");
+            const auto frozen=target.download(*b);const auto clock=b->externalContactElapsedTime();const auto tick=tool.world.stepCount();
+            for(double interval:{0.,5e-13,5e-11}) {
+                nlohmann::json row{{"material",materialPresetName(preset)},{"width_m",width},{"material_interval_s",interval},
+                    {"fixed_witnesses",true},{"native_step",false},{"contact_geometry",geometry==MaterialContactGeometry::ClippedFace?"clipped-face-v1":"closest-point-v1"}};
+                try {
+                    require(!runNativeFixedTargetTrial(tool.world,*b,[&] {
+                        const auto first=applyNativeFixedLocalSurfaceManifold(tool.world,*b,witnesses,{.1,3,64,4096},2,1,{1e-5,1e-5,1e-5});
+                        if(interval>0)b->advanceExternalContactStep(interval,[]{});
+                        require(target.download(*b).alive==frozen.alive,"source precision isolation crossed a topology change");
+                        const auto input=reapplicationInput(*b,witnesses,first.regions);
+                        const auto striker=static_cast<std::uint32_t>(std::find(first.source.body_ids.begin(),first.source.body_ids.end(),1)-first.source.body_ids.begin());
+                        const auto exact=evaluateFixedSurfaceManifold(input.nodes,input.contacts,first.source.contact.bodies,
+                            first.source.links,striker,1e-7);
+                        auto delivered=first.source.delivered_bodies;
+                        for(auto &body:delivered)for(unsigned a=0;a<3;++a)for(unsigned c=a+1;c<3;++c)
+                            body.inertia_world_kg_m2.m[a][c]=body.inertia_world_kg_m2.m[c][a]=
+                                .5*(body.inertia_world_kg_m2.m[a][c]+body.inertia_world_kg_m2.m[c][a]);
+                        const auto rounded=evaluateFixedSurfaceManifold(input.nodes,input.contacts,delivered,
+                            first.source.links,striker,1e-7);
+                        double velocity_error=0,spin_error=0;
+                        for(std::size_t k=0;k<delivered.size();++k) {
+                            velocity_error=std::max(velocity_error,length(delivered[k].motion.linear_velocity_m_s-first.source.contact.bodies[k].motion.linear_velocity_m_s));
+                            spin_error=std::max(spin_error,length(delivered[k].motion.angular_velocity_rad_s-first.source.contact.bodies[k].motion.angular_velocity_rad_s));
+                        }
+                        row["unrounded_target_work_j"]=reapplicationWork(input,exact);
+                        row["rounded_target_work_j"]=reapplicationWork(input,rounded);
+                        row["source_velocity_rounding_m_s"]=velocity_error;row["source_spin_rounding_rad_s"]=spin_error;
+                        row["unrounded_work_residual_j"]=exact.work_residual_j;row["rounded_work_residual_j"]=rounded.work_residual_j;
+                        return false;
+                    }),"source precision isolation committed");row["error"]="";
+                }catch(const std::exception &e){row["error"]=e.what();}
+                const auto restored=target.download(*b);
+                require(restored.u==frozen.u&&restored.u_prev==frozen.u_prev&&restored.v==frozen.v&&restored.damage==frozen.damage&&
+                    restored.alive==frozen.alive,"source precision isolation changed target state");
+                near(b->externalContactElapsedTime(),clock,0,"source precision isolation changed target time");
+                require(tool.world.stepCount()==tick,"source precision isolation changed native time");
+                std::cout<<"CONTACT_SOURCE_PRECISION "<<row.dump()<<std::endl;
+            }
         }
         if(!refusal.empty())for(double interval:{1e-7,1e-10,1e-12}) {
             // Isolate native stepping after the refused state. No new contact

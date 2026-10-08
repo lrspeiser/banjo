@@ -3170,6 +3170,7 @@ PreparedFixedSurfaceManifold JoltWorld::prepareExternalFixedSurfaceManifold(Matt
         body.inertia_world_kg_m2.m[a][b]=body.inertia_world_kg_m2.m[b][a]=
             .5*(body.inertia_world_kg_m2.m[a][b]+body.inertia_world_kg_m2.m[b][a]);
     auto &out=data->receipt;out.body_ids=assembly.receipt.body_ids;
+    out.joint_ids=assembly.receipt.joint_ids;out.links=assembly.receipt.links;
     const auto at=std::find(out.body_ids.begin(),out.body_ids.end(),striker)-out.body_ids.begin();
     out.contact=evaluateFixedSurfaceManifold(nodes,contacts,source,assembly.receipt.links,static_cast<std::uint32_t>(at),dt);
     out.delivered_bodies=assembly.before;

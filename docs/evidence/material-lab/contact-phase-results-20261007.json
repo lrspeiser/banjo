@@ -1,0 +1,788 @@
+{
+  "baseline_commit": "8cc32294625eb5f770538657daf0b1a6e48214a1",
+  "environment": "Windows x64 / MSVC Release / Jolt 5.6.0 / continuous-small-rotation / solver model 8",
+  "source_precision": [
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "material": "glass",
+      "material_interval_s": 0.0,
+      "native_step": false,
+      "rounded_target_work_j": 0.0,
+      "rounded_work_residual_j": 0.0,
+      "source_spin_rounding_rad_s": 4.90884706979157e-09,
+      "source_velocity_rounding_m_s": 1.1113517513978433e-07,
+      "unrounded_target_work_j": 2.432942648729296e-12,
+      "unrounded_work_residual_j": 2.8864924302365404e-15,
+      "width_m": 0.04
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "material": "glass",
+      "material_interval_s": 5e-13,
+      "native_step": false,
+      "rounded_target_work_j": 7.410198505070036e-07,
+      "rounded_work_residual_j": 5.887612589471643e-15,
+      "source_spin_rounding_rad_s": 4.90884706979157e-09,
+      "source_velocity_rounding_m_s": 1.1113517513978433e-07,
+      "unrounded_target_work_j": 9.078395133184618e-07,
+      "unrounded_work_residual_j": 2.150884534331868e-15,
+      "width_m": 0.04
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "material": "glass",
+      "material_interval_s": 5e-11,
+      "native_step": false,
+      "rounded_target_work_j": 9.061600666922603e-05,
+      "rounded_work_residual_j": 6.300177720522095e-15,
+      "source_spin_rounding_rad_s": 4.90884706979157e-09,
+      "source_velocity_rounding_m_s": 1.1113517513978433e-07,
+      "unrounded_target_work_j": 9.078282584888668e-05,
+      "unrounded_work_residual_j": 1.3492223089998615e-15,
+      "width_m": 0.04
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "material": "oak",
+      "material_interval_s": 0.0,
+      "native_step": false,
+      "rounded_target_work_j": 6.917561947346504e-08,
+      "rounded_work_residual_j": 1.1591080843346522e-16,
+      "source_spin_rounding_rad_s": 3.828679166607838e-09,
+      "source_velocity_rounding_m_s": 8.924199044069371e-08,
+      "unrounded_target_work_j": 6.80126578757587e-14,
+      "unrounded_work_residual_j": 4.063811657351469e-15,
+      "width_m": 0.04
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "material": "oak",
+      "material_interval_s": 5e-13,
+      "native_step": false,
+      "rounded_target_work_j": 3.945449733040974e-07,
+      "rounded_work_residual_j": 4.495431593095109e-16,
+      "source_spin_rounding_rad_s": 3.828679166607838e-09,
+      "source_velocity_rounding_m_s": 8.924199044069371e-08,
+      "unrounded_target_work_j": 3.2536870247498237e-07,
+      "unrounded_work_residual_j": 4.6918444797710624e-15,
+      "width_m": 0.04
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "material": "oak",
+      "material_interval_s": 5e-11,
+      "native_step": false,
+      "rounded_target_work_j": 3.260606328591673e-05,
+      "rounded_work_residual_j": -4.300717462937363e-15,
+      "source_spin_rounding_rad_s": 3.828679166607838e-09,
+      "source_velocity_rounding_m_s": 8.924199044069371e-08,
+      "unrounded_target_work_j": 3.2536887702087485e-05,
+      "unrounded_work_residual_j": -1.7982788663311072e-15,
+      "width_m": 0.04
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "material": "iron",
+      "material_interval_s": 0.0,
+      "native_step": false,
+      "rounded_target_work_j": 0.0,
+      "rounded_work_residual_j": 0.0,
+      "source_spin_rounding_rad_s": 2.3221219237546913e-08,
+      "source_velocity_rounding_m_s": 5.421583063908343e-08,
+      "unrounded_target_work_j": 2.448672421235652e-18,
+      "unrounded_work_residual_j": 2.448672421235718e-18,
+      "width_m": 0.04
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "material": "iron",
+      "material_interval_s": 5e-13,
+      "native_step": false,
+      "rounded_target_work_j": 5.342274418352254e-07,
+      "rounded_work_residual_j": -4.561300966300349e-16,
+      "source_spin_rounding_rad_s": 2.3221219237546913e-08,
+      "source_velocity_rounding_m_s": 5.421583063908343e-08,
+      "unrounded_target_work_j": 6.117244712557012e-07,
+      "unrounded_work_residual_j": -1.3885425085555072e-16,
+      "width_m": 0.04
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "material": "iron",
+      "material_interval_s": 5e-11,
+      "native_step": false,
+      "rounded_target_work_j": 6.109412132240367e-05,
+      "rounded_work_residual_j": -1.3102698149874405e-16,
+      "source_spin_rounding_rad_s": 2.3221219237546913e-08,
+      "source_velocity_rounding_m_s": 5.421583063908343e-08,
+      "unrounded_target_work_j": 6.117161769558674e-05,
+      "unrounded_work_residual_j": -2.70419073958741e-16,
+      "width_m": 0.04
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "material": "glass",
+      "material_interval_s": 0.0,
+      "native_step": false,
+      "rounded_target_work_j": 2.524662585547044e-07,
+      "rounded_work_residual_j": 2.4551301656643645e-14,
+      "source_spin_rounding_rad_s": 1.0213416765676835e-09,
+      "source_velocity_rounding_m_s": 9.859713258048726e-08,
+      "unrounded_target_work_j": 1.955886411649603e-13,
+      "unrounded_work_residual_j": -1.7574179563062048e-14,
+      "width_m": 0.12
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "material": "glass",
+      "material_interval_s": 5e-13,
+      "native_step": false,
+      "rounded_target_work_j": 1.939989733355787e-06,
+      "rounded_work_residual_j": 2.9224930539507915e-14,
+      "source_spin_rounding_rad_s": 1.0213416765676835e-09,
+      "source_velocity_rounding_m_s": 9.859713258048726e-08,
+      "unrounded_target_work_j": 1.6875226325035781e-06,
+      "unrounded_work_residual_j": 1.192204020869396e-14,
+      "width_m": 0.12
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "material": "glass",
+      "material_interval_s": 5e-11,
+      "native_step": false,
+      "rounded_target_work_j": 0.00016900401130423787,
+      "rounded_work_residual_j": -5.4819019297747856e-15,
+      "source_spin_rounding_rad_s": 1.0213416765676835e-09,
+      "source_velocity_rounding_m_s": 9.859713258048726e-08,
+      "unrounded_target_work_j": 0.0001687515444626097,
+      "unrounded_work_residual_j": 5.595232801096298e-17,
+      "width_m": 0.12
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "material": "oak",
+      "material_interval_s": 0.0,
+      "native_step": false,
+      "rounded_target_work_j": 0.0,
+      "rounded_work_residual_j": 0.0,
+      "source_spin_rounding_rad_s": 3.5990917487398515e-09,
+      "source_velocity_rounding_m_s": 2.896435405707569e-08,
+      "unrounded_target_work_j": 4.4189393905014207e-13,
+      "unrounded_work_residual_j": -4.127512126667779e-14,
+      "width_m": 0.12
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "material": "oak",
+      "material_interval_s": 5e-13,
+      "native_step": false,
+      "rounded_target_work_j": 3.5350874873086455e-07,
+      "rounded_work_residual_j": 3.6119684936824574e-14,
+      "source_spin_rounding_rad_s": 3.5990917487398515e-09,
+      "source_velocity_rounding_m_s": 2.896435405707569e-08,
+      "unrounded_target_work_j": 3.725869074241832e-07,
+      "unrounded_work_residual_j": -1.8441262641882287e-14,
+      "width_m": 0.12
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "material": "oak",
+      "material_interval_s": 5e-11,
+      "native_step": false,
+      "rounded_target_work_j": 3.7239642901153206e-05,
+      "rounded_work_residual_j": 7.559340947435592e-15,
+      "source_spin_rounding_rad_s": 3.5990917487398515e-09,
+      "source_velocity_rounding_m_s": 2.896435405707569e-08,
+      "unrounded_target_work_j": 3.725872029278232e-05,
+      "unrounded_work_residual_j": -2.6993076832530423e-14,
+      "width_m": 0.12
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "material": "iron",
+      "material_interval_s": 0.0,
+      "native_step": false,
+      "rounded_target_work_j": 0.0,
+      "rounded_work_residual_j": 0.0,
+      "source_spin_rounding_rad_s": 9.727462160945156e-09,
+      "source_velocity_rounding_m_s": 5.631686699156739e-08,
+      "unrounded_target_work_j": 0.0,
+      "unrounded_work_residual_j": 0.0,
+      "width_m": 0.12
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "material": "iron",
+      "material_interval_s": 5e-13,
+      "native_step": false,
+      "rounded_target_work_j": 2.02694981722948e-06,
+      "rounded_work_residual_j": 1.3698604670066853e-14,
+      "source_spin_rounding_rad_s": 9.727462160945156e-09,
+      "source_velocity_rounding_m_s": 5.631686699156739e-08,
+      "unrounded_target_work_j": 2.2888534237242495e-06,
+      "unrounded_work_residual_j": -1.989615499793769e-16,
+      "width_m": 0.12
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "material": "iron",
+      "material_interval_s": 5e-11,
+      "native_step": false,
+      "rounded_target_work_j": 0.00022862213413714933,
+      "rounded_work_residual_j": 5.153652248477965e-15,
+      "source_spin_rounding_rad_s": 9.727462160945156e-09,
+      "source_velocity_rounding_m_s": 5.631686699156739e-08,
+      "unrounded_target_work_j": 0.00022888403700805209,
+      "unrounded_work_residual_j": 2.99895653515425e-15,
+      "width_m": 0.12
+    }
+  ],
+  "operator_isolation": [
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "half_interval_s": 5e-13,
+      "material": "glass",
+      "material_step": false,
+      "native_step": false,
+      "native_step_angular_kg_m2_s": 0.0,
+      "native_step_energy_j": 0.0,
+      "native_step_impulse_n_s": 0.0,
+      "width_m": 0.04,
+      "target_work_per_contact_j": [
+        0.0032703963528594986,
+        0.0
+      ],
+      "source_delivery_correction_per_contact_j": [
+        -9.575765369230181e-07,
+        0.0
+      ]
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "half_interval_s": 5e-13,
+      "material": "glass",
+      "material_step": false,
+      "native_step": true,
+      "native_step_angular_kg_m2_s": 2.36591922845076e-10,
+      "native_step_energy_j": 9.700684699964768e-11,
+      "native_step_impulse_n_s": 0.0,
+      "width_m": 0.04,
+      "target_work_per_contact_j": [
+        0.0032703963528594986,
+        0.0
+      ],
+      "source_delivery_correction_per_contact_j": [
+        -9.575765369230181e-07,
+        0.0
+      ]
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "half_interval_s": 5e-13,
+      "material": "glass",
+      "material_step": true,
+      "native_step": false,
+      "native_step_angular_kg_m2_s": 0.0,
+      "native_step_energy_j": 0.0,
+      "native_step_impulse_n_s": 0.0,
+      "width_m": 0.04,
+      "target_work_per_contact_j": [
+        0.0032703963528594986,
+        7.410198505070036e-07
+      ],
+      "source_delivery_correction_per_contact_j": [
+        -9.575765369230181e-07,
+        7.353519225795525e-07
+      ]
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "half_interval_s": 5e-13,
+      "material": "glass",
+      "material_step": true,
+      "native_step": true,
+      "native_step_angular_kg_m2_s": 2.771150619651363e-10,
+      "native_step_energy_j": 1.0678746775738546e-10,
+      "native_step_impulse_n_s": 0.0,
+      "width_m": 0.04,
+      "target_work_per_contact_j": [
+        0.0032703963528594986,
+        7.413518017281899e-07
+      ],
+      "source_delivery_correction_per_contact_j": [
+        -9.575765369230181e-07,
+        7.356703633178782e-07
+      ]
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "half_interval_s": 5e-13,
+      "material": "oak",
+      "material_step": false,
+      "native_step": false,
+      "native_step_angular_kg_m2_s": 0.0,
+      "native_step_energy_j": 0.0,
+      "native_step_impulse_n_s": 0.0,
+      "width_m": 0.04,
+      "target_work_per_contact_j": [
+        1.0492806599015212e-06,
+        6.917561947346504e-08
+      ],
+      "source_delivery_correction_per_contact_j": [
+        1.0492802670361352e-06,
+        6.917563422570792e-08
+      ]
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "half_interval_s": 5e-13,
+      "material": "oak",
+      "material_step": false,
+      "native_step": true,
+      "native_step_angular_kg_m2_s": 1.1881510532386566e-10,
+      "native_step_energy_j": 2.0619950191758107e-11,
+      "native_step_impulse_n_s": 0.0,
+      "width_m": 0.04,
+      "target_work_per_contact_j": [
+        1.0492806599015212e-06,
+        6.91640794482465e-08
+      ],
+      "source_delivery_correction_per_contact_j": [
+        1.0492802670361352e-06,
+        6.915882685854343e-08
+      ]
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "half_interval_s": 5e-13,
+      "material": "oak",
+      "material_step": true,
+      "native_step": false,
+      "native_step_angular_kg_m2_s": 0.0,
+      "native_step_energy_j": 0.0,
+      "native_step_impulse_n_s": 0.0,
+      "width_m": 0.04,
+      "target_work_per_contact_j": [
+        1.0492806599015212e-06,
+        3.945449733040974e-07
+      ],
+      "source_delivery_correction_per_contact_j": [
+        1.0492802670361352e-06,
+        3.945450051167226e-07
+      ]
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "half_interval_s": 5e-13,
+      "material": "oak",
+      "material_step": true,
+      "native_step": true,
+      "native_step_angular_kg_m2_s": 1.1881510532386514e-10,
+      "native_step_energy_j": 2.0619950191758107e-11,
+      "native_step_impulse_n_s": 0.0,
+      "width_m": 0.04,
+      "target_work_per_contact_j": [
+        1.0492806599015212e-06,
+        3.9453343342353594e-07
+      ],
+      "source_delivery_correction_per_contact_j": [
+        1.0492802670361352e-06,
+        3.9452819789423465e-07
+      ]
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "half_interval_s": 5e-13,
+      "material": "iron",
+      "material_step": false,
+      "native_step": false,
+      "native_step_angular_kg_m2_s": 0.0,
+      "native_step_energy_j": 0.0,
+      "native_step_impulse_n_s": 0.0,
+      "width_m": 0.04,
+      "target_work_per_contact_j": [
+        0.01342385389927543,
+        0.0
+      ],
+      "source_delivery_correction_per_contact_j": [
+        -1.9945192208936646e-07,
+        0.0
+      ]
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "half_interval_s": 5e-13,
+      "material": "iron",
+      "material_step": false,
+      "native_step": true,
+      "native_step_angular_kg_m2_s": 7.908663302186397e-10,
+      "native_step_energy_j": -5.706453087839236e-10,
+      "native_step_impulse_n_s": 4.478209149722124e-09,
+      "width_m": 0.04,
+      "target_work_per_contact_j": [
+        0.01342385389927543,
+        0.0
+      ],
+      "source_delivery_correction_per_contact_j": [
+        -1.9945192208936646e-07,
+        0.0
+      ]
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "half_interval_s": 5e-13,
+      "material": "iron",
+      "material_step": true,
+      "native_step": false,
+      "native_step_angular_kg_m2_s": 0.0,
+      "native_step_energy_j": 0.0,
+      "native_step_impulse_n_s": 0.0,
+      "width_m": 0.04,
+      "target_work_per_contact_j": [
+        0.01342385389927543,
+        5.342274418352254e-07
+      ],
+      "source_delivery_correction_per_contact_j": [
+        -1.9945192208936646e-07,
+        2.3341144338611707e-08
+      ]
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "half_interval_s": 5e-13,
+      "material": "iron",
+      "material_step": true,
+      "native_step": true,
+      "native_step_angular_kg_m2_s": 4.312783921670219e-10,
+      "native_step_energy_j": 1.7956391928919402e-10,
+      "native_step_impulse_n_s": 2.0027160207991557e-09,
+      "width_m": 0.04,
+      "target_work_per_contact_j": [
+        0.01342385389927543,
+        5.341349682005383e-07
+      ],
+      "source_delivery_correction_per_contact_j": [
+        -1.9945192208936646e-07,
+        2.3258568102777182e-08
+      ]
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "half_interval_s": 5e-13,
+      "material": "glass",
+      "material_step": false,
+      "native_step": false,
+      "native_step_angular_kg_m2_s": 0.0,
+      "native_step_energy_j": 0.0,
+      "native_step_impulse_n_s": 0.0,
+      "width_m": 0.12,
+      "target_work_per_contact_j": [
+        0.0232639303193518,
+        2.524662585547044e-07
+      ],
+      "source_delivery_correction_per_contact_j": [
+        3.114782999722593e-06,
+        2.5241332014963207e-07
+      ]
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "half_interval_s": 5e-13,
+      "material": "glass",
+      "material_step": false,
+      "native_step": true,
+      "native_step_angular_kg_m2_s": 1.2080480079293103e-09,
+      "native_step_energy_j": 9.945040346792666e-10,
+      "native_step_impulse_n_s": 4.00543198608716e-09,
+      "width_m": 0.12,
+      "target_work_per_contact_j": [
+        0.0232639303193518,
+        2.524380513912733e-07
+      ],
+      "source_delivery_correction_per_contact_j": [
+        3.114782999722593e-06,
+        2.523961832413996e-07
+      ]
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "half_interval_s": 5e-13,
+      "material": "glass",
+      "material_step": true,
+      "native_step": false,
+      "native_step_angular_kg_m2_s": 0.0,
+      "native_step_energy_j": 0.0,
+      "native_step_impulse_n_s": 0.0,
+      "width_m": 0.12,
+      "target_work_per_contact_j": [
+        0.0232639303193518,
+        1.939989733355787e-06
+      ],
+      "source_delivery_correction_per_contact_j": [
+        3.114782999722593e-06,
+        1.938570226482336e-06
+      ]
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "half_interval_s": 5e-13,
+      "material": "glass",
+      "material_step": true,
+      "native_step": true,
+      "native_step_angular_kg_m2_s": 1.7604941075639137e-09,
+      "native_step_energy_j": 1.092246293410426e-09,
+      "native_step_impulse_n_s": 4.00543198608716e-09,
+      "width_m": 0.12,
+      "target_work_per_contact_j": [
+        0.0232639303193518,
+        1.9399615272235357e-06
+      ],
+      "source_delivery_correction_per_contact_j": [
+        3.114782999722593e-06,
+        1.9385530906006504e-06
+      ]
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "half_interval_s": 5e-13,
+      "material": "oak",
+      "material_step": false,
+      "native_step": false,
+      "native_step_angular_kg_m2_s": 0.0,
+      "native_step_energy_j": 0.0,
+      "native_step_impulse_n_s": 0.0,
+      "width_m": 0.12,
+      "target_work_per_contact_j": [
+        0.008656353441228377,
+        0.0
+      ],
+      "source_delivery_correction_per_contact_j": [
+        -7.657669841877601e-07,
+        0.0
+      ]
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "half_interval_s": 5e-13,
+      "material": "oak",
+      "material_step": false,
+      "native_step": true,
+      "native_step_angular_kg_m2_s": 5.86268913078111e-10,
+      "native_step_energy_j": -6.099156735217548e-10,
+      "native_step_impulse_n_s": 4.478209100071441e-09,
+      "width_m": 0.12,
+      "target_work_per_contact_j": [
+        0.008656353441228377,
+        0.0
+      ],
+      "source_delivery_correction_per_contact_j": [
+        -7.657669841877601e-07,
+        0.0
+      ]
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "half_interval_s": 5e-13,
+      "material": "oak",
+      "material_step": true,
+      "native_step": false,
+      "native_step_angular_kg_m2_s": 0.0,
+      "native_step_energy_j": 0.0,
+      "native_step_impulse_n_s": 0.0,
+      "width_m": 0.12,
+      "target_work_per_contact_j": [
+        0.008656353441228377,
+        3.5350874873086455e-07
+      ],
+      "source_delivery_correction_per_contact_j": [
+        -7.657669841877601e-07,
+        3.5352303632687473e-07
+      ]
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "half_interval_s": 5e-13,
+      "material": "oak",
+      "material_step": true,
+      "native_step": true,
+      "native_step_angular_kg_m2_s": 6.036039250869307e-10,
+      "native_step_energy_j": -6.041460665073828e-10,
+      "native_step_impulse_n_s": 4.478209100071441e-09,
+      "width_m": 0.12,
+      "target_work_per_contact_j": [
+        0.008656353441228377,
+        3.5346862667935605e-07
+      ],
+      "source_delivery_correction_per_contact_j": [
+        -7.657669841877601e-07,
+        3.5346287697297515e-07
+      ]
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "half_interval_s": 5e-13,
+      "material": "iron",
+      "material_step": false,
+      "native_step": false,
+      "native_step_angular_kg_m2_s": 0.0,
+      "native_step_energy_j": 0.0,
+      "native_step_impulse_n_s": 0.0,
+      "width_m": 0.12,
+      "target_work_per_contact_j": [
+        0.01016752903393429,
+        0.0
+      ],
+      "source_delivery_correction_per_contact_j": [
+        -1.3757332913890558e-06,
+        0.0
+      ]
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "half_interval_s": 5e-13,
+      "material": "iron",
+      "material_step": false,
+      "native_step": true,
+      "native_step_angular_kg_m2_s": 5.147893056061473e-10,
+      "native_step_energy_j": -5.385629719967255e-10,
+      "native_step_impulse_n_s": 4.478209149722125e-09,
+      "width_m": 0.12,
+      "target_work_per_contact_j": [
+        0.01016752903393429,
+        0.0
+      ],
+      "source_delivery_correction_per_contact_j": [
+        -1.3757332913890558e-06,
+        0.0
+      ]
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "half_interval_s": 5e-13,
+      "material": "iron",
+      "material_step": true,
+      "native_step": false,
+      "native_step_angular_kg_m2_s": 0.0,
+      "native_step_energy_j": 0.0,
+      "native_step_impulse_n_s": 0.0,
+      "width_m": 0.12,
+      "target_work_per_contact_j": [
+        0.01016752903393429,
+        2.02694981722948e-06
+      ],
+      "source_delivery_correction_per_contact_j": [
+        -1.3757332913890558e-06,
+        2.0150632224365046e-06
+      ]
+    },
+    {
+      "contact_geometry": "clipped-face-v1",
+      "error": "",
+      "fixed_witnesses": true,
+      "half_interval_s": 5e-13,
+      "material": "iron",
+      "material_step": true,
+      "native_step": true,
+      "native_step_angular_kg_m2_s": 9.161179275227028e-10,
+      "native_step_energy_j": -6.654161666119762e-10,
+      "native_step_impulse_n_s": 4.478209100071441e-09,
+      "width_m": 0.12,
+      "target_work_per_contact_j": [
+        0.01016752903393429,
+        2.027006772457613e-06
+      ],
+      "source_delivery_correction_per_contact_j": [
+        -1.3757332913890558e-06,
+        2.0151084017591747e-06
+      ]
+    }
+  ],
+  "executable_sha256": "2816e417c988cb3cf0c5a9e8ec1e9e2abf028758196a3eb32536dff8707803c7",
+  "rejected_endpoint_prototype": {
+    "stopped_after_cpu_seconds": 371.61,
+    "completed_cases": 0,
+    "removed": true
+  }
+}

@@ -154,6 +154,8 @@ struct PointShapeQuery {
 struct FixedSurfaceManifoldKick {
     FixedSurfaceManifoldResult contact;
     std::vector<MatterBodyId> body_ids;
+    std::vector<unsigned> joint_ids; // Same order as links and reaction receipts.
+    std::vector<FixedVelocityLink> links; // Actual native attachment witnesses.
     std::vector<RigidMechanicalState> delivered_bodies;
     double numerical_energy_change_j{};
     Vec3 momentum_error_kg_m_s{},angular_momentum_error_kg_m2_s{};
