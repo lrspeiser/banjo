@@ -25,7 +25,7 @@ import re
 
 ROOT = Path(__file__).resolve().parents[1]
 FILES = {"index.html", "lab.css", "lab.js", "contract.js", "material.json", "manifest.json",
-         "sheets.html", "sheets.js", "sheets.css", "drop.html", "drop.js",
+         "sheets.html", "sheets.js", "sheets.css", "drop.html", "drop.js", "drop-observation.js",
          "tests.html", "hub.css", "hub.js", "hub-contract.js", "world.html", "world.css", "world.js", "world-input.js", "world-impact.js",
          "three.module.js", "three.core.js", "three-LICENSE.txt"}
 SCALES = (.25, .5, 1, 1.25)
@@ -100,7 +100,7 @@ def prepare(native: Path, output: Path):
     if not compiled.is_file():
         raise RuntimeError("Build the client first: npm ci && npm run build in client/")
     subprocess.run([str(native), str(output / "material.json")], check=True, timeout=120)
-    for name in ("drop.html", "drop.js", "sheets.html", "sheets.js", "sheets.css", "index.html", "lab.css", "tests.html", "hub.css", "world.html", "world.css", "world.js", "world-input.js", "world-impact.js"):
+    for name in ("drop.html", "drop.js", "drop-observation.js", "sheets.html", "sheets.js", "sheets.css", "index.html", "lab.css", "tests.html", "hub.css", "world.html", "world.css", "world.js", "world-input.js", "world-impact.js"):
         shutil.copyfile(ROOT / "client/experiments" / name, output / name)
     for name in ("three.module.js", "three.core.js", "three-LICENSE.txt"):
         shutil.copyfile(ROOT / "playground/vendor" / name, output / name)
@@ -118,6 +118,7 @@ def prepare(native: Path, output: Path):
                "client/experiments/hub.ts", "client/experiments/hub-contract.ts", "scripts/lab-test-runner.py",
                "client/experiments/world.html", "client/experiments/world.css", "client/experiments/world.js", "client/experiments/world-input.js", "client/experiments/world-impact.js",
                "scripts/test-world.py", "runtime/src/main.rs", "runtime/src/world.rs", "runtime/src/native.rs"]
+    sources += ["src/platform/PlatformWorld.cpp", "src/platform/WaterWheelWorld.cpp", "src/platform/WaterWheelWorld.hpp", "tests/water_wheel_tests.py", "client/experiments/drop-observation.js", "tests/drop_observation_tests.mjs"]
     manifest = {
         "schema": "banjo.material-lab-manifest.v1",
         "source_revision": subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip(),

@@ -82,7 +82,7 @@ class DropTests(unittest.TestCase):
                 self.assertFalse(s['qualification']['release_ready'])
                 if sheet=='glass':self.assertGreater(obj(s,1)['broken_links'],0)
                 if ball=='glass':self.assertGreater(obj(s,2)['broken_links'],0,'The ball must participate in material response')
-                EVIDENCE.append(dict(case=sheet+'/'+ball,wall_s=time.perf_counter()-start,report=s['report']))
+                EVIDENCE.append(dict(case=sheet+'/'+ball,wall_s=time.perf_counter()-start,report=s['report'],before=initial,after=s))
                 if ball=='iron':
                     w.send(dict(op='create',sheet=sheet,ball=ball,mass_kg=1,height_m=0,offset_m=0,mode='deformable',speed_m_s=0))
                     control=w.advance(4)

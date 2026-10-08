@@ -54,7 +54,7 @@ export function validateJob(value:unknown,expected?:string):Job {
   const j=object(value);
   if(j.schema!=="banjo.test-job.v1"||typeof j.id!=="string"||!/^[0-9a-f]{32}$/.test(j.id)||(expected&&j.id!==expected)||!["running","completed"].includes(String(j.status)))throw Error("Wrong test execution");
   if(typeof j.current!=="string"||typeof j.selection!=="string")throw Error("Missing test selection");
-  const total=integer(j.total,1,15),ids=new Set<string>();
+  const total=integer(j.total,1,16),ids=new Set<string>();
   const checks=array(j.checks,0,total);
   for(const item of checks){const c=object(item);if(typeof c.id!=="string"||ids.has(c.id)||typeof c.name!=="string"||typeof c.kind!=="string"||typeof c.output!=="string"||c.output.length>30000)throw Error("Invalid check result");ids.add(c.id);
     if(!["pass","fail","error","unavailable"].includes(String(c.status)))throw Error("Unknown check status");

@@ -14,6 +14,12 @@ class DropManager(shared.SheetManager):
         super().__init__(native, log_root or Path(__file__).resolve().parents[1] / 'build/drop-world-logs')
 
     def validate_create(self, request):
+        if request.get('experiment') == 'water-wheel':
+            if set(request) != {'op','experiment','paddle','water','offset_m'}: raise ValueError('Invalid wheel declaration')
+            if request['paddle'] not in ('oak','glass','iron') or type(request['water']) is not bool: raise ValueError('Invalid paddle or water flag')
+            offset=request['offset_m']
+            if type(offset) not in (float,int) or not math.isfinite(offset) or abs(offset)>1: raise ValueError('Invalid jet offset')
+            return dict(request)
         if set(request) != {'op','sheet','ball','mass_kg','height_m','offset_m','mode','speed_m_s'}:
             raise ValueError('Invalid drop declaration')
         if request['sheet'] not in shared.MATERIALS or request['ball'] not in shared.MATERIALS:

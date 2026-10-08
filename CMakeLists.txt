@@ -292,7 +292,7 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
     add_library(banjo_material_lab src/creator/BondedBowl.cpp src/creator/BowlRecording.cpp src/platform/BowlGeometry.cpp)
     target_link_libraries(banjo_material_lab PUBLIC banjo_core)
     banjo_enable_warnings(banjo_material_lab)
-    add_library(banjo_platform src/platform/PlatformWorld.cpp src/platform/PlatformPlayback.cpp src/platform/CompiledObject.cpp src/platform/CompiledRuntime.cpp src/platform/NetworkWorld.cpp)
+    add_library(banjo_platform src/platform/PlatformWorld.cpp src/platform/PlatformPlayback.cpp src/platform/CompiledObject.cpp src/platform/CompiledRuntime.cpp src/platform/NetworkWorld.cpp src/platform/WaterWheelWorld.cpp)
     target_link_libraries(banjo_platform PUBLIC banjo_runtime banjo_material_lab PRIVATE nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_platform)
     add_library(banjo_sparse_world src/world/SparseThermalWorld.cpp src/world/WorldLabFixture.cpp src/world/WorldPackage.cpp)
@@ -528,6 +528,18 @@ if(BANJO_BUILD_HEADLESS)
             add_test(NAME banjo_drop_world_integration_tests
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/drop_world_tests.py $<TARGET_FILE:banjo_drop_world_run>)
             set_tests_properties(banjo_drop_world_integration_tests PROPERTIES TIMEOUT 120 LABELS "native;world;experimental")
+            add_test(NAME banjo_water_wheel_tests
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/water_wheel_tests.py $<TARGET_FILE:banjo_drop_world_run>)
+            set_tests_properties(banjo_water_wheel_tests PROPERTIES TIMEOUT 120 LABELS "native;water;experimental")
+            find_program(BANJO_NODE_EXECUTABLE node)
+            if(BANJO_NODE_EXECUTABLE)
+                set_tests_properties(banjo_drop_world_integration_tests PROPERTIES FIXTURES_SETUP drop_observation_data)
+                set_tests_properties(banjo_water_wheel_tests PROPERTIES FIXTURES_SETUP water_observation_data)
+                add_test(NAME banjo_drop_observation_tests
+                    COMMAND ${BANJO_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/drop_observation_tests.mjs)
+                set_tests_properties(banjo_drop_observation_tests PROPERTIES TIMEOUT 10
+                    FIXTURES_REQUIRED "drop_observation_data;water_observation_data" LABELS "native;client;experimental")
+            endif()
         endif()
         if(TARGET banjo_sheet_world_run)
             add_test(NAME banjo_sheet_gateway_tests

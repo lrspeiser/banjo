@@ -31,6 +31,7 @@ Json object(unsigned id,const char *name,MaterialPreset m,const char *shape,cons
         {"orientation_wxyz",{1,0,0,0}},{"velocity_m_s",{0,0,0}},{"spin_rad_s",{0,0,0}}};
 }
 Json declaration(const Json &r){
+    if(r.value("experiment",std::string{})=="water-wheel")return {{"package_version",1},{"physics_abi","banjo-fluid-wheel-1"},{"backend","fluid-wheel-v1"},{"units","SI"},{"fixed_dt_s",r.value("dt_s",1./240)},{"max_steps_per_call",4},{"paddle",r.at("paddle")},{"water",r.at("water")},{"offset_m",r.at("offset_m")}};
     const auto target=preset(r.at("sheet").get<std::string>()),ball=preset(r.at("ball").get<std::string>());
     const double mass=r.value("mass_kg",1.0),height=r.value("height_m",10.0),offset=r.value("offset_m",0.0);
     const auto mode=r.value("mode",std::string("deformable"));const bool deformable=mode=="deformable";
@@ -67,7 +68,7 @@ Json snapshot(PlatformWorld &world,const Json &input){
             {"material",i.material_id},{"deformable",i.deformable_cell}});}
     for(const auto &b:world.renderBonds())if(b.live)bonds.push_back({{"a",b.a_element},{"b",b.b_element},{"object_id",b.object_id},{"damage",b.damage}});
     return {{"schema","banjo.shared-world.v1"},{"declaration",input},{"instances",cells},{"bonds",bonds},{"report",report},
-        {"qualification",{{"release_ready",false},{"reason","Experimental axial network; full contact/work accounting, cell-frame bending and refinement remain open."}}}};
+        {"qualification",{{"release_ready",false},{"reason",report.value("experiment",std::string{})=="water-wheel"?"Experimental fluid / rigid contacts; compressibility, boundary refinement and complete energy/momentum accounting remain open.":"Experimental axial network; full contact/work accounting, cell-frame bending and refinement remain open."}}}};
 }
 }
 int main(int argc,char **argv){
@@ -78,7 +79,8 @@ int main(int argc,char **argv){
         if(line.size()>4096)throw std::invalid_argument("intention exceeds byte budget");const auto r=Json::parse(line);const auto op=r.at("op").get<std::string>();
         if(op=="create") {auto candidate=PlatformWorld::load(declaration(r).dump());world=std::move(candidate);input=r;steps=0;}
         else if(op=="advance") {if(!world)throw std::invalid_argument("create a world first");const unsigned n=r.value("steps",1U);
-            if(n<1||n>4||steps+n>12000)throw std::invalid_argument("world step budget exceeded");
+            const unsigned limit=input.value("experiment",std::string{})=="water-wheel"?unsigned(std::llround(1.6/world->fixedStep())):12000;
+            if(n<1||n>4||steps+n>limit)throw std::invalid_argument("Declared experiment duration reached; reset for a new experiment");
             for(unsigned i=0;i<n;++i){const auto receipt=world->step(1);steps+=receipt.completed_steps;
                 if(!receipt.error.empty())throw std::runtime_error(receipt.error);
                 const auto frame=snapshot(*world,input);frames.push_back({{"time_s",receipt.elapsed_s},{"instances",frame["instances"]}});}}
