@@ -2108,6 +2108,15 @@ if(BANJO_BUILD_TESTS)
             add_test(NAME banjo_voxel_gateway_tests COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_gateway_test.py $<TARGET_FILE:banjo_voxel_world_run>)
             set_tests_properties(banjo_voxel_gateway_tests PROPERTIES TIMEOUT 30 LABELS "native;voxel;client")
+            add_test(NAME banjo_voxel_pipeline_tests COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_pipeline_test.py $<TARGET_FILE:banjo_voxel_world_run>)
+            set_tests_properties(banjo_voxel_pipeline_tests PROPERTIES TIMEOUT 60 LABELS "native;voxel;client")
+            find_program(BANJO_NODE_EXECUTABLE NAMES node)
+            if(BANJO_NODE_EXECUTABLE)
+                add_test(NAME banjo_voxel_playback_tests COMMAND ${BANJO_NODE_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_playback_test.mjs)
+                set_tests_properties(banjo_voxel_playback_tests PROPERTIES TIMEOUT 10 LABELS "voxel;client")
+            endif()
         endif()
         add_test(NAME banjo_regression_runner_tests
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/regression_runner_tests.py)

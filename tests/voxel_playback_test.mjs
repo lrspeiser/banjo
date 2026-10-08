@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {NativePlayback} from '../client/voxel-lab/playback.mjs';
+const state=(time,component=1,material='glass',events=[])=>({time_s:time,events,cells:[{id:1,component,material,mass_kg:1,fixed:false,size_m:[1,1,1],position_m:[time,0,0]}]});
+const player=new NativePlayback();assert.equal(player.sample(0),null);
+player.reset(state(0),0);player.push(state(1),100);
+assert.equal(player.sample(100).alpha,0);assert.equal(player.sample(150).alpha,.5);assert.equal(player.sample(200).alpha,1);
+assert.equal(player.sample(10000).time_s,1,'no extrapolation beyond an accepted native state');
+assert.equal(player.push(state(.5),250),false,'late/out-of-order state rejected');
+assert.equal(player.push(state(1),250),false,'duplicate physical clock rejected');
+player.push(state(2,2),300);assert.equal(player.sample(300).time_s,2,'component change snaps');
+player.push(state(3,2,'iron'),400);assert.equal(player.sample(400).alpha,1,'material change snaps');
+player.push(state(4,2,'iron',[{a:1,b:2}]),500);assert.equal(player.sample(500).alpha,1,'broken-face topology change snaps');
+const changed=state(5,2,'iron',[{a:1,b:2}]);changed.cells[0].size_m=[2,1,1];player.push(changed,600);assert.equal(player.sample(600).alpha,1,'geometry change snaps');
+for(let i=6;i<500;i++)player.push(state(i,2,'iron',[{a:1,b:2}]),500+i*100);
+assert.equal(player.bufferedStates,2,'bounded two-state playback storage');
+player.reset(state(0),0);assert.equal(player.bufferedStates,1);assert.equal(player.sample(0).time_s,0,'reset removes prior world frames');
+console.log('PASS playback: accepted brackets, no extrapolation, duplicate/late refusal, geometry/topology discontinuities and bounded/reset storage');
