@@ -1,54 +1,59 @@
 {
-  "title": "Contact comparison: glass constituent ball",
+  "title": "Centered springs: full-impact gates open",
   "date": "2026-10-08",
-  "physics_revision": "d4af41a91d7b10c2ed06003394698771c26b62dc",
-  "native_sha256": "adfeda1cb18ec7b741b5160a730c9cbbf35fb34a5d69798ebc72201cd4b11560",
+  "physics_revision": "155a8068c661fce3554371e62ed9a2945be4beb0",
+  "native_sha256": "10620873f31bf13e869494a306ebc5769b7c7524b1aa38195e5923d43e53f62b",
   "changes": [
-    "Explicit unilateral contact alternative; reference behavior and gates unchanged.",
-    "Experimental glass-ball drops complete at two timesteps, with different fragment counts.",
-    "Surface constraints are inelastic; existing interfaces can recover elastic energy. No compliant indentation.",
-    "Large losses and useful calculation speed remain unresolved; this is a comparison, not an accuracy fix."
+    "Centered elastic rows use the declared stiffness/damping and actual midpoint pose velocities.",
+    "Undamped linear/principal-axis material oracles retain energy; matching damping work is tested.",
+    "Full centered glass impacts still refuse energy creation. This is not compliant contact or an accuracy fix.",
+    "Default physical/work behavior matches the published build. Centered oscillations stay active and cost more computation."
   ],
   "checks": [
+    {
+      "label": "Native oracles",
+      "status": "passed",
+      "value": "88 scenarios, including 1 s centered glass/oak/iron springs and torsion"
+    },
+    {
+      "label": "Centered reporting / refusal",
+      "status": "passed",
+      "value": "5 comparisons: 3 completed, 2 safely refused; physics gate stays OPEN"
+    },
     {
       "label": "Reference worlds",
       "status": "passed",
       "value": "11 completed cases; original glass-ball refusal retained"
     },
     {
-      "label": "Native contact and interfaces",
-      "status": "passed",
-      "value": "62 scenarios; analytical impacts and assembly recovery"
-    },
-    {
-      "label": "Experimental worlds",
-      "status": "passed",
-      "value": "6 cases: glass/oak/iron/ice, glass ball at two timesteps"
-    },
-    {
       "label": "Default-build parity",
       "status": "passed",
-      "value": "4 materials / 2 physical s; physical and work fields match"
+      "value": "4 materials / 2 physical s; physical and work outputs match"
     },
     {
       "label": "Scoped regression",
       "status": "passed",
-      "value": "7 CTests / 373.01 s plus rebuilt recovery oracles; not full repository"
+      "value": "8 CTests / 483.19 s; diagnostic refusal passes are not physical admission"
     },
     {
-      "label": "Energy accuracy",
+      "label": "Centered glass accuracy",
       "status": "blocked",
-      "value": "Experimental glass ball loses ~96 J; differing piece counts, convergence unqualified"
+      "value": "Iron ball refuses at 1.903077 s; glass ball refuses at 1.428242 s"
+    },
+    {
+      "label": "Energy accounting",
+      "status": "blocked",
+      "value": "Full contact, finite-rotation and momentum residuals remain unqualified"
     },
     {
       "label": "Calculation speed",
       "status": "blocked",
-      "value": "Iron/glass: reference 39.69 s, alternative 68.52 s per 2 physical s; no speedup"
+      "value": "Centered oak/iron ~59/76 wall s for 2 physical s; default glass ~39 s"
     },
     {
       "label": "Reference glass ball",
       "status": "blocked",
-      "value": "Still refuses at 1.427663 s; experimental completion is a separate model"
+      "value": "Original refusal at 1.427663 s is unchanged"
     }
   ],
   "next": [
