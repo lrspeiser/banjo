@@ -9,7 +9,11 @@ parser.add_argument('--dormant-spring-baseline',action='store_true',
     help='Exclude only the impulse-source diagnostics corrected by dormant spring scheduling')
 parser.add_argument('--contact-model-baseline',action='store_true',
     help='Exclude only the new contact model qualification label, retaining every work field')
+parser.add_argument('--friction-fastpath-baseline',action='store_true',
+    help='Five coupled-friction drops; compare both inline binaries, retaining every physical and work field')
 args=parser.parse_args()
+if args.friction_fastpath_baseline and (not args.baseline or args.contact_model_baseline or args.dormant_spring_baseline):
+    parser.error('--friction-fastpath-baseline requires a baseline and no diagnostic exclusions')
 if args.dormant_spring_baseline and not args.baseline:
     parser.error('--dormant-spring-baseline requires a baseline executable')
 if args.contact_model_baseline and (not args.baseline or args.dormant_spring_baseline):
@@ -25,7 +29,7 @@ def physical(reply):
         result['state']['diagnostics'].pop('max_spring_solver_residual_n')
         result['state']['step_work']['measured'].pop('solver_angular_residual_n_m_s')
         result['state']['step_work']['measured'].pop('solver_linear_residual_n_s')
-    elif args.baseline:result['state'].pop('step_work',None)
+    elif args.baseline and not args.friction_fastpath_baseline:result['state'].pop('step_work',None)
     return result
 
 def differences(a,b,path=''):
@@ -40,9 +44,12 @@ def differences(a,b,path=''):
 
 exe=Path(args.native).resolve()
 reference_exe=Path(args.baseline).resolve() if args.baseline else exe
-for material in ['glass','oak','iron','ice']:
+cases=[(m,'iron') for m in ['glass','oak','iron','ice']]
+if args.friction_fastpath_baseline:cases.append(('glass','glass'))
+for material,ball in cases:
+    reference_mode='--serve' if args.friction_fastpath_baseline else '--serve-reference'
     processes=[subprocess.Popen([str(binary),mode],stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,text=True) for binary,mode in [(exe,'--serve'),(reference_exe,'--serve-reference')]]
+                stdout=subprocess.PIPE,text=True) for binary,mode in [(exe,'--serve'),(reference_exe,reference_mode)]]
     timings=[0.,0.]
     def request(command):
         replies=[]
@@ -56,19 +63,22 @@ for material in ['glass','oak','iron','ice']:
         assert replies[0]['ok'],replies[0].get('error')
         return replies[0]['state']
     try:
-        first=request({'op':'create','declaration':{'sheet':material}})
+        declaration={'sheet':material}
+        if args.friction_fastpath_baseline:
+            declaration.update(ball=ball,contact_law='midpoint-block-friction',face_law='centered-log-gradient')
+        first=request({'op':'create','declaration':declaration})
         for _ in range(120):state=request({'op':'advance','steps':16})
         assert abs(state['time_s']-2)<1e-8
         assert {c['id']:c['mass_kg'] for c in state['cells']}=={c['id']:c['mass_kg'] for c in first['cells']}
-        print(json.dumps({'material':material,'ticks':state['ticks'],'substeps':state['substeps'],
+        print(json.dumps({'material':material,'ball':ball,'ticks':state['ticks'],'substeps':state['substeps'],
             'scene_s':timings[0],'reference_s':timings[1],
             'speedup':timings[1]/timings[0], 'pieces':state['objects'][0]['pieces'],
             'unclosed_energy_j':state['diagnostics']['unclosed_energy_j'],
             'linear_momentum_residual_n_s':state['contact_audit']['linear_momentum_residual_n_s'],
             'parity':'exact at every 16 host ticks; profiler excluded'}),flush=True)
-        if args.baseline:print(json.dumps({'material':material,'new_step_work':state['step_work'],
+        if args.baseline:print(json.dumps({'material':material,'ball':ball,'new_step_work':state['step_work'],
             'excluded_corrected_diagnostics':(['max_spring_solver_residual_n','solver_angular_residual_n_m_s','solver_linear_residual_n_s']
-                if args.dormant_spring_baseline else ['qualification/contact_law'] if args.contact_model_baseline else ['step_work'])}),flush=True)
+                if args.dormant_spring_baseline else ['qualification/contact_law'] if args.contact_model_baseline else [] if args.friction_fastpath_baseline else ['step_work'])}),flush=True)
     finally:
         for proc in processes:proc.terminate();proc.wait(timeout=5)
-print('PASS glass/oak/iron/ice execution parity through 2 s native impacts',flush=True)
+print('PASS '+('five coupled-friction' if args.friction_fastpath_baseline else 'glass/oak/iron/ice')+' execution parity through 2 s native impacts',flush=True)

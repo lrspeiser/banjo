@@ -68,9 +68,10 @@ function draw(s){if(!s)return;
  canvas.dataset.time=s.time_s;canvas.dataset.nativeCells=s.cells.length;canvas.dataset.sheetPieces=sheet.pieces;
 }
 function updateCamera(){target.set(0,whole?4.8:.43,0);const r=whole?13:radius;camera.position.set(target.x+r*Math.cos(pitch)*Math.sin(yaw),target.y+r*Math.sin(pitch),target.z+r*Math.cos(pitch)*Math.cos(yaw));camera.lookAt(target);}
-function render(now){drawPose(showBefore?{from:initial,to:initial,alpha:1,time_s:initial.time_s}:playback.sample(now));const w=canvas.clientWidth,h=canvas.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();updateCamera();renderer.setViewport(0,0,w,h);renderer.setScissorTest(false);renderer.render(scene,camera);
+let viewportWidth=0,viewportHeight=0;
+function render(now){drawPose(showBefore?{from:initial,to:initial,alpha:1,time_s:initial.time_s}:playback.sample(now));const w=canvas.clientWidth,h=canvas.clientHeight;if(w!==viewportWidth||h!==viewportHeight){renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();viewportWidth=w;viewportHeight=h;}updateCamera();renderer.setViewport(0,0,w,h);renderer.setScissorTest(false);renderer.render(scene,camera);
  if(pipeline)$('pose-age').textContent=(pipeline.published_state_age_ms+Math.max(0,now-pipelineArrivedAt)).toFixed(0)+' ms'+(!running&&!calculating?' · paused':'');
- if(!whole&&w>850){const ih=Math.min(190,h*.25),iw=110;renderer.setScissorTest(true);renderer.setScissor(w-iw-22,h-ih-250,iw,ih);renderer.setViewport(w-iw-22,h-ih-250,iw,ih);overview.aspect=iw/ih;overview.updateProjectionMatrix();renderer.render(scene,overview);renderer.setScissorTest(false);}
+ if(!whole&&w>850){const ih=Math.min(190,h*.25),iw=110;renderer.setScissorTest(true);renderer.setScissor(w-iw-22,h-ih-250,iw,ih);renderer.setViewport(w-iw-22,h-ih-250,iw,ih);if(overview.aspect!==iw/ih){overview.aspect=iw/ih;overview.updateProjectionMatrix();}renderer.render(scene,overview);renderer.setScissorTest(false);}
  renderFrames++;if(now-fpsStart>=1000){$('render-fps').textContent=Math.round(renderFrames*1000/(now-fpsStart))+' fps';renderFrames=0;fpsStart=now;}
  requestAnimationFrame(render);
 }

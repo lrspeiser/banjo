@@ -49,6 +49,17 @@ std::array<double,3> solveContactFrictionBlock(const std::array<double,9>& k,
     if(twist>0){
         const auto p=disk(sa,sb,sc,{q[0]-d*q[2]/f,q[1]-e*q[2]/f},cap);
         consider(p,-(q[2]+d*p[0]+e*p[1])/f);
+        // Eliminating z minimizes over an unrestricted twist axis. If that
+        // global minimizer also satisfies the twist interval, restricting
+        // the feasible set cannot improve it. No endpoint solves are needed.
+        // Keep the original disk root calculation and finite-objective guard.
+        if(std::isfinite(best_value))return best;
+    }else{
+        // Both interval endpoints are the same when twisting is disabled.
+        // Solve once, retaining the objective overflow/finite checks.
+        consider(disk(a,b,c,{q[0],q[1]},cap),0);
+        if(!std::isfinite(best_value))throw std::runtime_error("no finite friction minimizer");
+        return best;
     }
     // A constrained minimizer is either interior in z or on one endpoint.
     for(double z:{-twist,twist})consider(disk(a,b,c,{q[0]+d*z,q[1]+e*z},cap),z);
