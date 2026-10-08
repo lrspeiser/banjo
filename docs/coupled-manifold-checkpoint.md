@@ -1,5 +1,10 @@
 # Coupled material manifold checkpoint — October 7, 2026
 
+**Follow-up:** [Contact-search repair and current evidence](coupled-contact-search-checkpoint.md)
+supersede the broad-glass solver refusal below. All twelve coupled sustained
+cases now complete; narrow-glass topology refinement remains open. This earlier
+checkpoint records the original experiment and its failed acceptance.
+
 ## Scope
 
 Experimental CPU reference, not terrain migration or completed gameplay physics.

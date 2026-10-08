@@ -10,6 +10,7 @@
 #include <limits>
 #include <stdexcept>
 #include <fstream>
+#include <filesystem>
 #include <nlohmann/json.hpp>
 
 namespace {
@@ -147,7 +148,73 @@ MechanicalTotals totals(const LatticeState &s,JoltWorld &w) {
     }
     return out;
 }
+void capturedManifoldRegression() {
+    // Actual failing pre-contact inputs, not stored fracture outcomes. The old
+    // zero-start search refused this nine-contact glass state at 1.45336e-8 m/s.
+    std::ifstream input(std::filesystem::path(__FILE__).parent_path()/"data/coupled-glass-contact-state.txt");
+    require(input.good(),"missing captured coupled contact fixture");
+    std::size_t node_count{},contact_count{},body_count{},link_count{};std::uint32_t striker{};double dt{};
+    input>>node_count>>contact_count>>body_count>>link_count>>striker>>dt;
+    require(node_count==18&&contact_count==9&&body_count==2&&link_count==1&&striker==0,
+        "captured contact fixture header changed");
+    const auto read_vec=[&](Vec3 &v){input>>v.x>>v.y>>v.z;};
+    std::vector<ActiveNodeState> nodes(node_count);
+    for(auto &n:nodes) {
+        read_vec(n.position_world_m);read_vec(n.previous_position_world_m);read_vec(n.velocity_m_s);
+        read_vec(n.spin_angular_velocity_rad_s);input>>n.mass_kg;
+    }
+    std::vector<FixedSurfaceContact> contacts(contact_count);
+    for(auto &c:contacts) {
+        std::size_t count{};input>>count;require(count<=node_count,"captured support exceeds actual nodes");
+        c.nodes.resize(count);for(auto &id:c.nodes)input>>id;
+        read_vec(c.surface_world_m);read_vec(c.normal_world);input>>c.gap_m>>c.settings.static_friction>>
+            c.settings.dynamic_friction>>c.settings.restitution>>c.settings.restitution_speed_threshold_m_s>>c.settings.contact_margin_m;
+    }
+    std::vector<RigidMechanicalState> bodies(body_count);
+    for(auto &b:bodies) {
+        read_vec(b.motion.center_of_mass_world_m);
+        input>>b.motion.orientation_world.w>>b.motion.orientation_world.x>>b.motion.orientation_world.y>>b.motion.orientation_world.z;
+        read_vec(b.motion.linear_velocity_m_s);read_vec(b.motion.angular_velocity_rad_s);input>>b.mass_kg;
+        for(auto &row:b.inertia_world_kg_m2.m)for(auto &x:row)input>>x;
+    }
+    std::vector<FixedVelocityLink> links(link_count);
+    for(auto &link:links){input>>link.a>>link.b;read_vec(link.point_a_world_m);read_vec(link.point_b_world_m);}
+    require(!input.fail(),"malformed captured manifold fixture");
+    input>>std::ws;require(input.eof(),"unexpected captured manifold fixture tail");
+    const auto result=evaluateFixedSurfaceManifold(nodes,contacts,bodies,links,striker,dt);
+    require(result.active_contacts>0,"captured convergent contact discarded all impulses");
+    near(length(result.momentum_residual_kg_m_s),0,1e-10,"captured manifold source momentum audit");
+    near(length(result.angular_residual_kg_m2_s),0,1e-10,"captured manifold source angular audit");
+    near(result.work_residual_j,0,1e-10,"captured manifold whole-system work audit");
+    Vec3 momentum{},angular{};double energy_change=0;
+    for(std::size_t a=0;a<nodes.size();++a) {
+        const auto delta=result.node_velocities_m_s[a]-nodes[a].velocity_m_s;
+        const auto impulse=nodes[a].mass_kg*delta;
+        momentum+=impulse;angular+=cross(nodes[a].position_world_m,impulse);
+        energy_change+=.5*nodes[a].mass_kg*dot(delta,result.node_velocities_m_s[a]+nodes[a].velocity_m_s);
+    }
+    for(std::size_t a=0;a<bodies.size();++a) {
+        const auto &before=bodies[a],&after=result.bodies[a];
+        const auto delta=after.motion.linear_velocity_m_s-before.motion.linear_velocity_m_s;
+        const auto spin=after.motion.angular_velocity_rad_s-before.motion.angular_velocity_rad_s;
+        const auto impulse=before.mass_kg*delta;
+        momentum+=impulse;angular+=cross(before.motion.center_of_mass_world_m,impulse)+before.inertia_world_kg_m2*spin;
+        energy_change+=.5*before.mass_kg*dot(delta,after.motion.linear_velocity_m_s+before.motion.linear_velocity_m_s)+
+            .5*dot(spin,before.inertia_world_kg_m2*(after.motion.angular_velocity_rad_s+before.motion.angular_velocity_rad_s));
+    }
+    near(length(momentum),0,1e-10,"captured full material/source linear momentum");
+    near(length(angular-result.geometry_couple_kg_m2_s),0,1e-10,"captured full material/source angular momentum");
+    near(energy_change+result.reconciliation_loss_j+result.dissipated_energy_j,0,1e-10,
+        "captured full material/source energy account");
+    auto reversed=contacts;std::reverse(reversed.begin(),reversed.end());
+    const auto reverse=evaluateFixedSurfaceManifold(nodes,reversed,bodies,links,striker,dt);
+    for(std::size_t a=0;a<nodes.size();++a)
+        near(length(result.node_velocities_m_s[a]-reverse.node_velocities_m_s[a]),0,0,"captured contact order changed response");
+    std::cout<<"MANIFOLD_CAPTURE {\"contacts\":"<<contact_count<<",\"active\":"<<result.active_contacts
+        <<",\"work_residual_j\":"<<result.work_residual_j<<",\"iterations\":"<<result.iterations<<"}\n";
+}
 void manifoldOracles() {
+    capturedManifoldRegression();
     for(const auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
         Target target(preset,1e-7,.08,{.08,0,0});Tool tool;
         auto backend=target.backend();std::vector<ActiveNodeState> nodes;

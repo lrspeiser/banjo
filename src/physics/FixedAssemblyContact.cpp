@@ -198,24 +198,101 @@ FixedSurfaceManifoldResult evaluateFixedSurfaceManifold(std::span<const ActiveNo
         }
     }
     std::vector<Vec3> impulses(count);std::vector<bool> sliding(count,false);
+    // Find a unilateral normal-contact starting guess before the Coulomb
+    // search. Nearly redundant patches can leave block sweeps on a branch
+    // carrying load at a separating contact. This bounded active-set solve
+    // is only initialization: the unchanged complete friction residual and
+    // whole-system work audit still decide the published response.
+    const auto normal_start=[&]() {
+        std::vector<std::vector<double>> matrix(count,std::vector<double>(count));
+        std::vector<double> offset(count),x(count);std::vector<bool> active(count,false);
+        double scale=0;
+        for(std::size_t a=0;a<count;++a) {
+            offset[a]=dot(blocks[a].relative,blocks[a].normal)-blocks[a].wanted;
+            for(std::size_t b=0;b<count;++b)
+                matrix[a][b]=dot(blocks[a].normal,response[a][b]*blocks[b].normal);
+            scale=std::max(scale,std::abs(matrix[a][a]));
+        }
+        const double bound=1e-12*speed_scale;
+        unsigned remaining=static_cast<unsigned>(4*count*count+1);
+        while(remaining>0) {
+            --remaining;
+            std::size_t enter=count;double worst=-bound;
+            for(std::size_t a=0;a<count;++a)if(!active[a]) {
+                double gradient=offset[a];for(std::size_t b=0;b<count;++b)gradient+=matrix[a][b]*x[b];
+                if(!std::isfinite(gradient))return std::vector<double>(count);
+                if(gradient<worst){worst=gradient;enter=a;}
+            }
+            if(enter==count)return x;
+            active[enter]=true;
+            bool accepted=false;
+            while(remaining>0) {
+                --remaining;
+                std::vector<std::size_t> ids;
+                for(std::size_t a=0;a<count;++a)if(active[a])ids.push_back(a);
+                std::vector<std::vector<double>> lower(ids.size(),std::vector<double>(ids.size()));
+                for(std::size_t row=0;row<ids.size();++row)for(std::size_t col=0;col<=row;++col) {
+                    double value=.5*(matrix[ids[row]][ids[col]]+matrix[ids[col]][ids[row]]);
+                    for(std::size_t k=0;k<col;++k)value-=lower[row][k]*lower[col][k];
+                    if(row==col) {
+                        // Singular initialization is harmless: let the full
+                        // bounded contact search start from zero as before.
+                        if(!std::isfinite(value)||value<=64*std::numeric_limits<double>::epsilon()*scale)
+                            return std::vector<double>(count);
+                        lower[row][col]=std::sqrt(value);
+                    } else lower[row][col]=value/lower[col][col];
+                }
+                std::vector<double> y(ids.size()),z(count);
+                for(std::size_t row=0;row<ids.size();++row) {
+                    double value=-offset[ids[row]];for(std::size_t k=0;k<row;++k)value-=lower[row][k]*y[k];
+                    y[row]=value/lower[row][row];
+                }
+                for(std::size_t row=ids.size();row-->0;) {
+                    double value=y[row];for(std::size_t k=row+1;k<ids.size();++k)value-=lower[k][row]*z[ids[k]];
+                    z[ids[row]]=value/lower[row][row];
+                    if(!std::isfinite(z[ids[row]]))return std::vector<double>(count);
+                }
+                double fraction=1;std::size_t leaving=count;
+                for(const auto id:ids)if(z[id]<0) {
+                    const double candidate=x[id]/(x[id]-z[id]);
+                    if(candidate<=fraction){fraction=candidate;leaving=id;}
+                }
+                if(leaving==count){x=std::move(z);accepted=true;break;}
+                for(std::size_t a=0;a<count;++a)x[a]+=fraction*(z[a]-x[a]);
+                // The blocking variable is exactly on its zero bound. Do not
+                // let interpolation roundoff keep it active and cycle forever
+                // at a subsequent zero-length step.
+                x[leaving]=0;active[leaving]=false;
+                for(const auto id:ids)if(x[id]<=0){x[id]=0;active[id]=false;}
+            }
+            if(!accepted)break;
+        }
+        return std::vector<double>(count);
+    };
+    const auto initial_normal=normal_start();
+    for(std::size_t a=0;a<count;++a)impulses[a]=initial_normal[a]*blocks[a].normal;
     const auto without=[&](std::size_t a) {
         Vec3 v=blocks[a].relative;
         for(std::size_t b=0;b<count;++b)if(b!=a)v+=response[a][b]*impulses[b];
         return v;
     };
-    const auto update=[&](std::size_t a) {
+    const bool initialized=std::any_of(initial_normal.begin(),initial_normal.end(),[](double j){return j>0;});
+    std::vector<bool> inactive(count,false);
+    if(initialized)for(std::size_t a=0;a<count;++a)inactive[a]=initial_normal[a]==0;
+    const auto full_update=[&](std::size_t a) {
         const auto &c=contacts[blocks[a].original];
         return solveCoulombContactImpulse(without(a),blocks[a].normal,response[a][a],blocks[a].wanted,
             sliding[a]?c.settings.dynamic_friction:c.settings.static_friction,
             sliding[a]?c.settings.dynamic_friction:c.settings.static_friction);
     };
+    const auto update=[&](std::size_t a) {return inactive[a]?Vec3{}:full_update(a);};
     // Checking all blocks after each sweep prevents accepting an early contact
     // that was invalidated by a later shared-cell/source impulse.
     const double tolerance=1e-10*speed_scale;
     bool converged=false;double last_residual=0;
-        for(std::size_t phase=0;phase<=count;++phase) {
+        for(std::size_t phase=0;phase<=2*count;++phase) {
     converged=false;
-    for(unsigned iteration=1;iteration<=32;++iteration) {
+    for(unsigned iteration=1;iteration<=((initialized&&phase==0)?0U:32U);++iteration) {
         for(std::size_t a=0;a<count;++a)impulses[a]=.5*(impulses[a]+update(a));
         double residual=0;
         for(std::size_t a=0;a<count;++a)residual=std::max(residual,norm(response[a][a]*(update(a)-impulses[a])));
@@ -294,6 +371,7 @@ FixedSurfaceManifoldResult evaluateFixedSurfaceManifold(std::span<const ActiveNo
         for(unsigned backtrack=0;backtrack<16;++backtrack) {
             const double fraction=std::ldexp(1.,-static_cast<int>(backtrack));impulses=base;
             for(std::size_t a=0;a<count;++a)impulses[a]+=fraction*Vec3{step[3*a],step[3*a+1],step[3*a+2]};
+            for(std::size_t a=0;a<count;++a)if(inactive[a])impulses[a]={};
             const auto candidate=residual_vector();
             if(squared(candidate)<squared(r)){accepted=true;last_residual=maximum(candidate);break;}
         }
@@ -303,6 +381,14 @@ FixedSurfaceManifoldResult evaluateFixedSurfaceManifold(std::span<const ActiveNo
     }
     if(!converged)break;
     bool changed=false;
+    // A tentative inactive mode stays exactly zero while the active friction
+    // equations converge. Then re-admit every contact that the FULL unchanged
+    // Coulomb law says is violated. The normal-only guess never authorizes a
+    // discarded contact or a weakened final residual.
+    for(std::size_t a=0;a<count;++a)if(inactive[a]&&
+        norm(response[a][a]*(full_update(a)-impulses[a]))>tolerance) {
+        inactive[a]=false;changed=true;
+    }
     for(std::size_t a=0;a<count;++a)if(!sliding[a]) {
         Vec3 final_relative=blocks[a].relative;
         for(std::size_t b=0;b<count;++b)final_relative+=response[a][b]*impulses[b];
@@ -314,7 +400,15 @@ FixedSurfaceManifoldResult evaluateFixedSurfaceManifold(std::span<const ActiveNo
     }
     if(!changed)break;
     }
-    if(!converged){std::ostringstream message;message<<"coupled material manifold did not converge within its search budget: residual "
+    // Check the full law even if the bounded mode search exhausted its phases.
+    // This also prevents a final static-to-dynamic switch from being published
+    // without solving the newly selected law.
+    last_residual=0;
+    for(std::size_t a=0;a<count;++a)
+        last_residual=std::max(last_residual,norm(response[a][a]*(impulses[a]-full_update(a))));
+    converged=converged&&last_residual<=tolerance;
+    if(!converged){
+        std::ostringstream message;message<<"coupled material manifold did not converge within its search budget: residual "
         <<last_residual<<" m/s, tolerance "<<tolerance<<", blocks "<<count;
         for(std::size_t a=0;a<count;++a)message<<" [p="<<contacts[blocks[a].original].surface_world_m.x<<","<<contacts[blocks[a].original].surface_world_m.y<<","<<contacts[blocks[a].original].surface_world_m.z<<" n="<<blocks[a].normal.x<<","<<blocks[a].normal.y<<","<<blocks[a].normal.z<<" v="<<blocks[a].relative.x<<","<<blocks[a].relative.y<<","<<blocks[a].relative.z<<" target="<<blocks[a].wanted<<"]";
         throw std::domain_error(message.str());}

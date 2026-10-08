@@ -1078,6 +1078,9 @@ if(BANJO_BUILD_TESTS)
         banjo_enable_warnings(banjo_material_surface_contact_tests)
         add_test(NAME banjo_material_surface_contact_tests COMMAND banjo_material_surface_contact_tests)
         add_test(NAME banjo_material_manifold_oracles COMMAND banjo_material_surface_contact_tests --manifold-oracles-only)
+        # Exercises the full coupled contact search and transfer accounting.
+        # Strict fracture/time refinement is a separate retained acceptance gate.
+        add_test(NAME banjo_material_coupled_surface_contact_tests COMMAND banjo_material_surface_contact_tests --coupled-manifold)
 
     # Two wheels that turn together at a ratio: gears in mesh, a chain between
     # sprockets, and teeth that strip when too much goes through them.
