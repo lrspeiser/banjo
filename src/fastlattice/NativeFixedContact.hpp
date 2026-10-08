@@ -1,5 +1,6 @@
 #pragma once
 #include "fastlattice/FastLattice.hpp"
+#include "fastlattice/ContactAccuracy.hpp"
 #include "rigid/JoltWorld.hpp"
 #include "physics/MaterialContactStencil.hpp"
 
@@ -17,14 +18,7 @@ namespace banjo::fastlattice {
 // ForceBoundaries queries actual geometry twice per material step and advances
 // the native source once between them. No outcome cache is used by this API.
 enum class NativeContactComposition : std::uint8_t { BeforeForces, VerletForceBoundaries };
-struct NativeContactAccuracySettings {
-    double minimum_step_s{1e-12};
-    unsigned maximum_halvings{12};
-    double position_m{1e-8},velocity_m_s{1e-4};
-    double orientation_rad{1e-5},angular_velocity_rad_s{1e-4};
-    double damage_fraction{1e-5},history_strain{1e-5};
-    double plastic_extension_m{1e-8},plastic_strain{1e-5};
-    double energy_j{1e-6},impulse_n_s{1e-6},angular_impulse_kg_m2_s{1e-7};
+struct NativeContactAccuracySettings : ContactAccuracySettings {
     NativeContactComposition composition{NativeContactComposition::BeforeForces};
 };
 // Actual receipt aggregates, not guessed work or a source of applied impulses.
@@ -36,19 +30,7 @@ struct NativeContactStepAudit {
     Vec3 native_step_impulse_n_s{},native_step_angular_kg_m2_s{};
     std::uint64_t active_manifolds{};
 };
-struct NativeContactAccuracyResult {
-    bool accepted{},topology_agrees{};
-    unsigned attempted_intervals{},rejected_intervals{};
-    double accepted_interval_s{},suggested_interval_s{},normalized_error{};
-    std::string error_metric;
-    // Worst full/two-half comparison from the last attempted interval. Scalars
-    // use x only; vectors retain all components and use their difference norm.
-    // Values/bound share the units of the named quantity and accuracy setting.
-    // Orientation uses angular distance against zero. These are observations,
-    // never applied loads.
-    Vec3 error_full_value{},error_fine_value{};
-    double error_bound{},compared_interval_s{};
-    bool error_is_vector{};
+struct NativeContactAccuracyResult : ContactAccuracyDifference {
     NativeContactStepAudit accepted_audit{};
 };
 // Compare a restored full-step trial with a two-half-step trial from the same

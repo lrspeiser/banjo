@@ -169,12 +169,28 @@ private:
     std::shared_ptr<const Data> data_;
 };
 enum class MaterialContactGeometry : std::uint8_t { ClosestPoint, ClippedFace };
+struct RigidShapePose {
+    Vec3 center_of_mass_world_m{};
+    Quat orientation_world{};
+};
+// Immutable native geometry/material identity while an external solver owns
+// motion. Native stepping, edits, replacement or trial rollback invalidate it.
+// It does not import mass, constraints or momentum into the external solver.
+class MaterialShapeBinding {
+private:
+    friend class JoltWorld;
+    struct Data;
+    std::shared_ptr<const Data> data_;
+};
 struct MaterialShapeQuery {
     RigidPrimitive geometry; // Actual float geometry used by the native query.
     Quat orientation_world{};
     double separation_limit_m{};
     MaterialContactGeometry contact_geometry{MaterialContactGeometry::ClosestPoint};
     std::vector<PointShapeContact> contacts;
+    RigidShapePose source_pose_world; // Double COM, actual float query rotation.
+    Vec3 source_offset_roundoff_m{}; // Float relative offset minus double offset.
+    bool external_source_pose{};
 };
 struct CohesiveTensionKick {
     CohesiveInterfaceIncrement interface_increment;
@@ -533,6 +549,16 @@ public:
     [[nodiscard]] MaterialShapeQuery materialShapeContacts(MatterBodyId body,
         Vec3 center_world_m,const RigidPrimitive &geometry,Quat orientation_world={},
         double separation_limit_m=0,unsigned maximum_contacts=64,
+        MaterialContactGeometry contact_geometry=MaterialContactGeometry::ClosestPoint) const;
+    [[nodiscard]] MaterialShapeBinding bindMaterialShape(MatterBodyId body) const;
+    // Query the bound native shape at an externally owned current COM/rotation.
+    // Host thread between steps; bound native state must remain unchanged.
+    // Subtract double COMs before float GJK/EPA. Rotation/local geometry still
+    // use native float precision, reported above. No native pose/velocity writes,
+    // step, mass/anchor reconciliation, collision response or swept discovery.
+    [[nodiscard]] MaterialShapeQuery materialShapeContactsAtPose(const MaterialShapeBinding &,
+        RigidShapePose source_pose,Vec3 envelope_center_world_m,const RigidPrimitive &geometry,
+        Quat envelope_orientation_world={},double separation_limit_m=0,unsigned maximum_contacts=64,
         MaterialContactGeometry contact_geometry=MaterialContactGeometry::ClosestPoint) const;
     // Central tensile connector between body-local points; Jolt retains every
     // surface contact. Compression stiffness must be zero. Requires double
@@ -1112,6 +1138,9 @@ public:
     [[nodiscard]] bool parked(MatterBodyId body_id) const;
 
 private:
+    [[nodiscard]] MaterialShapeQuery materialShapeContactsImpl(MatterBodyId body,
+        Vec3 center_world_m,const RigidPrimitive &,Quat orientation_world,double separation_limit_m,
+        unsigned maximum_contacts,MaterialContactGeometry,const MaterialShapeBinding *,const RigidShapePose *) const;
     [[nodiscard]] std::shared_ptr<PreparedFixedPointContact::Data> prepareExternalFixedAssembly(
         MatterBodyId proxy,MatterBodyId striker,double duration,const PointContactRoundoffBudget &budget) const;
     [[nodiscard]] PairImpulseAudit applyAuditedPairImpulses(MatterBodyId a,MatterBodyId b,

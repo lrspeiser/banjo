@@ -667,6 +667,68 @@ void smallRotationOracles() {
             <<" maximum_energy_error_j="<<maximum_energy_error<<'\n';
     }
 }
+void externalPoseGeometryOracles() {
+    const RigidPrimitive cell_box{PrimitiveKind::Box,0,{.04,.04,.04}};
+    const auto patch=MaterialContactGeometry::ClippedFace;
+    const Quat turn{std::cos(std::numbers::pi/8),0,0,std::sin(std::numbers::pi/8)};
+    const Vec3 shifted{1e8,-2e8,3e8};
+    for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        const auto material=makeReferenceMaterial(preset,17);JoltWorld world;world.setGravity({});
+        world.addBox({1,{.4,.08,.06},material,{{},{},{1,2,3},{.1,.2,.3}},false});
+        const auto before=world.snapshot(1);const auto binding=world.bindMaterialShape(1);
+        for(const Vec3 center:{Vec3{2,-1,3},shifted}) {
+            const RigidShapePose pose{center,turn};
+            const auto query=world.materialShapeContactsAtPose(binding,pose,center+turn.rotate({.221,0,0}),cell_box,turn,.003,64,patch);
+            require(query.external_source_pose&&query.contacts.size()==4,"external pose omitted actual rotated face");
+            same(query.source_pose_world.center_of_mass_world_m,center,"CPU COM rounded before relative subtraction");
+            for(const auto &hit:query.contacts) {
+                near(hit.gap_m,.001,3e-7,"CPU pose face gap");
+                nearVec(hit.normal_world,turn.rotate({1,0,0}),3e-6,"CPU pose face normal");
+                materialMatches(hit.body_contact,material);
+            }
+            // The original native body stays at the origin; the new contact
+            // exists only at the current external pose, not a cached native one.
+            require(world.materialShapeContacts(1,center+turn.rotate({.221,0,0}),cell_box,turn,.003).contacts.empty(),
+                "external query changed native geometry placement");
+        }
+        const auto native=world.materialShapeContacts(1,{.221,0,0},cell_box,{},.003,64,patch);
+        const auto equal=world.materialShapeContactsAtPose(binding,{{},{}},{.221,0,0},cell_box,{},.003,64,patch);
+        require(native.contacts.size()==equal.contacts.size(),"same-pose query changed witness count");
+        for(unsigned i=0;i<native.contacts.size();++i){same(native.contacts[i].point_on_body_world_m,equal.contacts[i].point_on_body_world_m,"same-pose witness changed");
+            near(native.contacts[i].gap_m,equal.contacts[i].gap_m,0,"same-pose gap changed");}
+        const auto refuses=[&](auto action){bool rejected=false;try{action();}catch(const std::exception&){rejected=true;}require(rejected,"invalid external pose/binding admitted");};
+        refuses([&]{(void)world.materialShapeContactsAtPose({},{{},{}},{.221,0,0},cell_box);});
+        refuses([&]{(void)world.materialShapeContactsAtPose(binding,{{},{2,0,0,0}},{.221,0,0},cell_box);});
+        refuses([&]{(void)world.materialShapeContactsAtPose(binding,{{std::numeric_limits<double>::infinity(),0,0},{}},{},cell_box);});
+        refuses([&]{(void)world.materialShapeContactsAtPose(binding,{{1e20,0,0},{}},{},cell_box);});
+        refuses([&]{(void)world.materialShapeContactsAtPose(binding,{{},{}},{.221,0,0},cell_box,{},.003,3,patch);});
+        JoltWorld foreign;foreign.addBox({1,{.4,.08,.06},material,{{},{},{},{}},false});
+        refuses([&]{(void)foreign.materialShapeContactsAtPose(binding,{{},{}},{.221,0,0},cell_box);});
+        same(before,world.snapshot(1));require(world.stepCount()==0&&world.drainImpacts().empty(),"geometry query advanced native dynamics");
+        world.setMass(1,2*world.mechanicalState(1).mass_kg);
+        refuses([&]{(void)world.materialShapeContactsAtPose(binding,{{},{}},{.221,0,0},cell_box);});
+        const auto mass_binding=world.bindMaterialShape(1);world.step(dt);
+        refuses([&]{(void)world.materialShapeContactsAtPose(mass_binding,{{},{}},{.221,0,0},cell_box);});
+        const auto stepped=world.bindMaterialShape(1);
+        world.reshapePrimitive(1,false,{.5,.08,.06},nullptr,2,{.01,.02,.03},false);
+        refuses([&]{(void)world.materialShapeContactsAtPose(stepped,{{},{}},{.221,0,0},cell_box);});
+        const auto reshaped=world.bindMaterialShape(1);world.removeAndDestroy(1);
+        world.addBox({1,{.5,.08,.06},material,{{},{},{},{}},false});
+        refuses([&]{(void)world.materialShapeContactsAtPose(reshaped,{{},{}},{.221,0,0},cell_box);});
+        // Separate compound leaves keep their actual materials and empty gap.
+        JoltWorld hollow;const RigidPrimitive leaf{PrimitiveKind::Box,0,{.04,.04,.04}};
+        const auto iron=makeReferenceMaterial(MaterialPreset::Iron,17);
+        const auto description=compound({{leaf,{-.06,0,0},{},material},{leaf,{.06,0,0},{},iron}});
+        hollow.addCompound(description);
+        const auto leaves=hollow.bindMaterialShape(1);const RigidShapePose moved{{2,3,4},turn};
+        const auto origin=moved.center_of_mass_world_m-turn.rotate(description.state.center_of_mass_world_m);
+        require(hollow.materialShapeContactsAtPose(leaves,moved,origin,cell_box,turn).contacts.empty(),"CPU pose filled compound void");
+        const auto query=hollow.materialShapeContactsAtPose(leaves,moved,origin+turn.rotate({.091,0,0}),cell_box,turn,.002,64,patch);
+        require(query.contacts.size()==4,"CPU pose lost compound leaf face");
+        for(const auto &hit:query.contacts){require(hit.shape_user_data==2,"CPU pose lost leaf identity");materialMatches(hit.body_contact,iron);}
+        std::cout<<"EXTERNAL_POSE_GEOMETRY material="<<materialPresetName(preset)<<" rotated_and_distant=pass stale_refusal=pass native_writes=0\n";
+    }
+}
 void nativeClippedFaceWitnesses() {
     const RigidPrimitive cell_box{PrimitiveKind::Box,0,{.04,.04,.04}};
     constexpr auto patch=MaterialContactGeometry::ClippedFace;
@@ -764,7 +826,7 @@ int main(int argc,char **argv) {
 #endif
         if(require_small_rotation)smallRotationOracles();
         nativeSphereAndRotatedBoxWitnesses();compoundMaterialsVoidsAndBudgets();turnedCylinderAndConvexWitnesses();
-        actualWitnessFeedsNativeReaction();invalidQueriesRefuse();nativeOccupiedCuboidWitnesses();nativeClippedFaceWitnesses();
+        actualWitnessFeedsNativeReaction();invalidQueriesRefuse();nativeOccupiedCuboidWitnesses();nativeClippedFaceWitnesses();externalPoseGeometryOracles();
         nativeFixedToolRetainsItsLoadPath();
         nativeFixedContactUsesActualConstraintInertia();nativeFixedContactRefusesAtomically();
         orderedNativeFixedContactsRetainAllAccounts();

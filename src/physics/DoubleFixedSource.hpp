@@ -37,7 +37,7 @@ private:
     std::vector<Member> members_;
     std::vector<Link> links_;
     FixedAssemblyReconciliation import_;
-    double elapsed_s_{};
+    double elapsed_s_{},time_correction_s_{};
     std::uint64_t steps_{};
 };
 } // namespace banjo

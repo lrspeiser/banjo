@@ -41,10 +41,14 @@ std::vector<FixedVelocityLink> DoubleFixedSource::links() const {
     return out;
 }
 DoubleRigidTransfer DoubleFixedSource::advanceFree(double dt) {
-    require(dt!=0&&std::isfinite(elapsed_s_+dt)&&elapsed_s_+dt>=0&&elapsed_s_+dt!=elapsed_s_&&steps_!=std::numeric_limits<std::uint64_t>::max(),
+    // Same compensated accepted-clock arithmetic as the material backend.
+    // The dynamics still advance by dt, not by the rounding correction.
+    const double corrected_dt=dt-time_correction_s_,next_time=elapsed_s_+corrected_dt;
+    require(dt!=0&&std::isfinite(next_time)&&next_time>=0&&next_time!=elapsed_s_&&steps_!=std::numeric_limits<std::uint64_t>::max(),
         "double source clock/step overflow or negative absolute time");
     auto result=advanceDoubleRigidFree(state_,dt);
-    state_=result.state;elapsed_s_+=dt;++steps_;return result;
+    time_correction_s_=(next_time-elapsed_s_)-corrected_dt;
+    state_=result.state;elapsed_s_=next_time;++steps_;return result;
 }
 DoubleFixedSourceTransfer DoubleFixedSource::applyImpulse(std::uint32_t member,Vec3 at,Vec3 j,Vec3 couple) {
     require(member<members_.size(),"double source impulse has invalid member");

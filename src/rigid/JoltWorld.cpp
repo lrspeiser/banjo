@@ -3446,15 +3446,53 @@ PointShapeQuery JoltWorld::pointShapeContacts(MatterBodyId body_id,Vec3 point,
     return {shapes.geometry.radius_m,shapes.separation_limit_m,std::move(shapes.contacts)};
 }
 
+struct MaterialShapeBinding::Data {
+    std::shared_ptr<const int> identity;
+    std::uint64_t tick{},epoch{};
+    MatterBodyId body{};
+    JPH::BodyID native_body;
+    JPH::RefConst<JPH::Shape> shape;
+    RigidMechanicalState state;
+    CompiledContactMaterial contact;
+    std::vector<CompiledContactMaterial> part_contacts;
+};
+MaterialShapeBinding JoltWorld::bindMaterialShape(MatterBodyId body_id) const {
+    const auto found=impl_->bodies_.find(body_id);
+    if(found==impl_->bodies_.end())throw std::invalid_argument("material geometry binding body is missing");
+    auto data=std::make_shared<MaterialShapeBinding::Data>();
+    data->identity=impl_->contact_plan_identity_;data->tick=stepCount();data->epoch=impl_->contact_plan_epoch_;
+    data->body=body_id;data->native_body=found->second;data->shape=shapeOf(*impl_->physics_,found->second);
+    data->state=mechanicalState(body_id);
+    const auto &material=impl_->contact_states_.at(body_id);
+    data->contact=material.contact;data->part_contacts=material.part_contacts;
+    MaterialShapeBinding out;out.data_=std::move(data);return out;
+}
 MaterialShapeQuery JoltWorld::materialShapeContacts(MatterBodyId body_id,Vec3 point,
     const RigidPrimitive &geometry,Quat orientation,double separation,unsigned maximum_contacts,
     MaterialContactGeometry contact_geometry) const {
+    return materialShapeContactsImpl(body_id,point,geometry,orientation,separation,maximum_contacts,contact_geometry,nullptr,nullptr);
+}
+MaterialShapeQuery JoltWorld::materialShapeContactsAtPose(const MaterialShapeBinding &binding,
+    RigidShapePose pose,Vec3 point,const RigidPrimitive &geometry,Quat orientation,double separation,
+    unsigned maximum_contacts,MaterialContactGeometry contact_geometry) const {
+    if(!binding.data_)throw std::invalid_argument("empty material geometry binding");
+    return materialShapeContactsImpl(binding.data_->body,point,geometry,orientation,separation,maximum_contacts,contact_geometry,&binding,&pose);
+}
+MaterialShapeQuery JoltWorld::materialShapeContactsImpl(MatterBodyId body_id,Vec3 point,
+    const RigidPrimitive &geometry,Quat orientation,double separation,unsigned maximum_contacts,
+    MaterialContactGeometry contact_geometry,const MaterialShapeBinding *binding,const RigidShapePose *pose) const {
     const auto finite=[](Vec3 value){return std::isfinite(value.x)&&std::isfinite(value.y)&&std::isfinite(value.z);};
     const double q2=orientation.w*orientation.w+orientation.x*orientation.x+orientation.y*orientation.y+orientation.z*orientation.z;
     if(!finite(point)||!std::isfinite(q2)||std::abs(q2-1)>1e-6||
         !std::isfinite(separation)||separation<0||separation>1||maximum_contacts==0||maximum_contacts>256||
         (contact_geometry!=MaterialContactGeometry::ClosestPoint&&contact_geometry!=MaterialContactGeometry::ClippedFace))
         throw std::invalid_argument("invalid material native shape query or budget");
+    if(pose) {
+        const auto q=pose->orientation_world;
+        const double norm=q.w*q.w+q.x*q.x+q.y*q.y+q.z*q.z;
+        if(!finite(pose->center_of_mass_world_m)||!std::isfinite(norm)||std::abs(norm-1)>1e-10)
+            throw std::invalid_argument("invalid external material shape pose");
+    }
     MaterialShapeQuery result;result.geometry=geometry;result.contact_geometry=contact_geometry;
     const auto envelope_turn=joltTurn(orientation);
     result.orientation_world={double(envelope_turn.GetW()),double(envelope_turn.GetX()),
@@ -3480,13 +3518,38 @@ MaterialShapeQuery JoltWorld::materialShapeContacts(MatterBodyId body_id,Vec3 po
         if(!lock.Succeeded())throw std::runtime_error("cannot lock point query shape");
         source=lock.GetBody().GetTransformedShape();
     }
+    if(binding) {
+        const auto &data=*binding->data_;
+        if(data.identity!=impl_->contact_plan_identity_||data.tick!=stepCount()||data.epoch!=impl_->contact_plan_epoch_||
+            data.native_body!=found->second||data.shape.GetPtr()!=source.mShape.GetPtr())
+            throw std::invalid_argument("stale or foreign material geometry binding");
+        const auto state=mechanicalState(body_id);const auto &a=data.state.motion,&b=state.motion;
+        const auto p=a.orientation_world,q=b.orientation_world;
+        if(state.mass_kg!=data.state.mass_kg||state.inertia_world_kg_m2.m!=data.state.inertia_world_kg_m2.m||
+            length(a.center_of_mass_world_m-b.center_of_mass_world_m)!=0||
+            length(a.linear_velocity_m_s-b.linear_velocity_m_s)!=0||length(a.angular_velocity_rad_s-b.angular_velocity_rad_s)!=0||
+            p.w!=q.w||p.x!=q.x||p.y!=q.y||p.z!=q.z)
+            throw std::invalid_argument("bound native dynamics changed during external geometry ownership");
+        const auto key=[](const CompiledContactMaterial &c){return std::tie(c.static_friction,c.dynamic_friction,c.rolling_resistance,
+            c.restitution,c.contact_damping_ratio,c.young_modulus_pa,c.poisson_ratio);};
+        const auto &material=impl_->contact_states_.at(body_id);
+        if(key(data.contact)!=key(material.contact)||data.part_contacts.size()!=material.part_contacts.size())
+            throw std::invalid_argument("bound material identity changed");
+        for(std::size_t i=0;i<data.part_contacts.size();++i)if(key(data.part_contacts[i])!=key(material.part_contacts[i]))
+            throw std::invalid_argument("bound leaf material identity changed");
+    }
+    const Vec3 source_com=pose?pose->center_of_mass_world_m:fromJoltPosition(source.mShapePositionCOM);
+    if(pose)source.mShapeRotation=joltTurn(pose->orientation_world);
+    result.external_source_pose=pose!=nullptr;
+    result.source_pose_world={source_com,{double(source.mShapeRotation.GetW()),double(source.mShapeRotation.GetX()),
+        double(source.mShapeRotation.GetY()),double(source.mShapeRotation.GetZ())}};
     // Subtract the double world origin before converting the local collision
     // frame to float. A distant world must not collapse centimetre geometry.
-    const Vec3 offset{double(source.mShapePositionCOM.GetX())-point.x,
-        double(source.mShapePositionCOM.GetY())-point.y,double(source.mShapePositionCOM.GetZ())-point.z};
+    const Vec3 offset=source_com-point;
     const double relative_limit=std::sqrt(double(std::numeric_limits<float>::max()))/8;
     if(!finite(offset)||std::hypot(offset.x,offset.y,offset.z)>relative_limit)
         throw std::invalid_argument("point shape query exceeds native relative range");
+    result.source_offset_roundoff_m=fromJoltVector(toJolt(offset))-offset;
     float search=float(separation);
     if(double(search)<separation)search=std::nextafter(search,std::numeric_limits<float>::infinity());
     result.separation_limit_m=double(search);
