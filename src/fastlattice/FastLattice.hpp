@@ -26,6 +26,8 @@
 
 namespace banjo::fastlattice {
 
+enum class ExternalContactPhase : std::uint8_t { BeforeDrift, AfterForces };
+
 enum class Precision : std::uint8_t { Float, Double };
 [[nodiscard]] const char *precisionName(Precision precision);
 
@@ -303,6 +305,14 @@ public:
     // receipts are provisional until the enclosing paired trial is accepted.
     virtual RunStatus advanceExternalContactStep(double,const std::function<void()> &) {
         throw std::invalid_argument("this lattice backend does not implement variable contact steps");
+    }
+    // Serial-double Verlet: actual first force half-kick, BeforeDrift contact,
+    // drift, final forces/damping, AfterForces contact, failure/history update.
+    // One physical step and one finite-load substep. Pure contact transfers
+    // inside either phase are separately accounted from integration error.
+    // Paired trial, timestep and callback reentry restrictions are identical.
+    virtual RunStatus advanceCoupledContactStep(double,const std::function<void(ExternalContactPhase)> &) {
+        throw std::invalid_argument("this lattice backend does not implement force-boundary contact");
     }
     [[nodiscard]] virtual ExternalPointTransferLedger validateExternalPointVelocity(
         std::uint32_t,const ActiveNodeState &,Vec3) const {

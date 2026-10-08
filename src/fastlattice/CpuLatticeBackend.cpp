@@ -135,11 +135,19 @@ public:
         }else throw std::invalid_argument("contact clock requires serial double CPU");
     }
     RunStatus advanceExternalContactStep(double dt,const std::function<void()> &contact) override {
+        return advanceContactStep(dt,contact,nullptr);
+    }
+    RunStatus advanceCoupledContactStep(double dt,const std::function<void(ExternalContactPhase)> &contact) override {
+        return advanceContactStep(dt,{},&contact);
+    }
+    RunStatus advanceContactStep(double dt,const std::function<void()> &contact,
+        const std::function<void(ExternalContactPhase)> *force_contact) {
         if constexpr(!std::is_same_v<Real,double>) {
             throw std::invalid_argument("variable contact steps require serial double CPU");
         }else {
             (void)externalContactElapsedTime();
-            if(trial_depth_!=1||contact_step_callback_||!contact)
+            if(trial_depth_!=1||contact_step_callback_||force_contact_||
+                (force_contact?!*force_contact:!contact))
                 throw std::invalid_argument("variable contact step needs a nonnested reversible trial and callback");
             if(!std::isfinite(dt)||dt<=0||dt>S_.dt)
                 throw std::invalid_argument("variable contact timestep exceeds the uploaded positive horizon");
@@ -149,10 +157,13 @@ public:
             S_.dt=dt;
             try {
                 verlet::validate(L_,S_);verlet::checkStep(L_,S_);
-                contact_step_callback_=true;contact();contact_step_callback_=false;
+                force_contact_=force_contact;
+                if(!force_contact) {
+                    contact_step_callback_=true;contact();contact_step_callback_=false;
+                }
                 RunControl one;one.max_steps=1;
-                auto result=run(one);S_.dt=uploaded_dt;return result;
-            }catch(...) {contact_step_callback_=false;S_.dt=uploaded_dt;throw;}
+                auto result=run(one);force_contact_=nullptr;S_.dt=uploaded_dt;return result;
+            }catch(...) {contact_step_callback_=false;force_contact_=nullptr;S_.dt=uploaded_dt;throw;}
         }
     }
     [[nodiscard]] ActiveNodeState externalContactPoint(std::uint32_t i) const override {
@@ -466,6 +477,7 @@ private:
             status_.plastic_work_j+status_.plastic_return_numerical_loss_j;};
         const double before=mechanical(),loss_before=losses();
         const double work_before=status_.external_load.work_j+status_.gravity_load.work_j;
+        const double contact_work_before=status_.external_point_transfer.work_j;
         phase_clock_=std::chrono::steady_clock::now();
         if (dirty_start_) {
             for (std::uint32_t i=0;i<L_.node_count;++i) nodeStrain(L_,i,direct,S_.plate_half_thickness,S_.plastic_yield_stretch);
@@ -478,6 +490,7 @@ private:
         external_.kick(L_,Real(.5)*S_.dt,status_.external_load,&status_.external_sources,false,&status_.fixed_boundary);
         gravity_.kick(L_,Real(.5)*S_.dt,status_.gravity_load,nullptr,false,&status_.fixed_boundary);mark(3);
         verlet::kick(L_,S_,origin_,status_);mark(4);
+        invokeForceContact(ExternalContactPhase::BeforeDrift);
         verlet::drift(L_,S_.dt);mark(5);
         verlet::kick(L_,S_,origin_,status_);mark(8);
         external_.kick(L_,Real(.5)*S_.dt,status_.external_load,&status_.external_sources,true,&status_.fixed_boundary);
@@ -487,13 +500,22 @@ private:
             sweepAll([&](std::uint32_t j){bondDamp(L_,j,S_.damping_fraction,direct);});
             status_.damping_dissipated_j+=kinetic-latticeKineticEnergy(L_);mark(9);
         }
+        invokeForceContact(ExternalContactPhase::AfterForces);
         const bool failed=finishStep(direct,L_.node_count,L_.bond_count);
         const double error=mechanical()-before+losses()-loss_before-
-            (status_.external_load.work_j+status_.gravity_load.work_j-work_before);
+            (status_.external_load.work_j+status_.gravity_load.work_j-work_before)-
+            (status_.external_point_transfer.work_j-contact_work_before);
         if (!std::isfinite(error)||!std::isfinite(status_.integration_numerical_energy_j+error))
             throw std::overflow_error("Verlet measured integration energy overflow");
         status_.integration_numerical_energy_j+=error;
         return failed;
+    }
+
+    void invokeForceContact(ExternalContactPhase phase) {
+        if(!force_contact_)return;
+        contact_step_callback_=true;
+        try{(*force_contact_)(phase);contact_step_callback_=false;}
+        catch(...){contact_step_callback_=false;throw;}
     }
 
     std::chrono::steady_clock::time_point phase_clock_{};
@@ -508,6 +530,7 @@ private:
     CpuExternalLoads<Real> gravity_;
     unsigned trial_depth_{};
     bool contact_step_callback_{};
+    const std::function<void(ExternalContactPhase)> *force_contact_{};
     double accepted_time_s_{};
     double time_correction_s_{};
     Vec3 origin_{};

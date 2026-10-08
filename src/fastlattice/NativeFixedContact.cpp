@@ -142,7 +142,8 @@ double accuracyError(const AccuracySnapshot &a,const AccuracySnapshot &b,const N
 NativeContactAccuracyResult advanceNativeFixedTargetControlled(JoltWorld &world,LatticeBackend &target,
     double interval,const NativeContactAccuracySettings &settings,const std::function<NativeContactStepAudit(double)> &contact) {
     const double maximum=target.externalContactTimestep(),start_time=target.externalContactElapsedTime();
-    if(!contact||!std::isfinite(interval)||interval<=0||interval>maximum||settings.maximum_halvings>20)
+    if(!contact||!std::isfinite(interval)||interval<=0||interval>maximum||settings.maximum_halvings>20||
+        (settings.composition!=NativeContactComposition::BeforeForces&&settings.composition!=NativeContactComposition::VerletForceBoundaries))
         throw std::invalid_argument("invalid controlled contact interval, callback or refinement budget");
     for(double v:{settings.minimum_step_s,settings.position_m,settings.velocity_m_s,settings.orientation_rad,
         settings.angular_velocity_rad_s,settings.damage_fraction,settings.history_strain,settings.plastic_extension_m,
@@ -159,15 +160,24 @@ NativeContactAccuracyResult advanceNativeFixedTargetControlled(JoltWorld &world,
     NativeContactAccuracyResult result;
     const auto step=[&](double dt) {
         NativeContactStepAudit audit;
-        target.advanceExternalContactStep(dt,[&] {
-            const auto tick=world.stepCount();audit=contact(dt);validateAudit(audit,true);
+        const auto project=[&] {
+            const auto tick=world.stepCount();const auto receipt=contact(dt);validateAudit(receipt,true);
             if(world.stepCount()!=tick)throw std::logic_error("contact accuracy callback advanced the native world");
+            audit=addAudit(audit,receipt);
+        };
+        const auto advance_source=[&] {
             const auto before=world.mechanicalTotals();world.step(dt);const auto after=world.mechanicalTotals();
             audit.native_step_energy_j=after.mechanicalEnergy()-before.mechanicalEnergy();
             audit.native_step_impulse_n_s=after.linear_momentum_kg_m_s-before.linear_momentum_kg_m_s;
             audit.native_step_angular_kg_m2_s=after.angular_momentum_kg_m2_s-before.angular_momentum_kg_m2_s;
             validateAudit(audit);
-        });return audit;
+        };
+        if(settings.composition==NativeContactComposition::BeforeForces)
+            target.advanceExternalContactStep(dt,[&]{project();advance_source();});
+        else target.advanceCoupledContactStep(dt,[&](ExternalContactPhase phase) {
+            project();if(phase==ExternalContactPhase::BeforeDrift)advance_source();
+        });
+        return audit;
     };
     for(unsigned round=0;round<=settings.maximum_halvings;++round) {
         ++result.attempted_intervals;AccuracySnapshot full;

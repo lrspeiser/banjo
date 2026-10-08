@@ -13,6 +13,10 @@ namespace banjo::fastlattice {
 // SI, absolute local error bounds. These control numerical approximation, not
 // material strength or contact law. Exact surviving-bond/mode agreement is also
 // required. Every trial interval commits two half steps or commits nothing.
+// Explicit experimental composition; the default retains the published path.
+// ForceBoundaries queries actual geometry twice per material step and advances
+// the native source once between them. No outcome cache is used by this API.
+enum class NativeContactComposition : std::uint8_t { BeforeForces, VerletForceBoundaries };
 struct NativeContactAccuracySettings {
     double minimum_step_s{1e-12};
     unsigned maximum_halvings{12};
@@ -21,6 +25,7 @@ struct NativeContactAccuracySettings {
     double damage_fraction{1e-5},history_strain{1e-5};
     double plastic_extension_m{1e-8},plastic_strain{1e-5};
     double energy_j{1e-6},impulse_n_s{1e-6},angular_impulse_kg_m2_s{1e-7};
+    NativeContactComposition composition{NativeContactComposition::BeforeForces};
 };
 // Actual receipt aggregates, not guessed work or a source of applied impulses.
 // Callback returns only contact fields; the controller measures native stepping.
