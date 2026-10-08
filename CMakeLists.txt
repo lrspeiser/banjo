@@ -2121,6 +2121,9 @@ if(BANJO_BUILD_TESTS)
             add_test(NAME banjo_voxel_centered_comparison_tests COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_centered_comparison_test.py $<TARGET_FILE:banjo_voxel_world_run>)
             set_tests_properties(banjo_voxel_centered_comparison_tests PROPERTIES TIMEOUT 600 LABELS "native;voxel;diagnostic")
+            add_test(NAME banjo_voxel_midpoint_contact_comparison_tests COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_centered_comparison_test.py $<TARGET_FILE:banjo_voxel_world_run> midpoint-unilateral)
+            set_tests_properties(banjo_voxel_midpoint_contact_comparison_tests PROPERTIES TIMEOUT 900 LABELS "native;voxel;diagnostic")
             add_test(NAME banjo_voxel_log_gradient_tests COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_log_gradient_test.py $<TARGET_FILE:banjo_voxel_world_run>)
             set_tests_properties(banjo_voxel_log_gradient_tests PROPERTIES TIMEOUT 300 LABELS "native;voxel;experimental")

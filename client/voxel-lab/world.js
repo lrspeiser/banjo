@@ -57,7 +57,9 @@ function draw(s){if(!s)return;
  for(const [id,value] of [['support-impulse',contact?.support_reaction_impulse_n_s],['momentum-residual',contact?.linear_momentum_residual_n_s]])$(id).textContent=Array.isArray(value)?Math.hypot(...value).toPrecision(4)+' N·s':'Unavailable in this build';
  $('contact-points').textContent=contact?.point_samples??'Unavailable in this build';
  $('native-cost').textContent=Number.isFinite(d.profile?.native_step_ms)?(d.profile.native_step_ms/1000).toFixed(2)+' s wall time':'Unavailable in this build';
- $('law-status').textContent=(s.qualification?.model??'Model identity unavailable')+(s.qualification?.contact_law==='resolved-deformation'?' Unilateral contact: inelastic normal constraints; recovery only from interfaces. No compliant contact indentation or calibrated energy accuracy.':' Material-derived instantaneous restitution remains the reference contact response.');
+ $('law-status').textContent=(s.qualification?.model??'Model identity unavailable')+(s.qualification?.contact_law==='midpoint-unilateral'?' Midpoint normal and friction constraints match centered pose integration. Hard contact, not compliant indentation; full geometry and physical accuracy remain unqualified.':s.qualification?.contact_law==='resolved-deformation'?' Unilateral contact: inelastic normal constraints; recovery only from interfaces. No compliant contact indentation or calibrated energy accuracy.':' Material-derived instantaneous restitution remains the reference contact response.');
+ const boundary=s.midpoint_boundary;$('boundary-audit').hidden=!boundary;
+ if(boundary)$('boundary-audit').textContent='Midpoint contact · normal '+boundary.normal_midpoint_work_j.toFixed(4)+' J · friction '+boundary.friction_midpoint_work_j.toFixed(4)+' J · twist '+boundary.twist_midpoint_work_j.toFixed(4)+' J · largest constraint error '+boundary.max_complementarity_error_j.toPrecision(4)+' J. These are measured solver terms, not calibrated heat.';
  canvas.dataset.time=s.time_s;canvas.dataset.nativeCells=s.cells.length;canvas.dataset.sheetPieces=sheet.pieces;
 }
 function updateCamera(){target.set(0,whole?4.8:.43,0);const r=whole?13:radius;camera.position.set(target.x+r*Math.cos(pitch)*Math.sin(yaw),target.y+r*Math.sin(pitch),target.z+r*Math.cos(pitch)*Math.cos(yaw));camera.lookAt(target);}
@@ -102,7 +104,11 @@ async function advance(){if(busy||!session)return;busy=true;controls();const sta
 $('drop').onclick=async()=>{busy=true;controls();try{const r=await request({op:'play',session,running:!running,target_time_s:2});accept(r);if(r.ok&&(running||calculating))poll(sequence);}catch(e){$('phase').textContent='Stopped · '+e.message;}finally{busy=false;controls();}};$('step').onclick=advance;$('reset').onclick=reset;
 $('before').onclick=()=>{showBefore=true;draw(initial);$('phase').textContent='Before · starting state';controls();};$('live').onclick=()=>{showBefore=false;draw(state);$('phase').textContent=state.time_s>=2?'Drop complete':'Live · accepted native state';controls();};
 $('view').onclick=()=>{whole=!whole;$('view').textContent=whole?'Impact close-up':'Whole rig';};
-for(const id of ['sheet','thickness','resolution','gap','ball','mass','height','face_law','contact_law'])$(id).onchange=reset;
+for(const id of ['sheet','thickness','resolution','gap','ball','mass','height','face_law','contact_law'])$(id).onchange=()=>{
+ if(id==='contact_law'&&$('contact_law').value==='midpoint-unilateral')$('face_law').value='centered-log-gradient';
+ if(id==='face_law'&&$('face_law').value!=='centered-log-gradient'&&$('contact_law').value==='midpoint-unilateral')$('contact_law').value='resolved-deformation';
+ reset();
+};
 let press=null;canvas.addEventListener('pointerdown',e=>{press={x:e.clientX,y:e.clientY,yaw,pitch,moved:false};canvas.setPointerCapture(e.pointerId);});canvas.addEventListener('pointermove',e=>{if(!press)return;const dx=e.clientX-press.x,dy=e.clientY-press.y;if(Math.hypot(dx,dy)>5)press.moved=true;if(press.moved){yaw=press.yaw-dx*.008;pitch=Math.max(.04,Math.min(1.4,press.pitch+dy*.006));}});
 canvas.addEventListener('pointerup',e=>{if(!press)return;const clicked=!press.moved;press=null;if(!clicked||busy||running)return;const r=canvas.getBoundingClientRect(),ray=new THREE.Raycaster();ray.setFromCamera(new THREE.Vector2((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1),camera);const hit=ray.intersectObjects(groups.map(g=>g.mesh)).find(h=>state.cells.find(c=>c.id===groups.find(g=>g.mesh===h.object).ids[h.instanceId])?.object===1);if(hit){aim=[Math.max(-.19,Math.min(.19,hit.point.x)),Math.max(-.19,Math.min(.19,hit.point.z))];reset();}});
 canvas.addEventListener('wheel',e=>{e.preventDefault();radius=Math.max(.45,Math.min(3,radius*Math.exp(e.deltaY*.001)));},{passive:false});

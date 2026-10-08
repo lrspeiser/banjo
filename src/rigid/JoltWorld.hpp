@@ -96,7 +96,7 @@ enum class RigidJobExecution { ThreadPool, Inline };
 // Explicit model choice, not a display-material preset. ResolvedDeformation
 // leaves rebound to the deforming assembly and uses an inelastic unilateral
 // surface constraint. It does not implement compliant contact indentation.
-enum class RigidContactRestitution { MaterialCombination, ResolvedDeformation };
+enum class RigidContactRestitution { MaterialCombination, ResolvedDeformation, MidpointUnilateral };
 
 struct RigidContactCapacity {
     unsigned body_pairs{16384};
@@ -507,7 +507,7 @@ public:
     };
     unsigned addFaceSpring(const FaceSpringDescription &description);
     FaceSpringObservation faceSpringObservation(unsigned joint) const;
-    struct ContactImpulsePoint {Vec3 point_world_m{};double normal_impulse_n_s{};};
+    struct ContactImpulsePoint {Vec3 point_world_m{};double normal_impulse_n_s{};double initial_gap_m{};};
     struct ContactImpulseObservation {
         MatterBodyId a{},b{};
         Vec3 normal_a_to_b{},friction_point_world_m{},friction_impulse_on_b_n_s{},twist_impulse_on_b_n_m_s{};

@@ -4,9 +4,11 @@ A completed or safely refused comparison is not a passing conservation gate.
 import json,math,subprocess,sys,time
 from pathlib import Path
 native=Path(sys.argv[1]).resolve()
+contact_law=sys.argv[2] if len(sys.argv)>2 else "resolved-deformation"
+assert contact_law in ["resolved-deformation","midpoint-unilateral"]
 rows=[]
 for sheet,ball in [(m,'iron') for m in ['glass','oak','iron','ice']]+[('glass','glass')]:
-    declaration={'sheet':sheet,'ball':ball,'contact_law':'resolved-deformation','face_law':'centered-log-gradient'}
+    declaration={'sheet':sheet,'ball':ball,'contact_law':contact_law,'face_law':'centered-log-gradient'}
     proc=subprocess.Popen([str(native),'--serve'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
     def request(command):
         proc.stdin.write(json.dumps(command)+'\n');proc.stdin.flush()
@@ -22,10 +24,14 @@ for sheet,ball in [(m,'iron') for m in ['glass','oak','iron','ice']]+[('glass','
             state=reply['state']
             assert {c['id']:c['mass_kg'] for c in state['cells']}==masses
             assert state['qualification']['face_law']=='centered-log-gradient'
+            assert state['qualification']['contact_law']==contact_law
             assert not state['qualification']['calibrated']
             assert all(math.isfinite(x) for c in state['cells'] for key in ['position_m','velocity_m_s','spin_rad_s'] for x in c[key])
             assert abs(state['step_work']['closure_residual_j'])<1e-7
             assert state['diagnostics']['spring_implicit_elastic_loss_j']==0
+            if contact_law=='midpoint-unilateral':
+                assert all(math.isfinite(x) for x in state['midpoint_boundary'].values())
+                assert state['midpoint_boundary']['positive_normal_work_j']>=0
             if not reply['ok']:
                 refused=reply['error'];assert 'energy gate refused' in refused
                 rejected=state['step_work']['last_rejected_trial'];assert rejected and rejected['depth']==14
@@ -33,7 +39,7 @@ for sheet,ball in [(m,'iron') for m in ['glass','oak','iron','ice']]+[('glass','
                 break
         assert state['time_s']>1.4 and state['contact_audit']['point_samples']>0,'comparison missed impact'
         row={'declaration':declaration,'wall_s':time.monotonic()-started,'time_s':state['time_s'],'substeps':state['substeps'],'refused':refused,
-             'objects':state['objects'],'diagnostics':state['diagnostics'],'step_work':state['step_work'],'contact_audit':state['contact_audit']}
+             'objects':state['objects'],'diagnostics':state['diagnostics'],'step_work':state['step_work'],'contact_audit':state['contact_audit'],'midpoint_boundary':state.get('midpoint_boundary')}
         rows.append(row);print(json.dumps(row),flush=True)
     finally:proc.terminate();proc.wait(timeout=5)
 print(json.dumps({'scope':'Five material/ball diagnostics; accepted-state retention and audits verified, NOT conservation/admission',

@@ -4,6 +4,7 @@
 #include "physics/RotationStrain.hpp"
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 using namespace banjo;
 namespace {
@@ -346,6 +347,97 @@ void centered_pair_oracle(MaterialPreset preset,double damping){
     check(ccd,"uncoupled CCD refused in centered world");
     std::cout<<"material="<<materialSceneName(preset)<<" centered damping="<<damping<<" energy_error_j="<<maximum_error<<" declared_damping_j="<<physical<<'\n';
 }
+// Frozen-normal unilateral midpoint boundary; not a material indentation law.
+void midpoint_contact_oracle(MaterialPreset preset,bool fixed,double fraction,double h){
+    JoltWorld world(0,{},execution);world.setCenteredIntegration(true);world.setGravity({});
+    world.configureVoxelContacts(.1);world.setContactSolverIterations(96,4);
+    world.setContactImpulseObservationsEnabled(true);
+    world.setContactRestitutionModel(RigidContactRestitution::MidpointUnilateral);
+    auto material=makeReferenceMaterial(preset);material.model=MaterialModel::RigidOnly;
+    material.static_friction=material.dynamic_friction=material.friction=material.rolling_resistance=0;
+    const double closing=fixed?1:2,gap=closing*h*fraction;
+    world.addBox({1,{.1,.1,.1},material,{{-.05-gap/2,0,0},{},fixed?Vec3{}:Vec3{1,0,0},{}},fixed});
+    world.addBox({2,{.1,.1,.1},material,{{ .05+gap/2,0,0},{},{-1,0,0},{}},false});
+    if(!fixed)world.setContinuousCollision(1,false);world.setContinuousCollision(2,false);
+    const auto a0=world.mechanicalState(1),b0=world.mechanicalState(2);const auto before=world.mechanicalTotals({});
+    world.step(h);const auto a=world.mechanicalState(1),b=world.mechanicalState(2);const auto after=world.mechanicalTotals({});
+    const double final_relative=b.motion.linear_velocity_m_s.x-a.motion.linear_velocity_m_s.x;
+    const double expected=fraction<1?closing*(1-2*fraction):-closing;
+    // Native contact witnesses are float even with double COM positions.
+    // Their gap error becomes velocity error divided by h under refinement.
+    const double gap_tolerance=8*std::numeric_limits<float>::epsilon()*.1;
+    const double velocity_tolerance=2*gap_tolerance/h;
+    check(std::abs(final_relative-expected)<velocity_tolerance,"midpoint contact relative velocity follows gap complementarity");
+    const double final_gap=b.motion.center_of_mass_world_m.x-a.motion.center_of_mass_world_m.x-.1;
+    const double expected_gap=fraction<1?0:gap-closing*h;
+    check(std::abs(final_gap-expected_gap)<gap_tolerance,"midpoint contact integrates the predicted separation");
+    const double reduced=fixed?b0.mass_kg:1/(1/a0.mass_kg+1/b0.mass_kg);
+    const double expected_change=.5*reduced*(expected*expected-closing*closing);
+    check(std::abs(after.kinetic_energy_j-before.kinetic_energy_j-expected_change)<reduced*(std::abs(expected)*velocity_tolerance+.5*velocity_tolerance*velocity_tolerance)+3e-6,"midpoint contact energy matches analytical boundary work");
+    Vec3 impulse{},torque_b{};double work=0;
+    for(const auto &contact:world.contactImpulseObservations())for(const auto &point:contact.points){
+        const auto push=contact.normal_a_to_b*point.normal_impulse_n_s;
+        const auto ra=point.point_world_m-a0.motion.center_of_mass_world_m,rb=point.point_world_m-b0.motion.center_of_mass_world_m;
+        const auto v0=b0.motion.linear_velocity_m_s+cross(b0.motion.angular_velocity_rad_s,rb)-a0.motion.linear_velocity_m_s-cross(a0.motion.angular_velocity_rad_s,ra);
+        const auto v1=b.motion.linear_velocity_m_s+cross(b.motion.angular_velocity_rad_s,rb)-a.motion.linear_velocity_m_s-cross(a.motion.angular_velocity_rad_s,ra);
+        impulse+=push;torque_b+=cross(rb,push);work+=dot(push,(v0+v1)/2);
+    }
+    // Four contact rows accumulate float velocity/impulse updates. Bound
+    // this distinct oracle by 32 float eps times its momentum/work scale;
+    // record the actual residuals rather than treating this as world accuracy.
+    const double momentum_tolerance=32*std::numeric_limits<float>::epsilon()*b0.mass_kg*(1+closing);
+    const double impulse_error=length(b0.mass_kg*(b.motion.linear_velocity_m_s-b0.motion.linear_velocity_m_s)-impulse);
+    const double work_error=after.kinetic_energy_j-before.kinetic_energy_j-work;
+    check(impulse_error<momentum_tolerance,"midpoint contact impulse matches native momentum change");
+    check(length(b0.inertia_world_kg_m2*(b.motion.angular_velocity_rad_s-b0.motion.angular_velocity_rad_s)-torque_b)<momentum_tolerance*.1,"midpoint contact actual lever arms account for torque");
+    check(std::abs(work_error)<momentum_tolerance*closing,"midpoint contact work matches kinetic change");
+    check(work<momentum_tolerance*closing,"nonoverlapping midpoint normal contact does not add energy");
+    if(!fixed){
+        check(length(after.linear_momentum_kg_m_s-before.linear_momentum_kg_m_s)<momentum_tolerance,"midpoint contact equal opposite reactions");
+        check(length(after.angular_momentum_kg_m2_s-before.angular_momentum_kg_m2_s)<momentum_tolerance*.1,"midpoint contact global angular momentum");
+    }
+    const auto accepted=world.snapshot(2);const auto saved_count=world.contactImpulseObservations().size();
+    check(!world.runReversibleTrial([&]{world.step(h);return false;}),"midpoint contact can reject the next trial");
+    check(world.snapshot(2).center_of_mass_world_m.x==accepted.center_of_mass_world_m.x&&world.snapshot(2).linear_velocity_m_s.x==accepted.linear_velocity_m_s.x,"midpoint contact rollback retains accepted motion");
+    check(world.contactImpulseObservations().size()==saved_count,"midpoint contact rollback retains accepted observations");
+    std::cout<<"material="<<materialSceneName(preset)<<" midpoint-contact fixed="<<fixed<<" fraction="<<fraction<<" h="<<h<<" final_gap_m="<<final_gap<<" velocity_error_m_s="<<final_relative-expected<<" gap_error_m="<<final_gap-expected_gap<<" energy_error_j="<<after.kinetic_energy_j-before.kinetic_energy_j-expected_change<<" impulse_error_n_s="<<impulse_error<<" work_error_j="<<work_error<<" work_j="<<work<<'\n';
+}
+// Coupled torsion reverses endpoint spin during the solve. Endpoint friction
+// can then add work at the trajectory midpoint; retain that failing control.
+void midpoint_twist_reversal_oracle(MaterialPreset preset,bool repaired,bool sliding){
+    JoltWorld world(0,{},execution);world.setCenteredIntegration(true);world.setGravity({});
+    world.configureVoxelContacts(.004);world.setContactSolverIterations(96,4);
+    world.setContactImpulseObservationsEnabled(true);
+    world.setContactRestitutionModel(repaired?RigidContactRestitution::MidpointUnilateral:RigidContactRestitution::ResolvedDeformation);
+    auto material=makeReferenceMaterial(preset);material.model=MaterialModel::RigidOnly;
+    material.static_friction=material.dynamic_friction=material.friction=.4;material.rolling_resistance=0;
+    world.addBox({1,{.1,.1,.1},material,{{-.05,0,0},{},{},{}},true});
+    world.addBox({2,{.1,.1,.1},material,{{ .05,0,0},{},{-1,sliding?1.:0,0},sliding?Vec3{}:Vec3{1,0,0}},false});
+    world.addBox({3,{.1,.1,.1},material,{{ .30,0,0},{},{},{}},true});
+    world.setContinuousCollision(2,false);world.setPairContactOwner(2,3,PairContactOwner::External);
+    const double k=1e4,h=1./240;const Vec3 kt{1,sliding?1e7:1,1},kr{k,sliding?k:1,sliding?k:1};
+    const auto joint=world.addFaceSpring({2,3,{.05,0,0},{1,0,0},{0,1,0},kt,kr,{},{},true,true});
+    const auto a0=world.mechanicalState(2);const auto before=world.mechanicalTotals({});
+    world.step(h);const auto a=world.mechanicalState(2);const auto face=world.faceSpringObservation(joint);
+    const double e0=.5*dot(a0.motion.angular_velocity_rad_s,a0.inertia_world_kg_m2*a0.motion.angular_velocity_rad_s)+.5*a0.mass_kg*a0.motion.linear_velocity_m_s.y*a0.motion.linear_velocity_m_s.y;
+    const auto potential=[](Vec3 stiffness,Vec3 value){return .5*(stiffness.x*value.x*value.x+stiffness.y*value.y*value.y+stiffness.z*value.z*value.z);};
+    const double elastic=potential(kt,face.displacement_cs_m)+potential(kr,face.rotation_cs_rad);
+    const double e1=.5*dot(a.motion.angular_velocity_rad_s,a.inertia_world_kg_m2*a.motion.angular_velocity_rad_s)+.5*a.mass_kg*(a.motion.linear_velocity_m_s.y*a.motion.linear_velocity_m_s.y+a.motion.linear_velocity_m_s.z*a.motion.linear_velocity_m_s.z)+elastic;
+    std::cout<<"material="<<materialSceneName(preset)<<(sliding?" midpoint-slide repaired=":" midpoint-twist repaired=")<<repaired<<" coupled_energy_change_j="<<e1-e0<<" spin_x_rad_s="<<a.motion.angular_velocity_rad_s.x<<'\n';
+    if(repaired){
+        check(e1-e0<4e-7,"midpoint friction cannot create energy in a coupled direction reversal");
+        if(!sliding)check(std::abs(a.motion.angular_velocity_rad_s.x+1)<3e-5,"midpoint twist satisfies the shared trajectory constraint");
+        check(world.mechanicalTotals({}).kinetic_energy_j+elastic-before.kinetic_energy_j<5e-6,"coupled midpoint contact creates no energy beyond native float bound");
+    }else check(e1-e0>1e-5,"endpoint friction control retains observed coupled energy creation");
+}
+void midpoint_contact_configuration_oracle(){
+    JoltWorld world(0,{},execution);bool refused=false;
+    try{world.setContactRestitutionModel(RigidContactRestitution::MidpointUnilateral);}catch(const std::invalid_argument &){refused=true;}
+    check(refused,"midpoint contact refuses endpoint pose integration");
+    world.setCenteredIntegration(true);world.setContactRestitutionModel(RigidContactRestitution::MidpointUnilateral);
+    refused=false;try{world.setCenteredIntegration(false);}catch(const std::logic_error &){refused=true;}
+    check(refused,"midpoint contact cannot lose its matching pose integrator");
+}
 void restitution_model_oracle(MaterialPreset preset,bool resolved){
     JoltWorld world(0,{},execution);world.setGravity({});world.configureVoxelContacts(.004);
     world.setContactSolverIterations(96,4);world.setContactImpulseObservationsEnabled(true);
@@ -394,4 +486,4 @@ void resolved_assembly_recovery_oracle(MaterialPreset preset){
     std::cout<<"material="<<materialSceneName(preset)<<" assembly_recovery="<<upward<<" peak_elastic_j="<<peak_elastic<<" peak_energy_excess_j="<<peak_energy-initial<<'\n';
 }
 }
-int main(){try{for(auto policy:{RigidJobExecution::ThreadPool,RigidJobExecution::Inline}){execution=policy;std::cout<<"execution="<<(policy==RigidJobExecution::Inline?"inline":"thread-pool")<<'\n';for(bool law:{false,true}){log_gradient=law;for(double extension:{0.,.01}){oracle(0,extension);oracle(20,extension);}torsion(0);torsion(.005);sleeping_spring_oracle();}nearest_orientation();for(bool fixed:{false,true})for(double friction:{0.,.4})contact_oracle(fixed,friction);gravity_oracle();log_gradient_impulse_oracle();limit_observation_oracle();for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(bool resolved:{false,true})restitution_model_oracle(material,resolved);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})resolved_assembly_recovery_oracle(material);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(double damping:{0.,20.})centered_pair_oracle(material,damping);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(double damping:{0.,.02})centered_torsion_oracle(material,damping);centered_gravity_oracle();for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})centered_small_spin_oracle(material);}return 0;}catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(){try{for(auto policy:{RigidJobExecution::ThreadPool,RigidJobExecution::Inline}){execution=policy;std::cout<<"execution="<<(policy==RigidJobExecution::Inline?"inline":"thread-pool")<<'\n';for(bool law:{false,true}){log_gradient=law;for(double extension:{0.,.01}){oracle(0,extension);oracle(20,extension);}torsion(0);torsion(.005);sleeping_spring_oracle();}nearest_orientation();for(bool fixed:{false,true})for(double friction:{0.,.4})contact_oracle(fixed,friction);gravity_oracle();log_gradient_impulse_oracle();limit_observation_oracle();for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(bool resolved:{false,true})restitution_model_oracle(material,resolved);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})resolved_assembly_recovery_oracle(material);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(double damping:{0.,20.})centered_pair_oracle(material,damping);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(double damping:{0.,.02})centered_torsion_oracle(material,damping);centered_gravity_oracle();midpoint_contact_configuration_oracle();for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(bool repaired:{false,true})for(bool sliding:{false,true})midpoint_twist_reversal_oracle(material,repaired,sliding);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(bool fixed:{false,true})for(double fraction:{0.,.25,.75,1.25})for(double h:{1./960,1./3840})midpoint_contact_oracle(material,fixed,fraction,h);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})centered_small_spin_oracle(material);}return 0;}catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}

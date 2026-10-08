@@ -50,9 +50,9 @@ struct VoxelImpactWorld::Impl {
     double sweep_wall_ms{},trial_wall_ms{},observation_wall_ms{},native_step_wall_ms{},totals_wall_ms{},candidate_faces_wall_ms{};
     double feature{},dt{},time{},initial_energy{},fracture{},discarded_elastic{},max_wall_ms{},peak_stress_ratio{};
     unsigned ticks{},broken{},substeps{},rejected{};Vec3 gravity;MechanicalTotals initial,totals;
-    bool log_faces{},resolved_deformation{},centered_faces{};
+    bool log_faces{},resolved_deformation{},centered_faces{},midpoint_contact{};
     RigidStepWork work_total{};double elastic_change_j{},ledger_change_j{};Vec3 full_angular_residual{};
-    Json refused_work=nullptr;
+    Json refused_work=nullptr,boundary_total={{"normal_midpoint_work_j",0.},{"friction_midpoint_work_j",0.},{"twist_midpoint_work_j",0.},{"positive_normal_work_j",0.},{"max_velocity_violation_m_s",0.},{"max_complementarity_error_j",0.}};
     static Json workJson(const RigidStepWork &w){return {
         {"gravity_work_j",w.gravity_work_j},{"gyro_kick_j",w.gyro_kick_j},{"other_force_work_j",w.other_force_work_j},
         {"spring_work_j",w.spring_work_j},{"contact_work_j",w.contact_work_j},{"solver_residual_work_j",w.solver_residual_work_j},
@@ -94,6 +94,33 @@ struct VoxelImpactWorld::Impl {
         }
         for(unsigned i=0;i<cells.size();++i)if(!cells[i].fixed){if(indexed[i].before.mass_kg<=0)throw std::runtime_error("native force phase observation missing");dynamic.push_back(indexed[i]);}
         return auditRigidStepWork(dynamic,gravity);
+    }
+    Json measureBoundary(const std::vector<RigidSnapshot> &before,double h)const{
+        double normal=0,positive=0,friction=0,twist=0,velocity_violation=0,complementarity=0;
+        std::vector<RigidSnapshot> solver=before;
+        for(const auto &phase:world.forcePhaseObservations()){
+            auto &s=solver.at(std::size_t(phase.body-100));
+            s.linear_velocity_m_s=phase.velocity_after_solver_m_s;s.angular_velocity_rad_s=phase.spin_after_solver_rad_s;
+        }
+        for(const auto &c:world.contactImpulseObservations()){
+            const unsigned a=unsigned(c.a-100),b=unsigned(c.b-100);
+            const auto speed=[&](Vec3 point,const std::vector<RigidSnapshot> &states){
+                return states[b].linear_velocity_m_s+cross(states[b].angular_velocity_rad_s,point-before[b].center_of_mass_world_m)
+                    -states[a].linear_velocity_m_s-cross(states[a].angular_velocity_rad_s,point-before[a].center_of_mass_world_m);
+            };
+            for(const auto &p:c.points){
+                const double v0=dot(c.normal_a_to_b,speed(p.point_world_m,before)),v1=dot(c.normal_a_to_b,speed(p.point_world_m,solver));
+                const double residual=v0+v1+2*std::max(0.,p.initial_gap_m)/h;
+                const double work=p.normal_impulse_n_s*(v0+v1)/2;
+                normal+=work;
+                positive+=std::max(0.,work);
+                velocity_violation=std::max(velocity_violation,std::max(0.,-residual));
+                complementarity=std::max(complementarity,std::abs(p.normal_impulse_n_s*residual));
+            }
+            friction+=dot(c.friction_impulse_on_b_n_s,(speed(c.friction_point_world_m,before)+speed(c.friction_point_world_m,solver))/2);
+            twist+=dot(c.twist_impulse_on_b_n_m_s,(before[b].angular_velocity_rad_s-before[a].angular_velocity_rad_s+solver[b].angular_velocity_rad_s-solver[a].angular_velocity_rad_s)/2);
+        }
+        return {{"normal_midpoint_work_j",normal},{"friction_midpoint_work_j",friction},{"twist_midpoint_work_j",twist},{"positive_normal_work_j",positive},{"max_velocity_violation_m_s",velocity_violation},{"max_complementarity_error_j",complementarity}};
     }
     std::vector<unsigned> components() const {
         std::vector<unsigned> p(cells.size());std::iota(p.begin(),p.end(),0);
@@ -152,9 +179,10 @@ struct VoxelImpactWorld::Impl {
         log_faces=face_law!="native-motor";centered_faces=face_law=="centered-log-gradient";
         world.setCenteredIntegration(centered_faces);
         const auto contact_law=d.value("contact_law",std::string("material-restitution"));
-        if(contact_law!="material-restitution"&&contact_law!="resolved-deformation")throw std::invalid_argument("unsupported contact law");
-        resolved_deformation=contact_law=="resolved-deformation";
-        world.setContactRestitutionModel(resolved_deformation?RigidContactRestitution::ResolvedDeformation:RigidContactRestitution::MaterialCombination);
+        if(contact_law!="material-restitution"&&contact_law!="resolved-deformation"&&contact_law!="midpoint-unilateral")throw std::invalid_argument("unsupported contact law");
+        midpoint_contact=contact_law=="midpoint-unilateral";
+        resolved_deformation=contact_law!="material-restitution";
+        world.setContactRestitutionModel(midpoint_contact?RigidContactRestitution::MidpointUnilateral:resolved_deformation?RigidContactRestitution::ResolvedDeformation:RigidContactRestitution::MaterialCombination);
         const auto sheet=preset(d.value("sheet",std::string("glass"))),ball=preset(d.value("ball",std::string("iron")));
         const double requested=scalar(d,"resolution",8,4,16);const unsigned n=unsigned(requested);
         if(n!=requested||(n!=4&&n!=8&&n!=12&&n!=16))throw std::invalid_argument("resolution must be 4, 8, 12 or 16");
@@ -196,7 +224,7 @@ struct VoxelImpactWorld::Impl {
         for(unsigned i=0;i<bonds.size();++i)if(bonds[i].live){const auto &b=bonds[i];faces_before[i]=world.faceSpringObservation(b.joint);before_elastic+=quadratic(b.k,faces_before[i].displacement_cs_m)+quadratic(b.r,faces_before[i].rotation_cs_rad);}
         observation_wall_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-observation_start).count();
         const double before=totals.mechanicalEnergy()+before_elastic;
-        double candidateEnergy=0,after_elastic=0;MechanicalTotals candidateTotals;RigidStepWork candidateWork;
+        double candidateEnergy=0,after_elastic=0;MechanicalTotals candidateTotals;RigidStepWork candidateWork;Json candidateBoundary;
         std::vector<RigidMechanicalState> candidate_states;
         const auto trial_start=std::chrono::steady_clock::now();
         const bool accepted=world.runReversibleTrial([&]{
@@ -212,10 +240,15 @@ struct VoxelImpactWorld::Impl {
             candidate_faces_wall_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-faces_start).count();
             const double after=candidateTotals.mechanicalEnergy()+after_elastic;candidateEnergy=after;
             candidateWork=measureWork(before_states,candidate_states,faces_before,faces_after);
+            if(midpoint_contact)candidateBoundary=measureBoundary(before_states,h);
             return std::isfinite(after)&&after-before<=1e-5*std::max(1.,std::abs(before))+1e-6&&after+fracture+discarded_elastic-initial_energy<=.1;
         });
         trial_wall_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-trial_start).count();
-        if(!accepted){++rejected;refused_work={{"time_s",time},{"dt_s",h},{"depth",depth},{"before_j",before},{"candidate_j",candidateEnergy},{"elastic_change_j",after_elastic-before_elastic},{"work",workJson(candidateWork)}};if(depth>=14)throw std::runtime_error("native integration energy gate refused at "+std::to_string(time)+" s: before="+std::to_string(before)+", candidate="+std::to_string(candidateEnergy)+", h="+std::to_string(h)+"; last accepted state retained");interval(h/2,depth+1);interval(h/2,depth+1);return;}
+        if(!accepted){++rejected;refused_work={{"time_s",time},{"dt_s",h},{"depth",depth},{"before_j",before},{"candidate_j",candidateEnergy},{"elastic_change_j",after_elastic-before_elastic},{"work",workJson(candidateWork)}};if(midpoint_contact)refused_work["midpoint_boundary"]=candidateBoundary;if(depth>=14)throw std::runtime_error("native integration energy gate refused at "+std::to_string(time)+" s: before="+std::to_string(before)+", candidate="+std::to_string(candidateEnergy)+", h="+std::to_string(h)+"; last accepted state retained");interval(h/2,depth+1);interval(h/2,depth+1);return;}
+        if(midpoint_contact)for(auto it=candidateBoundary.begin();it!=candidateBoundary.end();++it){
+            const double value=it.value().get<double>();
+            boundary_total[it.key()]=it.key().starts_with("max_")?std::max(boundary_total[it.key()].get<double>(),value):boundary_total[it.key()].get<double>()+value;
+        }
         const auto add_work=[&](double RigidStepWork::*field){work_total.*field+=candidateWork.*field;};
         for(auto field:{&RigidStepWork::gravity_work_j,&RigidStepWork::gyro_kick_j,&RigidStepWork::other_force_work_j,&RigidStepWork::spring_work_j,&RigidStepWork::contact_work_j,&RigidStepWork::solver_residual_work_j,&RigidStepWork::rotation_drift_j,&RigidStepWork::potential_change_j,&RigidStepWork::kinetic_change_j,&RigidStepWork::energy_residual_j,&RigidStepWork::velocity_limit_work_j,&RigidStepWork::post_integration_work_j})add_work(field);
         work_total.solver_linear_residual_n_s+=candidateWork.solver_linear_residual_n_s;work_total.solver_angular_residual_n_m_s+=candidateWork.solver_angular_residual_n_m_s;work_total.angular_drift_n_m_s+=candidateWork.angular_drift_n_m_s;
@@ -328,17 +361,20 @@ std::string VoxelImpactWorld::snapshotJson() const {
         for(const auto &b:w.bonds)if(!b.live&&w.cells[b.a].object==object)++breaks;
         objects.push_back({{"id",object},{"mass_kg",objectmass},{"cells",count},{"pieces",parts.size()},{"broken_faces",breaks},{"center_m",v(objectmass?center/objectmass:Vec3{})},{"velocity_m_s",v(objectmass?speed/objectmass:Vec3{})},{"max_travel_m",maxtravel}});
     }
-    return Json{{"schema","banjo.voxel-impact.v1"},{"declaration",w.declaration},{"time_s",w.time},{"dt_s",w.dt},{"ticks",w.ticks},{"substeps",w.substeps},{"rejected_trials",w.rejected},{"cells",cells},{"objects",objects},{"events",w.events},
+    Json result={{"schema","banjo.voxel-impact.v1"},{"declaration",w.declaration},{"time_s",w.time},{"dt_s",w.dt},{"ticks",w.ticks},{"substeps",w.substeps},{"rejected_trials",w.rejected},{"cells",cells},{"objects",objects},{"events",w.events},
         {"diagnostics",{{"dynamic_mass_kg",mass},{"kinetic_j",w.totals.kinetic_energy_j},{"potential_j",w.totals.gravitational_potential_energy_j},{"elastic_j",elastic},{"fracture_j",w.fracture},{"fracture_overshoot_loss_j",w.discarded_elastic},{"unclosed_energy_j",w.totals.mechanicalEnergy()+elastic+w.fracture+w.discarded_elastic-w.initial_energy},{"linear_momentum_n_s",v(w.totals.linear_momentum_kg_m_s)},{"angular_momentum_kg_m2_s",v(w.totals.angular_momentum_kg_m2_s)},{"max_step_wall_ms",w.max_wall_ms},{"peak_stress_ratio",w.peak_stress_ratio},{"linear_velocity_quadratic_j",w.linear_velocity_quadratic},{"peak_spin_rad_s",w.peak_spin},{"native_spin_limit_samples",w.spin_limit_samples},{"spring_material_damping_j",w.material_damping},{"spring_implicit_elastic_loss_j",w.implicit_elastic_loss},{"spring_endpoint_work_j",w.spring_endpoint_work},{"spring_geometry_change_j",w.spring_geometry_change},{"spring_residual_work_j",w.spring_residual_work},{"max_spring_solver_residual_n",w.max_spring_residual_n},{"profile",{{"sweep_ms",w.sweep_wall_ms},{"trial_ms",w.trial_wall_ms},{"observation_ms",w.observation_wall_ms},{"native_step_ms",w.native_step_wall_ms},{"totals_ms",w.totals_wall_ms},{"candidate_faces_ms",w.candidate_faces_wall_ms}}}}},
         {"contact_audit",{{"normal_endpoint_work_j",w.contact_normal_work},{"friction_endpoint_work_j",w.contact_friction_work},{"twist_endpoint_work_j",w.contact_twist_work},{"support_reaction_impulse_n_s",v(w.support_reaction_impulse)},{"support_reaction_angular_impulse_n_m_s",v(w.support_reaction_angular_impulse)},{"gravity_impulse_n_s",v(w.gravity_impulse)},{"linear_momentum_residual_n_s",v(w.momentum_residual)},{"manifold_samples",w.contact_manifold_samples},{"point_samples",w.contact_point_samples},{"scope","Actual discrete native solver impulses at start-of-solve contact midpoints; endpoint work is diagnostic, not a closed energy balance. Gravity counts start-of-Update active bodies. Anchored reactions use world-origin moments; no dormant cache impulses or estimated launch velocities."}}},
         {"step_work",{{"measured",Impl::workJson(w.work_total)},{"elastic_change_j",w.elastic_change_j},{"net_change_j",w.ledger_change_j},
             {"closure_residual_j",w.ledger_change_j-w.work_total.kinetic_change_j-w.work_total.potential_change_j-w.elastic_change_j},
             {"full_angular_residual_n_m_s",v(w.full_angular_residual)},{"last_rejected_trial",w.refused_work},
             {"scope","Actual native force-phase velocities and shared-phase spring/contact work. Residual, gyro and rotation drift are signed numerical/unexplained terms, not heat. Algebraic closure is not material realism or solver conservation."}}},
-        {"qualification",{{"calibrated",false},{"contact_law",impl_->resolved_deformation?"resolved-deformation":"material-restitution"},{"face_law",impl_->centered_faces?"centered-log-gradient":impl_->log_faces?"log-gradient":"native-motor"},{"model",impl_->centered_faces?
+        {"qualification",{{"calibrated",false},{"contact_law",impl_->midpoint_contact?"midpoint-unilateral":impl_->resolved_deformation?"resolved-deformation":"material-restitution"},{"face_law",impl_->centered_faces?"centered-log-gradient":impl_->log_faces?"log-gradient":"native-motor"},{"model",impl_->midpoint_contact?
+            "Experimental frozen-normal unilateral midpoint boundary and centered interfaces. Not compliant indentation or calibrated material contact. Finite rotations/friction/full energy remain unqualified.":impl_->centered_faces?
             "Experimental centered elastic rows and midpoint pose velocities. Linear energy oracles pass; coupled contact and finite rotations remain unqualified. Not compliant surface contact.":impl_->log_faces?
             "Experimental SO(3) energy-gradient interfaces. Analytical torque gradients pass; full impacts still have unresolved energy refusals/losses. Not a realtime or calibrated material model.":
             "Passive finite-box native six-axis elastic interfaces. Finite-rotation/integration/full energy and angular momentum accounts remain unqualified."},
-            {"limits","Brittle strength AND stored fracture-work admission. Metals/oak remain elastic, not brittle; plasticity/grain are unsupported."}}}}.dump();
+            {"limits","Brittle strength AND stored fracture-work admission. Metals/oak remain elastic, not brittle; plasticity/grain are unsupported."}}}};
+    if(w.midpoint_contact)result["midpoint_boundary"]=w.boundary_total;
+    return result.dump();
 }
 }

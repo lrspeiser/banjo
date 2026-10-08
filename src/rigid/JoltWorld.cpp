@@ -351,7 +351,7 @@ bool readContactImpulses(const std::string &data,
 
 struct ContactImpulseGeometry {
     JPH::SubShapeIDPair key;MatterBodyId a{},b{};
-    JPH::Vec3 normal;std::vector<Vec3> points;
+    JPH::Vec3 normal;std::vector<Vec3> points;std::vector<double> gaps;
 };
 
 // Saves only the contact pairs a round body is in, so reading the impulses
@@ -495,6 +495,7 @@ struct GroundSuspension {
 class ImpactCollector final : public JPH::ContactListener {
 public:
     RigidContactRestitution restitution_model{RigidContactRestitution::MaterialCombination};
+    std::unordered_map<JPH::uint32,std::pair<Vec3,Vec3>> initial_contact_motion;
     bool contact_impulses_enabled{};
     bool detailed_observations{};
     bool observations_enabled{true};
@@ -528,6 +529,7 @@ public:
         // After processContact, which sets the combined friction itself.
         if (!driven.empty() && (driven.contains(body1.GetUserData()) || driven.contains(body2.GetUserData())))
             settings.mCombinedFriction = 0.0F;
+        configureMidpointContact(body1,body2,settings);
         recordContactGeometry(body1,body2,manifold,settings);
     }
 
@@ -540,6 +542,7 @@ public:
         // After processContact, which sets the combined friction itself.
         if (!driven.empty() && (driven.contains(body1.GetUserData()) || driven.contains(body2.GetUserData())))
             settings.mCombinedFriction = 0.0F;
+        configureMidpointContact(body1,body2,settings);
         recordContactGeometry(body1,body2,manifold,settings);
     }
     std::vector<ContactImpulseGeometry> takeContactGeometry(){
@@ -571,6 +574,18 @@ public:
     }
 
 private:
+    void configureMidpointContact(const JPH::Body &a,const JPH::Body &b,JPH::ContactSettings &settings) const {
+        if(restitution_model!=RigidContactRestitution::MidpointUnilateral||settings.mIsSensor)return;
+        settings.mBanjoMidpointContact=true;
+        const auto assign=[&](const JPH::Body &body,JPH::Vec3 &v,JPH::Vec3 &w){
+            if(body.IsStatic()){v=w=JPH::Vec3::sZero();return;}
+            const auto found=initial_contact_motion.find(body.GetID().GetIndexAndSequenceNumber());
+            if(found==initial_contact_motion.end())throw std::runtime_error("midpoint contact initial motion missing");
+            v=toJolt(found->second.first);w=toJolt(found->second.second);
+        };
+        assign(a,settings.mBanjoInitialLinear1,settings.mBanjoInitialAngular1);
+        assign(b,settings.mBanjoInitialLinear2,settings.mBanjoInitialAngular2);
+    }
     void recordContactGeometry(const JPH::Body &a,const JPH::Body &b,const JPH::ContactManifold &manifold,const JPH::ContactSettings &settings){
         if(!contact_impulses_enabled||settings.mIsSensor)return;
         if((!a.IsStatic()&&a.GetMotionProperties()->GetMotionQuality()!=JPH::EMotionQuality::Discrete)||
@@ -578,8 +593,11 @@ private:
             std::scoped_lock lock(contact_mutex_);contact_swept_=true;return;
         }
         ContactImpulseGeometry geometry{JPH::SubShapeIDPair(a.GetID(),manifold.mSubShapeID1,b.GetID(),manifold.mSubShapeID2),a.GetUserData(),b.GetUserData(),manifold.mWorldSpaceNormal,{}};
-        for(JPH::uint i=0;i<manifold.mRelativeContactPointsOn1.size();++i)
-            geometry.points.push_back(fromJoltPosition(.5_r*(manifold.GetWorldSpaceContactPointOn1(i)+manifold.GetWorldSpaceContactPointOn2(i))));
+        for(JPH::uint i=0;i<manifold.mRelativeContactPointsOn1.size();++i){
+            const auto p1=manifold.GetWorldSpaceContactPointOn1(i),p2=manifold.GetWorldSpaceContactPointOn2(i);
+            geometry.points.push_back(fromJoltPosition(.5_r*(p1+p2)));
+            geometry.gaps.push_back(-double(JPH::Vec3(p1-p2).Dot(manifold.mWorldSpaceNormal)));
+        }
         std::scoped_lock lock(contact_mutex_);
         if(contact_geometry_.size()>=65536){contact_overflow_=true;return;}
         contact_geometry_.push_back(std::move(geometry));
@@ -634,7 +652,7 @@ private:
                                             : combined.dynamic_friction;
         settings.mCombinedFriction = static_cast<float>(applied_friction);
         settings.mCombinedRestitution =
-            restitution_model==RigidContactRestitution::ResolvedDeformation?0.0F:static_cast<float>(combined.restitution);
+            restitution_model!=RigidContactRestitution::MaterialCombination?0.0F:static_cast<float>(combined.restitution);
 
         // A tool's point in the ground is held by its bite, not by the height
         // field: the height field is a surface and lets nothing in. The rest of
@@ -740,7 +758,7 @@ private:
         event.combined_static_friction = combined.static_friction;
         event.combined_dynamic_friction = combined.dynamic_friction;
         event.applied_friction = applied_friction;
-        event.combined_restitution = restitution_model==RigidContactRestitution::ResolvedDeformation?0.0:combined.restitution;
+        event.combined_restitution = restitution_model!=RigidContactRestitution::MaterialCombination?0.0:combined.restitution;
         event.effective_contact_modulus_pa = combined.effective_modulus_pa;
 
         // The callback changes contact settings only; body lifetime/motion is
@@ -965,14 +983,14 @@ public:
         const bool parsed=readContactRecords(recorder.GetData(),[&](const RecordedContactManifold &record){
             const auto found=current.find(record.key);if(found==current.end())return;
             const auto &frame=found->second;
-            if(frame.points.size()!=record.points.size())throw std::runtime_error("native contact geometry/impulse point count differs");
+            if(frame.points.size()!=record.points.size()||frame.gaps.size()!=record.points.size())throw std::runtime_error("native contact geometry/impulse point count differs");
             JoltWorld::ContactImpulseObservation out;out.a=frame.a;out.b=frame.b;
             out.normal_a_to_b=fromJoltVector(frame.normal);
             const auto tangent=frame.normal.GetNormalizedPerpendicular();
             out.friction_impulse_on_b_n_s=fromJoltVector(record.friction[0]*tangent+record.friction[1]*frame.normal.Cross(tangent));
             out.twist_impulse_on_b_n_m_s=fromJoltVector(record.twist*frame.normal);
             for(unsigned i=0;i<record.points.size();++i){
-                out.points.push_back({frame.points[i],record.points[i].lambda});out.friction_point_world_m+=frame.points[i];
+                out.points.push_back({frame.points[i],record.points[i].lambda,frame.gaps[i]});out.friction_point_world_m+=frame.points[i];
             }
             if(!out.points.empty())out.friction_point_world_m*=1./out.points.size();
             contact_impulses_.push_back(std::move(out));current.erase(found);
@@ -3037,13 +3055,15 @@ JoltWorld::FaceSpringObservation JoltWorld::faceSpringObservation(unsigned id) c
 void JoltWorld::setContactRestitutionModel(RigidContactRestitution model) {
     impl_->requireConfigurationMutable();
     if(!impl_->bodies_.empty()||!impl_->floor_id_.IsInvalid())throw std::logic_error("configure restitution model before creating bodies");
-    if(model!=RigidContactRestitution::MaterialCombination&&model!=RigidContactRestitution::ResolvedDeformation)
+    if(model!=RigidContactRestitution::MaterialCombination&&model!=RigidContactRestitution::ResolvedDeformation&&model!=RigidContactRestitution::MidpointUnilateral)
         throw std::invalid_argument("unsupported contact restitution model");
+    if(model==RigidContactRestitution::MidpointUnilateral&&!impl_->centered_integration_)throw std::invalid_argument("midpoint contact requires centered integration");
     impl_->impact_collector_.restitution_model=model;
 }
 void JoltWorld::setCenteredIntegration(bool enabled){
     impl_->requireConfigurationMutable();
     if(!impl_->bodies_.empty()||!impl_->floor_id_.IsInvalid())throw std::logic_error("configure centered integration before bodies");
+    if(!enabled&&impl_->impact_collector_.restitution_model==RigidContactRestitution::MidpointUnilateral)throw std::logic_error("midpoint contact requires centered integration");
     impl_->centered_integration_=enabled;
     // Native displacement-based sleep can zero a still-oscillating elastic
     // body after 0.5 s; the centered reference retains that mechanical energy.
@@ -4845,6 +4865,12 @@ void JoltWorld::step(double fixed_dt_s) {
             (void)id;JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(),native);
             if(!lock.Succeeded()||(!lock.GetBody().IsStatic()&&(!lock.GetBody().IsDynamic()||lock.GetBody().GetMotionProperties()->GetMotionQuality()!=JPH::EMotionQuality::Discrete)))throw std::logic_error("centered integration requires static or discrete dynamic bodies");
         }
+    }
+    collector.initial_contact_motion.clear();
+    if(collector.restitution_model==RigidContactRestitution::MidpointUnilateral){
+        for(const auto &phase:impl_->force_phase_)
+            collector.initial_contact_motion.emplace(impl_->bodies_.at(phase.body).GetIndexAndSequenceNumber(),
+                std::pair{phase.before.motion.linear_velocity_m_s,phase.before.motion.angular_velocity_rad_s});
     }
     impl_->tick_.fetch_add(1U, std::memory_order_relaxed);
     const JPH::EPhysicsUpdateError error = impl_->physics_->Update(
