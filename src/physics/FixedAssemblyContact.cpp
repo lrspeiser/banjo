@@ -170,16 +170,19 @@ FixedSurfaceManifoldResult evaluateFixedSurfaceManifold(std::span<const ActiveNo
             support.push_back(nodes[c.nodes[j]]);
         }
         const auto stencil=makeMaterialContactStencil(support,c.surface_world_m);
-        // Reuse the single-contact admission validation, but freeze its target
-        // from the reconciled PRE-impact source and target velocities.
-        const auto admitted=evaluatePointRigidContact(stencil.point,modal,c.normal_world,c.gap_m,dt,c.settings);
+        // Admit declarations without solving an unused isolated response.
+        // Targets use the reconciled PRE-impact velocities; the simultaneous
+        // response retains its complete Coulomb residual and whole-work audit.
+        validatePointRigidContactLaw(c.normal_world,c.gap_m,dt,c.settings);
         const Vec3 relative=stencil.point.velocity_m_s-modal.motion.linear_velocity_m_s-
             cross(modal.motion.angular_velocity_rad_s,c.surface_world_m-modal.motion.center_of_mass_world_m);
         const double vn=dot(relative,c.normal_world);
+        require(finite(relative)&&std::isfinite(norm(relative))&&std::isfinite(vn),
+            "manifold contact kinematics overflow");
         if(c.gap_m>std::max(c.settings.contact_margin_m,-vn*dt))continue;
         const double e=-vn>c.settings.restitution_speed_threshold_m_s?c.settings.restitution:0;
         const double wanted=c.gap_m>c.settings.contact_margin_m?-c.gap_m/dt:-e*std::min(vn,0.);
-        (void)admitted;
+        require(std::isfinite(wanted),"manifold contact target overflow");
         Block b{k,c.normal_world,c.surface_world_m-modal.motion.center_of_mass_world_m,relative,wanted,
             std::vector<double>(nodes.size())};
         for(std::size_t j=0;j<c.nodes.size();++j)b.weights[c.nodes[j]]=stencil.weights[j];

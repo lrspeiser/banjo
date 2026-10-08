@@ -108,8 +108,7 @@ Vec3 solveCoulombContactImpulse(Vec3 relative,Vec3 normal,const Mat3 &effective,
     require(finite(impulse),"Coulomb manifold impulse overflow");return impulse;
 }
 
-PointRigidContactResult evaluatePointRigidContact(const ActiveNodeState &node,
-    const RigidMechanicalState &rigid,Vec3 normal,double gap,double timestep,
+void validatePointRigidContactLaw(Vec3 normal,double gap,double timestep,
     const PointRigidContactSettings &settings) {
     require(std::isfinite(timestep)&&timestep>0&&std::isfinite(gap)&&finite(normal)&&
             std::abs(norm(normal)-1)<=1e-10,"invalid point-rigid timestep, gap or unit normal");
@@ -119,6 +118,12 @@ PointRigidContactResult evaluatePointRigidContact(const ActiveNodeState &node,
             std::isfinite(settings.restitution_speed_threshold_m_s)&&settings.restitution_speed_threshold_m_s>=0&&
             std::isfinite(settings.contact_margin_m)&&settings.contact_margin_m>=0,
             "invalid point-rigid contact law");
+}
+
+PointRigidContactResult evaluatePointRigidContact(const ActiveNodeState &node,
+    const RigidMechanicalState &rigid,Vec3 normal,double gap,double timestep,
+    const PointRigidContactSettings &settings) {
+    validatePointRigidContactLaw(normal,gap,timestep,settings);
     require(std::isfinite(node.mass_kg)&&node.mass_kg>0&&std::isfinite(rigid.mass_kg)&&rigid.mass_kg>0&&
             finite(node.position_world_m)&&finite(node.velocity_m_s)&&
             finite(rigid.motion.center_of_mass_world_m)&&finite(rigid.motion.linear_velocity_m_s)&&

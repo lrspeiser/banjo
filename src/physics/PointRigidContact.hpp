@@ -10,6 +10,12 @@ struct PointRigidContactSettings {
     double contact_margin_m{1e-5};
 };
 
+// Shared input admission only. A coupled manifold validates its declarations
+// here and audits the simultaneous response itself; no isolated impulse is
+// evaluated or committed by this function.
+void validatePointRigidContactLaw(Vec3 normal_world,double gap_m,double dt_s,
+    const PointRigidContactSettings &settings);
+
 struct PointRigidContactResult {
     bool applied{},sticking{};
     Vec3 node_velocity_m_s{};

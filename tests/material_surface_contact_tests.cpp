@@ -536,6 +536,46 @@ void simultaneousAdmissionOracle() {
             "first witness selected coupled native admission");
     std::cout<<"[PASS] coupled admission evaluates the actual manifold instead of its isolated first witness\n";
 }
+void slowRelativeManifoldOracle() {
+    // A common translation must not force an unused isolated response through
+    // a relative-speed audit before the actual simultaneous response is solved.
+    auto nodes=cube();
+    for(auto &node:nodes)node.velocity_m_s={6-2.5e-6*node.position_world_m.x,0,0};
+    RigidMechanicalState source;source.mass_kg=1;
+    source.inertia_world_kg_m2.m={{{.01,0,0},{0,.01,0},{0,0,.01}}};
+    source.motion.linear_velocity_m_s={6,0,0};
+    std::vector<std::uint32_t> ids;for(unsigned i=0;i<nodes.size();++i)ids.push_back(i);
+    const PointRigidContactSettings law{0,0,0};
+    const Vec3 left{-.04,.01,.01},right{.04,-.01,-.01};
+    const auto isolated=makeMaterialContactStencil(nodes,left);
+    rejects([&]{(void)evaluatePointRigidContact(isolated.point,source,{-1,0,0},0,1e-7,law);},
+        "slow-relative isolated audit fixture no longer reproduces refusal");
+    const std::vector<FixedSurfaceContact> contacts{{ids,left,{-1,0,0},0,law},{ids,right,{1,0,0},0,law}};
+    const auto response=evaluateFixedSurfaceManifold(nodes,contacts,{source},{},0,1e-7);
+    require(response.active_contacts==2,"slow-relative manifold omitted simultaneous contact");
+    near(length(response.momentum_residual_kg_m_s),0,1e-12,"slow-relative manifold momentum");
+    near(length(response.angular_residual_kg_m2_s),0,1e-12,"slow-relative manifold angular momentum");
+    near(response.work_residual_j,0,1e-12,"slow-relative manifold work");
+    auto rest_nodes=nodes;for(auto &node:rest_nodes)node.velocity_m_s.x-=6;
+    auto rest_source=source;rest_source.motion.linear_velocity_m_s.x-=6;
+    const auto rest=evaluateFixedSurfaceManifold(rest_nodes,contacts,{rest_source},{},0,1e-7);
+    for(unsigned i=0;i<contacts.size();++i)
+        near(length(response.impulses_n_s[i]-rest.impulses_n_s[i]),0,1e-14,
+            "common translation changed simultaneous contact impulse");
+    const auto invalid=[&](auto edit) {
+        auto bad=contacts;edit(bad.back());
+        rejects([&]{(void)evaluateFixedSurfaceManifold(nodes,bad,{source},{},0,1e-7);},
+            "invalid late manifold declaration admitted after removing isolated solve");
+    };
+    invalid([](auto &c){c.normal_world={2,0,0};});
+    invalid([](auto &c){c.gap_m=std::numeric_limits<double>::quiet_NaN();});
+    invalid([](auto &c){c.settings.static_friction=-1;});
+    invalid([](auto &c){c.settings.dynamic_friction=1;});
+    invalid([](auto &c){c.settings.restitution=1.1;});
+    invalid([](auto &c){c.settings.restitution_speed_threshold_m_s=-1;});
+    invalid([](auto &c){c.settings.contact_margin_m=-1;});
+    std::cout<<"[PASS] simultaneous slow-relative contact does not solve an unused isolated response\n";
+}
 void controlledContactOracles() {
     for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
         Target target(preset);Tool tool;auto b=target.backend();const auto ids=target.support();
@@ -983,7 +1023,7 @@ int main(int argc,char **argv){try{
     require(!(oracles_only&&(strict||manifold||reverse||refinement_requested||!output.empty()||controlled)),"oracle-only mode cannot imply sustained acceptance");
     require(!controlled||(!strict&&!manifold&&!reverse&&!refinement_requested&&output.empty()),"controlled experiment uses its separate live accuracy gate");
     require(!refinement_requested||manifold,"extended refinement requires the explicit coupled manifold experiment");
-    manifoldOracles();variableContactStepOracles();simultaneousAdmissionOracle();controlledContactOracles();
+    manifoldOracles();variableContactStepOracles();simultaneousAdmissionOracle();slowRelativeManifoldOracle();controlledContactOracles();
     if(oracles_only){std::cout<<"[PASS] coupled manifold analytical/native atomicity oracles\n";return 0;}
     if(controlled){const auto open=controlledSustainedContact();std::cout<<"Controlled sustained open gates: "<<open<<'\n';return open?1:0;}
     matchedNativeSurfaceTrajectories();matchedNativeSurfaceTrajectories(true);const auto open=sustainedLocalContact(output.empty()?nullptr:&recording,reverse,manifold,refinement_levels);
