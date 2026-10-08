@@ -67,9 +67,9 @@ class Session:
   try:
    reply=self.call(command)
    with self.condition:self.current_at=time.monotonic();self.publish(reply)
-   return reply
   finally:
    with self.condition:self.calculating=False;self.condition.notify_all()
+  with self.condition:return dict(reply,frame_id=self.frame_id,pipeline=self.metrics())
  def play(self,running,target):
   with self.condition:
    if self.closed or not self.latest:raise ValueError('Session unavailable')

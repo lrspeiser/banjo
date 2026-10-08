@@ -17,7 +17,10 @@ with tempfile.TemporaryDirectory() as folder:
    for _ in range(2):
     r=req({'op':'create','declaration':{'sheet':material}});assert r['ok'];keys.append(r['session'])
    direct,stream=keys
-   for _ in range(6):reference=req({'op':'advance','session':direct,'steps':16});assert reference['ok']
+   for _ in range(6):
+    reference=req({'op':'advance','session':direct,'steps':16});assert reference['ok']
+    assert reference['frame_id']>0 and reference['pipeline']['published_state_age_ms']<100
+    assert not reference['pipeline']['calculating'],'manual reply leaves controls waiting for a nonexistent batch'
    started=req({'op':'play','session':stream,'running':True,'target_time_s':.1});assert started['ok']
    after=0;deadline=time.monotonic()+8;seq=[]
    while True:

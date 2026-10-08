@@ -16,8 +16,10 @@ session journals. The live site exposes simulation speed separately from fps.
 This update adds nearest-rank native batch p95 over at most 256 batches, maximum
 batch latency, age of the published accepted pose, last browser control round
 trip and journal size. Native batch cost includes calculation and IPC. Pose age
-uses one server monotonic clock, including time spent paused; it does not
-subtract client/server clocks. Browser control latency includes the HTTP round
+uses one server monotonic clock, including time spent paused. The browser adds
+local elapsed time since receipt so the readout keeps aging when polling stops;
+network transit is not included in this estimate. It does not subtract
+client/server clocks. Browser control latency includes the HTTP round
 trip, not only handler execution. Metrics are observations, not admission gates
 or modifications to the selected material law. A slow batch can exceed the
 8 ms soft target; Pause stops scheduling and drains that batch once.
@@ -176,3 +178,17 @@ streams an actual impact and pauses at 1.442 s with 40 broken faces/12 pieces.
 The measured Pause round trip is 9.9 ms and rendering is 60 fps in that scoped
 observation. The 844 × 390 landscape layout, scrollable diagnostics and restored
 desktop viewport are checked; no physical-phone qualification is implied.
+
+Published-server browser verification completes the reference two-second drop
+with 40 broken faces, 12 sheet pieces, all 107 cells and 41,823 accepted substeps.
+The browser reports 60 fps and 0.05× realtime; p95 over the final 256 background
+batches is 69.1 ms, largest batch 632.8 ms, and native-update wall time 30.38 s.
+This is an individual pipeline observation, not a repeated latency benchmark.
+Captured warnings/errors are empty. The final native hash matches the manifest.
+
+A subsequent host/presentation repair makes accepted-pose age continue advancing
+while paused, and manual Step replies include their new accepted-frame metrics
+after the calculating flag clears. Three affected scoped CTests (gateway,
+pipeline, playback) pass again in 5.72 s, including a regression that prevents
+manual controls waiting for a nonexistent batch. Native laws/binary are unchanged
+by that repair; physics source is `a2895042cfe29c1b886832028f5714b66931495b`.

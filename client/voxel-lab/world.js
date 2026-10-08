@@ -29,7 +29,7 @@ const camera=new THREE.PerspectiveCamera(42,1,.005,50), overview=new THREE.Persp
 let yaw=.7,pitch=.36,radius=1.2,whole=false;const target=new THREE.Vector3(0,.43,0);
 const colors={glass:0x98d9ed,ice:0xd5eefb,iron:0xaeb9c9,aluminum:0xdbe1e6,ceramic:0xd6a78e,oak:0xad8b64,concrete:0x536575};
 let groups=[],state=null,initial=null,session=null,running=false,busy=false,showBefore=false,sequence=0;
-const playback=new NativePlayback();let frameId=0,polling=false,calculating=false,pipeline=null,renderFrames=0,fpsStart=performance.now();
+const playback=new NativePlayback();let frameId=0,polling=false,calculating=false,pipeline=null,pipelineArrivedAt=0,renderFrames=0,fpsStart=performance.now();
 const nativeRoot=new THREE.Group();scene.add(nativeRoot);
 const marker=new THREE.Mesh(new THREE.RingGeometry(.013,.017,32),new THREE.MeshBasicMaterial({color:0xb2ea78,side:THREE.DoubleSide}));marker.rotation.x=-Math.PI/2;scene.add(marker);
 let aim=[0,0];
@@ -57,6 +57,7 @@ function draw(s){if(!s)return;
 }
 function updateCamera(){target.set(0,whole?4.8:.43,0);const r=whole?13:radius;camera.position.set(target.x+r*Math.cos(pitch)*Math.sin(yaw),target.y+r*Math.sin(pitch),target.z+r*Math.cos(pitch)*Math.cos(yaw));camera.lookAt(target);}
 function render(now){drawPose(showBefore?{from:initial,to:initial,alpha:1,time_s:initial.time_s}:playback.sample(now));const w=canvas.clientWidth,h=canvas.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();updateCamera();renderer.setViewport(0,0,w,h);renderer.setScissorTest(false);renderer.render(scene,camera);
+ if(pipeline)$('pose-age').textContent=(pipeline.published_state_age_ms+Math.max(0,now-pipelineArrivedAt)).toFixed(0)+' ms'+(!running&&!calculating?' · paused':'');
  if(!whole&&w>850){const ih=Math.min(190,h*.25),iw=110;renderer.setScissorTest(true);renderer.setScissor(w-iw-22,h-ih-250,iw,ih);renderer.setViewport(w-iw-22,h-ih-250,iw,ih);overview.aspect=iw/ih;overview.updateProjectionMatrix();renderer.render(scene,overview);renderer.setScissorTest(false);}
  renderFrames++;if(now-fpsStart>=1000){$('render-fps').textContent=Math.round(renderFrames*1000/(now-fpsStart))+' fps';renderFrames=0;fpsStart=now;}
  requestAnimationFrame(render);
@@ -64,7 +65,7 @@ function render(now){drawPose(showBefore?{from:initial,to:initial,alpha:1,time_s
 async function request(command){const start=performance.now();const response=await fetch('/api/world',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(command)});const reply=await response.json();if(command.op!=='frame')$('control-latency').textContent=(performance.now()-start).toFixed(1)+' ms';return reply;}
 function accept(r){
  if(r.state){state=r.state;playback.push(state,performance.now());if(!showBefore)draw(state);}
- if(r.pipeline){pipeline=r.pipeline;running=pipeline.running;calculating=pipeline.calculating;$('sim-speed').textContent=pipeline.realtime_ratio.toFixed(2)+'× realtime';$('batch-cost').textContent=pipeline.max_native_batch_ms.toFixed(1)+' ms / '+pipeline.native_batch_budget_ms+' ms target';}
+ if(r.pipeline){pipeline=r.pipeline;pipelineArrivedAt=performance.now();running=pipeline.running;calculating=pipeline.calculating;$('sim-speed').textContent=pipeline.realtime_ratio.toFixed(2)+'× realtime';$('batch-cost').textContent=pipeline.max_native_batch_ms.toFixed(1)+' ms / '+pipeline.native_batch_budget_ms+' ms target';}
  if(r.pipeline){$('batch-p95').textContent=pipeline.batch_sample_count?pipeline.native_batch_p95_ms.toFixed(1)+' ms / '+pipeline.batch_sample_count+' batches':'No batches yet';$('pose-age').textContent=pipeline.published_state_age_ms.toFixed(0)+' ms'+(!running&&!calculating?' · paused':'');$('record-size').textContent=(pipeline.journal_compressed_bytes/1e6).toFixed(2)+' MB';}
  if(!r.ok){running=false;$('phase').textContent='Stopped · '+r.error;}
  else if(state)$('phase').textContent=state.time_s>=2?'Drop complete':calculating&&!running?'Pausing · finishing native batch':running?'Live native physics': 'Native state ready';
