@@ -71,6 +71,8 @@ receipt persistence with the original sheet manager. Eight sessions maximum,
 180 s inactivity, 12,000 host ticks/world, 15 s/request deadline. UI pause waits
 for the active bounded batch. A refused material update pauses the UI and stays
 visible. Integration success is never promoted to `release_ready:true`.
+Closing an expired session is idempotent, so Prepare/reset also recovers after
+server restart or inactivity expiry; advancing an expired session stays refused.
 
 ## Measured Windows evidence
 

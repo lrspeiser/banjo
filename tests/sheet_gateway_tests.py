@@ -30,6 +30,7 @@ class GatewayTests(unittest.TestCase):
                 manager.sessions[key]['sequence']=80
                 with self.assertRaises(ValueError):manager.request({'op':'advance','session':key})
                 self.assertTrue(manager.request({'op':'close','session':key})['closed'])
+                self.assertTrue(manager.request({'op':'close','session':key})['closed'])
                 with self.assertRaises(ValueError):manager.request({'op':'advance','session':key})
             finally:manager.close()
 

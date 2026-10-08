@@ -57,7 +57,12 @@ class SheetManager:
             else:
                 if set(request)!={'op','session'} or op not in ('advance','close'): raise ValueError('Invalid sheet intention')
                 key=request['session']
-                if not isinstance(key,str) or key not in self.sessions: raise ValueError('Specimen expired; reset it')
+                if not isinstance(key,str): raise ValueError('Invalid session identity')
+                # Closing an expired/restarted session is safe and lets reset create a new one.
+                if key not in self.sessions:
+                    if op=='close' and len(key)==32 and all(c in '0123456789abcdef' for c in key):
+                        return {'ok':True,'closed':True}
+                    raise ValueError('Specimen expired; reset it')
                 session=self.sessions[key]
                 if op=='close':
                     self._stop(session);del self.sessions[key];return {'ok':True,'closed':True}

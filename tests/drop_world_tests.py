@@ -106,6 +106,7 @@ class DropTests(unittest.TestCase):
                     self.assertEqual(lines[-1]['receipt'],after);self.assertEqual(lines[0]['request']['sheet'],name)
                     self.assertEqual(len(after['native_sha256']),64)
                     manager.request(dict(op='close',session=key))
+                    self.assertTrue(manager.request(dict(op='close',session=key))['closed'])
                     with self.assertRaises(ValueError):manager.request(dict(op='advance',session=key))
             finally:manager.close()
 
