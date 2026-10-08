@@ -1,8 +1,10 @@
+**Contact performance trial, October 8 (diagnostic regression and rendering; physics retained):** [Trial, ice counterexample and restored evaluation](friction-fastpath-checkpoint.md) expand the analytical suite to 4,224 cases and add full-state failure witnesses. The optimization passed three complete material comparisons but changed ice at 1.45 s, so it was withdrawn without relaxing parity. Restored physics passes six focused CTests and the exact ice counterexample. Viewport work is reduced and whole-rig framing uses actual geometry. No simulation speed improvement or new constitutive validation is published; all five physics/platform goals remain open.
+
 **Coupled friction block, October 8 (implemented experimental repair; full gates OPEN):** [Solver, native oracles and journal repair](coupled-friction-block-checkpoint.md) add a full 3 by 3 sliding/twisting solve with the original impulse caps. Glass/oak/iron anisotropic contact controls pass in both CPU runners; six focused CTests and four-material reference parity pass. All five final-build drops and the complete browser glass-ball replay finish; the prior glass-ball refusal is absent in this fixture. Signed losses and remaining normal/island errors are recorded. Normal/island convergence, energy losses, speed, plasticity, adaptive cells and authoring remain unfinished.
 
 # Remaining active goals: what you will test
 
-Updated October 8, 2026 from [the latest contact convergence audit](contact-stationarity-checkpoint.md). These are the five active goals, rewritten as user acceptance tests. Historical checkpoints and the wider platform roadmap follow below; they are not additional completed capabilities.
+Updated October 8, 2026 from [the completed coupled-friction impacts](coupled-friction-block-checkpoint.md). These are the five active goals, rewritten as user acceptance tests. Historical checkpoints and the wider platform roadmap follow below; they are not additional completed capabilities.
 
 ## 1. Trust the collision and its aftermath — in progress
 
@@ -10,7 +12,7 @@ Updated October 8, 2026 from [the latest contact convergence audit](contact-stat
 
 **Done when:** Supported cases finish without unexplained solver stops; fragments retain their source material and mass; measured energy and momentum transfers account for gravity, supports, friction and implemented damage. Smaller timesteps and finer cells give acceptably consistent results. Cracks and debris come from the calculation.
 
-**Still missing:** Coupled contact/friction convergence, unexplained energy losses and full transfer/refinement qualification. The new final-slip audit identifies positive twist work within a feasible impulse cap; 16/96/256 iteration probes all still fail. The experimental glass-ball case fractures into 20 components but stops at 1.470365 simulated seconds. A completed drop alone does not establish accuracy.
+**Still missing:** Normal/island contact convergence, unexplained energy losses and full transfer/refinement qualification. The latest experimental glass-ball case completes two simulated seconds with 34 sheet and 19 ball components, but still has nonzero final friction gaps and about 80 J of ledger loss. Earlier iteration probes failed before the coupled-friction repair. A completed drop alone does not establish accuracy.
 
 ## 2. Interact while the physics keeps up — in progress
 
@@ -18,7 +20,7 @@ Updated October 8, 2026 from [the latest contact convergence audit](contact-stat
 
 **Done when:** A published, bounded reference scene sustains at least one simulated second per wall second on the declared test machine, with responsive controls and the same accuracy gates. Display simulation progress separately from rendering frame rate.
 
-**Still missing:** Reduced active solve/substep cost. Two simulated seconds of glass impact currently take about 39 wall seconds in the reference model and 124 in the latest experimental model.
+**Still missing:** Reduced active solve/substep cost. Two simulated seconds of glass impact take about 39 wall seconds in the reference model. Latest experimental measurements range from 71 to 177 wall seconds across the material fixtures under concurrent verification load; these are not isolated performance benchmarks.
 
 ## 3. Leave a real, permanent dent in metal — planned for this lab
 

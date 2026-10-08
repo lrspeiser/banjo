@@ -1,34 +1,39 @@
 {
-  "title": "Glass-ball drop completes; accuracy and speed open",
+  "title": "Stronger regression checks; physics optimization withdrawn",
   "date": "2026-10-08",
-  "physics_revision": "7371898757c47f6c02d6a9eb5389f156c4c382e9",
-  "native_sha256": "a99ebdde07748148f36537225457ba76087a59a894518fffe1ea86f3826ac2e1",
+  "physics_revision": "ddf187e492680ff0b978d6d15e49a49f790b7a12",
+  "native_sha256": "43131a17e44f92d07bbe2397d020875f086d77a353ff7b10d56af25bf1a571ae",
   "changes": [
-    "New experimental Coupled friction option solves sliding and twisting together with the full 3 by 3 inverse mass and original impulse caps.",
-    "Reference response remains the default. Existing geometry, material laws and energy refusal gates are retained.",
-    "All five final-build drops finish. Browser glass-ball completes at 2 s: 34 sheet / 19 ball components; downloaded final work matches native CLI exactly.",
-    "Exact replacement journals retain all published poses within existing storage limits. Before/Live controls are clear of the inspection drawer."
+    "Full-state testing caught an ice trajectory difference at 1.45 s. The trial optimization was withdrawn; original contact evaluation and energy gates are retained.",
+    "Analytical coverage expands to 4,224 cases. The comparison tool can isolate a material pair and preserve both actual replies in a failure witness.",
+    "Viewport and projection work now run on resize. Whole-rig framing fits the actual declared geometry, including the ball at 10 m.",
+    "No calculation speed improvement is published. Energy/contact accuracy, realtime speed, metal dents, adaptive cells and authoring remain open."
   ],
   "checks": [
     {
-      "label": "Coupled friction oracles",
+      "label": "Restored contact evaluation",
       "status": "passed",
-      "value": "128 analytical cap/stationarity cases, basis invariance and invalid inputs; native glass/oak/iron partial support tests"
+      "value": "Original solver source restored; 6 focused CTests / 8.26 s, including native glass/oak/iron controls"
     },
     {
-      "label": "Matched material drops",
+      "label": "Ice counterexample",
       "status": "passed",
-      "value": "Glass/oak/iron/ice iron-ball + glass/glass complete; retained energy refusal gate. This is benchmark completion, not physics admission"
+      "value": "Restored build matches all physical and work fields at every 16 ticks through 1.45 s; no comparison tolerance relaxed"
     },
     {
-      "label": "Full browser / journal",
+      "label": "Analytical coverage",
       "status": "passed",
-      "value": "Glass-ball 2 s, 1,661 records, all 1,920 native ticks; exact final measured work parity and no console errors"
+      "value": "4,224 independent cap/stationarity cases plus basis invariance and invalid input checks"
     },
     {
-      "label": "Scoped regression",
+      "label": "Whole-world speed trial",
+      "status": "blocked",
+      "value": "Glass/oak/iron complete with parity; ice changes at 1.45 s. Trial withdrawn and not shipped. Glass/glass not reached in the trial"
+    },
+    {
+      "label": "Browser controls / responsive layout",
       "status": "passed",
-      "value": "6 focused CTests / 7.74 s; actual gateway, exact journal/pipeline and playback checks"
+      "value": "Desktop and 844 x 390 landscape; native Step, Before/Live, Run/Pause and geometry-based whole-rig framing; no console errors"
     },
     {
       "label": "Compiled sources",
@@ -38,12 +43,12 @@
     {
       "label": "Full conservation / refinement",
       "status": "blocked",
-      "value": "Glass-ball still has normal disagreement 0.048818 J, nonzero final friction gaps, numerical fracture overshoot and unqualified energy/momentum/refinement"
+      "value": "Inherited contact disagreement, substantial energy losses and unqualified spatial/timestep refinement remain"
     },
     {
       "label": "Simulation speed",
       "status": "blocked",
-      "value": "No speed fix: experimental final drops 71\u2013177 wall s / 2 physical s under concurrent verification load; reference about 39 s"
+      "value": "No speed fix published. Next: measure native update, observation and rejected-trial costs, then local stepping"
     }
   ],
   "next": [
