@@ -1,5 +1,27 @@
 import * as THREE from '/three.module.js';
 const $=id=>document.getElementById(id), canvas=$('scene');
+function statusRow(parent,label,value,status){const row=document.createElement('div'),name=document.createElement('dt'),result=document.createElement('dd');name.textContent=label;result.textContent=value;if(status)result.dataset.status=status;row.append(name,result);parent.append(row);}
+async function loadCheckpoint(){
+ try{
+  const response=await fetch('/api/checkpoint');if(!response.ok)throw Error('Build status unavailable');const build=await response.json(),c=build.checkpoint;
+  const matched=build.native_verified&&!build.restart_pending;
+  $('updates').textContent=(matched?'✓ Build ':'⚠ Check build ')+(build.website_revision?.slice(0,8)??'unknown');
+  $('updates').dataset.status=matched?'passed':'blocked';$('checkpoint-title').textContent=c.title??'Update status';
+  $('build-match').textContent=matched?'Running the tested native checkpoint.':build.restart_pending?'Server restart required for the current website revision.':'Native build differs from the checkpoint: these test results do not verify this executable.';
+  $('build-match').dataset.status=matched?'passed':'blocked';
+  statusRow($('build-versions'),'Website',build.website_revision?.slice(0,8)??'Unknown');
+  statusRow($('build-versions'),'Physics',c.physics_revision?.slice(0,8)??'Unrecorded');
+  statusRow($('build-versions'),'Local edits',build.local_changes===null?'Unknown':build.local_changes?'Present':'None');
+  for(const text of c.changes??[]){const row=document.createElement('li');row.textContent=text;$('build-changes').append(row);}
+  for(const check of c.checks??[])statusRow($('build-checks'),check.label,(matched?'': 'Checkpoint only · ')+(check.status==='passed'?'✓ ': '⚠ ')+check.value,matched?check.status:'blocked');
+  for(const next of c.next??[])statusRow($('build-next'),next.label,next.status,next.status);
+ }catch(e){$('updates').textContent='⚠ Build status unavailable';$('build-match').textContent=e.message;$('build-match').dataset.status='blocked';}
+}
+$('updates').onclick=()=>{const open=$('checkpoint').hidden;if(open)document.querySelector('footer details').open=false;$('checkpoint').hidden=!open;$('updates').setAttribute('aria-expanded',String(open));};
+$('close-updates').onclick=()=>{$('checkpoint').hidden=true;$('updates').setAttribute('aria-expanded','false');$('updates').focus();};
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('checkpoint').hidden)$('close-updates').click();});
+document.querySelector('footer details').addEventListener('toggle',e=>{if(e.target.open){$('checkpoint').hidden=true;$('updates').setAttribute('aria-expanded','false');}});
+loadCheckpoint();
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setClearColor(0x111a24);
 const scene=new THREE.Scene();scene.add(new THREE.HemisphereLight(0xbddcff,0x3e4033,2.5));const light=new THREE.DirectionalLight(0xffffff,3);light.position.set(2,6,4);scene.add(light);
 const camera=new THREE.PerspectiveCamera(42,1,.005,50), overview=new THREE.PerspectiveCamera(35,1,.01,50);overview.position.set(2.8,6,4);overview.lookAt(0,5.4,0);
@@ -19,6 +41,8 @@ function draw(s){if(!s)return;const cells=new Map(s.cells.map(c=>[c.id,c]));
  marker.position.set(aim[0],.501+Number($('thickness').value),aim[1]);marker.visible=s.time_s===0;
  const sheet=s.objects.find(x=>x.id===1),ball=s.objects.find(x=>x.id===2);$('time').textContent=s.time_s.toFixed(3)+' s';$('pieces').textContent=sheet.pieces+' / '+sheet.cells+' voxels';$('faces').textContent=sheet.broken_faces;$('speed').textContent=Math.hypot(...ball.velocity_m_s).toFixed(2)+' m/s';$('ballpieces').textContent=ball.pieces+' / '+ball.cells+' voxels';$('count').textContent=s.cells.length+' native cells · '+s.substeps+' accepted substeps';
  const d=s.diagnostics;$('audit').textContent=`Retained dynamic mass ${d.dynamic_mass_kg.toFixed(5)} kg · KE ${d.kinetic_j.toFixed(3)} J · elastic ${d.elastic_j.toFixed(3)} J · unclosed energy ${d.unclosed_energy_j.toFixed(3)} J · rejected trials ${s.rejected_trials}`;
+ for(const [id,value] of [['spring-damping',d.spring_material_damping_j],['numerical-elastic',d.spring_implicit_elastic_loss_j],['spring-residual',d.spring_residual_work_j]])$(id).textContent=Number.isFinite(value)?value.toFixed(3)+' J':'Unavailable in this build';
+ $('native-cost').textContent=Number.isFinite(d.profile?.native_step_ms)?(d.profile.native_step_ms/1000).toFixed(2)+' s wall time':'Unavailable in this build';
  canvas.dataset.time=s.time_s;canvas.dataset.nativeCells=s.cells.length;canvas.dataset.sheetPieces=sheet.pieces;
 }
 function updateCamera(){target.set(0,whole?4.8:.43,0);const r=whole?13:radius;camera.position.set(target.x+r*Math.cos(pitch)*Math.sin(yaw),target.y+r*Math.sin(pitch),target.z+r*Math.cos(pitch)*Math.cos(yaw));camera.lookAt(target);}
@@ -33,7 +57,7 @@ async function reset(){if(busy)return;busy=true;running=false;showBefore=false;c
  catch(e){$('phase').textContent='Stopped · '+e.message;}finally{busy=false;controls();}
 }
 async function advance(){if(busy||!session)return;busy=true;controls();const start=performance.now();
- try{await request({op:'advance',session,steps:16});$('phase').textContent=state.time_s>=2?'Drop complete':state.objects[0].broken_faces?'Fracture · native cells moving':'Running native physics';if(state.time_s>=2)running=false;}
+ try{await request({op:'advance',session,steps:16});$('phase').textContent=state.time_s>=2?'Drop complete':state.objects[0].broken_faces?'Fracture · native cells moving':running?'Running native physics':'Native step accepted';if(state.time_s>=2)running=false;}
  catch(e){running=false;$('phase').textContent='Stopped · '+e.message;}finally{busy=false;controls();if(running)setTimeout(advance,Math.max(0,16-(performance.now()-start)));}
 }
 $('drop').onclick=()=>{running=!running;controls();if(running)advance();};$('step').onclick=advance;$('reset').onclick=reset;

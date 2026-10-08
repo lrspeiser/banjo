@@ -1,0 +1,26 @@
+{
+  "title": "Spring energy audit",
+  "date": "2026-10-08",
+  "physics_revision": "20d6e597c42e8ef1945efe8ca7b4759b4dc51afe",
+  "native_sha256": "e46c7afabbaf117f6d0a94946a94fa0875817837be8d088062910494b6bc1660",
+  "changes": [
+    "Visible build status, test results and live energy diagnostics.",
+    "Separate spring damping from numerical energy loss.",
+    "Measure native stepping cost and solver residuals.",
+    "Keep the glass-ball failure visible until it is repaired."
+  ],
+  "checks": [
+    {"label": "Spring oracles", "status": "passed", "value": "7 checks"},
+    {"label": "Drop regression", "status": "passed", "value": "11 completed experiments"},
+    {"label": "Materials compared", "status": "passed", "value": "Glass · oak · iron · ice"},
+    {"label": "Gateway & joints", "status": "passed", "value": "5 scoped suites, including spring oracles"},
+    {"label": "Glass ball", "status": "blocked", "value": "Energy gate refuses impact"}
+  ],
+  "next": [
+    {"label": "Energy accuracy", "status": "in progress"},
+    {"label": "Simulation speed", "status": "in progress"},
+    {"label": "Permanent metal dents", "status": "planned"},
+    {"label": "Adaptive cell sizes", "status": "planned"},
+    {"label": "Custom materials & objects", "status": "planned"}
+  ]
+}

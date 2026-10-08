@@ -53,3 +53,30 @@ For headless work configure with `-DBANJO_BUILD_LAB=OFF`. Record environment and
 For behavioral changes, add analytical/constitutive/regression tests and record conservation residuals and performance where relevant. Explain any tolerance change. For documentation-only work, validate links and changed-file scope; do not imply new physical validation.
 
 Keep `docs/development-status.md` and `docs/roadmap.md` accurate. Label design, implementation, experimental result and validated behavior separately. State where changes are committed and whether they are on main. Leave a usable checkpoint with remaining defects and next tests rather than claiming the entire platform is complete.
+
+## Keep the user test website current
+
+The owner requires every user-facing checkpoint to update the actual local
+test website, not only source code or written status.
+
+- For physics checkpoints, update `client/voxel-lab/checkpoint.json` with the
+  exact verified native executable SHA256, physics source revision, scoped
+  test evidence, visible changes, remaining failures and next work. Keep
+  experimental behavior distinct from calibrated or fully validated behavior.
+- Build and run appropriate tests before publishing. Run
+  `python scripts/check-source-registration.py` before source completion and
+  again before publishing; keep docs and the mechanics scorecard accurate.
+- Push coherent verified checkpoints to main regularly, fetching first and
+  preserving concurrent changes. Never force-push or commit credentials/builds.
+- Start/restart the local `scripts/voxel-lab.py` server on port 18893 against
+  the verified binary. Check `/api/checkpoint`: the native hash must match the
+  recorded evidence, and the server must run the current website revision.
+  An old process or a different executable is not delivery of new physics.
+- Verify the ordinary browser controls, latest visible changes and build
+  status; check responsive layout when UI changes. Capture an actual screenshot
+  and include it with the user update. Leave the test URL usable.
+- Preserve session logs. Explain that restarting this disposable laboratory
+  resets active experiments; do not silently reset unrelated player worlds.
+- Never hide remaining failures behind a green build label: the label confirms
+  checkpoint identity, while separate checks show passed, blocked and planned
+  work. A mismatched binary must display an explicit unverified warning.
