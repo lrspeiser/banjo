@@ -123,6 +123,8 @@ retains the complete witness. An ordinary browser glass/glass drop reaches the
 same refusal and 20 ball components, without console errors/warnings. Its journal
 is saved in `build/voxel-friction-convergence-browser-refusal.jsonl` (1,048 rows).
 
+Implementation source revision: `30c9158d3b59a36cd22fd7805c705821e066778b`. The website reports its publication revision separately.
+
 Verified native SHA256:
 `6fdfee11ea7643c35d161ac84a81dd64b8430c7626e44a47f4ca725a10a88f8d`.
 Build: `build/voxel-contact-audit`; output:

@@ -1,34 +1,34 @@
 {
-  "title": "Contact friction corrected; coupled accuracy open",
+  "title": "Final contact convergence measured; accuracy open",
   "date": "2026-10-08",
-  "physics_revision": "ccaa19745532ab13e492c22c3174c08ed2343901",
-  "native_sha256": "6f401bd9831596f45957885264e5b07ce6ba6df9b357e87eaddf13d8494c3c16",
+  "physics_revision": "30c9158d3b59a36cd22fd7805c705821e066778b",
+  "native_sha256": "6fdfee11ea7643c35d161ac84a81dd64b8430c7626e44a47f4ca725a10a88f8d",
   "changes": [
-    "Choose Midpoint boundary to use matched centered normal, sliding and twisting constraints. This is an experimental hard boundary, not compliant contact.",
-    "Controlled glass/oak/iron tests reproduce endpoint-friction energy injection and verify its correction; native rows retain their force/torque bounds.",
-    "All four iron-ball sheet comparisons complete. Glass-ball fractures into 20 components, then still refuses at 1.470365 s with positive twist work.",
-    "The record separates actual normal, friction and twist work and normal-constraint errors. Full conservation, calibration and useful speed remain open."
+    "Physics & record now shows final normal, sliding and twisting disagreement; Download record retains the worst rejected cell contact.",
+    "The glass-ball failure is localized to cells 175/176: twisting adds 0.070003 J despite a feasible impulse cap. Rejected motion is not rendered.",
+    "16, 96 and 256 iteration probes all still refuse, with different fracture histories. Increasing the iteration count alone is not a verified fix.",
+    "This checkpoint changes measurement and reporting only. Previous physical/work records, response laws and energy gates are preserved."
   ],
   "checks": [
     {
       "label": "Controlled contact regressions",
       "status": "passed",
-      "value": "96 normal runs + 24 sliding/twist controls/corrections; earlier native oracles retained"
+      "value": "Retained 96 normal + 24 coupled controls/corrections; actual coefficient, cap and final-slip checks in both CPU runners"
     },
     {
       "label": "Matched material reporting",
       "status": "passed",
-      "value": "Glass/oak/iron/ice sheets complete; glass-ball safely refuses. Accuracy remains OPEN"
+      "value": "Four iron-ball sheets complete; glass-ball still refuses. All five prior final physical/work records preserved; accuracy OPEN"
     },
     {
       "label": "Reference preservation",
       "status": "passed",
-      "value": "4 materials / 2 s: every physical and work record matches the previous executable"
+      "value": "Glass/oak/iron/ice: every reference physical/work record matches at 16-tick intervals through 2 s"
     },
     {
       "label": "Scoped regression",
       "status": "passed",
-      "value": "5 focused CTests / 3.96 s; separate full material comparison and prior-binary parity"
+      "value": "5 focused CTests / 3.73 s; actual material, iteration and browser-journal witness verification"
     },
     {
       "label": "Compiled sources",
@@ -38,17 +38,17 @@
     {
       "label": "Coupled glass-ball accuracy",
       "status": "blocked",
-      "value": "Still refuses at 1.470365 s: rejected twist work +0.06967 J. No gate relaxed"
+      "value": "Glass-ball still refuses at 1.470365 s; cells 175/176 add +0.070003 J twist work inside their impulse cap"
     },
     {
       "label": "Full conservation / refinement",
       "status": "blocked",
-      "value": "Momentum, geometry work, contact/friction convergence and calibrated indentation remain unqualified"
+      "value": "Final friction convergence, full energy/momentum, finite geometry and calibration remain unqualified"
     },
     {
       "label": "Simulation speed",
       "status": "blocked",
-      "value": "Matched glass/iron: about 124 wall s / 2 physical s; reference still about 39 s"
+      "value": "No speed fix: experimental glass/iron about 125 wall s / 2 simulated s; reference about 39 s"
     },
     {
       "label": "Reference glass-ball gate",
@@ -60,7 +60,7 @@
     {
       "label": "Energy / accuracy",
       "status": "in progress",
-      "value": "Resolve coupled tangential/twist convergence; compliant surface potential/damping; finite geometry and P/L/E refinement"
+      "value": "Repair coupled tangent/twist/normal and contact-island convergence; preserve full energy, momentum and refinement gates"
     },
     {
       "label": "Calculation speed",
