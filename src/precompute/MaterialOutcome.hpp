@@ -14,12 +14,14 @@ namespace banjo {
 
 // 3: the key carries the numerical profile the outcome was computed under.
 inline constexpr std::uint32_t kMaterialOutcomeFormatVersion = 3U;
+// 7/8 retain a finer Coulomb-manifold Jacobian probe than 5/6; numerical
+// trajectories can change. The native angular integration remains distinct.
 #ifdef BANJO_JOLT_CONTINUOUS_SMALL_ROTATION
 // Native integration differs from the legacy angular dead zone. Outcomes from
 // that solver cannot be admitted under continuous small rotations or vice versa.
-inline constexpr std::uint32_t kMaterialSolverModelVersion = 6U;
+inline constexpr std::uint32_t kMaterialSolverModelVersion = 8U;
 #else
-inline constexpr std::uint32_t kMaterialSolverModelVersion = 5U;
+inline constexpr std::uint32_t kMaterialSolverModelVersion = 7U;
 #endif
 
 struct MaterialOutcomeKeyInput {

@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <functional>
 #include <iostream>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -18,6 +19,30 @@ namespace {
 
 struct TestFailure : std::runtime_error {
     using std::runtime_error::runtime_error;
+};
+
+// Separate CTest/build invocations must never share an outcome file. Atomically
+// claim a directory; random names alone do not establish exclusive ownership.
+struct TemporaryOutcomeDirectory {
+    std::filesystem::path path;
+    TemporaryOutcomeDirectory() {
+        std::random_device random;
+        for (unsigned attempt = 0; attempt < 64; ++attempt) {
+            auto candidate = std::filesystem::temp_directory_path() /
+                ("banjo-material-outcome-" + std::to_string(random()) + "-" +
+                 std::to_string(random()));
+            if (std::filesystem::create_directory(candidate)) {
+                path = std::move(candidate);
+                return;
+            }
+        }
+        throw std::runtime_error("could not claim a private outcome test directory");
+    }
+    ~TemporaryOutcomeDirectory() {
+        std::error_code ignored;
+        std::filesystem::remove(path / "outcome.bmo", ignored);
+        std::filesystem::remove(path, ignored);
+    }
 };
 
 void require(bool condition, std::string_view message) {
@@ -181,9 +206,8 @@ void outcomeFileRoundTripsDeterministically() {
     const banjo::MaterialOutcome original = banjo::captureMaterialOutcome(
         defaultKey(), active, rigid, 17U);
 
-    const std::filesystem::path path =
-        std::filesystem::temp_directory_path() /
-        "banjo-material-outcome-test.bmo";
+    const TemporaryOutcomeDirectory temporary;
+    const std::filesystem::path path = temporary.path / "outcome.bmo";
     banjo::saveMaterialOutcome(original, path);
     const banjo::MaterialOutcome loaded = banjo::loadMaterialOutcome(path);
     std::filesystem::remove(path);
@@ -210,11 +234,17 @@ void outcomeFileRoundTripsDeterministically() {
     catch (const std::invalid_argument &) { rejected = true; }
     require(rejected, "outcomes from predictor-driven damage must not be reused");
     incompatible = loaded;
-    incompatible.key.solver_model_version = banjo::kMaterialSolverModelVersion == 5U ? 6U : 5U;
+    incompatible.key.solver_model_version = banjo::kMaterialSolverModelVersion == 7U ? 8U : 7U;
     rejected = false;
     try { banjo::applyMaterialOutcome(incompatible, rigid, target); }
     catch (const std::invalid_argument &) { rejected = true; }
     require(rejected, "outcomes from a different native angular integration must not be reused");
+    for(const auto previous_model:{5U,6U}) {
+        incompatible=loaded;incompatible.key.solver_model_version=previous_model;rejected=false;
+        try{banjo::applyMaterialOutcome(incompatible,rigid,target);}
+        catch(const std::invalid_argument &){rejected=true;}
+        require(rejected,"outcomes from the former manifold Jacobian must not be reused");
+    }
     banjo::MaterialOutcomeKeyInput pulse_input;
     pulse_input.impact_internal_energy_fraction = .12;
     rejected = false;

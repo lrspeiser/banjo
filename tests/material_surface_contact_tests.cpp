@@ -3,6 +3,7 @@
 #include "material/MaterialCatalog.hpp"
 #include "material/MaterialCompiler.hpp"
 #include "matter/BoxLattice.hpp"
+#include "precompute/MaterialOutcome.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -665,12 +666,13 @@ void controlledContactOracles() {
             <<",\"attributed_e_residual_j\":"<<e_error<<"}\n";
     }
 }
-std::vector<NativeSurfaceWitness> queriedManifoldWitnesses(const Target &target,LatticeBackend &b,Tool &tool) {
+std::vector<NativeSurfaceWitness> queriedManifoldWitnesses(const Target &target,LatticeBackend &b,Tool &tool,
+    MaterialContactGeometry geometry=MaterialContactGeometry::ClosestPoint) {
     const auto state=target.download(b);std::vector<NativeSurfaceWitness> witnesses;
     for(unsigned i=0;i<state.node_count;++i) {
         const Vec3 at=state.origin+Vec3{state.x0[3*i]+state.u[3*i],state.x0[3*i+1]+state.u[3*i+1],state.x0[3*i+2]+state.u[3*i+2]};
-        require(tool.world.materialShapeContacts(10,at,{PrimitiveKind::Box,0,{.04,.04,.04}},{},1e-5).contacts.empty(),"controlled fixture omitted handle contact");
-        const auto hits=tool.world.materialShapeContacts(1,at,{PrimitiveKind::Box,0,{.04,.04,.04}},{},1e-5).contacts;
+        require(tool.world.materialShapeContacts(10,at,{PrimitiveKind::Box,0,{.04,.04,.04}},{},1e-5,64,geometry).contacts.empty(),"controlled fixture omitted handle contact");
+        const auto hits=tool.world.materialShapeContacts(1,at,{PrimitiveKind::Box,0,{.04,.04,.04}},{},1e-5,64,geometry).contacts;
         if(state.inv_mass[i]==0){require(hits.empty(),"controlled fixture omitted direct clamp contact");continue;}
         for(const auto &hit:hits) {
             const auto law=combineContactMaterials(compileContactMaterial(target.material),hit.body_contact);
@@ -681,8 +683,9 @@ std::vector<NativeSurfaceWitness> queriedManifoldWitnesses(const Target &target,
     return witnesses;
 }
 NativeContactStepAudit queriedManifoldAudit(const Target &target,LatticeBackend &b,Tool &tool,
-    nlohmann::json *trace=nullptr,const std::vector<NativeSurfaceWitness> *fixed_witnesses=nullptr) {
-    const auto witnesses=fixed_witnesses?*fixed_witnesses:queriedManifoldWitnesses(target,b,tool);
+    nlohmann::json *trace=nullptr,const std::vector<NativeSurfaceWitness> *fixed_witnesses=nullptr,
+    MaterialContactGeometry geometry=MaterialContactGeometry::ClosestPoint) {
+    const auto witnesses=fixed_witnesses?*fixed_witnesses:queriedManifoldWitnesses(target,b,tool,geometry);
     nlohmann::json inputs=nlohmann::json::array();
     if(trace)for(const auto &w:witnesses) {
         const auto node=b.externalContactPoint(w.seed);
@@ -705,7 +708,34 @@ NativeContactStepAudit queriedManifoldAudit(const Target &target,LatticeBackend 
     a.source_numerical_angular_kg_m2_s=r.source.angular_momentum_error_kg_m2_s;a.geometry_couple_kg_m2_s=r.source.contact.geometry_couple_kg_m2_s;
     a.active_manifolds=r.source.contact.active_contacts?1:0;return a;
 }
-unsigned controlledSustainedContact() {
+void facePatchImpactOracles() {
+    for(double width:{.04,.12})for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        Target target(preset,1e-7,.12,{.1,0,0});Tool tool(width);
+        for(unsigned i=0;i<target.state.node_count;++i)if(target.state.x0[3*i]>.039)target.state.inv_mass[i]=0;
+        auto b=target.backend();const auto initial=totals(target.state,tool.world);
+        const auto witnesses=queriedManifoldWitnesses(target,*b,tool,MaterialContactGeometry::ClippedFace);
+        require(witnesses.size()==(width==.04?12U:36U),"impact fixture omitted native face points");
+        const auto r=applyNativeFixedLocalSurfaceManifold(tool.world,*b,witnesses,{.1,3,64,4096},2,1,{1e-5,1e-5,1e-5});
+        require(r.source.contact.active_contacts>0&&r.source.contact.impulses_n_s.size()==witnesses.size(),
+            "face impact discarded original contact equations");
+        const auto state=target.download(*b);const auto after=totals(state,tool.world);
+        const double p=length(after.linear_momentum_kg_m_s-initial.linear_momentum_kg_m_s-r.source.momentum_error_kg_m_s);
+        const double l=length(after.angular_momentum_kg_m2_s-initial.angular_momentum_kg_m2_s-
+            r.source.angular_momentum_error_kg_m2_s-r.source.contact.geometry_couple_kg_m2_s);
+        const double e=after.mechanicalEnergy()-initial.mechanicalEnergy()+r.source.contact.dissipated_energy_j+
+            r.source.contact.reconciliation_loss_j-r.source.numerical_energy_change_j;
+        near(p,0,1e-9,"face impact linear attribution");near(l,0,1e-9,"face impact angular attribution");
+        near(e,0,1e-10,"face impact work attribution");near(after.mass_kg,initial.mass_kg,1e-12,"face impact changed mass");
+        require(b->status().total_steps==0&&tool.world.stepCount()==0&&state.u==target.state.u&&state.alive==target.state.alive,
+            "instantaneous face response advanced time or changed topology");
+        std::cout<<"FACE_PATCH_IMPACT "<<nlohmann::json{{"material",materialPresetName(preset)},{"width_m",width},
+            {"points",witnesses.size()},{"active_contacts",r.source.contact.active_contacts},
+            {"target_mass_kg",target.material.density_kg_m3*.12*.12*.12},{"target_work_j",r.target.work_j},
+            {"contact_loss_j",r.source.contact.dissipated_energy_j},{"source_correction_j",r.source.numerical_energy_change_j},
+            {"attributed_p_residual_n_s",p},{"attributed_l_residual_kg_m2_s",l},{"attributed_e_residual_j",e}}.dump()<<std::endl;
+    }
+}
+unsigned controlledSustainedContact(MaterialContactGeometry geometry) {
     unsigned open=0;
     for(double width:{.04,.12})for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
         Target target(preset,1e-7,.12,{.1,0,0});Tool tool(width);
@@ -721,7 +751,7 @@ unsigned controlledSustainedContact() {
             compared=false;metric.clear();
             try {
                 const auto r=advanceNativeFixedTargetControlled(tool.world,*b,std::min(proposal,remaining),settings,
-                    [&](double){return queriedManifoldAudit(target,*b,tool);});
+                    [&](double){return queriedManifoldAudit(target,*b,tool,nullptr,nullptr,geometry);});
                 rejected+=r.rejected_intervals;
                 last_error=r.normalized_error;metric=r.error_metric;compared=true;last_comparison=r;
                 if(!r.accepted) {refusal=r.topology_agrees?"accuracy budget exhausted":"topology comparison unresolved";break;}
@@ -739,21 +769,24 @@ unsigned controlledSustainedContact() {
             // Separate delivery/reconciliation rounding from native witness
             // changes. Neither system advances, and the same actual geometry
             // declarations are used in both consecutive contact projections.
-            const auto witnesses=queriedManifoldWitnesses(target,*b,tool);
+            const auto witnesses=queriedManifoldWitnesses(target,*b,tool,geometry);
             nlohmann::json trace=nlohmann::json::array();
             const auto clock=b->externalContactElapsedTime();const auto tick=tool.world.stepCount();
-            require(!runNativeFixedTargetTrial(tool.world,*b,[&] {
-                (void)queriedManifoldAudit(target,*b,tool,&trace,&witnesses);
-                (void)queriedManifoldAudit(target,*b,tool,&trace,&witnesses);return false;
-            }),"contact reapplication committed");
+            std::string reapplication_error;
+            try {
+                require(!runNativeFixedTargetTrial(tool.world,*b,[&] {
+                    (void)queriedManifoldAudit(target,*b,tool,&trace,&witnesses,geometry);
+                    (void)queriedManifoldAudit(target,*b,tool,&trace,&witnesses,geometry);return false;
+                }),"contact reapplication committed");
+            }catch(const std::exception &e){reapplication_error=e.what();}
             near(b->externalContactElapsedTime(),clock,0,"contact reapplication advanced time");
             require(tool.world.stepCount()==tick,"contact reapplication advanced native time");
             std::cout<<"CONTACT_REAPPLICATION "<<nlohmann::json{{"material",materialPresetName(preset)},
-                {"width_m",width},{"fixed_geometry",true},{"steps",trace}}.dump()<<std::endl;
+                {"width_m",width},{"fixed_geometry",true},{"error",reapplication_error},{"steps",trace}}.dump()<<std::endl;
         }
         if(!refusal.empty())for(double interval:{1e-7,1e-10,1e-12}) {
             nlohmann::json full=nlohmann::json::array(),half=nlohmann::json::array(),fixed_half=nlohmann::json::array();
-            const auto witnesses=queriedManifoldWitnesses(target,*b,tool);
+            const auto witnesses=queriedManifoldWitnesses(target,*b,tool,geometry);
             const auto frozen=target.download(*b);const auto clock=b->externalContactElapsedTime();
             const auto tick=tool.world.stepCount();
             const auto trial=[&](unsigned steps,nlohmann::json &trace,bool fixed=false) {
@@ -761,7 +794,7 @@ unsigned controlledSustainedContact() {
                 try {
                     require(!runNativeFixedTargetTrial(tool.world,*b,[&] {
                         for(unsigned k=0;k<steps;++k)b->advanceExternalContactStep(interval/steps,[&] {
-                            (void)queriedManifoldAudit(target,*b,tool,&trace,fixed?&witnesses:nullptr);tool.world.step(interval/steps);
+                            (void)queriedManifoldAudit(target,*b,tool,&trace,fixed?&witnesses:nullptr,geometry);tool.world.step(interval/steps);
                         });return false;
                     }),"contact refinement isolation committed");
                 }catch(const std::exception &e){error=e.what();}
@@ -778,7 +811,7 @@ unsigned controlledSustainedContact() {
             near(b->externalContactElapsedTime(),clock,0,"contact refinement isolation changed clock");
             require(tool.world.stepCount()==tick,"contact refinement isolation changed native clock");
             std::cout<<"CONTACT_STEP_REFINEMENT "<<nlohmann::json{{"material",materialPresetName(preset)},
-                {"width_m",width},{"interval_s",interval},{"full",full},{"half",half},
+                {"width_m",width},{"contact_geometry",geometry==MaterialContactGeometry::ClippedFace?"clipped-face-v1":"closest-point-v1"},{"interval_s",interval},{"full",full},{"half",half},
                 {"fixed_witness_half",fixed_half},{"fixed_witness_half_error",fixed_half_error},
                 {"full_error",full_error},{"half_error",half_error}}.dump()<<std::endl;
         }
@@ -838,7 +871,7 @@ unsigned controlledSustainedContact() {
         require(s.total_steps==2*accepted&&tool.world.stepCount()==2*accepted,"controlled sustained leaked trial steps");
         if(!refusal.empty()||std::abs(b->externalContactElapsedTime()-duration)>1e-18)++open;
         std::cout<<"CONTROLLED_SUSTAINED "<<nlohmann::json{{"material",materialPresetName(preset)},{"width_m",width},
-            {"accepted_time_s",b->externalContactElapsedTime()},{"accepted_intervals",accepted},{"rejected_intervals",rejected},
+            {"contact_geometry",geometry==MaterialContactGeometry::ClippedFace?"clipped-face-v1":"closest-point-v1"},{"accepted_time_s",b->externalContactElapsedTime()},{"accepted_intervals",accepted},{"rejected_intervals",rejected},
             {"minimum_interval_s",smallest},{"broken_bonds",s.broken_bonds},{"refusal",refusal},{"attributed_p_residual_n_s",p},
             {"last_normalized_error",compared?nlohmann::json(last_error):nlohmann::json(nullptr)},{"error_metric",metric},
             {"comparison_interval_s",last_comparison.compared_interval_s},{"comparison_bound",last_comparison.error_bound},
@@ -1105,12 +1138,13 @@ void matchedNativeSurfaceTrajectories(bool local=false) {
 }
 }
 int main(int argc,char **argv){try{
-    bool strict=false,reverse=false,manifold=false,oracles_only=false,controlled=false;std::string output;unsigned refinement_levels=2;bool refinement_requested=false;
+    bool strict=false,reverse=false,manifold=false,oracles_only=false,controlled=false,face_patches=false;std::string output;unsigned refinement_levels=2;bool refinement_requested=false;
     for(int i=1;i<argc;++i){const std::string option=argv[i];
         if(option=="--require-live-contact-convergence"&&!strict)strict=true;
         else if(option=="--coupled-manifold")manifold=true;
         else if(option=="--manifold-oracles-only")oracles_only=true;
         else if(option=="--controlled-manifold")controlled=true;
+        else if(option=="--face-patches"&&!face_patches)face_patches=true;
         else if(option=="--reverse-contact-order")reverse=true;
         else if(option=="--refinement-levels"&&!refinement_requested&&i+1<argc) {
             const std::string value=argv[++i];require(value.size()==1&&value[0]>='2'&&value[0]<='5',"refinement levels must be 2..5");
@@ -1126,12 +1160,15 @@ int main(int argc,char **argv){try{
     }
     std::cout.precision(12);liveGraphSelectionOracles();analyticalSurfaceOracles();bulkAtomicity();authoritativeTopologyAdmission();
     require(!(oracles_only&&(strict||manifold||reverse||refinement_requested||!output.empty()||controlled)),"oracle-only mode cannot imply sustained acceptance");
+    require(!face_patches||controlled,"face patch comparison requires controlled manifold mode");
     require(!controlled||(!strict&&!manifold&&!reverse&&!refinement_requested&&output.empty()),"controlled experiment uses its separate live accuracy gate");
     require(!refinement_requested||manifold,"extended refinement requires the explicit coupled manifold experiment");
     std::cout<<"NATIVE_ROTATION_PROFILE "<<JoltWorld::rotationIntegrationProfile()<<'\n';
+    std::cout<<"CONTACT_SOLVER_MODEL_VERSION "<<kMaterialSolverModelVersion<<'\n';
     manifoldOracles();variableContactStepOracles();simultaneousAdmissionOracle();slowRelativeManifoldOracle();controlledContactOracles();
+    facePatchImpactOracles();
     if(oracles_only){std::cout<<"[PASS] coupled manifold analytical/native atomicity oracles\n";return 0;}
-    if(controlled){const auto open=controlledSustainedContact();std::cout<<"Controlled sustained open gates: "<<open<<'\n';return open?1:0;}
+    if(controlled){const auto open=controlledSustainedContact(face_patches?MaterialContactGeometry::ClippedFace:MaterialContactGeometry::ClosestPoint);std::cout<<"Controlled sustained open gates: "<<open<<'\n';return open?1:0;}
     matchedNativeSurfaceTrajectories();matchedNativeSurfaceTrajectories(true);const auto open=sustainedLocalContact(output.empty()?nullptr:&recording,reverse,manifold,refinement_levels);
     if(!output.empty()){
         recording["open_convergence_gates"]=open;recording["coupled_manifold"]=manifold;recording["refinement_levels"]=refinement_levels;

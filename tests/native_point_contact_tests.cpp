@@ -667,6 +667,87 @@ void smallRotationOracles() {
             <<" maximum_energy_error_j="<<maximum_energy_error<<'\n';
     }
 }
+void nativeClippedFaceWitnesses() {
+    const RigidPrimitive cell_box{PrimitiveKind::Box,0,{.04,.04,.04}};
+    constexpr auto patch=MaterialContactGeometry::ClippedFace;
+    for(const auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        const auto material=makeReferenceMaterial(preset,17);JoltWorld world;world.setGravity({});
+        world.addBox({1,{.08,.08,.08},material,{{},{},{},{}},false});
+        const auto before=world.snapshot(1);const auto mass=world.mechanicalTotals().mass_kg;
+        for(double gap:{-.002,0.,.001}) {
+            const auto q=world.materialShapeContacts(1,{.06+gap,0,0},cell_box,{},.004,64,patch);
+            require(q.contact_geometry==patch&&q.contacts.size()==4,"face query omitted clipped quadrilateral");
+            Vec3 centre{};
+            for(const auto &hit:q.contacts) {
+                near(hit.gap_m,gap,1e-7,"clipped face point gap");
+                near(hit.point_on_body_world_m.x,.04,1e-7,"clipped source point left face");
+                near(std::abs(hit.point_on_body_world_m.y),.02,1e-7,"clipped face y boundary");
+                near(std::abs(hit.point_on_body_world_m.z),.02,1e-7,"clipped face z boundary");
+                nearVec(hit.normal_world,{1,0,0},1e-6,"clipped face normal");
+                materialMatches(hit.body_contact,material);centre+=hit.point_on_body_world_m;
+            }
+            nearVec(centre/4,{.04,0,0},1e-7,"clipped face centroid shifted");
+        }
+        bool overflow=false;
+        try{(void)world.materialShapeContacts(1,{.061,0,0},cell_box,{},.004,3,patch);}
+        catch(const std::length_error &){overflow=true;}
+        require(overflow,"face query silently pruned to fit budget");
+        bool invalid=false;
+        try{(void)world.materialShapeContacts(1,{},cell_box,{},0,64,static_cast<MaterialContactGeometry>(255));}
+        catch(const std::invalid_argument &){invalid=true;}
+        require(invalid,"invalid contact geometry model accepted");
+        same(before,world.snapshot(1));near(world.mechanicalTotals().mass_kg,mass,0,"face query changed mass");
+        require(world.stepCount()==0&&world.drainImpacts().empty(),"face query advanced physics");
+        const Quat turn{std::cos(std::numbers::pi/8),0,0,std::sin(std::numbers::pi/8)};
+        JoltWorld rotated;rotated.addBox({1,{.08,.08,.08},material,{{},turn,{},{}},false});
+        const auto turned=rotated.materialShapeContacts(1,turn.rotate({.061,0,0}),cell_box,turn,.004,64,patch);
+        require(turned.contacts.size()==4,"rotated face patch omitted corners");
+        for(const auto &hit:turned.contacts) {
+            near(hit.gap_m,.001,1e-6,"rotated face patch gap");
+            nearVec(hit.normal_world,turn.rotate({1,0,0}),2e-6,"rotated face patch normal");
+        }
+        JoltWorld curved;curved.addBall({1,.08,material,{},{},{}});
+        const auto curved_hit=curved.materialShapeContacts(1,{.101,0,0},cell_box,{},.003,64,patch);
+        require(curved_hit.contacts.size()==1,"curved witness invented a flat face");
+        near(curved_hit.contacts[0].gap_m,.001,2e-6,"curved face-query fallback gap");
+        const RigidPrimitive leaf{PrimitiveKind::Box,0,{.04,.04,.04}};
+        JoltWorld hollow;hollow.addCompound(compound({{leaf,{-.06,0,0},{},material},{leaf,{.06,0,0},{},material}}));
+        require(hollow.materialShapeContacts(1,{},cell_box,{},0,64,patch).contacts.empty(),"face query filled compound void");
+        const auto leaf_query=hollow.materialShapeContacts(1,{.091,0,0},cell_box,{},.002,64,patch);
+        require(leaf_query.contacts.size()==4,"compound leaf patch omitted corners");
+        for(const auto &hit:leaf_query.contacts) {
+            require(hit.shape_user_data==2,"face patch lost native leaf identity");materialMatches(hit.body_contact,material);
+        }
+
+        // Actual before/after inputs from the broad-oak 0.5 ps witness switch.
+        // Geometry queries are repeated for every retained comparison material.
+        const Vec3 source_centres[]{
+            {3.534960693606093e-05,1.1970356969737195e-06,6.037120045568372e-07},
+            {3.534960982871883e-05,1.1970357947665497e-06,6.037120540650515e-07}};
+        const Quat source_turns[]{
+            {1.,1.1308105563045956e-08,-6.719514544784033e-07,4.2752589024530607e-07},
+            {1.,1.1308106451224376e-08,-6.719515113218222e-07,4.275259186670155e-07}};
+        const Vec3 envelope_centres[]{
+            {.060026897445152334,7.06774821066912e-07,3.7752509611113175e-07},
+            {.060026897446867816,7.067748793485161e-07,3.77525127274056e-07}};
+        MaterialShapeQuery queries[2];
+        for(unsigned i=0;i<2;++i) {
+            JoltWorld captured;captured.setGravity({});
+            captured.addBox({1,{.08,.12,.08},material,{source_centres[i],source_turns[i],{},{}},false});
+            queries[i]=captured.materialShapeContacts(1,envelope_centres[i],cell_box,{},1e-5,64,patch);
+            require(queries[i].contacts.size()>=4,"captured contact lost its face patch");
+        }
+        double displacement=0;
+        for(unsigned from=0;from<2;++from)for(const auto &a:queries[from].contacts) {
+            double nearest=std::numeric_limits<double>::infinity();
+            for(const auto &b:queries[1-from].contacts)nearest=std::min(nearest,length(a.point_on_body_world_m-b.point_on_body_world_m));
+            displacement=std::max(displacement,nearest);
+        }
+        near(displacement,0,1e-7,"captured clipped patch changed without geometric motion");
+        std::cout<<"NATIVE_FACE_PATCH material="<<materialPresetName(preset)<<" points="<<queries[0].contacts.size()
+            <<" captured_patch_change_m="<<displacement<<" source_mass_kg="<<mass<<'\n';
+    }
+}
 } // namespace
 int main(int argc,char **argv) {
     try { std::cout.precision(12);materialReactionAndRounding();atomicRefusal();repeatedContactRetainsNativeState();
@@ -683,7 +764,7 @@ int main(int argc,char **argv) {
 #endif
         if(require_small_rotation)smallRotationOracles();
         nativeSphereAndRotatedBoxWitnesses();compoundMaterialsVoidsAndBudgets();turnedCylinderAndConvexWitnesses();
-        actualWitnessFeedsNativeReaction();invalidQueriesRefuse();nativeOccupiedCuboidWitnesses();
+        actualWitnessFeedsNativeReaction();invalidQueriesRefuse();nativeOccupiedCuboidWitnesses();nativeClippedFaceWitnesses();
         nativeFixedToolRetainsItsLoadPath();
         nativeFixedContactUsesActualConstraintInertia();nativeFixedContactRefusesAtomically();
         orderedNativeFixedContactsRetainAllAccounts();

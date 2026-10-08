@@ -325,7 +325,11 @@ FixedSurfaceManifoldResult evaluateFixedSurfaceManifold(std::span<const ActiveNo
         const std::size_t dimension=r.size();std::vector<std::vector<double>> jacobian(dimension,std::vector<double>(dimension));
         for(std::size_t col=0;col<dimension;++col) {
             const auto a=col/3;const unsigned axis=static_cast<unsigned>(col%3);
-            const double h=1e-7*std::max(1e-3,norm(base[a]));
+            // Nearly redundant face rows approach stick/slip boundaries with
+            // corrections below the former relative 1e-7 probe. A smaller
+            // Jacobian probe resolves that local branch; the full-law residual
+            // and work bounds below still admit or refuse the response.
+            const double h=1e-9*std::max(1e-3,norm(base[a]));
             impulses=base;impulses[a]+=h*axes[axis];const auto plus=residual_vector();
             impulses=base;impulses[a]-=h*axes[axis];const auto minus=residual_vector();
             for(std::size_t row=0;row<dimension;++row)jacobian[row][col]=(plus[row]-minus[row])/(2*h);

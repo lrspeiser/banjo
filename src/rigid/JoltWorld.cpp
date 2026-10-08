@@ -40,6 +40,7 @@
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/CollideShape.h>
+#include <Jolt/Physics/Collision/ManifoldBetweenTwoFaces.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 #include <Jolt/Physics/Body/BodyFilter.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
@@ -64,6 +65,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -3444,13 +3446,15 @@ PointShapeQuery JoltWorld::pointShapeContacts(MatterBodyId body_id,Vec3 point,
 }
 
 MaterialShapeQuery JoltWorld::materialShapeContacts(MatterBodyId body_id,Vec3 point,
-    const RigidPrimitive &geometry,Quat orientation,double separation,unsigned maximum_contacts) const {
+    const RigidPrimitive &geometry,Quat orientation,double separation,unsigned maximum_contacts,
+    MaterialContactGeometry contact_geometry) const {
     const auto finite=[](Vec3 value){return std::isfinite(value.x)&&std::isfinite(value.y)&&std::isfinite(value.z);};
     const double q2=orientation.w*orientation.w+orientation.x*orientation.x+orientation.y*orientation.y+orientation.z*orientation.z;
     if(!finite(point)||!std::isfinite(q2)||std::abs(q2-1)>1e-6||
-        !std::isfinite(separation)||separation<0||separation>1||maximum_contacts==0||maximum_contacts>256)
+        !std::isfinite(separation)||separation<0||separation>1||maximum_contacts==0||maximum_contacts>256||
+        (contact_geometry!=MaterialContactGeometry::ClosestPoint&&contact_geometry!=MaterialContactGeometry::ClippedFace))
         throw std::invalid_argument("invalid material native shape query or budget");
-    MaterialShapeQuery result;result.geometry=geometry;
+    MaterialShapeQuery result;result.geometry=geometry;result.contact_geometry=contact_geometry;
     const auto envelope_turn=joltTurn(orientation);
     result.orientation_world={double(envelope_turn.GetW()),double(envelope_turn.GetX()),
         double(envelope_turn.GetY()),double(envelope_turn.GetZ())};
@@ -3487,6 +3491,8 @@ MaterialShapeQuery JoltWorld::materialShapeContacts(MatterBodyId body_id,Vec3 po
     result.separation_limit_m=double(search);
     JPH::CollideShapeSettings settings;
     settings.mMaxSeparationDistance=search;
+    if(contact_geometry==MaterialContactGeometry::ClippedFace)
+        settings.mCollectFacesMode=JPH::ECollectFacesMode::CollectFaces;
     settings.mActiveEdgeMode=JPH::EActiveEdgeMode::CollideWithAll;
     settings.mBackFaceMode=JPH::EBackFaceMode::CollideWithBackFaces;
     class BoundedCollector final : public JPH::CollideShapeCollector {
@@ -3529,9 +3535,32 @@ MaterialShapeQuery JoltWorld::materialShapeContacts(MatterBodyId body_id,Vec3 po
                 throw std::domain_error("native contact leaf has no declared material");
             contact.body_contact=material.part_contacts[std::size_t(index-1)];
         }
-        if(!finite(contact.point_on_body_world_m)||!finite(contact.point_on_envelope_world_m))
-            throw std::invalid_argument("native contact world witness exceeds finite range");
-        result.contacts.push_back(contact);
+        const auto append=[&](Vec3 body_point,Vec3 envelope_point,double gap) {
+            auto candidate=contact;candidate.point_on_body_world_m=point+body_point;
+            candidate.point_on_envelope_world_m=point+envelope_point;candidate.gap_m=gap;
+            if(!finite(candidate.point_on_body_world_m)||!finite(candidate.point_on_envelope_world_m)||!std::isfinite(gap))
+                throw std::invalid_argument("native contact world witness exceeds finite range");
+            if(result.contacts.size()==maximum_contacts)
+                throw std::length_error("material native face contact witness budget exceeded");
+            result.contacts.push_back(candidate);
+        };
+        if(contact_geometry==MaterialContactGeometry::ClosestPoint)append(on_source,on_envelope,contact.gap_m);
+        else {
+            JPH::ContactPoints on1,on2;
+            // Use the same native supporting faces and clipping as Jolt's
+            // manifold construction. Include every clipped point (no pruning
+            // or centroid substitution); each retains its own signed gap.
+            // Native single-point fallback remains explicit for curved/edge
+            // cases whose supporting faces do not span a patch.
+            JPH::ManifoldBetweenTwoFaces(hit.mContactPointOn1,hit.mContactPointOn2,hit.mPenetrationAxis,
+                std::max(search,std::numeric_limits<float>::min()),hit.mShape1Face,hit.mShape2Face,on1,on2
+                JPH_IF_DEBUG_RENDERER(,toJoltPosition(point)));
+            if(on1.size()!=on2.size()||on1.empty())throw std::domain_error("native face clipping returned invalid points");
+            for(JPH::ContactPoints::size_type i=0;i<on1.size();++i) {
+                const auto envelope_point=fromJoltVector(on1[i]),body_point=fromJoltVector(on2[i]);
+                append(body_point,envelope_point,dot(envelope_point-body_point,contact.normal_world));
+            }
+        }
     }
     std::sort(result.contacts.begin(),result.contacts.end(),[](const PointShapeContact &a,const PointShapeContact &b) {
         if(a.shape_user_data!=b.shape_user_data)return a.shape_user_data<b.shape_user_data;
@@ -3539,7 +3568,11 @@ MaterialShapeQuery JoltWorld::materialShapeContacts(MatterBodyId body_id,Vec3 po
         if(a.gap_m!=b.gap_m)return a.gap_m<b.gap_m;
         if(a.normal_world.x!=b.normal_world.x)return a.normal_world.x<b.normal_world.x;
         if(a.normal_world.y!=b.normal_world.y)return a.normal_world.y<b.normal_world.y;
-        return a.normal_world.z<b.normal_world.z;
+        if(a.normal_world.z!=b.normal_world.z)return a.normal_world.z<b.normal_world.z;
+        return std::tie(a.point_on_body_world_m.x,a.point_on_body_world_m.y,a.point_on_body_world_m.z,
+            a.point_on_envelope_world_m.x,a.point_on_envelope_world_m.y,a.point_on_envelope_world_m.z)<
+            std::tie(b.point_on_body_world_m.x,b.point_on_body_world_m.y,b.point_on_body_world_m.z,
+            b.point_on_envelope_world_m.x,b.point_on_envelope_world_m.y,b.point_on_envelope_world_m.z);
     });
     return result;
 }

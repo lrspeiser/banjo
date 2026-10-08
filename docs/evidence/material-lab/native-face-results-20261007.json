@@ -1,0 +1,284 @@
+{
+  "impacts": [
+    {
+      "active_contacts": 7,
+      "attributed_e_residual_j": -1.2434497875801753e-14,
+      "attributed_l_residual_kg_m2_s": 1.5682218793438466e-17,
+      "attributed_p_residual_n_s": 2.333574374812845e-15,
+      "contact_loss_j": 4.003157084405618,
+      "material": "glass",
+      "points": 12,
+      "source_correction_j": -8.127989357120669e-07,
+      "target_mass_kg": 4.32,
+      "target_work_j": 19.55710537983209,
+      "width_m": 0.04
+    },
+    {
+      "active_contacts": 6,
+      "attributed_e_residual_j": -3.1086244689504383e-15,
+      "attributed_l_residual_kg_m2_s": 3.5525828959144124e-18,
+      "attributed_p_residual_n_s": 6.140866358629591e-16,
+      "contact_loss_j": 2.128140718002926,
+      "material": "oak",
+      "points": 12,
+      "source_correction_j": 1.4160006260865998e-06,
+      "target_mass_kg": 1.2096,
+      "target_work_j": 5.4407862617579354,
+      "width_m": 0.04
+    },
+    {
+      "active_contacts": 6,
+      "attributed_e_residual_j": 7.993605777301127e-15,
+      "attributed_l_residual_kg_m2_s": 2.408800862086405e-17,
+      "attributed_p_residual_n_s": 1.3351809286951067e-15,
+      "contact_loss_j": 12.451944654972339,
+      "material": "iron",
+      "points": 12,
+      "source_correction_j": -2.226656219406209e-07,
+      "target_mass_kg": 13.599359999999999,
+      "target_work_j": 24.777348500478787,
+      "width_m": 0.04
+    },
+    {
+      "active_contacts": 5,
+      "attributed_e_residual_j": 5.773159728050814e-15,
+      "attributed_l_residual_kg_m2_s": 1.728398562838273e-18,
+      "attributed_p_residual_n_s": 6.5295966517504406e-15,
+      "contact_loss_j": 4.594626967881295,
+      "material": "glass",
+      "points": 36,
+      "source_correction_j": 5.945958057917977e-06,
+      "target_mass_kg": 4.32,
+      "target_work_j": 25.75483460070639,
+      "width_m": 0.12
+    },
+    {
+      "active_contacts": 5,
+      "attributed_e_residual_j": 8.881784197001252e-16,
+      "attributed_l_residual_kg_m2_s": 2.600195664877457e-19,
+      "attributed_p_residual_n_s": 1.29507495217802e-15,
+      "contact_loss_j": 2.2218149882035947,
+      "material": "oak",
+      "points": 36,
+      "source_correction_j": -6.084125711680599e-06,
+      "target_mass_kg": 1.2096,
+      "target_work_j": 5.929849121992657,
+      "width_m": 0.12
+    },
+    {
+      "active_contacts": 5,
+      "attributed_e_residual_j": -1.687538997430238e-14,
+      "attributed_l_residual_kg_m2_s": 4.052747193698167e-17,
+      "attributed_p_residual_n_s": 5.2181229703658515e-15,
+      "contact_loss_j": 17.356758601262808,
+      "material": "iron",
+      "points": 36,
+      "source_correction_j": 2.1181634073386135e-06,
+      "target_mass_kg": 13.599359999999999,
+      "target_work_j": 48.130683756373955,
+      "width_m": 0.12
+    }
+  ],
+  "sustained": [
+    {
+      "accepted_intervals": 237,
+      "accepted_time_s": 6.38125e-06,
+      "attributed_e_residual_j": -1.2434497875801753e-14,
+      "attributed_l_residual_kg_m2_s": 1.3689225413488065e-17,
+      "attributed_p_residual_n_s": 3.2226208189230046e-16,
+      "broken_bonds": 0,
+      "comparison_bound": 1e-06,
+      "comparison_fine_value": [
+        19.560378380552944,
+        0.0,
+        0.0
+      ],
+      "comparison_full_value": [
+        19.56037577618495,
+        0.0,
+        0.0
+      ],
+      "comparison_interval_s": 3.0517578125e-12,
+      "comparison_is_vector": false,
+      "contact_geometry": "clipped-face-v1",
+      "error_metric": "target contact work (J)",
+      "integration_error_j": 2.2695412315698604e-05,
+      "last_normalized_error": 2.6043679923759555,
+      "material": "glass",
+      "minimum_interval_s": 6.25e-09,
+      "refusal": "accuracy budget exhausted",
+      "rejected_intervals": 17,
+      "wall_s": 0.1912065,
+      "width_m": 0.04
+    },
+    {
+      "accepted_intervals": 118,
+      "accepted_time_s": 6.400003051757812e-06,
+      "attributed_e_residual_j": 1.2186851361232782e-13,
+      "attributed_l_residual_kg_m2_s": 2.195394256660423e-18,
+      "attributed_p_residual_n_s": 4.7169890473944425e-15,
+      "broken_bonds": 0,
+      "comparison_bound": 1e-06,
+      "comparison_fine_value": [
+        5.449250682136693,
+        0.0,
+        0.0
+      ],
+      "comparison_full_value": [
+        5.449249619617214,
+        0.0,
+        0.0
+      ],
+      "comparison_interval_s": 3.0517578125e-12,
+      "comparison_is_vector": false,
+      "contact_geometry": "clipped-face-v1",
+      "error_metric": "target contact work (J)",
+      "integration_error_j": 1.2493600765495216e-05,
+      "last_normalized_error": 1.062519478622903,
+      "material": "oak",
+      "minimum_interval_s": 3.0517578125e-12,
+      "refusal": "accuracy budget exhausted",
+      "rejected_intervals": 16,
+      "wall_s": 0.1059438,
+      "width_m": 0.04
+    },
+    {
+      "accepted_intervals": 269,
+      "accepted_time_s": 7.3999999999999995e-06,
+      "attributed_e_residual_j": 7.993605777301127e-15,
+      "attributed_l_residual_kg_m2_s": 2.9645972861384024e-17,
+      "attributed_p_residual_n_s": 1.9359334940479818e-15,
+      "broken_bonds": 0,
+      "comparison_bound": 1e-06,
+      "comparison_fine_value": [
+        24.790774143686217,
+        0.0,
+        0.0
+      ],
+      "comparison_full_value": [
+        24.790772354378063,
+        0.0,
+        0.0
+      ],
+      "comparison_interval_s": 3.0517578125e-12,
+      "comparison_is_vector": false,
+      "contact_geometry": "clipped-face-v1",
+      "error_metric": "target contact work (J)",
+      "integration_error_j": 2.94476474600458e-05,
+      "last_normalized_error": 1.789308154087621,
+      "material": "iron",
+      "minimum_interval_s": 2.5e-08,
+      "refusal": "accuracy budget exhausted",
+      "rejected_intervals": 17,
+      "wall_s": 0.2050648,
+      "width_m": 0.04
+    },
+    {
+      "accepted_intervals": 222,
+      "accepted_time_s": 5.899999999999999e-06,
+      "attributed_e_residual_j": 6.94999613415348e-13,
+      "attributed_l_residual_kg_m2_s": 2.8517732464510375e-17,
+      "attributed_p_residual_n_s": 3.6766827545399575e-15,
+      "broken_bonds": 0,
+      "comparison_bound": 1e-06,
+      "comparison_fine_value": [
+        25.778103934476515,
+        0.0,
+        0.0
+      ],
+      "comparison_full_value": [
+        25.77809853102574,
+        0.0,
+        0.0
+      ],
+      "comparison_interval_s": 3.0517578125e-12,
+      "comparison_is_vector": false,
+      "contact_geometry": "clipped-face-v1",
+      "error_metric": "target contact work (J)",
+      "integration_error_j": 2.699857463284161e-05,
+      "last_normalized_error": 5.4034507748212945,
+      "material": "glass",
+      "minimum_interval_s": 2.5e-08,
+      "refusal": "accuracy budget exhausted",
+      "rejected_intervals": 17,
+      "wall_s": 0.8865858,
+      "width_m": 0.12
+    },
+    {
+      "accepted_intervals": 115,
+      "accepted_time_s": 6.2499999999999995e-06,
+      "attributed_e_residual_j": -6.217248937900877e-15,
+      "attributed_l_residual_kg_m2_s": 1.0665408440007346e-18,
+      "attributed_p_residual_n_s": 1.1088045624459934e-14,
+      "broken_bonds": 0,
+      "comparison_bound": 1e-06,
+      "comparison_fine_value": [
+        5.938506593881937,
+        0.0,
+        0.0
+      ],
+      "comparison_full_value": [
+        5.938505475433885,
+        0.0,
+        0.0
+      ],
+      "comparison_interval_s": 3.0517578125e-12,
+      "comparison_is_vector": false,
+      "contact_geometry": "clipped-face-v1",
+      "error_metric": "target contact work (J)",
+      "integration_error_j": 1.3008004223991065e-05,
+      "last_normalized_error": 1.1184480515069595,
+      "material": "oak",
+      "minimum_interval_s": 5e-08,
+      "refusal": "accuracy budget exhausted",
+      "rejected_intervals": 16,
+      "wall_s": 1.0143184,
+      "width_m": 0.12
+    },
+    {
+      "accepted_intervals": 235,
+      "accepted_time_s": 6.0749999999999994e-06,
+      "attributed_e_residual_j": -9.769962616701378e-15,
+      "attributed_l_residual_kg_m2_s": 4.9850406804635647e-17,
+      "attributed_p_residual_n_s": 2.3924708556156636e-15,
+      "broken_bonds": 0,
+      "comparison_bound": 1e-06,
+      "comparison_fine_value": [
+        48.1408580097282,
+        0.0,
+        0.0
+      ],
+      "comparison_full_value": [
+        48.14085128540789,
+        0.0,
+        0.0
+      ],
+      "comparison_interval_s": 3.0517578125e-12,
+      "comparison_is_vector": false,
+      "contact_geometry": "clipped-face-v1",
+      "error_metric": "target contact work (J)",
+      "integration_error_j": 4.6507599606115946e-05,
+      "last_normalized_error": 6.724320307682774,
+      "material": "iron",
+      "minimum_interval_s": 2.5e-08,
+      "refusal": "accuracy budget exhausted",
+      "rejected_intervals": 17,
+      "wall_s": 0.924327,
+      "width_m": 0.12
+    }
+  ],
+  "open_gates": [
+    "OPEN live-contact topology refinement: glass, width 0.04, dt 5e-08",
+    "OPEN live-contact integration refinement: glass, width 0.04, dt 5e-08",
+    "OPEN live-contact topology refinement: glass, width 0.12, dt 5e-08"
+  ],
+  "binaries": {
+    "banjo_native_point_contact_tests.exe": "79d4073e48a106a8163301a3ebb39f5767c24328f04b371457be1bdcbaa9586c",
+    "banjo_material_surface_contact_tests.exe": "457f56a40dc0d194752bba16989732f4ac767be089c26ea9e1fb60731598f417"
+  },
+  "ctest": [
+    "Test project C:/Users/henry/Documents/ChatGPT/Banjo/build/local-cell-tools\n    Start  92: banjo_outcome_tests\n1/7 Test  #92: banjo_outcome_tests ............................   Passed    0.04 sec\n    Start  94: banjo_point_rigid_contact_tests\n2/7 Test  #94: banjo_point_rigid_contact_tests ................   Passed    0.01 sec\n    Start  95: banjo_fixed_assembly_contact_tests\n3/7 Test  #95: banjo_fixed_assembly_contact_tests .............   Passed    0.01 sec\n    Start 109: banjo_native_point_contact_tests\n4/7 Test #109: banjo_native_point_contact_tests ...............   Passed    0.09 sec\n    Start 111: banjo_material_surface_contact_tests\n5/7 Test #111: banjo_material_surface_contact_tests ...........   Passed    6.20 sec\n    Start 112: banjo_material_manifold_oracles\n6/7 Test #112: banjo_material_manifold_oracles ................   Passed    0.11 sec\n    Start 113: banjo_material_coupled_surface_contact_tests\n7/7 Test #113: banjo_material_coupled_surface_contact_tests ...   Passed   10.31 sec\n\n100% tests passed, 0 tests failed out of 7\n\nTotal Test time (real) =  16.80 sec\n",
+    "Test project C:/Users/henry/Documents/ChatGPT/Banjo/build/agent-point-separation\n    Start  92: banjo_outcome_tests\n1/7 Test  #92: banjo_outcome_tests ............................   Passed    0.03 sec\n    Start  94: banjo_point_rigid_contact_tests\n2/7 Test  #94: banjo_point_rigid_contact_tests ................   Passed    0.01 sec\n    Start  95: banjo_fixed_assembly_contact_tests\n3/7 Test  #95: banjo_fixed_assembly_contact_tests .............   Passed    0.01 sec\n    Start 109: banjo_native_point_contact_tests\n4/7 Test #109: banjo_native_point_contact_tests ...............   Passed    0.13 sec\n    Start 111: banjo_material_surface_contact_tests\n5/7 Test #111: banjo_material_surface_contact_tests ...........   Passed    6.07 sec\n    Start 112: banjo_material_manifold_oracles\n6/7 Test #112: banjo_material_manifold_oracles ................   Passed    0.12 sec\n    Start 113: banjo_material_coupled_surface_contact_tests\n7/7 Test #113: banjo_material_coupled_surface_contact_tests ...   Passed   10.42 sec\n\n100% tests passed, 0 tests failed out of 7\n\nTotal Test time (real) =  16.83 sec\n"
+  ],
+  "native": "glass: h=0.04 dt=0.00416666666667 target mass=0.16 source mass=15.1104008985 loss=0.651784016156 roundoff J=1.13173896699e-07 dP=1.61939100365e-07 dL=5.73415877972e-08 normal error=-3.57644758253e-09\noak: h=0.04 dt=0.00416666666667 target mass=0.0448 source mass=15.1104008985 loss=0.205821650564 roundoff J=-4.03287921502e-07 dP=4.73112111776e-07 dL=4.77684250989e-07 normal error=-1.04200085227e-08\niron: h=0.04 dt=0.00416666666667 target mass=0.50368 source mass=15.1104008985 loss=2.16127506203 roundoff J=5.66809363889e-08 dP=2.27927938458e-07 dL=2.59442506478e-07 normal error=-7.36441641003e-09\nordered contacts retain native recoil and separate measured reactions\nNATIVE_SMALL_ROTATION material=glass horizon_s=1e-07 mass_kg=1.28 maximum_angle_error_rad=4.14639544782e-14 maximum_linear_error_n_s=0 maximum_angular_error_kg_m2_s=0 maximum_energy_error_j=0\nNATIVE_SMALL_ROTATION material=oak horizon_s=1e-07 mass_kg=0.35839997375 maximum_angle_error_rad=4.14639544782e-14 maximum_linear_error_n_s=0 maximum_angular_error_kg_m2_s=0 maximum_energy_error_j=0\nNATIVE_SMALL_ROTATION material=iron horizon_s=1e-07 mass_kg=4.02943996741 maximum_angle_error_rad=4.14639544782e-14 maximum_linear_error_n_s=0 maximum_angular_error_kg_m2_s=0 maximum_energy_error_j=0\nsphere/rotated-box witnesses retain signed gap, native surface and distant local precision\nmixed compound witnesses preserve both leaf materials and voids; overflow refuses\nturned cylinder and convex tetrahedron use their actual native surfaces\nactual glass box: source mass=4.80000011444 kg; gap=-0.0009999955073 m; Jn=0.13319798943 N s; loss=0.0718145376706 J; dE=1.93007374041e-07 J; dP=1.7654293273e-07 N s; dL=8.06837676686e-08 kg m2/s\nactual oak box: source mass=1.34399995898 kg; gap=-0.0009999955073 m; Jn=0.126465544427 N s; loss=0.0730507284124 J; dE=7.56624946724e-08 J; dP=7.4762400411e-08 N s; dL=6.18595571898e-08 kg m2/s\nactual iron box: source mass=15.1104008985 kg; gap=-0.0009999955073 m; Jn=0.130886591604 N s; loss=0.0755039810986 J; dE=-6.24747000549e-07 J; dP=7.28313004865e-07 N s; dL=6.47958599257e-07 kg m2/s\nNATIVE_FACE_PATCH material=glass points=4 captured_patch_change_m=5.26961043317e-09 source_mass_kg=1.28\nNATIVE_FACE_PATCH material=oak points=4 captured_patch_change_m=5.26961043317e-09 source_mass_kg=0.35839997375\nNATIVE_FACE_PATCH material=iron points=4 captured_patch_change_m=5.26961043317e-09 source_mass_kg=4.02943996741\nglass fixed source: head mass=1.28 kg; handle mass=0.268799991797 kg; axial=26.0576534271 N; shear=1.70269216487 N; root work=0.210940772888 J; dP=8.34614542457e-08 N s; dL=1.29766072828e-08 kg m2/s; unallocated dK-work=-0.00553928573724 J\noak fixed source: head mass=0.35839997375 kg; handle mass=0.268799991797 kg; axial=26.151471734 N; shear=2.33199682699 N; root work=0.211206094687 J; dP=1.84852996114e-08 N s; dL=1.34831100465e-08 kg m2/s; unallocated dK-work=-0.0182189671294 J\niron fixed source: head mass=4.02943996741 kg; handle mass=0.268799991797 kg; axial=25.3834444284 N; shear=0.531761558278 N; root work=0.210686049798 J; dP=1.81269767754e-07 N s; dL=6.02594332052e-09 kg m2/s; unallocated dK-work=-0.00150220971884 J\nglass simultaneous fixing: Jn=0.130634878142 N s; joint impulse=0.0233169796081 N s; loss=0.0651993091792 J; reconcile=0 J; dE=1.46717060695e-07 J; dP=7.65876990541e-08 N s; dL=1.33101682887e-11 kg m2/s\n  subsequent free fixed step unallocated dK=0 J\noak simultaneous fixing: Jn=0.122007775801 N s; joint impulse=0.0525475340368 N s; loss=0.0658928206197 J; reconcile=0 J; dE=-3.48702743624e-08 J; dP=1.93164644028e-08 N s; dL=2.86379485664e-11 kg m2/s\n  subsequent free fixed step unallocated dK=0 J\niron simultaneous fixing: Jn=0.129886346136 N s; joint impulse=0.00918587291612 N s; loss=0.0694550017407 J; reconcile=0 J; dE=1.16654410964e-07 J; dP=5.92222289914e-08 N s; dL=7.49501047163e-13 kg m2/s\n  subsequent free fixed step unallocated dK=1.04627417841e-12 J\nordered fixed contacts preserve actual native recoil and separate joint/work accounts\n[PASS] native material-point transfer, shape witnesses, float accounting and atomic refusal\n"
+}

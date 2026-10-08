@@ -166,10 +166,12 @@ private:
     struct Data;
     std::shared_ptr<const Data> data_;
 };
+enum class MaterialContactGeometry : std::uint8_t { ClosestPoint, ClippedFace };
 struct MaterialShapeQuery {
     RigidPrimitive geometry; // Actual float geometry used by the native query.
     Quat orientation_world{};
     double separation_limit_m{};
+    MaterialContactGeometry contact_geometry{MaterialContactGeometry::ClosestPoint};
     std::vector<PointShapeContact> contacts;
 };
 struct CohesiveTensionKick {
@@ -523,9 +525,13 @@ public:
     // cuboid. Cylinder envelopes are currently refused. Same read-only witness,
     // local precision and overflow semantics as pointShapeContacts. This is
     // geometry, not a finite-cell rotational/contact/constitutive law.
+    // ClippedFace explicitly selects all native clipped supporting-face points,
+    // with per-point gaps and the same total budget; curved/edge contacts may
+    // still have one point. No cached patch survives this read-only query.
     [[nodiscard]] MaterialShapeQuery materialShapeContacts(MatterBodyId body,
         Vec3 center_world_m,const RigidPrimitive &geometry,Quat orientation_world={},
-        double separation_limit_m=0,unsigned maximum_contacts=64) const;
+        double separation_limit_m=0,unsigned maximum_contacts=64,
+        MaterialContactGeometry contact_geometry=MaterialContactGeometry::ClosestPoint) const;
     // Central tensile connector between body-local points; Jolt retains every
     // surface contact. Compression stiffness must be zero. Requires double
     // positions and Jolt pair ownership; material-activation deferral rejects.
