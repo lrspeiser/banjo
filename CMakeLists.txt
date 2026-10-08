@@ -542,6 +542,15 @@ if(BANJO_BUILD_HEADLESS)
             endif()
         endif()
         if(TARGET banjo_sheet_world_run)
+            add_test(NAME banjo_sheet_feedback_native_tests
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sheet_feedback_native_tests.py $<TARGET_FILE:banjo_sheet_world_run>)
+            set_tests_properties(banjo_sheet_feedback_native_tests PROPERTIES TIMEOUT 30 FIXTURES_SETUP sheet_feedback_data LABELS "native;sheet;client")
+            find_program(BANJO_NODE_EXECUTABLE node)
+            if(BANJO_NODE_EXECUTABLE)
+                add_test(NAME banjo_sheet_observation_tests
+                    COMMAND ${BANJO_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sheet_observation_tests.mjs)
+                set_tests_properties(banjo_sheet_observation_tests PROPERTIES TIMEOUT 10 FIXTURES_REQUIRED sheet_feedback_data LABELS "native;sheet;client")
+            endif()
             add_test(NAME banjo_sheet_gateway_tests
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sheet_gateway_tests.py $<TARGET_FILE:banjo_sheet_world_run>)
             set_tests_properties(banjo_sheet_gateway_tests PROPERTIES TIMEOUT 30 LABELS "native;sheet;client")

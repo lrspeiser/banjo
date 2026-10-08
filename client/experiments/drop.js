@@ -5,6 +5,8 @@ for(const id of ['sheet','ball'])for(const name of ['iron','aluminum','glass','c
   const option=document.createElement('option');option.value=name;option.textContent=name==='oak'?'oak · laboratory':name;$(id).append(option);
 }
 $('sheet').value='glass';$('ball').value='iron';
+const selection=new URLSearchParams(location.search);
+for(const id of ['sheet','ball'])if([...$(id).options].some(o=>o.value===selection.get(id)))$(id).value=selection.get(id);
 const canvas=$('view'),renderer=new THREE.WebGLRenderer({canvas,antialias:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 function makeScene(){
