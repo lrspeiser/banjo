@@ -227,6 +227,91 @@ void sleeping_spring_oracle(){
     check(world.faceSpringObservation(joint).solver_scheduled==false,"rollback restores accepted dormant schedule");
     std::cout<<"sleeping spring cached impulse excluded, waking and rollback observed\n";
 }
+void centered_torsion_oracle(MaterialPreset preset,double damping){
+    JoltWorld world(0,{},execution);world.setCenteredIntegration(true);world.setGravity({});world.setContactSolverIterations(96,4);
+    auto material=makeReferenceMaterial(preset);material.model=MaterialModel::RigidOnly;
+    world.addBox({1,{.1,.1,.1},material,{{-.06,0,0},{},{},{-.1,0,0}},false});
+    world.addBox({2,{.1,.1,.1},material,{{ .06,0,0},{},{},{ .1,0,0}},false});
+    world.setContinuousCollision(1,false);world.setContinuousCollision(2,false);
+    world.setPairContactOwner(1,2,PairContactOwner::External);
+    const double k=10,h=1./240;
+    const auto joint=world.addFaceSpring({1,2,{},{1,0,0},{0,1,0},{1000,1000,1000},{k,k,k},{},{damping,damping,damping},true,true});
+    const double energy0=world.mechanicalTotals().kinetic_energy_j;
+    double physical=0,maximum_error=0;
+    for(unsigned i=0;i<240;++i){
+        const auto f0=world.faceSpringObservation(joint);const auto a0=world.mechanicalState(1),b0=world.mechanicalState(2);
+        const double v0=b0.motion.angular_velocity_rad_s.x-a0.motion.angular_velocity_rad_s.x;
+        const double mu=1/(1/a0.inertia_world_kg_m2.m[0][0]+1/b0.inertia_world_kg_m2.m[0][0]);
+        world.step(h);const auto f1=world.faceSpringObservation(joint);const auto after=world.mechanicalTotals();
+        const double v1=world.snapshot(2).angular_velocity_rad_s.x-world.snapshot(1).angular_velocity_rad_s.x;
+        const double coefficient=damping/2+h*k/4;
+        const double expected=(v0-h*(k*f0.rotation_cs_rad.x+coefficient*v0)/mu)/(1+h*coefficient/mu);
+        check(std::abs(v1-expected)<4e-6,"centered torsion analytical velocity");
+        const double mid=.5*(v0+v1);physical+=h*damping*mid*mid;
+        maximum_error=std::max(maximum_error,std::abs(after.kinetic_energy_j+.5*k*lengthSquared(f1.rotation_cs_rad)+physical-energy0));
+        check(length(after.angular_momentum_kg_m2_s)<1e-7,"centered torsion angular momentum");
+    }
+    check(maximum_error<2e-7,"centered torsion energy with declared damping over 240 steps");
+    std::cout<<"material="<<materialSceneName(preset)<<" centered torsion damping="<<damping<<" energy_error_j="<<maximum_error<<" declared_damping_j="<<physical<<'\n';
+}
+void centered_gravity_oracle(){
+    JoltWorld world(0,{},execution);world.setCenteredIntegration(true);world.setGravity({0,-8,0});
+    auto m=makeReferenceMaterial(MaterialPreset::Iron);m.model=MaterialModel::RigidOnly;
+    world.addBox({1,{.1,.1,.1},m,{{0,10,0},{},{},{}},false});world.setContinuousCollision(1,false);
+    const auto initial=world.mechanicalTotals({0,-8,0});const double h=1./256;
+    for(unsigned i=0;i<256;++i)world.step(h);
+    const auto final=world.mechanicalTotals({0,-8,0});const auto state=world.snapshot(1);
+    check(std::abs(state.center_of_mass_world_m.y-6.)<1e-10,"centered gravity analytical displacement");
+    std::cout<<"centered gravity y="<<state.center_of_mass_world_m.y<<" v="<<state.linear_velocity_m_s.y<<" energy_error_j="<<final.mechanicalEnergy()-initial.mechanicalEnergy()<<std::endl;
+    check(std::abs(final.mechanicalEnergy()-initial.mechanicalEnergy())<1e-10,"centered binary-exact gravity energy no Euler drift loss");
+    std::cout<<"centered gravity energy_error_j="<<final.mechanicalEnergy()-initial.mechanicalEnergy()<<'\n';
+}
+void centered_pair_oracle(MaterialPreset preset,double damping){
+    JoltWorld world(0,{},execution);world.setCenteredIntegration(true);world.setGravity({});world.setContactSolverIterations(96,4);
+    auto material=makeReferenceMaterial(preset);material.model=MaterialModel::RigidOnly;
+    world.addBox({1,{.1,.1,.1},material,{{-.06,0,0},{},{-.1,0,0},{}},false});
+    world.addBox({2,{.1,.1,.1},material,{{ .06,0,0},{},{ .1,0,0},{}},false});
+    world.setContinuousCollision(1,false);world.setContinuousCollision(2,false);
+    world.setPairContactOwner(1,2,PairContactOwner::External);
+    const double k=1000,h=1./240;
+    const auto joint=world.addFaceSpring({1,2,{},{1,0,0},{0,1,0},{k,k,k},{10,10,10},{damping,damping,damping},{},true,true});
+    auto a=world.snapshot(1),b=world.snapshot(2);a.center_of_mass_world_m.x-=.005;b.center_of_mass_world_m.x+=.005;
+    world.applyRigidState(1,a);world.applyRigidState(2,b);
+    const auto initial=world.mechanicalTotals();const auto initial_face=world.faceSpringObservation(joint);
+    const double energy0=initial.kinetic_energy_j+.5*k*lengthSquared(initial_face.displacement_cs_m);
+    double physical=0,maximum_error=0;
+    for(unsigned i=0;i<240;++i){
+        const auto before=world.mechanicalTotals();const auto f0=world.faceSpringObservation(joint);
+        const auto a0=world.mechanicalState(1),b0=world.mechanicalState(2);
+        const double v0=b0.motion.linear_velocity_m_s.x-a0.motion.linear_velocity_m_s.x;
+        const double mu=1/(1/a0.mass_kg+1/b0.mass_kg);
+        world.step(h);const auto f1=world.faceSpringObservation(joint);const auto after=world.mechanicalTotals();
+        const double v1=world.snapshot(2).linear_velocity_m_s.x-world.snapshot(1).linear_velocity_m_s.x;
+        const double coefficient=damping/2+h*k/4;
+        const double expected=(v0-h*(k*f0.displacement_cs_m.x+coefficient*v0)/mu)/(1+h*coefficient/mu);
+        if(std::abs(v1-expected)>=3e-6)std::cout<<"centered mismatch i="<<i<<" material="<<materialSceneName(preset)<<" v0="<<v0<<" v1="<<v1<<" expected="<<expected<<" q0="<<f0.displacement_cs_m.x<<" impulse="<<f1.linear_impulse_cs_n_s.x<<std::endl;
+        check(std::abs(v1-expected)<3e-6,"centered spring analytical velocity");
+        const double mid=.5*(v0+v1);
+        check(std::abs(f1.displacement_cs_m.x-f0.displacement_cs_m.x-h*mid)<1e-8,"centered drift uses actual midpoint velocity");
+        physical+=h*damping*mid*mid;
+        const double energy=after.kinetic_energy_j+.5*k*lengthSquared(f1.displacement_cs_m);
+        maximum_error=std::max(maximum_error,std::abs(energy+physical-energy0));
+        check(length(after.linear_momentum_kg_m_s-before.linear_momentum_kg_m_s)<1e-7,"centered spring linear momentum");
+        check(length(after.angular_momentum_kg_m2_s-before.angular_momentum_kg_m2_s)<1e-7,"centered spring angular momentum");
+        if(i==0){
+            const auto state=world.snapshot(1);
+            check(!world.runReversibleTrial([&]{world.step(h);return false;}),"centered refusal rolls back");
+            check(world.snapshot(1).center_of_mass_world_m.x==state.center_of_mass_world_m.x,"centered pose restored");
+            check(world.faceSpringObservation(joint).linear_impulse_cs_n_s.x==f1.linear_impulse_cs_n_s.x,"centered spring state restored");
+        }
+    }
+    check(maximum_error<2e-6,"centered spring energy with only declared damping over 240 steps");
+    bool late=false;try{world.setCenteredIntegration(false);}catch(const std::logic_error&){late=true;}
+    check(late,"centered integration cannot change live history");
+    bool ccd=false;try{world.setContinuousCollision(1,true);}catch(const std::invalid_argument&){ccd=true;}
+    check(ccd,"uncoupled CCD refused in centered world");
+    std::cout<<"material="<<materialSceneName(preset)<<" centered damping="<<damping<<" energy_error_j="<<maximum_error<<" declared_damping_j="<<physical<<'\n';
+}
 void restitution_model_oracle(MaterialPreset preset,bool resolved){
     JoltWorld world(0,{},execution);world.setGravity({});world.configureVoxelContacts(.004);
     world.setContactSolverIterations(96,4);world.setContactImpulseObservationsEnabled(true);
@@ -275,4 +360,4 @@ void resolved_assembly_recovery_oracle(MaterialPreset preset){
     std::cout<<"material="<<materialSceneName(preset)<<" assembly_recovery="<<upward<<" peak_elastic_j="<<peak_elastic<<" peak_energy_excess_j="<<peak_energy-initial<<'\n';
 }
 }
-int main(){try{for(auto policy:{RigidJobExecution::ThreadPool,RigidJobExecution::Inline}){execution=policy;std::cout<<"execution="<<(policy==RigidJobExecution::Inline?"inline":"thread-pool")<<'\n';for(bool law:{false,true}){log_gradient=law;for(double extension:{0.,.01}){oracle(0,extension);oracle(20,extension);}torsion(0);torsion(.005);sleeping_spring_oracle();}nearest_orientation();for(bool fixed:{false,true})for(double friction:{0.,.4})contact_oracle(fixed,friction);gravity_oracle();log_gradient_impulse_oracle();limit_observation_oracle();for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(bool resolved:{false,true})restitution_model_oracle(material,resolved);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})resolved_assembly_recovery_oracle(material);}return 0;}catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(){try{for(auto policy:{RigidJobExecution::ThreadPool,RigidJobExecution::Inline}){execution=policy;std::cout<<"execution="<<(policy==RigidJobExecution::Inline?"inline":"thread-pool")<<'\n';for(bool law:{false,true}){log_gradient=law;for(double extension:{0.,.01}){oracle(0,extension);oracle(20,extension);}torsion(0);torsion(.005);sleeping_spring_oracle();}nearest_orientation();for(bool fixed:{false,true})for(double friction:{0.,.4})contact_oracle(fixed,friction);gravity_oracle();log_gradient_impulse_oracle();limit_observation_oracle();for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(bool resolved:{false,true})restitution_model_oracle(material,resolved);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})resolved_assembly_recovery_oracle(material);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(double damping:{0.,20.})centered_pair_oracle(material,damping);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(double damping:{0.,.02})centered_torsion_oracle(material,damping);centered_gravity_oracle();}return 0;}catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}

@@ -252,6 +252,9 @@ public:
     void setBodyPairContactCacheEnabled(bool enabled);
     void setContactSolverIterations(unsigned velocity,unsigned position);
     void setContactRestitutionModel(RigidContactRestitution);
+    // Experimental centered spring/pose integration; discrete bodies and only
+    // matching face connectors. Configure before creating bodies.
+    void setCenteredIntegration(bool enabled);
     // Explicit small-cell contact scale; existing worlds retain their settings.
     void configureVoxelContacts(double minimum_feature_m);
     void setContinuousCollision(MatterBodyId body, bool enabled);
@@ -488,6 +491,7 @@ public:
         Vec3 translation_damping_n_s_m{},rotation_damping_n_m_s_rad{};
         // Opt-in energy-gradient SO(3) law; the default retains the native motor.
         bool log_rotation_gradient{};
+        bool centered_integration{};
     };
     struct FaceSpringObservation {
         Vec3 displacement_cs_m{},rotation_cs_rad{};

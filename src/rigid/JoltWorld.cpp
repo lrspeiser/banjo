@@ -1362,7 +1362,7 @@ public:
     ImpactCollector impact_collector_;
     std::vector<JoltWorld::ContactImpulseObservation> contact_impulses_;
     Vec3 observed_gravity_impulse_{};
-    bool force_phase_enabled_{};
+    bool force_phase_enabled_{},centered_integration_{};
     std::vector<JoltWorld::ForcePhaseObservation> force_phase_;
     std::unordered_map<JPH::uint32,std::size_t> force_phase_slot_;
     static void observeForcePhase(void *context,const JPH::Body &body,JPH::Vec3Arg v,
@@ -1387,6 +1387,13 @@ public:
         out.velocity_after_solver_m_s=fromJoltVector(v);out.spin_after_solver_rad_s=fromJoltVector(w);
         out.velocity_after_limit_m_s=fromJoltVector(body.GetLinearVelocity());
         out.spin_after_limit_rad_s=fromJoltVector(body.GetAngularVelocity());out.integration_scheduled=true;
+    }
+    static JPH::Vec3 centeredMotion(void *context,const JPH::Body &body,bool angular){
+        auto &self=*static_cast<Impl *>(context);
+        const auto found=self.force_phase_slot_.find(body.GetID().GetIndexAndSequenceNumber());
+        if(found==self.force_phase_slot_.end())throw std::runtime_error("centered integration phase missing");
+        const auto &before=self.force_phase_[found->second].before.motion;
+        return .5F*(toJolt(angular?before.angular_velocity_rad_s:before.linear_velocity_m_s)+(angular?body.GetAngularVelocity():body.GetLinearVelocity()));
     }
     std::uint64_t contact_plan_epoch_{};
     JPH::BodyID floor_id_;
@@ -2960,6 +2967,7 @@ void JoltWorld::configureVoxelContacts(double feature) {
 }
 void JoltWorld::setContinuousCollision(MatterBodyId id,bool enabled) {
     impl_->requireConfigurationMutable();
+    if(enabled&&impl_->centered_integration_)throw std::invalid_argument("centered integration requires discrete collision; CCD is not coupled");
     impl_->physics_->GetBodyInterface().SetMotionQuality(impl_->bodies_.at(id),enabled?JPH::EMotionQuality::LinearCast:JPH::EMotionQuality::Discrete);
 }
 unsigned JoltWorld::addFaceSpring(const FaceSpringDescription &d) {
@@ -2971,7 +2979,8 @@ unsigned JoltWorld::addFaceSpring(const FaceSpringDescription &d) {
        !std::isfinite(lengthSquared(d.anchor_world_m))||std::abs(length(d.normal_world)-1)>1e-8||
        std::abs(length(d.tangent_world)-1)>1e-8||std::abs(dot(d.normal_world,d.tangent_world))>1e-8)
         throw std::invalid_argument("invalid passive face spring");
-    if(d.log_rotation_gradient){
+    if(d.centered_integration!=impl_->centered_integration_)throw std::invalid_argument("face integration must match world pose integration");
+    if(d.log_rotation_gradient||d.centered_integration){
         const auto settings=logFaceSpringSettings(d);
         auto *raw=impl_->physics_->GetBodyInterface().CreateConstraint(settings.GetPtr(),impl_->bodies_.at(d.a),impl_->bodies_.at(d.b));
         if(!raw)throw std::runtime_error("log face spring creation failed");
@@ -3032,6 +3041,18 @@ void JoltWorld::setContactRestitutionModel(RigidContactRestitution model) {
         throw std::invalid_argument("unsupported contact restitution model");
     impl_->impact_collector_.restitution_model=model;
 }
+void JoltWorld::setCenteredIntegration(bool enabled){
+    impl_->requireConfigurationMutable();
+    if(!impl_->bodies_.empty()||!impl_->floor_id_.IsInvalid())throw std::logic_error("configure centered integration before bodies");
+    impl_->centered_integration_=enabled;
+    // Native displacement-based sleep can zero a still-oscillating elastic
+    // body after 0.5 s; the centered reference retains that mechanical energy.
+    auto settings=impl_->physics_->GetPhysicsSettings();
+    settings.mTimeBeforeSleep=enabled?std::numeric_limits<float>::max():JPH::PhysicsSettings{}.mTimeBeforeSleep;
+    impl_->physics_->SetPhysicsSettings(settings);
+    if(enabled)setForcePhaseObservationsEnabled(true);
+    impl_->physics_->SetBanjoCenteredMotion(enabled?&Impl::centeredMotion:nullptr,impl_.get());
+}
 void JoltWorld::setContactImpulseObservationsEnabled(bool enabled){
     impl_->requireConfigurationMutable();impl_->impact_collector_.contact_impulses_enabled=enabled;
     impl_->impact_collector_.clearContactGeometry();impl_->contact_impulses_.clear();
@@ -3039,7 +3060,9 @@ void JoltWorld::setContactImpulseObservationsEnabled(bool enabled){
 std::span<const JoltWorld::ContactImpulseObservation> JoltWorld::contactImpulseObservations() const {return impl_->contact_impulses_;}
 Vec3 JoltWorld::observedGravityImpulseN_s() const {return impl_->observed_gravity_impulse_;}
 void JoltWorld::setForcePhaseObservationsEnabled(bool enabled){
-    impl_->requireConfigurationMutable();impl_->force_phase_enabled_=enabled;
+    impl_->requireConfigurationMutable();
+    if(!enabled&&impl_->centered_integration_)throw std::logic_error("centered integration needs native phases");
+    impl_->force_phase_enabled_=enabled;
     impl_->force_phase_.clear();impl_->force_phase_slot_.clear();
     impl_->physics_->SetBanjoForceObserver(enabled?&Impl::observeForcePhase:nullptr,impl_.get());
     impl_->physics_->SetBanjoLimitObserver(enabled?&Impl::observeLimitPhase:nullptr,impl_.get());
@@ -4808,6 +4831,19 @@ void JoltWorld::step(double fixed_dt_s) {
             const auto *motion=body.GetMotionProperties();
             const auto delta=(motion->GetGravityFactor()*impl_->physics_->GetGravity())*static_cast<float>(fixed_dt_s);
             impl_->observed_gravity_impulse_+=fromJoltVector(delta)/motion->GetInverseMass();
+        }
+    }
+    if(impl_->centered_integration_){
+        if(!impl_->springs_.empty()||!impl_->pins_.empty())throw std::logic_error("unsupported centered world constraints");
+        for(const auto &[id,joint]:impl_->joints_){
+            (void)id;
+            if(joint.kind!=JointKind::FaceSpring||!joint.log_face)throw std::logic_error("unsupported centered world joint");
+            const auto a=snapshot(joint.a),b=snapshot(joint.b);
+            prepareCenteredFaceSpring(*joint.constraint.GetPtr(),a.linear_velocity_m_s,a.angular_velocity_rad_s,b.linear_velocity_m_s,b.angular_velocity_rad_s);
+        }
+        for(const auto &[id,native]:impl_->bodies_){
+            (void)id;JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(),native);
+            if(!lock.Succeeded()||(!lock.GetBody().IsStatic()&&(!lock.GetBody().IsDynamic()||lock.GetBody().GetMotionProperties()->GetMotionQuality()!=JPH::EMotionQuality::Discrete)))throw std::logic_error("centered integration requires static or discrete dynamic bodies");
         }
     }
     impl_->tick_.fetch_add(1U, std::memory_order_relaxed);

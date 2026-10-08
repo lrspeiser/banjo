@@ -1,5 +1,7 @@
 # Read-only hooks in the pinned dependency, generated only in this build tree.
-# Consumers share the same header/class layout. No force expression is replaced.
+# Consumers share the same header/class layout. Force expressions are unchanged.
+# An explicit experimental callback supplies centered pose velocities; absent
+# that callback, the pinned native integration expressions remain identical.
 function(banjo_jolt_force_observation target source_dir)
     set(overlay "${CMAKE_CURRENT_BINARY_DIR}/jolt-force-observation-overlay")
     file(MAKE_DIRECTORY "${overlay}/Jolt/Physics")
@@ -33,6 +35,17 @@ function(banjo_jolt_force_observation target source_dir)
     string(REPLACE "${header_marker}" "${limit_api}${header_marker}" header "${header}")
     string(REPLACE "\tBanjoForceObserver mBanjoForceObserver" "\tBanjoLimitObserver mBanjoLimitObserver = nullptr;\n\tvoid *mBanjoLimitContext = nullptr;\n\tBanjoForceObserver mBanjoForceObserver" header "${header}")
     string(REPLACE "${limit_marker}" "\t\t\t\tVec3 banjo_solver_velocity, banjo_solver_spin;\n\t\t\t\tif (mBanjoLimitObserver) { banjo_solver_velocity = body.GetLinearVelocity(); banjo_solver_spin = body.GetAngularVelocity(); }\n${limit_marker}\n\t\t\t\tif (mBanjoLimitObserver) mBanjoLimitObserver(mBanjoLimitContext, body, banjo_solver_velocity, banjo_solver_spin);" implementation "${implementation}")
+    set(centered_api "\tusing BanjoCenteredMotion = Vec3 (*)(void *, const Body &, bool);\n\tvoid SetBanjoCenteredMotion(BanjoCenteredMotion callback, void *context) { mBanjoCenteredMotion = callback; mBanjoCenteredContext = context; }\n")
+    string(REPLACE "${header_marker}" "${centered_api}${header_marker}" header "${header}")
+    string(REPLACE "\tBanjoForceObserver mBanjoForceObserver" "\tBanjoCenteredMotion mBanjoCenteredMotion = nullptr;\n\tvoid *mBanjoCenteredContext = nullptr;\n\tBanjoForceObserver mBanjoForceObserver" header "${header}")
+    foreach(expression "body.AddRotationStep(body.GetAngularVelocity() * delta_time);" "Vec3 delta_pos = body.GetLinearVelocity() * delta_time;")
+        string(FIND "${implementation}" "${expression}" motion_position)
+        if(motion_position LESS 0)
+            message(FATAL_ERROR "Pinned Jolt pose integration changed")
+        endif()
+    endforeach()
+    string(REPLACE "body.AddRotationStep(body.GetAngularVelocity() * delta_time);" "body.AddRotationStep((mBanjoCenteredMotion?mBanjoCenteredMotion(mBanjoCenteredContext, body, true):body.GetAngularVelocity()) * delta_time);" implementation "${implementation}")
+    string(REPLACE "Vec3 delta_pos = body.GetLinearVelocity() * delta_time;" "Vec3 delta_pos = (mBanjoCenteredMotion?mBanjoCenteredMotion(mBanjoCenteredContext, body, false):body.GetLinearVelocity()) * delta_time;" implementation "${implementation}")
     file(CONFIGURE OUTPUT "${overlay}/Jolt/Physics/PhysicsSystem.h" CONTENT "${header}" @ONLY)
     file(CONFIGURE OUTPUT "${overlay}/Jolt/Physics/PhysicsSystem.cpp" CONTENT "${implementation}" @ONLY)
     get_target_property(sources ${target} SOURCES)

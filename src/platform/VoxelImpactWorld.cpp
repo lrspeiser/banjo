@@ -50,7 +50,7 @@ struct VoxelImpactWorld::Impl {
     double sweep_wall_ms{},trial_wall_ms{},observation_wall_ms{},native_step_wall_ms{},totals_wall_ms{},candidate_faces_wall_ms{};
     double feature{},dt{},time{},initial_energy{},fracture{},discarded_elastic{},max_wall_ms{},peak_stress_ratio{};
     unsigned ticks{},broken{},substeps{},rejected{};Vec3 gravity;MechanicalTotals initial,totals;
-    bool log_faces{},resolved_deformation{};
+    bool log_faces{},resolved_deformation{},centered_faces{};
     RigidStepWork work_total{};double elastic_change_j{},ledger_change_j{};Vec3 full_angular_residual{};
     Json refused_work=nullptr;
     static Json workJson(const RigidStepWork &w){return {
@@ -121,7 +121,7 @@ struct VoxelImpactWorld::Impl {
         const auto inertia=RigidPrimitive{PrimitiveKind::Box,0,cells[a].size}.inertia(cells[a].mass);
         const double reduced_i=std::min({inertia.m[0][0],inertia.m[1][1],inertia.m[2][2]})/2;
         const auto damp=[&](Vec3 s,double reduced){return Vec3{2*m.damping_ratio*std::sqrt(s.x*reduced),2*m.damping_ratio*std::sqrt(s.y*reduced),2*m.damping_ratio*std::sqrt(s.z*reduced)};};
-        const auto joint=world.addFaceSpring({cells[a].id,cells[b].id,(cells[a].initial+cells[b].initial)/2,normal,tangent,k,r,damp(k,mass),damp(r,reduced_i),log_faces});
+        const auto joint=world.addFaceSpring({cells[a].id,cells[b].id,(cells[a].initial+cells[b].initial)/2,normal,tangent,k,r,damp(k,mass),damp(r,reduced_i),log_faces,centered_faces});
         bonds.push_back({a,b,joint,area,iy,iz,width,height,m.tensile_strength_pa,m.shear_strength_pa,m.fracture_energy_j_m2,k,r,damp(k,mass),damp(r,reduced_i),m.model==MaterialModel::BrittleBond});
     }
     void grid(unsigned object,MaterialPreset p,Vec3 dimensions,Vec3 center,unsigned nx,unsigned ny,unsigned nz,bool round){
@@ -148,8 +148,9 @@ struct VoxelImpactWorld::Impl {
         const std::set<std::string> keys{"sheet","ball","mass_kg","height_m","thickness_m","resolution","support_gap_m","offset_x_m","offset_z_m","dt_s","ball_enabled","gravity_m_s2","solver_iterations","face_law","contact_law"};
         for(auto i=d.begin();i!=d.end();++i)if(!keys.contains(i.key()))throw std::invalid_argument("unknown voxel experiment field");
         const auto face_law=d.value("face_law",std::string("native-motor"));
-        if(face_law!="native-motor"&&face_law!="log-gradient")throw std::invalid_argument("unsupported face law");
-        log_faces=face_law=="log-gradient";
+        if(face_law!="native-motor"&&face_law!="log-gradient"&&face_law!="centered-log-gradient")throw std::invalid_argument("unsupported face law");
+        log_faces=face_law!="native-motor";centered_faces=face_law=="centered-log-gradient";
+        world.setCenteredIntegration(centered_faces);
         const auto contact_law=d.value("contact_law",std::string("material-restitution"));
         if(contact_law!="material-restitution"&&contact_law!="resolved-deformation")throw std::invalid_argument("unsupported contact law");
         resolved_deformation=contact_law=="resolved-deformation";
@@ -254,13 +255,18 @@ struct VoxelImpactWorld::Impl {
             // SixDOF applies equal/opposite linear impulses at B's anchor.
             const auto arm_a=geometry.anchor_b_world_m-a.center_of_mass_world_m,arm_b=geometry.anchor_b_world_m-c.center_of_mass_world_m;
             const auto relative=cc.linear_velocity_m_s+cross(cc.angular_velocity_rad_s,arm_b)-aa.linear_velocity_m_s-cross(aa.angular_velocity_rad_s,arm_a);
-            const auto spin=cc.angular_velocity_rad_s-aa.angular_velocity_rad_s;
+            auto spin=cc.angular_velocity_rad_s-aa.angular_velocity_rad_s;
+            auto evaluated_relative=relative;
+            if(centered_faces){
+                evaluated_relative=.5*(relative+c.linear_velocity_m_s+cross(c.angular_velocity_rad_s,arm_b)-a.linear_velocity_m_s-cross(a.angular_velocity_rad_s,arm_a));
+                spin=.5*(spin+c.angular_velocity_rad_s-a.angular_velocity_rad_s);
+            }
             Vec3 speed{},rate{};
             double *vs[]={&speed.x,&speed.y,&speed.z},*ws[]={&rate.x,&rate.y,&rate.z};
-            for(unsigned axis=0;axis<3;++axis){*vs[axis]=dot(relative,geometry.translation_axes_world[axis]);*ws[axis]=dot(spin,geometry.rotation_axes_world[axis]);}
+            for(unsigned axis=0;axis<3;++axis){*vs[axis]=dot(evaluated_relative,geometry.translation_axes_world[axis]);*ws[axis]=dot(spin,geometry.rotation_axes_world[axis]);}
             const auto q0=geometry.displacement_cs_m,r0=geometry.rotation_error_cs_rad;
             material_damping+=2*h*(quadratic(b.damping,speed)+quadratic(b.rotation_damping,rate));
-            implicit_elastic_loss+=h*h*(quadratic(b.k,speed)+quadratic(b.r,rate));
+            if(!centered_faces)implicit_elastic_loss+=h*h*(quadratic(b.k,speed)+quadratic(b.r,rate));
             const double work=dot(response.linear_impulse_cs_n_s,speed)+dot(response.angular_impulse_cs_n_m_s,rate);spring_endpoint_work+=work;
             const double predicted=quadratic(b.k,q0+speed*h)+quadratic(b.r,r0+rate*h);
             const double actual=quadratic(b.k,response.displacement_cs_m)+quadratic(b.r,response.rotation_cs_rad);
@@ -270,10 +276,10 @@ struct VoxelImpactWorld::Impl {
             // 2*sin(angle/2) error differs from the reported physical angle.
             // Counting that absolute offset every step would invent a loss.
             spring_geometry_change+=(actual-old_physical)-(predicted-old_native);
-            spring_residual_work+=work+predicted-old_native+2*h*(quadratic(b.damping,speed)+quadratic(b.rotation_damping,rate))+h*h*(quadratic(b.k,speed)+quadratic(b.r,rate));
-            const Vec3 residual{response.linear_impulse_cs_n_s.x/h+b.k.x*q0.x+(b.damping.x+h*b.k.x)*speed.x,
-                response.linear_impulse_cs_n_s.y/h+b.k.y*q0.y+(b.damping.y+h*b.k.y)*speed.y,
-                response.linear_impulse_cs_n_s.z/h+b.k.z*q0.z+(b.damping.z+h*b.k.z)*speed.z};
+            spring_residual_work+=work+predicted-old_native+2*h*(quadratic(b.damping,speed)+quadratic(b.rotation_damping,rate))+(centered_faces?0:h*h*(quadratic(b.k,speed)+quadratic(b.r,rate)));
+            const Vec3 residual{response.linear_impulse_cs_n_s.x/h+b.k.x*q0.x+(b.damping.x+h*b.k.x*(centered_faces?.5:1))*speed.x,
+                response.linear_impulse_cs_n_s.y/h+b.k.y*q0.y+(b.damping.y+h*b.k.y*(centered_faces?.5:1))*speed.y,
+                response.linear_impulse_cs_n_s.z/h+b.k.z*q0.z+(b.damping.z+h*b.k.z*(centered_faces?.5:1))*speed.z};
             max_spring_residual_n=std::max(max_spring_residual_n,length(residual));
         }
 
@@ -329,7 +335,8 @@ std::string VoxelImpactWorld::snapshotJson() const {
             {"closure_residual_j",w.ledger_change_j-w.work_total.kinetic_change_j-w.work_total.potential_change_j-w.elastic_change_j},
             {"full_angular_residual_n_m_s",v(w.full_angular_residual)},{"last_rejected_trial",w.refused_work},
             {"scope","Actual native force-phase velocities and shared-phase spring/contact work. Residual, gyro and rotation drift are signed numerical/unexplained terms, not heat. Algebraic closure is not material realism or solver conservation."}}},
-        {"qualification",{{"calibrated",false},{"contact_law",impl_->resolved_deformation?"resolved-deformation":"material-restitution"},{"face_law",impl_->log_faces?"log-gradient":"native-motor"},{"model",impl_->log_faces?
+        {"qualification",{{"calibrated",false},{"contact_law",impl_->resolved_deformation?"resolved-deformation":"material-restitution"},{"face_law",impl_->centered_faces?"centered-log-gradient":impl_->log_faces?"log-gradient":"native-motor"},{"model",impl_->centered_faces?
+            "Experimental centered elastic rows and midpoint pose velocities. Linear energy oracles pass; coupled contact and finite rotations remain unqualified. Not compliant surface contact.":impl_->log_faces?
             "Experimental SO(3) energy-gradient interfaces. Analytical torque gradients pass; full impacts still have unresolved energy refusals/losses. Not a realtime or calibrated material model.":
             "Passive finite-box native six-axis elastic interfaces. Finite-rotation/integration/full energy and angular momentum accounts remain unqualified."},
             {"limits","Brittle strength AND stored fracture-work admission. Metals/oak remain elastic, not brittle; plasticity/grain are unsupported."}}}}.dump();

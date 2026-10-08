@@ -32,6 +32,12 @@ with tempfile.TemporaryDirectory() as folder:
   assert experimental['ok'] and experimental['state']['qualification']['face_law']=='log-gradient'
   assert not experimental['state']['qualification']['calibrated']
   assert req({'op':'close','session':experimental['session']})[1]['ok']
+  _,centered=req({'op':'create','declaration':{'face_law':'centered-log-gradient','ball_enabled':False}})
+  assert centered['ok'] and centered['state']['qualification']['face_law']=='centered-log-gradient'
+  assert not centered['state']['qualification']['calibrated']
+  _,centered_step=req({'op':'advance','session':centered['session'],'steps':16})
+  assert centered_step['ok'] and centered_step['state']['time_s']>0
+  assert req({'op':'close','session':centered['session']})[1]['ok']
   assert initial['qualification']['face_law']=='native-motor','default silently changed to experimental law'
   assert initial['qualification']['contact_law']=='material-restitution','default contact response silently changed'
   for law in ['invented',True,96,None]:
