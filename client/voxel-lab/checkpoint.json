@@ -1,24 +1,24 @@
 {
-  "title": "Centered springs: full-impact gates open",
+  "title": "Small rotations: full physics gates open",
   "date": "2026-10-08",
-  "physics_revision": "155a8068c661fce3554371e62ed9a2945be4beb0",
-  "native_sha256": "10620873f31bf13e869494a306ebc5769b7c7524b1aa38195e5923d43e53f62b",
+  "physics_revision": "f48956b4c38e88d035ca975a46bc840479945f49",
+  "native_sha256": "7ca74c0883a7b7a8e75b383c72af8309a6e203ea8de7cdf11abcf6298b7e1450",
   "changes": [
-    "Centered elastic rows use the declared stiffness/damping and actual midpoint pose velocities.",
-    "Undamped linear/principal-axis material oracles retain energy; matching damping work is tested.",
-    "Full centered glass impacts still refuse energy creation. This is not compliant contact or an accuracy fix.",
-    "Default physical/work behavior matches the published build. Centered oscillations stay active and cost more computation."
+    "Centered pose integration retains submicroradian rotation; the reference path is unchanged.",
+    "Glass/oak/iron refined free spin passes; isolated iron torsion energy error falls from 8.8e-8 to 3.0e-10 J.",
+    "Centered glass-sheet/iron-ball completes, but glass-ball still refuses near impact and ice now hits the cumulative energy gate.",
+    "Contact/geometry work and full momentum remain unqualified. The new centered glass run is slower, not a gameplay-speed fix."
   ],
   "checks": [
     {
       "label": "Native oracles",
       "status": "passed",
-      "value": "88 scenarios, including 1 s centered glass/oak/iron springs and torsion"
+      "value": "88 retained scenarios + 18 refined spin runs; 6 reference cutoff controls"
     },
     {
       "label": "Centered reporting / refusal",
       "status": "passed",
-      "value": "5 comparisons: 3 completed, 2 safely refused; physics gate stays OPEN"
+      "value": "5 comparisons: 3 completed, glass-ball and ice safely refused; physics gate OPEN"
     },
     {
       "label": "Reference worlds",
@@ -33,22 +33,22 @@
     {
       "label": "Scoped regression",
       "status": "passed",
-      "value": "8 CTests / 483.19 s; diagnostic refusal passes are not physical admission"
+      "value": "8 CTests / 473.80 s; refusal checks are not physical admission"
     },
     {
-      "label": "Centered glass accuracy",
+      "label": "Centered accuracy",
       "status": "blocked",
-      "value": "Iron ball refuses at 1.903077 s; glass ball refuses at 1.428242 s"
+      "value": "Glass-ball refuses at 1.428182 s; ice at 1.935725 s"
     },
     {
       "label": "Energy accounting",
       "status": "blocked",
-      "value": "Full contact, finite-rotation and momentum residuals remain unqualified"
+      "value": "Positive rejected contact work and large geometry/P/L residuals remain unresolved"
     },
     {
       "label": "Calculation speed",
       "status": "blocked",
-      "value": "Centered oak/iron ~59/76 wall s for 2 physical s; default glass ~39 s"
+      "value": "Centered glass ~158 wall s for 2 physical s; reference glass ~39 s"
     },
     {
       "label": "Reference glass ball",
