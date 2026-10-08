@@ -37,6 +37,7 @@
 #include <Jolt/Physics/Constraints/SixDOFConstraint.h>
 
 #include "rigid/DrumRope.hpp"
+#include "rigid/LogFaceSpring.hpp"
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/RayCast.h>
@@ -1378,6 +1379,7 @@ public:
         // A one-way fixing is a SixDOF constraint rather than a fixed one, and
         // reports its load along its own axes (addFixing, jointLoad).
         bool one_way{false};
+        bool log_face{false};
     };
     // How long the last step was. Only jointTension() needs it: Jolt reports a
     // constraint's IMPULSE over the step, and an impulse divided by the step it
@@ -2936,6 +2938,13 @@ unsigned JoltWorld::addFaceSpring(const FaceSpringDescription &d) {
        !std::isfinite(lengthSquared(d.anchor_world_m))||std::abs(length(d.normal_world)-1)>1e-8||
        std::abs(length(d.tangent_world)-1)>1e-8||std::abs(dot(d.normal_world,d.tangent_world))>1e-8)
         throw std::invalid_argument("invalid passive face spring");
+    if(d.log_rotation_gradient){
+        const auto settings=logFaceSpringSettings(d);
+        auto *raw=impl_->physics_->GetBodyInterface().CreateConstraint(settings.GetPtr(),impl_->bodies_.at(d.a),impl_->bodies_.at(d.b));
+        if(!raw)throw std::runtime_error("log face spring creation failed");
+        const auto id=impl_->next_joint_++;impl_->joints_.emplace(id,Impl::Joint{d.a,d.b,JointKind::FaceSpring,raw,false,true});
+        impl_->physics_->AddConstraint(raw);return id;
+    }
     JPH::SixDOFConstraintSettings s;s.mSpace=JPH::EConstraintSpace::WorldSpace;
     s.mPosition1=s.mPosition2=toJoltPosition(d.anchor_world_m);
     s.mAxisX1=s.mAxisX2=toJolt(d.normal_world);s.mAxisY1=s.mAxisY2=toJolt(d.tangent_world);
@@ -2954,6 +2963,7 @@ unsigned JoltWorld::addFaceSpring(const FaceSpringDescription &d) {
 JoltWorld::FaceSpringObservation JoltWorld::faceSpringObservation(unsigned id) const {
     const auto fromJoltVector=[](JPH::Vec3Arg x){return Vec3{x.GetX(),x.GetY(),x.GetZ()};};
     const auto &j=impl_->joints_.at(id);if(j.kind!=JointKind::FaceSpring)throw std::invalid_argument("not a face spring");
+    if(j.log_face)return observeLogFaceSpring(*j.constraint.GetPtr());
     const auto *c=static_cast<const JPH::SixDOFConstraint*>(j.constraint.GetPtr());
     // Between Updates the constraint holds the native bodies the solver uses.
     // Read each transform once, rather than taking eight BodyInterface locks

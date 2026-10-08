@@ -23,6 +23,10 @@ with tempfile.TemporaryDirectory() as folder:
    while True:
     actual=frame(stream,after);assert actual['ok'];assert actual['frame_id']>=after;after=actual['frame_id'];seq.append(after)
     assert actual['pipeline']['buffered_frames']==1
+    metrics=actual['pipeline'];assert 0<=metrics['batch_sample_count']<=metrics['batch_sample_limit']==256
+    assert 0<=metrics['native_batch_p95_ms']<=metrics['max_native_batch_ms']
+    assert metrics['published_state_age_ms']>=metrics['current_state_age_ms']>=0
+    assert 0<metrics['journal_compressed_bytes']<metrics['journal_uncompressed_bytes']
     if not actual['pipeline']['running'] and not actual['pipeline']['calculating']:break
     assert time.monotonic()<deadline,'pipeline stalled'
    assert physical(actual['state'])==physical(reference['state']),'scheduler changed native physics: '+material
@@ -46,7 +50,16 @@ with tempfile.TemporaryDirectory() as folder:
    stopped=frame(key)
    if not stopped['pipeline']['calculating']:break
   t=stopped['state']['time_s'];assert 0<t<.1
+  assert stopped['pipeline']['native_batch_p95_ms']>=300,'injected native delay missing from latency measurement'
+  assert stopped['pipeline']['batch_sample_count']==1,'pause measured more than its one draining batch'
   time.sleep(.1);assert frame(key)['state']==stopped['state'],'pause continued simulation or changed metrics in the state'
+  assert frame(key)['pipeline']['published_state_age_ms']>=100,'paused pose age not measured'
+  # Quantile is nearest-rank on a bounded rolling window, not an unbounded
+  # history. Injecting sample values exercises measurement only, no physics.
+  with session.condition:
+   session.batch_samples.extend(i/1000 for i in range(300));session.max_batch_s=.299
+  measured=frame(key)['pipeline'];assert measured['batch_sample_count']==256
+  assert abs(measured['native_batch_p95_ms']-287)<1e-9,'bounded p95 window/rank is wrong'
   assert not req({'op':'play','session':key,'running':True,'target_time_s':.10001})['ok'],'off-tick target accepted'
   for value in [True,-1,251]:assert not req({'op':'frame','session':key,'after':0,'wait_ms':value})['ok']
   print('PASS delayed-native pause latency',round(latency*1000,2),'ms; in-flight batch drains once, stable pause and bounded commands',flush=True)

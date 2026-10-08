@@ -1,11 +1,13 @@
 #include "rigid/JoltWorld.hpp"
 #include "material/MaterialCatalog.hpp"
+#include "physics/RotationStrain.hpp"
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
 using namespace banjo;
 namespace {
 RigidJobExecution execution=RigidJobExecution::ThreadPool;
+bool log_gradient=false;
 void check(bool value,const char *why){if(!value)throw std::runtime_error(why);}
 double axis(Vec3 a,Vec3 b){return dot(a,b);}
 void oracle(double damping,double initial_extension){
@@ -15,7 +17,7 @@ void oracle(double damping,double initial_extension){
     world.addBox({2,{.1,.1,.1},material,{{ .06,0,0},{},{ .1,0,0},{}},false});
     world.setPairContactOwner(1,2,PairContactOwner::External);
     const double stiffness=1000,h=1./240;
-    const auto joint=world.addFaceSpring({1,2,{},{1,0,0},{0,1,0},{stiffness,stiffness,stiffness},{10,10,10},{damping,damping,damping},{0,0,0}});
+    const auto joint=world.addFaceSpring({1,2,{},{1,0,0},{0,1,0},{stiffness,stiffness,stiffness},{10,10,10},{damping,damping,damping},{0,0,0},log_gradient});
     if(initial_extension){
         auto a=world.snapshot(1),b=world.snapshot(2);
         a.center_of_mass_world_m.x-=initial_extension/2;
@@ -51,7 +53,7 @@ void torsion(double damping){
     world.addBox({2,{.1,.1,.1},material,{{ .06,0,0},{},{},{ .1,0,0}},false});
     world.setPairContactOwner(1,2,PairContactOwner::External);
     const double k=10,h=1./240;
-    const auto joint=world.addFaceSpring({1,2,{},{1,0,0},{0,1,0},{1000,1000,1000},{k,k,k},{0,0,0},{damping,damping,damping}});
+    const auto joint=world.addFaceSpring({1,2,{},{1,0,0},{0,1,0},{1000,1000,1000},{k,k,k},{0,0,0},{damping,damping,damping},log_gradient});
     const auto before=world.mechanicalTotals();const auto a0=world.mechanicalState(1),b0=world.mechanicalState(2);
     world.step(h);
     const auto a=world.mechanicalState(1),b=world.mechanicalState(2);const auto face=world.faceSpringObservation(joint);
@@ -154,5 +156,26 @@ void gravity_oracle(){
     check(length(world.observedGravityImpulseN_s())==0,"sleeping body receives no scheduled gravity impulse");
     std::cout<<"gravity active impulse_n_s="<<length(impulse)<<" sleeping impulse_n_s=0\n";
 }
+void log_gradient_impulse_oracle(){
+    JoltWorld world(0,{},execution);world.setGravity({});world.setContactSolverIterations(96,4);
+    auto material=makeReferenceMaterial(MaterialPreset::Iron);material.model=MaterialModel::RigidOnly;
+    world.addBox({1,{.1,.1,.1},material,{{},{},{},{}},false});
+    world.addBox({2,{.1,.1,.1},material,{{},{},{},{}},false});world.setPairContactOwner(1,2,PairContactOwner::External);
+    const Vec3 k{2,7,13},phi{.4,.9,-.3};const double angle=length(phi),scale=std::sin(angle/2)/angle;
+    const auto joint=world.addFaceSpring({1,2,{},{1,0,0},{0,1,0},{1000,1000,1000},k,{},{},true});
+    auto state=world.snapshot(2);state.orientation_world={std::cos(angle/2),phi.x*scale,phi.y*scale,phi.z*scale};world.applyRigidState(2,state);
+    const auto a0=world.mechanicalState(1),b0=world.mechanicalState(2);const auto frame=world.faceSpringObservation(joint);
+    const Vec3 gradient=frame.rotation_axes_world[0]*(k.x*phi.x)+frame.rotation_axes_world[1]*(k.y*phi.y)+frame.rotation_axes_world[2]*(k.z*phi.z);
+    const double h=1e-6;world.step(h);const auto a=world.mechanicalState(1),b=world.mechanicalState(2);const auto response=world.faceSpringObservation(joint);
+    const auto impulse_b=b0.inertia_world_kg_m2*(b.motion.angular_velocity_rad_s-b0.motion.angular_velocity_rad_s);
+    const auto impulse_a=a0.inertia_world_kg_m2*(a.motion.angular_velocity_rad_s-a0.motion.angular_velocity_rad_s);
+    check(length(impulse_b/h+gradient)<4e-5,"finite-angle native torque follows anisotropic energy gradient");
+    check(length(impulse_a+impulse_b)<1e-10,"finite-angle native equal opposite torque");
+    const auto saved=world.snapshot(2);check(!world.runReversibleTrial([&]{world.step(h);return false;}),"log gradient trial refuses");
+    const auto restored=world.faceSpringObservation(joint);
+    check(length(restored.angular_impulse_cs_n_m_s-response.angular_impulse_cs_n_m_s)==0,"log generalized impulse rollback");
+    check(world.snapshot(2).orientation_world.w==saved.orientation_world.w,"log frame rollback");
+    std::cout<<"log finite-angle torque residual_nm="<<length(impulse_b/h+gradient)<<" reaction_residual_nms="<<length(impulse_a+impulse_b)<<'\n';
 }
-int main(){try{for(auto policy:{RigidJobExecution::ThreadPool,RigidJobExecution::Inline}){execution=policy;std::cout<<"execution="<<(policy==RigidJobExecution::Inline?"inline":"thread-pool")<<'\n';for(double extension:{0.,.01}){oracle(0,extension);oracle(20,extension);}torsion(0);torsion(.005);nearest_orientation();for(bool fixed:{false,true})for(double friction:{0.,.4})contact_oracle(fixed,friction);gravity_oracle();}return 0;}catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}
+}
+int main(){try{for(auto policy:{RigidJobExecution::ThreadPool,RigidJobExecution::Inline}){execution=policy;std::cout<<"execution="<<(policy==RigidJobExecution::Inline?"inline":"thread-pool")<<'\n';for(bool law:{false,true}){log_gradient=law;for(double extension:{0.,.01}){oracle(0,extension);oracle(20,extension);}torsion(0);torsion(.005);}nearest_orientation();for(bool fixed:{false,true})for(double friction:{0.,.4})contact_oracle(fixed,friction);gravity_oracle();log_gradient_impulse_oracle();}return 0;}catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}

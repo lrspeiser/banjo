@@ -5,10 +5,10 @@ function statusRow(parent,label,value,status){const row=document.createElement('
 async function loadCheckpoint(){
  try{
   const response=await fetch('/api/checkpoint');if(!response.ok)throw Error('Build status unavailable');const build=await response.json(),c=build.checkpoint;
-  const matched=build.native_verified&&!build.restart_pending;
+  const matched=build.native_verified&&!build.restart_pending&&build.local_changes===false;
   $('updates').textContent=(matched?'✓ Build ':'⚠ Check build ')+(build.website_revision?.slice(0,8)??'unknown');
   $('updates').dataset.status=matched?'passed':'blocked';$('checkpoint-title').textContent=c.title??'Update status';
-  $('build-match').textContent=matched?'Running the tested native checkpoint.':build.restart_pending?'Server restart required for the current website revision.':'Native build differs from the checkpoint: these test results do not verify this executable.';
+  $('build-match').textContent=matched?'Running the tested native checkpoint.':build.restart_pending?'Server restart required for the current website revision.':build.local_changes?'Local source or website edits are not part of the published checkpoint.':'Native build differs from the checkpoint: these test results do not verify this executable.';
   $('build-match').dataset.status=matched?'passed':'blocked';
   statusRow($('build-versions'),'Website',build.website_revision?.slice(0,8)??'Unknown');
   statusRow($('build-versions'),'Physics',c.physics_revision?.slice(0,8)??'Unrecorded');
@@ -52,6 +52,7 @@ function draw(s){if(!s)return;
  for(const [id,value] of [['support-impulse',contact?.support_reaction_impulse_n_s],['momentum-residual',contact?.linear_momentum_residual_n_s]])$(id).textContent=Array.isArray(value)?Math.hypot(...value).toPrecision(4)+' N·s':'Unavailable in this build';
  $('contact-points').textContent=contact?.point_samples??'Unavailable in this build';
  $('native-cost').textContent=Number.isFinite(d.profile?.native_step_ms)?(d.profile.native_step_ms/1000).toFixed(2)+' s wall time':'Unavailable in this build';
+ $('law-status').textContent=s.qualification?.model??'Model identity unavailable';
  canvas.dataset.time=s.time_s;canvas.dataset.nativeCells=s.cells.length;canvas.dataset.sheetPieces=sheet.pieces;
 }
 function updateCamera(){target.set(0,whole?4.8:.43,0);const r=whole?13:radius;camera.position.set(target.x+r*Math.cos(pitch)*Math.sin(yaw),target.y+r*Math.sin(pitch),target.z+r*Math.cos(pitch)*Math.cos(yaw));camera.lookAt(target);}
@@ -60,10 +61,11 @@ function render(now){drawPose(showBefore?{from:initial,to:initial,alpha:1,time_s
  renderFrames++;if(now-fpsStart>=1000){$('render-fps').textContent=Math.round(renderFrames*1000/(now-fpsStart))+' fps';renderFrames=0;fpsStart=now;}
  requestAnimationFrame(render);
 }
-async function request(command){const response=await fetch('/api/world',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(command)});return response.json();}
+async function request(command){const start=performance.now();const response=await fetch('/api/world',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(command)});const reply=await response.json();if(command.op!=='frame')$('control-latency').textContent=(performance.now()-start).toFixed(1)+' ms';return reply;}
 function accept(r){
  if(r.state){state=r.state;playback.push(state,performance.now());if(!showBefore)draw(state);}
  if(r.pipeline){pipeline=r.pipeline;running=pipeline.running;calculating=pipeline.calculating;$('sim-speed').textContent=pipeline.realtime_ratio.toFixed(2)+'× realtime';$('batch-cost').textContent=pipeline.max_native_batch_ms.toFixed(1)+' ms / '+pipeline.native_batch_budget_ms+' ms target';}
+ if(r.pipeline){$('batch-p95').textContent=pipeline.batch_sample_count?pipeline.native_batch_p95_ms.toFixed(1)+' ms / '+pipeline.batch_sample_count+' batches':'No batches yet';$('pose-age').textContent=pipeline.published_state_age_ms.toFixed(0)+' ms'+(!running&&!calculating?' · paused':'');$('record-size').textContent=(pipeline.journal_compressed_bytes/1e6).toFixed(2)+' MB';}
  if(!r.ok){running=false;$('phase').textContent='Stopped · '+r.error;}
  else if(state)$('phase').textContent=state.time_s>=2?'Drop complete':calculating&&!running?'Pausing · finishing native batch':running?'Live native physics': 'Native state ready';
  controls();
@@ -82,9 +84,9 @@ async function poll(generation){
  }}catch(e){if(generation===sequence){running=false;calculating=false;$('phase').textContent='Stopped · '+e.message;controls();}}
  finally{polling=false;if(generation!==sequence&&(running||calculating))poll(sequence);}
 }
-function controls(){for(const id of ['sheet','thickness','resolution','gap','ball','mass','height'])$(id).disabled=busy||running||calculating;$('reset').disabled=busy;$('drop').disabled=busy||!session||showBefore||state?.time_s>=2||(!running&&calculating);$('step').disabled=busy||running||calculating||!session||showBefore||state?.time_s>=2;$('before').disabled=busy||!initial||running||calculating;$('live').disabled=busy||!state||running||calculating;$('drop').textContent=running?'Pause':'Drop ball';}
+function controls(){for(const id of ['sheet','thickness','resolution','gap','ball','mass','height','face_law'])$(id).disabled=busy||running||calculating;$('reset').disabled=busy;$('drop').disabled=busy||!session||showBefore||state?.time_s>=2||(!running&&calculating);$('step').disabled=busy||running||calculating||!session||showBefore||state?.time_s>=2;$('before').disabled=busy||!initial||running||calculating;$('live').disabled=busy||!state||running||calculating;$('drop').textContent=running?'Pause':'Drop ball';}
 async function reset(){if(busy)return;busy=true;running=false;showBefore=false;controls();$('phase').textContent='Building native scene…';const generation=++sequence;
- try{if(session)await request({op:'close',session});session=null;frameId=0;calculating=false;pipeline=null;const declaration={sheet:$('sheet').value,ball:$('ball').value,mass_kg:Number($('mass').value),height_m:Number($('height').value),thickness_m:Number($('thickness').value),resolution:Number($('resolution').value),support_gap_m:Number($('gap').value),offset_x_m:aim[0],offset_z_m:aim[1]};const r=await request({op:'create',declaration});if(!r.ok)throw Error(r.error);if(generation!==sequence)return;session=r.session;state=r.state;initial=structuredClone(state);playback.reset(state,performance.now());layout(state);draw(state);$('sim-speed').textContent='Ready';$('batch-cost').textContent='8 ms target';$('phase').textContent='Ready · '+(9.81*declaration.mass_kg*declaration.height_m).toFixed(1)+' J drop';$('log').href='/api/log/'+session;}
+ try{if(session)await request({op:'close',session});session=null;frameId=0;calculating=false;pipeline=null;const declaration={sheet:$('sheet').value,ball:$('ball').value,mass_kg:Number($('mass').value),height_m:Number($('height').value),thickness_m:Number($('thickness').value),resolution:Number($('resolution').value),support_gap_m:Number($('gap').value),offset_x_m:aim[0],offset_z_m:aim[1]};if($('face_law').value!=='native-motor')declaration.face_law=$('face_law').value;const r=await request({op:'create',declaration});if(!r.ok)throw Error(r.error);if(generation!==sequence)return;session=r.session;state=r.state;initial=structuredClone(state);playback.reset(state,performance.now());layout(state);draw(state);$('sim-speed').textContent='Ready';$('batch-cost').textContent='8 ms target';$('batch-p95').textContent='No batches yet';$('pose-age').textContent='Ready';$('record-size').textContent='New record';$('phase').textContent='Ready · '+(9.81*declaration.mass_kg*declaration.height_m).toFixed(1)+' J drop';$('log').href='/api/log/'+session;}
  catch(e){$('phase').textContent='Stopped · '+e.message;}finally{busy=false;controls();}
 }
 async function advance(){if(busy||!session)return;busy=true;controls();const start=performance.now();
@@ -94,7 +96,7 @@ async function advance(){if(busy||!session)return;busy=true;controls();const sta
 $('drop').onclick=async()=>{busy=true;controls();try{const r=await request({op:'play',session,running:!running,target_time_s:2});accept(r);if(r.ok&&(running||calculating))poll(sequence);}catch(e){$('phase').textContent='Stopped · '+e.message;}finally{busy=false;controls();}};$('step').onclick=advance;$('reset').onclick=reset;
 $('before').onclick=()=>{showBefore=true;draw(initial);$('phase').textContent='Before · starting state';controls();};$('live').onclick=()=>{showBefore=false;draw(state);$('phase').textContent=state.time_s>=2?'Drop complete':'Live · accepted native state';controls();};
 $('view').onclick=()=>{whole=!whole;$('view').textContent=whole?'Impact close-up':'Whole rig';};
-for(const id of ['sheet','thickness','resolution','gap','ball','mass','height'])$(id).onchange=reset;
+for(const id of ['sheet','thickness','resolution','gap','ball','mass','height','face_law'])$(id).onchange=reset;
 let press=null;canvas.addEventListener('pointerdown',e=>{press={x:e.clientX,y:e.clientY,yaw,pitch,moved:false};canvas.setPointerCapture(e.pointerId);});canvas.addEventListener('pointermove',e=>{if(!press)return;const dx=e.clientX-press.x,dy=e.clientY-press.y;if(Math.hypot(dx,dy)>5)press.moved=true;if(press.moved){yaw=press.yaw-dx*.008;pitch=Math.max(.04,Math.min(1.4,press.pitch+dy*.006));}});
 canvas.addEventListener('pointerup',e=>{if(!press)return;const clicked=!press.moved;press=null;if(!clicked||busy||running)return;const r=canvas.getBoundingClientRect(),ray=new THREE.Raycaster();ray.setFromCamera(new THREE.Vector2((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1),camera);const hit=ray.intersectObjects(groups.map(g=>g.mesh)).find(h=>state.cells.find(c=>c.id===groups.find(g=>g.mesh===h.object).ids[h.instanceId])?.object===1);if(hit){aim=[Math.max(-.19,Math.min(.19,hit.point.x)),Math.max(-.19,Math.min(.19,hit.point.z))];reset();}});
 canvas.addEventListener('wheel',e=>{e.preventDefault();radius=Math.max(.45,Math.min(3,radius*Math.exp(e.deltaY*.001)));},{passive:false});

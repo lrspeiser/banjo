@@ -481,12 +481,16 @@ public:
         Vec3 anchor_world_m{},normal_world{1,0,0},tangent_world{0,1,0};
         Vec3 translation_stiffness_n_m{},rotation_stiffness_n_m_rad{};
         Vec3 translation_damping_n_s_m{},rotation_damping_n_m_s_rad{};
+        // Opt-in energy-gradient SO(3) law; the default retains the native motor.
+        bool log_rotation_gradient{};
     };
     struct FaceSpringObservation {
         Vec3 displacement_cs_m{},rotation_cs_rad{};
         Vec3 linear_impulse_cs_n_s{},angular_impulse_cs_n_m_s{};
         // Capture before Update to reconstruct the actual solver Jacobian.
         Vec3 anchor_b_world_m{},rotation_error_cs_rad{};
+        // With the log-gradient law rotation axes are differential rows (not
+        // necessarily unit vectors), and angular impulses are work conjugates.
         std::array<Vec3,3> translation_axes_world{},rotation_axes_world{};
     };
     unsigned addFaceSpring(const FaceSpringDescription &description);

@@ -96,6 +96,7 @@ add_library(
     src/physics/CompliantStep.cpp
     src/physics/CompliantAdvance.cpp
     src/physics/ElasticNewton.cpp
+    src/physics/RotationStrain.cpp
     src/physics/MechanicalAccounting.cpp
     src/physics/DoubleRigidDynamics.cpp
     src/physics/DoubleFixedSource.cpp
@@ -250,6 +251,7 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
         src/physics/TetrahedronContact.cpp
         src/rigid/DrumRope.cpp
         src/rigid/JoltWorld.cpp
+        src/rigid/LogFaceSpring.cpp
         src/sim/RollingBallExperiment.cpp
         src/numeric/FpProbeRuntime.cpp)
     target_include_directories(banjo_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -269,9 +271,9 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
     # left JoltWorld.cpp's and TetrahedronContact.cpp's as they were.
     if (NOT CPP_RTTI_ENABLED)
         if (MSVC)
-            set_source_files_properties(src/rigid/DrumRope.cpp PROPERTIES COMPILE_OPTIONS "/GR-")
+            set_source_files_properties(src/rigid/DrumRope.cpp src/rigid/LogFaceSpring.cpp PROPERTIES COMPILE_OPTIONS "/GR-")
         else()
-            set_source_files_properties(src/rigid/DrumRope.cpp PROPERTIES COMPILE_OPTIONS "-fno-rtti")
+            set_source_files_properties(src/rigid/DrumRope.cpp src/rigid/LogFaceSpring.cpp PROPERTIES COMPILE_OPTIONS "-fno-rtti")
         endif()
     endif()
     target_compile_features(banjo_runtime PUBLIC cxx_std_23)
@@ -310,6 +312,10 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
     banjo_enable_warnings(banjo_voxel_world_run)
     if(BANJO_BUILD_TESTS)
         add_executable(banjo_voxel_face_spring_tests tests/voxel_face_spring_tests.cpp)
+        add_executable(banjo_rotation_strain_tests tests/rotation_strain_tests.cpp)
+        target_link_libraries(banjo_rotation_strain_tests PRIVATE banjo_core)
+        banjo_enable_warnings(banjo_rotation_strain_tests)
+        add_test(NAME banjo_rotation_strain_tests COMMAND banjo_rotation_strain_tests)
         target_link_libraries(banjo_voxel_face_spring_tests PRIVATE banjo_platform)
         banjo_enable_warnings(banjo_voxel_face_spring_tests)
         add_test(NAME banjo_voxel_face_spring_tests COMMAND banjo_voxel_face_spring_tests)
@@ -2102,6 +2108,9 @@ if(BANJO_BUILD_TESTS)
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_FOUND)
         if(TARGET banjo_voxel_world_run)
+            add_test(NAME banjo_voxel_log_gradient_tests COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_log_gradient_test.py $<TARGET_FILE:banjo_voxel_world_run>)
+            set_tests_properties(banjo_voxel_log_gradient_tests PROPERTIES TIMEOUT 300 LABELS "native;voxel;experimental")
             add_test(NAME banjo_voxel_execution_tests COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_execution_test.py $<TARGET_FILE:banjo_voxel_world_run>)
             set_tests_properties(banjo_voxel_execution_tests PROPERTIES TIMEOUT 300 LABELS "native;voxel;performance")

@@ -49,6 +49,7 @@ struct VoxelImpactWorld::Impl {
     double sweep_wall_ms{},trial_wall_ms{},observation_wall_ms{},native_step_wall_ms{},totals_wall_ms{},candidate_faces_wall_ms{};
     double feature{},dt{},time{},initial_energy{},fracture{},discarded_elastic{},max_wall_ms{},peak_stress_ratio{};
     unsigned ticks{},broken{},substeps{},rejected{};Vec3 gravity;MechanicalTotals initial,totals;
+    bool log_faces{};
     std::vector<unsigned> components() const {
         std::vector<unsigned> p(cells.size());std::iota(p.begin(),p.end(),0);
         auto root=[&](unsigned x){while(p[x]!=x){p[x]=p[p[x]];x=p[x];}return x;};
@@ -75,7 +76,7 @@ struct VoxelImpactWorld::Impl {
         const auto inertia=RigidPrimitive{PrimitiveKind::Box,0,cells[a].size}.inertia(cells[a].mass);
         const double reduced_i=std::min({inertia.m[0][0],inertia.m[1][1],inertia.m[2][2]})/2;
         const auto damp=[&](Vec3 s,double reduced){return Vec3{2*m.damping_ratio*std::sqrt(s.x*reduced),2*m.damping_ratio*std::sqrt(s.y*reduced),2*m.damping_ratio*std::sqrt(s.z*reduced)};};
-        const auto joint=world.addFaceSpring({cells[a].id,cells[b].id,(cells[a].initial+cells[b].initial)/2,normal,tangent,k,r,damp(k,mass),damp(r,reduced_i)});
+        const auto joint=world.addFaceSpring({cells[a].id,cells[b].id,(cells[a].initial+cells[b].initial)/2,normal,tangent,k,r,damp(k,mass),damp(r,reduced_i),log_faces});
         bonds.push_back({a,b,joint,area,iy,iz,width,height,m.tensile_strength_pa,m.shear_strength_pa,m.fracture_energy_j_m2,k,r,damp(k,mass),damp(r,reduced_i),m.model==MaterialModel::BrittleBond});
     }
     void grid(unsigned object,MaterialPreset p,Vec3 dimensions,Vec3 center,unsigned nx,unsigned ny,unsigned nz,bool round){
@@ -99,8 +100,11 @@ struct VoxelImpactWorld::Impl {
     }
     explicit Impl(const Json &d,VoxelExecution storage):world(0,contactCapacity(d,storage),
         storage==VoxelExecution::Reference?RigidJobExecution::ThreadPool:RigidJobExecution::Inline),declaration(d){
-        const std::set<std::string> keys{"sheet","ball","mass_kg","height_m","thickness_m","resolution","support_gap_m","offset_x_m","offset_z_m","dt_s","ball_enabled","gravity_m_s2","solver_iterations"};
+        const std::set<std::string> keys{"sheet","ball","mass_kg","height_m","thickness_m","resolution","support_gap_m","offset_x_m","offset_z_m","dt_s","ball_enabled","gravity_m_s2","solver_iterations","face_law"};
         for(auto i=d.begin();i!=d.end();++i)if(!keys.contains(i.key()))throw std::invalid_argument("unknown voxel experiment field");
+        const auto face_law=d.value("face_law",std::string("native-motor"));
+        if(face_law!="native-motor"&&face_law!="log-gradient")throw std::invalid_argument("unsupported face law");
+        log_faces=face_law=="log-gradient";
         const auto sheet=preset(d.value("sheet",std::string("glass"))),ball=preset(d.value("ball",std::string("iron")));
         const double requested=scalar(d,"resolution",8,4,16);const unsigned n=unsigned(requested);
         if(n!=requested||(n!=4&&n!=8&&n!=12&&n!=16))throw std::invalid_argument("resolution must be 4, 8, 12 or 16");
@@ -215,7 +219,14 @@ struct VoxelImpactWorld::Impl {
         bool changed=false;
         for(unsigned i=0;i<bonds.size();++i)if(bonds[i].live){
             auto &b=bonds[i];const auto &s=faces_after[i];b.energy=quadratic(b.k,s.displacement_cs_m)+quadratic(b.r,s.rotation_cs_rad);
-            const auto f=s.linear_impulse_cs_n_s/h,m=s.angular_impulse_cs_n_m_s/h;
+            const auto f=s.linear_impulse_cs_n_s/h;auto m=s.angular_impulse_cs_n_m_s/h;
+            if(log_faces){
+                // Generalized log-strain impulses are not physical torque components.
+                // Project the actual start-of-solve torque into the material frame.
+                const auto &frame=faces_before[i];
+                const auto torque=frame.rotation_axes_world[0]*m.x+frame.rotation_axes_world[1]*m.y+frame.rotation_axes_world[2]*m.z;
+                m={dot(torque,frame.translation_axes_world[0]),dot(torque,frame.translation_axes_world[1]),dot(torque,frame.translation_axes_world[2])};
+            }
             const double tensile=std::max(0.,-f.x)/b.area+std::abs(m.y)*b.height/(2*b.iy)+std::abs(m.z)*b.width/(2*b.iz);
             const double shear=std::hypot(f.y,f.z)/b.area+std::abs(m.x)*std::max(b.width,b.height)/(2*(b.iy+b.iz));
             const double ratio=std::max(tensile/b.strength,shear/b.shear);peak_stress_ratio=std::max(peak_stress_ratio,ratio);
@@ -249,6 +260,9 @@ std::string VoxelImpactWorld::snapshotJson() const {
     return Json{{"schema","banjo.voxel-impact.v1"},{"declaration",w.declaration},{"time_s",w.time},{"dt_s",w.dt},{"ticks",w.ticks},{"substeps",w.substeps},{"rejected_trials",w.rejected},{"cells",cells},{"objects",objects},{"events",w.events},
         {"diagnostics",{{"dynamic_mass_kg",mass},{"kinetic_j",w.totals.kinetic_energy_j},{"potential_j",w.totals.gravitational_potential_energy_j},{"elastic_j",elastic},{"fracture_j",w.fracture},{"fracture_overshoot_loss_j",w.discarded_elastic},{"unclosed_energy_j",w.totals.mechanicalEnergy()+elastic+w.fracture+w.discarded_elastic-w.initial_energy},{"linear_momentum_n_s",v(w.totals.linear_momentum_kg_m_s)},{"angular_momentum_kg_m2_s",v(w.totals.angular_momentum_kg_m2_s)},{"max_step_wall_ms",w.max_wall_ms},{"peak_stress_ratio",w.peak_stress_ratio},{"linear_velocity_quadratic_j",w.linear_velocity_quadratic},{"peak_spin_rad_s",w.peak_spin},{"native_spin_limit_samples",w.spin_limit_samples},{"spring_material_damping_j",w.material_damping},{"spring_implicit_elastic_loss_j",w.implicit_elastic_loss},{"spring_endpoint_work_j",w.spring_endpoint_work},{"spring_geometry_change_j",w.spring_geometry_change},{"spring_residual_work_j",w.spring_residual_work},{"max_spring_solver_residual_n",w.max_spring_residual_n},{"profile",{{"sweep_ms",w.sweep_wall_ms},{"trial_ms",w.trial_wall_ms},{"observation_ms",w.observation_wall_ms},{"native_step_ms",w.native_step_wall_ms},{"totals_ms",w.totals_wall_ms},{"candidate_faces_ms",w.candidate_faces_wall_ms}}}}},
         {"contact_audit",{{"normal_endpoint_work_j",w.contact_normal_work},{"friction_endpoint_work_j",w.contact_friction_work},{"twist_endpoint_work_j",w.contact_twist_work},{"support_reaction_impulse_n_s",v(w.support_reaction_impulse)},{"support_reaction_angular_impulse_n_m_s",v(w.support_reaction_angular_impulse)},{"gravity_impulse_n_s",v(w.gravity_impulse)},{"linear_momentum_residual_n_s",v(w.momentum_residual)},{"manifold_samples",w.contact_manifold_samples},{"point_samples",w.contact_point_samples},{"scope","Actual discrete native solver impulses at start-of-solve contact midpoints; endpoint work is diagnostic, not a closed energy balance. Gravity counts start-of-Update active bodies. Anchored reactions use world-origin moments; no dormant cache impulses or estimated launch velocities."}}},
-        {"qualification",{{"calibrated",false},{"model","Passive finite-box six-axis elastic interfaces; brittle strength AND stored fracture-work admission. Metals/oak remain elastic, not brittle; plasticity/grain are unsupported. Contact endpoint work is measured, but finite-rotation/integration/full energy and angular momentum accounts remain unqualified."}}}}.dump();
+        {"qualification",{{"calibrated",false},{"face_law",impl_->log_faces?"log-gradient":"native-motor"},{"model",impl_->log_faces?
+            "Experimental SO(3) energy-gradient interfaces. Analytical torque gradients pass; full impacts still have unresolved energy refusals/losses. Not a realtime or calibrated material model.":
+            "Passive finite-box native six-axis elastic interfaces. Finite-rotation/integration/full energy and angular momentum accounts remain unqualified."},
+            {"limits","Brittle strength AND stored fracture-work admission. Metals/oak remain elastic, not brittle; plasticity/grain are unsupported."}}}}.dump();
 }
 }

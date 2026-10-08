@@ -1,5 +1,6 @@
 """Local, bounded native voxel world. No old website routes or simulation cache."""
 import argparse, gzip, hashlib, json, queue, subprocess, threading, time, uuid
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
@@ -16,6 +17,7 @@ class Session:
   self.output=queue.Queue(maxsize=2);self.lock=threading.Lock();self.record_lock=threading.Lock();self.last=time.monotonic();self.path=logs/(uuid.uuid4().hex+'.jsonl.gz');self.bytes=0;self.uncompressed_bytes=0
   self.condition=threading.Condition();self.closed=False;self.playing=False;self.calculating=False;self.latest=None;self.current=None;self.frame_id=0
   self.target_ticks=0;self.started=0.;self.started_time=0.;self.elapsed_s=0.;self.batch_cost_s=.001;self.max_batch_s=0.;self.pending_commands=[];self.last_publish=0.
+  self.batch_samples=deque(maxlen=256);self.current_at=0.;self.latest_at=0.
   def reader():
    for line in self.proc.stdout:self.output.put(line)
    self.output.put(None)
@@ -41,17 +43,22 @@ class Session:
    if record:self.write({'request':command,'response':reply})
    return reply
  def metrics(self):
-  elapsed=max(0.,time.monotonic()-self.started) if self.started and (self.playing or self.calculating) else self.elapsed_s
+  now=time.monotonic();elapsed=max(0.,now-self.started) if self.started and (self.playing or self.calculating) else self.elapsed_s
   physical=max(0.,self.current['state']['time_s']-self.started_time) if self.current and self.started else 0.
+  ordered=sorted(self.batch_samples);p95=ordered[max(0,(95*len(ordered)+99)//100-1)] if ordered else 0.
   return {'running':self.playing,'calculating':self.calculating,'realtime_ratio':physical/elapsed if elapsed else 0.,'wall_s':elapsed,
           'max_native_batch_ms':self.max_batch_s*1000,'native_batch_budget_ms':8,'frame_hz_target':30,'buffered_frames':1,
+          'native_batch_p95_ms':p95*1000,'batch_sample_count':len(ordered),'batch_sample_limit':256,
+          'published_state_age_ms':max(0.,now-self.latest_at)*1000 if self.latest_at else 0.,
+          'current_state_age_ms':max(0.,now-self.current_at)*1000 if self.current_at else 0.,
+          'journal_compressed_bytes':self.bytes,'journal_uncompressed_bytes':self.uncompressed_bytes,
           'physics_changed':False,'status':'running' if self.playing else 'pausing' if self.calculating else 'paused'}
  def publish(self,reply,record=False):
   # condition held by the caller. Every published pose is a native accepted
   # state; intermediate calls are retained as an exact replay command batch.
   if record:
    self.write({'request':{'op':'advance_batch','steps':self.pending_commands},'response':reply,'stream':self.metrics()})
-  self.pending_commands=[];self.latest=self.current=reply;self.frame_id+=1;self.last_publish=time.monotonic();self.condition.notify_all()
+  self.pending_commands=[];self.latest=self.current=reply;self.frame_id+=1;self.last_publish=time.monotonic();self.latest_at=self.current_at or self.last_publish;self.condition.notify_all()
  def manual(self,command):
   with self.condition:
    if self.closed:raise ValueError('Session closed')
@@ -59,7 +66,7 @@ class Session:
    self.calculating=True
   try:
    reply=self.call(command)
-   with self.condition:self.publish(reply)
+   with self.condition:self.current_at=time.monotonic();self.publish(reply)
    return reply
   finally:
    with self.condition:self.calculating=False;self.condition.notify_all()
@@ -73,7 +80,7 @@ class Session:
     if type(target) not in (int,float) or not 0<target<=2:raise ValueError('Target time must be within two physical seconds')
     ticks=round(target/dt)
     if abs(ticks*dt-target)>1e-8 or ticks<=state['ticks']:raise ValueError('Target must be a later native tick boundary')
-    if not self.playing:self.started=time.monotonic();self.started_time=state['time_s'];self.elapsed_s=0.;self.max_batch_s=0.
+    if not self.playing:self.started=time.monotonic();self.started_time=state['time_s'];self.elapsed_s=0.;self.max_batch_s=0.;self.batch_samples.clear()
     self.target_ticks=ticks
    elif self.playing or self.calculating:self.elapsed_s=max(0.,time.monotonic()-self.started)
    self.playing=running;self.condition.notify_all()
@@ -108,6 +115,7 @@ class Session:
     reply=self.call({'op':'advance','steps':steps},record=False);cost=time.monotonic()-start
     with self.condition:
      self.calculating=False;self.current=reply;self.elapsed_s=max(0.,time.monotonic()-self.started);self.batch_cost_s=.5*self.batch_cost_s+.5*cost/steps;self.max_batch_s=max(self.max_batch_s,cost)
+     self.current_at=time.monotonic();self.batch_samples.append(cost)
      self.pending_commands.append(steps)
      if not reply['ok'] or reply['state']['ticks']>=self.target_ticks:self.playing=False
      # Keep only the latest frame in memory. Publish at most 30 Hz plus an
