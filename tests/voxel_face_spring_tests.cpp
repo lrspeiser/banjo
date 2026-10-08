@@ -5,10 +5,11 @@
 #include <stdexcept>
 using namespace banjo;
 namespace {
+RigidJobExecution execution=RigidJobExecution::ThreadPool;
 void check(bool value,const char *why){if(!value)throw std::runtime_error(why);}
 double axis(Vec3 a,Vec3 b){return dot(a,b);}
 void oracle(double damping,double initial_extension){
-    JoltWorld world(0);world.setGravity({});world.setContactSolverIterations(96,4);
+    JoltWorld world(0,{},execution);world.setGravity({});world.setContactSolverIterations(96,4);
     auto material=makeReferenceMaterial(MaterialPreset::Iron);material.model=MaterialModel::RigidOnly;
     world.addBox({1,{.1,.1,.1},material,{{-.06,0,0},{},{-.1,0,0},{}},false});
     world.addBox({2,{.1,.1,.1},material,{{ .06,0,0},{},{ .1,0,0},{}},false});
@@ -44,7 +45,7 @@ void oracle(double damping,double initial_extension){
     std::cout<<"extension="<<initial_extension<<" damping="<<damping<<" physical_j="<<physical<<" numerical_elastic_j="<<numerical_elastic<<" numerical_velocity_j="<<numerical_velocity<<" residual_j="<<residual<<'\n';
 }
 void torsion(double damping){
-    JoltWorld world(0);world.setGravity({});world.setContactSolverIterations(96,4);
+    JoltWorld world(0,{},execution);world.setGravity({});world.setContactSolverIterations(96,4);
     auto material=makeReferenceMaterial(MaterialPreset::Iron);material.model=MaterialModel::RigidOnly;
     world.addBox({1,{.1,.1,.1},material,{{-.06,0,0},{},{},{-.1,0,0}},false});
     world.addBox({2,{.1,.1,.1},material,{{ .06,0,0},{},{},{ .1,0,0}},false});
@@ -69,7 +70,7 @@ void torsion(double damping){
     std::cout<<"torsion damping="<<damping<<" residual_j="<<residual<<'\n';
 }
 void nearest_orientation(){
-    JoltWorld world(0);world.setGravity({});
+    JoltWorld world(0,{},execution);world.setGravity({});
     auto material=makeReferenceMaterial(MaterialPreset::Iron);material.model=MaterialModel::RigidOnly;
     world.addBox({1,{.1,.1,.1},material,{{-.06,0,0},{},{},{}},false});
     world.addBox({2,{.1,.1,.1},material,{{ .06,0,0},{},{},{}},false});
@@ -80,7 +81,7 @@ void nearest_orientation(){
     check(face.rotation_error_cs_rad.x==-2,"native orientation tie chooses negative identity target");
 }
 void contact_oracle(bool fixed,double friction){
-    JoltWorld world(0);world.setGravity({});world.configureVoxelContacts(.004);
+    JoltWorld world(0,{},execution);world.setGravity({});world.configureVoxelContacts(.004);
     world.setContactSolverIterations(96,4);world.setContactImpulseObservationsEnabled(true);
     auto material=makeReferenceMaterial(MaterialPreset::Iron);material.model=MaterialModel::RigidOnly;
     material.static_friction=material.dynamic_friction=material.friction=friction;
@@ -141,7 +142,7 @@ void contact_oracle(bool fixed,double friction){
     std::cout<<"contact fixed="<<fixed<<" friction="<<friction<<" residual_j="<<residual<<" impulse_n_s="<<length(impulse)<<'\n';
 }
 void gravity_oracle(){
-    JoltWorld world(0);world.setGravity({0,-9.81,0});world.setContactImpulseObservationsEnabled(true);
+    JoltWorld world(0,{},execution);world.setGravity({0,-9.81,0});world.setContactImpulseObservationsEnabled(true);
     auto material=makeReferenceMaterial(MaterialPreset::Iron);material.model=MaterialModel::RigidOnly;
     world.addBox({1,{.1,.1,.1},material,{{0,10,0},{},{},{}},false});world.setContinuousCollision(1,false);
     const auto before=world.mechanicalState(1);world.step(1./960);const auto after=world.mechanicalState(1);
@@ -154,4 +155,4 @@ void gravity_oracle(){
     std::cout<<"gravity active impulse_n_s="<<length(impulse)<<" sleeping impulse_n_s=0\n";
 }
 }
-int main(){try{for(double extension:{0.,.01}){oracle(0,extension);oracle(20,extension);}torsion(0);torsion(.005);nearest_orientation();for(bool fixed:{false,true})for(double friction:{0.,.4})contact_oracle(fixed,friction);gravity_oracle();return 0;}catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(){try{for(auto policy:{RigidJobExecution::ThreadPool,RigidJobExecution::Inline}){execution=policy;std::cout<<"execution="<<(policy==RigidJobExecution::Inline?"inline":"thread-pool")<<'\n';for(double extension:{0.,.01}){oracle(0,extension);oracle(20,extension);}torsion(0);torsion(.005);nearest_orientation();for(bool fixed:{false,true})for(double friction:{0.,.4})contact_oracle(fixed,friction);gravity_oracle();}return 0;}catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}

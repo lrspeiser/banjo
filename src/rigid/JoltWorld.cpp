@@ -10,6 +10,7 @@
 #include <Jolt/RegisterTypes.h>
 #include <Jolt/Core/Factory.h>
 #include <Jolt/Core/JobSystemThreadPool.h>
+#include <Jolt/Core/JobSystemSingleThreaded.h>
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyLock.h>
@@ -821,7 +822,7 @@ void ensureJoltRuntime() { static JoltRuntime runtime; }
 
 class JoltWorld::Impl {
 public:
-    explicit Impl(int requested_workers=-1,RigidContactCapacity capacity={}) : impact_collector_(tick_, contact_states_,external_pairs_,ground_suspended_) {
+    explicit Impl(int requested_workers=-1,RigidContactCapacity capacity={},RigidJobExecution execution=RigidJobExecution::ThreadPool) : impact_collector_(tick_, contact_states_,external_pairs_,ground_suspended_) {
         if(capacity.body_pairs<128||capacity.body_pairs>262144||capacity.constraints<64||capacity.constraints>65536)
             throw std::invalid_argument("contact capacity bounds exceeded");
         contact_diagnostics_.capacity=capacity;
@@ -841,7 +842,10 @@ public:
             std::max(1U, std::thread::hardware_concurrency());
         const unsigned worker_threads =
             hardware_threads > 1U ? hardware_threads - 1U : 1U;
-        job_system_ = std::make_unique<JPH::JobSystemThreadPool>(
+        if(execution==RigidJobExecution::Inline){
+            if(requested_workers!=0)throw std::invalid_argument("inline native jobs require zero workers");
+            job_system_=std::make_unique<JPH::JobSystemSingleThreaded>(JPH::cMaxPhysicsJobs);
+        }else job_system_ = std::make_unique<JPH::JobSystemThreadPool>(
             JPH::cMaxPhysicsJobs,
             JPH::cMaxPhysicsBarriers,
             requested_workers<0?int(worker_threads):requested_workers);
@@ -1335,7 +1339,7 @@ public:
     ObjectVsBroadPhaseLayerFilter object_vs_broad_phase_filter_;
     ObjectLayerPairFilter object_pair_filter_;
     std::unique_ptr<JPH::TempAllocatorImpl> temp_allocator_;
-    std::unique_ptr<JPH::JobSystemThreadPool> job_system_;
+    std::unique_ptr<JPH::JobSystem> job_system_;
     std::unique_ptr<JPH::PhysicsSystem> physics_;
     std::unordered_map<MatterBodyId, BodyContactState> contact_states_;
     std::set<std::pair<MatterBodyId,MatterBodyId>> external_pairs_;
@@ -1517,9 +1521,9 @@ JoltWorld::JoltWorld(unsigned workers) {
     if(workers>64)throw std::invalid_argument("worker thread budget exceeded");
     impl_=std::make_unique<Impl>(int(workers));
 }
-JoltWorld::JoltWorld(unsigned workers,RigidContactCapacity capacity) {
+JoltWorld::JoltWorld(unsigned workers,RigidContactCapacity capacity,RigidJobExecution execution) {
     if(workers>64)throw std::invalid_argument("worker thread budget exceeded");
-    impl_=std::make_unique<Impl>(int(workers),capacity);
+    impl_=std::make_unique<Impl>(int(workers),capacity,execution);
 }
 JoltWorld::~JoltWorld() = default;
 JoltWorld::JoltWorld(JoltWorld &&) noexcept = default;

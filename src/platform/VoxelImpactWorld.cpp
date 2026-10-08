@@ -20,12 +20,26 @@ double scalar(const Json &j,const char *key,double fallback,double lo,double hi)
 }
 double quadratic(Vec3 k,Vec3 x){return .5*(k.x*x.x*x.x+k.y*x.y*x.y+k.z*x.z*x.z);}
 MaterialDefinition contact(MaterialDefinition m){m.model=MaterialModel::RigidOnly;return m;}
+RigidContactCapacity contactCapacity(const Json &d,VoxelExecution storage){
+    if(storage==VoxelExecution::Reference)return {32768,16384};
+    const double requested=scalar(d,"resolution",8,4,16);
+    if(requested!=4&&requested!=8&&requested!=12&&requested!=16)
+        throw std::invalid_argument("resolution must be 4, 8, 12 or 16");
+    // Allocation only: leave laws, ordering, iteration and admission unchanged.
+    // This is headroom for the bounded scene, not a claim about arbitrary worlds.
+    // Jolt capacity errors still refuse and restore the trial; never omit contacts.
+    const unsigned cells=unsigned(requested*requested)+32+11;
+    unsigned pairs=2048,constraints=1024;
+    while(pairs<cells*16)pairs*=2;
+    while(constraints<cells*8)constraints*=2;
+    return {pairs,constraints};
+}
 }
 struct VoxelImpactWorld::Impl {
     struct Cell {unsigned object;MatterBodyId id;Vec3 size,initial;double mass;std::string material;bool fixed;};
     struct Bond {unsigned a,b,joint;double area,iy,iz,width,height,strength,shear,gc;Vec3 k,r,damping,rotation_damping;bool brittle,live{true};double energy{};};
     struct Pair {unsigned a,b;int bond{-1};};
-    JoltWorld world{0,{32768,16384}};
+    JoltWorld world;
     Json declaration,events=Json::array();std::vector<Cell> cells;std::vector<Bond> bonds;std::vector<Pair> internal;
     double linear_velocity_quadratic{},peak_spin{};unsigned spin_limit_samples{};
     double material_damping{},implicit_elastic_loss{},spring_endpoint_work{},spring_geometry_change{},spring_residual_work{},max_spring_residual_n{};
@@ -83,7 +97,8 @@ struct VoxelImpactWorld::Impl {
             internal.push_back({a,it->second,bond});
         }
     }
-    explicit Impl(const Json &d):declaration(d){
+    explicit Impl(const Json &d,VoxelExecution storage):world(0,contactCapacity(d,storage),
+        storage==VoxelExecution::Reference?RigidJobExecution::ThreadPool:RigidJobExecution::Inline),declaration(d){
         const std::set<std::string> keys{"sheet","ball","mass_kg","height_m","thickness_m","resolution","support_gap_m","offset_x_m","offset_z_m","dt_s","ball_enabled","gravity_m_s2","solver_iterations"};
         for(auto i=d.begin();i!=d.end();++i)if(!keys.contains(i.key()))throw std::invalid_argument("unknown voxel experiment field");
         const auto sheet=preset(d.value("sheet",std::string("glass"))),ball=preset(d.value("ball",std::string("iron")));
@@ -216,7 +231,7 @@ struct VoxelImpactWorld::Impl {
         max_wall_ms=std::max(max_wall_ms,std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count());
     }
 };
-VoxelImpactWorld::VoxelImpactWorld(const std::string &source):impl_(std::make_unique<Impl>(Json::parse(source))){}
+VoxelImpactWorld::VoxelImpactWorld(const std::string &source,VoxelExecution storage):impl_(std::make_unique<Impl>(Json::parse(source),storage)){}
 VoxelImpactWorld::~VoxelImpactWorld()=default;
 void VoxelImpactWorld::step(unsigned count){if(count<1||count>64||impl_->time+count*impl_->dt>4.000001)throw std::invalid_argument("bounded steps/duration exceeded");for(unsigned i=0;i<count;++i)impl_->step();}
 std::string VoxelImpactWorld::snapshotJson() const {

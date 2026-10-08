@@ -92,6 +92,7 @@ struct RigidConvexDescription {
 };
 
 enum class PairContactOwner { Jolt, External };
+enum class RigidJobExecution { ThreadPool, Inline };
 
 struct RigidContactCapacity {
     unsigned body_pairs{16384};
@@ -231,7 +232,8 @@ class JoltWorld {
 public:
     JoltWorld();
     explicit JoltWorld(unsigned worker_threads);
-    JoltWorld(unsigned worker_threads,RigidContactCapacity capacity);
+    JoltWorld(unsigned worker_threads,RigidContactCapacity capacity,
+              RigidJobExecution execution=RigidJobExecution::ThreadPool);
     ~JoltWorld();
 
     JoltWorld(const JoltWorld &) = delete;

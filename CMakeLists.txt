@@ -2102,6 +2102,9 @@ if(BANJO_BUILD_TESTS)
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_FOUND)
         if(TARGET banjo_voxel_world_run)
+            add_test(NAME banjo_voxel_execution_tests COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_execution_test.py $<TARGET_FILE:banjo_voxel_world_run>)
+            set_tests_properties(banjo_voxel_execution_tests PROPERTIES TIMEOUT 300 LABELS "native;voxel;performance")
             add_test(NAME banjo_voxel_world_tests COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_world_test.py --native $<TARGET_FILE:banjo_voxel_world_run>)
             set_tests_properties(banjo_voxel_world_tests PROPERTIES TIMEOUT 600 LABELS "native;voxel;experimental")
