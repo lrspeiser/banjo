@@ -97,6 +97,7 @@ add_library(
     src/physics/CompliantAdvance.cpp
     src/physics/ElasticNewton.cpp
     src/physics/RotationStrain.cpp
+    src/physics/RigidStepWork.cpp
     src/physics/MechanicalAccounting.cpp
     src/physics/DoubleRigidDynamics.cpp
     src/physics/DoubleFixedSource.cpp
@@ -237,6 +238,8 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
         GIT_SHALLOW TRUE
         SOURCE_SUBDIR Build)
     FetchContent_MakeAvailable(JoltPhysics)
+    include(cmake/JoltForceObservation.cmake)
+    banjo_jolt_force_observation(Jolt "${joltphysics_SOURCE_DIR}")
     if(BANJO_JOLT_CONTINUOUS_SMALL_ROTATION)
         include(cmake/JoltSmallRotation.cmake)
         banjo_jolt_continuous_small_rotation(Jolt "${joltphysics_SOURCE_DIR}")
@@ -313,6 +316,10 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
     if(BANJO_BUILD_TESTS)
         add_executable(banjo_voxel_face_spring_tests tests/voxel_face_spring_tests.cpp)
         add_executable(banjo_rotation_strain_tests tests/rotation_strain_tests.cpp)
+        add_executable(banjo_rigid_step_work_tests tests/rigid_step_work_tests.cpp)
+        target_link_libraries(banjo_rigid_step_work_tests PRIVATE banjo_core)
+        banjo_enable_warnings(banjo_rigid_step_work_tests)
+        add_test(NAME banjo_rigid_step_work_tests COMMAND banjo_rigid_step_work_tests)
         target_link_libraries(banjo_rotation_strain_tests PRIVATE banjo_core)
         banjo_enable_warnings(banjo_rotation_strain_tests)
         add_test(NAME banjo_rotation_strain_tests COMMAND banjo_rotation_strain_tests)

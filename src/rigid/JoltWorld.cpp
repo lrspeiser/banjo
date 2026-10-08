@@ -1361,6 +1361,32 @@ public:
     ImpactCollector impact_collector_;
     std::vector<JoltWorld::ContactImpulseObservation> contact_impulses_;
     Vec3 observed_gravity_impulse_{};
+    bool force_phase_enabled_{};
+    std::vector<JoltWorld::ForcePhaseObservation> force_phase_;
+    std::unordered_map<JPH::uint32,std::size_t> force_phase_slot_;
+    static void observeForcePhase(void *context,const JPH::Body &body,JPH::Vec3Arg v,
+        JPH::Vec3Arg w,JPH::Vec3Arg gyro,JPH::Vec3Arg gravity_delta){
+        auto &self=*static_cast<Impl *>(context);
+        const auto found=self.force_phase_slot_.find(body.GetID().GetIndexAndSequenceNumber());
+        if(found==self.force_phase_slot_.end())return;
+        auto &out=self.force_phase_[found->second];
+        out.before.motion.linear_velocity_m_s=fromJoltVector(v);
+        out.before.motion.angular_velocity_rad_s=fromJoltVector(w);
+        out.spin_after_gyro_rad_s=fromJoltVector(gyro);
+        out.velocity_after_forces_m_s=fromJoltVector(body.GetLinearVelocity());
+        out.spin_after_forces_rad_s=fromJoltVector(body.GetAngularVelocity());
+        out.gravity_impulse_n_s=fromJoltVector(gravity_delta)/body.GetMotionProperties()->GetInverseMass();
+        out.force_scheduled=true;
+    }
+    static void observeLimitPhase(void *context,const JPH::Body &body,JPH::Vec3Arg v,JPH::Vec3Arg w){
+        auto &self=*static_cast<Impl *>(context);
+        const auto found=self.force_phase_slot_.find(body.GetID().GetIndexAndSequenceNumber());
+        if(found==self.force_phase_slot_.end())return;
+        auto &out=self.force_phase_[found->second];
+        out.velocity_after_solver_m_s=fromJoltVector(v);out.spin_after_solver_rad_s=fromJoltVector(w);
+        out.velocity_after_limit_m_s=fromJoltVector(body.GetLinearVelocity());
+        out.spin_after_limit_rad_s=fromJoltVector(body.GetAngularVelocity());out.integration_scheduled=true;
+    }
     std::uint64_t contact_plan_epoch_{};
     JPH::BodyID floor_id_;
     std::unordered_map<MatterBodyId,JPH::Ref<JPH::Constraint>> pins_;
@@ -1441,6 +1467,7 @@ public:
         unsigned manifolds{},points{},speculative{};
         std::vector<JoltWorld::ContactImpulseObservation> contact_impulses;
         Vec3 gravity_impulse{};
+        std::vector<JoltWorld::ForcePhaseObservation> force_phase;
     };
     TrialConfiguration captureTrialConfiguration() const {
         TrialConfiguration out{physics_->GetConstraints(),joints_,gear_strength_,stripped_gears_,{},last_dt_s,before_step_,cache_readable_};
@@ -1449,6 +1476,7 @@ public:
         out.speculative=impact_collector_.speculative_manifolds.load(std::memory_order_relaxed);
         out.contact_impulses=contact_impulses_;
         out.gravity_impulse=observed_gravity_impulse_;
+        out.force_phase=force_phase_;
         for (const auto &[id,joint]:joints_) {
             (void)id;
             if (joint.kind!=JointKind::Link) continue;
@@ -1469,6 +1497,7 @@ public:
         impact_collector_.speculative_manifolds.store(saved.speculative,std::memory_order_relaxed);
         impact_collector_.clearContactGeometry();contact_impulses_=std::move(saved.contact_impulses);
         observed_gravity_impulse_=saved.gravity_impulse;
+        force_phase_=std::move(saved.force_phase);
     }
 };
 
@@ -2986,6 +3015,13 @@ void JoltWorld::setContactImpulseObservationsEnabled(bool enabled){
 }
 std::span<const JoltWorld::ContactImpulseObservation> JoltWorld::contactImpulseObservations() const {return impl_->contact_impulses_;}
 Vec3 JoltWorld::observedGravityImpulseN_s() const {return impl_->observed_gravity_impulse_;}
+void JoltWorld::setForcePhaseObservationsEnabled(bool enabled){
+    impl_->requireConfigurationMutable();impl_->force_phase_enabled_=enabled;
+    impl_->force_phase_.clear();impl_->force_phase_slot_.clear();
+    impl_->physics_->SetBanjoForceObserver(enabled?&Impl::observeForcePhase:nullptr,impl_.get());
+    impl_->physics_->SetBanjoLimitObserver(enabled?&Impl::observeLimitPhase:nullptr,impl_.get());
+}
+std::span<const JoltWorld::ForcePhaseObservation> JoltWorld::forcePhaseObservations() const {return impl_->force_phase_;}
 
 PairContactOwner JoltWorld::pairContactOwner(MatterBodyId a,MatterBodyId b) const {
     if(a==b||!contains(a)||!contains(b))throw std::invalid_argument("contact ownership requires two distinct registered bodies");
@@ -4729,6 +4765,16 @@ void JoltWorld::step(double fixed_dt_s) {
     auto &collector=impl_->impact_collector_;collector.manifolds=0;collector.points=0;collector.speculative_manifolds=0;
     collector.clearContactGeometry();
     impl_->observed_gravity_impulse_={};
+    if(impl_->force_phase_enabled_){
+        if(impl_->bodies_.size()>2048)throw std::runtime_error("native force phase observation exceeds body budget");
+        impl_->force_phase_.clear();impl_->force_phase_slot_.clear();
+        for(const auto id:activeBodyIds()){
+            const auto state=mechanicalState(id);if(state.mass_kg==0)continue;
+            const auto index=impl_->force_phase_.size();
+            impl_->force_phase_slot_.emplace(impl_->bodies_.at(id).GetIndexAndSequenceNumber(),index);
+            impl_->force_phase_.push_back({id,state,state.motion.angular_velocity_rad_s,state.motion.linear_velocity_m_s,state.motion.angular_velocity_rad_s,{},false});
+        }
+    }
     if(collector.contact_impulses_enabled){
         JPH::BodyIDVector active;impl_->physics_->GetActiveBodies(JPH::EBodyType::RigidBody,active);
         std::sort(active.begin(),active.end());

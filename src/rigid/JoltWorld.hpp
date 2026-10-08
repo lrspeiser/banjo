@@ -511,6 +511,22 @@ public:
     // using native float gravity/factor/duration and actual solver mass.
     // Sleeping bodies receive none. Other applied forces are not included.
     Vec3 observedGravityImpulseN_s() const;
+    struct ForcePhaseObservation {
+        MatterBodyId body{};
+        RigidMechanicalState before{};
+        Vec3 spin_after_gyro_rad_s{},velocity_after_forces_m_s{},spin_after_forces_rad_s{};
+        Vec3 gravity_impulse_n_s{};
+        bool force_scheduled{};
+        Vec3 velocity_after_solver_m_s{},spin_after_solver_rad_s{};
+        Vec3 velocity_after_limit_m_s{},spin_after_limit_rad_s{};
+        bool integration_scheduled{};
+    };
+    // Actual native before/after force velocities, observed inside Jolt before
+    // constraints, and actual solver/velocity-limit stages before integration.
+    // Bounded, read-only and restored with rejected native trials.
+    // Per-body inertia/geometry is frozen at this force phase, not end-of-step.
+    void setForcePhaseObservationsEnabled(bool enabled);
+    std::span<const ForcePhaseObservation> forcePhaseObservations() const;
     // Opt-in observation only. Includes support/persisted contacts for reduced
     // fracture experiments; impulses remain estimates, not measured reactions.
     void setDetailedImpactObservations(bool enabled);

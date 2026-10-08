@@ -145,15 +145,24 @@ void contact_oracle(bool fixed,double friction){
 }
 void gravity_oracle(){
     JoltWorld world(0,{},execution);world.setGravity({0,-9.81,0});world.setContactImpulseObservationsEnabled(true);
+    world.setForcePhaseObservationsEnabled(true);
     auto material=makeReferenceMaterial(MaterialPreset::Iron);material.model=MaterialModel::RigidOnly;
     world.addBox({1,{.1,.1,.1},material,{{0,10,0},{},{},{}},false});world.setContinuousCollision(1,false);
     const auto before=world.mechanicalState(1);world.step(1./960);const auto after=world.mechanicalState(1);
     const auto impulse=world.observedGravityImpulseN_s();
+    const auto phase=world.forcePhaseObservations().front();check(phase.body==1&&phase.force_scheduled,"actual native force stage is observed");
+    check(length(phase.before.motion.linear_velocity_m_s-before.motion.linear_velocity_m_s)==0,"native observer retains actual initial velocity");
+    check(length(phase.velocity_after_forces_m_s-after.motion.linear_velocity_m_s)==0,"native observer sees actual final force velocity before constraints");
+    check(length(phase.gravity_impulse_n_s-impulse)==0,"native observed force schedule equals gravity audit");
+    check(phase.integration_scheduled&&length(phase.velocity_after_solver_m_s-after.motion.linear_velocity_m_s)==0,"actual native integration stage observed");
     check(length(impulse-after.mass_kg*(after.motion.linear_velocity_m_s-before.motion.linear_velocity_m_s))<1e-10,"native gravity scheduled impulse matches freefall momentum");
     check(!world.runReversibleTrial([&]{world.step(1./480);return false;}),"gravity audit trial refuses");
     check(length(world.observedGravityImpulseN_s()-impulse)==0,"gravity audit rolls back exactly");
+    check(length(world.forcePhaseObservations().front().velocity_after_forces_m_s-phase.velocity_after_forces_m_s)==0,"actual force stage rolls back exactly");
     world.sleep(1);world.step(1./960);
     check(length(world.observedGravityImpulseN_s())==0,"sleeping body receives no scheduled gravity impulse");
+    check(!world.forcePhaseObservations().front().force_scheduled,"sleeping cached force stage is not reported again");
+    check(!world.forcePhaseObservations().front().integration_scheduled,"sleeping integration stage is not counted again");
     std::cout<<"gravity active impulse_n_s="<<length(impulse)<<" sleeping impulse_n_s=0\n";
 }
 void log_gradient_impulse_oracle(){
@@ -177,5 +186,24 @@ void log_gradient_impulse_oracle(){
     check(world.snapshot(2).orientation_world.w==saved.orientation_world.w,"log frame rollback");
     std::cout<<"log finite-angle torque residual_nm="<<length(impulse_b/h+gradient)<<" reaction_residual_nms="<<length(impulse_a+impulse_b)<<'\n';
 }
+void limit_observation_oracle(){
+    JoltWorld world(0,{},execution);world.setGravity({});world.setForcePhaseObservationsEnabled(true);
+    auto material=makeReferenceMaterial(MaterialPreset::Iron);material.model=MaterialModel::RigidOnly;
+    for(unsigned id:{1u,2u})world.addBox({id,{.1,.1,.1},material,{{},{},{},{}},false});
+    world.setPairContactOwner(1,2,PairContactOwner::External);
+    world.addFaceSpring({1,2,{},{1,0,0},{0,1,0},{1000,1000,1000},{1e8,1e8,1e8},{},{},false});
+    auto state=world.snapshot(2);state.orientation_world={std::cos(.5),std::sin(.5),0,0};world.applyRigidState(2,state);
+    world.step(1e-5);bool capped=false;
+    for(const auto &p:world.forcePhaseObservations()){
+        check(p.integration_scheduled,"native cap observation scheduled");
+        check(length(p.spin_after_limit_rad_s)<=1000.001,"native cap bound retained");
+        capped|=length(p.spin_after_solver_rad_s)>length(p.spin_after_limit_rad_s)+1;
+    }
+    check(capped,"oracle must exercise a real native angular speed cap");
+    const auto saved=world.forcePhaseObservations().front();
+    check(!world.runReversibleTrial([&]{world.step(1e-5);return false;}),"native cap trial refuses");
+    check(length(world.forcePhaseObservations().front().spin_after_solver_rad_s-saved.spin_after_solver_rad_s)==0,"actual pre-limit velocities roll back");
+    std::cout<<"native angular cap observed and restored\n";
 }
-int main(){try{for(auto policy:{RigidJobExecution::ThreadPool,RigidJobExecution::Inline}){execution=policy;std::cout<<"execution="<<(policy==RigidJobExecution::Inline?"inline":"thread-pool")<<'\n';for(bool law:{false,true}){log_gradient=law;for(double extension:{0.,.01}){oracle(0,extension);oracle(20,extension);}torsion(0);torsion(.005);}nearest_orientation();for(bool fixed:{false,true})for(double friction:{0.,.4})contact_oracle(fixed,friction);gravity_oracle();log_gradient_impulse_oracle();}return 0;}catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}
+}
+int main(){try{for(auto policy:{RigidJobExecution::ThreadPool,RigidJobExecution::Inline}){execution=policy;std::cout<<"execution="<<(policy==RigidJobExecution::Inline?"inline":"thread-pool")<<'\n';for(bool law:{false,true}){log_gradient=law;for(double extension:{0.,.01}){oracle(0,extension);oracle(20,extension);}torsion(0);torsion(.005);}nearest_orientation();for(bool fixed:{false,true})for(double friction:{0.,.4})contact_oracle(fixed,friction);gravity_oracle();log_gradient_impulse_oracle();limit_observation_oracle();}return 0;}catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}

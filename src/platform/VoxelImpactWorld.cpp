@@ -1,6 +1,7 @@
 #include "platform/VoxelImpactWorld.hpp"
 #include "rigid/JoltWorld.hpp"
 #include "material/MaterialCatalog.hpp"
+#include "physics/RigidStepWork.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <chrono>
@@ -50,6 +51,48 @@ struct VoxelImpactWorld::Impl {
     double feature{},dt{},time{},initial_energy{},fracture{},discarded_elastic{},max_wall_ms{},peak_stress_ratio{};
     unsigned ticks{},broken{},substeps{},rejected{};Vec3 gravity;MechanicalTotals initial,totals;
     bool log_faces{};
+    RigidStepWork work_total{};double elastic_change_j{},ledger_change_j{};Vec3 full_angular_residual{};
+    Json refused_work=nullptr;
+    static Json workJson(const RigidStepWork &w){return {
+        {"gravity_work_j",w.gravity_work_j},{"gyro_kick_j",w.gyro_kick_j},{"other_force_work_j",w.other_force_work_j},
+        {"spring_work_j",w.spring_work_j},{"contact_work_j",w.contact_work_j},{"solver_residual_work_j",w.solver_residual_work_j},
+        {"rotation_drift_j",w.rotation_drift_j},{"potential_change_j",w.potential_change_j},{"kinetic_change_j",w.kinetic_change_j},
+        {"energy_residual_j",w.energy_residual_j},{"solver_linear_residual_n_s",v(w.solver_linear_residual_n_s)},
+        {"solver_angular_residual_n_m_s",v(w.solver_angular_residual_n_m_s)},{"angular_drift_n_m_s",v(w.angular_drift_n_m_s)},
+        {"velocity_limit_work_j",w.velocity_limit_work_j},{"post_integration_work_j",w.post_integration_work_j},
+        {"velocity_limit_impulse_n_s",v(w.velocity_limit_impulse_n_s)},{"velocity_limit_couple_n_m_s",v(w.velocity_limit_couple_n_m_s)}};}
+    RigidStepWork measureWork(const std::vector<RigidSnapshot> &before,
+        const std::vector<RigidMechanicalState> &after,const std::vector<JoltWorld::FaceSpringObservation> &faces_before,
+        const std::vector<JoltWorld::FaceSpringObservation> &faces_after)const{
+        std::vector<RigidStepWorkInput> indexed(cells.size()),dynamic;
+        for(const auto &p:world.forcePhaseObservations()){
+            const auto i=std::size_t(p.body-100);if(i>=cells.size()||cells[i].fixed)throw std::runtime_error("unknown native force phase body");
+            indexed[i]={p.before,after[i],p.spin_after_gyro_rad_s,p.velocity_after_forces_m_s,p.spin_after_forces_rad_s,p.gravity_impulse_n_s};
+            indexed[i].velocity_after_solver_m_s=p.velocity_after_solver_m_s;indexed[i].spin_after_solver_rad_s=p.spin_after_solver_rad_s;
+            indexed[i].velocity_after_limit_m_s=p.velocity_after_limit_m_s;indexed[i].spin_after_limit_rad_s=p.spin_after_limit_rad_s;
+            indexed[i].integration_observed=p.integration_scheduled;
+        }
+        const auto push=[&](unsigned a,unsigned b,Vec3 point,Vec3 impulse,bool spring){
+            auto &ia=indexed[a],&ib=indexed[b];
+            if(spring){ia.spring_impulse_n_s-=impulse;ib.spring_impulse_n_s+=impulse;
+                ia.spring_couple_n_m_s-=cross(point-before[a].center_of_mass_world_m,impulse);ib.spring_couple_n_m_s+=cross(point-before[b].center_of_mass_world_m,impulse);}
+            else{ia.contact_impulse_n_s-=impulse;ib.contact_impulse_n_s+=impulse;
+                ia.contact_couple_n_m_s-=cross(point-before[a].center_of_mass_world_m,impulse);ib.contact_couple_n_m_s+=cross(point-before[b].center_of_mass_world_m,impulse);}
+        };
+        for(unsigned i=0;i<bonds.size();++i)if(bonds[i].live){const auto &b=bonds[i];const auto &g=faces_before[i],&s=faces_after[i];
+            const Vec3 linear=g.translation_axes_world[0]*s.linear_impulse_cs_n_s.x+g.translation_axes_world[1]*s.linear_impulse_cs_n_s.y+g.translation_axes_world[2]*s.linear_impulse_cs_n_s.z;
+            const Vec3 angular=g.rotation_axes_world[0]*s.angular_impulse_cs_n_m_s.x+g.rotation_axes_world[1]*s.angular_impulse_cs_n_m_s.y+g.rotation_axes_world[2]*s.angular_impulse_cs_n_m_s.z;
+            push(b.a,b.b,g.anchor_b_world_m,linear,true);indexed[b.a].spring_couple_n_m_s-=angular;indexed[b.b].spring_couple_n_m_s+=angular;
+        }
+        for(const auto &c:world.contactImpulseObservations()){
+            const unsigned a=unsigned(c.a-100),b=unsigned(c.b-100);if(a>=cells.size()||b>=cells.size())throw std::runtime_error("unknown work contact body");
+            for(const auto &p:c.points)push(a,b,p.point_world_m,c.normal_a_to_b*p.normal_impulse_n_s,false);
+            push(a,b,c.friction_point_world_m,c.friction_impulse_on_b_n_s,false);
+            indexed[a].contact_couple_n_m_s-=c.twist_impulse_on_b_n_m_s;indexed[b].contact_couple_n_m_s+=c.twist_impulse_on_b_n_m_s;
+        }
+        for(unsigned i=0;i<cells.size();++i)if(!cells[i].fixed){if(indexed[i].before.mass_kg<=0)throw std::runtime_error("native force phase observation missing");dynamic.push_back(indexed[i]);}
+        return auditRigidStepWork(dynamic,gravity);
+    }
     std::vector<unsigned> components() const {
         std::vector<unsigned> p(cells.size());std::iota(p.begin(),p.end(),0);
         auto root=[&](unsigned x){while(p[x]!=x){p[x]=p[p[x]];x=p[x];}return x;};
@@ -119,6 +162,7 @@ struct VoxelImpactWorld::Impl {
         feature=thickness;world.configureVoxelContacts(thickness);
         world.setImpactObservationsEnabled(false);
         world.setContactImpulseObservationsEnabled(true);
+        world.setForcePhaseObservationsEnabled(true);
         // Supports/floor are declared anchored coarse voxels; no fixed sheet edges.
         cell(3,{.06,.5,.46},{-gap/2,.25,0},MaterialPreset::Concrete,true);
         cell(4,{.06,.5,.46},{gap/2,.25,0},MaterialPreset::Concrete,true);
@@ -145,24 +189,33 @@ struct VoxelImpactWorld::Impl {
         for(unsigned i=0;i<bonds.size();++i)if(bonds[i].live){const auto &b=bonds[i];faces_before[i]=world.faceSpringObservation(b.joint);before_elastic+=quadratic(b.k,faces_before[i].displacement_cs_m)+quadratic(b.r,faces_before[i].rotation_cs_rad);}
         observation_wall_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-observation_start).count();
         const double before=totals.mechanicalEnergy()+before_elastic;
-        double candidateEnergy=0;MechanicalTotals candidateTotals;
+        double candidateEnergy=0,after_elastic=0;MechanicalTotals candidateTotals;RigidStepWork candidateWork;
+        std::vector<RigidMechanicalState> candidate_states;
         const auto trial_start=std::chrono::steady_clock::now();
         const bool accepted=world.runReversibleTrial([&]{
             const auto native_start=std::chrono::steady_clock::now();world.step(h);
             const auto totals_start=std::chrono::steady_clock::now();
             native_step_wall_ms+=std::chrono::duration<double,std::milli>(totals_start-native_start).count();
-            candidateTotals=world.mechanicalTotals(gravity);double after_elastic=0;
+            candidateTotals={};candidate_states.clear();candidate_states.reserve(cells.size());
+            for(const auto &c:cells){const auto state=world.mechanicalState(c.id);candidate_states.push_back(state);candidateTotals+=measureRigidMechanics(state,gravity);}
+            after_elastic=0;
             const auto faces_start=std::chrono::steady_clock::now();
             totals_wall_ms+=std::chrono::duration<double,std::milli>(faces_start-totals_start).count();
             for(unsigned i=0;i<bonds.size();++i)if(bonds[i].live){const auto &b=bonds[i];faces_after[i]=world.faceSpringObservation(b.joint);after_elastic+=quadratic(b.k,faces_after[i].displacement_cs_m)+quadratic(b.r,faces_after[i].rotation_cs_rad);}
             candidate_faces_wall_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-faces_start).count();
             const double after=candidateTotals.mechanicalEnergy()+after_elastic;candidateEnergy=after;
+            candidateWork=measureWork(before_states,candidate_states,faces_before,faces_after);
             return std::isfinite(after)&&after-before<=1e-5*std::max(1.,std::abs(before))+1e-6&&after+fracture+discarded_elastic-initial_energy<=.1;
         });
         trial_wall_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-trial_start).count();
-        if(!accepted){++rejected;if(depth>=14)throw std::runtime_error("native integration energy gate refused at "+std::to_string(time)+" s: before="+std::to_string(before)+", candidate="+std::to_string(candidateEnergy)+", h="+std::to_string(h)+"; last accepted state retained");interval(h/2,depth+1);interval(h/2,depth+1);return;}
-        std::vector<RigidSnapshot> after_states;after_states.reserve(cells.size());for(unsigned i=0;i<cells.size();++i){const auto &c=cells[i];after_states.push_back(world.snapshot(c.id));if(!c.fixed){linear_velocity_quadratic+=.5*c.mass*lengthSquared(after_states[i].linear_velocity_m_s-before_states[i].linear_velocity_m_s);peak_spin=std::max(peak_spin,length(after_states[i].angular_velocity_rad_s));if(length(after_states[i].angular_velocity_rad_s)>=999.99)++spin_limit_samples;}}
-        Vec3 reaction{};
+        if(!accepted){++rejected;refused_work={{"time_s",time},{"dt_s",h},{"depth",depth},{"before_j",before},{"candidate_j",candidateEnergy},{"elastic_change_j",after_elastic-before_elastic},{"work",workJson(candidateWork)}};if(depth>=14)throw std::runtime_error("native integration energy gate refused at "+std::to_string(time)+" s: before="+std::to_string(before)+", candidate="+std::to_string(candidateEnergy)+", h="+std::to_string(h)+"; last accepted state retained");interval(h/2,depth+1);interval(h/2,depth+1);return;}
+        const auto add_work=[&](double RigidStepWork::*field){work_total.*field+=candidateWork.*field;};
+        for(auto field:{&RigidStepWork::gravity_work_j,&RigidStepWork::gyro_kick_j,&RigidStepWork::other_force_work_j,&RigidStepWork::spring_work_j,&RigidStepWork::contact_work_j,&RigidStepWork::solver_residual_work_j,&RigidStepWork::rotation_drift_j,&RigidStepWork::potential_change_j,&RigidStepWork::kinetic_change_j,&RigidStepWork::energy_residual_j,&RigidStepWork::velocity_limit_work_j,&RigidStepWork::post_integration_work_j})add_work(field);
+        work_total.solver_linear_residual_n_s+=candidateWork.solver_linear_residual_n_s;work_total.solver_angular_residual_n_m_s+=candidateWork.solver_angular_residual_n_m_s;work_total.angular_drift_n_m_s+=candidateWork.angular_drift_n_m_s;
+        work_total.velocity_limit_impulse_n_s+=candidateWork.velocity_limit_impulse_n_s;work_total.velocity_limit_couple_n_m_s+=candidateWork.velocity_limit_couple_n_m_s;
+        elastic_change_j+=after_elastic-before_elastic;ledger_change_j+=candidateEnergy-before;
+        std::vector<RigidSnapshot> after_states;after_states.reserve(cells.size());for(unsigned i=0;i<cells.size();++i){const auto &c=cells[i];after_states.push_back(candidate_states[i].motion);if(!c.fixed){linear_velocity_quadratic+=.5*c.mass*lengthSquared(after_states[i].linear_velocity_m_s-before_states[i].linear_velocity_m_s);peak_spin=std::max(peak_spin,length(after_states[i].angular_velocity_rad_s));if(length(after_states[i].angular_velocity_rad_s)>=999.99)++spin_limit_samples;}}
+        Vec3 reaction{};const auto support_angular_before=support_reaction_angular_impulse;
         for(const auto &contact:world.contactImpulseObservations()){
             const auto ai=unsigned(contact.a-100),bi=unsigned(contact.b-100);
             if(ai>=cells.size()||bi>=cells.size())throw std::runtime_error("voxel contact references an undeclared cell");
@@ -182,6 +235,8 @@ struct VoxelImpactWorld::Impl {
             ++contact_manifold_samples;contact_point_samples+=unsigned(contact.points.size());
         }
         support_reaction_impulse+=reaction;
+        Vec3 gravity_angular{};for(const auto &phase:world.forcePhaseObservations())gravity_angular+=cross(phase.before.motion.center_of_mass_world_m,phase.gravity_impulse_n_s);
+        full_angular_residual+=candidateTotals.angular_momentum_kg_m2_s-totals.angular_momentum_kg_m2_s-gravity_angular+(support_reaction_angular_impulse-support_angular_before);
         // Native gravity acts only on the start-of-Update active bodies.
         // Reactions above are ON the support; their negatives act on dynamics.
         const auto scheduled_gravity=world.observedGravityImpulseN_s();gravity_impulse+=scheduled_gravity;
@@ -260,6 +315,10 @@ std::string VoxelImpactWorld::snapshotJson() const {
     return Json{{"schema","banjo.voxel-impact.v1"},{"declaration",w.declaration},{"time_s",w.time},{"dt_s",w.dt},{"ticks",w.ticks},{"substeps",w.substeps},{"rejected_trials",w.rejected},{"cells",cells},{"objects",objects},{"events",w.events},
         {"diagnostics",{{"dynamic_mass_kg",mass},{"kinetic_j",w.totals.kinetic_energy_j},{"potential_j",w.totals.gravitational_potential_energy_j},{"elastic_j",elastic},{"fracture_j",w.fracture},{"fracture_overshoot_loss_j",w.discarded_elastic},{"unclosed_energy_j",w.totals.mechanicalEnergy()+elastic+w.fracture+w.discarded_elastic-w.initial_energy},{"linear_momentum_n_s",v(w.totals.linear_momentum_kg_m_s)},{"angular_momentum_kg_m2_s",v(w.totals.angular_momentum_kg_m2_s)},{"max_step_wall_ms",w.max_wall_ms},{"peak_stress_ratio",w.peak_stress_ratio},{"linear_velocity_quadratic_j",w.linear_velocity_quadratic},{"peak_spin_rad_s",w.peak_spin},{"native_spin_limit_samples",w.spin_limit_samples},{"spring_material_damping_j",w.material_damping},{"spring_implicit_elastic_loss_j",w.implicit_elastic_loss},{"spring_endpoint_work_j",w.spring_endpoint_work},{"spring_geometry_change_j",w.spring_geometry_change},{"spring_residual_work_j",w.spring_residual_work},{"max_spring_solver_residual_n",w.max_spring_residual_n},{"profile",{{"sweep_ms",w.sweep_wall_ms},{"trial_ms",w.trial_wall_ms},{"observation_ms",w.observation_wall_ms},{"native_step_ms",w.native_step_wall_ms},{"totals_ms",w.totals_wall_ms},{"candidate_faces_ms",w.candidate_faces_wall_ms}}}}},
         {"contact_audit",{{"normal_endpoint_work_j",w.contact_normal_work},{"friction_endpoint_work_j",w.contact_friction_work},{"twist_endpoint_work_j",w.contact_twist_work},{"support_reaction_impulse_n_s",v(w.support_reaction_impulse)},{"support_reaction_angular_impulse_n_m_s",v(w.support_reaction_angular_impulse)},{"gravity_impulse_n_s",v(w.gravity_impulse)},{"linear_momentum_residual_n_s",v(w.momentum_residual)},{"manifold_samples",w.contact_manifold_samples},{"point_samples",w.contact_point_samples},{"scope","Actual discrete native solver impulses at start-of-solve contact midpoints; endpoint work is diagnostic, not a closed energy balance. Gravity counts start-of-Update active bodies. Anchored reactions use world-origin moments; no dormant cache impulses or estimated launch velocities."}}},
+        {"step_work",{{"measured",Impl::workJson(w.work_total)},{"elastic_change_j",w.elastic_change_j},{"net_change_j",w.ledger_change_j},
+            {"closure_residual_j",w.ledger_change_j-w.work_total.kinetic_change_j-w.work_total.potential_change_j-w.elastic_change_j},
+            {"full_angular_residual_n_m_s",v(w.full_angular_residual)},{"last_rejected_trial",w.refused_work},
+            {"scope","Actual native force-phase velocities and shared-phase spring/contact work. Residual, gyro and rotation drift are signed numerical/unexplained terms, not heat. Algebraic closure is not material realism or solver conservation."}}},
         {"qualification",{{"calibrated",false},{"face_law",impl_->log_faces?"log-gradient":"native-motor"},{"model",impl_->log_faces?
             "Experimental SO(3) energy-gradient interfaces. Analytical torque gradients pass; full impacts still have unresolved energy refusals/losses. Not a realtime or calibrated material model.":
             "Passive finite-box native six-axis elastic interfaces. Finite-rotation/integration/full energy and angular momentum accounts remain unqualified."},

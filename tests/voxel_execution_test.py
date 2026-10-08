@@ -6,12 +6,14 @@ def physical(reply):
     result=copy.deepcopy(reply)
     result['state']['diagnostics'].pop('profile')
     result['state']['diagnostics'].pop('max_step_wall_ms')
+    if len(sys.argv)==3:result['state'].pop('step_work',None)
     return result
 
 exe=Path(sys.argv[1]).resolve()
+reference_exe=Path(sys.argv[2]).resolve() if len(sys.argv)==3 else exe
 for material in ['glass','oak','iron','ice']:
-    processes=[subprocess.Popen([str(exe),mode],stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,text=True) for mode in ['--serve','--serve-reference']]
+    processes=[subprocess.Popen([str(binary),mode],stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,text=True) for binary,mode in [(exe,'--serve'),(reference_exe,'--serve-reference')]]
     timings=[0.,0.]
     def request(command):
         replies=[]
@@ -34,6 +36,7 @@ for material in ['glass','oak','iron','ice']:
             'unclosed_energy_j':state['diagnostics']['unclosed_energy_j'],
             'linear_momentum_residual_n_s':state['contact_audit']['linear_momentum_residual_n_s'],
             'parity':'exact at every 16 host ticks; profiler excluded'}),flush=True)
+        if len(sys.argv)==3:print(json.dumps({'material':material,'new_step_work':state['step_work']}),flush=True)
     finally:
         for proc in processes:proc.terminate();proc.wait(timeout=5)
 print('PASS glass/oak/iron/ice execution parity through 2 s native impacts',flush=True)

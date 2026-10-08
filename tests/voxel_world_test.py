@@ -21,13 +21,18 @@ def experiment(declaration,duration):
    assert all(math.isfinite(audit[k]) for k in ['normal_endpoint_work_j','friction_endpoint_work_j','twist_endpoint_work_j'])
    assert all(math.isfinite(x) for k in ['support_reaction_impulse_n_s','support_reaction_angular_impulse_n_m_s','linear_momentum_residual_n_s'] for x in audit[k])
    assert audit['point_samples']>=audit['manifold_samples']>=0,'invalid actual contact counts'
+   work=state['step_work'];measured=work['measured']
+   assert abs(work['closure_residual_j'])<1e-7,'shared phase arithmetic ledger mismatch'
+   assert abs(measured['energy_residual_j'])<1e-7,'shared phase kinetic identity mismatch'
+   assert all(math.isfinite(x) for value in measured.values() for x in (value if isinstance(value,list) else [value])),'nonfinite work observation'
+   assert measured['velocity_limit_work_j']<=1e-7,'native velocity limit added energy'
    if state['objects'][1]['cells']:min_ball_y=min(min_ball_y,state['objects'][1]['center_m'][1])
    if state['time_s']<1 and len(state['cells'])==len(first['cells']) and state['objects'][1]['cells']:
     t=state['time_s'];assert abs(state['objects'][1]['velocity_m_s'][1]+9.81*t)<.002,'freefall velocity'
     assert abs(state['objects'][1]['center_m'][1]-(first['objects'][1]['center_m'][1]-.5*9.81*t*t))<.006,'freefall trajectory'
   assert abs(state['time_s']-duration)<1e-8
   assert state['contact_audit']['point_samples']>0,'supports registered no actual contact impulses'
-  result={'declaration':declaration,'time_s':state['time_s'],'wall_s':time.monotonic()-start,'min_ball_center_y_m':min_ball_y if math.isfinite(min_ball_y) else None,'objects':state['objects'],'diagnostics':state['diagnostics'],'contact_audit':state['contact_audit'],'substeps':state['substeps'],'rejected_trials':state['rejected_trials']};results.append(result);print(json.dumps(result),flush=True)
+  result={'declaration':declaration,'time_s':state['time_s'],'wall_s':time.monotonic()-start,'min_ball_center_y_m':min_ball_y if math.isfinite(min_ball_y) else None,'objects':state['objects'],'diagnostics':state['diagnostics'],'contact_audit':state['contact_audit'],'step_work':state['step_work'],'substeps':state['substeps'],'rejected_trials':state['rejected_trials']};results.append(result);print(json.dumps(result),flush=True)
   return first,state
  finally:proc.terminate();proc.wait(timeout=5)
 for material in ['glass','oak','iron','ice']:
@@ -59,6 +64,9 @@ try:
  assert not reply['ok'] and 'energy gate refused' in reply['error'],'retained glass-ball failure unexpectedly changed; requalify before advertising'
  assert 1.4<reply['state']['time_s']<1.5
  assert raw({'op':'snapshot'})['state']==reply['state'],'refusal did not retain accepted state'
+ rejected=reply['state']['step_work']['last_rejected_trial']
+ assert rejected and rejected['depth']==14 and 0<rejected['dt_s']<1e-6,'minimum-step refusal lacks actual work evidence'
+ print(json.dumps({'retained_glass_ball_refusal':rejected}),flush=True)
  print('KNOWN BLOCKED: glass ball reaches impact then refuses native energy increase; retained state verified',flush=True)
 finally:proc.terminate();proc.wait(timeout=5)
 print('PASS native voxel world: 11 completed comparative/control/refinement experiments + retained glass-ball refusal; realism/convergence unqualified',flush=True)
