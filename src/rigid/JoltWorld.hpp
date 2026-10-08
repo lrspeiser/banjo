@@ -483,6 +483,9 @@ public:
     struct FaceSpringObservation {
         Vec3 displacement_cs_m{},rotation_cs_rad{};
         Vec3 linear_impulse_cs_n_s{},angular_impulse_cs_n_m_s{};
+        // Capture before Update to reconstruct the actual solver Jacobian.
+        Vec3 anchor_b_world_m{},rotation_error_cs_rad{};
+        std::array<Vec3,3> translation_axes_world{},rotation_axes_world{};
     };
     unsigned addFaceSpring(const FaceSpringDescription &description);
     FaceSpringObservation faceSpringObservation(unsigned joint) const;

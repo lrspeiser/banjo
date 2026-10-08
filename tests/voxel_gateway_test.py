@@ -15,6 +15,8 @@ with tempfile.TemporaryDirectory() as folder:
   _,still=req({'op':'snapshot','session':other});assert still['state']['time_s']==0,'sessions shared'
   for steps in [0,17,True,-1]:assert req({'op':'advance','session':key,'steps':steps})[0]==400
   assert req({'op':'create','declaration':{'bogus':1}})[1]['ok'] is False
+  for iterations in [15,257,96.5,True,'96']:
+   assert req({'op':'create','declaration':{'solver_iterations':iterations}})[1]['ok'] is False
   _,unchanged=req({'op':'snapshot','session':key});assert unchanged['state']==moved['state'],'refusal mutated native state'
   with urllib.request.urlopen(base+'/api/log/'+key) as r:rows=[json.loads(x) for x in r.read().decode().splitlines()]
   assert rows[0]['native_sha256'] and rows[0]['assets'];assert any(r.get('response',{}).get('state')==moved['state'] for r in rows),'record differs from rendered response'

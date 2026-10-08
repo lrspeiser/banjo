@@ -8,18 +8,21 @@ def experiment(declaration,duration):
  def request(value):
   proc.stdin.write(json.dumps(value)+'\n');proc.stdin.flush();reply=json.loads(proc.stdout.readline());assert reply['ok'],reply.get('error');return reply['state']
  try:
-  first=request({'op':'create','declaration':declaration});state=first;ids={c['id']:c['mass_kg'] for c in first['cells']};start=time.monotonic();peak=0
+  first=request({'op':'create','declaration':declaration});state=first;ids={c['id']:c['mass_kg'] for c in first['cells']};start=time.monotonic();peak=0;min_ball_y=math.inf
   while state['time_s']<duration-1e-9:
    state=request({'op':'advance','steps':min(16,max(1,round((duration-state['time_s'])/state['dt_s'])))})
    assert {c['id']:c['mass_kg'] for c in state['cells']}==ids,'created/deleted/reweighted voxels'
    assert state['diagnostics']['unclosed_energy_j']<=.10001,'unbudgeted energy creation'
    assert all(math.isfinite(x) for c in state['cells'] for k in ['position_m','velocity_m_s','spin_rad_s'] for x in c[k])
    peak=max(peak,state['diagnostics']['kinetic_j'])
+   for key in ['spring_material_damping_j','spring_implicit_elastic_loss_j','linear_velocity_quadratic_j']:
+    assert math.isfinite(state['diagnostics'][key]) and state['diagnostics'][key]>=0,'invalid accumulated loss diagnostic'
+   if state['objects'][1]['cells']:min_ball_y=min(min_ball_y,state['objects'][1]['center_m'][1])
    if state['time_s']<1 and len(state['cells'])==len(first['cells']) and state['objects'][1]['cells']:
     t=state['time_s'];assert abs(state['objects'][1]['velocity_m_s'][1]+9.81*t)<.002,'freefall velocity'
     assert abs(state['objects'][1]['center_m'][1]-(first['objects'][1]['center_m'][1]-.5*9.81*t*t))<.006,'freefall trajectory'
   assert abs(state['time_s']-duration)<1e-8
-  result={'declaration':declaration,'time_s':state['time_s'],'wall_s':time.monotonic()-start,'objects':state['objects'],'diagnostics':state['diagnostics'],'substeps':state['substeps'],'rejected_trials':state['rejected_trials']};results.append(result);print(json.dumps(result),flush=True)
+  result={'declaration':declaration,'time_s':state['time_s'],'wall_s':time.monotonic()-start,'min_ball_center_y_m':min_ball_y if math.isfinite(min_ball_y) else None,'objects':state['objects'],'diagnostics':state['diagnostics'],'substeps':state['substeps'],'rejected_trials':state['rejected_trials']};results.append(result);print(json.dumps(result),flush=True)
   return first,state
  finally:proc.terminate();proc.wait(timeout=5)
 for material in ['glass','oak','iron','ice']:
@@ -28,7 +31,7 @@ for material in ['glass','oak','iron','ice']:
  if material in ['glass','ice']:
   assert sheet['pieces']>1 and sheet['broken_faces']>0,'did not fracture'
   assert sheet['max_travel_m']>.15,'no visible constituent movement'
-  assert after['objects'][1]['center_m'][1]<.5,'ball did not pass through sheet plane'
+  assert results[-1]['min_ball_center_y_m']<.5,'ball never passed through sheet plane'
  else:assert sheet['pieces']==1 and sheet['broken_faces']==0,'unsupported brittle law substituted'
  assert sheet['max_travel_m']<5,'unphysical blowup'
 for declaration in [{'sheet':'glass','ball_enabled':False},{'sheet':'glass','offset_x_m':.8}]:

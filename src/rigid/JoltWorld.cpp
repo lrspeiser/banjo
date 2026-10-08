@@ -2873,15 +2873,20 @@ JoltWorld::FaceSpringObservation JoltWorld::faceSpringObservation(unsigned id) c
     const auto fromJoltVector=[](JPH::Vec3Arg x){return Vec3{x.GetX(),x.GetY(),x.GetZ()};};
     const auto &j=impl_->joints_.at(id);if(j.kind!=JointKind::FaceSpring)throw std::invalid_argument("not a face spring");
     const auto *c=static_cast<const JPH::SixDOFConstraint*>(j.constraint.GetPtr());
-    const auto a=snapshot(j.a),b=snapshot(j.b);const auto frame=c->GetConstraintToBody1Matrix();
-    const auto pa=a.center_of_mass_world_m+a.orientation_world.rotate(fromJoltVector(frame.GetTranslation()));
-    const auto pb=b.center_of_mass_world_m+b.orientation_world.rotate(fromJoltVector(c->GetConstraintToBody2Matrix().GetTranslation()));
-    const auto x=a.orientation_world.rotate(fromJoltVector(frame.GetAxisX())),y=a.orientation_world.rotate(fromJoltVector(frame.GetAxisY())),z=cross(x,y);
+    // Between Updates the constraint holds the native bodies the solver uses.
+    // Read each transform once, rather than taking eight BodyInterface locks
+    // per face. Retain native frame arithmetic and double world positions.
+    const auto a=c->GetBody1()->GetCenterOfMassTransform()*c->GetConstraintToBody1Matrix();
+    const auto b=c->GetBody2()->GetCenterOfMassTransform()*c->GetConstraintToBody2Matrix();
+    const auto pa=fromJoltPosition(a.GetTranslation()),pb=fromJoltPosition(b.GetTranslation());
+    const auto x=fromJoltVector(a.GetAxisX()),y=fromJoltVector(a.GetAxisY()),z=fromJoltVector(a.GetAxisZ());
     const auto delta=pb-pa;const auto q=c->GetRotationInConstraintSpace();
     const double angle=2*std::atan2(std::sqrt(double(q.GetX())*q.GetX()+double(q.GetY())*q.GetY()+double(q.GetZ())*q.GetZ()),std::abs(double(q.GetW())));
     const auto axis=Vec3{q.GetX(),q.GetY(),q.GetZ()}*(q.GetW()<0?-1.:1.);
     const auto rotation=length(axis)>1e-12?axis*(angle/length(axis)):Vec3{};
-    return {{dot(delta,x),dot(delta,y),dot(delta,z)},rotation,fromJoltVector(c->GetTotalLambdaMotorTranslation()),fromJoltVector(c->GetTotalLambdaMotorRotation())};
+    return {{dot(delta,x),dot(delta,y),dot(delta,z)},rotation,fromJoltVector(c->GetTotalLambdaMotorTranslation()),fromJoltVector(c->GetTotalLambdaMotorRotation()),
+        pb,Vec3{q.GetX(),q.GetY(),q.GetZ()}*(q.GetW()>0?2.:-2.),{x,y,z},
+        {fromJoltVector(b.GetAxisX()),fromJoltVector(b.GetAxisY()),fromJoltVector(b.GetAxisZ())}};
 }
 
 PairContactOwner JoltWorld::pairContactOwner(MatterBodyId a,MatterBodyId b) const {
