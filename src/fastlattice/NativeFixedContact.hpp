@@ -36,6 +36,14 @@ struct NativeContactAccuracyResult {
     unsigned attempted_intervals{},rejected_intervals{};
     double accepted_interval_s{},suggested_interval_s{},normalized_error{};
     std::string error_metric;
+    // Worst full/two-half comparison from the last attempted interval. Scalars
+    // use x only; vectors retain all components and use their difference norm.
+    // Values/bound share the units of the named quantity and accuracy setting.
+    // Orientation uses angular distance against zero. These are observations,
+    // never applied loads.
+    Vec3 error_full_value{},error_fine_value{};
+    double error_bound{},compared_interval_s{};
+    bool error_is_vector{};
     NativeContactStepAudit accepted_audit{};
 };
 // Compare a restored full-step trial with a two-half-step trial from the same

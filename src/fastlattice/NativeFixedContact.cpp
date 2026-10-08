@@ -53,14 +53,22 @@ double rotationDistance(Quat a,Quat b) {
     const double plus=std::hypot(std::hypot(aw+bw,ax+bx),std::hypot(ay+by,az+bz));
     return 4*std::asin(std::min(1.0,.5*std::min(minus,plus)));
 }
-double accuracyError(const AccuracySnapshot &a,const AccuracySnapshot &b,const NativeContactAccuracySettings &s,std::string &worst) {
-    double error=0;worst.clear();const char *metric="material state";
-    const auto scalar=[&](double x,double y,double bound) {
-        const double e=std::abs(x-y)/bound;
+double accuracyError(const AccuracySnapshot &a,const AccuracySnapshot &b,const NativeContactAccuracySettings &s,NativeContactAccuracyResult &result) {
+    double error=0;result.error_metric.clear();result.error_bound=0;
+    result.error_full_value={};result.error_fine_value={};result.error_is_vector=false;
+    const char *metric="material state";
+    const auto compare=[&](Vec3 x,Vec3 y,double bound,bool is_vector) {
+        const double e=(is_vector?length(x-y):std::abs(x.x-y.x))/bound;
         if(!std::isfinite(e))throw std::overflow_error("contact accuracy comparison is nonfinite");
-        if(e>error){error=e;worst=metric;}
+        if(e>error) {
+            error=e;result.error_metric=metric;result.error_full_value=x;result.error_fine_value=y;
+            result.error_bound=bound;result.error_is_vector=is_vector;
+        }
     };
-    const auto vector=[&](Vec3 x,Vec3 y,double bound){scalar(length(x-y),0,bound);};
+    const auto scalar=[&](double x,double y,double bound) {
+        compare({x,0,0},{y,0,0},bound,false);
+    };
+    const auto vector=[&](Vec3 x,Vec3 y,double bound){compare(x,y,bound,true);};
     const auto array=[&](const std::vector<double> &x,const std::vector<double> &y,double bound) {
         if(x.size()!=y.size())throw std::logic_error("contact accuracy material dimensions changed");
         for(std::size_t i=0;i<x.size();++i)scalar(x[i],y[i],bound);
@@ -101,8 +109,10 @@ double accuracyError(const AccuracySnapshot &a,const AccuracySnapshot &b,const N
         if(x.external_sources[i].source!=y.external_sources[i].source)throw std::logic_error("contact accuracy force identity changed");
         load(x.external_sources[i].load,y.external_sources[i].load);
     }
-    metric="target contact transfer";scalar(x.external_point_transfer.work_j,y.external_point_transfer.work_j,s.energy_j);
+    metric="target contact work (J)";scalar(x.external_point_transfer.work_j,y.external_point_transfer.work_j,s.energy_j);
+    metric="target contact impulse (N s)";
     vector(x.external_point_transfer.impulse_n_s,y.external_point_transfer.impulse_n_s,s.impulse_n_s);
+    metric="target contact angular impulse (kg m2/s)";
     vector(x.external_point_transfer.angular_impulse_kg_m2_s,y.external_point_transfer.angular_impulse_kg_m2_s,s.angular_impulse_kg_m2_s);
     metric="target boundary/correction";vector(x.fixed_boundary.impulse_n_s,y.fixed_boundary.impulse_n_s,s.impulse_n_s);
     vector(x.fixed_boundary.angular_impulse_kg_m2_s,y.fixed_boundary.angular_impulse_kg_m2_s,s.angular_impulse_kg_m2_s);
@@ -168,7 +178,8 @@ NativeContactAccuracyResult advanceNativeFixedTargetControlled(JoltWorld &world,
             const auto first=step(interval*.5);const auto audit=addAudit(first,step(interval*.5));
             const auto fine=accuracySnapshot(world,target,ids,audit);
             result.topology_agrees=full.material.alive==fine.material.alive&&full.material.failure_mode==fine.material.failure_mode;
-            result.normalized_error=accuracyError(full,fine,settings,result.error_metric);
+            result.compared_interval_s=interval;
+            result.normalized_error=accuracyError(full,fine,settings,result);
             if(!result.topology_agrees||result.normalized_error>1)return false;
             const double elapsed=target.externalContactElapsedTime()-start_time;
             if(std::abs(elapsed-interval)>16*std::numeric_limits<double>::epsilon()*std::max(start_time+interval,interval))

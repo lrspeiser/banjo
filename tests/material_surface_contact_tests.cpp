@@ -628,6 +628,17 @@ void controlledContactOracles() {
         const auto refused=advanceNativeFixedTargetControlled(tool.world,*b,1e-7,tight,contact);
         require(!refused.accepted&&refused.rejected_intervals==1&&refused.accepted_interval_s==0&&
             refused.accepted_audit.active_manifolds==0,"accuracy exhaustion silently committed a candidate");unchanged();
+        require(refused.error_bound>0&&!refused.error_metric.empty(),"accuracy refusal omitted its measured comparison");
+        near(refused.compared_interval_s,1e-7,0,"accuracy refusal reported wrong trial interval");
+        const auto difference=refused.error_full_value-refused.error_fine_value;
+        const double measured=refused.error_is_vector?length(difference):std::abs(difference.x);
+        near(measured/refused.error_bound,refused.normalized_error,0,"accuracy refusal values do not reproduce normalized error");
+        auto vector_tight=settings;vector_tight.maximum_halvings=0;vector_tight.impulse_n_s=1e-30;
+        const auto vector_refused=advanceNativeFixedTargetControlled(tool.world,*b,1e-7,vector_tight,contact);
+        require(!vector_refused.accepted&&vector_refused.error_is_vector&&vector_refused.error_bound==1e-30,
+            "impulse accuracy refusal lost its vector components");
+        near(length(vector_refused.error_full_value-vector_refused.error_fine_value)/vector_refused.error_bound,
+            vector_refused.normalized_error,0,"vector comparison does not reproduce accuracy error");unchanged();
         unsigned throwing_calls=0;
         rejects([&]{(void)advanceNativeFixedTargetControlled(tool.world,*b,1e-7,settings,[&](double dt) {
             auto audit=contact(dt);if(++throwing_calls==3)throw std::runtime_error("intentional second-half failure");return audit;
@@ -654,7 +665,7 @@ void controlledContactOracles() {
             <<",\"attributed_e_residual_j\":"<<e_error<<"}\n";
     }
 }
-NativeContactStepAudit queriedManifoldAudit(const Target &target,LatticeBackend &b,Tool &tool) {
+std::vector<NativeSurfaceWitness> queriedManifoldWitnesses(const Target &target,LatticeBackend &b,Tool &tool) {
     const auto state=target.download(b);std::vector<NativeSurfaceWitness> witnesses;
     for(unsigned i=0;i<state.node_count;++i) {
         const Vec3 at=state.origin+Vec3{state.x0[3*i]+state.u[3*i],state.x0[3*i+1]+state.u[3*i+1],state.x0[3*i+2]+state.u[3*i+2]};
@@ -667,7 +678,27 @@ NativeContactStepAudit queriedManifoldAudit(const Target &target,LatticeBackend 
                 {law.static_friction,law.dynamic_friction,law.restitution}});
         }
     }
+    return witnesses;
+}
+NativeContactStepAudit queriedManifoldAudit(const Target &target,LatticeBackend &b,Tool &tool,
+    nlohmann::json *trace=nullptr,const std::vector<NativeSurfaceWitness> *fixed_witnesses=nullptr) {
+    const auto witnesses=fixed_witnesses?*fixed_witnesses:queriedManifoldWitnesses(target,b,tool);
+    nlohmann::json inputs=nlohmann::json::array();
+    if(trace)for(const auto &w:witnesses) {
+        const auto node=b.externalContactPoint(w.seed);
+        inputs.push_back({{"seed",w.seed},{"gap_m",w.gap_m},
+            {"point_m",nlohmann::json{w.surface_world_m.x,w.surface_world_m.y,w.surface_world_m.z}},
+            {"normal",nlohmann::json{w.normal_world.x,w.normal_world.y,w.normal_world.z}},
+            {"envelope_center_m",nlohmann::json{node.position_world_m.x,node.position_world_m.y,node.position_world_m.z}}});
+    }
+    const auto head=trace?tool.world.snapshot(1):RigidSnapshot{};
     const auto r=applyNativeFixedLocalSurfaceManifold(tool.world,b,witnesses,{.1,3,64,4096},2,1,{1e-5,1e-5,1e-5});
+    if(trace)trace->push_back({{"time_s",b.externalContactElapsedTime()},{"dt_s",b.externalContactTimestep()},
+        {"witnesses",inputs},{"active_contacts",r.source.contact.active_contacts},
+        {"source_center_m",nlohmann::json{head.center_of_mass_world_m.x,head.center_of_mass_world_m.y,head.center_of_mass_world_m.z}},
+        {"source_orientation_wxyz",nlohmann::json{head.orientation_world.w,head.orientation_world.x,head.orientation_world.y,head.orientation_world.z}},
+        {"target_work_j",r.target.work_j},{"source_roundoff_energy_j",r.source.numerical_energy_change_j},
+        {"reconciliation_loss_j",r.source.contact.reconciliation_loss_j},{"contact_loss_j",r.source.contact.dissipated_energy_j}});
     NativeContactStepAudit a;
     a.contact_loss_j=r.source.contact.dissipated_energy_j;a.reconciliation_loss_j=r.source.contact.reconciliation_loss_j;
     a.source_numerical_energy_j=r.source.numerical_energy_change_j;a.source_numerical_impulse_n_s=r.source.momentum_error_kg_m_s;
@@ -683,6 +714,7 @@ unsigned controlledSustainedContact() {
         NativeContactAccuracySettings settings;settings.maximum_halvings=20;
         const double duration=2048e-7;double proposal=1e-7;
         unsigned accepted=0,rejected=0;double smallest=proposal,last_error=0;std::string refusal,metric;bool compared=false;
+        NativeContactAccuracyResult last_comparison;
         const auto started=std::chrono::steady_clock::now();
         while(b->externalContactElapsedTime()<duration-1e-18&&accepted<100000) {
             const double remaining=duration-b->externalContactElapsedTime();
@@ -691,7 +723,7 @@ unsigned controlledSustainedContact() {
                 const auto r=advanceNativeFixedTargetControlled(tool.world,*b,std::min(proposal,remaining),settings,
                     [&](double){return queriedManifoldAudit(target,*b,tool);});
                 rejected+=r.rejected_intervals;
-                last_error=r.normalized_error;metric=r.error_metric;compared=true;
+                last_error=r.normalized_error;metric=r.error_metric;compared=true;last_comparison=r;
                 if(!r.accepted) {refusal=r.topology_agrees?"accuracy budget exhausted":"topology comparison unresolved";break;}
                 ++accepted;smallest=std::min(smallest,r.accepted_interval_s);proposal=r.suggested_interval_s;
                 const auto &a=r.accepted_audit;
@@ -703,6 +735,53 @@ unsigned controlledSustainedContact() {
             }catch(const std::exception &e){refusal=e.what();break;}
         }
         if(accepted==100000&&b->externalContactElapsedTime()<duration-1e-18)refusal="accepted interval budget exhausted";
+        if(!refusal.empty()) {
+            // Separate delivery/reconciliation rounding from native witness
+            // changes. Neither system advances, and the same actual geometry
+            // declarations are used in both consecutive contact projections.
+            const auto witnesses=queriedManifoldWitnesses(target,*b,tool);
+            nlohmann::json trace=nlohmann::json::array();
+            const auto clock=b->externalContactElapsedTime();const auto tick=tool.world.stepCount();
+            require(!runNativeFixedTargetTrial(tool.world,*b,[&] {
+                (void)queriedManifoldAudit(target,*b,tool,&trace,&witnesses);
+                (void)queriedManifoldAudit(target,*b,tool,&trace,&witnesses);return false;
+            }),"contact reapplication committed");
+            near(b->externalContactElapsedTime(),clock,0,"contact reapplication advanced time");
+            require(tool.world.stepCount()==tick,"contact reapplication advanced native time");
+            std::cout<<"CONTACT_REAPPLICATION "<<nlohmann::json{{"material",materialPresetName(preset)},
+                {"width_m",width},{"fixed_geometry",true},{"steps",trace}}.dump()<<std::endl;
+        }
+        if(!refusal.empty())for(double interval:{1e-7,1e-10,1e-12}) {
+            nlohmann::json full=nlohmann::json::array(),half=nlohmann::json::array(),fixed_half=nlohmann::json::array();
+            const auto witnesses=queriedManifoldWitnesses(target,*b,tool);
+            const auto frozen=target.download(*b);const auto clock=b->externalContactElapsedTime();
+            const auto tick=tool.world.stepCount();
+            const auto trial=[&](unsigned steps,nlohmann::json &trace,bool fixed=false) {
+                std::string error;
+                try {
+                    require(!runNativeFixedTargetTrial(tool.world,*b,[&] {
+                        for(unsigned k=0;k<steps;++k)b->advanceExternalContactStep(interval/steps,[&] {
+                            (void)queriedManifoldAudit(target,*b,tool,&trace,fixed?&witnesses:nullptr);tool.world.step(interval/steps);
+                        });return false;
+                    }),"contact refinement isolation committed");
+                }catch(const std::exception &e){error=e.what();}
+                return error;
+            };
+            const auto full_error=trial(1,full),half_error=trial(2,half);
+            // Diagnostic only: retain the first actual witnesses to isolate
+            // native requery from identical native/material stepping. This is
+            // not an admissible production geometry cache for moving objects.
+            const auto fixed_half_error=interval==1e-12?trial(2,fixed_half,true):std::string{};
+            const auto restored=target.download(*b);
+            require(restored.u==frozen.u&&restored.v==frozen.v&&restored.alive==frozen.alive,
+                "contact refinement isolation changed material state");
+            near(b->externalContactElapsedTime(),clock,0,"contact refinement isolation changed clock");
+            require(tool.world.stepCount()==tick,"contact refinement isolation changed native clock");
+            std::cout<<"CONTACT_STEP_REFINEMENT "<<nlohmann::json{{"material",materialPresetName(preset)},
+                {"width_m",width},{"interval_s",interval},{"full",full},{"half",half},
+                {"fixed_witness_half",fixed_half},{"fixed_witness_half_error",fixed_half_error},
+                {"full_error",full_error},{"half_error",half_error}}.dump()<<std::endl;
+        }
         if(!refusal.empty())for(double interval:{1e-7,1e-10,1e-12}) {
             // Isolate native stepping after the refused state. No new contact
             // impulse is applied. Both full and half experiments roll back.
@@ -762,6 +841,10 @@ unsigned controlledSustainedContact() {
             {"accepted_time_s",b->externalContactElapsedTime()},{"accepted_intervals",accepted},{"rejected_intervals",rejected},
             {"minimum_interval_s",smallest},{"broken_bonds",s.broken_bonds},{"refusal",refusal},{"attributed_p_residual_n_s",p},
             {"last_normalized_error",compared?nlohmann::json(last_error):nlohmann::json(nullptr)},{"error_metric",metric},
+            {"comparison_interval_s",last_comparison.compared_interval_s},{"comparison_bound",last_comparison.error_bound},
+            {"comparison_is_vector",last_comparison.error_is_vector},
+            {"comparison_full_value",nlohmann::json{last_comparison.error_full_value.x,last_comparison.error_full_value.y,last_comparison.error_full_value.z}},
+            {"comparison_fine_value",nlohmann::json{last_comparison.error_fine_value.x,last_comparison.error_fine_value.y,last_comparison.error_fine_value.z}},
             {"attributed_l_residual_kg_m2_s",l},{"attributed_e_residual_j",e},{"integration_error_j",s.integration_numerical_energy_j},
             {"wall_s",std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count()}}.dump()<<std::endl;
     }
