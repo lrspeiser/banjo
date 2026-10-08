@@ -27,6 +27,7 @@ const renderer=new THREE.WebGLRenderer({canvas,antialias:true});renderer.setPixe
 const scene=new THREE.Scene();scene.add(new THREE.HemisphereLight(0xbddcff,0x3e4033,2.5));const light=new THREE.DirectionalLight(0xffffff,3);light.position.set(2,6,4);scene.add(light);
 const camera=new THREE.PerspectiveCamera(42,1,.005,50), overview=new THREE.PerspectiveCamera(35,1,.01,50);overview.position.set(2.8,6,4);overview.lookAt(0,5.4,0);
 let yaw=.7,pitch=.36,radius=1.2,whole=false;const target=new THREE.Vector3(0,.43,0);
+const rigCenter=new THREE.Vector3();let rigExtent=1;
 const colors={glass:0x98d9ed,ice:0xd5eefb,iron:0xaeb9c9,aluminum:0xdbe1e6,ceramic:0xd6a78e,oak:0xad8b64,concrete:0x536575};
 let groups=[],state=null,initial=null,session=null,running=false,busy=false,showBefore=false,sequence=0;
 const playback=new NativePlayback();let frameId=0,polling=false,calculating=false,pipeline=null,pipelineArrivedAt=0,renderFrames=0,fpsStart=performance.now();
@@ -35,6 +36,11 @@ const marker=new THREE.Mesh(new THREE.RingGeometry(.013,.017,32),new THREE.MeshB
 let aim=[0,0];
 const matrix=new THREE.Matrix4(),q=new THREE.Quaternion(),q0=new THREE.Quaternion(),pos=new THREE.Vector3(),scale=new THREE.Vector3();
 function layout(s){for(const g of groups){nativeRoot.remove(g.mesh);g.mesh.geometry.dispose();g.mesh.material.dispose();}groups=[];
+ // Fit the actual initial geometry, including the ball at the chosen height.
+ // Rotated cells use their transformed box bounds. Recompute only on rebuild.
+ const bounds=new THREE.Box3(),unit=new THREE.Box3(new THREE.Vector3(-.5,-.5,-.5),new THREE.Vector3(.5,.5,.5));
+ for(const c of s.cells){const [w,x,y,z]=c.quaternion_wxyz;q.set(x,y,z,w);pos.fromArray(c.position_m);scale.fromArray(c.size_m);matrix.compose(pos,q,scale);bounds.union(unit.clone().applyMatrix4(matrix));}
+ bounds.getCenter(rigCenter);rigExtent=bounds.getSize(new THREE.Vector3()).length()/2;
  const buckets=new Map();for(const c of s.cells){const key=[c.material,...c.size_m].join(':');if(!buckets.has(key))buckets.set(key,[]);buckets.get(key).push(c);}
  for(const cells of buckets.values()){const c=cells[0];const geometry=new THREE.BoxGeometry(1,1,1);const mesh=new THREE.InstancedMesh(geometry,new THREE.MeshStandardMaterial({color:0xffffff,roughness:.6,metalness:c.material==='iron'?.5:.05}),cells.length);nativeRoot.add(mesh);groups.push({mesh,ids:cells.map(x=>x.id)});}
 }
@@ -67,7 +73,7 @@ function draw(s){if(!s)return;
  if(failedTwist)$('rejected-work').textContent+=' Largest rejected twist disagreement: cells '+failedTwist.a+' / '+failedTwist.b+' · work '+failedTwist.twist_work_j.toPrecision(5)+' J · midpoint slip '+failedTwist.midpoint_spin_rad_s.toPrecision(5)+' rad/s · impulse '+failedTwist.twist_impulse_n_m_s.toPrecision(5)+' / ±'+failedTwist.twist_cap_n_m_s.toPrecision(5)+' N·m·s. Full contact details are in Download record.';
  canvas.dataset.time=s.time_s;canvas.dataset.nativeCells=s.cells.length;canvas.dataset.sheetPieces=sheet.pieces;
 }
-function updateCamera(){target.set(0,whole?4.8:.43,0);const r=whole?13:radius;camera.position.set(target.x+r*Math.cos(pitch)*Math.sin(yaw),target.y+r*Math.sin(pitch),target.z+r*Math.cos(pitch)*Math.cos(yaw));camera.lookAt(target);}
+function updateCamera(){if(whole)target.copy(rigCenter);else target.set(0,.43,0);const halfFov=Math.atan(Math.tan(camera.fov*Math.PI/360)*Math.min(1,camera.aspect));const r=whole?1.08*rigExtent/Math.sin(halfFov):radius;camera.position.set(target.x+r*Math.cos(pitch)*Math.sin(yaw),target.y+r*Math.sin(pitch),target.z+r*Math.cos(pitch)*Math.cos(yaw));camera.lookAt(target);}
 let viewportWidth=0,viewportHeight=0;
 function render(now){drawPose(showBefore?{from:initial,to:initial,alpha:1,time_s:initial.time_s}:playback.sample(now));const w=canvas.clientWidth,h=canvas.clientHeight;if(w!==viewportWidth||h!==viewportHeight){renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();viewportWidth=w;viewportHeight=h;}updateCamera();renderer.setViewport(0,0,w,h);renderer.setScissorTest(false);renderer.render(scene,camera);
  if(pipeline)$('pose-age').textContent=(pipeline.published_state_age_ms+Math.max(0,now-pipelineArrivedAt)).toFixed(0)+' ms'+(!running&&!calculating?' · paused':'');
