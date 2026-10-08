@@ -1,44 +1,44 @@
 {
-  "title": "Live simulation pipeline",
+  "title": "Native execution audit",
   "date": "2026-10-08",
-  "physics_revision": "5e01124f4401cb9e412e51a2c9953f75163f73c3",
-  "native_sha256": "6b22cfb5171602946ebc25759bfb09a2b763bc9683a1d388fc148a52a6c580bc",
+  "physics_revision": "1d874d1709f8d6016c0ce8c391d2705787fe709c",
+  "native_sha256": "37881cdb5396d91be7a1d4ba2d0979f5b474a49cbc947dc4030c55e61dd894c0",
   "changes": [
-    "Physics runs in a background worker; Pause and Reset stay responsive.",
-    "Render between accepted native poses, with no extrapolation across fracture.",
-    "Keep a bounded frame buffer and compressed, replayable native journal.",
-    "Show renderer fps and simulation speed separately."
+    "Scene-sized contact buffers and inline CPU execution; native reference retained.",
+    "New regression compares every physical field through full material impacts.",
+    "Scheduler/storage comparisons showed no useful speed gain.",
+    "Background physics, bounded frames and compressed native logs remain."
   ],
   "checks": [
     {
-      "label": "Pipeline/reference parity",
+      "label": "Full-impact reference parity",
       "status": "passed",
-      "value": "Glass · oak · iron · ice / 96 ticks"
+      "value": "Glass · oak · iron · ice / 2 s each"
     },
     {
-      "label": "Transport/playback",
+      "label": "Contact & spring oracles",
       "status": "passed",
-      "value": "3 CTest suites; delayed Pause tested"
+      "value": "24 checks across both native runners"
+    },
+    {
+      "label": "Scoped regression",
+      "status": "passed",
+      "value": "6 CTests; 11 completed world experiments"
     },
     {
       "label": "Browser drop",
       "status": "passed",
-      "value": "2 s · 40 broken faces · 12 pieces"
-    },
-    {
-      "label": "Renderer",
-      "status": "passed",
-      "value": "Observed ~60 fps"
+      "value": "40 broken faces · 12 pieces · ~60 fps"
     },
     {
       "label": "Realtime calculation",
       "status": "blocked",
-      "value": "~0.05× / 8 ms batch target exceeded"
+      "value": "~36 s per 2 s / no useful speed gain"
     },
     {
-      "label": "Reference binary",
-      "status": "passed",
-      "value": "Retained native audit checkpoint"
+      "label": "Full energy balance",
+      "status": "blocked",
+      "value": "Glass deficit -92.923 J unresolved"
     },
     {
       "label": "Glass ball",
