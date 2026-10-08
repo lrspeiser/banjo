@@ -17,6 +17,7 @@ namespace banjo::fastlattice {
 template <typename Real>
 class CpuExternalLoads {
 public:
+    [[nodiscard]] bool active() const { return remaining_!=0; }
     [[nodiscard]] std::size_t payloadBytes() const {
         std::size_t bytes=sizeof(*this)+nodes_.size()*sizeof(Node)+wrenches_.size()*sizeof(ExternalWrench);
         for (const auto &w:wrenches_) bytes+=w.source.size()+w.nodes.size()*sizeof(std::uint32_t);

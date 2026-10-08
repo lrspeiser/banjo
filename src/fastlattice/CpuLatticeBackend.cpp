@@ -33,7 +33,7 @@ public:
             if (!trial||!L_.node_count||trial_depth_) throw std::invalid_argument("invalid lattice trial; nesting is forbidden");
             std::size_t bytes=working_.payloadBytes()+external_.payloadBytes()+gravity_.payloadBytes()+sizeof(status_)+
                 sizeof(S_)+sizeof(sphere_)+sizeof(origin_)+sizeof(dirty_start_)+sizeof(contact_rebuild_)+
-                sizeof(energy_flat_fraction_)+sizeof(phase_clock_)+
+                sizeof(energy_flat_fraction_)+sizeof(phase_clock_)+sizeof(accepted_time_s_)+sizeof(time_correction_s_)+
                 first_failure_bonds_.size()*sizeof(std::uint32_t)+frames_.size()*sizeof(FrameCapture);
             for (const auto &frame:frames_) bytes+=frame.u.size()*sizeof(float)+frame.alive.size()+frame.damage.size()*sizeof(float);
             for (const auto &source:status_.external_sources) bytes+=sizeof(source)+source.source.size();
@@ -43,11 +43,13 @@ public:
             const auto settings=S_;const auto sphere=sphere_;const auto origin=origin_;
             const bool dirty=dirty_start_,rebuild=contact_rebuild_;
             const double fraction=energy_flat_fraction_;const auto phase=phase_clock_;
+            const double time=accepted_time_s_,correction=time_correction_s_;
             const auto restore=[&] {
                 working_=std::move(working);L_=working_.arrays();external_=std::move(external);gravity_=std::move(gravity);
                 status_=std::move(status);frames_=std::move(frames);first_failure_bonds_=std::move(failures);
                 S_=settings;sphere_=sphere;origin_=origin;dirty_start_=dirty;contact_rebuild_=rebuild;
                 energy_flat_fraction_=fraction;phase_clock_=phase;
+                accepted_time_s_=time;time_correction_s_=correction;
             };
             ++trial_depth_;bool accepted=false;
             try {accepted=trial();}catch (...) {--trial_depth_;restore();throw;}
@@ -99,6 +101,7 @@ public:
         S_ = convertSettings<Real>(settings);
         sphere_ = convertSphere<Real>(sphere);
         status_ = {};
+        accepted_time_s_=0;time_correction_s_=0;
         status_.bond_integrator=S_.bond_integrator;
         external_.reset(state.origin);
         gravity_=std::move(staged_gravity);
@@ -111,9 +114,11 @@ public:
     }
 
     void setExternalForces(const std::vector<Vec3> &forces, std::uint64_t substeps) override {
+        if(contact_step_callback_)throw std::logic_error("contact callback cannot replace finite loads");
         external_.set(forces,substeps,L_,S_.bond_integrator==kBondVelocityVerlet);
     }
     void setExternalWrenches(const std::vector<ExternalWrench> &wrenches, std::uint64_t substeps) override {
+        if(contact_step_callback_)throw std::logic_error("contact callback cannot replace finite loads");
         external_.setWrenches(wrenches,substeps,L_);
     }
     [[nodiscard]] double externalContactTimestep() const override {
@@ -121,6 +126,34 @@ public:
         if(!L_.node_count||!std::isfinite(S_.dt)||S_.dt<=0)throw std::invalid_argument("external contact needs an uploaded finite timestep");
         return S_.dt;
         }else throw std::invalid_argument("external point contact requires serial double CPU");
+    }
+    [[nodiscard]] double externalContactElapsedTime() const override {
+        if constexpr(std::is_same_v<Real,double>) {
+            (void)externalContactTimestep();
+            if(S_.bond_integrator!=kBondVelocityVerlet)throw std::invalid_argument("contact clock requires Verlet");
+            return accepted_time_s_;
+        }else throw std::invalid_argument("contact clock requires serial double CPU");
+    }
+    RunStatus advanceExternalContactStep(double dt,const std::function<void()> &contact) override {
+        if constexpr(!std::is_same_v<Real,double>) {
+            throw std::invalid_argument("variable contact steps require serial double CPU");
+        }else {
+            (void)externalContactElapsedTime();
+            if(trial_depth_!=1||contact_step_callback_||!contact)
+                throw std::invalid_argument("variable contact step needs a nonnested reversible trial and callback");
+            if(!std::isfinite(dt)||dt<=0||dt>S_.dt)
+                throw std::invalid_argument("variable contact timestep exceeds the uploaded positive horizon");
+            if(dt!=S_.dt&&external_.active())
+                throw std::invalid_argument("variable contact step cannot change queued finite load duration");
+            const double uploaded_dt=S_.dt;
+            S_.dt=dt;
+            try {
+                verlet::validate(L_,S_);verlet::checkStep(L_,S_);
+                contact_step_callback_=true;contact();contact_step_callback_=false;
+                RunControl one;one.max_steps=1;
+                auto result=run(one);S_.dt=uploaded_dt;return result;
+            }catch(...) {contact_step_callback_=false;S_.dt=uploaded_dt;throw;}
+        }
     }
     [[nodiscard]] ActiveNodeState externalContactPoint(std::uint32_t i) const override {
         if constexpr(std::is_same_v<Real,double>) {
@@ -191,18 +224,31 @@ public:
     }
 
     RunStatus run(const RunControl &control) override {
+        if(contact_step_callback_)throw std::logic_error("contact callback cannot advance the material twice");
         energy_flat_fraction_ = control.energy_flat_fraction;
         const auto start = std::chrono::steady_clock::now();
         status_.exit_reason = 0;
         std::uint64_t done = 0;
         while (done < control.max_steps) {
             const std::uint64_t step = status_.total_steps;
+            if(step==std::numeric_limits<std::uint64_t>::max())throw std::overflow_error("lattice step count overflow");
+            double next_time=accepted_time_s_,next_correction=time_correction_s_;
+            if constexpr(std::is_same_v<Real,double>) {
+                if(S_.bond_integrator==kBondVelocityVerlet) {
+                    const double corrected_dt=double(S_.dt)-time_correction_s_;
+                    next_time=accepted_time_s_+corrected_dt;
+                    if(!std::isfinite(next_time)||next_time<=accepted_time_s_)
+                        throw std::overflow_error("lattice physical clock cannot advance");
+                    next_correction=(next_time-accepted_time_s_)-corrected_dt;
+                }
+            }
             if (control.capture_stride != 0 && step % control.capture_stride == 0 &&
                 status_.frames_captured < control.max_frames) {
                 frames_.push_back(captureFrame(working_, step, sphere_));
                 ++status_.frames_captured;
             }
             const bool failed = advance(step);
+            accepted_time_s_=next_time;time_correction_s_=next_correction;
             status_.total_steps = step + 1;
             ++done;
             if (failed) {
@@ -461,6 +507,9 @@ private:
     CpuExternalLoads<Real> external_;
     CpuExternalLoads<Real> gravity_;
     unsigned trial_depth_{};
+    bool contact_step_callback_{};
+    double accepted_time_s_{};
+    double time_correction_s_{};
     Vec3 origin_{};
     // RunControl::energy_flat_fraction, held here because the substep that
     // accumulates removed energy does not see the control.

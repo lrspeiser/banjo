@@ -16,7 +16,11 @@
 namespace {
 using namespace banjo;using namespace banjo::fastlattice;
 void require(bool ok,const char *why){if(!ok)throw std::runtime_error(why);}
-void near(double x,double y,double bound,const char *why){require(std::isfinite(x)&&std::abs(x-y)<=bound,why);}
+void near(double x,double y,double bound,const char *why){
+    if(!std::isfinite(x)||std::abs(x-y)>bound)
+        std::cerr<<why<<": measured="<<x<<" expected="<<y<<" difference="<<x-y<<" bound="<<bound<<'\n';
+    require(std::isfinite(x)&&std::abs(x-y)<=bound,why);
+}
 template<class F> void rejects(F action,const char *why){bool refused=false;try{action();}catch(const std::exception&){refused=true;}require(refused,why);}
 std::vector<ActiveNodeState> cube(double mass=2,Vec3 origin={}) {
     std::vector<ActiveNodeState> out;
@@ -347,6 +351,155 @@ void authoritativeTopologyAdmission() {
     require(before.nodes==after.nodes&&after.target_step==0&&backend->status().external_point_transfer.transfers==0,"rolled back contact reused changed graph clock");
     near(length(tool.world.snapshot(1).linear_velocity_m_s-source.linear_velocity_m_s),0,0,"local rollback failed source");
 }
+void variableContactStepOracles() {
+    for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        Target target(preset);Tool tool;auto b=target.backend();
+        const auto ids=target.support();
+        const auto initial_totals=totals(target.state,tool.world);
+        Vec3 contact_p{},contact_l{},contact_couple{},native_p{},native_l{};
+        double contact_loss=0,contact_correction=0,native_energy=0;
+        bool invoked=false;
+        rejects([&]{b->advanceExternalContactStep(5e-8,[&]{invoked=true;});},"variable step outside reversible trial admitted");
+        require(!invoked&&b->status().total_steps==0,"refused step invoked contact");
+        const auto step=[&](double dt,bool record=false) {
+            return b->advanceExternalContactStep(dt,[&] {
+                near(b->externalContactTimestep(),dt,0,"contact used uploaded rather than scoped horizon");
+                const auto result=applyNativeFixedSurfaceTransfer(tool.world,*b,ids,2,1,
+                    {.04,.01,.01},{1,0,0},0,{}, {1e-5,1e-5,1e-5});
+                near(result.horizon_s,dt,0,"native plan did not use actual step horizon");
+                const auto native_before=tool.world.mechanicalTotals();
+                tool.world.step(dt);
+                if(record) {
+                    const auto native_after=tool.world.mechanicalTotals();
+                    contact_p+=result.source.momentum_error_kg_m_s;
+                    contact_l+=result.source.angular_momentum_error_kg_m2_s;
+                    contact_couple+=result.source.contact.geometry_couple_kg_m2_s;
+                    contact_loss+=result.source.contact.modal_contact.dissipated_energy_j+result.source.contact.reconciliation_loss_j;
+                    contact_correction+=result.source.numerical_energy_change_j;
+                    native_p+=native_after.linear_momentum_kg_m_s-native_before.linear_momentum_kg_m_s;
+                    native_l+=native_after.angular_momentum_kg_m2_s-native_before.angular_momentum_kg_m2_s;
+                    native_energy+=native_after.mechanicalEnergy()-native_before.mechanicalEnergy();
+                }
+            });
+        };
+        require(runNativeFixedTargetTrial(tool.world,*b,[&]{step(1e-7,true);step(5e-8,true);return true;}),"variable contact trial refused");
+        near(b->externalContactElapsedTime(),1.5e-7,3e-23,"variable accepted clock used step count times uploaded dt");
+        near(b->externalContactTimestep(),1e-7,0,"accepted step leaked scoped configuration");
+        require(b->status().total_steps==2&&b->status().external_point_transfer.transfers>0,"variable step did not perform real contact/integration");
+        const auto final_totals=totals(target.download(*b),tool.world);const auto &account=b->status();
+        const double p_residual=length(final_totals.linear_momentum_kg_m_s-initial_totals.linear_momentum_kg_m_s-
+            contact_p-native_p-account.fixed_boundary.impulse_n_s-account.bond_kick_roundoff_impulse_n_s);
+        const double l_residual=length(final_totals.angular_momentum_kg_m2_s-initial_totals.angular_momentum_kg_m2_s-
+            contact_l-contact_couple-native_l-account.fixed_boundary.angular_impulse_kg_m2_s-account.bond_kick_roundoff_angular_kg_m2_s);
+        const double e_residual=final_totals.mechanicalEnergy()-initial_totals.mechanicalEnergy()+contact_loss+
+            account.removed_energy_j+account.plastic_work_j+account.plastic_return_numerical_loss_j-
+            contact_correction-native_energy-account.integration_numerical_energy_j;
+        near(p_residual,0,1e-9,"variable contact full linear attribution");
+        near(l_residual,0,1e-9,"variable contact full angular attribution");
+        near(e_residual,0,1e-10,"variable contact full energy attribution");
+        near(final_totals.mass_kg,initial_totals.mass_kg,1e-12,"variable contact changed complete assembly mass");
+        const auto initial=target.download(*b);const auto old=b->status();const auto head=tool.world.snapshot(1),handle=tool.world.snapshot(10);
+        const auto unchanged=[&] {
+            const auto now=target.download(*b);
+            require(now.u==initial.u&&now.u_prev==initial.u_prev&&now.v==initial.v&&now.mass==initial.mass&&
+                now.alive==initial.alive&&now.damage==initial.damage&&now.prev_tensile==initial.prev_tensile&&
+                now.prev_compressive==initial.prev_compressive&&now.prev_shear==initial.prev_shear&&
+                now.plastic_extension==initial.plastic_extension&&now.plastic_strain==initial.plastic_strain,
+                "variable trial leaked node/bond history");
+            require(b->status().total_steps==old.total_steps&&b->status().launches==old.launches&&
+                b->status().external_point_transfer.transfers==old.external_point_transfer.transfers,
+                "variable trial leaked status/transfer count");
+            near(b->status().integration_numerical_energy_j,old.integration_numerical_energy_j,0,"variable trial leaked numerical ledger");
+            near(b->status().external_point_transfer.work_j,old.external_point_transfer.work_j,0,"variable trial leaked transfer work");
+            near(length(tool.world.snapshot(1).linear_velocity_m_s-head.linear_velocity_m_s),0,0,"variable trial leaked native velocity");
+            near(length(tool.world.snapshot(1).center_of_mass_world_m-head.center_of_mass_world_m),0,0,"variable trial leaked native position");
+            for(const auto &[id,snapshot]:{std::pair{1U,head},std::pair{10U,handle}}) {
+                const auto body=tool.world.snapshot(id);
+                near(length(body.center_of_mass_world_m-snapshot.center_of_mass_world_m),0,0,"variable trial leaked joined native position");
+                near(length(body.linear_velocity_m_s-snapshot.linear_velocity_m_s),0,0,"variable trial leaked joined native velocity");
+                near(length(body.angular_velocity_rad_s-snapshot.angular_velocity_rad_s),0,0,"variable trial leaked joined native spin");
+                require(body.orientation_world.w==snapshot.orientation_world.w&&body.orientation_world.x==snapshot.orientation_world.x&&
+                    body.orientation_world.y==snapshot.orientation_world.y&&body.orientation_world.z==snapshot.orientation_world.z,
+                    "variable trial leaked joined native rotation");
+            }
+            near(b->externalContactElapsedTime(),1.5e-7,3e-23,"variable trial leaked accepted time");
+            near(b->externalContactTimestep(),1e-7,0,"variable trial leaked step configuration");
+        };
+        require(!runNativeFixedTargetTrial(tool.world,*b,[&]{step(2.5e-8);step(1.25e-8);return false;}),"rejected variable trial accepted");
+        unchanged();
+        rejects([&]{(void)runNativeFixedTargetTrial(tool.world,*b,[&] {
+            b->advanceExternalContactStep(2.5e-8,[&] {
+                tool.world.step(2.5e-8);throw std::runtime_error("intentional callback failure");
+            });return true;
+        });},"throwing variable trial accepted");unchanged();
+        require(runNativeFixedTargetTrial(tool.world,*b,[&] {
+            for(double bad:{0.0,-1.0,2e-7,std::numeric_limits<double>::quiet_NaN(),std::numeric_limits<double>::infinity()})
+                rejects([&]{b->advanceExternalContactStep(bad,[]{});},"invalid variable horizon admitted");
+            rejects([&]{b->advanceExternalContactStep(5e-8,{});},"empty variable callback admitted");
+            b->advanceExternalContactStep(5e-8,[&] {
+                rejects([&]{b->run({.max_steps=1});},"callback advanced target twice");
+                rejects([&]{b->advanceExternalContactStep(2.5e-8,[]{});},"recursive variable step admitted");
+                rejects([&]{b->setExternalForces({},0);},"callback replaced finite load schedule");
+                rejects([&]{b->setExternalWrenches({},0);},"callback replaced finite wrench schedule");
+                tool.world.step(5e-8);
+            });return false;
+        })==false,"callback guard trial accepted");unchanged();
+
+        // Finite queued forces have a declared substep span. A smaller dt must
+        // not silently shorten it. Uniform translation has no bond strain.
+        auto loads=target.backend();std::vector<Vec3> forces(target.state.node_count);
+        for(unsigned i=0;i<forces.size();++i)forces[i]={target.state.mass[i]*2,0,0};
+        loads->setExternalForces(forces,2);
+        require(runNativeFixedTargetTrial(tool.world,*loads,[&] {
+            rejects([&]{loads->advanceExternalContactStep(5e-8,[]{});},"variable step shortened queued force duration");
+            for(unsigned i=0;i<3;++i)loads->advanceExternalContactStep(1e-7,[&]{tool.world.step(1e-7);});
+            loads->advanceExternalContactStep(5e-8,[&]{tool.world.step(5e-8);});return true;
+        }),"finite force clock trial refused");
+        const auto loaded=target.download(*loads);double mass=0;for(double m:loaded.mass)mass+=m;
+        near(loads->externalContactElapsedTime(),3.5e-7,1e-22,"finite force clock incorrect");
+        require(loads->status().external_load.steps==2,"finite load span changed");
+        near(loads->status().external_load.elapsed_s,2e-7,1e-22,"finite force duration changed");
+        near(loads->status().external_load.impulse_n_s.x,4e-7*mass,2e-20,"finite force impulse changed");
+        // Internal spring roundoff redistributes tiny nodal velocities when
+        // reconstructed positions are rounded. Test assembly momentum, which
+        // internal action/reaction must preserve, rather than exact node copies.
+        Vec3 load_momentum{};
+        for(unsigned i=0;i<loaded.node_count;++i)load_momentum+=loaded.mass[i]*Vec3{loaded.v[3*i],loaded.v[3*i+1],loaded.v[3*i+2]};
+        near(length(load_momentum-Vec3{4e-7*mass,0,0}),0,2e-20,"finite force assembly momentum incorrect");
+
+        Target falling(preset);falling.settings.gravity={0,-9.81,0};auto gravity=falling.backend();
+        require(runNativeFixedTargetTrial(tool.world,*gravity,[&] {
+            for(double dt:{1e-7,5e-8,2.5e-8})gravity->advanceExternalContactStep(dt,[&]{tool.world.step(dt);});return true;
+        }),"variable gravity trial refused");
+        const auto fallen=falling.download(*gravity);const double time=1.75e-7;
+        Vec3 gravity_momentum{},center_displacement{};
+        for(unsigned i=0;i<fallen.node_count;++i) {
+            gravity_momentum+=fallen.mass[i]*Vec3{fallen.v[3*i],fallen.v[3*i+1],fallen.v[3*i+2]};
+            center_displacement+=fallen.mass[i]*Vec3{fallen.u[3*i],fallen.u[3*i+1],fallen.u[3*i+2]};
+        }
+        near(length(gravity_momentum-Vec3{0,-9.81*time*mass,0}),0,2e-20,"variable gravity momentum differs from analytical freefall");
+        near(length(center_displacement/mass-Vec3{0,-.5*9.81*time*time,0}),0,1e-24,"variable gravity center differs from analytical freefall");
+        near(gravity->externalContactElapsedTime(),time,1e-22,"variable gravity physical clock");
+        near(gravity->status().gravity_load.elapsed_s,time,1e-22,"gravity ledger used uploaded horizon");
+        near(gravity->status().gravity_load.impulse_n_s.y,-mass*9.81*time,2e-20,"variable gravity momentum ledger");
+        require(fallen.mass==falling.state.mass,"variable stepping changed material mass");
+        auto single=makeCpuLatticeBackend(target.schedule,Precision::Float);
+        rejects([&]{(void)single->externalContactElapsedTime();},"float contact clock silently supported");
+        rejects([&]{single->advanceExternalContactStep(5e-8,[]{});},"float variable contact silently supported");
+        auto legacy=target.settings;legacy.bond_integrator=kBondXpbd;
+        auto parallel=makeParallelCpuLatticeBackend(target.schedule,Precision::Double,2);parallel->upload(target.state,legacy,{});
+        rejects([&]{(void)parallel->externalContactElapsedTime();},"parallel contact clock silently supported");
+        rejects([&]{parallel->advanceExternalContactStep(5e-8,[]{});},"parallel variable contact silently supported");
+        auto xpbd=target.backend();xpbd->upload(target.state,legacy,{});
+        rejects([&]{(void)xpbd->externalContactElapsedTime();},"XPBD contact clock silently supported");
+        rejects([&]{xpbd->advanceExternalContactStep(5e-8,[]{});},"XPBD variable contact silently supported");
+        std::cout<<"VARIABLE_CONTACT {\"material\":\""<<materialPresetName(preset)<<"\",\"target_mass_kg\":"<<mass
+            <<",\"accepted_time_s\":"<<b->externalContactElapsedTime()<<",\"gravity_time_s\":"<<time
+            <<",\"gravity_impulse_n_s\":"<<gravity->status().gravity_load.impulse_n_s.y
+            <<",\"attributed_p_residual_n_s\":"<<p_residual<<",\"attributed_l_residual_kg_m2_s\":"<<l_residual
+            <<",\"attributed_e_residual_j\":"<<e_residual<<"}\n";
+    }
+}
 // Capture is read-only, sampled after accepted physical steps. No render clock,
 // interpolation, fragment templates or extra impulses enter the experiment.
 nlohmann::json vectorJson(Vec3 v){return {v.x,v.y,v.z};}
@@ -623,7 +776,7 @@ int main(int argc,char **argv){try{
     std::cout.precision(12);liveGraphSelectionOracles();analyticalSurfaceOracles();bulkAtomicity();authoritativeTopologyAdmission();
     require(!(oracles_only&&(strict||manifold||reverse||refinement_requested||!output.empty())),"oracle-only mode cannot imply sustained acceptance");
     require(!refinement_requested||manifold,"extended refinement requires the explicit coupled manifold experiment");
-    manifoldOracles();
+    manifoldOracles();variableContactStepOracles();
     if(oracles_only){std::cout<<"[PASS] coupled manifold analytical/native atomicity oracles\n";return 0;}
     matchedNativeSurfaceTrajectories();matchedNativeSurfaceTrajectories(true);const auto open=sustainedLocalContact(output.empty()?nullptr:&recording,reverse,manifold,refinement_levels);
     if(!output.empty()){

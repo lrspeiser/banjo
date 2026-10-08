@@ -289,6 +289,21 @@ public:
     [[nodiscard]] virtual double externalContactTimestep() const {
         throw std::invalid_argument("this lattice backend does not implement external point contact");
     }
+    // Accepted physical time since upload, independent of substep count. The
+    // owner retains an absolute origin when transferring a constituent. Only
+    // serial double Verlet implements this clock and variable contact steps.
+    [[nodiscard]] virtual double externalContactElapsedTime() const {
+        throw std::invalid_argument("this lattice backend does not implement a contact clock");
+    }
+    // Within a paired reversible source/material trial, scope the contact
+    // horizon to dt, invoke contact (including the source's one native step),
+    // then advance the material once. 0 < dt <= uploaded dt. No upload/history
+    // reset. Contact must not run/reenter this backend or replace finite loads.
+    // Queued loads count substeps; changing their timestep is refused. Callback
+    // receipts are provisional until the enclosing paired trial is accepted.
+    virtual RunStatus advanceExternalContactStep(double,const std::function<void()> &) {
+        throw std::invalid_argument("this lattice backend does not implement variable contact steps");
+    }
     [[nodiscard]] virtual ExternalPointTransferLedger validateExternalPointVelocity(
         std::uint32_t,const ActiveNodeState &,Vec3) const {
         throw std::invalid_argument("this lattice backend does not implement external point contact");
