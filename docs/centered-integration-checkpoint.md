@@ -1,3 +1,5 @@
+**Follow-up:** [Centered-only continuous rotation](centered-rotation-checkpoint.md) supersedes this checkpoint's centered pose dead zone and matched outcomes. Isolated torsion improves; glass-ball and ice still refuse, and full accuracy/speed remain OPEN. Reference integration is unchanged.
+
 # Centered elastic integration in the voxel laboratory
 
 October 8, 2026. **Implemented experimental integrator foundation; complete

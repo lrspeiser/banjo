@@ -266,6 +266,40 @@ void centered_gravity_oracle(){
     check(std::abs(final.mechanicalEnergy()-initial.mechanicalEnergy())<1e-10,"centered binary-exact gravity energy no Euler drift loss");
     std::cout<<"centered gravity energy_error_j="<<final.mechanicalEnergy()-initial.mechanicalEnergy()<<'\n';
 }
+void centered_small_spin_oracle(MaterialPreset preset){
+    // All three steps are the same one-second free-spin experiment. The two
+    // finer steps lie below the pinned native angular-increment cutoff.
+    const Vec3 spin{.000128,0,0};
+    auto material=makeReferenceMaterial(preset);material.model=MaterialModel::RigidOnly;
+    for(unsigned count:{64U,256U,1024U}){
+        JoltWorld world(0,{},execution);world.setCenteredIntegration(true);world.setGravity({});
+        world.addBox({1,{.1,.1,.1},material,{{1,2,3},{},{},spin},false});world.setContinuousCollision(1,false);
+        const auto initial=world.mechanicalTotals();const auto state0=world.snapshot(1);
+        const double h=1./count;
+        for(unsigned i=0;i<count;++i)world.step(h);
+        const auto state=world.snapshot(1);const auto final=world.mechanicalTotals();
+        const double angle=2*std::atan2(state.orientation_world.x,state.orientation_world.w);
+        check(std::abs(angle-spin.x)<2e-9,"centered submicroradian rotation converges under time refinement");
+        check(length(state.center_of_mass_world_m-state0.center_of_mass_world_m)==0,"centered rotation preserves centre of mass");
+        check(length(state.angular_velocity_rad_s-spin)<1e-10,"free spin not assigned or damped by rotation integration");
+        check(std::abs(final.kinetic_energy_j-initial.kinetic_energy_j)<1e-15,"small-spin energy retained");
+        check(length(final.angular_momentum_kg_m2_s-initial.angular_momentum_kg_m2_s)<1e-12,"small-spin angular momentum retained");
+        const auto accepted=world.snapshot(1);
+        check(!world.runReversibleTrial([&]{world.step(h);return false;}),"small-spin trial refusal");
+        const auto restored=world.snapshot(1);
+        check(restored.orientation_world.x==accepted.orientation_world.x&&restored.orientation_world.w==accepted.orientation_world.w,"small-spin native pose rollback");
+        std::cout<<"material="<<materialSceneName(preset)<<" centered small-spin steps="<<count<<" angle_rad="<<angle<<" angle_error_rad="<<angle-spin.x<<" energy_error_j="<<final.kinetic_energy_j-initial.kinetic_energy_j<<'\n';
+    }
+#ifndef BANJO_JOLT_CONTINUOUS_SMALL_ROTATION
+    JoltWorld reference(0,{},execution);reference.setGravity({});
+    reference.addBox({1,{.1,.1,.1},material,{{1,2,3},{},{},spin},false});reference.setContinuousCollision(1,false);
+    reference.step(1./256);
+    check(reference.snapshot(1).orientation_world.x==0&&reference.snapshot(1).angular_velocity_rad_s.x>0,"reference dead zone precedes native sleep");
+    for(unsigned i=1;i<256;++i)reference.step(1./256);
+    const auto state=reference.snapshot(1);
+    check(state.orientation_world.x==0,"pinned reference cutoff remains unchanged");
+#endif
+}
 void centered_pair_oracle(MaterialPreset preset,double damping){
     JoltWorld world(0,{},execution);world.setCenteredIntegration(true);world.setGravity({});world.setContactSolverIterations(96,4);
     auto material=makeReferenceMaterial(preset);material.model=MaterialModel::RigidOnly;
@@ -360,4 +394,4 @@ void resolved_assembly_recovery_oracle(MaterialPreset preset){
     std::cout<<"material="<<materialSceneName(preset)<<" assembly_recovery="<<upward<<" peak_elastic_j="<<peak_elastic<<" peak_energy_excess_j="<<peak_energy-initial<<'\n';
 }
 }
-int main(){try{for(auto policy:{RigidJobExecution::ThreadPool,RigidJobExecution::Inline}){execution=policy;std::cout<<"execution="<<(policy==RigidJobExecution::Inline?"inline":"thread-pool")<<'\n';for(bool law:{false,true}){log_gradient=law;for(double extension:{0.,.01}){oracle(0,extension);oracle(20,extension);}torsion(0);torsion(.005);sleeping_spring_oracle();}nearest_orientation();for(bool fixed:{false,true})for(double friction:{0.,.4})contact_oracle(fixed,friction);gravity_oracle();log_gradient_impulse_oracle();limit_observation_oracle();for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(bool resolved:{false,true})restitution_model_oracle(material,resolved);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})resolved_assembly_recovery_oracle(material);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(double damping:{0.,20.})centered_pair_oracle(material,damping);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(double damping:{0.,.02})centered_torsion_oracle(material,damping);centered_gravity_oracle();}return 0;}catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(){try{for(auto policy:{RigidJobExecution::ThreadPool,RigidJobExecution::Inline}){execution=policy;std::cout<<"execution="<<(policy==RigidJobExecution::Inline?"inline":"thread-pool")<<'\n';for(bool law:{false,true}){log_gradient=law;for(double extension:{0.,.01}){oracle(0,extension);oracle(20,extension);}torsion(0);torsion(.005);sleeping_spring_oracle();}nearest_orientation();for(bool fixed:{false,true})for(double friction:{0.,.4})contact_oracle(fixed,friction);gravity_oracle();log_gradient_impulse_oracle();limit_observation_oracle();for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(bool resolved:{false,true})restitution_model_oracle(material,resolved);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})resolved_assembly_recovery_oracle(material);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(double damping:{0.,20.})centered_pair_oracle(material,damping);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(double damping:{0.,.02})centered_torsion_oracle(material,damping);centered_gravity_oracle();for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})centered_small_spin_oracle(material);}return 0;}catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}

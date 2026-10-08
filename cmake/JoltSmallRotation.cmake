@@ -4,7 +4,13 @@
 # reducing dt stops orientation integration while velocity and attachments move.
 function(banjo_jolt_continuous_small_rotation target source_dir)
     set(relative_path "Jolt/Physics/Body/Body.inl")
-    file(READ "${source_dir}/${relative_path}" source_text)
+    # Preserve the centered-only method when the force observation overlay is
+    # present. All consumers must see the same body declaration/inline methods.
+    set(body_source "${source_dir}")
+    if(EXISTS "${CMAKE_CURRENT_BINARY_DIR}/jolt-force-observation-overlay/Jolt/Physics/Body/Body.h")
+        set(body_source "${CMAKE_CURRENT_BINARY_DIR}/jolt-force-observation-overlay")
+    endif()
+    file(READ "${body_source}/${relative_path}" source_text)
     set(original "if (len > 1.0e-6f)")
     set(replacement "if (len > 0.0f)")
     string(REPLACE "${original}" "" without "${source_text}")
@@ -23,7 +29,7 @@ function(banjo_jolt_continuous_small_rotation target source_dir)
     file(CONFIGURE OUTPUT "${overlay}/${relative_path}" CONTENT "${patched}" @ONLY)
     # Body.h includes "Body.inl" relative to itself. Copy its unchanged public
     # declaration into the overlay too, so the local include resolves here.
-    file(READ "${source_dir}/Jolt/Physics/Body/Body.h" body_header)
+    file(READ "${body_source}/Jolt/Physics/Body/Body.h" body_header)
     file(CONFIGURE OUTPUT "${overlay}/Jolt/Physics/Body/Body.h" CONTENT "${body_header}" @ONLY)
     target_include_directories(${target} BEFORE PUBLIC "${overlay}")
     target_compile_definitions(${target} PUBLIC BANJO_JOLT_CONTINUOUS_SMALL_ROTATION=1)
