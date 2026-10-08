@@ -314,6 +314,16 @@ public:
     virtual RunStatus advanceCoupledContactStep(double,const std::function<void(ExternalContactPhase)> &) {
         throw std::invalid_argument("this lattice backend does not implement force-boundary contact");
     }
+    // Read-only actual velocity before this phase's force half-kick, at the
+    // current unchanged phase geometry. Available only inside its coupled
+    // callback, for finite movable nodes in serial-double CPU Verlet. This
+    // snapshot does not change contact work or infer a dissipation law.
+    [[nodiscard]] virtual ActiveNodeState externalContactForceStartPoint(std::uint32_t) const {
+        throw std::invalid_argument("this lattice backend does not expose force-phase starting states");
+    }
+    [[nodiscard]] virtual std::vector<std::uint32_t> externalContactForceMovableNodes() const {
+        throw std::invalid_argument("this lattice backend does not expose force-phase mobility");
+    }
     [[nodiscard]] virtual ExternalPointTransferLedger validateExternalPointVelocity(
         std::uint32_t,const ActiveNodeState &,Vec3) const {
         throw std::invalid_argument("this lattice backend does not implement external point contact");

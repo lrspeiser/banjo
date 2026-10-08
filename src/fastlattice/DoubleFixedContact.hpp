@@ -2,6 +2,7 @@
 #include "fastlattice/FastLattice.hpp"
 #include "fastlattice/ContactAccuracy.hpp"
 #include "physics/DoubleFixedSource.hpp"
+#include "physics/ForceContactPhase.hpp"
 
 namespace banjo::fastlattice {
 struct DoubleFixedManifoldTransfer {
@@ -28,6 +29,7 @@ struct DoubleFixedStep {
     DoubleRigidTransfer free_drift;
     std::vector<DoubleFixedSourceTransfer> source_loads;
     std::vector<DoubleFixedManifoldTransfer> contacts;
+    std::vector<ForceContactPhaseAudit> force_phases;
     double interval_s{};
 };
 struct DoubleSourceWrench {
@@ -50,10 +52,14 @@ struct DoubleContactStepAudit {
     Vec3 contact_impulse_residual_n_s{},contact_angular_residual_kg_m2_s{},geometry_couple_kg_m2_s{};
     Vec3 drift_impulse_residual_n_s{},drift_angular_residual_kg_m2_s{},source_load_impulse_n_s{},source_load_angular_kg_m2_s{};
     std::vector<FixedVelocityImpulse> fixing_reactions;
+    ForceContactPhaseAudit force_phases;
     std::uint64_t active_manifolds{};
 };
 struct DoubleContactAccuracyResult : ContactAccuracyDifference {
     DoubleContactStepAudit accepted_audit;
+    // Diagnostic measurements from the final comparison, including a refused
+    // trial. These do not replace the retained operator/state accuracy gates.
+    ForceContactPhaseAudit full_force_phases,fine_force_phases;
 };
 // Full/two-half paired trials from the same actual state. Commits two half
 // steps only on exact topology agreement and all shared SI bounds <= 1.

@@ -37,6 +37,9 @@ public:
                 first_failure_bonds_.size()*sizeof(std::uint32_t)+frames_.size()*sizeof(FrameCapture);
             for (const auto &frame:frames_) bytes+=frame.u.size()*sizeof(float)+frame.alive.size()+frame.damage.size()*sizeof(float);
             for (const auto &source:status_.external_sources) bytes+=sizeof(source)+source.source.size();
+            // The bounded force callback can retain one starting velocity
+            // snapshot. Include its possible allocation before trial entry.
+            if(L_.node_count<=1024)bytes+=3ULL*L_.node_count*sizeof(double);
             if (bytes>16U*1024U*1024U) throw std::invalid_argument("lattice trial exceeds 16 MiB payload budget");
             auto working=working_;auto external=external_;auto gravity=gravity_;auto status=status_;
             auto frames=frames_;auto failures=first_failure_bonds_;
@@ -138,7 +141,22 @@ public:
         return advanceContactStep(dt,contact,nullptr);
     }
     RunStatus advanceCoupledContactStep(double dt,const std::function<void(ExternalContactPhase)> &contact) override {
+        if(L_.node_count>1024)throw std::invalid_argument("coupled force-phase snapshot exceeds 1024 nodes");
         return advanceContactStep(dt,{},&contact);
+    }
+    [[nodiscard]] ActiveNodeState externalContactForceStartPoint(std::uint32_t i) const override {
+        if(!force_contact_||!contact_step_callback_||force_start_velocities_.size()!=3ULL*L_.node_count)
+            throw std::invalid_argument("force-phase starting point is unavailable outside its callback");
+        auto out=externalContactPoint(i);
+        out.velocity_m_s={force_start_velocities_[3*i],force_start_velocities_[3*i+1],force_start_velocities_[3*i+2]};
+        return out;
+    }
+    [[nodiscard]] std::vector<std::uint32_t> externalContactForceMovableNodes() const override {
+        if(!force_contact_||!contact_step_callback_||L_.node_count>1024)
+            throw std::invalid_argument("force-phase mobility is unavailable outside its bounded callback");
+        std::vector<std::uint32_t> nodes;nodes.reserve(L_.node_count);
+        for(std::uint32_t i=0;i<L_.node_count;++i)if(L_.inv_mass[i]>0)nodes.push_back(i);
+        return nodes;
     }
     RunStatus advanceContactStep(double dt,const std::function<void()> &contact,
         const std::function<void(ExternalContactPhase)> *force_contact) {
@@ -162,8 +180,8 @@ public:
                     contact_step_callback_=true;contact();contact_step_callback_=false;
                 }
                 RunControl one;one.max_steps=1;
-                auto result=run(one);force_contact_=nullptr;S_.dt=uploaded_dt;return result;
-            }catch(...) {contact_step_callback_=false;force_contact_=nullptr;S_.dt=uploaded_dt;throw;}
+                auto result=run(one);force_contact_=nullptr;force_start_velocities_.clear();S_.dt=uploaded_dt;return result;
+            }catch(...) {contact_step_callback_=false;force_contact_=nullptr;force_start_velocities_.clear();S_.dt=uploaded_dt;throw;}
         }
     }
     [[nodiscard]] ActiveNodeState externalContactPoint(std::uint32_t i) const override {
@@ -487,11 +505,13 @@ private:
         }
         // Two half kicks consume one load substep. All spring forces at a
         // kick use the same positions; no position projection or v rebuild.
+        if(force_contact_)force_start_velocities_.assign(L_.v,L_.v+3ULL*L_.node_count);
         external_.kick(L_,Real(.5)*S_.dt,status_.external_load,&status_.external_sources,false,&status_.fixed_boundary);
         gravity_.kick(L_,Real(.5)*S_.dt,status_.gravity_load,nullptr,false,&status_.fixed_boundary);mark(3);
         verlet::kick(L_,S_,origin_,status_);mark(4);
         invokeForceContact(ExternalContactPhase::BeforeDrift);
         verlet::drift(L_,S_.dt);mark(5);
+        if(force_contact_)force_start_velocities_.assign(L_.v,L_.v+3ULL*L_.node_count);
         verlet::kick(L_,S_,origin_,status_);mark(8);
         external_.kick(L_,Real(.5)*S_.dt,status_.external_load,&status_.external_sources,true,&status_.fixed_boundary);
         gravity_.kick(L_,Real(.5)*S_.dt,status_.gravity_load,nullptr,true,&status_.fixed_boundary);mark(10);
@@ -531,6 +551,7 @@ private:
     unsigned trial_depth_{};
     bool contact_step_callback_{};
     const std::function<void(ExternalContactPhase)> *force_contact_{};
+    std::vector<double> force_start_velocities_;
     double accepted_time_s_{};
     double time_correction_s_{};
     Vec3 origin_{};

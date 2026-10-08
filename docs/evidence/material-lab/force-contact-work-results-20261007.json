@@ -1,0 +1,1158 @@
+{
+  "schema": "banjo-force-contact-work-checkpoint-v1",
+  "timestamp_utc": "2026-10-08T06:32:36.177719+00:00",
+  "base_commit": "cdbbd2dd1afa687f0d737d8858a64d07cd98ff2e",
+  "publication": "Final revision is recorded in Git; source hashes below identify tested changes.",
+  "environment": "Windows x64, VS 2022/MSVC Release, build/local-cell-tools, default Jolt rotation model 7, headless CPU double",
+  "classification": "experimental measurement; response/laws/accuracy gates and running worlds unchanged",
+  "sources": [
+    {
+      "path": "CMakeLists.txt",
+      "sha256": "9502edc86a27819af43f420e6fdef46371d157c7463a06e7642baf55e760da7e"
+    },
+    {
+      "path": "src/physics/ForceContactPhase.cpp",
+      "sha256": "703a3c09471bad25d4b8bdef3a196825c9a62d5614474f0d4a06633f6beb243b"
+    },
+    {
+      "path": "src/physics/ForceContactPhase.hpp",
+      "sha256": "90d92423c3b0b44e844f6145c86f4b8e9bc770fb3d4d171e85f7717f7ff70375"
+    },
+    {
+      "path": "src/fastlattice/FastLattice.hpp",
+      "sha256": "0baa8f1b047688f91e5961f7bf37b213c22fd1f3d422790e1e984f00b914e8ca"
+    },
+    {
+      "path": "src/fastlattice/CpuLatticeBackend.cpp",
+      "sha256": "c8fb454372e11a5f139c8e3c2942f399a18e2e4972fbdb30d0dd895734d0466f"
+    },
+    {
+      "path": "src/fastlattice/DoubleFixedContact.cpp",
+      "sha256": "092588a580413f1e74c848491f08e60f398b53a5676df2d0a07d2fa7150f28fc"
+    },
+    {
+      "path": "src/fastlattice/DoubleFixedContact.hpp",
+      "sha256": "3262ffab483271c283df145566c27bd68363cc0c5b4bb2ea067cd1085bdb37ef"
+    },
+    {
+      "path": "tests/force_contact_phase_tests.cpp",
+      "sha256": "3c96164a75e7d267ade866dce2c0fc0cd2e644cc259740dbb91cf15075d70370"
+    },
+    {
+      "path": "tests/double_geometry_contact_tests.cpp",
+      "sha256": "4fbde7079370071308decbd437be475bd671376a2a0c2b69f5b55dbb2b415d41"
+    }
+  ],
+  "binaries": [
+    {
+      "path": "build/local-cell-tools/Release/banjo_force_contact_phase_tests.exe",
+      "sha256": "242c9dee0cc83bbe40234667c5d3e40f3c5958af08f41111189243ac87c82c3d"
+    },
+    {
+      "path": "build/local-cell-tools/Release/banjo_double_geometry_contact_tests.exe",
+      "sha256": "7572b80f016c579998922e116f9f510db375b8e98182711befd444ab1b522626"
+    }
+  ],
+  "experiment": {
+    "cell_m": 0.04,
+    "target_dimensions_m": [
+      0.12,
+      0.12,
+      0.12
+    ],
+    "nodes": 27,
+    "clamps": 9,
+    "head_widths_m": [
+      0.04,
+      0.12
+    ],
+    "source_velocity_m_s": [
+      6,
+      0.2,
+      0.1
+    ],
+    "gravity_m_s2": [
+      0,
+      0,
+      0
+    ],
+    "damping": 0,
+    "accepted_interval_limit": 500,
+    "probe_intervals_s": [
+      1e-07,
+      5e-08,
+      2.5e-08,
+      1.25e-08
+    ],
+    "required_duration_s": 0.0002048,
+    "required_broken_bonds": ">0",
+    "materials": [
+      {
+        "name": "glass",
+        "density_kg_m3": 2500,
+        "youngs_modulus_pa": 70000000000.0,
+        "target_mass_kg": 4.319999999999999
+      },
+      {
+        "name": "oak",
+        "density_kg_m3": 700,
+        "youngs_modulus_pa": 12000000000.0,
+        "target_mass_kg": 1.2095999999999998
+      },
+      {
+        "name": "iron",
+        "density_kg_m3": 7870,
+        "youngs_modulus_pa": 211000000000.0,
+        "target_mass_kg": 13.599359999999997
+      }
+    ]
+  },
+  "oracles": [
+    "exact constrained 2/3 kg masses, zero normal contact work, 60 h^2 J raw operator projection loss",
+    "exact 2/3 kg m2 rotors, zero constraint work, 2.4 h^2 J raw projection loss",
+    "Galilean work transformation and interval-halving scaling",
+    "unforced impact retains -8 J work",
+    "late malformed/changed geometry, mass, tensor, spin, nonfinite states and budgets",
+    "actual contact receipt equality ensures source and material DOFs both included"
+  ],
+  "verification": {
+    "scoped_tests": [
+      {
+        "name": "banjo_cohesive_rigid_tests",
+        "wall_s": 5.09,
+        "passed": true
+      },
+      {
+        "name": "banjo_outcome_tests",
+        "wall_s": 0.04,
+        "passed": true
+      },
+      {
+        "name": "banjo_point_rigid_contact_tests",
+        "wall_s": 0.03,
+        "passed": true
+      },
+      {
+        "name": "banjo_force_contact_phase_tests",
+        "wall_s": 0.01,
+        "passed": true
+      },
+      {
+        "name": "banjo_fixed_assembly_contact_tests",
+        "wall_s": 0.03,
+        "passed": true
+      },
+      {
+        "name": "banjo_double_rigid_source_tests",
+        "wall_s": 0.04,
+        "passed": true
+      },
+      {
+        "name": "banjo_creator_tests",
+        "wall_s": 4.42,
+        "passed": true
+      },
+      {
+        "name": "banjo_native_point_contact_tests",
+        "wall_s": 0.12,
+        "passed": true
+      },
+      {
+        "name": "banjo_native_lattice_contact_tests",
+        "wall_s": 23.34,
+        "passed": true
+      },
+      {
+        "name": "banjo_material_surface_contact_tests",
+        "wall_s": 5.93,
+        "passed": true
+      },
+      {
+        "name": "banjo_material_manifold_oracles",
+        "wall_s": 0.13,
+        "passed": true
+      },
+      {
+        "name": "banjo_double_geometry_contact_tests",
+        "wall_s": 0.27,
+        "passed": true
+      },
+      {
+        "name": "banjo_material_coupled_surface_contact_tests",
+        "wall_s": 10.82,
+        "passed": true
+      },
+      {
+        "name": "banjo_lattice_external_load_tests",
+        "wall_s": 0.1,
+        "passed": true
+      },
+      {
+        "name": "banjo_solid_matter_patch_tests",
+        "wall_s": 1.73,
+        "passed": true
+      },
+      {
+        "name": "banjo_constituent_partition_tests",
+        "wall_s": 0.92,
+        "passed": true
+      },
+      {
+        "name": "banjo_lattice_verlet_tests",
+        "wall_s": 0.04,
+        "passed": true
+      }
+    ],
+    "total_wall_s": 53.33,
+    "source_registration": {
+      "registered": 322,
+      "total": 322,
+      "cmake_files": 31,
+      "exclusions": 0
+    },
+    "full_regression": false,
+    "interactive_solver_installation": false,
+    "physical_phone": false,
+    "probe_exit_code": 1,
+    "probe_gate": "All six sustained cases remain open; 24 restored probes refuse unchanged raw-operator accuracy.",
+    "build_note": "CTest names material_manifold_oracles and material_coupled_surface_contact_tests are modes of banjo_material_surface_contact_tests, not separate build targets; corrected build commands complete all 15 actual targets."
+  },
+  "measurement_limits": [
+    "common midpoint work is a measurement, not automatically physical dissipation",
+    "phase identity does not replace support/external/fracture/full-pipeline accounts",
+    "laboratory oak remains isotropic axial, uncalibrated, not gameplay wood/grain",
+    "no source/native custody transition, finite-cell spin, fracture/debris or useful-speed qualification"
+  ],
+  "cases": [
+    {
+      "material": "glass",
+      "width_m": 0.04,
+      "cell_m": 0.04,
+      "proposal_s": 1e-07,
+      "required_duration_s": 0.0002048,
+      "accepted_intervals": 500,
+      "rejected_intervals": 9,
+      "elapsed_s": 6.7945312499999996e-06,
+      "broken_bonds": 0,
+      "passed": false,
+      "normalized_error": 0.19580911825300973,
+      "worst_metric": "target contact work (J)",
+      "refusal": "",
+      "attributed_energy_j": 1.4033143137109905e-13,
+      "attributed_momentum_n_s": 4.38473452481257e-15,
+      "attributed_angular_kg_m2_s": 1.5475484968182747e-17,
+      "source_mass_kg": 2.2835199755035163,
+      "target_mass_kg": 4.32,
+      "wall_s": 0.9007984
+    },
+    {
+      "material": "oak",
+      "width_m": 0.04,
+      "cell_m": 0.04,
+      "proposal_s": 1e-07,
+      "required_duration_s": 0.0002048,
+      "accepted_intervals": 500,
+      "rejected_intervals": 6,
+      "elapsed_s": 8.775e-06,
+      "broken_bonds": 0,
+      "passed": false,
+      "normalized_error": 0.6811451118693412,
+      "worst_metric": "target numerical integration",
+      "refusal": "",
+      "attributed_energy_j": 7.7538485614842e-13,
+      "attributed_momentum_n_s": 3.4733675456036036e-14,
+      "attributed_angular_kg_m2_s": 4.2770071308890965e-17,
+      "source_mass_kg": 2.2835199755035163,
+      "target_mass_kg": 1.2096,
+      "wall_s": 0.6241881
+    },
+    {
+      "material": "iron",
+      "width_m": 0.04,
+      "cell_m": 0.04,
+      "proposal_s": 1e-07,
+      "required_duration_s": 0.0002048,
+      "accepted_intervals": 500,
+      "rejected_intervals": 14,
+      "elapsed_s": 7.754492187499999e-06,
+      "broken_bonds": 0,
+      "passed": false,
+      "normalized_error": 0.17123317164191576,
+      "worst_metric": "target contact work (J)",
+      "refusal": "",
+      "attributed_energy_j": -3.7503319541684274e-12,
+      "attributed_momentum_n_s": 1.9865467959648594e-14,
+      "attributed_angular_kg_m2_s": 6.589583531418639e-17,
+      "source_mass_kg": 2.2835199755035163,
+      "target_mass_kg": 13.599359999999999,
+      "wall_s": 0.9304028
+    },
+    {
+      "material": "glass",
+      "width_m": 0.12,
+      "cell_m": 0.04,
+      "proposal_s": 1e-07,
+      "required_duration_s": 0.0002048,
+      "accepted_intervals": 500,
+      "rejected_intervals": 9,
+      "elapsed_s": 6.328125e-06,
+      "broken_bonds": 0,
+      "passed": false,
+      "normalized_error": 0.28303107138390754,
+      "worst_metric": "contact dissipation",
+      "refusal": "",
+      "attributed_energy_j": -9.663526489428476e-13,
+      "attributed_momentum_n_s": 2.08265363708198e-14,
+      "attributed_angular_kg_m2_s": 6.076031468564183e-17,
+      "source_mass_kg": 6.312959942916797,
+      "target_mass_kg": 4.32,
+      "wall_s": 8.1478245
+    },
+    {
+      "material": "oak",
+      "width_m": 0.12,
+      "cell_m": 0.04,
+      "proposal_s": 1e-07,
+      "required_duration_s": 0.0002048,
+      "accepted_intervals": 500,
+      "rejected_intervals": 4,
+      "elapsed_s": 8.65625e-06,
+      "broken_bonds": 0,
+      "passed": false,
+      "normalized_error": 0.7738363470011222,
+      "worst_metric": "target contact work (J)",
+      "refusal": "",
+      "attributed_energy_j": 4.0816278308597465e-12,
+      "attributed_momentum_n_s": 3.138719776058792e-13,
+      "attributed_angular_kg_m2_s": 6.308546033738227e-17,
+      "source_mass_kg": 6.312959942916797,
+      "target_mass_kg": 1.2096,
+      "wall_s": 11.0348532
+    },
+    {
+      "material": "iron",
+      "width_m": 0.12,
+      "cell_m": 0.04,
+      "proposal_s": 1e-07,
+      "required_duration_s": 0.0002048,
+      "accepted_intervals": 500,
+      "rejected_intervals": 13,
+      "elapsed_s": 6.480859375e-06,
+      "broken_bonds": 0,
+      "passed": false,
+      "normalized_error": 0.4293811457500851,
+      "worst_metric": "target numerical integration",
+      "refusal": "",
+      "attributed_energy_j": -6.146307421350805e-13,
+      "attributed_momentum_n_s": 2.42749583760155e-14,
+      "attributed_angular_kg_m2_s": 7.680016507217728e-17,
+      "source_mass_kg": 6.312959942916797,
+      "target_mass_kg": 13.599359999999999,
+      "wall_s": 13.9325191
+    }
+  ],
+  "probes": [
+    {
+      "material": "glass",
+      "width_m": 0.04,
+      "start_s": 6.7945312499999996e-06,
+      "dt_s": 1e-07,
+      "accepted": false,
+      "normalized_error": 807.7472489702586,
+      "metric": "target contact work (J)",
+      "metric_full": 20.623478302349415,
+      "metric_fine": 20.624286049598386,
+      "work": {
+        "sequential_full_j": -0.001611097117682554,
+        "sequential_fine_j": -0.00080556384803848,
+        "simultaneous_full_j": -9.011750413917097e-10,
+        "simultaneous_fine_j": -6.751599120603735e-10,
+        "cross_full_j": 0.001611096216507474,
+        "cross_fine_j": 0.0008055631728785686,
+        "kinetic_full_j": -0.14054447639823844,
+        "kinetic_fine_j": -0.14054503654178419,
+        "work_residual_full_j": 1.7898414980414205e-17,
+        "work_residual_fine_j": 1.8789546580484933e-17
+      },
+      "restitution_candidates": 0,
+      "before_force_vn_range_m_s": [
+        -1.4106743146735893e-07,
+        0.0007731703944200904
+      ],
+      "witness_count_range": [
+        12.0,
+        12.0
+      ],
+      "phase_count": 6
+    },
+    {
+      "material": "glass",
+      "width_m": 0.04,
+      "start_s": 6.7945312499999996e-06,
+      "dt_s": 5e-08,
+      "accepted": false,
+      "normalized_error": 201.19510524096995,
+      "metric": "target contact work (J)",
+      "metric_full": 20.520968512237133,
+      "metric_fine": 20.521169707342374,
+      "work": {
+        "sequential_full_j": -0.00040183603831643155,
+        "sequential_fine_j": -0.0002009190848792403,
+        "simultaneous_full_j": 3.160855649717351e-10,
+        "simultaneous_fine_j": 3.0266195346483466e-11,
+        "cross_full_j": 0.00040183635440199097,
+        "cross_fine_j": 0.00020091911514543082,
+        "kinetic_full_j": -0.070675248201099,
+        "kinetic_fine_j": -0.0706753228022462,
+        "work_residual_full_j": -1.834619100704631e-17,
+        "work_residual_fine_j": -3.0163306472868665e-18
+      },
+      "restitution_candidates": 0,
+      "before_force_vn_range_m_s": [
+        -1.3615216358703368e-13,
+        0.0007663175568063188
+      ],
+      "witness_count_range": [
+        12.0,
+        12.0
+      ],
+      "phase_count": 6
+    },
+    {
+      "material": "glass",
+      "width_m": 0.04,
+      "start_s": 6.7945312499999996e-06,
+      "dt_s": 2.5e-08,
+      "accepted": false,
+      "normalized_error": 50.204963070399344,
+      "metric": "target contact work (J)",
+      "metric_full": 20.469378884287092,
+      "metric_fine": 20.469429089250163,
+      "work": {
+        "sequential_full_j": -0.00010034051116236751,
+        "sequential_fine_j": -5.017038088045929e-05,
+        "simultaneous_full_j": 2.1169877601752482e-11,
+        "simultaneous_fine_j": -5.618190436424533e-11,
+        "cross_full_j": 0.00010034053233225092,
+        "cross_fine_j": 5.017032469854609e-05,
+        "kinetic_full_j": -0.035438043791590476,
+        "kinetic_fine_j": -0.03543805338513716,
+        "work_residual_full_j": -2.720874967372726e-18,
+        "work_residual_fine_j": -5.454574542962474e-18
+      },
+      "restitution_candidates": 0,
+      "before_force_vn_range_m_s": [
+        -6.09919173009672e-14,
+        0.000762887040639924
+      ],
+      "witness_count_range": [
+        12.0,
+        12.0
+      ],
+      "phase_count": 6
+    },
+    {
+      "material": "glass",
+      "width_m": 0.04,
+      "start_s": 6.7945312499999996e-06,
+      "dt_s": 1.25e-08,
+      "accepted": false,
+      "normalized_error": 12.539060762151166,
+      "metric": "target contact work (J)",
+      "metric_full": 20.443501144668282,
+      "metric_fine": 20.443513683729044,
+      "work": {
+        "sequential_full_j": -2.5070253554035507e-05,
+        "sequential_fine_j": -1.2535164571798308e-05,
+        "simultaneous_full_j": -2.8044982802981012e-11,
+        "simultaneous_fine_j": -4.802363207551883e-11,
+        "cross_full_j": 2.507022550904966e-05,
+        "cross_fine_j": 1.2535116548162727e-05,
+        "kinetic_full_j": -0.01774408378339218,
+        "kinetic_fine_j": -0.017744084704397145,
+        "work_residual_full_j": -3.669039016317759e-18,
+        "work_residual_fine_j": -1.6053193409490114e-18
+      },
+      "restitution_candidates": 0,
+      "before_force_vn_range_m_s": [
+        -7.867151413572848e-08,
+        0.0007610837818634569
+      ],
+      "witness_count_range": [
+        12.0,
+        12.0
+      ],
+      "phase_count": 6
+    },
+    {
+      "material": "oak",
+      "width_m": 0.04,
+      "start_s": 8.775e-06,
+      "dt_s": 1e-07,
+      "accepted": false,
+      "normalized_error": 175.95230651412663,
+      "metric": "target numerical integration",
+      "metric_full": 0.0005837449267991346,
+      "metric_fine": 0.00040779262028500796,
+      "work": {
+        "sequential_full_j": -0.0003510089900317832,
+        "sequential_fine_j": -0.00017550541101821302,
+        "simultaneous_full_j": 2.5894754637347296e-10,
+        "simultaneous_fine_j": 1.2921710816468086e-10,
+        "cross_full_j": 0.0003510092489793462,
+        "cross_fine_j": 0.00017550554023532363,
+        "kinetic_full_j": -0.05436752500857962,
+        "kinetic_fine_j": -0.054367671096591026,
+        "work_residual_full_j": -2.410533345155081e-18,
+        "work_residual_fine_j": 1.147851818106051e-17
+      },
+      "restitution_candidates": 0,
+      "before_force_vn_range_m_s": [
+        -6.85499499957148e-13,
+        0.00034313695894852905
+      ],
+      "witness_count_range": [
+        12.0,
+        12.0
+      ],
+      "phase_count": 6
+    },
+    {
+      "material": "oak",
+      "width_m": 0.04,
+      "start_s": 8.775e-06,
+      "dt_s": 5e-08,
+      "accepted": false,
+      "normalized_error": 43.79641240515042,
+      "metric": "target numerical integration",
+      "metric_full": 0.00031969273491228023,
+      "metric_fine": 0.0002758963225071298,
+      "work": {
+        "sequential_full_j": -8.747975713036655e-05,
+        "sequential_fine_j": -4.373993544891247e-05,
+        "simultaneous_full_j": 8.823122810172649e-11,
+        "simultaneous_fine_j": 4.408057900209367e-11,
+        "cross_full_j": 8.747984536159706e-05,
+        "cross_fine_j": 4.373997952948488e-05,
+        "kinetic_full_j": -0.02720828932023145,
+        "kinetic_fine_j": -0.027208307935683844,
+        "work_residual_full_j": 3.2470966673962976e-18,
+        "work_residual_fine_j": -9.078705510234423e-18
+      },
+      "restitution_candidates": 0,
+      "before_force_vn_range_m_s": [
+        -3.078455646491002e-13,
+        0.00034071560859697675
+      ],
+      "witness_count_range": [
+        12.0,
+        12.0
+      ],
+      "phase_count": 6
+    },
+    {
+      "material": "oak",
+      "width_m": 0.04,
+      "start_s": 8.775e-06,
+      "dt_s": 2.5e-08,
+      "accepted": false,
+      "normalized_error": 10.925008100848288,
+      "metric": "target numerical integration",
+      "metric_full": 0.00025398276055721425,
+      "metric_fine": 0.00024305775245636596,
+      "work": {
+        "sequential_full_j": -2.183579158518832e-05,
+        "sequential_fine_j": -1.0917899369212229e-05,
+        "simultaneous_full_j": 2.4987223359311944e-11,
+        "simultaneous_fine_j": 1.245993906385873e-11,
+        "cross_full_j": 2.183581657240985e-05,
+        "cross_fine_j": 1.0917911829152532e-05,
+        "kinetic_full_j": -0.013610192619166496,
+        "kinetic_fine_j": -0.013610194968287075,
+        "work_residual_full_j": -9.98650190451595e-19,
+        "work_residual_fine_j": 2.664416995433838e-19
+      },
+      "restitution_candidates": 0,
+      "before_force_vn_range_m_s": [
+        -1.3433345763333903e-13,
+        0.00033949856699206325
+      ],
+      "witness_count_range": [
+        12.0,
+        12.0
+      ],
+      "phase_count": 6
+    },
+    {
+      "material": "oak",
+      "width_m": 0.04,
+      "start_s": 8.775e-06,
+      "dt_s": 1.25e-08,
+      "accepted": false,
+      "normalized_error": 2.7282581598342404,
+      "metric": "target contact work (J)",
+      "metric_full": 7.149441342426706,
+      "metric_fine": 7.149444070684866,
+      "work": {
+        "sequential_full_j": -5.454674106868115e-06,
+        "sequential_fine_j": -2.7273372581241297e-06,
+        "simultaneous_full_j": 6.5962449078424434e-12,
+        "simultaneous_fine_j": 3.2841673959318052e-12,
+        "cross_full_j": 5.454680703114596e-06,
+        "cross_fine_j": 2.727340542290982e-06,
+        "kinetic_full_j": -0.006806597727705066,
+        "kinetic_fine_j": -0.006806598149817103,
+        "work_residual_full_j": -5.238040578882324e-19,
+        "work_residual_fine_j": -4.037555423835646e-19
+      },
+      "restitution_candidates": 0,
+      "before_force_vn_range_m_s": [
+        -1.3520494720705802e-07,
+        0.0003393092161044515
+      ],
+      "witness_count_range": [
+        12.0,
+        12.0
+      ],
+      "phase_count": 6
+    },
+    {
+      "material": "iron",
+      "width_m": 0.04,
+      "start_s": 7.754492187499999e-06,
+      "dt_s": 1e-07,
+      "accepted": false,
+      "normalized_error": 703.8706074879997,
+      "metric": "target contact work (J)",
+      "metric_full": 25.3911674710922,
+      "metric_fine": 25.391871341699687,
+      "work": {
+        "sequential_full_j": -0.0014041228930987502,
+        "sequential_fine_j": -0.0007020895508916774,
+        "simultaneous_full_j": -1.4849230742772949e-08,
+        "simultaneous_fine_j": -1.5470131462384133e-08,
+        "cross_full_j": 0.0014041080438679998,
+        "cross_fine_j": 0.0007020740807602259,
+        "kinetic_full_j": -0.06124281280703365,
+        "kinetic_fine_j": -0.06124219350819547,
+        "work_residual_full_j": -1.5428599255118674e-17,
+        "work_residual_fine_j": 3.1292361686889245e-17
+      },
+      "restitution_candidates": 0,
+      "before_force_vn_range_m_s": [
+        -4.471729714949422e-08,
+        0.0012425799694784148
+      ],
+      "witness_count_range": [
+        12.0,
+        12.0
+      ],
+      "phase_count": 6
+    },
+    {
+      "material": "iron",
+      "width_m": 0.04,
+      "start_s": 7.754492187499999e-06,
+      "dt_s": 5e-08,
+      "accepted": false,
+      "normalized_error": 175.66394191703694,
+      "metric": "target contact work (J)",
+      "metric_full": 25.32792495915652,
+      "metric_fine": 25.328100623098436,
+      "work": {
+        "sequential_full_j": -0.0003508732105336098,
+        "sequential_fine_j": -0.00017544078068234333,
+        "simultaneous_full_j": -9.350901959306e-09,
+        "simultaneous_fine_j": -7.597731651387729e-09,
+        "cross_full_j": 0.00035086385963165447,
+        "cross_fine_j": 0.00017543318295068955,
+        "kinetic_full_j": -0.03145620962432076,
+        "kinetic_fine_j": -0.03145613901750265,
+        "work_residual_full_j": 1.0715549117918137e-17,
+        "work_residual_fine_j": 4.4382938249349236e-18
+      },
+      "restitution_candidates": 0,
+      "before_force_vn_range_m_s": [
+        -4.211005570932185e-08,
+        0.0012336482590354948
+      ],
+      "witness_count_range": [
+        12.0,
+        12.0
+      ],
+      "phase_count": 6
+    },
+    {
+      "material": "iron",
+      "width_m": 0.04,
+      "start_s": 7.754492187499999e-06,
+      "dt_s": 2.5e-08,
+      "accepted": false,
+      "normalized_error": 43.875882322907955,
+      "metric": "target contact work (J)",
+      "metric_full": 25.295818133570048,
+      "metric_fine": 25.29586200945237,
+      "work": {
+        "sequential_full_j": -8.769755080889722e-05,
+        "sequential_fine_j": -4.3850757732103335e-05,
+        "simultaneous_full_j": -3.88353302743104e-09,
+        "simultaneous_fine_j": -3.845832904651867e-09,
+        "cross_full_j": 8.769366727587116e-05,
+        "cross_fine_j": 4.3846911899203115e-05,
+        "kinetic_full_j": -0.015937120000655412,
+        "kinetic_fine_j": -0.015937111912065274,
+        "work_residual_full_j": 6.224342203559421e-18,
+        "work_residual_fine_j": 7.786747414329181e-19
+      },
+      "restitution_candidates": 0,
+      "before_force_vn_range_m_s": [
+        -2.0470754820963185e-08,
+        0.0012292046453973582
+      ],
+      "witness_count_range": [
+        12.0,
+        12.0
+      ],
+      "phase_count": 6
+    },
+    {
+      "material": "iron",
+      "width_m": 0.04,
+      "start_s": 7.754492187499999e-06,
+      "dt_s": 1.25e-08,
+      "accepted": false,
+      "normalized_error": 10.964072174601824,
+      "metric": "target contact work (J)",
+      "metric_full": 25.279643739632956,
+      "metric_fine": 25.27965470370513,
+      "work": {
+        "sequential_full_j": -2.1922453249167454e-05,
+        "sequential_fine_j": -1.0962192937294836e-05,
+        "simultaneous_full_j": -1.9411588668081305e-09,
+        "simultaneous_fine_j": -1.932150656929553e-09,
+        "cross_full_j": 2.1920512090303925e-05,
+        "cross_fine_j": 1.096026078663833e-05,
+        "kinetic_full_j": -0.008020850715450153,
+        "kinetic_fine_j": -0.008020849844149353,
+        "work_residual_full_j": 3.481173064317166e-19,
+        "work_residual_fine_j": -1.2886150454596086e-18
+      },
+      "restitution_candidates": 0,
+      "before_force_vn_range_m_s": [
+        -2.791608080912116e-08,
+        0.0012270094313320892
+      ],
+      "witness_count_range": [
+        12.0,
+        12.0
+      ],
+      "phase_count": 6
+    },
+    {
+      "material": "glass",
+      "width_m": 0.12,
+      "start_s": 6.328125e-06,
+      "dt_s": 1e-07,
+      "accepted": false,
+      "normalized_error": 1170.810146092549,
+      "metric": "target numerical integration",
+      "metric_full": 0.002442889387033631,
+      "metric_fine": 0.001272079240941082,
+      "work": {
+        "sequential_full_j": -0.002334733476476154,
+        "sequential_fine_j": -0.001167379955642687,
+        "simultaneous_full_j": -8.859147149236185e-10,
+        "simultaneous_fine_j": -4.4140374760025237e-10,
+        "cross_full_j": 0.002334732590561415,
+        "cross_fine_j": 0.0011673795142390006,
+        "kinetic_full_j": -0.24947178183885338,
+        "kinetic_fine_j": -0.2494728951782635,
+        "work_residual_full_j": -5.717381073226901e-17,
+        "work_residual_fine_j": -2.0103377399737608e-17
+      },
+      "restitution_candidates": 0,
+      "before_force_vn_range_m_s": [
+        -2.3718557102965846e-07,
+        0.0012711413721626028
+      ],
+      "witness_count_range": [
+        36.0,
+        36.0
+      ],
+      "phase_count": 6
+    },
+    {
+      "material": "glass",
+      "width_m": 0.12,
+      "start_s": 6.328125e-06,
+      "dt_s": 5e-08,
+      "accepted": false,
+      "normalized_error": 291.273786469759,
+      "metric": "target numerical integration",
+      "metric_full": 0.0006858051343172633,
+      "metric_fine": 0.0003945313478475043,
+      "work": {
+        "sequential_full_j": -0.000581673379033512,
+        "sequential_fine_j": -0.00029083751269823815,
+        "simultaneous_full_j": 2.2628564869467002e-10,
+        "simultaneous_fine_j": 1.1391364440172102e-10,
+        "cross_full_j": 0.0005816736053191952,
+        "cross_fine_j": 0.0002908376266118883,
+        "kinetic_full_j": -0.12501479331181015,
+        "kinetic_fine_j": -0.1250149344810785,
+        "work_residual_full_j": 8.184429383065075e-18,
+        "work_residual_fine_j": -1.993961879950926e-18
+      },
+      "restitution_candidates": 0,
+      "before_force_vn_range_m_s": [
+        -2.3359451602051565e-07,
+        0.0012579618911985092
+      ],
+      "witness_count_range": [
+        36.0,
+        36.0
+      ],
+      "phase_count": 6
+    },
+    {
+      "material": "glass",
+      "width_m": 0.12,
+      "start_s": 6.328125e-06,
+      "dt_s": 2.5e-08,
+      "accepted": false,
+      "normalized_error": 72.63803981771844,
+      "metric": "target numerical integration",
+      "metric_full": 0.00024878719147025663,
+      "metric_fine": 0.0001761491516525382,
+      "work": {
+        "sequential_full_j": -0.00014516476193947807,
+        "sequential_fine_j": -7.258243320675303e-05,
+        "simultaneous_full_j": 6.570761939602961e-10,
+        "simultaneous_fine_j": 3.283424993053665e-10,
+        "cross_full_j": 0.0001451654190156925,
+        "cross_fine_j": 7.258276154923594e-05,
+        "kinetic_full_j": -0.06257647685421983,
+        "kinetic_fine_j": -0.06257649389211378,
+        "work_residual_full_j": 1.8924059382975856e-17,
+        "work_residual_fine_j": 6.6565539997857285e-18
+      },
+      "restitution_candidates": 0,
+      "before_force_vn_range_m_s": [
+        -1.1251053322904109e-07,
+        0.0012515102301879147
+      ],
+      "witness_count_range": [
+        36.0,
+        36.0
+      ],
+      "phase_count": 6
+    },
+    {
+      "material": "glass",
+      "width_m": 0.12,
+      "start_s": 6.328125e-06,
+      "dt_s": 1.25e-08,
+      "accepted": false,
+      "normalized_error": 18.136845032046267,
+      "metric": "target numerical integration",
+      "metric_full": 0.00013981680755748016,
+      "metric_fine": 0.0001216799625254339,
+      "work": {
+        "sequential_full_j": -3.6258979985040034e-05,
+        "sequential_fine_j": -1.8129493434447594e-05,
+        "simultaneous_full_j": 4.568895765972762e-10,
+        "simultaneous_fine_j": 2.2824272916469564e-10,
+        "cross_full_j": 3.625943687460663e-05,
+        "cross_fine_j": 1.812972167717895e-05,
+        "kinetic_full_j": -0.0313054266499276,
+        "kinetic_fine_j": -0.031305428941646694,
+        "work_residual_full_j": -1.812540492102733e-18,
+        "work_residual_fine_j": 4.576084330603088e-18
+      },
+      "restitution_candidates": 0,
+      "before_force_vn_range_m_s": [
+        -1.602494234502333e-07,
+        0.0012481531892323157
+      ],
+      "witness_count_range": [
+        36.0,
+        36.0
+      ],
+      "phase_count": 6
+    },
+    {
+      "material": "oak",
+      "width_m": 0.12,
+      "start_s": 8.65625e-06,
+      "dt_s": 1e-07,
+      "accepted": false,
+      "normalized_error": 199.93908934168303,
+      "metric": "target numerical integration",
+      "metric_full": 0.0006612192275063933,
+      "metric_fine": 0.00046128013816471025,
+      "work": {
+        "sequential_full_j": -0.0003989283321074291,
+        "sequential_fine_j": -0.00019946487299786784,
+        "simultaneous_full_j": -7.03538377801853e-10,
+        "simultaneous_fine_j": -3.5153777757045416e-10,
+        "cross_full_j": 0.0003989276285690558,
+        "cross_fine_j": 0.00019946452146008667,
+        "kinetic_full_j": -0.06320740887424339,
+        "kinetic_fine_j": -0.0632075657710569,
+        "work_residual_full_j": -1.64070383212783e-17,
+        "work_residual_fine_j": -4.83402282024458e-19
+      },
+      "restitution_candidates": 0,
+      "before_force_vn_range_m_s": [
+        -3.450831024745815e-07,
+        0.00047437560032378805
+      ],
+      "witness_count_range": [
+        36.0,
+        36.0
+      ],
+      "phase_count": 6
+    },
+    {
+      "material": "oak",
+      "width_m": 0.12,
+      "start_s": 8.65625e-06,
+      "dt_s": 5e-08,
+      "accepted": false,
+      "normalized_error": 49.7592306372141,
+      "metric": "target numerical integration",
+      "metric_full": 0.0003611357651189806,
+      "metric_fine": 0.0003113765344817665,
+      "work": {
+        "sequential_full_j": -9.93996808126957e-05,
+        "sequential_fine_j": -4.969988466560182e-05,
+        "simultaneous_full_j": -5.338368058984674e-10,
+        "simultaneous_fine_j": -2.667379636746723e-10,
+        "cross_full_j": 9.939914697587986e-05,
+        "cross_fine_j": 4.969961792763904e-05,
+        "kinetic_full_j": -0.03161628715619451,
+        "kinetic_fine_j": -0.03161630615799865,
+        "work_residual_full_j": -2.193580103901943e-18,
+        "work_residual_fine_j": 2.095172701173194e-18
+      },
+      "restitution_candidates": 0,
+      "before_force_vn_range_m_s": [
+        -4.085738359249509e-07,
+        0.00046980351498172
+      ],
+      "witness_count_range": [
+        36.0,
+        36.0
+      ],
+      "phase_count": 6
+    },
+    {
+      "material": "oak",
+      "width_m": 0.12,
+      "start_s": 8.65625e-06,
+      "dt_s": 2.5e-08,
+      "accepted": false,
+      "normalized_error": 12.411493317543432,
+      "metric": "target numerical integration",
+      "metric_full": 0.0002864751705615731,
+      "metric_fine": 0.0002740636772440297,
+      "work": {
+        "sequential_full_j": -2.4807822999741427e-05,
+        "sequential_fine_j": -1.2403914189302174e-05,
+        "simultaneous_full_j": 6.200749789333637e-11,
+        "simultaneous_fine_j": 3.092251326633187e-11,
+        "cross_full_j": 2.4807885007240833e-05,
+        "cross_fine_j": 1.2403945111810875e-05,
+        "kinetic_full_j": -0.01581119952477643,
+        "kinetic_fine_j": -0.015811202324452198,
+        "work_residual_full_j": 1.9358722425549888e-18,
+        "work_residual_fine_j": -1.3194692958981428e-18
+      },
+      "restitution_candidates": 0,
+      "before_force_vn_range_m_s": [
+        -1.2748312096045576e-07,
+        0.000468717702760843
+      ],
+      "witness_count_range": [
+        36.0,
+        36.0
+      ],
+      "phase_count": 6
+    },
+    {
+      "material": "oak",
+      "width_m": 0.12,
+      "start_s": 8.65625e-06,
+      "dt_s": 1.25e-08,
+      "accepted": false,
+      "normalized_error": 3.0993266788570395,
+      "metric": "target numerical integration",
+      "metric_full": 0.00026785521896677267,
+      "metric_fine": 0.00026475589228791563,
+      "work": {
+        "sequential_full_j": -6.196890900405807e-06,
+        "sequential_fine_j": -3.098445593095406e-06,
+        "simultaneous_full_j": -6.088169407950365e-11,
+        "simultaneous_fine_j": -3.042015858792653e-11,
+        "cross_full_j": 6.196830018708637e-06,
+        "cross_fine_j": 3.0984151729359988e-06,
+        "kinetic_full_j": -0.00790635287349233,
+        "kinetic_fine_j": -0.007906353186366372,
+        "work_residual_full_j": 1.1632666286739488e-18,
+        "work_residual_fine_j": -8.59060088737336e-19
+      },
+      "restitution_candidates": 0,
+      "before_force_vn_range_m_s": [
+        -1.259075213697604e-07,
+        0.00046776352333163535
+      ],
+      "witness_count_range": [
+        36.0,
+        36.0
+      ],
+      "phase_count": 6
+    },
+    {
+      "material": "iron",
+      "width_m": 0.12,
+      "start_s": 6.480859375e-06,
+      "dt_s": 1e-07,
+      "accepted": false,
+      "normalized_error": 1778.747989050089,
+      "metric": "target numerical integration",
+      "metric_full": 0.0037054902128872413,
+      "metric_fine": 0.0019267422238371523,
+      "work": {
+        "sequential_full_j": -0.0035403852401765567,
+        "sequential_fine_j": -0.001770221498778586,
+        "simultaneous_full_j": 7.334621474676609e-10,
+        "simultaneous_fine_j": 3.667902692332721e-10,
+        "cross_full_j": 0.003540385973638777,
+        "cross_fine_j": 0.0017702218655688668,
+        "kinetic_full_j": -0.43545332229723555,
+        "kinetic_fine_j": -0.43545608903791233,
+        "work_residual_full_j": -5.085392585923727e-17,
+        "work_residual_fine_j": 3.722753478318993e-17
+      },
+      "restitution_candidates": 0,
+      "before_force_vn_range_m_s": [
+        -9.148174822631329e-08,
+        0.0024037648503445475
+      ],
+      "witness_count_range": [
+        36.0,
+        36.0
+      ],
+      "phase_count": 6
+    },
+    {
+      "material": "iron",
+      "width_m": 0.12,
+      "start_s": 6.480859375e-06,
+      "dt_s": 5e-08,
+      "accepted": false,
+      "normalized_error": 442.2165440161052,
+      "metric": "target numerical integration",
+      "metric_full": 0.0010373713322806566,
+      "metric_fine": 0.0005951547882645514,
+      "work": {
+        "sequential_full_j": -0.0008822629923614541,
+        "sequential_fine_j": -0.00044113329236842387,
+        "simultaneous_full_j": 4.2912546886119153e-10,
+        "simultaneous_fine_j": 2.144853119598822e-10,
+        "cross_full_j": 0.0008822634214869439,
+        "cross_fine_j": 0.00044113350685371944,
+        "kinetic_full_j": -0.21857638807570684,
+        "kinetic_fine_j": -0.21857674424401224,
+        "work_residual_full_j": 4.4040670764209494e-17,
+        "work_residual_fine_j": -1.4381600357863354e-17
+      },
+      "restitution_candidates": 0,
+      "before_force_vn_range_m_s": [
+        -9.229848840840839e-09,
+        0.0023799446033257454
+      ],
+      "witness_count_range": [
+        36.0,
+        36.0
+      ],
+      "phase_count": 6
+    },
+    {
+      "material": "iron",
+      "width_m": 0.12,
+      "start_s": 6.480859375e-06,
+      "dt_s": 2.5e-08,
+      "accepted": false,
+      "normalized_error": 110.2411002733561,
+      "metric": "target numerical integration",
+      "metric_full": 0.0003740502533062795,
+      "metric_fine": 0.0002638091530329234,
+      "work": {
+        "sequential_full_j": -0.00022020886316585629,
+        "sequential_fine_j": -0.00011010454385936439,
+        "simultaneous_full_j": 1.3760634444174372e-10,
+        "simultaneous_fine_j": 6.711764739746992e-11,
+        "cross_full_j": 0.00022020900077218946,
+        "cross_fine_j": 0.000110104610977018,
+        "kinetic_full_j": -0.1094990256577758,
+        "kinetic_fine_j": -0.10949907253468052,
+        "work_residual_full_j": -1.5332547042389016e-17,
+        "work_residual_fine_j": -6.091622728636513e-18
+      },
+      "restitution_candidates": 0,
+      "before_force_vn_range_m_s": [
+        -9.807647475451552e-08,
+        0.002368360519820735
+      ],
+      "witness_count_range": [
+        36.0,
+        36.0
+      ],
+      "phase_count": 6
+    },
+    {
+      "material": "iron",
+      "width_m": 0.12,
+      "start_s": 6.480859375e-06,
+      "dt_s": 1.25e-08,
+      "accepted": false,
+      "normalized_error": 27.520881054954316,
+      "metric": "target numerical integration",
+      "metric_full": 0.00020868928594097724,
+      "metric_fine": 0.00018116840488602293,
+      "work": {
+        "sequential_full_j": -5.5008293308945124e-05,
+        "sequential_fine_j": -2.750415375846755e-05,
+        "simultaneous_full_j": -3.9106555126535825e-10,
+        "simultaneous_fine_j": -1.9568805124517273e-10,
+        "cross_full_j": 5.500790224340272e-05,
+        "cross_fine_j": 2.7503958070413918e-05,
+        "kinetic_full_j": -0.05480201848010441,
+        "kinetic_fine_j": -0.05480202416596398,
+        "work_residual_full_j": -7.142929582522008e-18,
+        "work_residual_fine_j": -9.996199770017522e-18
+      },
+      "restitution_candidates": 0,
+      "before_force_vn_range_m_s": [
+        -9.807647475451552e-08,
+        0.002362082264506203
+      ],
+      "witness_count_range": [
+        36.0,
+        36.0
+      ],
+      "phase_count": 6
+    }
+  ],
+  "raw_logs": [
+    {
+      "path": "build/material-lab/double-force-phase-work-final.log",
+      "sha256": "2d4d0931cf3a255db9ebd2b6e186eb2770cc9d4ef76ce3cf3f3dd0a3b3521082"
+    },
+    {
+      "path": "build/material-lab/force-contact-work-ctest.log",
+      "sha256": "346281b2a6c45d5769dee7630f839d650cc99db1997436d839ff08de524fb916"
+    }
+  ]
+}

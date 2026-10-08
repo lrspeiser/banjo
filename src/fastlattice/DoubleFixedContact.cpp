@@ -65,22 +65,36 @@ DoubleFixedStep advanceOwnedDoubleFixedTargetStep(DoubleFixedSource &source,Latt
     for(const auto &w:wrenches)require(w.member<members.size()&&std::isfinite(length(w.point_member_local_m))&&
         std::isfinite(length(w.force_world_n))&&std::isfinite(length(w.free_torque_world_n_m)),"invalid double source wrench");
     DoubleFixedStep out;out.interval_s=dt;out.source_loads.reserve(2*wrenches.size());out.contacts.reserve(2);
+    out.force_phases.reserve(2);
     const auto steps=source.steps(),target_steps=target.status().total_steps;
     const auto source_time=source.elapsedTime(),target_time=target.externalContactElapsedTime();
     const double tolerance=16*std::numeric_limits<double>::epsilon()*std::max({source_time+dt,target_time+dt,dt});
     require(std::abs(source_time-target_time)<=tolerance&&source_time+dt>source_time&&target_time+dt>target_time,
         "double source/target absolute clocks do not agree or cannot advance");
     target.advanceCoupledContactStep(dt,[&](ExternalContactPhase phase){
+        const auto mobile=target.externalContactForceMovableNodes();
+        const auto source_start=source.bodies();
+        std::vector<ForceContactPointStates> point_states;point_states.reserve(mobile.size());
+        for(const auto id:mobile)point_states.push_back({target.externalContactForceStartPoint(id),target.externalContactPoint(id),{}});
         // Source and target force kicks surround the same actual drift.
         // Local application points follow current member geometry. All
         // signed actuator work and fixing reactions remain in receipts.
         for(const auto &w:wrenches){const auto body=source.bodies()[w.member].motion;
             const auto point=body.center_of_mass_world_m+body.orientation_world.rotate(w.point_member_local_m);
             out.source_loads.push_back(source.applyImpulse(w.member,point,.5*dt*w.force_world_n,.5*dt*w.free_torque_world_n_m));}
+        const auto source_free=source.bodies();
         const auto at=source.steps();const auto clock=source.elapsedTime();
         auto receipt=contact(dt);
         require(source.steps()==at&&source.elapsedTime()==clock,"double contact callback advanced source time");
         out.contacts.push_back(std::move(receipt));
+        const auto source_end=source.bodies();std::vector<ForceContactRigidStates> rigid_states;rigid_states.reserve(source_start.size());
+        for(std::size_t i=0;i<source_start.size();++i)rigid_states.push_back({source_start[i],source_free[i],source_end[i]});
+        for(std::size_t i=0;i<mobile.size();++i)point_states[i].after_contact=target.externalContactPoint(mobile[i]);
+        const auto audit=auditForceContactPhase(point_states,rigid_states);
+        const auto &transfer=out.contacts.back();
+        require(std::abs(audit.sequential_contact_work_j-transfer.source_work_j-transfer.target.work_j)<=1e-10,
+            "force-phase audit omitted or changed actual contact work");
+        out.force_phases.push_back(audit);
         if(phase==ExternalContactPhase::BeforeDrift)out.free_drift=source.advanceFree(dt);
     });
     require(source.steps()==steps+1&&target.status().total_steps==target_steps+1&&
@@ -98,6 +112,17 @@ DoubleFixedStep advanceDoubleFixedTargetStep(DoubleFixedSource &source,LatticeBa
     return out;
 }
 namespace {
+ForceContactPhaseAudit addForcePhases(ForceContactPhaseAudit a,const ForceContactPhaseAudit &b) {
+    a.kinetic_change_j+=b.kinetic_change_j;
+    a.sequential_force_work_j+=b.sequential_force_work_j;a.sequential_contact_work_j+=b.sequential_contact_work_j;
+    a.simultaneous_force_work_j+=b.simultaneous_force_work_j;a.simultaneous_contact_work_j+=b.simultaneous_contact_work_j;
+    a.force_cross_work_j+=b.force_cross_work_j;a.contact_cross_work_j+=b.contact_cross_work_j;
+    a.energy_residual_j+=b.energy_residual_j;a.cross_work_residual_j+=b.cross_work_residual_j;
+    a.force_impulse_n_s+=b.force_impulse_n_s;a.contact_impulse_n_s+=b.contact_impulse_n_s;
+    a.force_angular_impulse_kg_m2_s+=b.force_angular_impulse_kg_m2_s;a.contact_angular_impulse_kg_m2_s+=b.contact_angular_impulse_kg_m2_s;
+    a.momentum_residual_n_s+=b.momentum_residual_n_s;a.angular_residual_kg_m2_s+=b.angular_residual_kg_m2_s;
+    return a;
+}
 void addFixings(DoubleContactStepAudit &out,std::span<const FixedVelocityImpulse> reactions) {
     if(reactions.empty())return;
     if(out.fixing_reactions.empty())out.fixing_reactions.resize(reactions.size());
@@ -118,6 +143,7 @@ void validateDoubleAudit(const DoubleContactStepAudit &a) {
 DoubleContactStepAudit stepAudit(const DoubleFixedStep &step,std::size_t fixing_count) {
     DoubleContactStepAudit out;out.fixing_reactions.resize(fixing_count);out.source_drift_energy_j=step.free_drift.numerical_energy_j;
     out.drift_impulse_residual_n_s=step.free_drift.momentum_residual_n_s;out.drift_angular_residual_kg_m2_s=step.free_drift.angular_residual_kg_m2_s;
+    for(const auto &phase:step.force_phases)out.force_phases=addForcePhases(std::move(out.force_phases),phase);
     for(const auto &r:step.contacts){out.contact_loss_j+=r.contact.dissipated_energy_j;out.reconciliation_loss_j+=r.contact.reconciliation_loss_j;
         out.source_roundoff_energy_j+=r.source_roundoff_energy_j;out.contact_impulse_residual_n_s+=r.momentum_residual_n_s;
         out.contact_angular_residual_kg_m2_s+=r.angular_residual_kg_m2_s;out.geometry_couple_kg_m2_s+=r.contact.geometry_couple_kg_m2_s;
@@ -134,7 +160,8 @@ DoubleContactStepAudit addDoubleAudit(DoubleContactStepAudit a,const DoubleConta
     a.drift_angular_residual_kg_m2_s+=b.drift_angular_residual_kg_m2_s;a.source_load_impulse_n_s+=b.source_load_impulse_n_s;
     a.source_load_angular_kg_m2_s+=b.source_load_angular_kg_m2_s;
     require(b.active_manifolds<=std::numeric_limits<std::uint64_t>::max()-a.active_manifolds,"double accuracy count overflow");
-    a.active_manifolds+=b.active_manifolds;addFixings(a,b.fixing_reactions);validateDoubleAudit(a);return a;
+    a.active_manifolds+=b.active_manifolds;a.force_phases=addForcePhases(std::move(a.force_phases),b.force_phases);
+    addFixings(a,b.fixing_reactions);validateDoubleAudit(a);return a;
 }
 struct DoubleAccuracySnapshot {
     LatticeState material;RunStatus status;std::vector<RigidSnapshot> source;
@@ -194,6 +221,7 @@ DoubleContactAccuracyResult advanceDoubleFixedTargetControlled(DoubleFixedSource
         const bool accepted=runDoubleFixedTargetTrial(source,target,[&]{
             auto audit=step(interval*.5);audit=addDoubleAudit(std::move(audit),step(interval*.5));
             const auto fine=doubleAccuracySnapshot(source,target,audit);
+            out.full_force_phases=full.audit.force_phases;out.fine_force_phases=fine.audit.force_phases;
             out.topology_agrees=full.material.alive==fine.material.alive&&full.material.failure_mode==fine.material.failure_mode;
             out.compared_interval_s=interval;out.normalized_error=doubleAccuracyError(full,fine,settings,out);
             if(!out.topology_agrees||out.normalized_error>1)return false;

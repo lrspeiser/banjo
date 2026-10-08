@@ -104,6 +104,7 @@ add_library(
     src/physics/PointRigidContact.cpp
     src/physics/MaterialContactStencil.cpp
     src/physics/FixedAssemblyContact.cpp
+    src/physics/ForceContactPhase.cpp
     src/physics/GripPull.cpp
     src/fracture/ActivationPolicy.cpp
     src/fracture/FracturePreview.cpp
@@ -1008,6 +1009,10 @@ if(BANJO_BUILD_TESTS)
     target_link_libraries(banjo_point_rigid_contact_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_point_rigid_contact_tests)
     add_test(NAME banjo_point_rigid_contact_tests COMMAND banjo_point_rigid_contact_tests)
+    add_executable(banjo_force_contact_phase_tests tests/force_contact_phase_tests.cpp)
+    target_link_libraries(banjo_force_contact_phase_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_force_contact_phase_tests)
+    add_test(NAME banjo_force_contact_phase_tests COMMAND banjo_force_contact_phase_tests)
 
     add_executable(banjo_fixed_assembly_contact_tests tests/fixed_assembly_contact_tests.cpp)
     target_link_libraries(banjo_fixed_assembly_contact_tests PRIVATE banjo_core)
