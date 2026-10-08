@@ -13,6 +13,29 @@ struct FixedVelocityImpulse {
     Vec3 impulse_on_b_n_s{},free_angular_impulse_on_b_kg_m2_s{};
     double work_j{};
 };
+struct FixedAssemblyVelocityAudit {
+    std::vector<FixedVelocityImpulse> reactions;
+    double work_j{};
+    Vec3 momentum_residual_n_s{},geometry_couple_kg_m2_s{},angular_residual_kg_m2_s{};
+};
+struct FixedAssemblyReconciliation {
+    RigidMechanicalState modal;
+    std::vector<RigidMechanicalState> bodies;
+    FixedAssemblyVelocityAudit audit;
+    double loss_j{};
+};
+// Same fixed-tree reduction/reaction calculation used by contact, exposed for
+// an authoritative CPU source. No pose/time or mass change. Initial relative
+// motion has an explicit reconciliation loss, never hidden in later contact.
+[[nodiscard]] FixedAssemblyReconciliation reconcileFixedAssembly(
+    const std::vector<RigidMechanicalState> &,const std::vector<FixedVelocityLink> &,std::uint32_t striker=0);
+// Instantaneous velocity change at unchanged physical geometry. External
+// angular impulse is about the world origin. Returns actual member reactions;
+// refuses altered mass/inertia/pose or an unclosed tree response.
+[[nodiscard]] FixedAssemblyVelocityAudit auditFixedAssemblyVelocityChange(
+    const std::vector<RigidMechanicalState> &before,const std::vector<RigidMechanicalState> &after,
+    const std::vector<FixedVelocityLink> &,std::uint32_t loaded_member,
+    Vec3 external_impulse_n_s,Vec3 external_angular_impulse_origin_kg_m2_s);
 struct FixedAssemblyContactResult {
     // Reduced six-coordinate contact result; its rigid pose is a modal frame,
     // not any member's geometry. Only `bodies` contains physical body states.

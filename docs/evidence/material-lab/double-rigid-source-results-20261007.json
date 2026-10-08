@@ -1,0 +1,277 @@
+{
+  "acceptance_bounds_changed": false,
+  "baseline_commit": "e50172c1b5f27f3ad5b911ef02d0b30cdfb3b8a7",
+  "classification": "Experimental double CPU source and short coupled reference; not live-world or sustained-fracture qualification",
+  "constitutive_laws_changed": false,
+  "environment": "Windows x64 / MSVC Release / build/local-cell-tools / default Jolt rotation",
+  "executable_sha256": "c698b591c32c43e55726166885f39e9ceb90d0f01891809605e4e324a0b4ce6e",
+  "live_world_changed": false,
+  "native_dynamics_written_or_advanced_by_new_lane": false,
+  "new_lane_uses_outcome_cache": false,
+  "prior_six_sustained_native_gates_closed": false,
+  "rows": {
+    "ASSEMBLY": [
+      {
+        "angular_residual": 4.504409957548267e-15,
+        "fixing_work_j": 1.7259787364635003e-19,
+        "free_numerical_energy_j": 0,
+        "impulse_work_j": -0.5838999728886742,
+        "mass_kg": 1.5488000000000002,
+        "material": "glass"
+      },
+      {
+        "angular_residual": 2.6549620478449433e-15,
+        "fixing_work_j": -1.869407301675944e-19,
+        "free_numerical_energy_j": 1.8829382497642655e-13,
+        "impulse_work_j": -0.5751740552114428,
+        "mass_kg": 0.6272,
+        "material": "oak"
+      },
+      {
+        "angular_residual": 8.648773046989744e-15,
+        "fixing_work_j": -4.602951087639535e-20,
+        "free_numerical_energy_j": 1.4210854715202004e-14,
+        "impulse_work_j": -0.587229778254593,
+        "mass_kg": 4.298240000000001,
+        "material": "iron"
+      }
+    ],
+    "DOUBLE_CONTACT": [
+      {
+        "active_contacts": 2,
+        "attributed_angular_kg_m2_s": 4.476311728767231e-18,
+        "attributed_energy_j": 3.108624468950438e-14,
+        "attributed_momentum_n_s": 3.568906073152237e-15,
+        "broken_bonds": 0,
+        "dt_s": 1e-07,
+        "gravity_and_wrench": false,
+        "material": "glass",
+        "source_external_work_j": 0,
+        "source_mass_kg": 4.298240000000001,
+        "source_roundoff_j": 8.881784197001252e-16,
+        "target_mass_kg": 1.28,
+        "wall_s": 4.48e-05,
+        "work_residual_j": 1.7319479184152442e-14
+      },
+      {
+        "active_contacts": 2,
+        "attributed_angular_kg_m2_s": 6.1912068589109e-18,
+        "attributed_energy_j": 3.371737209566232e-14,
+        "attributed_momentum_n_s": 1.2503433877189985e-15,
+        "broken_bonds": 0,
+        "dt_s": 1e-07,
+        "gravity_and_wrench": true,
+        "material": "glass",
+        "source_external_work_j": -1.9751387792068956e-07,
+        "source_mass_kg": 4.298240000000001,
+        "source_roundoff_j": 1.0842021724855044e-19,
+        "target_mass_kg": 1.28,
+        "wall_s": 6.39e-05,
+        "work_residual_j": 3.2862601528904634e-14
+      },
+      {
+        "active_contacts": 2,
+        "attributed_angular_kg_m2_s": 3.51182046316436e-18,
+        "attributed_energy_j": -2.220446049250313e-16,
+        "attributed_momentum_n_s": 3.542580722675167e-15,
+        "broken_bonds": 0,
+        "dt_s": 1e-07,
+        "gravity_and_wrench": false,
+        "material": "oak",
+        "source_external_work_j": 0,
+        "source_mass_kg": 4.298240000000001,
+        "source_roundoff_j": 0,
+        "target_mass_kg": 0.35840000000000005,
+        "wall_s": 3.91e-05,
+        "work_residual_j": 1.7771843175496698e-14
+      },
+      {
+        "active_contacts": 2,
+        "attributed_angular_kg_m2_s": 4.892179574173033e-18,
+        "attributed_energy_j": 3.4291883821469783e-14,
+        "attributed_momentum_n_s": 4.7412722818755604e-15,
+        "broken_bonds": 0,
+        "dt_s": 1e-07,
+        "gravity_and_wrench": true,
+        "material": "oak",
+        "source_external_work_j": -1.8125386569145444e-07,
+        "source_mass_kg": 4.298240000000001,
+        "source_roundoff_j": 2.842170943040401e-14,
+        "target_mass_kg": 0.35840000000000005,
+        "wall_s": 5.52e-05,
+        "work_residual_j": 2.55351295663786e-14
+      },
+      {
+        "active_contacts": 2,
+        "attributed_angular_kg_m2_s": 7.589009873245642e-18,
+        "attributed_energy_j": -1.2434497875801753e-14,
+        "attributed_momentum_n_s": 1.0713701046704744e-14,
+        "broken_bonds": 0,
+        "dt_s": 1e-07,
+        "gravity_and_wrench": false,
+        "material": "iron",
+        "source_external_work_j": 0,
+        "source_mass_kg": 4.298240000000001,
+        "source_roundoff_j": 0,
+        "target_mass_kg": 4.02944,
+        "wall_s": 3.81e-05,
+        "work_residual_j": 1.8323625268472958e-14
+      },
+      {
+        "active_contacts": 2,
+        "attributed_angular_kg_m2_s": 1.0579439522849808e-17,
+        "attributed_energy_j": 4.710624226898667e-14,
+        "attributed_momentum_n_s": 4.696340280208692e-15,
+        "broken_bonds": 0,
+        "dt_s": 1e-07,
+        "gravity_and_wrench": true,
+        "material": "iron",
+        "source_external_work_j": -2.215662460173103e-07,
+        "source_mass_kg": 4.298240000000001,
+        "source_roundoff_j": 2.1316282072803006e-14,
+        "target_mass_kg": 4.02944,
+        "wall_s": 5.56e-05,
+        "work_residual_j": 2.6645352591003757e-14
+      }
+    ],
+    "GRAVITY": [
+      {
+        "dt_s": 0.01,
+        "expected_work_j": -0.022934932416000003,
+        "mass_kg": 1.5488000000000002,
+        "material": "glass",
+        "vertical_displacement_m": 0.0015095,
+        "work_j": -0.02293493241600001
+      },
+      {
+        "dt_s": 0.01,
+        "expected_work_j": -0.009287699904,
+        "mass_kg": 0.6272,
+        "material": "oak",
+        "vertical_displacement_m": 0.0015095,
+        "work_j": -0.009287699904
+      },
+      {
+        "dt_s": 0.01,
+        "expected_work_j": -0.06364917607680003,
+        "mass_kg": 4.298240000000001,
+        "material": "iron",
+        "vertical_displacement_m": 0.0015095000000000004,
+        "work_j": -0.06364917607680003
+      }
+    ],
+    "ROTATION": [
+      {
+        "angular_residual": 1.0367366991496098e-14,
+        "dt_s": 0.01,
+        "energy_error_j": -0.001194459623988564,
+        "orientation_error": 2.3937734302954008e-05,
+        "steps": 20
+      },
+      {
+        "angular_residual": 1.2121276483828486e-14,
+        "dt_s": 0.005,
+        "energy_error_j": -0.00029856767102387494,
+        "orientation_error": 5.98350319968595e-06,
+        "steps": 40
+      },
+      {
+        "angular_residual": 5.696125791425276e-14,
+        "dt_s": 0.0025,
+        "energy_error_j": -7.463896575643503e-05,
+        "orientation_error": 1.495160206067714e-06,
+        "steps": 80
+      }
+    ]
+  },
+  "source_registration": {
+    "cmake_files": 31,
+    "registered": 319,
+    "sources": 319
+  },
+  "source_sha256": {
+    "CMakeLists.txt": "994435fca8542e0d8b3dae21244ba74c38532162c5f331932d0482fb9eb07b07",
+    "src/fastlattice/DoubleFixedContact.cpp": "492171cbb3922ec01f0ef0aa586690520fb8a40fc80f2b7843af54f16d7e79b9",
+    "src/fastlattice/DoubleFixedContact.hpp": "a3637065001d0cda4d689f697d59e3eede05842b09a6a112b69ee01f02b3c900",
+    "src/fastlattice/MaterialContactRegion.hpp": "f2a4d53fd68d5070e8840323f13b7b225a3e6c241131c9d06cb7ccf85bef3d4a",
+    "src/fastlattice/NativeFixedContact.hpp": "1a8d201024b5cbbcd1a0338d70eb2496332c87c2339b0aa553a4a21544e4bdb0",
+    "src/physics/CohesiveRigidPair.cpp": "20d2e2061a90416a97f875a949d3b48a2c2340efa47105a1032de72d9a821de7",
+    "src/physics/DoubleFixedSource.cpp": "c3c8de305afe440631e7a33265a71a3a739d420443f4ddbdb33467aef8e59c21",
+    "src/physics/DoubleFixedSource.hpp": "d418d1d9e759e7ea9e03e06d232f9d96ddedeb8d5b854ebd6a8359cb0ffadc95",
+    "src/physics/DoubleRigidDynamics.cpp": "8b2b2ec05c82cabe469651f804dfc4e040e313819c0cf129a0ac464cf784ddd6",
+    "src/physics/DoubleRigidDynamics.hpp": "f9f7357b62ce6107e6362529927b15fd6021b36052c03699de6324de76d478f4",
+    "src/physics/FixedAssemblyContact.cpp": "e4353219805ede19cbf3f7bc3ae0f0d1ee51a3bff0bf05bcf254161a151b6a42",
+    "src/physics/FixedAssemblyContact.hpp": "9b60561d21b1de690accc700a9f5c699c37c35f47cc045801367e7c6b7fd9886",
+    "tests/double_rigid_source_tests.cpp": "a86b89f7e9c19335a77daf0954cda71a5a4e16e38b837eba978a9970fa512ed5"
+  },
+  "verification": {
+    "full_regression": false,
+    "interactive_window": false,
+    "passed": 15,
+    "physical_phone": false,
+    "scoped_ctest_entries": 15,
+    "test_results": [
+      {
+        "name": "banjo_cohesive_rigid_tests",
+        "wall_s": 5.01
+      },
+      {
+        "name": "banjo_outcome_tests",
+        "wall_s": 0.03
+      },
+      {
+        "name": "banjo_point_rigid_contact_tests",
+        "wall_s": 0.03
+      },
+      {
+        "name": "banjo_fixed_assembly_contact_tests",
+        "wall_s": 0.02
+      },
+      {
+        "name": "banjo_double_rigid_source_tests",
+        "wall_s": 0.01
+      },
+      {
+        "name": "banjo_creator_tests",
+        "wall_s": 4.61
+      },
+      {
+        "name": "banjo_native_point_contact_tests",
+        "wall_s": 0.12
+      },
+      {
+        "name": "banjo_native_lattice_contact_tests",
+        "wall_s": 23.58
+      },
+      {
+        "name": "banjo_material_surface_contact_tests",
+        "wall_s": 6.27
+      },
+      {
+        "name": "banjo_material_manifold_oracles",
+        "wall_s": 0.13
+      },
+      {
+        "name": "banjo_material_coupled_surface_contact_tests",
+        "wall_s": 10.58
+      },
+      {
+        "name": "banjo_lattice_external_load_tests",
+        "wall_s": 0.08
+      },
+      {
+        "name": "banjo_solid_matter_patch_tests",
+        "wall_s": 1.71
+      },
+      {
+        "name": "banjo_constituent_partition_tests",
+        "wall_s": 0.92
+      },
+      {
+        "name": "banjo_lattice_verlet_tests",
+        "wall_s": 0.04
+      }
+    ],
+    "wall_s": 53.35
+  }
+}

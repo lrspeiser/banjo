@@ -136,6 +136,31 @@ FixedReduction reduceFixed(const std::vector<RigidMechanicalState> &bodies,
     return {modal,reconciled,radius,order,parent,edge};
 }
 } // namespace
+FixedAssemblyVelocityAudit auditFixedAssemblyVelocityChange(const std::vector<RigidMechanicalState> &before,
+    const std::vector<RigidMechanicalState> &after,const std::vector<FixedVelocityLink> &links,
+    std::uint32_t striker,Vec3 j,Vec3 moment) {
+    const auto reduced=reduceFixed(before,links,striker);
+    require(after.size()==before.size()&&finite(j)&&finite(moment),"invalid fixed velocity audit dimensions/load");
+    for(std::size_t i=0;i<before.size();++i) {
+        const auto &a=before[i],&b=after[i];const auto qa=a.motion.orientation_world,qb=b.motion.orientation_world;
+        require(a.mass_kg==b.mass_kg&&a.inertia_world_kg_m2.m==b.inertia_world_kg_m2.m&&
+            norm(a.motion.center_of_mass_world_m-b.motion.center_of_mass_world_m)==0&&
+            qa.w==qb.w&&qa.x==qb.x&&qa.y==qb.y&&qa.z==qb.z&&
+            finite(b.motion.linear_velocity_m_s)&&finite(b.motion.angular_velocity_rad_s),
+            "fixed instantaneous velocity audit changed mass/tensor/geometry");
+    }
+    const auto audit=reactions(before,after,links,reduced.order,reduced.parent,reduced.edge,striker,j,moment);
+    return {audit.impulses,audit.work,audit.momentum,audit.couple,audit.angular};
+}
+FixedAssemblyReconciliation reconcileFixedAssembly(const std::vector<RigidMechanicalState> &bodies,
+    const std::vector<FixedVelocityLink> &links,std::uint32_t striker) {
+    auto reduction=reduceFixed(bodies,links,striker);
+    const auto audit=reactions(bodies,reduction.reconciled,links,reduction.order,reduction.parent,reduction.edge,striker,{},{});
+    const double loss=kinetic(bodies)-kinetic(reduction.reconciled);
+    if(!std::isfinite(loss)||loss < -1e-10*(1+kinetic(bodies)))throw std::domain_error("fixed reconciliation created kinetic energy");
+    return {reduction.modal,std::move(reduction.reconciled),
+        {audit.impulses,audit.work,audit.momentum,audit.couple,audit.angular},std::max(0.0,loss)};
+}
 FixedSurfaceManifoldResult evaluateFixedSurfaceManifold(std::span<const ActiveNodeState> nodes,
     const std::vector<FixedSurfaceContact> &contacts,const std::vector<RigidMechanicalState> &bodies,
     const std::vector<FixedVelocityLink> &links,std::uint32_t striker,double dt) {

@@ -88,12 +88,7 @@ struct NativeFixedSurfaceTransfer {
     double target_work_error_j{},horizon_s{};
     std::uint64_t target_step{};
 };
-struct NativeSurfaceWitness {
-    std::uint32_t seed{};
-    Vec3 surface_world_m{},normal_world{};
-    double gap_m{};
-    PointRigidContactSettings settings;
-};
+using NativeSurfaceWitness = MaterialSurfaceWitness;
 struct NativeFixedManifoldTransfer {
     FixedSurfaceManifoldKick source;
     ExternalPointTransferLedger target;

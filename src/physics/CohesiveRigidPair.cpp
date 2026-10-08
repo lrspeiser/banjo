@@ -1,4 +1,5 @@
 #include "physics/CohesiveRigidPair.hpp"
+#include "physics/DoubleRigidDynamics.hpp"
 #include <cmath>
 #include <algorithm>
 #include <stdexcept>
@@ -6,7 +7,6 @@ namespace banjo {
 namespace {
 bool finite(Vec3 v){return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z);}
 Quat conjugate(Quat q){return {q.w,-q.x,-q.y,-q.z};}
-Quat product(Quat a,Quat b){return {a.w*b.w-a.x*b.x-a.y*b.y-a.z*b.z,a.w*b.x+a.x*b.w+a.y*b.z-a.z*b.y,a.w*b.y-a.x*b.z+a.y*b.w+a.z*b.x,a.w*b.z+a.x*b.y-a.y*b.x+a.z*b.w};}
 Vec3 omega(const CohesiveRigidBody &b){const auto l=conjugate(b.orientation).rotate(b.angular_momentum_kg_m2_s);return b.orientation.rotate({l.x/b.principal_inertia_kg_m2.x,l.y/b.principal_inertia_kg_m2.y,l.z/b.principal_inertia_kg_m2.z});}
 Vec3 point(const CohesiveRigidBody &b){return b.center_m+b.orientation.rotate(b.attachment_local_m);}
 Vec3 momentum(const CohesiveRigidPairState &s){return s.a.mass_kg*s.a.velocity_m_s+s.b.mass_kg*s.b.velocity_m_s;}
@@ -25,16 +25,9 @@ void kick(CohesiveRigidPairState &s,Vec3 impulse){
 }
 void drift(CohesiveRigidBody &b,double dt){
     b.center_m+=dt*b.velocity_m_s;
-    // Symmetric composition of exact principal-axis kinetic Hamiltonian flows.
-    // World angular momentum is fixed during free drift; orientation evolves.
-    const auto axis=[&](unsigned i,double h){
-        const Vec3 l=conjugate(b.orientation).rotate(b.angular_momentum_kg_m2_s);
-        const double components[3]={l.x,l.y,l.z},inertias[3]={b.principal_inertia_kg_m2.x,b.principal_inertia_kg_m2.y,b.principal_inertia_kg_m2.z};
-        const double angle=.5*h*components[i]/inertias[i],sn=std::sin(angle);
-        const Quat rotation{std::cos(angle),i==0?sn:0,i==1?sn:0,i==2?sn:0};
-        b.orientation=product(b.orientation,rotation);
-    };
-    axis(0,.5*dt);axis(1,.5*dt);axis(2,dt);axis(1,.5*dt);axis(0,.5*dt);
+    Mat3 inertia;inertia.m[0][0]=b.principal_inertia_kg_m2.x;
+    inertia.m[1][1]=b.principal_inertia_kg_m2.y;inertia.m[2][2]=b.principal_inertia_kg_m2.z;
+    b.orientation=driftDoubleRigidOrientation(b.orientation,b.angular_momentum_kg_m2_s,inertia,dt);
 }
 void validate(const CohesiveRigidBody &b){
     const auto q=b.orientation;const double norm=q.w*q.w+q.x*q.x+q.y*q.y+q.z*q.z;

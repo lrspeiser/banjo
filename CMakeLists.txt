@@ -97,6 +97,8 @@ add_library(
     src/physics/CompliantAdvance.cpp
     src/physics/ElasticNewton.cpp
     src/physics/MechanicalAccounting.cpp
+    src/physics/DoubleRigidDynamics.cpp
+    src/physics/DoubleFixedSource.cpp
     src/physics/RollingKinematics.cpp
     src/physics/SphereMaterialContact.cpp
     src/physics/PointRigidContact.cpp
@@ -162,6 +164,7 @@ add_library(
     src/fastlattice/FastLattice.cpp
     src/fastlattice/CpuLatticeBackend.cpp
     src/fastlattice/MaterialContactRegion.cpp
+    src/fastlattice/DoubleFixedContact.cpp
     src/fastlattice/ParallelCpuLatticeBackend.cpp
     src/fastlattice/Refracture.cpp
     src/fastlattice/SolidMatterPatch.cpp
@@ -1010,6 +1013,11 @@ if(BANJO_BUILD_TESTS)
     target_link_libraries(banjo_fixed_assembly_contact_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_fixed_assembly_contact_tests)
     add_test(NAME banjo_fixed_assembly_contact_tests COMMAND banjo_fixed_assembly_contact_tests)
+
+    add_executable(banjo_double_rigid_source_tests tests/double_rigid_source_tests.cpp)
+    target_link_libraries(banjo_double_rigid_source_tests PRIVATE banjo_fastlattice)
+    banjo_enable_warnings(banjo_double_rigid_source_tests)
+    add_test(NAME banjo_double_rigid_source_tests COMMAND banjo_double_rigid_source_tests)
 
     if(TARGET banjo_runtime)
         add_executable(banjo_spring_trial_tests tests/spring_trial_tests.cpp)

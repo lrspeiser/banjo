@@ -1,11 +1,18 @@
 #pragma once
 #include "core/Math.hpp"
+#include "physics/PointRigidContact.hpp"
 #include <cstdint>
 #include <functional>
 #include <span>
 #include <vector>
 
 namespace banjo::fastlattice {
+struct MaterialSurfaceWitness {
+    std::uint32_t seed{};
+    Vec3 surface_world_m{},normal_world{};
+    double gap_m{};
+    PointRigidContactSettings settings;
+};
 struct MaterialContactRegionSettings {
     double radius_m{}; // Current physical distance from the contacted cell centre.
     std::uint32_t maximum_hops{3},maximum_nodes{64},maximum_edge_visits{4096};
