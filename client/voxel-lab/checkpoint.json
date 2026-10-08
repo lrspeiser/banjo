@@ -1,49 +1,49 @@
 {
-  "title": "Native execution audit",
+  "title": "Realtime pipeline: measured limits",
   "date": "2026-10-08",
-  "physics_revision": "1d874d1709f8d6016c0ce8c391d2705787fe709c",
-  "native_sha256": "37881cdb5396d91be7a1d4ba2d0979f5b474a49cbc947dc4030c55e61dd894c0",
+  "physics_revision": "a2895042cfe29c1b886832028f5714b66931495b",
+  "native_sha256": "e9736ab634bc6e40ea2049221d4c6c674f3833fc5e7985d20badd2da12438c62",
   "changes": [
-    "Scene-sized contact buffers and inline CPU execution; native reference retained.",
-    "New regression compares every physical field through full material impacts.",
-    "Scheduler/storage comparisons showed no useful speed gain.",
-    "Background physics, bounded frames and compressed native logs remain."
+    "Live batch p95, accepted-pose age, control round trip and compressed record size.",
+    "Physics & record offers an explicit finite-rotation experiment; reference stays default.",
+    "Native energy-gradient torque/reaction checks pass; full energy and speed remain open.",
+    "The continuous-rotation build regressed a default drop and was not promoted."
   ],
   "checks": [
     {
-      "label": "Full-impact reference parity",
+      "label": "Default world regression",
       "status": "passed",
-      "value": "Glass · oak · iron · ice / 2 s each"
+      "value": "11 completed cases + retained glass-ball refusal"
     },
     {
-      "label": "Contact & spring oracles",
+      "label": "Analytical/native interfaces",
       "status": "passed",
-      "value": "24 checks across both native runners"
+      "value": "38 native cases; 4 gradients + 2 refusals"
     },
     {
       "label": "Scoped regression",
       "status": "passed",
-      "value": "6 CTests; 11 completed world experiments"
+      "value": "7 CTests / 282.56 s; not full repository"
     },
     {
-      "label": "Browser drop",
+      "label": "Delayed-worker Pause",
       "status": "passed",
-      "value": "40 broken faces · 12 pieces · ~60 fps"
+      "value": "1.68 ms acknowledgement / injected 300 ms batch"
     },
     {
       "label": "Realtime calculation",
       "status": "blocked",
-      "value": "~36 s per 2 s / no useful speed gain"
+      "value": "Default glass: 36.01 s per 2 physical s"
     },
     {
       "label": "Full energy balance",
       "status": "blocked",
-      "value": "Glass deficit -92.923 J unresolved"
+      "value": "Default glass deficit -92.923 J unresolved"
     },
     {
       "label": "Glass ball",
       "status": "blocked",
-      "value": "Energy gate refuses impact"
+      "value": "Finite rotation still refuses at 1.428 s"
     }
   ],
   "next": [
