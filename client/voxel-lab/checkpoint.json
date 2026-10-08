@@ -1,81 +1,86 @@
 {
-  "title": "Small rotations: full physics gates open",
+  "title": "Contact friction corrected; coupled accuracy open",
   "date": "2026-10-08",
-  "physics_revision": "f48956b4c38e88d035ca975a46bc840479945f49",
-  "native_sha256": "7ca74c0883a7b7a8e75b383c72af8309a6e203ea8de7cdf11abcf6298b7e1450",
+  "physics_revision": "ccaa19745532ab13e492c22c3174c08ed2343901",
+  "native_sha256": "6f401bd9831596f45957885264e5b07ce6ba6df9b357e87eaddf13d8494c3c16",
   "changes": [
-    "Centered pose integration retains submicroradian rotation; the reference path is unchanged.",
-    "Glass/oak/iron refined free spin passes; isolated iron torsion energy error falls from 8.8e-8 to 3.0e-10 J.",
-    "Centered glass-sheet/iron-ball completes, but glass-ball still refuses near impact and ice now hits the cumulative energy gate.",
-    "Contact/geometry work and full momentum remain unqualified. The new centered glass run is slower, not a gameplay-speed fix."
+    "Choose Midpoint boundary to use matched centered normal, sliding and twisting constraints. This is an experimental hard boundary, not compliant contact.",
+    "Controlled glass/oak/iron tests reproduce endpoint-friction energy injection and verify its correction; native rows retain their force/torque bounds.",
+    "All four iron-ball sheet comparisons complete. Glass-ball fractures into 20 components, then still refuses at 1.470365 s with positive twist work.",
+    "The record separates actual normal, friction and twist work and normal-constraint errors. Full conservation, calibration and useful speed remain open."
   ],
   "checks": [
     {
-      "label": "Native oracles",
+      "label": "Controlled contact regressions",
       "status": "passed",
-      "value": "88 retained scenarios + 18 refined spin runs; 6 reference cutoff controls"
+      "value": "96 normal runs + 24 sliding/twist controls/corrections; earlier native oracles retained"
     },
     {
-      "label": "Centered reporting / refusal",
+      "label": "Matched material reporting",
       "status": "passed",
-      "value": "5 comparisons: 3 completed, glass-ball and ice safely refused; physics gate OPEN"
+      "value": "Glass/oak/iron/ice sheets complete; glass-ball safely refuses. Accuracy remains OPEN"
     },
     {
-      "label": "Reference worlds",
+      "label": "Reference preservation",
       "status": "passed",
-      "value": "11 completed cases; original glass-ball refusal retained"
-    },
-    {
-      "label": "Default-build parity",
-      "status": "passed",
-      "value": "4 materials / 2 physical s; physical and work outputs match"
+      "value": "4 materials / 2 s: every physical and work record matches the previous executable"
     },
     {
       "label": "Scoped regression",
       "status": "passed",
-      "value": "8 CTests / 473.80 s; refusal checks are not physical admission"
+      "value": "5 focused CTests / 3.96 s; separate full material comparison and prior-binary parity"
     },
     {
-      "label": "Centered accuracy",
-      "status": "blocked",
-      "value": "Glass-ball refuses at 1.428182 s; ice at 1.935725 s"
+      "label": "Compiled sources",
+      "status": "passed",
+      "value": "331 / 331 registered; no exclusions"
     },
     {
-      "label": "Energy accounting",
+      "label": "Coupled glass-ball accuracy",
       "status": "blocked",
-      "value": "Positive rejected contact work and large geometry/P/L residuals remain unresolved"
+      "value": "Still refuses at 1.470365 s: rejected twist work +0.06967 J. No gate relaxed"
     },
     {
-      "label": "Calculation speed",
+      "label": "Full conservation / refinement",
       "status": "blocked",
-      "value": "Centered glass ~158 wall s for 2 physical s; reference glass ~39 s"
+      "value": "Momentum, geometry work, contact/friction convergence and calibrated indentation remain unqualified"
     },
     {
-      "label": "Reference glass ball",
+      "label": "Simulation speed",
       "status": "blocked",
-      "value": "Original refusal at 1.427663 s is unchanged"
+      "value": "Matched glass/iron: about 124 wall s / 2 physical s; reference still about 39 s"
+    },
+    {
+      "label": "Reference glass-ball gate",
+      "status": "blocked",
+      "value": "Original reference refusal near 1.427663 s retained; reference remains default"
     }
   ],
   "next": [
     {
-      "label": "Energy accuracy",
-      "status": "in progress"
+      "label": "Energy / accuracy",
+      "status": "in progress",
+      "value": "Resolve coupled tangential/twist convergence; compliant surface potential/damping; finite geometry and P/L/E refinement"
     },
     {
-      "label": "Simulation speed",
-      "status": "in progress"
+      "label": "Calculation speed",
+      "status": "in progress",
+      "value": "Reduce measured global substeps and contact-island solve cost while preserving laws"
     },
     {
       "label": "Permanent metal dents",
-      "status": "planned"
+      "status": "planned",
+      "value": "Yield, retained plastic history and eventual tearing"
     },
     {
       "label": "Adaptive cell sizes",
-      "status": "planned"
+      "status": "planned",
+      "value": "Fine impact/thin-feature cells; larger intact regions; conserved mass/history transfer"
     },
     {
-      "label": "Custom materials & objects",
-      "status": "planned"
+      "label": "Custom materials / objects",
+      "status": "planned",
+      "value": "Validated unit-bearing material, geometry and interaction declarations"
     }
   ]
 }

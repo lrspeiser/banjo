@@ -123,7 +123,7 @@ approximation and unexplained numerical terms; arithmetic closure is not proof.
 
 ## Verification and next work
 
-Compiled source registration: 331/331, no exclusions. Five focused CTests pass
+Compiled source registration: 331/331, no exclusions. Five focused CTests pass in 3.96 s
 (native face/work, actual gateway, bounded pipeline and playback). Full five-material
 comparison and four-material prior-binary parity are separately recorded. The
 preceding normal-only candidate's nine scoped tests pass reporting/refusal gates;
@@ -135,9 +135,13 @@ Verified native SHA256:
 Build directory `build/voxel-contact-audit`; final native output
 `build/voxel-midpoint-friction/Release/banjo_voxel_world_run.exe`.
 Evidence: `build/voxel-midpoint-friction-{build,oracles,comparison,baseline}.log`,
-`build/voxel-midpoint-friction-focused-ctest.log`, and
-`build/voxel-midpoint-friction-browser-complete.png`. Current source revision and
-live website promotion are pinned in the checkpoint manifest after publication.
+`build/voxel-midpoint-friction-final-ctest.log`, and
+`build/voxel-midpoint-friction-browser-complete.png`. Physics implementation `ccaa19745532ab13e492c22c3174c08ed2343901` is published
+on main. The manifest pins that source and native; its publication revision is
+shown separately by the website. Ordinary browser iron/glass and glass/glass
+controls reach exactly the recorded final states, with no console warnings or
+errors. The glass-ball journal is preserved as
+`build/voxel-midpoint-friction-browser-refusal.jsonl` (1,043 rows).
 
 Next: measure tangential/twist complementarity and convergence in the coupled
 contact island, qualify compliant surface potential/damping and finite-geometry
