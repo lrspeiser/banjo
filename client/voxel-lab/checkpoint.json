@@ -1,49 +1,49 @@
 {
-  "title": "Realtime pipeline: actual work phases",
+  "title": "Physics audit: dormant impulses and rollback",
   "date": "2026-10-08",
-  "physics_revision": "4026f1db3146ee6204aa8db0d43b6dc2a2ab4e5a",
-  "native_sha256": "c536066952a088fb90c42d51c49a489900c3378ff4d2ead26ff622f7e8d3cae0",
+  "physics_revision": "6fd06a39272b9fa16c0cc59bfa9b530e4b53e172",
+  "native_sha256": "4b082084fdb9fcfa0d586710b7c86a3b8cf0545a7f450821198669238cbc3ac9",
   "changes": [
-    "Actual native force, solver and velocity-limit phases are recorded without changing the material laws.",
-    "Physics & record shows shared spring/contact work and the precise rejected trial.",
-    "Accepted frames still stream independently to 3D; rendering does not invent impacts.",
-    "Local coupled solves and adaptive detail are next; calculation speed and accuracy remain open."
+    "Sleeping spring caches are excluded from fresh work and damage.",
+    "First-step rejection restores the native observation lookup safely.",
+    "Glass/oak/iron/ice physical outputs match the prior build; corrected audit fields are compared separately.",
+    "Force laws and energy gates are unchanged. Major energy losses and calculation speed remain open."
   ],
   "checks": [
     {
-      "label": "Default world regression",
+      "label": "World regression",
       "status": "passed",
-      "value": "11 completed cases + retained glass-ball refusal"
+      "value": "11 completed cases, including fine sheets; glass-ball refusal retained"
     },
     {
       "label": "Native phases and interfaces",
       "status": "passed",
-      "value": "40 native scenarios + analytical work oracles"
+      "value": "44 scenarios, including first refusal, sleep, wake and rollback"
     },
     {
-      "label": "Full runner comparison",
+      "label": "Prior-build comparison",
       "status": "passed",
-      "value": "Glass/oak/iron/ice match through 2 physical s"
+      "value": "4 materials / 2 physical s; 3 corrected audit fields excluded"
     },
     {
       "label": "Scoped regression",
       "status": "passed",
-      "value": "8 CTests / 490.50 s; not full repository"
+      "value": "6 CTests / 215.89 s; not full repository"
     },
     {
-      "label": "Realtime calculation",
+      "label": "Calculation speed",
       "status": "blocked",
-      "value": "Glass: 38.43 s per 2 physical s"
+      "value": "Glass: 39.21 wall s per 2 physical s; no speedup"
     },
     {
-      "label": "Full energy accuracy",
+      "label": "Energy accuracy",
       "status": "blocked",
-      "value": "Spring/contact work measured; angular sources unresolved"
+      "value": "Glass loses 92.92 J; losses attributed but constitutive validity open"
     },
     {
       "label": "Glass ball",
       "status": "blocked",
-      "value": "Refuses a 63.6 ns trial at 1.427663 s"
+      "value": "Still refuses at 1.427663 s; admission unchanged"
     }
   ],
   "next": [
