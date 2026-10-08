@@ -14,7 +14,13 @@ namespace banjo {
 
 // 3: the key carries the numerical profile the outcome was computed under.
 inline constexpr std::uint32_t kMaterialOutcomeFormatVersion = 3U;
+#ifdef BANJO_JOLT_CONTINUOUS_SMALL_ROTATION
+// Native integration differs from the legacy angular dead zone. Outcomes from
+// that solver cannot be admitted under continuous small rotations or vice versa.
+inline constexpr std::uint32_t kMaterialSolverModelVersion = 6U;
+#else
 inline constexpr std::uint32_t kMaterialSolverModelVersion = 5U;
+#endif
 
 struct MaterialOutcomeKeyInput {
     MaterialPreset striker{MaterialPreset::Iron};

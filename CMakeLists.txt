@@ -10,6 +10,7 @@ option(BANJO_BUILD_LAB "Build the interactive rolling-ball visual laboratory" ON
 option(BANJO_BUILD_HEADLESS "Build the automated headless rolling-ball laboratory" ON)
 option(BANJO_BUILD_PRECOMPUTE "Build the deterministic scenario precomputation tools" ON)
 option(BANJO_BUILD_TESTS "Build Banjo unit tests" ON)
+option(BANJO_JOLT_CONTINUOUS_SMALL_ROTATION "Experimental: integrate native angular steps below one microradian" OFF)
 option(BANJO_BUILD_CUDA "Build the CUDA backend of the fast explicit lattice fracture lane" OFF)
 # nvcc contracts a*b+c into fused multiply-adds by default; MSVC (/fp:precise)
 # never does. A fused operation rounds once where the CPU rounds twice, and the
@@ -231,6 +232,10 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
         GIT_SHALLOW TRUE
         SOURCE_SUBDIR Build)
     FetchContent_MakeAvailable(JoltPhysics)
+    if(BANJO_JOLT_CONTINUOUS_SMALL_ROTATION)
+        include(cmake/JoltSmallRotation.cmake)
+        banjo_jolt_continuous_small_rotation(Jolt "${joltphysics_SOURCE_DIR}")
+    endif()
     # One file of ours compiled inside Jolt's own target, with Jolt's own flags,
     # so banjo_fp_profile_tests can ask what Jolt's objects actually do with a
     # NaN, an infinity, a signed zero and a product that could be fused.

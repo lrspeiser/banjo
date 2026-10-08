@@ -708,6 +708,7 @@ unsigned controlledSustainedContact() {
             // impulse is applied. Both full and half experiments roll back.
             std::vector<RigidSnapshot> full,half;double full_energy=0,half_energy=0;
             const auto native_ids=tool.world.activeBodyIds();const auto frozen_time=b->externalContactElapsedTime();
+            std::vector<RigidSnapshot> frozen;for(auto id:native_ids)frozen.push_back(tool.world.snapshot(id));
             const auto trial=[&](unsigned steps,std::vector<RigidSnapshot> &poses,double &energy) {
                 require(!runNativeFixedTargetTrial(tool.world,*b,[&] {
                     for(unsigned k=0;k<steps;++k)b->advanceExternalContactStep(interval/steps,[&]{tool.world.step(interval/steps);});
@@ -716,14 +717,35 @@ unsigned controlledSustainedContact() {
                 }),"native refinement isolation committed");
             };
             trial(1,full,full_energy);trial(2,half,half_energy);double position=0,velocity=0;
+            nlohmann::json body_differences=nlohmann::json::array();
+            const auto vector_json=[](Vec3 v){return nlohmann::json{v.x,v.y,v.z};};
+            const auto quaternion_json=[](Quat q){return nlohmann::json{q.w,q.x,q.y,q.z};};
             for(std::size_t i=0;i<full.size();++i) {
                 position=std::max(position,length(full[i].center_of_mass_world_m-half[i].center_of_mass_world_m));
                 velocity=std::max(velocity,length(full[i].linear_velocity_m_s-half[i].linear_velocity_m_s));
+                body_differences.push_back({{"body",native_ids[i]},
+                    {"frozen_position_m",vector_json(frozen[i].center_of_mass_world_m)},
+                    {"full_position_delta_m",vector_json(full[i].center_of_mass_world_m-frozen[i].center_of_mass_world_m)},
+                    {"half_position_delta_m",vector_json(half[i].center_of_mass_world_m-frozen[i].center_of_mass_world_m)},
+                    {"frozen_orientation_wxyz",quaternion_json(frozen[i].orientation_world)},
+                    {"full_orientation_wxyz",quaternion_json(full[i].orientation_world)},
+                    {"half_orientation_wxyz",quaternion_json(half[i].orientation_world)},
+                    {"frozen_velocity_m_s",vector_json(frozen[i].linear_velocity_m_s)},
+                    {"full_velocity_m_s",vector_json(full[i].linear_velocity_m_s)},
+                    {"half_velocity_m_s",vector_json(half[i].linear_velocity_m_s)},
+                    {"frozen_spin_rad_s",vector_json(frozen[i].angular_velocity_rad_s)},
+                    {"full_spin_rad_s",vector_json(full[i].angular_velocity_rad_s)},
+                    {"half_spin_rad_s",vector_json(half[i].angular_velocity_rad_s)}});
+                const auto restored=tool.world.snapshot(native_ids[i]);
+                near(length(restored.center_of_mass_world_m-frozen[i].center_of_mass_world_m),0,0,
+                    "native isolation changed frozen position");
+                near(length(restored.linear_velocity_m_s-frozen[i].linear_velocity_m_s),0,0,
+                    "native isolation changed frozen velocity");
             }
             near(b->externalContactElapsedTime(),frozen_time,0,"native isolation changed accepted clock");
             std::cout<<"NATIVE_STEP_REFINEMENT "<<nlohmann::json{{"material",materialPresetName(preset)},{"width_m",width},
                 {"interval_s",interval},{"maximum_position_difference_m",position},{"maximum_velocity_difference_m_s",velocity},
-                {"energy_difference_j",full_energy-half_energy}}.dump()<<std::endl;
+                {"energy_difference_j",full_energy-half_energy},{"body_differences",body_differences}}.dump()<<std::endl;
         }
         const auto state=target.download(*b);const auto final=totals(state,tool.world);const auto &s=b->status();
         const double p=length(final.linear_momentum_kg_m_s-initial.linear_momentum_kg_m_s-sum.source_numerical_impulse_n_s-
@@ -1023,6 +1045,7 @@ int main(int argc,char **argv){try{
     require(!(oracles_only&&(strict||manifold||reverse||refinement_requested||!output.empty()||controlled)),"oracle-only mode cannot imply sustained acceptance");
     require(!controlled||(!strict&&!manifold&&!reverse&&!refinement_requested&&output.empty()),"controlled experiment uses its separate live accuracy gate");
     require(!refinement_requested||manifold,"extended refinement requires the explicit coupled manifold experiment");
+    std::cout<<"NATIVE_ROTATION_PROFILE "<<JoltWorld::rotationIntegrationProfile()<<'\n';
     manifoldOracles();variableContactStepOracles();simultaneousAdmissionOracle();slowRelativeManifoldOracle();controlledContactOracles();
     if(oracles_only){std::cout<<"[PASS] coupled manifold analytical/native atomicity oracles\n";return 0;}
     if(controlled){const auto open=controlledSustainedContact();std::cout<<"Controlled sustained open gates: "<<open<<'\n';return open?1:0;}

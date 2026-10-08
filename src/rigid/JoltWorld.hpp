@@ -219,6 +219,7 @@ public:
     JoltWorld(JoltWorld &&) noexcept;
     JoltWorld &operator=(JoltWorld &&) noexcept;
     [[nodiscard]] static unsigned positionPrecisionBits() noexcept;
+    [[nodiscard]] static const char *rotationIntegrationProfile() noexcept;
 
     // Numerical experiment setting, before any bodies/supports are created.
     // Disables only cached narrow-phase body-pair results, not contacts/forces.

@@ -4303,6 +4303,13 @@ void JoltWorld::addFragments(
 }
 
 unsigned JoltWorld::positionPrecisionBits() noexcept { return 8*sizeof(JPH::Real); }
+const char *JoltWorld::rotationIntegrationProfile() noexcept {
+#ifdef BANJO_JOLT_CONTINUOUS_SMALL_ROTATION
+    return "jolt-continuous-small-rotation-v1";
+#else
+    return "jolt-angular-dead-zone-v1";
+#endif
+}
 
 bool JoltWorld::runReversibleTrial(const std::function<bool()> &trial) {
     if (impl_->external_fixed_trial_&&impl_->trial_depth_)

@@ -6,6 +6,7 @@
 #include <limits>
 #include <numbers>
 #include <stdexcept>
+#include <string>
 
 namespace {
 using namespace banjo;
@@ -628,9 +629,59 @@ void invalidQueriesRefuse() {
     catch(const std::invalid_argument &) {refused=true;}require(refused,"missing native query body admitted");
     same(before,f.world.snapshot(1));
 }
+void smallRotationOracles() {
+    constexpr double horizon=1e-7;
+    for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        const auto material=makeReferenceMaterial(preset,17);
+        double maximum_angle_error=0,maximum_energy_error=0,mass=0,maximum_linear_error=0,maximum_angular_error=0;
+        for(unsigned steps:{1U,2U,4U,16U,64U}) {
+            JoltWorld world;world.setGravity({});
+            world.addBox({1,{.08,.08,.08},material,{{},{},{},{0,0,1}},false});
+            world.setDamping(1,0,0);
+            const auto initial=world.mechanicalTotals();
+            mass=initial.mass_kg;
+            for(unsigned i=0;i<steps;++i)world.step(horizon/steps);
+            const auto after=world.snapshot(1);const auto totals=world.mechanicalTotals();
+            const auto q=after.orientation_world;
+            const double angle=2*std::atan2(q.z,q.w);
+            maximum_angle_error=std::max(maximum_angle_error,std::abs(angle-horizon));
+            maximum_energy_error=std::max(maximum_energy_error,std::abs(totals.mechanicalEnergy()-initial.mechanicalEnergy()));
+            maximum_linear_error=std::max(maximum_linear_error,length(totals.linear_momentum_kg_m_s-initial.linear_momentum_kg_m_s));
+            maximum_angular_error=std::max(maximum_angular_error,length(totals.angular_momentum_kg_m2_s-initial.angular_momentum_kg_m2_s));
+            near(angle,horizon,2e-13,"native spin stopped integrating below one microradian");
+            near(q.x,0,0,"principal-axis rotation acquired x component");
+            near(q.y,0,0,"principal-axis rotation acquired y component");
+            same(after.center_of_mass_world_m,{},"free principal-axis spin moved its centre");
+            same(after.angular_velocity_rad_s,{0,0,1},"free spin changed angular velocity");
+            near(totals.mass_kg,initial.mass_kg,0,"small rotation changed mass");
+            near(length(totals.linear_momentum_kg_m_s-initial.linear_momentum_kg_m_s),0,1e-12,"small rotation linear momentum");
+            near(length(totals.angular_momentum_kg_m2_s-initial.angular_momentum_kg_m2_s),0,1e-12,"small rotation angular momentum");
+            near(totals.mechanicalEnergy(),initial.mechanicalEnergy(),1e-12,"small rotation energy");
+            const auto frozen=world.snapshot(1);const auto tick=world.stepCount();
+            require(!world.runReversibleTrial([&]{world.step(horizon/steps);return false;}),"small rotation trial committed");
+            same(frozen,world.snapshot(1));require(world.stepCount()==tick,"small rotation trial leaked tick");
+        }
+        std::cout<<"NATIVE_SMALL_ROTATION material="<<materialPresetName(preset)<<" horizon_s="<<horizon
+            <<" mass_kg="<<mass<<" maximum_angle_error_rad="<<maximum_angle_error
+            <<" maximum_linear_error_n_s="<<maximum_linear_error<<" maximum_angular_error_kg_m2_s="<<maximum_angular_error
+            <<" maximum_energy_error_j="<<maximum_energy_error<<'\n';
+    }
+}
 } // namespace
-int main() {
+int main(int argc,char **argv) {
     try { std::cout.precision(12);materialReactionAndRounding();atomicRefusal();repeatedContactRetainsNativeState();
+        bool require_small_rotation=false;
+        require(argc<=2,"too many native point test options");
+        if(argc==2){require(std::string(argv[1])=="--require-small-rotation","unknown native point test option");require_small_rotation=true;}
+#ifdef BANJO_JOLT_CONTINUOUS_SMALL_ROTATION
+        require(std::string(JoltWorld::rotationIntegrationProfile())=="jolt-continuous-small-rotation-v1",
+            "native rotation profile disagrees with the compiled small-step test");
+        require_small_rotation=true;
+#else
+        require(std::string(JoltWorld::rotationIntegrationProfile())=="jolt-angular-dead-zone-v1",
+            "native legacy rotation profile disagrees with this build");
+#endif
+        if(require_small_rotation)smallRotationOracles();
         nativeSphereAndRotatedBoxWitnesses();compoundMaterialsVoidsAndBudgets();turnedCylinderAndConvexWitnesses();
         actualWitnessFeedsNativeReaction();invalidQueriesRefuse();nativeOccupiedCuboidWitnesses();
         nativeFixedToolRetainsItsLoadPath();

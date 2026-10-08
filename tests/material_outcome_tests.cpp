@@ -209,6 +209,12 @@ void outcomeFileRoundTripsDeterministically() {
     try { banjo::applyMaterialOutcome(incompatible, rigid, target); }
     catch (const std::invalid_argument &) { rejected = true; }
     require(rejected, "outcomes from predictor-driven damage must not be reused");
+    incompatible = loaded;
+    incompatible.key.solver_model_version = banjo::kMaterialSolverModelVersion == 5U ? 6U : 5U;
+    rejected = false;
+    try { banjo::applyMaterialOutcome(incompatible, rigid, target); }
+    catch (const std::invalid_argument &) { rejected = true; }
+    require(rejected, "outcomes from a different native angular integration must not be reused");
     banjo::MaterialOutcomeKeyInput pulse_input;
     pulse_input.impact_internal_energy_fraction = .12;
     rejected = false;
