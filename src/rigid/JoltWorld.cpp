@@ -57,6 +57,7 @@
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <numbers>
@@ -288,8 +289,13 @@ struct RollingContact {
 // and adds up each manifold's normal impulse. It has to account for every byte:
 // a layout that does not add up is refused rather than misread, and the caller
 // then falls back to the ball's own change of momentum.
-bool readContactImpulses(const std::string &data,
-                         std::vector<std::pair<JPH::SubShapeIDPair, double>> &out) {
+struct RecordedContactPoint {JPH::Float3 a,b;float lambda{};};
+struct RecordedContactManifold {
+    JPH::SubShapeIDPair key;JPH::Float3 normal;
+    float friction[2]{},twist{};std::vector<RecordedContactPoint> points;
+};
+bool readContactRecords(const std::string &data,
+                        const std::function<void(const RecordedContactManifold &)> &consume) {
     std::size_t at = 0;
     const auto take = [&](void *into, std::size_t bytes) {
         if (bytes > data.size() - at) return false;
@@ -314,25 +320,37 @@ bool readContactImpulses(const std::string &data,
         JPH::uint32 manifolds = 0;
         if (!take(&manifolds, sizeof manifolds)) return false;
         for (JPH::uint32 m = 0; m < manifolds; ++m) {
-            JPH::SubShapeIDPair key;
+            RecordedContactManifold record;
             JPH::uint16 points = 0;
-            if (!take(&key, sizeof key) || !take(&points, sizeof points)) return false;
+            if (!take(&record.key, sizeof record.key) || !take(&points, sizeof points)) return false;
             // The normal (in body 2's frame), two friction impulses, the twist.
-            if (!skip(sizeof(JPH::Float3) + 3 * sizeof(float))) return false;
-            double impulse = 0.0;
+            if (!take(&record.normal,sizeof record.normal)||!take(record.friction,sizeof record.friction)||!take(&record.twist,sizeof record.twist))return false;
+            if(points>(data.size()-at)/(2*sizeof(JPH::Float3)+sizeof(float)))return false;
+            record.points.resize(points);
             for (JPH::uint16 k = 0; k < points; ++k) {
-                float lambda = 0.0F;
                 // The point on each body, then the normal impulse through it.
-                if (!skip(2 * sizeof(JPH::Float3)) || !take(&lambda, sizeof lambda)) return false;
-                impulse += static_cast<double>(lambda);
+                auto &point=record.points[k];
+                if (!take(&point.a,sizeof point.a)||!take(&point.b,sizeof point.b)||!take(&point.lambda,sizeof point.lambda))return false;
             }
-            out.emplace_back(key, impulse);
+            consume(record);
         }
     }
     JPH::uint32 swept = 0;   // manifolds only reported by the swept pass: keys alone
     if (!take(&swept, sizeof swept)) return false;
     return data.size() - at == static_cast<std::size_t>(swept) * sizeof(JPH::SubShapeIDPair);
 }
+bool readContactImpulses(const std::string &data,
+                         std::vector<std::pair<JPH::SubShapeIDPair, double>> &out) {
+    return readContactRecords(data,[&](const RecordedContactManifold &record){
+        double total=0;for(const auto &point:record.points)total+=point.lambda;
+        out.emplace_back(record.key,total);
+    });
+}
+
+struct ContactImpulseGeometry {
+    JPH::SubShapeIDPair key;MatterBodyId a{},b{};
+    JPH::Vec3 normal;std::vector<Vec3> points;
+};
 
 // Saves only the contact pairs a round body is in, so reading the impulses
 // costs what the balls cost, not what the whole room does.
@@ -474,6 +492,7 @@ struct GroundSuspension {
 
 class ImpactCollector final : public JPH::ContactListener {
 public:
+    bool contact_impulses_enabled{};
     bool detailed_observations{};
     bool observations_enabled{true};
     // Whether landing on the support surface counts as an impact worth
@@ -506,6 +525,7 @@ public:
         // After processContact, which sets the combined friction itself.
         if (!driven.empty() && (driven.contains(body1.GetUserData()) || driven.contains(body2.GetUserData())))
             settings.mCombinedFriction = 0.0F;
+        recordContactGeometry(body1,body2,manifold,settings);
     }
 
     void OnContactPersisted(
@@ -517,7 +537,15 @@ public:
         // After processContact, which sets the combined friction itself.
         if (!driven.empty() && (driven.contains(body1.GetUserData()) || driven.contains(body2.GetUserData())))
             settings.mCombinedFriction = 0.0F;
+        recordContactGeometry(body1,body2,manifold,settings);
     }
+    std::vector<ContactImpulseGeometry> takeContactGeometry(){
+        std::scoped_lock lock(contact_mutex_);
+        if(contact_swept_)throw std::runtime_error("contact impulse audit supports discrete contacts only");
+        if(contact_overflow_)throw std::runtime_error("native contact observation budget exceeded");
+        std::vector<ContactImpulseGeometry> out;out.swap(contact_geometry_);return out;
+    }
+    void clearContactGeometry(){std::scoped_lock lock(contact_mutex_);contact_geometry_.clear();contact_overflow_=contact_swept_=false;}
 
     [[nodiscard]] std::vector<ImpactEvent> capture() {std::scoped_lock lock(mutex_);if(events_.size()>65536)throw std::runtime_error("trial event queue budget exceeded");return events_;}
     void restore(std::vector<ImpactEvent> events) {std::scoped_lock lock(mutex_);events_.swap(events);}
@@ -540,6 +568,19 @@ public:
     }
 
 private:
+    void recordContactGeometry(const JPH::Body &a,const JPH::Body &b,const JPH::ContactManifold &manifold,const JPH::ContactSettings &settings){
+        if(!contact_impulses_enabled||settings.mIsSensor)return;
+        if((!a.IsStatic()&&a.GetMotionProperties()->GetMotionQuality()!=JPH::EMotionQuality::Discrete)||
+           (!b.IsStatic()&&b.GetMotionProperties()->GetMotionQuality()!=JPH::EMotionQuality::Discrete)){
+            std::scoped_lock lock(contact_mutex_);contact_swept_=true;return;
+        }
+        ContactImpulseGeometry geometry{JPH::SubShapeIDPair(a.GetID(),manifold.mSubShapeID1,b.GetID(),manifold.mSubShapeID2),a.GetUserData(),b.GetUserData(),manifold.mWorldSpaceNormal,{}};
+        for(JPH::uint i=0;i<manifold.mRelativeContactPointsOn1.size();++i)
+            geometry.points.push_back(fromJoltPosition(.5_r*(manifold.GetWorldSpaceContactPointOn1(i)+manifold.GetWorldSpaceContactPointOn2(i))));
+        std::scoped_lock lock(contact_mutex_);
+        if(contact_geometry_.size()>=65536){contact_overflow_=true;return;}
+        contact_geometry_.push_back(std::move(geometry));
+    }
     void processContact(
         const JPH::Body &body1,
         const JPH::Body &body2,
@@ -750,6 +791,9 @@ private:
     std::vector<ImpactEvent> events_;
     std::mutex rolling_mutex_;
     std::vector<RollingContact> rolling_;
+    std::mutex contact_mutex_;bool contact_overflow_{};
+    std::vector<ContactImpulseGeometry> contact_geometry_;
+    bool contact_swept_{};
 };
 
 // Factory/type registration belongs to the process, not an individual world.
@@ -902,6 +946,32 @@ public:
         // sleep rule (still for half a second under 3 cm/s): that stopped a
         // ball just over atan(c) 8 mm down a ramp it should have rolled down.
         for (const JPH::BodyID ball : not_at_rest) bodies.ResetSleepTimer(ball);
+    }
+
+    void measureContactImpulses(){
+        contact_impulses_.clear();
+        if(!impact_collector_.contact_impulses_enabled)return;
+        auto frames=impact_collector_.takeContactGeometry();if(frames.empty())return;
+        std::map<JPH::SubShapeIDPair,ContactImpulseGeometry> current;
+        for(auto &frame:frames)current.try_emplace(frame.key,std::move(frame));
+        JPH::StateRecorderImpl recorder;physics_->SaveState(recorder,JPH::EStateRecorderState::Contacts);
+        if(recorder.IsFailed()||recorder.GetDataSize()>16U*1024U*1024U)throw std::runtime_error("cannot capture bounded native contact impulses");
+        const bool parsed=readContactRecords(recorder.GetData(),[&](const RecordedContactManifold &record){
+            const auto found=current.find(record.key);if(found==current.end())return;
+            const auto &frame=found->second;
+            if(frame.points.size()!=record.points.size())throw std::runtime_error("native contact geometry/impulse point count differs");
+            JoltWorld::ContactImpulseObservation out;out.a=frame.a;out.b=frame.b;
+            out.normal_a_to_b=fromJoltVector(frame.normal);
+            const auto tangent=frame.normal.GetNormalizedPerpendicular();
+            out.friction_impulse_on_b_n_s=fromJoltVector(record.friction[0]*tangent+record.friction[1]*frame.normal.Cross(tangent));
+            out.twist_impulse_on_b_n_m_s=fromJoltVector(record.twist*frame.normal);
+            for(unsigned i=0;i<record.points.size();++i){
+                out.points.push_back({frame.points[i],record.points[i].lambda});out.friction_point_world_m+=frame.points[i];
+            }
+            if(!out.points.empty())out.friction_point_world_m*=1./out.points.size();
+            contact_impulses_.push_back(std::move(out));current.erase(found);
+        });
+        if(!parsed||!current.empty())throw std::runtime_error("native contact impulse cache does not match this discrete Update");
     }
 
     // After a step: the normal force the solver put through every contact of
@@ -1284,6 +1354,8 @@ public:
     std::atomic<std::uint64_t> tick_{0};
     const std::shared_ptr<const int> contact_plan_identity_{std::make_shared<const int>(0)};
     ImpactCollector impact_collector_;
+    std::vector<JoltWorld::ContactImpulseObservation> contact_impulses_;
+    Vec3 observed_gravity_impulse_{};
     std::uint64_t contact_plan_epoch_{};
     JPH::BodyID floor_id_;
     std::unordered_map<MatterBodyId,JPH::Ref<JPH::Constraint>> pins_;
@@ -1361,12 +1433,16 @@ public:
         std::unordered_map<MatterBodyId,BeforeStep> before;
         bool cache_readable{};
         unsigned manifolds{},points{},speculative{};
+        std::vector<JoltWorld::ContactImpulseObservation> contact_impulses;
+        Vec3 gravity_impulse{};
     };
     TrialConfiguration captureTrialConfiguration() const {
         TrialConfiguration out{physics_->GetConstraints(),joints_,gear_strength_,stripped_gears_,{},last_dt_s,before_step_,cache_readable_};
         out.manifolds=impact_collector_.manifolds.load(std::memory_order_relaxed);
         out.points=impact_collector_.points.load(std::memory_order_relaxed);
         out.speculative=impact_collector_.speculative_manifolds.load(std::memory_order_relaxed);
+        out.contact_impulses=contact_impulses_;
+        out.gravity_impulse=observed_gravity_impulse_;
         for (const auto &[id,joint]:joints_) {
             (void)id;
             if (joint.kind!=JointKind::Link) continue;
@@ -1385,6 +1461,8 @@ public:
         impact_collector_.manifolds.store(saved.manifolds,std::memory_order_relaxed);
         impact_collector_.points.store(saved.points,std::memory_order_relaxed);
         impact_collector_.speculative_manifolds.store(saved.speculative,std::memory_order_relaxed);
+        impact_collector_.clearContactGeometry();contact_impulses_=std::move(saved.contact_impulses);
+        observed_gravity_impulse_=saved.gravity_impulse;
     }
 };
 
@@ -2888,6 +2966,12 @@ JoltWorld::FaceSpringObservation JoltWorld::faceSpringObservation(unsigned id) c
         pb,Vec3{q.GetX(),q.GetY(),q.GetZ()}*(q.GetW()>0?2.:-2.),{x,y,z},
         {fromJoltVector(b.GetAxisX()),fromJoltVector(b.GetAxisY()),fromJoltVector(b.GetAxisZ())}};
 }
+void JoltWorld::setContactImpulseObservationsEnabled(bool enabled){
+    impl_->requireConfigurationMutable();impl_->impact_collector_.contact_impulses_enabled=enabled;
+    impl_->impact_collector_.clearContactGeometry();impl_->contact_impulses_.clear();
+}
+std::span<const JoltWorld::ContactImpulseObservation> JoltWorld::contactImpulseObservations() const {return impl_->contact_impulses_;}
+Vec3 JoltWorld::observedGravityImpulseN_s() const {return impl_->observed_gravity_impulse_;}
 
 PairContactOwner JoltWorld::pairContactOwner(MatterBodyId a,MatterBodyId b) const {
     if(a==b||!contains(a)||!contains(b))throw std::invalid_argument("contact ownership requires two distinct registered bodies");
@@ -4629,13 +4713,27 @@ void JoltWorld::step(double fixed_dt_s) {
         rope->SetDistance(taut ? length : 0.0F, length);
     }
     auto &collector=impl_->impact_collector_;collector.manifolds=0;collector.points=0;collector.speculative_manifolds=0;
+    collector.clearContactGeometry();
+    impl_->observed_gravity_impulse_={};
+    if(collector.contact_impulses_enabled){
+        JPH::BodyIDVector active;impl_->physics_->GetActiveBodies(JPH::EBodyType::RigidBody,active);
+        std::sort(active.begin(),active.end());
+        for(const auto id:active){
+            JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(),id);
+            if(!lock.Succeeded())throw std::runtime_error("cannot lock active gravity audit body");
+            const auto &body=lock.GetBody();if(!body.IsDynamic())continue;
+            const auto *motion=body.GetMotionProperties();
+            const auto delta=(motion->GetGravityFactor()*impl_->physics_->GetGravity())*static_cast<float>(fixed_dt_s);
+            impl_->observed_gravity_impulse_+=fromJoltVector(delta)/motion->GetInverseMass();
+        }
+    }
     impl_->tick_.fetch_add(1U, std::memory_order_relaxed);
     const JPH::EPhysicsUpdateError error = impl_->physics_->Update(
         static_cast<float>(fixed_dt_s),
         1,
         impl_->temp_allocator_.get(),
         impl_->job_system_.get());
-    impl_->measureRolling(fixed_dt_s);
+    impl_->measureContactImpulses();impl_->measureRolling(fixed_dt_s);
     // Teeth that could not carry what was put through them. Read after the
     // solve, because the impulse this asks about is the one the solve just
     // applied; a gear that gives way is taken out here and is gone, so the

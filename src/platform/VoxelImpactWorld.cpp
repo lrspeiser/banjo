@@ -29,6 +29,9 @@ struct VoxelImpactWorld::Impl {
     Json declaration,events=Json::array();std::vector<Cell> cells;std::vector<Bond> bonds;std::vector<Pair> internal;
     double linear_velocity_quadratic{},peak_spin{};unsigned spin_limit_samples{};
     double material_damping{},implicit_elastic_loss{},spring_endpoint_work{},spring_geometry_change{},spring_residual_work{},max_spring_residual_n{};
+    double contact_normal_work{},contact_friction_work{},contact_twist_work{};
+    Vec3 support_reaction_impulse{},support_reaction_angular_impulse{},gravity_impulse{},momentum_residual{};
+    unsigned contact_manifold_samples{},contact_point_samples{};
     double sweep_wall_ms{},trial_wall_ms{},observation_wall_ms{},native_step_wall_ms{},totals_wall_ms{},candidate_faces_wall_ms{};
     double feature{},dt{},time{},initial_energy{},fracture{},discarded_elastic{},max_wall_ms{},peak_stress_ratio{};
     unsigned ticks{},broken{},substeps{},rejected{};Vec3 gravity;MechanicalTotals initial,totals;
@@ -96,6 +99,7 @@ struct VoxelImpactWorld::Impl {
         world.setContactSolverIterations(unsigned(requested_iterations),4);
         feature=thickness;world.configureVoxelContacts(thickness);
         world.setImpactObservationsEnabled(false);
+        world.setContactImpulseObservationsEnabled(true);
         // Supports/floor are declared anchored coarse voxels; no fixed sheet edges.
         cell(3,{.06,.5,.46},{-gap/2,.25,0},MaterialPreset::Concrete,true);
         cell(4,{.06,.5,.46},{gap/2,.25,0},MaterialPreset::Concrete,true);
@@ -139,6 +143,30 @@ struct VoxelImpactWorld::Impl {
         trial_wall_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-trial_start).count();
         if(!accepted){++rejected;if(depth>=14)throw std::runtime_error("native integration energy gate refused at "+std::to_string(time)+" s: before="+std::to_string(before)+", candidate="+std::to_string(candidateEnergy)+", h="+std::to_string(h)+"; last accepted state retained");interval(h/2,depth+1);interval(h/2,depth+1);return;}
         std::vector<RigidSnapshot> after_states;after_states.reserve(cells.size());for(unsigned i=0;i<cells.size();++i){const auto &c=cells[i];after_states.push_back(world.snapshot(c.id));if(!c.fixed){linear_velocity_quadratic+=.5*c.mass*lengthSquared(after_states[i].linear_velocity_m_s-before_states[i].linear_velocity_m_s);peak_spin=std::max(peak_spin,length(after_states[i].angular_velocity_rad_s));if(length(after_states[i].angular_velocity_rad_s)>=999.99)++spin_limit_samples;}}
+        Vec3 reaction{};
+        for(const auto &contact:world.contactImpulseObservations()){
+            const auto ai=unsigned(contact.a-100),bi=unsigned(contact.b-100);
+            if(ai>=cells.size()||bi>=cells.size())throw std::runtime_error("voxel contact references an undeclared cell");
+            const auto &a=before_states[ai],&b=before_states[bi],&aa=after_states[ai],&bb=after_states[bi];
+            const auto transfer=[&](Vec3 point,Vec3 push){
+                const auto ra=point-a.center_of_mass_world_m,rb=point-b.center_of_mass_world_m;
+                const auto speed=bb.linear_velocity_m_s+cross(bb.angular_velocity_rad_s,rb)-aa.linear_velocity_m_s-cross(aa.angular_velocity_rad_s,ra);
+                if(cells[ai].fixed&&!cells[bi].fixed){reaction-=push;support_reaction_angular_impulse-=cross(point,push);}
+                if(!cells[ai].fixed&&cells[bi].fixed){reaction+=push;support_reaction_angular_impulse+=cross(point,push);}
+                return dot(push,speed);
+            };
+            for(const auto &point:contact.points)contact_normal_work+=transfer(point.point_world_m,contact.normal_a_to_b*point.normal_impulse_n_s);
+            contact_friction_work+=transfer(contact.friction_point_world_m,contact.friction_impulse_on_b_n_s);
+            contact_twist_work+=dot(contact.twist_impulse_on_b_n_m_s,bb.angular_velocity_rad_s-aa.angular_velocity_rad_s);
+            if(cells[ai].fixed&&!cells[bi].fixed)support_reaction_angular_impulse-=contact.twist_impulse_on_b_n_m_s;
+            if(!cells[ai].fixed&&cells[bi].fixed)support_reaction_angular_impulse+=contact.twist_impulse_on_b_n_m_s;
+            ++contact_manifold_samples;contact_point_samples+=unsigned(contact.points.size());
+        }
+        support_reaction_impulse+=reaction;
+        // Native gravity acts only on the start-of-Update active bodies.
+        // Reactions above are ON the support; their negatives act on dynamics.
+        const auto scheduled_gravity=world.observedGravityImpulseN_s();gravity_impulse+=scheduled_gravity;
+        momentum_residual+=candidateTotals.linear_momentum_kg_m_s-totals.linear_momentum_kg_m_s-scheduled_gravity+reaction;
         for(unsigned i=0;i<bonds.size();++i)if(bonds[i].live){
             const auto &b=bonds[i];const auto &geometry=faces_before[i],&response=faces_after[i];
             const auto &a=before_states[b.a],&c=before_states[b.b],&aa=after_states[b.a],&cc=after_states[b.b];
@@ -205,6 +233,7 @@ std::string VoxelImpactWorld::snapshotJson() const {
     }
     return Json{{"schema","banjo.voxel-impact.v1"},{"declaration",w.declaration},{"time_s",w.time},{"dt_s",w.dt},{"ticks",w.ticks},{"substeps",w.substeps},{"rejected_trials",w.rejected},{"cells",cells},{"objects",objects},{"events",w.events},
         {"diagnostics",{{"dynamic_mass_kg",mass},{"kinetic_j",w.totals.kinetic_energy_j},{"potential_j",w.totals.gravitational_potential_energy_j},{"elastic_j",elastic},{"fracture_j",w.fracture},{"fracture_overshoot_loss_j",w.discarded_elastic},{"unclosed_energy_j",w.totals.mechanicalEnergy()+elastic+w.fracture+w.discarded_elastic-w.initial_energy},{"linear_momentum_n_s",v(w.totals.linear_momentum_kg_m_s)},{"angular_momentum_kg_m2_s",v(w.totals.angular_momentum_kg_m2_s)},{"max_step_wall_ms",w.max_wall_ms},{"peak_stress_ratio",w.peak_stress_ratio},{"linear_velocity_quadratic_j",w.linear_velocity_quadratic},{"peak_spin_rad_s",w.peak_spin},{"native_spin_limit_samples",w.spin_limit_samples},{"spring_material_damping_j",w.material_damping},{"spring_implicit_elastic_loss_j",w.implicit_elastic_loss},{"spring_endpoint_work_j",w.spring_endpoint_work},{"spring_geometry_change_j",w.spring_geometry_change},{"spring_residual_work_j",w.spring_residual_work},{"max_spring_solver_residual_n",w.max_spring_residual_n},{"profile",{{"sweep_ms",w.sweep_wall_ms},{"trial_ms",w.trial_wall_ms},{"observation_ms",w.observation_wall_ms},{"native_step_ms",w.native_step_wall_ms},{"totals_ms",w.totals_wall_ms},{"candidate_faces_ms",w.candidate_faces_wall_ms}}}}},
-        {"qualification",{{"calibrated",false},{"model","Passive finite-box six-axis elastic interfaces; brittle strength AND stored fracture-work admission. Metals/oak remain elastic, not brittle; plasticity/grain are unsupported. Implicit temporal error/contact/damping/full momentum accounts are unqualified."}}}}.dump();
+        {"contact_audit",{{"normal_endpoint_work_j",w.contact_normal_work},{"friction_endpoint_work_j",w.contact_friction_work},{"twist_endpoint_work_j",w.contact_twist_work},{"support_reaction_impulse_n_s",v(w.support_reaction_impulse)},{"support_reaction_angular_impulse_n_m_s",v(w.support_reaction_angular_impulse)},{"gravity_impulse_n_s",v(w.gravity_impulse)},{"linear_momentum_residual_n_s",v(w.momentum_residual)},{"manifold_samples",w.contact_manifold_samples},{"point_samples",w.contact_point_samples},{"scope","Actual discrete native solver impulses at start-of-solve contact midpoints; endpoint work is diagnostic, not a closed energy balance. Gravity counts start-of-Update active bodies. Anchored reactions use world-origin moments; no dormant cache impulses or estimated launch velocities."}}},
+        {"qualification",{{"calibrated",false},{"model","Passive finite-box six-axis elastic interfaces; brittle strength AND stored fracture-work admission. Metals/oak remain elastic, not brittle; plasticity/grain are unsupported. Contact endpoint work is measured, but finite-rotation/integration/full energy and angular momentum accounts remain unqualified."}}}}.dump();
 }
 }

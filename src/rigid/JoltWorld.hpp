@@ -489,6 +489,22 @@ public:
     };
     unsigned addFaceSpring(const FaceSpringDescription &description);
     FaceSpringObservation faceSpringObservation(unsigned joint) const;
+    struct ContactImpulsePoint {Vec3 point_world_m{};double normal_impulse_n_s{};};
+    struct ContactImpulseObservation {
+        MatterBodyId a{},b{};
+        Vec3 normal_a_to_b{},friction_point_world_m{},friction_impulse_on_b_n_s{},twist_impulse_on_b_n_m_s{};
+        std::vector<ContactImpulsePoint> points;
+    };
+    // Opt-in actual discrete solver impulses, not collision-response estimates.
+    // Only manifolds reported this Update are admitted; dormant cached impulses
+    // are excluded. CCD auditing is explicitly refused. Use a reversible trial
+    // to retain state on an audit failure; observations roll back with it.
+    void setContactImpulseObservationsEnabled(bool enabled);
+    std::span<const ContactImpulseObservation> contactImpulseObservations() const;
+    // Gravity impulse scheduled for dynamic bodies active at Update start,
+    // using native float gravity/factor/duration and actual solver mass.
+    // Sleeping bodies receive none. Other applied forces are not included.
+    Vec3 observedGravityImpulseN_s() const;
     // Opt-in observation only. Includes support/persisted contacts for reduced
     // fracture experiments; impulses remain estimates, not measured reactions.
     void setDetailedImpactObservations(bool enabled);

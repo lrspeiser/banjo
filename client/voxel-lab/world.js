@@ -42,6 +42,10 @@ function draw(s){if(!s)return;const cells=new Map(s.cells.map(c=>[c.id,c]));
  const sheet=s.objects.find(x=>x.id===1),ball=s.objects.find(x=>x.id===2);$('time').textContent=s.time_s.toFixed(3)+' s';$('pieces').textContent=sheet.pieces+' / '+sheet.cells+' voxels';$('faces').textContent=sheet.broken_faces;$('speed').textContent=Math.hypot(...ball.velocity_m_s).toFixed(2)+' m/s';$('ballpieces').textContent=ball.pieces+' / '+ball.cells+' voxels';$('count').textContent=s.cells.length+' native cells · '+s.substeps+' accepted substeps';
  const d=s.diagnostics;$('audit').textContent=`Retained dynamic mass ${d.dynamic_mass_kg.toFixed(5)} kg · KE ${d.kinetic_j.toFixed(3)} J · elastic ${d.elastic_j.toFixed(3)} J · unclosed energy ${d.unclosed_energy_j.toFixed(3)} J · rejected trials ${s.rejected_trials}`;
  for(const [id,value] of [['spring-damping',d.spring_material_damping_j],['numerical-elastic',d.spring_implicit_elastic_loss_j],['spring-residual',d.spring_residual_work_j]])$(id).textContent=Number.isFinite(value)?value.toFixed(3)+' J':'Unavailable in this build';
+ const contact=s.contact_audit;
+ for(const [id,value] of [['contact-normal',contact?.normal_endpoint_work_j],['contact-friction',contact?.friction_endpoint_work_j]])$(id).textContent=Number.isFinite(value)?value.toFixed(3)+' J':'Unavailable in this build';
+ for(const [id,value] of [['support-impulse',contact?.support_reaction_impulse_n_s],['momentum-residual',contact?.linear_momentum_residual_n_s]])$(id).textContent=Array.isArray(value)?Math.hypot(...value).toPrecision(4)+' N·s':'Unavailable in this build';
+ $('contact-points').textContent=contact?.point_samples??'Unavailable in this build';
  $('native-cost').textContent=Number.isFinite(d.profile?.native_step_ms)?(d.profile.native_step_ms/1000).toFixed(2)+' s wall time':'Unavailable in this build';
  canvas.dataset.time=s.time_s;canvas.dataset.nativeCells=s.cells.length;canvas.dataset.sheetPieces=sheet.pieces;
 }
