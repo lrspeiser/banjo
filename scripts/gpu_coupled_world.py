@@ -96,17 +96,23 @@ extern "C" __global__ void gather_ledger_trials(unsigned rows,unsigned batch,con
 }
 extern "C" __global__ void collect_trial_faults(unsigned n,unsigned rows,unsigned batch,const int *contributions,
     const int *body_faults,const double *poses,const double *ledger,int *faults){
-    const unsigned candidate=blockDim.x*blockIdx.x+threadIdx.x;if(candidate>=batch)return;
-    int fault=0;bool bad_history=false;
-    for(unsigned r=0;r<rows;++r){const int f=contributions[candidate*rows+r];if(f==6)bad_history=true;else if(f&&!fault)fault=f;}
-    if(!fault){for(unsigned i=0;i<6*n;++i)if(body_faults[candidate*6*n+i]){fault=5;break;}}
-    if(!fault&&bad_history)fault=6;
-    if(!fault){for(unsigned j=0;j<7*n;++j)if(!banjo::dgFinite(poses[7*n*candidate+j])){fault=7;break;}}
-    if(!fault){for(unsigned j=0;j<12;++j)if(!banjo::dgFinite(ledger[12*candidate+j])){fault=8;break;}}
-    faults[candidate]=fault;
+    const unsigned candidate=blockIdx.x;if(candidate>=batch)return;
+    // Integer minimum preserves reference fault precedence and the earliest
+    // contribution row. This is NOT a reordered floating force/work reduction.
+    __shared__ unsigned first;if(threadIdx.x==0)first=rows+4;__syncthreads();
+    for(unsigned r=threadIdx.x;r<rows;r+=blockDim.x){const int f=contributions[candidate*rows+r];
+        if(f)atomicMin(&first,f==6?rows+1:r);
+    }
+    for(unsigned j=threadIdx.x;j<6*n;j+=blockDim.x)if(body_faults[candidate*6*n+j])atomicMin(&first,rows);
+    for(unsigned j=threadIdx.x;j<7*n;j+=blockDim.x)if(!banjo::dgFinite(poses[7*n*candidate+j]))atomicMin(&first,rows+2);
+    for(unsigned j=threadIdx.x;j<12;j+=blockDim.x)if(!banjo::dgFinite(ledger[12*candidate+j]))atomicMin(&first,rows+3);
+    __syncthreads();
+    if(threadIdx.x==0)faults[candidate]=first<rows?contributions[candidate*rows+first]:first==rows?5:first==rows+1?6:first==rows+2?7:first==rows+3?8:0;
 }
 '''
-class TrialFailure(RuntimeError):pass
+class TrialFailure(RuntimeError):
+    def __init__(self,message,details=None):
+        super().__init__(message);self.details=details or {}
 
 class CoupledEvaluator:
     def __init__(self,bodies,edges,pipeline='parallel'):
@@ -171,21 +177,45 @@ class CoupledEvaluator:
             if self.rows:launch('contribution_trials',batch*self.rows,(self.bodies,n,self.edges,m,self.jobs,rows,np.uint32(self.pair_count),b,out['prepared'],out['pair_active'],h,out['contributions'],out['work'],out['history'],out['active'],out['contribution_faults'],np.int32(localized),self.jacobian_changed,base['contributions'],base['work'],base['history'],base['active'],base['contribution_faults']))
             launch('gather_body_trials',batch*self.n*6,(self.bodies,n,rows,b,self.offsets,self.incidence,velocity,out['contributions'],out['active'],h,gy,out['forces'],out['residual'],out['body_faults']))
             launch('gather_ledger_trials',batch*12,(rows,b,out['work'],out['ledger']))
-            launch('collect_trial_faults',batch,(n,rows,b,out['contribution_faults'],out['body_faults'],out['poses'],out['ledger'],out['faults']))
+            self.phases['collect_trial_faults']((batch,),(128,),(n,rows,b,out['contribution_faults'],out['body_faults'],out['poses'],out['ledger'],out['faults']))
         self.evaluations+=batch;return out
 
     def solve(self,h,gravity=-9.81,maximum_iterations=24):
         original=self.bodies[:,14:20].reshape(-1);y=original[self.dynamic]*self.active_weights
         count=len(y);tolerance=1e-10*max(1.,float(cp.linalg.norm(y)))
+        trace=[];last_trial=None;jacobian=None
+        def refuse(message):
+            # Failure-only observations never replace an accepted physical state.
+            # Retain the actual last evaluated candidate, rather than inferring
+            # the cause from the timestep at which subdivision eventually stops.
+            details=dict(dt_s=h,gravity_m_s2=gravity,equation_tolerance=tolerance,iterations=trace,
+                initial_bodies=cp.asnumpy(self.bodies).tolist(),initial_edges=cp.asnumpy(self.edges).tolist(),
+                iterate_weighted_velocity=cp.asnumpy(y).tolist(),finite_difference_weighted_scale=1e-12)
+            if last_trial is not None:
+                result,values,velocity=last_trial
+                details['last_evaluated']=dict(weighted_velocity=cp.asnumpy(values).tolist(),
+                    velocity=cp.asnumpy(velocity).tolist(),poses_wxyz=cp.asnumpy(result['poses']).tolist(),
+                    residual=cp.asnumpy(result['residual']).tolist(),forces=cp.asnumpy(result['forces']).tolist(),
+                    ledger=cp.asnumpy(result['ledger']).tolist(),faults=cp.asnumpy(result['faults']).tolist(),
+                    material_history=cp.asnumpy(result['history']).tolist())
+            if jacobian is not None:
+                matrix=cp.asnumpy(jacobian)
+                if np.isfinite(matrix).all():
+                    singular=np.linalg.svd(matrix,compute_uv=False)
+                    details['jacobian_singular_values']=singular.tolist();details['jacobian']=matrix.tolist()
+            raise TrialFailure(message,details)
         def trials(values,base=None):
+            nonlocal last_trial
             values=values.reshape(-1,count);velocity=cp.broadcast_to(original,(len(values),len(original))).copy()
             velocity[:,self.dynamic]=values/self.active_weights
             result=self.evaluate(velocity,h,gravity,_jacobian_base=base if self.pipeline=='parallel' else None)
+            last_trial=result,values,velocity.reshape(-1,self.n,6)
             return result,result['residual'].reshape(len(values),-1)[:,self.dynamic],velocity.reshape(-1,self.n,6)
         for iteration in range(maximum_iterations):
             out,residual,velocity=trials(y)
-            if int(out['faults'][0]):raise TrialFailure('Coupled trial fault '+str(int(out['faults'][0])))
+            if int(out['faults'][0]):refuse('Coupled trial fault '+str(int(out['faults'][0])))
             norm=float(cp.linalg.norm(residual[0]))
+            row=dict(iteration=iteration,equation_residual=norm,line_search=[]);trace.append(row)
             if norm<=tolerance:
                 return {k:out[k][0].copy() for k in ('poses','residual','history','forces','ledger','faults')},velocity[0].copy(),iteration,norm
             # Energy-weighted finite cells have sub-micrometre cohesive ranges.
@@ -196,18 +226,20 @@ class CoupledEvaluator:
             perturbed=cp.repeat(y[None],2*count,axis=0)
             ids=cp.arange(count);perturbed[ids,ids]+=epsilon;perturbed[count+ids,ids]-=epsilon
             diff,r,_=trials(perturbed,base=out)
-            if bool(cp.any(diff['faults'])):raise TrialFailure('Jacobian trial crosses a geometry/numeric boundary')
+            if bool(cp.any(diff['faults'])):refuse('Jacobian trial crosses a geometry/numeric boundary')
             jacobian=((r[:count]-r[count:])/(2*epsilon[:,None])).T
             try:
                 with cupyx.errstate(linalg='raise'):delta=cp.linalg.solve(jacobian,residual[0])
-            except np.linalg.LinAlgError as error:raise TrialFailure('Singular coupled Newton Jacobian') from error
-            if not bool(cp.isfinite(delta).all()):raise TrialFailure('Nonfinite coupled Newton direction')
+            except np.linalg.LinAlgError:refuse('Singular coupled Newton Jacobian')
+            if not bool(cp.isfinite(delta).all()):refuse('Nonfinite coupled Newton direction')
             accepted=False
             for scale in (1.,.5,.25,.125,.0625,.03125,.015625,.0078125):
                 candidate=y-scale*delta;probe,r,_=trials(candidate)
-                if int(probe['faults'][0])==0 and float(cp.linalg.norm(r[0]))<norm*(1-1e-4*scale):y=candidate;accepted=True;break
-            if not accepted:raise TrialFailure('Coupled Newton line search did not reduce the equation residual')
-        raise TrialFailure('Coupled Newton iteration budget exceeded')
+                fault=int(probe['faults'][0]);probe_norm=float(cp.linalg.norm(r[0])) if fault==0 else None
+                row['line_search'].append(dict(scale=scale,fault=fault,equation_residual=probe_norm))
+                if fault==0 and probe_norm<norm*(1-1e-4*scale):y=candidate;accepted=True;break
+            if not accepted:refuse('Coupled Newton line search did not reduce the equation residual')
+        refuse('Coupled Newton iteration budget exceeded')
 
 def declaration(raw):
     defaults=dict(material='glass',ball_material='iron',ball_mass_kg=.01,height_m=.02,dt_s=1/960,experiment='sheet',device='cuda:0',pipeline='parallel')
@@ -273,7 +305,7 @@ class GpuCoupledWorld:
         if self.rejected:raise ValueError('Refused coupled world is stopped; reset required')
         if type(steps) is not int or not 1<=steps<=32 or self.ticks+steps>round(2/self.d['dt_s']):raise ValueError('Invalid coupled advance')
         saved_b=self.eval.bodies.copy();saved_e=self.eval.edges.copy();accepted_b=cp.asnumpy(saved_b);accepted_e=cp.asnumpy(saved_e)
-        accounts=[];started=time.perf_counter();updates=0;trials=0
+        accounts=[];started=time.perf_counter();updates=0;trials=0;refusals=[];last_solver_failure=None
         try:
             for host_tick in range(steps):
                 queue=[(self.d['dt_s'],0)]
@@ -282,7 +314,11 @@ class GpuCoupledWorld:
                     if trials>128 or time.perf_counter()-started>30:raise TrialFailure('Coupled interval trial/time budget')
                     h,depth=queue.pop();before=cp.asnumpy(self.eval.bodies);energy0,p0,l0=self.mechanics(before)
                     try:out,velocity,iterations,equation=self.eval.solve(h)
-                    except TrialFailure:
+                    except TrialFailure as error:
+                        last_solver_failure=error.details
+                        refusals.append(dict(trial=trials,dt_s=h,depth=depth,error=str(error),
+                            private_elapsed_s=sum(a['dt_s'] for a in accounts),
+                            equation_residual=(error.details.get('iterations') or [{}])[-1].get('equation_residual')))
                         if depth>=10:raise
                         queue.extend([(h/2,depth+1),(h/2,depth+1)]);continue
                     ending=before.copy();ending[:,7:14]=cp.asnumpy(out['poses']);ending[:,14:20]=cp.asnumpy(velocity)
@@ -300,6 +336,10 @@ class GpuCoupledWorld:
                     # Conservative displacement guard prevents the tiny sheet
                     # from being skipped; CCD/event location is not qualified.
                     if abs(balance)>tolerance or np.linalg.norm(pres)>1e-9 or np.linalg.norm(lres)>1e-9 or ledger[8]>.2*scale or travel>.25*scale or angles>.25:
+                        refusals.append(dict(trial=trials,dt_s=h,depth=depth,error='Coupled finite/compression/travel/conservation gate',
+                            private_elapsed_s=sum(a['dt_s'] for a in accounts),energy_residual_j=balance,energy_tolerance_j=tolerance,
+                            P_residual_n_s=pres.tolist(),L_residual_n_m_s=lres.tolist(),compression_m=float(ledger[8]),
+                            maximum_compression_m=.2*scale,travel_m=travel,maximum_travel_m=.25*scale,turn_rad=float(angles),maximum_turn_rad=.25))
                         if depth>=10:raise TrialFailure('Coupled finite/compression/travel/conservation gate')
                         queue.extend([(h/2,depth+1),(h/2,depth+1)]);continue
                     updates+=1
@@ -322,7 +362,9 @@ class GpuCoupledWorld:
             restored=False
             try:cp.copyto(self.eval.bodies,saved_b);cp.copyto(self.eval.edges,saved_e);cp.cuda.get_current_stream().synchronize();restored=True
             except Exception:pass # A poisoned CUDA context cannot confirm GPU rollback.
-            self.rejected=dict(error=str(error),accepted_time_s=self.time,interval_rolled_back=restored,accepted_snapshot_preserved=True,failed_interval_substeps=updates,last_trial_accounts=accounts[-4:])
+            self.rejected=dict(error=str(error),accepted_time_s=self.time,interval_rolled_back=restored,accepted_snapshot_preserved=True,
+                failed_interval_substeps=updates,trial_attempts=trials,subdivision_refusals=refusals,
+                last_solver_failure=last_solver_failure,last_trial_accounts=accounts[-4:])
             raise RuntimeError(str(error)) from error
 
     def _snapshot(self,bodies):

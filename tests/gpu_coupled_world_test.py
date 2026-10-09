@@ -66,6 +66,8 @@ def main(args):
         except RuntimeError:pass
         assert w.time==0 and bool(cp.array_equal(w.eval.bodies,b)) and bool(cp.array_equal(w.eval.edges,e))
         refused=w.snapshot();witness=refused.pop('rejected_candidate');assert refused==initial and witness['interval_rolled_back'] and witness['failed_interval_substeps']==1
+        assert witness['trial_attempts']>1 and witness['subdivision_refusals'][-1]['depth']==10
+        assert all(a['error']=='Deliberate convergence refusal witness' for a in witness['subdivision_refusals'])
         result=dict(schema='banjo.gpu-coupled-evidence.v1',source_sha256=source_hash(),device=cp.cuda.runtime.getDeviceProperties(0)['name'].decode(),
             cuda_driver=cp.cuda.runtime.driverGetVersion(),cpu_cuda_trials=12,max_scaled_trial_difference=max_relative,comparisons=results,
             analytical_freefall_materials=4,whole_interval_rollback=True,realtime_qualified=False)

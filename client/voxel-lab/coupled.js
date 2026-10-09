@@ -23,9 +23,18 @@ function display(){const shown=showBefore?initial:state;if(!shown)return;
   $('before').textContent=showBefore?'Live':'Before';
 }
 function pair(name,value){const row=document.createElement('div'),dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=name;dd.textContent=value;row.append(dt,dd);$('results').append(row);}
+function refusalSummary(f){const counts={};for(const r of f.subdivision_refusals||[])counts[r.error]=(counts[r.error]||0)+1;
+  const n=f.last_solver_failure,last=n?.iterations?.at(-1);
+  return {stopped_by:f.error,accepted_time_s:f.accepted_time_s,interval_rolled_back:f.interval_rolled_back,
+    private_accepted_steps_rolled_back:f.failed_interval_substeps,trial_attempts:f.trial_attempts,refusal_counts:counts,
+    last_newton:n?{dt_s:n.dt_s,iteration:last?.iteration,equation_residual:last?.equation_residual,
+      equation_tolerance:n.equation_tolerance,line_search:last?.line_search}:null,
+    note:'This is a rejected private candidate. Download the experiment log for its actual poses, forces, material history and Jacobian; the scene shows accepted physics.'};
+}
 function accept(reply){if(reply.state){const s=reply.state;if(hash&&hash!==s.qualification.source_sha256)throw Error('Coupled source changed; reset required');if(!initial){initial=structuredClone(s);build(s);}state=s;showBefore=false;display();
     const d=s.diagnostics,p=s.performance;$('results').replaceChildren();pair('CUDA pipeline',p.pipeline==='parallel'?'Parallel':'Serial reference');pair('Physical time',s.time_s.toFixed(5)+' s');pair('Cells / interfaces',s.cells.length+' / '+d.interfaces);pair('Separated sites',d.separated_sites);pair('Yielded faces',d.yielded_faces);pair('Energy residual',d.global_energy_residual_j.toExponential(2)+' J');pair('Fracture / plastic work',(d.fracture_work_j+d.plastic_work_j).toExponential(2)+' J');pair('Numerical return excess',d.numerical_return_excess_j.toExponential(2)+' J');pair('Last calculation',p.last_batch_ms.toFixed(1)+' ms');pair('Physical / wall speed',p.compute_ratio===null?'—':p.compute_ratio.toFixed(5)+'×');
-    $('failure').hidden=!s.rejected_candidate;$('failure').textContent=s.rejected_candidate?JSON.stringify(s.rejected_candidate,null,2):'';
+    const f=s.rejected_candidate;if(f){pair('Rejected trials',f.subdivision_refusals?.length??'—');pair('Scene restored',f.interval_rolled_back?'Yes':'Unconfirmed');}
+    $('failure').hidden=!f;$('failure').textContent=f?JSON.stringify(refusalSummary(f),null,2):'';
   }
   if(!reply.ok)throw Error(reply.error);$('status').classList.remove('error');$('status').textContent='Accepted CUDA states · experimental / realtime gate open';
 }

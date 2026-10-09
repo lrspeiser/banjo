@@ -1,8 +1,9 @@
 {
-  "title": "Parallel coupled CUDA pipeline verified against serial histories; strong impacts and realtime remain open",
+  "title": "CUDA fault scan accelerated; actual Newton refusal causes recorded; strong impacts and realtime remain open",
   "date": "2026-10-09",
   "native_sha256": "eb3527a07fda2a0c181ff11683eb907a16045bf0fcae66e4db58f703e7df9ee4",
   "changes": [
+    "Coupled CUDA fault collection now runs in parallel with unchanged fault priority and physical sums. The lab shows rejected-trial counts and rollback; its log records actual failed Newton inputs/candidates/Jacobian. Strong glass/ice convergence remains unresolved.",
     "Coupled 3D lab now defaults to Parallel CUDA and offers Serial reference. Ordered material/contact contributions and current-Jacobian reuse preserve all four tested physical histories exactly. Controlled runs improve to about 1.4\u20133.0 wall seconds per 0.042 physical seconds; still far from realtime.",
     "New /coupled 3D page: nine connected finite cells, density-derived ball, fixed supports, actual CUDA material/contact/body solve, Before/Live and downloadable complete microstep records. Low-energy four-material controls pass; fracture/yield and realtime remain unqualified.",
     "GPU material inspector now shows actual CUDA force directions and body force/torque pairs. General finite-frame reactions use the same CPU/CUDA energy gradient; normal controlled loading has zero torque. The diagram still has no dynamics clock.",
@@ -19,6 +20,11 @@
     "Glass/oak/iron/ice complete at both timesteps in the initial trial. Full convergence, large energy deficits, connected calculation speed and thermal/fluid/power laws remain unfinished."
   ],
   "checks": [
+    {
+      "label": "CUDA fault priority and private diagnostics",
+      "status": "passed",
+      "value": "162 fault-priority cases; exact four-material low-energy history parity; eleven scoped suites; full/local CUDA memcheck 0 errors and racecheck 0 warnings/errors. Strong glass replay still refuses and rolls back. No fracture/dent/realtime qualification."
+    },
     {
       "label": "Parallel pipeline preservation",
       "status": "passed",
@@ -144,5 +150,5 @@
   "gpu_worker_sha256": "9380a55b680cc4b2e7b1dd3781d2e08bfad57c5b534d26024e901a84a6010bb2",
   "physx_source_sha256": "d1d30abfd67380a66fcf4664759e1917e50137bd7f6ef92bb160d0f1b5b5157f",
   "gpu_material_source_sha256": "439309fd656c70e3f3728fda7a7260aad16ecfe72c0f2f32d9c388b67690f559",
-  "gpu_coupled_source_sha256": "579e1bacfabcbfb8a80efdf23634d7f9ef42be0bd9d7526ce65301de5af4957f"
+  "gpu_coupled_source_sha256": "3954e4447ad9986acce3de570c5fbd5b0ff6af71e1cf1443156980f56b7867ac"
 }

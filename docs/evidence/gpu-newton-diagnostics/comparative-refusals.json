@@ -1,0 +1,836 @@
+{
+  "source_sha256": "0a008c45d8a4c10f33f7924ae5dfc8ac5232629f08b3accaadc2905d63d7d44d",
+  "scope": "First diagnostic port before integer fault-collection optimization and additional input/Jacobian fields. Same material/contact equations. Timings are not final optimized throughput measurements.",
+  "comparisons": [
+    {
+      "material": "glass",
+      "declaration": {
+        "material": "glass",
+        "ball_material": "iron",
+        "ball_mass_kg": 0.1,
+        "height_m": 0.005,
+        "dt_s": 0.0010416666666666667,
+        "experiment": "sheet",
+        "device": "cuda:0",
+        "pipeline": "parallel"
+      },
+      "accepted_time_s": 0.034375,
+      "wall_s": 12.71383279998554,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.12250000000000001,
+        "mechanical_j": 0.060056571191746205,
+        "material_stored_j": 1.3318431038122348e-07,
+        "contact_stored_j": 5.902819611400537e-06,
+        "global_energy_residual_j": 2.0222712393547226e-13,
+        "momentum_n_s": [
+          -4.76008262103037e-13,
+          0.029743889966478154,
+          1.9828592251919227e-13
+        ],
+        "angular_momentum_n_m_s": [
+          -1.9199220152702532e-13,
+          -3.707759036390713e-15,
+          6.825363167138704e-14
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 48,
+        "maximum_energy_residual_j": 2.367476756662177e-13,
+        "ground_impulse_n_s": [
+          -1.336032203532787e-12,
+          0.0710531868502037,
+          8.59524555561121e-15
+        ],
+        "ground_torque_impulse_n_m_s": [
+          -1.970688060986253e-13,
+          1.4632448794525615e-14,
+          1.4844312484472563e-13
+        ]
+      },
+      "refusal": "Coupled interval trial/time budget",
+      "trial_attempts": 129,
+      "failed_private_steps": 62,
+      "interval_rolled_back": true,
+      "refusal_counts": {
+        "Coupled Newton line search did not reduce the equation residual": 66
+      },
+      "last_newton_dt_s": 3.255208333333333e-05,
+      "last_iterations": [
+        {
+          "iteration": 0,
+          "equation_residual": 6.424788590746207,
+          "line_search": [
+            {
+              "scale": 1.0,
+              "fault": 0,
+              "equation_residual": 6.057742950083716
+            }
+          ]
+        },
+        {
+          "iteration": 1,
+          "equation_residual": 6.057742950083716,
+          "line_search": [
+            {
+              "scale": 1.0,
+              "fault": 0,
+              "equation_residual": 1.2294986627077642
+            }
+          ]
+        },
+        {
+          "iteration": 2,
+          "equation_residual": 1.2294986627077642,
+          "line_search": [
+            {
+              "scale": 1.0,
+              "fault": 0,
+              "equation_residual": 2.472925766492696
+            },
+            {
+              "scale": 0.5,
+              "fault": 0,
+              "equation_residual": 0.8341399487123119
+            }
+          ]
+        },
+        {
+          "iteration": 3,
+          "equation_residual": 0.8341399487123119,
+          "line_search": [
+            {
+              "scale": 1.0,
+              "fault": 0,
+              "equation_residual": 1.4658334967807254
+            },
+            {
+              "scale": 0.5,
+              "fault": 0,
+              "equation_residual": 0.6478231522242784
+            }
+          ]
+        },
+        {
+          "iteration": 4,
+          "equation_residual": 0.6478231522242784,
+          "line_search": [
+            {
+              "scale": 1.0,
+              "fault": 0,
+              "equation_residual": 0.549353852156778
+            }
+          ]
+        },
+        {
+          "iteration": 5,
+          "equation_residual": 0.549353852156778,
+          "line_search": [
+            {
+              "scale": 1.0,
+              "fault": 0,
+              "equation_residual": 90.65421273183293
+            },
+            {
+              "scale": 0.5,
+              "fault": 0,
+              "equation_residual": 41.907687074283416
+            },
+            {
+              "scale": 0.25,
+              "fault": 0,
+              "equation_residual": 17.561547228166685
+            },
+            {
+              "scale": 0.125,
+              "fault": 0,
+              "equation_residual": 5.73643461445077
+            },
+            {
+              "scale": 0.0625,
+              "fault": 0,
+              "equation_residual": 1.334047363463605
+            },
+            {
+              "scale": 0.03125,
+              "fault": 0,
+              "equation_residual": 0.5859013810229321
+            },
+            {
+              "scale": 0.015625,
+              "fault": 0,
+              "equation_residual": 0.5498971589640917
+            },
+            {
+              "scale": 0.0078125,
+              "fault": 0,
+              "equation_residual": 0.5466995209239042
+            }
+          ]
+        },
+        {
+          "iteration": 6,
+          "equation_residual": 0.5466995209239042,
+          "line_search": [
+            {
+              "scale": 1.0,
+              "fault": 0,
+              "equation_residual": 19.557321628522537
+            },
+            {
+              "scale": 0.5,
+              "fault": 0,
+              "equation_residual": 9.177462020353413
+            },
+            {
+              "scale": 0.25,
+              "fault": 0,
+              "equation_residual": 3.873959473978757
+            },
+            {
+              "scale": 0.125,
+              "fault": 0,
+              "equation_residual": 1.2782901352757237
+            },
+            {
+              "scale": 0.0625,
+              "fault": 0,
+              "equation_residual": 0.5451184938227802
+            }
+          ]
+        },
+        {
+          "iteration": 7,
+          "equation_residual": 0.5451184938227802,
+          "line_search": [
+            {
+              "scale": 1.0,
+              "fault": 0,
+              "equation_residual": 44.1004481575364
+            },
+            {
+              "scale": 0.5,
+              "fault": 0,
+              "equation_residual": 16.461787102457585
+            },
+            {
+              "scale": 0.25,
+              "fault": 0,
+              "equation_residual": 3.369581906905168
+            },
+            {
+              "scale": 0.125,
+              "fault": 0,
+              "equation_residual": 0.7810737782155243
+            },
+            {
+              "scale": 0.0625,
+              "fault": 0,
+              "equation_residual": 0.5786967100330895
+            },
+            {
+              "scale": 0.03125,
+              "fault": 0,
+              "equation_residual": 0.535949466905611
+            }
+          ]
+        },
+        {
+          "iteration": 8,
+          "equation_residual": 0.535949466905611,
+          "line_search": [
+            {
+              "scale": 1.0,
+              "fault": 0,
+              "equation_residual": 59.32244446901723
+            },
+            {
+              "scale": 0.5,
+              "fault": 0,
+              "equation_residual": 22.28115038384818
+            },
+            {
+              "scale": 0.25,
+              "fault": 0,
+              "equation_residual": 5.6246714518441925
+            },
+            {
+              "scale": 0.125,
+              "fault": 0,
+              "equation_residual": 1.8351316602268977
+            },
+            {
+              "scale": 0.0625,
+              "fault": 0,
+              "equation_residual": 0.6864329090101748
+            },
+            {
+              "scale": 0.03125,
+              "fault": 0,
+              "equation_residual": 0.5339266232219019
+            }
+          ]
+        },
+        {
+          "iteration": 9,
+          "equation_residual": 0.5339266232219019,
+          "line_search": [
+            {
+              "scale": 1.0,
+              "fault": 0,
+              "equation_residual": 104.09563555923465
+            },
+            {
+              "scale": 0.5,
+              "fault": 0,
+              "equation_residual": 45.57130248533019
+            },
+            {
+              "scale": 0.25,
+              "fault": 0,
+              "equation_residual": 16.490756960520248
+            },
+            {
+              "scale": 0.125,
+              "fault": 0,
+              "equation_residual": 3.6912322362241548
+            },
+            {
+              "scale": 0.0625,
+              "fault": 0,
+              "equation_residual": 1.1263109837577097
+            },
+            {
+              "scale": 0.03125,
+              "fault": 0,
+              "equation_residual": 0.9144415039141677
+            },
+            {
+              "scale": 0.015625,
+              "fault": 0,
+              "equation_residual": 0.5718903177531017
+            },
+            {
+              "scale": 0.0078125,
+              "fault": 0,
+              "equation_residual": 0.5359732708623791
+            }
+          ]
+        }
+      ],
+      "singular_values": [
+        15774.843180840742,
+        15385.577235921804,
+        12754.878692912125,
+        12579.46758919721,
+        10634.775914089536,
+        8048.643543477893,
+        4537.829542155985,
+        3436.9970974655484,
+        2686.191232770508,
+        1618.262697850195,
+        1107.6983888026357,
+        414.36317915591184,
+        80.82767019546284,
+        28.90333403612245,
+        20.210609727742263,
+        19.202001177205375,
+        17.21529191528781,
+        16.643257645842926,
+        11.877979656724076,
+        10.979250270834521,
+        10.315426755258562,
+        9.386504531125677,
+        8.584638579246397,
+        8.06547414201916,
+        7.136150909145486,
+        6.762687112198055,
+        6.708481977602255,
+        5.853087123062886,
+        4.5776840414859326,
+        4.2695563667021466,
+        3.5415862294338405,
+        3.5195113910598876,
+        2.7871935179781144,
+        2.5209036893872274,
+        2.409259466732032,
+        2.354108481465756,
+        2.1520317835545133,
+        2.0991227814742657,
+        1.3701110466955813,
+        1.1461401317149842,
+        1.0013257622023588,
+        1.000869839926977,
+        1.0006116885841663,
+        1.000015652889249,
+        1.0,
+        1.0,
+        0.9999999999999999,
+        0.9999999999999999,
+        0.9999999999999997,
+        0.9999994742319018,
+        0.9999967891209757,
+        0.9999953908186738,
+        0.8443047842623965,
+        0.7170759493478417,
+        0.6222165085919756,
+        0.4923976642264418,
+        0.42601618234757915,
+        0.28783269101275427,
+        0.26241357110833635,
+        0.04166667100291116
+      ]
+    },
+    {
+      "material": "oak",
+      "declaration": {
+        "material": "oak",
+        "ball_material": "iron",
+        "ball_mass_kg": 0.1,
+        "height_m": 0.005,
+        "dt_s": 0.0010416666666666667,
+        "experiment": "sheet",
+        "device": "cuda:0",
+        "pipeline": "parallel"
+      },
+      "accepted_time_s": 0.1041666666666666,
+      "wall_s": 58.30044599995017,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.1063,
+        "mechanical_j": 0.055270669459714664,
+        "material_stored_j": 2.3501497025741247e-05,
+        "contact_stored_j": 7.762392468142092e-07,
+        "global_energy_residual_j": 5.214648157725321e-13,
+        "momentum_n_s": [
+          1.6903017466961516e-05,
+          0.02408529287965294,
+          9.682702305715577e-06
+        ],
+        "angular_momentum_n_m_s": [
+          -1.6051544161733598e-06,
+          7.175449470354322e-09,
+          2.3838660660390763e-06
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 48,
+        "maximum_energy_residual_j": 2.5889158845144797e-13,
+        "ground_impulse_n_s": [
+          1.6903017470653702e-05,
+          0.1327106053784442,
+          9.682702256755809e-06
+        ],
+        "ground_torque_impulse_n_m_s": [
+          -1.6095743923572362e-06,
+          7.175452240263215e-09,
+          2.389682284085353e-06
+        ]
+      },
+      "refusal": null,
+      "trial_attempts": null,
+      "failed_private_steps": null,
+      "interval_rolled_back": null,
+      "refusal_counts": {},
+      "last_newton_dt_s": null,
+      "last_iterations": null,
+      "singular_values": null
+    },
+    {
+      "material": "iron",
+      "declaration": {
+        "material": "iron",
+        "ball_material": "iron",
+        "ball_mass_kg": 0.1,
+        "height_m": 0.005,
+        "dt_s": 0.0010416666666666667,
+        "experiment": "sheet",
+        "device": "cuda:0",
+        "pipeline": "parallel"
+      },
+      "accepted_time_s": 0.1041666666666666,
+      "wall_s": 13.567196899966802,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.17083000000000004,
+        "mechanical_j": 0.0742819870782184,
+        "material_stored_j": 3.7758389269675364e-06,
+        "contact_stored_j": 3.6327834548971574e-07,
+        "global_energy_residual_j": 2.5104918144336352e-14,
+        "momentum_n_s": [
+          9.862211424184666e-06,
+          0.02365735184166043,
+          -2.964215915664063e-07
+        ],
+        "angular_momentum_n_m_s": [
+          2.6551037338363883e-07,
+          -1.8041202262185394e-09,
+          -1.4148709826311096e-06
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 12,
+        "maximum_energy_residual_j": 2.3167839575387024e-14,
+        "ground_impulse_n_s": [
+          9.862206816720897e-06,
+          0.19822425808078806,
+          -2.964209240893545e-07
+        ],
+        "ground_torque_impulse_n_m_s": [
+          2.655839818978804e-07,
+          -1.804121732358958e-09,
+          -1.4140322066756645e-06
+        ]
+      },
+      "refusal": null,
+      "trial_attempts": null,
+      "failed_private_steps": null,
+      "interval_rolled_back": null,
+      "refusal_counts": {},
+      "last_newton_dt_s": null,
+      "last_iterations": null,
+      "singular_values": null
+    },
+    {
+      "material": "ice",
+      "declaration": {
+        "material": "ice",
+        "ball_material": "iron",
+        "ball_mass_kg": 0.1,
+        "height_m": 0.005,
+        "dt_s": 0.0010416666666666667,
+        "experiment": "sheet",
+        "device": "cuda:0",
+        "pipeline": "parallel"
+      },
+      "accepted_time_s": 0.0958333333333333,
+      "wall_s": 257.33955149998656,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.108253,
+        "mechanical_j": 0.05586323677030908,
+        "material_stored_j": 6.370861081509778e-06,
+        "contact_stored_j": 1.0746398255083236e-07,
+        "global_energy_residual_j": -9.261341693544978e-14,
+        "momentum_n_s": [
+          3.009438715754479e-07,
+          -0.03036573086814273,
+          2.685604793522635e-07
+        ],
+        "angular_momentum_n_m_s": [
+          4.136329301293634e-07,
+          1.4463531927038686e-09,
+          -7.741648985536372e-07
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 48,
+        "maximum_energy_residual_j": 2.605554357350018e-14,
+        "ground_impulse_n_s": [
+          3.009439811756255e-07,
+          0.07140562075583155,
+          2.685606402977892e-07
+        ],
+        "ground_torque_impulse_n_m_s": [
+          4.135548103959223e-07,
+          1.4463494911463301e-09,
+          -7.720474881777296e-07
+        ]
+      },
+      "refusal": "Coupled interval trial/time budget",
+      "trial_attempts": 129,
+      "failed_private_steps": 63,
+      "interval_rolled_back": true,
+      "refusal_counts": {
+        "Coupled Newton iteration budget exceeded": 2,
+        "Coupled Newton line search did not reduce the equation residual": 63
+      },
+      "last_newton_dt_s": 1.6276041666666666e-05,
+      "last_iterations": [
+        {
+          "iteration": 0,
+          "equation_residual": 0.16675939718570762,
+          "line_search": [
+            {
+              "scale": 1.0,
+              "fault": 0,
+              "equation_residual": 0.3055018419551169
+            },
+            {
+              "scale": 0.5,
+              "fault": 0,
+              "equation_residual": 0.18001372667670854
+            },
+            {
+              "scale": 0.25,
+              "fault": 0,
+              "equation_residual": 0.1353230341690936
+            }
+          ]
+        },
+        {
+          "iteration": 1,
+          "equation_residual": 0.1353230341690936,
+          "line_search": [
+            {
+              "scale": 1.0,
+              "fault": 0,
+              "equation_residual": 0.14732208785531575
+            },
+            {
+              "scale": 0.5,
+              "fault": 0,
+              "equation_residual": 0.12032774604678266
+            }
+          ]
+        },
+        {
+          "iteration": 2,
+          "equation_residual": 0.12032774604678266,
+          "line_search": [
+            {
+              "scale": 1.0,
+              "fault": 0,
+              "equation_residual": 0.6102146105042059
+            },
+            {
+              "scale": 0.5,
+              "fault": 0,
+              "equation_residual": 0.23118133797891324
+            },
+            {
+              "scale": 0.25,
+              "fault": 0,
+              "equation_residual": 0.09472414749262048
+            }
+          ]
+        },
+        {
+          "iteration": 3,
+          "equation_residual": 0.09472414749262048,
+          "line_search": [
+            {
+              "scale": 1.0,
+              "fault": 0,
+              "equation_residual": 0.6871720101383688
+            },
+            {
+              "scale": 0.5,
+              "fault": 0,
+              "equation_residual": 0.2815788620561281
+            },
+            {
+              "scale": 0.25,
+              "fault": 0,
+              "equation_residual": 0.1026915538891297
+            },
+            {
+              "scale": 0.125,
+              "fault": 0,
+              "equation_residual": 0.09187362448352322
+            }
+          ]
+        },
+        {
+          "iteration": 4,
+          "equation_residual": 0.09187362448352322,
+          "line_search": [
+            {
+              "scale": 1.0,
+              "fault": 0,
+              "equation_residual": 0.1665666699618938
+            },
+            {
+              "scale": 0.5,
+              "fault": 0,
+              "equation_residual": 0.10687066327440009
+            },
+            {
+              "scale": 0.25,
+              "fault": 0,
+              "equation_residual": 0.08348221593435842
+            }
+          ]
+        },
+        {
+          "iteration": 5,
+          "equation_residual": 0.08348221593435842,
+          "line_search": [
+            {
+              "scale": 1.0,
+              "fault": 0,
+              "equation_residual": 0.1850109633816423
+            },
+            {
+              "scale": 0.5,
+              "fault": 0,
+              "equation_residual": 0.09494426094474634
+            },
+            {
+              "scale": 0.25,
+              "fault": 0,
+              "equation_residual": 0.06796503566525378
+            }
+          ]
+        },
+        {
+          "iteration": 6,
+          "equation_residual": 0.06796503566525378,
+          "line_search": [
+            {
+              "scale": 1.0,
+              "fault": 0,
+              "equation_residual": 0.5698943596777923
+            },
+            {
+              "scale": 0.5,
+              "fault": 0,
+              "equation_residual": 0.23343182571039636
+            },
+            {
+              "scale": 0.25,
+              "fault": 0,
+              "equation_residual": 0.13224041793913036
+            },
+            {
+              "scale": 0.125,
+              "fault": 0,
+              "equation_residual": 0.09162514103634004
+            },
+            {
+              "scale": 0.0625,
+              "fault": 0,
+              "equation_residual": 0.07474237524828474
+            },
+            {
+              "scale": 0.03125,
+              "fault": 0,
+              "equation_residual": 0.0692860988845365
+            },
+            {
+              "scale": 0.015625,
+              "fault": 0,
+              "equation_residual": 0.0679029142774114
+            }
+          ]
+        },
+        {
+          "iteration": 7,
+          "equation_residual": 0.0679029142774114,
+          "line_search": [
+            {
+              "scale": 1.0,
+              "fault": 0,
+              "equation_residual": 17.551727741432533
+            },
+            {
+              "scale": 0.5,
+              "fault": 0,
+              "equation_residual": 8.523253233616499
+            },
+            {
+              "scale": 0.25,
+              "fault": 0,
+              "equation_residual": 3.8465901044930084
+            },
+            {
+              "scale": 0.125,
+              "fault": 0,
+              "equation_residual": 1.5323582304567205
+            },
+            {
+              "scale": 0.0625,
+              "fault": 0,
+              "equation_residual": 0.48517928730686427
+            },
+            {
+              "scale": 0.03125,
+              "fault": 0,
+              "equation_residual": 0.1407224599691927
+            },
+            {
+              "scale": 0.015625,
+              "fault": 0,
+              "equation_residual": 0.09235466081341322
+            },
+            {
+              "scale": 0.0078125,
+              "fault": 0,
+              "equation_residual": 0.07640425232854378
+            }
+          ]
+        }
+      ],
+      "singular_values": [
+        40.596616875827976,
+        32.50083413911619,
+        30.05814814679363,
+        26.188596446928237,
+        21.470769346128876,
+        20.30633045405539,
+        19.083121965190852,
+        17.303885042599504,
+        17.131968193545326,
+        17.01442811207962,
+        16.594771996341155,
+        15.739281305042665,
+        14.751692085985702,
+        14.105115631546951,
+        13.91156051456983,
+        13.371278691413712,
+        11.414867363769668,
+        10.5687779505447,
+        10.007814210301493,
+        9.455887674972676,
+        8.978097982552729,
+        8.181933296976021,
+        8.067026917792328,
+        6.734254784577081,
+        6.352216422173304,
+        5.435633452195553,
+        4.186044299275476,
+        3.94739583014667,
+        3.9229480938254166,
+        3.3031309764677643,
+        2.8951265851450803,
+        2.763156780063976,
+        2.6953548014341155,
+        2.2900863095112958,
+        1.7489971698509978,
+        1.21218693115128,
+        1.0002941085674866,
+        1.0000756297327607,
+        1.0000446415211044,
+        1.00001245187885,
+        1.000008252881367,
+        1.0000006104297599,
+        1.0000004152911521,
+        1.000000005363361,
+        1.0000000000062543,
+        0.9999999999999998,
+        0.9999999999999998,
+        0.9999999999999998,
+        0.9999999631560995,
+        0.9999999164568876,
+        0.9999991863515898,
+        0.9999970627815904,
+        0.9999803522677694,
+        0.9999331395117204,
+        0.9998960509965905,
+        0.9998848821558693,
+        0.9995989809503424,
+        0.33571247628305634,
+        0.2991229421543771,
+        0.005738264890253646
+      ]
+    }
+  ]
+}

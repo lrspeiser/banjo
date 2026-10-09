@@ -1,0 +1,9 @@
+{
+  "accepted_state_count": 34,
+  "accepted_time_s": 0.034375,
+  "accepted_physics_exactly_restored": true,
+  "failed_private_steps": 62,
+  "rejected_trials": 66,
+  "actual_newton_inputs_candidate_and_jacobian_in_log": true,
+  "source_sha256": "3954e4447ad9986acce3de570c5fbd5b0ff6af71e1cf1443156980f56b7867ac"
+}
