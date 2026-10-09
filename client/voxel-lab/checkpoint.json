@@ -1,54 +1,54 @@
 {
-  "title": "Stronger regression checks; physics optimization withdrawn",
+  "title": "Exact snapshots; measured 10% glass overhead reduction",
   "date": "2026-10-08",
-  "physics_revision": "ddf187e492680ff0b978d6d15e49a49f790b7a12",
-  "native_sha256": "43131a17e44f92d07bbe2397d020875f086d77a353ff7b10d56af25bf1a571ae",
+  "physics_revision": "8de0f3b609c158f4c537657aa677e42c74be5a06",
+  "native_sha256": "33abca5ee37001f1562ea33f51f8f1711d2c02046152401caefb9f47343cd618",
   "changes": [
-    "Full-state testing caught an ice trajectory difference at 1.45 s. The trial optimization was withdrawn; original contact evaluation and energy gates are retained.",
-    "Analytical coverage expands to 4,224 cases. The comparison tool can isolate a material pair and preserve both actual replies in a failure witness.",
-    "Viewport and projection work now run on resize. Whole-rig framing fits the actual declared geometry, including the ball at 10 m.",
-    "No calculation speed improvement is published. Energy/contact accuracy, realtime speed, metal dents, adaptive cells and authoring remain open."
+    "Jolt update, contact observation, preparation and trial snapshot/restore timings now appear in Physics & record. Timers never control physics.",
+    "Reusable bounded storage retains every native state byte and preserves nested rollback; contact observations no longer copy a fresh stream.",
+    "Balanced glass comparison: 35.57 s versus 39.56 s for two physical seconds, about 10% less request wall time. Physical/work fields match exactly.",
+    "Nine scoped CTests and complete glass/oak/iron/ice reference comparisons pass. Full coupled-friction comparisons are running and are not claimed as completed here. All five broader goals remain open."
   ],
   "checks": [
     {
-      "label": "Restored contact evaluation",
+      "label": "Exact native state transport",
       "status": "passed",
-      "value": "Original solver source restored; 6 focused CTests / 8.26 s, including native glass/oak/iron controls"
+      "value": "Byte equality, limits, exceptions and all 16 nested trial depths; 9 rebuilt scoped CTests"
     },
     {
-      "label": "Ice counterexample",
+      "label": "Four complete material comparisons",
       "status": "passed",
-      "value": "Restored build matches all physical and work fields at every 16 ticks through 1.45 s; no comparison tolerance relaxed"
+      "value": "Glass/oak/iron/ice; 2 simulated seconds; every physical/work field exact at 16-tick outputs"
     },
     {
-      "label": "Analytical coverage",
+      "label": "Paired glass timing",
       "status": "passed",
-      "value": "4,224 independent cap/stationarity cases plus basis invariance and invalid input checks"
+      "value": "Alternating order: 35.57 s new / 39.56 s baseline; about 10% reduction on this Windows fixture"
     },
     {
-      "label": "Whole-world speed trial",
-      "status": "blocked",
-      "value": "Glass/oak/iron complete with parity; ice changes at 1.45 s. Trial withdrawn and not shipped. Glass/glass not reached in the trial"
+      "label": "Five coupled-friction comparisons",
+      "status": "in progress",
+      "value": "Running separately; inherited coupled results are retained, no new completion claim"
     },
     {
       "label": "Browser controls / responsive layout",
       "status": "passed",
-      "value": "Desktop and 844 x 390 landscape; native Step, Before/Live, Run/Pause and geometry-based whole-rig framing; no console errors"
+      "value": "Ordinary native Step, Before/Live, Run/Pause; finite stage timings; 844 x 390 scrollable setup; no console errors. Physical phone not tested"
     },
     {
       "label": "Compiled sources",
       "status": "passed",
-      "value": "333 / 333 registered; no exclusions"
+      "value": "334 / 334 registered, no exclusions"
     },
     {
-      "label": "Full conservation / refinement",
+      "label": "Full physics qualification",
       "status": "blocked",
-      "value": "Inherited contact disagreement, substantial energy losses and unqualified spatial/timestep refinement remain"
+      "value": "Substantial losses, contact disagreement and spatial/timestep refinement remain unqualified"
     },
     {
-      "label": "Simulation speed",
+      "label": "Realtime calculation",
       "status": "blocked",
-      "value": "No speed fix published. Next: measure native update, observation and rejected-trial costs, then local stepping"
+      "value": "Most time remains in Jolt update; reduce global substeps and active local solves"
     }
   ],
   "next": [
@@ -60,7 +60,7 @@
     {
       "label": "Calculation speed",
       "status": "in progress",
-      "value": "Reduce measured global substeps and contact-island solve cost while preserving laws"
+      "value": "Reduce global substeps and local active solve cost; Jolt update dominates the measured reference fixture"
     },
     {
       "label": "Permanent metal dents",
