@@ -193,6 +193,7 @@ struct VoxelImpactWorld::Impl {
     }
     explicit Impl(const Json &d,VoxelExecution storage):world(0,contactCapacity(d,storage),
         storage==VoxelExecution::Reference?RigidJobExecution::ThreadPool:RigidJobExecution::Inline),declaration(d){
+        world.setExecutionProfilingEnabled(true);
         const std::set<std::string> keys{"sheet","ball","mass_kg","height_m","thickness_m","resolution","support_gap_m","offset_x_m","offset_z_m","dt_s","ball_enabled","gravity_m_s2","solver_iterations","face_law","contact_law"};
         for(auto i=d.begin();i!=d.end();++i)if(!keys.contains(i.key()))throw std::invalid_argument("unknown voxel experiment field");
         const auto face_law=d.value("face_law",std::string("native-motor"));
@@ -372,6 +373,7 @@ VoxelImpactWorld::~VoxelImpactWorld()=default;
 void VoxelImpactWorld::step(unsigned count){if(count<1||count>64||impl_->time+count*impl_->dt>4.000001)throw std::invalid_argument("bounded steps/duration exceeded");for(unsigned i=0;i<count;++i)impl_->step();}
 std::string VoxelImpactWorld::snapshotJson() const {
     const auto &w=*impl_;const auto roots=w.components();Json cells=Json::array(),objects=Json::array();
+    const auto execution=w.world.executionProfile();
     double mass=0,elastic=0;for(const auto &b:w.bonds)if(b.live)elastic+=b.energy;
     for(unsigned i=0;i<w.cells.size();++i){const auto &c=w.cells[i];const auto s=w.world.snapshot(c.id);const auto q=s.orientation_world;
         if(!c.fixed)mass+=c.mass;
@@ -396,6 +398,11 @@ std::string VoxelImpactWorld::snapshotJson() const {
             "Passive finite-box native six-axis elastic interfaces. Finite-rotation/integration/full energy and angular momentum accounts remain unqualified."},
             {"limits","Brittle strength AND stored fracture-work admission. Metals/oak remain elastic, not brittle; plasticity/grain are unsupported."}}}};
     if(w.midpoint_contact)result["midpoint_boundary"]=w.boundary_total;
+    auto &profile=result["diagnostics"]["profile"];
+    profile["execution"]={{"enabled",execution.enabled},{"step_calls",execution.step_calls},{"trial_calls",execution.trial_calls},{"trial_restores",execution.trial_restores},
+        {"step_prepare_ms",execution.step_prepare_ms},{"native_update_ms",execution.native_update_ms},{"contact_observation_ms",execution.contact_observation_ms},{"post_step_ms",execution.post_step_ms},
+        {"trial_capture_ms",execution.trial_capture_ms},{"trial_restore_ms",execution.trial_restore_ms},
+        {"scope","Cumulative host wall time including rejected trials; disjoint step stages. Native update includes Jolt jobs and enabled callbacks, not solver-only time. Trial capture/restore are outside the step stages; outer trial_ms is inclusive. Timing never controls physics."}};
     return result.dump();
 }
 }

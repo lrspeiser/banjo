@@ -13,6 +13,78 @@ RigidJobExecution execution=RigidJobExecution::ThreadPool;
 bool log_gradient=false;
 void check(bool value,const char *why){if(!value)throw std::runtime_error(why);}
 double axis(Vec3 a,Vec3 b){return dot(a,b);}
+void execution_profile_oracle(){
+    for(auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}){
+        JoltWorld reference(0,{},execution),measured(0,{},execution);
+        auto material=makeReferenceMaterial(preset);material.model=MaterialModel::RigidOnly;
+        for(auto *world:{&reference,&measured}){
+            world->setGravity({});world->setContactImpulseObservationsEnabled(true);
+            world->addBox({1,{.1,.1,.1},material,{{-.05,0,0},{},{},{}},true});
+            world->addBox({2,{.1,.1,.1},material,{{ .05,0,0},{},{-1,.4,0},{.2,.1,.3}},false});
+            world->setContinuousCollision(2,false);
+        }
+        measured.setExecutionProfilingEnabled(true);
+        const auto same=[&]{
+            const auto a=reference.snapshot(2),b=measured.snapshot(2);
+            check(lengthSquared(a.center_of_mass_world_m-b.center_of_mass_world_m)==0&&
+                lengthSquared(a.linear_velocity_m_s-b.linear_velocity_m_s)==0&&
+                lengthSquared(a.angular_velocity_rad_s-b.angular_velocity_rad_s)==0&&
+                a.orientation_world.w==b.orientation_world.w&&a.orientation_world.x==b.orientation_world.x&&
+                a.orientation_world.y==b.orientation_world.y&&a.orientation_world.z==b.orientation_world.z,
+                "profiling preserves exact native motion");
+            check(reference.mechanicalTotals({}).kinetic_energy_j==measured.mechanicalTotals({}).kinetic_energy_j,
+                "profiling preserves actual kinetic energy");
+        };
+        for(unsigned i=0;i<40;++i){reference.step(1./960);measured.step(1./960);same();}
+        check(!reference.executionProfile().enabled&&reference.executionProfile().step_calls==0,
+            "profiling is disabled by default");
+        const auto initial=measured.executionProfile();
+        check(initial.enabled&&initial.step_calls==40&&initial.trial_calls==0,"profile counts direct steps");
+        check(!measured.runReversibleTrial([&]{measured.step(1./960);return false;}),"profile rejection fixture");same();
+        const auto rejected=measured.executionProfile();
+        check(rejected.step_calls==41&&rejected.trial_calls==1&&rejected.trial_restores==1,
+            "actual rejected work is retained by the profiler");
+        bool caught=false;
+        try{(void)measured.runReversibleTrial([&]()->bool{measured.step(1./960);throw std::runtime_error("timed trial");});}
+        catch(const std::runtime_error&){caught=true;}same();
+        const auto failed=measured.executionProfile();
+        check(caught&&failed.step_calls==42&&failed.trial_calls==2&&failed.trial_restores==2,
+            "exception restoration is measured without publishing candidate motion");
+        check(measured.runReversibleTrial([&]{
+            bool refused=false;try{measured.setExecutionProfilingEnabled(false);}catch(const std::logic_error&){refused=true;}
+            check(refused,"profile cannot reset during an active trial");return true;
+        }),"profile configuration refusal fixture");
+        const auto final=measured.executionProfile();
+        for(double ms:{final.step_prepare_ms,final.native_update_ms,final.contact_observation_ms,final.post_step_ms,
+                final.trial_capture_ms,final.trial_restore_ms})check(std::isfinite(ms)&&ms>=0,"bounded finite wall timers");
+        check(final.native_update_ms>0&&final.trial_capture_ms>0&&final.trial_restore_ms>0,"real timed execution stages observed");
+        measured.setExecutionProfilingEnabled(false);
+        check(!measured.executionProfile().enabled&&measured.executionProfile().step_calls==0,"explicit profile reset");same();
+        check(!measured.runReversibleTrial([&]{
+            measured.step(1./960);const auto parent=measured.snapshot(2);
+            check(!measured.runReversibleTrial([&]{measured.step(1./960);return false;}),"nested rejection");
+            const auto restored=measured.snapshot(2);
+            check(lengthSquared(parent.center_of_mass_world_m-restored.center_of_mass_world_m)==0&&
+                lengthSquared(parent.linear_velocity_m_s-restored.linear_velocity_m_s)==0&&
+                lengthSquared(parent.angular_velocity_rad_s-restored.angular_velocity_rad_s)==0,
+                "child recorder restores its own candidate without overwriting parent storage");
+            check(measured.runReversibleTrial([&]{measured.step(1./960);return true;}),"accepted child fixture");
+            return false;
+        }),"parent rejection after child acceptance");same();
+        std::function<bool(unsigned)> nest=[&](unsigned depth){
+            return measured.runReversibleTrial([&]{
+                measured.step(1./960);
+                if(depth<16)(void)nest(depth+1);
+                else{
+                    bool refused=false;try{(void)nest(depth+1);}catch(const std::invalid_argument&){refused=true;}
+                    check(refused,"recorder depth bound remains explicit");
+                }
+                return false;
+            });
+        };
+        check(!nest(1),"maximum-depth recorder recovery");same();
+    }
+}
 void oracle(double damping,double initial_extension){
     JoltWorld world(0,{},execution);world.setGravity({});world.setContactSolverIterations(96,4);
     auto material=makeReferenceMaterial(MaterialPreset::Iron);material.model=MaterialModel::RigidOnly;
@@ -533,4 +605,4 @@ void resolved_assembly_recovery_oracle(MaterialPreset preset){
     std::cout<<"material="<<materialSceneName(preset)<<" assembly_recovery="<<upward<<" peak_elastic_j="<<peak_elastic<<" peak_energy_excess_j="<<peak_energy-initial<<'\n';
 }
 }
-int main(){try{for(auto policy:{RigidJobExecution::ThreadPool,RigidJobExecution::Inline}){execution=policy;std::cout<<"execution="<<(policy==RigidJobExecution::Inline?"inline":"thread-pool")<<'\n';for(bool law:{false,true}){log_gradient=law;for(double extension:{0.,.01}){oracle(0,extension);oracle(20,extension);}torsion(0);torsion(.005);sleeping_spring_oracle();}nearest_orientation();for(bool fixed:{false,true})for(double friction:{0.,.4})contact_oracle(fixed,friction);gravity_oracle();log_gradient_impulse_oracle();limit_observation_oracle();for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(bool resolved:{false,true})restitution_model_oracle(material,resolved);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})resolved_assembly_recovery_oracle(material);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(double damping:{0.,20.})centered_pair_oracle(material,damping);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(double damping:{0.,.02})centered_torsion_oracle(material,damping);centered_gravity_oracle();for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})block_anisotropic_patch_oracle(material);midpoint_contact_configuration_oracle();for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(bool repaired:{false,true})for(bool sliding:{false,true})midpoint_twist_reversal_oracle(material,repaired,sliding);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(bool sliding:{false,true})midpoint_twist_reversal_oracle(material,true,sliding,true);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(bool fixed:{false,true})for(double fraction:{0.,.25,.75,1.25})for(double h:{1./960,1./3840})midpoint_contact_oracle(material,fixed,fraction,h);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})centered_small_spin_oracle(material);}return 0;}catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(){try{for(auto policy:{RigidJobExecution::ThreadPool,RigidJobExecution::Inline}){execution=policy;execution_profile_oracle();std::cout<<"execution="<<(policy==RigidJobExecution::Inline?"inline":"thread-pool")<<'\n';for(bool law:{false,true}){log_gradient=law;for(double extension:{0.,.01}){oracle(0,extension);oracle(20,extension);}torsion(0);torsion(.005);sleeping_spring_oracle();}nearest_orientation();for(bool fixed:{false,true})for(double friction:{0.,.4})contact_oracle(fixed,friction);gravity_oracle();log_gradient_impulse_oracle();limit_observation_oracle();for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(bool resolved:{false,true})restitution_model_oracle(material,resolved);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})resolved_assembly_recovery_oracle(material);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(double damping:{0.,20.})centered_pair_oracle(material,damping);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(double damping:{0.,.02})centered_torsion_oracle(material,damping);centered_gravity_oracle();for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})block_anisotropic_patch_oracle(material);midpoint_contact_configuration_oracle();for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(bool repaired:{false,true})for(bool sliding:{false,true})midpoint_twist_reversal_oracle(material,repaired,sliding);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(bool sliding:{false,true})midpoint_twist_reversal_oracle(material,true,sliding,true);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(bool fixed:{false,true})for(double fraction:{0.,.25,.75,1.25})for(double h:{1./960,1./3840})midpoint_contact_oracle(material,fixed,fraction,h);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})centered_small_spin_oracle(material);}return 0;}catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}

@@ -17,6 +17,7 @@
 #include "physics/FixedAssemblyContact.hpp"
 
 #include <memory>
+#include <cstdint>
 #include <optional>
 #include <span>
 #include <functional>
@@ -109,6 +110,14 @@ struct RigidContactDiagnostics {
     // Listener callbacks/geometry points, not constraint allocator occupancy.
     unsigned last_manifolds{},peak_manifolds{},last_points{},peak_points{};
     unsigned last_speculative_manifolds{},peak_speculative_manifolds{};
+};
+// Host wall time, not physical time or energy. Cumulative work includes
+// rejected trials and is deliberately not rolled back with physical state.
+struct RigidExecutionProfile {
+    bool enabled{};
+    std::uint64_t step_calls{},trial_calls{},trial_restores{};
+    double step_prepare_ms{},native_update_ms{},contact_observation_ms{},post_step_ms{};
+    double trial_capture_ms{},trial_restore_ms{};
 };
 
 struct PairImpulseAudit {
@@ -267,6 +276,9 @@ public:
     // the resting that follows.
     void setSurfaceImpactObservations(bool enabled);
     [[nodiscard]] RigidContactDiagnostics contactDiagnostics() const;
+    // Disabled by default. Enabling/resetting is forbidden within a trial.
+    void setExecutionProfilingEnabled(bool enabled);
+    [[nodiscard]] RigidExecutionProfile executionProfile() const;
     // Initial/current AABB + speculative-margin pair envelope, no time sweep.
     // Host-thread observation for bounded convex v2 admission, <=1024 bodies.
     [[nodiscard]] unsigned contactPairUpperBound() const;

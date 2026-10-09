@@ -16,6 +16,7 @@
 #include <Jolt/Physics/Body/BodyLock.h>
 #include <Jolt/Physics/StateRecorder.h>
 #include <Jolt/Physics/StateRecorderImpl.h>
+#include "rigid/BoundedStateRecorder.hpp"
 #include <Jolt/Physics/Body/BodyPair.h>
 #include <Jolt/Physics/Collision/ContactListener.h>
 #include <Jolt/Physics/Collision/Shape/SubShapeIDPair.h>
@@ -53,6 +54,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
@@ -79,6 +81,21 @@ namespace banjo {
 namespace {
 
 using namespace JPH::literals;
+
+// Optional, allocation-free timing. Physical calculations never read these
+// counters; RAII also accounts for scopes that leave through an exception.
+class ExecutionWallTimer {
+    using Clock=std::chrono::steady_clock;
+    double *destination_;
+    Clock::time_point start_;
+public:
+    explicit ExecutionWallTimer(double *destination):destination_(destination),
+        start_(destination?Clock::now():Clock::time_point{}){}
+    void finish(){if(destination_){*destination_+=std::chrono::duration<double,std::milli>(Clock::now()-start_).count();destination_=nullptr;}}
+    ~ExecutionWallTimer(){finish();}
+    ExecutionWallTimer(const ExecutionWallTimer&)=delete;
+    ExecutionWallTimer& operator=(const ExecutionWallTimer&)=delete;
+};
 
 // kSupportSurfaceMatterId now lives in core/Types.hpp, so a scene that
 // reports contacts by name can recognise the ground.
@@ -296,7 +313,7 @@ struct RecordedContactManifold {
     JPH::SubShapeIDPair key;JPH::Float3 normal;
     float friction[2]{},twist{};std::vector<RecordedContactPoint> points;
 };
-bool readContactRecords(const std::string &data,
+bool readContactRecords(std::string_view data,
                         const std::function<void(const RecordedContactManifold &)> &consume) {
     std::size_t at = 0;
     const auto take = [&](void *into, std::size_t bytes) {
@@ -341,7 +358,7 @@ bool readContactRecords(const std::string &data,
     if (!take(&swept, sizeof swept)) return false;
     return data.size() - at == static_cast<std::size_t>(swept) * sizeof(JPH::SubShapeIDPair);
 }
-bool readContactImpulses(const std::string &data,
+bool readContactImpulses(std::string_view data,
                          std::vector<std::pair<JPH::SubShapeIDPair, double>> &out) {
     return readContactRecords(data,[&](const RecordedContactManifold &record){
         double total=0;for(const auto &point:record.points)total+=point.lambda;
@@ -986,7 +1003,8 @@ public:
         auto frames=impact_collector_.takeContactGeometry();if(frames.empty())return;
         std::map<JPH::SubShapeIDPair,ContactImpulseGeometry> current;
         for(auto &frame:frames)current.try_emplace(frame.key,std::move(frame));
-        JPH::StateRecorderImpl recorder;physics_->SaveState(recorder,JPH::EStateRecorderState::Contacts);
+        auto &recorder=contact_recorder_;recorder.Reset();
+        physics_->SaveState(recorder,JPH::EStateRecorderState::Contacts);
         if(recorder.IsFailed()||recorder.GetDataSize()>16U*1024U*1024U)throw std::runtime_error("cannot capture bounded native contact impulses");
         const bool parsed=readContactRecords(recorder.GetData(),[&](const RecordedContactManifold &record){
             const auto found=current.find(record.key);if(found==current.end())return;
@@ -1460,6 +1478,11 @@ public:
     // destroyed, so each comes back as the body it was (unpark).
     std::unordered_map<MatterBodyId, JPH::BodyID> parked_;
     RigidContactDiagnostics contact_diagnostics_;
+    RigidExecutionProfile execution_profile_;
+    BoundedStateRecorder contact_recorder_;
+    // Keep distinct storage at every permitted depth. Rejected and throwing
+    // nested trials cannot overwrite their parent's authoritative snapshot.
+    std::array<std::unique_ptr<BoundedStateRecorder>,16> trial_recorders_;
     std::optional<RigidSurfaceDescription> support_surface_;
     Vec3 gravity_m_s2_{0.0, -9.81, 0.0};
     // Patches of height-field ground, in the order they were added.
@@ -1934,6 +1957,12 @@ RigidContactDiagnostics JoltWorld::contactDiagnostics() const {
     result.speculative_distance_m=impl_->physics_->GetPhysicsSettings().mSpeculativeContactDistance;
     return result;
 }
+void JoltWorld::setExecutionProfilingEnabled(bool enabled){
+    if(impl_->trial_depth_||impl_->spring_trial_depth_||impl_->external_fixed_trial_)
+        throw std::logic_error("execution profile configuration cannot change within a trial");
+    impl_->execution_profile_={};impl_->execution_profile_.enabled=enabled;
+}
+RigidExecutionProfile JoltWorld::executionProfile() const{return impl_->execution_profile_;}
 unsigned JoltWorld::contactPairUpperBound() const {
     if(impl_->bodies_.size()>1024)throw std::invalid_argument("contact admission query body budget exceeded");
     std::vector<JPH::AABox> bounds;bounds.reserve(impl_->bodies_.size()+1);
@@ -4684,7 +4713,12 @@ bool JoltWorld::runReversibleTrial(const std::function<bool()> &trial) {
     if(!trial||impl_->bodies_.size()>2048||impl_->trial_depth_>=16||
        impl_->contact_plan_epoch_>std::numeric_limits<std::uint64_t>::max()-32)
         throw std::invalid_argument("invalid reversible trial or body/depth budget exceeded");
-    JPH::StateRecorderImpl recorder;impl_->physics_->SaveState(recorder);
+    auto &profile=impl_->execution_profile_;
+    if(profile.enabled)++profile.trial_calls;
+    ExecutionWallTimer capture(profile.enabled?&profile.trial_capture_ms:nullptr);
+    auto &slot=impl_->trial_recorders_[impl_->trial_depth_];
+    if(!slot)slot=std::make_unique<BoundedStateRecorder>();
+    auto &recorder=*slot;recorder.Reset();impl_->physics_->SaveState(recorder);
     if(recorder.IsFailed()||recorder.GetDataSize()>16U*1024U*1024U)
         throw std::runtime_error("cannot capture bounded Jolt trial state");
     auto events=impl_->impact_collector_.capture();const auto tick=impl_->tick_.load(std::memory_order_relaxed);
@@ -4695,6 +4729,8 @@ bool JoltWorld::runReversibleTrial(const std::function<bool()> &trial) {
     auto rolling=impl_->rolling_;auto rolling_report=impl_->rolling_report_;
     const double rolling_loss=impl_->rolling_loss_j_;auto rolling_loss_of=impl_->rolling_loss_of_;
     const auto restore=[&] {
+        if(profile.enabled)++profile.trial_restores;
+        ExecutionWallTimer restore_timer(profile.enabled?&profile.trial_restore_ms:nullptr);
         impl_->restoreTrialConfiguration(configuration);
         ++impl_->contact_plan_epoch_;
         recorder.Rewind();
@@ -4706,6 +4742,7 @@ bool JoltWorld::runReversibleTrial(const std::function<bool()> &trial) {
         impl_->rolling_loss_j_=rolling_loss;impl_->rolling_loss_of_=std::move(rolling_loss_of);
         impl_->impact_collector_.dropRolling();
     };
+    capture.finish();
     ++impl_->trial_depth_;bool accepted=false;
     try {accepted=trial();}catch(...) {--impl_->trial_depth_;restore();throw;}
     --impl_->trial_depth_;if(!accepted)restore();return accepted;
@@ -4794,6 +4831,9 @@ void JoltWorld::step(double fixed_dt_s) {
         fixed_dt_s>std::numeric_limits<float>::max()||static_cast<float>(fixed_dt_s)==0.0F) {
         throw std::invalid_argument("Jolt step must be finite, positive and representable");
     }
+    auto &profile=impl_->execution_profile_;
+    if(profile.enabled)++profile.step_calls;
+    ExecutionWallTimer prepare(profile.enabled?&profile.step_prepare_ms:nullptr);
     impl_->last_dt_s = fixed_dt_s;
     impl_->applyRollingResistance(fixed_dt_s);
     // A rope that is pulling stays pulling for the step. Jolt's distance limit
@@ -4882,12 +4922,20 @@ void JoltWorld::step(double fixed_dt_s) {
                 std::pair{phase.before.motion.linear_velocity_m_s,phase.before.motion.angular_velocity_rad_s});
     }
     impl_->tick_.fetch_add(1U, std::memory_order_relaxed);
+    prepare.finish();
+    ExecutionWallTimer update(profile.enabled?&profile.native_update_ms:nullptr);
     const JPH::EPhysicsUpdateError error = impl_->physics_->Update(
         static_cast<float>(fixed_dt_s),
         1,
         impl_->temp_allocator_.get(),
         impl_->job_system_.get());
-    impl_->measureContactImpulses();impl_->measureRolling(fixed_dt_s);
+    update.finish();
+    {
+        ExecutionWallTimer observation(profile.enabled?&profile.contact_observation_ms:nullptr);
+        impl_->measureContactImpulses();
+    }
+    ExecutionWallTimer post(profile.enabled?&profile.post_step_ms:nullptr);
+    impl_->measureRolling(fixed_dt_s);
     // Teeth that could not carry what was put through them. Read after the
     // solve, because the impulse this asks about is the one the solve just
     // applied; a gear that gives way is taken out here and is gone, so the
