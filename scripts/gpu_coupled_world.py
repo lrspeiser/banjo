@@ -13,11 +13,12 @@ import cupy as cp
 import cupyx
 import numpy as np
 from gpu_representations import FlightPartition, KERNEL as REPRESENTATION_KERNEL
+from object_registry import ObjectRegistry,CHECKPOINT_SCHEMA,open_checkpoint,seal
 ROOT=Path(__file__).resolve().parents[1]
 HEADERS=('src/physics/FiniteFrameKernel.hpp','src/physics/CohesiveInterfaceKernel.hpp',
  'src/material/ConnectorModeKernel.hpp','src/physics/MaterialHistoryKernel.hpp',
  'src/physics/NormalComplianceKernel.hpp','src/physics/CoupledGpuKernel.hpp')
-SOURCES=('scripts/gpu_coupled_world.py','scripts/gpu_linear_solve.py','scripts/gpu_representations.py',*HEADERS,'client/voxel-lab/material-laws.json')
+SOURCES=('scripts/gpu_coupled_world.py','scripts/gpu_linear_solve.py','scripts/gpu_representations.py','scripts/object_registry.py',*HEADERS,'client/voxel-lab/material-laws.json')
 def _disk_source_hash():
     h=hashlib.sha256()
     for name in SOURCES:h.update(name.encode());h.update(b'\0');h.update((ROOT/name).read_bytes())
@@ -410,7 +411,7 @@ def declaration(raw):
     return d
 
 class GpuCoupledWorld:
-    def __init__(self,raw):
+    def __init__(self,raw,*,world_id=None):
         if _disk_source_hash()!=LOADED_SOURCE_SHA256:raise RuntimeError('Coupled implementation changed; restart the GPU worker before creating a scene')
         self.d=declaration(raw);profiles=json.loads((ROOT/'client/voxel-lab/material-laws.json').read_text(encoding='utf8'))['profiles'];profiles={p['material']:p for p in profiles}
         self.meta=[];bodies=[];edges=[];cell=.01;material=profiles[self.d['material']]
@@ -445,6 +446,8 @@ class GpuCoupledWorld:
         body(2,p,[0,(.035 if self.d['experiment']=='sheet' else 0)+radius+self.d['height_m'],0],[radius]*3,mass=self.d['ball_mass_kg'])
         self.eval=CoupledEvaluator(bodies,edges,pipeline=self.d['pipeline'],newton_strategy=self.d['newton_strategy'],line_search=self.d['line_search'],linear_backend=self.d['linear_backend']);self.ticks=0;self.time=0.;self.step_s=0.;self.last_ms=0.;self.histories=np.zeros((len(edges),32))
         self.representations=FlightPartition(self.eval,CoupledEvaluator) if self.d['representation_policy']=='partitioned-flight' else None
+        self.registry=ObjectRegistry(np.array(bodies),np.array(edges).reshape(-1,70),self.meta,profiles,world_id)
+        self.unattached_spheres=[o['body_ids'][0] for o in self.registry.binding_state()['instances'] if o['single_sphere']]
         self.P_ground=np.zeros(3);self.L_ground=np.zeros(3);self.max_residual=0.;self.fracture=self.plastic=self.return_excess=0.;self.total_iterations=0;self.microsteps=0
         baseline=self.eval.evaluate(self.eval.bodies[:,14:20],1e-12,gravity=0)
         if int(baseline['faults'][0]):raise RuntimeError('Invalid initial coupled energy state')
@@ -468,6 +471,7 @@ class GpuCoupledWorld:
             'P_ground','L_ground','max_residual','last_accounts','stored_j','contact_j','last_ms','step_s','accepted')
         saved_host={key:(getattr(self,key).copy() if isinstance(getattr(self,key),np.ndarray) else getattr(self,key)) for key in host_keys}
         saved_modes=(self.representations.mode,self.representations.reason,copy.deepcopy(self.representations.transitions)) if self.representations else None
+        saved_registry=self.registry.binding_state()
         accounts=[];started=time.perf_counter();updates=0;trials=0;refusals=[];last_solver_failure=None;schedule=None
         try:
             for host_tick in range(steps):
@@ -482,10 +486,12 @@ class GpuCoupledWorld:
                             remainder=h-schedule['step_s'];h=schedule['step_s']
                             if remainder>0:queue.append((remainder,depth))
                     before=cp.asnumpy(self.eval.bodies);energy0,p0,l0=self.mechanics(before)
-                    scale=float(np.min(2*before[before[:,0]!=0,4:7]));representation=None
+                    scale=float(np.min(2*before[before[:,0]!=0,4:7]));representation=None;coordinate_rebases=[]
                     try:
                         flight=self.representations.propose(h,.25*scale) if self.representations else None
-                        if flight is None:out,velocity,iterations,equation=self.eval.solve(h)
+                        if flight is None:
+                            coordinate_rebases=self.local_primitive_origins(before)
+                            out,velocity,iterations,equation=self.eval.solve(h)
                         else:
                             out,velocity,iterations,equation,representation=flight
                             self.eval.last_solve=copy.deepcopy(self.representations.island.last_solve)
@@ -529,6 +535,7 @@ class GpuCoupledWorld:
                     accounts.append(dict(dt_s=h,energy_residual_j=balance,energy_tolerance_j=tolerance,P_residual_n_s=pres.tolist(),L_residual_n_m_s=lres.tolist(),
                         ground_impulse_n_s=reaction.tolist(),ground_torque_impulse_n_m_s=reaction_torque.tolist(),ledger=ledger.tolist(),iterations=iterations,equation_residual=equation,
                         poses_wxyz=ending[:,7:14].tolist(),velocities=ending[:,14:20].tolist(),material_history=history.tolist(),newton_start=copy.deepcopy(self.eval.last_solve),contact_schedule=schedule,
+                        coordinate_rebases=coordinate_rebases,
                         **({'representation':representation} if self.representations else {})))
             self.histories=history;self.ticks+=steps;self.time+=steps*self.d['dt_s'];self.microsteps+=updates;self.total_iterations+=sum(a['iterations'] for a in accounts)
             self.fracture+=sum(a['ledger'][2] for a in accounts) if self.material_model!='connector-plastic' else 0
@@ -538,6 +545,8 @@ class GpuCoupledWorld:
             self.max_residual=max(self.max_residual,max(abs(a['energy_residual_j']) for a in accounts));self.last_accounts=accounts
             self.stored_j=float(ledger[1]);self.contact_j=float(ledger[5])
             if self.representations:self.representations.commit_modes(accounts,self.time-steps*self.d['dt_s'])
+            sphere=self.representations.sphere if self.representations and self.representations.mode=='rigid-free-flight' else None
+            self.registry.bind(self.time,sphere)
             self.last_ms=(time.perf_counter()-started)*1000;self.step_s+=self.last_ms/1000;self.accepted=self._snapshot(ending);return self.snapshot()
         except Exception as error:
             restored=False
@@ -545,18 +554,34 @@ class GpuCoupledWorld:
             except Exception:pass # A poisoned CUDA context cannot confirm GPU rollback.
             for key,value in saved_host.items():setattr(self,key,value)
             if saved_modes:self.representations.mode,self.representations.reason,self.representations.transitions=saved_modes
+            self.registry.restore_bindings(saved_registry)
             self.rejected=dict(error=str(error),accepted_time_s=self.time,interval_rolled_back=restored,accepted_snapshot_preserved=True,
                 failed_interval_substeps=updates,trial_attempts=trials,subdivision_refusals=refusals,
                 last_solver_failure=last_solver_failure,last_trial_accounts=accounts[-4:],contact_timestep_policy=self.d['contact_resolution'],
                 last_contact_schedule=schedule,failed_interval_physical_s=sum(a['dt_s'] for a in accounts))
             raise RuntimeError(str(error)) from error
 
+    def local_primitive_origins(self,bodies):
+        # A primitive without an interface has no material rest reference to
+        # move. Recenter only its numerical translation basis; geometry,
+        # motion, inertia, all histories and physical clocks remain identical.
+        # Connected cells keep the native stable-coordinate reference intact.
+        receipts=[]
+        for i in self.unattached_spheres:
+            b=bodies[i]
+            if np.array_equal(b[20:23],b[7:10]) and not np.any(b[23:26]):continue
+            receipts.append(dict(body_id=i,from_origin_m=b[20:23].tolist(),from_increment_m=b[23:26].tolist(),to_origin_m=b[7:10].tolist(),
+                mapping='Identity physical state; unattached primitive translation basis only',mass_error_kg=0.,P_error_n_s=[0.,0.,0.],L_error_n_m_s=[0.,0.,0.],mechanical_error_j=0.,history_mapping='unchanged'))
+            b[20:23]=b[7:10];b[23:26]=0
+            self.eval.bodies[i,20:26]=cp.asarray(b[20:26])
+        return receipts
+
     def _snapshot(self,bodies):
         energy,p,l=self.mechanics(bodies);cells=[]
         for row,b in zip(self.meta,bodies):cells.append(row|dict(position_m=b[7:10].tolist(),quaternion_wxyz=b[10:14].tolist(),velocity_m_s=b[14:17].tolist(),angular_velocity_rad_s=b[17:20].tolist()))
         kinds=cp.asnumpy(self.eval.edges[:,2]).astype(int) if self.eval.m else []
         separated=int(sum(s[6]>0 for k,s in zip(kinds,self.histories) if k!=1));yielded=int(sum(s[14]>0 for k,s in zip(kinds,self.histories) if k==1))
-        return dict(schema='banjo.cupy-coupled-finite-cells.v1',declaration=copy.deepcopy(self.d),time_s=self.time,dt_s=self.d['dt_s'],ticks=self.ticks,cells=cells,history_arrays=self.histories.tolist(),
+        return dict(schema='banjo.cupy-coupled-finite-cells.v1',declaration=copy.deepcopy(self.d),time_s=self.time,dt_s=self.d['dt_s'],ticks=self.ticks,cells=cells,history_arrays=self.histories.tolist(),objects=self.registry.summary(),
             diagnostics=dict(dynamic_mass_kg=float(bodies[:,1].sum()),mechanical_j=energy,material_stored_j=self.stored_j,contact_stored_j=self.contact_j,
                 global_energy_residual_j=energy+self.stored_j+self.contact_j+self.fracture+self.plastic+self.return_excess-self.initial_energy,
                 momentum_n_s=p.tolist(),angular_momentum_n_m_s=l.tolist(),
@@ -575,3 +600,78 @@ class GpuCoupledWorld:
         out=copy.deepcopy(self.accepted)
         if self.rejected:out['rejected_candidate']=copy.deepcopy(self.rejected)
         return out
+
+    CHECKPOINT_FIELDS=('histories','ticks','time','microsteps','total_iterations','fracture','plastic','return_excess',
+        'P_ground','L_ground','max_residual','stored_j','contact_j','initial_energy','last_ms','step_s')
+
+    def export_checkpoint(self):
+        if self.rejected and not self.rejected['interval_rolled_back']:raise ValueError('Cannot save unconfirmed native rollback; retain the experiment journal')
+        continuation={key:(getattr(self,key).tolist() if isinstance(getattr(self,key),np.ndarray) else getattr(self,key)) for key in self.CHECKPOINT_FIELDS}
+        bindings=dict(mode=self.representations.mode,reason=self.representations.reason,transitions=copy.deepcopy(self.representations.transitions)) if self.representations else None
+        stopped={k:copy.deepcopy(self.rejected[k]) for k in ('error','accepted_time_s','interval_rolled_back','accepted_snapshot_preserved')} if self.rejected else None
+        return seal(dict(schema=CHECKPOINT_SCHEMA,source_sha256=self.hash,declaration=copy.deepcopy(self.d),registry=self.registry.document(),
+            native=dict(bodies=cp.asnumpy(self.eval.bodies).tolist(),edges=cp.asnumpy(self.eval.edges).tolist()),continuation=continuation,
+            representation=bindings,trial_evaluations=self.snapshot()['performance']['trial_evaluations'],stopped_failure=stopped,
+            scope='Exact accepted native state; private caches rebuilt. Past render frames/full rejection witnesses remain in the original journal.'))
+
+    @classmethod
+    def from_checkpoint(cls,payload):
+        saved=open_checkpoint(payload)
+        expected={'schema','source_sha256','declaration','registry','native','continuation','representation','trial_evaluations','stopped_failure','scope'}
+        if set(saved)!=expected or saved['source_sha256']!=source_hash():raise ValueError('Checkpoint schema or physics source is stale')
+        # Construct privately. The worker installs it after every check passes.
+        candidate=cls(saved['declaration'],world_id=saved['registry']['world_id'])
+        native=saved['native'];state=saved['continuation']
+        if set(native)!={'bodies','edges'} or set(state)!=set(cls.CHECKPOINT_FIELDS):raise ValueError('Incomplete native continuation')
+        b=np.asarray(native['bodies'],dtype=np.float64);e=np.asarray(native['edges'],dtype=np.float64).reshape(-1,70)
+        initial_b=cp.asnumpy(candidate.eval.bodies);initial_e=cp.asnumpy(candidate.eval.edges)
+        if b.shape!=initial_b.shape or e.shape!=initial_e.shape or not np.isfinite(b).all() or not np.isfinite(e).all():raise ValueError('Invalid native state arrays')
+        immutable=[*range(7),*range(26,30)];referenced=[i for i in range(len(b)) if i not in candidate.unattached_spheres]
+        if not np.array_equal(b[:,immutable],initial_b[:,immutable]) or not np.array_equal(b[referenced,20:23],initial_b[referenced,20:23]) or not np.array_equal(e[:,:35],initial_e[:,:35]) or not np.array_equal(e[:,67:],initial_e[:,67:]):raise ValueError('Checkpoint changes geometry, material, law or native rest mapping')
+        fixed=b[:,1]==0
+        if not np.array_equal(b[fixed,7:20],initial_b[fixed,7:20]) or np.max(abs(np.linalg.norm(b[:,10:14],axis=1)-1))>1e-10:raise ValueError('Invalid prescribed boundary or orientation')
+        if np.max(abs(b[:,7:10]-(b[:,20:23]+b[:,23:26])))>1e-12:raise ValueError('Inconsistent native reference position')
+        for edge in e:
+            history=edge[35:67]
+            if edge[2]==1:
+                if np.any(history[6:16]<0) or history[14]!=int(history[14]):raise ValueError('Invalid plastic history')
+            elif history[1]<max(0,history[0]) or np.any(history[3:5]<0) or not 0<=history[5]<=1 or history[6] not in (0,1):raise ValueError('Invalid cohesive history')
+        for key in cls.CHECKPOINT_FIELDS:
+            value=state[key]
+            if key in ('histories','P_ground','L_ground'):
+                value=np.asarray(value,dtype=float)
+                if key=='histories':value=value.reshape(-1,32)
+                shape=(e.shape[0],32) if key=='histories' else (3,)
+                if value.shape!=shape or not np.isfinite(value).all():raise ValueError('Invalid continuation array')
+            elif key in ('ticks','microsteps','total_iterations'):
+                if type(value) is not int or value<0:raise ValueError('Invalid continuation counter')
+            elif type(value) not in (int,float) or not math.isfinite(value):raise ValueError('Invalid continuation scalar')
+            elif key not in ('initial_energy','stored_j','contact_j') and value<0:raise ValueError('Negative continuation account')
+            setattr(candidate,key,value)
+        if candidate.ticks>round(2/candidate.d['dt_s']) or abs(candidate.time-candidate.ticks*candidate.d['dt_s'])>1e-12:raise ValueError('Inconsistent accepted clock')
+        if not np.array_equal(candidate.histories,e[:,35:67]):raise ValueError('Material history map differs')
+        candidate.registry.restore_document(saved['registry'])
+        if abs(candidate.registry.time_s-candidate.time)>1e-14:raise ValueError('Object/physics clocks differ')
+        mode=saved['representation']
+        if bool(mode)!=bool(candidate.representations):raise ValueError('Representation continuation differs')
+        if mode:
+            if set(mode)!={'mode','reason','transitions'} or mode['mode'] not in ('rigid-free-flight','rigid-coupled-contact') or not isinstance(mode['reason'],str) or not isinstance(mode['transitions'],list):raise ValueError('Unsupported representation continuation')
+            candidate.representations.mode=mode['mode'];candidate.representations.reason=mode['reason'];candidate.representations.transitions=copy.deepcopy(mode['transitions'])
+        sphere=candidate.representations.sphere if mode and mode['mode']=='rigid-free-flight' else None
+        for instance in candidate.registry.binding_state()['instances']:
+            owner='isolated-rigid-flight' if sphere is not None and instance['body_ids']==[sphere] else 'coupled-world'
+            if instance['solver_binding']!=owner:raise ValueError('Representation has duplicate or mismatched matter owner')
+        cp.copyto(candidate.eval.bodies,cp.asarray(b));cp.copyto(candidate.eval.edges,cp.asarray(e))
+        baseline=candidate.eval.evaluate(candidate.eval.bodies[:,14:20],1e-12,gravity=0)
+        if int(baseline['faults'][0]):raise ValueError('Restored native geometry/history refused')
+        ledger=cp.asnumpy(baseline['ledger'])[0]
+        if abs(ledger[0]-candidate.stored_j)>1e-10+1e-8*abs(candidate.stored_j) or abs(ledger[4]-candidate.contact_j)>1e-10+1e-8*abs(candidate.contact_j):raise ValueError('Restored storage account differs')
+        evaluations=saved['trial_evaluations']
+        if type(evaluations) is not int or evaluations<0:raise ValueError('Invalid solver continuation counter')
+        candidate.eval.evaluations=evaluations
+        if candidate.representations and candidate.representations.island:candidate.representations.island.evaluations=0
+        stopped=saved['stopped_failure']
+        if stopped is not None:
+            if not isinstance(stopped,dict) or set(stopped)!={'error','accepted_time_s','interval_rolled_back','accepted_snapshot_preserved'} or not isinstance(stopped['error'],str) or stopped['accepted_time_s']!=candidate.time or stopped['interval_rolled_back'] is not True or stopped['accepted_snapshot_preserved'] is not True:raise ValueError('Invalid stopped-scene continuation')
+        candidate.rejected=copy.deepcopy(stopped);candidate.last_accounts=[];candidate.accepted=candidate._snapshot(b)
+        return candidate

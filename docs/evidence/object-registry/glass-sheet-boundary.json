@@ -1,0 +1,70 @@
+{
+  "source_sha256": "2650fd35236576f443a2f75bbe2269d70bf96924a84f49b722da9d369aa2ee80",
+  "conditions": {
+    "material": "glass",
+    "ball_material": "iron",
+    "ball_mass_kg": 0.01,
+    "height_m": 10,
+    "dt_s": 0.004166666666666667,
+    "experiment": "sheet",
+    "device": "cuda:0",
+    "pipeline": "parallel",
+    "newton_strategy": "ranked",
+    "line_search": "batch-tail",
+    "linear_backend": "cupy-reference",
+    "contact_resolution": "reference",
+    "representation_policy": "partitioned-flight"
+  },
+  "accepted_physical_s": 1.429166666666663,
+  "wall_s": 45.844060499977786,
+  "diagnostics": {
+    "dynamic_mass_kg": 0.03250000000000001,
+    "mechanical_j": 0.9916226876434967,
+    "material_stored_j": 2.1918037985504286e-06,
+    "contact_stored_j": 8.95159605149648e-05,
+    "global_energy_residual_j": 5.948130876731739e-12,
+    "momentum_n_s": [
+      -2.1139220860945433e-11,
+      0.144124342779904,
+      -8.429937527896947e-12
+    ],
+    "angular_momentum_n_m_s": [
+      -2.2812410956059267e-11,
+      -1.4882249621115648e-13,
+      1.6737192865054356e-11
+    ],
+    "fracture_work_j": 0.0,
+    "plastic_work_j": 0.0,
+    "numerical_return_excess_j": 0.0,
+    "separated_sites": 0,
+    "yielded_faces": 0,
+    "interfaces": 48,
+    "maximum_energy_residual_j": 5.9469912736816924e-12,
+    "ground_impulse_n_s": [
+      -2.364366379278055e-11,
+      0.5997784052721344,
+      -4.820043835190013e-12
+    ],
+    "ground_torque_impulse_n_m_s": [
+      -2.9249594812535736e-11,
+      -1.321918069368762e-13,
+      4.573534975069444e-11
+    ]
+  },
+  "performance": {
+    "pipeline": "parallel",
+    "newton_strategy": "ranked",
+    "line_search": "batch-tail",
+    "linear_backend": "cupy-reference",
+    "contact_resolution": "reference",
+    "step_s": 35.969121299742255,
+    "last_batch_ms": 3173.9114000229165,
+    "compute_ratio": 0.03973315485682726,
+    "microsteps": 543,
+    "nonlinear_iterations": 4739,
+    "trial_evaluations": 1008429
+  },
+  "refusal": "Coupled interval trial/time budget",
+  "witness_sha256": "55979b717b23105da0be7c67986a469027dc00ae28c42eacdc09a7b7525c7b77",
+  "scope": "Single complete backend advance/snapshot attempt; constructor, HTTP/render excluded; no completed fracture"
+}

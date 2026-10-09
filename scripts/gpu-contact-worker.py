@@ -20,12 +20,13 @@ def main():
     world = None
     for line in sys.stdin:
         try:
-            if len(line) > 4096:
+            if len(line.encode('utf8')) > 2_010_000:
                 raise ValueError("Request size invalid")
             command = json.loads(line)
             if not isinstance(command, dict):
                 raise ValueError("Command must be an object")
             op = command.get("op")
+            if op!='restore' and len(line)>4096:raise ValueError('Request size invalid')
             with contextlib.redirect_stdout(sys.stderr):
                 if op == "create" and set(command) == {"op", "declaration"}:
                     if not isinstance(command["declaration"], dict):
@@ -61,10 +62,18 @@ def main():
                     state = world.strain(unload=True)
                 elif op == "snapshot" and set(command) == {"op"} and world:
                     state = world.snapshot()
+                elif op == 'export' and set(command)=={'op'} and world and hasattr(world,'export_checkpoint'):
+                    print(json.dumps(dict(ok=True,checkpoint=world.export_checkpoint()),separators=(',',':'),allow_nan=False),file=protocol,flush=True)
+                    continue
+                elif op == 'restore' and set(command)=={'op','checkpoint'}:
+                    from gpu_coupled_world import GpuCoupledWorld
+                    candidate=GpuCoupledWorld.from_checkpoint(command['checkpoint'])
+                    state=candidate.snapshot()
+                    world=candidate
                 else:
                     raise ValueError("Unsupported GPU command")
             reply = dict(ok=True, state=state)
-        except (ValueError, TypeError, KeyError, RuntimeError, ImportError) as error:
+        except (ValueError, TypeError, KeyError, RuntimeError, ImportError, MemoryError, OverflowError) as error:
             reply = dict(ok=False, error=str(error))
             if world is not None:
                 reply["state"] = world.snapshot()

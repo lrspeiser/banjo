@@ -1,8 +1,9 @@
 {
-  "title": "Visible high-drop experiments with accepted physical time; material accuracy and realtime remain open",
+  "title": "10 m primitive drop and exact scene save/reopen; connected-sheet impact remains blocked",
   "date": "2026-10-09",
-  "native_sha256": "eb3527a07fda2a0c181ff11683eb907a16045bf0fcae66e4db58f703e7df9ee4",
+  "native_sha256": "a1eb6b91f4bbc3296bed53a637a8780108cc5037fbaec6c7c482ed69f6f72605",
   "changes": [
+    "Versioned geometry/law definitions and stable matter/instance IDs retain exact native state with Save scene / Open scene. Unattached spheres use a local numerical translation origin without changing physical state or history. Four materials complete the 10 m primitive control at two timesteps/contact phases and match an independent compliance oracle; the connected glass sheet still stops at its work bound. The page starts with a useful 10 m drop and clearly separates that control from fracture.",
     "Coupled lab shows calculation pace in plain slower/faster-than-realtime terms and the failed full-drop boundary. The withdrawn local-force experiment is archived; published physics remains unchanged. Five scoped client/gateway CTests pass; complete drop/realtime gate still fails.",
     "Parallel coupled CUDA skips guaranteed-zero separated-pair ledger groups in original addition order and computes shared initial geometry once per trial batch. Contact sites shows actual sites from the last accepted substep. The final permitted Newton update can pass its original residual tolerance without an extra loop iteration. Full impact accuracy and realtime remain unqualified.",
     "Coupled lab adds Target view, Follow ball and Full drop with actual-position markers, simulated time, gap and speed. Run 10 steps shows its duration; Run to ball contact advances accepted steps with Stop. Edited settings are applied before Run and support motion cannot masquerade as ball contact. The exact replay log has a larger bounded storage allowance. Physics laws and gates are unchanged.",
@@ -28,9 +29,19 @@
   ],
   "checks": [
     {
-      "label": "Full 10 m glass drop and realtime",
+      "label": "10 m primitive control and exact restart",
+      "status": "passed",
+      "value": "16 glass/oak/iron/ice controls at 1/240 and 1/960 s, phases 0.25 / 0.0625 rad. All contact and rebound, oracle refinement, original work/P/L gates, exact resumed state and basis-only rollback pass. Fine-phase maximum error <0.4 micrometres / 0.01 m/s. Full 2 s backend measurements exclude constructor/HTTP/render; end-to-end realtime remains unqualified."
+    },
+    {
+      "label": "Object definition / instance / checkpoint registry",
+      "status": "passed",
+      "value": "Independent volume/mass/full inertia geometry oracles; shared definitions / distinct support instances, exact accepted and actual controlled constitutive history across all four materials, malformed/stale-state refusal, atomic publication rollback and real HTTP save/reopen continuation. Not a generic user geometry compiler or eight-family solver."
+    },
+    {
+      "label": "Full connected 10 m glass drop and realtime",
       "status": "failed",
-      "value": "1.425 accepted physical s / 36.397 calculation wall s, roughly 25.5 times too slow; Newton refusal before completed impact. A local derivative trial costs 53.595 wall s / 1.43333 physical s and stops at the work bound; withdrawn from runtime. No physical tolerance/law change. Completion, refinement accuracy and end-to-end realtime remain required."
+      "value": "Latest source: 1.42917 accepted physical s / 45.844 calculation wall s; stops at interval trial/time budget. Zero accepted separated sites/yielded faces. The primitive drop control does not qualify this material impact. Reduced modes, resident local solve and accuracy/delivery gates remain required."
     },
     {
       "label": "Native CUDA matrix operation",
@@ -186,13 +197,14 @@
     "hybrid_free_flight": true,
     "local_rigid_flight": true,
     "material_block_friction": true,
-    "gpu_partitioned_flight": true
+    "gpu_partitioned_flight": true,
+    "exact_coupled_checkpoint": true
   },
-  "physics_revision": "e12eb688a470e3a092038442ef1950ce5b52a30b",
+  "physics_revision": "94686b51560b5ccd3da9b8909be615afbc568648",
   "gpu_source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd",
-  "gpu_worker_sha256": "9380a55b680cc4b2e7b1dd3781d2e08bfad57c5b534d26024e901a84a6010bb2",
+  "gpu_worker_sha256": "cef064443c3a655dc4b10d6697a7e0eab67e4047d7f9bfc0f36f961a5ed453d6",
   "physx_source_sha256": "d1d30abfd67380a66fcf4664759e1917e50137bd7f6ef92bb160d0f1b5b5157f",
   "gpu_material_source_sha256": "439309fd656c70e3f3728fda7a7260aad16ecfe72c0f2f32d9c388b67690f559",
-  "gpu_coupled_source_sha256": "f1cb8651d27c90b5fa46a1d985fc105a846421b77407cfe07f500180202a7dca",
+  "gpu_coupled_source_sha256": "2650fd35236576f443a2f75bbe2269d70bf96924a84f49b722da9d369aa2ee80",
   "gpu_representation_scope": "Experimental isolated rigid sphere plus continuously solved material island; no detailed sphere fracture, heat or fluid coupling"
 }

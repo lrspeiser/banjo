@@ -156,7 +156,7 @@ class Session:
   try:
    reply=self.call(command)
    with self.condition:
-    if reply['ok'] or command.get('op')!='accelerate_object' or 'delivery_failure' in reply:
+    if command.get('op')!='export' and (reply['ok'] or command.get('op')!='accelerate_object' or 'delivery_failure' in reply):
      if 'delivery_failure' not in reply:self.current_at=time.monotonic()
      self.publish(reply)
   finally:
@@ -248,7 +248,7 @@ class Server(ThreadingHTTPServer):
   coupled_hash=None
   if self.gpu_python:
    h=hashlib.sha256()
-   for name in ('scripts/gpu_coupled_world.py','scripts/gpu_linear_solve.py','scripts/gpu_representations.py','src/physics/FiniteFrameKernel.hpp','src/physics/CohesiveInterfaceKernel.hpp','src/material/ConnectorModeKernel.hpp','src/physics/MaterialHistoryKernel.hpp','src/physics/NormalComplianceKernel.hpp','src/physics/CoupledGpuKernel.hpp','client/voxel-lab/material-laws.json'):
+   for name in ('scripts/gpu_coupled_world.py','scripts/gpu_linear_solve.py','scripts/gpu_representations.py','scripts/object_registry.py','src/physics/FiniteFrameKernel.hpp','src/physics/CohesiveInterfaceKernel.hpp','src/material/ConnectorModeKernel.hpp','src/physics/MaterialHistoryKernel.hpp','src/physics/NormalComplianceKernel.hpp','src/physics/CoupledGpuKernel.hpp','client/voxel-lab/material-laws.json'):
     h.update(name.encode());h.update(b'\0');h.update((ROOT/name).read_bytes())
    coupled_hash=h.hexdigest()
    h=hashlib.sha256()
@@ -294,12 +294,14 @@ class Handler(BaseHTTPRequestHandler):
    if backend=='gpu' and not self.server.gpu_python:raise ValueError('GPU runtime is not configured; no CPU fallback')
    if self.headers.get('Origin') not in (None,'http://'+self.headers.get('Host','')):raise ValueError('Cross-origin request refused')
    length=int(self.headers.get('Content-Length','0'))
-   if not 0<length<=4096:raise ValueError('Request size invalid')
+   if not 0<length<=2_010_000:raise ValueError('Request size invalid')
    data=json.loads(self.rfile.read(length))
    if not isinstance(data,dict):raise ValueError('Command must be an object')
    op=data.get('op')
-   if op=='create':
-    if set(data)!={'op','declaration'} or not isinstance(data['declaration'],dict):raise ValueError('Invalid scene declaration')
+   if op!='restore' and length>4096:raise ValueError('Request size invalid')
+   if op in ('create','restore'):
+    if op=='create' and (set(data)!={'op','declaration'} or not isinstance(data['declaration'],dict)):raise ValueError('Invalid scene declaration')
+    if op=='restore' and (backend!='gpu' or set(data)!={'op','checkpoint'} or not isinstance(data['checkpoint'],dict)):raise ValueError('Invalid checkpoint restore')
     with self.server.lock:
      for key,s in list(self.server.sessions.items()):
       if time.monotonic()-s.last>600:s.close();del self.server.sessions[key]
@@ -323,7 +325,7 @@ class Handler(BaseHTTPRequestHandler):
      if type(data['wait_ms']) is not int or not 0<=data['wait_ms']<=250:raise ValueError('Frame wait must be 0–250 ms')
      r=s.frame(data['after'],data['wait_ms'])
     r['session']=data['session']
-   elif op in ['advance','snapshot','close','accelerate_object','strain','unload']:
+   elif op in ['advance','snapshot','close','accelerate_object','strain','unload','export']:
     allowed={'op','session','steps'} if op=='advance' else {'op','session','object','acceleration_m_s2'} if op=='accelerate_object' else {'op','session','opening_m'} if op=='strain' else {'op','session'}
     if set(data)!=allowed:raise ValueError('Invalid command fields')
     try:s=self.server.session(data['session'],backend)
@@ -331,6 +333,7 @@ class Handler(BaseHTTPRequestHandler):
      if op!='close':raise
      s=None
     if backend=='gpu' and op=='accelerate_object':raise ValueError('GPU actuation is not implemented')
+    if op=='export' and (backend!='gpu' or not s.current['state'].get('objects')):raise ValueError('Object checkpoint export requires the coupled GPU lab')
     if op in ('strain','unload') and (backend!='gpu' or not s.current['state'].get('controlled_loading')):raise ValueError('Material loading requires the controlled GPU inspector')
     if op=='close':
      with self.server.lock:
@@ -338,7 +341,7 @@ class Handler(BaseHTTPRequestHandler):
      r={'ok':True,'already_closed':s is None}
     else:
      if op=='advance' and (type(data['steps']) is not int or not 1<=data['steps']<=16):raise ValueError('Steps must be 1–16')
-     r=s.manual({k:v for k,v in data.items() if k!='session'}) if op in ['advance','accelerate_object','strain','unload'] else s.frame(0,0);r['session']=data['session']
+     r=s.manual({k:v for k,v in data.items() if k!='session'}) if op in ['advance','accelerate_object','strain','unload','export'] else s.frame(0,0);r['session']=data['session']
    else:raise ValueError('Unknown operation')
    self.send(200,json.dumps(r,separators=(',',':')).encode())
   except SessionExpired as e:self.send(410,json.dumps({'ok':False,'error':str(e),'code':'session_expired'}).encode())

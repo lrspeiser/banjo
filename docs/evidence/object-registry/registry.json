@@ -1,0 +1,292 @@
+{
+  "schema": "banjo.object-registry-evidence.v1",
+  "source_sha256": "2650fd35236576f443a2f75bbe2269d70bf96924a84f49b722da9d369aa2ee80",
+  "oracles": {
+    "occupied_gap_preserved": true,
+    "full_parallel_axis_inertia": true,
+    "rotated_box_oracle": true,
+    "sphere_oracle": true
+  },
+  "materials": [
+    {
+      "material": "glass",
+      "conditions": {
+        "material": "glass",
+        "ball_material": "iron",
+        "ball_mass_kg": 0.01,
+        "height_m": 0.001,
+        "dt_s": 0.004166666666666667,
+        "experiment": "sheet",
+        "device": "cuda:0",
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "cupy-reference",
+        "contact_resolution": "reference",
+        "representation_policy": "partitioned-flight"
+      },
+      "diagnostics": {
+        "dynamic_mass_kg": 0.03250000000000001,
+        "mechanical_j": 0.01081249525503214,
+        "material_stored_j": 1.466046432108026e-10,
+        "contact_stored_j": 2.2605499607289866e-13,
+        "global_energy_residual_j": 8.031769693772617e-16,
+        "momentum_n_s": [
+          8.925746119532485e-13,
+          -0.0002874561382265408,
+          -4.215209102082775e-14
+        ],
+        "angular_momentum_n_m_s": [
+          -1.3532177637224754e-15,
+          1.8107575575756577e-14,
+          -2.672238814520631e-14
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 48,
+        "maximum_energy_residual_j": 8.066845955483213e-16,
+        "ground_impulse_n_s": [
+          1.189201378272854e-13,
+          0.010340043866465214,
+          3.5885441494361255e-13
+        ],
+        "ground_torque_impulse_n_m_s": [
+          -2.2702112848907715e-14,
+          1.0635238553204148e-14,
+          -1.041906034015266e-14
+        ]
+      },
+      "checkpoint_bytes": 216276,
+      "reopen_wall_s": 0.0662296999944374,
+      "next_accepted_steps_exact": 3,
+      "prior_loading": {
+        "imposed_opening_m": 7.111111111111112e-07,
+        "dt_s": 0.001,
+        "scope": "Compiled CPU/CUDA constitutive prior-loading comparison; externally held specimen, not free impact admission",
+        "separated": 12,
+        "yielded": 0,
+        "stored_j": 0.0,
+        "fracture_j": 0.0024000000000000007,
+        "plastic_j": 0.0,
+        "return_excess_j": 0.0
+      },
+      "damaged_or_plastic_history_exact": true
+    },
+    {
+      "material": "oak",
+      "conditions": {
+        "material": "oak",
+        "ball_material": "iron",
+        "ball_mass_kg": 0.01,
+        "height_m": 0.001,
+        "dt_s": 0.004166666666666667,
+        "experiment": "sheet",
+        "device": "cuda:0",
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "cupy-reference",
+        "contact_resolution": "reference",
+        "representation_policy": "partitioned-flight"
+      },
+      "diagnostics": {
+        "dynamic_mass_kg": 0.016300000000000002,
+        "mechanical_j": 0.006044835210829027,
+        "material_stored_j": 4.608179799730883e-12,
+        "contact_stored_j": 1.8642494158306596e-10,
+        "global_energy_residual_j": 1.1275702593849246e-16,
+        "momentum_n_s": [
+          -7.82400443329249e-14,
+          -2.9630375551932816e-05,
+          -3.9938503600139883e-14
+        ],
+        "angular_momentum_n_m_s": [
+          -1.2152492927796898e-15,
+          5.29518896685226e-16,
+          2.2978499670966314e-15
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 48,
+        "maximum_energy_residual_j": 1.180780385548724e-16,
+        "ground_impulse_n_s": [
+          -5.48911434778208e-14,
+          0.005300469622250569,
+          -1.1330845291941093e-14
+        ],
+        "ground_torque_impulse_n_m_s": [
+          2.217777813332737e-15,
+          -7.378437538529305e-16,
+          -4.8269107694246136e-15
+        ]
+      },
+      "checkpoint_bytes": 216229,
+      "reopen_wall_s": 0.07425210002111271,
+      "next_accepted_steps_exact": 3,
+      "prior_loading": {
+        "imposed_opening_m": 4.4444444444444447e-05,
+        "dt_s": 0.001,
+        "scope": "Compiled CPU/CUDA constitutive prior-loading comparison; externally held specimen, not free impact admission",
+        "separated": 12,
+        "yielded": 0,
+        "stored_j": 0.0,
+        "fracture_j": 0.3,
+        "plastic_j": 0.0,
+        "return_excess_j": 0.0
+      },
+      "damaged_or_plastic_history_exact": true
+    },
+    {
+      "material": "iron",
+      "conditions": {
+        "material": "iron",
+        "ball_material": "iron",
+        "ball_mass_kg": 0.01,
+        "height_m": 0.001,
+        "dt_s": 0.004166666666666667,
+        "experiment": "sheet",
+        "device": "cuda:0",
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "cupy-reference",
+        "contact_resolution": "reference",
+        "representation_policy": "partitioned-flight"
+      },
+      "diagnostics": {
+        "dynamic_mass_kg": 0.08083000000000001,
+        "mechanical_j": 0.02503601086540775,
+        "material_stored_j": 3.3725921362363463e-09,
+        "contact_stored_j": 1.6386654810225477e-10,
+        "global_energy_residual_j": 4.399258735077183e-15,
+        "momentum_n_s": [
+          6.407135099554075e-13,
+          -0.00037668744266283955,
+          6.278711414295e-13
+        ],
+        "angular_momentum_n_m_s": [
+          1.8673372547038198e-14,
+          8.284187174680164e-16,
+          -2.050507647001014e-14
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 12,
+        "maximum_energy_residual_j": 4.3838110713292365e-15,
+        "ground_impulse_n_s": [
+          3.1348065488220097e-12,
+          0.02605472254560809,
+          8.127854073859183e-13
+        ],
+        "ground_torque_impulse_n_m_s": [
+          1.7261677621814385e-16,
+          7.2332750477536e-15,
+          -7.653500438344591e-14
+        ]
+      },
+      "checkpoint_bytes": 84337,
+      "reopen_wall_s": 0.057041200052481145,
+      "next_accepted_steps_exact": 3,
+      "prior_loading": {
+        "imposed_opening_m": 1.895734597156398e-05,
+        "dt_s": 0.001,
+        "scope": "Compiled CPU/CUDA constitutive prior-loading comparison; externally held specimen, not free impact admission",
+        "separated": 0,
+        "yielded": 3,
+        "stored_j": 0.2843601895734597,
+        "fracture_j": 0.0,
+        "plastic_j": 0.5687203791469194,
+        "return_excess_j": 0.2843601895734597
+      },
+      "damaged_or_plastic_history_exact": true
+    },
+    {
+      "material": "ice",
+      "conditions": {
+        "material": "ice",
+        "ball_material": "iron",
+        "ball_mass_kg": 0.01,
+        "height_m": 0.001,
+        "dt_s": 0.004166666666666667,
+        "experiment": "sheet",
+        "device": "cuda:0",
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "cupy-reference",
+        "contact_resolution": "reference",
+        "representation_policy": "partitioned-flight"
+      },
+      "diagnostics": {
+        "dynamic_mass_kg": 0.018253000000000002,
+        "mechanical_j": 0.006619602955816531,
+        "material_stored_j": 1.1364290201997662e-10,
+        "contact_stored_j": 2.324033405300657e-10,
+        "global_energy_residual_j": 7.37257477290143e-16,
+        "momentum_n_s": [
+          3.154747864686006e-14,
+          -2.913850885854745e-05,
+          -9.591352344930054e-15
+        ],
+        "angular_momentum_n_m_s": [
+          -2.7391929485029e-16,
+          -3.7190337720170415e-16,
+          -9.824090155308639e-16
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 48,
+        "maximum_energy_residual_j": 7.415001537561469e-16,
+        "ground_impulse_n_s": [
+          1.673184621978432e-14,
+          0.005939592491466115,
+          1.7189625653960975e-15
+        ],
+        "ground_torque_impulse_n_m_s": [
+          1.540945131312577e-15,
+          -1.799541971735511e-16,
+          -9.298687093845107e-15
+        ]
+      },
+      "checkpoint_bytes": 216025,
+      "reopen_wall_s": 0.0632935999892652,
+      "next_accepted_steps_exact": 3,
+      "prior_loading": {
+        "imposed_opening_m": 6e-06,
+        "dt_s": 0.001,
+        "scope": "Compiled CPU/CUDA constitutive prior-loading comparison; externally held specimen, not free impact admission",
+        "separated": 12,
+        "yielded": 0,
+        "stored_j": 0.0,
+        "fracture_j": 0.00044999999999999993,
+        "plastic_j": 0.0,
+        "return_excess_j": 0.0
+      },
+      "damaged_or_plastic_history_exact": true
+    }
+  ],
+  "realtime_qualified": false,
+  "full_representation_architecture_complete": false,
+  "rejected_mutations": 10,
+  "publication_ownership_rollback": true,
+  "stopped_state_stays_stopped": true,
+  "gateway": {
+    "save_reopen_exact": true,
+    "next_16_steps_exact": true,
+    "export_keeps_delivery": true,
+    "failed_restore_keeps_original": true,
+    "checkpoint_bytes": 9318
+  }
+}

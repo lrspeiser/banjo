@@ -1,3 +1,5 @@
+**Implementation update, October 9:** [Bounded registry and exact scene restart](object-registry-checkpoint.md) implement stable installed definitions/instances/matter IDs and current primitive/cell graph continuation. The primitive 10 m contact control now runs; connected-sheet impacts and the remaining families/transfers below remain open.
+
 # One object, multiple physical representations
 
 **Implementation update:** [Initial GPU flight/material-island adapter](gpu-representation-checkpoint.md) and [ordered active work/controller repair](gpu-active-graph-checkpoint.md) are experimental. The complete representation registry, detailed sphere transfers, reduced modes and coupled fields below remain open.
