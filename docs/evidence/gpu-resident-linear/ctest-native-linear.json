@@ -1,0 +1,460 @@
+{
+  "schema": "banjo.resident-linear.v1",
+  "source_sha256": "31105d759be71507d256aac805caf643c5cf21e9895669e3d122819e96a0b33d",
+  "device": "NVIDIA GeForce RTX 5090",
+  "matrix_checks": {
+    "cases": 90,
+    "exact_cupy_results": true,
+    "max_relative_backward_error": 3.5128945461623237e-16,
+    "input_factor_solution_faults_checked": true
+  },
+  "command_graphs": [
+    {
+      "size": 6,
+      "changed_input_replays": 4,
+      "singular_and_recovery": true,
+      "native_library_version": [
+        11,
+        7,
+        5
+      ],
+      "native_library_sha256": "ad0ab0e6f5c63afd9629700735e2d5c346d839fd3932aa3bdc73a0b404f999de"
+    },
+    {
+      "size": 60,
+      "changed_input_replays": 4,
+      "singular_and_recovery": true,
+      "native_library_version": [
+        11,
+        7,
+        5
+      ],
+      "native_library_sha256": "ad0ab0e6f5c63afd9629700735e2d5c346d839fd3932aa3bdc73a0b404f999de"
+    },
+    {
+      "size": 192,
+      "changed_input_replays": 4,
+      "singular_and_recovery": true,
+      "native_library_version": [
+        11,
+        7,
+        5
+      ],
+      "native_library_sha256": "ad0ab0e6f5c63afd9629700735e2d5c346d839fd3932aa3bdc73a0b404f999de"
+    }
+  ],
+  "recorded_refusal_exact": true,
+  "worlds": [
+    {
+      "conditions": {
+        "material": "glass",
+        "height_m": 0.001,
+        "ball_mass_kg": 0.01,
+        "dt_s": 0.004166666666666667
+      },
+      "physical_time_s": 0.041666666666666664,
+      "wall_s": {
+        "cupy-reference": 2.104522099951282,
+        "native-cusolver": 2.0105682000285015
+      },
+      "exact_physical_history": true,
+      "max_E_residual_j": 2.0473149931938963e-15,
+      "max_P_residual_n_s": 4.571235477683327e-12,
+      "max_L_residual_n_m_s": 2.700509229079976e-14,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.03250000000000001,
+        "mechanical_j": 0.010812495258537915,
+        "material_stored_j": 1.4311778638663486e-10,
+        "contact_stored_j": 2.0429010069579813e-13,
+        "global_energy_residual_j": -2.0435042547006788e-15,
+        "momentum_n_s": [
+          1.2288546363785483e-12,
+          -0.001104821615189147,
+          3.4706468523790323e-13
+        ],
+        "angular_momentum_n_m_s": [
+          1.0316949802017563e-14,
+          1.6825192520845987e-14,
+          -3.686594671849733e-14
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 48,
+        "maximum_energy_residual_j": 2.0473149931938963e-15,
+        "ground_impulse_n_s": [
+          9.017359400740049e-13,
+          0.012179553384503468,
+          2.354048283130663e-13
+        ],
+        "ground_torque_impulse_n_m_s": [
+          1.913758858868218e-14,
+          2.165983101888447e-15,
+          -6.919083711918523e-14
+        ]
+      }
+    },
+    {
+      "conditions": {
+        "material": "glass",
+        "height_m": 0.005,
+        "ball_mass_kg": 0.1,
+        "dt_s": 0.0010416666666666667
+      },
+      "physical_time_s": 0.1041666666666666,
+      "wall_s": {
+        "cupy-reference": 9.195640799822286,
+        "native-cusolver": 8.816310400085058
+      },
+      "exact_physical_history": true,
+      "max_E_residual_j": 7.871873526187905e-14,
+      "max_P_residual_n_s": 2.4814645039207105e-12,
+      "max_L_residual_n_m_s": 4.1155810517236925e-14,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.12250000000000001,
+        "mechanical_j": 0.060049982720865945,
+        "material_stored_j": 1.9933453523205e-06,
+        "contact_stored_j": 1.0631129319644247e-05,
+        "global_energy_residual_j": 7.215061881282736e-14,
+        "momentum_n_s": [
+          -8.706857983832565e-06,
+          0.025882360065321183,
+          2.0772482708649064e-06
+        ],
+        "angular_momentum_n_m_s": [
+          1.6944329943332599e-06,
+          -4.136514348625857e-10,
+          9.374345008273292e-06
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 48,
+        "maximum_energy_residual_j": 7.871873526187905e-14,
+        "ground_impulse_n_s": [
+          -8.706857041900554e-06,
+          0.15106204755722175,
+          2.0772480703679688e-06
+        ],
+        "ground_torque_impulse_n_m_s": [
+          1.6939278632895323e-06,
+          -4.1365138991046406e-10,
+          9.371330497561166e-06
+        ]
+      }
+    },
+    {
+      "conditions": {
+        "material": "oak",
+        "height_m": 0.001,
+        "ball_mass_kg": 0.01,
+        "dt_s": 0.004166666666666667
+      },
+      "physical_time_s": 0.041666666666666664,
+      "wall_s": {
+        "cupy-reference": 1.1214579999214038,
+        "native-cusolver": 0.9965437001083046
+      },
+      "exact_physical_history": true,
+      "max_E_residual_j": 1.3435755677543043e-15,
+      "max_P_residual_n_s": 8.710964522704681e-13,
+      "max_L_residual_n_m_s": 1.2590771395743059e-14,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.016300000000000002,
+        "mechanical_j": 0.006044835212260927,
+        "material_stored_j": 4.562645568611427e-12,
+        "contact_stored_j": 1.8503711639471596e-10,
+        "global_energy_residual_j": -1.3470127790959907e-15,
+        "momentum_n_s": [
+          -1.5450492218864974e-13,
+          -0.0008471380829583803,
+          -5.507112628629361e-14
+        ],
+        "angular_momentum_n_m_s": [
+          -1.6666616090604139e-15,
+          6.400509201793728e-16,
+          4.582117887158566e-15
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 48,
+        "maximum_energy_residual_j": 1.3435755677543043e-15,
+        "ground_impulse_n_s": [
+          -2.379954168894029e-13,
+          0.005815486916811103,
+          -1.112616764329534e-13
+        ],
+        "ground_torque_impulse_n_m_s": [
+          2.5257314247259488e-14,
+          7.967175205824702e-16,
+          1.0795913888711906e-14
+        ]
+      }
+    },
+    {
+      "conditions": {
+        "material": "oak",
+        "height_m": 0.005,
+        "ball_mass_kg": 0.1,
+        "dt_s": 0.0010416666666666667
+      },
+      "physical_time_s": 0.1041666666666666,
+      "wall_s": {
+        "cupy-reference": 3.3236237001256086,
+        "native-cusolver": 3.0850848997943103
+      },
+      "exact_physical_history": true,
+      "max_E_residual_j": 2.0034095370196148e-13,
+      "max_P_residual_n_s": 4.040748352894581e-13,
+      "max_L_residual_n_m_s": 5.697002288745503e-15,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.1063,
+        "mechanical_j": 0.05524332290231295,
+        "material_stored_j": 4.902383741838363e-05,
+        "contact_stored_j": 2.6004555166033025e-06,
+        "global_energy_residual_j": -2.178118796436479e-13,
+        "momentum_n_s": [
+          -1.5272241828778237e-06,
+          0.024124253861166334,
+          -7.1341941770807e-08
+        ],
+        "angular_momentum_n_m_s": [
+          -1.9617309620427936e-08,
+          -3.425631336067382e-14,
+          4.232781778092888e-07
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 48,
+        "maximum_energy_residual_j": 2.0034095370196148e-13,
+        "ground_impulse_n_s": [
+          -1.5272244477942495e-06,
+          0.13274956636228183,
+          -7.134196939560663e-08
+        ],
+        "ground_torque_impulse_n_m_s": [
+          -1.9598386545810967e-08,
+          -3.454453189147974e-14,
+          4.2287173323933055e-07
+        ]
+      }
+    },
+    {
+      "conditions": {
+        "material": "iron",
+        "height_m": 0.001,
+        "ball_mass_kg": 0.01,
+        "dt_s": 0.004166666666666667
+      },
+      "physical_time_s": 0.041666666666666664,
+      "wall_s": {
+        "cupy-reference": 5.229024000058416,
+        "native-cusolver": 4.849151999922469
+      },
+      "exact_physical_history": true,
+      "max_E_residual_j": 1.7629918304143945e-15,
+      "max_P_residual_n_s": 5.368250317298807e-12,
+      "max_L_residual_n_m_s": 1.3923091595460394e-13,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.08083000000000001,
+        "mechanical_j": 0.025036012861837275,
+        "material_stored_j": 1.4929578767594607e-09,
+        "contact_stored_j": 4.706513047541882e-11,
+        "global_energy_residual_j": -1.7555401576885288e-15,
+        "momentum_n_s": [
+          -7.40029136883056e-12,
+          -0.0011821562428978958,
+          -4.4793379855620885e-12
+        ],
+        "angular_momentum_n_m_s": [
+          -1.3282534656136275e-13,
+          8.524697058219955e-14,
+          2.2371154713105544e-13
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 12,
+        "maximum_energy_residual_j": 1.7629918304143945e-15,
+        "ground_impulse_n_s": [
+          3.2594731473824716e-12,
+          0.03185710625100107,
+          -3.4648895525472053e-12
+        ],
+        "ground_torque_impulse_n_m_s": [
+          -1.7051290423492256e-13,
+          4.969317604226064e-14,
+          -5.906030449176786e-14
+        ]
+      }
+    },
+    {
+      "conditions": {
+        "material": "iron",
+        "height_m": 0.005,
+        "ball_mass_kg": 0.1,
+        "dt_s": 0.0010416666666666667
+      },
+      "physical_time_s": 0.1041666666666666,
+      "wall_s": {
+        "cupy-reference": 14.4291409997968,
+        "native-cusolver": 13.306864099751692
+      },
+      "exact_physical_history": true,
+      "max_E_residual_j": 1.6758581605907192e-14,
+      "max_P_residual_n_s": 1.0230030640196644e-11,
+      "max_L_residual_n_m_s": 5.4030817968904443e-14,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.17083000000000004,
+        "mechanical_j": 0.0742840599862255,
+        "material_stored_j": 1.944695215423763e-06,
+        "contact_stored_j": 1.2151403279642333e-07,
+        "global_energy_residual_j": 7.979727989493313e-15,
+        "momentum_n_s": [
+          -8.51440548307438e-06,
+          0.023391588930215746,
+          -1.1232258135706946e-06
+        ],
+        "angular_momentum_n_m_s": [
+          -2.0211842517629975e-06,
+          -9.535775536568688e-09,
+          -5.5601583427404555e-06
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 12,
+        "maximum_energy_residual_j": 1.6758581605907192e-14,
+        "ground_impulse_n_s": [
+          -8.51440635585329e-06,
+          0.19795849516807948,
+          -1.123225297912086e-06
+        ],
+        "ground_torque_impulse_n_m_s": [
+          -2.021111507885637e-06,
+          -9.535788709762753e-09,
+          -5.561295940181469e-06
+        ]
+      }
+    },
+    {
+      "conditions": {
+        "material": "ice",
+        "height_m": 0.001,
+        "ball_mass_kg": 0.01,
+        "dt_s": 0.004166666666666667
+      },
+      "physical_time_s": 0.041666666666666664,
+      "wall_s": {
+        "cupy-reference": 0.4711993999662809,
+        "native-cusolver": 0.5104128999519162
+      },
+      "exact_physical_history": true,
+      "max_E_residual_j": 5.319359554095463e-16,
+      "max_P_residual_n_s": 8.160987915703889e-13,
+      "max_L_residual_n_m_s": 8.928356497608267e-15,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.018253000000000002,
+        "mechanical_j": 0.0066196029576322075,
+        "material_stored_j": 1.1310909725280582e-10,
+        "contact_stored_j": 2.311201985891005e-10,
+        "global_energy_residual_j": -5.334274688628682e-16,
+        "momentum_n_s": [
+          -3.48163813547244e-14,
+          -0.0008466627936334283,
+          -8.23718579207909e-15
+        ],
+        "angular_momentum_n_m_s": [
+          -2.3235371966041997e-16,
+          -4.632599575039075e-16,
+          1.0032452173622455e-15
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 48,
+        "maximum_energy_residual_j": 5.319359554095463e-16,
+        "ground_impulse_n_s": [
+          -4.09543978398766e-14,
+          0.006614250956775677,
+          -1.108877270882613e-15
+        ],
+        "ground_torque_impulse_n_m_s": [
+          1.5183894451941648e-14,
+          3.841234355723774e-17,
+          1.37641620084164e-14
+        ]
+      }
+    },
+    {
+      "conditions": {
+        "material": "ice",
+        "height_m": 0.005,
+        "ball_mass_kg": 0.1,
+        "dt_s": 0.0010416666666666667
+      },
+      "physical_time_s": 0.1041666666666666,
+      "wall_s": {
+        "cupy-reference": 3.099993000156246,
+        "native-cusolver": 2.9517611998599023
+      },
+      "exact_physical_history": true,
+      "max_E_residual_j": 1.6589313954755152e-13,
+      "max_P_residual_n_s": 1.513432407181533e-12,
+      "max_L_residual_n_m_s": 4.7710842709717925e-15,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.108253,
+        "mechanical_j": 0.05575686737292492,
+        "material_stored_j": 6.827062331361425e-05,
+        "contact_stored_j": 4.457709893735429e-05,
+        "global_energy_residual_j": -2.8986535394182056e-13,
+        "momentum_n_s": [
+          2.801764459536188e-06,
+          0.02468560771556872,
+          5.479870892477072e-09
+        ],
+        "angular_momentum_n_m_s": [
+          1.8311543904500512e-08,
+          1.5620163852733036e-11,
+          -1.6602948396557261e-06
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 48,
+        "maximum_energy_residual_j": 1.6589313954755152e-13,
+        "ground_impulse_n_s": [
+          2.8017644294196206e-06,
+          0.13530664209182663,
+          5.479933808143311e-09
+        ],
+        "ground_torque_impulse_n_m_s": [
+          1.8309755232560533e-08,
+          1.5619536852034343e-11,
+          -1.659165024769008e-06
+        ]
+      }
+    }
+  ],
+  "nonlinear_loop_resident": false,
+  "realtime_qualified": false,
+  "material_trajectory_qualified": false
+}

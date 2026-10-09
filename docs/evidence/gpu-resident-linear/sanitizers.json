@@ -1,0 +1,7 @@
+{
+  "source_sha256": "31105d759be71507d256aac805caf643c5cf21e9895669e3d122819e96a0b33d",
+  "script_sha256": "d1ee269bc851ddbe8e005ba26e96abbc7f520780ac59276409bf1ce3b9c41ddc",
+  "script": "import sys\nfrom pathlib import Path\nROOT=Path(__file__).resolve().parents[2]\nsys.path[:0]=[str(ROOT/'scripts'),str(ROOT/'tests')]\nimport cupy as cp\nfrom gpu_resident_linear_test import matrices,captures,refusal\nfrom gpu_coupled_world import GpuCoupledWorld,source_hash\nassert matrices()['cases']==90\nassert len(captures())==3\nassert refusal()\nfor material in ('glass','oak','iron','ice'):\n    world=GpuCoupledWorld(dict(material=material,height_m=.001,ball_mass_kg=.01,linear_backend='native-cusolver'))\n    result=world.advance(1)\n    assert result['time_s']>0\ncp.cuda.get_current_stream().synchronize()\nprint('Native LU guards, changed-input graph replay, actual refusal and four material worlds passed '+source_hash(),flush=True)\n",
+  "memcheck": "========= COMPUTE-SANITIZER\n========= ERROR SUMMARY: 0 errors\n",
+  "racecheck": "========= COMPUTE-SANITIZER\n========= RACECHECK SUMMARY: 0 hazards displayed (0 errors, 0 warnings)\n"
+}

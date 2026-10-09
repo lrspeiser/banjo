@@ -1,8 +1,9 @@
 {
-  "title": "GPU Newton probe batching with exact tested histories; material accuracy and realtime remain open",
+  "title": "Optional native CUDA matrix solve with exact tested histories; full nonlinear residency and realtime remain open",
   "date": "2026-10-09",
   "native_sha256": "eb3527a07fda2a0c181ff11683eb907a16045bf0fcae66e4db58f703e7df9ee4",
   "changes": [
+    "Coupled GPU lab adds Linear solve: Resident cuSOLVER on pinned Windows x64. Reusable buffers and device error status support actual changed-input command replay. Eight tested glass/oak/iron/ice histories match CuPy reference exactly. CuPy reference remains default; the full nonlinear loop is still host controlled and realtime remains open.",
     "Coupled GPU lab tries the full Newton step first, then batches smaller choices on CUDA. Select Step-size probes to compare the retained one-at-a-time reference. Four-material accepted poses, velocities, material history and work records match exactly. Measured low-energy wall time improves 12\u201326%; full material accuracy and realtime remain open.",
     "Ball / ground timing control uses explicit material/mass-derived contact refinement. Compare Before, actual accepted peak-impact microstep and Live. The derivative scale resolves microsecond contact positions. Connected sheets at refined contact phases still stop at the bounded trial budget; Reference remains their default. No whole-world realtime or material fracture qualification.",
     "Coupled lab adds ranked Newton starting guesses and an explicit single-start reference. The same total 24-iteration bound and physical gates remain. Strong glass/oak/iron/ice controls now finish at both tested timesteps; trajectory differences remain substantial. Run 0.1 s displays actual accepted states.",
@@ -23,6 +24,11 @@
     "Glass/oak/iron/ice complete at both timesteps in the initial trial. Full convergence, large energy deficits, connected calculation speed and thermal/fluid/power laws remain unfinished."
   ],
   "checks": [
+    {
+      "label": "Native CUDA matrix operation",
+      "status": "passed",
+      "value": "90 matrices with exact CuPy parity; three CUDA command graphs process changing inputs; singular/nonfinite inputs and recovery are checked. Eight actual four-material histories and recorded glass refusal match exactly. No physics law or tolerance change; whole nonlinear residency and material accuracy/realtime remain open. Fifteen scoped CTests and 345/345 source registration pass."
+    },
     {
       "label": "Ordered CUDA step-size probes",
       "status": "passed",
@@ -178,5 +184,5 @@
   "gpu_worker_sha256": "9380a55b680cc4b2e7b1dd3781d2e08bfad57c5b534d26024e901a84a6010bb2",
   "physx_source_sha256": "d1d30abfd67380a66fcf4664759e1917e50137bd7f6ef92bb160d0f1b5b5157f",
   "gpu_material_source_sha256": "439309fd656c70e3f3728fda7a7260aad16ecfe72c0f2f32d9c388b67690f559",
-  "gpu_coupled_source_sha256": "18716413cf18147bd79f4730fcce32c493e2ff0b9c296da4ba4a91775c809c0c"
+  "gpu_coupled_source_sha256": "31105d759be71507d256aac805caf643c5cf21e9895669e3d122819e96a0b33d"
 }

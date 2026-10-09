@@ -16,7 +16,7 @@ ROOT=Path(__file__).resolve().parents[1]
 HEADERS=('src/physics/FiniteFrameKernel.hpp','src/physics/CohesiveInterfaceKernel.hpp',
  'src/material/ConnectorModeKernel.hpp','src/physics/MaterialHistoryKernel.hpp',
  'src/physics/NormalComplianceKernel.hpp','src/physics/CoupledGpuKernel.hpp')
-SOURCES=('scripts/gpu_coupled_world.py',*HEADERS,'client/voxel-lab/material-laws.json')
+SOURCES=('scripts/gpu_coupled_world.py','scripts/gpu_linear_solve.py',*HEADERS,'client/voxel-lab/material-laws.json')
 def source_hash():
     h=hashlib.sha256()
     for name in SOURCES:h.update(name.encode());h.update(b'\0');h.update((ROOT/name).read_bytes())
@@ -125,7 +125,7 @@ class TrialFailure(RuntimeError):
         super().__init__(message);self.details=details or {}
 
 class CoupledEvaluator:
-    def __init__(self,bodies,edges,pipeline='parallel',newton_strategy='ranked',line_search='batch-tail'):
+    def __init__(self,bodies,edges,pipeline='parallel',newton_strategy='ranked',line_search='batch-tail',linear_backend='cupy-reference'):
         if (cp.__version__,np.__version__)!=('13.5.1','2.5.3'):raise RuntimeError('Unverified coupled runtime')
         cp.cuda.Device(0).use()
         # Shared finite contact dispatch has bounded two-level calls and local
@@ -168,6 +168,11 @@ class CoupledEvaluator:
         self.jacobian_changed=cp.tile(self.dynamic//6,2)
         self.weights=cp.sqrt(cp.repeat(self.bodies[:,1:3],3,axis=1)).reshape(-1)
         self.active_weights=self.weights[self.dynamic]
+        if linear_backend not in ('cupy-reference','native-cusolver'):raise ValueError('Unknown coupled linear backend')
+        self.linear_backend=linear_backend;self.linear=None
+        if linear_backend=='native-cusolver':
+            from gpu_linear_solve import ResidentLinearSolve
+            self.linear=ResidentLinearSolve(len(self.dynamic))
 
     def contact_schedule(self,h,phase,gravity=-9.81,velocity_tolerance=1e-4):
         if not self.pair_count:return dict(step_s=h,frequency_rad_s=0.,excitation_m_s=0.,pair=None)
@@ -218,7 +223,7 @@ class CoupledEvaluator:
                 initial_bodies=cp.asnumpy(self.bodies).tolist(),initial_edges=cp.asnumpy(self.edges).tolist(),
                 iterate_weighted_velocity=cp.asnumpy(y).tolist(),finite_difference_weighted_scale=1e-12,
                 finite_difference_displacement_floor_kg_half_m=1e-16,
-                newton_strategy=self.newton_strategy,line_search=self.line_search,starting_fractions=list(fractions),starting_scores=start_scores,
+                newton_strategy=self.newton_strategy,line_search=self.line_search,linear_backend=self.linear_backend,starting_fractions=list(fractions),starting_scores=start_scores,
                 attempted_fractions=[fractions[i] for i in order[:start_index+1]])
             if last_trial is not None:
                 result,values,velocity=last_trial
@@ -277,10 +282,20 @@ class CoupledEvaluator:
             if bool(cp.any(diff['faults'])):refuse('Jacobian trial crosses a geometry/numeric boundary')
             jacobian=((r[:count]-r[count:])/(2*epsilon[:,None])).T
             jacobian_point=y
-            try:
-                with cupyx.errstate(linalg='raise'):delta=cp.linalg.solve(jacobian,residual[0])
-            except np.linalg.LinAlgError:refuse('Singular coupled Newton Jacobian')
-            if not bool(cp.isfinite(delta).all()):refuse('Nonfinite coupled Newton direction')
+            if self.linear is not None:
+                delta,status=self.linear.enqueue(jacobian,residual[0])
+                # The nonlinear loop is still host controlled. One combined
+                # observation replaces two LU status reads and a finite scan.
+                # A future resident controller consumes this device status.
+                reason,rf,rs=cp.asnumpy(status)
+                row['linear_status']=dict(reason=int(reason),factor_info=int(rf),solve_info=int(rs))
+                if reason==2 or reason==4:refuse('Singular coupled Newton Jacobian')
+                if reason:refuse('Nonfinite coupled Newton direction')
+            else:
+                try:
+                    with cupyx.errstate(linalg='raise'):delta=cp.linalg.solve(jacobian,residual[0])
+                except np.linalg.LinAlgError:refuse('Singular coupled Newton Jacobian')
+                if not bool(cp.isfinite(delta).all()):refuse('Nonfinite coupled Newton direction')
             accepted=False
             scales=(1.,.5,.25,.125,.0625,.03125,.015625,.0078125)
             if self.line_search=='batch-tail':
@@ -323,13 +338,14 @@ class CoupledEvaluator:
         refuse('Coupled Newton iteration budget exceeded')
 
 def declaration(raw):
-    defaults=dict(material='glass',ball_material='iron',ball_mass_kg=.01,height_m=.02,dt_s=1/960,experiment='sheet',device='cuda:0',pipeline='parallel',newton_strategy='ranked',line_search='batch-tail',contact_resolution='reference')
+    defaults=dict(material='glass',ball_material='iron',ball_mass_kg=.01,height_m=.02,dt_s=1/960,experiment='sheet',device='cuda:0',pipeline='parallel',newton_strategy='ranked',line_search='batch-tail',linear_backend='cupy-reference',contact_resolution='reference')
     if not isinstance(raw,dict) or set(raw)-set(defaults):raise ValueError('Unknown coupled scene field')
     d=defaults|raw
     if d['device']!='cuda:0' or d['experiment'] not in ('sheet','freefall'):raise ValueError('Only explicit CUDA sheet/freefall experiments admitted')
     if d['pipeline'] not in ('parallel','serial-reference'):raise ValueError('Unknown coupled trial pipeline')
     if d['newton_strategy'] not in ('ranked','single-reference'):raise ValueError('Unknown Newton starting strategy')
     if d['line_search'] not in ('batch-tail','serial-reference'):raise ValueError('Unknown Newton line search')
+    if d['linear_backend'] not in ('cupy-reference','native-cusolver'):raise ValueError('Unknown coupled linear backend')
     if d['contact_resolution'] not in ('reference','phase-0.25','phase-0.125','phase-0.0625'):raise ValueError('Unknown contact timestep policy')
     for name in ('material','ball_material'):
         if d[name] not in ('glass','oak','iron','ice'):raise ValueError('Unknown declared material')
@@ -371,7 +387,7 @@ class GpuCoupledWorld:
                         edges.append(row)
         p=profiles[self.d['ball_material']];radius=(3*self.d['ball_mass_kg']/(4*math.pi*p['density_kg_m3']))**(1/3)
         body(2,p,[0,(.035 if self.d['experiment']=='sheet' else 0)+radius+self.d['height_m'],0],[radius]*3,mass=self.d['ball_mass_kg'])
-        self.eval=CoupledEvaluator(bodies,edges,pipeline=self.d['pipeline'],newton_strategy=self.d['newton_strategy'],line_search=self.d['line_search']);self.ticks=0;self.time=0.;self.step_s=0.;self.last_ms=0.;self.histories=np.zeros((len(edges),32))
+        self.eval=CoupledEvaluator(bodies,edges,pipeline=self.d['pipeline'],newton_strategy=self.d['newton_strategy'],line_search=self.d['line_search'],linear_backend=self.d['linear_backend']);self.ticks=0;self.time=0.;self.step_s=0.;self.last_ms=0.;self.histories=np.zeros((len(edges),32))
         self.P_ground=np.zeros(3);self.L_ground=np.zeros(3);self.max_residual=0.;self.fracture=self.plastic=self.return_excess=0.;self.total_iterations=0;self.microsteps=0
         baseline=self.eval.evaluate(self.eval.bodies[:,14:20],1e-12,gravity=0)
         if int(baseline['faults'][0]):raise RuntimeError('Invalid initial coupled energy state')
@@ -469,7 +485,7 @@ class GpuCoupledWorld:
                 momentum_n_s=p.tolist(),angular_momentum_n_m_s=l.tolist(),
                 fracture_work_j=self.fracture,plastic_work_j=self.plastic,numerical_return_excess_j=self.return_excess,separated_sites=separated,yielded_faces=yielded,interfaces=self.eval.m,
                 maximum_energy_residual_j=self.max_residual,ground_impulse_n_s=self.P_ground.tolist(),ground_torque_impulse_n_m_s=self.L_ground.tolist()),
-            substep_accounts=copy.deepcopy(self.last_accounts),performance=dict(pipeline=self.eval.pipeline,newton_strategy=self.eval.newton_strategy,line_search=self.eval.line_search,contact_resolution=self.d['contact_resolution'],step_s=self.step_s,last_batch_ms=self.last_ms,compute_ratio=self.time/self.step_s if self.step_s else None,
+            substep_accounts=copy.deepcopy(self.last_accounts),performance=dict(pipeline=self.eval.pipeline,newton_strategy=self.eval.newton_strategy,line_search=self.eval.line_search,linear_backend=self.eval.linear_backend,contact_resolution=self.d['contact_resolution'],step_s=self.step_s,last_batch_ms=self.last_ms,compute_ratio=self.time/self.step_s if self.step_s else None,
                 microsteps=self.microsteps,nonlinear_iterations=self.total_iterations,trial_evaluations=self.eval.evaluations),
             qualification=dict(backend='cupy-implicit-body',gpu=True,device='cuda:0',dtype='float64',source_sha256=self.hash,complete_physics_validated=False,realtime_qualified=False,
                 scope='Experimental finite rigid-cell isotropic inertia; declared mixed-mode cohesive/6-mode plastic interfaces and frictionless normal compliance. No calibrated bulk/grain/J2/thermal law or CCD qualification.'))

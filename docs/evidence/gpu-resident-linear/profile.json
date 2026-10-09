@@ -1,0 +1,106 @@
+{
+  "source_sha256": "18716413cf18147bd79f4730fcce32c493e2ff0b9c296da4ba4a91775c809c0c",
+  "instrumentation": "Runtime observation wrappers; no equation or solver change. CUDA events add overhead; overlapping phase times are not additive.",
+  "rows": [
+    {
+      "material": "glass",
+      "physical_time_s": 0.041666666666666664,
+      "wall_s": 2.229434500040952,
+      "evaluate_calls": 1515,
+      "evaluate_enqueue_s": 0.13529710011789575,
+      "evaluate_cuda_s": 0.9171936957240104,
+      "linear_calls": 413,
+      "linear_host_s": 0.26460839982610196,
+      "linear_cuda_s": 0.2310778877735138,
+      "scalar_sync_count": 1778,
+      "scalar_sync_s": 0.7296309008379467,
+      "performance": {
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "contact_resolution": "reference",
+        "step_s": 2.2045614000526257,
+        "last_batch_ms": 55.808500037528574,
+        "compute_ratio": 0.01890020693715858,
+        "microsteps": 34,
+        "nonlinear_iterations": 308,
+        "trial_evaluations": 52260
+      }
+    },
+    {
+      "material": "oak",
+      "physical_time_s": 0.041666666666666664,
+      "wall_s": 0.9468570000026375,
+      "evaluate_calls": 737,
+      "evaluate_enqueue_s": 0.06627970025874674,
+      "evaluate_cuda_s": 0.43748345521092413,
+      "linear_calls": 201,
+      "linear_host_s": 0.0996350998757407,
+      "linear_cuda_s": 0.0946946881711483,
+      "scalar_sync_count": 894,
+      "scalar_sync_s": 0.2694751998060383,
+      "performance": {
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "contact_resolution": "reference",
+        "step_s": 0.9260446997941472,
+        "last_batch_ms": 22.187799972016364,
+        "compute_ratio": 0.044994228330369854,
+        "microsteps": 25,
+        "nonlinear_iterations": 156,
+        "trial_evaluations": 25528
+      }
+    },
+    {
+      "material": "iron",
+      "physical_time_s": 0.041666666666666664,
+      "wall_s": 5.047102799988352,
+      "evaluate_calls": 3787,
+      "evaluate_enqueue_s": 0.3998024011380039,
+      "evaluate_cuda_s": 2.2832338865995405,
+      "linear_calls": 1102,
+      "linear_host_s": 0.5746897995122708,
+      "linear_cuda_s": 0.5514517440795899,
+      "scalar_sync_count": 4598,
+      "scalar_sync_s": 1.445614000025671,
+      "performance": {
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "contact_resolution": "reference",
+        "step_s": 5.031869899888989,
+        "last_batch_ms": 195.60210005147383,
+        "compute_ratio": 0.008280553252695564,
+        "microsteps": 50,
+        "nonlinear_iterations": 408,
+        "trial_evaluations": 137529
+      }
+    },
+    {
+      "material": "ice",
+      "physical_time_s": 0.041666666666666664,
+      "wall_s": 0.538294100027997,
+      "evaluate_calls": 359,
+      "evaluate_enqueue_s": 0.04415379971032962,
+      "evaluate_cuda_s": 0.21719593527913095,
+      "linear_calls": 98,
+      "linear_host_s": 0.05686359968967736,
+      "linear_cuda_s": 0.05500569611787796,
+      "scalar_sync_count": 442,
+      "scalar_sync_s": 0.1359041006071493,
+      "performance": {
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "contact_resolution": "reference",
+        "step_s": 0.5235442999983206,
+        "last_batch_ms": 23.76060001552105,
+        "compute_ratio": 0.07958575170582569,
+        "microsteps": 15,
+        "nonlinear_iterations": 83,
+        "trial_evaluations": 12619
+      }
+    }
+  ]
+}

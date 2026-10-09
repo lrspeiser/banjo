@@ -239,7 +239,7 @@ class Server(ThreadingHTTPServer):
   coupled_hash=None
   if self.gpu_python:
    h=hashlib.sha256()
-   for name in ('scripts/gpu_coupled_world.py','src/physics/FiniteFrameKernel.hpp','src/physics/CohesiveInterfaceKernel.hpp','src/material/ConnectorModeKernel.hpp','src/physics/MaterialHistoryKernel.hpp','src/physics/NormalComplianceKernel.hpp','src/physics/CoupledGpuKernel.hpp','client/voxel-lab/material-laws.json'):
+   for name in ('scripts/gpu_coupled_world.py','scripts/gpu_linear_solve.py','src/physics/FiniteFrameKernel.hpp','src/physics/CohesiveInterfaceKernel.hpp','src/material/ConnectorModeKernel.hpp','src/physics/MaterialHistoryKernel.hpp','src/physics/NormalComplianceKernel.hpp','src/physics/CoupledGpuKernel.hpp','client/voxel-lab/material-laws.json'):
     h.update(name.encode());h.update(b'\0');h.update((ROOT/name).read_bytes())
    coupled_hash=h.hexdigest()
    h=hashlib.sha256()

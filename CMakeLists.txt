@@ -2198,6 +2198,10 @@ if(BANJO_BUILD_TESTS)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu_coupled_line_search_test.py
                 --output ${CMAKE_CURRENT_BINARY_DIR}/gpu-coupled-line-search-evidence.json)
             set_tests_properties(banjo_gpu_coupled_line_search_tests PROPERTIES TIMEOUT 900 LABELS "gpu;experimental;material;contact")
+            add_test(NAME banjo_gpu_resident_linear_tests COMMAND ${BANJO_NEWTON_PYTHON}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu_resident_linear_test.py
+                --output ${CMAKE_CURRENT_BINARY_DIR}/gpu-resident-linear-evidence.json)
+            set_tests_properties(banjo_gpu_resident_linear_tests PROPERTIES TIMEOUT 900 LABELS "gpu;experimental;material;contact")
             add_test(NAME banjo_gpu_contact_timing_tests COMMAND ${BANJO_NEWTON_PYTHON}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu_contact_timing_test.py
                 --oracle $<TARGET_FILE:banjo_gpu_material_oracle>

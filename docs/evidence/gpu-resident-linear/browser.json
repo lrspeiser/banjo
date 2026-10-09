@@ -1,0 +1,50 @@
+{
+  "source_sha256": "31105d759be71507d256aac805caf643c5cf21e9895669e3d122819e96a0b33d",
+  "normal_ui_controls": true,
+  "browser": "Codex in-app browser / Windows / default viewport",
+  "website_revision_during_prepublication_test": "f1f1f251b24ddead5bb94bb5d32960d59ed4bd9a",
+  "working_source_unpublished_during_test": true,
+  "conditions": [
+    {
+      "material": "glass",
+      "ball_material": "iron",
+      "ball_mass_kg": 0.01,
+      "height_m": 0.001,
+      "dt_s": 0.004166666666666667,
+      "experiment": "sheet",
+      "device": "cuda:0",
+      "pipeline": "parallel",
+      "newton_strategy": "ranked",
+      "line_search": "batch-tail",
+      "linear_backend": "cupy-reference",
+      "contact_resolution": "reference"
+    },
+    {
+      "material": "glass",
+      "ball_material": "iron",
+      "ball_mass_kg": 0.01,
+      "height_m": 0.001,
+      "dt_s": 0.004166666666666667,
+      "experiment": "sheet",
+      "device": "cuda:0",
+      "pipeline": "parallel",
+      "newton_strategy": "ranked",
+      "line_search": "batch-tail",
+      "linear_backend": "native-cusolver",
+      "contact_resolution": "reference"
+    }
+  ],
+  "journal_states_per_scene": 11,
+  "exact_physical_journal_sha256": "7b5c6befbaeff9749d5147f4d45bec5d8ea22ea6a767aa4fde46003d7cc54f21",
+  "exact_physical_history": true,
+  "before_live_verified": true,
+  "peak_actual_accepted_frame": {
+    "time_s": 0.014583333333333334,
+    "compression_m": 3.890758136053385e-07
+  },
+  "final_time_s": 0.041666666666666664,
+  "microsteps": 34,
+  "final_energy_residual_j": -2.0435042547006788e-15,
+  "nonlinear_loop_resident": false,
+  "realtime_qualified": false
+}

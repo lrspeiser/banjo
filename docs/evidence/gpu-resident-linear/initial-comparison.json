@@ -1,0 +1,37 @@
+{
+  "source_sha256": "456faeeab0f3f031de1ed2ed6eeb6e9022cc5499a31f00507c5a8c57ad9dcb5e",
+  "rows": [
+    {
+      "material": "glass",
+      "wall_s": [
+        2.1066557999583893,
+        1.9159825998940505
+      ],
+      "exact_physics": true
+    },
+    {
+      "material": "oak",
+      "wall_s": [
+        0.9763156999833882,
+        0.985761999967508
+      ],
+      "exact_physics": true
+    },
+    {
+      "material": "iron",
+      "wall_s": [
+        5.422995199973229,
+        5.031995699973777
+      ],
+      "exact_physics": true
+    },
+    {
+      "material": "ice",
+      "wall_s": [
+        0.4548256002017297,
+        0.46587020001607016
+      ],
+      "exact_physics": true
+    }
+  ]
+}
