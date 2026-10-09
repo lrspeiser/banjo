@@ -117,6 +117,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Install CPU reference array dependency
+        run: python3 -m pip install numpy==2.2.6
+
       - name: Install visual-lab dependencies
         run: |
           sudo apt-get update

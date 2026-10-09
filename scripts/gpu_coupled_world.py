@@ -13,12 +13,13 @@ import cupy as cp
 import cupyx
 import numpy as np
 from gpu_representations import FlightPartition, KERNEL as REPRESENTATION_KERNEL
-from object_registry import ObjectRegistry,CHECKPOINT_SCHEMA,open_checkpoint,seal
+from coupled_solver import CoupledNewton,TrialFailure
+from coupled_world import CoupledWorld,declaration
 ROOT=Path(__file__).resolve().parents[1]
 HEADERS=('src/physics/FiniteFrameKernel.hpp','src/physics/CohesiveInterfaceKernel.hpp',
  'src/material/ConnectorModeKernel.hpp','src/physics/MaterialHistoryKernel.hpp',
- 'src/physics/NormalComplianceKernel.hpp','src/physics/CoupledGpuKernel.hpp')
-SOURCES=('scripts/gpu_coupled_world.py','scripts/gpu_linear_solve.py','scripts/gpu_representations.py','scripts/object_registry.py',*HEADERS,'client/voxel-lab/material-laws.json')
+ 'src/physics/NormalComplianceKernel.hpp','src/physics/CoupledGpuKernel.hpp','src/physics/CoupledFlightKernel.hpp')
+SOURCES=('scripts/coupled_representations.py','scripts/coupled_solver.py','scripts/coupled_world.py','scripts/gpu_coupled_world.py','scripts/gpu_linear_solve.py','scripts/gpu_representations.py','scripts/object_registry.py',*HEADERS,'client/voxel-lab/material-laws.json')
 def _disk_source_hash():
     h=hashlib.sha256()
     for name in SOURCES:h.update(name.encode());h.update(b'\0');h.update((ROOT/name).read_bytes())
@@ -154,11 +155,13 @@ extern "C" __global__ void collect_trial_faults(unsigned n,unsigned rows,unsigne
     if(threadIdx.x==0)faults[candidate]=first<rows?contributions[candidate*rows+first]:first==rows?5:first==rows+1?6:first==rows+2?7:first==rows+3?8:0;
 }
 '''
-class TrialFailure(RuntimeError):
-    def __init__(self,message,details=None):
-        super().__init__(message);self.details=details or {}
+class CoupledEvaluator(CoupledNewton):
+    array_api=cp
+    to_host=staticmethod(cp.asnumpy)
+    @staticmethod
+    def solve_linear(matrix,rhs):
+        with cupyx.errstate(linalg="raise"):return cp.linalg.solve(matrix,rhs)
 
-class CoupledEvaluator:
     def __init__(self,bodies,edges,pipeline='parallel',newton_strategy='ranked',line_search='batch-tail',linear_backend='cupy-reference'):
         if (cp.__version__,np.__version__)!=('13.5.1','2.5.3'):raise RuntimeError('Unverified coupled runtime')
         cp.cuda.Device(0).use()
@@ -212,6 +215,14 @@ class CoupledEvaluator:
             from gpu_linear_solve import ResidentLinearSolve
             self.linear=ResidentLinearSolve(len(self.dynamic))
 
+    def flight_bounds(self,sphere,h,gravity,travel_bound,bounds):
+        self.module.get_function('isolated_sphere_bounds')(((self.n+127)//128,),(128,),
+            (self.bodies,np.uint32(self.n),np.uint32(sphere),np.float64(h),np.float64(gravity),np.float64(travel_bound),bounds))
+
+    def flight_step(self,sphere,h,gravity,poses,velocity,forces,residual):
+        self.module.get_function('isolated_sphere_step')((1,),(1,),
+            (self.bodies,np.uint32(sphere),np.float64(h),np.float64(gravity),poses,velocity,forces,residual))
+
     def contact_schedule(self,h,phase,gravity=-9.81,velocity_tolerance=1e-4):
         if not self.pair_count:return dict(step_s=h,frequency_rad_s=0.,excitation_m_s=0.,pair=None)
         self.plan_kernel(((self.pair_count+127)//128,),(128,),
@@ -253,425 +264,20 @@ class CoupledEvaluator:
             self.phases['collect_trial_faults']((batch,),(128,),(n,rows,b,out['contribution_faults'],out['body_faults'],out['poses'],out['ledger'],out['faults']))
         self.evaluations+=batch;return out
 
-    def solve(self,h,gravity=-9.81,maximum_iterations=24):
-        original=self.bodies[:,14:20].reshape(-1);y=original[self.dynamic]*self.active_weights
-        count=len(y);tolerance=1e-10*max(1.,float(cp.linalg.norm(y)))
-        trace=[];last_trial=None;jacobian=None;jacobian_point=None;self.last_solve=None
-        fractions=(1.,.1,.01) if self.newton_strategy=='ranked' else (1.,)
-        guesses=None;order=[0];start_index=0;start_scores=None
-        def refuse(message):
-            # Failure-only observations never replace an accepted physical state.
-            # Retain the actual last evaluated candidate, rather than inferring
-            # the cause from the timestep at which subdivision eventually stops.
-            details=dict(dt_s=h,gravity_m_s2=gravity,equation_tolerance=tolerance,iterations=trace,
-                initial_bodies=cp.asnumpy(self.bodies).tolist(),initial_edges=cp.asnumpy(self.edges).tolist(),
-                iterate_weighted_velocity=cp.asnumpy(y).tolist(),finite_difference_weighted_scale=1e-12,
-                finite_difference_displacement_floor_kg_half_m=1e-16,
-                newton_strategy=self.newton_strategy,line_search=self.line_search,linear_backend=self.linear_backend,starting_fractions=list(fractions),starting_scores=start_scores,
-                attempted_fractions=[fractions[i] for i in order[:start_index+1]])
-            if last_trial is not None:
-                result,values,velocity=last_trial
-                details['last_evaluated']=dict(weighted_velocity=cp.asnumpy(values).tolist(),
-                    velocity=cp.asnumpy(velocity).tolist(),poses_wxyz=cp.asnumpy(result['poses']).tolist(),
-                    residual=cp.asnumpy(result['residual']).tolist(),forces=cp.asnumpy(result['forces']).tolist(),
-                    ledger=cp.asnumpy(result['ledger']).tolist(),faults=cp.asnumpy(result['faults']).tolist(),
-                    material_history=cp.asnumpy(result['history']).tolist())
-            if jacobian is not None:
-                matrix=cp.asnumpy(jacobian)
-                if np.isfinite(matrix).all():
-                    singular=np.linalg.svd(matrix,compute_uv=False)
-                    details['jacobian_singular_values']=singular.tolist();details['jacobian']=matrix.tolist()
-                    details['jacobian_weighted_velocity']=cp.asnumpy(jacobian_point).tolist()
-            raise TrialFailure(message,details)
-        def trials(values,base=None):
-            nonlocal last_trial
-            values=values.reshape(-1,count);velocity=cp.broadcast_to(original,(len(values),len(original))).copy()
-            velocity[:,self.dynamic]=values/self.active_weights
-            result=self.evaluate(velocity,h,gravity,_jacobian_base=base if self.pipeline=='parallel' else None)
-            last_trial=result,values,velocity.reshape(-1,self.n,6)
-            return result,result['residual'].reshape(len(values),-1)[:,self.dynamic],velocity.reshape(-1,self.n,6)
-        if self.newton_strategy=='ranked':
-            # Numerical starting guesses only: contract the candidate midpoint
-            # motion toward zero. No accepted velocity or history is assigned.
-            # A stiff implicit root can be close to that limit even when the
-            # original velocity guess enters a different softening branch.
-            guesses=cp.asarray([2*f-1 for f in fractions])[:,None]*y[None]
-            probe,r,_=trials(guesses)
-            scores=cp.where(probe['faults']==0,cp.linalg.norm(r,axis=1),cp.inf)
-            host_scores=cp.asnumpy(scores);start_scores=[float(x) if np.isfinite(x) else None for x in host_scores]
-            order=np.argsort(host_scores,kind='stable').tolist()
-            if start_scores[order[0]] is None:refuse('All Newton starting trials refused')
-            y=guesses[order[0]].copy()
-        for iteration in range(maximum_iterations):
-            out,residual,velocity=trials(y)
-            if int(out['faults'][0]):refuse('Coupled trial fault '+str(int(out['faults'][0])))
-            norm=float(cp.linalg.norm(residual[0]))
-            row=dict(iteration=iteration,starting_fraction=fractions[order[start_index]],equation_residual=norm,line_search=[]);trace.append(row)
-            if norm<=tolerance:
-                self.last_solve=dict(strategy=self.newton_strategy,starting_scores=start_scores,
-                    attempted_fractions=[fractions[i] for i in order[:start_index+1]],converged_fraction=fractions[order[start_index]],iteration_evaluations=len(trace))
-                return {k:out[k][0].copy() for k in ('poses','residual','history','forces','ledger','faults')},velocity[0].copy(),iteration,norm
-            # Energy-weighted finite cells have sub-micrometre cohesive ranges.
-            # A 1e-7 sqrt(J) perturbation crossed compression/damage branches
-            # and produced a secant matrix rather than the local Jacobian.
-            # Independent derivative/refinement tests bound this FP64 scale.
-            # Midpoint translation/turn changes by h*delta/2. At microsecond
-            # steps the velocity-only scale falls below contact-position ULPs.
-            # Keep a declared weighted displacement floor, without changing
-            # the force law, nonlinear tolerance or accepted velocities.
-            epsilon=cp.maximum(1e-12*cp.maximum(1.,abs(y)),2e-16/h)
-            perturbed=cp.repeat(y[None],2*count,axis=0)
-            ids=cp.arange(count);perturbed[ids,ids]+=epsilon;perturbed[count+ids,ids]-=epsilon
-            diff,r,_=trials(perturbed,base=out)
-            if bool(cp.any(diff['faults'])):refuse('Jacobian trial crosses a geometry/numeric boundary')
-            jacobian=((r[:count]-r[count:])/(2*epsilon[:,None])).T
-            jacobian_point=y
-            if self.linear is not None:
-                delta,status=self.linear.enqueue(jacobian,residual[0])
-                # The nonlinear loop is still host controlled. One combined
-                # observation replaces two LU status reads and a finite scan.
-                # A future resident controller consumes this device status.
-                reason,rf,rs=cp.asnumpy(status)
-                row['linear_status']=dict(reason=int(reason),factor_info=int(rf),solve_info=int(rs))
-                if reason==2 or reason==4:refuse('Singular coupled Newton Jacobian')
-                if reason:refuse('Nonfinite coupled Newton direction')
-            else:
-                try:
-                    with cupyx.errstate(linalg='raise'):delta=cp.linalg.solve(jacobian,residual[0])
-                except np.linalg.LinAlgError:refuse('Singular coupled Newton Jacobian')
-                if not bool(cp.isfinite(delta).all()):refuse('Nonfinite coupled Newton direction')
-            accepted=False
-            scales=(1.,.5,.25,.125,.0625,.03125,.015625,.0078125)
-            if self.line_search=='batch-tail':
-                # Independent PRIVATE probes of the same Newton direction.
-                # Their material input/history/dt are identical. Retain the
-                # first accepted scale in the original order; later probes
-                # never change accepted physics or manufacture another root.
-                # Preserve the common full-step fast path. Only when it fails
-                # do the remaining seven independent candidates run together.
-                for group in (scales[:1],scales[1:]):
-                    candidates=y[None]-cp.asarray(group)[:,None]*delta[None]
-                    probe,r,v=trials(candidates)
-                    # Identical vector reduction for every row, rather than
-                    # an axis reduction with a different arithmetic ordering.
-                    norms=cp.stack([cp.linalg.norm(r[i]) for i in range(len(group))])
-                    # One bounded host observation. Fault codes fit exactly in
-                    # FP64; physical arrays remain resident and authoritative.
-                    host_faults,host_norms=cp.asnumpy(cp.stack((probe['faults'],norms)))
-                    for i,scale in enumerate(group):
-                        fault=int(host_faults[i]);probe_norm=float(host_norms[i]) if fault==0 else None
-                        row['line_search'].append(dict(scale=scale,fault=fault,equation_residual=probe_norm))
-                        # Retain only the last CONSIDERED failure candidate,
-                        # just as serial evaluation, not seven unused states.
-                        last_trial={k:probe[k][i:i+1] for k in ('poses','residual','history','forces','ledger','faults')},candidates[i:i+1],v[i:i+1]
-                        if fault==0 and probe_norm<norm*(1-1e-4*scale):y=candidates[i].copy();accepted=True;break
-                    if accepted:break
-            else:
-                for scale in scales:
-                    candidate=y-scale*delta;probe,r,_=trials(candidate)
-                    fault=int(probe['faults'][0]);probe_norm=float(cp.linalg.norm(r[0])) if fault==0 else None
-                    row['line_search'].append(dict(scale=scale,fault=fault,equation_residual=probe_norm))
-                    if fault==0 and probe_norm<norm*(1-1e-4*scale):y=candidate;accepted=True;break
-            if not accepted:
-                # All starts share the SAME total 24-iteration limit. Restart
-                # only the private nonlinear iterate; the physical input,
-                # constitutive history, equation and admission gates are fixed.
-                if guesses is not None and iteration+1<maximum_iterations and start_index+1<len(order) and start_scores[order[start_index+1]] is not None:
-                    start_index+=1;y=guesses[order[start_index]].copy();continue
-                refuse('Coupled Newton line search did not reduce the equation residual')
-            if iteration+1==maximum_iterations and probe_norm<=tolerance:
-                # The final permitted update already evaluated the complete
-                # nonlinear trial and passed the SAME convergence threshold.
-                # Do not require an extra outer iteration merely to observe it.
-                # This advances no extra update and changes no physical gate.
-                self.last_solve=dict(strategy=self.newton_strategy,starting_scores=start_scores,
-                    attempted_fractions=[fractions[i] for i in order[:start_index+1]],
-                    converged_fraction=fractions[order[start_index]],iteration_evaluations=len(trace),
-                    converged_on_final_update=True)
-                final,_,final_velocity=last_trial
-                return {k:final[k][0].copy() for k in ('poses','residual','history','forces','ledger','faults')},final_velocity[0].copy(),iteration+1,probe_norm
-        refuse('Coupled Newton iteration budget exceeded')
 
-def declaration(raw):
-    defaults=dict(material='glass',ball_material='iron',ball_mass_kg=.01,height_m=.02,dt_s=1/960,experiment='sheet',device='cuda:0',pipeline='parallel',newton_strategy='ranked',line_search='batch-tail',linear_backend='cupy-reference',contact_resolution='reference',representation_policy='coupled-reference')
-    if not isinstance(raw,dict) or set(raw)-set(defaults):raise ValueError('Unknown coupled scene field')
-    d=defaults|raw
-    if d['device']!='cuda:0' or d['experiment'] not in ('sheet','freefall'):raise ValueError('Only explicit CUDA sheet/freefall experiments admitted')
-    if d['pipeline'] not in ('parallel','serial-reference'):raise ValueError('Unknown coupled trial pipeline')
-    if d['newton_strategy'] not in ('ranked','single-reference'):raise ValueError('Unknown Newton starting strategy')
-    if d['line_search'] not in ('batch-tail','serial-reference'):raise ValueError('Unknown Newton line search')
-    if d['linear_backend'] not in ('cupy-reference','native-cusolver'):raise ValueError('Unknown coupled linear backend')
-    if d['contact_resolution'] not in ('reference','phase-0.25','phase-0.125','phase-0.0625'):raise ValueError('Unknown contact timestep policy')
-    if d['representation_policy'] not in ('coupled-reference','partitioned-flight'):raise ValueError('Unknown representation policy')
-    for name in ('material','ball_material'):
-        if d[name] not in ('glass','oak','iron','ice'):raise ValueError('Unknown declared material')
-    for name,lo,hi in (('ball_mass_kg',.001,1.),('height_m',.001,10.)):
-        if type(d[name]) not in (float,int) or not math.isfinite(d[name]) or not lo<=d[name]<=hi:raise ValueError('Invalid '+name)
-    if type(d['dt_s']) not in (float,int) or d['dt_s'] not in (1/240,1/480,1/960,1/1920):raise ValueError('Unadmitted coupled host timestep')
-    return d
-
-class GpuCoupledWorld:
-    def __init__(self,raw,*,world_id=None):
-        if _disk_source_hash()!=LOADED_SOURCE_SHA256:raise RuntimeError('Coupled implementation changed; restart the GPU worker before creating a scene')
-        self.d=declaration(raw);profiles=json.loads((ROOT/'client/voxel-lab/material-laws.json').read_text(encoding='utf8'))['profiles'];profiles={p['material']:p for p in profiles}
-        self.meta=[];bodies=[];edges=[];cell=.01;material=profiles[self.d['material']]
-        self.material_model=material['display_model']
-        def body(shape,p,pos,half,mass=None,fixed=False):
-            volume=4*math.pi*half[0]**3/3 if shape==2 else 8*np.prod(half)
-            m=mass if mass is not None else p['density_kg_m3']*volume
-            inertia=.4*m*half[0]**2 if shape==2 else m*(2*half[0])**2/6
-            row=np.zeros(30);row[:4]=[shape,0 if fixed else m,0 if fixed else inertia,p['young_pa']];row[4:7]=half;row[7:10]=row[20:23]=pos;row[10]=row[26]=1
-            i=len(bodies);bodies.append(row);self.meta.append(dict(id=i,shape=('plane','cube','sphere')[shape],material=p['material'],size_m=(2*np.array(half)).tolist(),radius_m=half[0] if shape==2 else 0,mass_kg=0 if fixed else m,fixed=fixed,component=i+1));return i
-        body(0,profiles['iron'],[0,0,0],[.01]*3,fixed=True)
-        if self.d['experiment']=='sheet':
-            for x in (-.012,.012):body(1,profiles['iron'],[x,.0125,0],[.004,.0125,.022],fixed=True)
-            indices={}
-            for x in range(3):
-                for z in range(3):indices[x,z]=body(1,material,[(x-1)*cell,.03,(z-1)*cell],[cell/2]*3)
-            for (x,z),a in indices.items():
-                for axis in (0,2):
-                    neighbor=(x+1,z) if axis==0 else (x,z+1)
-                    if neighbor not in indices:continue
-                    b=indices[neighbor];frame=[1,0,0,0] if axis==0 else [math.sqrt(.5),0,-math.sqrt(.5),0]
-                    sites=[(0.,0.)] if material['display_model']=='connector-plastic' else [(u*cell/(2*math.sqrt(3)),v*cell/(2*math.sqrt(3))) for u in (-1,1) for v in (-1,1)]
-                    for u,v in sites:
-                        row=np.zeros(70);row[:4]=[a,b,1 if material['display_model']=='connector-plastic' else 2,cell]
-                        local_a=np.zeros(3);local_b=np.zeros(3);local_a[axis]=cell/2;local_b[axis]=-cell/2
-                        local_a[1]=local_b[1]=u;local_a[2 if axis==0 else 0]=local_b[2 if axis==0 else 0]=v
-                        row[4:7]=local_a;row[7:10]=local_b;row[10:14]=row[14:18]=frame;row[18:23]=material['cohesive_law'];row[21]/=len(sites)
-                        if material['display_model']=='connector-plastic':row[23:29]=material['connector_stiffness'];row[29:35]=material['connector_yield_load']
-                        else:row[23]=.5 # Explicit kt/kn experiment input, not grain or inferred bulk plasticity.
-                        edges.append(row)
-        p=profiles[self.d['ball_material']];radius=(3*self.d['ball_mass_kg']/(4*math.pi*p['density_kg_m3']))**(1/3)
-        body(2,p,[0,(.035 if self.d['experiment']=='sheet' else 0)+radius+self.d['height_m'],0],[radius]*3,mass=self.d['ball_mass_kg'])
-        self.eval=CoupledEvaluator(bodies,edges,pipeline=self.d['pipeline'],newton_strategy=self.d['newton_strategy'],line_search=self.d['line_search'],linear_backend=self.d['linear_backend']);self.ticks=0;self.time=0.;self.step_s=0.;self.last_ms=0.;self.histories=np.zeros((len(edges),32))
-        self.representations=FlightPartition(self.eval,CoupledEvaluator) if self.d['representation_policy']=='partitioned-flight' else None
-        self.registry=ObjectRegistry(np.array(bodies),np.array(edges).reshape(-1,70),self.meta,profiles,world_id)
-        self.unattached_spheres=[o['body_ids'][0] for o in self.registry.binding_state()['instances'] if o['single_sphere']]
-        self.P_ground=np.zeros(3);self.L_ground=np.zeros(3);self.max_residual=0.;self.fracture=self.plastic=self.return_excess=0.;self.total_iterations=0;self.microsteps=0
-        baseline=self.eval.evaluate(self.eval.bodies[:,14:20],1e-12,gravity=0)
-        if int(baseline['faults'][0]):raise RuntimeError('Invalid initial coupled energy state')
-        ledger=cp.asnumpy(baseline['ledger'])[0];self.stored_j=float(ledger[0]);self.contact_j=float(ledger[4])
-        self.initial_energy=self.mechanics(np.array(bodies))[0]+self.stored_j+self.contact_j
-        self.last_accounts=[];self.rejected=None;self.hash=source_hash();self.accepted=self._snapshot(np.array(bodies))
-
+class GpuCoupledWorld(CoupledWorld):
+    array_api=cp
+    to_host=staticmethod(cp.asnumpy)
+    evaluator_type=CoupledEvaluator
+    flight_partition=FlightPartition
+    declaration=staticmethod(declaration)
+    source_hash=staticmethod(source_hash)
+    device='cuda:0'
+    gpu=True
+    state_schema='banjo.cupy-coupled-finite-cells.v1'
+    backend_name='cupy-implicit-body'
     @staticmethod
-    def mechanics(bodies):
-        mass=bodies[:,1];energy=.5*np.sum(mass[:,None]*bodies[:,14:17]**2)+.5*np.sum(bodies[:,2,None]*bodies[:,17:20]**2)+9.81*np.sum(mass*bodies[:,8])
-        p=np.sum(mass[:,None]*bodies[:,14:17],axis=0);l=np.sum(np.cross(bodies[:,7:10],mass[:,None]*bodies[:,14:17])+bodies[:,2,None]*bodies[:,17:20],axis=0)
-        return float(energy),p,l
-
-    def advance(self,steps):
-        if self.rejected:raise ValueError('Refused coupled world is stopped; reset required')
-        if type(steps) is not int or not 1<=steps<=32 or self.ticks+steps>round(2/self.d['dt_s']):raise ValueError('Invalid coupled advance')
-        saved_b=self.eval.bodies.copy();saved_e=self.eval.edges.copy()
-        # Publication is part of the transaction: a failure while constructing
-        # the accepted snapshot must also restore clocks/accounts/mode history.
-        host_keys=('histories','ticks','time','microsteps','total_iterations','fracture','plastic','return_excess',
-            'P_ground','L_ground','max_residual','last_accounts','stored_j','contact_j','last_ms','step_s','accepted')
-        saved_host={key:(getattr(self,key).copy() if isinstance(getattr(self,key),np.ndarray) else getattr(self,key)) for key in host_keys}
-        saved_modes=(self.representations.mode,self.representations.reason,copy.deepcopy(self.representations.transitions)) if self.representations else None
-        saved_registry=self.registry.binding_state()
-        accounts=[];started=time.perf_counter();updates=0;trials=0;refusals=[];last_solver_failure=None;schedule=None
-        try:
-            for host_tick in range(steps):
-                queue=[(self.d['dt_s'],0)]
-                while queue:
-                    trials+=1
-                    if trials>128 or time.perf_counter()-started>30:raise TrialFailure('Coupled interval trial/time budget')
-                    h,depth=queue.pop();schedule=None
-                    if self.d['contact_resolution']!='reference':
-                        schedule=self.eval.contact_schedule(h,float(self.d['contact_resolution'].split('-')[1]))
-                        if schedule['step_s']<h:
-                            remainder=h-schedule['step_s'];h=schedule['step_s']
-                            if remainder>0:queue.append((remainder,depth))
-                    before=cp.asnumpy(self.eval.bodies);energy0,p0,l0=self.mechanics(before)
-                    scale=float(np.min(2*before[before[:,0]!=0,4:7]));representation=None;coordinate_rebases=[]
-                    try:
-                        flight=self.representations.propose(h,.25*scale) if self.representations else None
-                        if flight is None:
-                            coordinate_rebases=self.local_primitive_origins(before)
-                            out,velocity,iterations,equation=self.eval.solve(h)
-                        else:
-                            out,velocity,iterations,equation,representation=flight
-                            self.eval.last_solve=copy.deepcopy(self.representations.island.last_solve)
-                    except TrialFailure as error:
-                        last_solver_failure=error.details
-                        refusals.append(dict(trial=trials,dt_s=h,depth=depth,error=str(error),
-                            private_elapsed_s=sum(a['dt_s'] for a in accounts),
-                            equation_residual=(error.details.get('iterations') or [{}])[-1].get('equation_residual')))
-                        if depth>=10:raise
-                        queue.extend([(h/2,depth+1),(h/2,depth+1)]);continue
-                    ending=before.copy();ending[:,7:14]=cp.asnumpy(out['poses']);ending[:,14:20]=cp.asnumpy(velocity)
-                    ending[:,23:26]=before[:,23:26]+h*(before[:,14:17]+ending[:,14:17])/2
-                    ledger=cp.asnumpy(out['ledger']);forces=cp.asnumpy(out['forces']);history=cp.asnumpy(out['history']);energy1,p1,l1=self.mechanics(ending)
-                    fixed=before[:,1]==0;reaction=-h*forces[fixed,:3].sum(axis=0)
-                    midpoint=(before[:,7:10]+ending[:,7:10])/2
-                    reaction_torque=-h*(np.cross(midpoint[fixed],forces[fixed,:3])+forces[fixed,3:]).sum(axis=0)
-                    gravity_impulse=np.array([0,-9.81*before[:,1].sum()*h,0]);gravity_torque=h*np.cross(midpoint,before[:,1,None]*[0,-9.81,0]).sum(axis=0)
-                    balance=energy1-energy0+ledger[1]-ledger[0]+ledger[2]+ledger[3]+ledger[5]-ledger[4]
-                    pres=p1-p0-reaction-gravity_impulse;lres=l1-l0-reaction_torque-gravity_torque
-                    tolerance=1e-10+1e-8*max(abs(energy0+ledger[0]+ledger[4]),1e-3)
-                    displacements=np.linalg.norm(ending[:,7:10]-before[:,7:10],axis=1)
-                    # The separated sphere has its own swept proof. The unchanged
-                    # travel bound still applies to every coupled island member.
-                    guarded=np.delete(displacements,self.representations.sphere) if representation else displacements
-                    travel=float(np.max(guarded,initial=0))
-                    angles=h*np.max(np.linalg.norm((ending[:,17:20]+before[:,17:20])/2,axis=1))
-                    # Conservative displacement guard prevents the tiny sheet
-                    # from being skipped; CCD/event location is not qualified.
-                    if abs(balance)>tolerance or np.linalg.norm(pres)>1e-9 or np.linalg.norm(lres)>1e-9 or ledger[8]>.2*scale or travel>.25*scale or angles>.25:
-                        refusals.append(dict(trial=trials,dt_s=h,depth=depth,error='Coupled finite/compression/travel/conservation gate',
-                            private_elapsed_s=sum(a['dt_s'] for a in accounts),energy_residual_j=balance,energy_tolerance_j=tolerance,
-                            P_residual_n_s=pres.tolist(),L_residual_n_m_s=lres.tolist(),compression_m=float(ledger[8]),
-                            maximum_compression_m=.2*scale,travel_m=travel,maximum_travel_m=.25*scale,turn_rad=float(angles),maximum_turn_rad=.25))
-                        if depth>=10:raise TrialFailure('Coupled finite/compression/travel/conservation gate')
-                        queue.extend([(h/2,depth+1),(h/2,depth+1)]);continue
-                    updates+=1
-                    if updates>512 or time.perf_counter()-started>30:raise TrialFailure('Coupled interval work budget')
-                    self.eval.bodies[:,23:26]+=h*(self.eval.bodies[:,14:17]+velocity[:,:3])/2
-                    self.eval.bodies[:,7:14]=out['poses'];self.eval.bodies[:,14:20]=velocity
-                    if self.eval.m:self.eval.edges[:,35:67]=out['history']
-                    accounts.append(dict(dt_s=h,energy_residual_j=balance,energy_tolerance_j=tolerance,P_residual_n_s=pres.tolist(),L_residual_n_m_s=lres.tolist(),
-                        ground_impulse_n_s=reaction.tolist(),ground_torque_impulse_n_m_s=reaction_torque.tolist(),ledger=ledger.tolist(),iterations=iterations,equation_residual=equation,
-                        poses_wxyz=ending[:,7:14].tolist(),velocities=ending[:,14:20].tolist(),material_history=history.tolist(),newton_start=copy.deepcopy(self.eval.last_solve),contact_schedule=schedule,
-                        coordinate_rebases=coordinate_rebases,
-                        **({'representation':representation} if self.representations else {})))
-            self.histories=history;self.ticks+=steps;self.time+=steps*self.d['dt_s'];self.microsteps+=updates;self.total_iterations+=sum(a['iterations'] for a in accounts)
-            self.fracture+=sum(a['ledger'][2] for a in accounts) if self.material_model!='connector-plastic' else 0
-            self.plastic+=sum(a['ledger'][2] for a in accounts) if self.material_model=='connector-plastic' else 0
-            self.return_excess+=sum(a['ledger'][3] for a in accounts)
-            self.P_ground+=sum((np.array(a['ground_impulse_n_s']) for a in accounts),start=np.zeros(3));self.L_ground+=sum((np.array(a['ground_torque_impulse_n_m_s']) for a in accounts),start=np.zeros(3))
-            self.max_residual=max(self.max_residual,max(abs(a['energy_residual_j']) for a in accounts));self.last_accounts=accounts
-            self.stored_j=float(ledger[1]);self.contact_j=float(ledger[5])
-            if self.representations:self.representations.commit_modes(accounts,self.time-steps*self.d['dt_s'])
-            sphere=self.representations.sphere if self.representations and self.representations.mode=='rigid-free-flight' else None
-            self.registry.bind(self.time,sphere)
-            self.last_ms=(time.perf_counter()-started)*1000;self.step_s+=self.last_ms/1000;self.accepted=self._snapshot(ending);return self.snapshot()
-        except Exception as error:
-            restored=False
-            try:cp.copyto(self.eval.bodies,saved_b);cp.copyto(self.eval.edges,saved_e);cp.cuda.get_current_stream().synchronize();restored=True
-            except Exception:pass # A poisoned CUDA context cannot confirm GPU rollback.
-            for key,value in saved_host.items():setattr(self,key,value)
-            if saved_modes:self.representations.mode,self.representations.reason,self.representations.transitions=saved_modes
-            self.registry.restore_bindings(saved_registry)
-            self.rejected=dict(error=str(error),accepted_time_s=self.time,interval_rolled_back=restored,accepted_snapshot_preserved=True,
-                failed_interval_substeps=updates,trial_attempts=trials,subdivision_refusals=refusals,
-                last_solver_failure=last_solver_failure,last_trial_accounts=accounts[-4:],contact_timestep_policy=self.d['contact_resolution'],
-                last_contact_schedule=schedule,failed_interval_physical_s=sum(a['dt_s'] for a in accounts))
-            raise RuntimeError(str(error)) from error
-
-    def local_primitive_origins(self,bodies):
-        # A primitive without an interface has no material rest reference to
-        # move. Recenter only its numerical translation basis; geometry,
-        # motion, inertia, all histories and physical clocks remain identical.
-        # Connected cells keep the native stable-coordinate reference intact.
-        receipts=[]
-        for i in self.unattached_spheres:
-            b=bodies[i]
-            if np.array_equal(b[20:23],b[7:10]) and not np.any(b[23:26]):continue
-            receipts.append(dict(body_id=i,from_origin_m=b[20:23].tolist(),from_increment_m=b[23:26].tolist(),to_origin_m=b[7:10].tolist(),
-                mapping='Identity physical state; unattached primitive translation basis only',mass_error_kg=0.,P_error_n_s=[0.,0.,0.],L_error_n_m_s=[0.,0.,0.],mechanical_error_j=0.,history_mapping='unchanged'))
-            b[20:23]=b[7:10];b[23:26]=0
-            self.eval.bodies[i,20:26]=cp.asarray(b[20:26])
-        return receipts
-
-    def _snapshot(self,bodies):
-        energy,p,l=self.mechanics(bodies);cells=[]
-        for row,b in zip(self.meta,bodies):cells.append(row|dict(position_m=b[7:10].tolist(),quaternion_wxyz=b[10:14].tolist(),velocity_m_s=b[14:17].tolist(),angular_velocity_rad_s=b[17:20].tolist()))
-        kinds=cp.asnumpy(self.eval.edges[:,2]).astype(int) if self.eval.m else []
-        separated=int(sum(s[6]>0 for k,s in zip(kinds,self.histories) if k!=1));yielded=int(sum(s[14]>0 for k,s in zip(kinds,self.histories) if k==1))
-        return dict(schema='banjo.cupy-coupled-finite-cells.v1',declaration=copy.deepcopy(self.d),time_s=self.time,dt_s=self.d['dt_s'],ticks=self.ticks,cells=cells,history_arrays=self.histories.tolist(),objects=self.registry.summary(),
-            diagnostics=dict(dynamic_mass_kg=float(bodies[:,1].sum()),mechanical_j=energy,material_stored_j=self.stored_j,contact_stored_j=self.contact_j,
-                global_energy_residual_j=energy+self.stored_j+self.contact_j+self.fracture+self.plastic+self.return_excess-self.initial_energy,
-                momentum_n_s=p.tolist(),angular_momentum_n_m_s=l.tolist(),
-                fracture_work_j=self.fracture,plastic_work_j=self.plastic,numerical_return_excess_j=self.return_excess,separated_sites=separated,yielded_faces=yielded,interfaces=self.eval.m,
-                maximum_energy_residual_j=self.max_residual,ground_impulse_n_s=self.P_ground.tolist(),ground_torque_impulse_n_m_s=self.L_ground.tolist()),
-            substep_accounts=copy.deepcopy(self.last_accounts),performance=dict(pipeline=self.eval.pipeline,newton_strategy=self.eval.newton_strategy,line_search=self.eval.line_search,linear_backend=self.eval.linear_backend,contact_resolution=self.d['contact_resolution'],step_s=self.step_s,last_batch_ms=self.last_ms,compute_ratio=self.time/self.step_s if self.step_s else None,
-                microsteps=self.microsteps,nonlinear_iterations=self.total_iterations,trial_evaluations=self.eval.evaluations+(self.representations.island.evaluations if self.representations and self.representations.island else 0)),
-            **({'representations':self.representations.snapshot(),
-                'render_schedule':dict(safe_rigid_flight_steps=self.representations.safe_rigid_batch(self.d['dt_s']),
-                    scope='Swept collision-free rigid sphere with fixed surroundings only; coupled material worlds request one host tick')}
-                if self.representations else {}),
-            qualification=dict(backend='cupy-implicit-body',gpu=True,device='cuda:0',dtype='float64',source_sha256=self.hash,complete_physics_validated=False,realtime_qualified=False,
-                scope='Experimental finite rigid-cell isotropic inertia; declared mixed-mode cohesive/6-mode plastic interfaces and frictionless normal compliance. No calibrated bulk/grain/J2/thermal law or CCD qualification.'))
-
-    def snapshot(self):
-        out=copy.deepcopy(self.accepted)
-        if self.rejected:out['rejected_candidate']=copy.deepcopy(self.rejected)
-        return out
-
-    CHECKPOINT_FIELDS=('histories','ticks','time','microsteps','total_iterations','fracture','plastic','return_excess',
-        'P_ground','L_ground','max_residual','stored_j','contact_j','initial_energy','last_ms','step_s')
-
-    def export_checkpoint(self):
-        if self.rejected and not self.rejected['interval_rolled_back']:raise ValueError('Cannot save unconfirmed native rollback; retain the experiment journal')
-        continuation={key:(getattr(self,key).tolist() if isinstance(getattr(self,key),np.ndarray) else getattr(self,key)) for key in self.CHECKPOINT_FIELDS}
-        bindings=dict(mode=self.representations.mode,reason=self.representations.reason,transitions=copy.deepcopy(self.representations.transitions)) if self.representations else None
-        stopped={k:copy.deepcopy(self.rejected[k]) for k in ('error','accepted_time_s','interval_rolled_back','accepted_snapshot_preserved')} if self.rejected else None
-        return seal(dict(schema=CHECKPOINT_SCHEMA,source_sha256=self.hash,declaration=copy.deepcopy(self.d),registry=self.registry.document(),
-            native=dict(bodies=cp.asnumpy(self.eval.bodies).tolist(),edges=cp.asnumpy(self.eval.edges).tolist()),continuation=continuation,
-            representation=bindings,trial_evaluations=self.snapshot()['performance']['trial_evaluations'],stopped_failure=stopped,
-            scope='Exact accepted native state; private caches rebuilt. Past render frames/full rejection witnesses remain in the original journal.'))
-
-    @classmethod
-    def from_checkpoint(cls,payload):
-        saved=open_checkpoint(payload)
-        expected={'schema','source_sha256','declaration','registry','native','continuation','representation','trial_evaluations','stopped_failure','scope'}
-        if set(saved)!=expected or saved['source_sha256']!=source_hash():raise ValueError('Checkpoint schema or physics source is stale')
-        # Construct privately. The worker installs it after every check passes.
-        candidate=cls(saved['declaration'],world_id=saved['registry']['world_id'])
-        native=saved['native'];state=saved['continuation']
-        if set(native)!={'bodies','edges'} or set(state)!=set(cls.CHECKPOINT_FIELDS):raise ValueError('Incomplete native continuation')
-        b=np.asarray(native['bodies'],dtype=np.float64);e=np.asarray(native['edges'],dtype=np.float64).reshape(-1,70)
-        initial_b=cp.asnumpy(candidate.eval.bodies);initial_e=cp.asnumpy(candidate.eval.edges)
-        if b.shape!=initial_b.shape or e.shape!=initial_e.shape or not np.isfinite(b).all() or not np.isfinite(e).all():raise ValueError('Invalid native state arrays')
-        immutable=[*range(7),*range(26,30)];referenced=[i for i in range(len(b)) if i not in candidate.unattached_spheres]
-        if not np.array_equal(b[:,immutable],initial_b[:,immutable]) or not np.array_equal(b[referenced,20:23],initial_b[referenced,20:23]) or not np.array_equal(e[:,:35],initial_e[:,:35]) or not np.array_equal(e[:,67:],initial_e[:,67:]):raise ValueError('Checkpoint changes geometry, material, law or native rest mapping')
-        fixed=b[:,1]==0
-        if not np.array_equal(b[fixed,7:20],initial_b[fixed,7:20]) or np.max(abs(np.linalg.norm(b[:,10:14],axis=1)-1))>1e-10:raise ValueError('Invalid prescribed boundary or orientation')
-        if np.max(abs(b[:,7:10]-(b[:,20:23]+b[:,23:26])))>1e-12:raise ValueError('Inconsistent native reference position')
-        for edge in e:
-            history=edge[35:67]
-            if edge[2]==1:
-                if np.any(history[6:16]<0) or history[14]!=int(history[14]):raise ValueError('Invalid plastic history')
-            elif history[1]<max(0,history[0]) or np.any(history[3:5]<0) or not 0<=history[5]<=1 or history[6] not in (0,1):raise ValueError('Invalid cohesive history')
-        for key in cls.CHECKPOINT_FIELDS:
-            value=state[key]
-            if key in ('histories','P_ground','L_ground'):
-                value=np.asarray(value,dtype=float)
-                if key=='histories':value=value.reshape(-1,32)
-                shape=(e.shape[0],32) if key=='histories' else (3,)
-                if value.shape!=shape or not np.isfinite(value).all():raise ValueError('Invalid continuation array')
-            elif key in ('ticks','microsteps','total_iterations'):
-                if type(value) is not int or value<0:raise ValueError('Invalid continuation counter')
-            elif type(value) not in (int,float) or not math.isfinite(value):raise ValueError('Invalid continuation scalar')
-            elif key not in ('initial_energy','stored_j','contact_j') and value<0:raise ValueError('Negative continuation account')
-            setattr(candidate,key,value)
-        if candidate.ticks>round(2/candidate.d['dt_s']) or abs(candidate.time-candidate.ticks*candidate.d['dt_s'])>1e-12:raise ValueError('Inconsistent accepted clock')
-        if not np.array_equal(candidate.histories,e[:,35:67]):raise ValueError('Material history map differs')
-        candidate.registry.restore_document(saved['registry'])
-        if abs(candidate.registry.time_s-candidate.time)>1e-14:raise ValueError('Object/physics clocks differ')
-        mode=saved['representation']
-        if bool(mode)!=bool(candidate.representations):raise ValueError('Representation continuation differs')
-        if mode:
-            if set(mode)!={'mode','reason','transitions'} or mode['mode'] not in ('rigid-free-flight','rigid-coupled-contact') or not isinstance(mode['reason'],str) or not isinstance(mode['transitions'],list):raise ValueError('Unsupported representation continuation')
-            candidate.representations.mode=mode['mode'];candidate.representations.reason=mode['reason'];candidate.representations.transitions=copy.deepcopy(mode['transitions'])
-        sphere=candidate.representations.sphere if mode and mode['mode']=='rigid-free-flight' else None
-        for instance in candidate.registry.binding_state()['instances']:
-            owner='isolated-rigid-flight' if sphere is not None and instance['body_ids']==[sphere] else 'coupled-world'
-            if instance['solver_binding']!=owner:raise ValueError('Representation has duplicate or mismatched matter owner')
-        cp.copyto(candidate.eval.bodies,cp.asarray(b));cp.copyto(candidate.eval.edges,cp.asarray(e))
-        baseline=candidate.eval.evaluate(candidate.eval.bodies[:,14:20],1e-12,gravity=0)
-        if int(baseline['faults'][0]):raise ValueError('Restored native geometry/history refused')
-        ledger=cp.asnumpy(baseline['ledger'])[0]
-        if abs(ledger[0]-candidate.stored_j)>1e-10+1e-8*abs(candidate.stored_j) or abs(ledger[4]-candidate.contact_j)>1e-10+1e-8*abs(candidate.contact_j):raise ValueError('Restored storage account differs')
-        evaluations=saved['trial_evaluations']
-        if type(evaluations) is not int or evaluations<0:raise ValueError('Invalid solver continuation counter')
-        candidate.eval.evaluations=evaluations
-        if candidate.representations and candidate.representations.island:candidate.representations.island.evaluations=0
-        stopped=saved['stopped_failure']
-        if stopped is not None:
-            if not isinstance(stopped,dict) or set(stopped)!={'error','accepted_time_s','interval_rolled_back','accepted_snapshot_preserved'} or not isinstance(stopped['error'],str) or stopped['accepted_time_s']!=candidate.time or stopped['interval_rolled_back'] is not True or stopped['accepted_snapshot_preserved'] is not True:raise ValueError('Invalid stopped-scene continuation')
-        candidate.rejected=copy.deepcopy(stopped);candidate.last_accounts=[];candidate.accepted=candidate._snapshot(b)
-        return candidate
+    def ensure_source_current():
+        if _disk_source_hash()!=LOADED_SOURCE_SHA256:raise RuntimeError('Coupled implementation changed; restart the GPU worker before creating a scene')
+    @staticmethod
+    def synchronize():cp.cuda.get_current_stream().synchronize()

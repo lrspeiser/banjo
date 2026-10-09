@@ -1,4 +1,47 @@
-# Hosting the playground
+# Hosting Banjo
+
+## Current Render physics lab
+
+The current service is [Banjo](https://banjo-f1sv.onrender.com/coupled), Render
+service `srv-dajite67bikc73c8echg`, on `lrspeiser/banjo` main with automatic
+commit deployment. It has one CPU / 2 GB and no CUDA GPU.
+
+The Docker image now starts `scripts/voxel-lab.py` with `banjo_voxel_world_run`
+and the compiled `banjo_coupled_cpu` library. Ubuntu 24.04 includes NumPy;
+BLAS/OpenMP threads are bounded to one per worker. The browser explicitly
+shows **CPU reference**. It uses the same physical trial headers, nonlinear
+controller, canonical world and acceptance gates as the local CUDA backend.
+CUDA requests do not fall back silently.
+
+Use the existing password at `/login`. Root opens `/coupled`. Docker Command
+stays empty; a health check can use `/login`. Existing `BANJO_PASSWORD` and
+`BANJO_PUBLIC_HOST=banjo-f1sv.onrender.com` remain unchanged. Public binds need
+the password; assets and APIs use the existing gate, Host and same-origin
+checks, including HTTPS through Render's reverse proxy.
+
+Eight scenes can run separately and expire after ten idle minutes. Journals
+live at `/data/physics-lab-logs`; use a persistent disk to keep them through
+deploys. Save scene downloads the accepted state to the user. Restore requires
+the same source, native binary, NumPy version and backend. Running processes
+are not persistent multiplayer worlds. The image receipt records identity;
+it does not certify physics. Credentials, `.env` and local build files are
+excluded. The Render API key stays only in the ignored local environment.
+
+Testable: 10 m rigid-ball rebound, before/contact/after inspection, low-energy
+four-material sheet controls, save/reopen and substep logs. Strong fracture,
+detailed ball impacts and full-world realtime remain open. This is a physics
+validation lab, not the complete game.
+
+Run source registration, the CPU coupled/high-drop/gateway suites, and on a
+CUDA host the retained CUDA and CPU/CUDA parity suites before publishing.
+Then verify the intended commit on Render, HTTPS login and the public drop
+in a browser. Local testing is not hosted verification.
+
+## Historical playground deployment
+
+The following describes the previous game server, retained for reference.
+Its binaries and saved data remain, but it is no longer the Docker default.
+No Fly deployment was made for the hosted physics checkpoint.
 
 The playground -- `playground/server.py` and the engine it drives -- runs
 anywhere a Linux container runs and stays running. This page puts it on

@@ -859,3 +859,9 @@ The raw-receiving checkpoint now exposes independent transfer and excavation dia
 Stored excavated material can now return to native carrying and be redeposited, using durable receipts and remaining-lot quantities rather than recreating resources. [Main-world retrieval evidence](evidence/raw-retrieval-deployment.json) covers browser use and restart; physical cargo containers and raw processing remain open.
 
 Terrain-world carrying now uses a shared native mass budget for held objects, stored objects and excavated material. [Measured evidence](evidence/shared-carry-deployment.json) records the deployed world; terrain-free lab policy and physically supported cargo remain open.
+# Hosted CPU lab checkpoint, October 9
+
+[Shared CPU/CUDA execution and Render testing](cpu-hosted-lab-checkpoint.md)
+connects the lab to the existing public service with an explicit native CPU
+reference. Bounded drop/low-energy controls and saved scenes are testable;
+strong sheet fracture and the complete eight-family platform remain open.

@@ -1,10 +1,16 @@
 """Local, bounded native voxel world. No old website routes or simulation cache."""
+import os,sys
+from types import SimpleNamespace
 import argparse, bz2, copy, gzip, hashlib, io, json, queue, struct, subprocess, threading, time, uuid
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT/'playground'))
+import access_gate
+from urllib.parse import urlsplit
 ASSETS={'/':'client/voxel-lab/index.html','/world.js':'client/voxel-lab/world.js','/playback.mjs':'client/voxel-lab/playback.mjs','/style.css':'client/voxel-lab/style.css','/three.module.js':'playground/vendor/three.module.js','/three.core.js':'playground/vendor/three.core.js','/gpu':'client/voxel-lab/gpu.html','/gpu.js':'client/voxel-lab/gpu.js','/gpu.css':'client/voxel-lab/gpu.css','/materials':'client/voxel-lab/materials.html','/materials.js':'client/voxel-lab/materials.js','/materials.css':'client/voxel-lab/materials.css'}
+ASSETS['/native']='client/voxel-lab/index.html'
 ASSETS.update({'/coupled':'client/voxel-lab/coupled.html','/coupled.js':'client/voxel-lab/coupled.js'})
 ASSETS['/scene-session.mjs']='client/voxel-lab/scene-session.mjs'
 ASSETS.update({'/coupled-view.mjs':'client/voxel-lab/coupled-view.mjs','/coupled.css':'client/voxel-lab/coupled.css'})
@@ -50,10 +56,13 @@ def repository_state():
   revision=subprocess.check_output(['git','-C',str(ROOT),'rev-parse','HEAD'],text=True,timeout=3).strip()
   dirty=bool(subprocess.check_output(['git','-C',str(ROOT),'status','--porcelain'],text=True,timeout=3).strip())
   return revision,dirty
- except (OSError,subprocess.SubprocessError):return None,None
+ except (OSError,subprocess.SubprocessError):
+  receipt=ROOT/'bin/build-receipt.json'
+  try:return json.loads(receipt.read_text()).get('revision'),False
+  except (OSError,ValueError):return None,None
 class Session:
- def __init__(self,native,logs,checkpoint=None,worker_command=None):
-  self.backend='gpu' if worker_command else 'cpu'
+ def __init__(self,native,logs,checkpoint=None,worker_command=None,backend=None):
+  self.backend=backend or ('gpu' if worker_command else 'cpu')
   self.worker_stderr=None
   if worker_command:
    self.worker_stderr=(logs/(uuid.uuid4().hex+'.worker.stderr.log')).open('w',encoding='utf8')
@@ -212,7 +221,7 @@ class Session:
     self.calculating=True
    start=time.monotonic()
    try:
-    reply=self.call({'op':'advance','steps':steps},record=self.backend=='gpu');cost=time.monotonic()-start
+    reply=self.call({'op':'advance','steps':steps},record=self.backend in ('gpu','cpu-coupled'));cost=time.monotonic()-start
     with self.condition:
      self.calculating=False;self.current=reply;self.elapsed_s=max(0.,time.monotonic()-self.started);self.batch_cost_s=.5*self.batch_cost_s+.5*cost/steps;self.max_batch_s=max(self.max_batch_s,cost)
      if 'delivery_failure' not in reply:self.current_at=time.monotonic();self.pending_commands.append(steps)
@@ -232,9 +241,14 @@ class Session:
   if self.worker_stderr:self.worker_stderr.close()
 class Server(ThreadingHTTPServer):
  daemon_threads=True
- def __init__(self,address,native,logs,checkpoint_path=None,gpu_python=None):
+ def __init__(self,address,native,logs,checkpoint_path=None,gpu_python=None,cpu_library=None,password=None,public_host=None):
+  refusal=access_gate.refusal(address[0],password)
+  if refusal:raise ValueError(refusal)
+  self.app=SimpleNamespace(password=password,public_host=public_host,sessions=set(),login_destination='/coupled')
   super().__init__(address,Handler);self.native=native;self.logs=logs;logs.mkdir(parents=True,exist_ok=True);self.sessions={};self.lock=threading.Lock()
   self.checkpoint_path=checkpoint_path or ROOT/'client/voxel-lab/checkpoint.json';self.started_revision,_=repository_state()
+  self.cpu_library=cpu_library
+  if cpu_library:os.environ['BANJO_COUPLED_CPU_LIBRARY']=str(cpu_library)
   self.gpu_python=gpu_python;self.representation_busy=threading.BoundedSemaphore(1)
  def checkpoint_status(self):
   try:
@@ -242,6 +256,8 @@ class Server(ThreadingHTTPServer):
    if not isinstance(checkpoint,dict):raise ValueError('Invalid checkpoint')
   except (ValueError,OSError):checkpoint={}
   revision,dirty=repository_state();actual=hashlib.sha256(self.native.read_bytes()).hexdigest()
+  try:receipt=json.loads((ROOT/'bin/build-receipt.json').read_text())
+  except (OSError,ValueError):receipt={}
   gpu_hash=hashlib.sha256((ROOT/'scripts/gpu_contact_world.py').read_bytes()).hexdigest() if self.gpu_python else None
   worker_hash=hashlib.sha256((ROOT/'scripts/gpu-contact-worker.py').read_bytes()).hexdigest() if self.gpu_python else None
   physx_hash=hashlib.sha256((ROOT/'scripts/physx_contact_world.py').read_bytes()).hexdigest() if self.gpu_python else None
@@ -249,14 +265,20 @@ class Server(ThreadingHTTPServer):
   coupled_hash=None
   if self.gpu_python:
    h=hashlib.sha256()
-   for name in ('scripts/gpu_coupled_world.py','scripts/gpu_linear_solve.py','scripts/gpu_representations.py','scripts/object_registry.py','src/physics/FiniteFrameKernel.hpp','src/physics/CohesiveInterfaceKernel.hpp','src/material/ConnectorModeKernel.hpp','src/physics/MaterialHistoryKernel.hpp','src/physics/NormalComplianceKernel.hpp','src/physics/CoupledGpuKernel.hpp','client/voxel-lab/material-laws.json'):
+   for name in ('scripts/coupled_representations.py','scripts/coupled_solver.py','scripts/coupled_world.py','scripts/gpu_coupled_world.py','scripts/gpu_linear_solve.py','scripts/gpu_representations.py','scripts/object_registry.py','src/physics/FiniteFrameKernel.hpp','src/physics/CohesiveInterfaceKernel.hpp','src/material/ConnectorModeKernel.hpp','src/physics/MaterialHistoryKernel.hpp','src/physics/NormalComplianceKernel.hpp','src/physics/CoupledGpuKernel.hpp','src/physics/CoupledFlightKernel.hpp','client/voxel-lab/material-laws.json'):
     h.update(name.encode());h.update(b'\0');h.update((ROOT/name).read_bytes())
    coupled_hash=h.hexdigest()
    h=hashlib.sha256()
    for name in ('scripts/gpu_material_laws.py','src/physics/CohesiveInterfaceKernel.hpp','src/material/ConnectorModeKernel.hpp','client/voxel-lab/material-laws.json','src/material/MaterialCatalog.cpp','src/material/ConnectorPlasticity.cpp','src/physics/CohesiveInterface.cpp','scripts/gpu_material_frames.py','src/physics/FiniteFrameKernel.hpp','src/physics/MaterialWrench.cpp','src/physics/RotationStrain.cpp'):
     h.update(name.encode());h.update(b'\0');h.update((ROOT/name).read_bytes())
    material_hash=h.hexdigest()
-  return {'checkpoint':checkpoint,'native_sha256':actual,'native_verified':bool(checkpoint.get('native_sha256')==actual),'website_revision':revision,'local_changes':dirty,'server_revision':self.started_revision,'restart_pending':revision!=self.started_revision,'gpu_available':self.gpu_python is not None,'gpu_source_sha256':gpu_hash,'gpu_worker_sha256':worker_hash,'physx_source_sha256':physx_hash,'physx_source_verified':bool(physx_hash and checkpoint.get('physx_source_sha256')==physx_hash),'gpu_source_verified':bool(gpu_hash and checkpoint.get('gpu_source_sha256')==gpu_hash and checkpoint.get('gpu_worker_sha256')==worker_hash),'gpu_material_source_sha256':material_hash,'gpu_material_source_verified':bool(material_hash and checkpoint.get('gpu_material_source_sha256')==material_hash),'gpu_coupled_source_sha256':coupled_hash,'gpu_coupled_source_verified':bool(coupled_hash and checkpoint.get('gpu_coupled_source_sha256')==coupled_hash)}
+  cpu_hash=None;cpu_source=None;cpu_binary=None
+  if self.cpu_library:
+   from cpu_coupled_world import disk_source_hash,implementation_hash
+   cpu_source=disk_source_hash();cpu_hash=implementation_hash();cpu_binary=hashlib.sha256(self.cpu_library.read_bytes()).hexdigest()
+  return {'cpu_coupled_available':self.cpu_library is not None,'coupled_backend':'cpu-implicit-body' if self.cpu_library else 'cupy-implicit-body',
+   'cpu_coupled_source_sha256':cpu_source,'cpu_coupled_implementation_sha256':cpu_hash,'cpu_coupled_binary_sha256':cpu_binary,
+   'cpu_image_identity_verified':bool(receipt and receipt.get('cpu_source_sha256')==cpu_source and receipt.get('cpu_implementation_sha256')==cpu_hash and receipt.get('native_sha256')==actual),'cpu_coupled_source_verified':bool(cpu_source and checkpoint.get('cpu_coupled_source_sha256')==cpu_source),'checkpoint':checkpoint,'native_sha256':actual,'native_verified':bool(checkpoint.get('native_sha256')==actual),'website_revision':revision,'local_changes':dirty,'server_revision':self.started_revision,'restart_pending':revision!=self.started_revision,'gpu_available':self.gpu_python is not None,'gpu_source_sha256':gpu_hash,'gpu_worker_sha256':worker_hash,'physx_source_sha256':physx_hash,'physx_source_verified':bool(physx_hash and checkpoint.get('physx_source_sha256')==physx_hash),'gpu_source_verified':bool(gpu_hash and checkpoint.get('gpu_source_sha256')==gpu_hash and checkpoint.get('gpu_worker_sha256')==worker_hash),'gpu_material_source_sha256':material_hash,'gpu_material_source_verified':bool(material_hash and checkpoint.get('gpu_material_source_sha256')==material_hash),'gpu_coupled_source_sha256':coupled_hash,'gpu_coupled_source_verified':bool(coupled_hash and checkpoint.get('gpu_coupled_source_sha256')==coupled_hash)}
  def session(self,key,backend=None):
   if type(key) is not str or not key:raise ValueError('Invalid session identifier')
   with self.lock:
@@ -268,8 +290,18 @@ class Server(ThreadingHTTPServer):
 class Handler(BaseHTTPRequestHandler):
  def send(self,status,body,kind='application/json'):
   self.send_response(status);self.send_header('Content-Type',kind);self.send_header('Content-Length',str(len(body)));self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.send_header('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' blob:; object-src 'none'; frame-ancestors 'none'");self.end_headers();self.wfile.write(body)
+ def host_allowed(self):
+  host=urlsplit('//'+self.headers.get('Host','')).hostname
+  return host in access_gate.LOOPBACK or bool(self.server.app.public_host and host==self.server.app.public_host)
+ def origin_allowed(self):
+  origin=self.headers.get('Origin')
+  return origin is None or origin in ('http://'+self.headers.get('Host',''),'https://'+self.headers.get('Host',''))
  def do_GET(self):
+  if not self.host_allowed():self.send(403,b'{"error":"Host refused"}');return
+  if access_gate.answered(self,'GET'):return
   path=self.path.split('?')[0]
+  if path=='/world' or (path=='/' and self.server.cpu_library):
+   self.send_response(303);self.send_header('Location','/coupled');self.end_headers();return
   if path=='/api/checkpoint':
    try:self.send(200,json.dumps(self.server.checkpoint_status()).encode())
    except OSError:self.send(503,b'{"error":"Running native build cannot be inspected"}')
@@ -290,11 +322,23 @@ class Handler(BaseHTTPRequestHandler):
   self.send(200,(ROOT/ASSETS[path]).read_bytes(),kind)
  def do_POST(self):
   try:
+   # Consume the bounded body before any refusal. Closing a socket with an
+   # unread POST can reset the client connection instead of delivering 401/400.
+   length=int(self.headers.get('Content-Length','0'))
+   if not 0<=length<=2_010_000:raise ValueError('Request size invalid')
+   self.connection.settimeout(30.)
+   body=self.rfile.read(length)
+   if not self.host_allowed() or not self.origin_allowed():raise ValueError('Host or cross-origin request refused')
+   if self.path=='/login':
+    length=int(self.headers.get('Content-Length','0'))
+    if not 0<length<=4096:raise ValueError('Login request size invalid')
+    if access_gate.answered(self,'POST',body):return
+   elif access_gate.answered(self,'POST'):return
    if self.path=='/api/representation':
-    if self.headers.get('Origin') not in (None,'http://'+self.headers.get('Host','')):raise ValueError('Cross-origin request refused')
+    if not self.origin_allowed():raise ValueError('Cross-origin request refused')
     length=int(self.headers.get('Content-Length','0'))
     if not 0<length<=4096:raise ValueError('Representation request size invalid')
-    data=json.loads(self.rfile.read(length))
+    data=json.loads(body)
     if not isinstance(data,dict) or set(data)!={'declaration'}:raise ValueError('Invalid representation declaration')
     # This separate endpoint makes no claim to execute the GPU contact solver.
     # One bounded CPU-reference experiment; no persistent scene to mutate.
@@ -303,25 +347,26 @@ class Handler(BaseHTTPRequestHandler):
     try:r=experiment(data['declaration'])
     finally:self.server.representation_busy.release()
     self.send(200,json.dumps(r,separators=(',',':'),allow_nan=False).encode());return
-   if self.path not in ('/api/world','/api/gpu'):raise ValueError('Unknown endpoint')
-   backend='gpu' if self.path=='/api/gpu' else 'cpu'
+   if self.path not in ('/api/world','/api/gpu','/api/coupled'):raise ValueError('Unknown endpoint')
+   backend=('cpu-coupled' if self.server.cpu_library else 'gpu') if self.path=='/api/coupled' else 'gpu' if self.path=='/api/gpu' else 'cpu'
    if backend=='gpu' and not self.server.gpu_python:raise ValueError('GPU runtime is not configured; no CPU fallback')
-   if self.headers.get('Origin') not in (None,'http://'+self.headers.get('Host','')):raise ValueError('Cross-origin request refused')
+   if not self.origin_allowed():raise ValueError('Cross-origin request refused')
    length=int(self.headers.get('Content-Length','0'))
    if not 0<length<=2_010_000:raise ValueError('Request size invalid')
-   data=json.loads(self.rfile.read(length))
+   data=json.loads(body)
    if not isinstance(data,dict):raise ValueError('Command must be an object')
    op=data.get('op')
    if op!='restore' and length>4096:raise ValueError('Request size invalid')
    if op in ('create','restore'):
     if op=='create' and (set(data)!={'op','declaration'} or not isinstance(data['declaration'],dict)):raise ValueError('Invalid scene declaration')
-    if op=='restore' and (backend!='gpu' or set(data)!={'op','checkpoint'} or not isinstance(data['checkpoint'],dict)):raise ValueError('Invalid checkpoint restore')
+    if op=='restore' and (backend not in ('gpu','cpu-coupled') or set(data)!={'op','checkpoint'} or not isinstance(data['checkpoint'],dict)):raise ValueError('Invalid checkpoint restore')
     with self.server.lock:
      for key,s in list(self.server.sessions.items()):
       if time.monotonic()-s.last>600:s.close();del self.server.sessions[key]
      if len(self.server.sessions)>=8:raise ValueError('Eight scenes active; close or reset an old scene')
      command=[str(self.server.gpu_python),str(ROOT/'scripts/gpu-contact-worker.py')] if backend=='gpu' else None
-     s=Session(self.server.native,self.server.logs,self.server.checkpoint_status(),worker_command=command);key=uuid.uuid4().hex
+     if backend=='cpu-coupled':command=[sys.executable,str(ROOT/'scripts/cpu-coupled-worker.py')]
+     s=Session(self.server.native,self.server.logs,self.server.checkpoint_status(),worker_command=command,backend=backend);key=uuid.uuid4().hex
      try:r=s.manual(data)
      except Exception:s.close();raise
      if r['ok']:self.server.sessions[key]=s
@@ -346,8 +391,8 @@ class Handler(BaseHTTPRequestHandler):
     except SessionExpired:
      if op!='close':raise
      s=None
-    if backend=='gpu' and op=='accelerate_object':raise ValueError('GPU actuation is not implemented')
-    if op=='export' and (backend!='gpu' or not s.current['state'].get('objects')):raise ValueError('Object checkpoint export requires the coupled GPU lab')
+    if backend in ('gpu','cpu-coupled') and op=='accelerate_object':raise ValueError('GPU actuation is not implemented')
+    if op=='export' and (backend not in ('gpu','cpu-coupled') or not s.current['state'].get('objects')):raise ValueError('Object checkpoint export requires the coupled lab')
     if op in ('strain','unload') and (backend!='gpu' or not s.current['state'].get('controlled_loading')):raise ValueError('Material loading requires the controlled GPU inspector')
     if op=='close':
      with self.server.lock:
@@ -362,8 +407,8 @@ class Handler(BaseHTTPRequestHandler):
   except (ValueError,TypeError,KeyError,OSError) as e:self.send(400,json.dumps({'ok':False,'error':str(e)}).encode())
  def log_message(self,*args):pass
 if __name__=='__main__':
- p=argparse.ArgumentParser();p.add_argument('--native',type=Path,required=True);p.add_argument('--gpu-python',type=Path);p.add_argument('--port',type=int,default=18893);a=p.parse_args()
- server=Server(('127.0.0.1',a.port),a.native.resolve(strict=True),ROOT/'build/voxel-world-logs',gpu_python=a.gpu_python.resolve(strict=True) if a.gpu_python else None)
+ p=argparse.ArgumentParser();p.add_argument('--native',type=Path,required=True);p.add_argument('--gpu-python',type=Path);p.add_argument('--cpu-library',type=Path);p.add_argument('--host',default='127.0.0.1');p.add_argument('--logs',type=Path,default=ROOT/'build/voxel-world-logs');p.add_argument('--port',type=int,default=18893);a=p.parse_args()
+ server=Server((a.host,a.port),a.native.resolve(strict=True),a.logs,gpu_python=a.gpu_python.resolve(strict=True) if a.gpu_python else None,cpu_library=a.cpu_library.resolve(strict=True) if a.cpu_library else None,password=os.environ.get('BANJO_PASSWORD'),public_host=os.environ.get('BANJO_PUBLIC_HOST'))
  print(f'Voxel world http://127.0.0.1:{a.port}/',flush=True)
  try:server.serve_forever()
  finally:

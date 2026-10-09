@@ -31,7 +31,7 @@ COOKIE = "banjo_session"
 LOOPBACK = frozenset({"127.0.0.1", "localhost", "::1"})
 # What a person opens by its address: asked for without a session, it goes to
 # the login page. Anything else asked for without one is told to log in.
-PAGES = frozenset({"/", "/world", "/world.html"})
+PAGES = frozenset({"/", "/world", "/world.html", "/coupled", "/representations", "/gpu", "/materials"})
 WRONG_PASSWORD_DELAY_S = 1.0
 # The same policy the server's other answers carry: nothing inline, nothing
 # from anywhere else. The world page has one deliberately inline module, which
@@ -216,7 +216,7 @@ def answered(handler: Any, method: str, body: bytes = b"") -> bool:
             _sessions(app).add(token)
             secure = "; Secure" if handler.headers.get("X-Forwarded-Proto", "").lower() == "https" else ""
             _send(handler, 303, b"", "text/plain",
-                  {"Location": "/world",
+                  {"Location": getattr(app,"login_destination","/world"),
                    "Set-Cookie": f"{COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/{secure}"})
         else:
             # Guessing costs a second a try.

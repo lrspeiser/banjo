@@ -308,6 +308,10 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
         GIT_REPOSITORY https://github.com/nlohmann/json.git
         GIT_TAG 65ee68451d8eb2b5f3a30b410476ab83deb3289b)
     FetchContent_MakeAvailable(nlohmann_json)
+    add_library(banjo_coupled_cpu SHARED src/physics/CoupledCpuApi.cpp)
+    target_include_directories(banjo_coupled_cpu PRIVATE src)
+    target_compile_features(banjo_coupled_cpu PRIVATE cxx_std_17)
+    banjo_enable_warnings(banjo_coupled_cpu)
     add_executable(banjo_gpu_material_oracle src/app/gpu_material_oracle_main.cpp)
     target_link_libraries(banjo_gpu_material_oracle PRIVATE banjo_core nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_gpu_material_oracle)
@@ -2226,6 +2230,25 @@ if(BANJO_BUILD_TESTS)
                 --oracle $<TARGET_FILE:banjo_gpu_material_oracle>
                 --output ${CMAKE_CURRENT_BINARY_DIR}/gpu-contact-timing-evidence.json)
             set_tests_properties(banjo_gpu_contact_timing_tests PROPERTIES TIMEOUT 900 LABELS "gpu;experimental;material;contact")
+        endif()
+        if(TARGET banjo_coupled_cpu AND TARGET banjo_voxel_world_run)
+            add_test(NAME banjo_cpu_coupled_world_tests COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpu_coupled_world_test.py --library $<TARGET_FILE:banjo_coupled_cpu>
+                --output ${CMAKE_CURRENT_BINARY_DIR}/cpu-coupled-evidence.json)
+            add_test(NAME banjo_cpu_high_drop_tests COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpu_high_drop_test.py --library $<TARGET_FILE:banjo_coupled_cpu>
+                --output ${CMAKE_CURRENT_BINARY_DIR}/cpu-high-drop-evidence.json)
+            add_test(NAME banjo_cpu_coupled_gateway_tests COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpu_coupled_gateway_test.py --library $<TARGET_FILE:banjo_coupled_cpu>
+                --native $<TARGET_FILE:banjo_voxel_world_run>)
+            set_tests_properties(banjo_cpu_coupled_world_tests banjo_cpu_high_drop_tests banjo_cpu_coupled_gateway_tests
+                PROPERTIES TIMEOUT 180 LABELS "cpu;experimental;material;client")
+            if(BANJO_NEWTON_PYTHON)
+                add_test(NAME banjo_cpu_coupled_parity_tests COMMAND ${BANJO_NEWTON_PYTHON}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpu_coupled_parity_test.py --library $<TARGET_FILE:banjo_coupled_cpu>
+                    --output ${CMAKE_CURRENT_BINARY_DIR}/cpu-cuda-parity-evidence.json)
+                set_tests_properties(banjo_cpu_coupled_parity_tests PROPERTIES TIMEOUT 180 LABELS "cpu;gpu;experimental;material")
+            endif()
         endif()
         if(BANJO_TEST_CUPY)
             add_test(NAME banjo_cupy_physics_probe COMMAND ${Python3_EXECUTABLE}

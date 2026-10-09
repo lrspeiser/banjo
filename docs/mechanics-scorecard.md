@@ -1099,3 +1099,10 @@ An elastic approximation uses the same declared bond law for each material's den
 4. Continue local adaptive matter, assemblies, creator APIs and publishing in the full roadmap. The platform goal is not complete when balls work.
 
 Evidence: [shape checkpoint](shape-checkpoint.md), [automatic assistant checkpoint](assistant-checkpoint.md), [creator workshop checkpoint](creator-checkpoint.md), [adaptive/12-run checkpoint](adaptive-checkpoint.md), [full-state/five-rate checkpoint](trajectory-checkpoint.md), [explicit compliance/27-case checkpoint](compliance-checkpoint.md), [contact-root/full-resolution checkpoint](event-root-checkpoint.md), [event/material comparison](event-material-checkpoint.md), [support/timestep checkpoint](coupled-support-checkpoint.md), [elastic reference](elastic-newton-checkpoint.md), [default-stage defects](material-stage-checkpoint.md), [transfer accounting](transfer-accounting-checkpoint.md), [property consumers](physics-coverage.md), [ordered roadmap](roadmap.md). The table records the scope of that evidence, including missing evidence, rather than inferring completion from passing suites.
+**CPU/hosted execution, October 9:**
+[Shared physical trial and canonical transaction](cpu-hosted-lab-checkpoint.md)
+pass four-material low-energy sheets and 16 independently checked 10 m rigid
+controls on Windows/WSL Linux, including reactions, work and P/L. Primitive
+two-second calculation is locally faster than wall time; this does not qualify
+Render speed, strong fracture or full-world realtime. General contact, detailed
+ball deformation, awake-island performance and remaining families stay open.

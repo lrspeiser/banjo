@@ -212,6 +212,8 @@
   "gpu_worker_sha256": "cef064443c3a655dc4b10d6697a7e0eab67e4047d7f9bfc0f36f961a5ed453d6",
   "physx_source_sha256": "d1d30abfd67380a66fcf4664759e1917e50137bd7f6ef92bb160d0f1b5b5157f",
   "gpu_material_source_sha256": "439309fd656c70e3f3728fda7a7260aad16ecfe72c0f2f32d9c388b67690f559",
-  "gpu_coupled_source_sha256": "18132dd57f1aaecf595cc44ec378f956f69780b5b3782b94882b5de26b9413ac",
-  "gpu_representation_scope": "Experimental isolated rigid sphere plus continuously solved material island; no detailed sphere fracture, heat or fluid coupling"
+  "gpu_coupled_source_sha256": "ae85f484987660d523ce56085fa5ec19c27725bfe9ecf0a0728b10dc5ed83069",
+  "gpu_representation_scope": "Experimental isolated rigid sphere plus continuously solved material island; no detailed sphere fracture, heat or fluid coupling",
+  "cpu_coupled_source_sha256": "7164c4fb441c7f867ccd458465a04b547602e8275dcd1697466c378758f149c6",
+  "cpu_hosted_scope": "Explicit compiled CPU reference for the same material/contact equations; bounded rigid rebound and low-energy sheet controls. Strong fracture and all-family realtime remain open."
 }

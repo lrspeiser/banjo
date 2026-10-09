@@ -1,0 +1,14 @@
+{
+  "parent_revision": "7efe962e68025d7f9d88ae83ab9b81865537a906",
+  "cpu_source_sha256": "7164c4fb441c7f867ccd458465a04b547602e8275dcd1697466c378758f149c6",
+  "windows_cpu_implementation_sha256": "915b606437d38ed26ebe5c0da462eef5b7662d45989cb77f20232d7405fa1ddc",
+  "source_registration": "346/346",
+  "gpu_baseline_exact_states": 12,
+  "scoped_ctests_passed": 14,
+  "initial_gateway_failure": "Unread POST body caused Windows connection reset instead of 401; fixed by consuming bounded body before refusals. Gateway/legacy gateway/pipeline rerun pass; 20 unauthenticated POSTs retained in regression.",
+  "linux_gateway_passed": true,
+  "render_service": "srv-dajite67bikc73c8echg",
+  "public_url": "https://banjo-f1sv.onrender.com/coupled",
+  "public_deployment_verified": false,
+  "complete_fracture_or_realtime_qualified": false
+}

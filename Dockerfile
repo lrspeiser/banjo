@@ -24,15 +24,15 @@ RUN cmake -S . -B build/linux -G Ninja -DCMAKE_BUILD_TYPE=Release \
       -DBANJO_BUILD_LAB=OFF -DBANJO_BUILD_HEADLESS=ON \
       -DBANJO_BUILD_PRECOMPUTE=OFF -DBANJO_BUILD_TESTS=OFF \
  && cmake --build build/linux --parallel "${BUILD_JOBS}" \
-      --target banjo_platform_cli banjo_c banjo_live_world_run \
+      --target banjo_platform_cli banjo_c banjo_live_world_run banjo_voxel_world_run banjo_coupled_cpu \
  && mkdir -p /out/bin \
  && cp -a build/linux/banjo_platform_cli build/linux/banjo_live_world_run \
-       build/linux/libbanjo.so* /out/bin/
+       build/linux/libbanjo.so* build/linux/banjo_voxel_world_run build/linux/libbanjo_coupled_cpu.so /out/bin/
 
 FROM ubuntu:24.04
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      python3 libgomp1 ca-certificates \
+      python3 python3-numpy libgomp1 ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 # The source tree as a checkout has it -- about 5 MB, with .dockerignore leaving
@@ -42,11 +42,16 @@ WORKDIR /app
 # left out examples/authoring, and on Render it would not start.
 COPY . /app
 COPY --from=build /out/bin /app/bin
+ARG RENDER_GIT_COMMIT
+RUN python3 scripts/cpu-build-receipt.py --library /app/bin/libbanjo_coupled_cpu.so --native /app/bin/banjo_voxel_world_run --output /app/bin/build-receipt.json
 ENV BANJO_LIBRARY=/app/bin/libbanjo.so \
     BANJO_TERRAIN_CACHE=/data/terrain-cache \
+    BANJO_COUPLED_CPU_LIBRARY=/app/bin/libbanjo_coupled_cpu.so \
+    OPENBLAS_NUM_THREADS=1 \
+    OMP_NUM_THREADS=1 \
     PYTHONUNBUFFERED=1
 EXPOSE 8080
 # On the port a host hands it in PORT -- Render sets one -- or else 8080, which
 # fly.toml forwards to. The native studio windows are a desktop feature: not
 # built here, and the page says so if asked for one.
-CMD ["sh", "-c", "exec python3 -u playground/server.py --host 0.0.0.0 --port \"${PORT:-8080}\" --engine /app/bin/banjo_platform_cli --studio /app/bin/banjo_network_lab --runs /data/runs --rooms /data/rooms"]
+CMD ["sh", "-c", "exec python3 -u scripts/voxel-lab.py --host 0.0.0.0 --port \"${PORT:-8080}\" --native /app/bin/banjo_voxel_world_run --cpu-library /app/bin/libbanjo_coupled_cpu.so --logs /data/physics-lab-logs"]

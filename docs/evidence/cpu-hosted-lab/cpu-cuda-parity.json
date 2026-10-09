@@ -1,0 +1,26 @@
+{
+  "cpu_implementation": "e60258cb28f546da9afa3b3118d35039a8711ef170eeb22f593d9750fd7e1274",
+  "cuda_source": "ae85f484987660d523ce56085fa5ec19c27725bfe9ecf0a0728b10dc5ed83069",
+  "comparisons": [
+    {
+      "material": "glass",
+      "candidates": 8,
+      "max_scaled_difference": 0.0
+    },
+    {
+      "material": "oak",
+      "candidates": 8,
+      "max_scaled_difference": 0.0
+    },
+    {
+      "material": "iron",
+      "candidates": 8,
+      "max_scaled_difference": 0.0
+    },
+    {
+      "material": "ice",
+      "candidates": 8,
+      "max_scaled_difference": 0.0
+    }
+  ]
+}

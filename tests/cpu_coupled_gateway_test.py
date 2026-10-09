@@ -1,0 +1,45 @@
+"""Hosted password/host/origin checks, real CPU session, isolation and exact logs."""
+import argparse,http.cookiejar,importlib.util,json,os,sys,tempfile,threading,urllib.request,urllib.error
+from pathlib import Path
+ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'scripts'))
+p=argparse.ArgumentParser();p.add_argument('--library',type=Path,required=True);p.add_argument('--native',type=Path,required=True);a=p.parse_args()
+os.environ['BANJO_COUPLED_CPU_LIBRARY']=str(a.library.resolve())
+spec=importlib.util.spec_from_file_location('cpu_gateway',ROOT/'scripts/voxel-lab.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+with tempfile.TemporaryDirectory() as folder:
+    server=m.Server(('127.0.0.1',0),a.native.resolve(),Path(folder),cpu_library=a.library.resolve(),password='regression-only-password',public_host='test.example')
+    threading.Thread(target=server.serve_forever,daemon=True).start();base='http://127.0.0.1:'+str(server.server_port)
+    client=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+    def request(path,data=None,headers=None,auth=True):
+        req=urllib.request.Request(base+path,None if data is None else json.dumps(data).encode(),headers or ({'Content-Type':'application/json'} if data is not None else {}))
+        try:
+            r=(client.open if auth else urllib.request.urlopen)(req,timeout=120);return r.status,r.read(),r.headers
+        except urllib.error.HTTPError as e:return e.code,e.read(),e.headers
+    def command(data):
+        status,body,_=request('/api/coupled',data);reply=json.loads(body);assert status==200,(status,reply);return reply
+    try:
+        assert request('/api/checkpoint',auth=False)[0]==401
+        for _ in range(20):assert request('/api/coupled',{'op':'create','declaration':{}},auth=False)[0]==401
+        assert request('/login')[0]==200
+        # Login follows redirect to the protected lab with the same cookie.
+        code,html,headers=request('/login',{'password':'regression-only-password'});assert code==200 and b'Physics lab' in html
+        assert request('/api/checkpoint',headers={'Host':'attacker.example'})[0]==403
+        assert request('/api/coupled',{'op':'create','declaration':{}},headers={'Content-Type':'application/json','Origin':'https://attacker.example'})[0]==400
+        build=json.loads(request('/api/checkpoint')[1]);assert build['cpu_coupled_available'] and not build['gpu_available']
+        x=command({'op':'create','declaration':{'solver_backend':'cpu-implicit-body','experiment':'freefall','height_m':10.,'representation_policy':'partitioned-flight'}});assert x['ok'] and not x['state']['qualification']['gpu'];key=x['session']
+        y=command({'op':'create','declaration':{'experiment':'freefall','height_m':10.}});other=y['session']
+        assert command({'op':'advance','session':key,'steps':16})['state']['time_s']>0
+        assert command({'op':'snapshot','session':other})['state']['time_s']==0
+        saved=command({'op':'export','session':key})['checkpoint'];r=command({'op':'restore','checkpoint':saved});assert r['ok']
+        assert command({'op':'export','session':r['session']})['checkpoint']==saved
+        for k in (other,r['session']):assert command({'op':'close','session':k})['ok']
+        log=json.loads(request('/api/log/'+key)[1].splitlines()[-1]);assert log['response']['checkpoint']==saved
+        assert command({'op':'close','session':key})['ok']
+        assert not command({'op':'create','declaration':{'device':'cuda:0'}})['ok']
+        assert request('/api/gpu',{'op':'create','declaration':{}})[0]==400
+        # HTTPS same-origin remains usable through the reverse proxy.
+        d={'op':'create','declaration':{'experiment':'freefall'}}
+        code,body,_=request('/api/coupled',d,headers={'Content-Type':'application/json','Origin':'https://127.0.0.1:'+str(server.server_port)});assert code==200 and json.loads(body)['ok']
+        print('PASS hosted auth / cross-origin / CPU sessions / resume / journal / no CUDA fallback')
+    finally:
+        for s in server.sessions.values():s.close()
+        server.shutdown();server.server_close()
