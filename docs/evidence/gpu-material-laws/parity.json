@@ -1,0 +1,124 @@
+{
+  "scope": "Controlled interface laws only; no dynamic world or realtime qualification",
+  "source_sha256": "9321f999e50c4ade4c64fb76ddf94aca7d0f0657127cf8e3323a5dd87ac2fe1d",
+  "revision": "3e5d558fe254b7c989b8916d21e5992624d0ed8a",
+  "gpu": "NVIDIA GeForce RTX 5090",
+  "cupy": "13.5.1",
+  "numpy": "2.5.3",
+  "cpu_gpu_compared_updates": 61520,
+  "prior_checked_cpu_exact_updates": 61520,
+  "max_scaled_cpu_gpu_error": 0.0,
+  "max_increment_work_residual_j": 2.1316282072803006e-14,
+  "controls": [
+    {
+      "material": "glass",
+      "model": "normal-cohesive",
+      "density_kg_m3": 2500.0,
+      "young_pa": 70000000000.0,
+      "stored_energy_j": 0.0,
+      "physical_dissipation_j": 0.0008,
+      "numerical_return_excess_j": 0.0,
+      "permanent_rest_m": 0,
+      "separated": true,
+      "work_residual_j": 0.0
+    },
+    {
+      "material": "oak",
+      "model": "normal-cohesive",
+      "density_kg_m3": 700.0,
+      "young_pa": 12000000000.0,
+      "stored_energy_j": 0.0,
+      "physical_dissipation_j": 0.1,
+      "numerical_return_excess_j": 0.0,
+      "permanent_rest_m": 0,
+      "separated": true,
+      "work_residual_j": 0.0
+    },
+    {
+      "material": "iron",
+      "model": "connector-plastic",
+      "density_kg_m3": 7870.0,
+      "young_pa": 211000000000.0,
+      "stored_energy_j": 0.0947867298578199,
+      "physical_dissipation_j": 0.8521327014218011,
+      "numerical_return_excess_j": 0.6058205687203793,
+      "permanent_rest_m": 2.052132701421801e-05,
+      "separated": false,
+      "work_residual_j": 2.7755575615628914e-17
+    },
+    {
+      "material": "ice",
+      "model": "normal-cohesive",
+      "density_kg_m3": 917.0,
+      "young_pa": 9000000000.0,
+      "stored_energy_j": 0.0,
+      "physical_dissipation_j": 0.00015000000000000001,
+      "numerical_return_excess_j": 0.0,
+      "permanent_rest_m": 0,
+      "separated": true,
+      "work_residual_j": 0.0
+    }
+  ],
+  "benchmark": [
+    {
+      "interfaces": 4,
+      "control_median_ms": 0.10790000669658184,
+      "kernel_median_ms": 0.021824000403285027,
+      "readback_median_ms": 0.05180004518479109,
+      "audit_median_ms": 0.018000020645558834
+    },
+    {
+      "interfaces": 4096,
+      "control_median_ms": 0.756499997805804,
+      "kernel_median_ms": 0.044863998889923096,
+      "readback_median_ms": 0.3108999808318913,
+      "audit_median_ms": 0.35419996129348874
+    },
+    {
+      "interfaces": 65536,
+      "control_median_ms": 13.09580000815913,
+      "kernel_median_ms": 0.2051520049571991,
+      "readback_median_ms": 4.167900013271719,
+      "audit_median_ms": 8.143200015183538
+    }
+  ],
+  "plastic_loading_refinement": [
+    {
+      "increments": 64,
+      "permanent_rest_m": 2.052132701421801e-05,
+      "physical_dissipation_j": 0.4104265402843603,
+      "numerical_return_excess_j": 0.010108507201569908
+    },
+    {
+      "increments": 128,
+      "permanent_rest_m": 2.052132701421801e-05,
+      "physical_dissipation_j": 0.4104265402843603,
+      "numerical_return_excess_j": 0.0050599232171949044
+    }
+  ],
+  "dt_s": null,
+  "physical_clock": false,
+  "full_world_gpu": false,
+  "realtime_qualified": false,
+  "tests": [
+    "catalog parity",
+    "history/reversal/six modes",
+    "shared CPU CUDA comparison",
+    "old checked CPU exact parity",
+    "rename invariance",
+    "area partition",
+    "finite rollback",
+    "invalid input retention",
+    "unloading",
+    "actual HTTP worker CUDA journal",
+    "warm measured controls"
+  ],
+  "verification": {
+    "scoped_ctest_count": 17,
+    "source_registration": "343/343, no exclusions",
+    "native_binary_unchanged": true,
+    "browser": "Ordinary loading/unloading, labeled magnification, portrait and landscape desktop viewports; no actual phone qualification",
+    "parent_revision": "3e5d558fe254b7c989b8916d21e5992624d0ed8a",
+    "uncommitted_scope": "This source checkpoint; published revision recorded in Git/report"
+  }
+}

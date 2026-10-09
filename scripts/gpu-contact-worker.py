@@ -42,17 +42,26 @@ def main():
                         from physx_contact_world import PhysXContactWorld
                         world = PhysXContactWorld(d)
                         atexit.register(world.close)
+                    elif backend == 'cupy-material-laws':
+                        from gpu_material_laws import GpuMaterialWorld
+                        world = GpuMaterialWorld(d)
                     else:
                         raise ValueError('Unknown GPU solver backend')
                     state = world.snapshot()
                 elif op == "advance" and set(command) == {"op", "steps"} and world:
+                    if not hasattr(world, 'advance'):
+                        raise ValueError('Controlled material loading has no dynamics clock')
                     state = world.advance(command["steps"])
+                elif op == 'strain' and set(command) == {'op','opening_m'} and world and hasattr(world,'strain'):
+                    state = world.strain(command['opening_m'])
+                elif op == 'unload' and set(command) == {'op'} and world and hasattr(world,'strain'):
+                    state = world.strain(unload=True)
                 elif op == "snapshot" and set(command) == {"op"} and world:
                     state = world.snapshot()
                 else:
                     raise ValueError("Unsupported GPU command")
             reply = dict(ok=True, state=state)
-        except (ValueError, TypeError, KeyError, RuntimeError) as error:
+        except (ValueError, TypeError, KeyError, RuntimeError, ImportError) as error:
             reply = dict(ok=False, error=str(error))
             if world is not None:
                 reply["state"] = world.snapshot()

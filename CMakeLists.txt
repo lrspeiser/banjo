@@ -307,6 +307,9 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
         GIT_REPOSITORY https://github.com/nlohmann/json.git
         GIT_TAG 65ee68451d8eb2b5f3a30b410476ab83deb3289b)
     FetchContent_MakeAvailable(nlohmann_json)
+    add_executable(banjo_gpu_material_oracle src/app/gpu_material_oracle_main.cpp)
+    target_link_libraries(banjo_gpu_material_oracle PRIVATE banjo_core nlohmann_json::nlohmann_json)
+    banjo_enable_warnings(banjo_gpu_material_oracle)
     add_library(banjo_material_lab src/creator/BondedBowl.cpp src/creator/BowlRecording.cpp src/platform/BowlGeometry.cpp)
     target_link_libraries(banjo_material_lab PUBLIC banjo_core)
     banjo_enable_warnings(banjo_material_lab)
@@ -2162,6 +2165,12 @@ if(BANJO_BUILD_TESTS)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/physx_contact_test.py
                 --report ${CMAKE_CURRENT_BINARY_DIR}/gpu-contact/physx-results.json)
             set_tests_properties(banjo_physx_contact_tests PROPERTIES TIMEOUT 300 LABELS "gpu;experimental;contact;client")
+            add_test(NAME banjo_gpu_material_laws_tests COMMAND ${BANJO_NEWTON_PYTHON}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu_material_laws_test.py
+                --oracle $<TARGET_FILE:banjo_gpu_material_oracle>
+                --native $<TARGET_FILE:banjo_voxel_world_run>
+                --report ${CMAKE_CURRENT_BINARY_DIR}/gpu-contact/material-laws-results.json)
+            set_tests_properties(banjo_gpu_material_laws_tests PROPERTIES TIMEOUT 180 LABELS "gpu;experimental;material;client")
         endif()
         if(BANJO_TEST_CUPY)
             add_test(NAME banjo_cupy_physics_probe COMMAND ${Python3_EXECUTABLE}

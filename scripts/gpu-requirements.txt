@@ -5,3 +5,5 @@ numpy==2.5.3
 ovphysx==0.6.3
 ovstage==0.2.0.377349
 packaging==23.2
+cupy-cuda12x==13.5.1
+fastrlock==0.8.3

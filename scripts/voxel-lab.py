@@ -4,7 +4,7 @@ from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-ASSETS={'/':'client/voxel-lab/index.html','/world.js':'client/voxel-lab/world.js','/playback.mjs':'client/voxel-lab/playback.mjs','/style.css':'client/voxel-lab/style.css','/three.module.js':'playground/vendor/three.module.js','/three.core.js':'playground/vendor/three.core.js','/gpu':'client/voxel-lab/gpu.html','/gpu.js':'client/voxel-lab/gpu.js','/gpu.css':'client/voxel-lab/gpu.css'}
+ASSETS={'/':'client/voxel-lab/index.html','/world.js':'client/voxel-lab/world.js','/playback.mjs':'client/voxel-lab/playback.mjs','/style.css':'client/voxel-lab/style.css','/three.module.js':'playground/vendor/three.module.js','/three.core.js':'playground/vendor/three.core.js','/gpu':'client/voxel-lab/gpu.html','/gpu.js':'client/voxel-lab/gpu.js','/gpu.css':'client/voxel-lab/gpu.css','/materials':'client/voxel-lab/materials.html','/materials.js':'client/voxel-lab/materials.js','/materials.css':'client/voxel-lab/materials.css'}
 
 def same_record(previous,current):
  if type(previous) is not type(current):return False
@@ -159,6 +159,7 @@ class Session:
     if self.calculating and not self.playing:raise ValueError('Current native batch is still finishing')
     if not self.latest['ok']:raise ValueError(self.latest['error'] if self.native_failure else 'Native gate refused; reset to continue')
     state=self.current['state'];dt=state['dt_s']
+    if state.get('controlled_loading'):raise ValueError('Controlled material loading has no dynamics clock; use Apply or Unload')
     limit=4 if 'actuation' in state else 2
     if type(target) not in (int,float) or not 0<target<=limit:raise ValueError(f'Target time must be within {limit} physical seconds')
     ticks=round(target/dt)
@@ -233,7 +234,13 @@ class Server(ThreadingHTTPServer):
   gpu_hash=hashlib.sha256((ROOT/'scripts/gpu_contact_world.py').read_bytes()).hexdigest() if self.gpu_python else None
   worker_hash=hashlib.sha256((ROOT/'scripts/gpu-contact-worker.py').read_bytes()).hexdigest() if self.gpu_python else None
   physx_hash=hashlib.sha256((ROOT/'scripts/physx_contact_world.py').read_bytes()).hexdigest() if self.gpu_python else None
-  return {'checkpoint':checkpoint,'native_sha256':actual,'native_verified':bool(checkpoint.get('native_sha256')==actual),'website_revision':revision,'local_changes':dirty,'server_revision':self.started_revision,'restart_pending':revision!=self.started_revision,'gpu_available':self.gpu_python is not None,'gpu_source_sha256':gpu_hash,'gpu_worker_sha256':worker_hash,'physx_source_sha256':physx_hash,'physx_source_verified':bool(physx_hash and checkpoint.get('physx_source_sha256')==physx_hash),'gpu_source_verified':bool(gpu_hash and checkpoint.get('gpu_source_sha256')==gpu_hash and checkpoint.get('gpu_worker_sha256')==worker_hash)}
+  material_hash=None
+  if self.gpu_python:
+   h=hashlib.sha256()
+   for name in ('scripts/gpu_material_laws.py','src/physics/CohesiveInterfaceKernel.hpp','src/material/ConnectorModeKernel.hpp','client/voxel-lab/material-laws.json','src/material/MaterialCatalog.cpp','src/material/ConnectorPlasticity.cpp','src/physics/CohesiveInterface.cpp'):
+    h.update(name.encode());h.update(b'\0');h.update((ROOT/name).read_bytes())
+   material_hash=h.hexdigest()
+  return {'checkpoint':checkpoint,'native_sha256':actual,'native_verified':bool(checkpoint.get('native_sha256')==actual),'website_revision':revision,'local_changes':dirty,'server_revision':self.started_revision,'restart_pending':revision!=self.started_revision,'gpu_available':self.gpu_python is not None,'gpu_source_sha256':gpu_hash,'gpu_worker_sha256':worker_hash,'physx_source_sha256':physx_hash,'physx_source_verified':bool(physx_hash and checkpoint.get('physx_source_sha256')==physx_hash),'gpu_source_verified':bool(gpu_hash and checkpoint.get('gpu_source_sha256')==gpu_hash and checkpoint.get('gpu_worker_sha256')==worker_hash),'gpu_material_source_sha256':material_hash,'gpu_material_source_verified':bool(material_hash and checkpoint.get('gpu_material_source_sha256')==material_hash)}
  def session(self,key,backend=None):
   with self.lock:
    for old,s in list(self.sessions.items()):
@@ -300,17 +307,18 @@ class Handler(BaseHTTPRequestHandler):
      if type(data['wait_ms']) is not int or not 0<=data['wait_ms']<=250:raise ValueError('Frame wait must be 0–250 ms')
      r=s.frame(data['after'],data['wait_ms'])
     r['session']=data['session']
-   elif op in ['advance','snapshot','close','accelerate_object']:
-    allowed={'op','session','steps'} if op=='advance' else {'op','session','object','acceleration_m_s2'} if op=='accelerate_object' else {'op','session'}
+   elif op in ['advance','snapshot','close','accelerate_object','strain','unload']:
+    allowed={'op','session','steps'} if op=='advance' else {'op','session','object','acceleration_m_s2'} if op=='accelerate_object' else {'op','session','opening_m'} if op=='strain' else {'op','session'}
     if set(data)!=allowed:raise ValueError('Invalid command fields')
     s=self.server.session(data['session'],backend)
     if backend=='gpu' and op=='accelerate_object':raise ValueError('GPU actuation is not implemented')
+    if op in ('strain','unload') and (backend!='gpu' or not s.current['state'].get('controlled_loading')):raise ValueError('Material loading requires the controlled GPU inspector')
     if op=='close':
      with self.server.lock:s.close();self.server.sessions.pop(data['session'],None)
      r={'ok':True}
     else:
      if op=='advance' and (type(data['steps']) is not int or not 1<=data['steps']<=16):raise ValueError('Steps must be 1–16')
-     r=s.manual({k:v for k,v in data.items() if k!='session'}) if op in ['advance','accelerate_object'] else s.frame(0,0);r['session']=data['session']
+     r=s.manual({k:v for k,v in data.items() if k!='session'}) if op in ['advance','accelerate_object','strain','unload'] else s.frame(0,0);r['session']=data['session']
    else:raise ValueError('Unknown operation')
    self.send(200,json.dumps(r,separators=(',',':')).encode())
   except (ValueError,TypeError,KeyError,OSError) as e:self.send(400,json.dumps({'ok':False,'error':str(e)}).encode())

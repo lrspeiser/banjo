@@ -1,4 +1,5 @@
 #include "material/ConnectorPlasticity.hpp"
+#include "material/ConnectorModeKernel.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -35,16 +36,14 @@ ConnectorPlasticUpdate advanceConnectorPlasticity(const ConnectorPlasticParamete
             throw std::invalid_argument("invalid connector coordinate, history or coefficient");
         double elastic=q[i]-old;const double limit=y/k;
         if(!std::isfinite(elastic)||!std::isfinite(limit)||limit<=0)throw std::invalid_argument("connector return overflow");
-        if(std::abs(elastic)>limit){
-            const double delta=std::copysign(std::abs(elastic)-limit,elastic);
-            out.state.plastic_rest[i]+=delta;out.state.accumulated_flow[i]+=std::abs(delta);
-            out.plastic_increment_j+=y*std::abs(delta);
-            // Fixed-coordinate backward-Euler projection releases this excess
-            // beyond physical yield work. Keep it numerical, never label heat.
-            out.return_excess_increment_j+=.5*k*delta*delta;
-            elastic=q[i]-out.state.plastic_rest[i];out.yielded=true;
-        }
-        out.stored_energy_j+=.5*k*elastic*elastic;
+        const auto mode=connectorModeReturnUnchecked(k,y,q[i],old,flow);
+        out.state.plastic_rest[i]=mode.plastic_rest;
+        out.state.accumulated_flow[i]=mode.accumulated_flow;
+        out.plastic_increment_j+=mode.plastic_increment_j;
+        // Numerical return excess is separate from physical yield work.
+        out.return_excess_increment_j+=mode.return_excess_increment_j;
+        out.yielded|=mode.yielded;
+        out.stored_energy_j+=mode.stored_energy_j;
         if(!std::isfinite(out.state.plastic_rest[i])||!std::isfinite(out.state.accumulated_flow[i]))
             throw std::invalid_argument("connector history overflow");
     }
