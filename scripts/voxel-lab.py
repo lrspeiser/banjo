@@ -45,7 +45,7 @@ class Session:
   self.proc=subprocess.Popen([str(native),'--serve'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,bufsize=1)
   self.output=queue.Queue(maxsize=2);self.lock=threading.Lock();self.record_lock=threading.Lock();self.last=time.monotonic();self.path=logs/(uuid.uuid4().hex+'.jsonl.bz2');self.bytes=0;self.uncompressed_bytes=0
   self.previous_record=None
-  self.condition=threading.Condition();self.closed=False;self.playing=False;self.calculating=False;self.latest=None;self.current=None;self.frame_id=0
+  self.condition=threading.Condition();self.closed=False;self.native_failure=None;self.response_timeout_s=25.;self.playing=False;self.calculating=False;self.latest=None;self.current=None;self.frame_id=0
   self.target_ticks=0;self.started=0.;self.started_time=0.;self.elapsed_s=0.;self.batch_cost_s=.001;self.max_batch_s=0.;self.pending_commands=[];self.last_publish=0.
   self.batch_samples=deque(maxlen=256);self.current_at=0.;self.latest_at=0.
   def reader():
@@ -86,12 +86,36 @@ class Session:
   return b''.join(parts)
  def call(self,command,record=True):
   with self.lock:
-   self.last=time.monotonic();self.proc.stdin.write(json.dumps(command)+'\n');self.proc.stdin.flush()
-   try:line=self.output.get(timeout=25)
-   except queue.Empty:self.close();raise ValueError('Native calculation exceeded 25 seconds; session stopped')
-   if line is None:raise ValueError('Native process stopped')
-   reply=json.loads(line)
+   if self.native_failure:raise ValueError(self.native_failure['error'])
+   self.last=time.monotonic();started=self.last
+   try:
+    self.proc.stdin.write(json.dumps(command)+'\n');self.proc.stdin.flush()
+    line=self.output.get(timeout=self.response_timeout_s)
+   except queue.Empty:return self.delivery_failed(command,started,'timeout',f'Native response exceeded {self.response_timeout_s:g} seconds. Last delivered scene retained; reset to continue.')
+   except OSError:return self.delivery_failed(command,started,'pipe_closed','Native response pipe closed. Last delivered scene retained; reset to continue.')
+   if line is None:return self.delivery_failed(command,started,'process_stopped','Native process stopped. Last delivered scene retained; reset to continue.')
+   try:reply=json.loads(line)
+   except ValueError:return self.delivery_failed(command,started,'invalid_response','Invalid native response. Last delivered scene retained; reset to continue.')
    if record:self.write({'request':command,'response':reply})
+   return reply
+ def stop_native(self):
+  # This session owns the process. Stopping delivery never adjusts physics.
+  if self.proc.poll() is None:
+   self.proc.terminate()
+   try:self.proc.wait(timeout=2)
+   except subprocess.TimeoutExpired:self.proc.kill();self.proc.wait(timeout=2)
+ def delivery_failed(self,command,started,reason,error):
+  self.stop_native()
+  with self.condition:
+   # Persist completed commands first. The unanswered request is separate and
+   # must never appear among accepted replay steps or generate a new pose.
+   if self.pending_commands:self.publish(self.current,record=True)
+   detail={'reason':reason,'request':command,'response_timeout_s':self.response_timeout_s,'elapsed_s':time.monotonic()-started,
+           'last_delivered_time_s':self.current['state']['time_s'] if self.current and 'state' in self.current else None,
+           'candidate_available':False,'unfinished_request':True}
+   reply=dict(self.current or {},ok=False,error=error,delivery_failure=detail)
+   self.native_failure=reply
+   self.write({'request':command,'response':reply,'delivery':detail})
    return reply
  def metrics(self):
   now=time.monotonic();elapsed=max(0.,now-self.started) if self.started and (self.playing or self.calculating) else self.elapsed_s
@@ -103,7 +127,7 @@ class Session:
           'published_state_age_ms':max(0.,now-self.latest_at)*1000 if self.latest_at else 0.,
           'current_state_age_ms':max(0.,now-self.current_at)*1000 if self.current_at else 0.,
           'journal_compressed_bytes':self.bytes,'journal_uncompressed_bytes':self.uncompressed_bytes,
-          'physics_changed':False,'status':'running' if self.playing else 'pausing' if self.calculating else 'paused'}
+          'physics_changed':False,'status':'native stopped' if self.native_failure else 'running' if self.playing else 'pausing' if self.calculating else 'paused'}
  def publish(self,reply,record=False):
   # condition held by the caller. Every published pose is a native accepted
   # state; intermediate calls are retained as an exact replay command batch.
@@ -118,7 +142,9 @@ class Session:
   try:
    reply=self.call(command)
    with self.condition:
-    if reply['ok'] or command.get('op')!='accelerate_object':self.current_at=time.monotonic();self.publish(reply)
+    if reply['ok'] or command.get('op')!='accelerate_object' or 'delivery_failure' in reply:
+     if 'delivery_failure' not in reply:self.current_at=time.monotonic()
+     self.publish(reply)
   finally:
    with self.condition:self.calculating=False;self.condition.notify_all()
   with self.condition:return dict(reply,frame_id=self.frame_id,pipeline=self.metrics())
@@ -127,7 +153,7 @@ class Session:
    if self.closed or not self.latest:raise ValueError('Session unavailable')
    if running:
     if self.calculating and not self.playing:raise ValueError('Current native batch is still finishing')
-    if not self.latest['ok']:raise ValueError('Native gate refused; reset to continue')
+    if not self.latest['ok']:raise ValueError(self.latest['error'] if self.native_failure else 'Native gate refused; reset to continue')
     state=self.current['state'];dt=state['dt_s']
     limit=4 if 'actuation' in state else 2
     if type(target) not in (int,float) or not 0<target<=limit:raise ValueError(f'Target time must be within {limit} physical seconds')
@@ -147,7 +173,9 @@ class Session:
    if self.closed:raise ValueError('Session closed')
    if self.frame_id>after:return dict(self.latest,frame_id=self.frame_id,pipeline=self.metrics())
    reply={'ok':self.latest['ok'],'frame_id':self.frame_id,'pipeline':self.metrics()}
-   if not reply['ok']:reply['error']=self.latest['error']
+   if not reply['ok']:
+    reply['error']=self.latest['error']
+    if 'delivery_failure' in self.latest:reply['delivery_failure']=self.latest['delivery_failure']
    return reply
  def simulate(self):
   while True:
@@ -168,12 +196,12 @@ class Session:
     reply=self.call({'op':'advance','steps':steps},record=False);cost=time.monotonic()-start
     with self.condition:
      self.calculating=False;self.current=reply;self.elapsed_s=max(0.,time.monotonic()-self.started);self.batch_cost_s=.5*self.batch_cost_s+.5*cost/steps;self.max_batch_s=max(self.max_batch_s,cost)
-     self.current_at=time.monotonic();self.batch_samples.append(cost)
-     self.pending_commands.append(steps)
+     if 'delivery_failure' not in reply:self.current_at=time.monotonic();self.pending_commands.append(steps)
+     self.batch_samples.append(cost)
      if not reply['ok'] or reply['state']['ticks']>=self.target_ticks:self.playing=False
      # Keep only the latest frame in memory. Publish at most 30 Hz plus an
      # immediate final/pause/failure frame; no accumulating playback queue.
-     if not self.playing or time.monotonic()-self.last_publish>=1/30:self.publish(reply,record=True)
+     if not self.playing or time.monotonic()-self.last_publish>=1/30:self.publish(reply,record='delivery_failure' not in reply)
      self.condition.notify_all()
    except (ValueError,OSError,TypeError,KeyError) as error:
     with self.condition:
@@ -181,7 +209,7 @@ class Session:
      self.publish(dict(self.current,ok=False,error=str(error)));self.condition.notify_all()
  def close(self):
   with self.condition:self.closed=True;self.playing=False;self.condition.notify_all()
-  if self.proc.poll() is None:self.proc.terminate()
+  self.stop_native()
 class Server(ThreadingHTTPServer):
  daemon_threads=True
  def __init__(self,address,native,logs,checkpoint_path=None):

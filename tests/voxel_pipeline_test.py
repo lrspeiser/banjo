@@ -1,5 +1,5 @@
 """Actual native pipeline parity plus deliberately delayed control-latency probe."""
-import copy,gzip,hashlib,importlib.util,json,sys,tempfile,threading,time,urllib.request,urllib.error
+import copy,gzip,hashlib,importlib.util,json,queue,sys,tempfile,threading,time,urllib.request,urllib.error
 from pathlib import Path
 spec=importlib.util.spec_from_file_location('voxel_pipeline',Path(__file__).resolve().parents[1]/'scripts/voxel-lab.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 def physical(state):
@@ -96,6 +96,54 @@ with tempfile.TemporaryDirectory() as folder:
   for value in [True,-1,251]:assert not req({'op':'frame','session':key,'after':0,'wait_ms':value})['ok']
   print('PASS delayed-native pause latency',round(latency*1000,2),'ms; in-flight batch drains once, stable pause and bounded commands',flush=True)
   assert req({'op':'close','session':key})['ok']
+  # Native scenes are real. Only delivery is withheld, never a force, pose or
+  # constitutive result. An unanswered command has no admitted candidate.
+  class InterruptedOutput:
+   def __init__(self,original,eof=False):self.original=original;self.eof=eof
+   def put(self,line):self.original.put(line)
+   def get(self,timeout):
+    if self.eof:return None
+    time.sleep(timeout);raise queue.Empty
+  survivor=req({'op':'create','declaration':{'sheet':'iron'}});assert survivor['ok'];other=survivor['session']
+  for mode in ['manual','stream','eof']:
+   created=req({'op':'create','declaration':{'sheet':'glass'}});assert created['ok'];key=created['session'];session=server.sessions[key]
+   accepted=req({'op':'advance','session':key,'steps':2});assert accepted['ok']
+   pending=[]
+   if mode=='stream':
+    # A genuine accepted batch waiting for its 30 Hz publication boundary.
+    completed=session.call({'op':'advance','steps':2},record=False);assert completed['ok']
+    with session.condition:session.current=completed;session.current_at=time.monotonic();session.pending_commands=[2]
+    accepted=completed;pending=[2]
+   state=copy.deepcopy(accepted['state']);pose_at=session.current_at
+   session.response_timeout_s=.05;session.output=InterruptedOutput(session.output,eof=mode=='eof')
+   started=time.monotonic()
+   if mode=='stream':
+    assert req({'op':'play','session':key,'running':True,'target_time_s':.1})['ok']
+    while True:
+     failed=frame(key)
+     if not failed['pipeline']['calculating'] and not failed['pipeline']['running']:break
+     assert time.monotonic()-started<3,'delivery failure did not stop the worker'
+   else:failed=req({'op':'advance','session':key,'steps':1})
+   assert time.monotonic()-started<3,'delivery stop exceeded bounded termination'
+   assert not failed['ok'] and not session.closed and session.proc.poll() is not None
+   assert m.same_record(failed['state'],state),'unanswered calculation changed the displayed scene'
+   assert session.current_at==pose_at,'terminal publication refreshed a stale physics pose'
+   detail=failed['delivery_failure'];assert detail['candidate_available'] is False and detail['unfinished_request'] is True
+   assert detail['reason']==('process_stopped' if mode=='eof' else 'timeout')
+   assert detail['last_delivered_time_s']==state['time_s'] and detail['request']['op']=='advance'
+   inspected=frame(key);assert not inspected['ok'] and m.same_record(inspected['state'],state)
+   assert inspected['pipeline']['status']=='native stopped' and inspected['pipeline']['published_state_age_ms']>0
+   assert not req({'op':'play','session':key,'running':True,'target_time_s':.1})['ok']
+   assert not req({'op':'advance','session':key,'steps':1})['ok']
+   rows=[json.loads(x) for x in session.iter_log()];terminal=[x for x in rows if 'delivery' in x]
+   assert len(terminal)==1 and terminal[0]['delivery']==detail and m.same_record(terminal[0]['response']['state'],state)
+   batches=[x for x in rows if x.get('request',{}).get('op')=='advance_batch']
+   assert [s for x in batches for s in x['request']['steps']]==pending,'unfinished request recorded as accepted steps'
+   time.sleep(.06);assert m.same_record(frame(key)['state'],state),'late native output replaced the retained pose'
+   assert req({'op':'advance','session':other,'steps':1})['ok'],'one failed calculation stopped another world'
+   assert req({'op':'close','session':key})['ok'] and session.closed
+   print('PASS interrupted native delivery:',mode,'exact retained scene, separate unanswered command, inspectable record and isolated termination',flush=True)
+  assert req({'op':'close','session':other})['ok']
  finally:
   for session in list(server.sessions.values()):session.close()
   server.shutdown();server.server_close()

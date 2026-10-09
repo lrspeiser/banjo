@@ -1,39 +1,49 @@
 {
-  "title": "Lift the load; inspect retained metal deformation",
+  "title": "Retain the scene when a native response stops",
   "date": "2026-10-08",
   "physics_revision": "bbb00f2ccada0179dd48d53eef9115089f6dcd9f",
-  "native_sha256": "8b776001a625b99904149003e9509adcebe6aea8eba23a7c4e3ec21aecda811d",
+  "native_sha256": "d0cf707f69ebef5e64077acc10eec4c6764c65f193217a3c4dd272bd3af6e68a",
   "changes": [
-    "Lift ball and Release lift apply bounded native forces. External work, impulse and torque are recorded; no teleport, assigned velocity or removed material.",
-    "A general object-acceleration command drives every dynamic cell using its material-derived mass. Invalid commands preserve the accepted scene and journal.",
-    "Unloaded iron retains its plastic rest/history and a downward central deformation. Settling, full contact accuracy and continuum yielding/tearing remain unqualified.",
-    "Default glass/oak/iron/ice physical/work results remain exact. Full five-goal completion is still open."
+    "An interrupted native response retains the exact last delivered scene and records the unfinished request. Before, Live, record download and Reset remain available.",
+    "The normal patch trial was slower in the short glass/oak/iron comparisons and timed out on ice. Its native option is withdrawn; only a compiled analytical CPU reference is retained.",
+    "Simulation speed remains about 0.05x realtime in the default glass drop. This checkpoint does not improve solver speed or change the native material laws.",
+    "The active objective now includes near realtime fracture, dents, bounce, heat, burning and power with visible 3D demonstrations. Unsupported laws remain unimplemented."
   ],
   "checks": [
     {
-      "label": "Focused native / pipeline tests",
+      "label": "Scoped compiled / pipeline tests",
       "status": "passed",
-      "value": "9 scoped CTests; 336/336 sources registered, changed runtime targets compiled"
+      "value": "11 CTests; 338/338 registered sources; analytical normal reference compiled"
     },
     {
-      "label": "External force / unloading",
+      "label": "Interrupted native delivery",
       "status": "passed",
-      "value": "Glass/oak/iron free-flight work and impulse, bounded input/release and four matched loaded/unloaded sheets"
+      "value": "Manual, streaming and EOF controls retain exact scenes and one unfinished-request record; another world remains usable"
     },
     {
-      "label": "Default state parity",
+      "label": "Native scheduling parity",
       "status": "passed",
-      "value": "Four complete two-second glass/oak/iron/ice physical/work comparisons"
+      "value": "Glass/oak/iron/ice 96-tick direct/stream comparisons; delayed Pause remains responsive"
     },
     {
-      "label": "3D lift / release and exact record",
+      "label": "Full native reference parity",
       "status": "passed",
-      "value": "Ordinary browser 2.0 \u2192 2.6 \u2192 3.2 s; 29.03 MB bounded archive; exact downloaded final state; landscape controls"
+      "value": "Four complete two-second glass/oak/iron/ice comparisons; every physical/work field retained"
     },
     {
-      "label": "Whole-model qualification",
+      "label": "3D recovery controls",
+      "status": "passed",
+      "value": "Injected delivery interruption after 16 accepted ticks; Before/Live preserve scene; Reset restores usable controls"
+    },
+    {
+      "label": "Native normal patch experiment",
       "status": "blocked",
-      "value": "Unexplained losses, contact/refinement, static settling, tearing and restart remain open"
+      "value": "Withdrawn after mixed accuracy, slower material trials and unanswered ice request"
+    },
+    {
+      "label": "Near realtime physics",
+      "status": "blocked",
+      "value": "Global substeps/constraint work and unexplained energy losses remain unresolved"
     }
   ],
   "next": [
@@ -61,6 +71,11 @@
       "label": "Custom materials / objects",
       "status": "planned",
       "value": "Validated unit-bearing material, geometry and interaction declarations"
+    },
+    {
+      "label": "Heat, fluids and power",
+      "status": "planned",
+      "value": "Qualified coupled laws and visible energy-accounted 3D demonstrations"
     }
   ],
   "capabilities": {
