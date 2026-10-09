@@ -9,10 +9,15 @@ export async function requestScene(command,{endpoint='/api/gpu',fetcher=fetch}={
 }
 
 // Recovery creates a fresh scene; never replay an interrupted action or batch.
-export async function runSceneSteps({session,count,onState,onExpired,shouldStop=()=>false,request=requestScene}) {
+export async function runSceneSteps({session,count,onState,onExpired,shouldStop=()=>false,getBatchSize=()=>1,request=requestScene}) {
   if(!Number.isInteger(count)||count<1||count>3840)throw RangeError('Invalid step count');
   try {
-    for(let i=0;i<count&&!shouldStop();i++)onState(await request({op:'advance',session,steps:1}));
+    for(let i=0;i<count&&!shouldStop();) {
+      const proposed=getBatchSize();
+      if(!Number.isInteger(proposed)||proposed<1||proposed>16)throw RangeError('Invalid physics batch');
+      const steps=Math.min(proposed,count-i);
+      onState(await request({op:'advance',session,steps}));i+=steps;
+    }
     return true;
   } catch(error) {
     if(!(error instanceof SessionExpiredError))throw error;

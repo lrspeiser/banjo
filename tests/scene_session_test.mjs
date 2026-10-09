@@ -18,3 +18,11 @@ assert.equal(ticks,343,'run-to-contact did not stop at the observed accepted bou
 ticks=0;await runSceneSteps({session:'drop',count:10,shouldStop:()=>true,onState:()=>{ticks++;},onExpired:()=>{},request:async()=>{throw Error('Stop still requested a step');}});assert.equal(ticks,0);
 for(const count of [0,3841,1.5,NaN])await assert.rejects(runSceneSteps({count}),RangeError);
 console.log('PASS cancellable bounded drop: all accepted steps retained, first-contact stop, two-second capacity and no requests after Stop');
+calls=[];ticks=0;
+await runSceneSteps({session:'rigid-flight',count:70,getBatchSize:()=>16,shouldStop:()=>false,onState:r=>ticks+=r.steps,onExpired:()=>{},request:async c=>{calls.push(c);return c;}});
+assert.deepEqual(calls.map(c=>c.steps),[16,16,16,16,6]);assert.equal(ticks,70);
+calls=[];ticks=0;
+await runSceneSteps({session:'rigid-flight',count:70,getBatchSize:()=>16,shouldStop:()=>ticks>=16,onState:r=>ticks+=r.steps,onExpired:()=>{},request:async c=>{calls.push(c);return c;}});
+assert.equal(calls.length,1,'no batch after Stop');
+for(const size of [0,17,1.5,NaN])await assert.rejects(runSceneSteps({count:1,getBatchSize:()=>size,onState:()=>{},onExpired:()=>{},request:()=>{throw Error('Invalid batch reached API');}}),RangeError);
+console.log('PASS bounded rigid-flight delivery, exact requested duration, batch-boundary Stop and malformed-batch refusal');

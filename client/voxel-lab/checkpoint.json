@@ -178,12 +178,14 @@
     "object_acceleration": true,
     "hybrid_free_flight": true,
     "local_rigid_flight": true,
-    "material_block_friction": true
+    "material_block_friction": true,
+    "gpu_partitioned_flight": true
   },
   "physics_revision": "e12eb688a470e3a092038442ef1950ce5b52a30b",
   "gpu_source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd",
   "gpu_worker_sha256": "9380a55b680cc4b2e7b1dd3781d2e08bfad57c5b534d26024e901a84a6010bb2",
   "physx_source_sha256": "d1d30abfd67380a66fcf4664759e1917e50137bd7f6ef92bb160d0f1b5b5157f",
   "gpu_material_source_sha256": "439309fd656c70e3f3728fda7a7260aad16ecfe72c0f2f32d9c388b67690f559",
-  "gpu_coupled_source_sha256": "31105d759be71507d256aac805caf643c5cf21e9895669e3d122819e96a0b33d"
+  "gpu_coupled_source_sha256": "2ec72186d7e2c6c434cbb9f1140b7f5b2e06b81dd933ca870466997c5e4ce3ab",
+  "gpu_representation_scope": "Experimental isolated rigid sphere plus continuously solved material island; no detailed sphere fracture, heat or fluid coupling"
 }

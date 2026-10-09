@@ -1,0 +1,1783 @@
+{
+  "schema": "banjo.rigid-flight-http-evidence.v1",
+  "source_sha256": "2ec72186d7e2c6c434cbb9f1140b7f5b2e06b81dd933ca870466997c5e4ce3ab",
+  "physical_s": 1.3333333333333333,
+  "api_wall_s": 1.261516499973368,
+  "physical_per_wall": 1.0569289687146237,
+  "response_bytes": 420462,
+  "maximum_request_wall_s": 0.08410500001627952,
+  "setup_wall_s": 1.8907358000287786,
+  "request_wall_s": [
+    0.06016809999709949,
+    0.048483199963811785,
+    0.0484143000212498,
+    0.0703061000094749,
+    0.055849799944553524,
+    0.07463449996430427,
+    0.07947380002588034,
+    0.05407660000491887,
+    0.04810370004270226,
+    0.0725961999851279,
+    0.0671670000301674,
+    0.07181900000432506,
+    0.05246109998552129,
+    0.033508499967865646,
+    0.07571000000461936,
+    0.057479500013869256,
+    0.08410500001627952,
+    0.057125399995129555,
+    0.08380490000126883,
+    0.06516440003179014
+  ],
+  "final_state": {
+    "schema": "banjo.cupy-coupled-finite-cells.v1",
+    "declaration": {
+      "material": "glass",
+      "ball_material": "iron",
+      "ball_mass_kg": 0.01,
+      "height_m": 10,
+      "dt_s": 0.004166666666666667,
+      "experiment": "freefall",
+      "device": "cuda:0",
+      "pipeline": "parallel",
+      "newton_strategy": "ranked",
+      "line_search": "batch-tail",
+      "linear_backend": "cupy-reference",
+      "contact_resolution": "reference",
+      "representation_policy": "partitioned-flight"
+    },
+    "time_s": 1.3333333333333333,
+    "dt_s": 0.004166666666666667,
+    "ticks": 320,
+    "cells": [
+      {
+        "id": 0,
+        "shape": "plane",
+        "material": "iron",
+        "size_m": [
+          0.02,
+          0.02,
+          0.02
+        ],
+        "radius_m": 0,
+        "mass_kg": 0,
+        "fixed": true,
+        "component": 1,
+        "position_m": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "quaternion_wxyz": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "velocity_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "angular_velocity_rad_s": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "id": 1,
+        "shape": "sphere",
+        "material": "iron",
+        "size_m": [
+          0.0134382344926001,
+          0.0134382344926001,
+          0.0134382344926001
+        ],
+        "radius_m": 0.00671911724630005,
+        "mass_kg": 0.01,
+        "fixed": false,
+        "component": 2,
+        "position_m": [
+          0.0,
+          1.286719117246312,
+          0.0
+        ],
+        "quaternion_wxyz": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "velocity_m_s": [
+          0.0,
+          -13.079999999999961,
+          0.0
+        ],
+        "angular_velocity_rad_s": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "history_arrays": [],
+    "diagnostics": {
+      "dynamic_mass_kg": 0.01,
+      "mechanical_j": 0.9816591454018581,
+      "material_stored_j": 0.0,
+      "contact_stored_j": 0.0,
+      "global_energy_residual_j": -3.9968028886505635e-15,
+      "momentum_n_s": [
+        0.0,
+        -0.1307999999999996,
+        0.0
+      ],
+      "angular_momentum_n_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "fracture_work_j": 0.0,
+      "plastic_work_j": 0.0,
+      "numerical_return_excess_j": 0.0,
+      "separated_sites": 0,
+      "yielded_faces": 0,
+      "interfaces": 0,
+      "maximum_energy_residual_j": 3.3306690738754696e-16,
+      "ground_impulse_n_s": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "ground_torque_impulse_n_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "substep_accounts": [
+      {
+        "dt_s": 0.004166666666666667,
+        "energy_residual_j": 0.0,
+        "energy_tolerance_j": 9.916591454018587e-09,
+        "P_residual_n_s": [
+          0.0,
+          6.505213034913027e-19,
+          0.0
+        ],
+        "L_residual_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ground_impulse_n_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ledger": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "iterations": 0,
+        "equation_residual": 0.0,
+        "poses_wxyz": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            2.085058960996311,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "velocities": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -12.466874999999964,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "material_history": [],
+        "newton_start": {
+          "strategy": "fixed-island",
+          "iteration_evaluations": 1
+        },
+        "contact_schedule": null,
+        "representation": {
+          "mode": "rigid-free-flight",
+          "sphere_id": 1,
+          "island_body_ids": [
+            0
+          ],
+          "separation_lower_bound_m": 2.078318554687511,
+          "activation_margin_m": 1e-10,
+          "island_travel_bound_m": 0.003359558623150025,
+          "reason": "Swept sphere is separated throughout the candidate interval; material island continues solving",
+          "integration": "constant gravity midpoint; reference isotropic-spin Cayley update"
+        }
+      },
+      {
+        "dt_s": 0.004166666666666667,
+        "energy_residual_j": -1.1102230246251565e-16,
+        "energy_tolerance_j": 9.916591454018587e-09,
+        "P_residual_n_s": [
+          0.0,
+          6.505213034913027e-19,
+          0.0
+        ],
+        "L_residual_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ground_impulse_n_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ledger": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "iterations": 0,
+        "equation_residual": 0.0,
+        "poses_wxyz": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            2.033028492246311,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "velocities": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -12.507749999999964,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "material_history": [],
+        "newton_start": {
+          "strategy": "fixed-island",
+          "iteration_evaluations": 1
+        },
+        "contact_schedule": null,
+        "representation": {
+          "mode": "rigid-free-flight",
+          "sphere_id": 1,
+          "island_body_ids": [
+            0
+          ],
+          "separation_lower_bound_m": 2.026288085937511,
+          "activation_margin_m": 1e-10,
+          "island_travel_bound_m": 0.003359558623150025,
+          "reason": "Swept sphere is separated throughout the candidate interval; material island continues solving",
+          "integration": "constant gravity midpoint; reference isotropic-spin Cayley update"
+        }
+      },
+      {
+        "dt_s": 0.004166666666666667,
+        "energy_residual_j": -1.1102230246251565e-16,
+        "energy_tolerance_j": 9.916591454018586e-09,
+        "P_residual_n_s": [
+          0.0,
+          1.452830911130576e-17,
+          0.0
+        ],
+        "L_residual_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ground_impulse_n_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ledger": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "iterations": 0,
+        "equation_residual": 0.0,
+        "poses_wxyz": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.9808277109963104,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "velocities": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -12.548624999999964,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "material_history": [],
+        "newton_start": {
+          "strategy": "fixed-island",
+          "iteration_evaluations": 1
+        },
+        "contact_schedule": null,
+        "representation": {
+          "mode": "rigid-free-flight",
+          "sphere_id": 1,
+          "island_body_ids": [
+            0
+          ],
+          "separation_lower_bound_m": 1.9740873046875103,
+          "activation_margin_m": 1e-10,
+          "island_travel_bound_m": 0.003359558623150025,
+          "reason": "Swept sphere is separated throughout the candidate interval; material island continues solving",
+          "integration": "constant gravity midpoint; reference isotropic-spin Cayley update"
+        }
+      },
+      {
+        "dt_s": 0.004166666666666667,
+        "energy_residual_j": -1.1102230246251565e-16,
+        "energy_tolerance_j": 9.916591454018584e-09,
+        "P_residual_n_s": [
+          0.0,
+          -1.3227266504323154e-17,
+          0.0
+        ],
+        "L_residual_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ground_impulse_n_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ledger": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "iterations": 0,
+        "equation_residual": 0.0,
+        "poses_wxyz": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.9284566172463098,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "velocities": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -12.589499999999964,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "material_history": [],
+        "newton_start": {
+          "strategy": "fixed-island",
+          "iteration_evaluations": 1
+        },
+        "contact_schedule": null,
+        "representation": {
+          "mode": "rigid-free-flight",
+          "sphere_id": 1,
+          "island_body_ids": [
+            0
+          ],
+          "separation_lower_bound_m": 1.9217162109375097,
+          "activation_margin_m": 1e-10,
+          "island_travel_bound_m": 0.003359558623150025,
+          "reason": "Swept sphere is separated throughout the candidate interval; material island continues solving",
+          "integration": "constant gravity midpoint; reference isotropic-spin Cayley update"
+        }
+      },
+      {
+        "dt_s": 0.004166666666666667,
+        "energy_residual_j": 0.0,
+        "energy_tolerance_j": 9.916591454018584e-09,
+        "P_residual_n_s": [
+          0.0,
+          1.452830911130576e-17,
+          0.0
+        ],
+        "L_residual_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ground_impulse_n_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ledger": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "iterations": 0,
+        "equation_residual": 0.0,
+        "poses_wxyz": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.8759152109963093,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "velocities": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -12.630374999999963,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "material_history": [],
+        "newton_start": {
+          "strategy": "fixed-island",
+          "iteration_evaluations": 1
+        },
+        "contact_schedule": null,
+        "representation": {
+          "mode": "rigid-free-flight",
+          "sphere_id": 1,
+          "island_body_ids": [
+            0
+          ],
+          "separation_lower_bound_m": 1.8691748046875092,
+          "activation_margin_m": 1e-10,
+          "island_travel_bound_m": 0.003359558623150025,
+          "reason": "Swept sphere is separated throughout the candidate interval; material island continues solving",
+          "integration": "constant gravity midpoint; reference isotropic-spin Cayley update"
+        }
+      },
+      {
+        "dt_s": 0.004166666666666667,
+        "energy_residual_j": 0.0,
+        "energy_tolerance_j": 9.916591454018584e-09,
+        "P_residual_n_s": [
+          0.0,
+          -1.3227266504323154e-17,
+          0.0
+        ],
+        "L_residual_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ground_impulse_n_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ledger": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "iterations": 0,
+        "equation_residual": 0.0,
+        "poses_wxyz": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.823203492246309,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "velocities": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -12.671249999999963,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "material_history": [],
+        "newton_start": {
+          "strategy": "fixed-island",
+          "iteration_evaluations": 1
+        },
+        "contact_schedule": null,
+        "representation": {
+          "mode": "rigid-free-flight",
+          "sphere_id": 1,
+          "island_body_ids": [
+            0
+          ],
+          "separation_lower_bound_m": 1.8164630859375088,
+          "activation_margin_m": 1e-10,
+          "island_travel_bound_m": 0.003359558623150025,
+          "reason": "Swept sphere is separated throughout the candidate interval; material island continues solving",
+          "integration": "constant gravity midpoint; reference isotropic-spin Cayley update"
+        }
+      },
+      {
+        "dt_s": 0.004166666666666667,
+        "energy_residual_j": -1.1102230246251565e-16,
+        "energy_tolerance_j": 9.916591454018584e-09,
+        "P_residual_n_s": [
+          0.0,
+          1.452830911130576e-17,
+          0.0
+        ],
+        "L_residual_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ground_impulse_n_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ledger": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "iterations": 0,
+        "equation_residual": 0.0,
+        "poses_wxyz": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.7703214609963087,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "velocities": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -12.712124999999963,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "material_history": [],
+        "newton_start": {
+          "strategy": "fixed-island",
+          "iteration_evaluations": 1
+        },
+        "contact_schedule": null,
+        "representation": {
+          "mode": "rigid-free-flight",
+          "sphere_id": 1,
+          "island_body_ids": [
+            0
+          ],
+          "separation_lower_bound_m": 1.7635810546875086,
+          "activation_margin_m": 1e-10,
+          "island_travel_bound_m": 0.003359558623150025,
+          "reason": "Swept sphere is separated throughout the candidate interval; material island continues solving",
+          "integration": "constant gravity midpoint; reference isotropic-spin Cayley update"
+        }
+      },
+      {
+        "dt_s": 0.004166666666666667,
+        "energy_residual_j": -1.1102230246251565e-16,
+        "energy_tolerance_j": 9.916591454018582e-09,
+        "P_residual_n_s": [
+          0.0,
+          -1.3227266504323154e-17,
+          0.0
+        ],
+        "L_residual_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ground_impulse_n_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ledger": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "iterations": 0,
+        "equation_residual": 0.0,
+        "poses_wxyz": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.7172691172463086,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "velocities": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -12.752999999999963,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "material_history": [],
+        "newton_start": {
+          "strategy": "fixed-island",
+          "iteration_evaluations": 1
+        },
+        "contact_schedule": null,
+        "representation": {
+          "mode": "rigid-free-flight",
+          "sphere_id": 1,
+          "island_body_ids": [
+            0
+          ],
+          "separation_lower_bound_m": 1.7105287109375085,
+          "activation_margin_m": 1e-10,
+          "island_travel_bound_m": 0.003359558623150025,
+          "reason": "Swept sphere is separated throughout the candidate interval; material island continues solving",
+          "integration": "constant gravity midpoint; reference isotropic-spin Cayley update"
+        }
+      },
+      {
+        "dt_s": 0.004166666666666667,
+        "energy_residual_j": -1.1102230246251565e-16,
+        "energy_tolerance_j": 9.91659145401858e-09,
+        "P_residual_n_s": [
+          0.0,
+          1.452830911130576e-17,
+          0.0
+        ],
+        "L_residual_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ground_impulse_n_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ledger": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "iterations": 0,
+        "equation_residual": 0.0,
+        "poses_wxyz": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.6640464609963086,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "velocities": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -12.793874999999963,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "material_history": [],
+        "newton_start": {
+          "strategy": "fixed-island",
+          "iteration_evaluations": 1
+        },
+        "contact_schedule": null,
+        "representation": {
+          "mode": "rigid-free-flight",
+          "sphere_id": 1,
+          "island_body_ids": [
+            0
+          ],
+          "separation_lower_bound_m": 1.6573060546875085,
+          "activation_margin_m": 1e-10,
+          "island_travel_bound_m": 0.003359558623150025,
+          "reason": "Swept sphere is separated throughout the candidate interval; material island continues solving",
+          "integration": "constant gravity midpoint; reference isotropic-spin Cayley update"
+        }
+      },
+      {
+        "dt_s": 0.004166666666666667,
+        "energy_residual_j": 0.0,
+        "energy_tolerance_j": 9.91659145401858e-09,
+        "P_residual_n_s": [
+          0.0,
+          1.452830911130576e-17,
+          0.0
+        ],
+        "L_residual_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ground_impulse_n_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ledger": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "iterations": 0,
+        "equation_residual": 0.0,
+        "poses_wxyz": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.6106534922463087,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "velocities": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -12.834749999999962,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "material_history": [],
+        "newton_start": {
+          "strategy": "fixed-island",
+          "iteration_evaluations": 1
+        },
+        "contact_schedule": null,
+        "representation": {
+          "mode": "rigid-free-flight",
+          "sphere_id": 1,
+          "island_body_ids": [
+            0
+          ],
+          "separation_lower_bound_m": 1.6039130859375086,
+          "activation_margin_m": 1e-10,
+          "island_travel_bound_m": 0.003359558623150025,
+          "reason": "Swept sphere is separated throughout the candidate interval; material island continues solving",
+          "integration": "constant gravity midpoint; reference isotropic-spin Cayley update"
+        }
+      },
+      {
+        "dt_s": 0.004166666666666667,
+        "energy_residual_j": 0.0,
+        "energy_tolerance_j": 9.91659145401858e-09,
+        "P_residual_n_s": [
+          0.0,
+          -1.3227266504323154e-17,
+          0.0
+        ],
+        "L_residual_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ground_impulse_n_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ledger": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "iterations": 0,
+        "equation_residual": 0.0,
+        "poses_wxyz": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.557090210996309,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "velocities": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -12.875624999999962,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "material_history": [],
+        "newton_start": {
+          "strategy": "fixed-island",
+          "iteration_evaluations": 1
+        },
+        "contact_schedule": null,
+        "representation": {
+          "mode": "rigid-free-flight",
+          "sphere_id": 1,
+          "island_body_ids": [
+            0
+          ],
+          "separation_lower_bound_m": 1.5503498046875088,
+          "activation_margin_m": 1e-10,
+          "island_travel_bound_m": 0.003359558623150025,
+          "reason": "Swept sphere is separated throughout the candidate interval; material island continues solving",
+          "integration": "constant gravity midpoint; reference isotropic-spin Cayley update"
+        }
+      },
+      {
+        "dt_s": 0.004166666666666667,
+        "energy_residual_j": -1.1102230246251565e-16,
+        "energy_tolerance_j": 9.91659145401858e-09,
+        "P_residual_n_s": [
+          0.0,
+          1.452830911130576e-17,
+          0.0
+        ],
+        "L_residual_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ground_impulse_n_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ledger": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "iterations": 0,
+        "equation_residual": 0.0,
+        "poses_wxyz": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.5033566172463093,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "velocities": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -12.916499999999962,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "material_history": [],
+        "newton_start": {
+          "strategy": "fixed-island",
+          "iteration_evaluations": 1
+        },
+        "contact_schedule": null,
+        "representation": {
+          "mode": "rigid-free-flight",
+          "sphere_id": 1,
+          "island_body_ids": [
+            0
+          ],
+          "separation_lower_bound_m": 1.4966162109375092,
+          "activation_margin_m": 1e-10,
+          "island_travel_bound_m": 0.003359558623150025,
+          "reason": "Swept sphere is separated throughout the candidate interval; material island continues solving",
+          "integration": "constant gravity midpoint; reference isotropic-spin Cayley update"
+        }
+      },
+      {
+        "dt_s": 0.004166666666666667,
+        "energy_residual_j": 2.220446049250313e-16,
+        "energy_tolerance_j": 9.916591454018579e-09,
+        "P_residual_n_s": [
+          0.0,
+          -1.3227266504323154e-17,
+          0.0
+        ],
+        "L_residual_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ground_impulse_n_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ledger": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "iterations": 0,
+        "equation_residual": 0.0,
+        "poses_wxyz": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.4494527109963098,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "velocities": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -12.957374999999962,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "material_history": [],
+        "newton_start": {
+          "strategy": "fixed-island",
+          "iteration_evaluations": 1
+        },
+        "contact_schedule": null,
+        "representation": {
+          "mode": "rigid-free-flight",
+          "sphere_id": 1,
+          "island_body_ids": [
+            0
+          ],
+          "separation_lower_bound_m": 1.4427123046875097,
+          "activation_margin_m": 1e-10,
+          "island_travel_bound_m": 0.003359558623150025,
+          "reason": "Swept sphere is separated throughout the candidate interval; material island continues solving",
+          "integration": "constant gravity midpoint; reference isotropic-spin Cayley update"
+        }
+      },
+      {
+        "dt_s": 0.004166666666666667,
+        "energy_residual_j": -1.1102230246251565e-16,
+        "energy_tolerance_j": 9.91659145401858e-09,
+        "P_residual_n_s": [
+          0.0,
+          1.452830911130576e-17,
+          0.0
+        ],
+        "L_residual_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ground_impulse_n_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ledger": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "iterations": 0,
+        "equation_residual": 0.0,
+        "poses_wxyz": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.3953784922463104,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "velocities": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -12.998249999999961,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "material_history": [],
+        "newton_start": {
+          "strategy": "fixed-island",
+          "iteration_evaluations": 1
+        },
+        "contact_schedule": null,
+        "representation": {
+          "mode": "rigid-free-flight",
+          "sphere_id": 1,
+          "island_body_ids": [
+            0
+          ],
+          "separation_lower_bound_m": 1.3886380859375103,
+          "activation_margin_m": 1e-10,
+          "island_travel_bound_m": 0.003359558623150025,
+          "reason": "Swept sphere is separated throughout the candidate interval; material island continues solving",
+          "integration": "constant gravity midpoint; reference isotropic-spin Cayley update"
+        }
+      },
+      {
+        "dt_s": 0.004166666666666667,
+        "energy_residual_j": 1.1102230246251565e-16,
+        "energy_tolerance_j": 9.91659145401858e-09,
+        "P_residual_n_s": [
+          0.0,
+          -1.3227266504323154e-17,
+          0.0
+        ],
+        "L_residual_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ground_impulse_n_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ledger": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "iterations": 0,
+        "equation_residual": 0.0,
+        "poses_wxyz": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.341133960996311,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "velocities": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -13.039124999999961,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "material_history": [],
+        "newton_start": {
+          "strategy": "fixed-island",
+          "iteration_evaluations": 1
+        },
+        "contact_schedule": null,
+        "representation": {
+          "mode": "rigid-free-flight",
+          "sphere_id": 1,
+          "island_body_ids": [
+            0
+          ],
+          "separation_lower_bound_m": 1.334393554687511,
+          "activation_margin_m": 1e-10,
+          "island_travel_bound_m": 0.003359558623150025,
+          "reason": "Swept sphere is separated throughout the candidate interval; material island continues solving",
+          "integration": "constant gravity midpoint; reference isotropic-spin Cayley update"
+        }
+      },
+      {
+        "dt_s": 0.004166666666666667,
+        "energy_residual_j": -1.1102230246251565e-16,
+        "energy_tolerance_j": 9.91659145401858e-09,
+        "P_residual_n_s": [
+          0.0,
+          1.452830911130576e-17,
+          0.0
+        ],
+        "L_residual_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ground_impulse_n_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          -0.0,
+          -0.0,
+          -0.0
+        ],
+        "ledger": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "iterations": 0,
+        "equation_residual": 0.0,
+        "poses_wxyz": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.286719117246312,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "velocities": [
+          [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -13.079999999999961,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        ],
+        "material_history": [],
+        "newton_start": {
+          "strategy": "fixed-island",
+          "iteration_evaluations": 1
+        },
+        "contact_schedule": null,
+        "representation": {
+          "mode": "rigid-free-flight",
+          "sphere_id": 1,
+          "island_body_ids": [
+            0
+          ],
+          "separation_lower_bound_m": 1.2799787109375118,
+          "activation_margin_m": 1e-10,
+          "island_travel_bound_m": 0.003359558623150025,
+          "reason": "Swept sphere is separated throughout the candidate interval; material island continues solving",
+          "integration": "constant gravity midpoint; reference isotropic-spin Cayley update"
+        }
+      }
+    ],
+    "performance": {
+      "pipeline": "parallel",
+      "newton_strategy": "ranked",
+      "line_search": "batch-tail",
+      "linear_backend": "cupy-reference",
+      "contact_resolution": "reference",
+      "step_s": 0.8284433000371791,
+      "last_batch_ms": 39.19109998969361,
+      "compute_ratio": 1.6094442833607268,
+      "microsteps": 320,
+      "nonlinear_iterations": 0,
+      "trial_evaluations": 321
+    },
+    "representations": {
+      "schema": "banjo.object-representations.v1",
+      "policy": "partitioned-flight",
+      "families": [
+        "sleeping",
+        "rigid",
+        "articulated",
+        "reduced-solid",
+        "detailed-solid",
+        "flowing",
+        "thermal",
+        "chemical"
+      ],
+      "sphere_id": 1,
+      "mechanical_mode": "rigid-free-flight",
+      "reason": "Swept sphere is separated throughout the candidate interval; material island continues solving",
+      "transitions": [
+        {
+          "time_s": 0.0,
+          "from_mode": "rigid-coupled-contact",
+          "to_mode": "rigid-free-flight",
+          "reason": "Swept sphere is separated throughout the candidate interval; material island continues solving",
+          "sphere_id": 1,
+          "state_mapping": "identity: same matter, poses, velocities and histories; no topology change",
+          "topology_transfer": false,
+          "audit": "No material-state remapping; full accepted substep P/L/energy accounts measure this integration handoff"
+        }
+      ],
+      "ownership": "canonical world arrays; derived island caches never own extra matter",
+      "implemented_scope": "isolated isotropic rigid sphere plus continuously solved connected rigid-cell island",
+      "unsupported": [
+        "automatic equilibrium sleep",
+        "general articulated mapping",
+        "detailed sphere fracture",
+        "automatic damaged-fragment coarsening",
+        "reduced-solid modes",
+        "flowing",
+        "thermal",
+        "chemical"
+      ]
+    },
+    "render_schedule": {
+      "safe_rigid_flight_steps": 16,
+      "scope": "Swept collision-free rigid sphere with fixed surroundings only; coupled material worlds request one host tick"
+    },
+    "qualification": {
+      "backend": "cupy-implicit-body",
+      "gpu": true,
+      "device": "cuda:0",
+      "dtype": "float64",
+      "source_sha256": "2ec72186d7e2c6c434cbb9f1140b7f5b2e06b81dd933ca870466997c5e4ce3ab",
+      "complete_physics_validated": false,
+      "realtime_qualified": false,
+      "scope": "Experimental finite rigid-cell isotropic inertia; declared mixed-mode cohesive/6-mode plastic interfaces and frictionless normal compliance. No calibrated bulk/grain/J2/thermal law or CCD qualification."
+    }
+  },
+  "includes": "GPU worker, JSON encode/decode, bounded exact replay journal and localhost HTTP; excludes browser rendering"
+}

@@ -33,4 +33,5 @@ assert.equal(settingsDiffer({height_m:.001,dt_s:1/240},{height_m:10,dt_s:1/240})
 assert.equal(settingsDiffer({height_m:10,dt_s:1/240,device:'cuda:0'},{height_m:10,dt_s:1/240}),false);
 assert.equal(remainingSteps({time_s:2-1e-15,dt_s:1/1920}),0);
 assert.equal(remainingSteps({time_s:0,dt_s:1/1920}),3840);
+assert.equal(settingsDiffer({representation_policy:'coupled-reference'},{representation_policy:'partitioned-flight'}),true,'representation change requires a new scene');
 console.log('PASS 10 m visibility, physical-time/flight estimates, true ball contact, rotated geometry and three camera aspects');

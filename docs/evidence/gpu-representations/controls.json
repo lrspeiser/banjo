@@ -1,0 +1,381 @@
+{
+  "schema": "banjo.gpu-representation-evidence.v1",
+  "source_sha256": "2ec72186d7e2c6c434cbb9f1140b7f5b2e06b81dd933ca870466997c5e4ce3ab",
+  "comparisons": [
+    {
+      "material": "glass",
+      "conditions": {
+        "material": "glass",
+        "ball_material": "iron",
+        "ball_mass_kg": 0.01,
+        "height_m": 10,
+        "dt_s": 0.004166666666666667,
+        "experiment": "sheet",
+        "device": "cuda:0",
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "cupy-reference",
+        "contact_resolution": "reference",
+        "representation_policy": "partitioned-flight"
+      },
+      "reference_performance": {
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "cupy-reference",
+        "contact_resolution": "reference",
+        "step_s": 1.8865685000200756,
+        "last_batch_ms": 1886.5685000200756,
+        "compute_ratio": 0.002208595482550635,
+        "microsteps": 32,
+        "nonlinear_iterations": 176,
+        "trial_evaluations": 48545
+      },
+      "partitioned_performance": {
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "cupy-reference",
+        "contact_resolution": "reference",
+        "step_s": 0.14125719998264685,
+        "last_batch_ms": 141.25719998264685,
+        "compute_ratio": 0.02949702151237978,
+        "microsteps": 2,
+        "nonlinear_iterations": 8,
+        "trial_evaluations": 3293
+      },
+      "diagnostics": {
+        "dynamic_mass_kg": 0.03250000000000001,
+        "mechanical_j": 1.9717143954018619,
+        "material_stored_j": 2.3558236617806147e-21,
+        "contact_stored_j": 3.810816590891184e-19,
+        "global_energy_residual_j": -2.220446049250313e-16,
+        "momentum_n_s": [
+          -1.4582889105461053e-13,
+          -0.1404087356544725,
+          -9.279045198163708e-14
+        ],
+        "angular_momentum_n_m_s": [
+          -2.78379153597403e-15,
+          2.2689531000491257e-15,
+          4.374878886309691e-15
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 48,
+        "maximum_energy_residual_j": 3.96016700940541e-16,
+        "ground_impulse_n_s": [
+          -1.0650838261146287e-13,
+          0.0009197018431966309,
+          -3.53048111075135e-14
+        ],
+        "ground_torque_impulse_n_m_s": [
+          4.500003660352549e-15,
+          1.4092982505436079e-16,
+          1.2069937154058028e-14
+        ]
+      },
+      "sheet_common_time_max_position_difference_m": 3.038600135396585e-10,
+      "transitions": [
+        {
+          "time_s": 0.0,
+          "from_mode": "rigid-coupled-contact",
+          "to_mode": "rigid-free-flight",
+          "reason": "Swept sphere is separated throughout the candidate interval; material island continues solving",
+          "sphere_id": 12,
+          "state_mapping": "identity: same matter, poses, velocities and histories; no topology change",
+          "topology_transfer": false,
+          "audit": "No material-state remapping; full accepted substep P/L/energy accounts measure this integration handoff"
+        }
+      ]
+    },
+    {
+      "material": "oak",
+      "conditions": {
+        "material": "oak",
+        "ball_material": "iron",
+        "ball_mass_kg": 0.01,
+        "height_m": 10,
+        "dt_s": 0.004166666666666667,
+        "experiment": "sheet",
+        "device": "cuda:0",
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "cupy-reference",
+        "contact_resolution": "reference",
+        "representation_policy": "partitioned-flight"
+      },
+      "reference_performance": {
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "cupy-reference",
+        "contact_resolution": "reference",
+        "step_s": 1.417508100043051,
+        "last_batch_ms": 1417.508100043051,
+        "compute_ratio": 0.002939430587056343,
+        "microsteps": 32,
+        "nonlinear_iterations": 152,
+        "trial_evaluations": 40556
+      },
+      "partitioned_performance": {
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "cupy-reference",
+        "contact_resolution": "reference",
+        "step_s": 0.019638300000224262,
+        "last_batch_ms": 19.638300000224262,
+        "compute_ratio": 0.21217043565986285,
+        "microsteps": 1,
+        "nonlinear_iterations": 3,
+        "trial_evaluations": 342
+      },
+      "diagnostics": {
+        "dynamic_mass_kg": 0.016300000000000002,
+        "mechanical_j": 1.9669467353721395,
+        "material_stored_j": 9.941079925075878e-13,
+        "contact_stored_j": 2.8728473330657748e-11,
+        "global_energy_residual_j": 0.0,
+        "momentum_n_s": [
+          5.078838804074419e-16,
+          -0.14040875145432566,
+          3.3302894075385836e-17
+        ],
+        "angular_momentum_n_m_s": [
+          9.996405226454771e-19,
+          7.450740459791935e-21,
+          -1.52426143238722e-17
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 48,
+        "maximum_energy_residual_j": 8.744749443380421e-17,
+        "ground_impulse_n_s": [
+          -2.471002433559297e-15,
+          0.0002575110447129439,
+          5.184418762825071e-16
+        ],
+        "ground_torque_impulse_n_m_s": [
+          5.172506941949673e-18,
+          -9.699241014102767e-18,
+          6.929068321719078e-17
+        ]
+      },
+      "sheet_common_time_max_position_difference_m": 5.532511115902139e-10,
+      "transitions": [
+        {
+          "time_s": 0.0,
+          "from_mode": "rigid-coupled-contact",
+          "to_mode": "rigid-free-flight",
+          "reason": "Swept sphere is separated throughout the candidate interval; material island continues solving",
+          "sphere_id": 12,
+          "state_mapping": "identity: same matter, poses, velocities and histories; no topology change",
+          "topology_transfer": false,
+          "audit": "No material-state remapping; full accepted substep P/L/energy accounts measure this integration handoff"
+        }
+      ]
+    },
+    {
+      "material": "iron",
+      "conditions": {
+        "material": "iron",
+        "ball_material": "iron",
+        "ball_mass_kg": 0.01,
+        "height_m": 10,
+        "dt_s": 0.004166666666666667,
+        "experiment": "sheet",
+        "device": "cuda:0",
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "cupy-reference",
+        "contact_resolution": "reference",
+        "representation_policy": "partitioned-flight"
+      },
+      "reference_performance": {
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "cupy-reference",
+        "contact_resolution": "reference",
+        "step_s": 1.390733000007458,
+        "last_batch_ms": 1390.733000007458,
+        "compute_ratio": 0.0029960220018107877,
+        "microsteps": 32,
+        "nonlinear_iterations": 138,
+        "trial_evaluations": 39454
+      },
+      "partitioned_performance": {
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "cupy-reference",
+        "contact_resolution": "reference",
+        "step_s": 0.129958399978932,
+        "last_batch_ms": 129.958399978932,
+        "compute_ratio": 0.03206154174983794,
+        "microsteps": 2,
+        "nonlinear_iterations": 8,
+        "trial_evaluations": 3644
+      },
+      "diagnostics": {
+        "dynamic_mass_kg": 0.08083000000000001,
+        "mechanical_j": 1.985937914401862,
+        "material_stored_j": 2.400321723257353e-18,
+        "contact_stored_j": 3.057493377099877e-18,
+        "global_energy_residual_j": 0.0,
+        "momentum_n_s": [
+          -2.861435842967159e-13,
+          -0.1404086746237805,
+          -2.0326065581991683e-14
+        ],
+        "angular_momentum_n_m_s": [
+          -6.090429972062574e-16,
+          1.8022917027426895e-15,
+          8.583163701096297e-15
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 12,
+        "maximum_energy_residual_j": 3.4898506307579517e-16,
+        "ground_impulse_n_s": [
+          6.792433736759676e-13,
+          0.002895251628400354,
+          4.628231400930936e-14
+        ],
+        "ground_torque_impulse_n_m_s": [
+          4.7406118948502575e-14,
+          1.1909068196927261e-14,
+          -8.29384719901414e-14
+        ]
+      },
+      "sheet_common_time_max_position_difference_m": 7.98998853190902e-11,
+      "transitions": [
+        {
+          "time_s": 0.0,
+          "from_mode": "rigid-coupled-contact",
+          "to_mode": "rigid-free-flight",
+          "reason": "Swept sphere is separated throughout the candidate interval; material island continues solving",
+          "sphere_id": 12,
+          "state_mapping": "identity: same matter, poses, velocities and histories; no topology change",
+          "topology_transfer": false,
+          "audit": "No material-state remapping; full accepted substep P/L/energy accounts measure this integration handoff"
+        }
+      ]
+    },
+    {
+      "material": "ice",
+      "conditions": {
+        "material": "ice",
+        "ball_material": "iron",
+        "ball_mass_kg": 0.01,
+        "height_m": 10,
+        "dt_s": 0.004166666666666667,
+        "experiment": "sheet",
+        "device": "cuda:0",
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "cupy-reference",
+        "contact_resolution": "reference",
+        "representation_policy": "partitioned-flight"
+      },
+      "reference_performance": {
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "cupy-reference",
+        "contact_resolution": "reference",
+        "step_s": 1.2809196999878623,
+        "last_batch_ms": 1280.9196999878623,
+        "compute_ratio": 0.0032528710946565574,
+        "microsteps": 32,
+        "nonlinear_iterations": 128,
+        "trial_evaluations": 33665
+      },
+      "partitioned_performance": {
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "cupy-reference",
+        "contact_resolution": "reference",
+        "step_s": 0.015023000014480203,
+        "last_batch_ms": 15.023000014480203,
+        "compute_ratio": 0.27735250367107406,
+        "microsteps": 1,
+        "nonlinear_iterations": 3,
+        "trial_evaluations": 342
+      },
+      "diagnostics": {
+        "dynamic_mass_kg": 0.018253000000000002,
+        "mechanical_j": 1.9675215032169535,
+        "material_stored_j": 1.8695342120868426e-11,
+        "contact_stored_j": 6.621314031239244e-11,
+        "global_energy_residual_j": -2.220446049250313e-16,
+        "momentum_n_s": [
+          -3.586714543517905e-15,
+          -0.14040875415460716,
+          4.797176226393127e-16
+        ],
+        "angular_momentum_n_m_s": [
+          1.438966056165623e-17,
+          -1.421812772064716e-18,
+          1.0754932128183435e-16
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 48,
+        "maximum_energy_residual_j": 4.222244155887816e-17,
+        "ground_impulse_n_s": [
+          1.527274459787552e-14,
+          0.0003373372211315856,
+          2.719824550643561e-15
+        ],
+        "ground_torque_impulse_n_m_s": [
+          -1.583072228031509e-15,
+          -7.427198801270933e-17,
+          -1.9701335831831536e-15
+        ]
+      },
+      "sheet_common_time_max_position_difference_m": 6.134277842628766e-10,
+      "transitions": [
+        {
+          "time_s": 0.0,
+          "from_mode": "rigid-coupled-contact",
+          "to_mode": "rigid-free-flight",
+          "reason": "Swept sphere is separated throughout the candidate interval; material island continues solving",
+          "sphere_id": 12,
+          "state_mapping": "identity: same matter, poses, velocities and histories; no topology change",
+          "topology_transfer": false,
+          "audit": "No material-state remapping; full accepted substep P/L/energy accounts measure this integration handoff"
+        }
+      ]
+    }
+  ],
+  "control_materials": [
+    "glass",
+    "oak",
+    "iron",
+    "ice"
+  ],
+  "swept_interior_and_rotated_plane": true,
+  "canonical_proposal_and_interval_rollback": true,
+  "low_energy_reference_impact_exact": true,
+  "complete_10m_impact_qualified": false,
+  "realtime_qualified": false
+}

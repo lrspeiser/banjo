@@ -12,15 +12,21 @@ import time
 import cupy as cp
 import cupyx
 import numpy as np
+from gpu_representations import FlightPartition, KERNEL as REPRESENTATION_KERNEL
 ROOT=Path(__file__).resolve().parents[1]
 HEADERS=('src/physics/FiniteFrameKernel.hpp','src/physics/CohesiveInterfaceKernel.hpp',
  'src/material/ConnectorModeKernel.hpp','src/physics/MaterialHistoryKernel.hpp',
  'src/physics/NormalComplianceKernel.hpp','src/physics/CoupledGpuKernel.hpp')
-SOURCES=('scripts/gpu_coupled_world.py','scripts/gpu_linear_solve.py',*HEADERS,'client/voxel-lab/material-laws.json')
-def source_hash():
+SOURCES=('scripts/gpu_coupled_world.py','scripts/gpu_linear_solve.py','scripts/gpu_representations.py',*HEADERS,'client/voxel-lab/material-laws.json')
+def _disk_source_hash():
     h=hashlib.sha256()
     for name in SOURCES:h.update(name.encode());h.update(b'\0');h.update((ROOT/name).read_bytes())
     return h.hexdigest()
+
+# Evidence identifies the loaded implementation, even if source files change
+# while a long experiment is running. New worlds refuse a mixed-version worker.
+LOADED_SOURCE_SHA256=_disk_source_hash()
+def source_hash():return LOADED_SOURCE_SHA256
 
 KERNEL=r'''
 extern "C" __global__ void plan_contact_steps(const double *bodies,const unsigned *pairs,unsigned count,double h,double gy,
@@ -138,7 +144,7 @@ class CoupledEvaluator:
         self.bodies=cp.asarray(bodies,dtype=cp.float64).reshape(self.n,30)
         self.edges=cp.asarray(edges,dtype=cp.float64).reshape(self.m,70)
         if not bool(cp.isfinite(self.bodies).all()) or not bool(cp.isfinite(self.edges).all()):raise ValueError('Nonfinite coupled declaration')
-        code='\n'.join((ROOT/name).read_text(encoding='utf8').replace('#pragma once','') for name in HEADERS)+'\n'+KERNEL
+        code='\n'.join((ROOT/name).read_text(encoding='utf8').replace('#pragma once','') for name in HEADERS)+'\n'+KERNEL+REPRESENTATION_KERNEL
         self.module=cp.RawModule(code=code,options=('--std=c++17','--fmad=false'))
         if pipeline not in ('parallel','serial-reference'):raise ValueError('Unknown coupled trial pipeline')
         if newton_strategy not in ('ranked','single-reference'):raise ValueError('Unknown Newton starting strategy')
@@ -170,7 +176,7 @@ class CoupledEvaluator:
         self.active_weights=self.weights[self.dynamic]
         if linear_backend not in ('cupy-reference','native-cusolver'):raise ValueError('Unknown coupled linear backend')
         self.linear_backend=linear_backend;self.linear=None
-        if linear_backend=='native-cusolver':
+        if linear_backend=='native-cusolver' and len(self.dynamic):
             from gpu_linear_solve import ResidentLinearSolve
             self.linear=ResidentLinearSolve(len(self.dynamic))
 
@@ -338,7 +344,7 @@ class CoupledEvaluator:
         refuse('Coupled Newton iteration budget exceeded')
 
 def declaration(raw):
-    defaults=dict(material='glass',ball_material='iron',ball_mass_kg=.01,height_m=.02,dt_s=1/960,experiment='sheet',device='cuda:0',pipeline='parallel',newton_strategy='ranked',line_search='batch-tail',linear_backend='cupy-reference',contact_resolution='reference')
+    defaults=dict(material='glass',ball_material='iron',ball_mass_kg=.01,height_m=.02,dt_s=1/960,experiment='sheet',device='cuda:0',pipeline='parallel',newton_strategy='ranked',line_search='batch-tail',linear_backend='cupy-reference',contact_resolution='reference',representation_policy='coupled-reference')
     if not isinstance(raw,dict) or set(raw)-set(defaults):raise ValueError('Unknown coupled scene field')
     d=defaults|raw
     if d['device']!='cuda:0' or d['experiment'] not in ('sheet','freefall'):raise ValueError('Only explicit CUDA sheet/freefall experiments admitted')
@@ -347,6 +353,7 @@ def declaration(raw):
     if d['line_search'] not in ('batch-tail','serial-reference'):raise ValueError('Unknown Newton line search')
     if d['linear_backend'] not in ('cupy-reference','native-cusolver'):raise ValueError('Unknown coupled linear backend')
     if d['contact_resolution'] not in ('reference','phase-0.25','phase-0.125','phase-0.0625'):raise ValueError('Unknown contact timestep policy')
+    if d['representation_policy'] not in ('coupled-reference','partitioned-flight'):raise ValueError('Unknown representation policy')
     for name in ('material','ball_material'):
         if d[name] not in ('glass','oak','iron','ice'):raise ValueError('Unknown declared material')
     for name,lo,hi in (('ball_mass_kg',.001,1.),('height_m',.001,10.)):
@@ -356,6 +363,7 @@ def declaration(raw):
 
 class GpuCoupledWorld:
     def __init__(self,raw):
+        if _disk_source_hash()!=LOADED_SOURCE_SHA256:raise RuntimeError('Coupled implementation changed; restart the GPU worker before creating a scene')
         self.d=declaration(raw);profiles=json.loads((ROOT/'client/voxel-lab/material-laws.json').read_text(encoding='utf8'))['profiles'];profiles={p['material']:p for p in profiles}
         self.meta=[];bodies=[];edges=[];cell=.01;material=profiles[self.d['material']]
         self.material_model=material['display_model']
@@ -388,6 +396,7 @@ class GpuCoupledWorld:
         p=profiles[self.d['ball_material']];radius=(3*self.d['ball_mass_kg']/(4*math.pi*p['density_kg_m3']))**(1/3)
         body(2,p,[0,(.035 if self.d['experiment']=='sheet' else 0)+radius+self.d['height_m'],0],[radius]*3,mass=self.d['ball_mass_kg'])
         self.eval=CoupledEvaluator(bodies,edges,pipeline=self.d['pipeline'],newton_strategy=self.d['newton_strategy'],line_search=self.d['line_search'],linear_backend=self.d['linear_backend']);self.ticks=0;self.time=0.;self.step_s=0.;self.last_ms=0.;self.histories=np.zeros((len(edges),32))
+        self.representations=FlightPartition(self.eval,CoupledEvaluator) if self.d['representation_policy']=='partitioned-flight' else None
         self.P_ground=np.zeros(3);self.L_ground=np.zeros(3);self.max_residual=0.;self.fracture=self.plastic=self.return_excess=0.;self.total_iterations=0;self.microsteps=0
         baseline=self.eval.evaluate(self.eval.bodies[:,14:20],1e-12,gravity=0)
         if int(baseline['faults'][0]):raise RuntimeError('Invalid initial coupled energy state')
@@ -404,7 +413,13 @@ class GpuCoupledWorld:
     def advance(self,steps):
         if self.rejected:raise ValueError('Refused coupled world is stopped; reset required')
         if type(steps) is not int or not 1<=steps<=32 or self.ticks+steps>round(2/self.d['dt_s']):raise ValueError('Invalid coupled advance')
-        saved_b=self.eval.bodies.copy();saved_e=self.eval.edges.copy();accepted_b=cp.asnumpy(saved_b);accepted_e=cp.asnumpy(saved_e)
+        saved_b=self.eval.bodies.copy();saved_e=self.eval.edges.copy()
+        # Publication is part of the transaction: a failure while constructing
+        # the accepted snapshot must also restore clocks/accounts/mode history.
+        host_keys=('histories','ticks','time','microsteps','total_iterations','fracture','plastic','return_excess',
+            'P_ground','L_ground','max_residual','last_accounts','stored_j','contact_j','last_ms','step_s','accepted')
+        saved_host={key:(getattr(self,key).copy() if isinstance(getattr(self,key),np.ndarray) else getattr(self,key)) for key in host_keys}
+        saved_modes=(self.representations.mode,self.representations.reason,copy.deepcopy(self.representations.transitions)) if self.representations else None
         accounts=[];started=time.perf_counter();updates=0;trials=0;refusals=[];last_solver_failure=None;schedule=None
         try:
             for host_tick in range(steps):
@@ -419,7 +434,13 @@ class GpuCoupledWorld:
                             remainder=h-schedule['step_s'];h=schedule['step_s']
                             if remainder>0:queue.append((remainder,depth))
                     before=cp.asnumpy(self.eval.bodies);energy0,p0,l0=self.mechanics(before)
-                    try:out,velocity,iterations,equation=self.eval.solve(h)
+                    scale=float(np.min(2*before[before[:,0]!=0,4:7]));representation=None
+                    try:
+                        flight=self.representations.propose(h,.25*scale) if self.representations else None
+                        if flight is None:out,velocity,iterations,equation=self.eval.solve(h)
+                        else:
+                            out,velocity,iterations,equation,representation=flight
+                            self.eval.last_solve=copy.deepcopy(self.representations.island.last_solve)
                     except TrialFailure as error:
                         last_solver_failure=error.details
                         refusals.append(dict(trial=trials,dt_s=h,depth=depth,error=str(error),
@@ -437,7 +458,11 @@ class GpuCoupledWorld:
                     balance=energy1-energy0+ledger[1]-ledger[0]+ledger[2]+ledger[3]+ledger[5]-ledger[4]
                     pres=p1-p0-reaction-gravity_impulse;lres=l1-l0-reaction_torque-gravity_torque
                     tolerance=1e-10+1e-8*max(abs(energy0+ledger[0]+ledger[4]),1e-3)
-                    scale=float(np.min(2*before[before[:,0]!=0,4:7]));travel=float(np.max(np.linalg.norm(ending[:,7:10]-before[:,7:10],axis=1)))
+                    displacements=np.linalg.norm(ending[:,7:10]-before[:,7:10],axis=1)
+                    # The separated sphere has its own swept proof. The unchanged
+                    # travel bound still applies to every coupled island member.
+                    guarded=np.delete(displacements,self.representations.sphere) if representation else displacements
+                    travel=float(np.max(guarded,initial=0))
                     angles=h*np.max(np.linalg.norm((ending[:,17:20]+before[:,17:20])/2,axis=1))
                     # Conservative displacement guard prevents the tiny sheet
                     # from being skipped; CCD/event location is not qualified.
@@ -455,7 +480,8 @@ class GpuCoupledWorld:
                     if self.eval.m:self.eval.edges[:,35:67]=out['history']
                     accounts.append(dict(dt_s=h,energy_residual_j=balance,energy_tolerance_j=tolerance,P_residual_n_s=pres.tolist(),L_residual_n_m_s=lres.tolist(),
                         ground_impulse_n_s=reaction.tolist(),ground_torque_impulse_n_m_s=reaction_torque.tolist(),ledger=ledger.tolist(),iterations=iterations,equation_residual=equation,
-                        poses_wxyz=ending[:,7:14].tolist(),velocities=ending[:,14:20].tolist(),material_history=history.tolist(),newton_start=copy.deepcopy(self.eval.last_solve),contact_schedule=schedule))
+                        poses_wxyz=ending[:,7:14].tolist(),velocities=ending[:,14:20].tolist(),material_history=history.tolist(),newton_start=copy.deepcopy(self.eval.last_solve),contact_schedule=schedule,
+                        **({'representation':representation} if self.representations else {})))
             self.histories=history;self.ticks+=steps;self.time+=steps*self.d['dt_s'];self.microsteps+=updates;self.total_iterations+=sum(a['iterations'] for a in accounts)
             self.fracture+=sum(a['ledger'][2] for a in accounts) if self.material_model!='connector-plastic' else 0
             self.plastic+=sum(a['ledger'][2] for a in accounts) if self.material_model=='connector-plastic' else 0
@@ -463,11 +489,14 @@ class GpuCoupledWorld:
             self.P_ground+=sum((np.array(a['ground_impulse_n_s']) for a in accounts),start=np.zeros(3));self.L_ground+=sum((np.array(a['ground_torque_impulse_n_m_s']) for a in accounts),start=np.zeros(3))
             self.max_residual=max(self.max_residual,max(abs(a['energy_residual_j']) for a in accounts));self.last_accounts=accounts
             self.stored_j=float(ledger[1]);self.contact_j=float(ledger[5])
+            if self.representations:self.representations.commit_modes(accounts,self.time-steps*self.d['dt_s'])
             self.last_ms=(time.perf_counter()-started)*1000;self.step_s+=self.last_ms/1000;self.accepted=self._snapshot(ending);return self.snapshot()
         except Exception as error:
             restored=False
             try:cp.copyto(self.eval.bodies,saved_b);cp.copyto(self.eval.edges,saved_e);cp.cuda.get_current_stream().synchronize();restored=True
             except Exception:pass # A poisoned CUDA context cannot confirm GPU rollback.
+            for key,value in saved_host.items():setattr(self,key,value)
+            if saved_modes:self.representations.mode,self.representations.reason,self.representations.transitions=saved_modes
             self.rejected=dict(error=str(error),accepted_time_s=self.time,interval_rolled_back=restored,accepted_snapshot_preserved=True,
                 failed_interval_substeps=updates,trial_attempts=trials,subdivision_refusals=refusals,
                 last_solver_failure=last_solver_failure,last_trial_accounts=accounts[-4:],contact_timestep_policy=self.d['contact_resolution'],
@@ -486,7 +515,11 @@ class GpuCoupledWorld:
                 fracture_work_j=self.fracture,plastic_work_j=self.plastic,numerical_return_excess_j=self.return_excess,separated_sites=separated,yielded_faces=yielded,interfaces=self.eval.m,
                 maximum_energy_residual_j=self.max_residual,ground_impulse_n_s=self.P_ground.tolist(),ground_torque_impulse_n_m_s=self.L_ground.tolist()),
             substep_accounts=copy.deepcopy(self.last_accounts),performance=dict(pipeline=self.eval.pipeline,newton_strategy=self.eval.newton_strategy,line_search=self.eval.line_search,linear_backend=self.eval.linear_backend,contact_resolution=self.d['contact_resolution'],step_s=self.step_s,last_batch_ms=self.last_ms,compute_ratio=self.time/self.step_s if self.step_s else None,
-                microsteps=self.microsteps,nonlinear_iterations=self.total_iterations,trial_evaluations=self.eval.evaluations),
+                microsteps=self.microsteps,nonlinear_iterations=self.total_iterations,trial_evaluations=self.eval.evaluations+(self.representations.island.evaluations if self.representations and self.representations.island else 0)),
+            **({'representations':self.representations.snapshot(),
+                'render_schedule':dict(safe_rigid_flight_steps=self.representations.safe_rigid_batch(self.d['dt_s']),
+                    scope='Swept collision-free rigid sphere with fixed surroundings only; coupled material worlds request one host tick')}
+                if self.representations else {}),
             qualification=dict(backend='cupy-implicit-body',gpu=True,device='cuda:0',dtype='float64',source_sha256=self.hash,complete_physics_validated=False,realtime_qualified=False,
                 scope='Experimental finite rigid-cell isotropic inertia; declared mixed-mode cohesive/6-mode plastic interfaces and frictionless normal compliance. No calibrated bulk/grain/J2/thermal law or CCD qualification.'))
 
