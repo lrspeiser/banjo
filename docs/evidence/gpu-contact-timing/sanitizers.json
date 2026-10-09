@@ -1,0 +1,7 @@
+{
+  "source_sha256": "012e17b9d2d577bd79fc8eb54f5a73c4ff7d2b5dd11daecc6f15345cd60f9988",
+  "script_sha256": "064fd5dd4d8c3503ef4bec3ccb6c1d6407b2f4b38a965bd4f74998382c091a38",
+  "script": "import sys\r\nsys.path.insert(0,'scripts')\r\nimport cupy as cp\r\nfrom gpu_coupled_world import GpuCoupledWorld\r\nfor material in ('glass','oak','iron','ice'):\r\n w=GpuCoupledWorld({'material':material});e=w.eval\r\n v=e.bodies[:,14:20].reshape(-1);base=e.evaluate(v,1/960)\r\n d=len(e.dynamic);p=cp.broadcast_to(v,(2*d,len(v))).copy();ids=cp.arange(d)\r\n p[ids,e.dynamic]+=1e-12/e.active_weights;p[d+ids,e.dynamic]-=1e-12/e.active_weights\r\n o=e.evaluate(p,1/960,_jacobian_base=base);cp.cuda.get_current_stream().synchronize()\r\n assert not bool(cp.any(o['faults']))\r\nprint('Full/within-Jacobian parallel CUDA memory checks passed')\r\n\r\nfor material in ('glass','oak','iron','ice'):\r\n for experiment in ('sheet','freefall'):\r\n  w=GpuCoupledWorld(dict(material=material,ball_material=material,experiment=experiment,height_m=.001));e=w.eval\r\n  if experiment=='freefall':e.bodies[-1,15]=-.3\r\n  p=e.contact_schedule(1/240,.25);assert 0<p['step_s']<=1/240\r\ncp.cuda.get_current_stream().synchronize()\r\nprint('Shared contact policy CUDA memory checks passed')\r\n",
+  "memcheck": "========= COMPUTE-SANITIZER\n========= ERROR SUMMARY: 0 errors\n",
+  "racecheck": "========= COMPUTE-SANITIZER\n========= RACECHECK SUMMARY: 0 hazards displayed (0 errors, 0 warnings)\n"
+}

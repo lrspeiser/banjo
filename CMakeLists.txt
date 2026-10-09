@@ -2194,6 +2194,11 @@ if(BANJO_BUILD_TESTS)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu_coupled_convergence_test.py
                 --output ${CMAKE_CURRENT_BINARY_DIR}/gpu-coupled-convergence-evidence.json)
             set_tests_properties(banjo_gpu_coupled_convergence_tests PROPERTIES TIMEOUT 900 LABELS "gpu;experimental;material;contact")
+            add_test(NAME banjo_gpu_contact_timing_tests COMMAND ${BANJO_NEWTON_PYTHON}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu_contact_timing_test.py
+                --oracle $<TARGET_FILE:banjo_gpu_material_oracle>
+                --output ${CMAKE_CURRENT_BINARY_DIR}/gpu-contact-timing-evidence.json)
+            set_tests_properties(banjo_gpu_contact_timing_tests PROPERTIES TIMEOUT 900 LABELS "gpu;experimental;material;contact")
         endif()
         if(BANJO_TEST_CUPY)
             add_test(NAME banjo_cupy_physics_probe COMMAND ${Python3_EXECUTABLE}

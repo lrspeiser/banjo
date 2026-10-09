@@ -51,5 +51,22 @@ int main(){try{
         require(fabs(target-applied)<1e-14,"pair discrete work");require(dgLength(frameAdd(w.force_a,w.force_b))<1e-11,"work correction force reaction");
         require(dgLength(frameAdd(frameAdd(frameCross(p,w.force_a),w.torque_a),frameAdd(frameCross(q,w.force_b),w.torque_b)))<1e-11,"work correction torque reaction");
     }
-    std::cout<<"424 contact geometries / all 12 derivatives; 1000 work/P/L projections passed\n";return 0;
+    // Independent normal oscillator frequency; no display name dispatch.
+    for(double modulus:{70e9,12e9,211e9,9e9}){
+        std::array<double,30> plane{},ball{};plane[3]=211e9;ball[0]=2;ball[1]=.1;ball[2]=.4*.1*.02*.02;ball[3]=modulus;ball[4]=ball[5]=ball[6]=.02;ball[15]=-.3;
+        const double k=2/(1/modulus+1/211e9)*.01,omega=sqrt(k/.1),h=.001;
+        DGPose p{{0,0,0},{1,0,0,0}},q{{0,.02,0},{1,0,0,0}},future{{0,.02-.3*h,0},{1,0,0,0}};
+        const auto plan=dgContactSchedule(plane.data(),ball.data(),p,q,p,future,h,.25,1e-4);
+        require(fabs(plan.frequency_rad_s/omega-1)<1e-14,"normal frequency uses material stiffness and effective mass");
+        require(fabs(plan.step_s*omega-.25)<1e-14,"bounded normal contact phase");
+        ball[15]=0;const auto rest=dgContactSchedule(plane.data(),ball.data(),p,q,p,q,h,.25,1e-4);
+        require(rest.step_s==h,"unexcited touching contact does not force tiny steps");
+        q.p.y=.02003;future.p.y=q.p.y-.3*h;ball[15]=-.3;
+        const auto approach=dgContactSchedule(plane.data(),ball.data(),p,q,p,future,h,.25,1e-4);
+        require(fabs(approach.step_s-.00008)<1e-15,"free approach timestep is explicit prediction");
+        ball[15]=0;q.p.y=.020000000000001;future.p.y=q.p.y-.5*9.81*h*h;
+        const auto quiet=dgContactSchedule(plane.data(),ball.data(),p,q,p,future,h,.25,1e-4);
+        require(quiet.step_s==h,"sub-tolerance predicted contact must not bypass excitation cutoff");
+    }
+    std::cout<<"424 contact geometries / all 12 derivatives; 1000 work/P/L projections; four stiffness/phase/approach controls passed\n";return 0;
 }catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}

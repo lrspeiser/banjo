@@ -1,8 +1,9 @@
 {
-  "title": "Ranked CUDA Newton completes stronger controls; timestep accuracy and realtime remain open",
+  "title": "Analytical GPU contact timing and actual impact inspection; assemblies and realtime remain open",
   "date": "2026-10-09",
   "native_sha256": "eb3527a07fda2a0c181ff11683eb907a16045bf0fcae66e4db58f703e7df9ee4",
   "changes": [
+    "Ball / ground timing control uses explicit material/mass-derived contact refinement. Compare Before, actual accepted peak-impact microstep and Live. The derivative scale resolves microsecond contact positions. Connected sheets at refined contact phases still stop at the bounded trial budget; Reference remains their default. No whole-world realtime or material fracture qualification.",
     "Coupled lab adds ranked Newton starting guesses and an explicit single-start reference. The same total 24-iteration bound and physical gates remain. Strong glass/oak/iron/ice controls now finish at both tested timesteps; trajectory differences remain substantial. Run 0.1 s displays actual accepted states.",
     "Coupled CUDA fault collection now runs in parallel with unchanged fault priority and physical sums. The lab shows rejected-trial counts and rollback; its log records actual failed Newton inputs/candidates/Jacobian. Strong glass/ice convergence remains unresolved.",
     "Coupled 3D lab now defaults to Parallel CUDA and offers Serial reference. Ordered material/contact contributions and current-Jacobian reuse preserve all four tested physical histories exactly. Controlled runs improve to about 1.4\u20133.0 wall seconds per 0.042 physical seconds; still far from realtime.",
@@ -21,6 +22,16 @@
     "Glass/oak/iron/ice complete at both timesteps in the initial trial. Full convergence, large energy deficits, connected calculation speed and thermal/fluid/power laws remain unfinished."
   ],
   "checks": [
+    {
+      "label": "Isolated normal-contact clock",
+      "status": "passed",
+      "value": "Four materials, 12 microstep traces, 48 matched analytical drop controls at two heights/timesteps and 2040 compiled CPU/CUDA schedule comparisons. Energy closure alone is not trajectory accuracy; full assemblies and realtime remain open. Thirteen scoped suites pass; registered assembly refusal/rollback controls remain distinct from admission; CUDA memory/race checks and 345/345 source registration pass."
+    },
+    {
+      "label": "Resolved connected-sheet cost",
+      "status": "open",
+      "value": "All four refined sheet attempts exceed the unchanged 128-trial bound and restore the interval. Last accepted time: glass 0.01146 s; oak/iron/ice 0.03125 s. Resident local work and coupled temporal accuracy are required."
+    },
     {
       "label": "Ranked Newton control completion",
       "status": "passed",
@@ -161,5 +172,5 @@
   "gpu_worker_sha256": "9380a55b680cc4b2e7b1dd3781d2e08bfad57c5b534d26024e901a84a6010bb2",
   "physx_source_sha256": "d1d30abfd67380a66fcf4664759e1917e50137bd7f6ef92bb160d0f1b5b5157f",
   "gpu_material_source_sha256": "439309fd656c70e3f3728fda7a7260aad16ecfe72c0f2f32d9c388b67690f559",
-  "gpu_coupled_source_sha256": "a31a57e2f92a0e9ef727a4973737cc4c3a00c0573cae1d26e3a9d0c82c1b0412"
+  "gpu_coupled_source_sha256": "012e17b9d2d577bd79fc8eb54f5a73c4ff7d2b5dd11daecc6f15345cd60f9988"
 }

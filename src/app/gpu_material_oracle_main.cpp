@@ -105,6 +105,18 @@ Json coupled(const Json &input){
     if(!std::isfinite(h)||h<=0||h>1)throw std::invalid_argument("invalid coupled dt");
     for(const auto &row:v)for(double x:row)if(!std::isfinite(x))throw std::invalid_argument("invalid coupled velocity");
     for(double x:g)if(!std::isfinite(x))throw std::invalid_argument("invalid coupled gravity");
+    if(input.at("op")=="contact_schedule"){
+        const double phase=input.at("phase").get<double>(),tolerance=input.at("velocity_tolerance_m_s").get<double>();
+        if(!std::isfinite(phase)||phase<=0||phase>1||!std::isfinite(tolerance)||tolerance<0)throw std::invalid_argument("invalid contact timestep policy");
+        Json rows=Json::array();
+        for(unsigned a=0;a<b.size();++a)for(unsigned c=a+1;c<b.size();++c){
+            if(b[a][1]==0&&b[c][1]==0)continue;
+            const auto pa=dgPrepareTrial(b[a].data(),v[a].data(),h),pc=dgPrepareTrial(b[c].data(),v[c].data(),h);
+            const auto r=dgContactSchedule(b[a].data(),b[c].data(),pa.initial,pc.initial,pa.ending,pc.ending,h,phase,tolerance);
+            rows.push_back({{"pair",{a,c}},{"step_s",r.step_s},{"frequency_rad_s",r.frequency_rad_s},{"excitation_m_s",r.excitation_m_s}});
+        }
+        return {{"schedules",rows}};
+    }
     std::vector<std::array<double,7>> poses(b.size());std::vector<std::array<double,6>> residual(b.size()),forces(b.size());
     std::vector<std::array<double,32>> history(e.size());std::array<double,dgLedgerWidth> ledger;
     const int fault=coupledTrialUnchecked(b.front().data(),static_cast<unsigned>(b.size()),e.empty()?nullptr:e.front().data(),static_cast<unsigned>(e.size()),v.front().data(),h,{g[0],g[1],g[2]},poses.front().data(),residual.front().data(),history.empty()?nullptr:history.front().data(),forces.front().data(),ledger.data());
@@ -120,6 +132,6 @@ int main(){std::string line;while(std::getline(std::cin,line))try{
         Json out=Json::array();for(const auto &lane:lanes)out.push_back(frame(lane));
         std::cout<<Json{{"ok",true},{"frames",out}}.dump()<<'\n';
     }
-    else if(op=="coupled")std::cout<<Json{{"ok",true},{"trial",coupled(input)}}.dump()<<'\n';
+    else if(op=="coupled"||op=="contact_schedule")std::cout<<Json{{"ok",true},{"trial",coupled(input)}}.dump()<<'\n';
     else throw std::invalid_argument("unknown oracle command");
 }catch(const std::exception &e){std::cout<<Json{{"ok",false},{"error",e.what()}}.dump()<<'\n';}}

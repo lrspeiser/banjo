@@ -175,6 +175,62 @@ BANJO_DG_HD inline unsigned dgContactSiteCount(const double *a,const double *b){
     const bool sb=static_cast<int>(b[0])==1&&static_cast<int>(a[0])!=2;
     return sa&&sb?48:sa||sb?24:1;
 }
+BANJO_DG_HD inline double dgContactStiffness(const double *a,const double *b,unsigned sites){
+    const double scale=dgScale(a)<dgScale(b)?dgScale(a):dgScale(b);
+    return (2/(1/a[3]+1/b[3]))*scale/(sites==48?8:sites==24?4:1);
+}
+// Read-only timestep policy. Free-flight endpoints predict an approach; they
+// are not accepted motion or CCD certification. The trace of the sampled
+// normal stiffness/mass bounds the local contact frequency. This is not a
+// bound on material-interface modes or a global trajectory-error estimator.
+struct DGContactSchedule { double step_s{},frequency_rad_s{},excitation_m_s{}; };
+BANJO_DG_HD inline DGContactSchedule dgContactSchedule(const double *a,const double *b,DGPose pa,DGPose pb,
+    DGPose free_a,DGPose free_b,double h,double phase,double velocity_tolerance){
+    DGContactSchedule out{h,0,0};if(a[1]==0&&b[1]==0)return out;
+    const auto broad0=dgContact(a,b,pa,pb),broad1=dgContact(a,b,free_a,free_b);
+    if(broad0.gap>0&&broad1.gap>0)return out;
+    const unsigned sites=dgContactSiteCount(a,b);
+    const bool sa=static_cast<int>(a[0])==1&&static_cast<int>(b[0])!=2;
+    const bool sb=static_cast<int>(b[0])==1&&static_cast<int>(a[0])!=2;
+    const auto contact=[&](DGPose x,DGPose y,unsigned site){
+        if(sites==1)return dgContact(a,b,x,y);
+        if(!sb||(sa&&site<24))return dgSurfaceContact(a,b,x,y,site);
+        auto r=dgSurfaceContact(b,a,y,x,site%24);auto g=r.gradient;
+        r.gradient={g.force_b,g.torque_b,g.force_a,g.torque_a};return r;
+    };
+    const double k=dgContactStiffness(a,b,sites);double frequency2=0;
+    for(unsigned site=0;site<sites;++site){
+        const auto c=contact(pa,pb,site),f=contact(free_a,free_b,site);
+        if(c.gap>0&&f.gap>0)continue;const auto g=c.gradient;
+        frequency2+=k*((a[1]>0?frameDot(g.force_a,g.force_a)/a[1]+frameDot(g.torque_a,g.torque_a)/a[2]:0)
+            +(b[1]>0?frameDot(g.force_b,g.force_b)/b[1]+frameDot(g.torque_b,g.torque_b)/b[2]:0));
+    }
+    out.frequency_rad_s=sqrt(frequency2);if(out.frequency_rad_s==0)return out;
+    const double resolved=phase/out.frequency_rad_s;
+    for(unsigned site=0;site<sites;++site){
+        const auto c=contact(pa,pb,site),f=contact(free_a,free_b,site);const auto g=c.gradient;
+        const double rate=frameDot(g.force_a,dgRead3(a+14))+frameDot(g.torque_a,dgRead3(a+17))
+            +frameDot(g.force_b,dgRead3(b+14))+frameDot(g.torque_b,dgRead3(b+17));
+        const double excitation=fabs(rate)+out.frequency_rad_s*(c.gap<0?-c.gap:0);
+        if(c.gap<=0&&excitation>velocity_tolerance){
+            if(resolved<out.step_s)out.step_s=resolved;
+            if(excitation>out.excitation_m_s)out.excitation_m_s=excitation;
+        }else if(c.gap>0&&f.gap<=0){
+            // Near a resting surface, a roundoff-sized positive gap and free
+            // gravity forecast must not bypass the declared excitation cutoff.
+            // This local quadratic is a scheduling estimate, not accepted
+            // motion or a certified acceleration/CCD bound.
+            const double acceleration=2*(f.gap-c.gap-rate*h)/(h*h);
+            const double approach_excitation=sqrt(rate*rate+2*fabs(acceleration)*c.gap);
+            if(approach_excitation<=velocity_tolerance)continue;
+            const double approach=.8*h*c.gap/(c.gap-f.gap);
+            const double limit=approach>resolved?approach:resolved;
+            if(limit<out.step_s)out.step_s=limit;
+            if(approach_excitation>out.excitation_m_s)out.excitation_m_s=approach_excitation;
+        }
+    }
+    return out;
+}
 BANJO_DG_HD inline int dgContactTrial(const double *ba,const double *bb,const DGTrialBody &pa,const DGTrialBody &pb,
     unsigned site,double h,FiniteFrameWrenches &w,double *ledger,bool &active,bool separated_checked=false){
     active=false;if(ba[1]==0&&bb[1]==0)return 0;
@@ -197,7 +253,7 @@ BANJO_DG_HD inline int dgContactTrial(const double *ba,const double *bb,const DG
         const auto before=contact(pa.initial,pb.initial),after=contact(pa.ending,pb.ending);
         if(!dgFinite(before.gap)||!dgFinite(after.gap))return 3;
         const double scale=dgScale(ba)<dgScale(bb)?dgScale(ba):dgScale(bb);
-        const double stiffness=(2/(1/ba[3]+1/bb[3]))*scale/(sites==48?8:sites==24?4:1);
+        const double stiffness=dgContactStiffness(ba,bb,sites);
         const auto normal=normalComplianceUnchecked(before.gap,after.gap-before.gap,h,{stiffness,0});
         if(before.gap>0&&after.gap>0)return 0;
         const auto middle=contact(pa.midpoint,pb.midpoint);

@@ -1,0 +1,79 @@
+{
+  "schema": "banjo.gpu-contact-timing.browser.v1",
+  "source_sha256": "012e17b9d2d577bd79fc8eb54f5a73c4ff7d2b5dd11daecc6f15345cd60f9988",
+  "conditions": {
+    "material": "glass",
+    "ball_material": "iron",
+    "ball_mass_kg": 0.1,
+    "height_m": 0.02,
+    "dt_s": 0.004166666666666667,
+    "experiment": "freefall",
+    "device": "cuda:0",
+    "pipeline": "parallel",
+    "newton_strategy": "ranked",
+    "contact_resolution": "phase-0.25"
+  },
+  "journal_sha256": "23b030dbe624a52df609c03ed09fecde1f9d6616bda87bd7835856c52b754eaa",
+  "journal_records": 26,
+  "accepted_states": 25,
+  "accepted_microsteps": 43,
+  "final_time_s": 0.09999999999999999,
+  "peak_compression_m": 4.3007311539243476e-06,
+  "peak_time_s": 0.063866476950103,
+  "peak_poses_wxyz": [
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.014471598550666407,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  ],
+  "before_live_impact_controls_checked": true,
+  "diagnostics": {
+    "dynamic_mass_kg": 0.1,
+    "mechanical_j": 0.033820857176871104,
+    "material_stored_j": 0.0,
+    "contact_stored_j": 0.0,
+    "global_energy_residual_j": -1.8594646655767377e-11,
+    "momentum_n_s": [
+      0.0,
+      0.027205006649987304,
+      0.0
+    ],
+    "angular_momentum_n_m_s": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "fracture_work_j": 0.0,
+    "plastic_work_j": 0.0,
+    "numerical_return_excess_j": 0.0,
+    "separated_sites": 0,
+    "yielded_faces": 0,
+    "interfaces": 0,
+    "maximum_energy_residual_j": 1.054342203821168e-11,
+    "ground_impulse_n_s": [
+      0.0,
+      0.12530500663636315,
+      0.0
+    ],
+    "ground_torque_impulse_n_m_s": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "publication_check": "Published revision and source hashes checked after commit/restart separately."
+}
