@@ -264,6 +264,7 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
         src/physics/TetrahedronContact.cpp
         src/rigid/DrumRope.cpp
         src/rigid/JoltWorld.cpp
+        src/rigid/RigidComponent.cpp
         src/rigid/LogFaceSpring.cpp
         src/sim/RollingBallExperiment.cpp
         src/numeric/FpProbeRuntime.cpp)
@@ -324,6 +325,10 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
     target_link_libraries(banjo_voxel_world_run PRIVATE banjo_platform nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_voxel_world_run)
     if(BANJO_BUILD_TESTS)
+        add_executable(banjo_rigid_component_tests tests/rigid_component_tests.cpp)
+        target_link_libraries(banjo_rigid_component_tests PRIVATE banjo_runtime)
+        banjo_enable_warnings(banjo_rigid_component_tests)
+        add_test(NAME banjo_rigid_component_tests COMMAND banjo_rigid_component_tests)
         add_executable(banjo_voxel_face_spring_tests tests/voxel_face_spring_tests.cpp)
         add_executable(banjo_connector_plasticity_tests tests/connector_plasticity_tests.cpp)
         target_link_libraries(banjo_connector_plasticity_tests PRIVATE banjo_platform)
@@ -2175,6 +2180,9 @@ if(BANJO_BUILD_TESTS)
             set_tests_properties(banjo_voxel_actuation_tests PROPERTIES TIMEOUT 600 LABELS "native;voxel;experimental")
             add_test(NAME banjo_voxel_pipeline_tests COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_pipeline_test.py $<TARGET_FILE:banjo_voxel_world_run>)
+            add_test(NAME banjo_voxel_hybrid_tests COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_hybrid_test.py $<TARGET_FILE:banjo_voxel_world_run>)
+            set_tests_properties(banjo_voxel_hybrid_tests PROPERTIES TIMEOUT 120 LABELS "native;voxel;experimental")
             add_test(NAME banjo_voxel_motion_profile_tests COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_motion_profile_test.py $<TARGET_FILE:banjo_voxel_world_run>)
             set_tests_properties(banjo_voxel_motion_profile_tests PROPERTIES TIMEOUT 60 LABELS "native;voxel")

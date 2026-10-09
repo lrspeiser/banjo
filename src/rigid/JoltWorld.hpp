@@ -1224,6 +1224,14 @@ public:
     // orientation, as snapshot() gives them. Its velocities are not read.
     [[nodiscard]] bool unpark(MatterBodyId body_id, const RigidSnapshot &pose, std::string &why);
     [[nodiscard]] bool parked(MatterBodyId body_id) const;
+    // Closed, dynamic face-spring component only. Retains native bodies,
+    // local frames and constitutive rest; removes internal constraints from
+    // the solver until every endpoint returns. No external joint/pin/spring.
+    // Preflight refusal changes nothing. Configuration cannot change in trials.
+    [[nodiscard]] bool parkFaceComponent(std::span<const MatterBodyId> bodies, std::string &why);
+    [[nodiscard]] bool restoreFaceComponent(std::span<const MatterBodyId> bodies,
+                                          std::span<const RigidSnapshot> states, std::string &why);
+    [[nodiscard]] bool faceComponentParked(unsigned joint) const;
 
 private:
     [[nodiscard]] MaterialShapeQuery materialShapeContactsImpl(MatterBodyId body,

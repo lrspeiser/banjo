@@ -923,6 +923,8 @@ public:
             springs_.clear();
             for(auto &[id,constraint]:pins_) { (void)id;physics_->RemoveConstraint(constraint); }
             pins_.clear();
+            for(auto &[id,joint]:joints_){if(!parked_face_joints_.contains(id))physics_->RemoveConstraint(joint.constraint.GetPtr());}
+            joints_.clear();parked_face_joints_.clear();
             JPH::BodyInterface &body_interface = physics_->GetBodyInterface();
             for (const auto &[logical_id, body_id] : bodies_) {
                 (void)logical_id;
@@ -1487,6 +1489,7 @@ public:
     // Bodies set aside (park): out of the broadphase and out of bodies_, not
     // destroyed, so each comes back as the body it was (unpark).
     std::unordered_map<MatterBodyId, JPH::BodyID> parked_;
+    std::unordered_set<unsigned> parked_face_joints_;
     RigidContactDiagnostics contact_diagnostics_;
     RigidExecutionProfile execution_profile_;
     BoundedStateRecorder contact_recorder_;
@@ -1746,7 +1749,7 @@ void JoltWorld::addBall(const RigidBallDescription &description) {
         description.sphere_inertia_factor <= 0.0) {
         throw std::invalid_argument("ball requires a valid ID, radius, density, and inertia");
     }
-    if (impl_->bodies_.contains(description.body_id)) {
+    if (impl_->bodies_.contains(description.body_id)||impl_->parked_.contains(description.body_id)) {
         throw std::logic_error("body ID is already in the Jolt world");
     }
 
@@ -1828,7 +1831,7 @@ void JoltWorld::addBox(const RigidBoxDescription &description) {
         !finite(s.center_of_mass_world_m)||!finite(s.linear_velocity_m_s)||!finite(s.angular_velocity_rad_s)||
         !std::isfinite(q.w+q.x+q.y+q.z)||std::abs(q.w*q.w+q.x*q.x+q.y*q.y+q.z*q.z-1)>1e-5)
         throw std::invalid_argument("box requires finite positive dimensions/density and valid rigid state");
-    if(impl_->bodies_.contains(description.body_id))throw std::logic_error("body ID is already in the Jolt world");
+    if(impl_->bodies_.contains(description.body_id)||impl_->parked_.contains(description.body_id))throw std::logic_error("body ID is already in the Jolt world");
     if(description.fixed&&(lengthSquared(s.linear_velocity_m_s)>0||lengthSquared(s.angular_velocity_rad_s)>0))throw std::invalid_argument("fixed box cannot have initial motion");
     const RigidPrimitive shape{PrimitiveKind::Box,0,d};
     const double mass=shape.volume()*description.material.density_kg_m3;
@@ -1881,7 +1884,7 @@ void JoltWorld::setDetailedImpactObservations(bool enabled){impl_->requireConfig
 void JoltWorld::addCompound(const RigidCompoundDescription &d){
     impl_->requireConfigurationMutable();
     auto finite=[](Vec3 v){return std::isfinite(lengthSquared(v));};const auto q=d.state.orientation_world;
-    if(d.body_id==kInvalidMatterBodyId||d.body_id==kSupportSurfaceMatterId||impl_->bodies_.contains(d.body_id)||d.parts.empty()||d.parts.size()>64||
+    if(d.body_id==kInvalidMatterBodyId||d.body_id==kSupportSurfaceMatterId||impl_->bodies_.contains(d.body_id)||impl_->parked_.contains(d.body_id)||d.parts.empty()||d.parts.size()>64||
        !std::isfinite(d.mass_kg)||d.mass_kg<=0||!finite(d.state.center_of_mass_world_m)||!finite(d.state.linear_velocity_m_s)||!finite(d.state.angular_velocity_rad_s)||
        !std::isfinite(q.w+q.x+q.y+q.z)||std::abs(q.w*q.w+q.x*q.x+q.y*q.y+q.z*q.z-1)>1e-5)
         throw std::invalid_argument("invalid compiled compound description");
@@ -2972,7 +2975,7 @@ void JoltWorld::removeJoint(unsigned joint) {
     impl_->requireConfigurationMutable();
     const auto found = impl_->joints_.find(joint);
     if (found == impl_->joints_.end()) return;
-    impl_->physics_->RemoveConstraint(found->second.constraint.GetPtr());
+    if(!impl_->parked_face_joints_.erase(joint))impl_->physics_->RemoveConstraint(found->second.constraint.GetPtr());
     impl_->joints_.erase(found);
 }
 
@@ -3073,6 +3076,7 @@ JoltWorld::FaceSpringObservation JoltWorld::faceSpringObservation(unsigned id) c
     const auto &j=impl_->joints_.at(id);if(j.kind!=JointKind::FaceSpring)throw std::invalid_argument("not a face spring");
     const auto observed=[&](FaceSpringObservation out){
         if(impl_->force_phase_enabled_){
+            if(impl_->parked_face_joints_.contains(id)){out.solver_scheduled=false;return out;}
             bool scheduled=false;
             for(const auto body:{j.a,j.b}){
                 const auto slot=impl_->force_phase_slot_.find(impl_->bodies_.at(body).GetIndexAndSequenceNumber());
@@ -3103,6 +3107,7 @@ JoltWorld::FaceSpringObservation JoltWorld::faceSpringObservation(unsigned id) c
 void JoltWorld::setFacePlasticRest(unsigned id,Vec3 p,Vec3 r){
     if(!std::isfinite(lengthSquared(p))||!std::isfinite(lengthSquared(r))||length(p)>10||length(r)>=std::acos(-1.))
         throw std::invalid_argument("face plastic rest exceeds finite 10 m / pi rad native bounds");
+    if(impl_->parked_face_joints_.contains(id))throw std::invalid_argument("restore component before editing constitutive rest");
     const auto &joint=impl_->joints_.at(id);
     if(joint.kind!=JointKind::FaceSpring||!joint.log_face)throw std::invalid_argument("plastic rest needs a log-gradient face");
     setLogFacePlasticRest(*joint.constraint.GetPtr(),p,r);
@@ -4464,7 +4469,7 @@ void JoltWorld::addFragments(
         for (const RigidFragmentDescription &fragment : fragments) {
             if (fragment.body_id == kInvalidMatterBodyId ||
                 fragment.body_id == kSupportSurfaceMatterId ||
-                impl_->bodies_.contains(fragment.body_id) ||
+                impl_->bodies_.contains(fragment.body_id) || impl_->parked_.contains(fragment.body_id) ||
                 fragment.mass_properties.mass_kg <= 0.0 ||
                 fragment.collision_points_local_m.size() < 4U) {
                 throw std::invalid_argument("rigid fragment description is invalid");
@@ -4925,7 +4930,7 @@ void JoltWorld::step(double fixed_dt_s) {
     if(impl_->centered_integration_){
         if(!impl_->springs_.empty()||!impl_->pins_.empty())throw std::logic_error("unsupported centered world constraints");
         for(const auto &[id,joint]:impl_->joints_){
-            (void)id;
+            if(impl_->parked_face_joints_.contains(id))continue;
             if(joint.kind!=JointKind::FaceSpring||!joint.log_face)throw std::logic_error("unsupported centered world joint");
             const auto a=snapshot(joint.a),b=snapshot(joint.b);
             prepareCenteredFaceSpring(*joint.constraint.GetPtr(),a.linear_velocity_m_s,a.angular_velocity_rad_s,b.linear_velocity_m_s,b.angular_velocity_rad_s);
@@ -5120,10 +5125,11 @@ void JoltWorld::removeAndDestroy(MatterBodyId body_id) {
     const auto found = impl_->bodies_.find(body_id);
     if (found == impl_->bodies_.end()) {
         // A body set aside (park) is not in the broadphase, so it is destroyed
-        // and not removed. Nothing is joined to it: park refuses a body that
-        // has anything on it, and nothing can be joined to one that is not in
-        // the world. Its shape and its contact settings go with it.
+        // and not removed. Release retained face-component joints before
+        // destroying an endpoint; a constraint must not outlive its body.
+        // Its shape and contact settings go with it.
         if (const auto set_aside = impl_->parked_.find(body_id); set_aside != impl_->parked_.end()) {
+            for(const auto joint:jointsOn(body_id))removeJoint(joint);
             impl_->physics_->GetBodyInterface().DestroyBody(set_aside->second);
             impl_->parked_.erase(set_aside);
             impl_->cell_shapes_.erase(body_id);
@@ -5187,6 +5193,7 @@ bool JoltWorld::unpark(MatterBodyId body_id, const RigidSnapshot &pose, std::str
         why = impl_->bodies_.contains(body_id) ? "it is not set aside" : "rigid body is missing";
         return false;
     }
+    if(!jointsOn(body_id).empty()){why="restore the complete face component";return false;}
     JPH::BodyInterface &bodies = impl_->physics_->GetBodyInterface();
     // At rest: with no velocity given, Jolt does not try to wake a body that is
     // not in the broadphase yet. AddBody puts it there, awake.
@@ -5199,6 +5206,75 @@ bool JoltWorld::unpark(MatterBodyId body_id, const RigidSnapshot &pose, std::str
     impl_->bodies_.emplace(body_id, found->second);
     impl_->parked_.erase(found);
     return true;
+}
+
+bool JoltWorld::faceComponentParked(unsigned joint) const {
+    return impl_->parked_face_joints_.contains(joint);
+}
+bool JoltWorld::parkFaceComponent(std::span<const MatterBodyId> ids,std::string &why) {
+    impl_->requireConfigurationMutable();
+    const std::set<MatterBodyId> members(ids.begin(),ids.end());
+    if(ids.empty()||ids.size()>64||members.size()!=ids.size()){why="invalid component body budget or duplicates";return false;}
+    for(const auto id:ids){
+        if(!contains(id)||mechanicalState(id).mass_kg<=0||impl_->pins_.contains(id)||impl_->ground_suspended_.contains(id)){
+            why="component must contain unparked dynamic bodies without pins or suspended ground contact";return false;}
+        JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(),impl_->bodies_.at(id));
+        if(!lock.Succeeded()||lock.GetBody().GetAccumulatedForce().LengthSq()!=0||lock.GetBody().GetAccumulatedTorque().LengthSq()!=0){
+            why="component has pending native force or torque";return false;}
+    }
+    for(const auto &[id,s]:impl_->springs_)if(members.contains(s.a)||members.contains(s.b)){
+        (void)id;why="distance spring is not supported by face component parking";return false;}
+    std::vector<unsigned> joints;
+    for(const auto &[id,j]:impl_->joints_)if(members.contains(j.a)||members.contains(j.b)){
+        if(!members.contains(j.a)||!members.contains(j.b)||j.kind!=JointKind::FaceSpring||impl_->parked_face_joints_.contains(id)){
+            why="component is not closed or has an unsupported joint";return false;}
+        joints.push_back(id);
+    }
+    // Reserve before native mutations. Retain pair ownership: a restored
+    // component must keep its internal contact suppression, not collide twice.
+    impl_->parked_.reserve(impl_->parked_.size()+ids.size());
+    impl_->parked_face_joints_.reserve(impl_->parked_face_joints_.size()+joints.size());
+    for(const auto joint:joints){impl_->physics_->RemoveConstraint(impl_->joints_.at(joint).constraint.GetPtr());impl_->parked_face_joints_.insert(joint);}
+    std::erase_if(impl_->rolling_,[&](const RollingContact &c){return members.contains(c.sphere)||members.contains(c.other);});
+    for(const auto id:ids){const auto native=impl_->bodies_.at(id);
+        impl_->physics_->GetBodyInterface().RemoveBody(native);
+        impl_->parked_.emplace(id,native);impl_->bodies_.erase(id);impl_->before_step_.erase(id);
+    }
+    why.clear();return true;
+}
+bool JoltWorld::restoreFaceComponent(std::span<const MatterBodyId> ids,
+    std::span<const RigidSnapshot> states,std::string &why) {
+    impl_->requireConfigurationMutable();
+    const std::set<MatterBodyId> members(ids.begin(),ids.end());
+    if(ids.empty()||ids.size()>64||ids.size()!=states.size()||members.size()!=ids.size()){
+        why="invalid component restore budget or duplicates";return false;}
+    for(unsigned i=0;i<ids.size();++i){
+        const auto &s=states[i];const auto q=s.orientation_world;
+        const auto finite=[](Vec3 x){return std::isfinite(lengthSquared(x))&&std::max({std::abs(x.x),std::abs(x.y),std::abs(x.z)})<1e12;};
+        if(!impl_->parked_.contains(ids[i])||!finite(s.center_of_mass_world_m)||!finite(s.linear_velocity_m_s)||!finite(s.angular_velocity_rad_s)||
+            !std::isfinite(q.w+q.x+q.y+q.z)||std::abs(q.w*q.w+q.x*q.x+q.y*q.y+q.z*q.z-1)>1e-5||
+            length(s.linear_velocity_m_s)>500||length(s.angular_velocity_rad_s)>1000){
+            why="restore requires parked bodies and finite native-limit states";return false;}
+    }
+    std::vector<unsigned> joints;
+    for(const auto id:impl_->parked_face_joints_){const auto &j=impl_->joints_.at(id);
+        if(members.contains(j.a)||members.contains(j.b)){
+            if(!members.contains(j.a)||!members.contains(j.b)){why="restore must contain the complete parked component";return false;}
+            joints.push_back(id);
+        }
+    }
+    impl_->bodies_.reserve(impl_->bodies_.size()+ids.size());
+    auto &native=impl_->physics_->GetBodyInterface();
+    for(unsigned i=0;i<ids.size();++i){const auto id=ids[i];const auto body=impl_->parked_.at(id);const auto &s=states[i];
+        native.SetPositionRotationAndVelocity(body,toJoltPosition(s.center_of_mass_world_m),toJoltRotation(s.orientation_world),JPH::Vec3::sZero(),JPH::Vec3::sZero());
+        native.AddBody(body,JPH::EActivation::Activate);
+        impl_->bodies_.emplace(id,body);impl_->parked_.erase(id);
+        applyRigidState(id,s);
+    }
+    std::sort(joints.begin(),joints.end());
+    for(const auto id:joints){auto *c=impl_->joints_.at(id).constraint.GetPtr();
+        c->ResetWarmStart();impl_->physics_->AddConstraint(c);impl_->parked_face_joints_.erase(id);}
+    why.clear();return true;
 }
 
 bool JoltWorld::parked(MatterBodyId body_id) const { return impl_->parked_.contains(body_id); }

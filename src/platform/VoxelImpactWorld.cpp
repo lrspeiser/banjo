@@ -1,5 +1,7 @@
 #include "platform/VoxelImpactWorld.hpp"
 #include "rigid/JoltWorld.hpp"
+#include "rigid/RigidComponent.hpp"
+#include "physics/BoxSweep.hpp"
 #include "material/MaterialCatalog.hpp"
 #include "material/ConnectorPlasticity.hpp"
 #include "physics/RigidStepWork.hpp"
@@ -43,6 +45,45 @@ struct VoxelImpactWorld::Impl {
         std::optional<ConnectorPlasticParameters> plastic;ConnectorPlasticState plastic_state;};
     struct Pair {unsigned a,b;int bond{-1};};
     JoltWorld world;
+    std::unique_ptr<RigidComponent> coast;
+    unsigned coast_index{};bool hybrid{};
+    double transfer_energy{},coast_time{};Json transfers=Json::array();
+    bool active(unsigned i) const {return world.contains(cells[i].id)||(coast&&coast->collapsed()&&i==coast_index);}
+    MatterBodyId nativeId(unsigned i) const {return coast&&coast->collapsed()&&i==coast_index?coast->proxy():cells[i].id;}
+    unsigned slot(MatterBodyId id) const {return coast&&coast->collapsed()&&id==coast->proxy()?coast_index:unsigned(id-100);}
+    bool detailed(const Bond &b) const {return b.live&&!world.faceComponentParked(b.joint);}
+    RigidSnapshot cellSnapshot(unsigned i) const {
+        if(coast&&coast->collapsed()&&cells[i].object==2)return coast->snapshots(world).at(i-coast_index);
+        return world.snapshot(cells[i].id);
+    }
+    void receipt(const ComponentTransferReceipt &r,const char *action){
+        const auto &a=r.audit;const double delta=a.after.mechanicalEnergy()-a.before.mechanicalEnergy();
+        if(a.measured)transfer_energy+=delta;
+        transfers.push_back({{"time_s",time},{"action",action},{"admitted",r.admitted},{"reason",r.reason},{"measured",a.measured},
+            {"mass_change_kg",a.after.mass_kg-a.before.mass_kg},{"energy_change_j",delta},{"nonrigid_energy_j",r.nonrigid_energy_j},
+            {"linear_change_n_s",v(a.after.linear_momentum_kg_m_s-a.before.linear_momentum_kg_m_s)},
+            {"angular_change_n_m_s",v(a.after.angular_momentum_kg_m2_s-a.before.angular_momentum_kg_m2_s)}});
+    }
+    void expandCoast(const char *reason){
+        if(!coast||!coast->collapsed())return;
+        const auto r=coast->expand(world,gravity);receipt(r,reason);totals=world.mechanicalTotals(gravity);
+        if(!r.admitted)throw std::runtime_error("component restoration transfer exceeds budget: "+r.reason);
+    }
+    void guardCoast(double h){
+        if(!coast||!coast->collapsed())return;
+        if(!actuators.empty()){expandCoast("external loading");return;}
+        const auto state=world.snapshot(coast->proxy());
+        const auto [lo,hi]=world.shapeBoundsTurned(coast->proxy(),state.orientation_world);
+        const auto sweep=boundBoxSweep(hi-lo,state.center_of_mass_world_m+(hi+lo)/2,{},
+            (length(state.linear_velocity_m_s)+length(state.angular_velocity_rad_s)*std::max(length(lo),length(hi)))*h+length(gravity)*h*h);
+        for(unsigned i=0;i<cells.size();++i)if(cells[i].object!=2){const auto b=world.snapshot(cells[i].id);
+            const auto other=boundBoxSweep(cells[i].size,b.center_of_mass_world_m,b.orientation_world,
+                (length(b.linear_velocity_m_s)+length(b.angular_velocity_rad_s)*length(cells[i].size)/2)*h+length(gravity)*h*h);
+            // A broad enclosing bound only schedules activation. It never
+            // supplies contact geometry or relaxes detailed acceptance gates.
+            if(boxSweepRatio(sweep,other,.02)>0){expandCoast("prospective contact");return;}
+        }
+    }
     Json declaration,events=Json::array();std::vector<Cell> cells;std::vector<Bond> bonds;std::vector<Pair> internal;
     std::map<MatterBodyId,unsigned> motion_drivers;
     unsigned motion_splits{},max_motion_depth{};
@@ -74,7 +115,7 @@ struct VoxelImpactWorld::Impl {
         const std::vector<JoltWorld::FaceSpringObservation> &faces_after)const{
         std::vector<RigidStepWorkInput> indexed(cells.size()),dynamic;
         for(const auto &p:world.forcePhaseObservations()){
-            const auto i=std::size_t(p.body-100);if(i>=cells.size()||cells[i].fixed)throw std::runtime_error("unknown native force phase body");
+            const auto i=slot(p.body);if(i>=cells.size()||cells[i].fixed)throw std::runtime_error("unknown native force phase body");
             indexed[i]={p.before,after[i],p.spin_after_gyro_rad_s,p.velocity_after_forces_m_s,p.spin_after_forces_rad_s,p.gravity_impulse_n_s};
             indexed[i].velocity_after_solver_m_s=p.velocity_after_solver_m_s;indexed[i].spin_after_solver_rad_s=p.spin_after_solver_rad_s;
             indexed[i].velocity_after_limit_m_s=p.velocity_after_limit_m_s;indexed[i].spin_after_limit_rad_s=p.spin_after_limit_rad_s;
@@ -87,7 +128,7 @@ struct VoxelImpactWorld::Impl {
             else{ia.contact_impulse_n_s-=impulse;ib.contact_impulse_n_s+=impulse;
                 ia.contact_couple_n_m_s-=cross(point-before[a].center_of_mass_world_m,impulse);ib.contact_couple_n_m_s+=cross(point-before[b].center_of_mass_world_m,impulse);}
         };
-        for(unsigned i=0;i<bonds.size();++i)if(bonds[i].live){const auto &b=bonds[i];const auto &g=faces_before[i],&s=faces_after[i];
+        for(unsigned i=0;i<bonds.size();++i)if(detailed(bonds[i])){const auto &b=bonds[i];const auto &g=faces_before[i],&s=faces_after[i];
             if(!s.solver_scheduled.has_value())throw std::runtime_error("native spring schedule observation missing");
             if(!*s.solver_scheduled)continue;
             const Vec3 linear=g.translation_axes_world[0]*s.linear_impulse_cs_n_s.x+g.translation_axes_world[1]*s.linear_impulse_cs_n_s.y+g.translation_axes_world[2]*s.linear_impulse_cs_n_s.z;
@@ -95,12 +136,12 @@ struct VoxelImpactWorld::Impl {
             push(b.a,b.b,g.anchor_b_world_m,linear,true);indexed[b.a].spring_couple_n_m_s-=angular;indexed[b.b].spring_couple_n_m_s+=angular;
         }
         for(const auto &c:world.contactImpulseObservations()){
-            const unsigned a=unsigned(c.a-100),b=unsigned(c.b-100);if(a>=cells.size()||b>=cells.size())throw std::runtime_error("unknown work contact body");
+            const unsigned a=slot(c.a),b=slot(c.b);if(a>=cells.size()||b>=cells.size())throw std::runtime_error("unknown work contact body");
             for(const auto &p:c.points)push(a,b,p.point_world_m,c.normal_a_to_b*p.normal_impulse_n_s,false);
             push(a,b,c.friction_point_world_m,c.friction_impulse_on_b_n_s,false);
             indexed[a].contact_couple_n_m_s-=c.twist_impulse_on_b_n_m_s;indexed[b].contact_couple_n_m_s+=c.twist_impulse_on_b_n_m_s;
         }
-        for(unsigned i=0;i<cells.size();++i)if(!cells[i].fixed){if(indexed[i].before.mass_kg<=0)throw std::runtime_error("native force phase observation missing");dynamic.push_back(indexed[i]);}
+        for(unsigned i=0;i<cells.size();++i)if(!cells[i].fixed&&active(i)){if(indexed[i].before.mass_kg<=0)throw std::runtime_error("native force phase observation missing");dynamic.push_back(indexed[i]);}
         return auditRigidStepWork(dynamic,gravity);
     }
     Json measureBoundary(const std::vector<RigidSnapshot> &before,double h,Json &worst_twist)const{
@@ -109,11 +150,11 @@ struct VoxelImpactWorld::Impl {
         worst_twist=nullptr;
         std::vector<RigidSnapshot> solver=before;
         for(const auto &phase:world.forcePhaseObservations()){
-            auto &s=solver.at(std::size_t(phase.body-100));
+            auto &s=solver.at(slot(phase.body));
             s.linear_velocity_m_s=phase.velocity_after_solver_m_s;s.angular_velocity_rad_s=phase.spin_after_solver_rad_s;
         }
         for(const auto &c:world.contactImpulseObservations()){
-            const unsigned a=unsigned(c.a-100),b=unsigned(c.b-100);
+            const unsigned a=slot(c.a),b=slot(c.b);
             const auto speed=[&](Vec3 point,const std::vector<RigidSnapshot> &states){
                 return states[b].linear_velocity_m_s+cross(states[b].angular_velocity_rad_s,point-before[b].center_of_mass_world_m)
                     -states[a].linear_velocity_m_s-cross(states[a].angular_velocity_rad_s,point-before[a].center_of_mass_world_m);
@@ -202,7 +243,9 @@ struct VoxelImpactWorld::Impl {
     explicit Impl(const Json &d,VoxelExecution storage):world(0,contactCapacity(d,storage),
         storage==VoxelExecution::Reference?RigidJobExecution::ThreadPool:RigidJobExecution::Inline),declaration(d){
         world.setExecutionProfilingEnabled(true);
-        const std::set<std::string> keys{"sheet","ball","mass_kg","height_m","thickness_m","resolution","support_gap_m","offset_x_m","offset_z_m","dt_s","ball_enabled","gravity_m_s2","solver_iterations","face_law","contact_law","sheet_plasticity"};
+        if(d.contains("hybrid_free_flight")&&!d["hybrid_free_flight"].is_boolean())throw std::invalid_argument("hybrid_free_flight must be boolean");
+        hybrid=d.value("hybrid_free_flight",false);
+        const std::set<std::string> keys{"sheet","ball","mass_kg","height_m","thickness_m","resolution","support_gap_m","offset_x_m","offset_z_m","dt_s","ball_enabled","gravity_m_s2","solver_iterations","face_law","contact_law","sheet_plasticity","hybrid_free_flight"};
         for(auto i=d.begin();i!=d.end();++i)if(!keys.contains(i.key()))throw std::invalid_argument("unknown voxel experiment field");
         const auto face_law=d.value("face_law",std::string("native-motor"));
         if(face_law!="native-motor"&&face_law!="log-gradient"&&face_law!="centered-log-gradient")throw std::invalid_argument("unsupported face law");
@@ -245,12 +288,23 @@ struct VoxelImpactWorld::Impl {
         }
         if(internal.size()>4096)throw std::invalid_argument("voxel neighbour budget exceeded");
         filtering();initial=totals=world.mechanicalTotals(gravity);initial_energy=initial.mechanicalEnergy();
+        if(hybrid&&enabled.get<bool>()){
+            std::vector<RigidComponentCell> members;
+            for(unsigned i=0;i<cells.size();++i)if(cells[i].object==2){if(members.empty())coast_index=i;
+                members.push_back({cells[i].id,cells[i].size,contact(makeReferenceMaterial(ball))});}
+            coast=std::make_unique<RigidComponent>(10000,std::move(members));
+            const auto r=coast->collapse(world,0,{},gravity);receipt(r,"collapse unloaded ball");
+            totals=world.mechanicalTotals(gravity);
+            if(!r.admitted)throw std::runtime_error("initial component handoff refused: "+r.reason);
+        }
     }
     void interval(double h,unsigned depth=0){
+        guardCoast(h);
+        const bool coasting=coast&&coast->collapsed();
         const auto sweep_start=std::chrono::steady_clock::now();
         double minBallY=1e20,maxSpeed=0;MatterBodyId driver{};
         std::vector<RigidSnapshot> before_states;before_states.reserve(cells.size());
-        for(const auto &c:cells){const auto s=world.snapshot(c.id);before_states.push_back(s);if(!c.fixed){
+        for(unsigned i=0;i<cells.size();++i){const auto &c=cells[i];const auto s=active(i)?world.snapshot(nativeId(i)):RigidSnapshot{};before_states.push_back(s);if(!c.fixed&&active(i)){
             const double speed=length(s.linear_velocity_m_s)+length(s.angular_velocity_rad_s)*length(c.size)/2;
             if(speed>maxSpeed){maxSpeed=speed;driver=c.id;}
             if(c.object==2)minBallY=std::min(minBallY,s.center_of_mass_world_m.y-length(c.size)/2);}}
@@ -260,7 +314,7 @@ struct VoxelImpactWorld::Impl {
         const auto observation_start=std::chrono::steady_clock::now();
         std::vector<JoltWorld::FaceSpringObservation> faces_before(bonds.size()),faces_after(bonds.size());
         double before_elastic=0;
-        for(unsigned i=0;i<bonds.size();++i)if(bonds[i].live){const auto &b=bonds[i];faces_before[i]=world.faceSpringObservation(b.joint);before_elastic+=quadratic(b.k,faces_before[i].displacement_cs_m)+quadratic(b.r,faces_before[i].rotation_cs_rad);}
+        for(unsigned i=0;i<bonds.size();++i)if(detailed(bonds[i])){const auto &b=bonds[i];faces_before[i]=world.faceSpringObservation(b.joint);before_elastic+=quadratic(b.k,faces_before[i].displacement_cs_m)+quadratic(b.r,faces_before[i].rotation_cs_rad);}
         observation_wall_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-observation_start).count();
         const double before=totals.mechanicalEnergy()+before_elastic;
         double candidateEnergy=0,after_elastic=0;MechanicalTotals candidateTotals;RigidStepWork candidateWork;Json candidateBoundary,candidateTwist;
@@ -269,6 +323,7 @@ struct VoxelImpactWorld::Impl {
         double candidate_plastic_work=0,candidate_return_excess=0,candidate_actuator_work=0;
         Vec3 candidate_actuator_impulse{},candidate_actuator_angular{},candidate_actuator_phase_residual{};
         const auto trial_start=std::chrono::steady_clock::now();
+        bool coast_contact=false;
         const bool accepted=world.runReversibleTrial([&]{
             const auto native_start=std::chrono::steady_clock::now();
             // Queue forces inside the trial so refusal restores both the force
@@ -276,14 +331,18 @@ struct VoxelImpactWorld::Impl {
             for(const auto &c:cells)if(!c.fixed){const auto a=actuators.find(c.object);
                 if(a!=actuators.end()&&lengthSquared(a->second)>0)world.pushBody(c.id,c.mass*a->second);}
             world.step(h);
+            if(coasting)for(const auto &c:world.contactImpulseObservations())if(c.a==coast->proxy()||c.b==coast->proxy()){
+                coast_contact=true;return false;
+            }
             const auto totals_start=std::chrono::steady_clock::now();
             native_step_wall_ms+=std::chrono::duration<double,std::milli>(totals_start-native_start).count();
             candidateTotals={};candidate_states.clear();candidate_states.reserve(cells.size());
-            for(const auto &c:cells){const auto state=world.mechanicalState(c.id);candidate_states.push_back(state);candidateTotals+=measureRigidMechanics(state,gravity);}
+            for(unsigned i=0;i<cells.size();++i){const auto state=active(i)?world.mechanicalState(nativeId(i)):RigidMechanicalState{};
+                candidate_states.push_back(state);candidateTotals+=measureRigidMechanics(state,gravity);}
             after_elastic=0;
             const auto faces_start=std::chrono::steady_clock::now();
             totals_wall_ms+=std::chrono::duration<double,std::milli>(faces_start-totals_start).count();
-            for(unsigned i=0;i<bonds.size();++i)if(bonds[i].live){const auto &b=bonds[i];faces_after[i]=world.faceSpringObservation(b.joint);after_elastic+=quadratic(b.k,faces_after[i].displacement_cs_m)+quadratic(b.r,faces_after[i].rotation_cs_rad);}
+            for(unsigned i=0;i<bonds.size();++i)if(detailed(bonds[i])){const auto &b=bonds[i];faces_after[i]=world.faceSpringObservation(b.joint);after_elastic+=quadratic(b.k,faces_after[i].displacement_cs_m)+quadratic(b.r,faces_after[i].rotation_cs_rad);}
             candidate_faces_wall_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-faces_start).count();
             candidateWork=measureWork(before_states,candidate_states,faces_before,faces_after);
             candidate_actuator_work=0;candidate_actuator_impulse={};candidate_actuator_angular={};candidate_actuator_phase_residual={};
@@ -294,12 +353,12 @@ struct VoxelImpactWorld::Impl {
                 candidate_actuator_impulse+=push;candidate_actuator_angular+=cross(before_states[i].center_of_mass_world_m,push);
             }
             if(actuation_used)for(const auto &phase:world.forcePhaseObservations()){
-                const auto &c=cells.at(unsigned(phase.body-100));const auto a=actuators.find(c.object);
+                const auto &c=cells.at(slot(phase.body));const auto a=actuators.find(c.object);
                 if(a==actuators.end()||lengthSquared(a->second)==0)continue;
                 candidate_actuator_phase_residual+=phase.before.mass_kg*(phase.velocity_after_forces_m_s-phase.before.motion.linear_velocity_m_s)-phase.gravity_impulse_n_s-c.mass*a->second*h;
             }
             if(midpoint_contact)candidateBoundary=measureBoundary(before_states,h,candidateTwist);
-            for(unsigned i=0;i<bonds.size();++i)if(bonds[i].live&&bonds[i].plastic){
+            for(unsigned i=0;i<bonds.size();++i)if(detailed(bonds[i])&&bonds[i].plastic){
                 const auto &b=bonds[i];const auto &s=faces_after[i];const auto &rest=b.plastic_state.plastic_rest;
                 auto &update=candidate_plastic[i];
                 update=advanceConnectorPlasticity(*b.plastic,b.plastic_state,
@@ -313,13 +372,14 @@ struct VoxelImpactWorld::Impl {
             const double after=candidateTotals.mechanicalEnergy()+after_elastic;candidateEnergy=after;
             const double accounted=after+candidate_plastic_work+candidate_return_excess-candidate_actuator_work;
             return std::isfinite(accounted)&&accounted-before<=1e-5*std::max(1.,std::abs(before))+1e-6&&
-                accounted+fracture+discarded_elastic+plastic_work+plastic_return_excess-actuator_work-initial_energy<=.1;
+                accounted+fracture+discarded_elastic+plastic_work+plastic_return_excess-actuator_work-transfer_energy-initial_energy<=.1;
         });
         trial_wall_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-trial_start).count();
+        if(coast_contact){++rejected;expandCoast("candidate contact rollback");interval(h,depth);return;}
         if(!accepted){++rejected;refused_work={{"time_s",time},{"dt_s",h},{"depth",depth},{"before_j",before},{"candidate_j",candidateEnergy},{"elastic_change_j",after_elastic-before_elastic},{"work",workJson(candidateWork)}};if(actuation_used)refused_work["actuator_work_j"]=candidate_actuator_work;if(sheet_plasticity){refused_work["plastic_work_j"]=candidate_plastic_work;refused_work["plastic_return_excess_j"]=candidate_return_excess;}if(midpoint_contact){refused_work["midpoint_boundary"]=candidateBoundary;refused_work["worst_twist_contact"]=candidateTwist;}if(depth>=14)throw std::runtime_error("native integration energy gate refused at "+std::to_string(time)+" s: before="+std::to_string(before)+", candidate="+std::to_string(candidateEnergy)+", h="+std::to_string(h)+"; last accepted state retained");interval(h/2,depth+1);interval(h/2,depth+1);return;}
         actuator_work+=candidate_actuator_work;actuator_impulse+=candidate_actuator_impulse;actuator_angular_impulse+=candidate_actuator_angular;actuator_force_phase_residual+=candidate_actuator_phase_residual;
         plastic_work+=candidate_plastic_work;plastic_return_excess+=candidate_return_excess;
-        for(unsigned i=0;i<bonds.size();++i)if(bonds[i].live&&bonds[i].plastic)bonds[i].plastic_state=candidate_plastic[i].state;
+        for(unsigned i=0;i<bonds.size();++i)if(detailed(bonds[i])&&bonds[i].plastic)bonds[i].plastic_state=candidate_plastic[i].state;
         if(midpoint_contact)for(auto it=candidateBoundary.begin();it!=candidateBoundary.end();++it){
             const double value=it.value().get<double>();
             boundary_total[it.key()]=it.key().starts_with("max_")?std::max(boundary_total[it.key()].get<double>(),value):boundary_total[it.key()].get<double>()+value;
@@ -329,10 +389,10 @@ struct VoxelImpactWorld::Impl {
         work_total.solver_linear_residual_n_s+=candidateWork.solver_linear_residual_n_s;work_total.solver_angular_residual_n_m_s+=candidateWork.solver_angular_residual_n_m_s;work_total.angular_drift_n_m_s+=candidateWork.angular_drift_n_m_s;
         work_total.velocity_limit_impulse_n_s+=candidateWork.velocity_limit_impulse_n_s;work_total.velocity_limit_couple_n_m_s+=candidateWork.velocity_limit_couple_n_m_s;
         elastic_change_j+=after_elastic-before_elastic;ledger_change_j+=candidateEnergy-before;
-        std::vector<RigidSnapshot> after_states;after_states.reserve(cells.size());for(unsigned i=0;i<cells.size();++i){const auto &c=cells[i];after_states.push_back(candidate_states[i].motion);if(!c.fixed){linear_velocity_quadratic+=.5*c.mass*lengthSquared(after_states[i].linear_velocity_m_s-before_states[i].linear_velocity_m_s);peak_spin=std::max(peak_spin,length(after_states[i].angular_velocity_rad_s));if(length(after_states[i].angular_velocity_rad_s)>=999.99)++spin_limit_samples;}}
+        std::vector<RigidSnapshot> after_states;after_states.reserve(cells.size());for(unsigned i=0;i<cells.size();++i){const auto &c=cells[i];after_states.push_back(candidate_states[i].motion);if(!c.fixed&&active(i)){linear_velocity_quadratic+=.5*(coasting&&i==coast_index?candidate_states[i].mass_kg:c.mass)*lengthSquared(after_states[i].linear_velocity_m_s-before_states[i].linear_velocity_m_s);peak_spin=std::max(peak_spin,length(after_states[i].angular_velocity_rad_s));if(length(after_states[i].angular_velocity_rad_s)>=999.99)++spin_limit_samples;}}
         Vec3 reaction{};const auto support_angular_before=support_reaction_angular_impulse;
         for(const auto &contact:world.contactImpulseObservations()){
-            const auto ai=unsigned(contact.a-100),bi=unsigned(contact.b-100);
+            const auto ai=slot(contact.a),bi=slot(contact.b);
             if(ai>=cells.size()||bi>=cells.size())throw std::runtime_error("voxel contact references an undeclared cell");
             const auto &a=before_states[ai],&b=before_states[bi],&aa=after_states[ai],&bb=after_states[bi];
             const auto transfer=[&](Vec3 point,Vec3 push){
@@ -356,7 +416,7 @@ struct VoxelImpactWorld::Impl {
         // Reactions above are ON the support; their negatives act on dynamics.
         const auto scheduled_gravity=world.observedGravityImpulseN_s();gravity_impulse+=scheduled_gravity;
         momentum_residual+=candidateTotals.linear_momentum_kg_m_s-totals.linear_momentum_kg_m_s-scheduled_gravity-candidate_actuator_impulse+reaction;
-        for(unsigned i=0;i<bonds.size();++i)if(bonds[i].live){
+        for(unsigned i=0;i<bonds.size();++i)if(detailed(bonds[i])){
             const auto &b=bonds[i];const auto &geometry=faces_before[i],&response=faces_after[i];
             if(!response.solver_scheduled.value())continue;
             const auto &a=before_states[b.a],&c=before_states[b.b],&aa=after_states[b.a],&cc=after_states[b.b];
@@ -391,9 +451,10 @@ struct VoxelImpactWorld::Impl {
             max_spring_residual_n=std::max(max_spring_residual_n,length(residual));
         }
 
+        if(coasting)coast_time+=h;
         time+=h;++substeps;
         bool changed=false;
-        for(unsigned i=0;i<bonds.size();++i)if(bonds[i].live){
+        for(unsigned i=0;i<bonds.size();++i)if(detailed(bonds[i])){
             auto &b=bonds[i];const auto &s=faces_after[i];b.energy=quadratic(b.k,s.displacement_cs_m)+quadratic(b.r,s.rotation_cs_rad);
             if(b.plastic)b.energy=candidate_plastic[i].stored_energy_j;
             // No new strain/impulse while dormant. Dividing a cached lambda by
@@ -440,12 +501,12 @@ std::string VoxelImpactWorld::snapshotJson() const {
     const auto &w=*impl_;const auto roots=w.components();Json cells=Json::array(),objects=Json::array();
     const auto execution=w.world.executionProfile();
     double mass=0,elastic=0;for(const auto &b:w.bonds)if(b.live)elastic+=b.energy;
-    for(unsigned i=0;i<w.cells.size();++i){const auto &c=w.cells[i];const auto s=w.world.snapshot(c.id);const auto q=s.orientation_world;
+    for(unsigned i=0;i<w.cells.size();++i){const auto &c=w.cells[i];const auto s=w.cellSnapshot(i);const auto q=s.orientation_world;
         if(!c.fixed)mass+=c.mass;
         cells.push_back({{"id",c.id},{"object",c.object},{"component",roots[i]},{"size_m",v(c.size)},{"position_m",v(s.center_of_mass_world_m)},{"quaternion_wxyz",{q.w,q.x,q.y,q.z}},{"velocity_m_s",v(s.linear_velocity_m_s)},{"spin_rad_s",v(s.angular_velocity_rad_s)},{"mass_kg",c.mass},{"material",c.material},{"fixed",c.fixed}});
     }
     for(unsigned object:{1U,2U}){double objectmass=0;unsigned count=0,breaks=0;std::set<unsigned> parts;Vec3 center{},speed{};double maxtravel=0;
-        for(unsigned i=0;i<w.cells.size();++i)if(w.cells[i].object==object){const auto &c=w.cells[i];const auto s=w.world.snapshot(c.id);objectmass+=c.mass;++count;parts.insert(roots[i]);center+=s.center_of_mass_world_m*c.mass;speed+=s.linear_velocity_m_s*c.mass;maxtravel=std::max(maxtravel,length(s.center_of_mass_world_m-c.initial));}
+        for(unsigned i=0;i<w.cells.size();++i)if(w.cells[i].object==object){const auto &c=w.cells[i];const auto s=w.cellSnapshot(i);objectmass+=c.mass;++count;parts.insert(roots[i]);center+=s.center_of_mass_world_m*c.mass;speed+=s.linear_velocity_m_s*c.mass;maxtravel=std::max(maxtravel,length(s.center_of_mass_world_m-c.initial));}
         for(const auto &b:w.bonds)if(!b.live&&w.cells[b.a].object==object)++breaks;
         objects.push_back({{"id",object},{"mass_kg",objectmass},{"cells",count},{"pieces",parts.size()},{"broken_faces",breaks},{"center_m",v(objectmass?center/objectmass:Vec3{})},{"velocity_m_s",v(objectmass?speed/objectmass:Vec3{})},{"max_travel_m",maxtravel}});
     }
@@ -467,6 +528,10 @@ std::string VoxelImpactWorld::snapshotJson() const {
         motion_drivers.push_back({{"body",id},{"object",c.object},{"split_proposals",count}});}
     result["diagnostics"]["profile"]["motion"]={{"split_proposals",w.motion_splits},{"max_depth",w.max_motion_depth},{"drivers",motion_drivers},
         {"scope","Recursive proposal counters, not elapsed-time contributions. The fastest cell drives the existing global thickness/surface-speed rule. Energy rejections are separate."}};
+    if(w.hybrid){result["hybrid"]={{"mode","unloaded-ball-free-flight"},{"collapsed",w.coast&&w.coast->collapsed()},
+        {"coast_time_s",w.coast_time},{"active_native_bodies",w.world.activeBodyIds().size()},
+        {"transfer_energy_j",w.transfer_energy},{"energy_after_transfer_correction_j",w.totals.mechanicalEnergy()+elastic+w.fracture+w.discarded_elastic+w.plastic_work+w.plastic_return_excess-w.actuator_work-w.transfer_energy-w.initial_energy},{"transfers",w.transfers},
+        {"scope","Experimental initial unloaded ball continuation only. Original occupied cells and face rest survive transfer; prospective contact or a candidate contact restores detail before response. No post-fracture coarsening, loaded bending, second-impact speed or calibrated material law admission."}};}
     if(w.sheet_plasticity){
         Json history=Json::array();unsigned yielded=0;
         for(const auto &b:w.bonds)if(b.plastic){const auto &s=b.plastic_state;
