@@ -62,3 +62,7 @@ python tests/voxel_execution_test.py build/voxel-plastic-face/Release/banjo_voxe
 python scripts/check-source-registration.py
 node --check client/voxel-lab/world.js
 ```
+
+## Published source
+
+Source and tests published to GitHub main as `eda7a89c70d7fde09269db22713abff567d76ba5`. Tested native SHA-256: `c091c4615afac39c86ba034c4dc363ccf27b33b095f10d16826b49a91ad114de`. The publishing follow-up updates the website checkpoint and restarts the local server. All five goals remain open; this is a coherent experimental stage.

@@ -1,54 +1,49 @@
 {
-  "title": "Exact snapshots; measured 10% glass overhead reduction",
+  "title": "Persistent metal yielding \u00b7 experimental",
   "date": "2026-10-08",
-  "physics_revision": "8de0f3b609c158f4c537657aa677e42c74be5a06",
-  "native_sha256": "33abca5ee37001f1562ea33f51f8f1711d2c02046152401caefb9f47343cd618",
+  "physics_revision": "eda7a89c70d7fde09269db22713abff567d76ba5",
+  "native_sha256": "c091c4615afac39c86ba034c4dc363ccf27b33b095f10d16826b49a91ad114de",
   "changes": [
-    "Jolt update, contact observation, preparation and trial snapshot/restore timings now appear in Physics & record. Timers never control physics.",
-    "Reusable bounded storage retains every native state byte and preserves nested rollback; contact observations no longer copy a fresh stream.",
-    "Balanced glass comparison: 35.57 s versus 39.56 s for two physical seconds, about 10% less request wall time. Physical/work fields match exactly.",
-    "Nine scoped CTests and complete glass/oak/iron/ice reference comparisons pass. Full coupled-friction comparisons are running and are not claimed as completed here. All five broader goals remain open."
+    "Optional metal yielding changes persistent native connector rest; rendered deformation follows actual voxel poses. No assigned dent or shatter animation.",
+    "Try Iron, Yielding response, Coupled friction, 5 kg, 1 m. The completed browser drop retained 24 yielded connections; the ball is still on the sheet.",
+    "Physics & record separates physical yield work from numerical projection loss. Six independent modes are experimental, not continuum J2, hardening, grain or tearing.",
+    "Default glass/oak/iron/ice impacts retain exact prior physical/work state. Earlier five coupled-friction storage comparisons also finished with exact parity. All five broad goals remain open."
   ],
   "checks": [
     {
-      "label": "Exact native state transport",
+      "label": "Registered CPU/native tests",
       "status": "passed",
-      "value": "Byte equality, limits, exceptions and all 16 nested trial depths; 9 rebuilt scoped CTests"
+      "value": "336/336 sources compiled; 9 scoped CTests; six modes, unload/reversal, refinement and exact rejected/exception/nested history rollback"
     },
     {
-      "label": "Four complete material comparisons",
+      "label": "Live comparative integration",
       "status": "passed",
-      "value": "Glass/oak/iron/ice; 2 simulated seconds; every physical/work field exact at 16-tick outputs"
+      "value": "5 glass/oak/iron controls and two-timestep iron yielding scenes; finite motion, conserved mass and retained history"
     },
     {
-      "label": "Paired glass timing",
+      "label": "Default physical/work parity",
       "status": "passed",
-      "value": "Alternating order: 35.57 s new / 39.56 s baseline; about 10% reduction on this Windows fixture"
+      "value": "4 complete two-second glass/oak/iron/ice comparisons; wall profile excluded"
     },
     {
-      "label": "Five coupled-friction comparisons",
+      "label": "Ordinary browser controls",
+      "status": "passed",
+      "value": "Completed iron yielding drop to 2 s, Before/Live, readout and record; desktop and 844\u00d7390 scrolling controls; physical phone not tested"
+    },
+    {
+      "label": "Physical accuracy / refinement",
+      "status": "blocked",
+      "value": "Unexplained energy remains; whole-impact projection loss is not monotonically refined; contact and spatial qualification open"
+    },
+    {
+      "label": "Complete metal model",
       "status": "in progress",
-      "value": "Running separately; inherited coupled results are retained, no new completion claim"
+      "value": "Native rest/history implemented; shared solve yielding, unload/removal, restart, hardening and tearing remain"
     },
     {
-      "label": "Browser controls / responsive layout",
-      "status": "passed",
-      "value": "Ordinary native Step, Before/Live, Run/Pause; finite stage timings; 844 x 390 scrollable setup; no console errors. Physical phone not tested"
-    },
-    {
-      "label": "Compiled sources",
-      "status": "passed",
-      "value": "334 / 334 registered, no exclusions"
-    },
-    {
-      "label": "Full physics qualification",
+      "label": "Realtime speed",
       "status": "blocked",
-      "value": "Substantial losses, contact disagreement and spatial/timestep refinement remain unqualified"
-    },
-    {
-      "label": "Realtime calculation",
-      "status": "blocked",
-      "value": "Most time remains in Jolt update; reduce global substeps and active local solves"
+      "value": "Jolt updates still dominate; rendering at 60 fps is not realtime simulation"
     }
   ],
   "next": [
@@ -64,8 +59,8 @@
     },
     {
       "label": "Permanent metal dents",
-      "status": "planned",
-      "value": "Yield, retained plastic history and eventual tearing"
+      "status": "in progress",
+      "value": "Qualify native plasticity, unload/save-resume, shared solve yielding and measured ductile tearing"
     },
     {
       "label": "Adaptive cell sizes",
