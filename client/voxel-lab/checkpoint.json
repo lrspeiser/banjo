@@ -1,8 +1,9 @@
 {
-  "title": "Analytical GPU contact timing and actual impact inspection; assemblies and realtime remain open",
+  "title": "GPU Newton probe batching with exact tested histories; material accuracy and realtime remain open",
   "date": "2026-10-09",
   "native_sha256": "eb3527a07fda2a0c181ff11683eb907a16045bf0fcae66e4db58f703e7df9ee4",
   "changes": [
+    "Coupled GPU lab tries the full Newton step first, then batches smaller choices on CUDA. Select Step-size probes to compare the retained one-at-a-time reference. Four-material accepted poses, velocities, material history and work records match exactly. Measured low-energy wall time improves 12\u201326%; full material accuracy and realtime remain open.",
     "Ball / ground timing control uses explicit material/mass-derived contact refinement. Compare Before, actual accepted peak-impact microstep and Live. The derivative scale resolves microsecond contact positions. Connected sheets at refined contact phases still stop at the bounded trial budget; Reference remains their default. No whole-world realtime or material fracture qualification.",
     "Coupled lab adds ranked Newton starting guesses and an explicit single-start reference. The same total 24-iteration bound and physical gates remain. Strong glass/oak/iron/ice controls now finish at both tested timesteps; trajectory differences remain substantial. Run 0.1 s displays actual accepted states.",
     "Coupled CUDA fault collection now runs in parallel with unchanged fault priority and physical sums. The lab shows rejected-trial counts and rollback; its log records actual failed Newton inputs/candidates/Jacobian. Strong glass/ice convergence remains unresolved.",
@@ -22,6 +23,11 @@
     "Glass/oak/iron/ice complete at both timesteps in the initial trial. Full convergence, large energy deficits, connected calculation speed and thermal/fluid/power laws remain unfinished."
   ],
   "checks": [
+    {
+      "label": "Ordered CUDA step-size probes",
+      "status": "passed",
+      "value": "Twelve paired low-energy histories, eight stronger histories at two timesteps, four analytical-contact fixtures, exact recorded glass refusal and whole-interval rollback. Fourteen scoped CTests and 345/345 source registration pass. No physical law or tolerance change; not fracture/dent or realtime qualification. CUDA memcheck/racecheck zero errors; ordinary UI Before/Live/Impact and exact eleven-state sheet journals verified."
+    },
     {
       "label": "Isolated normal-contact clock",
       "status": "passed",
@@ -172,5 +178,5 @@
   "gpu_worker_sha256": "9380a55b680cc4b2e7b1dd3781d2e08bfad57c5b534d26024e901a84a6010bb2",
   "physx_source_sha256": "d1d30abfd67380a66fcf4664759e1917e50137bd7f6ef92bb160d0f1b5b5157f",
   "gpu_material_source_sha256": "439309fd656c70e3f3728fda7a7260aad16ecfe72c0f2f32d9c388b67690f559",
-  "gpu_coupled_source_sha256": "012e17b9d2d577bd79fc8eb54f5a73c4ff7d2b5dd11daecc6f15345cd60f9988"
+  "gpu_coupled_source_sha256": "18716413cf18147bd79f4730fcce32c493e2ff0b9c296da4ba4a91775c809c0c"
 }

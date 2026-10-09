@@ -1,0 +1,13 @@
+{
+  "source_sha256": "18716413cf18147bd79f4730fcce32c493e2ff0b9c296da4ba4a91775c809c0c",
+  "base_revision": "c4113374515d9598add8d37f63116cce44a8ba6d",
+  "ctest_scope_count": 14,
+  "ctest_passed": 14,
+  "ctest_wall_s": 564.67,
+  "source_registration": {
+    "sources": 345,
+    "registered": 345,
+    "exclusions": 0
+  },
+  "ctest_transcript": "Test project C:/Users/henry/Documents/ChatGPT/Banjo/build/voxel-contact-audit\n      Start   4: banjo_coupled_contact_tests\n 1/14 Test   #4: banjo_coupled_contact_tests ...........   Passed    0.02 sec\n      Start   9: banjo_rotation_strain_tests\n 2/14 Test   #9: banjo_rotation_strain_tests ...........   Passed    0.01 sec\n      Start  10: banjo_voxel_face_spring_tests\n 3/14 Test  #10: banjo_voxel_face_spring_tests .........   Passed    0.19 sec\n      Start 107: banjo_compliant_step_tests\n 4/14 Test #107: banjo_compliant_step_tests ............   Passed    2.32 sec\n      Start 279: banjo_gpu_material_laws_tests\n 5/14 Test #279: banjo_gpu_material_laws_tests .........   Passed    5.40 sec\n      Start 280: banjo_gpu_material_frames_tests\n 6/14 Test #280: banjo_gpu_material_frames_tests .......   Passed    2.96 sec\n      Start 281: banjo_gpu_coupled_world_tests\n 7/14 Test #281: banjo_gpu_coupled_world_tests .........   Passed    9.20 sec\n      Start 282: banjo_gpu_coupled_pipeline_tests\n 8/14 Test #282: banjo_gpu_coupled_pipeline_tests ......   Passed  188.92 sec\n      Start 283: banjo_gpu_coupled_convergence_tests\n 9/14 Test #283: banjo_gpu_coupled_convergence_tests ...   Passed   68.30 sec\n      Start 284: banjo_gpu_coupled_line_search_tests\n10/14 Test #284: banjo_gpu_coupled_line_search_tests ...   Passed  199.15 sec\n      Start 285: banjo_gpu_contact_timing_tests\n11/14 Test #285: banjo_gpu_contact_timing_tests ........   Passed   77.73 sec\n      Start 293: banjo_voxel_gateway_tests\n12/14 Test #293: banjo_voxel_gateway_tests .............   Passed    3.25 sec\n      Start 296: banjo_voxel_pipeline_tests\n13/14 Test #296: banjo_voxel_pipeline_tests ............   Passed    7.14 sec\n      Start 301: banjo_voxel_playback_tests\n14/14 Test #301: banjo_voxel_playback_tests ............   Passed    0.05 sec\n\n100% tests passed, 0 tests failed out of 14\n\nLabel Time Summary:\nclient          =  15.84 sec*proc (4 tests)\ncontact         = 546.25 sec*proc (6 tests)\nexperimental    = 551.65 sec*proc (7 tests)\ngpu             = 551.65 sec*proc (7 tests)\nmaterial        = 551.65 sec*proc (7 tests)\nnative          =  10.39 sec*proc (2 tests)\nvoxel           =  10.44 sec*proc (3 tests)\n\nTotal Test time (real) = 564.67 sec\n"
+}

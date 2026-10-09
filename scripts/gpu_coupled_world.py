@@ -125,7 +125,7 @@ class TrialFailure(RuntimeError):
         super().__init__(message);self.details=details or {}
 
 class CoupledEvaluator:
-    def __init__(self,bodies,edges,pipeline='parallel',newton_strategy='ranked'):
+    def __init__(self,bodies,edges,pipeline='parallel',newton_strategy='ranked',line_search='batch-tail'):
         if (cp.__version__,np.__version__)!=('13.5.1','2.5.3'):raise RuntimeError('Unverified coupled runtime')
         cp.cuda.Device(0).use()
         # Shared finite contact dispatch has bounded two-level calls and local
@@ -142,6 +142,8 @@ class CoupledEvaluator:
         self.module=cp.RawModule(code=code,options=('--std=c++17','--fmad=false'))
         if pipeline not in ('parallel','serial-reference'):raise ValueError('Unknown coupled trial pipeline')
         if newton_strategy not in ('ranked','single-reference'):raise ValueError('Unknown Newton starting strategy')
+        if line_search not in ('batch-tail','serial-reference'):raise ValueError('Unknown Newton line search')
+        self.line_search=line_search
         self.newton_strategy=newton_strategy;self.last_solve=None
         self.pipeline=pipeline;self.kernel=self.module.get_function('coupled_trials');self.storage={};self.evaluations=0
         self.phases={name:self.module.get_function(name) for name in ('prepare_trials','prepare_pairs','contribution_trials','gather_body_trials','gather_ledger_trials','collect_trial_faults')}
@@ -216,7 +218,7 @@ class CoupledEvaluator:
                 initial_bodies=cp.asnumpy(self.bodies).tolist(),initial_edges=cp.asnumpy(self.edges).tolist(),
                 iterate_weighted_velocity=cp.asnumpy(y).tolist(),finite_difference_weighted_scale=1e-12,
                 finite_difference_displacement_floor_kg_half_m=1e-16,
-                newton_strategy=self.newton_strategy,starting_fractions=list(fractions),starting_scores=start_scores,
+                newton_strategy=self.newton_strategy,line_search=self.line_search,starting_fractions=list(fractions),starting_scores=start_scores,
                 attempted_fractions=[fractions[i] for i in order[:start_index+1]])
             if last_trial is not None:
                 result,values,velocity=last_trial
@@ -280,11 +282,37 @@ class CoupledEvaluator:
             except np.linalg.LinAlgError:refuse('Singular coupled Newton Jacobian')
             if not bool(cp.isfinite(delta).all()):refuse('Nonfinite coupled Newton direction')
             accepted=False
-            for scale in (1.,.5,.25,.125,.0625,.03125,.015625,.0078125):
-                candidate=y-scale*delta;probe,r,_=trials(candidate)
-                fault=int(probe['faults'][0]);probe_norm=float(cp.linalg.norm(r[0])) if fault==0 else None
-                row['line_search'].append(dict(scale=scale,fault=fault,equation_residual=probe_norm))
-                if fault==0 and probe_norm<norm*(1-1e-4*scale):y=candidate;accepted=True;break
+            scales=(1.,.5,.25,.125,.0625,.03125,.015625,.0078125)
+            if self.line_search=='batch-tail':
+                # Independent PRIVATE probes of the same Newton direction.
+                # Their material input/history/dt are identical. Retain the
+                # first accepted scale in the original order; later probes
+                # never change accepted physics or manufacture another root.
+                # Preserve the common full-step fast path. Only when it fails
+                # do the remaining seven independent candidates run together.
+                for group in (scales[:1],scales[1:]):
+                    candidates=y[None]-cp.asarray(group)[:,None]*delta[None]
+                    probe,r,v=trials(candidates)
+                    # Identical vector reduction for every row, rather than
+                    # an axis reduction with a different arithmetic ordering.
+                    norms=cp.stack([cp.linalg.norm(r[i]) for i in range(len(group))])
+                    # One bounded host observation. Fault codes fit exactly in
+                    # FP64; physical arrays remain resident and authoritative.
+                    host_faults,host_norms=cp.asnumpy(cp.stack((probe['faults'],norms)))
+                    for i,scale in enumerate(group):
+                        fault=int(host_faults[i]);probe_norm=float(host_norms[i]) if fault==0 else None
+                        row['line_search'].append(dict(scale=scale,fault=fault,equation_residual=probe_norm))
+                        # Retain only the last CONSIDERED failure candidate,
+                        # just as serial evaluation, not seven unused states.
+                        last_trial={k:probe[k][i:i+1] for k in ('poses','residual','history','forces','ledger','faults')},candidates[i:i+1],v[i:i+1]
+                        if fault==0 and probe_norm<norm*(1-1e-4*scale):y=candidates[i].copy();accepted=True;break
+                    if accepted:break
+            else:
+                for scale in scales:
+                    candidate=y-scale*delta;probe,r,_=trials(candidate)
+                    fault=int(probe['faults'][0]);probe_norm=float(cp.linalg.norm(r[0])) if fault==0 else None
+                    row['line_search'].append(dict(scale=scale,fault=fault,equation_residual=probe_norm))
+                    if fault==0 and probe_norm<norm*(1-1e-4*scale):y=candidate;accepted=True;break
             if not accepted:
                 # All starts share the SAME total 24-iteration limit. Restart
                 # only the private nonlinear iterate; the physical input,
@@ -295,12 +323,13 @@ class CoupledEvaluator:
         refuse('Coupled Newton iteration budget exceeded')
 
 def declaration(raw):
-    defaults=dict(material='glass',ball_material='iron',ball_mass_kg=.01,height_m=.02,dt_s=1/960,experiment='sheet',device='cuda:0',pipeline='parallel',newton_strategy='ranked',contact_resolution='reference')
+    defaults=dict(material='glass',ball_material='iron',ball_mass_kg=.01,height_m=.02,dt_s=1/960,experiment='sheet',device='cuda:0',pipeline='parallel',newton_strategy='ranked',line_search='batch-tail',contact_resolution='reference')
     if not isinstance(raw,dict) or set(raw)-set(defaults):raise ValueError('Unknown coupled scene field')
     d=defaults|raw
     if d['device']!='cuda:0' or d['experiment'] not in ('sheet','freefall'):raise ValueError('Only explicit CUDA sheet/freefall experiments admitted')
     if d['pipeline'] not in ('parallel','serial-reference'):raise ValueError('Unknown coupled trial pipeline')
     if d['newton_strategy'] not in ('ranked','single-reference'):raise ValueError('Unknown Newton starting strategy')
+    if d['line_search'] not in ('batch-tail','serial-reference'):raise ValueError('Unknown Newton line search')
     if d['contact_resolution'] not in ('reference','phase-0.25','phase-0.125','phase-0.0625'):raise ValueError('Unknown contact timestep policy')
     for name in ('material','ball_material'):
         if d[name] not in ('glass','oak','iron','ice'):raise ValueError('Unknown declared material')
@@ -342,7 +371,7 @@ class GpuCoupledWorld:
                         edges.append(row)
         p=profiles[self.d['ball_material']];radius=(3*self.d['ball_mass_kg']/(4*math.pi*p['density_kg_m3']))**(1/3)
         body(2,p,[0,(.035 if self.d['experiment']=='sheet' else 0)+radius+self.d['height_m'],0],[radius]*3,mass=self.d['ball_mass_kg'])
-        self.eval=CoupledEvaluator(bodies,edges,pipeline=self.d['pipeline'],newton_strategy=self.d['newton_strategy']);self.ticks=0;self.time=0.;self.step_s=0.;self.last_ms=0.;self.histories=np.zeros((len(edges),32))
+        self.eval=CoupledEvaluator(bodies,edges,pipeline=self.d['pipeline'],newton_strategy=self.d['newton_strategy'],line_search=self.d['line_search']);self.ticks=0;self.time=0.;self.step_s=0.;self.last_ms=0.;self.histories=np.zeros((len(edges),32))
         self.P_ground=np.zeros(3);self.L_ground=np.zeros(3);self.max_residual=0.;self.fracture=self.plastic=self.return_excess=0.;self.total_iterations=0;self.microsteps=0
         baseline=self.eval.evaluate(self.eval.bodies[:,14:20],1e-12,gravity=0)
         if int(baseline['faults'][0]):raise RuntimeError('Invalid initial coupled energy state')
@@ -440,7 +469,7 @@ class GpuCoupledWorld:
                 momentum_n_s=p.tolist(),angular_momentum_n_m_s=l.tolist(),
                 fracture_work_j=self.fracture,plastic_work_j=self.plastic,numerical_return_excess_j=self.return_excess,separated_sites=separated,yielded_faces=yielded,interfaces=self.eval.m,
                 maximum_energy_residual_j=self.max_residual,ground_impulse_n_s=self.P_ground.tolist(),ground_torque_impulse_n_m_s=self.L_ground.tolist()),
-            substep_accounts=copy.deepcopy(self.last_accounts),performance=dict(pipeline=self.eval.pipeline,newton_strategy=self.eval.newton_strategy,contact_resolution=self.d['contact_resolution'],step_s=self.step_s,last_batch_ms=self.last_ms,compute_ratio=self.time/self.step_s if self.step_s else None,
+            substep_accounts=copy.deepcopy(self.last_accounts),performance=dict(pipeline=self.eval.pipeline,newton_strategy=self.eval.newton_strategy,line_search=self.eval.line_search,contact_resolution=self.d['contact_resolution'],step_s=self.step_s,last_batch_ms=self.last_ms,compute_ratio=self.time/self.step_s if self.step_s else None,
                 microsteps=self.microsteps,nonlinear_iterations=self.total_iterations,trial_evaluations=self.eval.evaluations),
             qualification=dict(backend='cupy-implicit-body',gpu=True,device='cuda:0',dtype='float64',source_sha256=self.hash,complete_physics_validated=False,realtime_qualified=False,
                 scope='Experimental finite rigid-cell isotropic inertia; declared mixed-mode cohesive/6-mode plastic interfaces and frictionless normal compliance. No calibrated bulk/grain/J2/thermal law or CCD qualification.'))

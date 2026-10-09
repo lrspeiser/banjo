@@ -1,0 +1,105 @@
+{
+  "source_sha256": "012e17b9d2d577bd79fc8eb54f5a73c4ff7d2b5dd11daecc6f15345cd60f9988",
+  "instrumentation": "Runtime observation wrappers; no equation or solver change. CUDA events add overhead; overlapping phase times are not additive.",
+  "rows": [
+    {
+      "material": "glass",
+      "physical_time_s": 0.041666666666666664,
+      "wall_s": 2.79625140002463,
+      "evaluate_calls": 2223,
+      "evaluate_enqueue_s": 0.2536524006864056,
+      "evaluate_cuda_s": 1.2856282555162906,
+      "linear_calls": 413,
+      "linear_host_s": 0.23518789955414832,
+      "linear_cuda_s": 0.22910294410586357,
+      "scalar_sync_count": 4388,
+      "scalar_sync_s": 1.2802251987741329,
+      "performance": {
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "contact_resolution": "reference",
+        "step_s": 2.7721954999724403,
+        "last_batch_ms": 77.14170002145693,
+        "compute_ratio": 0.015030205000722673,
+        "microsteps": 34,
+        "nonlinear_iterations": 308,
+        "trial_evaluations": 51858
+      }
+    },
+    {
+      "material": "oak",
+      "physical_time_s": 0.041666666666666664,
+      "wall_s": 1.4907280000043102,
+      "evaluate_calls": 1109,
+      "evaluate_enqueue_s": 0.1412273998139426,
+      "evaluate_cuda_s": 0.6453395527899265,
+      "linear_calls": 201,
+      "linear_host_s": 0.12392490013735369,
+      "linear_cuda_s": 0.1217337277829647,
+      "scalar_sync_count": 2178,
+      "scalar_sync_s": 0.6356765995151363,
+      "performance": {
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "contact_resolution": "reference",
+        "step_s": 1.4700775999808684,
+        "last_batch_ms": 31.46070003276691,
+        "compute_ratio": 0.02834317499104055,
+        "microsteps": 25,
+        "nonlinear_iterations": 156,
+        "trial_evaluations": 25480
+      }
+    },
+    {
+      "material": "iron",
+      "physical_time_s": 0.041666666666666664,
+      "wall_s": 6.203509000013582,
+      "evaluate_calls": 4794,
+      "evaluate_enqueue_s": 0.5437985005555674,
+      "evaluate_cuda_s": 2.823762910157442,
+      "linear_calls": 1102,
+      "linear_host_s": 0.6316225998452865,
+      "linear_cuda_s": 0.6086628482937813,
+      "scalar_sync_count": 9498,
+      "scalar_sync_s": 2.8107884018681943,
+      "performance": {
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "contact_resolution": "reference",
+        "step_s": 6.187056900002062,
+        "last_batch_ms": 245.48520002281293,
+        "compute_ratio": 0.006734489005047421,
+        "microsteps": 50,
+        "nonlinear_iterations": 408,
+        "trial_evaluations": 136484
+      }
+    },
+    {
+      "material": "ice",
+      "physical_time_s": 0.041666666666666664,
+      "wall_s": 0.6570880999788642,
+      "evaluate_calls": 506,
+      "evaluate_enqueue_s": 0.05600079940631986,
+      "evaluate_cuda_s": 0.2933569599092007,
+      "linear_calls": 98,
+      "linear_host_s": 0.05667860014364123,
+      "linear_cuda_s": 0.05508313605189324,
+      "scalar_sync_count": 992,
+      "scalar_sync_s": 0.288761698291637,
+      "performance": {
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "contact_resolution": "reference",
+        "step_s": 0.6417198999552056,
+        "last_batch_ms": 36.86569997807965,
+        "compute_ratio": 0.06492967830602596,
+        "microsteps": 15,
+        "nonlinear_iterations": 83,
+        "trial_evaluations": 12580
+      }
+    }
+  ],
+  "instrumentation_source": "import sys,time,json,builtins,statistics,hashlib\nfrom pathlib import Path\nsys.path.insert(0,str(Path.cwd()/'scripts'))\nimport cupy as cp, gpu_coupled_world as module\nfrom gpu_coupled_world import GpuCoupledWorld,source_hash\nrows=[]\nfor material in ('glass','oak','iron','ice'):\n w=GpuCoupledWorld(dict(material=material,height_m=.001,dt_s=1/240));e=w.eval\n # Warm CUDA linear/runtime allocations without changing the physical input.\n e.solve(1/960)\n calls=[];waits=[];linears=[];events=[];phase_events=[]\n original_eval=e.evaluate;original_linear=cp.linalg.solve;original_solve=e.solve\n def evaluate(*a,**kw):\n  start=time.perf_counter();aevent=cp.cuda.Event();bevent=cp.cuda.Event();aevent.record();r=original_eval(*a,**kw);bevent.record();calls.append((time.perf_counter()-start,len(r['faults'])));events.append((aevent,bevent));return r\n def linear(*a,**kw):\n  start=time.perf_counter();ae=cp.cuda.Event();be=cp.cuda.Event();ae.record();r=original_linear(*a,**kw);be.record();linears.append(time.perf_counter()-start);phase_events.append((ae,be));return r\n def scalar(kind,value):\n  t=time.perf_counter();r=kind(value)\n  if isinstance(value,cp.ndarray):waits.append((kind.__name__,time.perf_counter()-t))\n  return r\n def solve(*a,**kw):\n  module.float=lambda x:scalar(builtins.float,x);module.int=lambda x:scalar(builtins.int,x);module.bool=lambda x:scalar(builtins.bool,x)\n  try:return original_solve(*a,**kw)\n  finally:del module.float,module.int,module.bool\n e.evaluate=evaluate;cp.linalg.solve=linear;e.solve=solve\n start=time.perf_counter()\n try:\n  for tick in range(10):s=w.advance(1)\n finally:\n  cp.linalg.solve=original_linear;e.solve=original_solve\n cp.cuda.get_current_stream().synchronize();wall=time.perf_counter()-start\n row=dict(material=material,physical_time_s=s['time_s'],wall_s=wall,evaluate_calls=len(calls),evaluate_enqueue_s=sum(x[0] for x in calls),evaluate_cuda_s=sum(cp.cuda.get_elapsed_time(a,b)/1000 for a,b in events),linear_calls=len(linears),linear_host_s=sum(linears),linear_cuda_s=sum(cp.cuda.get_elapsed_time(a,b)/1000 for a,b in phase_events),scalar_sync_count=len(waits),scalar_sync_s=sum(x[1] for x in waits),performance=s['performance']);rows.append(row);print(row,flush=True)\nPath('build/gpu-local-solve/profile.json').write_text(json.dumps(dict(source_sha256=source_hash(),instrumentation='Runtime observation wrappers; no equation or solver change. CUDA events add overhead; overlapping phase times are not additive.',rows=rows),indent=2),encoding='utf8')\n",
+  "base_revision": "c4113374515d9598add8d37f63116cce44a8ba6d",
+  "clock_note": "CUDA event and host wait intervals overlap; do not add them. These are instrumented observations, not the uninstrumented speed comparison."
+}

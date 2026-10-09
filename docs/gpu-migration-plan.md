@@ -1,3 +1,5 @@
+**Current experimental GPU world, October 9:** Shared material/contact kernels and an implicit finite-body solve now run through CuPy at `/coupled`. [Ordered probe scheduling](gpu-line-search-checkpoint.md) retains exact tested reference histories and improves measured orchestration cost. The default CPU world remains separate; coupled material accuracy, useful realtime and the remaining laws are unfinished. The October 8 assessment below records the original migration decision and library roles.
+
 # GPU physics migration — October 8, 2026
 
 ## Decision and actual status
