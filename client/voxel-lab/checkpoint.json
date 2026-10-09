@@ -1,10 +1,11 @@
 {
-  "title": "GPU migration started; the 3D world remains the CPU reference",
+  "title": "GPU contact yard is live; full material port remains open",
   "date": "2026-10-08",
   "native_sha256": "eb3527a07fda2a0c181ff11683eb907a16045bf0fcae66e4db58f703e7df9ee4",
   "changes": [
-    "GPU migration: shared-source CuPy bond checks run on the RTX 5090. This is a primitive test; the displayed world still runs the previous CPU physics.",
-    "Optional Contact response → Coupled friction + bounce solves sliding and twist together while retaining native material restitution. Reference stays default.",
+    "Open GPU contact yard: CUDA-calculated ball drops, two-body impacts and free fall. CPU material lab remains available; no GPU fracture or dents yet.",
+    "GPU frames use actual resident Newton/Warp states, with every substep recorded. The full 27-block stack stops at an energy refusal and retains its last accepted scene.",
+    "Optional Contact response \u2192 Coupled friction + bounce solves sliding and twist together while retaining native material restitution. Reference stays default.",
     "Physics step selects the actual 1/960 or refined 1/1920 s experiment. Before/Live shows original and accepted native geometry.",
     "The reproduced refined glass refusal is twisting friction adding energy in the direction of existing spin. Terminal rejected records now retain original-cell impulses and actual force/solver velocities.",
     "Glass/oak/iron/ice complete at both timesteps in the initial trial. Full convergence, large energy deficits, connected calculation speed and thermal/fluid/power laws remain unfinished."
@@ -34,6 +35,16 @@
       "label": "GPU primitive (separate probe)",
       "status": "passed",
       "value": "12 glass/oak/iron/ice axial coupon checks, 128/4096/65536 independent bonds, compiled from the shared source via CuPy; not world/contact/fracture admission"
+    },
+    {
+      "label": "GPU contact stage",
+      "status": "passed",
+      "value": "Glass/oak/iron/ice analytical drops at two timesteps, free-body pairs, off-center spin, CPU/graph parity, rollback/capacity and exact journal tests; four scoped CTests"
+    },
+    {
+      "label": "GPU full world",
+      "status": "blocked",
+      "value": "27-block coupled contacts refuse intermediate energy creation. Complete support reactions, fracture/plasticity, thin geometry and full-world realtime remain open."
     }
   ],
   "next": [
@@ -45,7 +56,7 @@
     {
       "label": "GPU world migration",
       "status": "in progress",
-      "value": "Evaluate Warp/Newton and PhysX GPU contacts; keep coupled material/history state resident, qualify transfers/conservation and wire accepted GPU frames into this 3D view"
+      "value": "Resolve GPU multi-contact work/convergence, compare PhysX, and port bonded material/history laws into the resident pipeline; accepted rigid GPU frames are now visible at /gpu."
     },
     {
       "label": "Permanent metal dents",
@@ -75,5 +86,7 @@
     "local_rigid_flight": true,
     "material_block_friction": true
   },
-  "physics_revision": "e12eb688a470e3a092038442ef1950ce5b52a30b"
+  "physics_revision": "e12eb688a470e3a092038442ef1950ce5b52a30b",
+  "gpu_source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd",
+  "gpu_worker_sha256": "788b2e8aa6bd938d96f8a3dce4aeef476ec43b9d58d9b7ccdd49db9666bdb23b"
 }

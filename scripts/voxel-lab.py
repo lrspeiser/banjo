@@ -4,7 +4,7 @@ from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-ASSETS={'/':'client/voxel-lab/index.html','/world.js':'client/voxel-lab/world.js','/playback.mjs':'client/voxel-lab/playback.mjs','/style.css':'client/voxel-lab/style.css','/three.module.js':'playground/vendor/three.module.js','/three.core.js':'playground/vendor/three.core.js'}
+ASSETS={'/':'client/voxel-lab/index.html','/world.js':'client/voxel-lab/world.js','/playback.mjs':'client/voxel-lab/playback.mjs','/style.css':'client/voxel-lab/style.css','/three.module.js':'playground/vendor/three.module.js','/three.core.js':'playground/vendor/three.core.js','/gpu':'client/voxel-lab/gpu.html','/gpu.js':'client/voxel-lab/gpu.js','/gpu.css':'client/voxel-lab/gpu.css'}
 
 def same_record(previous,current):
  if type(previous) is not type(current):return False
@@ -41,18 +41,22 @@ def repository_state():
   return revision,dirty
  except (OSError,subprocess.SubprocessError):return None,None
 class Session:
- def __init__(self,native,logs,checkpoint=None):
-  self.proc=subprocess.Popen([str(native),'--serve'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,bufsize=1)
+ def __init__(self,native,logs,checkpoint=None,worker_command=None):
+  self.backend='gpu' if worker_command else 'cpu'
+  self.worker_stderr=None
+  if worker_command:
+   self.worker_stderr=(logs/(uuid.uuid4().hex+'.worker.stderr.log')).open('w',encoding='utf8')
+  self.proc=subprocess.Popen(worker_command or [str(native),'--serve'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=self.worker_stderr or subprocess.DEVNULL,text=True,bufsize=1)
   self.output=queue.Queue(maxsize=2);self.lock=threading.Lock();self.record_lock=threading.Lock();self.last=time.monotonic();self.path=logs/(uuid.uuid4().hex+'.jsonl.bz2');self.bytes=0;self.uncompressed_bytes=0
   self.previous_record=None
-  self.condition=threading.Condition();self.closed=False;self.native_failure=None;self.response_timeout_s=25.;self.playing=False;self.calculating=False;self.latest=None;self.current=None;self.frame_id=0
+  self.condition=threading.Condition();self.closed=False;self.native_failure=None;self.response_timeout_s=120. if worker_command else 25.;self.playing=False;self.calculating=False;self.latest=None;self.current=None;self.frame_id=0
   self.target_ticks=0;self.started=0.;self.started_time=0.;self.elapsed_s=0.;self.batch_cost_s=.001;self.max_batch_s=0.;self.pending_commands=[];self.last_publish=0.
   self.batch_samples=deque(maxlen=256);self.current_at=0.;self.latest_at=0.
   def reader():
    for line in self.proc.stdout:self.output.put(line)
    self.output.put(None)
   threading.Thread(target=reader,daemon=True).start()
-  self.write({'native_sha256':hashlib.sha256(native.read_bytes()).hexdigest(),'assets':{k:hashlib.sha256((ROOT/v).read_bytes()).hexdigest() for k,v in ASSETS.items()},'checkpoint':checkpoint})
+  self.write({'native_sha256':hashlib.sha256(native.read_bytes()).hexdigest(),'backend':self.backend,'worker_command':worker_command,'assets':{k:hashlib.sha256((ROOT/v).read_bytes()).hexdigest() for k,v in ASSETS.items()},'checkpoint':checkpoint})
   threading.Thread(target=self.simulate,daemon=True).start()
  def write(self,data):
   with self.record_lock:
@@ -122,7 +126,7 @@ class Session:
   physical=max(0.,self.current['state']['time_s']-self.started_time) if self.current and self.started else 0.
   ordered=sorted(self.batch_samples);p95=ordered[max(0,(95*len(ordered)+99)//100-1)] if ordered else 0.
   return {'running':self.playing,'calculating':self.calculating,'realtime_ratio':physical/elapsed if elapsed else 0.,'wall_s':elapsed,
-          'max_native_batch_ms':self.max_batch_s*1000,'native_batch_budget_ms':8,'frame_hz_target':30,'buffered_frames':1,
+          'max_native_batch_ms':self.max_batch_s*1000,'native_batch_budget_ms':1000/30 if self.backend=='gpu' else 8,'frame_hz_target':30,'buffered_frames':1,'backend':self.backend,
           'native_batch_p95_ms':p95*1000,'batch_sample_count':len(ordered),'batch_sample_limit':256,
           'published_state_age_ms':max(0.,now-self.latest_at)*1000 if self.latest_at else 0.,
           'current_state_age_ms':max(0.,now-self.current_at)*1000 if self.current_at else 0.,
@@ -188,12 +192,15 @@ class Session:
     ahead=state['time_s']-self.started_time-(time.monotonic()-self.started)
     if ahead>.03:
      self.condition.wait(timeout=min(.03,ahead-.03));continue
-    steps=min(16,max(1,int(.008/max(.0001,self.batch_cost_s))),self.target_ticks-state['ticks'])
+    # The CUDA graph schedule uses a fixed resident batch. Adaptive native CPU
+    # batch sizes would repeatedly capture new graphs and lose GPU throughput.
+    batch=32 if self.backend=='gpu' else min(16,max(1,int(.008/max(.0001,self.batch_cost_s))))
+    steps=min(batch,self.target_ticks-state['ticks'])
     if steps<=0:self.playing=False;self.condition.notify_all();continue
     self.calculating=True
    start=time.monotonic()
    try:
-    reply=self.call({'op':'advance','steps':steps},record=False);cost=time.monotonic()-start
+    reply=self.call({'op':'advance','steps':steps},record=self.backend=='gpu');cost=time.monotonic()-start
     with self.condition:
      self.calculating=False;self.current=reply;self.elapsed_s=max(0.,time.monotonic()-self.started);self.batch_cost_s=.5*self.batch_cost_s+.5*cost/steps;self.max_batch_s=max(self.max_batch_s,cost)
      if 'delivery_failure' not in reply:self.current_at=time.monotonic();self.pending_commands.append(steps)
@@ -210,23 +217,28 @@ class Session:
  def close(self):
   with self.condition:self.closed=True;self.playing=False;self.condition.notify_all()
   self.stop_native()
+  if self.worker_stderr:self.worker_stderr.close()
 class Server(ThreadingHTTPServer):
  daemon_threads=True
- def __init__(self,address,native,logs,checkpoint_path=None):
+ def __init__(self,address,native,logs,checkpoint_path=None,gpu_python=None):
   super().__init__(address,Handler);self.native=native;self.logs=logs;logs.mkdir(parents=True,exist_ok=True);self.sessions={};self.lock=threading.Lock()
   self.checkpoint_path=checkpoint_path or ROOT/'client/voxel-lab/checkpoint.json';self.started_revision,_=repository_state()
+  self.gpu_python=gpu_python
  def checkpoint_status(self):
   try:
    checkpoint=json.loads(self.checkpoint_path.read_text(encoding='utf8'))
    if not isinstance(checkpoint,dict):raise ValueError('Invalid checkpoint')
   except (ValueError,OSError):checkpoint={}
   revision,dirty=repository_state();actual=hashlib.sha256(self.native.read_bytes()).hexdigest()
-  return {'checkpoint':checkpoint,'native_sha256':actual,'native_verified':bool(checkpoint.get('native_sha256')==actual),'website_revision':revision,'local_changes':dirty,'server_revision':self.started_revision,'restart_pending':revision!=self.started_revision}
- def session(self,key):
+  gpu_hash=hashlib.sha256((ROOT/'scripts/gpu_contact_world.py').read_bytes()).hexdigest() if self.gpu_python else None
+  worker_hash=hashlib.sha256((ROOT/'scripts/gpu-contact-worker.py').read_bytes()).hexdigest() if self.gpu_python else None
+  return {'checkpoint':checkpoint,'native_sha256':actual,'native_verified':bool(checkpoint.get('native_sha256')==actual),'website_revision':revision,'local_changes':dirty,'server_revision':self.started_revision,'restart_pending':revision!=self.started_revision,'gpu_available':self.gpu_python is not None,'gpu_source_sha256':gpu_hash,'gpu_worker_sha256':worker_hash,'gpu_source_verified':bool(gpu_hash and checkpoint.get('gpu_source_sha256')==gpu_hash and checkpoint.get('gpu_worker_sha256')==worker_hash)}
+ def session(self,key,backend=None):
   with self.lock:
    for old,s in list(self.sessions.items()):
     if time.monotonic()-s.last>600:s.close();del self.sessions[old]
    if key not in self.sessions:raise ValueError('Session expired; reset the scene')
+   if backend and self.sessions[key].backend!=backend:raise ValueError('Session belongs to a different physics backend')
    return self.sessions[key]
 class Handler(BaseHTTPRequestHandler):
  def send(self,status,body,kind='application/json'):
@@ -253,18 +265,23 @@ class Handler(BaseHTTPRequestHandler):
   self.send(200,(ROOT/ASSETS[path]).read_bytes(),kind)
  def do_POST(self):
   try:
-   if self.path!='/api/world':raise ValueError('Unknown endpoint')
+   if self.path not in ('/api/world','/api/gpu'):raise ValueError('Unknown endpoint')
+   backend='gpu' if self.path=='/api/gpu' else 'cpu'
+   if backend=='gpu' and not self.server.gpu_python:raise ValueError('GPU runtime is not configured; no CPU fallback')
    if self.headers.get('Origin') not in (None,'http://'+self.headers.get('Host','')):raise ValueError('Cross-origin request refused')
    length=int(self.headers.get('Content-Length','0'))
    if not 0<length<=4096:raise ValueError('Request size invalid')
-   data=json.loads(self.rfile.read(length));op=data.get('op')
+   data=json.loads(self.rfile.read(length))
+   if not isinstance(data,dict):raise ValueError('Command must be an object')
+   op=data.get('op')
    if op=='create':
     if set(data)!={'op','declaration'} or not isinstance(data['declaration'],dict):raise ValueError('Invalid scene declaration')
     with self.server.lock:
      for key,s in list(self.server.sessions.items()):
       if time.monotonic()-s.last>600:s.close();del self.server.sessions[key]
      if len(self.server.sessions)>=8:raise ValueError('Eight scenes active; close or reset an old scene')
-     s=Session(self.server.native,self.server.logs,self.server.checkpoint_status());key=uuid.uuid4().hex
+     command=[str(self.server.gpu_python),str(ROOT/'scripts/gpu-contact-worker.py')] if backend=='gpu' else None
+     s=Session(self.server.native,self.server.logs,self.server.checkpoint_status(),worker_command=command);key=uuid.uuid4().hex
      try:r=s.manual(data)
      except Exception:s.close();raise
      if r['ok']:self.server.sessions[key]=s
@@ -273,7 +290,7 @@ class Handler(BaseHTTPRequestHandler):
    elif op in ['play','frame']:
     allowed={'op','session','running','target_time_s'} if op=='play' else {'op','session','after','wait_ms'}
     if set(data)!=allowed:raise ValueError('Invalid pipeline command fields')
-    s=self.server.session(data['session'])
+    s=self.server.session(data['session'],backend)
     if op=='play':
      if type(data['running']) is not bool:raise ValueError('Running must be boolean')
      r=s.play(data['running'],data['target_time_s'])
@@ -285,7 +302,8 @@ class Handler(BaseHTTPRequestHandler):
    elif op in ['advance','snapshot','close','accelerate_object']:
     allowed={'op','session','steps'} if op=='advance' else {'op','session','object','acceleration_m_s2'} if op=='accelerate_object' else {'op','session'}
     if set(data)!=allowed:raise ValueError('Invalid command fields')
-    s=self.server.session(data['session'])
+    s=self.server.session(data['session'],backend)
+    if backend=='gpu' and op=='accelerate_object':raise ValueError('GPU actuation is not implemented')
     if op=='close':
      with self.server.lock:s.close();self.server.sessions.pop(data['session'],None)
      r={'ok':True}
@@ -297,8 +315,8 @@ class Handler(BaseHTTPRequestHandler):
   except (ValueError,TypeError,KeyError,OSError) as e:self.send(400,json.dumps({'ok':False,'error':str(e)}).encode())
  def log_message(self,*args):pass
 if __name__=='__main__':
- p=argparse.ArgumentParser();p.add_argument('--native',type=Path,required=True);p.add_argument('--port',type=int,default=18893);a=p.parse_args()
- server=Server(('127.0.0.1',a.port),a.native.resolve(strict=True),ROOT/'build/voxel-world-logs')
+ p=argparse.ArgumentParser();p.add_argument('--native',type=Path,required=True);p.add_argument('--gpu-python',type=Path);p.add_argument('--port',type=int,default=18893);a=p.parse_args()
+ server=Server(('127.0.0.1',a.port),a.native.resolve(strict=True),ROOT/'build/voxel-world-logs',gpu_python=a.gpu_python.resolve(strict=True) if a.gpu_python else None)
  print(f'Voxel world http://127.0.0.1:{a.port}/',flush=True)
  try:server.serve_forever()
  finally:

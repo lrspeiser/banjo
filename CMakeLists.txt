@@ -13,6 +13,7 @@ option(BANJO_BUILD_TESTS "Build Banjo unit tests" ON)
 option(BANJO_JOLT_CONTINUOUS_SMALL_ROTATION "Experimental: integrate native angular steps below one microradian" OFF)
 option(BANJO_BUILD_CUDA "Build the CUDA backend of the fast explicit lattice fracture lane" OFF)
 option(BANJO_TEST_CUPY "Run opt-in shared-source CuPy GPU coupon checks (requires GPU, CuPy, nvcc and host compiler)" OFF)
+set(BANJO_NEWTON_PYTHON "" CACHE FILEPATH "Opt-in Python runtime with pinned Newton/Warp and an actual CUDA GPU")
 # nvcc contracts a*b+c into fused multiply-adds by default; MSVC (/fp:precise)
 # never does. A fused operation rounds once where the CPU rounds twice, and the
 # lattice's discrete failure decisions amplify that last-bit difference into a
@@ -2151,6 +2152,13 @@ endif()
 if(BANJO_BUILD_TESTS)
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_FOUND)
+        if(BANJO_NEWTON_PYTHON AND TARGET banjo_voxel_world_run)
+            add_test(NAME banjo_gpu_contact_tests COMMAND ${BANJO_NEWTON_PYTHON}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu_contact_test.py
+                --native $<TARGET_FILE:banjo_voxel_world_run>
+                --report ${CMAKE_CURRENT_BINARY_DIR}/gpu-contact/results.json)
+            set_tests_properties(banjo_gpu_contact_tests PROPERTIES TIMEOUT 300 LABELS "gpu;experimental;contact;client")
+        endif()
         if(BANJO_TEST_CUPY)
             add_test(NAME banjo_cupy_physics_probe COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/scripts/cupy-physics-probe.py

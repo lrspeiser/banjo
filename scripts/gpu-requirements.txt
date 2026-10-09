@@ -1,0 +1,4 @@
+# Isolated development runtime; keep the CPU reference environment unchanged.
+newton==1.6.1
+warp-lang==1.18.0
+numpy==2.5.3

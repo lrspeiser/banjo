@@ -11,7 +11,7 @@ needs CUDA. A GPU simulation host can eventually serve a browser renderer.
 plus CuPy for arrays, reductions and execution of reusable CUDA kernels. Evaluate
 PhysX GPU dynamics against the same contact fixture before committing the final
 contact backend. These are architecture recommendations, not completed ports.
-Neither Warp nor Newton has been installed or benchmarked in this checkpoint.
+The subsequent [resident GPU contact checkpoint](gpu-contact-checkpoint.md) installs Newton 1.6.1 / Warp 1.18.0 and measures a separate rigid yard on the RTX 5090. The full block stack remains blocked.
 
 **Implemented:** an opt-in CuPy probe compiles Banjo's existing axial bond
 function directly from `LatticePhysics.hpp` and executes it on the RTX 5090.
@@ -19,8 +19,8 @@ Twelve analytical coupon cases pass across glass, oak, iron and ice. The CMake
 test is opt-in and fails if the required GPU/toolchain is unavailable.
 
 **Not implemented:** a GPU replacement for the current 3D world's Jolt/contact/
-six-mode interface solve. The visible world remains the exact previous CPU
-native binary. This checkpoint changes neither its material laws nor its
+six-mode interface solve. The default material world remains the exact previous CPU
+native binary; the separate `/gpu` rigid yard now consumes accepted CUDA states. This checkpoint changes neither its material laws nor its
 performance. Full impact accuracy and near realtime are still open.
 
 ## What each library actually supplies

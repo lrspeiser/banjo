@@ -1,0 +1,2068 @@
+{
+  "schema": "banjo.gpu-contact-evidence.v1",
+  "rows": [
+    {
+      "declaration": {
+        "experiment": "floor",
+        "material": "glass",
+        "ball_material": "glass",
+        "height_m": 10.0,
+        "ball_mass_kg": 1.0,
+        "restitution": 0.5,
+        "friction": 0.3,
+        "dt_s": 0.0010416666666666667,
+        "offset_m": 0.0,
+        "device": "cuda:0",
+        "solver_relaxation": 0.1
+      },
+      "startup_s": 0.3710179000045173,
+      "wall_s": 1.1494726999662817,
+      "initial": {
+        "dynamic_mass_kg": 0.9999999403953552,
+        "kinetic_j": 0.0,
+        "potential_j": 98.54838668892428,
+        "mechanical_j": 98.54838668892428,
+        "mechanical_change_j": 0.0,
+        "momentum_n_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 0,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final": {
+        "dynamic_mass_kg": 0.9999999403953552,
+        "kinetic_j": 0.9727659789273633,
+        "potential_j": 23.96104865544736,
+        "mechanical_j": 24.933814634374723,
+        "mechanical_change_j": -73.61457205454955,
+        "momentum_n_s": [
+          0.0,
+          1.3948232296214513,
+          -6.07680781445224e-07
+        ],
+        "angular_momentum_n_m_s": [
+          -9.992689982346007e-07,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 1,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final_cells": [
+        {
+          "id": 0,
+          "material": "glass",
+          "shape": "sphere",
+          "radius_m": 0.04570781497340833,
+          "size_m": [
+            0.09141562994681666,
+            0.09141562994681666,
+            0.09141562994681666
+          ],
+          "expected_mass_kg": 1.0,
+          "mass_kg": 0.9999999403953552,
+          "position_m": [
+            0.0,
+            2.4425127506256104,
+            -3.4771363743857364e-07
+          ],
+          "quaternion_wxyz": [
+            1.0,
+            -3.1797813271339237e-09,
+            0.0,
+            0.0
+          ],
+          "velocity_m_s": [
+            0.0,
+            1.3948233127593994,
+            -6.076808176658233e-07
+          ],
+          "angular_velocity_rad_s": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fixed": false,
+          "component": 1
+        }
+      ],
+      "performance": {
+        "step_s": 1.1116395999561064,
+        "last_batch_ms": 14.518600015435368,
+        "compute_ratio": 1.7991442550975791
+      },
+      "max_substep_gain_j": 0.0,
+      "source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd"
+    },
+    {
+      "declaration": {
+        "experiment": "floor",
+        "material": "glass",
+        "ball_material": "glass",
+        "height_m": 10.0,
+        "ball_mass_kg": 1.0,
+        "restitution": 0.5,
+        "friction": 0.3,
+        "dt_s": 0.0005208333333333333,
+        "offset_m": 0.0,
+        "device": "cuda:0",
+        "solver_relaxation": 0.1
+      },
+      "startup_s": 0.04351770004723221,
+      "wall_s": 2.079762600013055,
+      "initial": {
+        "dynamic_mass_kg": 0.9999999403953552,
+        "kinetic_j": 0.0,
+        "potential_j": 98.54838668892428,
+        "mechanical_j": 98.54838668892428,
+        "mechanical_change_j": 0.0,
+        "momentum_n_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 0,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final": {
+        "dynamic_mass_kg": 0.9999999403953552,
+        "kinetic_j": 0.9731875339600845,
+        "potential_j": 23.983328884641512,
+        "mechanical_j": 24.9565164186016,
+        "mechanical_change_j": -73.59187027032269,
+        "momentum_n_s": [
+          0.0,
+          1.3951254251524503,
+          -6.077035188114131e-07
+        ],
+        "angular_momentum_n_m_s": [
+          -1.0006382395566609e-06,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 1,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final_cells": [
+        {
+          "id": 0,
+          "material": "glass",
+          "shape": "sphere",
+          "radius_m": 0.04570781497340833,
+          "size_m": [
+            0.09141562994681666,
+            0.09141562994681666,
+            0.09141562994681666
+          ],
+          "expected_mass_kg": 1.0,
+          "mass_kg": 0.9999999403953552,
+          "position_m": [
+            0.0,
+            2.444783926010132,
+            -3.4768598311529786e-07
+          ],
+          "quaternion_wxyz": [
+            1.0,
+            -1.5899502825433842e-09,
+            0.0,
+            0.0
+          ],
+          "velocity_m_s": [
+            0.0,
+            1.3951255083084106,
+            -6.077035550333676e-07
+          ],
+          "angular_velocity_rad_s": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fixed": false,
+          "component": 1
+        }
+      ],
+      "performance": {
+        "step_s": 2.008259999915026,
+        "last_batch_ms": 15.280999999959022,
+        "compute_ratio": 0.9958869867868824
+      },
+      "max_substep_gain_j": 0.0,
+      "source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd"
+    },
+    {
+      "declaration": {
+        "experiment": "floor",
+        "material": "glass",
+        "ball_material": "oak",
+        "height_m": 10.0,
+        "ball_mass_kg": 1.0,
+        "restitution": 0.5,
+        "friction": 0.3,
+        "dt_s": 0.0010416666666666667,
+        "offset_m": 0.0,
+        "device": "cuda:0",
+        "solver_relaxation": 0.1
+      },
+      "startup_s": 0.052978700026869774,
+      "wall_s": 1.1992988000274636,
+      "initial": {
+        "dynamic_mass_kg": 1.0,
+        "kinetic_j": 0.0,
+        "potential_j": 98.78539658546448,
+        "mechanical_j": 98.78539658546448,
+        "mechanical_change_j": 0.0,
+        "momentum_n_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 0,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final": {
+        "dynamic_mass_kg": 1.0,
+        "kinetic_j": 0.9727667020124356,
+        "potential_j": 24.19806580066681,
+        "mechanical_j": 25.170832502679247,
+        "mechanical_change_j": -73.61456408278524,
+        "momentum_n_s": [
+          0.0,
+          1.3948237895965576,
+          -6.076807039789855e-07
+        ],
+        "angular_momentum_n_m_s": [
+          -1.013950559039032e-06,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 1,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final_cells": [
+        {
+          "id": 0,
+          "material": "oak",
+          "shape": "sphere",
+          "radius_m": 0.06986684255075999,
+          "size_m": [
+            0.13973368510151998,
+            0.13973368510151998,
+            0.13973368510151998
+          ],
+          "expected_mass_kg": 1.0,
+          "mass_kg": 1.0,
+          "position_m": [
+            0.0,
+            2.4666733741760254,
+            -3.4771363743857364e-07
+          ],
+          "quaternion_wxyz": [
+            1.0,
+            -2.0802546352172158e-09,
+            0.0,
+            0.0
+          ],
+          "velocity_m_s": [
+            0.0,
+            1.3948237895965576,
+            -6.076807039789855e-07
+          ],
+          "angular_velocity_rad_s": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fixed": false,
+          "component": 1
+        }
+      ],
+      "performance": {
+        "step_s": 1.1572254001512192,
+        "last_batch_ms": 15.415099973324686,
+        "compute_ratio": 1.7282717781157
+      },
+      "max_substep_gain_j": 0.0,
+      "source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd"
+    },
+    {
+      "declaration": {
+        "experiment": "floor",
+        "material": "glass",
+        "ball_material": "oak",
+        "height_m": 10.0,
+        "ball_mass_kg": 1.0,
+        "restitution": 0.5,
+        "friction": 0.3,
+        "dt_s": 0.0005208333333333333,
+        "offset_m": 0.0,
+        "device": "cuda:0",
+        "solver_relaxation": 0.1
+      },
+      "startup_s": 0.050748499983455986,
+      "wall_s": 2.0374224000261165,
+      "initial": {
+        "dynamic_mass_kg": 1.0,
+        "kinetic_j": 0.0,
+        "potential_j": 98.78539658546448,
+        "mechanical_j": 98.78539658546448,
+        "mechanical_change_j": 0.0,
+        "momentum_n_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 0,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final": {
+        "dynamic_mass_kg": 1.0,
+        "kinetic_j": 0.9731875919665852,
+        "potential_j": 24.22032965898514,
+        "mechanical_j": 25.193517250951725,
+        "mechanical_change_j": -73.59187933451275,
+        "momentum_n_s": [
+          0.0,
+          1.3951255083084106,
+          -6.077036687202053e-07
+        ],
+        "angular_momentum_n_m_s": [
+          -1.015320102146195e-06,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 1,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final_cells": [
+        {
+          "id": 0,
+          "material": "oak",
+          "shape": "sphere",
+          "radius_m": 0.06986684255075999,
+          "size_m": [
+            0.13973368510151998,
+            0.13973368510151998,
+            0.13973368510151998
+          ],
+          "expected_mass_kg": 1.0,
+          "mass_kg": 1.0,
+          "position_m": [
+            0.0,
+            2.468942880630493,
+            -3.4768595469358843e-07
+          ],
+          "quaternion_wxyz": [
+            1.0,
+            -1.0401656203029574e-09,
+            0.0,
+            0.0
+          ],
+          "velocity_m_s": [
+            0.0,
+            1.3951255083084106,
+            -6.077036687202053e-07
+          ],
+          "angular_velocity_rad_s": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fixed": false,
+          "component": 1
+        }
+      ],
+      "performance": {
+        "step_s": 1.960807199939154,
+        "last_batch_ms": 16.133800032548606,
+        "compute_ratio": 1.01998809473061
+      },
+      "max_substep_gain_j": 0.0,
+      "source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd"
+    },
+    {
+      "declaration": {
+        "experiment": "floor",
+        "material": "glass",
+        "ball_material": "iron",
+        "height_m": 10.0,
+        "ball_mass_kg": 1.0,
+        "restitution": 0.5,
+        "friction": 0.3,
+        "dt_s": 0.0010416666666666667,
+        "offset_m": 0.0,
+        "device": "cuda:0",
+        "solver_relaxation": 0.1
+      },
+      "startup_s": 0.054951900034211576,
+      "wall_s": 1.1998806000337936,
+      "initial": {
+        "dynamic_mass_kg": 1.0,
+        "kinetic_j": 0.0,
+        "potential_j": 98.4059450340271,
+        "mechanical_j": 98.4059450340271,
+        "mechanical_change_j": 0.0,
+        "momentum_n_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 0,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final": {
+        "dynamic_mass_kg": 1.0,
+        "kinetic_j": 0.9727660369087373,
+        "potential_j": 23.81860723257065,
+        "mechanical_j": 24.791373269479386,
+        "mechanical_change_j": -73.61457176454772,
+        "momentum_n_s": [
+          0.0,
+          1.3948233127593994,
+          -6.076807608224044e-07
+        ],
+        "angular_momentum_n_m_s": [
+          -9.904452920323891e-07,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 1,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final_cells": [
+        {
+          "id": 0,
+          "material": "iron",
+          "shape": "sphere",
+          "radius_m": 0.03118737958216135,
+          "size_m": [
+            0.0623747591643227,
+            0.0623747591643227,
+            0.0623747591643227
+          ],
+          "expected_mass_kg": 1.0,
+          "mass_kg": 1.0,
+          "position_m": [
+            0.0,
+            2.427992582321167,
+            -3.4771363743857364e-07
+          ],
+          "quaternion_wxyz": [
+            1.0,
+            -4.660246855081596e-09,
+            0.0,
+            0.0
+          ],
+          "velocity_m_s": [
+            0.0,
+            1.3948233127593994,
+            -6.076807608224044e-07
+          ],
+          "angular_velocity_rad_s": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fixed": false,
+          "component": 1
+        }
+      ],
+      "performance": {
+        "step_s": 1.1569393000681885,
+        "last_batch_ms": 16.58080000197515,
+        "compute_ratio": 1.728699163285509
+      },
+      "max_substep_gain_j": 0.0,
+      "source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd"
+    },
+    {
+      "declaration": {
+        "experiment": "floor",
+        "material": "glass",
+        "ball_material": "iron",
+        "height_m": 10.0,
+        "ball_mass_kg": 1.0,
+        "restitution": 0.5,
+        "friction": 0.3,
+        "dt_s": 0.0005208333333333333,
+        "offset_m": 0.0,
+        "device": "cuda:0",
+        "solver_relaxation": 0.1
+      },
+      "startup_s": 0.04973580001387745,
+      "wall_s": 2.1547163000213914,
+      "initial": {
+        "dynamic_mass_kg": 1.0,
+        "kinetic_j": 0.0,
+        "potential_j": 98.4059450340271,
+        "mechanical_j": 98.4059450340271,
+        "mechanical_change_j": 0.0,
+        "momentum_n_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 0,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final": {
+        "dynamic_mass_kg": 1.0,
+        "kinetic_j": 0.9731875919665852,
+        "potential_j": 23.840882785320282,
+        "mechanical_j": 24.814070377286868,
+        "mechanical_change_j": -73.59187465674023,
+        "momentum_n_s": [
+          0.0,
+          1.3951255083084106,
+          -6.077036118767865e-07
+        ],
+        "angular_momentum_n_m_s": [
+          -9.918141896698956e-07,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 1,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final_cells": [
+        {
+          "id": 0,
+          "material": "iron",
+          "shape": "sphere",
+          "radius_m": 0.03118737958216135,
+          "size_m": [
+            0.0623747591643227,
+            0.0623747591643227,
+            0.0623747591643227
+          ],
+          "expected_mass_kg": 1.0,
+          "mass_kg": 1.0,
+          "position_m": [
+            0.0,
+            2.4302632808685303,
+            -3.4768598311529786e-07
+          ],
+          "quaternion_wxyz": [
+            1.0,
+            -2.3302104690259284e-09,
+            0.0,
+            0.0
+          ],
+          "velocity_m_s": [
+            0.0,
+            1.3951255083084106,
+            -6.077036118767865e-07
+          ],
+          "angular_velocity_rad_s": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fixed": false,
+          "component": 1
+        }
+      ],
+      "performance": {
+        "step_s": 2.073958099645097,
+        "last_batch_ms": 14.126299996860325,
+        "compute_ratio": 0.9643396365347242
+      },
+      "max_substep_gain_j": 0.0,
+      "source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd"
+    },
+    {
+      "declaration": {
+        "experiment": "floor",
+        "material": "glass",
+        "ball_material": "ice",
+        "height_m": 10.0,
+        "ball_mass_kg": 1.0,
+        "restitution": 0.5,
+        "friction": 0.3,
+        "dt_s": 0.0010416666666666667,
+        "offset_m": 0.0,
+        "device": "cuda:0",
+        "solver_relaxation": 0.1
+      },
+      "startup_s": 0.05367829999886453,
+      "wall_s": 1.0786608000053093,
+      "initial": {
+        "dynamic_mass_kg": 0.9999998807907104,
+        "kinetic_j": 0.0,
+        "potential_j": 98.7263887493133,
+        "mechanical_j": 98.7263887493133,
+        "mechanical_change_j": 0.0,
+        "momentum_n_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 0,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final": {
+        "dynamic_mass_kg": 0.9999998807907104,
+        "kinetic_j": 0.9727659209459891,
+        "potential_j": 24.13905048381646,
+        "mechanical_j": 25.11181640476245,
+        "mechanical_change_j": -73.61457234455085,
+        "momentum_n_s": [
+          0.0,
+          1.3948231464835033,
+          -6.076807452246247e-07
+        ],
+        "angular_momentum_n_m_s": [
+          -1.0102953967156544e-06,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 1,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final_cells": [
+        {
+          "id": 0,
+          "material": "ice",
+          "shape": "sphere",
+          "radius_m": 0.06385290862430001,
+          "size_m": [
+            0.12770581724860003,
+            0.12770581724860003,
+            0.12770581724860003
+          ],
+          "expected_mass_kg": 1.0,
+          "mass_kg": 0.9999998807907104,
+          "position_m": [
+            0.0,
+            2.460657835006714,
+            -3.477136090168642e-07
+          ],
+          "quaternion_wxyz": [
+            1.0,
+            -2.276181465532545e-09,
+            0.0,
+            0.0
+          ],
+          "velocity_m_s": [
+            0.0,
+            1.3948233127593994,
+            -6.076808176658233e-07
+          ],
+          "angular_velocity_rad_s": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fixed": false,
+          "component": 1
+        }
+      ],
+      "performance": {
+        "step_s": 1.0442022999050096,
+        "last_batch_ms": 15.829899988602847,
+        "compute_ratio": 1.9153376698958993
+      },
+      "max_substep_gain_j": 0.0,
+      "source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd"
+    },
+    {
+      "declaration": {
+        "experiment": "floor",
+        "material": "glass",
+        "ball_material": "ice",
+        "height_m": 10.0,
+        "ball_mass_kg": 1.0,
+        "restitution": 0.5,
+        "friction": 0.3,
+        "dt_s": 0.0005208333333333333,
+        "offset_m": 0.0,
+        "device": "cuda:0",
+        "solver_relaxation": 0.1
+      },
+      "startup_s": 0.0483214000123553,
+      "wall_s": 2.0882816000375897,
+      "initial": {
+        "dynamic_mass_kg": 0.9999998807907104,
+        "kinetic_j": 0.0,
+        "potential_j": 98.7263887493133,
+        "mechanical_j": 98.7263887493133,
+        "mechanical_change_j": 0.0,
+        "momentum_n_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 0,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final": {
+        "dynamic_mass_kg": 0.9999998807907104,
+        "kinetic_j": 0.9731881412013009,
+        "potential_j": 24.16133071168261,
+        "mechanical_j": 25.13451885288391,
+        "mechanical_change_j": -73.59186989642939,
+        "momentum_n_s": [
+          0.0,
+          1.3951258188335913,
+          -6.077035962762827e-07
+        ],
+        "angular_momentum_n_m_s": [
+          -1.0116651647491084e-06,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 1,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final_cells": [
+        {
+          "id": 0,
+          "material": "ice",
+          "shape": "sphere",
+          "radius_m": 0.06385290862430001,
+          "size_m": [
+            0.12770581724860003,
+            0.12770581724860003,
+            0.12770581724860003
+          ],
+          "expected_mass_kg": 1.0,
+          "mass_kg": 0.9999998807907104,
+          "position_m": [
+            0.0,
+            2.4629290103912354,
+            -3.4768595469358843e-07
+          ],
+          "quaternion_wxyz": [
+            1.0,
+            -1.1381336983973256e-09,
+            0.0,
+            0.0
+          ],
+          "velocity_m_s": [
+            0.0,
+            1.3951259851455688,
+            -6.077036687202053e-07
+          ],
+          "angular_velocity_rad_s": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fixed": false,
+          "component": 1
+        }
+      ],
+      "performance": {
+        "step_s": 2.0037977000465617,
+        "last_batch_ms": 15.507000032812357,
+        "compute_ratio": 0.9981047487745527
+      },
+      "max_substep_gain_j": 0.0,
+      "source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd"
+    },
+    {
+      "declaration": {
+        "experiment": "pair",
+        "material": "glass",
+        "ball_material": "iron",
+        "height_m": 10.0,
+        "ball_mass_kg": 1.0,
+        "restitution": 0.5,
+        "friction": 0.0,
+        "dt_s": 0.0010416666666666667,
+        "offset_m": 0.0,
+        "device": "cuda:0",
+        "solver_relaxation": 1.0
+      },
+      "startup_s": 0.06993110000621527,
+      "wall_s": 0.32936510001309216,
+      "initial": {
+        "dynamic_mass_kg": 1.9999999403953552,
+        "kinetic_j": 2.0,
+        "potential_j": -0.0,
+        "mechanical_j": 2.0,
+        "mechanical_change_j": 0.0,
+        "momentum_n_s": [
+          2.0,
+          0.0,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 0,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final": {
+        "dynamic_mass_kg": 1.9999999403953552,
+        "kinetic_j": 1.2499999329447746,
+        "potential_j": -0.0,
+        "mechanical_j": 1.2499999329447746,
+        "mechanical_change_j": -0.7500000670552254,
+        "momentum_n_s": [
+          1.9999999105930328,
+          0.0,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 1,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final_cells": [
+        {
+          "id": 0,
+          "material": "iron",
+          "shape": "sphere",
+          "radius_m": 0.03118737958216135,
+          "size_m": [
+            0.0623747591643227,
+            0.0623747591643227,
+            0.0623747591643227
+          ],
+          "expected_mass_kg": 1.0,
+          "mass_kg": 1.0,
+          "position_m": [
+            0.2428039163351059,
+            0.0,
+            0.0
+          ],
+          "quaternion_wxyz": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "velocity_m_s": [
+            0.5,
+            0.0,
+            0.0
+          ],
+          "angular_velocity_rad_s": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fixed": false,
+          "component": 1
+        },
+        {
+          "id": 1,
+          "material": "glass",
+          "shape": "sphere",
+          "radius_m": 0.04570781497340833,
+          "size_m": [
+            0.09141562994681666,
+            0.09141562994681666,
+            0.09141562994681666
+          ],
+          "expected_mass_kg": 1.0,
+          "mass_kg": 0.9999999403953552,
+          "position_m": [
+            0.5571978092193604,
+            0.0,
+            0.0
+          ],
+          "quaternion_wxyz": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "velocity_m_s": [
+            1.5,
+            0.0,
+            0.0
+          ],
+          "angular_velocity_rad_s": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fixed": false,
+          "component": 2
+        }
+      ],
+      "performance": {
+        "step_s": 0.31846279988531023,
+        "last_batch_ms": 15.15230000950396,
+        "compute_ratio": 1.2560336722030148
+      },
+      "max_substep_gain_j": 0.0,
+      "source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd"
+    },
+    {
+      "declaration": {
+        "experiment": "pair",
+        "material": "oak",
+        "ball_material": "iron",
+        "height_m": 10.0,
+        "ball_mass_kg": 1.0,
+        "restitution": 0.5,
+        "friction": 0.0,
+        "dt_s": 0.0010416666666666667,
+        "offset_m": 0.0,
+        "device": "cuda:0",
+        "solver_relaxation": 1.0
+      },
+      "startup_s": 0.06572610000148416,
+      "wall_s": 0.3296252000145614,
+      "initial": {
+        "dynamic_mass_kg": 2.0,
+        "kinetic_j": 2.0,
+        "potential_j": -0.0,
+        "mechanical_j": 2.0,
+        "mechanical_change_j": 0.0,
+        "momentum_n_s": [
+          2.0,
+          0.0,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 0,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final": {
+        "dynamic_mass_kg": 2.0,
+        "kinetic_j": 1.25,
+        "potential_j": -0.0,
+        "mechanical_j": 1.25,
+        "mechanical_change_j": -0.75,
+        "momentum_n_s": [
+          2.0,
+          0.0,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 1,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final_cells": [
+        {
+          "id": 0,
+          "material": "iron",
+          "shape": "sphere",
+          "radius_m": 0.03118737958216135,
+          "size_m": [
+            0.0623747591643227,
+            0.0623747591643227,
+            0.0623747591643227
+          ],
+          "expected_mass_kg": 1.0,
+          "mass_kg": 1.0,
+          "position_m": [
+            0.22447413206100464,
+            0.0,
+            0.0
+          ],
+          "quaternion_wxyz": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "velocity_m_s": [
+            0.5,
+            0.0,
+            0.0
+          ],
+          "angular_velocity_rad_s": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fixed": false,
+          "component": 1
+        },
+        {
+          "id": 1,
+          "material": "oak",
+          "shape": "sphere",
+          "radius_m": 0.06986684255075999,
+          "size_m": [
+            0.13973368510151998,
+            0.13973368510151998,
+            0.13973368510151998
+          ],
+          "expected_mass_kg": 1.0,
+          "mass_kg": 1.0,
+          "position_m": [
+            0.575527012348175,
+            0.0,
+            0.0
+          ],
+          "quaternion_wxyz": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "velocity_m_s": [
+            1.5,
+            0.0,
+            0.0
+          ],
+          "angular_velocity_rad_s": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fixed": false,
+          "component": 2
+        }
+      ],
+      "performance": {
+        "step_s": 0.319542899960652,
+        "last_batch_ms": 17.07850000821054,
+        "compute_ratio": 1.2517881012197591
+      },
+      "max_substep_gain_j": 0.0,
+      "source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd"
+    },
+    {
+      "declaration": {
+        "experiment": "pair",
+        "material": "iron",
+        "ball_material": "iron",
+        "height_m": 10.0,
+        "ball_mass_kg": 1.0,
+        "restitution": 0.5,
+        "friction": 0.0,
+        "dt_s": 0.0010416666666666667,
+        "offset_m": 0.0,
+        "device": "cuda:0",
+        "solver_relaxation": 1.0
+      },
+      "startup_s": 0.06568289996357635,
+      "wall_s": 0.3550237999879755,
+      "initial": {
+        "dynamic_mass_kg": 2.0,
+        "kinetic_j": 2.0,
+        "potential_j": -0.0,
+        "mechanical_j": 2.0,
+        "mechanical_change_j": 0.0,
+        "momentum_n_s": [
+          2.0,
+          0.0,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 0,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final": {
+        "dynamic_mass_kg": 2.0,
+        "kinetic_j": 1.25,
+        "potential_j": -0.0,
+        "mechanical_j": 1.25,
+        "mechanical_change_j": -0.75,
+        "momentum_n_s": [
+          2.0,
+          0.0,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 1,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final_cells": [
+        {
+          "id": 0,
+          "material": "iron",
+          "shape": "sphere",
+          "radius_m": 0.03118737958216135,
+          "size_m": [
+            0.0623747591643227,
+            0.0623747591643227,
+            0.0623747591643227
+          ],
+          "expected_mass_kg": 1.0,
+          "mass_kg": 1.0,
+          "position_m": [
+            0.2537097930908203,
+            0.0,
+            0.0
+          ],
+          "quaternion_wxyz": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "velocity_m_s": [
+            0.5,
+            0.0,
+            0.0
+          ],
+          "angular_velocity_rad_s": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fixed": false,
+          "component": 1
+        },
+        {
+          "id": 1,
+          "material": "iron",
+          "shape": "sphere",
+          "radius_m": 0.03118737958216135,
+          "size_m": [
+            0.0623747591643227,
+            0.0623747591643227,
+            0.0623747591643227
+          ],
+          "expected_mass_kg": 1.0,
+          "mass_kg": 1.0,
+          "position_m": [
+            0.5462918877601624,
+            0.0,
+            0.0
+          ],
+          "quaternion_wxyz": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "velocity_m_s": [
+            1.5,
+            0.0,
+            0.0
+          ],
+          "angular_velocity_rad_s": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fixed": false,
+          "component": 2
+        }
+      ],
+      "performance": {
+        "step_s": 0.3453170999418944,
+        "last_batch_ms": 20.681400026660413,
+        "compute_ratio": 1.158355610154571
+      },
+      "max_substep_gain_j": 0.0,
+      "source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd"
+    },
+    {
+      "declaration": {
+        "experiment": "pair",
+        "material": "ice",
+        "ball_material": "iron",
+        "height_m": 10.0,
+        "ball_mass_kg": 1.0,
+        "restitution": 0.5,
+        "friction": 0.0,
+        "dt_s": 0.0010416666666666667,
+        "offset_m": 0.0,
+        "device": "cuda:0",
+        "solver_relaxation": 1.0
+      },
+      "startup_s": 0.06958800001302734,
+      "wall_s": 0.3568885999848135,
+      "initial": {
+        "dynamic_mass_kg": 1.9999998807907104,
+        "kinetic_j": 2.0,
+        "potential_j": -0.0,
+        "mechanical_j": 2.0,
+        "mechanical_change_j": 0.0,
+        "momentum_n_s": [
+          2.0,
+          0.0,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 0,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final": {
+        "dynamic_mass_kg": 1.9999998807907104,
+        "kinetic_j": 1.2499998658895493,
+        "potential_j": -0.0,
+        "mechanical_j": 1.2499998658895493,
+        "mechanical_change_j": -0.7500001341104507,
+        "momentum_n_s": [
+          1.9999998211860657,
+          0.0,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 1,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final_cells": [
+        {
+          "id": 0,
+          "material": "iron",
+          "shape": "sphere",
+          "radius_m": 0.03118737958216135,
+          "size_m": [
+            0.0623747591643227,
+            0.0623747591643227,
+            0.0623747591643227
+          ],
+          "expected_mass_kg": 1.0,
+          "mass_kg": 1.0,
+          "position_m": [
+            0.22904366254806519,
+            0.0,
+            0.0
+          ],
+          "quaternion_wxyz": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "velocity_m_s": [
+            0.5,
+            0.0,
+            0.0
+          ],
+          "angular_velocity_rad_s": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fixed": false,
+          "component": 1
+        },
+        {
+          "id": 1,
+          "material": "ice",
+          "shape": "sphere",
+          "radius_m": 0.06385290862430001,
+          "size_m": [
+            0.12770581724860003,
+            0.12770581724860003,
+            0.12770581724860003
+          ],
+          "expected_mass_kg": 1.0,
+          "mass_kg": 0.9999998807907104,
+          "position_m": [
+            0.5709576606750488,
+            0.0,
+            0.0
+          ],
+          "quaternion_wxyz": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "velocity_m_s": [
+            1.5,
+            0.0,
+            0.0
+          ],
+          "angular_velocity_rad_s": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fixed": false,
+          "component": 2
+        }
+      ],
+      "performance": {
+        "step_s": 0.34347920009167865,
+        "last_batch_ms": 16.83859998593107,
+        "compute_ratio": 1.1645537776180779
+      },
+      "max_substep_gain_j": 0.0,
+      "source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd"
+    },
+    {
+      "declaration": {
+        "experiment": "pair",
+        "material": "glass",
+        "ball_material": "iron",
+        "height_m": 10.0,
+        "ball_mass_kg": 1.0,
+        "restitution": 0.5,
+        "friction": 0.3,
+        "dt_s": 0.0010416666666666667,
+        "offset_m": 0.03,
+        "device": "cuda:0",
+        "solver_relaxation": 1.0
+      },
+      "startup_s": 0.0574925999972038,
+      "wall_s": 0.3206973999622278,
+      "initial": {
+        "dynamic_mass_kg": 1.9999999403953552,
+        "kinetic_j": 2.0,
+        "potential_j": -0.0,
+        "mechanical_j": 2.0,
+        "mechanical_change_j": 0.0,
+        "momentum_n_s": [
+          2.0,
+          0.0,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.05999999865889549,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 0,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final": {
+        "dynamic_mass_kg": 1.9999999403953552,
+        "kinetic_j": 1.320619049898182,
+        "potential_j": -0.0,
+        "mechanical_j": 1.320619049898182,
+        "mechanical_change_j": -0.679380950101818,
+        "momentum_n_s": [
+          2.0000001004151216,
+          0.0,
+          -3.810786353142248e-09
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.05972261362522417,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 1,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final_cells": [
+        {
+          "id": 0,
+          "material": "iron",
+          "shape": "sphere",
+          "radius_m": 0.03118737958216135,
+          "size_m": [
+            0.0623747591643227,
+            0.0623747591643227,
+            0.0623747591643227
+          ],
+          "expected_mass_kg": 1.0,
+          "mass_kg": 1.0,
+          "position_m": [
+            0.29080894589424133,
+            0.0,
+            0.1324639618396759
+          ],
+          "quaternion_wxyz": [
+            0.49636298418045044,
+            0.0,
+            0.8681151270866394,
+            0.0
+          ],
+          "velocity_m_s": [
+            0.6846863627433777,
+            0.0,
+            0.43606558442115784
+          ],
+          "angular_velocity_rad_s": [
+            0.0,
+            8.932516098022461,
+            0.0
+          ],
+          "fixed": false,
+          "component": 1
+        },
+        {
+          "id": 1,
+          "material": "glass",
+          "shape": "sphere",
+          "radius_m": 0.04570781497340833,
+          "size_m": [
+            0.09141562994681666,
+            0.09141562994681666,
+            0.09141562994681666
+          ],
+          "expected_mass_kg": 1.0,
+          "mass_kg": 0.9999999403953552,
+          "position_m": [
+            0.5091941356658936,
+            0.0,
+            -0.10246417671442032
+          ],
+          "quaternion_wxyz": [
+            0.7535268664360046,
+            0.0,
+            0.6574172377586365,
+            0.0
+          ],
+          "velocity_m_s": [
+            1.3153138160705566,
+            0.0,
+            -0.4360656142234802
+          ],
+          "angular_velocity_rad_s": [
+            0.0,
+            6.0948076248168945,
+            0.0
+          ],
+          "fixed": false,
+          "component": 2
+        }
+      ],
+      "performance": {
+        "step_s": 0.3103630000841804,
+        "last_batch_ms": 21.837100037373602,
+        "compute_ratio": 1.2888134213534062
+      },
+      "max_substep_gain_j": 5.079859821677246e-08,
+      "source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd"
+    },
+    {
+      "declaration": {
+        "experiment": "freefall",
+        "material": "glass",
+        "ball_material": "iron",
+        "height_m": 10.0,
+        "ball_mass_kg": 1.0,
+        "restitution": 0.5,
+        "friction": 0.3,
+        "dt_s": 0.0010416666666666667,
+        "offset_m": 0.0,
+        "device": "cuda:0",
+        "solver_relaxation": 0.1
+      },
+      "startup_s": 0.07139259995892644,
+      "wall_s": 0.3729627999709919,
+      "initial": {
+        "dynamic_mass_kg": 1.0,
+        "kinetic_j": 0.0,
+        "potential_j": 98.4059450340271,
+        "mechanical_j": 98.4059450340271,
+        "mechanical_change_j": 0.0,
+        "momentum_n_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 0,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final": {
+        "dynamic_mass_kg": 1.0,
+        "kinetic_j": 12.02955329021097,
+        "potential_j": 86.35134395599366,
+        "mechanical_j": 98.38089724620463,
+        "mechanical_change_j": -0.025047787822472856,
+        "momentum_n_s": [
+          0.0,
+          -4.905008316040039,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 0,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final_cells": [
+        {
+          "id": 0,
+          "material": "iron",
+          "shape": "sphere",
+          "radius_m": 0.03118737958216135,
+          "size_m": [
+            0.0623747591643227,
+            0.0623747591643227,
+            0.0623747591643227
+          ],
+          "expected_mass_kg": 1.0,
+          "mass_kg": 1.0,
+          "position_m": [
+            0.0,
+            8.802379608154297,
+            0.0
+          ],
+          "quaternion_wxyz": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "velocity_m_s": [
+            0.0,
+            -4.905008316040039,
+            0.0
+          ],
+          "angular_velocity_rad_s": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fixed": false,
+          "component": 1
+        }
+      ],
+      "performance": {
+        "step_s": 0.36314900015713647,
+        "last_batch_ms": 15.944799990393221,
+        "compute_ratio": 1.3768453163402554
+      },
+      "max_substep_gain_j": 0.0,
+      "source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd"
+    },
+    {
+      "declaration": {
+        "experiment": "pair",
+        "material": "glass",
+        "ball_material": "iron",
+        "height_m": 10.0,
+        "ball_mass_kg": 1.0,
+        "restitution": 0.5,
+        "friction": 0.0,
+        "dt_s": 0.0010416666666666667,
+        "offset_m": 0.0,
+        "device": "cpu",
+        "solver_relaxation": 1.0
+      },
+      "startup_s": 0.09174490004079416,
+      "wall_s": 1.3536315000383183,
+      "initial": {
+        "dynamic_mass_kg": 1.9999999403953552,
+        "kinetic_j": 2.0,
+        "potential_j": -0.0,
+        "mechanical_j": 2.0,
+        "mechanical_change_j": 0.0,
+        "momentum_n_s": [
+          2.0,
+          0.0,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 0,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final": {
+        "dynamic_mass_kg": 1.9999999403953552,
+        "kinetic_j": 1.2499999329447746,
+        "potential_j": -0.0,
+        "mechanical_j": 1.2499999329447746,
+        "mechanical_change_j": -0.7500000670552254,
+        "momentum_n_s": [
+          1.9999999105930328,
+          0.0,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "contacts": 0,
+        "max_contacts": 1,
+        "last_constraint_wrenches_n_n_m": [],
+        "reaction_account_complete": false,
+        "numerical_and_contact_losses_separated": false
+      },
+      "final_cells": [
+        {
+          "id": 0,
+          "material": "iron",
+          "shape": "sphere",
+          "radius_m": 0.03118737958216135,
+          "size_m": [
+            0.0623747591643227,
+            0.0623747591643227,
+            0.0623747591643227
+          ],
+          "expected_mass_kg": 1.0,
+          "mass_kg": 1.0,
+          "position_m": [
+            0.2428039014339447,
+            0.0,
+            0.0
+          ],
+          "quaternion_wxyz": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "velocity_m_s": [
+            0.5,
+            0.0,
+            0.0
+          ],
+          "angular_velocity_rad_s": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fixed": false,
+          "component": 1
+        },
+        {
+          "id": 1,
+          "material": "glass",
+          "shape": "sphere",
+          "radius_m": 0.04570781497340833,
+          "size_m": [
+            0.09141562994681666,
+            0.09141562994681666,
+            0.09141562994681666
+          ],
+          "expected_mass_kg": 1.0,
+          "mass_kg": 0.9999999403953552,
+          "position_m": [
+            0.5571978092193604,
+            0.0,
+            0.0
+          ],
+          "quaternion_wxyz": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "velocity_m_s": [
+            1.5,
+            0.0,
+            0.0
+          ],
+          "angular_velocity_rad_s": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fixed": false,
+          "component": 2
+        }
+      ],
+      "performance": {
+        "step_s": 1.3472444000653923,
+        "last_batch_ms": 105.34150002058595,
+        "compute_ratio": 0.2969023289171474
+      },
+      "max_substep_gain_j": 0.0,
+      "source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd"
+    }
+  ],
+  "environment": {
+    "backend": "newton-xpbd",
+    "newton": "1.6.1",
+    "warp": "1.18.0",
+    "device": "cuda:0",
+    "gpu": true,
+    "device_name": "NVIDIA GeForce RTX 5090",
+    "source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd",
+    "dtype": "float32",
+    "contact_weighting": false,
+    "angular_damping": 0.0,
+    "material_scope": "Density-derived rigid mass/inertia; declared global restitution/friction. No elastic, fracture, plastic, grain or thermal law.",
+    "complete_physics_validated": false,
+    "realtime_qualified": false
+  },
+  "test_sha256": "7e0a2c8da71e4161c79f1c25279be0a79936cec3324cb66932f2da5704a3fd8e",
+  "worker_sha256": "788b2e8aa6bd938d96f8a3dce4aeef476ec43b9d58d9b7ccdd49db9666bdb23b",
+  "native_gateway_sha256": "eb3527a07fda2a0c181ff11683eb907a16045bf0fcae66e4db58f703e7df9ee4",
+  "known_stack_refusal": {
+    "first_tick": 1,
+    "max_gain_j": 0.004562343122188395,
+    "energy_j": [
+      308.1284224711252,
+      308.1239761207835,
+      308.1198882641158,
+      308.11582793376783,
+      308.1117339540492,
+      308.0461988608961,
+      308.046548361964,
+      308.04470604721814,
+      307.9180967409952,
+      307.8644127271541,
+      307.86501216736167,
+      307.86957451048386,
+      307.8716195787098,
+      307.87334408434896,
+      307.8726927377372,
+      307.8704196776876,
+      307.8669491875013,
+      307.862899417287,
+      307.8592202746555,
+      307.856618094041,
+      307.85549427719974,
+      307.8558444783686,
+      307.8572211942917,
+      307.8590450557484,
+      307.8608047111022,
+      307.86220015230515,
+      307.863041577809,
+      307.8632972512648,
+      307.86301090657184,
+      307.8622894774648,
+      307.86139154604234,
+      307.8604441544204
+    ],
+    "tolerance_j": [
+      0.0030823320969578564,
+      0.0030822842247112524,
+      0.003082239761207835,
+      0.003082198882641158,
+      0.0030821582793376786,
+      0.0030821173395404926,
+      0.0030814619886089614,
+      0.0030814654836196407,
+      0.0030814470604721817,
+      0.0030801809674099526,
+      0.0030796441272715413,
+      0.003079650121673617,
+      0.003079695745104839,
+      0.003079716195787098,
+      0.00307973344084349,
+      0.0030797269273773725,
+      0.0030797041967768764,
+      0.003079669491875013,
+      0.0030796289941728704,
+      0.0030795922027465556,
+      0.0030795661809404104,
+      0.0030795549427719976,
+      0.0030795584447836865,
+      0.0030795722119429172,
+      0.0030795904505574847,
+      0.0030796080471110227,
+      0.003079622001523052,
+      0.00307963041577809,
+      0.0030796329725126482,
+      0.003079630109065719,
+      0.003079622894774648,
+      0.0030796139154604238
+    ],
+    "contact_counts": [
+      452,
+      448,
+      434,
+      450,
+      440,
+      440,
+      436,
+      492,
+      496,
+      462,
+      465,
+      467,
+      470,
+      464,
+      469,
+      462,
+      464,
+      458,
+      472,
+      474,
+      474,
+      476,
+      472,
+      466,
+      468,
+      466,
+      474,
+      472,
+      472,
+      466,
+      464,
+      468
+    ],
+    "faults": 0
+  },
+  "refined_stack_refusal": {
+    "first_tick": 1,
+    "max_gain_j": 0.004230671788377549,
+    "energy_j": [
+      308.1320096084876,
+      308.1308881784177,
+      308.1298701381404,
+      308.1288660770265,
+      308.12784734139206,
+      308.126805993373,
+      308.12577345120684,
+      308.12475054145096,
+      308.12372096206855,
+      308.12269039655297,
+      308.1216645283973,
+      308.0507666858386,
+      308.05362406192086,
+      308.0529277261957,
+      308.05183388566127,
+      308.0506916323366,
+      307.97474005819754,
+      307.9034568416059,
+      307.89347486909065,
+      307.89770554087903,
+      307.900281796242,
+      307.9017466308139,
+      307.90173660538164,
+      307.90144243386993,
+      307.90065731815065,
+      307.89942430474935,
+      307.8973406158323,
+      307.8945893759722,
+      307.8919904156493,
+      307.8902387993523,
+      307.8896819770696,
+      307.89018395785985
+    ],
+    "tolerance_j": [
+      0.0030823320969578564,
+      0.003082320096084876,
+      0.0030823088817841775,
+      0.0030822987013814046,
+      0.003082288660770265,
+      0.003082278473413921,
+      0.0030822680599337307,
+      0.003082257734512069,
+      0.00308224750541451,
+      0.0030822372096206857,
+      0.00308222690396553,
+      0.003082216645283973,
+      0.0030815076668583865,
+      0.0030815362406192088,
+      0.0030815292772619577,
+      0.003081518338856613,
+      0.0030815069163233665,
+      0.0030807474005819756,
+      0.003080034568416059,
+      0.003079934748690907,
+      0.0030799770554087906,
+      0.00308000281796242,
+      0.0030800174663081392,
+      0.003080017366053817,
+      0.0030800144243387,
+      0.0030800065731815067,
+      0.003079994243047494,
+      0.0030799734061583237,
+      0.003079945893759722,
+      0.003079919904156493,
+      0.0030799023879935234,
+      0.003079896819770696
+    ],
+    "contact_counts": [
+      452,
+      432,
+      446,
+      446,
+      450,
+      438,
+      436,
+      434,
+      436,
+      448,
+      428,
+      444,
+      432,
+      498,
+      446,
+      488,
+      490,
+      482,
+      464,
+      464,
+      464,
+      474,
+      471,
+      468,
+      471,
+      468,
+      472,
+      466,
+      466,
+      464,
+      464,
+      468
+    ],
+    "faults": 0
+  },
+  "stream": {
+    "wall_s": 2.020760000043083,
+    "pipeline": {
+      "running": false,
+      "calculating": false,
+      "realtime_ratio": 1.018304481286751,
+      "wall_s": 1.9640491000027396,
+      "max_native_batch_ms": 152.75400003883988,
+      "native_batch_budget_ms": 33.333333333333336,
+      "frame_hz_target": 30,
+      "buffered_frames": 1,
+      "backend": "gpu",
+      "native_batch_p95_ms": 26.55910002067685,
+      "batch_sample_count": 60,
+      "batch_sample_limit": 256,
+      "published_state_age_ms": 0.5124000017531216,
+      "current_state_age_ms": 0.5124000017531216,
+      "journal_compressed_bytes": 101520,
+      "journal_uncompressed_bytes": 343071,
+      "physics_changed": false,
+      "status": "paused"
+    },
+    "final_time_s": 2.0
+  },
+  "qualification": "Scoped rigid tests only; reaction/contact loss accounting incomplete; stack blocked"
+}

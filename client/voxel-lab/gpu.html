@@ -1,0 +1,17 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Banjo · GPU contact yard</title><link rel="stylesheet" href="/gpu.css"></head><body>
+<header><strong>Banjo <span>GPU contact yard</span></strong><a href="/">CPU material lab</a><output id="build">Checking build…</output></header>
+<main><section id="view" aria-label="GPU calculated 3D world"><div id="ball-marker" hidden>Ball ↘</div><div id="scene-note">Drag to orbit · Scroll to zoom · Grid: 0.5 m</div></section>
+<aside><h1>Calculated on CUDA</h1><p>Rigid contact experiment. Fracture, dents and material elasticity have not been ported.</p>
+<label>Experiment<select id="experiment"><option value="floor">Ball drop · rebound</option><option value="pair">Two-body impact</option><option value="freefall">Free fall · control</option><option value="yard">27-block stack · blocked diagnostic</option></select></label>
+<label>Ball material<select id="ball-material"><option>iron</option><option>glass</option><option>oak</option><option>ice</option></select></label>
+<label id="target-row" hidden>Target blocks / second ball<select id="material"><option>glass</option><option>oak</option><option>iron</option><option>ice</option></select></label>
+<label id="height-row">Drop height<input id="height" type="number" min="0.1" max="10" step="0.1" value="10"> m</label>
+<label>Ball mass<input id="mass" type="number" min="0.1" max="5" step="0.1" value="1"> kg</label>
+<label>Restitution<input id="restitution" type="number" min="0" max="0.9" step="0.1" value="0.5"></label>
+<label>Friction<input id="friction" type="number" min="0" max="0.8" step="0.1" value="0.3"></label>
+<label>Physics step<select id="dt"><option value="960">1 / 960 s</option><option value="1920">1 / 1920 s</option></select></label>
+<div class="buttons"><button id="reset">Set up</button><button id="play" disabled>Run 2 s</button><button id="pause" disabled>Pause</button><button id="focus">Follow ball</button></div>
+<output id="status" aria-live="polite">Set up an experiment. First GPU compilation may take a minute.</output>
+<dl><div><dt>Physical time</dt><dd id="time">—</dd></div><div><dt>End-to-end speed</dt><dd id="speed">—</dd></div><div><dt>Solver + audit speed</dt><dd id="compute">—</dd></div><div><dt>Contacts · peak</dt><dd id="contacts">—</dd></div><div><dt>Mass</dt><dd id="total-mass">—</dd></div><div><dt>Mechanical change</dt><dd id="energy">—</dd></div></dl>
+<details><summary>Physics boundary / record</summary><p>Newton 1.6.1 · Warp 1.18.0 · FP32 XPBD. Density determines mass and inertia. Restitution and friction are declared global contact parameters, not calibrated material laws. No fracture, plasticity, grain, thermal behavior or continuous collision detection.</p><p>Every calculated substep is audited for finite values and energy creation. Refused batches retain the previous accepted scene. Ground reactions and numerical/contact losses are not yet fully accounted. Passing the admission gate is not proof of physical realism. The block stack currently fails.</p><p>Rendering interpolates two accepted poses; it never predicts impact outcomes. Speed includes cold graph captures. The end-to-end value also includes IPC, publication and logging.</p><a id="log" hidden>Download exact substep record</a><pre id="refusal"></pre></details>
+</aside></main><script type="module" src="/gpu.js"></script></body></html>
