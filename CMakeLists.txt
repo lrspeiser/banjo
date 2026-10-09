@@ -2262,6 +2262,9 @@ if(BANJO_BUILD_TESTS)
                 add_test(NAME banjo_voxel_playback_tests COMMAND ${BANJO_NODE_EXECUTABLE}
                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_playback_test.mjs)
                 set_tests_properties(banjo_voxel_playback_tests PROPERTIES TIMEOUT 10 LABELS "voxel;client")
+                add_test(NAME banjo_scene_session_tests COMMAND ${BANJO_NODE_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/scene_session_test.mjs)
+                set_tests_properties(banjo_scene_session_tests PROPERTIES TIMEOUT 10 LABELS "voxel;client")
             endif()
         endif()
         add_test(NAME banjo_regression_runner_tests

@@ -87,7 +87,17 @@ with tempfile.TemporaryDirectory() as folder:
   assert rows[0]['native_sha256'] and rows[0]['assets'];assert any(r.get('response',{}).get('state')==moved['state'] for r in rows),'record differs from rendered response'
   assert rows[0]['checkpoint']['native_sha256']==rows[0]['native_sha256'],'session provenance differs from build badge'
   assert rows[0]['checkpoint']['checkpoint']['physics_revision']==build['checkpoint']['physics_revision']
-  assert req({'op':'close','session':key})[1]['ok'];assert req({'op':'snapshot','session':key})[0]==400
+  assert req({'op':'close','session':key})[1]['ok']
+  assert req({'op':'close','session':key})[1]['already_closed'],'closing an absent scene blocked reset'
+  status,expired=req({'op':'snapshot','session':key});assert status==410 and expired['code']=='session_expired'
+  # Actual idle expiry must permit reset, without changing another scene.
+  _,idle=req({'op':'create','declaration':{}});idle_key=idle['session'];server.sessions[idle_key].last-=601
+  status,expired=req({'op':'advance','session':idle_key,'steps':1});assert status==410 and expired['code']=='session_expired'
+  assert req({'op':'close','session':idle_key})[1]['already_closed']
+  _,fresh=req({'op':'create','declaration':{}});assert fresh['ok'] and fresh['state']['time_s']==0
+  assert req({'op':'advance','session':fresh['session'],'steps':1})[1]['ok']
+  assert req({'op':'snapshot','session':other})[1]['ok'],'idle expiry affected another scene'
+  assert req({'op':'close','session':fresh['session']})[1]['ok']
   print('PASS gateway: new routes, isolated native sessions, bounded commands, refusal state, exact persistent records and close')
  finally:
   for s in server.sessions.values():s.close()

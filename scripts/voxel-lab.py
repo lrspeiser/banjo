@@ -6,6 +6,9 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 ASSETS={'/':'client/voxel-lab/index.html','/world.js':'client/voxel-lab/world.js','/playback.mjs':'client/voxel-lab/playback.mjs','/style.css':'client/voxel-lab/style.css','/three.module.js':'playground/vendor/three.module.js','/three.core.js':'playground/vendor/three.core.js','/gpu':'client/voxel-lab/gpu.html','/gpu.js':'client/voxel-lab/gpu.js','/gpu.css':'client/voxel-lab/gpu.css','/materials':'client/voxel-lab/materials.html','/materials.js':'client/voxel-lab/materials.js','/materials.css':'client/voxel-lab/materials.css'}
 ASSETS.update({'/coupled':'client/voxel-lab/coupled.html','/coupled.js':'client/voxel-lab/coupled.js'})
+ASSETS['/scene-session.mjs']='client/voxel-lab/scene-session.mjs'
+
+class SessionExpired(ValueError):pass
 
 def same_record(previous,current):
  if type(previous) is not type(current):return False
@@ -248,10 +251,11 @@ class Server(ThreadingHTTPServer):
    material_hash=h.hexdigest()
   return {'checkpoint':checkpoint,'native_sha256':actual,'native_verified':bool(checkpoint.get('native_sha256')==actual),'website_revision':revision,'local_changes':dirty,'server_revision':self.started_revision,'restart_pending':revision!=self.started_revision,'gpu_available':self.gpu_python is not None,'gpu_source_sha256':gpu_hash,'gpu_worker_sha256':worker_hash,'physx_source_sha256':physx_hash,'physx_source_verified':bool(physx_hash and checkpoint.get('physx_source_sha256')==physx_hash),'gpu_source_verified':bool(gpu_hash and checkpoint.get('gpu_source_sha256')==gpu_hash and checkpoint.get('gpu_worker_sha256')==worker_hash),'gpu_material_source_sha256':material_hash,'gpu_material_source_verified':bool(material_hash and checkpoint.get('gpu_material_source_sha256')==material_hash),'gpu_coupled_source_sha256':coupled_hash,'gpu_coupled_source_verified':bool(coupled_hash and checkpoint.get('gpu_coupled_source_sha256')==coupled_hash)}
  def session(self,key,backend=None):
+  if type(key) is not str or not key:raise ValueError('Invalid session identifier')
   with self.lock:
    for old,s in list(self.sessions.items()):
     if time.monotonic()-s.last>600:s.close();del self.sessions[old]
-   if key not in self.sessions:raise ValueError('Session expired; reset the scene')
+   if key not in self.sessions:raise SessionExpired('Session expired; reset the scene')
    if backend and self.sessions[key].backend!=backend:raise ValueError('Session belongs to a different physics backend')
    return self.sessions[key]
 class Handler(BaseHTTPRequestHandler):
@@ -316,17 +320,22 @@ class Handler(BaseHTTPRequestHandler):
    elif op in ['advance','snapshot','close','accelerate_object','strain','unload']:
     allowed={'op','session','steps'} if op=='advance' else {'op','session','object','acceleration_m_s2'} if op=='accelerate_object' else {'op','session','opening_m'} if op=='strain' else {'op','session'}
     if set(data)!=allowed:raise ValueError('Invalid command fields')
-    s=self.server.session(data['session'],backend)
+    try:s=self.server.session(data['session'],backend)
+    except SessionExpired:
+     if op!='close':raise
+     s=None
     if backend=='gpu' and op=='accelerate_object':raise ValueError('GPU actuation is not implemented')
     if op in ('strain','unload') and (backend!='gpu' or not s.current['state'].get('controlled_loading')):raise ValueError('Material loading requires the controlled GPU inspector')
     if op=='close':
-     with self.server.lock:s.close();self.server.sessions.pop(data['session'],None)
-     r={'ok':True}
+     with self.server.lock:
+      if s:s.close();self.server.sessions.pop(data['session'],None)
+     r={'ok':True,'already_closed':s is None}
     else:
      if op=='advance' and (type(data['steps']) is not int or not 1<=data['steps']<=16):raise ValueError('Steps must be 1–16')
      r=s.manual({k:v for k,v in data.items() if k!='session'}) if op in ['advance','accelerate_object','strain','unload'] else s.frame(0,0);r['session']=data['session']
    else:raise ValueError('Unknown operation')
    self.send(200,json.dumps(r,separators=(',',':')).encode())
+  except SessionExpired as e:self.send(410,json.dumps({'ok':False,'error':str(e),'code':'session_expired'}).encode())
   except (ValueError,TypeError,KeyError,OSError) as e:self.send(400,json.dumps({'ok':False,'error':str(e)}).encode())
  def log_message(self,*args):pass
 if __name__=='__main__':

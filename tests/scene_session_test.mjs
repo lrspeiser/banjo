@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {requestScene,runSceneSteps,SessionExpiredError} from '../client/voxel-lab/scene-session.mjs';
+const response=(status,body)=>({status,ok:status<400,json:async()=>body});
+await assert.rejects(requestScene({op:'advance'},{fetcher:async()=>response(410,{code:'session_expired',error:'Gone'})}),SessionExpiredError);
+await assert.rejects(requestScene({op:'advance'},{fetcher:async()=>response(400,{error:'Invalid physics command'})}),e=>!(e instanceof SessionExpiredError));
+let calls=[],accepted=[],recoveries=0;
+const run=()=>runSceneSteps({session:'old',count:10,onState:s=>accepted.push(s),onExpired:async()=>{recoveries++;},request:async c=>{calls.push(c);if(calls.length===3)throw new SessionExpiredError();return {tick:calls.length};}});
+assert.equal(await run(),false);assert.equal(calls.length,3);assert.deepEqual(accepted,[{tick:1},{tick:2}]);assert.equal(recoveries,1);
+assert.ok(calls.every(c=>c.session==='old'&&c.steps===1)); // No retry/replay on the recovered scene.
+await assert.rejects(runSceneSteps({session:'old',count:1,onState:()=>{},onExpired:()=>{throw Error('Must not recover');},request:async()=>{throw Error('Physics refused');}}),/Physics refused/);
+await assert.rejects(runSceneSteps({session:'old',count:1,onState:()=>{throw Error('Energy gate');},onExpired:()=>{throw Error('Must not recover');},request:async()=>({ok:false})}),/Energy gate/);
+await assert.rejects(runSceneSteps({session:'old',count:1,onState:()=>{},onExpired:async()=>{throw Error('Runtime unavailable');},request:async()=>{throw new SessionExpiredError();}}),/Runtime unavailable/);
+accepted=[];assert.equal(await runSceneSteps({session:'fresh',count:2,onState:s=>accepted.push(s),onExpired:()=>{throw Error('Unexpected recovery');},request:async()=>({ok:true})}),true);assert.equal(accepted.length,2);
+console.log('PASS session lifecycle: structured expiry, one recovery, no replay or masking of physics/network failures');

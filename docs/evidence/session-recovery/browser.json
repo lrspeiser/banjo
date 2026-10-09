@@ -1,0 +1,27 @@
+{
+  "base_revision": "080cb31d900639e94d5835c1a7f3012e329d52aa",
+  "working_source_unpublished": true,
+  "missing_server_session_reproduced": true,
+  "recovered_scene_has_only_create": true,
+  "recovered_time_s": 0.0,
+  "settings_preserved": {
+    "material": "glass",
+    "ball_material": "iron",
+    "ball_mass_kg": 0.01,
+    "height_m": 0.001,
+    "dt_s": 0.004166666666666667,
+    "experiment": "sheet",
+    "device": "cuda:0",
+    "pipeline": "parallel",
+    "newton_strategy": "ranked",
+    "line_search": "batch-tail",
+    "linear_backend": "native-cusolver",
+    "contact_resolution": "reference"
+  },
+  "status": "Previous scene expired. Fresh scene ready; run it again.",
+  "interrupted_batch_not_replayed": true,
+  "manual_setup_after_absent_session": true,
+  "subsequent_user_run_passed": true,
+  "final_time_s": 0.041666666666666664,
+  "final_energy_residual_j": -2.0435042547006788e-15
+}
