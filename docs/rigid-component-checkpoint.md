@@ -1,6 +1,6 @@
 # Rigid component transfer and initial free flight
 
-October 8, 2026. Implemented experimental representation transfer; near realtime and material accuracy remain **OPEN**. Source parent `d5a988f3c3bf4e46e216eab61414310166d6f829`; publication revision is recorded in the follow-up below. The material-law baseline remains `bbb00f2ccada0179dd48d53eef9115089f6dcd9f`.
+October 8, 2026. Implemented experimental representation transfer; near realtime and material accuracy remain **OPEN**. Source parent `d5a988f3c3bf4e46e216eab61414310166d6f829`; source/tests and the website are published to GitHub main as `4e4aa33d1d0ac01ea73b17ba70438f090784504f`. This following documentation revision records that checkpoint. The material-law baseline remains `bbb00f2ccada0179dd48d53eef9115089f6dcd9f`.
 
 ## What you can test
 
