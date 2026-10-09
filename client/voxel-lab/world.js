@@ -72,6 +72,10 @@ function draw(s){if(!s)return;
  const execution=d.profile?.execution;
  for(const [id,key] of [['profile-update','native_update_ms'],['profile-observation','contact_observation_ms'],['profile-prepare','step_prepare_ms'],['profile-post','post_step_ms'],['profile-capture','trial_capture_ms'],['profile-restore','trial_restore_ms']])$(id).textContent=Number.isFinite(execution?.[key])?(execution[key]/1000).toFixed(3)+' s':'Unavailable in this build';
  $('profile-calls').textContent=Number.isInteger(execution?.step_calls)?execution.step_calls.toLocaleString()+' / '+s.substeps.toLocaleString():'Unavailable in this build';
+ const motion=d.profile?.motion;
+ $('profile-motion').textContent=Number.isInteger(motion?.split_proposals)?motion.split_proposals.toLocaleString()+' · depth '+motion.max_depth:'Unavailable in this build';
+ const driver=motion?.drivers?.reduce((best,row)=>!best||row.split_proposals>best.split_proposals?row:best,null);
+ $('profile-driver').textContent=driver?(driver.object===1?'Sheet':'Ball')+' cell '+driver.body+' · '+(100*driver.split_proposals/motion.split_proposals).toFixed(1)+'% of proposals':motion?'No motion splits':'Unavailable in this build';
  const plastic=s.plasticity;$('plastic-readout').hidden=!plastic;$('center-readout').hidden=!plastic;$('plastic-work').hidden=!plastic;
  const centerChange=sheetCenterHeightChange(initial,s);$('center-change').textContent=centerChange===null?'Unavailable':(centerChange*1000).toFixed(2)+' mm';
  if(plastic){$('yielded').textContent=plastic.yielded_connectors;$('plastic-work').textContent='Yield work: '+plastic.plastic_work_j.toFixed(4)+' J · numerical return loss: '+plastic.return_excess_j.toFixed(4)+' J. '+plastic.scope;}

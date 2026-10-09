@@ -44,6 +44,8 @@ struct VoxelImpactWorld::Impl {
     struct Pair {unsigned a,b;int bond{-1};};
     JoltWorld world;
     Json declaration,events=Json::array();std::vector<Cell> cells;std::vector<Bond> bonds;std::vector<Pair> internal;
+    std::map<MatterBodyId,unsigned> motion_drivers;
+    unsigned motion_splits{},max_motion_depth{};
     double linear_velocity_quadratic{},peak_spin{};unsigned spin_limit_samples{};
     double material_damping{},implicit_elastic_loss{},spring_endpoint_work{},spring_geometry_change{},spring_residual_work{},max_spring_residual_n{};
     double contact_normal_work{},contact_friction_work{},contact_twist_work{};
@@ -246,11 +248,15 @@ struct VoxelImpactWorld::Impl {
     }
     void interval(double h,unsigned depth=0){
         const auto sweep_start=std::chrono::steady_clock::now();
-        double minBallY=1e20,maxSpeed=0;
+        double minBallY=1e20,maxSpeed=0;MatterBodyId driver{};
         std::vector<RigidSnapshot> before_states;before_states.reserve(cells.size());
-        for(const auto &c:cells){const auto s=world.snapshot(c.id);before_states.push_back(s);if(!c.fixed){maxSpeed=std::max(maxSpeed,length(s.linear_velocity_m_s)+length(s.angular_velocity_rad_s)*length(c.size)/2);if(c.object==2)minBallY=std::min(minBallY,s.center_of_mass_world_m.y-length(c.size)/2);}}
+        for(const auto &c:cells){const auto s=world.snapshot(c.id);before_states.push_back(s);if(!c.fixed){
+            const double speed=length(s.linear_velocity_m_s)+length(s.angular_velocity_rad_s)*length(c.size)/2;
+            if(speed>maxSpeed){maxSpeed=speed;driver=c.id;}
+            if(c.object==2)minBallY=std::min(minBallY,s.center_of_mass_world_m.y-length(c.size)/2);}}
         sweep_wall_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-sweep_start).count();
-        if(minBallY<.65&&maxSpeed*h>feature*.05){if(depth>=14)throw std::runtime_error("voxel swept distance gate refused");interval(h/2,depth+1);interval(h/2,depth+1);return;}
+        if(minBallY<.65&&maxSpeed*h>feature*.05){++motion_splits;++motion_drivers[driver];max_motion_depth=std::max(max_motion_depth,depth);
+            if(depth>=14)throw std::runtime_error("voxel swept distance gate refused");interval(h/2,depth+1);interval(h/2,depth+1);return;}
         const auto observation_start=std::chrono::steady_clock::now();
         std::vector<JoltWorld::FaceSpringObservation> faces_before(bonds.size()),faces_after(bonds.size());
         double before_elastic=0;
@@ -456,6 +462,11 @@ std::string VoxelImpactWorld::snapshotJson() const {
             "Experimental SO(3) energy-gradient interfaces. Analytical torque gradients pass; full impacts still have unresolved energy refusals/losses. Not a realtime or calibrated material model.":
             "Passive finite-box native six-axis elastic interfaces. Finite-rotation/integration/full energy and angular momentum accounts remain unqualified."},
             {"limits","Brittle strength AND stored fracture-work admission. Metals/oak remain elastic, not brittle; plasticity/grain are unsupported."}}}};
+    Json motion_drivers=Json::array();
+    for(const auto &[id,count]:w.motion_drivers){const auto &c=w.cells.at(id-100);
+        motion_drivers.push_back({{"body",id},{"object",c.object},{"split_proposals",count}});}
+    result["diagnostics"]["profile"]["motion"]={{"split_proposals",w.motion_splits},{"max_depth",w.max_motion_depth},{"drivers",motion_drivers},
+        {"scope","Recursive proposal counters, not elapsed-time contributions. The fastest cell drives the existing global thickness/surface-speed rule. Energy rejections are separate."}};
     if(w.sheet_plasticity){
         Json history=Json::array();unsigned yielded=0;
         for(const auto &b:w.bonds)if(b.plastic){const auto &s=b.plastic_state;

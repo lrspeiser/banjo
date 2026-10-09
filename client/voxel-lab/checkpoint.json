@@ -1,49 +1,40 @@
 {
-  "title": "Retain the scene when a native response stops",
+  "title": "Measure the cells driving slow simulation",
   "date": "2026-10-08",
   "physics_revision": "bbb00f2ccada0179dd48d53eef9115089f6dcd9f",
-  "native_sha256": "d0cf707f69ebef5e64077acc10eec4c6764c65f193217a3c4dd272bd3af6e68a",
+  "native_sha256": "e7e0c961b5398f0c5d8ee4beac32243504d92bb627c3e63e18874f2db94401ff",
   "changes": [
-    "An interrupted native response retains the exact last delivered scene and records the unfinished request. Before, Live, record download and Reset remain available.",
-    "The normal patch trial was slower in the short glass/oak/iron comparisons and timed out on ice. Its native option is withdrawn; only a compiled analytical CPU reference is retained.",
-    "Simulation speed remains about 0.05x realtime in the default glass drop. This checkpoint does not improve solver speed or change the native material laws.",
-    "The active objective now includes near realtime fracture, dents, bounce, heat, burning and power with visible 3D demonstrations. Unsupported laws remain unimplemented."
+    "Physics & record now shows actual global motion split counts and the largest driving cell. These are proposal counts, not time contributions.",
+    "Body state observations use one native read lock. All four complete prior-binary material records retain exact physical/work parity.",
+    "The pair-sweep shortcut is withdrawn: glass refuses an energy-creating candidate, oak/iron are slower, and ice changes fracture/losses.",
+    "Default glass still takes about 37 wall seconds per two physical seconds. Useful speed, coupled contact/elastic accuracy and adaptive cells remain open.",
+    "Earlier fixtures used brief detailed material windows followed by cheap rigid continuation. This lab has not recovered that architecture; conserved handoff and later-impact reactivation are next."
   ],
   "checks": [
     {
       "label": "Scoped compiled / pipeline tests",
       "status": "passed",
-      "value": "11 CTests; 338/338 registered sources; analytical normal reference compiled"
-    },
-    {
-      "label": "Interrupted native delivery",
-      "status": "passed",
-      "value": "Manual, streaming and EOF controls retain exact scenes and one unfinished-request record; another world remains usable"
-    },
-    {
-      "label": "Native scheduling parity",
-      "status": "passed",
-      "value": "Glass/oak/iron/ice 96-tick direct/stream comparisons; delayed Pause remains responsive"
+      "value": "14 scoped CTests; 340/340 registered sources; CPU sweep helper compiled but not used for native stepping"
     },
     {
       "label": "Full native reference parity",
       "status": "passed",
-      "value": "Four complete two-second glass/oak/iron/ice comparisons; every physical/work field retained"
+      "value": "Four complete glass/oak/iron/ice two-second comparisons; every physical/work field retained"
     },
     {
-      "label": "3D recovery controls",
+      "label": "Actual impact split reporting",
       "status": "passed",
-      "value": "Injected delivery interruption after 16 accepted ticks; Before/Live preserve scene; Reset restores usable controls"
+      "value": "Glass/oak/iron/ice impact controls retain mass and identify valid dynamic driver cells"
     },
     {
-      "label": "Native normal patch experiment",
+      "label": "Native pair-sweep experiment",
       "status": "blocked",
-      "value": "Withdrawn after mixed accuracy, slower material trials and unanswered ice request"
+      "value": "Withdrawn after glass energy refusal, slower oak/iron and changed ice losses/fracture"
     },
     {
       "label": "Near realtime physics",
       "status": "blocked",
-      "value": "Global substeps/constraint work and unexplained energy losses remain unresolved"
+      "value": "Glass about 0.054x realtime; coupled solve, local stepping and adaptive cells remain required"
     }
   ],
   "next": [
@@ -55,7 +46,7 @@
     {
       "label": "Calculation speed",
       "status": "in progress",
-      "value": "Reduce global substeps and local active solve cost; Jolt update dominates the measured reference fixture"
+      "value": "Recover hybrid rigid/material activation and accounted handoff; qualify later-impact reactivation and local active solves"
     },
     {
       "label": "Permanent metal dents",

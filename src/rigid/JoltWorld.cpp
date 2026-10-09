@@ -178,6 +178,16 @@ public:
     };
 }
 
+// Caller owns a BodyLockRead for the complete observation. Match the
+// BodyInterface velocity getters' static-body zero convention.
+[[nodiscard]] RigidSnapshot observeLockedBody(const JPH::Body &body) {
+    const auto q=body.GetRotation();
+    return {fromJoltPosition(body.GetCenterOfMassPosition()),
+        {double(q.GetW()),double(q.GetX()),double(q.GetY()),double(q.GetZ())},
+        body.IsStatic()?Vec3{}:fromJoltVector(body.GetLinearVelocity()),
+        body.IsStatic()?Vec3{}:fromJoltVector(body.GetAngularVelocity())};
+}
+
 [[nodiscard]] JPH::Vec3 toJolt(const Vec3 &value) {
     return {
         static_cast<float>(value.x),
@@ -4997,23 +5007,11 @@ RigidSnapshot JoltWorld::snapshot(MatterBodyId body_id) const {
         throw std::out_of_range("body is not in the Jolt world");
     }
 
-    const JPH::BodyInterface &body_interface =
-        impl_->physics_->GetBodyInterface();
-    const JPH::RVec3 position =
-        body_interface.GetCenterOfMassPosition(found->second);
-    const JPH::Quat rotation =
-        body_interface.GetRotation(found->second);
-    return {
-        fromJoltPosition(position),
-        {
-            static_cast<double>(rotation.GetW()),
-            static_cast<double>(rotation.GetX()),
-            static_cast<double>(rotation.GetY()),
-            static_cast<double>(rotation.GetZ()),
-        },
-        fromJoltVector(body_interface.GetLinearVelocity(found->second)),
-        fromJoltVector(body_interface.GetAngularVelocity(found->second)),
-    };
+    // One read lock observes one coherent body state. The old four
+    // BodyInterface getters each acquired the same lock independently.
+    JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(),found->second);
+    if(!lock.Succeeded())throw std::runtime_error("cannot lock snapshot body");
+    return observeLockedBody(lock.GetBody());
 }
 
 std::vector<MatterBodyId> JoltWorld::activeBodyIds() const {
@@ -5029,10 +5027,10 @@ RigidMechanicalState JoltWorld::mechanicalState(MatterBodyId body_id) const {
     if (found == impl_->bodies_.end()) throw std::out_of_range("mechanical body is missing");
     // Read solver state after Update, including the actual float mass/inertia
     // accepted by Jolt. Authored fragment descriptions are not insertion proof.
-    const RigidSnapshot motion = snapshot(body_id);
     JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(), found->second);
     if (!lock.Succeeded()) throw std::runtime_error("cannot lock mechanical body");
     const JPH::Body &body = lock.GetBody();
+    const RigidSnapshot motion=observeLockedBody(body);
     if (!body.IsDynamic()) return {motion, 0.0, {}};
     const double inverse_mass = body.GetMotionProperties()->GetInverseMass();
     const JPH::Mat44 jolt_inverse = body.GetInverseInertia();

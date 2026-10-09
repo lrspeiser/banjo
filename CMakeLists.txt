@@ -63,6 +63,7 @@ add_library(
     src/physics/SmallStrainPatch.cpp
     src/physics/DynamicPatch.cpp
     src/physics/SweptSphereTriangle.cpp
+    src/physics/BoxSweep.cpp
     src/physics/SpherePatchWorld.cpp
     src/physics/SphereSurfaceContactStep.cpp
     src/physics/SpherePatchAdvance.cpp
@@ -339,6 +340,10 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
         banjo_enable_warnings(banjo_contact_friction_block_tests)
         add_test(NAME banjo_contact_friction_block_tests COMMAND banjo_contact_friction_block_tests)
         add_executable(banjo_contact_normal_block_tests tests/contact_normal_block_tests.cpp)
+        add_executable(banjo_box_sweep_tests tests/box_sweep_tests.cpp)
+        target_link_libraries(banjo_box_sweep_tests PRIVATE banjo_core)
+        banjo_enable_warnings(banjo_box_sweep_tests)
+        add_test(NAME banjo_box_sweep_tests COMMAND banjo_box_sweep_tests)
         target_link_libraries(banjo_contact_normal_block_tests PRIVATE banjo_friction_block)
         banjo_enable_warnings(banjo_contact_normal_block_tests)
         add_test(NAME banjo_contact_normal_block_tests COMMAND banjo_contact_normal_block_tests)
@@ -2170,6 +2175,9 @@ if(BANJO_BUILD_TESTS)
             set_tests_properties(banjo_voxel_actuation_tests PROPERTIES TIMEOUT 600 LABELS "native;voxel;experimental")
             add_test(NAME banjo_voxel_pipeline_tests COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_pipeline_test.py $<TARGET_FILE:banjo_voxel_world_run>)
+            add_test(NAME banjo_voxel_motion_profile_tests COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_motion_profile_test.py $<TARGET_FILE:banjo_voxel_world_run>)
+            set_tests_properties(banjo_voxel_motion_profile_tests PROPERTIES TIMEOUT 60 LABELS "native;voxel")
             set_tests_properties(banjo_voxel_pipeline_tests PROPERTIES TIMEOUT 60 LABELS "native;voxel;client")
             find_program(BANJO_NODE_EXECUTABLE NAMES node)
             if(BANJO_NODE_EXECUTABLE)
