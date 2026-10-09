@@ -2,3 +2,6 @@
 newton==1.6.1
 warp-lang==1.18.0
 numpy==2.5.3
+ovphysx==0.6.3
+ovstage==0.2.0.377349
+packaging==23.2

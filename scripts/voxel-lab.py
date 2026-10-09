@@ -232,7 +232,8 @@ class Server(ThreadingHTTPServer):
   revision,dirty=repository_state();actual=hashlib.sha256(self.native.read_bytes()).hexdigest()
   gpu_hash=hashlib.sha256((ROOT/'scripts/gpu_contact_world.py').read_bytes()).hexdigest() if self.gpu_python else None
   worker_hash=hashlib.sha256((ROOT/'scripts/gpu-contact-worker.py').read_bytes()).hexdigest() if self.gpu_python else None
-  return {'checkpoint':checkpoint,'native_sha256':actual,'native_verified':bool(checkpoint.get('native_sha256')==actual),'website_revision':revision,'local_changes':dirty,'server_revision':self.started_revision,'restart_pending':revision!=self.started_revision,'gpu_available':self.gpu_python is not None,'gpu_source_sha256':gpu_hash,'gpu_worker_sha256':worker_hash,'gpu_source_verified':bool(gpu_hash and checkpoint.get('gpu_source_sha256')==gpu_hash and checkpoint.get('gpu_worker_sha256')==worker_hash)}
+  physx_hash=hashlib.sha256((ROOT/'scripts/physx_contact_world.py').read_bytes()).hexdigest() if self.gpu_python else None
+  return {'checkpoint':checkpoint,'native_sha256':actual,'native_verified':bool(checkpoint.get('native_sha256')==actual),'website_revision':revision,'local_changes':dirty,'server_revision':self.started_revision,'restart_pending':revision!=self.started_revision,'gpu_available':self.gpu_python is not None,'gpu_source_sha256':gpu_hash,'gpu_worker_sha256':worker_hash,'physx_source_sha256':physx_hash,'physx_source_verified':bool(physx_hash and checkpoint.get('physx_source_sha256')==physx_hash),'gpu_source_verified':bool(gpu_hash and checkpoint.get('gpu_source_sha256')==gpu_hash and checkpoint.get('gpu_worker_sha256')==worker_hash)}
  def session(self,key,backend=None):
   with self.lock:
    for old,s in list(self.sessions.items()):

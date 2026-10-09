@@ -2158,6 +2158,10 @@ if(BANJO_BUILD_TESTS)
                 --native $<TARGET_FILE:banjo_voxel_world_run>
                 --report ${CMAKE_CURRENT_BINARY_DIR}/gpu-contact/results.json)
             set_tests_properties(banjo_gpu_contact_tests PROPERTIES TIMEOUT 300 LABELS "gpu;experimental;contact;client")
+            add_test(NAME banjo_physx_contact_tests COMMAND ${BANJO_NEWTON_PYTHON}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/physx_contact_test.py
+                --report ${CMAKE_CURRENT_BINARY_DIR}/gpu-contact/physx-results.json)
+            set_tests_properties(banjo_physx_contact_tests PROPERTIES TIMEOUT 300 LABELS "gpu;experimental;contact;client")
         endif()
         if(BANJO_TEST_CUPY)
             add_test(NAME banjo_cupy_physics_probe COMMAND ${Python3_EXECUTABLE}

@@ -1,8 +1,10 @@
 {
-  "title": "GPU contact yard is live; full material port remains open",
+  "title": "PhysX GPU stack comparator added; realtime and bonded material laws remain open",
   "date": "2026-10-08",
   "native_sha256": "eb3527a07fda2a0c181ff11683eb907a16045bf0fcae66e4db58f703e7df9ee4",
   "changes": [
+    "GPU solver now compares Newton XPBD and PhysX TGS in the same 3D world. Stack control uses zero bounce/friction and 1/1920 s; glass/oak/iron/ice complete in scoped controls.",
+    "PhysX records actual CUDA poses, mass/inertia and normal contact impulses each substep. Friction and full contact/numerical work are not yet in that account; no bonded GPU fracture or dents.",
     "Open GPU contact yard: CUDA-calculated ball drops, two-body impacts and free fall. CPU material lab remains available; no GPU fracture or dents yet.",
     "GPU frames use actual resident Newton/Warp states, with every substep recorded. The full 27-block stack stops at an energy refusal and retains its last accepted scene.",
     "Optional Contact response \u2192 Coupled friction + bounce solves sliding and twist together while retaining native material restitution. Reference stays default.",
@@ -45,6 +47,11 @@
       "label": "GPU full world",
       "status": "blocked",
       "value": "27-block coupled contacts refuse intermediate energy creation. Complete support reactions, fracture/plasticity, thin geometry and full-world realtime remain open."
+    },
+    {
+      "label": "PhysX comparator",
+      "status": "passed",
+      "value": "Refined glass/oak/iron/ice rigid stacks and analytical pairs, actual gated bounce outcome, retained Newton failure, SDK fault/protocol checks; five scoped CTests pass. Coarse PhysX pair withdrawn; full material/reaction/work and realtime remain open."
     }
   ],
   "next": [
@@ -56,7 +63,7 @@
     {
       "label": "GPU world migration",
       "status": "in progress",
-      "value": "Resolve GPU multi-contact work/convergence, compare PhysX, and port bonded material/history laws into the resident pipeline; accepted rigid GPU frames are now visible at /gpu."
+      "value": "Remove measured GPU state/contact delivery overhead, complete friction/reaction/work ledgers and coupled bounce admission, then port bonded material history with comparative refinement."
     },
     {
       "label": "Permanent metal dents",
@@ -88,5 +95,6 @@
   },
   "physics_revision": "e12eb688a470e3a092038442ef1950ce5b52a30b",
   "gpu_source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd",
-  "gpu_worker_sha256": "788b2e8aa6bd938d96f8a3dce4aeef476ec43b9d58d9b7ccdd49db9666bdb23b"
+  "gpu_worker_sha256": "521bcf6a1b567dbe09d9b6b6ffee8f518990fa77666107cb738e219b8862ef0c",
+  "physx_source_sha256": "dedbcc00563e6a02a0014e4b26df2a97682695790dfeb79b3001817f9aa208a5"
 }

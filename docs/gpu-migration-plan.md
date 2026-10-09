@@ -11,7 +11,7 @@ needs CUDA. A GPU simulation host can eventually serve a browser renderer.
 plus CuPy for arrays, reductions and execution of reusable CUDA kernels. Evaluate
 PhysX GPU dynamics against the same contact fixture before committing the final
 contact backend. These are architecture recommendations, not completed ports.
-The subsequent [resident GPU contact checkpoint](gpu-contact-checkpoint.md) installs Newton 1.6.1 / Warp 1.18.0 and measures a separate rigid yard on the RTX 5090. The full block stack remains blocked.
+The subsequent [resident GPU contact checkpoint](gpu-contact-checkpoint.md) installs Newton 1.6.1 / Warp 1.18.0 and measures a separate rigid yard on the RTX 5090. Newton's full stack remains blocked. The subsequent [PhysX GPU comparator](physx-gpu-checkpoint.md) runs the refined four-material zero-bounce/friction stack control with actual CUDA states. Complete work, bonded laws and realtime remain open.
 
 **Implemented:** an opt-in CuPy probe compiles Banjo's existing axial bond
 function directly from `LatticePhysics.hpp` and executes it on the RTX 5090.

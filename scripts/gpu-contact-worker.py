@@ -1,11 +1,22 @@
 """Bounded JSON-lines bridge; CUDA physics stays independent of the website."""
 import contextlib
+import atexit
 import json
+import os
 import sys
 from gpu_contact_world import GpuContactWorld
 
 
 def main():
+    # Native SDK diagnostics can bypass Python redirect_stdout. Reserve the
+    # original pipe for protocol replies and redirect the process stdout to
+    # stderr, including Windows libraries using GetStdHandle rather than CRT.
+    protocol = os.fdopen(os.dup(sys.stdout.fileno()),'w',encoding='utf8',buffering=1)
+    os.dup2(sys.stderr.fileno(),sys.stdout.fileno())
+    if os.name == 'nt':
+        import ctypes
+        import msvcrt
+        ctypes.windll.kernel32.SetStdHandle(ctypes.c_ulong(-11),ctypes.c_void_p(msvcrt.get_osfhandle(sys.stderr.fileno())))
     world = None
     for line in sys.stdin:
         try:
@@ -23,7 +34,16 @@ def main():
                         raise ValueError("One experiment per worker; close and create to reset")
                     if command["declaration"].get("device", "cuda:0") != "cuda:0":
                         raise ValueError("The GPU endpoint requires CUDA; no CPU fallback")
-                    world = GpuContactWorld(command["declaration"])
+                    d = dict(command['declaration'])
+                    backend = d.pop('solver_backend','newton-xpbd')
+                    if backend == 'newton-xpbd':
+                        world = GpuContactWorld(d)
+                    elif backend == 'physx-tgs':
+                        from physx_contact_world import PhysXContactWorld
+                        world = PhysXContactWorld(d)
+                        atexit.register(world.close)
+                    else:
+                        raise ValueError('Unknown GPU solver backend')
                     state = world.snapshot()
                 elif op == "advance" and set(command) == {"op", "steps"} and world:
                     state = world.advance(command["steps"])
@@ -36,7 +56,7 @@ def main():
             reply = dict(ok=False, error=str(error))
             if world is not None:
                 reply["state"] = world.snapshot()
-        print(json.dumps(reply, separators=(",", ":"), allow_nan=False), flush=True)
+        print(json.dumps(reply, separators=(",", ":"), allow_nan=False), file=protocol, flush=True)
 
 
 if __name__ == "__main__":

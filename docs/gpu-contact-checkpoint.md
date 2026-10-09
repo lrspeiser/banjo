@@ -22,7 +22,7 @@ balls; blocks are free solid cubes, not connected sheet constituents.
   [requirements](../scripts/gpu-requirements.txt); Warp reports toolkit 13.4 /
   driver API 13.3. This is a different contact law from the native Jolt model.
 - The shape builder derives mass/inertia from geometry and numeric density:
-  glass 2500, oak 700, iron 7870, ice 917 kg/mÂ³. A 1 kg ball consequently has a
+  glass 2500, oak 700, iron 7870, ice 917 kg/m³. A 1 kg ball consequently has a
   different radius for each density. Elastic stiffness and material damage are
   not implemented here; names do not select fracture outcomes.
 - XPBD uses 16 iterations, explicit zero angular damping, disabled per-body
@@ -81,7 +81,7 @@ The native CPU website executable remains SHA256
 `e12eb688a470e3a092038442ef1950ce5b52a30b`.
 
 Same 1 kg ball, 10 m drop, global restitution 0.5 / friction 0.3, stationary
-plane, gravity 9.81 m/sÂ², two physical seconds, both dt = 1/960 and 1/1920 s:
+plane, gravity 9.81 m/s², two physical seconds, both dt = 1/960 and 1/1920 s:
 
 | Ball | dt | Final center height | Mechanical change | Calculation/readback/audit wall time |
 |---|---|---|---|---|
