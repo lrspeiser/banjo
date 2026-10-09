@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import * as THREE from '../playground/vendor/three.module.js';
-import {ballObservation,cameraFrame,settingsDiffer,remainingSteps} from '../client/voxel-lab/coupled-view.mjs';
+import {ballObservation,cameraFrame,settingsDiffer,remainingSteps,computePace} from '../client/voxel-lab/coupled-view.mjs';
 const plane={shape:'plane',position_m:[0,0,0],quaternion_wxyz:[1,0,0,0],size_m:[.3,.001,.3],radius_m:0};
 const cube={shape:'cube',position_m:[0,.03,0],quaternion_wxyz:[1,0,0,0],size_m:[.03,.01,.03],radius_m:0};
 const sphere={shape:'sphere',position_m:[0,10.045,0],quaternion_wxyz:[1,0,0,0],size_m:[.02,.02,.02],radius_m:.01,velocity_m_s:[0,0,0]};
@@ -34,4 +34,8 @@ assert.equal(settingsDiffer({height_m:10,dt_s:1/240,device:'cuda:0'},{height_m:1
 assert.equal(remainingSteps({time_s:2-1e-15,dt_s:1/1920}),0);
 assert.equal(remainingSteps({time_s:0,dt_s:1/1920}),3840);
 assert.equal(settingsDiffer({representation_policy:'coupled-reference'},{representation_policy:'partitioned-flight'}),true,'representation change requires a new scene');
+assert.equal(computePace(1.425/43),'30.2× slower than realtime');
+assert.equal(computePace(1),'Realtime');
+assert.equal(computePace(3),'3.0× faster than realtime');
+for(const ratio of [null,undefined,0,-1,Infinity,NaN])assert.equal(computePace(ratio),'Not measured');
 console.log('PASS 10 m visibility, physical-time/flight estimates, true ball contact, rotated geometry and three camera aspects');

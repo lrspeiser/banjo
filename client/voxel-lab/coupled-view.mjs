@@ -1,6 +1,12 @@
 // Read-only geometry/flight observations. These never change simulated poses.
 export function settingsDiffer(declaration,settings){return !declaration||Object.entries(settings).some(([key,value])=>declaration[key]!==value);}
 export function remainingSteps(state){return state?Math.max(0,Math.round((2-state.time_s)/state.dt_s)):0;}
+export function computePace(ratio){
+  if(!Number.isFinite(ratio)||ratio<=0)return 'Not measured';
+  if(ratio<1)return (1/ratio).toFixed(1)+'× slower than realtime';
+  if(ratio===1)return 'Realtime';
+  return ratio.toFixed(1)+'× faster than realtime';
+}
 function localPoint(point,cell) {
   const v=point.map((x,i)=>x-cell.position_m[i]),[w,x,y,z]=cell.quaternion_wxyz;
   const q=[-x,-y,-z],t=[2*(q[1]*v[2]-q[2]*v[1]),2*(q[2]*v[0]-q[0]*v[2]),2*(q[0]*v[1]-q[1]*v[0])];

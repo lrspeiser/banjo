@@ -1,0 +1,146 @@
+diff --git a/scripts/gpu_coupled_world.py b/scripts/gpu_coupled_world.py
+index 66119cd2..f91c7a63 100644
+--- a/scripts/gpu_coupled_world.py
++++ b/scripts/gpu_coupled_world.py
+@@ -137,6 +137,30 @@ extern "C" __global__ void gather_active_ledger_trials(unsigned rows,unsigned ed
+         }
+     }ledger[k]=total;
+ }
++extern "C" __global__ void local_force_jacobian(const double *bodies,const double *edges,unsigned edge_count,
++    const unsigned *jobs,unsigned rows,const unsigned *offsets,const unsigned *incidence,
++    const int *dynamic,unsigned count,const double *epsilon,const double *wrenches,
++    const unsigned char *active,double h,double *matrix){
++    const unsigned k=blockDim.x*blockIdx.x+threadIdx.x;if(k>=count*count)return;
++    const unsigned i=k/count,j=k%count,coordinate=dynamic[i],body=coordinate/6,column=coordinate%6;
++    const unsigned changed=dynamic[j]/6;double derivative=0;
++    // Each constitutive/contact force depends only on its two endpoints.
++    // Difference those forces BEFORE unrelated contributions are added.
++    // The inertia derivative is exactly the identity in weighted coordinates.
++    // No force/history response or accepted residual is approximated here.
++    for(unsigned p=offsets[body];p<offsets[body+1];++p){
++        const unsigned code=incidence[p],row=code/2,side=code%2;unsigned a,b;
++        if(row<edge_count){a=static_cast<unsigned>(edges[70*row]);b=static_cast<unsigned>(edges[70*row+1]);}
++        else{a=jobs[4*(row-edge_count)];b=jobs[4*(row-edge_count)+1];}
++        if(a!=changed&&b!=changed)continue;
++        const unsigned plus=j*rows+row,minus=(count+j)*rows+row;
++        const double fp=active[plus]?wrenches[12*plus+6*side+column]:0;
++        const double fm=active[minus]?wrenches[12*minus+6*side+column]:0;
++        derivative+=(fp-fm)/(2*epsilon[j]);
++    }
++    const double *b=bodies+30*body,root=sqrt(column<3?b[1]:b[2]);
++    matrix[k]=(i==j?1:0)-h*derivative/root;
++}
+ extern "C" __global__ void collect_trial_faults(unsigned n,unsigned rows,unsigned batch,const int *contributions,
+     const int *body_faults,const double *poses,const double *ledger,int *faults){
+     const unsigned candidate=blockIdx.x;if(candidate>=batch)return;
+@@ -158,7 +182,7 @@ class TrialFailure(RuntimeError):
+         super().__init__(message);self.details=details or {}
+ 
+ class CoupledEvaluator:
+-    def __init__(self,bodies,edges,pipeline='parallel',newton_strategy='ranked',line_search='batch-tail',linear_backend='cupy-reference'):
++    def __init__(self,bodies,edges,pipeline='parallel',newton_strategy='ranked',line_search='batch-tail',linear_backend='cupy-reference',jacobian_method='residual-reference'):
+         if (cp.__version__,np.__version__)!=('13.5.1','2.5.3'):raise RuntimeError('Unverified coupled runtime')
+         cp.cuda.Device(0).use()
+         # Shared finite contact dispatch has bounded two-level calls and local
+@@ -176,6 +200,9 @@ class CoupledEvaluator:
+         if pipeline not in ('parallel','serial-reference'):raise ValueError('Unknown coupled trial pipeline')
+         if newton_strategy not in ('ranked','single-reference'):raise ValueError('Unknown Newton starting strategy')
+         if line_search not in ('batch-tail','serial-reference'):raise ValueError('Unknown Newton line search')
++        if jacobian_method not in ('residual-reference','local-forces'):raise ValueError('Unknown Jacobian method')
++        if jacobian_method=='local-forces' and pipeline!='parallel':raise ValueError('Local force derivatives require the parallel contribution pipeline')
++        self.jacobian_method=jacobian_method
+         self.line_search=line_search
+         self.newton_strategy=newton_strategy;self.last_solve=None
+         self.pipeline=pipeline;self.kernel=self.module.get_function('coupled_trials');self.storage={};self.evaluations=0
+@@ -205,6 +232,8 @@ class CoupledEvaluator:
+         self.jacobian_changed=cp.tile(self.dynamic//6,2)
+         self.weights=cp.sqrt(cp.repeat(self.bodies[:,1:3],3,axis=1)).reshape(-1)
+         self.active_weights=self.weights[self.dynamic]
++        self.local_jacobian_kernel=self.module.get_function('local_force_jacobian')
++        self.jacobian_buffer=cp.empty((len(self.dynamic),len(self.dynamic)),dtype=cp.float64)
+         if linear_backend not in ('cupy-reference','native-cusolver'):raise ValueError('Unknown coupled linear backend')
+         self.linear_backend=linear_backend;self.linear=None
+         if linear_backend=='native-cusolver' and len(self.dynamic):
+@@ -252,6 +281,15 @@ class CoupledEvaluator:
+             self.phases['collect_trial_faults']((batch,),(128,),(n,rows,b,out['contribution_faults'],out['body_faults'],out['poses'],out['ledger'],out['faults']))
+         self.evaluations+=batch;return out
+ 
++    def local_jacobian(self,trials,epsilon,h):
++        if self.pipeline!='parallel':raise ValueError('Local force derivatives require contribution arrays')
++        count=len(self.dynamic)
++        if trials['contributions'].shape!=(2*count,self.rows,12) or epsilon.shape!=(count,):raise ValueError('Wrong local derivative trial shape')
++        if count:self.local_jacobian_kernel(((count*count+127)//128,),(128,),
++            (self.bodies,self.edges,np.uint32(self.m),self.jobs,np.uint32(self.rows),self.offsets,self.incidence,
++             self.dynamic,np.uint32(count),epsilon,trials['contributions'],trials['active'],np.float64(h),self.jacobian_buffer))
++        return self.jacobian_buffer
++
+     def solve(self,h,gravity=-9.81,maximum_iterations=24):
+         original=self.bodies[:,14:20].reshape(-1);y=original[self.dynamic]*self.active_weights
+         count=len(y);tolerance=1e-10*max(1.,float(cp.linalg.norm(y)))
+@@ -266,7 +304,7 @@ class CoupledEvaluator:
+                 initial_bodies=cp.asnumpy(self.bodies).tolist(),initial_edges=cp.asnumpy(self.edges).tolist(),
+                 iterate_weighted_velocity=cp.asnumpy(y).tolist(),finite_difference_weighted_scale=1e-12,
+                 finite_difference_displacement_floor_kg_half_m=1e-16,
+-                newton_strategy=self.newton_strategy,line_search=self.line_search,linear_backend=self.linear_backend,starting_fractions=list(fractions),starting_scores=start_scores,
++                newton_strategy=self.newton_strategy,line_search=self.line_search,linear_backend=self.linear_backend,jacobian_method=self.jacobian_method,starting_fractions=list(fractions),starting_scores=start_scores,
+                 attempted_fractions=[fractions[i] for i in order[:start_index+1]])
+             if last_trial is not None:
+                 result,values,velocity=last_trial
+@@ -323,7 +361,7 @@ class CoupledEvaluator:
+             ids=cp.arange(count);perturbed[ids,ids]+=epsilon;perturbed[count+ids,ids]-=epsilon
+             diff,r,_=trials(perturbed,base=out)
+             if bool(cp.any(diff['faults'])):refuse('Jacobian trial crosses a geometry/numeric boundary')
+-            jacobian=((r[:count]-r[count:])/(2*epsilon[:,None])).T
++            jacobian=self.local_jacobian(diff,epsilon,h) if self.jacobian_method=='local-forces' else ((r[:count]-r[count:])/(2*epsilon[:,None])).T
+             jacobian_point=y
+             if self.linear is not None:
+                 delta,status=self.linear.enqueue(jacobian,residual[0])
+@@ -392,7 +430,7 @@ class CoupledEvaluator:
+         refuse('Coupled Newton iteration budget exceeded')
+ 
+ def declaration(raw):
+-    defaults=dict(material='glass',ball_material='iron',ball_mass_kg=.01,height_m=.02,dt_s=1/960,experiment='sheet',device='cuda:0',pipeline='parallel',newton_strategy='ranked',line_search='batch-tail',linear_backend='cupy-reference',contact_resolution='reference',representation_policy='coupled-reference')
++    defaults=dict(material='glass',ball_material='iron',ball_mass_kg=.01,height_m=.02,dt_s=1/960,experiment='sheet',device='cuda:0',pipeline='parallel',newton_strategy='ranked',line_search='batch-tail',linear_backend='cupy-reference',contact_resolution='reference',representation_policy='coupled-reference',jacobian_method='residual-reference')
+     if not isinstance(raw,dict) or set(raw)-set(defaults):raise ValueError('Unknown coupled scene field')
+     d=defaults|raw
+     if d['device']!='cuda:0' or d['experiment'] not in ('sheet','freefall'):raise ValueError('Only explicit CUDA sheet/freefall experiments admitted')
+@@ -402,6 +440,8 @@ def declaration(raw):
+     if d['linear_backend'] not in ('cupy-reference','native-cusolver'):raise ValueError('Unknown coupled linear backend')
+     if d['contact_resolution'] not in ('reference','phase-0.25','phase-0.125','phase-0.0625'):raise ValueError('Unknown contact timestep policy')
+     if d['representation_policy'] not in ('coupled-reference','partitioned-flight'):raise ValueError('Unknown representation policy')
++    if d['jacobian_method'] not in ('residual-reference','local-forces'):raise ValueError('Unknown Jacobian method')
++    if d['jacobian_method']=='local-forces' and d['pipeline']!='parallel':raise ValueError('Local force derivatives require the parallel contribution pipeline')
+     for name in ('material','ball_material'):
+         if d[name] not in ('glass','oak','iron','ice'):raise ValueError('Unknown declared material')
+     for name,lo,hi in (('ball_mass_kg',.001,1.),('height_m',.001,10.)):
+@@ -443,7 +483,7 @@ class GpuCoupledWorld:
+                         edges.append(row)
+         p=profiles[self.d['ball_material']];radius=(3*self.d['ball_mass_kg']/(4*math.pi*p['density_kg_m3']))**(1/3)
+         body(2,p,[0,(.035 if self.d['experiment']=='sheet' else 0)+radius+self.d['height_m'],0],[radius]*3,mass=self.d['ball_mass_kg'])
+-        self.eval=CoupledEvaluator(bodies,edges,pipeline=self.d['pipeline'],newton_strategy=self.d['newton_strategy'],line_search=self.d['line_search'],linear_backend=self.d['linear_backend']);self.ticks=0;self.time=0.;self.step_s=0.;self.last_ms=0.;self.histories=np.zeros((len(edges),32))
++        self.eval=CoupledEvaluator(bodies,edges,pipeline=self.d['pipeline'],newton_strategy=self.d['newton_strategy'],line_search=self.d['line_search'],linear_backend=self.d['linear_backend'],jacobian_method=self.d['jacobian_method']);self.ticks=0;self.time=0.;self.step_s=0.;self.last_ms=0.;self.histories=np.zeros((len(edges),32))
+         self.representations=FlightPartition(self.eval,CoupledEvaluator) if self.d['representation_policy']=='partitioned-flight' else None
+         self.P_ground=np.zeros(3);self.L_ground=np.zeros(3);self.max_residual=0.;self.fracture=self.plastic=self.return_excess=0.;self.total_iterations=0;self.microsteps=0
+         baseline=self.eval.evaluate(self.eval.bodies[:,14:20],1e-12,gravity=0)
+@@ -562,7 +602,7 @@ class GpuCoupledWorld:
+                 momentum_n_s=p.tolist(),angular_momentum_n_m_s=l.tolist(),
+                 fracture_work_j=self.fracture,plastic_work_j=self.plastic,numerical_return_excess_j=self.return_excess,separated_sites=separated,yielded_faces=yielded,interfaces=self.eval.m,
+                 maximum_energy_residual_j=self.max_residual,ground_impulse_n_s=self.P_ground.tolist(),ground_torque_impulse_n_m_s=self.L_ground.tolist()),
+-            substep_accounts=copy.deepcopy(self.last_accounts),performance=dict(pipeline=self.eval.pipeline,newton_strategy=self.eval.newton_strategy,line_search=self.eval.line_search,linear_backend=self.eval.linear_backend,contact_resolution=self.d['contact_resolution'],step_s=self.step_s,last_batch_ms=self.last_ms,compute_ratio=self.time/self.step_s if self.step_s else None,
++            substep_accounts=copy.deepcopy(self.last_accounts),performance=dict(pipeline=self.eval.pipeline,newton_strategy=self.eval.newton_strategy,line_search=self.eval.line_search,linear_backend=self.eval.linear_backend,jacobian_method=self.eval.jacobian_method,contact_resolution=self.d['contact_resolution'],step_s=self.step_s,last_batch_ms=self.last_ms,compute_ratio=self.time/self.step_s if self.step_s else None,
+                 microsteps=self.microsteps,nonlinear_iterations=self.total_iterations,trial_evaluations=self.eval.evaluations+(self.representations.island.evaluations if self.representations and self.representations.island else 0)),
+             **({'representations':self.representations.snapshot(),
+                 'render_schedule':dict(safe_rigid_flight_steps=self.representations.safe_rigid_batch(self.d['dt_s']),
+diff --git a/scripts/gpu_representations.py b/scripts/gpu_representations.py
+index 0b198943..22014f53 100644
+--- a/scripts/gpu_representations.py
++++ b/scripts/gpu_representations.py
+@@ -72,7 +72,7 @@ class FlightPartition:
+             island_edges=edges.copy()
+             for edge in island_edges:edge[:2]=[mapping[int(edge[0])],mapping[int(edge[1])]]
+             self.island=evaluator_type(host[self.indices],island_edges,pipeline=evaluator.pipeline,
+-                newton_strategy=evaluator.newton_strategy,line_search=evaluator.line_search,linear_backend=evaluator.linear_backend)
++                newton_strategy=evaluator.newton_strategy,line_search=evaluator.line_search,linear_backend=evaluator.linear_backend,jacobian_method=evaluator.jacobian_method)
+             # Both modules compile the shared physical trial definitions.
+             self.bound_kernel=evaluator.module.get_function('isolated_sphere_bounds')
+             self.flight_kernel=evaluator.module.get_function('isolated_sphere_step')
