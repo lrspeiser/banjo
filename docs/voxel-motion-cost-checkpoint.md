@@ -2,6 +2,8 @@
 
 October 8, 2026. Experimental performance work on Windows x64. The proposed pair-sweep stepping policy is withdrawn after the complete material tests below. The retained native changes are coherent read-only body observations and recursive motion-driver counters. No useful simulation speed gain or new material accuracy is admitted.
 
+Source/tests and website are published to GitHub main as `86e56320f94274471d5297261e713f8409ba38be`. This following documentation revision records that verified checkpoint. The remaining hybrid handoff/activation task is planned, not implemented in this lab.
+
 ## Current speed and the work still needed
 
 The default glass lab still needs about 37 wall seconds to calculate two physical seconds: approximately 0.054 times realtime. The renderer can draw around 60 frames per second while the calculation progresses slowly. Finishing the speed requirement means at least one simulated second per wall second in complete declared glass, oak, iron and ice experiments, with qualified accuracy, responsive controls and visible actual native reactions.
