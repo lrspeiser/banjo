@@ -72,5 +72,8 @@
       "status": "planned",
       "value": "Validated unit-bearing material, geometry and interaction declarations"
     }
-  ]
+  ],
+  "capabilities": {
+    "sheet_plasticity": true
+  }
 }

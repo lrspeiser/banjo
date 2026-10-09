@@ -4,7 +4,7 @@ October 8, 2026. Implemented experimental CPU integration, not full metal admiss
 
 ## What the user can test
 
-In the [3D lab](http://127.0.0.1:18893/), choose Iron, Sheet response **Yielding · experimental**, Coupled friction, 5 kg and 1 m. Drop the ball; use Before/Live to compare real native poses. The result reports yielded connections; Physics & record separates physical yield work from numerical return loss. Reset starts a new experiment. The reference response remains default. Unsupported brittle/grain declarations cannot select this model. No replacement velocity, pose, shader dent or shatter animation is used.
+In the [3D lab](http://127.0.0.1:18910/), choose Iron, Sheet response **Yielding · experimental**, Coupled friction, 5 kg and 1 m. Drop the ball; use Before/Live to compare real native poses. The result reports yielded connections; Physics & record separates physical yield work from numerical return loss. Reset starts a new experiment. The reference response remains default. Unsupported brittle/grain declarations cannot select this model. No replacement velocity, pose, shader dent or shatter animation is used.
 
 The browser experiment completed 2 s with 64 connected sheet cells, 32 ball cells and 11 anchored support/floor cells. It retained 24 yielded sheet connections, 31.576116 J plastic work and 1.443777 J endpoint projection excess. Its final unexplained energy ledger was -16.461741 J (see saved native result for full precision), so completion is not physical accuracy admission. At 0.8 s sheet cell centers ranged from 0.496887 to 0.515965 m, compared with initial 0.502 m; this is small deformation, not a promised dramatic crater. The ball remains on the sheet: a full unload/removal test is still required.
 
@@ -66,3 +66,5 @@ node --check client/voxel-lab/world.js
 ## Published source
 
 Source and tests published to GitHub main as `eda7a89c70d7fde09269db22713abff567d76ba5`. Tested native SHA-256: `c091c4615afac39c86ba034c4dc363ccf27b33b095f10d16826b49a91ad114de`. The publishing follow-up updates the website checkpoint and restarts the local server. All five goals remain open; this is a coherent experimental stage.
+
+The updated test lab is served separately at `http://127.0.0.1:18910/`; the owner’s paused 18893 drop at 0.408 s is preserved. The new yielding control requires a verified native checkpoint advertising that capability, so refreshing an older server does not offer unsupported yielding.

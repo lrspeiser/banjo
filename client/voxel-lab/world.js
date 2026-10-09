@@ -1,10 +1,13 @@
 import * as THREE from '/three.module.js';
 import {NativePlayback} from '/playback.mjs';
 const $=id=>document.getElementById(id), canvas=$('scene');
+let plasticSupported=false;
 function statusRow(parent,label,value,status){const row=document.createElement('div'),name=document.createElement('dt'),result=document.createElement('dd');name.textContent=label;result.textContent=value;if(status)result.dataset.status=status;row.append(name,result);parent.append(row);}
 async function loadCheckpoint(){
  try{
   const response=await fetch('/api/checkpoint');if(!response.ok)throw Error('Build status unavailable');const build=await response.json(),c=build.checkpoint;
+  plasticSupported=build.native_verified&&c.capabilities?.sheet_plasticity===true;
+  $('sheet_response').querySelector('option[value="plastic"]').disabled=!plasticSupported||!['iron','aluminum'].includes($('sheet').value);
   const matched=build.native_verified&&!build.restart_pending&&build.local_changes===false;
   $('updates').textContent=(matched?'✓ Build ':'⚠ Check build ')+(build.website_revision?.slice(0,8)??'unknown');
   $('updates').dataset.status=matched?'passed':'blocked';$('checkpoint-title').textContent=c.title??'Update status';
@@ -122,7 +125,7 @@ $('drop').onclick=async()=>{busy=true;controls();try{const r=await request({op:'
 $('before').onclick=()=>{showBefore=true;draw(initial);$('phase').textContent='Before · starting state';controls();};$('live').onclick=()=>{showBefore=false;draw(state);$('phase').textContent=state.time_s>=2?'Drop complete':'Live · accepted native state';controls();};
 $('view').onclick=()=>{whole=!whole;$('view').textContent=whole?'Impact close-up':'Whole rig';};
 for(const id of ['sheet','thickness','resolution','gap','ball','mass','height','face_law','contact_law','sheet_response'])$(id).onchange=()=>{
- const allowed=['iron','aluminum'].includes($('sheet').value);$('sheet_response').querySelector('option[value="plastic"]').disabled=!allowed;
+ const allowed=plasticSupported&&['iron','aluminum'].includes($('sheet').value);$('sheet_response').querySelector('option[value="plastic"]').disabled=!allowed;
  if(!allowed)$('sheet_response').value='elastic';
  if(id==='sheet_response'&&$('sheet_response').value==='plastic')$('face_law').value='centered-log-gradient';
  if(id==='face_law'&&$('face_law').value!=='centered-log-gradient')$('sheet_response').value='elastic';
