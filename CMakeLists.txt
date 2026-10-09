@@ -2186,6 +2186,10 @@ if(BANJO_BUILD_TESTS)
                 --oracle $<TARGET_FILE:banjo_gpu_material_oracle>
                 --output ${CMAKE_CURRENT_BINARY_DIR}/gpu-coupled-evidence.json)
             set_tests_properties(banjo_gpu_coupled_world_tests PROPERTIES TIMEOUT 900 LABELS "gpu;experimental;material;contact")
+            add_test(NAME banjo_gpu_coupled_pipeline_tests COMMAND ${BANJO_NEWTON_PYTHON}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu_coupled_pipeline_test.py
+                --output ${CMAKE_CURRENT_BINARY_DIR}/gpu-coupled-pipeline-evidence.json)
+            set_tests_properties(banjo_gpu_coupled_pipeline_tests PROPERTIES TIMEOUT 900 LABELS "gpu;experimental;material;contact")
         endif()
         if(BANJO_TEST_CUPY)
             add_test(NAME banjo_cupy_physics_probe COMMAND ${Python3_EXECUTABLE}

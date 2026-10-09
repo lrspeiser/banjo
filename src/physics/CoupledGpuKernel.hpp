@@ -125,29 +125,31 @@ BANJO_DG_HD inline void dgAdd(double *forces,unsigned a,unsigned b,FiniteFrameWr
 // COM, wxyz, v, omega. Edge: a,b,kind,length,anchors,local frames,law,k/y,s32.
 // ledger: U0,U1,D increment,return excess,contact U0/U1,correction norm^2,
 // contacts,maximum compression,material work,work mismatch,reserved.
-BANJO_DG_HD inline int coupledTrialUnchecked(const double *bodies,unsigned n,const double *edges,unsigned m,
-    const double *velocity,double h,FrameVector gravity,double *poses,double *residual,double *histories,double *forces,double *ledger){
-    DGPose initial[dgMaxBodies],ending[dgMaxBodies],midpoint[dgMaxBodies];FrameVector displacements[dgMaxBodies],turns[dgMaxBodies];
-    for(unsigned j=0;j<dgLedgerWidth;++j)ledger[j]=0;
-    for(unsigned i=0;i<n;++i){
-        const auto b=bodies+dgBodyWidth*i,v=velocity+6*i;initial[i]=dgPose(b);
+struct DGTrialBody { DGPose initial,ending,midpoint;FrameVector displacement,turn; };
+static_assert(sizeof(DGTrialBody)==27*sizeof(double),"CUDA trial-body layout");
+static_assert(sizeof(FiniteFrameWrenches)==12*sizeof(double),"CUDA wrench layout");
+BANJO_DG_HD inline DGTrialBody dgPrepareTrial(const double *b,const double *v,double h){
+    DGTrialBody result;auto &initial=result.initial,&ending=result.ending,&midpoint=result.midpoint;
+    auto &displacement=result.displacement,&turn=result.turn;
+    initial=dgPose(b);
         const auto vm=frameScale(frameAdd(dgRead3(b+14),dgRead3(v)),.5),wm=frameScale(frameAdd(dgRead3(b+17),dgRead3(v+3)),.5);
-        displacements[i]=b[1]>0?frameScale(vm,h):FrameVector{};turns[i]=b[1]>0?frameScale(wm,h):FrameVector{};
-        ending[i].p=frameAdd(dgRead3(b+20),frameAdd(dgRead3(b+23),displacements[i]));
-        const auto theta=turns[i];ending[i].q=dgUnit(frameMultiply(dgUnit({1,.5*theta.x,.5*theta.y,.5*theta.z}),initial[i].q));
-        midpoint[i]={frameScale(frameAdd(initial[i].p,ending[i].p),.5),dgUnit({initial[i].q.w+ending[i].q.w,initial[i].q.x+ending[i].q.x,initial[i].q.y+ending[i].q.y,initial[i].q.z+ending[i].q.z})};
-        dgWrite3(poses+7*i,ending[i].p);dgWrite4(poses+7*i+3,ending[i].q);
-        dgWrite3(forces+6*i,frameScale(gravity,b[1]));dgWrite3(forces+6*i+3,{});
-    }
-    for(unsigned e=0;e<m;++e){
-        const auto edge=edges+dgEdgeWidth*e;const unsigned a=static_cast<unsigned>(edge[0]),b=static_cast<unsigned>(edge[1]);const int kind=static_cast<int>(edge[2]);
-        auto c=finiteFrameCoordinatesUnchecked(ending[a].p,ending[b].p,ending[a].q,ending[b].q,dgRead3(edge+4),dgRead3(edge+7),dgRead4(edge+10),dgRead4(edge+14));
-        auto cm=finiteFrameCoordinatesUnchecked(midpoint[a].p,midpoint[b].p,midpoint[a].q,midpoint[b].q,dgRead3(edge+4),dgRead3(edge+7),dgRead4(edge+10),dgRead4(edge+14));
-        const double *body_a=bodies+dgBodyWidth*a,*body_b=bodies+dgBodyWidth*b;
-        dgStableCoordinates(c,body_a,body_b,frameAdd(dgRead3(body_a+23),displacements[a]),frameAdd(dgRead3(body_b+23),displacements[b]),ending[a].q,ending[b].q,edge);
-        dgStableCoordinates(cm,body_a,body_b,frameAdd(dgRead3(body_a+23),frameScale(displacements[a],.5)),frameAdd(dgRead3(body_b+23),frameScale(displacements[b],.5)),midpoint[a].q,midpoint[b].q,edge);
+        displacement=b[1]>0?frameScale(vm,h):FrameVector{};turn=b[1]>0?frameScale(wm,h):FrameVector{};
+        ending.p=frameAdd(dgRead3(b+20),frameAdd(dgRead3(b+23),displacement));
+        const auto theta=turn;ending.q=dgUnit(frameMultiply(dgUnit({1,.5*theta.x,.5*theta.y,.5*theta.z}),initial.q));
+        midpoint={frameScale(frameAdd(initial.p,ending.p),.5),dgUnit({initial.q.w+ending.q.w,initial.q.x+ending.q.x,initial.q.y+ending.q.y,initial.q.z+ending.q.z})};
+    return result;
+}
+// Independent contributions use exactly the reference constitutive and
+// geometric operations. The caller owns deterministic body/ledger gathering.
+BANJO_DG_HD inline int dgMaterialTrial(const double *body_a,const double *body_b,const double *edge,
+    const DGTrialBody &pa,const DGTrialBody &pb,double *state,FiniteFrameWrenches &wrench,double *ledger){
+    const int kind=static_cast<int>(edge[2]);
+        auto c=finiteFrameCoordinatesUnchecked(pa.ending.p,pb.ending.p,pa.ending.q,pb.ending.q,dgRead3(edge+4),dgRead3(edge+7),dgRead4(edge+10),dgRead4(edge+14));
+        auto cm=finiteFrameCoordinatesUnchecked(pa.midpoint.p,pb.midpoint.p,pa.midpoint.q,pb.midpoint.q,dgRead3(edge+4),dgRead3(edge+7),dgRead4(edge+10),dgRead4(edge+14));
+        dgStableCoordinates(c,body_a,body_b,frameAdd(dgRead3(body_a+23),pa.displacement),frameAdd(dgRead3(body_b+23),pb.displacement),pa.ending.q,pb.ending.q,edge);
+        dgStableCoordinates(cm,body_a,body_b,frameAdd(dgRead3(body_a+23),frameScale(pa.displacement,.5)),frameAdd(dgRead3(body_b+23),frameScale(pb.displacement,.5)),pa.midpoint.q,pb.midpoint.q,edge);
         if(c.rotation.branch_angle>=3.141592653589793-1e-7)return 1;
-        const double *old=edge+35;double *state=histories+32*e,loads[6];
+        const double *old=edge+35;double loads[6];
         if(kind==2){
             // Same effective-opening potential as CohesiveFacet: kn<gn>+^2
             // + kt|gt|^2. This finite attachment's authored A frame rotates.
@@ -160,26 +162,31 @@ BANJO_DG_HD inline int coupledTrialUnchecked(const double *bodies,unsigned n,con
             if(sum>0){loads[0]=scalar*(n1+n0)/sum*(change==0?(c.q[0]>0?1:0):(n1-n0)/change);
                 loads[1]=scalar*ratio*(c.q[1]+old[23])/sum;loads[2]=scalar*ratio*(c.q[2]+old[24])/sum;}
         }else materialHistoryUnchecked(kind,edge+18,edge+23,old,c.q,state,loads);
-        auto wrench=finiteFrameWrenchesUnchecked(cm,midpoint[a].p,midpoint[b].p,loads);
+        wrench=finiteFrameWrenchesUnchecked(cm,pa.midpoint.p,pb.midpoint.p,loads);
         const double work=kind!=1?state[8]:state[17];
-        if(!dgWorkCorrect(wrench,midpoint[a].p,midpoint[b].p,displacements[a],displacements[b],turns[a],turns[b],edge[3],-work,ledger[6]))return 2;
-        dgAdd(forces,a,b,wrench);
+        if(!dgWorkCorrect(wrench,pa.midpoint.p,pb.midpoint.p,pa.displacement,pb.displacement,pa.turn,pb.turn,edge[3],-work,ledger[6]))return 2;
         ledger[0]+=kind!=1?old[3]:old[15];ledger[1]+=kind!=1?state[3]:state[15];
         ledger[2]+=kind!=1?state[9]:state[20];ledger[3]+=kind!=1?0:state[21];ledger[9]+=work;
         ledger[10]+=kind!=1?state[10]:state[18];
+    return 0;
+}
+BANJO_DG_HD inline unsigned dgContactSiteCount(const double *a,const double *b){
+    const bool sa=static_cast<int>(a[0])==1&&static_cast<int>(b[0])!=2;
+    const bool sb=static_cast<int>(b[0])==1&&static_cast<int>(a[0])!=2;
+    return sa&&sb?48:sa||sb?24:1;
+}
+BANJO_DG_HD inline int dgContactTrial(const double *ba,const double *bb,const DGTrialBody &pa,const DGTrialBody &pb,
+    unsigned site,double h,FiniteFrameWrenches &w,double *ledger,bool &active,bool separated_checked=false){
+    active=false;if(ba[1]==0&&bb[1]==0)return 0;
+    if(!separated_checked){
+        const auto broad_before=dgContact(ba,bb,pa.initial,pb.initial);
+        const auto broad_after=dgContact(ba,bb,pa.ending,pb.ending);
+        if(broad_before.gap>0&&broad_after.gap>0)return 0;
     }
-    for(unsigned a=0;a<n;++a)for(unsigned b=a+1;b<n;++b){
-        const double *ba=bodies+dgBodyWidth*a,*bb=bodies+dgBodyWidth*b;if(ba[1]==0&&bb[1]==0)continue;
-        // SAT/distance supplies an exact endpoint separation rejection for
-        // these shapes. A disjoint pair has no penetrating surface samples.
-        // The independent interval travel gate still bounds missed crossings.
-        const auto broad_before=dgContact(ba,bb,initial[a],initial[b]);
-        const auto broad_after=dgContact(ba,bb,ending[a],ending[b]);
-        if(broad_before.gap>0&&broad_after.gap>0)continue;
         const bool surface_a=static_cast<int>(ba[0])==1&&static_cast<int>(bb[0])!=2;
         const bool surface_b=static_cast<int>(bb[0])==1&&static_cast<int>(ba[0])!=2;
         const unsigned sites=surface_a&&surface_b?48:surface_a||surface_b?24:1;
-        for(unsigned site=0;site<sites;++site){
+        if(site>=sites)return 0;
         const bool swapped=surface_b&&(!surface_a||site>=24);
         const auto contact=[&](DGPose pa,DGPose pb){
             if(sites==1)return dgContact(ba,bb,pa,pb);
@@ -187,19 +194,42 @@ BANJO_DG_HD inline int coupledTrialUnchecked(const double *bodies,unsigned n,con
             auto out=dgSurfaceContact(bb,ba,pb,pa,site%24);const auto g=out.gradient;
             out.gradient={g.force_b,g.torque_b,g.force_a,g.torque_a};return out;
         };
-        const auto before=contact(initial[a],initial[b]),after=contact(ending[a],ending[b]);
+        const auto before=contact(pa.initial,pb.initial),after=contact(pa.ending,pb.ending);
         if(!dgFinite(before.gap)||!dgFinite(after.gap))return 3;
         const double scale=dgScale(ba)<dgScale(bb)?dgScale(ba):dgScale(bb);
         const double stiffness=(2/(1/ba[3]+1/bb[3]))*scale/(sites==48?8:sites==24?4:1);
         const auto normal=normalComplianceUnchecked(before.gap,after.gap-before.gap,h,{stiffness,0});
-        if(before.gap>0&&after.gap>0)continue;
-        const auto middle=contact(midpoint[a],midpoint[b]);
+        if(before.gap>0&&after.gap>0)return 0;
+        const auto middle=contact(pa.midpoint,pb.midpoint);
         const double load=normal.impulse_kg_m_s/h;const auto g=middle.gradient;
-        FiniteFrameWrenches w{frameScale(g.force_a,load),frameScale(g.torque_a,load),frameScale(g.force_b,load),frameScale(g.torque_b,load)};
+        w={frameScale(g.force_a,load),frameScale(g.torque_a,load),frameScale(g.force_b,load),frameScale(g.torque_b,load)};
         const double work=normal.energy_before_j-normal.energy_after_j;
-        if(!dgWorkCorrect(w,midpoint[a].p,midpoint[b].p,displacements[a],displacements[b],turns[a],turns[b],scale,work,ledger[6]))return 4;
-        dgAdd(forces,a,b,w);ledger[4]+=normal.energy_before_j;ledger[5]+=normal.energy_after_j;ledger[7]+=1;
+        if(!dgWorkCorrect(w,pa.midpoint.p,pb.midpoint.p,pa.displacement,pb.displacement,pa.turn,pb.turn,scale,work,ledger[6]))return 4;
+        active=true;ledger[4]+=normal.energy_before_j;ledger[5]+=normal.energy_after_j;ledger[7]+=1;
         const double compression=before.gap<after.gap?-before.gap:-after.gap;if(compression>ledger[8])ledger[8]=compression;
+    return 0;
+}
+BANJO_DG_HD inline int coupledTrialUnchecked(const double *bodies,unsigned n,const double *edges,unsigned m,
+    const double *velocity,double h,FrameVector gravity,double *poses,double *residual,double *histories,double *forces,double *ledger){
+    DGTrialBody prepared[dgMaxBodies];
+    for(unsigned j=0;j<dgLedgerWidth;++j)ledger[j]=0;
+    for(unsigned i=0;i<n;++i){const double *b=bodies+dgBodyWidth*i;
+        prepared[i]=dgPrepareTrial(b,velocity+6*i,h);
+        dgWrite3(poses+7*i,prepared[i].ending.p);dgWrite4(poses+7*i+3,prepared[i].ending.q);
+        dgWrite3(forces+6*i,frameScale(gravity,b[1]));dgWrite3(forces+6*i+3,{});
+    }
+    for(unsigned e=0;e<m;++e){const double *edge=edges+dgEdgeWidth*e;
+        const unsigned a=static_cast<unsigned>(edge[0]),b=static_cast<unsigned>(edge[1]);FiniteFrameWrenches wrench;
+        const int fault=dgMaterialTrial(bodies+dgBodyWidth*a,bodies+dgBodyWidth*b,edge,prepared[a],prepared[b],histories+32*e,wrench,ledger);
+        if(fault)return fault;dgAdd(forces,a,b,wrench);
+    }
+    for(unsigned a=0;a<n;++a)for(unsigned b=a+1;b<n;++b){const double *ba=bodies+dgBodyWidth*a,*bb=bodies+dgBodyWidth*b;
+        if(ba[1]==0&&bb[1]==0)continue;
+        const auto before=dgContact(ba,bb,prepared[a].initial,prepared[b].initial),after=dgContact(ba,bb,prepared[a].ending,prepared[b].ending);
+        if(before.gap>0&&after.gap>0)continue;
+        for(unsigned site=0;site<dgContactSiteCount(ba,bb);++site){FiniteFrameWrenches w;bool active=false;
+            const int fault=dgContactTrial(ba,bb,prepared[a],prepared[b],site,h,w,ledger,active,true);
+            if(fault)return fault;if(active)dgAdd(forces,a,b,w);
         }
     }
     for(unsigned i=0;i<n;++i){const double *b=bodies+dgBodyWidth*i,*v=velocity+6*i;

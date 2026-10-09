@@ -30,11 +30,86 @@ extern "C" __global__ void coupled_trials(const double *bodies,unsigned n,const 
     faults[i]=banjo::coupledTrialUnchecked(bodies,n,edges,m,velocity+6*n*i,h,{0,gy,0},
         poses+7*n*i,residual+6*n*i,histories+32*m*i,forces+6*n*i,ledger+12*i);
 }
+extern "C" __global__ void prepare_trials(const double *bodies,unsigned n,const double *velocity,unsigned batch,double h,
+    banjo::DGTrialBody *prepared,double *poses){
+    const unsigned k=blockDim.x*blockIdx.x+threadIdx.x;if(k>=n*batch)return;const unsigned body=k%n;
+    const auto p=banjo::dgPrepareTrial(bodies+30*body,velocity+6*k,h);prepared[k]=p;
+    banjo::dgWrite3(poses+7*k,p.ending.p);banjo::dgWrite4(poses+7*k+3,p.ending.q);
+}
+extern "C" __global__ void prepare_pairs(const double *bodies,unsigned n,const unsigned *pairs,unsigned pair_count,unsigned batch,
+    const banjo::DGTrialBody *prepared,unsigned char *active,int localized,const int *changed_body,const unsigned char *base_active){
+    const unsigned k=blockDim.x*blockIdx.x+threadIdx.x;if(k>=pair_count*batch)return;
+    const unsigned candidate=k/pair_count,pair=k%pair_count,a=pairs[2*pair],b=pairs[2*pair+1];
+    if(localized&&a!=static_cast<unsigned>(changed_body[candidate])&&b!=static_cast<unsigned>(changed_body[candidate])){active[k]=base_active[pair];return;}
+    const auto p=prepared+n*candidate;const auto before=banjo::dgContact(bodies+30*a,bodies+30*b,p[a].initial,p[b].initial);
+    const auto after=banjo::dgContact(bodies+30*a,bodies+30*b,p[a].ending,p[b].ending);
+    active[k]=before.gap>0&&after.gap>0?0:1;
+}
+extern "C" __global__ void contribution_trials(const double *bodies,unsigned n,const double *edges,unsigned m,
+    const unsigned *jobs,unsigned rows,unsigned pair_count,unsigned batch,const banjo::DGTrialBody *prepared,const unsigned char *pair_active,double h,
+    banjo::FiniteFrameWrenches *wrenches,double *ledgers,double *history,unsigned char *active,int *faults,
+    int localized,const int *changed_body,const banjo::FiniteFrameWrenches *base_wrenches,const double *base_ledger,
+    const double *base_history,const unsigned char *base_active,const int *base_faults){
+    const unsigned k=blockDim.x*blockIdx.x+threadIdx.x;if(k>=rows*batch)return;
+    const unsigned candidate=k/rows,row=k%rows;double *ledger=ledgers+12*k;for(unsigned j=0;j<12;++j)ledger[j]=0;
+    unsigned a,b;if(row<m){const double *edge=edges+70*row;a=static_cast<unsigned>(edge[0]);b=static_cast<unsigned>(edge[1]);}
+    else {const unsigned *job=jobs+4*(row-m);a=job[0];b=job[1];}
+    if(localized&&a!=static_cast<unsigned>(changed_body[candidate])&&b!=static_cast<unsigned>(changed_body[candidate])){
+        // Within ONE Jacobian, all unaffected pairs have exactly the same two
+        // poses, velocities, histories, material law and dt as the fresh base.
+        // Reuse their exact contributions; final gathering/order is unchanged.
+        // This is not cross-time outcome caching or approximate fracture reuse.
+        wrenches[k]=base_wrenches[row];active[k]=base_active[row];faults[k]=base_faults[row];
+        for(unsigned j=0;j<12;++j)ledger[j]=base_ledger[12*row+j];
+        if(row<m)for(unsigned j=0;j<32;++j)history[32*(candidate*m+row)+j]=base_history[32*row+j];
+        return;
+    }
+    banjo::FiniteFrameWrenches w{};int fault=0;bool touched=false;const auto p=prepared+n*candidate;
+    if(row<m){const double *edge=edges+70*row;
+        double *s=history+32*(candidate*m+row);
+        fault=banjo::dgMaterialTrial(bodies+30*a,bodies+30*b,edge,p[a],p[b],s,w,ledger);touched=true;
+        if(!fault)for(unsigned j=0;j<32;++j)if(!banjo::dgFinite(s[j])){fault=6;break;}
+    }else {const unsigned *job=jobs+4*(row-m);
+        if(pair_active[candidate*pair_count+job[3]])fault=banjo::dgContactTrial(bodies+30*a,bodies+30*b,p[a],p[b],job[2],h,w,ledger,touched,true);
+    }
+    wrenches[k]=w;active[k]=touched?1:0;faults[k]=fault;
+}
+extern "C" __global__ void gather_body_trials(const double *bodies,unsigned n,unsigned rows,unsigned batch,
+    const unsigned *offsets,const unsigned *incidence,const double *velocity,const double *wrenches,const unsigned char *active,
+    double h,double gy,double *forces,double *residual,int *faults){
+    const unsigned k=blockDim.x*blockIdx.x+threadIdx.x;if(k>=6*n*batch)return;const unsigned candidate=k/(6*n),body=(k/6)%n,column=k%6;
+    const double *b=bodies+30*body,*v=velocity+k-column;const auto gravity=banjo::frameScale({0,gy,0},b[1]);
+    const double initial[6]{gravity.x,gravity.y,gravity.z,0,0,0};double f=initial[column];
+    for(unsigned i=offsets[body];i<offsets[body+1];++i){const unsigned code=incidence[i],row=code/2,side=code%2;
+        const unsigned record=candidate*rows+row;if(!active[record])continue;
+        const double *w=wrenches+12*record+6*side;f+=w[column];
+    }
+    const double mass=column<3?b[1]:b[2],root=sqrt(mass);
+    const double r=mass>0?(v[column]-b[14+column])*root-h*f/root:0;forces[k]=f;residual[k]=r;
+    faults[k]=!banjo::dgFinite(f)||!banjo::dgFinite(r)?5:0;
+}
+extern "C" __global__ void gather_ledger_trials(unsigned rows,unsigned batch,const double *input,double *ledger){
+    const unsigned k=blockDim.x*blockIdx.x+threadIdx.x;if(k>=12*batch)return;const unsigned candidate=k/12,column=k%12;
+    double total=0;for(unsigned row=0;row<rows;++row){const double value=input[12*(candidate*rows+row)+column];
+        if(column==8){if(value>total)total=value;}else total+=value;
+    }ledger[k]=total;
+}
+extern "C" __global__ void collect_trial_faults(unsigned n,unsigned rows,unsigned batch,const int *contributions,
+    const int *body_faults,const double *poses,const double *ledger,int *faults){
+    const unsigned candidate=blockDim.x*blockIdx.x+threadIdx.x;if(candidate>=batch)return;
+    int fault=0;bool bad_history=false;
+    for(unsigned r=0;r<rows;++r){const int f=contributions[candidate*rows+r];if(f==6)bad_history=true;else if(f&&!fault)fault=f;}
+    if(!fault){for(unsigned i=0;i<6*n;++i)if(body_faults[candidate*6*n+i]){fault=5;break;}}
+    if(!fault&&bad_history)fault=6;
+    if(!fault){for(unsigned j=0;j<7*n;++j)if(!banjo::dgFinite(poses[7*n*candidate+j])){fault=7;break;}}
+    if(!fault){for(unsigned j=0;j<12;++j)if(!banjo::dgFinite(ledger[12*candidate+j])){fault=8;break;}}
+    faults[candidate]=fault;
+}
 '''
 class TrialFailure(RuntimeError):pass
 
 class CoupledEvaluator:
-    def __init__(self,bodies,edges):
+    def __init__(self,bodies,edges,pipeline='parallel'):
         if (cp.__version__,np.__version__)!=('13.5.1','2.5.3'):raise RuntimeError('Unverified coupled runtime')
         cp.cuda.Device(0).use()
         # Shared finite contact dispatch has bounded two-level calls and local
@@ -49,34 +124,70 @@ class CoupledEvaluator:
         if not bool(cp.isfinite(self.bodies).all()) or not bool(cp.isfinite(self.edges).all()):raise ValueError('Nonfinite coupled declaration')
         code='\n'.join((ROOT/name).read_text(encoding='utf8').replace('#pragma once','') for name in HEADERS)+'\n'+KERNEL
         self.module=cp.RawModule(code=code,options=('--std=c++17','--fmad=false'))
-        self.kernel=self.module.get_function('coupled_trials');self.storage={};self.evaluations=0
+        if pipeline not in ('parallel','serial-reference'):raise ValueError('Unknown coupled trial pipeline')
+        self.pipeline=pipeline;self.kernel=self.module.get_function('coupled_trials');self.storage={};self.evaluations=0
+        self.phases={name:self.module.get_function(name) for name in ('prepare_trials','prepare_pairs','contribution_trials','gather_body_trials','gather_ledger_trials','collect_trial_faults')}
+        host_b=np.asarray(bodies);jobs=[];pairs=[]
+        for a in range(self.n):
+            for b in range(a+1,self.n):
+                if host_b[a,1]==host_b[b,1]==0:continue
+                pair=len(pairs);pairs.append((a,b))
+                sa=host_b[a,0]==1 and host_b[b,0]!=2;sb=host_b[b,0]==1 and host_b[a,0]!=2
+                for site in range(48 if sa and sb else 24 if sa or sb else 1):jobs.append((a,b,site,pair))
+        self.jobs=cp.asarray(np.array(jobs,dtype=np.uint32).reshape(-1,4));self.rows=self.m+len(jobs)
+        self.pairs=cp.asarray(np.array(pairs,dtype=np.uint32).reshape(-1,2));self.pair_count=len(pairs)
+        incidence=[[] for _ in range(self.n)]
+        for row,edge in enumerate(np.asarray(edges).reshape(self.m,70)):
+            incidence[int(edge[0])].append(2*row);incidence[int(edge[1])].append(2*row+1)
+        for index,(a,b,_,_) in enumerate(jobs):
+            incidence[a].append(2*(self.m+index));incidence[b].append(2*(self.m+index)+1)
+        self.offsets=cp.asarray(np.r_[0,np.cumsum([len(row) for row in incidence])],dtype=cp.uint32)
+        self.incidence=cp.asarray([code for row in incidence for code in row],dtype=cp.uint32)
         self.dynamic=cp.asarray(np.flatnonzero(np.repeat(np.asarray(bodies)[:,1]>0,6)),dtype=cp.int32)
+        self.jacobian_changed=cp.tile(self.dynamic//6,2)
         self.weights=cp.sqrt(cp.repeat(self.bodies[:,1:3],3,axis=1)).reshape(-1)
         self.active_weights=self.weights[self.dynamic]
 
-    def evaluate(self,velocity,h,gravity=-9.81):
+    def evaluate(self,velocity,h,gravity=-9.81,*,_jacobian_base=None):
         velocity=cp.ascontiguousarray(velocity,dtype=cp.float64).reshape(-1,self.n,6);batch=len(velocity)
+        if not 1<=batch<=384:raise ValueError('Coupled trial batch exceeds reference bound')
         if batch not in self.storage:
             self.storage[batch]=dict(poses=cp.zeros((batch,self.n,7),dtype=cp.float64),residual=cp.zeros((batch,self.n,6),dtype=cp.float64),
                 history=cp.zeros((batch,self.m,32),dtype=cp.float64),forces=cp.zeros((batch,self.n,6),dtype=cp.float64),ledger=cp.zeros((batch,12),dtype=cp.float64),faults=cp.zeros(batch,dtype=cp.int32))
+            if self.pipeline=='parallel':self.storage[batch].update(prepared=cp.empty((batch,self.n,27),dtype=cp.float64),
+                contributions=cp.empty((batch,self.rows,12),dtype=cp.float64),work=cp.empty((batch,self.rows,12),dtype=cp.float64),
+                active=cp.empty((batch,self.rows),dtype=cp.uint8),pair_active=cp.empty((batch,self.pair_count),dtype=cp.uint8),
+                contribution_faults=cp.empty((batch,self.rows),dtype=cp.int32),body_faults=cp.empty((batch,self.n,6),dtype=cp.int32))
         out=self.storage[batch]
-        self.kernel(((batch+31)//32,),(32,),(self.bodies,np.uint32(self.n),self.edges,np.uint32(self.m),velocity,np.uint32(batch),np.float64(h),np.float64(gravity),out['poses'],out['residual'],out['history'],out['forces'],out['ledger'],out['faults']))
+        n,m,rows,b,h,gy=np.uint32(self.n),np.uint32(self.m),np.uint32(self.rows),np.uint32(batch),np.float64(h),np.float64(gravity)
+        def launch(name,count,args):self.phases[name](((count+127)//128,),(128,),args)
+        if self.pipeline=='serial-reference':
+            self.kernel(((batch+31)//32,),(32,),(self.bodies,n,self.edges,m,velocity,b,h,gy,out['poses'],out['residual'],out['history'],out['forces'],out['ledger'],out['faults']))
+        else:
+            launch('prepare_trials',batch*self.n,(self.bodies,n,velocity,b,h,out['prepared'],out['poses']))
+            base=_jacobian_base or out;localized=_jacobian_base is not None
+            if localized and batch!=len(self.jacobian_changed):raise ValueError('Only the current single-DOF Jacobian batch can reuse contributions')
+            if self.pair_count:launch('prepare_pairs',batch*self.pair_count,(self.bodies,n,self.pairs,np.uint32(self.pair_count),b,out['prepared'],out['pair_active'],np.int32(localized),self.jacobian_changed,base['pair_active']))
+            if self.rows:launch('contribution_trials',batch*self.rows,(self.bodies,n,self.edges,m,self.jobs,rows,np.uint32(self.pair_count),b,out['prepared'],out['pair_active'],h,out['contributions'],out['work'],out['history'],out['active'],out['contribution_faults'],np.int32(localized),self.jacobian_changed,base['contributions'],base['work'],base['history'],base['active'],base['contribution_faults']))
+            launch('gather_body_trials',batch*self.n*6,(self.bodies,n,rows,b,self.offsets,self.incidence,velocity,out['contributions'],out['active'],h,gy,out['forces'],out['residual'],out['body_faults']))
+            launch('gather_ledger_trials',batch*12,(rows,b,out['work'],out['ledger']))
+            launch('collect_trial_faults',batch,(n,rows,b,out['contribution_faults'],out['body_faults'],out['poses'],out['ledger'],out['faults']))
         self.evaluations+=batch;return out
 
     def solve(self,h,gravity=-9.81,maximum_iterations=24):
         original=self.bodies[:,14:20].reshape(-1);y=original[self.dynamic]*self.active_weights
         count=len(y);tolerance=1e-10*max(1.,float(cp.linalg.norm(y)))
-        def trials(values):
+        def trials(values,base=None):
             values=values.reshape(-1,count);velocity=cp.broadcast_to(original,(len(values),len(original))).copy()
             velocity[:,self.dynamic]=values/self.active_weights
-            result=self.evaluate(velocity,h,gravity)
+            result=self.evaluate(velocity,h,gravity,_jacobian_base=base if self.pipeline=='parallel' else None)
             return result,result['residual'].reshape(len(values),-1)[:,self.dynamic],velocity.reshape(-1,self.n,6)
         for iteration in range(maximum_iterations):
             out,residual,velocity=trials(y)
             if int(out['faults'][0]):raise TrialFailure('Coupled trial fault '+str(int(out['faults'][0])))
             norm=float(cp.linalg.norm(residual[0]))
             if norm<=tolerance:
-                return {k:v[0].copy() for k,v in out.items()},velocity[0].copy(),iteration,norm
+                return {k:out[k][0].copy() for k in ('poses','residual','history','forces','ledger','faults')},velocity[0].copy(),iteration,norm
             # Energy-weighted finite cells have sub-micrometre cohesive ranges.
             # A 1e-7 sqrt(J) perturbation crossed compression/damage branches
             # and produced a secant matrix rather than the local Jacobian.
@@ -84,7 +195,7 @@ class CoupledEvaluator:
             epsilon=1e-12*cp.maximum(1.,abs(y))
             perturbed=cp.repeat(y[None],2*count,axis=0)
             ids=cp.arange(count);perturbed[ids,ids]+=epsilon;perturbed[count+ids,ids]-=epsilon
-            diff,r,_=trials(perturbed)
+            diff,r,_=trials(perturbed,base=out)
             if bool(cp.any(diff['faults'])):raise TrialFailure('Jacobian trial crosses a geometry/numeric boundary')
             jacobian=((r[:count]-r[count:])/(2*epsilon[:,None])).T
             try:
@@ -99,10 +210,11 @@ class CoupledEvaluator:
         raise TrialFailure('Coupled Newton iteration budget exceeded')
 
 def declaration(raw):
-    defaults=dict(material='glass',ball_material='iron',ball_mass_kg=.01,height_m=.02,dt_s=1/960,experiment='sheet',device='cuda:0')
+    defaults=dict(material='glass',ball_material='iron',ball_mass_kg=.01,height_m=.02,dt_s=1/960,experiment='sheet',device='cuda:0',pipeline='parallel')
     if not isinstance(raw,dict) or set(raw)-set(defaults):raise ValueError('Unknown coupled scene field')
     d=defaults|raw
     if d['device']!='cuda:0' or d['experiment'] not in ('sheet','freefall'):raise ValueError('Only explicit CUDA sheet/freefall experiments admitted')
+    if d['pipeline'] not in ('parallel','serial-reference'):raise ValueError('Unknown coupled trial pipeline')
     for name in ('material','ball_material'):
         if d[name] not in ('glass','oak','iron','ice'):raise ValueError('Unknown declared material')
     for name,lo,hi in (('ball_mass_kg',.001,1.),('height_m',.001,10.)):
@@ -143,7 +255,7 @@ class GpuCoupledWorld:
                         edges.append(row)
         p=profiles[self.d['ball_material']];radius=(3*self.d['ball_mass_kg']/(4*math.pi*p['density_kg_m3']))**(1/3)
         body(2,p,[0,(.035 if self.d['experiment']=='sheet' else 0)+radius+self.d['height_m'],0],[radius]*3,mass=self.d['ball_mass_kg'])
-        self.eval=CoupledEvaluator(bodies,edges);self.ticks=0;self.time=0.;self.step_s=0.;self.last_ms=0.;self.histories=np.zeros((len(edges),32))
+        self.eval=CoupledEvaluator(bodies,edges,pipeline=self.d['pipeline']);self.ticks=0;self.time=0.;self.step_s=0.;self.last_ms=0.;self.histories=np.zeros((len(edges),32))
         self.P_ground=np.zeros(3);self.L_ground=np.zeros(3);self.max_residual=0.;self.fracture=self.plastic=self.return_excess=0.;self.total_iterations=0;self.microsteps=0
         baseline=self.eval.evaluate(self.eval.bodies[:,14:20],1e-12,gravity=0)
         if int(baseline['faults'][0]):raise RuntimeError('Invalid initial coupled energy state')
@@ -224,7 +336,7 @@ class GpuCoupledWorld:
                 momentum_n_s=p.tolist(),angular_momentum_n_m_s=l.tolist(),
                 fracture_work_j=self.fracture,plastic_work_j=self.plastic,numerical_return_excess_j=self.return_excess,separated_sites=separated,yielded_faces=yielded,interfaces=self.eval.m,
                 maximum_energy_residual_j=self.max_residual,ground_impulse_n_s=self.P_ground.tolist(),ground_torque_impulse_n_m_s=self.L_ground.tolist()),
-            substep_accounts=copy.deepcopy(self.last_accounts),performance=dict(step_s=self.step_s,last_batch_ms=self.last_ms,compute_ratio=self.time/self.step_s if self.step_s else None,
+            substep_accounts=copy.deepcopy(self.last_accounts),performance=dict(pipeline=self.eval.pipeline,step_s=self.step_s,last_batch_ms=self.last_ms,compute_ratio=self.time/self.step_s if self.step_s else None,
                 microsteps=self.microsteps,nonlinear_iterations=self.total_iterations,trial_evaluations=self.eval.evaluations),
             qualification=dict(backend='cupy-implicit-body',gpu=True,device='cuda:0',dtype='float64',source_sha256=self.hash,complete_physics_validated=False,realtime_qualified=False,
                 scope='Experimental finite rigid-cell isotropic inertia; declared mixed-mode cohesive/6-mode plastic interfaces and frictionless normal compliance. No calibrated bulk/grain/J2/thermal law or CCD qualification.'))

@@ -1,0 +1,1259 @@
+{
+  "schema": "banjo.cupy-pipeline-profile.v1",
+  "source_sha256": "579e1bacfabcbfb8a80efdf23634d7f9ef42be0bd9d7526ce65301de5af4957f",
+  "device": "NVIDIA GeForce RTX 5090",
+  "cuda_driver": 13030,
+  "repeats": 9,
+  "rows": [
+    {
+      "material": "glass",
+      "pipeline": "serial-reference",
+      "experiment": "single",
+      "candidates": 1,
+      "wall_median_ms": 26.77120000589639,
+      "cuda_batch_median_ms": 26.7542724609375,
+      "phase_median_ms": {},
+      "attributes": {
+        "max_threads_per_block": 256,
+        "shared_size_bytes": 0,
+        "const_size_bytes": 0,
+        "local_size_bytes": 7584,
+        "num_regs": 255,
+        "ptx_version": 120,
+        "binary_version": 120,
+        "cache_mode_ca": 0,
+        "max_dynamic_shared_size_bytes": 49152,
+        "preferred_shared_memory_carveout": -1
+      }
+    },
+    {
+      "material": "glass",
+      "pipeline": "serial-reference",
+      "experiment": "jacobian-full",
+      "candidates": 120,
+      "wall_median_ms": 27.936400030739605,
+      "cuda_batch_median_ms": 27.89017677307129,
+      "phase_median_ms": {},
+      "attributes": {
+        "max_threads_per_block": 256,
+        "shared_size_bytes": 0,
+        "const_size_bytes": 0,
+        "local_size_bytes": 7584,
+        "num_regs": 255,
+        "ptx_version": 120,
+        "binary_version": 120,
+        "cache_mode_ca": 0,
+        "max_dynamic_shared_size_bytes": 49152,
+        "preferred_shared_memory_carveout": -1
+      }
+    },
+    {
+      "material": "glass",
+      "pipeline": "parallel",
+      "experiment": "single",
+      "candidates": 1,
+      "wall_median_ms": 0.6965000065974891,
+      "cuda_batch_median_ms": 0.6585599780082703,
+      "phase_median_ms": {
+        "prepare_trials": 0.04243199899792671,
+        "prepare_pairs": 0.14297600090503693,
+        "contribution_trials": 0.05283199995756149,
+        "gather_body_trials": 0.04076800122857094,
+        "gather_ledger_trials": 0.24115200340747833,
+        "collect_trial_faults": 0.1305599957704544
+      },
+      "attributes": {
+        "prepare_trials": {
+          "max_threads_per_block": 640,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 82,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "prepare_pairs": {
+          "max_threads_per_block": 256,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 240,
+          "num_regs": 240,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "contribution_trials": {
+          "max_threads_per_block": 256,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 560,
+          "num_regs": 250,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "gather_body_trials": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 48,
+          "num_regs": 40,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "gather_ledger_trials": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 38,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "collect_trial_faults": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 19,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        }
+      }
+    },
+    {
+      "material": "glass",
+      "pipeline": "parallel",
+      "experiment": "jacobian-full",
+      "candidates": 120,
+      "wall_median_ms": 1.3670999906025827,
+      "cuda_batch_median_ms": 1.3186559677124023,
+      "phase_median_ms": {
+        "prepare_trials": 0.047968000173568726,
+        "prepare_pairs": 0.13359999656677246,
+        "contribution_trials": 0.37462401390075684,
+        "gather_body_trials": 0.05711999908089638,
+        "gather_ledger_trials": 0.2902719974517822,
+        "collect_trial_faults": 0.3968000113964081
+      },
+      "attributes": {
+        "prepare_trials": {
+          "max_threads_per_block": 640,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 82,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "prepare_pairs": {
+          "max_threads_per_block": 256,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 240,
+          "num_regs": 240,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "contribution_trials": {
+          "max_threads_per_block": 256,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 560,
+          "num_regs": 250,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "gather_body_trials": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 48,
+          "num_regs": 40,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "gather_ledger_trials": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 38,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "collect_trial_faults": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 19,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        }
+      }
+    },
+    {
+      "material": "glass",
+      "pipeline": "parallel",
+      "experiment": "jacobian-local",
+      "candidates": 120,
+      "wall_median_ms": 1.1305000516586006,
+      "cuda_batch_median_ms": 1.0903680324554443,
+      "phase_median_ms": {
+        "prepare_trials": 0.04623999819159508,
+        "prepare_pairs": 0.12892800569534302,
+        "contribution_trials": 0.17744000256061554,
+        "gather_body_trials": 0.054976001381874084,
+        "gather_ledger_trials": 0.2882240116596222,
+        "collect_trial_faults": 0.3885760009288788
+      },
+      "attributes": {
+        "prepare_trials": {
+          "max_threads_per_block": 640,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 82,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "prepare_pairs": {
+          "max_threads_per_block": 256,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 240,
+          "num_regs": 240,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "contribution_trials": {
+          "max_threads_per_block": 256,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 560,
+          "num_regs": 250,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "gather_body_trials": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 48,
+          "num_regs": 40,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "gather_ledger_trials": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 38,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "collect_trial_faults": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 19,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        }
+      }
+    },
+    {
+      "material": "oak",
+      "pipeline": "serial-reference",
+      "experiment": "single",
+      "candidates": 1,
+      "wall_median_ms": 26.924799953121692,
+      "cuda_batch_median_ms": 26.90598487854004,
+      "phase_median_ms": {},
+      "attributes": {
+        "max_threads_per_block": 256,
+        "shared_size_bytes": 0,
+        "const_size_bytes": 0,
+        "local_size_bytes": 7584,
+        "num_regs": 255,
+        "ptx_version": 120,
+        "binary_version": 120,
+        "cache_mode_ca": 0,
+        "max_dynamic_shared_size_bytes": 49152,
+        "preferred_shared_memory_carveout": -1
+      }
+    },
+    {
+      "material": "oak",
+      "pipeline": "serial-reference",
+      "experiment": "jacobian-full",
+      "candidates": 120,
+      "wall_median_ms": 27.92819996830076,
+      "cuda_batch_median_ms": 27.622976303100586,
+      "phase_median_ms": {},
+      "attributes": {
+        "max_threads_per_block": 256,
+        "shared_size_bytes": 0,
+        "const_size_bytes": 0,
+        "local_size_bytes": 7584,
+        "num_regs": 255,
+        "ptx_version": 120,
+        "binary_version": 120,
+        "cache_mode_ca": 0,
+        "max_dynamic_shared_size_bytes": 49152,
+        "preferred_shared_memory_carveout": -1
+      }
+    },
+    {
+      "material": "oak",
+      "pipeline": "parallel",
+      "experiment": "single",
+      "candidates": 1,
+      "wall_median_ms": 0.7028999971225858,
+      "cuda_batch_median_ms": 0.6612160205841064,
+      "phase_median_ms": {
+        "prepare_trials": 0.044256001710891724,
+        "prepare_pairs": 0.14368000626564026,
+        "contribution_trials": 0.05273599922657013,
+        "gather_body_trials": 0.04076800122857094,
+        "gather_ledger_trials": 0.24111999571323395,
+        "collect_trial_faults": 0.1305599957704544
+      },
+      "attributes": {
+        "prepare_trials": {
+          "max_threads_per_block": 640,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 82,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "prepare_pairs": {
+          "max_threads_per_block": 256,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 240,
+          "num_regs": 240,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "contribution_trials": {
+          "max_threads_per_block": 256,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 560,
+          "num_regs": 250,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "gather_body_trials": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 48,
+          "num_regs": 40,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "gather_ledger_trials": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 38,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "collect_trial_faults": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 19,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        }
+      }
+    },
+    {
+      "material": "oak",
+      "pipeline": "parallel",
+      "experiment": "jacobian-full",
+      "candidates": 120,
+      "wall_median_ms": 1.3500999775715172,
+      "cuda_batch_median_ms": 1.3124159574508667,
+      "phase_median_ms": {
+        "prepare_trials": 0.047807998955249786,
+        "prepare_pairs": 0.13465599715709686,
+        "contribution_trials": 0.37254399061203003,
+        "gather_body_trials": 0.05718399956822395,
+        "gather_ledger_trials": 0.2902719974517822,
+        "collect_trial_faults": 0.3968000113964081
+      },
+      "attributes": {
+        "prepare_trials": {
+          "max_threads_per_block": 640,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 82,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "prepare_pairs": {
+          "max_threads_per_block": 256,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 240,
+          "num_regs": 240,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "contribution_trials": {
+          "max_threads_per_block": 256,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 560,
+          "num_regs": 250,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "gather_body_trials": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 48,
+          "num_regs": 40,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "gather_ledger_trials": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 38,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "collect_trial_faults": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 19,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        }
+      }
+    },
+    {
+      "material": "oak",
+      "pipeline": "parallel",
+      "experiment": "jacobian-local",
+      "candidates": 120,
+      "wall_median_ms": 1.130899996496737,
+      "cuda_batch_median_ms": 1.0925439596176147,
+      "phase_median_ms": {
+        "prepare_trials": 0.04950400069355965,
+        "prepare_pairs": 0.13020800054073334,
+        "contribution_trials": 0.1757120043039322,
+        "gather_body_trials": 0.05500800162553787,
+        "gather_ledger_trials": 0.2882240116596222,
+        "collect_trial_faults": 0.38655999302864075
+      },
+      "attributes": {
+        "prepare_trials": {
+          "max_threads_per_block": 640,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 82,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "prepare_pairs": {
+          "max_threads_per_block": 256,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 240,
+          "num_regs": 240,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "contribution_trials": {
+          "max_threads_per_block": 256,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 560,
+          "num_regs": 250,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "gather_body_trials": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 48,
+          "num_regs": 40,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "gather_ledger_trials": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 38,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "collect_trial_faults": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 19,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        }
+      }
+    },
+    {
+      "material": "iron",
+      "pipeline": "serial-reference",
+      "experiment": "single",
+      "candidates": 1,
+      "wall_median_ms": 25.388500012923032,
+      "cuda_batch_median_ms": 25.349952697753906,
+      "phase_median_ms": {},
+      "attributes": {
+        "max_threads_per_block": 256,
+        "shared_size_bytes": 0,
+        "const_size_bytes": 0,
+        "local_size_bytes": 7584,
+        "num_regs": 255,
+        "ptx_version": 120,
+        "binary_version": 120,
+        "cache_mode_ca": 0,
+        "max_dynamic_shared_size_bytes": 49152,
+        "preferred_shared_memory_carveout": -1
+      }
+    },
+    {
+      "material": "iron",
+      "pipeline": "serial-reference",
+      "experiment": "jacobian-full",
+      "candidates": 120,
+      "wall_median_ms": 25.946300011128187,
+      "cuda_batch_median_ms": 25.907039642333984,
+      "phase_median_ms": {},
+      "attributes": {
+        "max_threads_per_block": 256,
+        "shared_size_bytes": 0,
+        "const_size_bytes": 0,
+        "local_size_bytes": 7584,
+        "num_regs": 255,
+        "ptx_version": 120,
+        "binary_version": 120,
+        "cache_mode_ca": 0,
+        "max_dynamic_shared_size_bytes": 49152,
+        "preferred_shared_memory_carveout": -1
+      }
+    },
+    {
+      "material": "iron",
+      "pipeline": "parallel",
+      "experiment": "single",
+      "candidates": 1,
+      "wall_median_ms": 0.6571999983862042,
+      "cuda_batch_median_ms": 0.6334080100059509,
+      "phase_median_ms": {
+        "prepare_trials": 0.048128001391887665,
+        "prepare_pairs": 0.11673600226640701,
+        "contribution_trials": 0.051552001386880875,
+        "gather_body_trials": 0.041120000183582306,
+        "gather_ledger_trials": 0.23907199501991272,
+        "collect_trial_faults": 0.12848000228405
+      },
+      "attributes": {
+        "prepare_trials": {
+          "max_threads_per_block": 640,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 82,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "prepare_pairs": {
+          "max_threads_per_block": 256,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 240,
+          "num_regs": 240,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "contribution_trials": {
+          "max_threads_per_block": 256,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 560,
+          "num_regs": 250,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "gather_body_trials": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 48,
+          "num_regs": 40,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "gather_ledger_trials": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 38,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "collect_trial_faults": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 19,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        }
+      }
+    },
+    {
+      "material": "iron",
+      "pipeline": "parallel",
+      "experiment": "jacobian-full",
+      "candidates": 120,
+      "wall_median_ms": 1.2017000117339194,
+      "cuda_batch_median_ms": 1.1737279891967773,
+      "phase_median_ms": {
+        "prepare_trials": 0.04585599899291992,
+        "prepare_pairs": 0.13302400708198547,
+        "contribution_trials": 0.36191999912261963,
+        "gather_body_trials": 0.061216000467538834,
+        "gather_ledger_trials": 0.28617599606513977,
+        "collect_trial_faults": 0.2800320088863373
+      },
+      "attributes": {
+        "prepare_trials": {
+          "max_threads_per_block": 640,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 82,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "prepare_pairs": {
+          "max_threads_per_block": 256,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 240,
+          "num_regs": 240,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "contribution_trials": {
+          "max_threads_per_block": 256,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 560,
+          "num_regs": 250,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "gather_body_trials": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 48,
+          "num_regs": 40,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "gather_ledger_trials": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 38,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "collect_trial_faults": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 19,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        }
+      }
+    },
+    {
+      "material": "iron",
+      "pipeline": "parallel",
+      "experiment": "jacobian-local",
+      "candidates": 120,
+      "wall_median_ms": 1.0165999992750585,
+      "cuda_batch_median_ms": 0.9865279793739319,
+      "phase_median_ms": {
+        "prepare_trials": 0.04320000112056732,
+        "prepare_pairs": 0.12876799702644348,
+        "contribution_trials": 0.19017599523067474,
+        "gather_body_trials": 0.06115199998021126,
+        "gather_ledger_trials": 0.2821120023727417,
+        "collect_trial_faults": 0.27801600098609924
+      },
+      "attributes": {
+        "prepare_trials": {
+          "max_threads_per_block": 640,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 82,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "prepare_pairs": {
+          "max_threads_per_block": 256,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 240,
+          "num_regs": 240,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "contribution_trials": {
+          "max_threads_per_block": 256,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 560,
+          "num_regs": 250,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "gather_body_trials": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 48,
+          "num_regs": 40,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "gather_ledger_trials": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 38,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "collect_trial_faults": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 19,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        }
+      }
+    },
+    {
+      "material": "ice",
+      "pipeline": "serial-reference",
+      "experiment": "single",
+      "candidates": 1,
+      "wall_median_ms": 26.779600011650473,
+      "cuda_batch_median_ms": 26.75152015686035,
+      "phase_median_ms": {},
+      "attributes": {
+        "max_threads_per_block": 256,
+        "shared_size_bytes": 0,
+        "const_size_bytes": 0,
+        "local_size_bytes": 7584,
+        "num_regs": 255,
+        "ptx_version": 120,
+        "binary_version": 120,
+        "cache_mode_ca": 0,
+        "max_dynamic_shared_size_bytes": 49152,
+        "preferred_shared_memory_carveout": -1
+      }
+    },
+    {
+      "material": "ice",
+      "pipeline": "serial-reference",
+      "experiment": "jacobian-full",
+      "candidates": 120,
+      "wall_median_ms": 27.706600027158856,
+      "cuda_batch_median_ms": 27.680896759033203,
+      "phase_median_ms": {},
+      "attributes": {
+        "max_threads_per_block": 256,
+        "shared_size_bytes": 0,
+        "const_size_bytes": 0,
+        "local_size_bytes": 7584,
+        "num_regs": 255,
+        "ptx_version": 120,
+        "binary_version": 120,
+        "cache_mode_ca": 0,
+        "max_dynamic_shared_size_bytes": 49152,
+        "preferred_shared_memory_carveout": -1
+      }
+    },
+    {
+      "material": "ice",
+      "pipeline": "parallel",
+      "experiment": "single",
+      "candidates": 1,
+      "wall_median_ms": 0.6966000073589385,
+      "cuda_batch_median_ms": 0.658240020275116,
+      "phase_median_ms": {
+        "prepare_trials": 0.04399999976158142,
+        "prepare_pairs": 0.1440960019826889,
+        "contribution_trials": 0.052671998739242554,
+        "gather_body_trials": 0.040800001472234726,
+        "gather_ledger_trials": 0.24111999571323395,
+        "collect_trial_faults": 0.13052800297737122
+      },
+      "attributes": {
+        "prepare_trials": {
+          "max_threads_per_block": 640,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 82,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "prepare_pairs": {
+          "max_threads_per_block": 256,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 240,
+          "num_regs": 240,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "contribution_trials": {
+          "max_threads_per_block": 256,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 560,
+          "num_regs": 250,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "gather_body_trials": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 48,
+          "num_regs": 40,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "gather_ledger_trials": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 38,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "collect_trial_faults": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 19,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        }
+      }
+    },
+    {
+      "material": "ice",
+      "pipeline": "parallel",
+      "experiment": "jacobian-full",
+      "candidates": 120,
+      "wall_median_ms": 1.3509000418707728,
+      "cuda_batch_median_ms": 1.3119679689407349,
+      "phase_median_ms": {
+        "prepare_trials": 0.05222399905323982,
+        "prepare_pairs": 0.13344000279903412,
+        "contribution_trials": 0.3741439878940582,
+        "gather_body_trials": 0.0570559985935688,
+        "gather_ledger_trials": 0.2902719974517822,
+        "collect_trial_faults": 0.39475199580192566
+      },
+      "attributes": {
+        "prepare_trials": {
+          "max_threads_per_block": 640,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 82,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "prepare_pairs": {
+          "max_threads_per_block": 256,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 240,
+          "num_regs": 240,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "contribution_trials": {
+          "max_threads_per_block": 256,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 560,
+          "num_regs": 250,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "gather_body_trials": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 48,
+          "num_regs": 40,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "gather_ledger_trials": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 38,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "collect_trial_faults": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 19,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        }
+      }
+    },
+    {
+      "material": "ice",
+      "pipeline": "parallel",
+      "experiment": "jacobian-local",
+      "candidates": 120,
+      "wall_median_ms": 1.1279999744147062,
+      "cuda_batch_median_ms": 1.088320016860962,
+      "phase_median_ms": {
+        "prepare_trials": 0.048608001321554184,
+        "prepare_pairs": 0.12934400141239166,
+        "contribution_trials": 0.17423999309539795,
+        "gather_body_trials": 0.05350400134921074,
+        "gather_ledger_trials": 0.2882240116596222,
+        "collect_trial_faults": 0.38655999302864075
+      },
+      "attributes": {
+        "prepare_trials": {
+          "max_threads_per_block": 640,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 82,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "prepare_pairs": {
+          "max_threads_per_block": 256,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 240,
+          "num_regs": 240,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "contribution_trials": {
+          "max_threads_per_block": 256,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 560,
+          "num_regs": 250,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "gather_body_trials": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 48,
+          "num_regs": 40,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "gather_ledger_trials": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 38,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        },
+        "collect_trial_faults": {
+          "max_threads_per_block": 1024,
+          "shared_size_bytes": 0,
+          "const_size_bytes": 0,
+          "local_size_bytes": 0,
+          "num_regs": 19,
+          "ptx_version": 120,
+          "binary_version": 120,
+          "cache_mode_ca": 0,
+          "max_dynamic_shared_size_bytes": 49152,
+          "preferred_shared_memory_carveout": -1
+        }
+      }
+    }
+  ],
+  "realtime_qualified": false,
+  "scope": "Warmed candidate equations; excludes Newton orchestration, accepted integration/audit, journals, gateway and rendering. CUDA batch time includes stream scheduling gaps; phase times measure device regions with event overhead."
+}
