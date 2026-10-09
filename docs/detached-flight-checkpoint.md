@@ -1,6 +1,6 @@
 # Detached native cell flight — experimental stepping
 
-October 8, 2026. Source parent `aef24471e38f527a998ed833cb99409f9182ec96`. Implemented optional scheduling, not near realtime or calibrated material admission. The material-law baseline is unchanged.
+October 8, 2026. Source parent `aef24471e38f527a998ed833cb99409f9182ec96`. Implemented optional scheduling, not near realtime or calibrated material admission. Source/tests and the website are published to GitHub main as `ec246f9f70a4fab41e841af902fd0c151a1f291f`; this following documentation revision records that checkpoint. The material-law baseline is unchanged.
 
 ## What you can test
 
