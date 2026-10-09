@@ -26,6 +26,11 @@ def scene(raw):
             accepted=w.snapshot()
             try:
                 s=w.advance(min(32,round(2/w.d['dt_s'])-w.ticks))
+                performance=s['performance']
+                assert all(math.isfinite(t) and t>=0 for t in performance['phase_s'].values())
+                assert math.isclose(sum(performance['phase_s'].values()),performance['step_s'],rel_tol=1e-12,abs_tol=1e-12)
+                assert math.isclose(sum(performance['last_phase_ms'].values()),performance['last_batch_ms'],rel_tol=1e-12,abs_tol=1e-9)
+                assert len(s['substep_trace']['normal_accounts'])==w.last_steps
                 peak=max(peak,max(row['mechanical_change_j'] for row in s['substep_trace']['normal_accounts']))
             except ValueError as fault:
                 error=str(fault)
@@ -38,7 +43,7 @@ def scene(raw):
         s=w.snapshot()
         return dict(declaration=w.d,initial=initial['diagnostics'],final=s['diagnostics'],final_cells=s['cells'],
             final_time_s=s['time_s'],startup_s=startup,wall_s=time.perf_counter()-start,max_accepted_gain_j=peak,
-            error=error,rejected_candidate=s.get('rejected_candidate'),qualification=s['qualification'])
+            error=error,rejected_candidate=s.get('rejected_candidate'),qualification=s['qualification'],performance=s['performance'])
     finally:w.close()
 
 
@@ -107,6 +112,7 @@ def main():
     try:w.advance(1)
     except ValueError:assert w.snapshot()['cells']==initial['cells'] and w.snapshot()['ticks']==0
     else:raise AssertionError('SDK capacity fault admitted')
+    assert w.snapshot()['performance']==initial['performance'], 'Rejected time reported as accepted throughput'
     w.close()
     report=dict(scope='Experimental rigid GPU contact/control, not bonded material qualification',
         source_sha256=SOURCE_SHA256,worker_sha256=hashlib.sha256((ROOT/'scripts/gpu-contact-worker.py').read_bytes()).hexdigest(),
@@ -115,6 +121,7 @@ def main():
             'four analytical isolated pair controls','bouncing stack actual gated outcome and exact refusal retention when applicable',
             'Newton zero-bounce/friction retained failure','JSON-only worker and unsupported command preservation',
             'SDK diagnostic stops and retains accepted scene'])
+    report['checks'].append('disjoint finite phase timings sum to accepted batch time; every substep retained')
     args.report.parent.mkdir(parents=True,exist_ok=True)
     args.report.write_text(json.dumps(report,indent=2,allow_nan=False),encoding='utf8')
     print('PhysX scoped checks passed; full laws and near realtime remain open')

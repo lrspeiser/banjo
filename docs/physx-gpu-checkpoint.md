@@ -135,7 +135,9 @@ browser layout checks, not a physical-phone or mobile-GPU qualification.
 Source-registration guard: 342/342 C++ files, no exclusions. These are scoped
 checks, not the entire repository regression or cross-GPU determinism.
 
-Next measure SDK stepping versus state/contact read costs, batch resident
+[October 9 phase measurements](gpu-phase-profile-checkpoint.md) now isolate synchronized SDK stepping as 60.5% of the measured coarse glass control, with observation 35.7%. Four-iteration and coarse CCD shortcuts are withdrawn; no speedup is claimed.
+
+Next measure kernel/launch/wait costs within SDK stepping, batch resident
 observations without dropping substeps, and complete friction/reaction/work
 accounts. Resolve rebound/position-correction validity and refine coupled
 contacts. Then port Banjo's bonded material/history laws into the resident

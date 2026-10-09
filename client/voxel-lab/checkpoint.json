@@ -1,8 +1,9 @@
 {
-  "title": "PhysX GPU stack comparator added; realtime and bonded material laws remain open",
-  "date": "2026-10-08",
+  "title": "GPU calculation phases measured; laws and safety gates retained",
+  "date": "2026-10-09",
   "native_sha256": "eb3527a07fda2a0c181ff11683eb907a16045bf0fcae66e4db58f703e7df9ee4",
   "changes": [
+    "GPU lab shows actual SDK stepping, GPU observation and host audit time. Every calculated substep remains recorded; no speedup or new material law is claimed.",
     "GPU solver now compares Newton XPBD and PhysX TGS in the same 3D world. Stack control uses zero bounce/friction and 1/1920 s; glass/oak/iron/ice complete in scoped controls.",
     "PhysX records actual CUDA poses, mass/inertia and normal contact impulses each substep. Friction and full contact/numerical work are not yet in that account; no bonded GPU fracture or dents.",
     "Open GPU contact yard: CUDA-calculated ball drops, two-body impacts and free fall. CPU material lab remains available; no GPU fracture or dents yet.",
@@ -52,6 +53,11 @@
       "label": "PhysX comparator",
       "status": "passed",
       "value": "Refined glass/oak/iron/ice rigid stacks and analytical pairs, actual gated bounce outcome, retained Newton failure, SDK fault/protocol checks; five scoped CTests pass. Coarse PhysX pair withdrawn; full material/reaction/work and realtime remain open."
+    },
+    {
+      "label": "GPU phase regression",
+      "status": "passed",
+      "value": "Five scoped CTests pass: PhysX four-material refined stacks/pairs, Newton controls, gateway, pipeline and playback. Finite phase counters sum to accepted batch time; 342/342 source registration. Private four-iteration/CCD variants withdrawn."
     }
   ],
   "next": [
@@ -63,7 +69,7 @@
     {
       "label": "GPU world migration",
       "status": "in progress",
-      "value": "Remove measured GPU state/contact delivery overhead, complete friction/reaction/work ledgers and coupled bounce admission, then port bonded material history with comparative refinement."
+      "value": "Profile SDK kernel/launch/wait cost (larger than observation in measured controls), retain resident substep audits, complete friction/reaction/work ledgers and port shared bonded material history with comparative refinement."
     },
     {
       "label": "Permanent metal dents",
@@ -96,5 +102,5 @@
   "physics_revision": "e12eb688a470e3a092038442ef1950ce5b52a30b",
   "gpu_source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd",
   "gpu_worker_sha256": "521bcf6a1b567dbe09d9b6b6ffee8f518990fa77666107cb738e219b8862ef0c",
-  "physx_source_sha256": "dedbcc00563e6a02a0014e4b26df2a97682695790dfeb79b3001817f9aa208a5"
+  "physx_source_sha256": "f741c7e4545b1b68f796cfeb4e495bb08ea3702406d8c237bdcdcacc63246651"
 }

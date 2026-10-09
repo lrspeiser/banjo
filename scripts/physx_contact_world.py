@@ -63,6 +63,8 @@ class PhysXContactWorld:
         self.gravity = 0. if self.d['experiment'] == 'pair' else -9.81
         self.ticks = 0
         self.total_step_s = self.last_batch_s = 0.
+        self.phase_s = dict(sdk_step=0., gpu_observation=0., host_audit=0.)
+        self.last_phase_s = dict(self.phase_s)
         self.max_contacts = self.last_steps = 0
         self.metadata = []
         self.paths = []
@@ -279,10 +281,15 @@ def Material "contact" (prepend apiSchemas = ["PhysicsMaterialAPI", "PhysxMateri
         if type(steps) is not int or not 1 <= steps <= 32 or self.ticks+steps > round(4/self.d['dt_s']):
             raise ValueError('Steps outside bounded experiment')
         start = time.perf_counter()
+        phases = dict(sdk_step=0., gpu_observation=0., host_audit=0.)
         try:
             for slot in range(steps):
+                phase_start = time.perf_counter()
                 self.sdk.step_sync(self.d['dt_s'])
+                phases['sdk_step'] += time.perf_counter()-phase_start
+                phase_start = time.perf_counter()
                 self._observe(slot)
+                phases['gpu_observation'] += time.perf_counter()-phase_start
             ovphysx.flush_log()
         except Exception as error:
             self.rejected_candidate=dict(first_tick=self.ticks+1,max_gain_j=None,solver_stopped=True,
@@ -327,6 +334,13 @@ def Material "contact" (prepend apiSchemas = ["PhysicsMaterialAPI", "PhysxMateri
         self.last_energy=float(energies[-1])
         self.max_contacts=max(self.max_contacts,int(counts.max()))
         self.last_batch_s=time.perf_counter()-start
+        # Disjoint synchronized wall phases. These are not GPU kernel timers.
+        # Preserve the existing measured interval: snapshot/IPC/render cost is
+        # outside step_s and remains in the gateway's end-to-end measurement.
+        phases['host_audit'] = self.last_batch_s-phases['sdk_step']-phases['gpu_observation']
+        self.last_phase_s = phases
+        for phase, elapsed in phases.items():
+            self.phase_s[phase] += elapsed
         self.total_step_s+=self.last_batch_s
         self.accepted_snapshot=self._snapshot(trace,states,counts)
         return self.snapshot()
@@ -352,6 +366,8 @@ def Material "contact" (prepend apiSchemas = ["PhysicsMaterialAPI", "PhysxMateri
                 cumulative_normal_impulse_n_s=self.cumulative_normal_impulse.tolist(),max_normal_only_P_residual_n_s=self.max_normal_P_residual,
                 reaction_account_complete=False,numerical_and_contact_losses_separated=False),
             performance=dict(step_s=self.total_step_s,last_batch_ms=self.last_batch_s*1000,
+                phase_s=dict(self.phase_s),last_phase_ms={k:1000*v for k,v in self.last_phase_s.items()},
+                timing_scope='Disjoint synchronized wall phases of accepted batches; not GPU kernel timings. Excludes startup, snapshot serialization, IPC, journal and rendering.',
                 compute_ratio=self.ticks*self.d['dt_s']/self.total_step_s if self.total_step_s else None),
             qualification=dict(backend='physx-tgs',ovphysx=ovphysx.__version__,warp=wp.__version__,device=str(self.device),gpu=True,
                 device_name=self.device.name,source_sha256=SOURCE_SHA256,dtype='float32',position_iterations=16,velocity_iterations=4,
