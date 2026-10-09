@@ -1,6 +1,6 @@
 # Normal contact experiment and interrupted native delivery
 
-October 8, 2026. The native normal patch experiment is withdrawn. The CPU analytical primitive is compiled and retained for future solver work. Interrupted native delivery now preserves the last delivered scene and an exact failure record. No physics speed improvement is admitted at this checkpoint.
+October 8, 2026. Source and tests published to GitHub main as `f349fa762361811c25fb5004329209e137658e4d`; this following documentation commit records that verified revision. The native normal patch experiment is withdrawn. The CPU analytical primitive is compiled and retained for future solver work. Interrupted native delivery now preserves the last delivered scene and an exact failure record. No physics speed improvement is admitted at this checkpoint.
 
 ## Why the glass drop appears slow
 
