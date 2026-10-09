@@ -2183,6 +2183,9 @@ if(BANJO_BUILD_TESTS)
             add_test(NAME banjo_voxel_hybrid_tests COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_hybrid_test.py $<TARGET_FILE:banjo_voxel_world_run>)
             set_tests_properties(banjo_voxel_hybrid_tests PROPERTIES TIMEOUT 120 LABELS "native;voxel;experimental")
+            add_test(NAME banjo_voxel_rigid_flight_tests COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_rigid_flight_test.py $<TARGET_FILE:banjo_voxel_world_run> --full)
+            set_tests_properties(banjo_voxel_rigid_flight_tests PROPERTIES TIMEOUT 180 LABELS "native;voxel;experimental")
             add_test(NAME banjo_voxel_motion_profile_tests COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_motion_profile_test.py $<TARGET_FILE:banjo_voxel_world_run>)
             set_tests_properties(banjo_voxel_motion_profile_tests PROPERTIES TIMEOUT 60 LABELS "native;voxel")

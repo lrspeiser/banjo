@@ -87,6 +87,44 @@ struct VoxelImpactWorld::Impl {
     Json declaration,events=Json::array();std::vector<Cell> cells;std::vector<Bond> bonds;std::vector<Pair> internal;
     std::map<MatterBodyId,unsigned> motion_drivers;
     unsigned motion_splits{},max_motion_depth{};
+    bool local_flight{};unsigned flight_candidates{},flight_accepted{},flight_rollbacks{};
+    std::map<MatterBodyId,unsigned> flown_cells;std::set<MatterBodyId> returned_contact_cells;
+    double peak_flight_surface_travel{};unsigned last_free_cells{};
+    // Only a singleton with no live interfaces can leave the material motion
+    // budget. Its original native body, mass, pose, spin and history stay put.
+    // Use a sphere enclosing every orientation for dynamic boxes, and exact
+    // oriented extents for anchored supports. This is broad-phase scheduling,
+    // never a contact response. The candidate endpoint envelope is checked
+    // again inside the reversible trial before any result is accepted.
+    BoxCenterPath flightBounds(unsigned i,const RigidSnapshot &start,double h,
+                             const RigidSnapshot *end=nullptr)const{
+        const auto &c=cells[i];
+        const double travel=end||c.fixed?0:length(start.linear_velocity_m_s)*h+length(gravity)*h*h;
+        return boundBoxCenterPath(c.size,start.center_of_mass_world_m,
+            end?end->center_of_mass_world_m:start.center_of_mass_world_m,start.orientation_world,c.fixed,travel);
+    }
+    static bool flightOverlap(const BoxCenterPath &a,const BoxCenterPath &b){
+        return boxCenterPathsOverlap(a,b,.02);
+    }
+    std::vector<bool> isolatedFlight(const std::vector<RigidSnapshot> &states,double h)const{
+        std::vector<bool> eligible(cells.size(),false);if(!local_flight||!actuators.empty()||(coast&&coast->collapsed()))return eligible;
+        std::vector<unsigned> degree(cells.size());for(const auto &b:bonds)if(b.live){++degree[b.a];++degree[b.b];}
+        std::vector<BoxCenterPath> bounds;bounds.reserve(cells.size());
+        for(unsigned i=0;i<cells.size();++i)bounds.push_back(flightBounds(i,states[i],h));
+        for(unsigned i=0;i<cells.size();++i)if(!cells[i].fixed&&degree[i]==0){
+            eligible[i]=true;for(unsigned j=0;j<cells.size();++j)if(i!=j&&flightOverlap(bounds[i],bounds[j])){eligible[i]=false;break;}}
+        return eligible;
+    }
+    bool candidateFlightSafe(const std::vector<bool> &eligible,
+                             const std::vector<RigidSnapshot> &before,
+                             const std::vector<RigidMechanicalState> &after)const{
+        std::vector<BoxCenterPath> bounds;bounds.reserve(cells.size());
+        for(unsigned i=0;i<cells.size();++i)bounds.push_back(flightBounds(i,before[i],0,&after[i].motion));
+        for(unsigned i=0;i<cells.size();++i)if(eligible[i])for(unsigned j=0;j<cells.size();++j)
+            if(i!=j&&flightOverlap(bounds[i],bounds[j]))return false;
+        for(const auto &c:world.contactImpulseObservations())if(eligible.at(slot(c.a))||eligible.at(slot(c.b)))return false;
+        return true;
+    }
     double linear_velocity_quadratic{},peak_spin{};unsigned spin_limit_samples{};
     double material_damping{},implicit_elastic_loss{},spring_endpoint_work{},spring_geometry_change{},spring_residual_work{},max_spring_residual_n{};
     double contact_normal_work{},contact_friction_work{},contact_twist_work{};
@@ -245,7 +283,9 @@ struct VoxelImpactWorld::Impl {
         world.setExecutionProfilingEnabled(true);
         if(d.contains("hybrid_free_flight")&&!d["hybrid_free_flight"].is_boolean())throw std::invalid_argument("hybrid_free_flight must be boolean");
         hybrid=d.value("hybrid_free_flight",false);
-        const std::set<std::string> keys{"sheet","ball","mass_kg","height_m","thickness_m","resolution","support_gap_m","offset_x_m","offset_z_m","dt_s","ball_enabled","gravity_m_s2","solver_iterations","face_law","contact_law","sheet_plasticity","hybrid_free_flight"};
+        if(d.contains("local_rigid_flight")&&!d["local_rigid_flight"].is_boolean())throw std::invalid_argument("local_rigid_flight must be boolean");
+        local_flight=d.value("local_rigid_flight",false);
+        const std::set<std::string> keys{"sheet","ball","mass_kg","height_m","thickness_m","resolution","support_gap_m","offset_x_m","offset_z_m","dt_s","ball_enabled","gravity_m_s2","solver_iterations","face_law","contact_law","sheet_plasticity","hybrid_free_flight","local_rigid_flight"};
         for(auto i=d.begin();i!=d.end();++i)if(!keys.contains(i.key()))throw std::invalid_argument("unknown voxel experiment field");
         const auto face_law=d.value("face_law",std::string("native-motor"));
         if(face_law!="native-motor"&&face_law!="log-gradient"&&face_law!="centered-log-gradient")throw std::invalid_argument("unsupported face law");
@@ -298,7 +338,7 @@ struct VoxelImpactWorld::Impl {
             if(!r.admitted)throw std::runtime_error("initial component handoff refused: "+r.reason);
         }
     }
-    void interval(double h,unsigned depth=0){
+    void interval(double h,unsigned depth=0,bool force_full_motion=false){
         guardCoast(h);
         const bool coasting=coast&&coast->collapsed();
         const auto sweep_start=std::chrono::steady_clock::now();
@@ -308,9 +348,17 @@ struct VoxelImpactWorld::Impl {
             const double speed=length(s.linear_velocity_m_s)+length(s.angular_velocity_rad_s)*length(c.size)/2;
             if(speed>maxSpeed){maxSpeed=speed;driver=c.id;}
             if(c.object==2)minBallY=std::min(minBallY,s.center_of_mass_world_m.y-length(c.size)/2);}}
+        auto flight=force_full_motion?std::vector<bool>(cells.size(),false):isolatedFlight(before_states,h);
+        if(local_flight){maxSpeed=0;driver=0;
+            for(unsigned i=0;i<cells.size();++i)if(!cells[i].fixed&&active(i)){
+                if(flight[i]){++flight_candidates;continue;}
+                const auto &s=before_states[i];const double speed=length(s.linear_velocity_m_s)+length(s.angular_velocity_rad_s)*length(cells[i].size)/2;
+                if(speed>maxSpeed){maxSpeed=speed;driver=cells[i].id;}
+            }}
+        const unsigned flights=unsigned(std::count(flight.begin(),flight.end(),true));
         sweep_wall_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-sweep_start).count();
         if(minBallY<.65&&maxSpeed*h>feature*.05){++motion_splits;++motion_drivers[driver];max_motion_depth=std::max(max_motion_depth,depth);
-            if(depth>=14)throw std::runtime_error("voxel swept distance gate refused");interval(h/2,depth+1);interval(h/2,depth+1);return;}
+            if(depth>=14)throw std::runtime_error("voxel swept distance gate refused");interval(h/2,depth+1,force_full_motion);interval(h/2,depth+1,force_full_motion);return;}
         const auto observation_start=std::chrono::steady_clock::now();
         std::vector<JoltWorld::FaceSpringObservation> faces_before(bonds.size()),faces_after(bonds.size());
         double before_elastic=0;
@@ -323,7 +371,7 @@ struct VoxelImpactWorld::Impl {
         double candidate_plastic_work=0,candidate_return_excess=0,candidate_actuator_work=0;
         Vec3 candidate_actuator_impulse{},candidate_actuator_angular{},candidate_actuator_phase_residual{};
         const auto trial_start=std::chrono::steady_clock::now();
-        bool coast_contact=false;
+        bool coast_contact=false,flight_unsafe=false;
         const bool accepted=world.runReversibleTrial([&]{
             const auto native_start=std::chrono::steady_clock::now();
             // Queue forces inside the trial so refusal restores both the force
@@ -339,6 +387,7 @@ struct VoxelImpactWorld::Impl {
             candidateTotals={};candidate_states.clear();candidate_states.reserve(cells.size());
             for(unsigned i=0;i<cells.size();++i){const auto state=active(i)?world.mechanicalState(nativeId(i)):RigidMechanicalState{};
                 candidate_states.push_back(state);candidateTotals+=measureRigidMechanics(state,gravity);}
+            if(flights&&!candidateFlightSafe(flight,before_states,candidate_states)){flight_unsafe=true;return false;}
             after_elastic=0;
             const auto faces_start=std::chrono::steady_clock::now();
             totals_wall_ms+=std::chrono::duration<double,std::milli>(faces_start-totals_start).count();
@@ -376,7 +425,10 @@ struct VoxelImpactWorld::Impl {
         });
         trial_wall_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-trial_start).count();
         if(coast_contact){++rejected;expandCoast("candidate contact rollback");interval(h,depth);return;}
-        if(!accepted){++rejected;refused_work={{"time_s",time},{"dt_s",h},{"depth",depth},{"before_j",before},{"candidate_j",candidateEnergy},{"elastic_change_j",after_elastic-before_elastic},{"work",workJson(candidateWork)}};if(actuation_used)refused_work["actuator_work_j"]=candidate_actuator_work;if(sheet_plasticity){refused_work["plastic_work_j"]=candidate_plastic_work;refused_work["plastic_return_excess_j"]=candidate_return_excess;}if(midpoint_contact){refused_work["midpoint_boundary"]=candidateBoundary;refused_work["worst_twist_contact"]=candidateTwist;}if(depth>=14)throw std::runtime_error("native integration energy gate refused at "+std::to_string(time)+" s: before="+std::to_string(before)+", candidate="+std::to_string(candidateEnergy)+", h="+std::to_string(h)+"; last accepted state retained");interval(h/2,depth+1);interval(h/2,depth+1);return;}
+        if(flight_unsafe){++rejected;++flight_rollbacks;
+            if(depth>=14)throw std::runtime_error("isolated rigid flight candidate path refused");
+            interval(h/2,depth+1,true);interval(h/2,depth+1,true);return;}
+        if(!accepted){++rejected;refused_work={{"time_s",time},{"dt_s",h},{"depth",depth},{"before_j",before},{"candidate_j",candidateEnergy},{"elastic_change_j",after_elastic-before_elastic},{"work",workJson(candidateWork)}};if(actuation_used)refused_work["actuator_work_j"]=candidate_actuator_work;if(sheet_plasticity){refused_work["plastic_work_j"]=candidate_plastic_work;refused_work["plastic_return_excess_j"]=candidate_return_excess;}if(midpoint_contact){refused_work["midpoint_boundary"]=candidateBoundary;refused_work["worst_twist_contact"]=candidateTwist;}if(depth>=14)throw std::runtime_error("native integration energy gate refused at "+std::to_string(time)+" s: before="+std::to_string(before)+", candidate="+std::to_string(candidateEnergy)+", h="+std::to_string(h)+"; last accepted state retained");interval(h/2,depth+1,force_full_motion);interval(h/2,depth+1,force_full_motion);return;}
         actuator_work+=candidate_actuator_work;actuator_impulse+=candidate_actuator_impulse;actuator_angular_impulse+=candidate_actuator_angular;actuator_force_phase_residual+=candidate_actuator_phase_residual;
         plastic_work+=candidate_plastic_work;plastic_return_excess+=candidate_return_excess;
         for(unsigned i=0;i<bonds.size();++i)if(detailed(bonds[i])&&bonds[i].plastic)bonds[i].plastic_state=candidate_plastic[i].state;
@@ -393,6 +445,7 @@ struct VoxelImpactWorld::Impl {
         Vec3 reaction{};const auto support_angular_before=support_reaction_angular_impulse;
         for(const auto &contact:world.contactImpulseObservations()){
             const auto ai=slot(contact.a),bi=slot(contact.b);
+            if(local_flight){for(auto id:{contact.a,contact.b})if(flown_cells.contains(id))returned_contact_cells.insert(id);}
             if(ai>=cells.size()||bi>=cells.size())throw std::runtime_error("voxel contact references an undeclared cell");
             const auto &a=before_states[ai],&b=before_states[bi],&aa=after_states[ai],&bb=after_states[bi];
             const auto transfer=[&](Vec3 point,Vec3 push){
@@ -452,6 +505,9 @@ struct VoxelImpactWorld::Impl {
         }
 
         if(coasting)coast_time+=h;
+        flight_accepted+=flights;last_free_cells=flights;
+        if(flights)for(unsigned i=0;i<cells.size();++i)if(flight[i]){++flown_cells[cells[i].id];
+            peak_flight_surface_travel=std::max(peak_flight_surface_travel,h*(length(before_states[i].linear_velocity_m_s)+length(before_states[i].angular_velocity_rad_s)*length(cells[i].size)/2));}
         time+=h;++substeps;
         bool changed=false;
         for(unsigned i=0;i<bonds.size();++i)if(detailed(bonds[i])){
@@ -528,6 +584,11 @@ std::string VoxelImpactWorld::snapshotJson() const {
         motion_drivers.push_back({{"body",id},{"object",c.object},{"split_proposals",count}});}
     result["diagnostics"]["profile"]["motion"]={{"split_proposals",w.motion_splits},{"max_depth",w.max_motion_depth},{"drivers",motion_drivers},
         {"scope","Recursive proposal counters, not elapsed-time contributions. The fastest cell drives the existing global thickness/surface-speed rule. Energy rejections are separate."}};
+    Json flown=Json::array();for(const auto &[id,count]:w.flown_cells)flown.push_back({{"body",id},{"accepted_intervals",count}});
+    if(w.local_flight)result["rigid_flight"]={{"flown_cells",flown},{"returned_contact_cells",w.returned_contact_cells},
+        {"current_free_cells",w.last_free_cells},{"peak_free_surface_travel_m",w.peak_flight_surface_travel},{"mode","isolated-native-singletons"},{"candidate_cell_intervals",w.flight_candidates},
+        {"accepted_cell_intervals",w.flight_accepted},{"candidate_path_rollbacks",w.flight_rollbacks},
+        {"scope","Only disconnected native cells without external loading may skip the global thickness motion bound in empty space. Conservative predicted and actual candidate path envelopes restore the original limit near other objects. Connected material, contact response and energy gates remain detailed; not local island integration or calibrated fracture."}};
     if(w.hybrid){result["hybrid"]={{"mode","unloaded-ball-free-flight"},{"collapsed",w.coast&&w.coast->collapsed()},
         {"coast_time_s",w.coast_time},{"active_native_bodies",w.world.activeBodyIds().size()},
         {"transfer_energy_j",w.transfer_energy},{"energy_after_transfer_correction_j",w.totals.mechanicalEnergy()+elastic+w.fracture+w.discarded_elastic+w.plastic_work+w.plastic_return_excess-w.actuator_work-w.transfer_energy-w.initial_energy},{"transfers",w.transfers},

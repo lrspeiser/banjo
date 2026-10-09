@@ -30,6 +30,36 @@ void run(){
             }
         }
     }
+    unsigned path_samples=0;
+    for(unsigned seed=0;seed<100;++seed){
+        const Vec3 size{.05,.004,.05},start{0,.5,0},end{seed*.002,.3,seed*.003};
+        const auto envelope=boundBoxCenterPath(size,start,end,{},false);
+        for(unsigned t=0;t<=20;++t){const double u=t/20.,angle=(seed+.1)*u;
+            const Quat q{std::cos(angle/2),0,std::sin(angle/2),0};
+            for(int x:{-1,1})for(int y:{-1,1})for(int z:{-1,1}){
+                const auto corner=start+(end-start)*u+q.rotate({x*size.x/2,y*size.y/2,z*size.z/2});
+                check(corner.x>=envelope.lo_m.x&&corner.x<=envelope.hi_m.x&&
+                      corner.y>=envelope.lo_m.y&&corner.y<=envelope.hi_m.y&&
+                      corner.z>=envelope.lo_m.z&&corner.z<=envelope.hi_m.z,"rotating straight path excluded");++path_samples;
+            }
+        }
+    }
+    const auto floor=boundBoxCenterPath({1,.1,1},{0,-.05,0},{0,-.05,0},{},true);
+    const auto free=boundBoxCenterPath({.05,.004,.05},{0,.5,0},{0,.4,0},{},false);
+    const auto crossing=boundBoxCenterPath({.05,.004,.05},{0,.5,0},{0,-.1,0},{},false);
+    check(!boxCenterPathsOverlap(floor,free,.02),"thin anchored floor inflated to sphere");
+    check(boxCenterPathsOverlap(floor,crossing,.02),"floor crossing excluded");
+    const auto incoming=boundBoxCenterPath({.05,.004,.05},{-1,.45,0},{1,.45,0},{},false);
+    check(boxCenterPathsOverlap(free,incoming,.02),"second moving body's path excluded");
+    check(boxCenterPathsOverlap(incoming,free,.02)==boxCenterPathsOverlap(free,incoming,.02),"center path asymmetric");
+    const auto expanded=boundBoxCenterPath({.05,.004,.05},{0,.5,0},{0,.5,0},{},false,.5);
+    check(boxCenterPathsOverlap(floor,expanded,.02),"supplied center travel dropped");
+    unsigned path_refused=0;
+    try{(void)boundBoxCenterPath({1,1,1},{},{1,0,0},{},true);}catch(const std::invalid_argument&){++path_refused;}
+    try{(void)boundBoxCenterPath({1,1,1},{},{},{},false,-1);}catch(const std::invalid_argument&){++path_refused;}
+    try{(void)boxCenterPathsOverlap(floor,free,-1);}catch(const std::invalid_argument&){++path_refused;}
+    check(path_refused==3,"invalid center path accepted");
+    std::cout<<"PASS "<<path_samples<<" arbitrary-rotation center-path corners, anchored floor and crossing paths\n";
     unsigned refused=0;
     try{(void)boundBoxSweep({1,0,1},{},{},0);}catch(const std::invalid_argument&){++refused;}
     try{(void)boundBoxSweep({1,1,1},{},{2,0,0,0},0);}catch(const std::invalid_argument&){++refused;}

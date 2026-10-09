@@ -9,3 +9,6 @@ footer{flex-direction:row-reverse}
 
 #setup{max-height:calc(100dvh - 145px);overflow:auto;overscroll-behavior:contain}
 @media(max-height:550px){#setup{max-height:none}#readout{max-height:calc(100dvh - 105px);overflow:auto;overscroll-behavior:contain}}
+
+/* Keep experimental motion names readable before starting a comparison. */
+.fields label:has(#motion_mode){grid-column:1/-1}
