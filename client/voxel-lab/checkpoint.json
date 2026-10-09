@@ -13,7 +13,7 @@
     {
       "label": "Registered CPU/native tests",
       "status": "passed",
-      "value": "336/336 sources compiled; 9 scoped CTests; six modes, unload/reversal, refinement and exact rejected/exception/nested history rollback"
+      "value": "336/336 sources registered; new targets compiled; 9 scoped CTests; six modes, unload/reversal, refinement and exact rejected/exception/nested history rollback"
     },
     {
       "label": "Live comparative integration",
