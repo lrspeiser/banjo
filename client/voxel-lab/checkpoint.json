@@ -1,8 +1,9 @@
 {
-  "title": "GPU finite-frame material forces and actual PhysX delivery tested; coupled motion gate remains open",
+  "title": "Experimental coupled GPU cells: material/contact/body motion audited; realtime remains open",
   "date": "2026-10-09",
   "native_sha256": "eb3527a07fda2a0c181ff11683eb907a16045bf0fcae66e4db58f703e7df9ee4",
   "changes": [
+    "New /coupled 3D page: nine connected finite cells, density-derived ball, fixed supports, actual CUDA material/contact/body solve, Before/Live and downloadable complete microstep records. Low-energy four-material controls pass; fracture/yield and realtime remain unqualified.",
     "GPU material inspector now shows actual CUDA force directions and body force/torque pairs. General finite-frame reactions use the same CPU/CUDA energy gradient; normal controlled loading has zero torque. The diagram still has no dynamics clock.",
     "GPU material laws at /materials runs persistent damage and six-mode plastic return from shared C++ source via CuPy. Apply a common opening, unload and inspect retained history. Controlled constitutive loading only, not dynamic GPU fracture or dents.",
     "PhysX reuses resident CUDA pose/velocity buffers. Every substep is retained; all 15360 refined stack states match the independent column reference exactly. The slower column path remains available in the profiler.",
@@ -17,6 +18,11 @@
     "Glass/oak/iron/ice complete at both timesteps in the initial trial. Full convergence, large energy deficits, connected calculation speed and thermal/fluid/power laws remain unfinished."
   ],
   "checks": [
+    {
+      "label": "Coupled GPU reference",
+      "status": "passed",
+      "value": "424 contact geometries / all 12 derivatives; 1000 work/P/L corrections; 12 CPU/CUDA full trial comparisons; four matched low-energy drops and analytical freefall; whole-interval rollback; CUDA memory smoke 0 errors. Ten distinct scoped CTests and 345/345 registered sources. No general fracture/dent/realtime admission."
+    },
     {
       "label": "Native contact controls",
       "status": "passed",
@@ -129,7 +135,8 @@
   },
   "physics_revision": "e12eb688a470e3a092038442ef1950ce5b52a30b",
   "gpu_source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd",
-  "gpu_worker_sha256": "518183d0d853a00213e466456cbf19f4f76bc4ba3a25f4a4adac1a51d67ae3d5",
+  "gpu_worker_sha256": "9380a55b680cc4b2e7b1dd3781d2e08bfad57c5b534d26024e901a84a6010bb2",
   "physx_source_sha256": "d1d30abfd67380a66fcf4664759e1917e50137bd7f6ef92bb160d0f1b5b5157f",
-  "gpu_material_source_sha256": "439309fd656c70e3f3728fda7a7260aad16ecfe72c0f2f32d9c388b67690f559"
+  "gpu_material_source_sha256": "439309fd656c70e3f3728fda7a7260aad16ecfe72c0f2f32d9c388b67690f559",
+  "gpu_coupled_source_sha256": "992b42096d49425ab41335dbe88f42ee9434583e1061bb8b6f80a67833f9a63c"
 }

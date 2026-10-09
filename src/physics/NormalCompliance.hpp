@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/Math.hpp"
+#include "physics/NormalComplianceKernel.hpp"
 #include <cstddef>
 #include <limits>
 #include <vector>
@@ -8,14 +9,6 @@
 namespace banjo {
 // Explicit normal interface law: U = k*min(gap,0)^2/2. A dashpot acts
 // only during compression. No restitution coefficient is prescribed.
-struct NormalComplianceLaw {
-    double stiffness_n_m{};
-    double compression_damping_kg_s{};
-};
-struct NormalComplianceEvaluation {
-    double impulse_kg_m_s{}, impulse_gap_derivative_kg_s{};
-    double energy_before_j{}, energy_after_j{}, damping_loss_j{};
-};
 [[nodiscard]] NormalComplianceEvaluation evaluateNormalCompliance(
     double gap0_m, double gap_change_m, double dt_s, const NormalComplianceLaw &law);
 

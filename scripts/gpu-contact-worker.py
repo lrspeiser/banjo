@@ -45,6 +45,9 @@ def main():
                     elif backend == 'cupy-material-laws':
                         from gpu_material_laws import GpuMaterialWorld
                         world = GpuMaterialWorld(d)
+                    elif backend == 'cupy-implicit-body':
+                        from gpu_coupled_world import GpuCoupledWorld
+                        world = GpuCoupledWorld(d)
                     else:
                         raise ValueError('Unknown GPU solver backend')
                     state = world.snapshot()

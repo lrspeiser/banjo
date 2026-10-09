@@ -1,5 +1,5 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Banjo · GPU material laws</title><link rel="stylesheet" href="/gpu.css"><link rel="stylesheet" href="/materials.css"></head><body>
-<header><strong>Banjo <span>GPU material laws</span></strong><a href="/">CPU world</a><a href="/gpu">GPU contacts</a><output id="build">Checking build…</output></header>
+<header><strong>Banjo <span>GPU material laws</span></strong><a href="/">CPU world</a><a href="/gpu">GPU contacts</a><a href="/coupled">Coupled GPU cells</a><output id="build">Checking build…</output></header>
 <main><section id="view" aria-label="3D controlled material interfaces"><div id="labels"></div><div id="scene-note">Drag to orbit · Cells: 10 mm · <span id="scale-note">Opening ×1000</span><br>Force arrows: A gold · B teal · Direction only, fixed length.<br>Controlled loading diagram; no collision or flight simulation.</div></section>
 <aside><h1>Pull · unload · inspect</h1><p>Apply one opening to all four interfaces. CUDA retains damage and plastic rest, and calculates 3D forces and torques.</p>
 <label>Opening <input id="opening" type="number" value="2" min="0" max="50" step="0.05"> µm</label>

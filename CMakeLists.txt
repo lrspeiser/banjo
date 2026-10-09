@@ -345,6 +345,10 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
         banjo_enable_warnings(banjo_state_recorder_tests)
         add_test(NAME banjo_state_recorder_tests COMMAND banjo_state_recorder_tests)
         add_executable(banjo_rotation_strain_tests tests/rotation_strain_tests.cpp)
+        add_executable(banjo_coupled_contact_tests tests/coupled_contact_tests.cpp)
+        target_link_libraries(banjo_coupled_contact_tests PRIVATE banjo_core)
+        banjo_enable_warnings(banjo_coupled_contact_tests)
+        add_test(NAME banjo_coupled_contact_tests COMMAND banjo_coupled_contact_tests)
         add_executable(banjo_rigid_step_work_tests tests/rigid_step_work_tests.cpp)
         add_executable(banjo_contact_friction_block_tests tests/contact_friction_block_tests.cpp)
         target_link_libraries(banjo_contact_friction_block_tests PRIVATE banjo_friction_block)
@@ -2177,6 +2181,11 @@ if(BANJO_BUILD_TESTS)
                 --oracle $<TARGET_FILE:banjo_gpu_material_oracle>
                 --report ${CMAKE_CURRENT_BINARY_DIR}/gpu-contact/material-frames-results.json)
             set_tests_properties(banjo_gpu_material_frames_tests PROPERTIES TIMEOUT 180 LABELS "gpu;experimental;material;contact")
+            add_test(NAME banjo_gpu_coupled_world_tests COMMAND ${BANJO_NEWTON_PYTHON}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu_coupled_world_test.py
+                --oracle $<TARGET_FILE:banjo_gpu_material_oracle>
+                --output ${CMAKE_CURRENT_BINARY_DIR}/gpu-coupled-evidence.json)
+            set_tests_properties(banjo_gpu_coupled_world_tests PROPERTIES TIMEOUT 900 LABELS "gpu;experimental;material;contact")
         endif()
         if(BANJO_TEST_CUPY)
             add_test(NAME banjo_cupy_physics_probe COMMAND ${Python3_EXECUTABLE}

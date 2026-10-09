@@ -10,32 +10,7 @@ NormalComplianceEvaluation evaluateNormalCompliance(double g0, double change, do
         !std::isfinite(law.stiffness_n_m) || law.stiffness_n_m<=0 ||
         !std::isfinite(law.compression_damping_kg_s) || law.compression_damping_kg_s<0)
         throw std::invalid_argument("invalid normal-compliance evaluation");
-    const double g1 = g0 + change;
-    const double s0 = std::min(g0, 0.0), s1 = std::min(g1, 0.0);
-    NormalComplianceEvaluation result;
-    result.energy_before_j = .5 * law.stiffness_n_m * s0 * s0;
-    result.energy_after_j = .5 * law.stiffness_n_m * s1 * s1;
-    double force = 0, derivative = 0;
-    if (g0 <= 0 && g1 <= 0) {
-        force = -.5 * law.stiffness_n_m * (2*g0 + change);
-        derivative = -.5 * law.stiffness_n_m;
-    } else if (g0 > 0 && g1 < 0) {
-        force = -.5 * law.stiffness_n_m * g1*g1 / change;
-        derivative = -.5 * law.stiffness_n_m * g1*(2*change-g1)/(change*change);
-    } else if (g0 < 0 && g1 > 0) {
-        force = .5 * law.stiffness_n_m * g0*g0 / change;
-        derivative = -.5 * law.stiffness_n_m * g0*g0/(change*change);
-    }
-    // Integrate compression-only dashpot work on the linear gap path. Use the
-    // stable increment directly when both states are compressed.
-    const double compressed_change = g0 <= 0 && g1 <= 0 ? change : s1-s0;
-    const double damping_impulse = -law.compression_damping_kg_s * std::min(compressed_change, 0.0);
-    result.impulse_kg_m_s = dt*force + damping_impulse;
-    result.impulse_gap_derivative_kg_s = dt*derivative;
-    if (g1 <= 0 && compressed_change <= 0)
-        result.impulse_gap_derivative_kg_s -= law.compression_damping_kg_s;
-    result.damping_loss_j = -damping_impulse * change/dt;
-    return result;
+    return normalComplianceUnchecked(g0,change,dt,law);
 }
 
 detail::ElasticContactEvaluation detail::evaluateElasticContact(const ElasticNormalContact &contact,
