@@ -1,0 +1,121 @@
+{
+  "base_revision": "41e1f01344dbbb3c3424b4546b3d2f4e8966451e",
+  "environment": "Windows x64, actual in-app browser and RTX 5090 CUDA worker",
+  "physics_source_unchanged": true,
+  "declaration": {
+    "material": "glass",
+    "ball_material": "iron",
+    "ball_mass_kg": 0.01,
+    "height_m": 10,
+    "dt_s": 0.004166666666666667,
+    "experiment": "sheet",
+    "device": "cuda:0",
+    "pipeline": "parallel",
+    "newton_strategy": "ranked",
+    "line_search": "batch-tail",
+    "linear_backend": "cupy-reference",
+    "contact_resolution": "reference"
+  },
+  "experiment_log": "/api/log/f598d41122ad4be79b6c3b25b23934f9",
+  "recorded_state_rows": 344,
+  "journal_compressed_bytes": 42018109,
+  "camera_views": [
+    "Target view: close-up target visible",
+    "Follow ball: accepted ball close-up visible",
+    "Full drop: actual projected endpoint labels visible"
+  ],
+  "ten_steps": {
+    "accepted_time_s": 0.041666666666666664,
+    "ball_position_m": [
+      0.0,
+      10.033203492246301,
+      0.0
+    ],
+    "reported_gap_m": 9.991484375
+  },
+  "stop_observation": {
+    "accepted_time_s": 0.05416666666666667,
+    "in_flight_step_completed": true,
+    "continued_only_after_explicit_run": true,
+    "source": "first normal-browser run before journal-bound correction"
+  },
+  "peak_accepted_substep_residuals": {
+    "energy_residual_j": 2.302490045072429e-12,
+    "P_residual_n_s": 5.5561611389966475e-12,
+    "L_residual_n_m_s": 6.59739216275539e-14
+  },
+  "final_outcome": {
+    "ok": false,
+    "error": "Coupled Newton iteration budget exceeded",
+    "accepted_time_s": 1.4249999999999963,
+    "ball_position_m": [
+      0.0,
+      0.08150349224142062,
+      0.0
+    ],
+    "reported_gap_m": 0.04,
+    "inspect_ball_contact_enabled": false,
+    "interval_rolled_back": true,
+    "private_substeps_rolled_back": 43,
+    "separated_sites": 0,
+    "yielded_faces": 0
+  },
+  "performance": {
+    "pipeline": "parallel",
+    "newton_strategy": "ranked",
+    "line_search": "batch-tail",
+    "linear_backend": "cupy-reference",
+    "contact_resolution": "reference",
+    "step_s": 422.8411597996019,
+    "last_batch_ms": 1748.1902000145055,
+    "compute_ratio": 0.0033700598131822124,
+    "microsteps": 7030,
+    "nonlinear_iterations": 40944,
+    "trial_evaluations": 11360930
+  },
+  "diagnostics": {
+    "dynamic_mass_kg": 0.03250000000000001,
+    "mechanical_j": 0.9917143953318291,
+    "material_stored_j": 4.36378803729207e-13,
+    "contact_stored_j": 7.042066855355896e-11,
+    "global_energy_residual_j": 8.241185511792537e-13,
+    "momentum_n_s": [
+      1.2400342973317197e-11,
+      -0.1397925429463634,
+      -4.5664558147817364e-12
+    ],
+    "angular_momentum_n_m_s": [
+      -1.3068340804529187e-13,
+      5.3547793751815564e-14,
+      -3.593477760093106e-13
+    ],
+    "fracture_work_j": 0.0,
+    "plastic_work_j": 0.0,
+    "numerical_return_excess_j": 0.0,
+    "separated_sites": 0,
+    "yielded_faces": 0,
+    "interfaces": 48,
+    "maximum_energy_residual_j": 2.302490045072429e-12,
+    "ground_impulse_n_s": [
+      7.333500201290983e-12,
+      0.3145330820435414,
+      -4.111020089391851e-12
+    ],
+    "ground_torque_impulse_n_m_s": [
+      7.56365252802072e-12,
+      7.58793074746819e-15,
+      7.612369326694409e-11
+    ]
+  },
+  "qualification": "UI visibility and orchestration verified; the 10 m collision refuses before accepted contact. No high-energy fracture, trajectory accuracy, realtime or cross-GPU qualification.",
+  "gentle_contact_control": {
+    "height_m": 0.001,
+    "same_materials_and_dt": true,
+    "run_stopped_at_host_time_s": 0.016666666666666666,
+    "observed_contact_microstep_s": 0.0145833,
+    "geometric_overlap_m": 3.89e-07,
+    "inspect_enabled_and_clicked": true,
+    "shown_ball_speed_down_m_s": 0.061,
+    "source": "normal browser control on unchanged actual CUDA solver, after high-drop refusal"
+  }
+}

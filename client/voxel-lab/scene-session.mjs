@@ -9,10 +9,10 @@ export async function requestScene(command,{endpoint='/api/gpu',fetcher=fetch}={
 }
 
 // Recovery creates a fresh scene; never replay an interrupted action or batch.
-export async function runSceneSteps({session,count,onState,onExpired,request=requestScene}) {
-  if(!Number.isInteger(count)||count<1||count>192)throw RangeError('Invalid step count');
+export async function runSceneSteps({session,count,onState,onExpired,shouldStop=()=>false,request=requestScene}) {
+  if(!Number.isInteger(count)||count<1||count>3840)throw RangeError('Invalid step count');
   try {
-    for(let i=0;i<count;i++)onState(await request({op:'advance',session,steps:1}));
+    for(let i=0;i<count&&!shouldStop();i++)onState(await request({op:'advance',session,steps:1}));
     return true;
   } catch(error) {
     if(!(error instanceof SessionExpiredError))throw error;

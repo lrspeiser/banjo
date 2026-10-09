@@ -1,0 +1,7 @@
+.camera-controls{position:absolute;top:12px;left:12px;right:12px;display:flex;gap:6px;flex-wrap:wrap}
+.camera-controls button{font-size:13px;padding:6px 10px}
+.camera-controls button[aria-pressed=true]{border-color:#9ed6ef;background:#356178}
+#drop-progress{position:absolute;top:62px;left:12px;right:12px;background:#18252ee6;padding:10px;border-radius:6px;font-size:13px;color:#e4edf4;pointer-events:none;line-height:1.5}
+.position-marker{position:absolute;pointer-events:none;color:#e3f4ff;max-width:160px;padding:3px 6px;background:#142836dd;border:1px solid #9ed6ef;border-radius:5px;transform:translate(-50%,-50%);text-align:center;font-size:12px;white-space:pre-line}
+#scene-note{font-size:13px;max-width:calc(100% - 30px)}
+@media(max-width:350px){#drop-progress{top:90px}.camera-controls button{font-size:12px;padding:6px 7px}}

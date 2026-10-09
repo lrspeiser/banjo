@@ -22,6 +22,18 @@ with tempfile.TemporaryDirectory() as folder:
   row=json.loads(line);assert row=={'retained':'x'*3_000_000,'tick':count};count+=1
  assert count==101,'lossless streaming export lost records'
  assert journal.path.read_bytes().startswith(b'BZh'),'new persistent archive uses the wrong codec'
+ # A long high-drop journal may pass the former limits, but remains bounded.
+ # Counter injection tests the boundary without allocating hundreds of MB.
+ journal.bytes=32_000_000;journal.uncompressed_bytes=256_000_000
+ journal.write(payload)
+ assert journal.bytes>32_000_000 and journal.uncompressed_bytes>256_000_000
+ length=journal.path.stat().st_size;previous=copy.deepcopy(journal.previous_record)
+ for field,limit in [('bytes',m.JOURNAL_COMPRESSED_LIMIT),('uncompressed_bytes',m.JOURNAL_ENCODED_LIMIT)]:
+  saved=getattr(journal,field);setattr(journal,field,limit)
+  try:journal.write({'overflow':field});assert False,'journal capacity silently exceeded'
+  except ValueError as e:assert 'record limit' in str(e)
+  assert journal.path.stat().st_size==length and m.same_record(journal.previous_record,previous),'refused record corrupted archive'
+  setattr(journal,field,saved)
  # Completed independent members are readable while the session is open;
  # exact signed-zero/type/list history also survives the archive boundary.
  journal.write(old);journal.write(new);journal.write(resized)

@@ -1,8 +1,9 @@
 {
-  "title": "Optional native CUDA matrix solve with exact tested histories; full nonlinear residency and realtime remain open",
+  "title": "Visible high-drop experiments with accepted physical time; material accuracy and realtime remain open",
   "date": "2026-10-09",
   "native_sha256": "eb3527a07fda2a0c181ff11683eb907a16045bf0fcae66e4db58f703e7df9ee4",
   "changes": [
+    "Coupled lab adds Target view, Follow ball and Full drop with actual-position markers, simulated time, gap and speed. Run 10 steps shows its duration; Run to ball contact advances accepted steps with Stop. Edited settings are applied before Run and support motion cannot masquerade as ball contact. The exact replay log has a larger bounded storage allowance. Physics laws and gates are unchanged.",
     "Coupled GPU lab adds Linear solve: Resident cuSOLVER on pinned Windows x64. Reusable buffers and device error status support actual changed-input command replay. Eight tested glass/oak/iron/ice histories match CuPy reference exactly. CuPy reference remains default; the full nonlinear loop is still host controlled and realtime remains open.",
     "Coupled GPU lab tries the full Newton step first, then batches smaller choices on CUDA. Select Step-size probes to compare the retained one-at-a-time reference. Four-material accepted poses, velocities, material history and work records match exactly. Measured low-energy wall time improves 12\u201326%; full material accuracy and realtime remain open.",
     "Ball / ground timing control uses explicit material/mass-derived contact refinement. Compare Before, actual accepted peak-impact microstep and Live. The derivative scale resolves microsecond contact positions. Connected sheets at refined contact phases still stop at the bounded trial budget; Reference remains their default. No whole-world realtime or material fracture qualification.",

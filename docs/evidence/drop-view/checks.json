@@ -1,0 +1,15 @@
+{
+  "base_revision": "41e1f01344dbbb3c3424b4546b3d2f4e8966451e",
+  "environment": "Windows x64, Node, Python gateway",
+  "physics_source_unchanged": true,
+  "ctest_scope_count": 5,
+  "ctest_passed": 5,
+  "ctest_wall_s": 10.41,
+  "source_registration": {
+    "sources": 345,
+    "registered": 345,
+    "exclusions": 0
+  },
+  "ctest_transcript": "Test project C:/Users/henry/Documents/ChatGPT/Banjo/build/voxel-contact-audit\n    Start 294: banjo_voxel_gateway_tests\n1/5 Test #294: banjo_voxel_gateway_tests ........   Passed    3.29 sec\n    Start 297: banjo_voxel_pipeline_tests\n2/5 Test #297: banjo_voxel_pipeline_tests .......   Passed    6.94 sec\n    Start 302: banjo_voxel_playback_tests\n3/5 Test #302: banjo_voxel_playback_tests .......   Passed    0.04 sec\n    Start 303: banjo_scene_session_tests\n4/5 Test #303: banjo_scene_session_tests ........   Passed    0.04 sec\n    Start 304: banjo_coupled_view_tests\n5/5 Test #304: banjo_coupled_view_tests .........   Passed    0.07 sec\n\n100% tests passed, 0 tests failed out of 5\n\nLabel Time Summary:\nclient    =  10.39 sec*proc (5 tests)\nnative    =  10.23 sec*proc (2 tests)\nvoxel     =  10.39 sec*proc (5 tests)\n\nTotal Test time (real) =  10.41 sec\n",
+  "journal_bound_regression": "Cross former 32 MB compressed / 256 MB encoded thresholds; refuse 128 MB / 1.024 GB boundaries without writing or changing prior replay record."
+}

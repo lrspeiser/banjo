@@ -7,8 +7,14 @@ ROOT=Path(__file__).resolve().parents[1]
 ASSETS={'/':'client/voxel-lab/index.html','/world.js':'client/voxel-lab/world.js','/playback.mjs':'client/voxel-lab/playback.mjs','/style.css':'client/voxel-lab/style.css','/three.module.js':'playground/vendor/three.module.js','/three.core.js':'playground/vendor/three.core.js','/gpu':'client/voxel-lab/gpu.html','/gpu.js':'client/voxel-lab/gpu.js','/gpu.css':'client/voxel-lab/gpu.css','/materials':'client/voxel-lab/materials.html','/materials.js':'client/voxel-lab/materials.js','/materials.css':'client/voxel-lab/materials.css'}
 ASSETS.update({'/coupled':'client/voxel-lab/coupled.html','/coupled.js':'client/voxel-lab/coupled.js'})
 ASSETS['/scene-session.mjs']='client/voxel-lab/scene-session.mjs'
+ASSETS.update({'/coupled-view.mjs':'client/voxel-lab/coupled-view.mjs','/coupled.css':'client/voxel-lab/coupled.css'})
 
 class SessionExpired(ValueError):pass
+
+# Bound disk use while retaining every accepted microstep of the two-second
+# coupled experiment. The old 32 MB bound stopped a 10 m drop before contact.
+JOURNAL_COMPRESSED_LIMIT=128_000_000
+JOURNAL_ENCODED_LIMIT=1_024_000_000
 
 def same_record(previous,current):
  if type(previous) is not type(current):return False
@@ -69,12 +75,12 @@ class Session:
    # The 100 KB bzip2 block retains repeated fields in large native rows that
    # exceed gzip's 32 KB dictionary; numbers and all published poses stay exact.
    row=(json.dumps(stored,separators=(',',':'))+'\n').encode('utf8');compressed=bz2.compress(row,compresslevel=1)
-   if self.bytes+len(compressed)>32_000_000 or self.uncompressed_bytes+len(row)>256_000_000:raise ValueError('Session record limit reached; reset to continue')
+   if self.bytes+len(compressed)>JOURNAL_COMPRESSED_LIMIT or self.uncompressed_bytes+len(row)>JOURNAL_ENCODED_LIMIT:raise ValueError('Session record limit reached; reset to continue')
    with self.path.open('ab') as f:f.write(compressed)
    self.bytes+=len(compressed);self.uncompressed_bytes+=len(row)
    self.previous_record=copy.deepcopy(data)
  def iter_log(self):
-  # Snapshot at most the existing 32 MB compressed bound. Expand one exact
+  # Snapshot at most the bounded compressed journal. Expand one exact
   # record at a time, so downloads need not allocate the whole replay history.
   with self.record_lock:data=self.path.read_bytes()
   previous=None

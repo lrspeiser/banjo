@@ -12,3 +12,9 @@ await assert.rejects(runSceneSteps({session:'old',count:1,onState:()=>{throw Err
 await assert.rejects(runSceneSteps({session:'old',count:1,onState:()=>{},onExpired:async()=>{throw Error('Runtime unavailable');},request:async()=>{throw new SessionExpiredError();}}),/Runtime unavailable/);
 accepted=[];assert.equal(await runSceneSteps({session:'fresh',count:2,onState:s=>accepted.push(s),onExpired:()=>{throw Error('Unexpected recovery');},request:async()=>({ok:true})}),true);assert.equal(accepted.length,2);
 console.log('PASS session lifecycle: structured expiry, one recovery, no replay or masking of physics/network failures');
+let ticks=0;
+assert.equal(await runSceneSteps({session:'drop',count:3840,shouldStop:()=>ticks===343,onState:()=>{ticks++;},onExpired:()=>{throw Error('Unexpected expiry');},request:async()=>({ok:true})}),true);
+assert.equal(ticks,343,'run-to-contact did not stop at the observed accepted boundary');
+ticks=0;await runSceneSteps({session:'drop',count:10,shouldStop:()=>true,onState:()=>{ticks++;},onExpired:()=>{},request:async()=>{throw Error('Stop still requested a step');}});assert.equal(ticks,0);
+for(const count of [0,3841,1.5,NaN])await assert.rejects(runSceneSteps({count}),RangeError);
+console.log('PASS cancellable bounded drop: all accepted steps retained, first-contact stop, two-second capacity and no requests after Stop');
