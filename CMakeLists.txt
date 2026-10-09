@@ -710,6 +710,11 @@ if(BANJO_BUILD_HEADLESS)
         # no engine, then the same loop through a real server, runner and MCP.
         add_test(NAME banjo_gameplay_tests
                  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/gameplay_tests.py)
+        add_test(NAME banjo_solid_representation_tests
+                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/solid_representation_tests.py
+                 --native $<TARGET_FILE:banjo_voxel_world_run>
+                 --output ${CMAKE_CURRENT_BINARY_DIR}/solid-representation-evidence.json)
+        set_tests_properties(banjo_solid_representation_tests PROPERTIES TIMEOUT 180 LABELS "experimental;material;representation;client")
         add_test(NAME banjo_gameplay_live_tests
                  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/gameplay_live_tests.py)
         set_tests_properties(banjo_gameplay_live_tests PROPERTIES

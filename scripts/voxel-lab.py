@@ -8,6 +8,7 @@ ASSETS={'/':'client/voxel-lab/index.html','/world.js':'client/voxel-lab/world.js
 ASSETS.update({'/coupled':'client/voxel-lab/coupled.html','/coupled.js':'client/voxel-lab/coupled.js'})
 ASSETS['/scene-session.mjs']='client/voxel-lab/scene-session.mjs'
 ASSETS.update({'/coupled-view.mjs':'client/voxel-lab/coupled-view.mjs','/coupled.css':'client/voxel-lab/coupled.css'})
+ASSETS.update({'/representations':'client/voxel-lab/representations.html','/representations.js':'client/voxel-lab/representations.js'})
 
 class SessionExpired(ValueError):pass
 
@@ -234,7 +235,7 @@ class Server(ThreadingHTTPServer):
  def __init__(self,address,native,logs,checkpoint_path=None,gpu_python=None):
   super().__init__(address,Handler);self.native=native;self.logs=logs;logs.mkdir(parents=True,exist_ok=True);self.sessions={};self.lock=threading.Lock()
   self.checkpoint_path=checkpoint_path or ROOT/'client/voxel-lab/checkpoint.json';self.started_revision,_=repository_state()
-  self.gpu_python=gpu_python
+  self.gpu_python=gpu_python;self.representation_busy=threading.BoundedSemaphore(1)
  def checkpoint_status(self):
   try:
    checkpoint=json.loads(self.checkpoint_path.read_text(encoding='utf8'))
@@ -289,6 +290,19 @@ class Handler(BaseHTTPRequestHandler):
   self.send(200,(ROOT/ASSETS[path]).read_bytes(),kind)
  def do_POST(self):
   try:
+   if self.path=='/api/representation':
+    if self.headers.get('Origin') not in (None,'http://'+self.headers.get('Host','')):raise ValueError('Cross-origin request refused')
+    length=int(self.headers.get('Content-Length','0'))
+    if not 0<length<=4096:raise ValueError('Representation request size invalid')
+    data=json.loads(self.rfile.read(length))
+    if not isinstance(data,dict) or set(data)!={'declaration'}:raise ValueError('Invalid representation declaration')
+    # This separate endpoint makes no claim to execute the GPU contact solver.
+    # One bounded CPU-reference experiment; no persistent scene to mutate.
+    from solid_representation import experiment
+    if not self.server.representation_busy.acquire(blocking=False):raise ValueError('Representation reference is busy; retry after it finishes')
+    try:r=experiment(data['declaration'])
+    finally:self.server.representation_busy.release()
+    self.send(200,json.dumps(r,separators=(',',':'),allow_nan=False).encode());return
    if self.path not in ('/api/world','/api/gpu'):raise ValueError('Unknown endpoint')
    backend='gpu' if self.path=='/api/gpu' else 'cpu'
    if backend=='gpu' and not self.server.gpu_python:raise ValueError('GPU runtime is not configured; no CPU fallback')

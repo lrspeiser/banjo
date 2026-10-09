@@ -1,0 +1,255 @@
+{
+  "source_sha256": "c5cb7217587c44b27758029c6c990e659c6c6eda04b55d82f8fcab567463e5f2",
+  "geometry": [
+    {
+      "level": 2,
+      "elements": 32,
+      "interfaces": 60,
+      "cell_sizes_m": [
+        0.0125
+      ],
+      "mass_kg": 1.2500000000000002,
+      "relative_volume_error": -0.04507034144862784,
+      "relative_inertia_error": -0.005281605675654587
+    },
+    {
+      "level": 3,
+      "elements": 224,
+      "interfaces": 552,
+      "cell_sizes_m": [
+        0.00625,
+        0.0125
+      ],
+      "mass_kg": 1.3671875000000002,
+      "relative_volume_error": 0.04445431404056335,
+      "relative_inertia_error": 0.0972987287390452
+    },
+    {
+      "level": 4,
+      "elements": 1168,
+      "interfaces": 3204,
+      "cell_sizes_m": [
+        0.003125,
+        0.00625,
+        0.0125
+      ],
+      "mass_kg": 1.3281250000000002,
+      "relative_volume_error": 0.014612762210832953,
+      "relative_inertia_error": 0.03124321036594074
+    }
+  ],
+  "transfers": [
+    {
+      "material": "glass",
+      "density_kg_m3": 2500.0,
+      "young_pa": 70000000000.0,
+      "mass_kg": 1.3671875000000002,
+      "transfer": {
+        "from_owner": "detailed",
+        "to_owner": "rigid",
+        "time_s": 0.0,
+        "nonrigid_energy_j": 2.758861258253561e-29,
+        "mass_residual_kg": 0.0,
+        "momentum_residual_n_s": [
+          2.886579864025407e-15,
+          -1.7763568394002505e-15,
+          -9.769962616701378e-15
+        ],
+        "angular_residual_n_m_s": [
+          -6.750155989720952e-14,
+          1.5987211554602254e-14,
+          -2.4868995751603507e-14
+        ],
+        "mechanical_energy_residual_j": -1.4210854715202004e-14
+      },
+      "dt_s": 0.125,
+      "flight_energy_residual_j": 0.0,
+      "retained_history_and_fields": true,
+      "scope": "Mapping/analytical mechanics only; declared stiffness does not implement internal forces"
+    },
+    {
+      "material": "oak",
+      "density_kg_m3": 700.0,
+      "young_pa": 12000000000.0,
+      "mass_kg": 0.3828125,
+      "transfer": {
+        "from_owner": "detailed",
+        "to_owner": "rigid",
+        "time_s": 0.0,
+        "nonrigid_energy_j": 3.0516692382670626e-29,
+        "mass_residual_kg": 0.0,
+        "momentum_residual_n_s": [
+          3.6914915568786455e-15,
+          4.440892098500626e-16,
+          -2.9976021664879227e-15
+        ],
+        "angular_residual_n_m_s": [
+          -2.4424906541753444e-14,
+          8.881784197001252e-16,
+          -2.7533531010703882e-14
+        ],
+        "mechanical_energy_residual_j": -3.552713678800501e-15
+      },
+      "dt_s": 0.125,
+      "flight_energy_residual_j": -3.552713678800501e-15,
+      "retained_history_and_fields": true,
+      "scope": "Mapping/analytical mechanics only; declared stiffness does not implement internal forces"
+    },
+    {
+      "material": "iron",
+      "density_kg_m3": 7870.0,
+      "young_pa": 211000000000.0,
+      "mass_kg": 4.303906250000002,
+      "transfer": {
+        "from_owner": "detailed",
+        "to_owner": "rigid",
+        "time_s": 0.0,
+        "nonrigid_energy_j": 5.496583251688723e-29,
+        "mass_residual_kg": 0.0,
+        "momentum_residual_n_s": [
+          1.0658141036401503e-14,
+          1.0658141036401503e-14,
+          -1.5987211554602254e-14
+        ],
+        "angular_residual_n_m_s": [
+          -1.2079226507921703e-13,
+          1.7763568394002505e-14,
+          -4.263256414560601e-14
+        ],
+        "mechanical_energy_residual_j": -5.684341886080802e-14
+      },
+      "dt_s": 0.125,
+      "flight_energy_residual_j": -1.1368683772161603e-13,
+      "retained_history_and_fields": true,
+      "scope": "Mapping/analytical mechanics only; declared stiffness does not implement internal forces"
+    },
+    {
+      "material": "ice",
+      "density_kg_m3": 917.0,
+      "young_pa": 9000000000.0,
+      "mass_kg": 0.501484375,
+      "transfer": {
+        "from_owner": "detailed",
+        "to_owner": "rigid",
+        "time_s": 0.0,
+        "nonrigid_energy_j": 1.0850096866255881e-29,
+        "mass_residual_kg": 0.0,
+        "momentum_residual_n_s": [
+          1.3322676295501878e-15,
+          -4.440892098500626e-16,
+          -3.1086244689504383e-15
+        ],
+        "angular_residual_n_m_s": [
+          -2.220446049250313e-14,
+          6.661338147750939e-15,
+          -1.2434497875801753e-14
+        ],
+        "mechanical_energy_residual_j": -7.105427357601002e-15
+      },
+      "dt_s": 0.125,
+      "flight_energy_residual_j": -1.4210854715202004e-14,
+      "retained_history_and_fields": true,
+      "scope": "Mapping/analytical mechanics only; declared stiffness does not implement internal forces"
+    }
+  ],
+  "drops": [
+    {
+      "material": "glass",
+      "elements": 224,
+      "interfaces": 552,
+      "wall_s": 0.1602259999490343,
+      "physical_s": 1.4134925765692263,
+      "gravity_impulse_n_s": [
+        0.0,
+        -18.95791703769703,
+        0.0
+      ],
+      "momentum_residual_n_s": [
+        7.047314121155779e-19,
+        2.4868995751603507e-14,
+        -2.0599841277224584e-18
+      ],
+      "angular_residual_n_m_s": [
+        1.5165085632753897e-16,
+        6.071532165918825e-18,
+        3.9993115836142027e-17
+      ],
+      "energy_residual_j": 0.0
+    },
+    {
+      "material": "oak",
+      "elements": 224,
+      "interfaces": 552,
+      "wall_s": 0.1644840000080876,
+      "physical_s": 1.4134925765692263,
+      "gravity_impulse_n_s": [
+        0.0,
+        -5.308216770555152,
+        0.0
+      ],
+      "momentum_residual_n_s": [
+        6.369687763352339e-19,
+        -1.5987211554602254e-14,
+        5.421010862427522e-20
+      ],
+      "angular_residual_n_m_s": [
+        -8.08088511602199e-18,
+        -1.734723475976807e-18,
+        8.703432939627366e-18
+      ],
+      "energy_residual_j": 7.105427357601002e-15
+    },
+    {
+      "material": "iron",
+      "elements": 224,
+      "interfaces": 552,
+      "wall_s": 0.15738330001477152,
+      "physical_s": 1.4134925765692263,
+      "gravity_impulse_n_s": [
+        0.0,
+        -59.67952283466992,
+        0.0
+      ],
+      "momentum_residual_n_s": [
+        -1.235990476633475e-17,
+        -5.755396159656812e-13,
+        -5.637851296924623e-18
+      ],
+      "angular_residual_n_m_s": [
+        -2.0614627435477226e-17,
+        2.949029909160572e-17,
+        1.8430658008826624e-16
+      ],
+      "energy_residual_j": -5.684341886080802e-14
+    },
+    {
+      "material": "ice",
+      "elements": 224,
+      "interfaces": 552,
+      "wall_s": 0.1618091000127606,
+      "physical_s": 1.4134925765692263,
+      "gravity_impulse_n_s": [
+        0.0,
+        -6.953763969427278,
+        0.0
+      ],
+      "momentum_residual_n_s": [
+        0.0,
+        7.105427357601002e-15,
+        -6.776263578034403e-19
+      ],
+      "angular_residual_n_m_s": [
+        1.8718734414159539e-16,
+        -4.336808689942018e-19,
+        -5.322782058525812e-17
+      ],
+      "energy_residual_j": 7.105427357601002e-15
+    }
+  ],
+  "gateway": {
+    "actual_http_compiler": true,
+    "cross_origin_and_unknown_law_refused": true,
+    "no_gpu_or_native_session_mutation": true
+  },
+  "scope": "CPU occupied geometry/conservative transfer/uniform-gravity reference. Internal/contact/field solvers and full realtime remain open."
+}

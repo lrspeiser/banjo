@@ -32,7 +32,9 @@ export function ballObservation(state) {
     gravity_estimate_s:gap>0&&Number.isFinite(gap)?(-down+Math.sqrt(down*down+2*9.81*gap))/9.81:0};
 }
 export function cameraFrame(cells,mode) {
-  let selected=mode==='ball'?cells.filter(c=>c.shape==='sphere'):cells.filter(c=>c.shape!=='plane'&&(mode==='overview'||c.shape!=='sphere'));
+  // Include the ground in Full drop even when the ball is the only finite
+  // object; otherwise overview becomes another close-up of the ball.
+  let selected=mode==='ball'?cells.filter(c=>c.shape==='sphere'):cells.filter(c=>mode==='overview'||(c.shape!=='plane'&&c.shape!=='sphere'));
   if(!selected.length)selected=cells.filter(c=>c.shape==='plane');
   const lo=[Infinity,Infinity,Infinity],hi=[-Infinity,-Infinity,-Infinity];
   for(const cell of selected) {
@@ -41,4 +43,11 @@ export function cameraFrame(cells,mode) {
   }
   const center=lo.map((x,i)=>(x+hi[i])/2),bound=Math.hypot(...hi.map((x,i)=>(x-lo[i])/2));
   return {center,radius:Math.max(mode==='ball'?.04:.08,bound/Math.sin(20*Math.PI/180)*1.15)};
+}
+export function dropMilestones(initial,state,impact){
+  if(!initial||!state)return {before:'Not set up',contact:'Not calculated',after:'Not calculated'};
+  const start=ballObservation(initial),now=ballObservation(state);
+  return {before:start.gap_m.toFixed(2)+' m above target',
+    contact:impact?'Observed at '+impact.time_s.toFixed(4)+' s':'Not observed',
+    after:impact?(now.down_m_s<0?'Rebounding · '+(-now.down_m_s).toFixed(2)+' m/s':now.contact?'In contact':'Contact recorded · '+state.time_s.toFixed(3)+' s'):'Not reached'};
 }

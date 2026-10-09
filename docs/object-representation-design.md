@@ -1,3 +1,5 @@
+**Implementation update, October 9:** [Adaptive occupied-ball compiler and conservative CPU transfer reference](solid-representation-checkpoint.md) add geometry/full-inertia/history mappings and an inspectable 3D reference. This is not a GPU detailed-ball solver; contact/fracture, other families and realtime qualification remain open.
+
 **Implementation update, October 9:** [Bounded registry and exact scene restart](object-registry-checkpoint.md) implement stable installed definitions/instances/matter IDs and current primitive/cell graph continuation. The primitive 10 m contact control now runs; connected-sheet impacts and the remaining families/transfers below remain open.
 
 # One object, multiple physical representations

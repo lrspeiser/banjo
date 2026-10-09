@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import * as THREE from '../playground/vendor/three.module.js';
-import {ballObservation,cameraFrame,settingsDiffer,remainingSteps,computePace} from '../client/voxel-lab/coupled-view.mjs';
+import {ballObservation,cameraFrame,settingsDiffer,remainingSteps,computePace,dropMilestones} from '../client/voxel-lab/coupled-view.mjs';
 const plane={shape:'plane',position_m:[0,0,0],quaternion_wxyz:[1,0,0,0],size_m:[.3,.001,.3],radius_m:0};
 const cube={shape:'cube',position_m:[0,.03,0],quaternion_wxyz:[1,0,0,0],size_m:[.03,.01,.03],radius_m:0};
 const sphere={shape:'sphere',position_m:[0,10.045,0],quaternion_wxyz:[1,0,0,0],size_m:[.02,.02,.02],radius_m:.01,velocity_m_s:[0,0,0]};
@@ -29,6 +29,14 @@ for(const aspect of [.5,1.3,2])for(const mode of ['target','ball','overview']) {
   if(mode==='ball'){assert.ok(f.radius<.1,'ball focus must resolve the actual ball');}
 }
 assert.equal(JSON.stringify(initial),snapshot,'camera framing mutated physics');
+// Ground-only drops formerly excluded the plane from overview, making it
+// another ball close-up. Both references must remain inside the full view.
+const groundOnly=[plane,sphere],f=cameraFrame(groundOnly,'overview');
+assert.ok(f.center[1]>4&&f.center[1]<6&&f.radius>10);
+assert.equal(dropMilestones(initial,later,null).after,'Not reached');
+const bounced=structuredClone(initial);bounced.time_s=2;bounced.cells[2].velocity_m_s[1]=8;
+assert.equal(dropMilestones(initial,bounced,{time_s:1.43}).after,'Rebounding · 8.00 m/s');
+assert.equal(dropMilestones(initial,bounced,{time_s:1.43}).contact,'Observed at 1.4300 s');
 assert.equal(settingsDiffer({height_m:.001,dt_s:1/240},{height_m:10,dt_s:1/240}),true);
 assert.equal(settingsDiffer({height_m:10,dt_s:1/240,device:'cuda:0'},{height_m:10,dt_s:1/240}),false);
 assert.equal(remainingSteps({time_s:2-1e-15,dt_s:1/1920}),0);
