@@ -45,7 +45,7 @@ The 1.1 s full linear-momentum residual norms remain about 2.07e-4 / 5.28e-4 / 4
 
 ## Verification scope and reproducibility
 
-Windows, MSVC Release, precise CPU floating-point policy, SDK 10.0.26100; separate output `build/voxel-unload/Release`. Native SHA-256: `8b776001a625b99904149003e9509adcebe6aea8eba23a7c4e3ec21aecda811d`. Source revision is recorded by the publishing follow-up.
+Windows, MSVC Release, precise CPU floating-point policy, SDK 10.0.26100; separate output `build/voxel-unload/Release`. Native SHA-256: `8b776001a625b99904149003e9509adcebe6aea8eba23a7c4e3ec21aecda811d`. Source and tests are published to GitHub main as `bbb00f2ccada0179dd48d53eef9115089f6dcd9f`. The following metadata commit records this tested native/source pair and refreshes the live lab.
 
 - Nine scoped CTests pass in 9.30 s: connector plasticity, native face springs, state recorder, rigid work, reversible trials, friction block, gateway, pipeline and playback.
 - Registered `banjo_voxel_actuation_tests` exercises the three analytical controls and four matched unloaded scenes against the real native executable. It is also runnable directly with an output artifact.

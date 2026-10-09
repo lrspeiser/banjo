@@ -1,49 +1,39 @@
 {
-  "title": "Persistent metal yielding \u00b7 experimental",
+  "title": "Lift the load; inspect retained metal deformation",
   "date": "2026-10-08",
-  "physics_revision": "eda7a89c70d7fde09269db22713abff567d76ba5",
-  "native_sha256": "c091c4615afac39c86ba034c4dc363ccf27b33b095f10d16826b49a91ad114de",
+  "physics_revision": "bbb00f2ccada0179dd48d53eef9115089f6dcd9f",
+  "native_sha256": "8b776001a625b99904149003e9509adcebe6aea8eba23a7c4e3ec21aecda811d",
   "changes": [
-    "Optional metal yielding changes persistent native connector rest; rendered deformation follows actual voxel poses. No assigned dent or shatter animation.",
-    "Try Iron, Yielding response, Coupled friction, 5 kg, 1 m. The completed browser drop retained 24 yielded connections; the ball is still on the sheet.",
-    "Physics & record separates physical yield work from numerical projection loss. Six independent modes are experimental, not continuum J2, hardening, grain or tearing.",
-    "Default glass/oak/iron/ice impacts retain exact prior physical/work state. Earlier five coupled-friction storage comparisons also finished with exact parity. All five broad goals remain open."
+    "Lift ball and Release lift apply bounded native forces. External work, impulse and torque are recorded; no teleport, assigned velocity or removed material.",
+    "A general object-acceleration command drives every dynamic cell using its material-derived mass. Invalid commands preserve the accepted scene and journal.",
+    "Unloaded iron retains its plastic rest/history and a downward central deformation. Settling, full contact accuracy and continuum yielding/tearing remain unqualified.",
+    "Default glass/oak/iron/ice physical/work results remain exact. Full five-goal completion is still open."
   ],
   "checks": [
     {
-      "label": "Registered CPU/native tests",
+      "label": "Focused native / pipeline tests",
       "status": "passed",
-      "value": "336/336 sources registered; new targets compiled; 9 scoped CTests; six modes, unload/reversal, refinement and exact rejected/exception/nested history rollback"
+      "value": "9 scoped CTests; 336/336 sources registered, changed runtime targets compiled"
     },
     {
-      "label": "Live comparative integration",
+      "label": "External force / unloading",
       "status": "passed",
-      "value": "5 glass/oak/iron controls and two-timestep iron yielding scenes; finite motion, conserved mass and retained history"
+      "value": "Glass/oak/iron free-flight work and impulse, bounded input/release and four matched loaded/unloaded sheets"
     },
     {
-      "label": "Default physical/work parity",
+      "label": "Default state parity",
       "status": "passed",
-      "value": "4 complete two-second glass/oak/iron/ice comparisons; wall profile excluded"
+      "value": "Four complete two-second glass/oak/iron/ice physical/work comparisons"
     },
     {
-      "label": "Ordinary browser controls",
+      "label": "3D lift / release and exact record",
       "status": "passed",
-      "value": "Completed iron yielding drop to 2 s, Before/Live, readout and record; desktop and 844\u00d7390 scrolling controls; physical phone not tested"
+      "value": "Ordinary browser 2.0 \u2192 2.6 \u2192 3.2 s; 29.03 MB bounded archive; exact downloaded final state; landscape controls"
     },
     {
-      "label": "Physical accuracy / refinement",
+      "label": "Whole-model qualification",
       "status": "blocked",
-      "value": "Unexplained energy remains; whole-impact projection loss is not monotonically refined; contact and spatial qualification open"
-    },
-    {
-      "label": "Complete metal model",
-      "status": "in progress",
-      "value": "Native rest/history implemented; shared solve yielding, unload/removal, restart, hardening and tearing remain"
-    },
-    {
-      "label": "Realtime speed",
-      "status": "blocked",
-      "value": "Jolt updates still dominate; rendering at 60 fps is not realtime simulation"
+      "value": "Unexplained losses, contact/refinement, static settling, tearing and restart remain open"
     }
   ],
   "next": [
@@ -60,7 +50,7 @@
     {
       "label": "Permanent metal dents",
       "status": "in progress",
-      "value": "Qualify native plasticity, unload/save-resume, shared solve yielding and measured ductile tearing"
+      "value": "Qualify coupled yield/settling, material-history save-resume and measured ductile tearing"
     },
     {
       "label": "Adaptive cell sizes",
@@ -74,6 +64,7 @@
     }
   ],
   "capabilities": {
-    "sheet_plasticity": true
+    "sheet_plasticity": true,
+    "object_acceleration": true
   }
 }
