@@ -4,4 +4,12 @@
 #drop-progress{position:absolute;top:62px;left:12px;right:12px;background:#18252ee6;padding:10px;border-radius:6px;font-size:13px;color:#e4edf4;pointer-events:none;line-height:1.5}
 .position-marker{position:absolute;pointer-events:none;color:#e3f4ff;max-width:160px;padding:3px 6px;background:#142836dd;border:1px solid #9ed6ef;border-radius:5px;transform:translate(-50%,-50%);text-align:center;font-size:12px;white-space:pre-line}
 #scene-note{font-size:13px;max-width:calc(100% - 30px)}
+.readiness{border:1px solid #456171;border-radius:8px;padding:12px;margin:12px 0;background:#172c37}
+.readiness h2{font-size:16px;margin:0 0 8px}
+.readiness dl{font-size:13px;margin:0}
+.readiness dl div{display:block;padding:7px 0;border-bottom:1px solid #344c5b}
+.readiness dt{color:#b6e2ce;font-weight:600}
+.readiness dd{margin:4px 0;color:#e0e8ec;line-height:1.4}
+.readiness .unfinished dt{color:#f2c78a}
+.readiness details{margin-top:10px;font-size:13px}
 @media(max-width:350px){#drop-progress{top:90px}.camera-controls button{font-size:12px;padding:6px 7px}}

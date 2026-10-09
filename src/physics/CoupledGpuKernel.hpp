@@ -71,14 +71,19 @@ BANJO_DG_HD inline DGContact dgContact(const double *a,const double *b,DGPose pa
     if(sa==2&&sb==2){const auto d=dgSub(pa.p,pb.p);const double r=dgLength(d);const auto n=frameScale(d,1/r);out.gap=r-a[4]-b[4];out.gradient={n,{},frameScale(n,-1),{}};return out;}
     if(sa==1&&sb==2){out=dgContact(b,a,pb,pa);auto old=out.gradient;out.gradient={old.force_b,old.torque_b,old.force_a,old.torque_a};return out;}
     if(sa==2){
-        const auto d=dgSub(pa.p,pb.p);FrameVector point=pb.p,normal{};double inside=1e300;unsigned face=0;double values[3];FrameVector axes[3];bool exterior=false;
+        const auto d=dgSub(pa.p,pb.p);FrameVector lever{},difference{},normal{};double inside=1e300;unsigned face=0;double values[3];FrameVector axes[3];bool exterior=false;
         for(unsigned j=0;j<3;++j){axes[j]=frameRotate(pb.q,dgAxis(j));const double value=frameDot(d,axes[j]);values[j]=value;
-            const double clamped=value<-b[4+j]?-b[4+j]:value>b[4+j]?b[4+j]:value;point=frameAdd(point,frameScale(axes[j],clamped));
+            const double clamped=value<-b[4+j]?-b[4+j]:value>b[4+j]?b[4+j]:value;
+            lever=frameAdd(lever,frameScale(axes[j],clamped));
+            // Form the closest-point residual in box coordinates. Adding a
+            // tiny gap to a world center and then subtracting can erase it,
+            // leaving an exterior point with zero distance and a NaN normal.
+            difference=frameAdd(difference,frameScale(axes[j],value-clamped));
             if(fabs(value)>b[4+j])exterior=true;const double depth=b[4+j]-fabs(value);if(depth<inside){inside=depth;face=j;}}
-        const auto difference=dgSub(pa.p,point);double distance=dgLength(difference);
+        double distance=dgLength(difference);
         if(exterior)normal=frameScale(difference,1/distance);
-        else {normal=frameScale(axes[face],values[face]<0?-1:1);distance=-inside;point=frameAdd(pa.p,frameScale(normal,inside));}
-        out.gap=distance-a[4];const auto negative=frameScale(normal,-1);out.gradient={normal,{},negative,frameCross(dgSub(point,pb.p),negative)};return out;
+        else {normal=frameScale(axes[face],values[face]<0?-1:1);distance=-inside;lever=frameAdd(d,frameScale(normal,inside));}
+        out.gap=distance-a[4];const auto negative=frameScale(normal,-1);out.gradient={normal,{},negative,frameCross(lever,negative)};return out;
     }
     FrameVector axes_a[3],axes_b[3];for(unsigned j=0;j<3;++j){axes_a[j]=frameRotate(pa.q,dgAxis(j));axes_b[j]=frameRotate(pb.q,dgAxis(j));}
     const auto d=dgSub(pb.p,pa.p);out.gap=-1e300;

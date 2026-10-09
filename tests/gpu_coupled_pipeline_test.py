@@ -6,6 +6,38 @@ import numpy as np
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'scripts'))
 from gpu_coupled_world import CoupledEvaluator,GpuCoupledWorld,TrialFailure,source_hash
 PUBLIC=('poses','residual','history','forces','ledger','faults')
+
+def rounded_surface_boundary():
+    # Same measured zero-radius sample as the compiled native contact test.
+    # The pre-repair world-space closest point loses its exterior displacement
+    # and returns a NaN normal. This oracle is geometric, not material-specific.
+    from gpu_coupled_world import HEADERS
+    # Match the installed evaluator's explicit stack capacity for the shared
+    # bounded shape-dispatch calls, including this standalone kernel oracle.
+    cp.cuda.Device(0).use()
+    if cp.cuda.runtime.deviceGetLimit(cp.cuda.runtime.cudaLimitStackSize)<16384:
+        cp.cuda.runtime.deviceSetLimit(cp.cuda.runtime.cudaLimitStackSize,16384)
+    code='\n'.join((ROOT/name).read_text().replace('#pragma once','') for name in HEADERS)+r'''
+    extern "C" __global__ void boundary(double *out){
+        double a[30]{},b[30]{};a[0]=b[0]=1;
+        a[4]=a[5]=a[6]=b[4]=b[5]=b[6]=.0125;
+        banjo::DGPose pa{{.012500000000000015,.06379968846241157,-.012500000000000164},
+                        {1,5.225713013386706e-15,-5.027304629602819e-15,9.12335065991894e-15}};
+        banjo::DGPose pb{{.012500000000000035,.0887996884624115,-.012499999999999954},
+                        {1,3.3444898121104495e-15,-1.612270849281483e-15,1.935251965707791e-15}};
+        const auto result=banjo::dgSurfaceContact(a,b,pa,pb,12);
+        out[0]=result.gap;
+        const banjo::FrameVector rows[]{result.gradient.force_a,result.gradient.torque_a,
+                                      result.gradient.force_b,result.gradient.torque_b};
+        for(unsigned i=0;i<4;++i){out[1+3*i]=rows[i].x;out[2+3*i]=rows[i].y;out[3+3*i]=rows[i].z;}
+    }
+    '''
+    module=cp.RawModule(code=code,options=('--std=c++17','--fmad=false'))
+    out=cp.empty(13,dtype=cp.float64);module.get_function('boundary')((1,),(1,),(out,))
+    result=cp.asnumpy(out);assert np.isfinite(result).all() and result[0]>0
+    assert abs(np.linalg.norm(result[1:4])-1)<1e-14
+    assert np.linalg.norm(result[1:4]+result[7:10])<1e-14
+    return dict(gap_m=float(result[0]),finite_normal=True,unit_normal=True,force_reaction=True)
 def exact(a,b):
     a=cp.asnumpy(a) if isinstance(a,cp.ndarray) else np.asarray(a)
     b=cp.asnumpy(b) if isinstance(b,cp.ndarray) else np.asarray(b)
@@ -73,6 +105,7 @@ def actual_final_update_replay():
     exact(bodies,e.bodies);exact(edges,e.edges)
     return dict(updates=updates,equation_residual=residual,original_tolerance=d['equation_tolerance'],canonical_nonmutation=True)
 def main(args):
+    boundary=rounded_surface_boundary()
     rng=np.random.default_rng(4123);comparisons=[];trial_count=0;jacobian_count=0
     for material in ('glass','oak','iron','ice'):
         p=GpuCoupledWorld(dict(material=material,height_m=.001,dt_s=1/240,pipeline='parallel'))
@@ -141,6 +174,7 @@ def main(args):
     result['initial_geometry_edit_invalidation']=True
     result['final_permitted_update_convergence']=True
     result['actual_glass_final_update_replay']=actual_final_update_replay()
+    result['rounded_surface_boundary']=boundary
     args.output.parent.mkdir(parents=True,exist_ok=True);args.output.write_text(json.dumps(result,indent=2)+'\n',encoding='utf8')
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--output',type=Path,required=True);main(p.parse_args())

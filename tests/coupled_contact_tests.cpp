@@ -29,6 +29,22 @@ void gradient(const std::array<double,30>&a,const std::array<double,30>&b,DGPose
 }
 }
 int main(){try{
+    // A zero-radius surface sample can be one ULP outside a translated box,
+    // while adding its closest local point to the world center rounds back
+    // onto the sample. The exterior normal must not divide that lost gap by
+    // zero. This is a real Jacobian witness from the compiled ball probe.
+    {
+        std::array<double,30> sample{},box{};sample[0]=box[0]=1;
+        sample[4]=sample[5]=sample[6]=box[4]=box[5]=box[6]=.0125;
+        const DGPose a{{.012500000000000015,.06379968846241157,-.012500000000000164},
+                      {1,5.225713013386706e-15,-5.027304629602819e-15,9.12335065991894e-15}};
+        const DGPose b{{.012500000000000035,.0887996884624115,-.012499999999999954},
+                      {1,3.3444898121104495e-15,-1.612270849281483e-15,1.935251965707791e-15}};
+        const auto result=dgSurfaceContact(sample.data(),box.data(),a,b,12);
+        require(std::isfinite(result.gradient.force_a.y),"finite exterior sample normal at a rounded world boundary");
+        require(result.gap>0,"local exterior distance is retained");
+        require(fabs(dgLength(result.gradient.force_a)-1)<1e-14,"exterior sample has a unit normal");
+    }
     std::mt19937_64 rng(91843);std::uniform_real_distribution<double> random(-1,1);
     for(unsigned i=0;i<300;++i){std::array<double,30>a{},b{};a[0]=2;b[0]=i%3;a[4]=.008;b[4]=.012;b[5]=.017;b[6]=.023;
         DGPose pa{{random(rng)*.04,random(rng)*.04+.03,random(rng)*.04},dgUnit({1,random(rng)*.4,random(rng)*.4,random(rng)*.4})};
@@ -68,5 +84,5 @@ int main(){try{
         const auto quiet=dgContactSchedule(plane.data(),ball.data(),p,q,p,future,h,.25,1e-4);
         require(quiet.step_s==h,"sub-tolerance predicted contact must not bypass excitation cutoff");
     }
-    std::cout<<"424 contact geometries / all 12 derivatives; 1000 work/P/L projections; four stiffness/phase/approach controls passed\n";return 0;
+    std::cout<<"424 contact derivative checks; rounded boundary witness; 1000 work/P/L projections; four stiffness/phase/approach controls passed\n";return 0;
 }catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}

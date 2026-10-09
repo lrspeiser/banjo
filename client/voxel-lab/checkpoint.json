@@ -1,8 +1,9 @@
 {
-  "title": "10 m primitive drop and exact scene save/reopen; connected-sheet impact remains blocked",
+  "title": "Contact-boundary regression repaired; reliable smash test still unfinished",
   "date": "2026-10-09",
   "native_sha256": "a1eb6b91f4bbc3296bed53a637a8780108cc5037fbaec6c7c482ed69f6f72605",
   "changes": [
+    "Shared CPU/CUDA box closest-point geometry now preserves tiny exterior gaps in local coordinates instead of producing an invalid normal at a rounded boundary. The measured native regression passes, and four-material CPU/CUDA, parallel/reference and 10 m rigid controls retain their gates. The page lists usable checks and clearly marks full smash tests and remaining representation families unfinished.",
     "Representation workbench at /representations compiles adaptive occupied cubes and tests conservative CPU rigid/detail mappings and gravity-only flight. No internal/contact solver is connected there. Coupled lab now shows Before/Contact/After milestones and frames the ground in Full drop; the default test is plainly labeled a rigid rebound control.",
     "Versioned geometry/law definitions and stable matter/instance IDs retain exact native state with Save scene / Open scene. Unattached spheres use a local numerical translation origin without changing physical state or history. Four materials complete the 10 m primitive control at two timesteps/contact phases and match an independent compliance oracle; the connected glass sheet still stops at its work bound. The page starts with a useful 10 m drop and clearly separates that control from fracture.",
     "Coupled lab shows calculation pace in plain slower/faster-than-realtime terms and the failed full-drop boundary. The withdrawn local-force experiment is archived; published physics remains unchanged. Five scoped client/gateway CTests pass; complete drop/realtime gate still fails.",
@@ -30,6 +31,11 @@
   ],
   "checks": [
     {
+      "label": "Rounded contact boundary",
+      "status": "passed",
+      "value": "The measured native fixture fails before the repair and passes afterward; the same standalone CUDA geometry is finite. Existing four-material controls and physical/work parity pass. No material coefficients, equation tolerances or installed scene capacities changed."
+    },
+    {
       "label": "10 m primitive control and exact restart",
       "status": "passed",
       "value": "16 glass/oak/iron/ice controls at 1/240 and 1/960 s, phases 0.25 / 0.0625 rad. All contact and rebound, oracle refinement, original work/P/L gates, exact resumed state and basis-only rollback pass. Fine-phase maximum error <0.4 micrometres / 0.01 m/s. Full 2 s backend measurements exclude constructor/HTTP/render; end-to-end realtime remains unqualified."
@@ -42,7 +48,7 @@
     {
       "label": "Full connected 10 m glass drop and realtime",
       "status": "failed",
-      "value": "Latest source: 1.42917 accepted physical s / 45.844 calculation wall s; stops at interval trial/time budget. Zero accepted separated sites/yielded faces. The primitive drop control does not qualify this material impact. Reduced modes, resident local solve and accuracy/delivery gates remain required."
+      "value": "Current-source four-host-step requests: 1.416667 accepted physical s / 64.493 calculation wall s; stops at interval trial/time budget. Zero accepted separated sites/yielded faces. The earlier one-step 1.42917 s result uses the prior source/request size. No controlled speed improvement is claimed. Full impact and realtime remain open."
     },
     {
       "label": "Native CUDA matrix operation",
@@ -206,6 +212,6 @@
   "gpu_worker_sha256": "cef064443c3a655dc4b10d6697a7e0eab67e4047d7f9bfc0f36f961a5ed453d6",
   "physx_source_sha256": "d1d30abfd67380a66fcf4664759e1917e50137bd7f6ef92bb160d0f1b5b5157f",
   "gpu_material_source_sha256": "439309fd656c70e3f3728fda7a7260aad16ecfe72c0f2f32d9c388b67690f559",
-  "gpu_coupled_source_sha256": "2650fd35236576f443a2f75bbe2269d70bf96924a84f49b722da9d369aa2ee80",
+  "gpu_coupled_source_sha256": "18132dd57f1aaecf595cc44ec378f956f69780b5b3782b94882b5de26b9413ac",
   "gpu_representation_scope": "Experimental isolated rigid sphere plus continuously solved material island; no detailed sphere fracture, heat or fluid coupling"
 }

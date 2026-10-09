@@ -1,0 +1,30 @@
+# Rounded contact boundary repair
+
+October 9, 2026. Implemented geometry repair, not completed material-impact or realtime qualification. Parent main: `118ba9c6`. Coupled source: `18132dd57f1aaecf595cc44ec378f956f69780b5b3782b94882b5de26b9413ac`.
+
+## Defect and change
+
+A private coarse occupied-ball binding exposed a failure before ground contact. Seven of its 384 Jacobian candidates returned contact fault 4. A zero-radius box surface sample was locally just outside a neighboring rotated box, but constructing the closest point in world coordinates rounded it onto the sample. The exterior branch then divided a zero displacement by zero, producing a NaN contact normal. The measured two-box fixture is now in the compiled native contact test and the standalone CUDA geometry test. The native test failed before the repair and passes afterward.
+
+The shared [contact kernel](../src/physics/CoupledGpuKernel.hpp) forms the closest-point displacement from the box-local `value - clamped` coordinates, then rotates it to world coordinates. It retains the local contact lever for torque. This is a more stable evaluation of the existing signed-distance geometry; it adds no gap epsilon, contact impulse, launch velocity or damping. Material laws, equation/work/P/L tolerances and installed 32-body/128-interface limits are unchanged. Floating-point gaps and subsequent branch choices can change; previous physical histories are not claimed bitwise identical to this revision.
+
+## Verification
+
+Windows x64, MSVC Release, NVIDIA GeForce RTX 5090, CuPy 13.5.1 / NumPy 2.5.3, CUDA driver 13030. `build/voxel-contact-audit` compiles `banjo_coupled_contact_tests` and `banjo_gpu_material_oracle` against the changed header. Nine scoped CTests pass after repairing the standalone CUDA test's missing explicit stack capacity: coupled contact, solid representation, GPU coupled world, high drop, coupled pipeline, coupled view, voxel pipeline, voxel playback and voxel gateway. The production evaluator already declares that capacity. Registration remains 345/345 sources. This is not the full repository regression suite.
+
+- [Four-material controls](evidence/contact-boundary/controls.json): glass/oak/iron/ice, identical nine-cell geometry, 1 mm approach, 0.01 kg iron ball, 1/240 s host step. Twelve compiled CPU/CUDA trials agree exactly in this run; full accounts retain the original gates. Densities and declared stiffness differ through the installed profiles. These controls do not qualify grain, continuum plasticity, strong impacts or fracture trajectories.
+- [Parallel/reference evidence](evidence/contact-boundary/parity.json): all current four-material accepted histories match bitwise, with localized Jacobian and fault-priority checks, retained actual refusal replay, and the new finite/unit-normal boundary witness. This compares implementations of the current equations, not their general physical accuracy.
+- [Rigid controls](evidence/contact-boundary/rigid-controls.json): retained matched four-material 10 m sphere/plane tests, analytical contact comparisons and original admission gates. The sphere remains rigid and the plane fixed.
+- [Private coarse-ball probe](evidence/contact-boundary/coarse-probe.json): 32 occupied 25 mm cubes / 60 faces, radius 50 mm, no spin, initial ground clearance 2 mm, downward velocity 14.0057403 m/s from gravity-only 10 m approach. This diagnostic copies the installed shared laws into a private 64-body/256-edge capacity build; it is **not installed or offered as a completed impact**. All four materials pass initial audited ground approach/contact. Glass refuses the subsequent 10 microsecond solve; oak/iron/ice complete only the declared 161 microseconds. Ice records separated interface sites, not a qualified full fragmentation trajectory. Timesteps, original E/P/L residuals, actual timings and profiles are retained. No comparison of full before/after material damage is claimed.
+
+The fresh installed [10 m glass-sheet refusal](evidence/contact-boundary/glass-sheet-refusal.json.bz2), with reference contact timing, 0.01 kg iron ball, partitioned flight and requests of four host steps, stops at **1.4166667 accepted seconds / 64.493 wall seconds**, with zero accepted separated sites or yielded faces. Its last accepted global energy residual is `-5.33e-15 J`; the failed interval rolls back. Request size differs from the earlier one-step result, so those last accepted times are not a controlled speed comparison. Work closure does not imply an accurate complete impact. The unresolved nonlinear/material continuation and full-pipeline realtime gates stay open.
+
+## Visible status and deployment boundary
+
+The [coupled page](../client/voxel-lab/coupled.html) now lists the actual usable tests: bounded fall/rebound, exact accepted-state save/reopen, and a separate occupied-element inspection reference. It marks the smash test blocked and explains the remaining eight representation families. None of this supplies new thermal, reaction, fluid, articulated or reduced-solid dynamics.
+
+The repository's current [Dockerfile](../Dockerfile) starts `playground/server.py`, the older playground, rather than `scripts/voxel-lab.py`. The newer coupled lab additionally requires the qualified CUDA worker. Publishing main alone does not establish that this lab is available on Render. The service URL/configuration and an actual supported execution backend must be verified before reporting a usable Render test link. Existing parent CI also has unrelated Rust large-enum and native test-hub 429 failures; this scoped checkpoint does not resolve or conceal them.
+
+## Next visible acceptance
+
+Complete the actual installed material impact under common-time temporal/spatial refinement and full reactions/work/P/L accounts; keep all four substances. Connect occupied-ball matter to a qualified solver/registry transfer instead of leaving it as a private larger-capacity probe. Then offer the corresponding before/contact/after experiment on the public web deployment with measured end-to-end delivery and rendering. The eight-family objective remains active.
