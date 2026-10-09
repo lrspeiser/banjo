@@ -1,8 +1,9 @@
 {
-  "title": "Coupled friction retains bounce and completes the refined glass drop",
+  "title": "GPU migration started; the 3D world remains the CPU reference",
   "date": "2026-10-08",
   "native_sha256": "eb3527a07fda2a0c181ff11683eb907a16045bf0fcae66e4db58f703e7df9ee4",
   "changes": [
+    "GPU migration: shared-source CuPy bond checks run on the RTX 5090. This is a primitive test; the displayed world still runs the previous CPU physics.",
     "Optional Contact response → Coupled friction + bounce solves sliding and twist together while retaining native material restitution. Reference stays default.",
     "Physics step selects the actual 1/960 or refined 1/1920 s experiment. Before/Live shows original and accepted native geometry.",
     "The reproduced refined glass refusal is twisting friction adding energy in the direction of existing spin. Terminal rejected records now retain original-cell impulses and actual force/solver velocities.",
@@ -28,6 +29,11 @@
       "label": "Accuracy / realtime",
       "status": "blocked",
       "value": "Timestep changes glass/ice topology and large energy deficits. Two simulated seconds still take tens of wall seconds"
+    },
+    {
+      "label": "GPU primitive (separate probe)",
+      "status": "passed",
+      "value": "12 glass/oak/iron/ice axial coupon checks, 128/4096/65536 independent bonds, compiled from the shared source via CuPy; not world/contact/fracture admission"
     }
   ],
   "next": [
@@ -37,9 +43,9 @@
       "value": "Resolve normal/contact/interface island consistency and full energy; qualify timestep and spatial accuracy"
     },
     {
-      "label": "Calculation speed",
+      "label": "GPU world migration",
       "status": "in progress",
-      "value": "Recover hybrid rigid/material activation and accounted handoff; qualify later-impact reactivation and local active solves"
+      "value": "Evaluate Warp/Newton and PhysX GPU contacts; keep coupled material/history state resident, qualify transfers/conservation and wire accepted GPU frames into this 3D view"
     },
     {
       "label": "Permanent metal dents",
