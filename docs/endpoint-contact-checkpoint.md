@@ -181,3 +181,11 @@ rotation terms remain separate in the complete per-material work records.
 | oak / 1/1920 | 3.942514 | 0.2572404 | 1.319611e-05 | 2.946475e-06 |
 | iron / 1/1920 | 0.6393364 | 0.05727018 | 0.0001179279 | 2.977388e-06 |
 | ice / 1/1920 | 4.283099 | 5.313154 | 5.819442e-05 | 0.001075303 |
+
+## Published checkpoint
+
+Source, compiled regression registration, 3D controls and measured evidence are
+on GitHub **main** at `e12eb688a470e3a092038442ef1950ce5b52a30b`. This follow-up records that
+exact physics source revision in the website manifest; it does not change the
+tested native binary or physical laws. The current 18926 server runs the native
+SHA-256 above. The earlier 18924 scene is preserved.

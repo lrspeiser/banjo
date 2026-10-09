@@ -68,5 +68,6 @@
     "hybrid_free_flight": true,
     "local_rigid_flight": true,
     "material_block_friction": true
-  }
+  },
+  "physics_revision": "e12eb688a470e3a092038442ef1950ce5b52a30b"
 }
