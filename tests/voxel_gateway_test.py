@@ -38,6 +38,19 @@ with tempfile.TemporaryDirectory() as folder:
   _,centered_step=req({'op':'advance','session':centered['session'],'steps':16})
   assert centered_step['ok'] and centered_step['state']['time_s']>0
   assert req({'op':'close','session':centered['session']})[1]['ok']
+  assert 'plasticity' not in initial,'default response changed'
+  for value in [1,'yes',None]:
+   assert req({'op':'create','declaration':{'sheet_plasticity':value}})[1]['ok'] is False
+  for material in ['glass','oak','ice']:
+   assert req({'op':'create','declaration':{'sheet':material,'sheet_plasticity':True,'face_law':'centered-log-gradient'}})[1]['ok'] is False
+  assert req({'op':'create','declaration':{'sheet':'iron','sheet_plasticity':True}})[1]['ok'] is False
+  for material in ['iron','aluminum']:
+   _,plastic=req({'op':'create','declaration':{'sheet':material,'sheet_plasticity':True,'face_law':'centered-log-gradient','ball_enabled':False}})
+   assert plastic['ok'] and plastic['state']['plasticity']['yielded_connectors']==0
+   _,plastic_step=req({'op':'advance','session':plastic['session'],'steps':16})
+   assert plastic_step['ok'] and plastic_step['state']['plasticity']['plastic_work_j']>=0
+   assert len(plastic_step['state']['plasticity']['history'])==112
+   assert req({'op':'close','session':plastic['session']})[1]['ok']
   assert initial['qualification']['face_law']=='native-motor','default silently changed to experimental law'
   assert initial['qualification']['contact_law']=='material-restitution','default contact response silently changed'
   for law in ['invented',True,96,None]:

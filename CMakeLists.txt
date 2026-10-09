@@ -58,6 +58,7 @@ add_library(
     src/material/MaterialCatalog.cpp
     src/material/NetworkMaterial.cpp
     src/material/Plasticity.cpp
+    src/material/ConnectorPlasticity.cpp
     src/material/SmallStrainLaw.cpp
     src/physics/SmallStrainPatch.cpp
     src/physics/DynamicPatch.cpp
@@ -323,6 +324,10 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
     banjo_enable_warnings(banjo_voxel_world_run)
     if(BANJO_BUILD_TESTS)
         add_executable(banjo_voxel_face_spring_tests tests/voxel_face_spring_tests.cpp)
+        add_executable(banjo_connector_plasticity_tests tests/connector_plasticity_tests.cpp)
+        target_link_libraries(banjo_connector_plasticity_tests PRIVATE banjo_platform)
+        banjo_enable_warnings(banjo_connector_plasticity_tests)
+        add_test(NAME banjo_connector_plasticity_tests COMMAND banjo_connector_plasticity_tests)
         add_executable(banjo_state_recorder_tests tests/state_recorder_tests.cpp)
         target_link_libraries(banjo_state_recorder_tests PRIVATE banjo_core Jolt)
         banjo_enable_warnings(banjo_state_recorder_tests)
@@ -2152,6 +2157,9 @@ if(BANJO_BUILD_TESTS)
             add_test(NAME banjo_voxel_gateway_tests COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_gateway_test.py $<TARGET_FILE:banjo_voxel_world_run>)
             set_tests_properties(banjo_voxel_gateway_tests PROPERTIES TIMEOUT 30 LABELS "native;voxel;client")
+            add_test(NAME banjo_voxel_plasticity_tests COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_plasticity_test.py $<TARGET_FILE:banjo_voxel_world_run>)
+            set_tests_properties(banjo_voxel_plasticity_tests PROPERTIES TIMEOUT 600 LABELS "native;voxel;experimental")
             add_test(NAME banjo_voxel_pipeline_tests COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_pipeline_test.py $<TARGET_FILE:banjo_voxel_world_run>)
             set_tests_properties(banjo_voxel_pipeline_tests PROPERTIES TIMEOUT 60 LABELS "native;voxel;client")

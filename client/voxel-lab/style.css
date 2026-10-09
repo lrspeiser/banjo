@@ -6,3 +6,6 @@ footer details[open]{position:absolute;right:0;bottom:0;width:min(430px,calc(100
 
 /* Keep the collapsed inspection drawer clear of Before/Live controls. */
 footer{flex-direction:row-reverse}
+
+#setup{max-height:calc(100dvh - 145px);overflow:auto;overscroll-behavior:contain}
+@media(max-height:550px){#setup{max-height:none}#readout{max-height:calc(100dvh - 105px);overflow:auto;overscroll-behavior:contain}}

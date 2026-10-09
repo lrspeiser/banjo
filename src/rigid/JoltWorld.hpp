@@ -519,6 +519,10 @@ public:
     };
     unsigned addFaceSpring(const FaceSpringDescription &description);
     FaceSpringObservation faceSpringObservation(unsigned joint) const;
+    // Log-gradient faces only. Constitutive rest is native dynamic state,
+    // captured by reversible trials. Changes reset warm starting, wake both
+    // bodies, and change free energy: callers must account for that change.
+    void setFacePlasticRest(unsigned joint,Vec3 translation_m,Vec3 rotation_rad);
     struct ContactImpulsePoint {Vec3 point_world_m{};double normal_impulse_n_s{};double initial_gap_m{};double friction_radius_m{};};
     struct ContactImpulseObservation {
         MatterBodyId a{},b{};

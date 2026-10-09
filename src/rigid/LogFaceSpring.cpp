@@ -46,8 +46,16 @@ public:
         Vec3 translation_impulse{},rotation_impulse{};double *t[]{&translation_impulse.x,&translation_impulse.y,&translation_impulse.z};
         double *r[]{&rotation_impulse.x,&rotation_impulse.y,&rotation_impulse.z};
         for(unsigned i=0;i<3;++i){*t[i]=translation[i].GetTotalLambda();*r[i]=rotation[i].GetTotalLambda()/rotation_scale[i];}
-        return {{dot(gap,axes[0]),dot(gap,axes[1]),dot(gap,axes[2])},strain.angle_rad,
-            translation_impulse,rotation_impulse,position(pb),strain.angle_rad,axes,strain.gradient_axes_world};
+        Vec3 displacement{dot(gap,axes[0]),dot(gap,axes[1]),dot(gap,axes[2])},angle=strain.angle_rad;
+        if(plastic_rest_active){displacement-=plastic_translation;angle-=plastic_rotation;}
+        return {displacement,angle,translation_impulse,rotation_impulse,position(pb),angle,axes,strain.gradient_axes_world};
+    }
+    void setPlasticRest(Vec3 translation_m,Vec3 rotation_rad){
+        if(translation_m.x==plastic_translation.x&&translation_m.y==plastic_translation.y&&translation_m.z==plastic_translation.z&&
+           rotation_rad.x==plastic_rotation.x&&rotation_rad.y==plastic_rotation.y&&rotation_rad.z==plastic_rotation.z)return;
+        plastic_translation=translation_m;plastic_rotation=rotation_rad;
+        plastic_rest_active=lengthSquared(translation_m)+lengthSquared(rotation_rad)>0;
+        ResetWarmStart();
     }
     void prepare(Vec3 va,Vec3 wa,Vec3 vb,Vec3 wb){initial_va=va;initial_wa=wa;initial_vb=vb;initial_wb=wb;}
     void SetupVelocityConstraint(float h)override{
@@ -85,10 +93,12 @@ public:
     void SaveState(JPH::StateRecorder &s)const override{
         TwoBodyConstraint::SaveState(s);for(const auto &p:translation)p.SaveState(s);for(const auto &p:rotation)p.SaveState(s);
         for(unsigned i=0;i<3;++i){s.Write(translation_axes[i]);s.Write(rotation_axes[i]);s.Write(rotation_scale[i]);}
+        s.Write(plastic_translation);s.Write(plastic_rotation);s.Write(plastic_rest_active);
     }
     void RestoreState(JPH::StateRecorder &s)override{
         TwoBodyConstraint::RestoreState(s);for(auto &p:translation)p.RestoreState(s);for(auto &p:rotation)p.RestoreState(s);
         for(unsigned i=0;i<3;++i){s.Read(translation_axes[i]);s.Read(rotation_axes[i]);s.Read(rotation_scale[i]);}
+        s.Read(plastic_translation);s.Read(plastic_rotation);s.Read(plastic_rest_active);
     }
     JPH::Ref<JPH::ConstraintSettings> GetConstraintSettings()const override{
         throw std::logic_error("log face spring generic settings serialization unsupported; recreate from validated declaration");
@@ -103,10 +113,12 @@ private:
     JPH::Vec3 local_anchor[2];JPH::Quat local_frame[2];
     JPH::AxisConstraintPart translation[3];JPH::AngleConstraintPart rotation[3];
     std::array<Vec3,3> translation_axes{},rotation_axes{};double rotation_scale[3]{1,1,1};
+    Vec3 plastic_translation{},plastic_rotation{};bool plastic_rest_active{};
 };
 JPH::TwoBodyConstraint *LogSettings::Create(JPH::Body &a,JPH::Body &b)const{return new LogFaceSpring(a,b,description);}
 }
 JPH::Ref<JPH::TwoBodyConstraintSettings> logFaceSpringSettings(const JoltWorld::FaceSpringDescription &d){return new LogSettings(d);}
 void prepareCenteredFaceSpring(JPH::TwoBodyConstraint &c,Vec3 va,Vec3 wa,Vec3 vb,Vec3 wb){static_cast<LogFaceSpring&>(c).prepare(va,wa,vb,wb);}
 JoltWorld::FaceSpringObservation observeLogFaceSpring(const JPH::TwoBodyConstraint &c){return static_cast<const LogFaceSpring&>(c).observe();}
+void setLogFacePlasticRest(JPH::TwoBodyConstraint &c,Vec3 p,Vec3 r){static_cast<LogFaceSpring&>(c).setPlasticRest(p,r);}
 }

@@ -1,4 +1,6 @@
-**Native execution stages, October 8 (measured overhead reduction; full goals OPEN):** [Timings, exact snapshots and verification](native-stage-performance-checkpoint.md) identify Jolt update as about 73% of reference glass cost. Reusable full-state byte storage reduces an alternating-order glass comparison from 39.56 to 35.57 wall seconds with exact physical/work parity. Nine scoped CTests and four complete material comparisons pass; full coupled comparisons are running and are not claimed here. Stage timers are exposed in the live lab. Realtime speed, energy/contact accuracy, metal plasticity, adaptive cells and authoring remain open.
+**Persistent connector plasticity, October 8 (implemented experimental integration; full goals OPEN):** [Law, native history and measured 3D comparisons](connector-plasticity-checkpoint.md) add optional six-mode perfect plasticity with real retained native rest. A 5 kg iron ball from 1 m produces 24 yielded connections; browser Before/Live uses actual poses. Nine scoped CTests, five comparative/refined scenes and four default full-state parity checks pass. Numerical projection loss, unexplained energy and whole-impact refinement remain unqualified; no J2/hardening/tearing, unload/removal or restart admission is claimed. Adaptive cells, realtime and authoring remain open.
+
+**Native execution stages, October 8 (measured overhead reduction; full goals OPEN):** [Timings, exact snapshots and verification](native-stage-performance-checkpoint.md) identify Jolt update as about 73% of reference glass cost. Reusable full-state byte storage reduces an alternating-order glass comparison from 39.56 to 35.57 wall seconds with exact physical/work parity. Nine scoped CTests and four complete material comparisons pass; all five coupled comparisons have now finished with exact physical/work parity; see the follow-up checkpoint. Stage timers are exposed in the live lab. Realtime speed, energy/contact accuracy, metal plasticity, adaptive cells and authoring remain open.
 
 **Contact performance trial, October 8 (diagnostic regression and rendering; physics retained):** [Trial, ice counterexample and restored evaluation](friction-fastpath-checkpoint.md) expand the analytical suite to 4,224 cases and add full-state failure witnesses. The optimization passed three complete material comparisons but changed ice at 1.45 s, so it was withdrawn without relaxing parity. Restored physics passes six focused CTests and the exact ice counterexample. Viewport work is reduced and whole-rig framing uses actual geometry. No simulation speed improvement or new constitutive validation is published; all five physics/platform goals remain open.
 
@@ -24,13 +26,13 @@ Updated October 8, 2026 from [the completed coupled-friction impacts](coupled-fr
 
 **Still missing:** Reduced active solve/substep cost. The current measured storage optimization takes 35.57 wall seconds for two simulated seconds of glass impact, versus 39.56 s in its paired baseline. Realtime remains unmet; Jolt update dominates. Latest experimental measurements range from 71 to 177 wall seconds across the material fixtures under concurrent verification load; these are not isolated performance benchmarks.
 
-## 3. Leave a real, permanent dent in metal — planned for this lab
+## 3. Leave a real, permanent dent in metal — experimental integration in progress
 
 **You test:** Drop a ball onto a metal sheet, remove the load, inspect the retained dent, then hit it again. Compare a light elastic impact with a stronger yielding impact and eventual tearing under sufficient loading.
 
 **Done when:** Permanent shape and material history survive subsequent steps and supported save/reload; plastic work and tearing are measured. The rendered dent is the actual deformed geometry.
 
-**Still missing:** Integration and qualification of persistent metal plasticity and tearing in this shared scene. Separate reference models do not make the current iron sheet capable of this.
+**Still missing:** Full qualification of the new six-mode native plastic rest model, combined yielding inside the shared solve, unload/removal, supported history save/reload and ductile tearing. The optional experiment retains real history and produces measured yielding; it is not continuum J2 or calibrated plate plasticity.
 
 ## 4. Preserve thin features without simulating everything finely — planned for this lab
 

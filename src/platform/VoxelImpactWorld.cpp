@@ -1,6 +1,7 @@
 #include "platform/VoxelImpactWorld.hpp"
 #include "rigid/JoltWorld.hpp"
 #include "material/MaterialCatalog.hpp"
+#include "material/ConnectorPlasticity.hpp"
 #include "physics/RigidStepWork.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>
@@ -38,7 +39,8 @@ RigidContactCapacity contactCapacity(const Json &d,VoxelExecution storage){
 }
 struct VoxelImpactWorld::Impl {
     struct Cell {unsigned object;MatterBodyId id;Vec3 size,initial;double mass;std::string material;bool fixed;};
-    struct Bond {unsigned a,b,joint;double area,iy,iz,width,height,strength,shear,gc;Vec3 k,r,damping,rotation_damping;bool brittle,live{true};double energy{};};
+    struct Bond {unsigned a,b,joint;double area,iy,iz,width,height,strength,shear,gc;Vec3 k,r,damping,rotation_damping;bool brittle,live{true};double energy{};
+        std::optional<ConnectorPlasticParameters> plastic;ConnectorPlasticState plastic_state;};
     struct Pair {unsigned a,b;int bond{-1};};
     JoltWorld world;
     Json declaration,events=Json::array();std::vector<Cell> cells;std::vector<Bond> bonds;std::vector<Pair> internal;
@@ -51,6 +53,7 @@ struct VoxelImpactWorld::Impl {
     double feature{},dt{},time{},initial_energy{},fracture{},discarded_elastic{},max_wall_ms{},peak_stress_ratio{};
     unsigned ticks{},broken{},substeps{},rejected{};Vec3 gravity;MechanicalTotals initial,totals;
     bool log_faces{},resolved_deformation{},centered_faces{},midpoint_contact{};
+    bool sheet_plasticity{};double plastic_work{},plastic_return_excess{};
     RigidStepWork work_total{};double elastic_change_j{},ledger_change_j{};Vec3 full_angular_residual{};
     Json refused_work=nullptr,boundary_total={{"normal_midpoint_work_j",0.},{"friction_midpoint_work_j",0.},{"twist_midpoint_work_j",0.},{"positive_normal_work_j",0.},{"max_velocity_violation_m_s",0.},{"max_complementarity_error_j",0.},
         {"max_friction_stationarity_gap_j",0.},{"max_twist_stationarity_gap_j",0.},{"max_friction_cap_excess_n_s",0.},{"max_twist_cap_excess_n_m_s",0.}};
@@ -171,6 +174,7 @@ struct VoxelImpactWorld::Impl {
         const auto damp=[&](Vec3 s,double reduced){return Vec3{2*m.damping_ratio*std::sqrt(s.x*reduced),2*m.damping_ratio*std::sqrt(s.y*reduced),2*m.damping_ratio*std::sqrt(s.z*reduced)};};
         const auto joint=world.addFaceSpring({cells[a].id,cells[b].id,(cells[a].initial+cells[b].initial)/2,normal,tangent,k,r,damp(k,mass),damp(r,reduced_i),log_faces,centered_faces});
         bonds.push_back({a,b,joint,area,iy,iz,width,height,m.tensile_strength_pa,m.shear_strength_pa,m.fracture_energy_j_m2,k,r,damp(k,mass),damp(r,reduced_i),m.model==MaterialModel::BrittleBond});
+        if(sheet_plasticity&&cells[a].object==1)bonds.back().plastic=compileConnectorPlasticity(m,length0,width,height);
     }
     void grid(unsigned object,MaterialPreset p,Vec3 dimensions,Vec3 center,unsigned nx,unsigned ny,unsigned nz,bool round){
         const Vec3 h{dimensions.x/nx,dimensions.y/ny,dimensions.z/nz};std::map<std::array<int,3>,unsigned> ids;
@@ -194,11 +198,15 @@ struct VoxelImpactWorld::Impl {
     explicit Impl(const Json &d,VoxelExecution storage):world(0,contactCapacity(d,storage),
         storage==VoxelExecution::Reference?RigidJobExecution::ThreadPool:RigidJobExecution::Inline),declaration(d){
         world.setExecutionProfilingEnabled(true);
-        const std::set<std::string> keys{"sheet","ball","mass_kg","height_m","thickness_m","resolution","support_gap_m","offset_x_m","offset_z_m","dt_s","ball_enabled","gravity_m_s2","solver_iterations","face_law","contact_law"};
+        const std::set<std::string> keys{"sheet","ball","mass_kg","height_m","thickness_m","resolution","support_gap_m","offset_x_m","offset_z_m","dt_s","ball_enabled","gravity_m_s2","solver_iterations","face_law","contact_law","sheet_plasticity"};
         for(auto i=d.begin();i!=d.end();++i)if(!keys.contains(i.key()))throw std::invalid_argument("unknown voxel experiment field");
         const auto face_law=d.value("face_law",std::string("native-motor"));
         if(face_law!="native-motor"&&face_law!="log-gradient"&&face_law!="centered-log-gradient")throw std::invalid_argument("unsupported face law");
         log_faces=face_law!="native-motor";centered_faces=face_law=="centered-log-gradient";
+        const auto plastic=d.value("sheet_plasticity",Json(false));
+        if(!plastic.is_boolean())throw std::invalid_argument("sheet_plasticity must be boolean");
+        sheet_plasticity=plastic.get<bool>();
+        if(sheet_plasticity&&!centered_faces)throw std::invalid_argument("plastic sheet requires centered-log-gradient interfaces");
         world.setCenteredIntegration(centered_faces);
         const auto contact_law=d.value("contact_law",std::string("material-restitution"));
         if(contact_law!="material-restitution"&&contact_law!="resolved-deformation"&&contact_law!="midpoint-unilateral"&&contact_law!="midpoint-block-friction")throw std::invalid_argument("unsupported contact law");
@@ -209,6 +217,7 @@ struct VoxelImpactWorld::Impl {
         const double requested=scalar(d,"resolution",8,4,16);const unsigned n=unsigned(requested);
         if(n!=requested||(n!=4&&n!=8&&n!=12&&n!=16))throw std::invalid_argument("resolution must be 4, 8, 12 or 16");
         const double thickness=scalar(d,"thickness_m",.004,.002,.04),gap=scalar(d,"support_gap_m",.32,.20,.36);
+        if(sheet_plasticity)(void)compileConnectorPlasticity(makeReferenceMaterial(sheet),.4/n,.4/n,thickness);
         const double mass=scalar(d,"mass_kg",1,.1,5),height=scalar(d,"height_m",10,.05,10);
         const double x=scalar(d,"offset_x_m",0,-.8,.8),z=scalar(d,"offset_z_m",0,-.8,.8);
         dt=scalar(d,"dt_s",1./960,1./3840,1./240);
@@ -248,6 +257,8 @@ struct VoxelImpactWorld::Impl {
         const double before=totals.mechanicalEnergy()+before_elastic;
         double candidateEnergy=0,after_elastic=0;MechanicalTotals candidateTotals;RigidStepWork candidateWork;Json candidateBoundary,candidateTwist;
         std::vector<RigidMechanicalState> candidate_states;
+        std::vector<ConnectorPlasticUpdate> candidate_plastic(sheet_plasticity?bonds.size():0);
+        double candidate_plastic_work=0,candidate_return_excess=0;
         const auto trial_start=std::chrono::steady_clock::now();
         const bool accepted=world.runReversibleTrial([&]{
             const auto native_start=std::chrono::steady_clock::now();world.step(h);
@@ -260,13 +271,28 @@ struct VoxelImpactWorld::Impl {
             totals_wall_ms+=std::chrono::duration<double,std::milli>(faces_start-totals_start).count();
             for(unsigned i=0;i<bonds.size();++i)if(bonds[i].live){const auto &b=bonds[i];faces_after[i]=world.faceSpringObservation(b.joint);after_elastic+=quadratic(b.k,faces_after[i].displacement_cs_m)+quadratic(b.r,faces_after[i].rotation_cs_rad);}
             candidate_faces_wall_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-faces_start).count();
-            const double after=candidateTotals.mechanicalEnergy()+after_elastic;candidateEnergy=after;
             candidateWork=measureWork(before_states,candidate_states,faces_before,faces_after);
             if(midpoint_contact)candidateBoundary=measureBoundary(before_states,h,candidateTwist);
-            return std::isfinite(after)&&after-before<=1e-5*std::max(1.,std::abs(before))+1e-6&&after+fracture+discarded_elastic-initial_energy<=.1;
+            for(unsigned i=0;i<bonds.size();++i)if(bonds[i].live&&bonds[i].plastic){
+                const auto &b=bonds[i];const auto &s=faces_after[i];const auto &rest=b.plastic_state.plastic_rest;
+                auto &update=candidate_plastic[i];
+                update=advanceConnectorPlasticity(*b.plastic,b.plastic_state,
+                    {s.displacement_cs_m.x+rest[0],s.displacement_cs_m.y+rest[1],s.displacement_cs_m.z+rest[2],
+                     s.rotation_cs_rad.x+rest[3],s.rotation_cs_rad.y+rest[4],s.rotation_cs_rad.z+rest[5]});
+                after_elastic+=update.stored_energy_j-quadratic(b.k,s.displacement_cs_m)-quadratic(b.r,s.rotation_cs_rad);
+                candidate_plastic_work+=update.plastic_increment_j;candidate_return_excess+=update.return_excess_increment_j;
+                const auto &p=update.state.plastic_rest;
+                if(update.yielded)world.setFacePlasticRest(b.joint,{p[0],p[1],p[2]},{p[3],p[4],p[5]});
+            }
+            const double after=candidateTotals.mechanicalEnergy()+after_elastic;candidateEnergy=after;
+            const double accounted=after+candidate_plastic_work+candidate_return_excess;
+            return std::isfinite(accounted)&&accounted-before<=1e-5*std::max(1.,std::abs(before))+1e-6&&
+                accounted+fracture+discarded_elastic+plastic_work+plastic_return_excess-initial_energy<=.1;
         });
         trial_wall_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-trial_start).count();
-        if(!accepted){++rejected;refused_work={{"time_s",time},{"dt_s",h},{"depth",depth},{"before_j",before},{"candidate_j",candidateEnergy},{"elastic_change_j",after_elastic-before_elastic},{"work",workJson(candidateWork)}};if(midpoint_contact){refused_work["midpoint_boundary"]=candidateBoundary;refused_work["worst_twist_contact"]=candidateTwist;}if(depth>=14)throw std::runtime_error("native integration energy gate refused at "+std::to_string(time)+" s: before="+std::to_string(before)+", candidate="+std::to_string(candidateEnergy)+", h="+std::to_string(h)+"; last accepted state retained");interval(h/2,depth+1);interval(h/2,depth+1);return;}
+        if(!accepted){++rejected;refused_work={{"time_s",time},{"dt_s",h},{"depth",depth},{"before_j",before},{"candidate_j",candidateEnergy},{"elastic_change_j",after_elastic-before_elastic},{"work",workJson(candidateWork)}};if(sheet_plasticity){refused_work["plastic_work_j"]=candidate_plastic_work;refused_work["plastic_return_excess_j"]=candidate_return_excess;}if(midpoint_contact){refused_work["midpoint_boundary"]=candidateBoundary;refused_work["worst_twist_contact"]=candidateTwist;}if(depth>=14)throw std::runtime_error("native integration energy gate refused at "+std::to_string(time)+" s: before="+std::to_string(before)+", candidate="+std::to_string(candidateEnergy)+", h="+std::to_string(h)+"; last accepted state retained");interval(h/2,depth+1);interval(h/2,depth+1);return;}
+        plastic_work+=candidate_plastic_work;plastic_return_excess+=candidate_return_excess;
+        for(unsigned i=0;i<bonds.size();++i)if(bonds[i].live&&bonds[i].plastic)bonds[i].plastic_state=candidate_plastic[i].state;
         if(midpoint_contact)for(auto it=candidateBoundary.begin();it!=candidateBoundary.end();++it){
             const double value=it.value().get<double>();
             boundary_total[it.key()]=it.key().starts_with("max_")?std::max(boundary_total[it.key()].get<double>(),value):boundary_total[it.key()].get<double>()+value;
@@ -342,6 +368,7 @@ struct VoxelImpactWorld::Impl {
         bool changed=false;
         for(unsigned i=0;i<bonds.size();++i)if(bonds[i].live){
             auto &b=bonds[i];const auto &s=faces_after[i];b.energy=quadratic(b.k,s.displacement_cs_m)+quadratic(b.r,s.rotation_cs_rad);
+            if(b.plastic)b.energy=candidate_plastic[i].stored_energy_j;
             // No new strain/impulse while dormant. Dividing a cached lambda by
             // an unrelated fragment's smaller dt would invent a new stress.
             if(!s.solver_scheduled.value())continue;
@@ -397,6 +424,23 @@ std::string VoxelImpactWorld::snapshotJson() const {
             "Experimental SO(3) energy-gradient interfaces. Analytical torque gradients pass; full impacts still have unresolved energy refusals/losses. Not a realtime or calibrated material model.":
             "Passive finite-box native six-axis elastic interfaces. Finite-rotation/integration/full energy and angular momentum accounts remain unqualified."},
             {"limits","Brittle strength AND stored fracture-work admission. Metals/oak remain elastic, not brittle; plasticity/grain are unsupported."}}}};
+    if(w.sheet_plasticity){
+        Json history=Json::array();unsigned yielded=0;
+        for(const auto &b:w.bonds)if(b.plastic){const auto &s=b.plastic_state;
+            if(s.yielded_updates)++yielded;
+            history.push_back({{"a",w.cells[b.a].id},{"b",w.cells[b.b].id},{"plastic_rest",s.plastic_rest},
+                {"accumulated_flow",s.accumulated_flow},{"plastic_work_j",s.plastic_dissipation_j},
+                {"return_excess_j",s.return_excess_j},{"yielded_updates",s.yielded_updates},{"elastic_j",b.energy}});
+        }
+        result["plasticity"]={{"model","independent-six-mode-perfect-plastic-v1"},{"yielded_connectors",yielded},
+            {"plastic_work_j",w.plastic_work},{"return_excess_j",w.plastic_return_excess},{"history",history},
+            {"units","Rest/flow axes 0..2: m; axes 3..5: rad. Work: J."},
+            {"scope","Experimental endpoint return with persistent native rest; numerical projection excess is separate from physical yield work. Not continuum J2, hardening, grain, tearing or calibrated plate plasticity."}};
+        result["diagnostics"]["unclosed_energy_j"]=w.totals.mechanicalEnergy()+elastic+w.fracture+w.discarded_elastic+w.plastic_work+w.plastic_return_excess-w.initial_energy;
+        result["step_work"]["plastic_work_j"]=w.plastic_work;
+        result["step_work"]["plastic_return_excess_j"]=w.plastic_return_excess;
+        result["qualification"]["limits"]="Sheet uses independent six-mode perfect plasticity; ball retains its declared elastic/brittle law. No hardening, grain, ductile tearing, restart persistence or continuum J2 admission. Full contact/energy/refinement remains unqualified.";
+    }
     if(w.midpoint_contact)result["midpoint_boundary"]=w.boundary_total;
     auto &profile=result["diagnostics"]["profile"];
     profile["execution"]={{"enabled",execution.enabled},{"step_calls",execution.step_calls},{"trial_calls",execution.trial_calls},{"trial_restores",execution.trial_restores},

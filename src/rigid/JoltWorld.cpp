@@ -3090,6 +3090,16 @@ JoltWorld::FaceSpringObservation JoltWorld::faceSpringObservation(unsigned id) c
         {fromJoltVector(b.GetAxisX()),fromJoltVector(b.GetAxisY()),fromJoltVector(b.GetAxisZ())}});
 }
 
+void JoltWorld::setFacePlasticRest(unsigned id,Vec3 p,Vec3 r){
+    if(!std::isfinite(lengthSquared(p))||!std::isfinite(lengthSquared(r))||length(p)>10||length(r)>=std::acos(-1.))
+        throw std::invalid_argument("face plastic rest exceeds finite 10 m / pi rad native bounds");
+    const auto &joint=impl_->joints_.at(id);
+    if(joint.kind!=JointKind::FaceSpring||!joint.log_face)throw std::invalid_argument("plastic rest needs a log-gradient face");
+    setLogFacePlasticRest(*joint.constraint.GetPtr(),p,r);
+    auto &bodies=impl_->physics_->GetBodyInterface();
+    for(const auto body:{joint.a,joint.b})bodies.ActivateBody(impl_->bodies_.at(body));
+}
+
 void JoltWorld::setContactRestitutionModel(RigidContactRestitution model) {
     impl_->requireConfigurationMutable();
     if(!impl_->bodies_.empty()||!impl_->floor_id_.IsInvalid())throw std::logic_error("configure restitution model before creating bodies");
