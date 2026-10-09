@@ -15,7 +15,8 @@ function build(s){for(const g of groups)scene.remove(g);groups.length=0;$('label
   for(const [i,c] of s.coupons.entries()){const g=new THREE.Group();g.position.x=centers[i];
     const geometry=new THREE.BoxGeometry(c.cell_size_m,c.cell_size_m,c.cell_size_m);
     for(let j=0;j<2;j++){const mesh=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color:colors[c.material],metalness:c.material==='iron'?.55:0,roughness:.5}));mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry),new THREE.LineBasicMaterial({color:0x294552})));g.add(mesh);}
-    const bond=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(.01,0,0)]),new THREE.LineBasicMaterial({color:0x6fe0bc}));g.add(bond);scene.add(g);groups.push(g);
+    const bond=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(.01,0,0)]),new THREE.LineBasicMaterial({color:0x6fe0bc}));g.add(bond);
+    for(let j=0;j<2;j++){const arrow=new THREE.ArrowHelper(new THREE.Vector3(j?-1:1,0,0),new THREE.Vector3(),.016,j?0x6fe0bc:0xffce7a,.004,.003);g.add(arrow);}scene.add(g);groups.push(g);
     const label=document.createElement('span');label.className='object-label';label.textContent=c.material;$('labels').append(label);labels.push(label);
   }
 }
@@ -27,6 +28,7 @@ function accept(reply){if(!reply.ok)throw Error(reply.error);if(!state)build(rep
     if(c.model==='connector-plastic')pairs.push(['Permanent rest',(c.permanent_rest_m*1e6).toFixed(3)+' µm'],['Numerical return excess',c.numerical_return_excess_j.toPrecision(4)+' J']);
     else pairs.push(['Damage',(c.damage*100).toFixed(1)+'%']);
     pairs.push(['Loading work',c.loading_work_j.toPrecision(4)+' J'],['Work residual',c.balance_residual_j.toExponential(2)+' J']);
+    pairs.push(['Cell A force',c.force_a_n.map(v=>v.toPrecision(3)).join(' / ')+' N'],['Cell B force',c.force_b_n.map(v=>v.toPrecision(3)).join(' / ')+' N'],['Cell A torque',c.torque_a_n_m.map(v=>v.toPrecision(3)).join(' / ')+' N·m']);
     const dl=document.createElement('dl');for(const [name,value] of pairs){const row=document.createElement('div'),dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=name;dd.textContent=value;row.append(dt,dd);dl.append(row);}card.append(dl);$('results').append(card);
   }
   const p=state.performance;$('latency').textContent=p.last_control_ms.toFixed(3)+' ms';$('kernel').textContent=p.kernel_ms.toFixed(3)+' ms';$('readback').textContent=p.readback_ms.toFixed(3)+' / '+p.audit_ms.toFixed(3)+' ms';
@@ -41,8 +43,9 @@ $('magnification').addEventListener('change',()=>$('scale-note').textContent='Op
 $('readout').addEventListener('change',()=>{if(state)accept({ok:true,state});});
 // This inspector owns only its temporary GPU worker; its journal stays on disk.
 window.addEventListener('pagehide',()=>{if(session)navigator.sendBeacon('/api/gpu',new Blob([JSON.stringify({op:'close',session})],{type:'application/json'}));});
-const projection=new THREE.Vector3();function draw(){if(state)for(const [i,c] of state.coupons.entries()){const g=groups[i],gap=c.opening_m*Number($('magnification').value);g.children[0].position.x=-.005;g.children[1].position.x=.005+gap;g.children[2].visible=!c.separated;g.children[2].scale.x=1+gap/.01;g.children[2].material.color.setHex(c.model==='connector-plastic'&&c.permanent_rest_m?0xffc579:0x6fe0bc);
-    projection.set(centers[i]+gap/2,.023,0).project(camera);labels[i].hidden=projection.z>1||Math.abs(projection.x)>1||Math.abs(projection.y)>1;const half=labels[i].offsetWidth/2+4;labels[i].style.left=Math.max(half,Math.min(view.clientWidth-half,(projection.x+1)*view.clientWidth/2))+'px';labels[i].style.top=((1-projection.y)*view.clientHeight/2+(view.clientWidth<500?-45+(i%2?22:0):0))+'px';}
+const projection=new THREE.Vector3(),direction=new THREE.Vector3();function draw(){if(state)for(const [i,c] of state.coupons.entries()){const g=groups[i],gap=c.opening_m*Number($('magnification').value);g.children[0].position.x=-.005;g.children[1].position.x=.005+gap;g.children[2].visible=!c.separated;g.children[2].scale.x=1+gap/.01;g.children[2].material.color.setHex(c.model==='connector-plastic'&&c.permanent_rest_m?0xffc579:0x6fe0bc);
+    for(let j=0;j<2;j++){const arrow=g.children[3+j];direction.fromArray(j?c.force_b_n:c.force_a_n);arrow.visible=direction.lengthSq()>1e-20;if(arrow.visible){arrow.setDirection(direction.normalize());arrow.position.copy(g.children[j].position);arrow.position.y=.014+j*.010;}}
+    projection.set(centers[i]+gap/2,.044,0).project(camera);labels[i].hidden=projection.z>1||Math.abs(projection.x)>1||Math.abs(projection.y)>1;const half=labels[i].offsetWidth/2+4;labels[i].style.left=Math.max(half,Math.min(view.clientWidth-half,(projection.x+1)*view.clientWidth/2))+'px';labels[i].style.top=((1-projection.y)*view.clientHeight/2+(view.clientWidth<500?-45+(i%2?22:0):0))+'px';}
   renderer.render(scene,camera);requestAnimationFrame(draw);
 }pose();draw();
 fetch('/api/checkpoint').then(r=>r.json()).then(build=>{expectedHash=build.gpu_material_source_sha256;$('build').textContent=`Build ${build.website_revision?.slice(0,7)} · ${build.gpu_material_source_verified&&build.gpu_source_verified&&!build.local_changes&&!build.restart_pending?'shared GPU laws verified':'source / restart unverified'}`;reset();}).catch(e=>$('build').textContent=e.message);

@@ -17,7 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCES = ('scripts/gpu_material_laws.py', 'src/physics/CohesiveInterfaceKernel.hpp',
            'src/material/ConnectorModeKernel.hpp', 'client/voxel-lab/material-laws.json',
            'src/material/MaterialCatalog.cpp', 'src/material/ConnectorPlasticity.cpp',
-           'src/physics/CohesiveInterface.cpp')
+           'src/physics/CohesiveInterface.cpp','scripts/gpu_material_frames.py',
+           'src/physics/FiniteFrameKernel.hpp','src/physics/MaterialWrench.cpp','src/physics/RotationStrain.cpp')
 
 
 def source_hash():
@@ -124,11 +125,15 @@ class ResidentLaws:
 
     def update(self, coordinates, unload=False):
         self.device.use()
-        q=np.asarray(coordinates,dtype=np.float64)
-        if q.shape!=(len(self.profiles),6) or not np.isfinite(q).all() or np.max(np.abs(q[:,:3]))>.001 or np.max(np.abs(q[:,3:]))>.1:
+        resident=isinstance(coordinates,cp.ndarray)
+        q=cp.asarray(coordinates,dtype=cp.float64) if resident else np.asarray(coordinates,dtype=np.float64)
+        xp=cp if resident else np
+        if (resident and q.device.id!=0) or q.shape!=(len(self.profiles),6) or not bool(xp.isfinite(q).all()) or float(xp.max(xp.abs(q[:,:3])))>.001 or float(xp.max(xp.abs(q[:,3:])))>.1:
             raise ValueError('Invalid bounded interface coordinates')
         if type(unload) is not bool:raise ValueError('Unload must be boolean')
-        started=time.perf_counter(); self.coordinates.set(q)
+        started=time.perf_counter()
+        if resident:cp.copyto(self.coordinates,q)
+        else:self.coordinates.set(q)
         a,b=cp.cuda.Event(),cp.cuda.Event();a.record();self._launch(unload);b.record();b.synchronize()
         gpu_ms=cp.cuda.get_elapsed_time(a,b)
         before_read=time.perf_counter();candidate=cp.asnumpy(self.candidate);faults=cp.asnumpy(self.faults)
@@ -156,6 +161,17 @@ class GpuMaterialWorld:
             raise ValueError('Material inspector accepts only the CUDA device declaration')
         self.profiles=json.loads((ROOT/'client/voxel-lab/material-laws.json').read_text(encoding='utf8'))['profiles']
         self.laws=ResidentLaws(self.profiles)
+        from gpu_material_frames import ResidentFrames
+        self.frames=ResidentFrames(4)
+        self._force_snapshot()
+
+    def _force_snapshot(self):
+        f=np.zeros((4,2,14));f[:,:,3]=1;f[:,:,10]=1
+        f[:,0,0]=-.005;f[:,1,0]=.005;f[:,0,7]=.005;f[:,1,7]=-.005
+        for i,(model,s) in enumerate(zip(self.laws.models,self.laws.host)):
+            f[i,1,0]+=s[22] if model=='connector-plastic' else s[0]
+        self.frames.coordinates(f)
+        self.body_wrenches=cp.asnumpy(self.frames.material_forces(self.laws))
 
     def strain(self, opening_m=None, unload=False):
         if type(unload) is not bool:raise ValueError('Unload must be boolean')
@@ -165,11 +181,12 @@ class GpuMaterialWorld:
             raise ValueError('Opening must be 0-50 micrometres')
         q=np.zeros((4,6));q[:,0]=opening_m or 0
         self.laws.update(q,unload=unload)
+        self._force_snapshot()
         return self.snapshot()
 
     def snapshot(self):
         rows=[]
-        for p,m,s in zip(self.profiles,self.laws.models,self.laws.host):
+        for i,(p,m,s) in enumerate(zip(self.profiles,self.laws.models,self.laws.host)):
             plastic=m=='connector-plastic'
             rows.append(dict(material=p['material'],model=m,cell_size_m=p['cell_size_m'],
                 mass_kg=2*p['density_kg_m3']*p['cell_size_m']**3,
@@ -180,7 +197,9 @@ class GpuMaterialWorld:
                 numerical_return_excess_j=float(s[13] if plastic else 0),
                 loading_work_j=float(s[16] if plastic else s[7]),
                 balance_residual_j=float(s[18] if plastic else s[10]),
-                damage=float(0 if plastic else s[5]),separated=bool(not plastic and s[6]),yielded_updates=int(s[14]) if plastic else 0))
+                damage=float(0 if plastic else s[5]),separated=bool(not plastic and s[6]),yielded_updates=int(s[14]) if plastic else 0,
+                force_a_n=self.body_wrenches[i,0].tolist(),torque_a_n_m=self.body_wrenches[i,1].tolist(),
+                force_b_n=self.body_wrenches[i,2].tolist(),torque_b_n_m=self.body_wrenches[i,3].tolist()))
         return dict(schema='banjo.cupy-material-laws.v1',time_s=0.,dt_s=None,ticks=self.laws.updates,
             controlled_loading=True,coupons=rows,history_arrays=self.laws.host.tolist(),
             performance=dict(last_control_ms=self.laws.last_ms,kernel_ms=self.laws.gpu_ms,

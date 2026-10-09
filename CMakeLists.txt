@@ -105,6 +105,7 @@ add_library(
     src/physics/CompliantAdvance.cpp
     src/physics/ElasticNewton.cpp
     src/physics/RotationStrain.cpp
+    src/physics/MaterialWrench.cpp
     src/physics/RigidStepWork.cpp
     src/physics/MechanicalAccounting.cpp
     src/physics/DoubleRigidDynamics.cpp
@@ -2171,6 +2172,11 @@ if(BANJO_BUILD_TESTS)
                 --native $<TARGET_FILE:banjo_voxel_world_run>
                 --report ${CMAKE_CURRENT_BINARY_DIR}/gpu-contact/material-laws-results.json)
             set_tests_properties(banjo_gpu_material_laws_tests PROPERTIES TIMEOUT 180 LABELS "gpu;experimental;material;client")
+            add_test(NAME banjo_gpu_material_frames_tests COMMAND ${BANJO_NEWTON_PYTHON}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu_material_frames_test.py
+                --oracle $<TARGET_FILE:banjo_gpu_material_oracle>
+                --report ${CMAKE_CURRENT_BINARY_DIR}/gpu-contact/material-frames-results.json)
+            set_tests_properties(banjo_gpu_material_frames_tests PROPERTIES TIMEOUT 180 LABELS "gpu;experimental;material;contact")
         endif()
         if(BANJO_TEST_CUPY)
             add_test(NAME banjo_cupy_physics_probe COMMAND ${Python3_EXECUTABLE}

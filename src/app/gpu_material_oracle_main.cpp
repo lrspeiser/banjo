@@ -1,6 +1,7 @@
 #include "material/MaterialCatalog.hpp"
 #include "material/ConnectorPlasticity.hpp"
 #include "physics/CohesiveInterface.hpp"
+#include "physics/MaterialWrench.hpp"
 #include <nlohmann/json.hpp>
 #include <array>
 #include <cmath>
@@ -69,10 +70,26 @@ Json advance(const Json &input){
     }
     return output;
 }
+Json frame(const Json &j){
+    auto read=[](const Json &r){
+        const auto p=r.at("com").get<std::array<double,3>>(),l=r.at("anchor").get<std::array<double,3>>();
+        const auto q=r.at("orientation").get<std::array<double,4>>(),f=r.at("frame").get<std::array<double,4>>();
+        return MaterialFrame{{p[0],p[1],p[2]},{l[0],l[1],l[2]},{q[0],q[1],q[2],q[3]},{f[0],f[1],f[2],f[3]}};
+    };
+    const auto a=read(j.at("a")),b=read(j.at("b"));const auto loads=j.at("loads").get<std::array<double,6>>();
+    const auto c=materialCoordinates(a,b);const auto w=materialWrenches(a,b,loads);
+    auto v=[](FrameVector p){return Json::array({p.x,p.y,p.z});};
+    return {{"q",c.q},{"wrenches",Json::array({v(w.force_a),v(w.torque_a),v(w.force_b),v(w.torque_b)})}};
+}
 }
 int main(){std::string line;while(std::getline(std::cin,line))try{
     const auto input=Json::parse(line);const auto op=input.at("op");
     if(op=="catalog")std::cout<<Json{{"ok",true},{"profiles",catalog()}}.dump()<<'\n';
     else if(op=="advance")std::cout<<Json{{"ok",true},{"states",advance(input)}}.dump()<<'\n';
+    else if(op=="frames"){
+        const auto &lanes=input.at("lanes");if(!lanes.is_array()||lanes.size()>65536)throw std::invalid_argument("invalid frame count");
+        Json out=Json::array();for(const auto &lane:lanes)out.push_back(frame(lane));
+        std::cout<<Json{{"ok",true},{"frames",out}}.dump()<<'\n';
+    }
     else throw std::invalid_argument("unknown oracle command");
 }catch(const std::exception &e){std::cout<<Json{{"ok",false},{"error",e.what()}}.dump()<<'\n';}}

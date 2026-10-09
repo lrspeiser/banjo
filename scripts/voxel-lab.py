@@ -237,7 +237,7 @@ class Server(ThreadingHTTPServer):
   material_hash=None
   if self.gpu_python:
    h=hashlib.sha256()
-   for name in ('scripts/gpu_material_laws.py','src/physics/CohesiveInterfaceKernel.hpp','src/material/ConnectorModeKernel.hpp','client/voxel-lab/material-laws.json','src/material/MaterialCatalog.cpp','src/material/ConnectorPlasticity.cpp','src/physics/CohesiveInterface.cpp'):
+   for name in ('scripts/gpu_material_laws.py','src/physics/CohesiveInterfaceKernel.hpp','src/material/ConnectorModeKernel.hpp','client/voxel-lab/material-laws.json','src/material/MaterialCatalog.cpp','src/material/ConnectorPlasticity.cpp','src/physics/CohesiveInterface.cpp','scripts/gpu_material_frames.py','src/physics/FiniteFrameKernel.hpp','src/physics/MaterialWrench.cpp','src/physics/RotationStrain.cpp'):
     h.update(name.encode());h.update(b'\0');h.update((ROOT/name).read_bytes())
    material_hash=h.hexdigest()
   return {'checkpoint':checkpoint,'native_sha256':actual,'native_verified':bool(checkpoint.get('native_sha256')==actual),'website_revision':revision,'local_changes':dirty,'server_revision':self.started_revision,'restart_pending':revision!=self.started_revision,'gpu_available':self.gpu_python is not None,'gpu_source_sha256':gpu_hash,'gpu_worker_sha256':worker_hash,'physx_source_sha256':physx_hash,'physx_source_verified':bool(physx_hash and checkpoint.get('physx_source_sha256')==physx_hash),'gpu_source_verified':bool(gpu_hash and checkpoint.get('gpu_source_sha256')==gpu_hash and checkpoint.get('gpu_worker_sha256')==worker_hash),'gpu_material_source_sha256':material_hash,'gpu_material_source_verified':bool(material_hash and checkpoint.get('gpu_material_source_sha256')==material_hash)}

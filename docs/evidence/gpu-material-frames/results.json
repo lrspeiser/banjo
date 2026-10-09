@@ -1,0 +1,358 @@
+{
+  "revision": "d600ad9afff6f80316e7d1ee0e5a2cd006279e77",
+  "source_sha256": "c16ba2e88ed4b34fcaa00c3bfae9be8b8d02c1d63b165d8312ab31d849346f37",
+  "gpu": "NVIDIA GeForce RTX 5090",
+  "compared_finite_frames": 1024,
+  "max_coordinate_error": 4.440892098500626e-16,
+  "max_wrench_error": 5.684341886080802e-14,
+  "max_linear_residual": 0.0,
+  "max_angular_residual": 5.115907697472721e-13,
+  "max_energy_gradient_absolute_error": 1.372351243844605e-05,
+  "missing_frame_torque_mutation_n_m": 1333.9540717621232,
+  "controls": [
+    {
+      "material": "glass",
+      "model": "normal-cohesive",
+      "declared_opening_m": 5e-08,
+      "actual_coordinates": [
+        5.5960464456772385e-08,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "material_force_n": [
+        2832.99853515625,
+        0.0,
+        0.0
+      ],
+      "material_torque_n_m": [
+        0.0,
+        56.659969329833984,
+        -28.329984664916992
+      ],
+      "mass_kg": [
+        1.0,
+        1.0
+      ],
+      "inertia_kg_m2": [
+        0.000835681741591543,
+        0.000835681741591543
+      ],
+      "dt_s": 0.0005208333333333333,
+      "velocity_after_m_s": [
+        [
+          3.475520133972168,
+          0.0,
+          0.0
+        ],
+        [
+          -1.475520133972168,
+          0.0,
+          0.0
+        ]
+      ],
+      "omega_after_rad_s": [
+        [
+          4.939960662753151e-10,
+          35.312965393066406,
+          -17.656482696533203
+        ],
+        [
+          4.939960662753151e-10,
+          -35.312965393066406,
+          17.656482696533203
+        ]
+      ],
+      "kinetic_change_j": 6.430824619679726,
+      "frozen_load_work_j": 6.43082441072656,
+      "work_residual_j": 2.0895316588109836e-07,
+      "P_residual_n_s": 0.0,
+      "L_residual_n_m_s": 8.256469860086532e-13,
+      "probe_wall_ms": 100.34300002735108,
+      "material_history_dynamic": false,
+      "contact_count": 0,
+      "coupled_candidate_admitted": false,
+      "coupled_end_coordinates": [
+        -0.0034127402481837674,
+        -3.1382710746659835e-05,
+        -6.276542149329076e-05,
+        0.0,
+        -0.03677836134009912,
+        0.018389180670058024
+      ],
+      "coupled_energy_gain_j": 6.430745351723425,
+      "coupled_energy_tolerance_j": 2.1000792679563e-05,
+      "coupled_rejection": "Frozen initial material force over full rigid dt creates energy; coupled implicit solve required"
+    },
+    {
+      "material": "oak",
+      "model": "normal-cohesive",
+      "declared_opening_m": 5e-08,
+      "actual_coordinates": [
+        5.5960464456772385e-08,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "material_force_n": [
+        90.65595245361328,
+        0.0,
+        0.0
+      ],
+      "material_torque_n_m": [
+        0.0,
+        1.8131190538406372,
+        -0.9065595269203186
+      ],
+      "mass_kg": [
+        1.0,
+        1.0
+      ],
+      "inertia_kg_m2": [
+        0.0019525502575561404,
+        0.0019525502575561404
+      ],
+      "dt_s": 0.0005208333333333333,
+      "velocity_after_m_s": [
+        [
+          2.0472166538238525,
+          0.0,
+          0.0
+        ],
+        [
+          -0.047216642647981644,
+          0.0,
+          0.0
+        ]
+      ],
+      "omega_after_rad_s": [
+        [
+          8.623983688629822e-13,
+          0.48364076018333435,
+          -0.24182038009166718
+        ],
+        [
+          8.623983688629822e-13,
+          -0.48364076018333435,
+          0.24182038009166718
+        ]
+      ],
+      "kinetic_change_j": 0.097233616864842,
+      "frozen_load_work_j": 0.09723359269354104,
+      "work_residual_j": 2.417130096077358e-08,
+      "P_residual_n_s": 1.1175870895385742e-08,
+      "L_residual_n_m_s": 3.3677523144788224e-15,
+      "probe_wall_ms": 9.02449997374788,
+      "material_history_dynamic": false,
+      "contact_count": 0,
+      "coupled_candidate_admitted": false,
+      "coupled_end_coordinates": [
+        -0.0011030956861200366,
+        -1.3597663538334242e-07,
+        -2.7195327076668467e-07,
+        0.0,
+        -0.0004930951950583238,
+        0.000246547597529162
+      ],
+      "coupled_energy_gain_j": 0.0972310802902404,
+      "coupled_energy_tolerance_j": 2.100002536574602e-05,
+      "coupled_rejection": "Frozen initial material force over full rigid dt creates energy; coupled implicit solve required"
+    },
+    {
+      "material": "iron",
+      "model": "connector-plastic",
+      "declared_opening_m": 5e-08,
+      "actual_coordinates": [
+        5.5960464456772385e-08,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "material_force_n": [
+        118.07657623291016,
+        0.0,
+        0.0
+      ],
+      "material_torque_n_m": [
+        0.0,
+        2.3615314960479736,
+        -1.1807657480239868
+      ],
+      "mass_kg": [
+        1.0,
+        1.0
+      ],
+      "inertia_kg_m2": [
+        0.0003890610532835126,
+        0.0003890610532835126
+      ],
+      "dt_s": 0.0005208333333333333,
+      "velocity_after_m_s": [
+        [
+          2.0614981651306152,
+          0.0,
+          0.0
+        ],
+        [
+          -0.06149822100996971,
+          0.0,
+          0.0
+        ]
+      ],
+      "omega_after_rad_s": [
+        [
+          6.456688655953613e-11,
+          3.1613662242889404,
+          -1.5806831121444702
+        ],
+        [
+          6.456688655953613e-11,
+          -3.1613662242889404,
+          1.5806831121444702
+        ]
+      ],
+      "kinetic_change_j": 0.13163881818980983,
+      "frozen_load_work_j": 0.1316389223617561,
+      "work_residual_j": -1.0417194626355375e-07,
+      "P_residual_n_s": 5.587935447692871e-08,
+      "L_residual_n_m_s": 5.02409217841804e-14,
+      "probe_wall_ms": 11.087099963333458,
+      "material_history_dynamic": false,
+      "contact_count": 0,
+      "coupled_candidate_admitted": false,
+      "coupled_end_coordinates": [
+        -0.001187277684097847,
+        -9.76755872038514e-07,
+        -1.953511744080414e-06,
+        0.0,
+        -0.003290875990287586,
+        0.001645437995143863
+      ],
+      "coupled_energy_gain_j": 1487.4104574559165,
+      "coupled_energy_tolerance_j": 2.1000033038101293e-05,
+      "coupled_rejection": "Frozen initial material force over full rigid dt creates energy; coupled implicit solve required"
+    },
+    {
+      "material": "ice",
+      "model": "normal-cohesive",
+      "declared_opening_m": 5e-08,
+      "actual_coordinates": [
+        5.5960464456772385e-08,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "material_force_n": [
+        7.461395263671875,
+        0.0,
+        0.0
+      ],
+      "material_torque_n_m": [
+        0.0,
+        0.14922790229320526,
+        -0.07461395114660263
+      ],
+      "mass_kg": [
+        1.0,
+        1.0
+      ],
+      "inertia_kg_m2": [
+        0.001630877610296011,
+        0.001630877610296011
+      ],
+      "dt_s": 0.0005208333333333333,
+      "velocity_after_m_s": [
+        [
+          2.0038862228393555,
+          0.0,
+          0.0
+        ],
+        [
+          -0.0038861436769366264,
+          0.0,
+          0.0
+        ]
+      ],
+      "omega_after_rad_s": [
+        [
+          -9.458041886842034e-15,
+          0.047657083719968796,
+          -0.023828541859984398
+        ],
+        [
+          -9.458041886842034e-15,
+          -0.047657083719968796,
+          0.023828541859984398
+        ]
+      ],
+      "kinetic_change_j": 0.007792178155729967,
+      "frozen_load_work_j": 0.007792019054682823,
+      "work_residual_j": 1.5910104714418616e-07,
+      "P_residual_n_s": 7.916241884231567e-08,
+      "L_residual_n_m_s": 3.084981750098502e-17,
+      "probe_wall_ms": 8.379300008527935,
+      "material_history_dynamic": false,
+      "contact_count": 0,
+      "coupled_candidate_admitted": false,
+      "coupled_end_coordinates": [
+        -0.001046734659891092,
+        -1.1219899188984853e-08,
+        -2.2439798377969705e-08,
+        0.0,
+        -4.2877858502600074e-05,
+        2.1438929251300037e-05
+      ],
+      "coupled_energy_gain_j": 0.007791969384157819,
+      "coupled_energy_tolerance_j": 2.100000208771572e-05,
+      "coupled_rejection": "Frozen initial material force over full rigid dt creates energy; coupled implicit solve required"
+    }
+  ],
+  "benchmarks": [
+    {
+      "interfaces": 1024,
+      "frame_wrench_median_ms": 0.4734999965876341,
+      "includes_gpu_finite_branch_checks": true,
+      "excludes_initial_upload_startup_and_full_readback": true,
+      "no_physics_time": true
+    },
+    {
+      "interfaces": 4096,
+      "frame_wrench_median_ms": 0.5404999828897417,
+      "includes_gpu_finite_branch_checks": true,
+      "excludes_initial_upload_startup_and_full_readback": true,
+      "no_physics_time": true
+    },
+    {
+      "interfaces": 65536,
+      "frame_wrench_median_ms": 0.5069999606348574,
+      "includes_gpu_finite_branch_checks": true,
+      "excludes_initial_upload_startup_and_full_readback": true,
+      "no_physics_time": true
+    }
+  ],
+  "scope": "Finite-frame law-to-wrench bridge and one frozen-load actual GPU SDK step; no dynamic fracture/plastic/contact world or realtime qualification",
+  "complete_physics_validated": false,
+  "realtime_qualified": false,
+  "prior_checked_cpu_rotation_exact_cases": 10000,
+  "source_registration": {
+    "built": 344,
+    "on_disk": 344,
+    "exclusions": 0
+  },
+  "verification": {
+    "scoped_ctests": 7,
+    "final_bridge_standalone": true,
+    "windows": true,
+    "cross_gpu_validated": false,
+    "interactive_site": "/materials",
+    "native_binary_unchanged": true
+  }
+}

@@ -1,8 +1,9 @@
 {
-  "title": "Shared C++ cohesive and plastic laws now run on CUDA; coupled GPU world remains open",
+  "title": "GPU finite-frame material forces and actual PhysX delivery tested; coupled motion gate remains open",
   "date": "2026-10-09",
   "native_sha256": "eb3527a07fda2a0c181ff11683eb907a16045bf0fcae66e4db58f703e7df9ee4",
   "changes": [
+    "GPU material inspector now shows actual CUDA force directions and body force/torque pairs. General finite-frame reactions use the same CPU/CUDA energy gradient; normal controlled loading has zero torque. The diagram still has no dynamics clock.",
     "GPU material laws at /materials runs persistent damage and six-mode plastic return from shared C++ source via CuPy. Apply a common opening, unload and inspect retained history. Controlled constitutive loading only, not dynamic GPU fracture or dents.",
     "PhysX reuses resident CUDA pose/velocity buffers. Every substep is retained; all 15360 refined stack states match the independent column reference exactly. The slower column path remains available in the profiler.",
     "GPU lab shows actual SDK stepping, GPU observation and host audit time. Every calculated substep remains recorded; constitutive port is separate from this rigid solver.",
@@ -75,6 +76,16 @@
       "label": "Shared GPU material laws",
       "status": "passed",
       "value": "61520 CPU/CUDA law updates match exactly; all 61520 checked CPU outputs also match pre-refactor code. Actual HTTP/worker/history/journal, no-healing, unloading, area and fault refusal controls pass. No dynamic contact or whole-system conservation claim. 17 scoped CTests pass; final law suite also verifies 64/128-increment loss reduction and later recovery. Controlled loading only."
+    },
+    {
+      "label": "GPU material force delivery",
+      "status": "passed",
+      "value": "1024 finite CPU/CUDA frames, all 12 finite-frame energy-gradient directions, objectivity and angular reactions. Glass/oak/iron/ice material wrenches reach actual PhysX CUDA bodies with measured impulse/torque/work. Seven scoped suites pass; 10000 checked CPU rotations exactly preserve prior output. 344/344 sources registered."
+    },
+    {
+      "label": "Coupled material motion",
+      "status": "blocked",
+      "value": "Frozen material forces at 1/1920 s create energy for all four materials, despite closing their own applied-force work account. That trial is not admitted to the live world. A coupled implicit material/contact solve and refinement are required."
     }
   ],
   "next": [
@@ -86,7 +97,7 @@
     {
       "label": "GPU world migration",
       "status": "in progress",
-      "value": "Reduce measured SDK launch/TGS cost with resident batched material/contact solves; retain full substep audits and port shared constitutive/bond/plastic history. Complete work/reactions and comparative refinement."
+      "value": "Use the tested resident finite-frame material-wrench bridge in a coupled implicit body/material/contact solve. Refuse the retained four-material frozen-force energy failures; qualify full work, contacts, refinement and complete-world realtime."
     },
     {
       "label": "Permanent metal dents",
@@ -120,5 +131,5 @@
   "gpu_source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd",
   "gpu_worker_sha256": "518183d0d853a00213e466456cbf19f4f76bc4ba3a25f4a4adac1a51d67ae3d5",
   "physx_source_sha256": "d1d30abfd67380a66fcf4664759e1917e50137bd7f6ef92bb160d0f1b5b5157f",
-  "gpu_material_source_sha256": "9321f999e50c4ade4c64fb76ddf94aca7d0f0657127cf8e3323a5dd87ac2fe1d"
+  "gpu_material_source_sha256": "439309fd656c70e3f3728fda7a7260aad16ecfe72c0f2f32d9c388b67690f559"
 }
