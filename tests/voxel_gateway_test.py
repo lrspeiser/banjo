@@ -70,6 +70,18 @@ with tempfile.TemporaryDirectory() as folder:
   assert not block['state']['qualification']['calibrated']
   assert req({'op':'advance','session':block['session'],'steps':16})[1]['ok']
   assert req({'op':'close','session':block['session']})[1]['ok']
+  _,actuated=req({'op':'create','declaration':{'sheet':'iron','face_law':'centered-log-gradient','gravity_m_s2':0}})
+  actor=actuated['session'];actor_initial=actuated['state']
+  for data in [
+    {'op':'accelerate_object','session':actor,'object':2,'acceleration_m_s2':[0,31,0]},
+    {'op':'accelerate_object','session':actor,'object':2,'acceleration_m_s2':[0,'20',0]},
+    {'op':'accelerate_object','session':actor,'object':2,'acceleration_m_s2':[0,20,0],'extra':1}]:
+   assert not req(data)[1]['ok']
+  _,retained=req({'op':'snapshot','session':actor});assert retained['ok'] and retained['state']==actor_initial,'bad actuator command poisoned accepted session'
+  _,forced=req({'op':'accelerate_object','session':actor,'object':2,'acceleration_m_s2':[0,20,0]})
+  assert forced['ok'] and forced['state']['cells']==actor_initial['cells'],'force command assigned motion'
+  _,advanced_actor=req({'op':'advance','session':actor,'steps':16});assert advanced_actor['ok'] and advanced_actor['state']['actuation']['work_j']>0
+  assert req({'op':'close','session':actor})[1]['ok']
   _,unchanged=req({'op':'snapshot','session':key});assert unchanged['state']==moved['state'],'refusal mutated native state'
   with urllib.request.urlopen(base+'/api/log/'+key) as r:rows=[json.loads(x) for x in r.read().decode().splitlines()]
   assert rows[0]['native_sha256'] and rows[0]['assets'];assert any(r.get('response',{}).get('state')==moved['state'] for r in rows),'record differs from rendered response'

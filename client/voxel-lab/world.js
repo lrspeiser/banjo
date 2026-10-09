@@ -1,12 +1,13 @@
 import * as THREE from '/three.module.js';
-import {NativePlayback} from '/playback.mjs';
+import {NativePlayback,sheetCenterHeightChange} from '/playback.mjs';
 const $=id=>document.getElementById(id), canvas=$('scene');
-let plasticSupported=false;
+let plasticSupported=false,actuationSupported=false;
 function statusRow(parent,label,value,status){const row=document.createElement('div'),name=document.createElement('dt'),result=document.createElement('dd');name.textContent=label;result.textContent=value;if(status)result.dataset.status=status;row.append(name,result);parent.append(row);}
 async function loadCheckpoint(){
  try{
   const response=await fetch('/api/checkpoint');if(!response.ok)throw Error('Build status unavailable');const build=await response.json(),c=build.checkpoint;
   plasticSupported=build.native_verified&&c.capabilities?.sheet_plasticity===true;
+  actuationSupported=build.native_verified&&c.capabilities?.object_acceleration===true;
   $('sheet_response').querySelector('option[value="plastic"]').disabled=!plasticSupported||!['iron','aluminum'].includes($('sheet').value);
   const matched=build.native_verified&&!build.restart_pending&&build.local_changes===false;
   $('updates').textContent=(matched?'✓ Build ':'⚠ Check build ')+(build.website_revision?.slice(0,8)??'unknown');
@@ -38,12 +39,14 @@ const nativeRoot=new THREE.Group();scene.add(nativeRoot);
 const marker=new THREE.Mesh(new THREE.RingGeometry(.013,.017,32),new THREE.MeshBasicMaterial({color:0xb2ea78,side:THREE.DoubleSide}));marker.rotation.x=-Math.PI/2;scene.add(marker);
 let aim=[0,0];
 const matrix=new THREE.Matrix4(),q=new THREE.Quaternion(),q0=new THREE.Quaternion(),pos=new THREE.Vector3(),scale=new THREE.Vector3();
-function layout(s){for(const g of groups){nativeRoot.remove(g.mesh);g.mesh.geometry.dispose();g.mesh.material.dispose();}groups=[];
- // Fit the actual initial geometry, including the ball at the chosen height.
- // Rotated cells use their transformed box bounds. Recompute only on rebuild.
+function fitRig(s){
+ // Fit actual accepted geometry, including lifted objects and rotated cells.
  const bounds=new THREE.Box3(),unit=new THREE.Box3(new THREE.Vector3(-.5,-.5,-.5),new THREE.Vector3(.5,.5,.5));
  for(const c of s.cells){const [w,x,y,z]=c.quaternion_wxyz;q.set(x,y,z,w);pos.fromArray(c.position_m);scale.fromArray(c.size_m);matrix.compose(pos,q,scale);bounds.union(unit.clone().applyMatrix4(matrix));}
  bounds.getCenter(rigCenter);rigExtent=bounds.getSize(new THREE.Vector3()).length()/2;
+}
+function layout(s){for(const g of groups){nativeRoot.remove(g.mesh);g.mesh.geometry.dispose();g.mesh.material.dispose();}groups=[];
+ fitRig(s);
  const buckets=new Map();for(const c of s.cells){const key=[c.material,...c.size_m].join(':');if(!buckets.has(key))buckets.set(key,[]);buckets.get(key).push(c);}
  for(const cells of buckets.values()){const c=cells[0];const geometry=new THREE.BoxGeometry(1,1,1);const mesh=new THREE.InstancedMesh(geometry,new THREE.MeshStandardMaterial({color:0xffffff,roughness:.6,metalness:c.material==='iron'?.5:.05}),cells.length);nativeRoot.add(mesh);groups.push({mesh,ids:cells.map(x=>x.id)});}
 }
@@ -69,8 +72,11 @@ function draw(s){if(!s)return;
  const execution=d.profile?.execution;
  for(const [id,key] of [['profile-update','native_update_ms'],['profile-observation','contact_observation_ms'],['profile-prepare','step_prepare_ms'],['profile-post','post_step_ms'],['profile-capture','trial_capture_ms'],['profile-restore','trial_restore_ms']])$(id).textContent=Number.isFinite(execution?.[key])?(execution[key]/1000).toFixed(3)+' s':'Unavailable in this build';
  $('profile-calls').textContent=Number.isInteger(execution?.step_calls)?execution.step_calls.toLocaleString()+' / '+s.substeps.toLocaleString():'Unavailable in this build';
- const plastic=s.plasticity;$('plastic-readout').hidden=!plastic;$('plastic-work').hidden=!plastic;
+ const plastic=s.plasticity;$('plastic-readout').hidden=!plastic;$('center-readout').hidden=!plastic;$('plastic-work').hidden=!plastic;
+ const centerChange=sheetCenterHeightChange(initial,s);$('center-change').textContent=centerChange===null?'Unavailable':(centerChange*1000).toFixed(2)+' mm';
  if(plastic){$('yielded').textContent=plastic.yielded_connectors;$('plastic-work').textContent='Yield work: '+plastic.plastic_work_j.toFixed(4)+' J · numerical return loss: '+plastic.return_excess_j.toFixed(4)+' J. '+plastic.scope;}
+ const actuator=s.actuation;$('actuator-work').hidden=!actuator;
+ if(actuator)$('actuator-work').textContent='External actuator: '+actuator.work_j.toFixed(4)+' J · '+Math.hypot(...actuator.impulse_n_s).toFixed(4)+' N·s. '+actuator.scope;
  $('law-status').textContent=(s.qualification?.model??'Model identity unavailable')+(s.qualification?.contact_law==='midpoint-block-friction'?' Coupled sliding/twisting block with original impulse caps; global contact convergence and full accuracy remain unqualified.':s.qualification?.contact_law==='midpoint-unilateral'?' Midpoint normal and friction constraints match centered pose integration. Hard contact, not compliant indentation; full geometry and physical accuracy remain unqualified.':s.qualification?.contact_law==='resolved-deformation'?' Unilateral contact: inelastic normal constraints; recovery only from interfaces. No compliant contact indentation or calibrated energy accuracy.':' Material-derived instantaneous restitution remains the reference contact response.');
  const boundary=s.midpoint_boundary;$('boundary-audit').hidden=!boundary;
  if(boundary){
@@ -91,11 +97,11 @@ function render(now){drawPose(showBefore?{from:initial,to:initial,alpha:1,time_s
 }
 async function request(command){const start=performance.now();const response=await fetch('/api/world',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(command)});const reply=await response.json();if(command.op!=='frame')$('control-latency').textContent=(performance.now()-start).toFixed(1)+' ms';return reply;}
 function accept(r){
- if(r.state){state=r.state;playback.push(state,performance.now());if(!showBefore)draw(state);}
+ if(r.state){state=r.state;if(whole)fitRig(state);playback.push(state,performance.now());if(!showBefore)draw(state);}
  if(r.pipeline){pipeline=r.pipeline;pipelineArrivedAt=performance.now();running=pipeline.running;calculating=pipeline.calculating;$('sim-speed').textContent=pipeline.realtime_ratio.toFixed(2)+'× realtime';$('batch-cost').textContent=pipeline.max_native_batch_ms.toFixed(1)+' ms / '+pipeline.native_batch_budget_ms+' ms target';}
  if(r.pipeline){$('batch-p95').textContent=pipeline.batch_sample_count?pipeline.native_batch_p95_ms.toFixed(1)+' ms / '+pipeline.batch_sample_count+' batches':'No batches yet';$('pose-age').textContent=pipeline.published_state_age_ms.toFixed(0)+' ms'+(!running&&!calculating?' · paused':'');$('record-size').textContent=(pipeline.journal_compressed_bytes/1e6).toFixed(2)+' MB';}
  if(!r.ok){running=false;$('phase').textContent='Stopped · '+r.error;}
- else if(state)$('phase').textContent=state.time_s>=2?'Drop complete':calculating&&!running?'Pausing · finishing native batch':running?'Live native physics': 'Native state ready';
+ else if(state)$('phase').textContent=state.time_s>=stageEnd()-1e-8?completedPhase():calculating&&!running?'Pausing · finishing native batch':running?'Live native physics': 'Native state ready';
  controls();
 }
 async function poll(generation){
@@ -112,7 +118,10 @@ async function poll(generation){
  }}catch(e){if(generation===sequence){running=false;calculating=false;$('phase').textContent='Stopped · '+e.message;controls();}}
  finally{polling=false;if(generation!==sequence&&(running||calculating))poll(sequence);}
 }
-function controls(){for(const id of ['sheet','thickness','resolution','gap','ball','mass','height','face_law','contact_law','sheet_response'])$(id).disabled=busy||running||calculating;$('reset').disabled=busy;$('drop').disabled=busy||!session||showBefore||state?.time_s>=2||(!running&&calculating);$('step').disabled=busy||running||calculating||!session||showBefore||state?.time_s>=2;$('before').disabled=busy||!initial||running||calculating;$('live').disabled=busy||!state||running||calculating;$('drop').textContent=running?'Pause':'Drop ball';}
+function stageEnd(){return state?.actuation?Math.min(4,state.actuation.started_at_s+.6):2;}
+function liftActive(){return state?.actuation?.commands?.some(c=>c.object===2&&c.acceleration_m_s2.some(x=>x!==0))??false;}
+function completedPhase(){return state?.actuation?'Force trial complete':'Drop complete';}
+function controls(){for(const id of ['sheet','thickness','resolution','gap','ball','mass','height','face_law','contact_law','sheet_response'])$(id).disabled=busy||running||calculating;$('reset').disabled=busy;$('drop').disabled=busy||!session||showBefore||state?.time_s>=stageEnd()-1e-8||(!running&&calculating);$('step').disabled=busy||running||calculating||!session||showBefore||state?.time_s>=stageEnd()-1e-8;$('before').disabled=busy||!initial||running||calculating;$('live').disabled=busy||!state||running||calculating;$('drop').textContent=running?'Pause':state?.actuation?'Run force trial':'Drop ball';$('lift').hidden=!actuationSupported||state?.qualification?.face_law!=='centered-log-gradient';$('lift').disabled=busy||running||calculating||!session||showBefore||state?.time_s>=4-1e-8;$('lift').textContent=liftActive()?'Release lift':'Lift ball';}
 async function reset(){if(busy)return;busy=true;running=false;showBefore=false;controls();$('phase').textContent='Building native scene…';const generation=++sequence;
  try{const glass=$('ball').querySelector('option[value="glass"]');glass.disabled=$('contact_law').value==='material-restitution';glass.textContent=glass.disabled?'Glass · reference gate open':'Glass';if(glass.disabled&&$('ball').value==='glass')$('ball').value='iron';if(session)await request({op:'close',session});session=null;frameId=0;calculating=false;pipeline=null;const declaration={sheet:$('sheet').value,ball:$('ball').value,mass_kg:Number($('mass').value),height_m:Number($('height').value),thickness_m:Number($('thickness').value),resolution:Number($('resolution').value),support_gap_m:Number($('gap').value),offset_x_m:aim[0],offset_z_m:aim[1]};if($('sheet_response').value==='plastic')declaration.sheet_plasticity=true;if($('face_law').value!=='native-motor')declaration.face_law=$('face_law').value;if($('contact_law').value!=='material-restitution')declaration.contact_law=$('contact_law').value;const r=await request({op:'create',declaration});if(!r.ok)throw Error(r.error);if(generation!==sequence)return;session=r.session;state=r.state;initial=structuredClone(state);playback.reset(state,performance.now());layout(state);draw(state);$('sim-speed').textContent='Ready';$('batch-cost').textContent='8 ms target';$('batch-p95').textContent='No batches yet';$('pose-age').textContent='Ready';$('record-size').textContent='New record';$('phase').textContent='Ready · '+(9.81*declaration.mass_kg*declaration.height_m).toFixed(1)+' J drop';$('log').href='/api/log/'+session;}
  catch(e){$('phase').textContent='Stopped · '+e.message;}finally{busy=false;controls();}
@@ -121,9 +130,13 @@ async function advance(){if(busy||!session)return;busy=true;controls();const sta
  try{const r=await request({op:'advance',session,steps:16});accept(r);if(r.ok)$('phase').textContent='Native step accepted';}
  catch(e){running=false;$('phase').textContent='Stopped · '+e.message;}finally{busy=false;controls();}
 }
-$('drop').onclick=async()=>{busy=true;controls();try{const r=await request({op:'play',session,running:!running,target_time_s:2});accept(r);if(r.ok&&(running||calculating))poll(sequence);}catch(e){$('phase').textContent='Stopped · '+e.message;}finally{busy=false;controls();}};$('step').onclick=advance;$('reset').onclick=reset;
-$('before').onclick=()=>{showBefore=true;draw(initial);$('phase').textContent='Before · starting state';controls();};$('live').onclick=()=>{showBefore=false;draw(state);$('phase').textContent=state.time_s>=2?'Drop complete':'Live · accepted native state';controls();};
-$('view').onclick=()=>{whole=!whole;$('view').textContent=whole?'Impact close-up':'Whole rig';};
+$('drop').onclick=async()=>{busy=true;controls();try{const r=await request({op:'play',session,running:!running,target_time_s:stageEnd()});accept(r);if(r.ok&&(running||calculating))poll(sequence);}catch(e){$('phase').textContent='Stopped · '+e.message;}finally{busy=false;controls();}};$('step').onclick=advance;$('reset').onclick=reset;
+$('lift').onclick=async()=>{if(busy||!session)return;busy=true;controls();try{
+ const r=await request({op:'accelerate_object',session,object:2,acceleration_m_s2:liftActive()?[0,0,0]:[0,20,0]});accept(r);
+ if(r.ok){const play=await request({op:'play',session,running:true,target_time_s:stageEnd()});accept(play);if(play.ok&&(running||calculating))poll(sequence);}
+ }catch(e){$('phase').textContent='Stopped · '+e.message;}finally{busy=false;controls();}};
+$('before').onclick=()=>{showBefore=true;draw(initial);$('phase').textContent='Before · starting state';controls();};$('live').onclick=()=>{showBefore=false;draw(state);$('phase').textContent=state.time_s>=stageEnd()-1e-8?completedPhase():'Live · accepted native state';controls();};
+$('view').onclick=()=>{whole=!whole;if(whole)fitRig(showBefore?initial:state);$('view').textContent=whole?'Impact close-up':'Whole rig';};
 for(const id of ['sheet','thickness','resolution','gap','ball','mass','height','face_law','contact_law','sheet_response'])$(id).onchange=()=>{
  const allowed=plasticSupported&&['iron','aluminum'].includes($('sheet').value);$('sheet_response').querySelector('option[value="plastic"]').disabled=!allowed;
  if(!allowed)$('sheet_response').value='elastic';

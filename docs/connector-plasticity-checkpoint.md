@@ -1,3 +1,5 @@
+**Follow-up:** [Native unloading and retained deformation](voxel-unloading-checkpoint.md) now supplies controlled lift/release and matched unloaded geometry tests. The loaded-only results below remain the historical checkpoint; static settling, restart and tearing remain open.
+
 # Persistent connector plasticity checkpoint
 
 October 8, 2026. Implemented experimental CPU integration, not full metal admission. All five active goals remain open. The source revision and tested executable hash are recorded in the publishing follow-up and `client/voxel-lab/checkpoint.json`.

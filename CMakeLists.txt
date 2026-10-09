@@ -2160,6 +2160,9 @@ if(BANJO_BUILD_TESTS)
             add_test(NAME banjo_voxel_plasticity_tests COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_plasticity_test.py $<TARGET_FILE:banjo_voxel_world_run>)
             set_tests_properties(banjo_voxel_plasticity_tests PROPERTIES TIMEOUT 600 LABELS "native;voxel;experimental")
+            add_test(NAME banjo_voxel_actuation_tests COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_actuation_test.py $<TARGET_FILE:banjo_voxel_world_run>)
+            set_tests_properties(banjo_voxel_actuation_tests PROPERTIES TIMEOUT 600 LABELS "native;voxel;experimental")
             add_test(NAME banjo_voxel_pipeline_tests COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_pipeline_test.py $<TARGET_FILE:banjo_voxel_world_run>)
             set_tests_properties(banjo_voxel_pipeline_tests PROPERTIES TIMEOUT 60 LABELS "native;voxel;client")

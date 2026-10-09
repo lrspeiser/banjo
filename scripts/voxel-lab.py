@@ -1,5 +1,5 @@
 """Local, bounded native voxel world. No old website routes or simulation cache."""
-import argparse, copy, gzip, hashlib, io, json, queue, struct, subprocess, threading, time, uuid
+import argparse, bz2, copy, gzip, hashlib, io, json, queue, struct, subprocess, threading, time, uuid
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -43,7 +43,7 @@ def repository_state():
 class Session:
  def __init__(self,native,logs,checkpoint=None):
   self.proc=subprocess.Popen([str(native),'--serve'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,bufsize=1)
-  self.output=queue.Queue(maxsize=2);self.lock=threading.Lock();self.record_lock=threading.Lock();self.last=time.monotonic();self.path=logs/(uuid.uuid4().hex+'.jsonl.gz');self.bytes=0;self.uncompressed_bytes=0
+  self.output=queue.Queue(maxsize=2);self.lock=threading.Lock();self.record_lock=threading.Lock();self.last=time.monotonic();self.path=logs/(uuid.uuid4().hex+'.jsonl.bz2');self.bytes=0;self.uncompressed_bytes=0
   self.previous_record=None
   self.condition=threading.Condition();self.closed=False;self.playing=False;self.calculating=False;self.latest=None;self.current=None;self.frame_id=0
   self.target_ticks=0;self.started=0.;self.started_time=0.;self.elapsed_s=0.;self.batch_cost_s=.001;self.max_batch_s=0.;self.pending_commands=[];self.last_publish=0.
@@ -57,7 +57,10 @@ class Session:
  def write(self,data):
   with self.record_lock:
    stored=data if self.previous_record is None else {'record_codec':'banjo.exact-replacements.v1','patch':record_patch(self.previous_record,data)}
-   row=(json.dumps(stored,separators=(',',':'))+'\n').encode('utf8');compressed=gzip.compress(row,compresslevel=1,mtime=0)
+   # Independent completed members persist each record even after a crash.
+   # The 100 KB bzip2 block retains repeated fields in large native rows that
+   # exceed gzip's 32 KB dictionary; numbers and all published poses stay exact.
+   row=(json.dumps(stored,separators=(',',':'))+'\n').encode('utf8');compressed=bz2.compress(row,compresslevel=1)
    if self.bytes+len(compressed)>32_000_000 or self.uncompressed_bytes+len(row)>256_000_000:raise ValueError('Session record limit reached; reset to continue')
    with self.path.open('ab') as f:f.write(compressed)
    self.bytes+=len(compressed);self.uncompressed_bytes+=len(row)
@@ -67,7 +70,8 @@ class Session:
   # record at a time, so downloads need not allocate the whole replay history.
   with self.record_lock:data=self.path.read_bytes()
   previous=None
-  with gzip.GzipFile(fileobj=io.BytesIO(data)) as archive:
+  archive=bz2.BZ2File(io.BytesIO(data),'rb') if data.startswith(b'BZh') else gzip.GzipFile(fileobj=io.BytesIO(data))
+  with archive:
    for line in archive:
     row=json.loads(line)
     previous=apply_record_patch(previous,row['patch']) if row.get('record_codec')=='banjo.exact-replacements.v1' else row
@@ -113,7 +117,8 @@ class Session:
    self.calculating=True
   try:
    reply=self.call(command)
-   with self.condition:self.current_at=time.monotonic();self.publish(reply)
+   with self.condition:
+    if reply['ok'] or command.get('op')!='accelerate_object':self.current_at=time.monotonic();self.publish(reply)
   finally:
    with self.condition:self.calculating=False;self.condition.notify_all()
   with self.condition:return dict(reply,frame_id=self.frame_id,pipeline=self.metrics())
@@ -124,7 +129,8 @@ class Session:
     if self.calculating and not self.playing:raise ValueError('Current native batch is still finishing')
     if not self.latest['ok']:raise ValueError('Native gate refused; reset to continue')
     state=self.current['state'];dt=state['dt_s']
-    if type(target) not in (int,float) or not 0<target<=2:raise ValueError('Target time must be within two physical seconds')
+    limit=4 if 'actuation' in state else 2
+    if type(target) not in (int,float) or not 0<target<=limit:raise ValueError(f'Target time must be within {limit} physical seconds')
     ticks=round(target/dt)
     if abs(ticks*dt-target)>1e-8 or ticks<=state['ticks']:raise ValueError('Target must be a later native tick boundary')
     if not self.playing:self.started=time.monotonic();self.started_time=state['time_s'];self.elapsed_s=0.;self.max_batch_s=0.;self.batch_samples.clear()
@@ -248,8 +254,8 @@ class Handler(BaseHTTPRequestHandler):
      if type(data['wait_ms']) is not int or not 0<=data['wait_ms']<=250:raise ValueError('Frame wait must be 0–250 ms')
      r=s.frame(data['after'],data['wait_ms'])
     r['session']=data['session']
-   elif op in ['advance','snapshot','close']:
-    allowed={'op','session','steps'} if op=='advance' else {'op','session'}
+   elif op in ['advance','snapshot','close','accelerate_object']:
+    allowed={'op','session','steps'} if op=='advance' else {'op','session','object','acceleration_m_s2'} if op=='accelerate_object' else {'op','session'}
     if set(data)!=allowed:raise ValueError('Invalid command fields')
     s=self.server.session(data['session'])
     if op=='close':
@@ -257,7 +263,7 @@ class Handler(BaseHTTPRequestHandler):
      r={'ok':True}
     else:
      if op=='advance' and (type(data['steps']) is not int or not 1<=data['steps']<=16):raise ValueError('Steps must be 1–16')
-     r=s.manual({k:v for k,v in data.items() if k!='session'}) if op=='advance' else s.frame(0,0);r['session']=data['session']
+     r=s.manual({k:v for k,v in data.items() if k!='session'}) if op in ['advance','accelerate_object'] else s.frame(0,0);r['session']=data['session']
    else:raise ValueError('Unknown operation')
    self.send(200,json.dumps(r,separators=(',',':')).encode())
   except (ValueError,TypeError,KeyError,OSError) as e:self.send(400,json.dumps({'ok':False,'error':str(e)}).encode())

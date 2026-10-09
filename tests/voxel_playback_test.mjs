@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {NativePlayback} from '../client/voxel-lab/playback.mjs';
+import {NativePlayback,sheetCenterHeightChange} from '../client/voxel-lab/playback.mjs';
 const state=(time,component=1,material='glass',events=[])=>({time_s:time,events,cells:[{id:1,component,material,mass_kg:1,fixed:false,size_m:[1,1,1],position_m:[time,0,0]}]});
 const player=new NativePlayback();assert.equal(player.sample(0),null);
 player.reset(state(0),0);player.push(state(1),100);
@@ -15,3 +15,11 @@ for(let i=6;i<500;i++)player.push(state(i,2,'iron',[{a:1,b:2}]),500+i*100);
 assert.equal(player.bufferedStates,2,'bounded two-state playback storage');
 player.reset(state(0),0);assert.equal(player.bufferedStates,1);assert.equal(player.sample(0).time_s,0,'reset removes prior world frames');
 console.log('PASS playback: accepted brackets, no extrapolation, duplicate/late refusal, geometry/topology discontinuities and bounded/reset storage');
+
+const sheet={cells:[{id:1,object:1,position_m:[0,2,0],size_m:[1,1,1]},{id:2,object:1,position_m:[0,2,0],size_m:[2,1,1]}]};
+const moved={cells:[{...sheet.cells[1],position_m:[0,1.994,0]},{...sheet.cells[0],position_m:[0,1.997,0]}]};
+assert.ok(Math.abs(sheetCenterHeightChange(sheet,moved)+.005)<1e-14,'volume weighting and stable ids for unequal cells');
+assert.equal(sheetCenterHeightChange(sheet,sheet),0,'Before has no change');
+assert.equal(sheetCenterHeightChange(sheet,{cells:[moved.cells[0]]}),null,'missing tracked matter is not zero deformation');
+assert.equal(sheetCenterHeightChange(null,moved),null);
+console.log('PASS measured sheet center: original ids, volume weighting, baseline and unavailable history');
