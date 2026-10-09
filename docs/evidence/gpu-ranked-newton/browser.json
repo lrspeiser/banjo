@@ -1,0 +1,93 @@
+{
+  "schema": "banjo.gpu-ranked-newton.browser.v1",
+  "source_sha256": "a31a57e2f92a0e9ef727a4973737cc4c3a00c0573cae1d26e3a9d0c82c1b0412",
+  "declaration": {
+    "material": "glass",
+    "ball_material": "iron",
+    "ball_mass_kg": 0.1,
+    "height_m": 0.005,
+    "dt_s": 0.0010416666666666667,
+    "experiment": "sheet",
+    "device": "cuda:0",
+    "pipeline": "parallel",
+    "newton_strategy": "ranked"
+  },
+  "journal_sha256": "2ed448c0cda67d3117773d4498c5ddb354ce1d31b959aa529b55705113d6c207",
+  "journal_records": 98,
+  "accepted_snapshots": 97,
+  "accepted_microstep_accounts": 121,
+  "all_responses_ok": true,
+  "final_time_s": 0.09999999999999995,
+  "final_diagnostics": {
+    "dynamic_mass_kg": 0.12250000000000001,
+    "mechanical_j": 0.060054025981854976,
+    "material_stored_j": 8.936505504237296e-07,
+    "contact_stored_j": 7.68756284738077e-06,
+    "global_energy_residual_j": -2.1298240948652847e-13,
+    "momentum_n_s": [
+      -1.332588418151127e-05,
+      0.030977857726586303,
+      9.062222452872626e-07
+    ],
+    "angular_momentum_n_m_s": [
+      -7.230299041306888e-08,
+      -2.124463098979732e-09,
+      1.4250307934911312e-05
+    ],
+    "fracture_work_j": 0.0,
+    "plastic_work_j": 0.0,
+    "numerical_return_excess_j": 0.0,
+    "separated_sites": 0,
+    "yielded_faces": 0,
+    "interfaces": 48,
+    "maximum_energy_residual_j": 2.1693694971792812e-13,
+    "ground_impulse_n_s": [
+      -1.3325883828826654e-05,
+      0.15115035772828292,
+      9.062216940652449e-07
+    ],
+    "ground_torque_impulse_n_m_s": [
+      -7.233502832163338e-08,
+      -2.1244699582343255e-09,
+      1.4249088910155055e-05
+    ]
+  },
+  "performance": {
+    "pipeline": "parallel",
+    "newton_strategy": "ranked",
+    "step_s": 9.589890499657486,
+    "last_batch_ms": 285.57330003241077,
+    "compute_ratio": 0.010427647740458722,
+    "microsteps": 121,
+    "nonlinear_iterations": 1045,
+    "trial_evaluations": 193462
+  },
+  "first_start": {
+    "strategy": "ranked",
+    "starting_scores": [
+      0.0035765624804612113,
+      0.0035765624804612113,
+      0.0035765624804612113
+    ],
+    "attempted_fractions": [
+      1.0
+    ],
+    "converged_fraction": 1.0,
+    "iteration_evaluations": 4
+  },
+  "last_start": {
+    "strategy": "ranked",
+    "starting_scores": [
+      83.01487147165352,
+      19.41389008252701,
+      1.313385180596003
+    ],
+    "attempted_fractions": [
+      0.01
+    ],
+    "converged_fraction": 0.01,
+    "iteration_evaluations": 12
+  },
+  "before_live_control_checked": true,
+  "publication_check": "Post-push checkpoint hashes/revision and restart are checked separately; this capture is pre-publish."
+}

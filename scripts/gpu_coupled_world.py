@@ -115,7 +115,7 @@ class TrialFailure(RuntimeError):
         super().__init__(message);self.details=details or {}
 
 class CoupledEvaluator:
-    def __init__(self,bodies,edges,pipeline='parallel'):
+    def __init__(self,bodies,edges,pipeline='parallel',newton_strategy='ranked'):
         if (cp.__version__,np.__version__)!=('13.5.1','2.5.3'):raise RuntimeError('Unverified coupled runtime')
         cp.cuda.Device(0).use()
         # Shared finite contact dispatch has bounded two-level calls and local
@@ -131,6 +131,8 @@ class CoupledEvaluator:
         code='\n'.join((ROOT/name).read_text(encoding='utf8').replace('#pragma once','') for name in HEADERS)+'\n'+KERNEL
         self.module=cp.RawModule(code=code,options=('--std=c++17','--fmad=false'))
         if pipeline not in ('parallel','serial-reference'):raise ValueError('Unknown coupled trial pipeline')
+        if newton_strategy not in ('ranked','single-reference'):raise ValueError('Unknown Newton starting strategy')
+        self.newton_strategy=newton_strategy;self.last_solve=None
         self.pipeline=pipeline;self.kernel=self.module.get_function('coupled_trials');self.storage={};self.evaluations=0
         self.phases={name:self.module.get_function(name) for name in ('prepare_trials','prepare_pairs','contribution_trials','gather_body_trials','gather_ledger_trials','collect_trial_faults')}
         host_b=np.asarray(bodies);jobs=[];pairs=[]
@@ -183,14 +185,18 @@ class CoupledEvaluator:
     def solve(self,h,gravity=-9.81,maximum_iterations=24):
         original=self.bodies[:,14:20].reshape(-1);y=original[self.dynamic]*self.active_weights
         count=len(y);tolerance=1e-10*max(1.,float(cp.linalg.norm(y)))
-        trace=[];last_trial=None;jacobian=None
+        trace=[];last_trial=None;jacobian=None;jacobian_point=None;self.last_solve=None
+        fractions=(1.,.1,.01) if self.newton_strategy=='ranked' else (1.,)
+        guesses=None;order=[0];start_index=0;start_scores=None
         def refuse(message):
             # Failure-only observations never replace an accepted physical state.
             # Retain the actual last evaluated candidate, rather than inferring
             # the cause from the timestep at which subdivision eventually stops.
             details=dict(dt_s=h,gravity_m_s2=gravity,equation_tolerance=tolerance,iterations=trace,
                 initial_bodies=cp.asnumpy(self.bodies).tolist(),initial_edges=cp.asnumpy(self.edges).tolist(),
-                iterate_weighted_velocity=cp.asnumpy(y).tolist(),finite_difference_weighted_scale=1e-12)
+                iterate_weighted_velocity=cp.asnumpy(y).tolist(),finite_difference_weighted_scale=1e-12,
+                newton_strategy=self.newton_strategy,starting_fractions=list(fractions),starting_scores=start_scores,
+                attempted_fractions=[fractions[i] for i in order[:start_index+1]])
             if last_trial is not None:
                 result,values,velocity=last_trial
                 details['last_evaluated']=dict(weighted_velocity=cp.asnumpy(values).tolist(),
@@ -203,6 +209,7 @@ class CoupledEvaluator:
                 if np.isfinite(matrix).all():
                     singular=np.linalg.svd(matrix,compute_uv=False)
                     details['jacobian_singular_values']=singular.tolist();details['jacobian']=matrix.tolist()
+                    details['jacobian_weighted_velocity']=cp.asnumpy(jacobian_point).tolist()
             raise TrialFailure(message,details)
         def trials(values,base=None):
             nonlocal last_trial
@@ -211,12 +218,26 @@ class CoupledEvaluator:
             result=self.evaluate(velocity,h,gravity,_jacobian_base=base if self.pipeline=='parallel' else None)
             last_trial=result,values,velocity.reshape(-1,self.n,6)
             return result,result['residual'].reshape(len(values),-1)[:,self.dynamic],velocity.reshape(-1,self.n,6)
+        if self.newton_strategy=='ranked':
+            # Numerical starting guesses only: contract the candidate midpoint
+            # motion toward zero. No accepted velocity or history is assigned.
+            # A stiff implicit root can be close to that limit even when the
+            # original velocity guess enters a different softening branch.
+            guesses=cp.asarray([2*f-1 for f in fractions])[:,None]*y[None]
+            probe,r,_=trials(guesses)
+            scores=cp.where(probe['faults']==0,cp.linalg.norm(r,axis=1),cp.inf)
+            host_scores=cp.asnumpy(scores);start_scores=[float(x) if np.isfinite(x) else None for x in host_scores]
+            order=np.argsort(host_scores,kind='stable').tolist()
+            if start_scores[order[0]] is None:refuse('All Newton starting trials refused')
+            y=guesses[order[0]].copy()
         for iteration in range(maximum_iterations):
             out,residual,velocity=trials(y)
             if int(out['faults'][0]):refuse('Coupled trial fault '+str(int(out['faults'][0])))
             norm=float(cp.linalg.norm(residual[0]))
-            row=dict(iteration=iteration,equation_residual=norm,line_search=[]);trace.append(row)
+            row=dict(iteration=iteration,starting_fraction=fractions[order[start_index]],equation_residual=norm,line_search=[]);trace.append(row)
             if norm<=tolerance:
+                self.last_solve=dict(strategy=self.newton_strategy,starting_scores=start_scores,
+                    attempted_fractions=[fractions[i] for i in order[:start_index+1]],converged_fraction=fractions[order[start_index]],iteration_evaluations=len(trace))
                 return {k:out[k][0].copy() for k in ('poses','residual','history','forces','ledger','faults')},velocity[0].copy(),iteration,norm
             # Energy-weighted finite cells have sub-micrometre cohesive ranges.
             # A 1e-7 sqrt(J) perturbation crossed compression/damage branches
@@ -228,6 +249,7 @@ class CoupledEvaluator:
             diff,r,_=trials(perturbed,base=out)
             if bool(cp.any(diff['faults'])):refuse('Jacobian trial crosses a geometry/numeric boundary')
             jacobian=((r[:count]-r[count:])/(2*epsilon[:,None])).T
+            jacobian_point=y
             try:
                 with cupyx.errstate(linalg='raise'):delta=cp.linalg.solve(jacobian,residual[0])
             except np.linalg.LinAlgError:refuse('Singular coupled Newton Jacobian')
@@ -238,15 +260,22 @@ class CoupledEvaluator:
                 fault=int(probe['faults'][0]);probe_norm=float(cp.linalg.norm(r[0])) if fault==0 else None
                 row['line_search'].append(dict(scale=scale,fault=fault,equation_residual=probe_norm))
                 if fault==0 and probe_norm<norm*(1-1e-4*scale):y=candidate;accepted=True;break
-            if not accepted:refuse('Coupled Newton line search did not reduce the equation residual')
+            if not accepted:
+                # All starts share the SAME total 24-iteration limit. Restart
+                # only the private nonlinear iterate; the physical input,
+                # constitutive history, equation and admission gates are fixed.
+                if guesses is not None and iteration+1<maximum_iterations and start_index+1<len(order) and start_scores[order[start_index+1]] is not None:
+                    start_index+=1;y=guesses[order[start_index]].copy();continue
+                refuse('Coupled Newton line search did not reduce the equation residual')
         refuse('Coupled Newton iteration budget exceeded')
 
 def declaration(raw):
-    defaults=dict(material='glass',ball_material='iron',ball_mass_kg=.01,height_m=.02,dt_s=1/960,experiment='sheet',device='cuda:0',pipeline='parallel')
+    defaults=dict(material='glass',ball_material='iron',ball_mass_kg=.01,height_m=.02,dt_s=1/960,experiment='sheet',device='cuda:0',pipeline='parallel',newton_strategy='ranked')
     if not isinstance(raw,dict) or set(raw)-set(defaults):raise ValueError('Unknown coupled scene field')
     d=defaults|raw
     if d['device']!='cuda:0' or d['experiment'] not in ('sheet','freefall'):raise ValueError('Only explicit CUDA sheet/freefall experiments admitted')
     if d['pipeline'] not in ('parallel','serial-reference'):raise ValueError('Unknown coupled trial pipeline')
+    if d['newton_strategy'] not in ('ranked','single-reference'):raise ValueError('Unknown Newton starting strategy')
     for name in ('material','ball_material'):
         if d[name] not in ('glass','oak','iron','ice'):raise ValueError('Unknown declared material')
     for name,lo,hi in (('ball_mass_kg',.001,1.),('height_m',.001,10.)):
@@ -287,7 +316,7 @@ class GpuCoupledWorld:
                         edges.append(row)
         p=profiles[self.d['ball_material']];radius=(3*self.d['ball_mass_kg']/(4*math.pi*p['density_kg_m3']))**(1/3)
         body(2,p,[0,(.035 if self.d['experiment']=='sheet' else 0)+radius+self.d['height_m'],0],[radius]*3,mass=self.d['ball_mass_kg'])
-        self.eval=CoupledEvaluator(bodies,edges,pipeline=self.d['pipeline']);self.ticks=0;self.time=0.;self.step_s=0.;self.last_ms=0.;self.histories=np.zeros((len(edges),32))
+        self.eval=CoupledEvaluator(bodies,edges,pipeline=self.d['pipeline'],newton_strategy=self.d['newton_strategy']);self.ticks=0;self.time=0.;self.step_s=0.;self.last_ms=0.;self.histories=np.zeros((len(edges),32))
         self.P_ground=np.zeros(3);self.L_ground=np.zeros(3);self.max_residual=0.;self.fracture=self.plastic=self.return_excess=0.;self.total_iterations=0;self.microsteps=0
         baseline=self.eval.evaluate(self.eval.bodies[:,14:20],1e-12,gravity=0)
         if int(baseline['faults'][0]):raise RuntimeError('Invalid initial coupled energy state')
@@ -349,7 +378,7 @@ class GpuCoupledWorld:
                     if self.eval.m:self.eval.edges[:,35:67]=out['history']
                     accounts.append(dict(dt_s=h,energy_residual_j=balance,energy_tolerance_j=tolerance,P_residual_n_s=pres.tolist(),L_residual_n_m_s=lres.tolist(),
                         ground_impulse_n_s=reaction.tolist(),ground_torque_impulse_n_m_s=reaction_torque.tolist(),ledger=ledger.tolist(),iterations=iterations,equation_residual=equation,
-                        poses_wxyz=ending[:,7:14].tolist(),velocities=ending[:,14:20].tolist(),material_history=history.tolist()))
+                        poses_wxyz=ending[:,7:14].tolist(),velocities=ending[:,14:20].tolist(),material_history=history.tolist(),newton_start=copy.deepcopy(self.eval.last_solve)))
             self.histories=history;self.ticks+=steps;self.time+=steps*self.d['dt_s'];self.microsteps+=updates;self.total_iterations+=sum(a['iterations'] for a in accounts)
             self.fracture+=sum(a['ledger'][2] for a in accounts) if self.material_model!='connector-plastic' else 0
             self.plastic+=sum(a['ledger'][2] for a in accounts) if self.material_model=='connector-plastic' else 0
@@ -378,7 +407,7 @@ class GpuCoupledWorld:
                 momentum_n_s=p.tolist(),angular_momentum_n_m_s=l.tolist(),
                 fracture_work_j=self.fracture,plastic_work_j=self.plastic,numerical_return_excess_j=self.return_excess,separated_sites=separated,yielded_faces=yielded,interfaces=self.eval.m,
                 maximum_energy_residual_j=self.max_residual,ground_impulse_n_s=self.P_ground.tolist(),ground_torque_impulse_n_m_s=self.L_ground.tolist()),
-            substep_accounts=copy.deepcopy(self.last_accounts),performance=dict(pipeline=self.eval.pipeline,step_s=self.step_s,last_batch_ms=self.last_ms,compute_ratio=self.time/self.step_s if self.step_s else None,
+            substep_accounts=copy.deepcopy(self.last_accounts),performance=dict(pipeline=self.eval.pipeline,newton_strategy=self.eval.newton_strategy,step_s=self.step_s,last_batch_ms=self.last_ms,compute_ratio=self.time/self.step_s if self.step_s else None,
                 microsteps=self.microsteps,nonlinear_iterations=self.total_iterations,trial_evaluations=self.eval.evaluations),
             qualification=dict(backend='cupy-implicit-body',gpu=True,device='cuda:0',dtype='float64',source_sha256=self.hash,complete_physics_validated=False,realtime_qualified=False,
                 scope='Experimental finite rigid-cell isotropic inertia; declared mixed-mode cohesive/6-mode plastic interfaces and frictionless normal compliance. No calibrated bulk/grain/J2/thermal law or CCD qualification.'))

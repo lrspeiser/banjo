@@ -1,8 +1,9 @@
 {
-  "title": "CUDA fault scan accelerated; actual Newton refusal causes recorded; strong impacts and realtime remain open",
+  "title": "Ranked CUDA Newton completes stronger controls; timestep accuracy and realtime remain open",
   "date": "2026-10-09",
   "native_sha256": "eb3527a07fda2a0c181ff11683eb907a16045bf0fcae66e4db58f703e7df9ee4",
   "changes": [
+    "Coupled lab adds ranked Newton starting guesses and an explicit single-start reference. The same total 24-iteration bound and physical gates remain. Strong glass/oak/iron/ice controls now finish at both tested timesteps; trajectory differences remain substantial. Run 0.1 s displays actual accepted states.",
     "Coupled CUDA fault collection now runs in parallel with unchanged fault priority and physical sums. The lab shows rejected-trial counts and rollback; its log records actual failed Newton inputs/candidates/Jacobian. Strong glass/ice convergence remains unresolved.",
     "Coupled 3D lab now defaults to Parallel CUDA and offers Serial reference. Ordered material/contact contributions and current-Jacobian reuse preserve all four tested physical histories exactly. Controlled runs improve to about 1.4\u20133.0 wall seconds per 0.042 physical seconds; still far from realtime.",
     "New /coupled 3D page: nine connected finite cells, density-derived ball, fixed supports, actual CUDA material/contact/body solve, Before/Live and downloadable complete microstep records. Low-energy four-material controls pass; fracture/yield and realtime remain unqualified.",
@@ -20,6 +21,16 @@
     "Glass/oak/iron/ice complete at both timesteps in the initial trial. Full convergence, large energy deficits, connected calculation speed and thermal/fluid/power laws remain unfinished."
   ],
   "checks": [
+    {
+      "label": "Ranked Newton control completion",
+      "status": "passed",
+      "value": "Analytical stiff oscillator and recorded glass refusal replay; eight stronger material/timestep controls close work/P/L; twelve scoped suites, exact current serial/parallel history parity and 345/345 source registration. Completion is not material-trajectory qualification."
+    },
+    {
+      "label": "Material trajectory accuracy",
+      "status": "open",
+      "value": "Across 1/960 and 1/1920 s, common-time glass position differs by 2.17 mm and velocity by 0.295 m/s. Solver-start experiments also changed ice fracture outcomes. Contact timing, branch selection and timestep convergence remain unqualified."
+    },
     {
       "label": "CUDA fault priority and private diagnostics",
       "status": "passed",
@@ -150,5 +161,5 @@
   "gpu_worker_sha256": "9380a55b680cc4b2e7b1dd3781d2e08bfad57c5b534d26024e901a84a6010bb2",
   "physx_source_sha256": "d1d30abfd67380a66fcf4664759e1917e50137bd7f6ef92bb160d0f1b5b5157f",
   "gpu_material_source_sha256": "439309fd656c70e3f3728fda7a7260aad16ecfe72c0f2f32d9c388b67690f559",
-  "gpu_coupled_source_sha256": "3954e4447ad9986acce3de570c5fbd5b0ff6af71e1cf1443156980f56b7867ac"
+  "gpu_coupled_source_sha256": "a31a57e2f92a0e9ef727a4973737cc4c3a00c0573cae1d26e3a9d0c82c1b0412"
 }

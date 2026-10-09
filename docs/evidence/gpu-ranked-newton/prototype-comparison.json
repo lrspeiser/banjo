@@ -1,0 +1,430 @@
+[
+  {
+    "prototype": "multistart",
+    "baseline": "f21567fcdcd9c83a6c6ffad3cdcfd98acc7b9037",
+    "method_override": true,
+    "scope": "Local experiment replaced CoupledEvaluator.solve at runtime; the original world source hash does not identify this override. This is not the published strategy or a validated material result.",
+    "script_sha256": "db260dc0514dbc57070294741410b9bfae6cb15dd96e17fdf1c0ef88de13892e",
+    "script": "import sys,json,inspect,textwrap,time\nfrom pathlib import Path\nsys.path.insert(0,'scripts')\nimport gpu_coupled_world as module\nbase=textwrap.dedent(inspect.getsource(module.CoupledEvaluator.solve));solvers=[]\nfor fraction in (1.,.1,.01):\n source=base.replace('y=original[self.dynamic]*self.active_weights',f'y=({2*fraction}-1)*original[self.dynamic]*self.active_weights')\n scope=dict(vars(module));exec(source,scope);solvers.append(scope['solve'])\ndef bounded(self,h,gravity=-9.81,maximum_iterations=24):\n used=0\n for solve in solvers:\n  if used>=maximum_iterations:break\n  try:\n   result,velocity,iterations,norm=solve(self,h,gravity,maximum_iterations-used)\n   return result,velocity,used+iterations,norm\n  except module.TrialFailure as error:\n   used+=len(error.details.get('iterations',[])) or 1;last=error\n raise last\nmodule.CoupledEvaluator.solve=bounded\nresult=dict(algorithm='Private bounded three-start Newton; total iteration limit stays 24; no changed physical laws or admission tolerances',comparisons=[])\nfor material in ('glass','oak','iron','ice'):\n w=module.GpuCoupledWorld(dict(material=material,ball_mass_kg=.1,height_m=.005,dt_s=1/960));started=time.perf_counter()\n for tick in range(100):\n  try:w.advance(1)\n  except RuntimeError:break\n s=w.snapshot();row=dict(material=material,wall_s=time.perf_counter()-started,state=s);result['comparisons'].append(row)\n print(material,s['time_s'],row['wall_s'],'steps',s['performance']['microsteps'],'iterations',s['performance']['nonlinear_iterations'],'separated',s['diagnostics']['separated_sites'],'E',s['diagnostics']['global_energy_residual_j'],'failure',s.get('rejected_candidate',{}).get('error'),flush=True)\n Path('build/gpu-contact-convergence/multistart-world.json').write_text(json.dumps(result,indent=2)+'\\n',encoding='utf8')\n",
+    "comparisons": [
+      {
+        "material": "glass",
+        "conditions": {
+          "material": "glass",
+          "ball_material": "iron",
+          "ball_mass_kg": 0.1,
+          "height_m": 0.005,
+          "dt_s": 0.0010416666666666667,
+          "experiment": "sheet",
+          "device": "cuda:0",
+          "pipeline": "parallel"
+        },
+        "time_s": 0.1041666666666666,
+        "wall_s": 132.14459580002585,
+        "diagnostics": {
+          "dynamic_mass_kg": 0.12250000000000001,
+          "mechanical_j": 0.06004466134905784,
+          "material_stored_j": 1.4016912975610286e-05,
+          "contact_stored_j": 3.928933321892177e-06,
+          "global_energy_residual_j": -1.1041861869287573e-13,
+          "momentum_n_s": [
+            -7.024484290308914e-06,
+            0.025156338382632863,
+            1.0952823357972521e-05
+          ],
+          "angular_momentum_n_m_s": [
+            1.2113521559499772e-05,
+            4.098543075431758e-08,
+            6.812573652283517e-06
+          ],
+          "fracture_work_j": 0.0,
+          "plastic_work_j": 0.0,
+          "numerical_return_excess_j": 0.0,
+          "separated_sites": 0,
+          "yielded_faces": 0,
+          "interfaces": 48,
+          "maximum_energy_residual_j": 1.234556619260363e-13,
+          "ground_impulse_n_s": [
+            -7.024484303904097e-06,
+            0.15033602588885306,
+            1.0952822639495502e-05
+          ],
+          "ground_torque_impulse_n_m_s": [
+            1.211123433074173e-05,
+            4.0985436658742426e-08,
+            6.809954706106018e-06
+          ]
+        },
+        "microsteps": 615,
+        "iterations": 9780
+      },
+      {
+        "material": "oak",
+        "conditions": {
+          "material": "oak",
+          "ball_material": "iron",
+          "ball_mass_kg": 0.1,
+          "height_m": 0.005,
+          "dt_s": 0.0010416666666666667,
+          "experiment": "sheet",
+          "device": "cuda:0",
+          "pipeline": "parallel"
+        },
+        "time_s": 0.1041666666666666,
+        "wall_s": 9.434743999969214,
+        "diagnostics": {
+          "dynamic_mass_kg": 0.1063,
+          "mechanical_j": 0.05526548432942884,
+          "material_stored_j": 3.695998226567886e-06,
+          "contact_stored_j": 2.5766868223092105e-05,
+          "global_energy_residual_j": 4.1275316498001757e-13,
+          "momentum_n_s": [
+            1.6620759250293145e-06,
+            0.02501459928003624,
+            -4.593784135485664e-07
+          ],
+          "angular_momentum_n_m_s": [
+            -4.114639605513355e-07,
+            7.526497380572033e-09,
+            -1.060203582382586e-06
+          ],
+          "fracture_work_j": 0.0,
+          "plastic_work_j": 0.0,
+          "numerical_return_excess_j": 0.0,
+          "separated_sites": 0,
+          "yielded_faces": 0,
+          "interfaces": 48,
+          "maximum_energy_residual_j": 2.2192820670267017e-13,
+          "ground_impulse_n_s": [
+            1.66207559821646e-06,
+            0.13363991178157103,
+            -4.59378434233291e-07
+          ],
+          "ground_torque_impulse_n_m_s": [
+            -4.1128728225487064e-07,
+            7.526498872705236e-09,
+            -1.060437858694692e-06
+          ]
+        },
+        "microsteps": 126,
+        "iterations": 1079
+      },
+      {
+        "material": "iron",
+        "conditions": {
+          "material": "iron",
+          "ball_material": "iron",
+          "ball_mass_kg": 0.1,
+          "height_m": 0.005,
+          "dt_s": 0.0010416666666666667,
+          "experiment": "sheet",
+          "device": "cuda:0",
+          "pipeline": "parallel"
+        },
+        "time_s": 0.1041666666666666,
+        "wall_s": 16.646086899971124,
+        "diagnostics": {
+          "dynamic_mass_kg": 0.17083000000000004,
+          "mechanical_j": 0.07428443363362942,
+          "material_stored_j": 1.6924602704305574e-06,
+          "contact_stored_j": 1.0155841650806987e-10,
+          "global_energy_residual_j": -7.480127628411992e-15,
+          "momentum_n_s": [
+            -1.9464725275249716e-07,
+            0.024456468191075546,
+            7.161640616456245e-09
+          ],
+          "angular_momentum_n_m_s": [
+            4.937452675943247e-09,
+            8.284567038747802e-11,
+            4.070368887631839e-07
+          ],
+          "fracture_work_j": 0.0,
+          "plastic_work_j": 0.0,
+          "numerical_return_excess_j": 0.0,
+          "separated_sites": 0,
+          "yielded_faces": 0,
+          "interfaces": 12,
+          "maximum_energy_residual_j": 1.2085803383237167e-14,
+          "ground_impulse_n_s": [
+            -1.9464547214374562e-07,
+            0.19902337441505133,
+            7.163110839315637e-09
+          ],
+          "ground_torque_impulse_n_m_s": [
+            4.935084141088952e-09,
+            8.28593711943656e-11,
+            4.0637368830172276e-07
+          ]
+        },
+        "microsteps": 163,
+        "iterations": 1916
+      },
+      {
+        "material": "ice",
+        "conditions": {
+          "material": "ice",
+          "ball_material": "iron",
+          "ball_mass_kg": 0.1,
+          "height_m": 0.005,
+          "dt_s": 0.0010416666666666667,
+          "experiment": "sheet",
+          "device": "cuda:0",
+          "pipeline": "parallel"
+        },
+        "time_s": 0.1041666666666666,
+        "wall_s": 37.98789089999627,
+        "diagnostics": {
+          "dynamic_mass_kg": 0.108253,
+          "mechanical_j": 0.054609542750084804,
+          "material_stored_j": 3.931459228860017e-05,
+          "contact_stored_j": 4.104559619211239e-05,
+          "global_energy_residual_j": -1.7458257062230587e-13,
+          "momentum_n_s": [
+            2.338044998478541e-06,
+            -0.015324068464147099,
+            -2.472226327380637e-07
+          ],
+          "angular_momentum_n_m_s": [
+            -6.405603171413768e-07,
+            -9.198373432883767e-10,
+            -6.920695824092574e-06
+          ],
+          "fracture_work_j": 0.0011798121567256534,
+          "plastic_work_j": 0.0,
+          "numerical_return_excess_j": 0.0,
+          "separated_sites": 31,
+          "yielded_faces": 0,
+          "interfaces": 48,
+          "maximum_energy_residual_j": 1.5651976242869736e-13,
+          "ground_impulse_n_s": [
+            2.3380452337385746e-06,
+            0.09529696590997165,
+            -2.4722280477190723e-07
+          ],
+          "ground_torque_impulse_n_m_s": [
+            -6.406076214501915e-07,
+            -9.198361833907928e-10,
+            -6.918741612739686e-06
+          ]
+        },
+        "microsteps": 223,
+        "iterations": 3155
+      }
+    ]
+  },
+  {
+    "prototype": "ranked",
+    "baseline": "f21567fcdcd9c83a6c6ffad3cdcfd98acc7b9037",
+    "method_override": true,
+    "scope": "Local experiment replaced CoupledEvaluator.solve at runtime; the original world source hash does not identify this override. This is not the published strategy or a validated material result.",
+    "script_sha256": "f6c33b2a17069e8d92698e204a779a8242e4c4c542c31e91cce5af53433b9c8b",
+    "script": "import sys,json,inspect,textwrap,time\nfrom pathlib import Path\nsys.path.insert(0,'scripts')\nimport cupy as cp,numpy as np\nimport gpu_coupled_world as module\nbase=textwrap.dedent(inspect.getsource(module.CoupledEvaluator.solve));solvers=[]\nfractions=(1.,.1,.01)\nfor fraction in fractions:\n source=base.replace('y=original[self.dynamic]*self.active_weights',f'y=({2*fraction}-1)*original[self.dynamic]*self.active_weights')\n scope=dict(vars(module));exec(source,scope);solvers.append(scope['solve'])\ndef bounded(self,h,gravity=-9.81,maximum_iterations=24):\n used=0;v=cp.broadcast_to(self.bodies[:,14:20],(3,self.n,6)).copy();v*=cp.asarray([2*f-1 for f in fractions])[:,None,None]\n probes=self.evaluate(v,h,gravity);norms=cp.linalg.norm(probes['residual'].reshape(3,-1)[:,self.dynamic],axis=1)\n norms=cp.where(probes['faults']==0,norms,cp.inf);order=cp.asnumpy(cp.argsort(norms,kind='stable'))\n for index in order:\n  if used>=maximum_iterations:break\n  try:\n   result,velocity,iterations,norm=solvers[index](self,h,gravity,maximum_iterations-used)\n   return result,velocity,used+iterations,norm\n  except module.TrialFailure as error:\n   used+=len(error.details.get('iterations',[])) or 1;last=error\n raise last\nmodule.CoupledEvaluator.solve=bounded\nresult=dict(algorithm='Private residual-ranked bounded three-start Newton; total iteration limit stays 24; physical laws and gates unchanged',comparisons=[])\nfor material in ('glass','oak','iron','ice'):\n w=module.GpuCoupledWorld(dict(material=material,ball_mass_kg=.1,height_m=.005,dt_s=1/960));started=time.perf_counter()\n for tick in range(100):\n  try:w.advance(1)\n  except RuntimeError:break\n  if (tick+1)%20==0:print(material,'tick',tick+1,'wall',time.perf_counter()-started,flush=True)\n s=w.snapshot();row=dict(material=material,wall_s=time.perf_counter()-started,state=s);result['comparisons'].append(row)\n print(material,s['time_s'],row['wall_s'],'steps',s['performance']['microsteps'],'iterations',s['performance']['nonlinear_iterations'],'separated',s['diagnostics']['separated_sites'],'E',s['diagnostics']['global_energy_residual_j'],'failure',s.get('rejected_candidate',{}).get('error'),flush=True)\n Path('build/gpu-contact-convergence/ranked-world.json').write_text(json.dumps(result,indent=2)+'\\n',encoding='utf8')\n",
+    "comparisons": [
+      {
+        "material": "glass",
+        "conditions": {
+          "material": "glass",
+          "ball_material": "iron",
+          "ball_mass_kg": 0.1,
+          "height_m": 0.005,
+          "dt_s": 0.0010416666666666667,
+          "experiment": "sheet",
+          "device": "cuda:0",
+          "pipeline": "parallel"
+        },
+        "time_s": 0.1041666666666666,
+        "wall_s": 11.465405800030567,
+        "diagnostics": {
+          "dynamic_mass_kg": 0.12250000000000001,
+          "mechanical_j": 0.060046672683738894,
+          "material_stored_j": 8.858341554563402e-06,
+          "contact_stored_j": 7.0761702717903295e-06,
+          "global_energy_residual_j": 9.948986079422184e-14,
+          "momentum_n_s": [
+            -1.32845666357177e-05,
+            0.025934893960957453,
+            -3.969675608678215e-06
+          ],
+          "angular_momentum_n_m_s": [
+            -5.605997223780363e-06,
+            -4.311981396063622e-09,
+            1.4362473185396277e-05
+          ],
+          "fracture_work_j": 0.0,
+          "plastic_work_j": 0.0,
+          "numerical_return_excess_j": 0.0,
+          "separated_sites": 0,
+          "yielded_faces": 0,
+          "interfaces": 48,
+          "maximum_energy_residual_j": 1.0054309562182033e-13,
+          "ground_impulse_n_s": [
+            -1.3284566678003513e-05,
+            0.15111458145992487,
+            -3.969675920966201e-06
+          ],
+          "ground_torque_impulse_n_m_s": [
+            -5.6050013487388464e-06,
+            -4.311980525368242e-09,
+            1.4358345918414066e-05
+          ]
+        },
+        "microsteps": 130,
+        "iterations": 1183
+      },
+      {
+        "material": "oak",
+        "conditions": {
+          "material": "oak",
+          "ball_material": "iron",
+          "ball_mass_kg": 0.1,
+          "height_m": 0.005,
+          "dt_s": 0.0010416666666666667,
+          "experiment": "sheet",
+          "device": "cuda:0",
+          "pipeline": "parallel"
+        },
+        "time_s": 0.1041666666666666,
+        "wall_s": 3.4495987000409514,
+        "diagnostics": {
+          "dynamic_mass_kg": 0.1063,
+          "mechanical_j": 0.05524332290299579,
+          "material_stored_j": 4.9023837093194e-05,
+          "contact_stored_j": 2.6004554787333742e-06,
+          "global_energy_residual_j": 1.0196704591791672e-13,
+          "momentum_n_s": [
+            -1.527038629798743e-06,
+            0.024124253935040977,
+            -7.134401963819578e-08
+          ],
+          "angular_momentum_n_m_s": [
+            -1.9617874196144138e-08,
+            -3.273099711513164e-14,
+            4.2322677143052154e-07
+          ],
+          "fracture_work_j": 0.0,
+          "plastic_work_j": 0.0,
+          "numerical_return_excess_j": 0.0,
+          "separated_sites": 0,
+          "yielded_faces": 0,
+          "interfaces": 48,
+          "maximum_energy_residual_j": 8.388585137833977e-14,
+          "ground_impulse_n_s": [
+            -1.5270386733316267e-06,
+            0.1327495664359506,
+            -7.134410063039466e-08
+          ],
+          "ground_torque_impulse_n_m_s": [
+            -1.9598963251511935e-08,
+            -3.152542208374628e-14,
+            4.2282041156511373e-07
+          ]
+        },
+        "microsteps": 103,
+        "iterations": 632
+      },
+      {
+        "material": "iron",
+        "conditions": {
+          "material": "iron",
+          "ball_material": "iron",
+          "ball_mass_kg": 0.1,
+          "height_m": 0.005,
+          "dt_s": 0.0010416666666666667,
+          "experiment": "sheet",
+          "device": "cuda:0",
+          "pipeline": "parallel"
+        },
+        "time_s": 0.1041666666666666,
+        "wall_s": 11.452291599998716,
+        "diagnostics": {
+          "dynamic_mass_kg": 0.17083000000000004,
+          "mechanical_j": 0.07428118566311763,
+          "material_stored_j": 3.869237039098587e-06,
+          "contact_stored_j": 1.071295434653815e-06,
+          "global_energy_residual_j": 1.2563561302414428e-13,
+          "momentum_n_s": [
+            6.210646118256455e-07,
+            0.024631745573845138,
+            2.9820011614673227e-08
+          ],
+          "angular_momentum_n_m_s": [
+            -8.703708943920556e-07,
+            -1.5750903443249795e-10,
+            -2.141876249811748e-06
+          ],
+          "fracture_work_j": 0.0,
+          "plastic_work_j": 0.0,
+          "numerical_return_excess_j": 0.0,
+          "separated_sites": 0,
+          "yielded_faces": 0,
+          "interfaces": 12,
+          "maximum_energy_residual_j": 1.3684673845984445e-13,
+          "ground_impulse_n_s": [
+            6.210629588699671e-07,
+            0.19919865181714047,
+            2.9820432793922245e-08
+          ],
+          "ground_torque_impulse_n_m_s": [
+            -8.703714101081898e-07,
+            -1.5750295449128202e-10,
+            -2.142049134648316e-06
+          ]
+        },
+        "microsteps": 135,
+        "iterations": 1418
+      },
+      {
+        "material": "ice",
+        "conditions": {
+          "material": "ice",
+          "ball_material": "iron",
+          "ball_mass_kg": 0.1,
+          "height_m": 0.005,
+          "dt_s": 0.0010416666666666667,
+          "experiment": "sheet",
+          "device": "cuda:0",
+          "pipeline": "parallel"
+        },
+        "time_s": 0.1041666666666666,
+        "wall_s": 3.3669470999739133,
+        "diagnostics": {
+          "dynamic_mass_kg": 0.108253,
+          "mechanical_j": 0.055756867257937825,
+          "material_stored_j": 6.827065614865553e-05,
+          "contact_stored_j": 4.457718121229389e-05,
+          "global_energy_residual_j": -1.6697754290362354e-13,
+          "momentum_n_s": [
+            2.801692776377963e-06,
+            0.024685600011081346,
+            5.481156666334849e-09
+          ],
+          "angular_momentum_n_m_s": [
+            1.8319861267528865e-08,
+            1.560980422342718e-11,
+            -1.6602945039288888e-06
+          ],
+          "fracture_work_j": 0.0,
+          "plastic_work_j": 0.0,
+          "numerical_return_excess_j": 0.0,
+          "separated_sites": 0,
+          "yielded_faces": 0,
+          "interfaces": 48,
+          "maximum_energy_residual_j": 3.207063531586999e-13,
+          "ground_impulse_n_s": [
+            2.8016931230406414e-06,
+            0.1353066343865241,
+            5.4812636519333065e-09
+          ],
+          "ground_torque_impulse_n_m_s": [
+            1.8318063617043182e-08,
+            1.5612933528190844e-11,
+            -1.659164710257551e-06
+          ]
+        },
+        "microsteps": 102,
+        "iterations": 593
+      }
+    ]
+  }
+]
