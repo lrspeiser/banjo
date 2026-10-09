@@ -3,6 +3,7 @@
   "date": "2026-10-09",
   "native_sha256": "eb3527a07fda2a0c181ff11683eb907a16045bf0fcae66e4db58f703e7df9ee4",
   "changes": [
+    "Parallel coupled CUDA skips guaranteed-zero separated-pair ledger groups in original addition order and computes shared initial geometry once per trial batch. Contact sites shows actual sites from the last accepted substep. The final permitted Newton update can pass its original residual tolerance without an extra loop iteration. Full impact accuracy and realtime remain unqualified.",
     "Coupled lab adds Target view, Follow ball and Full drop with actual-position markers, simulated time, gap and speed. Run 10 steps shows its duration; Run to ball contact advances accepted steps with Stop. Edited settings are applied before Run and support motion cannot masquerade as ball contact. The exact replay log has a larger bounded storage allowance. Physics laws and gates are unchanged.",
     "Coupled GPU lab adds Linear solve: Resident cuSOLVER on pinned Windows x64. Reusable buffers and device error status support actual changed-input command replay. Eight tested glass/oak/iron/ice histories match CuPy reference exactly. CuPy reference remains default; the full nonlinear loop is still host controlled and realtime remains open.",
     "Coupled GPU lab tries the full Newton step first, then batches smaller choices on CUDA. Select Step-size probes to compare the retained one-at-a-time reference. Four-material accepted poses, velocities, material history and work records match exactly. Measured low-energy wall time improves 12\u201326%; full material accuracy and realtime remain open.",
@@ -186,6 +187,6 @@
   "gpu_worker_sha256": "9380a55b680cc4b2e7b1dd3781d2e08bfad57c5b534d26024e901a84a6010bb2",
   "physx_source_sha256": "d1d30abfd67380a66fcf4664759e1917e50137bd7f6ef92bb160d0f1b5b5157f",
   "gpu_material_source_sha256": "439309fd656c70e3f3728fda7a7260aad16ecfe72c0f2f32d9c388b67690f559",
-  "gpu_coupled_source_sha256": "2ec72186d7e2c6c434cbb9f1140b7f5b2e06b81dd933ca870466997c5e4ce3ab",
+  "gpu_coupled_source_sha256": "f1cb8651d27c90b5fa46a1d985fc105a846421b77407cfe07f500180202a7dca",
   "gpu_representation_scope": "Experimental isolated rigid sphere plus continuously solved material island; no detailed sphere fracture, heat or fluid coupling"
 }

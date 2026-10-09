@@ -1,0 +1,367 @@
+{
+  "source_sha256": "5d56634eca0190e53bd73733ea4c8d86ef63a091e0980214add10285faa04d5c",
+  "baseline_revision": "2747d8c1f798c36db8286cc7e8e455fccd359d4e",
+  "scope": "Same shared laws and controller; baseline reconstructs only prior pair/ledger phase kernels. Complete Python advance/snapshot, excludes HTTP/render. Alternating-order four-material prefix and two complete glass attempts.",
+  "prefix": [
+    {
+      "material": "glass",
+      "conditions": {
+        "material": "glass",
+        "ball_material": "iron",
+        "ball_mass_kg": 0.01,
+        "height_m": 10,
+        "dt_s": 0.004166666666666667,
+        "experiment": "sheet",
+        "device": "cuda:0",
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "cupy-reference",
+        "contact_resolution": "reference",
+        "representation_policy": "partitioned-flight"
+      },
+      "physical_s": 0.09999999999999999,
+      "reference_wall_s": 5.164983199967537,
+      "current_wall_s": 4.359412299934775,
+      "speedup": 1.1847888762539884,
+      "exact_common_time_state": true,
+      "state_sha256": "924ebe79d8ca9e57b5e5c149406c162e7c0392cd81cf77cf346774f7130e30e3",
+      "diagnostics": {
+        "dynamic_mass_kg": 0.03250000000000001,
+        "mechanical_j": 0.9917143953971387,
+        "material_stored_j": 1.715841709750104e-14,
+        "contact_stored_j": 4.706356829316638e-12,
+        "global_energy_residual_j": 1.1102230246251565e-16,
+        "momentum_n_s": [
+          1.8437482930627843e-12,
+          -0.009810707719672813,
+          3.6302754863975047e-13
+        ],
+        "angular_momentum_n_m_s": [
+          1.0843974903525472e-14,
+          -1.0976005345269929e-14,
+          -5.52775939386131e-14
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 48,
+        "maximum_energy_residual_j": 1.9668065852410096e-16,
+        "ground_impulse_n_s": [
+          4.653475045711624e-13,
+          0.022071792260860836,
+          -2.7131775009328755e-13
+        ],
+        "ground_torque_impulse_n_m_s": [
+          1.0778429926295745e-14,
+          9.42965885155039e-15,
+          -8.602331850784486e-14
+        ]
+      }
+    },
+    {
+      "material": "oak",
+      "conditions": {
+        "material": "oak",
+        "ball_material": "iron",
+        "ball_mass_kg": 0.01,
+        "height_m": 10,
+        "dt_s": 0.004166666666666667,
+        "experiment": "sheet",
+        "device": "cuda:0",
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "cupy-reference",
+        "contact_resolution": "reference",
+        "representation_policy": "partitioned-flight"
+      },
+      "physical_s": 0.09999999999999999,
+      "reference_wall_s": 0.7038131996523589,
+      "current_wall_s": 0.6539231002097949,
+      "speedup": 1.0762935266035991,
+      "exact_common_time_state": true,
+      "state_sha256": "488261c0a544d57ab42a20d9fae32475a84f589811a961db042a63f211c076dd",
+      "diagnostics": {
+        "dynamic_mass_kg": 0.016300000000000002,
+        "mechanical_j": 0.9869467353996111,
+        "material_stored_j": 7.944364086920597e-14,
+        "contact_stored_j": 2.1716555514624734e-12,
+        "global_energy_residual_j": 2.220446049250313e-16,
+        "momentum_n_s": [
+          -1.0025123917746575e-13,
+          -0.009809750030768699,
+          -1.276203620857243e-13
+        ],
+        "angular_momentum_n_m_s": [
+          -3.832254541558091e-15,
+          2.0740927275170674e-15,
+          3.010111779383988e-15
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 48,
+        "maximum_energy_residual_j": 2.0757724800979763e-16,
+        "ground_impulse_n_s": [
+          -9.289184256033466e-13,
+          0.0061805499628984194,
+          -2.588469308090989e-13
+        ],
+        "ground_torque_impulse_n_m_s": [
+          2.7093449278069577e-14,
+          6.7518919418580875e-15,
+          1.1968056609968131e-14
+        ]
+      }
+    },
+    {
+      "material": "iron",
+      "conditions": {
+        "material": "iron",
+        "ball_material": "iron",
+        "ball_mass_kg": 0.01,
+        "height_m": 10,
+        "dt_s": 0.004166666666666667,
+        "experiment": "sheet",
+        "device": "cuda:0",
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "cupy-reference",
+        "contact_resolution": "reference",
+        "representation_policy": "partitioned-flight"
+      },
+      "physical_s": 0.09999999999999999,
+      "reference_wall_s": 5.442775399889797,
+      "current_wall_s": 4.676160700211767,
+      "speedup": 1.163941050965873,
+      "exact_common_time_state": true,
+      "state_sha256": "0e24a65e3412d5d37b87ca7c8d4b0d602b3bbff50ed96635194788a2e514eea5",
+      "diagnostics": {
+        "dynamic_mass_kg": 0.08083000000000001,
+        "mechanical_j": 1.0059379143740081,
+        "material_stored_j": 2.055083530104941e-12,
+        "contact_stored_j": 2.5798956362068624e-11,
+        "global_energy_residual_j": 0.0,
+        "momentum_n_s": [
+          -3.9031674945019926e-12,
+          -0.009813001479594583,
+          -1.164899312042916e-13
+        ],
+        "angular_momentum_n_m_s": [
+          -2.7606022113613684e-15,
+          4.3753715879980155e-14,
+          1.1681800484625124e-13
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 12,
+        "maximum_energy_residual_j": 4.2245493873668924e-16,
+        "ground_impulse_n_s": [
+          -7.560657738153697e-12,
+          0.0694812285259854,
+          4.4477577212193127e-13
+        ],
+        "ground_torque_impulse_n_m_s": [
+          -8.219751156010637e-14,
+          7.89833068390517e-14,
+          2.9085370473661893e-15
+        ]
+      }
+    },
+    {
+      "material": "ice",
+      "conditions": {
+        "material": "ice",
+        "ball_material": "iron",
+        "ball_mass_kg": 0.01,
+        "height_m": 10,
+        "dt_s": 0.004166666666666667,
+        "experiment": "sheet",
+        "device": "cuda:0",
+        "pipeline": "parallel",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "cupy-reference",
+        "contact_resolution": "reference",
+        "representation_policy": "partitioned-flight"
+      },
+      "physical_s": 0.09999999999999999,
+      "reference_wall_s": 1.364489599771332,
+      "current_wall_s": 1.1897670000907965,
+      "speedup": 1.1468544678640453,
+      "exact_common_time_state": true,
+      "state_sha256": "ba75cf3b3a5ad9b3566e3f945ab205432f059507818cdfdcae92a685737d3ee1",
+      "diagnostics": {
+        "dynamic_mass_kg": 0.018253000000000002,
+        "mechanical_j": 0.9875215032747977,
+        "material_stored_j": 7.435699105474143e-12,
+        "contact_stored_j": 1.9628772810019762e-11,
+        "global_energy_residual_j": 0.0,
+        "momentum_n_s": [
+          -2.0847964365203315e-13,
+          -0.009809471284750487,
+          7.470211140640996e-13
+        ],
+        "angular_momentum_n_m_s": [
+          2.2597680121273683e-14,
+          -7.232721064238818e-15,
+          6.4586391670015544e-15
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 48,
+        "maximum_energy_residual_j": 2.509347334361387e-16,
+        "ground_impulse_n_s": [
+          -8.92159154271285e-13,
+          0.008096721715822826,
+          2.3782311134163358e-14
+        ],
+        "ground_torque_impulse_n_m_s": [
+          -8.905402837713178e-15,
+          -6.081319008481569e-15,
+          8.765996427179317e-15
+        ]
+      }
+    }
+  ],
+  "glass_10m": [
+    {
+      "path": "current",
+      "physical_s": 1.4249999999999963,
+      "wall_s": 36.02186850004364,
+      "refusal": "Coupled Newton iteration budget exceeded",
+      "accepted_state_chain_sha256": "0849b83b1c0d7bf95f7074fc4403fb78f0fee9d5ee29b56f97139df38ba1da8d",
+      "accepted_final_state_sha256": "019bcbd81bd6c64f1054ca154e4da06c8f5b93ccdca78e912967b2123f1c496b",
+      "diagnostics": {
+        "dynamic_mass_kg": 0.03250000000000001,
+        "mechanical_j": 0.991714395397579,
+        "material_stored_j": 2.2350827717078884e-12,
+        "contact_stored_j": 2.0431545468058627e-12,
+        "global_energy_residual_j": -4.884981308350689e-15,
+        "momentum_n_s": [
+          -7.534295927668662e-12,
+          -0.13979284902720285,
+          -3.290833469462329e-12
+        ],
+        "angular_momentum_n_m_s": [
+          -9.821020187010265e-14,
+          -1.2442471163680945e-13,
+          2.256539049998518e-13
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 48,
+        "maximum_energy_residual_j": 3.08769241583504e-16,
+        "ground_impulse_n_s": [
+          -6.267563757128613e-12,
+          0.31453277600952473,
+          8.357753729131286e-13
+        ],
+        "ground_torque_impulse_n_m_s": [
+          1.0900665252237677e-11,
+          -1.5854544116288561e-13,
+          8.593074953176361e-12
+        ]
+      },
+      "microsteps": 522,
+      "iterations": 4362,
+      "refusal_witness_sha256": "07a2768e1a3c4922626b56a0664d29b671dd9e8fd9e0aaa425d3541077d0daba",
+      "refusal_counts": {
+        "Coupled Newton line search did not reduce the equation residual": 8,
+        "Coupled Newton iteration budget exceeded": 11,
+        "Coupled finite/compression/travel/conservation gate": 9
+      },
+      "last_solver_error": {
+        "iteration": 23,
+        "starting_fraction": 0.01,
+        "equation_residual": 1.2489112251524168e-06,
+        "line_search": [
+          {
+            "scale": 1.0,
+            "fault": 0,
+            "equation_residual": 8.520071837551327e-11
+          }
+        ]
+      }
+    },
+    {
+      "path": "prior phase kernels",
+      "physical_s": 1.4249999999999963,
+      "wall_s": 43.285788999986835,
+      "refusal": "Coupled Newton iteration budget exceeded",
+      "accepted_state_chain_sha256": "0849b83b1c0d7bf95f7074fc4403fb78f0fee9d5ee29b56f97139df38ba1da8d",
+      "accepted_final_state_sha256": "019bcbd81bd6c64f1054ca154e4da06c8f5b93ccdca78e912967b2123f1c496b",
+      "diagnostics": {
+        "dynamic_mass_kg": 0.03250000000000001,
+        "mechanical_j": 0.991714395397579,
+        "material_stored_j": 2.2350827717078884e-12,
+        "contact_stored_j": 2.0431545468058627e-12,
+        "global_energy_residual_j": -4.884981308350689e-15,
+        "momentum_n_s": [
+          -7.534295927668662e-12,
+          -0.13979284902720285,
+          -3.290833469462329e-12
+        ],
+        "angular_momentum_n_m_s": [
+          -9.821020187010265e-14,
+          -1.2442471163680945e-13,
+          2.256539049998518e-13
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 48,
+        "maximum_energy_residual_j": 3.08769241583504e-16,
+        "ground_impulse_n_s": [
+          -6.267563757128613e-12,
+          0.31453277600952473,
+          8.357753729131286e-13
+        ],
+        "ground_torque_impulse_n_m_s": [
+          1.0900665252237677e-11,
+          -1.5854544116288561e-13,
+          8.593074953176361e-12
+        ]
+      },
+      "microsteps": 522,
+      "iterations": 4362,
+      "refusal_witness_sha256": "07a2768e1a3c4922626b56a0664d29b671dd9e8fd9e0aaa425d3541077d0daba",
+      "refusal_counts": {
+        "Coupled Newton line search did not reduce the equation residual": 8,
+        "Coupled Newton iteration budget exceeded": 11,
+        "Coupled finite/compression/travel/conservation gate": 9
+      },
+      "last_solver_error": {
+        "iteration": 23,
+        "starting_fraction": 0.01,
+        "equation_residual": 1.2489112251524168e-06,
+        "line_search": [
+          {
+            "scale": 1.0,
+            "fault": 0,
+            "equation_residual": 8.520071837551327e-11
+          }
+        ]
+      }
+    }
+  ],
+  "whole_world_realtime": false,
+  "impact_complete": false
+}

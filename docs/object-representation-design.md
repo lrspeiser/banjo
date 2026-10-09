@@ -1,6 +1,6 @@
 # One object, multiple physical representations
 
-**Implementation update:** [Initial GPU flight/material-island adapter](gpu-representation-checkpoint.md) is experimental. The complete representation registry, detailed sphere transfers, reduced modes and coupled fields below remain open.
+**Implementation update:** [Initial GPU flight/material-island adapter](gpu-representation-checkpoint.md) and [ordered active work/controller repair](gpu-active-graph-checkpoint.md) are experimental. The complete representation registry, detailed sphere transfers, reduced modes and coupled fields below remain open.
 
 October 9, 2026. **Proposed architecture; no new solver or speed improvement implemented in this checkpoint.** Source reviewed at main `3ebe792060df2bd42585e183616e2361bda6a917`. This expands [deferred physicalization](project-master-plan.md#4-matter-representation-and-deferred-physicalization) into an explicit storage and switching contract, and addresses the [measured 10 m drop bottleneck](drop-performance-audit.md).
 

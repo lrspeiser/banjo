@@ -4,7 +4,7 @@ from pathlib import Path
 import cupy as cp
 import numpy as np
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'scripts'))
-from gpu_coupled_world import GpuCoupledWorld,TrialFailure,source_hash
+from gpu_coupled_world import CoupledEvaluator,GpuCoupledWorld,TrialFailure,source_hash
 PUBLIC=('poses','residual','history','forces','ledger','faults')
 def exact(a,b):
     a=cp.asnumpy(a) if isinstance(a,cp.ndarray) else np.asarray(a)
@@ -36,6 +36,42 @@ def fault_precedence(kernel):
             assert np.array_equal(cp.asnumpy(output),expected),(n,rows)
             cases+=batch
     return cases
+
+def active_ledger_parity(evaluator):
+    # Empty groups, inactive zero rows and sparse mixed-sign active work retain
+    # the exact serial row order. Include overflow/nonfinite witnesses: this
+    # optimization must not erase the original refusal condition.
+    rng=np.random.default_rng(2871);cases=0
+    for edges,sizes in ((0,[]),(1,[1]),(5,[24,48,1]),(48,[48]*75)):
+        pairs=len(sizes);offsets=edges+np.r_[0,np.cumsum(sizes)].astype(np.uint32)
+        rows=int(offsets[-1]);batch=17
+        active=rng.integers(0,2,size=(batch,pairs),dtype=np.uint8)
+        work=rng.normal(size=(batch,rows,12))*10**rng.uniform(-20,20,size=(batch,rows,12))
+        for i in range(batch):
+            for p in range(pairs):
+                if not active[i,p]:work[i,offsets[p]:offsets[p+1]]=0
+        if rows:
+            if edges:
+                work[-1,0,3]=np.nan
+                if edges>1:work[-2,:2,4]=np.finfo(np.float64).max
+        data=cp.asarray(work);out=cp.empty((batch,12));reference=cp.empty_like(out)
+        args=(np.uint32(rows),np.uint32(batch),data,reference)
+        evaluator.phases['gather_ledger_trials'](((batch*12+127)//128,),(128,),args)
+        evaluator.phases['gather_active_ledger_trials'](((batch*12+127)//128,),(128,),
+            (np.uint32(rows),np.uint32(edges),np.uint32(pairs),np.uint32(batch),cp.asarray(offsets),cp.asarray(active),data,out))
+        exact(out,reference);cases+=batch
+    return cases
+
+def actual_final_update_replay():
+    archive=json.loads((ROOT/'docs/evidence/gpu-representations/backend-performance.json').read_text())
+    d=archive['glass_drop']['state']['rejected_candidate']['last_solver_failure']
+    e=CoupledEvaluator(d['initial_bodies'],d['initial_edges'],pipeline='parallel',
+        newton_strategy=d['newton_strategy'],line_search=d['line_search'],linear_backend=d['linear_backend'])
+    bodies=e.bodies.copy();edges=e.edges.copy()
+    out,_,updates,residual=e.solve(d['dt_s'],d['gravity_m_s2'],maximum_iterations=24)
+    assert updates<=24 and residual<=d['equation_tolerance'] and int(out['faults'])==0
+    exact(bodies,e.bodies);exact(edges,e.edges)
+    return dict(updates=updates,equation_residual=residual,original_tolerance=d['equation_tolerance'],canonical_nonmutation=True)
 def main(args):
     rng=np.random.default_rng(4123);comparisons=[];trial_count=0;jacobian_count=0
     for material in ('glass','oak','iron','ice'):
@@ -54,6 +90,12 @@ def main(args):
         saved={k:localized[k].copy() for k in PUBLIC};full=p.eval.evaluate(perturbed,1/960)
         for key in PUBLIC:exact(saved[key],full[key])
         jacobian_count+=2*d
+        # Initial-geometry flags are only reused inside the SAME Jacobian;
+        # an accepted edit must recompute them before the next ordinary trial.
+        initial=p.eval.bodies.copy();p.eval.bodies[1,7]+=.1;r.eval.bodies[1,7]+=.1
+        po=p.eval.evaluate(v,1/960);ro=r.eval.evaluate(v,1/960)
+        for key in PUBLIC:exact(po[key],ro[key])
+        cp.copyto(p.eval.bodies,initial);cp.copyto(r.eval.bodies,initial)
         # A fresh base is regenerated after each real accepted state change.
         wall={'parallel':0.,'serial-reference':0.};microsteps=0
         for tick in range(10):
@@ -65,20 +107,40 @@ def main(args):
             speedup=wall['serial-reference']/wall['parallel'],diagnostics=ps['diagnostics']))
         print(material,'entire trajectory bitwise equal',wall,flush=True)
     faults=fault_precedence(p.eval.phases['collect_trial_faults'])
+    ledger_cases=active_ledger_parity(p.eval)
     # The diagnostic candidate is an actual private solve, not an estimate of
     # what should have happened. Observation must not mutate the physical input.
-    w=GpuCoupledWorld(dict(experiment='freefall',height_m=.1,dt_s=1/240))
+    # The reference's numerical derivative solves this gravity root in two
+    # updates. The last permitted update must be admitted when its residual
+    # passes the original tolerance, without an extra iteration or mutation.
+    linear=GpuCoupledWorld(dict(experiment='freefall',height_m=.1,dt_s=1/240))
+    original=linear.eval.bodies.copy()
+    reference_out,reference_velocity,_,_=linear.eval.solve(1/240)
+    out,velocity,updates,equation=linear.eval.solve(1/240,maximum_iterations=2)
+    assert updates==2 and equation<=1e-10 and int(out['faults'])==0
+    for key in PUBLIC:exact(out[key],reference_out[key])
+    exact(velocity,reference_velocity)
+    assert abs(float(velocity[-1,1])+9.81/240)<1e-10
+    assert linear.eval.last_solve['converged_on_final_update']
+    exact(original,linear.eval.bodies)
+    # The nonlinear sheet still refuses an insufficient update budget; its
+    # actual final candidate remains available for failure diagnosis.
+    w=GpuCoupledWorld(dict(height_m=.001,dt_s=1/240))
     before=w.eval.bodies.copy();edges=w.eval.edges.copy()
     try:w.eval.solve(1/240,maximum_iterations=1);raise AssertionError('Deliberate iteration limit was admitted')
     except TrialFailure as error:
         d=error.details;assert str(error)=='Coupled Newton iteration budget exceeded'
     exact(before,w.eval.bodies);exact(edges,w.eval.edges)
     assert len(d['iterations'])==1 and d['last_evaluated']['faults']==[0]
-    assert len(d['initial_bodies'])==2 and d['initial_edges']==[] and d['dt_s']==1/240
+    assert len(d['initial_bodies'])==13 and len(d['initial_edges'])==48 and d['dt_s']==1/240
     assert d['last_evaluated']['velocity'][0][-1][1]<0 and d['initial_bodies'][-1][15]==0
-    assert len(d['jacobian_singular_values'])==6 and np.isfinite(d['jacobian']).all()
+    assert len(d['jacobian_singular_values'])==60 and np.isfinite(d['jacobian']).all()
     result=dict(schema='banjo.cupy-parallel-parity.v1',source_sha256=source_hash(),candidate_trials=trial_count,localized_jacobian_trials=jacobian_count,
         exact_candidate_parity=True,exact_physical_history_parity=True,fault_precedence_cases=faults,private_refusal_diagnostics=True,comparisons=comparisons,realtime_qualified=False)
+    result['active_ledger_exact_cases']=ledger_cases
+    result['initial_geometry_edit_invalidation']=True
+    result['final_permitted_update_convergence']=True
+    result['actual_glass_final_update_replay']=actual_final_update_replay()
     args.output.parent.mkdir(parents=True,exist_ok=True);args.output.write_text(json.dumps(result,indent=2)+'\n',encoding='utf8')
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--output',type=Path,required=True);main(p.parse_args())

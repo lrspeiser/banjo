@@ -1,0 +1,65 @@
+{
+  "source": "5d56634eca0190e53bd73733ea4c8d86ef63a091e0980214add10285faa04d5c",
+  "reports": [
+    {
+      "material": "glass",
+      "rows": 2856,
+      "coordinates": 54,
+      "batch": 108,
+      "wall_per_jacobian_ms": 0.48991333266409737,
+      "kernel_ms": {
+        "prepare_trials": 0.020871466398239134,
+        "prepare_pairs": 0.06395840073625246,
+        "contribution_trials": 0.17985493342081707,
+        "gather_body_trials": 0.054064000273744264,
+        "gather_active_ledger_trials": 0.14838826457659404,
+        "collect_trial_faults": 0.010270933372279007
+      }
+    },
+    {
+      "material": "oak",
+      "rows": 2856,
+      "coordinates": 54,
+      "batch": 108,
+      "wall_per_jacobian_ms": 0.49337999856409925,
+      "kernel_ms": {
+        "prepare_trials": 0.015337600031246741,
+        "prepare_pairs": 0.06399573360880216,
+        "contribution_trials": 0.17714773366848627,
+        "gather_body_trials": 0.053092266991734506,
+        "gather_active_ledger_trials": 0.15865280032157897,
+        "collect_trial_faults": 0.016656000322351854
+      }
+    },
+    {
+      "material": "iron",
+      "rows": 2820,
+      "coordinates": 54,
+      "batch": 108,
+      "wall_per_jacobian_ms": 0.48912999918684363,
+      "kernel_ms": {
+        "prepare_trials": 0.014715733254949253,
+        "prepare_pairs": 0.0638848011692365,
+        "contribution_trials": 0.17948373407125473,
+        "gather_body_trials": 0.06048426702618599,
+        "gather_active_ledger_trials": 0.1516405334075292,
+        "collect_trial_faults": 0.011179733369499446
+      }
+    },
+    {
+      "material": "ice",
+      "rows": 2856,
+      "coordinates": 54,
+      "batch": 108,
+      "wall_per_jacobian_ms": 0.4925566667225212,
+      "kernel_ms": {
+        "prepare_trials": 0.015115733289470275,
+        "prepare_pairs": 0.07024426758289337,
+        "contribution_trials": 0.1736224000652631,
+        "gather_body_trials": 0.05052693312366804,
+        "gather_active_ledger_trials": 0.16419733315706253,
+        "collect_trial_faults": 0.010528000040600697
+      }
+    }
+  ]
+}

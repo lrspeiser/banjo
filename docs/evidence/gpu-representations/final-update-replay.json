@@ -1,0 +1,32 @@
+{
+  "source_sha256": "f1cb8651d27c90b5fa46a1d985fc105a846421b77407cfe07f500180202a7dca",
+  "original_refusal": "Coupled Newton iteration budget exceeded",
+  "conditions": "Actual final private glass-sheet/iron-ball candidate from the 10 m attempt",
+  "dt_s": 4.069010416666667e-06,
+  "original_tolerance": 1.4000363578317015e-10,
+  "original_final_probe": {
+    "scale": 1.0,
+    "fault": 0,
+    "equation_residual": 8.520071837551327e-11
+  },
+  "new_equation_residual": 8.520071837551327e-11,
+  "new_updates": 24,
+  "canonical_nonmutation": true,
+  "solver": {
+    "strategy": "ranked",
+    "starting_scores": [
+      0.46493487745169915,
+      2.5836782231965216,
+      2.8016513445527176
+    ],
+    "attempted_fractions": [
+      1.0,
+      0.1,
+      0.01
+    ],
+    "converged_fraction": 0.01,
+    "iteration_evaluations": 24,
+    "converged_on_final_update": true
+  },
+  "note": "Private nonlinear convergence only. Whole physical interval and contact accuracy still require world gates."
+}

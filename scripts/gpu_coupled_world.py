@@ -52,14 +52,22 @@ extern "C" __global__ void prepare_trials(const double *bodies,unsigned n,const 
     const auto p=banjo::dgPrepareTrial(bodies+30*body,velocity+6*k,h);prepared[k]=p;
     banjo::dgWrite3(poses+7*k,p.ending.p);banjo::dgWrite4(poses+7*k+3,p.ending.q);
 }
+extern "C" __global__ void prepare_initial_pairs(const double *bodies,const unsigned *pairs,unsigned pair_count,
+    const banjo::DGTrialBody *prepared,unsigned char *initial_active){
+    const unsigned pair=blockDim.x*blockIdx.x+threadIdx.x;if(pair>=pair_count)return;
+    const unsigned a=pairs[2*pair],b=pairs[2*pair+1];
+    const auto before=banjo::dgContact(bodies+30*a,bodies+30*b,prepared[a].initial,prepared[b].initial);
+    initial_active[pair]=before.gap>0?0:1;
+}
 extern "C" __global__ void prepare_pairs(const double *bodies,unsigned n,const unsigned *pairs,unsigned pair_count,unsigned batch,
-    const banjo::DGTrialBody *prepared,unsigned char *active,int localized,const int *changed_body,const unsigned char *base_active){
+    const banjo::DGTrialBody *prepared,const unsigned char *initial_active,unsigned char *active,int localized,const int *changed_body,const unsigned char *base_active){
     const unsigned k=blockDim.x*blockIdx.x+threadIdx.x;if(k>=pair_count*batch)return;
     const unsigned candidate=k/pair_count,pair=k%pair_count,a=pairs[2*pair],b=pairs[2*pair+1];
     if(localized&&a!=static_cast<unsigned>(changed_body[candidate])&&b!=static_cast<unsigned>(changed_body[candidate])){active[k]=base_active[pair];return;}
-    const auto p=prepared+n*candidate;const auto before=banjo::dgContact(bodies+30*a,bodies+30*b,p[a].initial,p[b].initial);
+    if(initial_active[pair]){active[k]=1;return;}
+    const auto p=prepared+n*candidate;
     const auto after=banjo::dgContact(bodies+30*a,bodies+30*b,p[a].ending,p[b].ending);
-    active[k]=before.gap>0&&after.gap>0?0:1;
+    active[k]=after.gap>0?0:1;
 }
 extern "C" __global__ void contribution_trials(const double *bodies,unsigned n,const double *edges,unsigned m,
     const unsigned *jobs,unsigned rows,unsigned pair_count,unsigned batch,const banjo::DGTrialBody *prepared,const unsigned char *pair_active,double h,
@@ -110,6 +118,25 @@ extern "C" __global__ void gather_ledger_trials(unsigned rows,unsigned batch,con
         if(column==8){if(value>total)total=value;}else total+=value;
     }ledger[k]=total;
 }
+extern "C" __global__ void gather_active_ledger_trials(unsigned rows,unsigned edges,unsigned pairs,unsigned batch,
+    const unsigned *pair_offsets,const unsigned char *pair_active,const double *input,double *ledger){
+    const unsigned k=blockDim.x*blockIdx.x+threadIdx.x;if(k>=12*batch)return;
+    const unsigned candidate=k/12,column=k%12;double total=0;
+    // Constitutive rows are always present, including failed private trials.
+    // Contact rows are contiguous in the reference pair/site order. A pair
+    // rejected by prepare_pairs has exactly zero work for every site; only
+    // those zeros are omitted. Keep all nonzero additions and max operations
+    // in their original order: this is no reordered floating reduction.
+    for(unsigned row=0;row<edges;++row){const double value=input[12*(candidate*rows+row)+column];
+        if(column==8){if(value>total)total=value;}else total+=value;
+    }
+    for(unsigned pair=0;pair<pairs;++pair){if(!pair_active[candidate*pairs+pair])continue;
+        for(unsigned row=pair_offsets[pair];row<pair_offsets[pair+1];++row){
+            const double value=input[12*(candidate*rows+row)+column];
+            if(column==8){if(value>total)total=value;}else total+=value;
+        }
+    }ledger[k]=total;
+}
 extern "C" __global__ void collect_trial_faults(unsigned n,unsigned rows,unsigned batch,const int *contributions,
     const int *body_faults,const double *poses,const double *ledger,int *faults){
     const unsigned candidate=blockIdx.x;if(candidate>=batch)return;
@@ -152,7 +179,7 @@ class CoupledEvaluator:
         self.line_search=line_search
         self.newton_strategy=newton_strategy;self.last_solve=None
         self.pipeline=pipeline;self.kernel=self.module.get_function('coupled_trials');self.storage={};self.evaluations=0
-        self.phases={name:self.module.get_function(name) for name in ('prepare_trials','prepare_pairs','contribution_trials','gather_body_trials','gather_ledger_trials','collect_trial_faults')}
+        self.phases={name:self.module.get_function(name) for name in ('prepare_trials','prepare_initial_pairs','prepare_pairs','contribution_trials','gather_body_trials','gather_ledger_trials','gather_active_ledger_trials','collect_trial_faults')}
         host_b=np.asarray(bodies);jobs=[];pairs=[]
         for a in range(self.n):
             for b in range(a+1,self.n):
@@ -162,6 +189,10 @@ class CoupledEvaluator:
                 for site in range(48 if sa and sb else 24 if sa or sb else 1):jobs.append((a,b,site,pair))
         self.jobs=cp.asarray(np.array(jobs,dtype=np.uint32).reshape(-1,4));self.rows=self.m+len(jobs)
         self.pairs=cp.asarray(np.array(pairs,dtype=np.uint32).reshape(-1,2));self.pair_count=len(pairs)
+        # Symbolic row groups only; contact activity is recomputed on CUDA for
+        # every private candidate, including every derivative perturbation.
+        pair_sizes=np.bincount(np.array(jobs,dtype=np.uint32).reshape(-1,4)[:,3],minlength=self.pair_count)
+        self.pair_offsets=cp.asarray(self.m+np.r_[0,np.cumsum(pair_sizes)],dtype=cp.uint32)
         self.plan_kernel=self.module.get_function('plan_contact_steps');self.plan_buffer=cp.empty((self.pair_count,3),dtype=cp.float64)
         incidence=[[] for _ in range(self.n)]
         for row,edge in enumerate(np.asarray(edges).reshape(self.m,70)):
@@ -198,6 +229,7 @@ class CoupledEvaluator:
             if self.pipeline=='parallel':self.storage[batch].update(prepared=cp.empty((batch,self.n,27),dtype=cp.float64),
                 contributions=cp.empty((batch,self.rows,12),dtype=cp.float64),work=cp.empty((batch,self.rows,12),dtype=cp.float64),
                 active=cp.empty((batch,self.rows),dtype=cp.uint8),pair_active=cp.empty((batch,self.pair_count),dtype=cp.uint8),
+                initial_pair_active=cp.empty(self.pair_count,dtype=cp.uint8),
                 contribution_faults=cp.empty((batch,self.rows),dtype=cp.int32),body_faults=cp.empty((batch,self.n,6),dtype=cp.int32))
         out=self.storage[batch]
         n,m,rows,b,h,gy=np.uint32(self.n),np.uint32(self.m),np.uint32(self.rows),np.uint32(batch),np.float64(h),np.float64(gravity)
@@ -208,10 +240,15 @@ class CoupledEvaluator:
             launch('prepare_trials',batch*self.n,(self.bodies,n,velocity,b,h,out['prepared'],out['poses']))
             base=_jacobian_base or out;localized=_jacobian_base is not None
             if localized and batch!=len(self.jacobian_changed):raise ValueError('Only the current single-DOF Jacobian batch can reuse contributions')
-            if self.pair_count:launch('prepare_pairs',batch*self.pair_count,(self.bodies,n,self.pairs,np.uint32(self.pair_count),b,out['prepared'],out['pair_active'],np.int32(localized),self.jacobian_changed,base['pair_active']))
+            if self.pair_count:
+                # All candidates share the same accepted initial geometry.
+                # Within one Jacobian use its freshly calculated base only;
+                # ordinary trials recompute this geometry after any edit/step.
+                if not localized:launch('prepare_initial_pairs',self.pair_count,(self.bodies,self.pairs,np.uint32(self.pair_count),out['prepared'],out['initial_pair_active']))
+                launch('prepare_pairs',batch*self.pair_count,(self.bodies,n,self.pairs,np.uint32(self.pair_count),b,out['prepared'],base['initial_pair_active'],out['pair_active'],np.int32(localized),self.jacobian_changed,base['pair_active']))
             if self.rows:launch('contribution_trials',batch*self.rows,(self.bodies,n,self.edges,m,self.jobs,rows,np.uint32(self.pair_count),b,out['prepared'],out['pair_active'],h,out['contributions'],out['work'],out['history'],out['active'],out['contribution_faults'],np.int32(localized),self.jacobian_changed,base['contributions'],base['work'],base['history'],base['active'],base['contribution_faults']))
             launch('gather_body_trials',batch*self.n*6,(self.bodies,n,rows,b,self.offsets,self.incidence,velocity,out['contributions'],out['active'],h,gy,out['forces'],out['residual'],out['body_faults']))
-            launch('gather_ledger_trials',batch*12,(rows,b,out['work'],out['ledger']))
+            launch('gather_active_ledger_trials',batch*12,(rows,m,np.uint32(self.pair_count),b,self.pair_offsets,out['pair_active'],out['work'],out['ledger']))
             self.phases['collect_trial_faults']((batch,),(128,),(n,rows,b,out['contribution_faults'],out['body_faults'],out['poses'],out['ledger'],out['faults']))
         self.evaluations+=batch;return out
 
@@ -341,6 +378,17 @@ class CoupledEvaluator:
                 if guesses is not None and iteration+1<maximum_iterations and start_index+1<len(order) and start_scores[order[start_index+1]] is not None:
                     start_index+=1;y=guesses[order[start_index]].copy();continue
                 refuse('Coupled Newton line search did not reduce the equation residual')
+            if iteration+1==maximum_iterations and probe_norm<=tolerance:
+                # The final permitted update already evaluated the complete
+                # nonlinear trial and passed the SAME convergence threshold.
+                # Do not require an extra outer iteration merely to observe it.
+                # This advances no extra update and changes no physical gate.
+                self.last_solve=dict(strategy=self.newton_strategy,starting_scores=start_scores,
+                    attempted_fractions=[fractions[i] for i in order[:start_index+1]],
+                    converged_fraction=fractions[order[start_index]],iteration_evaluations=len(trace),
+                    converged_on_final_update=True)
+                final,_,final_velocity=last_trial
+                return {k:final[k][0].copy() for k in ('poses','residual','history','forces','ledger','faults')},final_velocity[0].copy(),iteration+1,probe_norm
         refuse('Coupled Newton iteration budget exceeded')
 
 def declaration(raw):
