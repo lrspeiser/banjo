@@ -9,13 +9,29 @@ import sys
 import time
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
-from physx_contact_world import PhysXContactWorld, SOURCE_SHA256
+from physx_contact_world import PhysXContactWorld, SOURCE_SHA256, np, wp
 from gpu_contact_world import GpuContactWorld
 
 
-def scene(raw):
+class ShadowObservedPhysX(PhysXContactWorld):
+    """Compare every real GPU substep with the independent column read path."""
+    def _observe(self, slot, contacts=True):
+        super()._observe(slot, contacts)
+        if not hasattr(self, 'shadow_trace'):
+            self.shadow_trace = wp.zeros(self.trace.shape,dtype=wp.float32,device=self.device)
+        primary = self.trace
+        self.trace = self.shadow_trace
+        self.observation_mode = 'columns'
+        try:
+            super()._observe(slot, contacts=False)
+        finally:
+            self.trace = primary
+            self.observation_mode = 'bindings'
+
+
+def scene(raw, check_read_parity=False):
     start=time.perf_counter()
-    w=PhysXContactWorld(raw)
+    w=(ShadowObservedPhysX if check_read_parity else PhysXContactWorld)(raw)
     startup=time.perf_counter()-start
     initial=w.snapshot()
     start=time.perf_counter()
@@ -31,6 +47,8 @@ def scene(raw):
                 assert math.isclose(sum(performance['phase_s'].values()),performance['step_s'],rel_tol=1e-12,abs_tol=1e-12)
                 assert math.isclose(sum(performance['last_phase_ms'].values()),performance['last_batch_ms'],rel_tol=1e-12,abs_tol=1e-9)
                 assert len(s['substep_trace']['normal_accounts'])==w.last_steps
+                if check_read_parity:
+                    assert np.array_equal(w.trace.numpy()[:w.last_steps],w.shadow_trace.numpy()[:w.last_steps]), 'Resident/column substep states differ'
                 peak=max(peak,max(row['mechanical_change_j'] for row in s['substep_trace']['normal_accounts']))
             except ValueError as fault:
                 error=str(fault)
@@ -43,7 +61,9 @@ def scene(raw):
         s=w.snapshot()
         return dict(declaration=w.d,initial=initial['diagnostics'],final=s['diagnostics'],final_cells=s['cells'],
             final_time_s=s['time_s'],startup_s=startup,wall_s=time.perf_counter()-start,max_accepted_gain_j=peak,
-            error=error,rejected_candidate=s.get('rejected_candidate'),qualification=s['qualification'],performance=s['performance'])
+            error=error,rejected_candidate=s.get('rejected_candidate'),qualification=s['qualification'],performance=s['performance'],
+            all_substeps_match_column_reference=check_read_parity,
+            timing_includes_shadow_reads=check_read_parity)
     finally:w.close()
 
 
@@ -55,7 +75,7 @@ def main():
     for material in ('glass','oak','iron','ice'):
         # Same declared experiment for every substance. Refined zero-bounce,
         # friction-free control qualifies only the current rigid contact gate.
-        result=scene(dict(experiment='yard',material=material,restitution=0.,friction=0.,dt_s=1/1920))
+        result=scene(dict(experiment='yard',material=material,restitution=0.,friction=0.,dt_s=1/1920),check_read_parity=True)
         assert result['error'] is None,result
         assert result['final_time_s']==2.
         assert result['qualification']['gpu'] and result['qualification']['direct_gpu']
@@ -122,6 +142,7 @@ def main():
             'Newton zero-bounce/friction retained failure','JSON-only worker and unsupported command preservation',
             'SDK diagnostic stops and retains accepted scene'])
     report['checks'].append('disjoint finite phase timings sum to accepted batch time; every substep retained')
+    report['checks'].append('all 3840 substep transforms/velocities match column reads exactly for each material; binding resources closed before stage teardown')
     args.report.parent.mkdir(parents=True,exist_ok=True)
     args.report.write_text(json.dumps(report,indent=2,allow_nan=False),encoding='utf8')
     print('PhysX scoped checks passed; full laws and near realtime remain open')

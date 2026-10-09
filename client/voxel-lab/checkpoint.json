@@ -1,8 +1,9 @@
 {
-  "title": "GPU calculation phases measured; laws and safety gates retained",
+  "title": "Resident GPU observations reduce cost; material laws and realtime remain open",
   "date": "2026-10-09",
   "native_sha256": "eb3527a07fda2a0c181ff11683eb907a16045bf0fcae66e4db58f703e7df9ee4",
   "changes": [
+    "PhysX reuses resident CUDA pose/velocity buffers. Every substep is retained; all 15360 refined stack states match the independent column reference exactly. The slower column path remains available in the profiler.",
     "GPU lab shows actual SDK stepping, GPU observation and host audit time. Every calculated substep remains recorded; no speedup or new material law is claimed.",
     "GPU solver now compares Newton XPBD and PhysX TGS in the same 3D world. Stack control uses zero bounce/friction and 1/1920 s; glass/oak/iron/ice complete in scoped controls.",
     "PhysX records actual CUDA poses, mass/inertia and normal contact impulses each substep. Friction and full contact/numerical work are not yet in that account; no bonded GPU fracture or dents.",
@@ -47,7 +48,7 @@
     {
       "label": "GPU full world",
       "status": "blocked",
-      "value": "27-block coupled contacts refuse intermediate energy creation. Complete support reactions, fracture/plasticity, thin geometry and full-world realtime remain open."
+      "value": "Newton XPBD coupled stack retains its energy refusal; PhysX zero-bounce/friction control completes. Full friction/reactions, bonded fracture/plasticity, thin geometry and full-world realtime remain open."
     },
     {
       "label": "PhysX comparator",
@@ -58,6 +59,16 @@
       "label": "GPU phase regression",
       "status": "passed",
       "value": "Five scoped CTests pass: PhysX four-material refined stacks/pairs, Newton controls, gateway, pipeline and playback. Finite phase counters sum to accepted batch time; 342/342 source registration. Private four-iteration/CCD variants withdrawn."
+    },
+    {
+      "label": "Resident GPU reads",
+      "status": "passed",
+      "value": "Five scoped CTests pass; every refined glass/oak/iron/ice substep pose/velocity matches column reads. Nine final states/energies match the prior checkpoint. Binding layout/device/order and pinned SDK are checked; no GPU fracture/dents qualification."
+    },
+    {
+      "label": "Measured GPU speed",
+      "status": "experimental",
+      "value": "Same refined four-material controls complete in 14.26-14.35 wall s per two physical s, versus prior 19.12-19.30 s. Single runs, no statistical/realtime qualification; no laws or gates changed."
     }
   ],
   "next": [
@@ -69,7 +80,7 @@
     {
       "label": "GPU world migration",
       "status": "in progress",
-      "value": "Profile SDK kernel/launch/wait cost (larger than observation in measured controls), retain resident substep audits, complete friction/reaction/work ledgers and port shared bonded material history with comparative refinement."
+      "value": "Reduce measured SDK launch/TGS cost with resident batched material/contact solves; retain full substep audits and port shared constitutive/bond/plastic history. Complete work/reactions and comparative refinement."
     },
     {
       "label": "Permanent metal dents",
@@ -102,5 +113,5 @@
   "physics_revision": "e12eb688a470e3a092038442ef1950ce5b52a30b",
   "gpu_source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd",
   "gpu_worker_sha256": "521bcf6a1b567dbe09d9b6b6ffee8f518990fa77666107cb738e219b8862ef0c",
-  "physx_source_sha256": "f741c7e4545b1b68f796cfeb4e495bb08ea3702406d8c237bdcdcacc63246651"
+  "physx_source_sha256": "d1d30abfd67380a66fcf4664759e1917e50137bd7f6ef92bb160d0f1b5b5157f"
 }

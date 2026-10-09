@@ -19,7 +19,7 @@ with contextlib.redirect_stdout(sys.stderr):
     import warp as wp
     import ovphysx
     import ovstage
-    from ovphysx import PhysX, PhysXConfig
+    from ovphysx import PhysX, PhysXConfig, TensorType
     from ovphysx.types import SimObjectType, ObjectScope
 from gpu_contact_world import DENSITY, declaration
 
@@ -32,6 +32,16 @@ def copy_column(src: wp.array2d[wp.float32], dst: wp.array3d[wp.float32],
                 rows: wp.array[wp.int32], slot: int, column: int):
     i, j = wp.tid()
     dst[slot, rows[i], column+j] = src[i, j]
+
+
+@wp.kernel
+def copy_bound(pose: wp.array2d[wp.float32], velocity: wp.array2d[wp.float32],
+               dst: wp.array3d[wp.float32], slot: int):
+    i, j = wp.tid()
+    if j < 7:
+        dst[slot,i,j] = pose[i,j]
+    else:
+        dst[slot,i,j] = velocity[i,j-7]
 
 
 @wp.kernel
@@ -51,10 +61,14 @@ def contact_summary(layout: wp.array2d[wp.int32], positions: wp.array2d[wp.float
 
 
 class PhysXContactWorld:
-    def __init__(self, raw):
+    def __init__(self, raw, *, observation_mode='bindings'):
         if (ovphysx.__version__, wp.__version__, np.__version__,importlib.metadata.version('ovstage')) != ('0.6.3', '1.18.0', '2.5.3','0.2.0.377349'):
             raise RuntimeError('Unverified PhysX runtime; install scripts/gpu-requirements.txt')
         self.d = declaration(raw)
+        if observation_mode not in ('bindings', 'columns'):
+            raise ValueError('Unknown PhysX observation mode')
+        self.observation_mode = observation_mode
+        self.pose_binding = self.velocity_binding = None
         if self.d['experiment']=='pair' and self.d['dt_s']>1/1920:
             raise ValueError('PhysX pair requires 1/1920 s: coarse iron pair fails the analytical bounce oracle')
         if self.d['device'] != 'cuda:0' or PhysX.get_cpu_mode():
@@ -246,23 +260,46 @@ def Material "contact" (prepend apiSchemas = ["PhysicsMaterialAPI", "PhysxMateri
         self.accepted_snapshot = self._snapshot([])
 
     def _observe(self, slot, contacts=True):
-        seen = set()
-        with self.sdk.read(SimObjectType.RIGID_BODY, list(ATTRS), scope=ObjectScope.ALL) as result:
-            for g in result.groups:
-                if g.is_delete or g.is_array or g.index_map is not None or g.prim_index_map is not None:
-                    raise RuntimeError('Unsupported sparse/deleted state group')
-                if g.attribute not in self.tokens or len(g.tensors) != 1:
-                    raise RuntimeError('Unexpected GPU state column')
-                src = g.tensors[0]
-                if not src.device.is_cuda or src.device.ordinal != self.device.ordinal:
-                    raise RuntimeError('State read is not resident on the requested CUDA GPU')
-                key = (g.attribute, tuple(self.pd.get_path_strings(g.prim_list)))
-                if key not in self.groups:
-                    self.groups[key] = wp.array([self.paths.index(p) for p in key[1]], dtype=wp.int32, device=self.device)
-                seen.update((g.attribute,p) for p in key[1])
-                wp.launch(copy_column, dim=src.shape, inputs=[src,self.trace,self.groups[key],slot,self.tokens[g.attribute][1]],device=self.device)
-        if len(seen) != 4*len(self.paths):
-            raise RuntimeError('Incomplete actual GPU state read')
+        if self.observation_mode == 'bindings':
+            if self.pose_binding is None:
+                # Pinned 0.6.3 compatibility path. Binding API is deprecated;
+                # its removal must fail initialization, never use CPU staging
+                # or silently drop observations. This world never reparses or
+                # changes topology during a session; close destroys bindings
+                # before the realized stage and SDK are destroyed.
+                self.pose_binding = self.sdk.create_tensor_binding(prim_paths=self.paths,
+                    tensor_type=TensorType.RIGID_BODY_POSE, raise_if_empty=True)
+                self.velocity_binding = self.sdk.create_tensor_binding(prim_paths=self.paths,
+                    tensor_type=TensorType.RIGID_BODY_VELOCITY, raise_if_empty=True)
+                for binding, width in ((self.pose_binding,7),(self.velocity_binding,6)):
+                    device = binding.native_device
+                    if (binding.prim_paths != self.paths or binding.shape != (len(self.paths),width)
+                        or binding.dtype_name != 'float32' or device.device_type.value != 2
+                        or device.device_id != self.device.ordinal):
+                        raise RuntimeError('Unqualified resident PhysX binding layout/order/device')
+                self.bound_pose = wp.zeros(self.pose_binding.shape,dtype=wp.float32,device=self.device)
+                self.bound_velocity = wp.zeros(self.velocity_binding.shape,dtype=wp.float32,device=self.device)
+            self.pose_binding.read(self.bound_pose)
+            self.velocity_binding.read(self.bound_velocity)
+            wp.launch(copy_bound,dim=(len(self.paths),13),inputs=[self.bound_pose,self.bound_velocity,self.trace,slot],device=self.device)
+        else:
+            seen = set()
+            with self.sdk.read(SimObjectType.RIGID_BODY, list(ATTRS), scope=ObjectScope.ALL) as result:
+                for g in result.groups:
+                    if g.is_delete or g.is_array or g.index_map is not None or g.prim_index_map is not None:
+                        raise RuntimeError('Unsupported sparse/deleted state group')
+                    if g.attribute not in self.tokens or len(g.tensors) != 1:
+                        raise RuntimeError('Unexpected GPU state column')
+                    src = g.tensors[0]
+                    if not src.device.is_cuda or src.device.ordinal != self.device.ordinal:
+                        raise RuntimeError('State read is not resident on the requested CUDA GPU')
+                    key = (g.attribute, tuple(self.pd.get_path_strings(g.prim_list)))
+                    if key not in self.groups:
+                        self.groups[key] = wp.array([self.paths.index(p) for p in key[1]], dtype=wp.int32, device=self.device)
+                    seen.update((g.attribute,p) for p in key[1])
+                    wp.launch(copy_column, dim=src.shape, inputs=[src,self.trace,self.groups[key],slot,self.tokens[g.attribute][1]],device=self.device)
+            if len(seen) != 4*len(self.paths):
+                raise RuntimeError('Incomplete actual GPU state read')
         if contacts:
             self.cb.read_net_forces(self.net)
             wp.copy(self.force_trace,self.net,dest_offset=slot*len(self.paths)*3,count=len(self.paths)*3)
@@ -372,6 +409,7 @@ def Material "contact" (prepend apiSchemas = ["PhysicsMaterialAPI", "PhysxMateri
             qualification=dict(backend='physx-tgs',ovphysx=ovphysx.__version__,warp=wp.__version__,device=str(self.device),gpu=True,
                 device_name=self.device.name,source_sha256=SOURCE_SHA256,dtype='float32',position_iterations=16,velocity_iterations=4,
                 direct_gpu=True,angular_damping=0.,sleeping=False,solver_relaxation_applicable=False,
+                observation_mode=self.observation_mode,binding_api_deprecated=self.observation_mode=='bindings',
                 material_scope='Density-derived rigid mass/inertia, numeric global restitution/friction. No bonded fracture/plasticity/elastic/thermal laws. Contact force read is normal-only; friction is not in that ledger.',
                 complete_physics_validated=False,realtime_qualified=False))
 
@@ -382,6 +420,10 @@ def Material "contact" (prepend apiSchemas = ["PhysicsMaterialAPI", "PhysxMateri
         return result
 
     def close(self):
+        for name in ('pose_binding','velocity_binding'):
+            binding = getattr(self,name,None)
+            if binding is not None:
+                binding.destroy();setattr(self,name,None)
         if self.cb is not None:
             self.cb.destroy();self.cb=None
         if self.pd is not None:

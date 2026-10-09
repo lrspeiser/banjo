@@ -73,6 +73,8 @@ nonzero for any refused experiment. A short startup check is available with
 
 Five scoped CTests pass: PhysX 132.59 s, Newton 26.72 s, gateway 3.30 s, pipeline 7.01 s and playback 0.04 s. Source registration is 342/342 with no exclusions; Python compilation, JavaScript syntax and changed-file whitespace checks pass. The profiler's four-material short startup check passes at 38 substeps (0.019792 physical s); that startup check is not an impact test. These are Windows RTX 5090 measurements, not full repository regression or cross-GPU qualification.
 
+The subsequent [resident observation optimization](resident-observation-checkpoint.md) measures actual TGS kernels with a compatible profiler and removes repeated pose/velocity column sessions. Its all-substep parity and ordinary performance reports are separate from these earlier timings.
+
 ## Remaining work
 
 Measure CUDA kernel/launch/wait cost inside stepping before choosing a new
