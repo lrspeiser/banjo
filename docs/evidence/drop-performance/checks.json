@@ -1,0 +1,19 @@
+{
+  "base_revision": "dc6fca416aa1fee065f68816b3361c5435bfcd55",
+  "scope": "Read-only profiling tool and audit documentation; production simulation sources unchanged",
+  "actual_fixture_pairs": 7,
+  "exact_accepted_state_parity_pairs": 7,
+  "gravity_oracle_all_below_m": 1e-10,
+  "source_registration": {
+    "sources": 345,
+    "registered": 345,
+    "exclusions": 0
+  },
+  "profiler_syntax": "Python compilation passed",
+  "audit_references": "All local links exist",
+  "physics_digest_unchanged": "31105d759be71507d256aac805caf643c5cf21e9895669e3d122819e96a0b33d",
+  "full_repository_regression_run": false,
+  "realtime_gate": "OPEN",
+  "ten_metre_impact_gate": "OPEN; recorded Newton refusal at 1.425 s",
+  "timing_scope": "Single warmed uninstrumented/instrumented fixture pairs, actual archived full release and one journal observation; no claimed speed improvement"
+}

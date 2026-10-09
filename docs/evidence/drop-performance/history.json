@@ -1,0 +1,121 @@
+{
+  "base_revision": "dc6fca416aa1fee065f68816b3361c5435bfcd55",
+  "actual_history": "previous full normal-browser 10 m release, unchanged current physics digest",
+  "physical_advance_rows": 342,
+  "quarter_second_bins": [
+    {
+      "start_s": 0.0,
+      "end_s": 0.25,
+      "host_ticks": 60,
+      "microsteps": 259,
+      "solver_s": 16.202794499869924,
+      "trial_candidates": 439876,
+      "nonlinear_iterations": 1550
+    },
+    {
+      "start_s": 0.25,
+      "end_s": 0.5,
+      "host_ticks": 60,
+      "microsteps": 699,
+      "solver_s": 44.71190359973116,
+      "trial_candidates": 1181527,
+      "nonlinear_iterations": 4241
+    },
+    {
+      "start_s": 0.5,
+      "end_s": 0.75,
+      "host_ticks": 60,
+      "microsteps": 976,
+      "solver_s": 64.21246570005314,
+      "trial_candidates": 1686551,
+      "nonlinear_iterations": 6066
+    },
+    {
+      "start_s": 0.75,
+      "end_s": 1.0,
+      "host_ticks": 60,
+      "microsteps": 1810,
+      "solver_s": 110.99663309997413,
+      "trial_candidates": 2904618,
+      "nonlinear_iterations": 10424
+    },
+    {
+      "start_s": 1.0,
+      "end_s": 1.25,
+      "host_ticks": 60,
+      "microsteps": 1936,
+      "solver_s": 111.23006359988358,
+      "trial_candidates": 3071220,
+      "nonlinear_iterations": 11020
+    },
+    {
+      "start_s": 1.25,
+      "end_s": 1.5,
+      "host_ticks": 42,
+      "microsteps": 1350,
+      "solver_s": 75.48729930008994,
+      "trial_candidates": 2077138,
+      "nonlinear_iterations": 7643
+    }
+  ],
+  "exact_journal_compressed_bytes": 42018109,
+  "decoded_json_bytes": 164815214,
+  "journal_sample": {
+    "time_s": 1.30833333333333,
+    "first_full_write_s": 0.05762289999984205,
+    "repeat_same_record_write_median_s": 0.017611499992199242,
+    "json_serialization_median_s": 0.011120900046080351,
+    "serialized_record_bytes": 734307,
+    "note": "Offline first full record and exact repeats. Changing-state archival cost was not isolated; these are not an end-to-end gateway benchmark."
+  },
+  "impact_failure": {
+    "accepted_time_s": 1.4249999999999963,
+    "error": "Coupled Newton iteration budget exceeded",
+    "interval_rolled_back": true,
+    "private_substeps_rolled_back": 43,
+    "private_elapsed_s": 0.004036458333333333,
+    "trials": 92,
+    "refusal_counts": {
+      "Coupled Newton line search did not reduce the equation residual": 10,
+      "Coupled finite/compression/travel/conservation gate": 26,
+      "Coupled Newton iteration budget exceeded": 13
+    },
+    "last_newton": {
+      "dt_s": 4.069010416666667e-06,
+      "equation_tolerance": 1.399659835819458e-10,
+      "iterations": 24,
+      "residuals": [
+        0.7194043926496791,
+        0.37577246384298185,
+        0.3743723755969146,
+        0.364433152624886,
+        0.3550469633758754,
+        0.3476791746201918,
+        0.34370039201779673,
+        0.2913019185499993,
+        0.28521345924522223,
+        0.27818988848876397,
+        0.27638803602041356,
+        2.533045653410403,
+        0.23953439436145643,
+        0.20202575499155112,
+        0.1941224594697881,
+        0.19218437270591665,
+        0.19163865560954024,
+        0.18491217783517877,
+        0.12437550607673405,
+        0.12419307532927375,
+        0.10913969346922439,
+        0.1053376400725005,
+        0.04238226270326775,
+        0.012395200825746354
+      ],
+      "starting_fractions": [
+        1.0,
+        0.1
+      ],
+      "jacobian_condition_estimate": 426.50843600620493
+    },
+    "note": "The stored Jacobian is one final failed candidate, not an explanation of every failure. Failed interval wall time is excluded from accepted performance counters."
+  }
+}
