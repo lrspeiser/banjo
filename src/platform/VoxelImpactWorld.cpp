@@ -182,6 +182,38 @@ struct VoxelImpactWorld::Impl {
         for(unsigned i=0;i<cells.size();++i)if(!cells[i].fixed&&active(i)){if(indexed[i].before.mass_kg<=0)throw std::runtime_error("native force phase observation missing");dynamic.push_back(indexed[i]);}
         return auditRigidStepWork(dynamic,gravity);
     }
+    Json contactWorkWitness(const std::vector<RigidSnapshot> &before)const{
+        std::vector<RigidSnapshot> free=before,solved=before;
+        for(const auto &phase:world.forcePhaseObservations()){
+            auto &f=free.at(slot(phase.body)),&s=solved.at(slot(phase.body));
+            f.linear_velocity_m_s=phase.velocity_after_forces_m_s;f.angular_velocity_rad_s=phase.spin_after_forces_rad_s;
+            s.linear_velocity_m_s=phase.velocity_after_solver_m_s;s.angular_velocity_rad_s=phase.spin_after_solver_rad_s;}
+        Json contacts=Json::array();double normal=0,friction=0,twist=0;
+        for(const auto &c:world.contactImpulseObservations()){
+            const auto a=slot(c.a),b=slot(c.b);
+            const auto relative=[&](Vec3 p,const std::vector<RigidSnapshot> &states){
+                return states[b].linear_velocity_m_s+cross(states[b].angular_velocity_rad_s,p-before[b].center_of_mass_world_m)
+                     - states[a].linear_velocity_m_s-cross(states[a].angular_velocity_rad_s,p-before[a].center_of_mass_world_m);};
+            Json points=Json::array();double nw=0;
+            for(const auto &p:c.points){const double v0=dot(c.normal_a_to_b,relative(p.point_world_m,free)),v1=dot(c.normal_a_to_b,relative(p.point_world_m,solved));
+                const double work=.5*p.normal_impulse_n_s*(v0+v1);nw+=work;
+                points.push_back({{"point_m",v(p.point_world_m)},{"gap_m",p.initial_gap_m},{"impulse_n_s",p.normal_impulse_n_s},
+                    {"free_normal_m_s",v0},{"solved_normal_m_s",v1},{"work_j",work}});}
+            const auto slip=.5*(relative(c.friction_point_world_m,free)+relative(c.friction_point_world_m,solved));
+            const auto spin=.5*(free[b].angular_velocity_rad_s-free[a].angular_velocity_rad_s+solved[b].angular_velocity_rad_s-solved[a].angular_velocity_rad_s);
+            const double fw=dot(c.friction_impulse_on_b_n_s,slip),tw=dot(c.twist_impulse_on_b_n_m_s,spin);
+            normal+=nw;friction+=fw;twist+=tw;
+            if(contacts.size()<256)contacts.push_back({{"a",c.a},{"b",c.b},{"normal_j",nw},{"friction_j",fw},{"twist_j",tw},
+                {"combined_friction",c.combined_friction},{"normal",v(c.normal_a_to_b)},{"points",points},
+                {"friction_impulse_n_s",v(c.friction_impulse_on_b_n_s)},{"common_slip_m_s",v(slip)},
+                {"twist_impulse_n_m_s",v(c.twist_impulse_on_b_n_m_s)},{"common_spin_rad_s",v(spin)},
+                {"free_spin_rad_s",v(free[b].angular_velocity_rad_s-free[a].angular_velocity_rad_s)},
+                {"solved_spin_rad_s",v(solved[b].angular_velocity_rad_s-solved[a].angular_velocity_rad_s)}});
+        }
+        return {{"normal_j",normal},{"friction_j",friction},{"twist_j",twist},{"sum_j",normal+friction+twist},
+            {"native_contact_count",world.contactImpulseObservations().size()},{"contacts",contacts},
+            {"scope","Read-only rejected candidate impulses and actual force/solver phases. This candidate is rolled back and never rendered."}};
+    }
     Json measureBoundary(const std::vector<RigidSnapshot> &before,double h,Json &worst_twist)const{
         double normal=0,positive=0,friction=0,twist=0,velocity_violation=0,complementarity=0;
         double friction_gap=0,twist_gap=0,friction_excess=0,twist_excess=0;
@@ -296,10 +328,10 @@ struct VoxelImpactWorld::Impl {
         if(sheet_plasticity&&!centered_faces)throw std::invalid_argument("plastic sheet requires centered-log-gradient interfaces");
         world.setCenteredIntegration(centered_faces);
         const auto contact_law=d.value("contact_law",std::string("material-restitution"));
-        if(contact_law!="material-restitution"&&contact_law!="resolved-deformation"&&contact_law!="midpoint-unilateral"&&contact_law!="midpoint-block-friction")throw std::invalid_argument("unsupported contact law");
+        if(contact_law!="material-restitution"&&contact_law!="resolved-deformation"&&contact_law!="midpoint-unilateral"&&contact_law!="midpoint-block-friction"&&contact_law!="material-block-friction")throw std::invalid_argument("unsupported contact law");
         midpoint_contact=contact_law=="midpoint-unilateral"||contact_law=="midpoint-block-friction";
-        resolved_deformation=contact_law!="material-restitution";
-        world.setContactRestitutionModel(contact_law=="midpoint-block-friction"?RigidContactRestitution::MidpointBlockFriction:midpoint_contact?RigidContactRestitution::MidpointUnilateral:resolved_deformation?RigidContactRestitution::ResolvedDeformation:RigidContactRestitution::MaterialCombination);
+        resolved_deformation=contact_law!="material-restitution"&&contact_law!="material-block-friction";
+        world.setContactRestitutionModel(contact_law=="material-block-friction"?RigidContactRestitution::MaterialBlockFriction:contact_law=="midpoint-block-friction"?RigidContactRestitution::MidpointBlockFriction:midpoint_contact?RigidContactRestitution::MidpointUnilateral:resolved_deformation?RigidContactRestitution::ResolvedDeformation:RigidContactRestitution::MaterialCombination);
         const auto sheet=preset(d.value("sheet",std::string("glass"))),ball=preset(d.value("ball",std::string("iron")));
         const double requested=scalar(d,"resolution",8,4,16);const unsigned n=unsigned(requested);
         if(n!=requested||(n!=4&&n!=8&&n!=12&&n!=16))throw std::invalid_argument("resolution must be 4, 8, 12 or 16");
@@ -371,7 +403,7 @@ struct VoxelImpactWorld::Impl {
         double candidate_plastic_work=0,candidate_return_excess=0,candidate_actuator_work=0;
         Vec3 candidate_actuator_impulse{},candidate_actuator_angular{},candidate_actuator_phase_residual{};
         const auto trial_start=std::chrono::steady_clock::now();
-        bool coast_contact=false,flight_unsafe=false;
+        bool coast_contact=false,flight_unsafe=false;Json rejected_contacts;
         const bool accepted=world.runReversibleTrial([&]{
             const auto native_start=std::chrono::steady_clock::now();
             // Queue forces inside the trial so refusal restores both the force
@@ -420,15 +452,17 @@ struct VoxelImpactWorld::Impl {
             }
             const double after=candidateTotals.mechanicalEnergy()+after_elastic;candidateEnergy=after;
             const double accounted=after+candidate_plastic_work+candidate_return_excess-candidate_actuator_work;
-            return std::isfinite(accounted)&&accounted-before<=1e-5*std::max(1.,std::abs(before))+1e-6&&
+            const bool energy_ok=std::isfinite(accounted)&&accounted-before<=1e-5*std::max(1.,std::abs(before))+1e-6&&
                 accounted+fracture+discarded_elastic+plastic_work+plastic_return_excess-actuator_work-transfer_energy-initial_energy<=.1;
+            if(!energy_ok&&depth>=14)rejected_contacts=contactWorkWitness(before_states);
+            return energy_ok;
         });
         trial_wall_ms+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-trial_start).count();
         if(coast_contact){++rejected;expandCoast("candidate contact rollback");interval(h,depth);return;}
         if(flight_unsafe){++rejected;++flight_rollbacks;
             if(depth>=14)throw std::runtime_error("isolated rigid flight candidate path refused");
             interval(h/2,depth+1,true);interval(h/2,depth+1,true);return;}
-        if(!accepted){++rejected;refused_work={{"time_s",time},{"dt_s",h},{"depth",depth},{"before_j",before},{"candidate_j",candidateEnergy},{"elastic_change_j",after_elastic-before_elastic},{"work",workJson(candidateWork)}};if(actuation_used)refused_work["actuator_work_j"]=candidate_actuator_work;if(sheet_plasticity){refused_work["plastic_work_j"]=candidate_plastic_work;refused_work["plastic_return_excess_j"]=candidate_return_excess;}if(midpoint_contact){refused_work["midpoint_boundary"]=candidateBoundary;refused_work["worst_twist_contact"]=candidateTwist;}if(depth>=14)throw std::runtime_error("native integration energy gate refused at "+std::to_string(time)+" s: before="+std::to_string(before)+", candidate="+std::to_string(candidateEnergy)+", h="+std::to_string(h)+"; last accepted state retained");interval(h/2,depth+1,force_full_motion);interval(h/2,depth+1,force_full_motion);return;}
+        if(!accepted){++rejected;refused_work={{"time_s",time},{"dt_s",h},{"depth",depth},{"before_j",before},{"candidate_j",candidateEnergy},{"elastic_change_j",after_elastic-before_elastic},{"work",workJson(candidateWork)}};if(!rejected_contacts.is_null())refused_work["contact_sources"]=rejected_contacts;if(actuation_used)refused_work["actuator_work_j"]=candidate_actuator_work;if(sheet_plasticity){refused_work["plastic_work_j"]=candidate_plastic_work;refused_work["plastic_return_excess_j"]=candidate_return_excess;}if(midpoint_contact){refused_work["midpoint_boundary"]=candidateBoundary;refused_work["worst_twist_contact"]=candidateTwist;}if(depth>=14)throw std::runtime_error("native integration energy gate refused at "+std::to_string(time)+" s: before="+std::to_string(before)+", candidate="+std::to_string(candidateEnergy)+", h="+std::to_string(h)+"; last accepted state retained");interval(h/2,depth+1,force_full_motion);interval(h/2,depth+1,force_full_motion);return;}
         actuator_work+=candidate_actuator_work;actuator_impulse+=candidate_actuator_impulse;actuator_angular_impulse+=candidate_actuator_angular;actuator_force_phase_residual+=candidate_actuator_phase_residual;
         plastic_work+=candidate_plastic_work;plastic_return_excess+=candidate_return_excess;
         for(unsigned i=0;i<bonds.size();++i)if(detailed(bonds[i])&&bonds[i].plastic)bonds[i].plastic_state=candidate_plastic[i].state;
@@ -573,7 +607,8 @@ std::string VoxelImpactWorld::snapshotJson() const {
             {"closure_residual_j",w.ledger_change_j-w.work_total.kinetic_change_j-w.work_total.potential_change_j-w.elastic_change_j},
             {"full_angular_residual_n_m_s",v(w.full_angular_residual)},{"last_rejected_trial",w.refused_work},
             {"scope","Actual native force-phase velocities and shared-phase spring/contact work. Residual, gyro and rotation drift are signed numerical/unexplained terms, not heat. Algebraic closure is not material realism or solver conservation."}}},
-        {"qualification",{{"calibrated",false},{"contact_law",impl_->declaration.value("contact_law",std::string("material-restitution"))=="midpoint-block-friction"?"midpoint-block-friction":impl_->midpoint_contact?"midpoint-unilateral":impl_->resolved_deformation?"resolved-deformation":"material-restitution"},{"face_law",impl_->centered_faces?"centered-log-gradient":impl_->log_faces?"log-gradient":"native-motor"},{"model",impl_->midpoint_contact?
+        {"qualification",{{"calibrated",false},{"contact_law",impl_->declaration.value("contact_law",std::string("material-restitution"))},{"face_law",impl_->centered_faces?"centered-log-gradient":impl_->log_faces?"log-gradient":"native-motor"},{"model",impl_->declaration.value("contact_law",std::string("material-restitution"))=="material-block-friction"?
+            "Experimental coupled endpoint sliding/twisting contact with native material restitution and original impulse caps. Local contact oracles pass; full island convergence, energy accuracy and realtime remain unqualified.":impl_->midpoint_contact?
             "Experimental frozen-normal unilateral midpoint boundary and centered interfaces. Not compliant indentation or calibrated material contact. Finite rotations/friction/full energy remain unqualified.":impl_->centered_faces?
             "Experimental centered elastic rows and midpoint pose velocities. Linear energy oracles pass; coupled contact and finite rotations remain unqualified. Not compliant surface contact.":impl_->log_faces?
             "Experimental SO(3) energy-gradient interfaces. Analytical torque gradients pass; full impacts still have unresolved energy refusals/losses. Not a realtime or calibrated material model.":

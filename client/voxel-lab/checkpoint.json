@@ -1,41 +1,40 @@
 {
-  "title": "Detached cells fly and collide again through native physics",
+  "title": "Coupled friction retains bounce and completes the refined glass drop",
   "date": "2026-10-08",
-  "physics_revision": "bbb00f2ccada0179dd48d53eef9115089f6dcd9f",
-  "native_sha256": "79a0ff1372639e4768100a799bb4ec49e58208b2106618bb90881574004e27b0",
+  "native_sha256": "eb3527a07fda2a0c181ff11683eb907a16045bf0fcae66e4db58f703e7df9ee4",
   "changes": [
-    "Optional Motion → Detached flight keeps every original native cell and its mass, inertia and history; disconnected cells in empty space can leave the global thickness timestep.",
-    "Predicted and actual candidate-path checks retain detailed stepping near other objects. Whole-world contact and energy refusal gates are unchanged.",
-    "Ice completes with 48,977 steps versus reference 73,631; 25 previously flown cells collide again. Topology changes 62/110 → 61/109 pieces/faces, so accuracy is unqualified.",
-    "Glass remains slow. Connected material/local island integration, refinement, full conservation, adaptive cells and thermal/fluid/power laws remain unfinished. Reference stays default."
+    "Optional Contact response → Coupled friction + bounce solves sliding and twist together while retaining native material restitution. Reference stays default.",
+    "Physics step selects the actual 1/960 or refined 1/1920 s experiment. Before/Live shows original and accepted native geometry.",
+    "The reproduced refined glass refusal is twisting friction adding energy in the direction of existing spin. Terminal rejected records now retain original-cell impulses and actual force/solver velocities.",
+    "Glass/oak/iron/ice complete at both timesteps in the initial trial. Full convergence, large energy deficits, connected calculation speed and thermal/fluid/power laws remain unfinished."
   ],
   "checks": [
     {
+      "label": "Native contact controls",
+      "status": "passed",
+      "value": "Glass/oak/iron/ice endpoint and midpoint friction plus unchanged material bounce, in both CPU runners"
+    },
+    {
       "label": "Scoped regression",
       "status": "passed",
-      "value": "17/17 CTests including full 10 m lifecycle; 342/342 source registration and JS syntax"
+      "value": "12/12 CTests: eight complete impacts at two timesteps plus actual retained refusal, native analytical/rollback and client pipeline tests; 342/342 source registration"
     },
     {
       "label": "Default preservation",
       "status": "passed",
-      "value": "Complete glass/oak/iron/ice prior-build physical/work parity at every 16 host ticks"
+      "value": "Complete glass/oak/iron/ice prior-build physical/work parity at every 16 host ticks through 2 s; profiling alone excluded"
     },
     {
-      "label": "Actual detached contact",
-      "status": "passed",
-      "value": "Original masses retained; 25 previously flown ice cells later enter native contact in the complete nominal experiment"
-    },
-    {
-      "label": "Refinement / realtime",
+      "label": "Accuracy / realtime",
       "status": "blocked",
-      "value": "Refined glass repeats the old energy refusal before any flight; refined ice saves no steps and loses different energy. Full accuracy and realtime remain unfinished"
+      "value": "Timestep changes glass/ice topology and large energy deficits. Two simulated seconds still take tens of wall seconds"
     }
   ],
   "next": [
     {
       "label": "Energy / accuracy",
       "status": "in progress",
-      "value": "Resolve normal/island convergence, force/pose consistency and fracture overshoot; qualify timestep/spatial accuracy"
+      "value": "Resolve normal/contact/interface island consistency and full energy; qualify timestep and spatial accuracy"
     },
     {
       "label": "Calculation speed",
@@ -67,6 +66,7 @@
     "sheet_plasticity": true,
     "object_acceleration": true,
     "hybrid_free_flight": true,
-    "local_rigid_flight": true
+    "local_rigid_flight": true,
+    "material_block_friction": true
   }
 }

@@ -521,11 +521,11 @@ void midpoint_twist_reversal_oracle(MaterialPreset preset,bool repaired,bool sli
 }
 // A partial support patch shifts the friction point away from the COM;
 // yawed unequal dimensions couple both tangent rows and the twist row.
-void block_anisotropic_patch_oracle(MaterialPreset preset){
-    JoltWorld world(0,{},execution);world.setCenteredIntegration(true);world.setGravity({});
+void block_anisotropic_patch_oracle(MaterialPreset preset,bool endpoint=false){
+    JoltWorld world(0,{},execution);world.setCenteredIntegration(!endpoint);world.setGravity({});
     world.configureVoxelContacts(.004);world.setContactSolverIterations(96,4);
     world.setContactImpulseObservationsEnabled(true);
-    world.setContactRestitutionModel(RigidContactRestitution::MidpointBlockFriction);
+    world.setContactRestitutionModel(endpoint?RigidContactRestitution::MaterialBlockFriction:RigidContactRestitution::MidpointBlockFriction);
     auto material=makeReferenceMaterial(preset);material.model=MaterialModel::RigidOnly;
     material.static_friction=material.dynamic_friction=material.friction=.4;material.rolling_resistance=0;
     const double angle=.37;
@@ -533,21 +533,23 @@ void block_anisotropic_patch_oracle(MaterialPreset preset){
     world.addBox({2,{.15,.1,.08},material,{{0,.05,0},{std::cos(angle/2),0,std::sin(angle/2),0},{1,-1,.5},{2,5,-3}},false});
     world.setContinuousCollision(2,false);
     const auto before=world.mechanicalState(2);world.step(1./960);const auto after=world.mechanicalState(2);
-    double gap=0,work=0;unsigned contacts=0;
+    double gap=0,work=0,common_work=0;unsigned contacts=0;
     for(const auto& c:world.contactImpulseObservations()){
         check(c.a==1&&c.b==2,"anisotropic block observes intended support pair");++contacts;
         double cap=0,twist_cap=0;for(const auto& point:c.points){cap+=point.normal_impulse_n_s;twist_cap+=point.normal_impulse_n_s*point.friction_radius_m;}
         cap*=c.combined_friction;twist_cap*=c.combined_friction;
         const Vec3 r=c.friction_point_world_m-before.motion.center_of_mass_world_m;
         Vec3 slip=(before.motion.linear_velocity_m_s+after.motion.linear_velocity_m_s+cross(before.motion.angular_velocity_rad_s+after.motion.angular_velocity_rad_s,r))/2;
+        if(endpoint)slip=after.motion.linear_velocity_m_s+cross(after.motion.angular_velocity_rad_s,r);
         slip-=dot(slip,c.normal_a_to_b)*c.normal_a_to_b;
         const auto audit=auditContactFrictionStationarity(c.friction_impulse_on_b_n_s,slip,cap,
-            dot(c.twist_impulse_on_b_n_m_s,c.normal_a_to_b),dot((before.motion.angular_velocity_rad_s+after.motion.angular_velocity_rad_s)/2,c.normal_a_to_b),twist_cap);
+            dot(c.twist_impulse_on_b_n_m_s,c.normal_a_to_b),dot(endpoint?after.motion.angular_velocity_rad_s:(before.motion.angular_velocity_rad_s+after.motion.angular_velocity_rad_s)/2,c.normal_a_to_b),twist_cap);
         gap=std::max(gap,std::max(audit.friction_gap_j,audit.twist_gap_j));work+=audit.friction_work_j+audit.twist_work_j;
+        common_work+=dot(c.friction_impulse_on_b_n_s,(before.motion.linear_velocity_m_s+after.motion.linear_velocity_m_s+cross(before.motion.angular_velocity_rad_s+after.motion.angular_velocity_rad_s,r))/2)+dot(c.twist_impulse_on_b_n_m_s,(before.motion.angular_velocity_rad_s+after.motion.angular_velocity_rad_s)/2);
         check(audit.friction_cap_excess_n_s<1e-6&&audit.twist_cap_excess_n_m_s<1e-8,"anisotropic block retains native caps");
     }
-    check(contacts>0&&gap<5e-6&&work<=1e-6,"anisotropic native block final stationarity and dissipative work");
-    std::cout<<"material="<<materialSceneName(preset)<<" anisotropic_block gap_j="<<gap<<" friction_work_j="<<work<<'\n';
+    check(contacts>0&&gap<5e-6&&work<=1e-6&&common_work<=1e-6,"anisotropic native block final stationarity and actual dissipative work");
+    std::cout<<"material="<<materialSceneName(preset)<<" anisotropic_block endpoint="<<endpoint<<" gap_j="<<gap<<" friction_work_j="<<common_work<<'\n';
 }
 void midpoint_contact_configuration_oracle(){
     JoltWorld world(0,{},execution);bool refused=false;
@@ -557,10 +559,10 @@ void midpoint_contact_configuration_oracle(){
     refused=false;try{world.setCenteredIntegration(false);}catch(const std::logic_error &){refused=true;}
     check(refused,"midpoint contact cannot lose its matching pose integrator");
 }
-void restitution_model_oracle(MaterialPreset preset,bool resolved){
+void restitution_model_oracle(MaterialPreset preset,bool resolved,bool block=false){
     JoltWorld world(0,{},execution);world.setGravity({});world.configureVoxelContacts(.004);
     world.setContactSolverIterations(96,4);world.setContactImpulseObservationsEnabled(true);
-    world.setContactRestitutionModel(resolved?RigidContactRestitution::ResolvedDeformation:RigidContactRestitution::MaterialCombination);
+    world.setContactRestitutionModel(block?RigidContactRestitution::MaterialBlockFriction:resolved?RigidContactRestitution::ResolvedDeformation:RigidContactRestitution::MaterialCombination);
     auto material=makeReferenceMaterial(preset);material.model=MaterialModel::RigidOnly;
     material.static_friction=material.dynamic_friction=material.friction=material.rolling_resistance=0;
     world.addBox({1,{.1,.1,.1},material,{{-.05,0,0},{},{1,0,0},{}},false});
@@ -605,4 +607,4 @@ void resolved_assembly_recovery_oracle(MaterialPreset preset){
     std::cout<<"material="<<materialSceneName(preset)<<" assembly_recovery="<<upward<<" peak_elastic_j="<<peak_elastic<<" peak_energy_excess_j="<<peak_energy-initial<<'\n';
 }
 }
-int main(){try{for(auto policy:{RigidJobExecution::ThreadPool,RigidJobExecution::Inline}){execution=policy;execution_profile_oracle();std::cout<<"execution="<<(policy==RigidJobExecution::Inline?"inline":"thread-pool")<<'\n';for(bool law:{false,true}){log_gradient=law;for(double extension:{0.,.01}){oracle(0,extension);oracle(20,extension);}torsion(0);torsion(.005);sleeping_spring_oracle();}nearest_orientation();for(bool fixed:{false,true})for(double friction:{0.,.4})contact_oracle(fixed,friction);gravity_oracle();log_gradient_impulse_oracle();limit_observation_oracle();for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(bool resolved:{false,true})restitution_model_oracle(material,resolved);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})resolved_assembly_recovery_oracle(material);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(double damping:{0.,20.})centered_pair_oracle(material,damping);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(double damping:{0.,.02})centered_torsion_oracle(material,damping);centered_gravity_oracle();for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})block_anisotropic_patch_oracle(material);midpoint_contact_configuration_oracle();for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(bool repaired:{false,true})for(bool sliding:{false,true})midpoint_twist_reversal_oracle(material,repaired,sliding);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(bool sliding:{false,true})midpoint_twist_reversal_oracle(material,true,sliding,true);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(bool fixed:{false,true})for(double fraction:{0.,.25,.75,1.25})for(double h:{1./960,1./3840})midpoint_contact_oracle(material,fixed,fraction,h);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})centered_small_spin_oracle(material);}return 0;}catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(){try{for(auto policy:{RigidJobExecution::ThreadPool,RigidJobExecution::Inline}){execution=policy;execution_profile_oracle();std::cout<<"execution="<<(policy==RigidJobExecution::Inline?"inline":"thread-pool")<<'\n';for(bool law:{false,true}){log_gradient=law;for(double extension:{0.,.01}){oracle(0,extension);oracle(20,extension);}torsion(0);torsion(.005);sleeping_spring_oracle();}nearest_orientation();for(bool fixed:{false,true})for(double friction:{0.,.4})contact_oracle(fixed,friction);gravity_oracle();log_gradient_impulse_oracle();limit_observation_oracle();for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(bool resolved:{false,true})restitution_model_oracle(material,resolved);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})resolved_assembly_recovery_oracle(material);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(double damping:{0.,20.})centered_pair_oracle(material,damping);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(double damping:{0.,.02})centered_torsion_oracle(material,damping);centered_gravity_oracle();for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron,MaterialPreset::Ice})for(bool endpoint:{false,true})block_anisotropic_patch_oracle(material,endpoint);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron,MaterialPreset::Ice})restitution_model_oracle(material,false,true);midpoint_contact_configuration_oracle();for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(bool repaired:{false,true})for(bool sliding:{false,true})midpoint_twist_reversal_oracle(material,repaired,sliding);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(bool sliding:{false,true})midpoint_twist_reversal_oracle(material,true,sliding,true);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})for(bool fixed:{false,true})for(double fraction:{0.,.25,.75,1.25})for(double h:{1./960,1./3840})midpoint_contact_oracle(material,fixed,fraction,h);for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron})centered_small_spin_oracle(material);}return 0;}catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}

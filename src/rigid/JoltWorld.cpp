@@ -602,6 +602,11 @@ public:
 
 private:
     void configureMidpointContact(const JPH::Body &a,const JPH::Body &b,JPH::ContactSettings &settings) const {
+        // Endpoint Coulomb block retains the native normal/restitution model.
+        // Its gradient uses actual current velocity, without midpoint biases.
+        if(restitution_model==RigidContactRestitution::MaterialBlockFriction&&!settings.mIsSensor){
+            settings.mBanjoBlockFriction=true;return;
+        }
         if((restitution_model!=RigidContactRestitution::MidpointUnilateral&&restitution_model!=RigidContactRestitution::MidpointBlockFriction)||settings.mIsSensor)return;
         settings.mBanjoMidpointContact=true;
         settings.mBanjoBlockFriction=restitution_model==RigidContactRestitution::MidpointBlockFriction;
@@ -687,7 +692,7 @@ private:
                                             : combined.dynamic_friction;
         settings.mCombinedFriction = static_cast<float>(applied_friction);
         settings.mCombinedRestitution =
-            restitution_model!=RigidContactRestitution::MaterialCombination?0.0F:static_cast<float>(combined.restitution);
+            (restitution_model==RigidContactRestitution::MaterialCombination||restitution_model==RigidContactRestitution::MaterialBlockFriction)?static_cast<float>(combined.restitution):0.0F;
 
         // A tool's point in the ground is held by its bite, not by the height
         // field: the height field is a surface and lets nothing in. The rest of
@@ -793,7 +798,7 @@ private:
         event.combined_static_friction = combined.static_friction;
         event.combined_dynamic_friction = combined.dynamic_friction;
         event.applied_friction = applied_friction;
-        event.combined_restitution = restitution_model!=RigidContactRestitution::MaterialCombination?0.0:combined.restitution;
+        event.combined_restitution = (restitution_model==RigidContactRestitution::MaterialCombination||restitution_model==RigidContactRestitution::MaterialBlockFriction)?combined.restitution:0.0;
         event.effective_contact_modulus_pa = combined.effective_modulus_pa;
 
         // The callback changes contact settings only; body lifetime/motion is
@@ -3118,7 +3123,7 @@ void JoltWorld::setFacePlasticRest(unsigned id,Vec3 p,Vec3 r){
 void JoltWorld::setContactRestitutionModel(RigidContactRestitution model) {
     impl_->requireConfigurationMutable();
     if(!impl_->bodies_.empty()||!impl_->floor_id_.IsInvalid())throw std::logic_error("configure restitution model before creating bodies");
-    if(model!=RigidContactRestitution::MaterialCombination&&model!=RigidContactRestitution::ResolvedDeformation&&model!=RigidContactRestitution::MidpointUnilateral&&model!=RigidContactRestitution::MidpointBlockFriction)
+    if(model!=RigidContactRestitution::MaterialCombination&&model!=RigidContactRestitution::ResolvedDeformation&&model!=RigidContactRestitution::MidpointUnilateral&&model!=RigidContactRestitution::MidpointBlockFriction&&model!=RigidContactRestitution::MaterialBlockFriction)
         throw std::invalid_argument("unsupported contact restitution model");
     if((model==RigidContactRestitution::MidpointUnilateral||model==RigidContactRestitution::MidpointBlockFriction)&&!impl_->centered_integration_)throw std::invalid_argument("midpoint contact requires centered integration");
     impl_->impact_collector_.restitution_model=model;
