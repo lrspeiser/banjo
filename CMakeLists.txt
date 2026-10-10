@@ -1479,6 +1479,13 @@ if(BANJO_BUILD_TESTS)
                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_game_tests.py --engine $<TARGET_FILE:banjo_live_world_run>)
                 set_tests_properties(banjo_machine_game_tests PROPERTIES TIMEOUT 600
                     ENVIRONMENT "BANJO_MACHINE_ENGINE=required" LABELS "native;world;machine")
+                # The same puzzles in Chrome: a piece's ghost moved, turned,
+                # set down and run, on a desktop and a phone.
+                add_test(NAME banjo_machine_game_browser_tests COMMAND ${CMAKE_COMMAND} -E env
+                    BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+                    ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_game_browser_tests.py)
+                set_tests_properties(banjo_machine_game_browser_tests PROPERTIES TIMEOUT 300
+                    LABELS "native;world;machine;browser")
             endif()
             target_link_libraries(banjo_motor_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_motor_tests)
@@ -1533,6 +1540,16 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_optics_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_optics_tests)
             add_test(NAME banjo_optics_tests COMMAND banjo_optics_tests)
+
+            # Lit spots (docs/light-spots.md): a 4.5 kW beam off a mirror parts
+            # an oak cord in seconds by taking the lit oak away, for the energy
+            # per volume the thermochemistry gives; a weaker beam takes longer
+            # and a weak one only warms; the mirror is not cut; glass is warmed
+            # and never cut; ice melts by depth; the ledgers close.
+            add_executable(banjo_light_spot_tests tests/light_spot_tests.cpp)
+            target_link_libraries(banjo_light_spot_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_light_spot_tests)
+            add_test(NAME banjo_light_spot_tests COMMAND banjo_light_spot_tests)
 
             # What a break costs: the charge the room's failure law makes for
             # a crack, against what the material itself declares, and what a

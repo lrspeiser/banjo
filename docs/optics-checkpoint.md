@@ -127,7 +127,7 @@ From `tests/optics_tests.cpp` (Windows, Release, cell 20 mm, step 1/240 s):
 | A 100 mm glass ball in an overhead 1000 W/m² sun | 150 times the open sun on a spot 1 mm in radius, 67.5 mm below the ball's centre: 0.472 W. The same grid of rays traced by hand through a perfect sphere gives the same 0.472 W. The glass itself absorbs 5.65 W of the 7.85 W on it; by hand, 1.35 W comes out the far side |
 | A 0.3 m oak board square to the sun | It absorbs 45 W, half of the 90 W on it. In 1 s the heat network took 45 J and the light gave 45 J |
 | An exact (compound) oak board beside it | It absorbs 45 W, counted as warming nothing; the heat network is not handed it |
-| A 2 kW filament heat lamp on an oak cord 20 × 20 × 100 mm holding 32 kg, 25 cm away | 1765 W of light; the cord absorbs 786 W, burns, and parts at 16.3 s |
+| A 2 kW filament heat lamp on an oak cord 20 × 20 × 100 mm holding 32 kg, 25 cm away | 1765 W of light; the cord absorbs 786 W, burns, and parts at 16.3 s. Since lit spots ([light-spots.md](light-spots.md)): it chars through where the beam lands and parts at 5.2 s |
 | A lamp's beam on a sensor, and a ball that falls into the beam | The beam closes the switch on the second step. The ball reaches the beam at 0.350 s and the switch opens at 0.358 s, two steps later, and stays open while the ball sits there |
 | A saved world | Its lights, sensors, polish and accounts come back, and it goes on exactly as the unsaved one |
 | A world with no light | Two seconds of a ramp, a marble and a block are bitwise identical with and without light declared (a sensor, and a lamp's light with the lamp off). 0.0939 ms a step without, 0.0945 ms with |
@@ -151,6 +151,12 @@ The default machine, which declares no light, gives byte-identical replies for 2
 time on the engine before and after this change.
 
 ## Why sunlight through a glass ball does not set the rope alight
+
+*Superseded in part by [light-spots.md](light-spots.md): light now heats the spot it lands on, and
+a beam strong enough takes oak and ice away where it lands. The 100 mm glass ball's focus still
+does not char oak -- it brings 0.22 W onto 4.3 mm² of it, which would lose 0.30 W held at oak's
+char line, so the oak there settles at about 500 K -- so the machine below is still built this
+way. What follows is how it stood on October 10, before spots.*
 
 In life, a burning glass sets wood alight by heating a spot a few millimetres across, very
 quickly. In the engine, heat is held per body (a surface layer and a core). The light a body
@@ -197,6 +203,7 @@ come with the `optics` and `light_trace` operations, or a step asked with `"ligh
 | `light_remove` `{light}` | Takes a light away |
 | `polish` `{body, polished}` | A mirror finish on a metal part, or off it |
 | `photocell` `{name, body, at_m, normal, area_m2}` | A light sensor on a part |
+| `lens` `{body, at_m, axis, front_radius_m, back_radius_m, thickness_m, aperture_m}` | A lens in a clear part ([light-spots.md](light-spots.md), "Lenses"); replies with its focal length |
 | `light_tracing` `{trace_every_steps, bounce_limit, follow_share, drawn}` | How light is traced |
 | `light_trace`, `optics` | Trace now (or not), and answer with the full report and paths |
 
@@ -209,8 +216,9 @@ A circuit branch may carry `follows_light: {sensor, closed_at_or_above_w | close
   dispersion: one refractive index for all colours. Two absorption bands, not a spectrum.
 - **Scattered light is not followed.** A rough surface's scattered share leaves the trace.
   There is no light bounced off walls and no light from the sky, only the sun's direct beam.
-- **Heat is held per body.** A focused spot warms a body's whole surface layer, not the spot
-  (see above). Light carries no momentum: it pushes nothing.
+- **Heat is held per body, and per lit spot.** Since [light-spots.md](light-spots.md), light heats
+  the spot it lands on first and can take oak and ice away there; its limits are listed there.
+  Light carries no momentum: it pushes nothing.
 - **Sampling.** Light is a grid of rays. A sensor smaller than a few grid squares reads in
   steps of one ray's power, and a beam narrower than the grid can fall between rays.
 - **Mirrors** reflect the same share at every angle; real metals reflect more at grazing angles.

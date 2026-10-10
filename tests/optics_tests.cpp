@@ -14,7 +14,7 @@
 //    against the open sun, and the same ray grid traced by hand through a
 //    perfect sphere agrees.
 // 6. What absorbs light is heated by exactly what it absorbed.
-// 7. A heat lamp's beam heats an oak cord until it burns and parts.
+// 7. A heat lamp's beam chars through an oak cord where it lands, and parts it.
 // 8. A beam on a light sensor closes a circuit's switch; a ball that falls into
 //    the beam opens it; a hand cannot work it.
 // 9. The ledger closes, and a world with no light is untouched by all this.
@@ -444,34 +444,34 @@ void aHeatLampBurnsAnOakCord() {
     // A filament heat lamp: 2 kW at 15 lumens a watt; a filament's light carries
     // about 17 lumens a radiant watt, a tenth of it visible.
     beam(*world, {-0.25, 0.945, 0.0}, {1.0, 0.0, 0.0}, 256, 3.0, 2000.0, 15.0, 17.0, 0.1);
+    // Its beam is about 26 mm across where it meets the cord, so its light is
+    // concentrated on a spot (docs/light-spots.md): it chars the oak through
+    // where it lands, and the weight falls with what is below.
     bool parted = false;
-    double parted_at = 0.0, hottest = 0.0;
-    std::string why;
+    double parted_at = 0.0, cord_w = 0.0, spot_k = 0.0;
+    std::string how;
     for (int i = 0; i < 60 * 240 && !parted; ++i) {
         tick(*world);
-        for (const LiveJoint &j : world->joints())
-            if (j.id == top && !j.attached) {
+        for (const LiveOptics::Lit &b : world->optics().bodies)
+            if (b.body == "cord" && b.absorbed_w > 0.0) {
+                cord_w = b.absorbed_w;
+                spot_k = b.spot_k;
+                how = b.spot_how;
+            }
+        for (const LiveBodyPose &b : world->poses())
+            if (b.name == "weight" && b.position_m.y < 0.81 - 0.05) {
                 parted = true;
                 parted_at = (i + 1) * kDt;
             }
     }
     const LiveOptics o = world->optics();
-    double cord_w = 0.0;
-    for (const LiveOptics::Lit &b : o.bodies)
-        if (b.body == "cord") cord_w = b.absorbed_w;
-    const auto heat = nlohmann::json::parse(world->thermoReport(false));
-    bool burned = false;
-    for (const auto &b : heat.at("bodies"))
-        if (b.at("name") == "cord") {
-            hottest = b.value("temperature_k", 0.0);
-            burned = b.value("reacting", false);
-        }
     std::cout << "    heat lamp: " << o.watts.sent << " W of light, the cord absorbing " << cord_w
-              << " W; it parted at " << parted_at << " s, its surface " << hottest << " K"
-              << (burned ? ", burning" : "") << "; " << o.traces << " traces of " << o.rays << " rays and "
-              << o.casts << " casts, " << o.trace_ms / o.traces << " ms each\n";
+              << " W, its spot at " << spot_k << " K (" << how << "); " << o.taken.size()
+              << " cell(s) of it taken away, and the weight fell at " << parted_at << " s; " << o.traces
+              << " traces of " << o.rays << " rays and " << o.casts << " casts, " << o.trace_ms / o.traces
+              << " ms each\n";
     require(parted, "the heat lamp's light burns through the cord");
-    require(burned, "and the cord is burning");
+    require(!o.taken.empty() && how == "chars", "where it lands: the oak there is charred away");
     checkLedger(o, "heat lamp");
 }
 
@@ -592,6 +592,162 @@ void aSavedWorldKeepsItsLight() {
     checkLedger(b, "opened again");
 }
 
+// ---- 2b. a mirror turned about two axes ----------------------------------------------
+
+// A polished plate tipped 20 degrees about x as well as turned 45 about y (the
+// game will let a piece be turned any way): a lamp's beam leaves it by the law
+// of reflection about the normal the engine itself reports for the plate.
+void aTippedMirrorReflectsByTheLaw() {
+    auto world = open({box("mirror", MaterialPreset::Aluminum, {0.02, 0.2, 0.2}, {0.5, 0.5, 0.0}, true,
+                           {20.0, 45.0, 0.0})});
+    require(world->polish("mirror", true).empty(), "polish");
+    beam(*world, {-1.0, 0.5, 0.0}, {1.0, 0.0, 0.0}, 64, 0.5, 100.0, 120.0, 300.0, 1.0);
+    require(world->setLightTracing(4, 16, 0.02, 64), "light tracing");
+    tick(*world);   // a lamp gives what its last kept step gave it
+    world->traceLight();
+    Vec3 normal{};
+    for (const LiveBodyPose &b : world->poses())
+        if (b.name == "mirror") {
+            const Quat q{b.orientation_wxyz[0], b.orientation_wxyz[1], b.orientation_wxyz[2], b.orientation_wxyz[3]};
+            normal = normalized(q.rotate(Vec3{1.0, 0.0, 0.0}));
+        }
+    double worst = 0.0;
+    int seen = 0;
+    for (const LiveOptics::Path &p : world->optics().paths) {
+        if (p.points.size() < 3) continue;
+        const Vec3 in = normalized(p.points[1] - p.points[0]), out = normalized(p.points[2] - p.points[1]);
+        const Vec3 want = in - 2.0 * dot(in, normal) * normal;
+        worst = std::max(worst, angleBetween(out, want));
+        ++seen;
+    }
+    std::cout << "    a mirror tipped 20 degrees and turned 45: " << seen << " rays off it, each within " << worst / kDeg
+              << " degrees of the law of reflection about the normal the engine reports, (" << normal.x << ", "
+              << normal.y << ", " << normal.z << ")\n";
+    require(seen >= 10, "rays off the tipped mirror");
+    require(worst < 1e-4 * kDeg, "a tipped mirror reflects by the law of reflection");
+    checkLedger(world->optics(), "tipped mirror");
+}
+
+// ---- 11. lenses ----------------------------------------------------------------------
+
+// Where a ray leaving a lens crosses the lens's axis (or would have, traced
+// back): its last leg, from where it left the back face, against the axis
+// through `centre` along `axis`. Returns the distance along the axis from the
+// back vertex (positive beyond the lens), and h, how far from the axis the ray
+// came in.
+struct AxisCrossing {
+    double from_back_vertex_m{};
+    double h_m{};
+    bool ok{};
+};
+
+AxisCrossing crossing(const LiveOptics::Path &p, const Vec3 &centre, const Vec3 &axis, double back_vertex_m) {
+    AxisCrossing out;
+    if (p.points.size() < 4) return out;
+    const Vec3 start = p.points.front();
+    const Vec3 e = p.points[p.points.size() - 2], d = normalized(p.points.back() - e);
+    const auto across = [&](const Vec3 &v) { return v - dot(v, axis) * axis; };
+    const Vec3 e_off = across(e - centre), d_off = across(d);
+    if (!(dot(d_off, d_off) > 1e-24)) return out;
+    const double s = -dot(e_off, d_off) / dot(d_off, d_off);
+    out.from_back_vertex_m = dot(e + s * d - centre, axis) - back_vertex_m;
+    out.h_m = length(across(start - centre));
+    out.ok = true;
+    return out;
+}
+
+// A lens of glass, its axis straight down, in an overhead sun: rays through
+// the box `box` round it.
+struct LensRun {
+    std::vector<AxisCrossing> crossings;
+    LiveOptics optics;
+    double focal{}, back_focal{};
+};
+
+LensRun throughALens(double r1, double r2, double t, double a, Vec3 box_size, double spacing) {
+    const Vec3 centre{0.0, 0.5, 0.0}, axis{0.0, -1.0, 0.0};
+    auto world = open({box("lens", MaterialPreset::Glass, {0.08, 0.04, 0.08}, centre)});
+    require(world->setSun(90.0, 0.0, 1000.0), "the sun would not go up");
+    const std::string refused = world->lens("lens", centre, axis, r1, r2, t, a);
+    require(refused.empty(), "the lens: " + refused);
+    require(world->setLightTracing(4, 16, 0.02, 512), "light tracing");
+    require(world->sunlight("sun", {{centre, box_size}}, spacing) != 0, "the sunlight");
+    world->traceLight();
+    LensRun run;
+    run.optics = world->optics();
+    const LiveLens made = world->lenses().front();
+    run.focal = made.focal_length_m;
+    run.back_focal = made.back_focal_distance_m;
+    for (const LiveOptics::Path &p : run.optics.paths) {
+        const AxisCrossing c = crossing(p, centre, axis, 0.5 * t);
+        if (c.ok) run.crossings.push_back(c);
+    }
+    return run;
+}
+
+void aLensFocusesWhereTheLensmakerSays() {
+    const double n = optics::opticalProperties(MaterialPreset::Glass).refractive_index;
+    for (const bool convex : {true, false}) {
+        // Biconvex: both faces of radius 100 mm, 12 mm thick, 30 mm in radius.
+        // Biconcave: the same faces the other way, 3 mm thick in the middle.
+        const double r1 = convex ? 0.1 : -0.1, r2 = -r1, t = convex ? 0.012 : 0.003, a = 0.03;
+        const optics::Lens lens{r1, r2, t, a};
+        const double f = optics::lensFocalLengthM(lens, n), bfd = optics::lensBackFocalDistanceM(lens, n);
+        // Paraxial: rays within 5 mm of the axis, 1 mm apart.
+        LensRun near = throughALens(r1, r2, t, a, {0.01, 0.04, 0.01}, 0.001);
+        // A ray h from the axis crosses it short of the paraxial focus by
+        // about c h^2 (spherical aberration): a straight line through the
+        // crossings against h^2 meets h = 0 at the paraxial focus.
+        double h_max = 0.0, sx = 0.0, sy = 0.0, sxx = 0.0, sxy = 0.0;
+        for (const AxisCrossing &c : near.crossings) {
+            const double x = c.h_m * c.h_m, y = c.from_back_vertex_m;
+            sx += x; sy += y; sxx += x * x; sxy += x * y;
+            h_max = std::max(h_max, c.h_m);
+        }
+        const double count = static_cast<double>(near.crossings.size());
+        const double slope = count > 1.0 ? (count * sxy - sx * sy) / (count * sxx - sx * sx) : 0.0;
+        const double measured = count > 0.0 ? (sy - slope * sx) / count : 0.0;
+        // Out to the rim, 2 mm apart: the marginal rays.
+        LensRun wide = throughALens(r1, r2, t, a, {0.08, 0.04, 0.08}, 0.002);
+        double marginal = 0.0, marginal_h = 0.0;
+        for (const AxisCrossing &c : wide.crossings)
+            if (c.h_m > marginal_h && c.h_m < 0.9 * a) {   // clear of the rim
+                marginal_h = c.h_m;
+                marginal = c.from_back_vertex_m;
+            }
+        std::cout << "    " << (convex ? "convex" : "concave") << " lens, faces " << r1 * 1000 << " and " << r2 * 1000
+                  << " mm, " << t * 1000 << " mm thick, glass n = " << n << ": the lensmaker's equation gives f = "
+                  << f * 1000 << " mm, " << bfd * 1000 << " mm from the back vertex (the engine reports "
+                  << near.back_focal * 1000 << " mm); " << near.crossings.size() << " rays within " << h_max * 1000
+                  << " mm of the axis cross it, met at h = 0, " << measured * 1000 << " mm from the back vertex"
+                  << (convex ? "" : " (traced back: a virtual focus)") << "; a ray " << marginal_h * 1000
+                  << " mm out crosses at " << marginal * 1000 << " mm (spherical aberration)\n";
+        require(near.crossings.size() >= 10, "rays through the lens");
+        require(std::abs(near.focal - f) < 1e-12 && std::abs(near.back_focal - bfd) < 1e-12,
+                "the engine reports the lensmaker's focal length");
+        require(std::abs(measured - bfd) < 0.0005 * std::abs(bfd), "paraxial rays focus where the lensmaker says");
+        require(convex ? measured > 0.0 : measured < 0.0,
+                convex ? "a convex lens brings light to a focus beyond it" : "a concave lens spreads it from before it");
+        // Spherical aberration: rays further out are bent more, for both.
+        require(convex ? marginal < measured : marginal > measured, "marginal rays focus nearer the lens");
+        checkLedger(wide.optics, convex ? "convex lens" : "concave lens");
+    }
+}
+
+void aLensIsRefusedWhenItCannotBeMade() {
+    auto world = open({box("pane", MaterialPreset::Glass, {0.08, 0.04, 0.08}, {0.0, 0.5, 0.0}),
+                       box("plank", MaterialPreset::Oak, {0.08, 0.04, 0.08}, {0.5, 0.5, 0.0})});
+    const Vec3 down{0.0, -1.0, 0.0};
+    const std::string oak = world->lens("plank", {0.5, 0.5, 0.0}, down, 0.1, -0.1, 0.012, 0.03);
+    const std::string flat_rim = world->lens("pane", {0.0, 0.5, 0.0}, down, 0.1, -0.1, 0.005, 0.03);
+    const std::string tight = world->lens("pane", {0.0, 0.5, 0.0}, down, 0.02, -0.02, 0.012, 0.03);
+    const std::string big = world->lens("pane", {0.0, 0.5, 0.0}, down, 0.2, -0.2, 0.02, 0.06);
+    std::cout << "    refused: oak (" << oak << "); too thin (" << flat_rim << "); faces too tight (" << tight
+              << "); too big (" << big << ")\n";
+    require(!oak.empty() && !flat_rim.empty() && !tight.empty() && !big.empty(), "what cannot be made is refused");
+    require(world->lens("pane", {0.0, 0.5, 0.0}, down, 0.1, -0.1, 0.012, 0.03).empty(), "and what can is made");
+}
+
 // ---- 9. untouched without light --------------------------------------------------
 
 void aWorldWithoutLightIsUntouched() {
@@ -654,6 +810,9 @@ int main() {
     run("a beam works a switch and a falling ball breaks it", aBeamWorksASwitchAndAFallingBallBreaksIt);
     run("a saved world keeps its light", aSavedWorldKeepsItsLight);
     run("a world without light is untouched", aWorldWithoutLightIsUntouched);
+    run("a tipped mirror reflects by the law", aTippedMirrorReflectsByTheLaw);
+    run("a lens focuses where the lensmaker says", aLensFocusesWhereTheLensmakerSays);
+    run("a lens is refused when it cannot be made", aLensIsRefusedWhenItCannotBeMade);
     if (failures) {
         std::cout << failures << " failure(s)\n";
         return 1;

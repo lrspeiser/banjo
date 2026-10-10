@@ -535,6 +535,10 @@ class Handler(BaseHTTPRequestHandler):
     spec,checked,cost=machine_game.compose(level,data.get('placements') or [])
     r=host.open(spec);r['level']=machine_game.public(level);r['placements']=checked;r['cost']=cost
     host.get(r['session']).game={'level':level['id'],'checked':checked,'cost':cost,'helped':bool(data.get('helped'))}
+   elif op=='level_ghost':
+    # A piece before it is set down: what it would be and where, and why it
+    # could not go there. Compiled only, never run, so it is not rationed.
+    r={'ok':True,**machine_game.ghost(machine_game.level_by_id(data.get('level')),data.get('placements'),data.get('index'))}
    elif op=='level_score':
     # Stars from what the engine measured in this session's run.
     s=host.get(data.get('session'));game=getattr(s,'game',None)

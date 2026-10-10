@@ -11,6 +11,7 @@ Nothing on the page is animated. Every position, cut, pressure and dent is the e
 | Physics | How a machine asks for it | Measured (tests/machine_physics_tests.py) |
 |---|---|---|
 | Rigid bodies: rolling, sliding, falling, toppling, friction, rolling resistance | parts, kits | Marble run, dominoes, falling weight in the default machine |
+| Turning a whole kit any way | `"turned": {"yaw_deg", "pitch_deg", "roll_deg", "about_m", "clear_ground"}` on any kit: its parts, joints, gas, edges and lamps all turn about `about_m`; with `clear_ground` it is lifted to stand on the ground | A cannon turned 20 degrees fires 20 degrees off its line; a knife pendulum turned 30 degrees still cuts its rope (tests/machine_game_tests.py) |
 | Hinges, fixings, ropes (ties), springs, slides, a rope wound on a drum | `joints` | Lever, rope and gate |
 | Gears | a `gear` joint between two hinges, teeth on each | A motor turns a 12-tooth wheel 1189 degrees; the 24-tooth wheel turns back 594 |
 | Pulleys (block and tackle) | a `pulley` joint with a ratio | 2:1: the counterweight falls 0.538 m, the load rises 0.269 m |
@@ -25,6 +26,7 @@ Nothing on the page is animated. Every position, cut, pressure and dent is the e
 | A powder charge (a stand-in for gunpowder) | a `cannon` kit; a primer at a time, or a coil on its charge | 2 g fires a 2.1 kg iron ball at 20.7 m/s, a 0.72 kg aluminium one at 31.6, a 0.19 kg oak one at 78; a 0.1 ohm coil on 24 V fires it 0.4 s after its switch closes |
 | Water in a channel, buoyancy and drag; water poured from a spout | `ground` flume, `spouts`, the water wheel's `pour` | Pouring water onto the wheel |
 | Light: a sun traced through glass and off mirrors (polished aluminium or iron), glass and ice that bend and focus it, lamps whose light is traced, light sensors and switches that follow them; light warms what absorbs it | `light` (sunlight boxes, `mirrors`, `lamps`, `photocells`), the `mirror` and `light_gate` kits, a circuit switch with `photocell`, `lit_w` and `shaded_w` stations | A 100 mm glass ball puts 0.72 W on a 4 mm sensor, twenty times the open sun, which closes a coil that burns a rope; a falling ball breaks a light gate's beam ([optics-checkpoint.md](optics-checkpoint.md); tests/machine_world_tests.py, class Light) |
+| Light on a spot: a beam heats where it lands and takes oak (charred) and ice (melted) away there; lasers; lenses traced as spheres | the `laser` and `lens` kits, `light.lenses`, the `cut` station | A 4.5 kW laser off one mirror burns a 20 mm oak rope through at 2.05 s and the weight is in its bin at 2.3 s; a convex lens focuses a wider beam to a smaller spot and the rope goes sooner ([light-spots.md](light-spots.md); tests/machine_world_tests.py, class Light) |
 
 What the measurements show, and what they do not:
 
@@ -58,7 +60,7 @@ What the measurements show, and what they do not:
 ## Order of work
 
 1. Done: gears, pulleys, motors, the sun and solar panels, dents, cutting, steam, the cannon. Next of what the engine has: rockets, fuses.
-2. Done on `agent/optics`: light, ray optics with mirrors and lenses, sunlight that heats what it lands on, and photocells ([optics-checkpoint.md](optics-checkpoint.md)).
+2. Done on `agent/optics`: light, ray optics with mirrors and lenses, sunlight that heats what it lands on, and photocells ([optics-checkpoint.md](optics-checkpoint.md)). Done on `agent/light-spot`: light that heats the spot it lands on and cuts there, lasers, and lenses with curved faces ([light-spots.md](light-spots.md)).
 3. Sensors for heat and touch, then magnetism.
 4. Air drag, thermal expansion, freezing and condensation, sound.
 
