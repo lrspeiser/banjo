@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import * as THREE from '../playground/vendor/three.module.js';
-import {ballObservation,cameraFrame,settingsDiffer,remainingSteps,computePace,dropMilestones} from '../client/voxel-lab/coupled-view.mjs';
+import {ballObservation,cameraFrame,settingsDiffer,remainingSteps,computePace,dropMilestones,AcceptedReplay} from '../client/voxel-lab/coupled-view.mjs';
 const plane={shape:'plane',position_m:[0,0,0],quaternion_wxyz:[1,0,0,0],size_m:[.3,.001,.3],radius_m:0};
 const cube={shape:'cube',position_m:[0,.03,0],quaternion_wxyz:[1,0,0,0],size_m:[.03,.01,.03],radius_m:0};
 const sphere={shape:'sphere',position_m:[0,10.045,0],quaternion_wxyz:[1,0,0,0],size_m:[.02,.02,.02],radius_m:.01,velocity_m_s:[0,0,0]};
@@ -47,3 +47,33 @@ assert.equal(computePace(1),'Realtime');
 assert.equal(computePace(3),'3.0× faster than realtime');
 for(const ratio of [null,undefined,0,-1,Infinity,NaN])assert.equal(computePace(ratio),'Not measured');
 console.log('PASS 10 m visibility, physical-time/flight estimates, true ball contact, rotated geometry and three camera aspects');
+
+// Fast calculation must still show actual intermediate poses at physical pace.
+const {AcceptedReplay:Replay}=await import('../client/voxel-lab/coupled-view.mjs');
+const replay=new Replay();replay.reset(initial);
+for(let i=1;i<=480;i++){const frame=structuredClone(initial);frame.time_s=i/240;frame.cells[2].position_m[1]=10-.5*9.81*frame.time_s**2;replay.push(frame);}
+replay.start(1000);let shown=replay.sample(1500);
+assert.equal(shown.time_s,.5);assert.equal(shown.cells[2].position_m[1],10-.5*9.81*.5**2);
+assert.equal(replay.sample(3000).time_s,2);assert.equal(replay.sample(9000).time_s,2,'no extrapolation');
+assert.ok(replay.frames.length<=481);
+replay.reset(initial);replay.push(later);replay.start(0);
+assert.equal(replay.sample(1000),later,'stall at latest measured data');
+replay.push(contact); // contact time is zero; stale frames must not replace latest.
+assert.equal(replay.latest,later);
+replay.stop();assert.equal(replay.sample(2000),null);
+assert.equal(JSON.stringify(initial),snapshot,'playback cannot change native state');
+console.log('PASS physical-paced exact accepted-frame replay, bounded sampling, stalled delivery and no extrapolation');
+
+// Regression for the reported phone failure: overview fits the ball but makes
+// it subpixel. The default ball frame must resolve the actual sphere.
+for(const [width,height] of [[390,464],[844,320]]){
+  const frame=cameraFrame([plane,sphere],'ball'),r=frame.radius*Math.max(1,1.3/(width/height));
+  const pixels=height*sphere.radius_m/(r*Math.tan(20*Math.PI/180));
+  assert.ok(pixels>40,`ball diameter ${pixels}px must be visible on ${width}x${height}`);
+}
+const {readFileSync}=await import('node:fs');
+const html=readFileSync(new URL('../client/voxel-lab/coupled.html',import.meta.url),'utf8');
+const ids=[...html.matchAll(/ id="([^"]+)"/g)].map(m=>m[1]);
+assert.equal(new Set(ids).size,ids.length,'duplicate controls can silently leave the visible button disabled');
+for(const id of ['reset','full-drop','replay','stop'])assert.ok(html.indexOf(`id="${id}"`)<html.indexOf('<aside>'),'primary action must remain beside the mobile scene');
+console.log('PASS actual-ball pixel visibility at phone aspects and unique scene-adjacent controls');

@@ -1,4 +1,5 @@
 """Hosted password/host/origin checks, real CPU session, isolation and exact logs."""
+from unittest.mock import patch
 import argparse,http.cookiejar,importlib.util,json,os,sys,tempfile,threading,urllib.request,urllib.error
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'scripts'))
@@ -25,6 +26,20 @@ with tempfile.TemporaryDirectory() as folder:
         assert request('/api/checkpoint',headers={'Host':'attacker.example'})[0]==403
         assert request('/api/coupled',{'op':'create','declaration':{}},headers={'Content-Type':'application/json','Origin':'https://attacker.example'})[0]==400
         build=json.loads(request('/api/checkpoint')[1]);assert build['cpu_coupled_available'] and not build['gpu_available']
+        # Hosted identity follows the image's source + implementation + native
+        # receipt, rather than an older local measurement checkpoint.
+        receipt={'schema':'banjo.cpu-image-identity.v1','cpu_source_sha256':build['cpu_coupled_source_sha256'],
+                 'cpu_implementation_sha256':build['cpu_coupled_implementation_sha256'],'native_sha256':build['native_sha256']}
+        read_text=Path.read_text
+        def receipt_read(path,*args,**kwargs):
+            return json.dumps(receipt) if path==ROOT/'bin/build-receipt.json' else read_text(path,*args,**kwargs)
+        with patch.object(Path,'read_text',receipt_read):
+            observed=server.checkpoint_status()
+            assert observed['cpu_image_identity_verified'] and observed['cpu_coupled_source_verified']
+            for field in ('cpu_source_sha256','cpu_implementation_sha256','native_sha256','schema'):
+                original=receipt[field];receipt[field]='mismatch';observed=server.checkpoint_status()
+                assert not observed['cpu_image_identity_verified'] and not observed['cpu_coupled_source_verified']
+                receipt[field]=original
         x=command({'op':'create','declaration':{'solver_backend':'cpu-implicit-body','experiment':'freefall','height_m':10.,'representation_policy':'partitioned-flight'}});assert x['ok'] and not x['state']['qualification']['gpu'];key=x['session']
         y=command({'op':'create','declaration':{'experiment':'freefall','height_m':10.}});other=y['session']
         assert command({'op':'advance','session':key,'steps':16})['state']['time_s']>0

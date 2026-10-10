@@ -7,6 +7,27 @@ export function computePace(ratio){
   if(ratio===1)return 'Realtime';
   return ratio.toFixed(1)+'× faster than realtime';
 }
+// Presentation of measured states only. Sampling drops redundant render frames,
+// never creates a pose, advances physics, or extrapolates beyond delivered data.
+export class AcceptedReplay {
+  reset(initial){this.frames=initial?[initial]:[];this.latest=initial;this.time=initial?.time_s??0;this.clock=null;this.active=false;}
+  constructor(){this.reset(null);}
+  push(frame){
+    if(!this.latest||frame.time_s<=this.latest.time_s)return;
+    this.latest=frame;
+    if(frame.time_s-this.frames.at(-1).time_s>=1/240-1e-10)this.frames.push(frame);
+  }
+  start(now){if(!this.frames.length)return;this.time=this.frames[0].time_s;this.clock=now;this.active=true;}
+  stop(){this.active=false;}
+  sample(now){
+    if(!this.active)return null;
+    this.time=Math.min(this.latest.time_s,this.time+Math.max(0,now-this.clock)/1000);this.clock=now;
+    if(this.time>=this.latest.time_s)return this.latest;
+    let lo=0,hi=this.frames.length;
+    while(lo+1<hi){const mid=(lo+hi)>>1;if(this.frames[mid].time_s<=this.time)lo=mid;else hi=mid;}
+    return this.frames[lo];
+  }
+}
 function localPoint(point,cell) {
   const v=point.map((x,i)=>x-cell.position_m[i]),[w,x,y,z]=cell.quaternion_wxyz;
   const q=[-x,-y,-z],t=[2*(q[1]*v[2]-q[2]*v[1]),2*(q[2]*v[0]-q[0]*v[2]),2*(q[0]*v[1]-q[1]*v[0])];

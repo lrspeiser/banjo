@@ -1388,3 +1388,9 @@ retain sub-ULP compression through actual geometry and restore matched supported
 roots without relaxing physical gates. Glass/oak/iron/ice numerical contact,
 restart and independent rigid-drop controls remain comparative. Strong impacts,
 detailed ball response and the other representation families remain unfinished.
+
+**Phone lab, October 9 (presentation implemented; strong fracture OPEN):**
+[Visible sphere, adjacent touch controls and measured replay](mobile-lab-checkpoint.md)
+repair the label-only phone experience. Five scoped suites and portrait/landscape
+browser checks pass. Public deployment must be verified; no physical-phone or
+new material-law qualification is claimed.
