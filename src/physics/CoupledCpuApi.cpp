@@ -148,6 +148,48 @@ BANJO_CPU_EXPORT int banjo_coupled_cpu_contact_stiffness(const double* b,unsigne
     }
     return static_cast<int>(at);
 }
+// Native compensated material coordinates and world-pose derivatives.
+// 100 doubles/edge: index,a,b,kind; q[6]; J[6][12]; A axes[3][3];
+// A/B world anchor levers[3] each; compensated attachment gap[3].
+// Read-only preparation. This creates no force, history or accepted motion.
+BANJO_CPU_EXPORT int banjo_coupled_cpu_material_geometry(const double* b,unsigned n,const double* e,unsigned m,
+    unsigned capacity,double* out){
+    if(!scene(b,n,e,m,1e-12,0)||capacity<m||(!out&&m))return -1;
+    std::array<std::array<double,100>,banjo::dgMaxEdges> rows{};
+    for(unsigned i=0;i<m;++i){
+        const double* edge=e+70*i;const auto a=static_cast<unsigned>(edge[0]),c=static_cast<unsigned>(edge[1]);
+        const double* ba=b+30*a,*bc=b+30*c;const auto pa=banjo::dgPose(ba),pc=banjo::dgPose(bc);
+        auto coordinates=banjo::finiteFrameCoordinatesUnchecked(pa.p,pc.p,pa.q,pc.q,
+            banjo::dgRead3(edge+4),banjo::dgRead3(edge+7),banjo::dgRead4(edge+10),banjo::dgRead4(edge+14));
+        banjo::dgStableCoordinates(coordinates,ba,bc,banjo::dgRead3(ba+23),banjo::dgRead3(bc+23),pa.q,pc.q,edge);
+        if(coordinates.rotation.branch_angle>=3.141592653589793-1e-7)return -1;
+        auto& row=rows[i];row[0]=i;row[1]=a;row[2]=c;row[3]=edge[2];
+        std::copy(coordinates.q,coordinates.q+6,row.begin()+4);
+        const auto la=banjo::frameRotate(pa.q,banjo::dgRead3(edge+4));
+        const auto lb=banjo::frameRotate(pc.q,banjo::dgRead3(edge+7));
+        const auto gap=banjo::frameAdd(banjo::dgRead3(edge+67),banjo::frameAdd(
+            banjo::dgSub(banjo::dgRead3(bc+23),banjo::dgRead3(ba+23)),banjo::dgSub(
+            banjo::dgRotationChange(pc.q,banjo::dgRead4(bc+26),banjo::dgRead3(edge+7)),
+            banjo::dgRotationChange(pa.q,banjo::dgRead4(ba+26),banjo::dgRead3(edge+4)))));
+        const auto relative=banjo::frameAdd(gap,la);
+        for(unsigned j=0;j<6;++j){
+            auto* gradient=row.data()+10+12*j;
+            if(j<3){const auto axis=coordinates.axes[j];
+                banjo::dgWrite3(gradient,banjo::frameScale(axis,-1));
+                banjo::dgWrite3(gradient+3,banjo::frameCross(axis,relative));
+                banjo::dgWrite3(gradient+6,axis);banjo::dgWrite3(gradient+9,banjo::frameCross(lb,axis));
+                banjo::dgWrite3(row.data()+82+3*j,axis);
+            }else{const auto axis=coordinates.rotation.gradient[j-3];
+                banjo::dgWrite3(gradient+3,banjo::frameScale(axis,-1));banjo::dgWrite3(gradient+9,axis);
+            }
+        }
+        banjo::dgWrite3(row.data()+91,la);banjo::dgWrite3(row.data()+94,lb);banjo::dgWrite3(row.data()+97,gap);
+        if(!finite(row.data(),100))return -1;
+    }
+    // Complete validation before any caller output is touched.
+    for(unsigned i=0;i<m;++i)std::copy(rows[i].begin(),rows[i].end(),out+100*i);
+    return static_cast<int>(m);
+}
 BANJO_CPU_EXPORT int banjo_coupled_cpu_local_trials(const double* b,unsigned n,const double* e,unsigned m,
     const double* base,const double* v,const int* changed,unsigned batch,double h,double gy,
     double* poses,double* residual,double* history,double* forces,double* ledger,int* faults){

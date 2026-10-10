@@ -1,8 +1,9 @@
 {
-  "title": "Separate native contact branches and retained fields; reduced execution remains open",
+  "title": "Conditional native material branches; reduced execution remains open",
   "date": "2026-10-09",
   "native_sha256": "736fa231999ddf1b578742de3dd97ce3fe6763c6406575d989b2ade526a39dca",
   "changes": [
+    "Native elastic opening/compression candidates retain cohesive shear and full support force maps. Inspect vibration basis shows their qualification beside the 3D scene. Five scoped Windows suites, compiled native API, HTTP gateway and source registration pass. Reduced motion, strong sheet impacts and complete realtime remain unfinished; this checkpoint is not yet verified on Render.",
     "Inspect vibration basis beside the 3D scene now separates native material preparation from explicit opening/closing contact curvature, including compressed geometry and torque. Independent scalar-gap/potential tests pass; native stationary force and contact energy reconstruct across glass/oak/iron/ice. Material branch, refinement, nonlinear trajectory, endpoint-history and full reaction transfers still block reduced execution. No accepted physics law or convergence gate changed.",
     "Native relative contact differentials and correlated local-point bounds retain common motion, exact-frequency cancellation, finite Cayley rotations and sub-ULP axial gaps. Inspect vibration basis beside the 3D scene shows measured narrower gap uncertainty. All 54 modes and native histories remain; the sheet still has 116 uncertain sites and reduced motion is not admitted. No physical response law or tolerance changed.",
     "Optional CPU heat remains on the same moving matter through flight/contact, with shared clocks, exact save/reopen and atomic rollback. Temperature inspection uses real field observations. Water continues the same sealed accepted state with cumulative budgets. Run, replay, reset, inspection and save controls are beside the 3D scene on desktop and phones. Representation, CUDA contact and material-loading workbenches use the same adjacent action dock; thermal navigation closes only its owned session.",
@@ -34,6 +35,11 @@
     "Glass/oak/iron/ice complete at both timesteps in the initial trial. Full convergence, large energy deficits, connected calculation speed and thermal/fluid/power laws remain unfinished."
   ],
   "checks": [
+    {
+      "label": "Conditional native material branches",
+      "status": "passed",
+      "value": "Glass/oak/iron/ice one-sided native elastic potentials, coordinate derivatives, geometric preload curvature, retained support maps and private-state refusal checks. Five scoped Windows CTests and actual protected CPU HTTP gateway pass; 354/354 registered sources. Preparation only; no admitted reduced execution or full-world speed claim."
+    },
     {
       "label": "Correlated native contact geometry",
       "status": "passed",
@@ -237,6 +243,6 @@
   "gpu_material_source_sha256": "439309fd656c70e3f3728fda7a7260aad16ecfe72c0f2f32d9c388b67690f559",
   "gpu_coupled_source_sha256": "41042759a91de85e7cea44d0804c2e86bd3635e25fa01c71198cc45f51e03f87",
   "gpu_representation_scope": "Experimental isolated rigid sphere plus continuously solved material island; no detailed sphere fracture, heat or fluid coupling",
-  "cpu_coupled_source_sha256": "f789c39609e33c4b7a0568487b5e3178052a5d600bc7bc8a042f1d7a48c4539b",
+  "cpu_coupled_source_sha256": "32ca864e501cfa9002caf9bfb06e4941bd44403eabdbb581ca2ffdade866e798",
   "cpu_hosted_scope": "Explicit compiled CPU reference; optional inert conduction fields bound to stable matter through flight/contact. Mechanical properties remain constant; damage/plastic/phase transfers refuse. Strong fracture and all-family realtime remain open."
 }

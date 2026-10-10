@@ -1,0 +1,48 @@
+{
+  "schema": "banjo.native-material-branch-verification.v1",
+  "materials": {
+    "glass": {
+      "native_one_sided_force_relative_errors": {
+        "opening": 7.0359187452998736e-12,
+        "compression": 7.070949882427266e-11
+      },
+      "build_and_checks_wall_s": 0.11533100000815466,
+      "conditional_branches_distinct": true,
+      "full_force_rows": 12,
+      "execution_admitted": false
+    },
+    "oak": {
+      "native_one_sided_force_relative_errors": {
+        "opening": 7.035918259345327e-12,
+        "compression": 7.070949869176803e-11
+      },
+      "build_and_checks_wall_s": 0.003073300002142787,
+      "conditional_branches_distinct": true,
+      "full_force_rows": 12,
+      "execution_admitted": false
+    },
+    "iron": {
+      "native_one_sided_force_relative_errors": {
+        "opening": 8.63478282624456e-12,
+        "compression": 8.634782780962915e-12
+      },
+      "build_and_checks_wall_s": 0.002759199996944517,
+      "conditional_branches_distinct": false,
+      "full_force_rows": 12,
+      "execution_admitted": false
+    },
+    "ice": {
+      "native_one_sided_force_relative_errors": {
+        "opening": 7.0359183768049485e-12,
+        "compression": 7.070949869546516e-11
+      },
+      "build_and_checks_wall_s": 0.0031017999863252044,
+      "conditional_branches_distinct": true,
+      "full_force_rows": 12,
+      "execution_admitted": false
+    }
+  },
+  "maximum_native_coordinate_gradient_error": 5.7890744281641204e-11,
+  "maximum_attachment_curvature_error": 8.858907496467339e-10,
+  "scope": "Native scalar coordinates/elastic one-sided potentials, private preparation; no reduced execution"
+}

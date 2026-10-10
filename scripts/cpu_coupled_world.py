@@ -10,7 +10,7 @@ HEADERS=('src/physics/FiniteFrameKernel.hpp','src/physics/CohesiveInterfaceKerne
  'src/material/ConnectorModeKernel.hpp','src/physics/MaterialHistoryKernel.hpp',
  'src/physics/NormalComplianceKernel.hpp','src/physics/CoupledGpuKernel.hpp','src/physics/CoupledFlightKernel.hpp')
 SOURCES=('scripts/cpu_coupled_world.py','scripts/coupled_solver.py','scripts/coupled_world.py',
- 'scripts/coupled_representations.py','scripts/object_registry.py','scripts/coupled_modes.py','scripts/thermal_matter_adapter.py','src/physics/CoupledCpuApi.cpp',
+ 'scripts/coupled_representations.py','scripts/object_registry.py','scripts/coupled_modes.py','scripts/material_modes.py','scripts/thermal_matter_adapter.py','src/physics/CoupledCpuApi.cpp',
  *HEADERS,'client/voxel-lab/material-laws.json')
 def disk_source_hash():
     h=hashlib.sha256()
@@ -55,6 +55,7 @@ class CpuCoupledEvaluator(CoupledNewton):
         self.lib.banjo_coupled_cpu_trials.argtypes=[p,u,p,u,p,u,d,d,p,p,p,p,p,i];self.lib.banjo_coupled_cpu_trials.restype=ctypes.c_int
         self.lib.banjo_coupled_cpu_material_trials.argtypes=[p,u,p,u,p,u,d,d,p,p,p,p,p,i];self.lib.banjo_coupled_cpu_material_trials.restype=ctypes.c_int
         self.lib.banjo_coupled_cpu_contact_stiffness.argtypes=[p,u,u,p];self.lib.banjo_coupled_cpu_contact_stiffness.restype=ctypes.c_int
+        self.lib.banjo_coupled_cpu_material_geometry.argtypes=[p,u,p,u,u,p];self.lib.banjo_coupled_cpu_material_geometry.restype=ctypes.c_int
         self.lib.banjo_coupled_cpu_local_trials.argtypes=[p,u,p,u,p,p,i,u,d,d,p,p,p,p,p,i];self.lib.banjo_coupled_cpu_local_trials.restype=ctypes.c_int
         self.lib.banjo_coupled_cpu_schedule.argtypes=[p,u,d,d,d,d,p];self.lib.banjo_coupled_cpu_schedule.restype=ctypes.c_int
         self.lib.banjo_coupled_cpu_flight.argtypes=[p,u,u,d,d,d,p,p,p,p,p];self.lib.banjo_coupled_cpu_flight.restype=ctypes.c_int
@@ -115,6 +116,11 @@ class CpuCoupledEvaluator(CoupledNewton):
         count=self.lib.banjo_coupled_cpu_contact_stiffness(self.bodies,self.n,capacity,rows)
         if count<0 or count>capacity or not np.isfinite(rows[:count]).all():raise ValueError('Native contact stiffness refused')
         return rows[:count].copy()
+    def material_geometry(self):
+        rows=np.empty((self.m,100))
+        count=self.lib.banjo_coupled_cpu_material_geometry(self.bodies,self.n,self.edges,self.m,self.m,rows)
+        if count!=self.m or not np.isfinite(rows).all():raise ValueError('Native material geometry refused')
+        return rows
     def interaction_sites(self,velocity,h):
         v=np.ascontiguousarray(velocity,dtype=np.float64).reshape(self.n,6)
         capacity=len(self.pairs)*48;rows=np.empty((capacity,24));total=np.empty((self.n,6))

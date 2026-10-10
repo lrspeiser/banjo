@@ -334,7 +334,7 @@ def contact_branch_model(evaluator, *, touching):
         scope='Native smooth endpoint potential in frozen Cayley coordinates; explicit touching branch, not an accepted timestep')
 
 
-def prepare_contact_branches(evaluator,bodies,edges,delta):
+def prepare_contact_branches(evaluator,bodies,edges,delta,*,candidate_store=None):
     """Separate native constitutive sampling from conditional contact Hessians."""
     started=time.perf_counter();e=evaluator
     baseline=e.evaluate_material(-bodies[:,14:20],1e-6)
@@ -373,6 +373,36 @@ def prepare_contact_branches(evaluator,bodies,edges,delta):
     result.update(material_candidate_valid=changed==0 and result['material_one_sided_defect']<=1e-6 and result['material_symmetry_defect']<=1e-6 and result['material_refinement_relative']<=1e-6,
         full_reaction_maps_retained=False,broad_contact_events_qualified=False,wall_s=time.perf_counter()-started,
         scope='Private material/contact separation and explicit touching candidates; material branches, contact events and nonlinear transfers remain unqualified')
+    from material_modes import material_branch_model
+    analytical=dict(branches={},execution_admitted=False,full_reaction_maps_retained=candidate_store is not None)
+    for normal in ('opening','compression'):
+        try:
+            model=material_branch_model(e,normal_at_zero=normal)
+            gravity=np.zeros((e.n,6));gravity[:,1]=-9.81*bodies[:,1]
+            difference=model['force']+gravity.ravel()-f
+            if np.linalg.norm(difference)>1e-9 or abs(model['energy_j']-baseline['ledger'][0,0])>1e-20+1e-12*abs(model['energy_j']):
+                raise ValueError('Analytical material branch does not reconstruct native stationary response')
+            row=dict(available=True,zero_normal_edges=model['zero_normal_edges'],elastic_limits=model['elastic_limits'],
+                stationary_force_residual_n_nm=float(np.linalg.norm(difference)),geometric_curvature_norm=model['geometric_curvature_norm'],contact_choices={})
+            staged={}
+            for choice in ('open','closed'):
+                contact=contact_branch_model(e,touching=choice);matrix=model['stiffness']+contact['stiffness']
+                full_force=model['force']+gravity.ravel()+contact['force'];dynamic=matrix[np.ix_(e.dynamic,e.dynamic)]
+                basis=ModeBasis(np.repeat(bodies[:,1:3],3,axis=1).ravel()[e.dynamic],dynamic,
+                    full_force[e.dynamic],bodies[:,14:20].ravel()[e.dynamic])
+                basis.full_force=full_force;basis.full_force_tangent=-matrix[:,e.dynamic]
+                basis.native_bodies=bodies.copy();basis.native_edges=edges.copy();basis.dynamic_dofs=e.dynamic.copy()
+                basis.elastic_limits=model['elastic_limits'];basis.material_normal_choices=model['normal_at_zero'];basis.touching_contact_choice=choice
+                probe=basis.advance(1/240)
+                row['contact_choices'][choice]=dict(retained_modes=len(basis.eigenvalues),
+                    eigen_residual_relative=float(np.linalg.norm(basis.scaled@basis.vectors-basis.vectors*basis.eigenvalues)/max(np.linalg.norm(basis.scaled),1)),
+                    full_force_rows=len(full_force),affine_dynamic_impulse_residual_n_s=float(np.linalg.norm(probe['affine_dynamic_impulse_residual'])))
+                staged[(normal,choice)]=basis
+            if candidate_store is not None:candidate_store.update(staged)
+            analytical['branches'][normal]=row
+        except ValueError as error:analytical['branches'][normal]=dict(available=False,reason=str(error))
+    analytical['full_reaction_maps_retained']=bool(candidate_store)
+    result['analytical_material_preparation']=analytical
     return result
 
 
@@ -507,11 +537,15 @@ def prepare(evaluator, *, source_identity, world_body_ids=None):
     basis.full_force=force.copy();basis.full_force_tangent=-matrices[-1].copy()
     basis.native_bodies=bodies.copy();basis.native_edges=edges.copy();basis.dynamic_dofs=e.dynamic.copy();basis.world_body_ids=ids
     guard=contact_envelope(basis,e,1/240)
-    branch_preparation=prepare_contact_branches(e,bodies,edges,delta)
+    basis.branch_candidates={}
+    branch_preparation=prepare_contact_branches(e,bodies,edges,delta,candidate_store=basis.branch_candidates)
     identity = hashlib.sha256()
     for a in (bodies,edges):identity.update(a.tobytes())
     identity.update(json.dumps(ids,separators=(',',':')).encode())
     identity.update(source_identity.encode());identity.update(b'banjo.native-mode-preparation.v1/1e-13m/1e-11rad/half')
+    for choice,candidate in basis.branch_candidates.items():
+        candidate.world_body_ids=ids.copy()
+        candidate.state_key=hashlib.sha256(identity.digest()+json.dumps(choice).encode()+b'/native-elastic-branches.v1').hexdigest()
     values=basis.eigenvalues; peak=float(max(np.max(abs(values)),1))
     uncertain = int(np.sum(abs(values)<=peak*max(refinement,symmetry,64*np.finfo(float).eps)))
     shape_residual = float(np.linalg.norm(basis.scaled@basis.vectors-basis.vectors*values)/max(np.linalg.norm(basis.scaled),1))

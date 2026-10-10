@@ -2304,6 +2304,9 @@ if(BANJO_BUILD_TESTS)
             add_test(NAME banjo_contact_branch_tests COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/contact_branch_test.py --library $<TARGET_FILE:banjo_coupled_cpu>)
             set_tests_properties(banjo_contact_branch_tests PROPERTIES TIMEOUT 180 LABELS "cpu;experimental;contact;representation")
+            add_test(NAME banjo_material_branch_tests COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/material_branch_test.py --library $<TARGET_FILE:banjo_coupled_cpu>)
+            set_tests_properties(banjo_material_branch_tests PROPERTIES TIMEOUT 180 LABELS "cpu;experimental;material;representation")
             add_test(NAME banjo_cpu_local_jacobian_tests COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpu_local_jacobian_test.py --library $<TARGET_FILE:banjo_coupled_cpu>
                 --output ${CMAKE_CURRENT_BINARY_DIR}/cpu-local-jacobian-evidence.json)

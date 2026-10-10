@@ -108,8 +108,13 @@ for name in ('glass','oak','iron','ice'):
     e=CpuCoupledEvaluator(bodies,edges)
     before_b=e.bodies.copy();before_e=e.edges.copy()
     delta=np.array([1e-13 if dof%6<3 else 1e-11 for dof in e.dynamic])
-    receipt=prepare_contact_branches(e,bodies.copy(),edges.copy(),delta)
+    candidates={};receipt=prepare_contact_branches(e,bodies.copy(),edges.copy(),delta,candidate_store=candidates)
     assert receipt['execution_admitted'] is False
+    assert len(candidates)==4 and receipt['analytical_material_preparation']['full_reaction_maps_retained']
+    for candidate in candidates.values():
+        assert candidate.full_force.shape==(e.n*6,) and candidate.full_force_tangent.shape==(e.n*6,len(e.dynamic))
+        assert np.array_equal(candidate.native_edges,edges) and np.array_equal(candidate.native_bodies,bodies)
+        assert np.linalg.norm(candidate.advance(1/240)['affine_dynamic_impulse_residual'])<1e-12
     assert np.array_equal(before_b,e.bodies) and np.array_equal(before_e,e.edges)
     # Constitutive-only trials retain exact full-native history/poses, even
     # while the full native response includes contact independently.
