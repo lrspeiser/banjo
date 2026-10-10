@@ -224,6 +224,10 @@ def _new_stations(compiled, previous):
     return [i for i, s in enumerate(compiled['stations']) if s.get('done_when') and s['title'] not in before]
 
 
+# How many times the engine's measured rehearsal goes back to the model.
+MAX_REVISIONS = 2
+
+
 def respond(message, spec=None, history=None, call=None, rehearse=None):
     """Turn a request into a checked declaration. `call` replaces the model
     (tests); it receives the message list and returns (answer, usage).
@@ -254,29 +258,35 @@ def respond(message, spec=None, history=None, call=None, rehearse=None):
     answer, compiled, problems, usage, attempts = _checked(call, messages, answer, usage)
     rehearsal = None
     if compiled is not None and rehearse is not None:
-        added = _new_stations(compiled, current)
         rehearsal = rehearse(compiled)
-        missed = [compiled['stations'][i]['title'] for i in added
-                  if i < len(rehearsal['stations']) and not rehearsal['stations'][i]['done']]
-        if missed:
+        # Up to MAX_REVISIONS times: what the engine measured goes back, with
+        # where everything now stands, and the model revises its layout.
+        for revision in range(MAX_REVISIONS):
+            added = _new_stations(compiled, current)
+            missed = [compiled['stations'][i]['title'] for i in added
+                      if i < len(rehearsal['stations']) and not rehearsal['stations'][i]['done']]
+            if not missed:
+                break
             messages += [{'role': 'assistant', 'content': json.dumps(answer)},
                          {'role': 'user', 'content': json.dumps({
                              'rehearsal': {'world_time_s': rehearsal['world_time_s'], 'stations': rehearsal['stations'],
                                            'closest_approach': rehearsal.get('closest_approach', []),
                                            'events': rehearsal['events'][:50]},
-                             'instruction': 'The engine ran your machine once. These new stations did not happen: '
-                                            + ', '.join(missed) + '. Using the measured events, change positions, '
-                                            'sizes, materials or joints so they can; keep everything else. Your reply '
-                                            'describes the whole build and what the rehearsal showed.'})}]
+                             'layout': layout(answer['spec']),
+                             'instruction': 'The engine ran your machine. These new stations did not happen: '
+                                            + ', '.join(missed) + '. Using the measured events and where each '
+                                            'thing stands (layout), change positions, sizes, materials or joints so '
+                                            'they can; keep everything else. Your reply describes the whole build and '
+                                            'what the rehearsal showed.'})}]
             revised, more = call(messages)
             usage = _added(usage, more)
             revised, again, again_problems, usage, extra = _checked(call, messages, revised, usage)
             attempts += extra
-            if again is not None:
-                answer, compiled = revised, again
-                rehearsal = rehearse(compiled)
-            else:
+            if again is None:
                 rehearsal['revision_refused'] = again_problems
+                break
+            answer, compiled = revised, again
+            rehearsal = rehearse(compiled)
     summary = None
     if rehearsal is not None:
         added = _new_stations(compiled, current)
