@@ -58,4 +58,6 @@ EXPOSE 8080
 # On the port a host hands it in PORT -- Render sets one -- or else 8080, which
 # fly.toml forwards to. The native studio windows are a desktop feature: not
 # built here, and the page says so if asked for one.
-CMD ["sh", "-c", "exec python3 -u scripts/voxel-lab.py --host 0.0.0.0 --port \"${PORT:-8080}\" --native /app/bin/banjo_voxel_world_run --cpu-library /app/bin/libbanjo_coupled_cpu.so --logs /data/physics-lab-logs"]
+# --site game: the deployed site is the game -- the levels and the sandbox
+# they are built on -- and nothing else (docs/machine-game.md).
+CMD ["sh", "-c", "exec python3 -u scripts/voxel-lab.py --host 0.0.0.0 --port \"${PORT:-8080}\" --native /app/bin/banjo_voxel_world_run --cpu-library /app/bin/libbanjo_coupled_cpu.so --logs /data/physics-lab-logs --site game"]

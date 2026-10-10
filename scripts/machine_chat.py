@@ -246,6 +246,10 @@ PIECE_HELP = {
              '0.34 m up; heat_kw boils water under it and the piston rises about 1.2 cm/s per kW',
     'ramp': 'a ramp toward +x with an iron ball at its top: its top at (x_m, top_height_m, z_m), its foot run_m '
             'further on at foot_height_m. The ball rolls down and flies on from the foot',
+    'mirror': 'a polished aluminium mirror 0.2 m square standing upright at (x_m, z_m), turned angle_deg about the '
+              'vertical: at 0 its face looks along x; turned 45 a beam along +x leaves along +z, turned -45 a beam '
+              'along +z leaves along -x. Light reflects off its face, 1 cm in front of its middle, and it keeps 92% '
+              'of the light',
 }
 
 

@@ -28,6 +28,13 @@ ASSETS.update({'/machine':'client/voxel-lab/machine.html','/machine.js':'client/
  '/machine-view.mjs':'client/voxel-lab/machine-view.mjs','/machine-default.json':'client/voxel-lab/machine-default.json'})
 # The puzzles: the same page, a level at a time (machine_game.py).
 ASSETS['/play']='client/voxel-lab/machine.html'
+# What a game-only site (--site game, as deployed) serves: the levels, the
+# sandbox they are built on, and what those two pages load. Everything else
+# here -- the labs, their APIs -- stays in the code for local work and is not
+# served.
+GAME_ROUTES={'/play','/machine','/machine.js','/machine.css','/machine-view.mjs','/machine-default.json',
+ '/three.module.js','/three.core.js','/api/checkpoint'}
+GAME_POSTS={'/login','/api/machine'}
 
 class SessionExpired(ValueError):pass
 
@@ -254,10 +261,12 @@ class Session:
   if self.worker_stderr:self.worker_stderr.close()
 class Server(ThreadingHTTPServer):
  daemon_threads=True
- def __init__(self,address,native,logs,checkpoint_path=None,gpu_python=None,cpu_library=None,password=None,public_host=None):
+ def __init__(self,address,native,logs,checkpoint_path=None,gpu_python=None,cpu_library=None,password=None,public_host=None,site='all'):
   refusal=access_gate.refusal(address[0],password)
   if refusal:raise ValueError(refusal)
-  self.app=SimpleNamespace(password=password,public_host=public_host,sessions=set(),login_destination='/machine')
+  if site not in ('all','game'):raise ValueError('site is all or game')
+  self.site=site
+  self.app=SimpleNamespace(password=password,public_host=public_host,sessions=set(),login_destination='/play' if site=='game' else '/machine')
   super().__init__(address,Handler);self.native=native;self.logs=logs;logs.mkdir(parents=True,exist_ok=True);self.sessions={};self.lock=threading.Lock()
   self.checkpoint_path=checkpoint_path or ROOT/'client/voxel-lab/checkpoint.json';self.started_revision,_=repository_state()
   self.cpu_library=cpu_library
@@ -323,6 +332,11 @@ class Handler(BaseHTTPRequestHandler):
   if not self.host_allowed():self.send(403,b'{"error":"Host refused"}');return
   if access_gate.answered(self,'GET'):return
   path=self.path.split('?')[0]
+  if self.server.site=='game':
+   # The game is the whole site: its front door is the levels.
+   if path in ('/','/world','/index.html'):
+    self.send_response(303);self.send_header('Location','/play');self.end_headers();return
+   if path not in GAME_ROUTES:self.send(404,b'{}');return
   if path=='/world' or (path=='/' and self.server.cpu_library):
    self.send_response(303);self.send_header('Location','/machine');self.end_headers();return
   if path=='/api/checkpoint':
@@ -357,6 +371,7 @@ class Handler(BaseHTTPRequestHandler):
     if not 0<length<=4096:raise ValueError('Login request size invalid')
     if access_gate.answered(self,'POST',body):return
    elif access_gate.answered(self,'POST'):return
+   if self.server.site=='game' and self.path not in GAME_POSTS:self.send(404,b'{}');return
    if self.path=='/api/machine':self.machine(body);return
    if self.path=='/api/representation':
     if not self.origin_allowed():raise ValueError('Cross-origin request refused')
@@ -510,8 +525,8 @@ class Handler(BaseHTTPRequestHandler):
   except (ValueError,TypeError,KeyError,RuntimeError,OSError) as e:self.send(400,json.dumps({'ok':False,'error':str(e)}).encode())
  def log_message(self,*args):pass
 if __name__=='__main__':
- p=argparse.ArgumentParser();p.add_argument('--native',type=Path,required=True);p.add_argument('--gpu-python',type=Path);p.add_argument('--cpu-library',type=Path);p.add_argument('--host',default='127.0.0.1');p.add_argument('--logs',type=Path,default=ROOT/'build/voxel-world-logs');p.add_argument('--port',type=int,default=18893);a=p.parse_args()
- server=Server((a.host,a.port),a.native.resolve(strict=True),a.logs,gpu_python=a.gpu_python.resolve(strict=True) if a.gpu_python else None,cpu_library=a.cpu_library.resolve(strict=True) if a.cpu_library else None,password=os.environ.get('BANJO_PASSWORD'),public_host=os.environ.get('BANJO_PUBLIC_HOST'))
+ p=argparse.ArgumentParser();p.add_argument('--native',type=Path,required=True);p.add_argument('--gpu-python',type=Path);p.add_argument('--cpu-library',type=Path);p.add_argument('--host',default='127.0.0.1');p.add_argument('--logs',type=Path,default=ROOT/'build/voxel-world-logs');p.add_argument('--port',type=int,default=18893);p.add_argument('--site',choices=['all','game'],default='all',help='game: serve only the puzzles and the sandbox, as deployed');a=p.parse_args()
+ server=Server((a.host,a.port),a.native.resolve(strict=True),a.logs,gpu_python=a.gpu_python.resolve(strict=True) if a.gpu_python else None,cpu_library=a.cpu_library.resolve(strict=True) if a.cpu_library else None,password=os.environ.get('BANJO_PASSWORD'),public_host=os.environ.get('BANJO_PUBLIC_HOST'),site=a.site)
  print(f'Voxel world http://127.0.0.1:{a.port}/',flush=True)
  try:server.serve_forever()
  finally:

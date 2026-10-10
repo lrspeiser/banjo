@@ -794,6 +794,240 @@
      "z_m": 0.0
     }
    ]
+  },
+  {
+   "id": "laser",
+   "title": "Bounce the beam",
+   "teaches": "light: reflection, and light heating what it lands on",
+   "brief": "The laser can burn through the cord holding the weight, but the wall is in the way. Bounce its beam off mirrors onto the cord.",
+   "time_s": 25,
+   "budget": 20,
+   "par": 12,
+   "style_pieces": 1,
+   "machine": {
+    "schema": "banjo.machine.v1",
+    "title": "Bounce the beam",
+    "kits": [
+     {
+      "kit": "hanging_weight",
+      "name": "weight",
+      "post_m": [
+       -0.4,
+       0,
+       1.25
+      ],
+      "drop_m": 0.4,
+      "side": "-z",
+      "hang": "rope",
+      "rope_m": 0.1,
+      "weight_material": "iron",
+      "weight_size_m": 0.12
+     }
+    ],
+    "parts": [
+     {
+      "name": "laser post",
+      "shape": "box",
+      "material": "concrete",
+      "size_m": [
+       0.1,
+       0.52,
+       0.1
+      ],
+      "at_m": [
+       -1.0,
+       0.26,
+       0.0
+      ],
+      "fixed": true
+     },
+     {
+      "name": "laser",
+      "shape": "box",
+      "material": "aluminum",
+      "size_m": [
+       0.16,
+       0.06,
+       0.06
+      ],
+      "at_m": [
+       -0.9,
+       0.575,
+       0.0
+      ],
+      "fixed": true
+     },
+     {
+      "name": "battery box",
+      "shape": "box",
+      "material": "iron",
+      "size_m": [
+       0.1,
+       0.1,
+       0.1
+      ],
+      "at_m": [
+       -1.0,
+       0.05,
+       0.3
+      ],
+      "fixed": true
+     },
+     {
+      "name": "wall",
+      "shape": "box",
+      "material": "concrete",
+      "size_m": [
+       1.3,
+       0.8,
+       0.04
+      ],
+      "at_m": [
+       -0.35,
+       0.4,
+       0.5
+      ],
+      "fixed": true
+     },
+     {
+      "name": "bin left",
+      "shape": "box",
+      "material": "concrete",
+      "size_m": [
+       0.04,
+       0.12,
+       0.3
+      ],
+      "at_m": [
+       -0.6,
+       0.06,
+       1.0
+      ],
+      "fixed": true
+     },
+     {
+      "name": "bin right",
+      "shape": "box",
+      "material": "concrete",
+      "size_m": [
+       0.04,
+       0.12,
+       0.3
+      ],
+      "at_m": [
+       -0.2,
+       0.06,
+       1.0
+      ],
+      "fixed": true
+     }
+    ],
+    "batteries": [
+     {
+      "name": "battery",
+      "in": "battery box",
+      "capacity_j": 1000000,
+      "voltage_v": 48,
+      "max_power_w": 10000
+     }
+    ],
+    "light": {
+     "lamps": [
+      {
+       "name": "laser beam",
+       "on": "laser",
+       "at_m": [
+        -0.81,
+        0.575,
+        0.0
+       ],
+       "battery": "battery",
+       "watts": 5000,
+       "efficacy_lm_w": 270,
+       "axis": [
+        1,
+        0,
+        0
+       ],
+       "half_angle_deg": 0.3,
+       "rays": 64
+      }
+     ]
+    }
+   },
+   "goal": {
+    "title": "The weight is in the bin",
+    "focus": [
+     "weight rope",
+     "weight"
+    ],
+    "station": {
+     "done_when": {
+      "in_zone": {
+       "part": "weight",
+       "at_m": [
+        -0.4,
+        0.08,
+        1.0
+       ],
+       "size_m": [
+        0.36,
+        0.16,
+        0.34
+       ]
+      }
+     }
+    }
+   },
+   "tray": [
+    {
+     "piece": "mirror",
+     "count": 2,
+     "cost": 6,
+     "knobs": {
+      "x_m": {
+       "min": -1.0,
+       "max": 1.5,
+       "default": 0.0,
+       "step": 0.005,
+       "label": "x"
+      },
+      "z_m": {
+       "min": -0.5,
+       "max": 1.5,
+       "default": 0.0,
+       "step": 0.005,
+       "label": "z"
+      },
+      "angle_deg": {
+       "min": -90,
+       "max": 90,
+       "default": 0,
+       "step": 1,
+       "label": "Turned (degrees)"
+      }
+     }
+    }
+   ],
+   "hints": [
+    "The laser fires along +x at 0.575 m up, from x = -0.81 at z = 0, about 4.5 kW of light in a beam 2 cm wide.",
+    "The cord hangs at x = -0.4, z = 1.015. A mirror turned 45 degrees sends a beam along x off into z; light leaves a mirror at the angle it came in.",
+    "Light reflects off a mirror's face, 1 cm in front of its middle."
+   ],
+   "solution": [
+    {
+     "piece": "mirror",
+     "x_m": 0.614,
+     "z_m": 0.0,
+     "angle_deg": 45
+    },
+    {
+     "piece": "mirror",
+     "x_m": 0.614,
+     "z_m": 1.015,
+     "angle_deg": -45
+    }
+   ]
   }
  ]
 }

@@ -46,7 +46,7 @@ LEVELS = mg.load_levels()
 
 class Tray(unittest.TestCase):
     def test_every_level_is_well_formed_and_its_solution_fits_its_tray(self):
-        self.assertEqual([l['id'] for l in LEVELS], ['gap', 'cut', 'fire', 'steam', 'chain'])
+        self.assertEqual([l['id'] for l in LEVELS], ['gap', 'cut', 'fire', 'steam', 'chain', 'laser'])
         for level in LEVELS:
             spec, checked, cost = mg.compose(level, level['solution'])
             mw.compile_spec(spec)
@@ -143,8 +143,10 @@ class Engine(unittest.TestCase):
         # The cannon too weak: its ball falls short of the block.
         fire = mg.level_by_id('fire')
         weak = [dict(fire['solution'][0], powder_g=0.5)]
+        # One mirror where two are needed: the beam goes into the wall.
+        laser = mg.level_by_id('laser')
         with tempfile.TemporaryDirectory() as logs:
-            for lv, placed in ((level, high), (fire, weak)):
+            for lv, placed in ((level, high), (fire, weak), (laser, laser['solution'][:1])):
                 t = mg.trial(lv, placed, ENGINE, Path(logs), runs=1)
                 self.assertEqual(t['worked'], 0, lv['id'])
 

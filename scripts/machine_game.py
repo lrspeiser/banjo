@@ -85,7 +85,18 @@ def _ramp(name, k):
                                                 'name': name + ' ball'}}]}
 
 
-PIECES = {'plank': _plank, 'knife': _knife, 'cannon': _cannon, 'steam': _steam, 'ramp': _ramp}
+def _mirror(name, k):
+    """A polished aluminium mirror on its own stand, standing upright at
+    (x_m, z_m) and turned angle_deg about the vertical: at 0 it faces along
+    x. It reflects what light reaches it; where the light goes is the
+    engine's."""
+    height = k.get('height_m', 0.575)
+    return {'parts': [{'name': name, 'shape': 'box', 'material': 'aluminum', 'size_m': [0.02, 0.2, 0.2],
+                       'at_m': [k['x_m'], height, k['z_m']], 'turn_deg': [0, k['angle_deg'], 0], 'fixed': True}],
+            'mirrors': [name]}
+
+
+PIECES = {'plank': _plank, 'knife': _knife, 'cannon': _cannon, 'steam': _steam, 'ramp': _ramp, 'mirror': _mirror}
 
 
 class LevelRefused(ValueError):
@@ -158,6 +169,9 @@ def compose(level, placements):
         made = PIECES[p['piece']](f'your {p["piece"]} {i + 1}', knobs)
         spec['kits'] += made.get('kits', [])
         spec['parts'] += made.get('parts', [])
+        if made.get('mirrors'):
+            spec.setdefault('light', {}).setdefault('mirrors', [])
+            spec['light']['mirrors'] = spec['light']['mirrors'] + made['mirrors']
     goal = level['goal']['station']['done_when']
     rule = next(iter(goal.values()))
     wanted = rule.get('part') if isinstance(rule, dict) else rule

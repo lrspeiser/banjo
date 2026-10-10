@@ -10,7 +10,7 @@ October 10, 2026. The machine page has a game: open `/play`. Each level is a sma
 - **Stars**, from what the engine measured: one for the goal in time, one for staying at or under the level's par cost, one for style (using enough different pieces, on levels that ask for it). If the chat placed the pieces, one star at most.
 - **Is it reliable?** runs your machine three times with every loose part nudged by up to 1.5 mm, as fast as the engine goes, and says in how many the goal happened. Real chains of events are fragile; a machine that works 3 of 3 is a good one.
 
-## The five levels
+## The six levels
 
 | Level | What it teaches | The pieces | A solution, as tested |
 |---|---|---|---|
@@ -19,6 +19,7 @@ October 10, 2026. The machine page has a game: open `/play`. Each level is a sma
 | 3. Knock it off | a powder charge | a cannon | muzzle at x = 1.4 m, bore 0.48 m up, 1 g of powder: the block is knocked into the zone at 1.4 s |
 | 4. Up she goes | steam | a steam engine | over the marker with a 12 kW firebox: the piston reaches the zone at 3.4 s |
 | 5. Chain reaction | a chain | a ramp with a ball | the ball tips the lever, which closes the switch; the coil lights the cannon's powder; the ball knocks the block into the zone at 1.5 s |
+| 6. Bounce the beam | light: reflection, and light heating what it lands on | two mirrors | a 5 kW laser's beam bounced around a wall by two mirrors at 45 and -45 degrees burns through the cord; the weight is in the bin at 20.3 s |
 
 How forgiving they are, measured: in level 2 the knife works with its pivot anywhere from 16 cm behind the rope's line to level with it, across about 25 cm of height. In level 3, 1 g of powder works from several places; 0.5 g falls short and 2 g throws the block past the zone.
 
@@ -40,6 +41,12 @@ Levels are in `client/voxel-lab/levels.json`. Each has:
 - `solution`, which is never sent to the page or the model.
 
 The pieces (`plank`, `knife`, `cannon`, `steam`, `ramp`) are in `scripts/machine_game.py`. `tests/machine_game_tests.py` checks that every level's solution reaches its goal in three nudged runs out of three, that no level is solved with no pieces, and that a misplaced piece fails for a physical reason.
+
+Level 6 is slow for a real laser: the engine spreads a body's heat through the whole of it, so the beam has to warm the entire cord before it burns. A model of the lit spot heating faster than the rest of the body is being built; then the cord goes in seconds, as it would.
+
+## The site
+
+The deployed site is the game and nothing else: `scripts/voxel-lab.py --site game` (the Dockerfile's command) serves `/play`, the sandbox `/machine` it is built on, and what those pages load; `/` goes to `/play`; every other page and API answers 404. The other labs stay in the code and run locally without `--site game`.
 
 ## Real time
 
