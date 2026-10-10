@@ -48,6 +48,12 @@ With heat switched on, the lab used to refuse a step as soon as any interface ha
 
 Measured on the 10 m glass drop with the centre cell heated at 2 W: every face had separated by 1.4292 s; from then on, the other eight cells' temperatures did not change in the last bit; the centre cell ended at 261.89 K; the combined account of motion, stored energy, fracture and heat closed to 3.8 × 10⁻¹⁰ J; the mechanics were identical to the unheated run (9,216 substeps); and the scene reopened exactly. `tests/thermal_matter_adapter_test.py` checks the face law directly: half-bonded faces carry exactly half the conductance, separated faces isolate a heated cell exactly, and two broken sites of four leave half a face bonded.
 
+## Faster, the same to the bit
+
+Each Newton iteration evaluates 120 finite-difference trials, one per unknown each way, in one call to the native library. They are independent: each reads the shared, prepared scene and writes only its own rows. They now run on up to 8 threads, so every output is the same to the bit, and `cpu_local_jacobian_tests`, which compares local and full trials byte for byte, still passes on Windows and under GCC. The batch for the saved glass step went from 16.5 ms to 5.0 ms. The heated 10 m glass drop went from 233 s to 136 s of wall time, with identical results (the same 9,216 substeps and the same residuals to the last digit).
+
+It is not enough for the gentler impacts. From 1 m, glass now gets through 363 substeps of the impact step in its 30 s, against 163 before, and is still refused there. So is oak from 10 m, after 430. Those need a cheaper Jacobian, not more threads.
+
 ## Pick where it lands
 
 The ball used to fall on the sheet's centre every time. The coupled lab now takes a drop spot (`spot_m`, x and z from the sheet's centre, within the 15 mm the sheet reaches each way; the page has **Spot · x mm** and **Spot · z mm** beside the drop height). `tests/cpu_drop_spot_test.py` lets a 1 mm drop go over two corner cells, an off-centre point and the centre, and checks from the solver's own contact sites that each first touches the cell beneath it; a spot off the sheet is refused. A ball that bounces lands again wherever the calculation takes it, so second hits need no extra setting.
