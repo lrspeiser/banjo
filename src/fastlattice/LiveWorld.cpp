@@ -391,6 +391,9 @@ struct LiveWorld::Pending {
     // Kept as cells rather than body numbers because cells are not renumbered
     // by anything, and the body table is.
     std::unordered_set<std::uint32_t> may_break;
+    // Set when the run is binned before it is done (dropGuess): its backend
+    // stops at the next substep instead of finishing a run nobody will use.
+    std::atomic<bool> abandon{false};
     bool guessed{};
     std::string guessed_striker;
     double guessed_speed{};
@@ -10675,7 +10678,13 @@ void LiveWorld::guessAhead(const Foresight &guess, const std::string &name) {
 
 void LiveWorld::dropGuess(const char *why) {
     if (!impl_->guessing) return;
-    if (impl_->guess_worker.valid()) impl_->guess_worker.get();   // let it finish, then bin it
+    // Binned, so whatever it would have said is not wanted: stop it at its next
+    // substep rather than wait out the rest of a run. Measured in the default
+    // machine, a guess about one shard was still running when a different
+    // shard landed, and the world stood still 370 ms for an answer it threw
+    // away.
+    impl_->guessing->abandon.store(true, std::memory_order_relaxed);
+    if (impl_->guess_worker.valid()) impl_->guess_worker.get();
     impl_->delays.push_back({impl_->time_s, impl_->guessing->name, why, 0.0,
                              impl_->guessing->cost_ms, impl_->guessing->dt_s,
                              impl_->guessing->status.total_steps});
@@ -11887,6 +11896,7 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
     job.state = std::move(island_state);
     job.backend = std::move(backend);
     job.control = control;
+    job.control.abandon = &job.abandon;
     job.parked = parked;
     job.which = which;
     job.anvil = anvil;
