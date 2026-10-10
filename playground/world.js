@@ -7403,8 +7403,12 @@ function pressPrimary(target=null) {
   // Inspection is available in the side panel. A held gathering tool uses its
   // native stroke even when the design also declares a Study action.
   if (world.held?.pick) {
-    // A machine or anything fixed in place is selected, not swung at.
-    if (!target && world.aim?.name && selectsInsteadOfSwing(world.aim.name)) return false;
+    // A machine or anything fixed in place is selected, not swung at. A mouse
+    // press is aimed where the cursor is, which world.aim already names; since
+    // 535804ad every press carries its ray for the trace, and testing only
+    // for a missing ray let a click on a rover with a pick in hand strike it
+    // instead of opening its panel.
+    if ((!target || target.input === "mouse") && world.aim?.name && selectsInsteadOfSwing(world.aim.name)) return false;
     tools.press(target); return true;
   }
   const name = world.held?.name || world.aim?.name;

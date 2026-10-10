@@ -93,10 +93,24 @@ def test_selection_edit_save_review_reload_and_landscape(self):
     self.screenshot('paid-pick-equipped-landscape.png')
     rover=self.page.evaluate('window.banjoRoom.world.machines.programs.find(p=>p.kind==="roam")?.body')
     self.assertIsNotNone(rover)
-    self.page.evaluate(f'window.banjoRoom.pick({json.dumps(rover)})')
-    self.open_rail();self.wait('!!document.querySelector(".rover-card [data-rover-command]")')
+    # The rover's controls, opened as a player with a tool in hand opens
+    # them: a click on a machine selects it rather than swinging at it, and
+    # opens its panel. Details, which this opened, went with the inspector
+    # rail (eaf9e306).
+    self.page.evaluate('(()=>{const r=window.banjoRoom,p=r.world.bodies.get(%s).mesh.position;'
+                       'r.standAt(p.x+.8,p.y+1.1,p.z+.5);r.lookAt(p.x,p.y,p.z);})()' % json.dumps(rover))
+    self.wait('(()=>{const r=window.banjoRoom,p=r.world.bodies.get(%s).mesh.position;r.lookAt(p.x,p.y,p.z);'
+              'return r.world.machines.programs.find(q=>q.body===%s)?.parts.includes(r.world.aim?.name)})()'
+              % (json.dumps(rover), json.dumps(rover)))
+    # With the cursor free, the first click in the room only takes the view
+    # back: holding a tool, it is consumed so it cannot dig (eaf9e306).
+    if self.page.evaluate('window.banjoRoom.controls().cursorFree'):
+        self.click('#stage');self.wait('!window.banjoRoom.controls().cursorFree')
+    self.click('#stage')
+    self.wait('document.body.classList.contains("machine-open")');self.wait_rail_shown()
+    self.wait('!!document.querySelector("#machine-panel .rover-card [data-rover-command]")')
     self.assertEqual(1,self.page.evaluate('Array.from(document.querySelectorAll(".rover-card")).filter(e=>e.offsetParent!==null).length'))
-    self.click('.rover-card button:not([data-rover-command])')
+    self.click('#machine-panel .rover-card button:not([data-rover-command])')
     self.wait('document.querySelector("#chat-recipient").value.startsWith("robot:")')
     self.click('#ask-text')
     self.page.evaluate('document.querySelector("#ask-text").value="stop";document.querySelector("#ask").requestSubmit()')
