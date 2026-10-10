@@ -253,10 +253,13 @@ the fitter read the ground under each footing's middle, where a flat foot on
 a slope bears on its uphill edge, and the seating read a bilinear blend of
 the height samples rather than the collider's own triangles. Fitted to the
 highest ground under each foot, seated by the engine's survey, the catalog
-pad stood at 0.03, 0.46 and 1.09 degrees on the three spots the test met
-(up to 1.76 before, which failed the test). What is left is the solver's own allowance: the feet
-settle up to 9 mm into the ground, unequally, inside Jolt's 2 cm
-penetration slop. The test's 1.5 degree bound is unchanged.
+pad stood at 0.03 to 1.09 degrees on the three spots the test met (up to
+1.76 before, which failed the test), and at 0.05 to 1.23 degrees once the
+ground's contacts were filtered for the rover (the scorecard, October 10).
+What is left is the solver's own allowance: the feet settle up to 9 mm
+into the ground, unequally, inside Jolt's 2 cm penetration slop. The
+test's 1.5 degree bound is unchanged, so the worst spot has 0.27 degrees
+to spare.
 
 ## Full construction goal: remaining work
 

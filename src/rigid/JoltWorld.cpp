@@ -4069,6 +4069,20 @@ unsigned JoltWorld::addGroundPatch(const std::vector<float> &heights, unsigned c
     settings.mFriction = static_cast<float>(contact.dynamic_friction);
     settings.mRestitution = static_cast<float>(contact.restitution);
     settings.mUserData = kGroundPatchMatterId;
+    // Whatever touches the ground's triangles is checked against the triangle
+    // it touches (Jolt's enhanced internal edge removal): a contact on an edge
+    // or corner that the next triangle covers gives way to the faces' own, and
+    // one whose normal no part of its triangle could give is dropped. The
+    // ground is one continuous surface; its triangles' edges are only how it
+    // is stored. Without this a thin part was handed contacts pointing INTO
+    // the ground. Measured on the generated rover's 5.4 mm iron wheel on
+    // smooth terrain: a contact 0.2 mm deep with its normal pointing down and
+    // its point on the wheel's top rim, 32 cm above the triangle it came from.
+    // The solver obeyed it and pulled the wheel 12 cm into the ground in one
+    // step, where it stuck, and the rover backed out three times and gave up
+    // (generated_rover_repeat_tests). That suite's two runs met eleven such
+    // contacts; with this, none. Contacts between bodies are not filtered.
+    settings.mEnhancedInternalEdgeRemoval = true;
     const JPH::BodyID id =
         impl_->physics_->GetBodyInterface().CreateAndAddBody(settings, JPH::EActivation::DontActivate);
     if (id.IsInvalid()) throw std::runtime_error("Jolt could not create a ground patch");
@@ -4086,6 +4100,7 @@ unsigned JoltWorld::addGroundTriangles(const std::vector<std::array<Vec3,3>> &tr
                                        JPH::EMotionType::Static,Layers::kNonMoving);
     settings.mFriction=float(contact.dynamic_friction);settings.mRestitution=float(contact.restitution);
     settings.mUserData=kGroundPatchMatterId;
+    settings.mEnhancedInternalEdgeRemoval=true;   // as a ground patch (addGroundPatch)
     const auto id=impl_->physics_->GetBodyInterface().CreateAndAddBody(settings,JPH::EActivation::DontActivate);
     if(id.IsInvalid())throw std::runtime_error("Jolt could not create ground mesh");
     impl_->ground_.push_back({id,0,0,0,0});
@@ -4132,6 +4147,7 @@ unsigned JoltWorld::addRoofPatch(const std::vector<float> &down_from, unsigned c
     settings.mFriction = static_cast<float>(contact.dynamic_friction);
     settings.mRestitution = static_cast<float>(contact.restitution);
     settings.mUserData = kGroundPatchMatterId;
+    settings.mEnhancedInternalEdgeRemoval = true;   // as a ground patch (addGroundPatch)
     const JPH::BodyID id =
         impl_->physics_->GetBodyInterface().CreateAndAddBody(settings, JPH::EActivation::DontActivate);
     if (id.IsInvalid()) throw std::runtime_error("Jolt could not create a roof patch");
