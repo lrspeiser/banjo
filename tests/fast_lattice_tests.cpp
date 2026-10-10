@@ -954,6 +954,93 @@ void parallelBackendMatchesSerialWithContact() {
     }
 }
 
+// The live world's own lane: single precision and displacement arithmetic, a
+// plate large enough that the parallel backend splits its heavy phases
+// between threads, struck hard enough to break and to bring the node contact
+// in. On a processor with AVX2 this is where the parallel backend runs its
+// eight-wide kernels (the sweep, the end-of-substep strain and the bond
+// failure test), so it is where they are held to the serial backend bit for
+// bit. Iron with plasticity on takes the scalar path for the failure test and
+// sums the plastic work, which the parallel backend replays in bond order.
+void parallelBackendMatchesSerialInSinglePrecision() {
+    struct Case {
+        const char *name;
+        TileImpactRequest request;
+        std::uint64_t steps;
+    };
+    std::vector<Case> cases;
+    {
+        TileImpactRequest glass = smallScene(BackendKind::Cpu, Precision::Float, 1);
+        glass.tile_dimensions_m = {0.24, 0.04, 0.2};
+        glass.ball_speed_m_s = 20.0;
+        cases.push_back({"glass", glass, 3000});
+        TileImpactRequest iron = glass;
+        iron.tile_material = MaterialPreset::Iron;
+        iron.plasticity = true;
+        iron.ball_speed_m_s = 40.0;
+        cases.push_back({"iron, plastic", iron, 1500});
+    }
+    for (const Case &c : cases) {
+        auto setup = buildTileImpactSetup(c.request);
+        RunControl control{};
+        control.max_steps = c.steps;
+        const auto run = [&](unsigned threads) {
+            LatticeState state = buildLatticeState(setup->matter, setup->schedule, setup->origin);
+            SphereState<double> sphere = setup->sphere_world;
+            sphere.center = sphere.center - V3<double>{setup->origin.x, setup->origin.y, setup->origin.z};
+            auto backend = threads == 0 ? makeCpuLatticeBackend(setup->schedule, Precision::Float)
+                                        : makeParallelCpuLatticeBackend(setup->schedule, Precision::Float, threads);
+            backend->upload(state, setup->settings_scene, sphere);
+            // Two calls, so the second starts from what the first left.
+            RunControl half = control;
+            half.max_steps = control.max_steps / 2U;
+            (void)backend->run(half);
+            const RunStatus status = backend->run(half);
+            backend->download(state, sphere);
+            return std::pair<LatticeState, RunStatus>{std::move(state), status};
+        };
+        const auto [serial_state, serial_status] = run(0);
+        std::cout << "  " << c.name << ", single precision: " << serial_state.node_count << " cells, "
+                  << serial_status.broken_bonds << " bonds broken, " << serial_status.node_contact.contacts
+                  << " contacts, plastic work " << serial_status.plastic_work_j << " J\n";
+        require(serial_status.broken_bonds > 0, std::string(c.name) + ": the scene did not fracture; it proves nothing");
+        for (const unsigned threads : {1U, 2U, 4U, 8U}) {
+            const auto [state, status] = run(threads);
+            const std::string at = std::string(c.name) + ", " + std::to_string(threads) + " threads: ";
+            require(state.u == serial_state.u && state.u_prev == serial_state.u_prev && state.v == serial_state.v,
+                    at + "the parallel backend moved a node differently");
+            require(state.alive == serial_state.alive && state.damage == serial_state.damage &&
+                        state.failure_mode == serial_state.failure_mode,
+                    at + "the parallel backend broke or damaged a bond differently");
+            require(state.prev_tensile == serial_state.prev_tensile &&
+                        state.prev_compressive == serial_state.prev_compressive &&
+                        state.prev_shear == serial_state.prev_shear,
+                    at + "the parallel backend kept a different strain sample");
+            require(state.plastic_extension == serial_state.plastic_extension &&
+                        state.plastic_strain == serial_state.plastic_strain,
+                    at + "the parallel backend flowed a bond differently");
+            require(status.broken_bonds == serial_status.broken_bonds &&
+                        status.removed_energy_j == serial_status.removed_energy_j &&
+                        status.failure_rounds == serial_status.failure_rounds &&
+                        status.first_failure_step == serial_status.first_failure_step &&
+                        status.total_steps == serial_status.total_steps &&
+                        status.plastic_work_j == serial_status.plastic_work_j &&
+                        status.rank_deficient_nodes == serial_status.rank_deficient_nodes,
+                    at + "the parallel backend reported a different cascade");
+            require(status.max_tensile_stretch == serial_status.max_tensile_stretch &&
+                        status.max_compressive_strain == serial_status.max_compressive_strain &&
+                        status.max_shear_strain == serial_status.max_shear_strain &&
+                        status.max_plastic_stretch == serial_status.max_plastic_stretch,
+                    at + "the parallel backend reported different strain peaks");
+            require(status.node_contact.contacts == serial_status.node_contact.contacts &&
+                        status.node_contact.rebuilds == serial_status.node_contact.rebuilds &&
+                        status.node_contact.dissipated_kinetic_energy_j ==
+                            serial_status.node_contact.dissipated_kinetic_energy_j,
+                    at + "the parallel backend reported a different contact ledger");
+        }
+    }
+}
+
 // Off is the lane as it was, and measuring is not acting: the broad phase and
 // the overlap record must leave every number the run reports untouched.
 void measuringTheOverlapChangesNothing() {
@@ -1286,6 +1373,8 @@ int main() {
         std::cout << "[PASS] node contact conserves momentum and removes kinetic energy\n";
         parallelBackendMatchesSerialWithContact();
         std::cout << "[PASS] the parallel backend is bit identical with node contact on\n";
+        parallelBackendMatchesSerialInSinglePrecision();
+        std::cout << "[PASS] the parallel backend is bit identical in single precision, kernels and all\n";
         measuringTheOverlapChangesNothing();
         std::cout << "[PASS] measuring the overlap changes nothing the run reports\n";
         energyPlateauStopsTheWindow();
