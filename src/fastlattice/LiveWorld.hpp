@@ -684,6 +684,9 @@ struct LivePhotocell {
 // gone): counted, warming nothing.
 struct LiveOpticsLedger {
     double sent{}, heated{}, unheated{}, ground{}, escaped{}, scattered{}, unfollowed{}, bounce_limit{};
+    // Of `heated`, what went into lit spots towards taking matter away
+    // (docs/light-spots.md): part of heated, not a line of its own.
+    double spots{};
     [[nodiscard]] double residual() const {
         return sent - (heated + unheated + ground + escaped + scattered + unfollowed + bounce_limit);
     }
@@ -695,8 +698,29 @@ struct LiveOptics {
         std::string body;
         double absorbed_w{}, absorbed_j{};
         bool heated{};                  // the heat network holds it
+        // Its brightest spot over the last step (docs/light-spots.md): the
+        // power absorbed there and over what area, the temperature the spot is
+        // at, and of that power what goes into taking its matter away; how the
+        // matter goes ("chars", "melts"), or "" when nothing can take it away.
+        double spot_w{}, spot_area_m2{}, spot_k{}, cut_w{};
+        std::string spot_how;
+        // Since light was declared: what it spent taking this body's matter
+        // away, and how much it took.
+        double taken_j{}, taken_m3{}, taken_kg{};
     };
     std::vector<Lit> bodies;            // everything light has reached
+    // A cell light has taken away (docs/light-spots.md): which body, when,
+    // where, how much matter, and what light spent taking it from where it
+    // was to gone -- against the cell's volume, the energy per volume.
+    struct Taken {
+        std::string body;
+        double t_s{};
+        Vec3 at_m{};
+        double volume_m3{}, kg{}, energy_j{};
+        std::string how;
+        double gone_k{};
+    };
+    std::vector<Taken> taken;
     struct Path {
         unsigned light{};
         std::vector<Vec3> points;
@@ -2649,6 +2673,13 @@ private:
     // step starts, and draw into the heat network every body the light now
     // reaches -- before the network's state is saved for the step's trial.
     void traceLightIfDue();
+    // Where the last trace's light landed on each body, by cell, grouped into
+    // lit spots for the heat network (docs/light-spots.md).
+    void placeLitSpots();
+    // After an accepted step: every cell whose spot has been given what
+    // taking it away costs leaves its body, and the body is rebuilt from the
+    // cells it has left -- as pieces, where they no longer join.
+    void takeLitCells();
     // What one body can carry across a load running along `load_world` -- its
     // longest axis when null. See materialStates.
     [[nodiscard]] LiveMaterialState materialStateOf(std::size_t body, const Vec3 *load_world) const;
@@ -2686,7 +2717,8 @@ private:
     void burnAway(std::size_t body, const std::string &why);
     // A piece whose cells have burned away is rebuilt from the cells it has
     // left -- as more than one if they no longer join. Returns how many.
-    std::size_t reformFromCells(std::size_t body);
+    std::size_t reformFromCells(std::size_t body, const char *whole_word = "burned smaller",
+                                const char *apart_word = "burned apart");
     // The bond summary and admission limits of a heated body, from its field.
     void refreshHeatedBonds(std::size_t body, const thermo::MaterialField &field);
     // Every joint made of a member brought up to what its member is now, with

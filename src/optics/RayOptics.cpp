@@ -52,6 +52,11 @@ struct Going {
     double started_w{};
     unsigned met{};
     int path{-1};
+    // Its bundle (Ray::section_m2, spread_sr) and how far it has come.
+    double section_m2{};
+    double spread_sr{};
+    double travelled_m{};
+    [[nodiscard]] double section() const { return section_m2 + spread_sr * travelled_m * travelled_m; }
 };
 
 class Tracer {
@@ -71,10 +76,13 @@ public:
                 const Meeting behind = scene_.toSurface(ray.from, -1.0 * ray.along, settings_.reach_m, -1);
                 if (behind.hit) {
                     absorbAt(behind.body, sent);
+                    record(behind.body, behind.point_m, ray.along, behind.normal, sent, ray.section_m2);
                     continue;
                 }
             }
             Going g{ray.from, ray.along, 0.0, ray.power_w, -1, ray.ignore, sent, 0, -1};
+            g.section_m2 = ray.section_m2;
+            g.spread_sr = ray.spread_sr;
             if (ray.drawn) {
                 result_.paths.push_back({ray.light, {ray.from}, {}});
                 g.path = static_cast<int>(result_.paths.size()) - 1;
@@ -99,6 +107,20 @@ private:
         } else {
             result_.ledger.ground_w += power_w;
         }
+    }
+
+    // Where a body took light at its surface: what a lit spot is made of.
+    void record(int body, const Vec3 &at, const Vec3 &along, const Vec3 &normal, double power_w,
+                double section_m2) {
+        if (body < 0 || !(power_w > 0.0)) return;
+        Absorption a;
+        a.body = body;
+        a.at = at;
+        a.along = along;
+        a.normal = normal;
+        a.power_w = power_w;
+        a.section_m2 = section_m2;
+        result_.absorptions.push_back(a);
     }
 
     void leg(Going &g, const Vec3 &to) {
@@ -167,6 +189,7 @@ private:
                     return;
                 }
                 leg(g, m.point_m);
+                g.travelled_m += g.skipped_m + m.distance_m;
                 // The normal facing back the way the light came.
                 const Vec3 toward = dot(g.along, m.normal) > 0.0 ? -1.0 * m.normal : m.normal;
                 if (m.body >= 0) scene_.arrives(m.body, m.point_m, g.along, toward, g.power_w);
@@ -201,6 +224,7 @@ private:
                     scattered += std::max(0.0, g.power_w[b] - a - specular[b]);
                 }
                 absorbAt(m.body, absorbed);
+                record(m.body, m.point_m, g.along, toward, absorbed, g.section());
                 result_.ledger.scattered_w += scattered;
                 if (!(total(specular) > 0.0)) return;
                 g.power_w = specular;
@@ -225,12 +249,27 @@ private:
             // ray truly started, to where it leaves.
             const double path_m = m.distance_m + g.skipped_m;
             double absorbed = 0.0;
+            const Power entering = g.power_w;
             for (std::size_t b = 0; b < kBands; ++b) {
                 const double kept = g.power_w[b] * std::exp(-s.absorption_per_m[b] * path_m);
                 absorbed += g.power_w[b] - kept;
                 g.power_w[b] = kept;
             }
             absorbAt(g.inside, absorbed);
+            if (g.inside >= 0 && absorbed > 0.0) {
+                Absorption a;
+                a.body = g.inside;
+                a.at = g.from - g.skipped_m * g.along;
+                a.along = g.along;
+                a.power_w = absorbed;
+                a.section_m2 = g.section();
+                a.through = true;
+                a.length_m = path_m;
+                a.entering_w = entering;
+                a.per_m = s.absorption_per_m;
+                result_.absorptions.push_back(a);
+            }
+            g.travelled_m += path_m;
             ++g.met;
             const Vec3 outward = dot(g.along, m.normal) < 0.0 ? -1.0 * m.normal : m.normal;
             const Vec3 toward = -1.0 * outward;

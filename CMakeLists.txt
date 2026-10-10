@@ -1534,6 +1534,16 @@ if(BANJO_BUILD_TESTS)
             banjo_enable_warnings(banjo_optics_tests)
             add_test(NAME banjo_optics_tests COMMAND banjo_optics_tests)
 
+            # Lit spots (docs/light-spots.md): a 4.5 kW beam off a mirror parts
+            # an oak cord in seconds by taking the lit oak away, for the energy
+            # per volume the thermochemistry gives; a weaker beam takes longer
+            # and a weak one only warms; the mirror is not cut; glass is warmed
+            # and never cut; ice melts by depth; the ledgers close.
+            add_executable(banjo_light_spot_tests tests/light_spot_tests.cpp)
+            target_link_libraries(banjo_light_spot_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_light_spot_tests)
+            add_test(NAME banjo_light_spot_tests COMMAND banjo_light_spot_tests)
+
             # What a break costs: the charge the room's failure law makes for
             # a crack, against what the material itself declares, and what a
             # break actually took away.

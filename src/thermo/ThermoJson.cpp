@@ -294,6 +294,8 @@ std::string reportJson(const ThermoWorld &world, bool with_model) {
                           {"carrying_kg", contentsOf(b.carrying_kg)},
                           {"carrying_k", b.carrying_k},
                           {"contents_kg", contentsOf(b.contents_kg)}});
+        // Light's heat held in spots on it towards taking matter away.
+        if (b.spot_j != 0.0) bodies.back()["spot_j"] = b.spot_j;
         // Set aside with its body (ThermoWorld::park): held as it was put away.
         if (b.parked) bodies.back()["set_aside"] = true;
     }
@@ -342,6 +344,11 @@ std::string reportJson(const ThermoWorld &world, bool with_model) {
                    {"work_to_atmosphere_j", l.work_to_atmosphere_j},
                    {"mechanical_in_j", l.mechanical_in_j},
                    {"numerical_j", l.numerical_j},
+                   // Lit spots, told apart; none is a crossing of its own.
+                   {"spot_in_j", l.spot_in_j},
+                   {"taken_by_light_j", l.taken_j},
+                   {"spot_returned_j", l.returned_j},
+                   {"taken_by_light_kg", l.taken_kg},
                    {"residual_j", l.residualJ()},
                    {"mass_residual_kg", l.massResidualKg()},
                    {"out_of_range_steps", l.out_of_range_steps}};

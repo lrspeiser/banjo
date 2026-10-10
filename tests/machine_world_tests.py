@@ -359,7 +359,82 @@ def lens_machine(lens=True):
             {'title': 'The weight falls', 'done_when': {'hits': ['weight', 'the ground']}, 'focus': ['weight']}]}
 
 
+def laser_machine(mirror=True, watts=5000.0, band='visible'):
+    """Level 6's laser with one mirror: a laser fires along +x at 0.575 m, 4.5 kW
+    of light in a beam about 1 cm wide a metre out; a polished aluminium plate
+    turned 45 degrees about the vertical sends it along +z onto an oak rope
+    1 m on, 20 mm square, holding a 13.6 kg iron weight over a bin."""
+    parts = [part('battery box', [0.1, 0.1, 0.1], [-1.0, 0.05, 0.3], material='iron', fixed=True),
+             part('bin left', [0.04, 0.12, 0.3], [0.3, 0.06, 1.0], material='concrete', fixed=True),
+             part('bin right', [0.04, 0.12, 0.3], [0.7, 0.06, 1.0], material='concrete', fixed=True)]
+    if mirror:
+        # Its face is 10 mm in front of its middle: set back so the beam
+        # leaves it along the rope's line.
+        parts.append(part('mirror', [0.02, 0.2, 0.2], [0.5 + 0.01 * math.sqrt(2.0), 0.575, 0.0], material='aluminum',
+                          turn_deg=[0, 45, 0], fixed=True))
+    return {
+        'schema': mw.SCHEMA, 'title': 'A laser off a mirror', 'cell_m': 0.02, 'parts': parts,
+        'kits': [{'kit': 'laser', 'name': 'laser', 'at_m': [-0.81, 0.575, 0.0], 'aim': [1, 0, 0], 'battery': 'battery',
+                  'watts': watts, 'efficiency': 0.9, 'beam_width_m': 0.0105, 'band': band},
+                 {'kit': 'hanging_weight', 'name': 'weight', 'post_m': [0.5, 0, 1.235], 'drop_m': 0.4, 'side': '-z',
+                  'hang': 'rope', 'rope_m': 0.1, 'weight_material': 'iron', 'weight_size_m': 0.12}],
+        'batteries': [{'name': 'battery', 'in': 'battery box', 'capacity_j': 1e6, 'voltage_v': 48,
+                       'max_power_w': 10000}],
+        'light': {'mirrors': ['mirror']} if mirror else {},
+        'stations': [{'title': 'The beam burns through the rope', 'done_when': {'cut': 'weight rope'},
+                      'focus': ['weight rope']},
+                     {'title': 'The weight is in the bin',
+                      'done_when': {'in_zone': {'part': 'weight', 'at_m': [0.5, 0.08, 1.0], 'size_m': [0.36, 0.16, 0.34]}},
+                      'focus': ['weight']}]}
+
+
 class Light(unittest.TestCase):
+    def test_a_laser_kit_is_a_narrow_lamp_on_a_housing(self):
+        c = mw.compile_spec(laser_machine())
+        housing = next(p for p in c['parts'] if p['name'] == 'laser housing')
+        self.assertTrue(housing['fixed'])
+        lamp = next(lp for lp in c['light']['lamps'] if lp['name'] == 'laser')
+        self.assertEqual(lamp['on'], 'laser housing')
+        self.assertEqual(lamp['axis'], [1.0, 0.0, 0.0])
+        # 5000 W drawn, 0.9 of it light: 270 lumens a watt drawn at 300 a watt of light.
+        self.assertAlmostEqual(lamp['watts'] * lamp['efficacy_lm_w'] / lamp['radiant_efficacy_lm_w'], 4500.0)
+        # 10.5 mm wide a metre out: half of that over a metre.
+        self.assertAlmostEqual(math.tan(math.radians(lamp['half_angle_deg'])), 0.00525, places=9)
+        self.assertEqual(lamp['visible_share'], 1.0)
+        self.assertEqual(mw.compile_spec(laser_machine(band='infrared'))['light']['lamps'][0]['visible_share'], 0.0)
+
+        def refused(change, words):
+            spec = laser_machine()
+            change(spec['kits'][0])
+            with self.assertRaises(mw.MachineRefused) as caught:
+                mw.compile_spec(spec)
+            self.assertIn(words, str(caught.exception))
+        refused(lambda k: k.update(band='ultraviolet'), 'band is "visible" or "infrared"')
+        refused(lambda k: k.pop('battery'), 'needs the battery')
+        refused(lambda k: k.pop('aim'), 'needs aim')
+        refused(lambda k: k.update(watts=9000), 'watts')
+
+    @need_engine
+    def test_a_laser_off_one_mirror_burns_a_rope_and_drops_a_weight_into_a_bin(self):
+        with tempfile.TemporaryDirectory() as logs:
+            r = mw.rehearse(mw.compile_spec(laser_machine()), ENGINE, Path(logs), seconds=10, wall_limit_s=200)
+        self.assertIsNone(r['error'])
+        self.assertTrue(all(row['done'] for row in r['stations']), r['stations'])
+        cut, binned = [row['at_s'] for row in r['stations']]
+        # About 1.8 kW of the beam is absorbed on the rope, most of it on the
+        # one cell it is centred on, which costs about 3.5 kJ to char through.
+        self.assertLess(cut, 4.0)
+        self.assertLess(cut, binned)
+        texts = ' | '.join(e['text'] for e in r['events'])
+        self.assertIn('the light charred', texts)
+        self.assertIn('the light burned weight rope through', texts)
+        # Without the mirror the beam goes past, and the weight hangs.
+        with tempfile.TemporaryDirectory() as logs:
+            r = mw.rehearse(mw.compile_spec(laser_machine(mirror=False)), ENGINE, Path(logs), seconds=4,
+                            wall_limit_s=120)
+        self.assertIsNone(r['error'])
+        self.assertFalse(any(row['done'] for row in r['stations']), r['stations'])
+
     def test_light_is_declared_and_what_cannot_be_built_is_refused(self):
         c = mw.compile_spec(lens_machine())
         self.assertEqual(c['light']['sun']['irradiance_w_m2'], 1000.0)

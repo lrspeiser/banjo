@@ -213,7 +213,227 @@ struct ThermoWorld::Impl {
     // What it is made of AND what it carries: a body joining or leaving the
     // world takes the water in it with it, so the ledger has to count both.
     [[nodiscard]] static double lumpEnergy(const Lump &l) {
-        return l.surface.internal_energy_j + l.core.internal_energy_j + l.cargo.internal_energy_j;
+        return l.surface.internal_energy_j + l.core.internal_energy_j + l.cargo.internal_energy_j + spotEnergy(l);
+    }
+    // Light's heat held in a body's spots: the body's, and on the ledger with it.
+    [[nodiscard]] static double spotEnergy(const Lump &l) {
+        double held = 0.0;
+        for (const Spot &spot : l.spots) held += spot.energy_j;
+        return held;
+    }
+    // A spot's heat given back to its body, as heat in its surface: when it is
+    // no longer lit, or when the body is about to be shared out among pieces.
+    void returnSpots(Lump &l) {
+        const double held = spotEnergy(l);
+        l.spots.clear();
+        if (held == 0.0) return;
+        l.surface.internal_energy_j += held;
+        s.ledger.returned_j += held;
+    }
+
+    // ---- lit spots (SpotDeclaration) ----------------------------------------
+    // How heat alone takes a material's matter away, from the model: a material
+    // whose law says where it chars is gone there (oak, at the EN 1995-1-2 char
+    // line its law declares); one whose load-bearing substance melts is gone
+    // when it melts (ice). Nothing else is.
+    [[nodiscard]] Removal removalOf(std::string_view material) const {
+        Removal r;
+        const MechanicalLaw *law = lawFor(material);
+        if (law != nullptr && law->char_k > 0.0) {
+            r.possible = true;
+            r.how = "chars";
+            r.gone_k = law->char_k;
+            return r;
+        }
+        if (law != nullptr && model.has(law->load_bearing)) {
+            if (const Transition *melt = model.meltingOf(model.index(law->load_bearing))) {
+                r.possible = true;
+                r.how = "melts";
+                r.gone_k = melt->at_k;
+                return r;
+            }
+        }
+        r.why_not = std::string(material) +
+                    (law == nullptr ? ": the model has no law for it, so heat never takes its matter away"
+                                    : ": it neither chars nor melts in the model, so heat never takes its matter away");
+        return r;
+    }
+
+    // The gas a held liquid is driven off as, and the temperature it leaves
+    // at: what it boils into, at its boiling point; or the one gas a reaction
+    // of it alone makes and releases (moisture's drying makes water vapour),
+    // leaving where that gas boils from its liquid (373.15 K for water vapour),
+    // and failing that at the temperature the matter is gone at.
+    [[nodiscard]] std::pair<std::size_t, double> vapourOf(std::size_t liquid, double gone_k) const {
+        if (const Transition *boil = model.boilingOf(liquid)) return {boil->to, boil->at_k};
+        for (const Reaction &reaction : model.reactions) {
+            if (reaction.reactants.size() != 1 || reaction.reactants.front().substance != liquid) continue;
+            if (reaction.products.size() != 1) continue;
+            const Term &product = reaction.products.front();
+            if (product.fate != Fate::Released || model[product.substance].phase != Phase::Gas) continue;
+            double leaves_k = gone_k;
+            for (const Transition &transition : model.transitions)
+                if (transition.to == product.substance) leaves_k = transition.at_k;
+            return {product.substance, leaves_k};
+        }
+        return {kNone, gone_k};
+    }
+
+    // What taking `share` of a body's matter -- the same share of each zone --
+    // from where it is to gone costs. Solids are heated to where the matter is
+    // gone (a solid that melts by then is melted instead); held liquids are
+    // driven off as their gas, carrying its enthalpy as anything released does.
+    [[nodiscard]] double removalEnergy(const Lump &l, double share, const Removal &r) const {
+        if (!r.possible) return 0.0;
+        const double f = std::clamp(share, 0.0, 1.0);
+        double total = 0.0;
+        for (const Parcel *p : {&l.surface, &l.core}) {
+            if (!(massKg(*p) > 0.0)) continue;
+            const double t = temperature(*p);
+            for (std::size_t i = 0; i < p->kg.size(); ++i) {
+                const double m = f * p->kg[i];
+                if (!(m > 0.0)) continue;
+                const Substance &what = model[i];
+                if (what.phase == Phase::Gas) continue;
+                if (what.phase == Phase::Liquid) {
+                    const auto [gas, leaves_k] = vapourOf(i, r.gone_k);
+                    if (gas != kNone) {
+                        total += m * (specificEnthalpyJKg(model[gas], leaves_k) - specificEnergyJKg(what, t));
+                        continue;
+                    }
+                } else if (melts[i] != kNone && model.transitions[melts[i]].at_k <= r.gone_k + 1.0e-9) {
+                    const Transition &melt = model.transitions[melts[i]];
+                    total += m * std::max(0.0, specificEnergyJKg(model[melt.to], melt.at_k) - specificEnergyJKg(what, t));
+                    continue;
+                }
+                total += m * what.cv_j_kg_k * std::max(0.0, r.gone_k - t);
+            }
+        }
+        return std::max(0.0, total);
+    }
+
+    // The temperature the spot's face meets the air at.
+    [[nodiscard]] double airAround(const Lump &l) const {
+        return l.environment >= 0 ? temperature(s.regions[static_cast<std::size_t>(l.environment)].gas)
+                                  : ambient.temperature_k;
+    }
+
+    // What a spot loses with its face at `t`: conducted into the body (whose
+    // own temperature stands for the far side), and from its face. A disc of
+    // radius a held at a fixed temperature on a large body passes 4 k a per
+    // kelvin into it (Carslaw and Jaeger, Conduction of Heat in Solids, 1959,
+    // section 8.2); a region inside a clear body, taken as a sphere of the same
+    // volume inside a large one, 4 pi k r. Each a declared approximation: a
+    // thin body, or a spot near its edge, passes less.
+    [[nodiscard]] double spotLoss(const Lump &l, const SpotDeclaration &d, double t, double t_body) const {
+        const double k = l.conductivity_w_m_k;
+        if (d.through) {
+            const double r = std::cbrt(3.0 * std::max(0.0, d.volume_m3) / (4.0 * kPi));
+            return 4.0 * kPi * k * r * (t - t_body);
+        }
+        const double area = std::max(0.0, d.area_m2);
+        const double a = std::sqrt(area / kPi);
+        const double tair = airAround(l);
+        return 4.0 * k * a * (t - t_body) + ambient.film_coefficient_w_m2_k * area * (t - tair) +
+               l.emissivity * kStefanBoltzmannWM2K4 * area * (t * t * t * t - tair * tair * tair * tair);
+    }
+
+    // Where a spot that takes nothing away settles: light in equals what it
+    // loses (both rise with its temperature, so there is one answer).
+    [[nodiscard]] double spotTemperature(const Lump &l, const SpotDeclaration &d, double t_body) const {
+        if (!(d.power_w > 0.0)) return t_body;
+        double lo = std::min(t_body, airAround(l)), hi = std::max(t_body, airAround(l)) + 1.0;
+        while (spotLoss(l, d, hi, t_body) < d.power_w && hi < 1.0e7) hi *= 2.0;
+        for (int i = 0; i < 100; ++i) {
+            const double mid = 0.5 * (lo + hi);
+            (spotLoss(l, d, mid, t_body) < d.power_w ? lo : hi) = mid;
+        }
+        return 0.5 * (lo + hi);
+    }
+
+    // Light on spots over this step (SpotDeclaration).
+    void lightSpots(double from, double to, double dt) {
+        for (Lump &l : s.lumps)
+            for (Spot &spot : l.spots) spot.lit = false;
+        s.spot_states.clear();
+        for (const SpotDeclaration &d : s.spot_lights) {
+            const double on = std::max(0.0, std::min(to, d.start_s + d.seconds) - std::max(from, d.start_s));
+            if (!(on > 0.0)) continue;
+            const std::size_t index = lumpOf(d.body);
+            // Gone, or set aside: it warms nothing, so nothing crosses.
+            if (index == kNone || s.lumps[index].parked) continue;
+            Lump &l = s.lumps[index];
+            const Removal r = removalOf(l.material);
+            SpotState state;
+            state.body = d.body;
+            state.power_w = d.power_w;
+            state.area_m2 = d.area_m2;
+            state.volume_m3 = d.volume_m3;
+            state.through = d.through;
+            state.how = r.possible ? r.how : std::string{};
+            state.gone_k = r.gone_k;
+            const double t_body = temperature(l.surface);
+            double cut = 0.0;
+            if (r.possible) {
+                state.loss_w = std::max(0.0, spotLoss(l, d, r.gone_k, t_body));
+                double shares = 0.0;
+                for (const SpotCell &cell : d.cells) shares += cell.share;
+                if (shares > 0.0) cut = std::max(0.0, d.power_w - state.loss_w);
+            }
+            state.cut_w = cut;
+            state.temperature_k = cut > 0.0 ? r.gone_k : spotTemperature(l, d, t_body);
+            state.beyond_model = state.temperature_k > model.maximum_temperature_k;
+            const double energy = d.power_w * on;
+            const double into_cells = cut * on;
+            l.surface.internal_energy_j += energy - into_cells;
+            l.heater_w += (energy - into_cells) / dt;
+            s.ledger.heater_in_j += energy;
+            if (into_cells > 0.0) {
+                double shares = 0.0;
+                for (const SpotCell &cell : d.cells) shares += cell.share;
+                for (const SpotCell &cell : d.cells) {
+                    if (!(cell.share > 0.0)) continue;
+                    auto found = std::find_if(l.spots.begin(), l.spots.end(),
+                                              [&](const Spot &spot) { return spot.cell == cell.cell; });
+                    if (found == l.spots.end()) {
+                        l.spots.push_back(Spot{cell.cell, 0.0, 0.0, cell.matter_share, false});
+                        found = l.spots.end() - 1;
+                    }
+                    found->energy_j += into_cells * cell.share / shares;
+                    found->matter_share = cell.matter_share;
+                    found->lit = true;
+                }
+                s.ledger.spot_in_j += into_cells;
+            }
+            s.spot_states.push_back(std::move(state));
+        }
+        // A spot no longer lit gives its heat to the body around it: nothing
+        // holds a spot hot but the light on it (declared: at once, not over the
+        // time it would take to spread).
+        for (Lump &l : s.lumps) {
+            if (l.parked) continue;
+            double unlit = 0.0;
+            for (const Spot &spot : l.spots)
+                if (!spot.lit) unlit += spot.energy_j;
+            if (unlit != 0.0) {
+                l.surface.internal_energy_j += unlit;
+                s.ledger.returned_j += unlit;
+            }
+            l.spots.erase(std::remove_if(l.spots.begin(), l.spots.end(), [](const Spot &spot) { return !spot.lit; }),
+                          l.spots.end());
+        }
+        s.spot_lights.erase(std::remove_if(s.spot_lights.begin(), s.spot_lights.end(),
+                                           [&](const SpotDeclaration &d) { return d.start_s + d.seconds <= to; }),
+                            s.spot_lights.end());
+    }
+
+    // What each spot still needs, as the step left its body.
+    void priceSpots() {
+        for (Lump &l : s.lumps) {
+            if (l.spots.empty()) continue;
+            const Removal r = removalOf(l.material);
+            for (Spot &spot : l.spots) spot.needed_j = removalEnergy(l, spot.matter_share, r);
+        }
     }
     // What the body IS: the iron of the kettle, and not the water in it. This
     // is what it is reported as weighing and what its strength is reckoned on.
@@ -811,6 +1031,8 @@ struct ThermoWorld::Impl {
             add(l.surface);
             add(l.core);
             add(l.cargo);   // what it carries is on the ledger like everything else
+            // And light's heat held in its spots: sensible heat, in no parcel.
+            total += spotEnergy(l);
         }
         for (const GasRegion &r : s.regions) add(r.gas);
         ledger.reference_j = reference;
@@ -1162,6 +1384,128 @@ void ThermoWorld::setVent(const std::string &region, bool open) {
     impl_->s.regions[static_cast<std::size_t>(index)].vent_open = open;
 }
 
+void ThermoWorld::spot(const SpotDeclaration &d) {
+    Impl &w = *impl_;
+    require(std::isfinite(d.power_w) && d.power_w >= 0.0 && d.power_w <= 1.0e8,
+            "a spot's power is between 0 and 100 MW");
+    require(std::isfinite(d.seconds) && d.seconds > 0.0 && d.seconds <= 1.0e6, "a spot is lit for a positive time");
+    require(std::isfinite(d.start_s) && d.start_s >= 0.0, "a spot is lit from a time on the clock");
+    require(std::isfinite(d.area_m2) && d.area_m2 >= 0.0 && std::isfinite(d.volume_m3) && d.volume_m3 >= 0.0,
+            "a spot's area and volume are not negative");
+    for (const SpotCell &cell : d.cells)
+        require(std::isfinite(cell.share) && cell.share >= 0.0 && std::isfinite(cell.matter_share) &&
+                    cell.matter_share >= 0.0 && cell.matter_share <= 1.0,
+                "a spot's cells have shares between 0 and 1");
+    if (w.lumpOf(d.body) == kNone) {
+        require(w.shape(d.body) != nullptr, "there is nothing called \"" + d.body + "\" to light");
+        require(w.activate(d.body) != kNone, d.body + " is made of something the model cannot hold: declare its contents");
+        w.couple();
+    }
+    w.s.spot_lights.push_back(d);
+}
+
+Removal ThermoWorld::removal(std::string_view material) const { return impl_->removalOf(material); }
+
+double ThermoWorld::removalEnergyJ(const std::string &body, double matter_share) const {
+    const Impl &w = *impl_;
+    const std::size_t index = w.lumpOf(body);
+    if (index == kNone) return 0.0;
+    const Lump &l = w.s.lumps[index];
+    return w.removalEnergy(l, matter_share, w.removalOf(l.material));
+}
+
+std::optional<double> ThermoWorld::spotLossW(const std::string &body, double area_m2) const {
+    const Impl &w = *impl_;
+    const std::size_t index = w.lumpOf(body);
+    if (index == kNone) return std::nullopt;
+    const Lump &l = w.s.lumps[index];
+    const Removal r = w.removalOf(l.material);
+    if (!r.possible) return std::nullopt;
+    SpotDeclaration d;
+    d.area_m2 = std::max(0.0, area_m2);
+    return std::max(0.0, w.spotLoss(l, d, r.gone_k, w.temperature(l.surface)));
+}
+
+std::optional<double> ThermoWorld::spotTemperatureK(const std::string &body, double power_w, double area_m2) const {
+    const Impl &w = *impl_;
+    const std::size_t index = w.lumpOf(body);
+    if (index == kNone) return std::nullopt;
+    const Lump &l = w.s.lumps[index];
+    SpotDeclaration d;
+    d.power_w = std::max(0.0, power_w);
+    d.area_m2 = std::max(0.0, area_m2);
+    return w.spotTemperature(l, d, w.temperature(l.surface));
+}
+
+std::vector<SpotReady> ThermoWorld::spotsHeld() const {
+    std::vector<SpotReady> out;
+    for (const Lump &l : impl_->s.lumps)
+        for (const Spot &spot : l.spots)
+            out.push_back({l.body, spot.cell, spot.matter_share, spot.energy_j, spot.needed_j});
+    return out;
+}
+
+std::vector<SpotReady> ThermoWorld::spotsReady() const {
+    std::vector<SpotReady> out;
+    for (const Lump &l : impl_->s.lumps) {
+        if (l.parked) continue;
+        for (const Spot &spot : l.spots)
+            if (spot.energy_j > 0.0 && spot.energy_j >= spot.needed_j)
+                out.push_back({l.body, spot.cell, spot.matter_share, spot.energy_j, spot.needed_j});
+    }
+    return out;
+}
+
+const std::vector<SpotState> &ThermoWorld::spotStates() const { return impl_->s.spot_states; }
+
+TakenAway ThermoWorld::takeAway(const std::string &body, std::uint32_t cell, double matter_share) {
+    Impl &w = *impl_;
+    const std::size_t index = w.lumpOf(body);
+    require(index != kNone, "there is nothing called \"" + body + "\" in the network to take a cell from");
+    require(std::isfinite(matter_share) && matter_share > 0.0 && matter_share <= 1.0,
+            body + ": a cell holds a share of its body's matter between 0 and 1");
+    Lump &l = w.s.lumps[index];
+    const Removal r = w.removalOf(l.material);
+    TakenAway out;
+    out.how = r.how;
+    out.gone_k = r.gone_k;
+    out.needed_j = w.removalEnergy(l, matter_share, r);
+    double held = 0.0;
+    const auto spot = std::find_if(l.spots.begin(), l.spots.end(), [&](const Spot &s) { return s.cell == cell; });
+    if (spot != l.spots.end()) {
+        held = spot->energy_j;
+        l.spots.erase(spot);
+    }
+    // What of it melts, for the host to put where meltwater goes.
+    if (r.how == "melts")
+        for (std::size_t i = 0; i < l.surface.kg.size(); ++i)
+            if (w.melts[i] != kNone)
+                out.melted_kg += matter_share * (l.surface.kg[i] + (i < l.core.kg.size() ? l.core.kg[i] : 0.0));
+    const Parcel a = takeShare(l.surface, matter_share);
+    const Parcel b = takeShare(l.core, matter_share);
+    out.kg = massKg(a) + massKg(b);
+    out.energy_out_j = a.internal_energy_j + b.internal_energy_j + out.needed_j;
+    for (double &kg : l.initial_kg) kg *= 1.0 - matter_share;
+    l.layer_fuel_kg *= 1.0 - matter_share;
+    l.layer_melt_kg *= 1.0 - matter_share;
+    out.surplus_j = held - out.needed_j;
+    // What its spot held beyond what it cost is the body's heat -- unless
+    // nothing is left of the body to hold it, when it went with the matter.
+    if (massKg(l.surface) + massKg(l.core) > 0.0) {
+        l.surface.internal_energy_j += out.surplus_j;
+    } else {
+        out.energy_out_j += out.surplus_j;
+        out.surplus_j = 0.0;
+    }
+    w.s.ledger.matter_out_j += out.energy_out_j;
+    w.s.ledger.matter_out_kg += out.kg;
+    w.s.ledger.taken_j += out.needed_j;
+    w.s.ledger.returned_j += out.surplus_j;
+    w.s.ledger.taken_kg += out.kg;
+    l.meltwater_kg += out.melted_kg;
+    return out;
+}
+
 std::vector<Push> ThermoWorld::pushes() {
     Impl &w = *impl_;
     std::vector<Push> out;
@@ -1302,6 +1646,13 @@ void ThermoWorld::advance(double dt_s, const std::vector<Moved> &moved) {
     w.s.heaters.erase(std::remove_if(w.s.heaters.begin(), w.s.heaters.end(),
                                      [&](const Heater &h) { return h.what.start_s + h.what.seconds <= to; }),
                       w.s.heaters.end());
+    // Light on spots: like a heater, except what it brings beyond what the spot
+    // loses goes into the cells under it towards taking them away.
+    if (!w.s.spot_lights.empty() || std::any_of(w.s.lumps.begin(), w.s.lumps.end(),
+                                                [](const Lump &l) { return !l.spots.empty(); }))
+        w.lightSpots(from, to, dt_s);
+    else
+        w.s.spot_states.clear();
 
     for (GasRegion &region : w.s.regions) w.vent(region, dt_s);
     for (Lump &lump : w.s.lumps) {
@@ -1322,6 +1673,7 @@ void ThermoWorld::advance(double dt_s, const std::vector<Moved> &moved) {
         if (massKg(l.surface) > 0.0) l.peak_surface_k = std::max(l.peak_surface_k, w.temperature(l.surface));
         if (massKg(l.core) > 0.0) l.peak_core_k = std::max(l.peak_core_k, w.temperature(l.core));
     }
+    w.priceSpots();
 
     const auto outside = [&](const Parcel &p) {
         if (massKg(p) <= 0.0) return false;
@@ -1347,6 +1699,10 @@ void ThermoWorld::split(const std::string &body,
         total += share;
     }
     require(total > 0.0, "a split needs somewhere for the matter to go");
+    // Light's heat held in its spots is the body's heat from here: a spot is a
+    // cell of the whole, and the pieces are new bodies (a declared choice --
+    // the light finds its spots again on the pieces at its next trace).
+    w.returnSpots(w.s.lumps[index]);
     Lump parent = std::move(w.s.lumps[index]);
     w.s.lumps.erase(w.s.lumps.begin() + static_cast<std::ptrdiff_t>(index));
     double left = 1.0;
@@ -1490,6 +1846,7 @@ std::vector<BodyHeat> ThermoWorld::bodies() const {
         heat.reacting = l.fuel_use_kg_s > 0.0 || std::abs(l.heat_release_w) > 1.0;
         heat.declared = l.declared;
         heat.parked = l.parked;
+        heat.spot_j = Impl::spotEnergy(l);
         heat.melt_kg_s = l.melt_kg_s;
         heat.melting = l.melt_kg_s > 0.0;
         heat.boil_kg_s = l.boil_kg_s;

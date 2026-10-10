@@ -2534,9 +2534,19 @@ def probe_light(session):
                       'at_m': c.get('at_m'), 'normal': c.get('normal'), 'area_m2': c.get('area_m2')})
     lit = sorted(o.get('lit', []), key=lambda b: -b.get('absorbed_w', 0.0))[:8]
     w = o.get('watts') or {}
+    def row(b):
+        out = {'name': b['body'], 'absorbed_w': _round(b.get('absorbed_w', 0.0), 3)}
+        # Its brightest spot (docs/light-spots.md): watts, area, how hot, and
+        # what of it is taking matter away; and what light has taken of it.
+        if b.get('spot'):
+            out['spot'] = b['spot']
+        if b.get('taken'):
+            out['taken'] = b['taken']
+        return out
     return {'sent_w': _round(w.get('sent', 0.0), 3), 'heated_w': _round(w.get('heated', 0.0), 3),
+            'spots_w': _round(w.get('spots', 0.0), 3),
             'residual_w': w.get('residual'), 'joules': o.get('joules'), 'photocells': cells,
-            'lit': [{'name': b['body'], 'absorbed_w': _round(b.get('absorbed_w', 0.0), 3)} for b in lit],
+            'lit': [row(b) for b in lit], 'taken': o.get('taken', []),
             'lights': o.get('lights', []), 'paths': o.get('paths', []), 'cost': o.get('cost')}
 
 
@@ -2554,6 +2564,26 @@ def ingest_light(session, reply):
         power = c.get('power_w', 0.0)
         if not h or h[-1][1] != power:
             h.append((round(session.t, 4), power))
+    # Cells light has taken away (docs/light-spots.md): each is news, and a
+    # part it has taken into pieces is cut through -- the "cut" station rule's
+    # news, whatever did the cutting.
+    count = o.get('taken_count', 0) or 0
+    seen = session.__dict__.get('_light_taken', 0)
+    if count > seen and hasattr(session, '_event'):
+        taken = o.get('taken') or []
+        for t in taken[max(0, len(taken) - (count - seen)):]:
+            fam = family(t.get('body'))
+            verb = {'chars': 'charred', 'melts': 'melted'}.get(t.get('how'), 'took')
+            session._event('light', f'the light {verb} {t.get("cm3", 0.0):.1f} cm3 of {fam} away '
+                           f'({t.get("j", 0.0):.0f} J, {t.get("j_per_cm3", 0.0):.2f} J/cm3)', body=fam,
+                           cm3=t.get('cm3'), j=t.get('j'))
+        session._light_taken = count
+        severed = session.__dict__.setdefault('_light_severed', set())
+        for fam in {family(t.get('body')) for t in taken}:
+            if fam in severed or sum(1 for name in session.bodies if family(name) == fam) < 2:
+                continue
+            severed.add(fam)
+            session._event('severed', f'the light burned {fam} through', body=fam)
 
 
 def light_station(rule, session):
@@ -2673,4 +2703,90 @@ KIT_HELP.update({
                   'battery), watts (10: about 4 W of light reach the eye), half_angle_deg (1). A thing in the beam '
                   'darkens the eye: a circuit switch {"photocell": "<name> eye", "closed_at_or_below_w": 1} closes '
                   'then',
+})
+
+
+# A laser: the engine's lamp made narrow (docs/light-spots.md). Its light comes
+# from one point into a cone; what makes it a laser is how narrow the cone is
+# and how much of what it draws comes out as light. The light it puts on a small
+# spot heats that spot faster than the body round it can carry the heat away,
+# and where it brings more than that, it takes the matter there away -- the
+# engine decides, from what the spot is made of.
+LASER_BANDS = {'visible': 1.0, 'infrared': 0.0}
+
+
+def _laser_aim(k, at, problems, name):
+    """The way a laser fires: aim [dx, dy, dz], or at aim_at (a part declared
+    before it) or aim_m (a point)."""
+    if k.get('aim') is not None:
+        aim = _unit(_vec(k.get('aim'), 3, name + ' aim', problems))
+        if aim is None:
+            problems.append(f'{name}: aim must point somewhere')
+        return aim, None
+    target = None
+    if k.get('aim_at') is not None:
+        aimed = (k.get('_known') or {}).get(k['aim_at'])
+        if aimed is None:
+            problems.append(f'{name}: aim_at must name a part declared before it')
+        else:
+            target = aimed['at_m']
+    elif k.get('aim_m') is not None:
+        target = _vec(k.get('aim_m'), 3, name + ' aim_m', problems)
+    else:
+        problems.append(f'{name}: a laser needs aim (a direction), aim_at (a part) or aim_m (a point)')
+    if target is None:
+        return None, None
+    aim = _unit([target[i] - at[i] for i in range(3)])
+    if aim is None:
+        problems.append(f'{name}: the target is where the laser is')
+    return aim, math.sqrt(sum((target[i] - at[i]) ** 2 for i in range(3)))
+
+
+def _kit_laser(k, problems, name):
+    """A laser: a small fixed housing, "<name> housing", and on it a lamp whose
+    light leaves at at_m along aim, in a beam beam_width_m wide a metre out
+    (or half_angle_deg), drawing watts from its battery and giving efficiency
+    of them as light, all of it visible light or all near infrared (band)."""
+    at = _vec(k.get('at_m'), 3, name + ' at_m', problems)
+    aim, _ = _laser_aim(k, at, problems, name)
+    if k.get('battery') is None:
+        problems.append(f'{name}: a laser needs the battery it runs from')
+    band = k.get('band', 'visible')
+    if band not in LASER_BANDS:
+        problems.append(f'{name}: band is "visible" or "infrared"')
+        band = 'visible'
+    watts = _num(k, 'watts', name, problems, 1000.0, 1.0, 5000.0)
+    efficiency = _num(k, 'efficiency', name, problems, 0.3, 0.01, 1.0)
+    if k.get('half_angle_deg') is not None:
+        half = _num(k, 'half_angle_deg', name, problems, 0.3, 0.05, 10.0)
+    else:
+        width = _num(k, 'beam_width_m', name, problems, 0.01, 0.002, 0.3)
+        half = max(0.05, min(10.0, math.degrees(math.atan(0.5 * width))))
+    rays = int(_num(k, 'rays', name, problems, 64, 8, 1024))
+    if aim is None:
+        return [], []
+    size = 0.06
+    housing = [at[i] - aim[i] * (0.5 * size + 0.005) for i in range(3)]
+    parts = [{'name': name + ' housing', 'shape': 'box', 'material': k.get('material', 'aluminum'),
+              'size_m': [size, size, size], 'at_m': [round(c, 6) for c in housing], 'turn_deg': [0, 0, 0],
+              'fixed': True}]
+    extra = k['_light'] if k.get('_light') is not None else {}
+    # Its light is watts x efficiency: a lamp whose lumens a watt drawn are
+    # efficiency x the 300 lumens a watt of its light is taken to carry.
+    extra.setdefault('lamps', []).append({'name': name, 'on': name + ' housing', 'at_m': at,
+                                          'battery': k.get('battery'), 'watts': watts,
+                                          'efficacy_lm_w': round(300.0 * efficiency, 9), 'axis': aim,
+                                          'half_angle_deg': round(half, 9), 'rays': rays,
+                                          'radiant_efficacy_lm_w': 300.0, 'visible_share': LASER_BANDS[band]})
+    return parts, []
+
+
+KITS.update({'laser': _kit_laser})
+KIT_HELP.update({
+    'laser': 'a laser: "<name> housing" (a fixed 6 cm box) and a beam leaving at at_m [x, y, z] along aim [dx, dy, dz] '
+             '(or at aim_at, a part declared before it, or aim_m [x, y, z]); battery (what it runs from), watts (1000: '
+             'what it draws, at most 5000), efficiency (0.3: the share of that which comes out as light), '
+             'beam_width_m (0.01: how wide the beam is a metre out; or half_angle_deg), band ("visible", or '
+             '"infrared", which glass and ice absorb within a few centimetres), rays (64). Where the beam lands on '
+             'a small spot it chars oak and melts ice through; mirrors (polished) bounce it',
 })

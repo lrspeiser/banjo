@@ -113,6 +113,14 @@ struct Ray {
     Vec3 from{};
     Vec3 along{};            // unit
     Power power_w{};
+    // The bundle of light the ray stands for: its cross-section where it
+    // starts (a sun ray's square of the grid), and the solid angle it spreads
+    // into (a lamp's ray, a point source's share of its cone). Its section a
+    // distance d along its way is section + spread d^2 -- through plane mirrors
+    // exactly, through a lens not (a lens's focus is found from where the rays
+    // land, not from this). What a lit spot's size is reckoned from.
+    double section_m2{};
+    double spread_sr{};
     int ignore{-1};          // a body it starts inside and passes out of unhindered
     unsigned light{};        // which light sent it, for the drawn paths
     bool drawn{};            // keep its path, to draw
@@ -161,9 +169,30 @@ struct Path {
     std::vector<double> power_w;   // one per leg: points.size() - 1, both bands
 };
 
+// Where light was absorbed, one record each time a ray gives some of its power
+// to a body: what the host needs to say WHERE a body is heated, not only how
+// much (docs/light-spots.md). The records of a body add up to its absorbed_w.
+struct Absorption {
+    int body{-1};
+    Vec3 at{};               // the surface point; through a clear body, where the leg inside starts
+    Vec3 along{};            // the way the light was going
+    Vec3 normal{};           // at a surface: its normal there, facing back toward the light
+    double power_w{};        // both bands
+    double section_m2{};     // the ray's bundle's cross-section here, across its way (Ray)
+    // Absorbed on the way through a clear body (Beer and Lambert) rather than
+    // at its surface: how long the leg inside is, and each band's power where
+    // it starts and the rate it is absorbed at, so the host can say how much
+    // of it each part of the leg took.
+    bool through{};
+    double length_m{};
+    Power entering_w{};
+    Power per_m{};
+};
+
 struct Result {
     Ledger ledger;
     std::vector<double> absorbed_w;   // by body index, both bands
+    std::vector<Absorption> absorptions;
     std::vector<Path> paths;
     std::size_t rays{}, legs{}, casts{};
     // Rays that came into a body across a sharp edge and found themselves

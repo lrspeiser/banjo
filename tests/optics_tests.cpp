@@ -14,7 +14,7 @@
 //    against the open sun, and the same ray grid traced by hand through a
 //    perfect sphere agrees.
 // 6. What absorbs light is heated by exactly what it absorbed.
-// 7. A heat lamp's beam heats an oak cord until it burns and parts.
+// 7. A heat lamp's beam chars through an oak cord where it lands, and parts it.
 // 8. A beam on a light sensor closes a circuit's switch; a ball that falls into
 //    the beam opens it; a hand cannot work it.
 // 9. The ledger closes, and a world with no light is untouched by all this.
@@ -444,34 +444,34 @@ void aHeatLampBurnsAnOakCord() {
     // A filament heat lamp: 2 kW at 15 lumens a watt; a filament's light carries
     // about 17 lumens a radiant watt, a tenth of it visible.
     beam(*world, {-0.25, 0.945, 0.0}, {1.0, 0.0, 0.0}, 256, 3.0, 2000.0, 15.0, 17.0, 0.1);
+    // Its beam is about 26 mm across where it meets the cord, so its light is
+    // concentrated on a spot (docs/light-spots.md): it chars the oak through
+    // where it lands, and the weight falls with what is below.
     bool parted = false;
-    double parted_at = 0.0, hottest = 0.0;
-    std::string why;
+    double parted_at = 0.0, cord_w = 0.0, spot_k = 0.0;
+    std::string how;
     for (int i = 0; i < 60 * 240 && !parted; ++i) {
         tick(*world);
-        for (const LiveJoint &j : world->joints())
-            if (j.id == top && !j.attached) {
+        for (const LiveOptics::Lit &b : world->optics().bodies)
+            if (b.body == "cord" && b.absorbed_w > 0.0) {
+                cord_w = b.absorbed_w;
+                spot_k = b.spot_k;
+                how = b.spot_how;
+            }
+        for (const LiveBodyPose &b : world->poses())
+            if (b.name == "weight" && b.position_m.y < 0.81 - 0.05) {
                 parted = true;
                 parted_at = (i + 1) * kDt;
             }
     }
     const LiveOptics o = world->optics();
-    double cord_w = 0.0;
-    for (const LiveOptics::Lit &b : o.bodies)
-        if (b.body == "cord") cord_w = b.absorbed_w;
-    const auto heat = nlohmann::json::parse(world->thermoReport(false));
-    bool burned = false;
-    for (const auto &b : heat.at("bodies"))
-        if (b.at("name") == "cord") {
-            hottest = b.value("temperature_k", 0.0);
-            burned = b.value("reacting", false);
-        }
     std::cout << "    heat lamp: " << o.watts.sent << " W of light, the cord absorbing " << cord_w
-              << " W; it parted at " << parted_at << " s, its surface " << hottest << " K"
-              << (burned ? ", burning" : "") << "; " << o.traces << " traces of " << o.rays << " rays and "
-              << o.casts << " casts, " << o.trace_ms / o.traces << " ms each\n";
+              << " W, its spot at " << spot_k << " K (" << how << "); " << o.taken.size()
+              << " cell(s) of it taken away, and the weight fell at " << parted_at << " s; " << o.traces
+              << " traces of " << o.rays << " rays and " << o.casts << " casts, " << o.trace_ms / o.traces
+              << " ms each\n";
     require(parted, "the heat lamp's light burns through the cord");
-    require(burned, "and the cord is burning");
+    require(!o.taken.empty() && how == "chars", "where it lands: the oak there is charred away");
     checkLedger(o, "heat lamp");
 }
 
