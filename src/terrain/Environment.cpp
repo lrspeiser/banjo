@@ -168,6 +168,25 @@ Landscape landscapeFrom(const Json &terrain, std::uint64_t *seed = nullptr) {
         p.sand_m = 0.0;
         p.discharge_m3_s = 0.0;
     }
+    if (kind == "flume") {
+        // Level and fine like a clearing, with no river unless it says so.
+        p.cell_m = 0.1;
+        p.soil_m = 0.4;
+        p.sand_m = 0.0;
+        p.discharge_m3_s = 0.0;
+        p.trench_z_m = number(options, "trench_z_m", p.trench_z_m, -1000.0, 1000.0);
+        p.trench_width_m = number(options, "trench_width_m", p.trench_width_m, 0.05, 100.0);
+        p.trench_depth_m = number(options, "trench_depth_m", p.trench_depth_m, 0.01, 20.0);
+        p.trench_slope = number(options, "trench_slope", p.trench_slope, 0.0, 0.1);
+        p.reservoir_to_x_m = number(options, "reservoir_to_x_m", p.reservoir_to_x_m, -1000.0, 1000.0);
+        p.reservoir_level_m = number(options, "reservoir_level_m", p.reservoir_level_m, -1.0e9, 0.0);
+        options.erase("trench_z_m");
+        options.erase("trench_width_m");
+        options.erase("trench_depth_m");
+        options.erase("trench_slope");
+        options.erase("reservoir_to_x_m");
+        options.erase("reservoir_level_m");
+    }
     onlyKeys(options, {"kind", "nx", "nz", "cell_m", "discharge_m3_s", "lake_level_m", "soil_m", "sand_m"},
              "a simple landscape");
     p.nx = static_cast<int>(number(options, "nx", p.nx, 4, 1024));
@@ -181,8 +200,9 @@ Landscape landscapeFrom(const Json &terrain, std::uint64_t *seed = nullptr) {
     if (kind == "channel") return channel(p);
     if (kind == "flat") return flatGround(p);
     if (kind == "clearing") return clearing(p);
-    throw std::invalid_argument("terrain.generate is \"valley\", \"basin\", \"channel\", \"flat\" or "
-                                "\"clearing\", not \"" + kind + "\"");
+    if (kind == "flume") return flume(p);
+    throw std::invalid_argument("terrain.generate is \"valley\", \"basin\", \"channel\", \"flat\", "
+                                "\"clearing\" or \"flume\", not \"" + kind + "\"");
 }
 
 template <typename T> std::vector<T> decodeArray(const Json &state, const char *key, std::size_t count) {
@@ -1393,17 +1413,28 @@ void Environment::wakeWhatTheWaterReached(JoltWorld &world, const std::vector<wa
         std::vector<water::Reaction> ignored;
         const std::vector<water::BodyForce> now = coupling_.forces(*water_, {asked}, ignored);
         const Vec3 force = now.empty() ? Vec3{} : now.front().force_n;
+        const Vec3 torque = now.empty() ? Vec3{} : now.front().torque_n_m;
         const double weight = b.density_kg_m3 * b.volume_m3 * water_->settings().gravity_m_s2;
         auto [rest, fresh] = rest_force_.try_emplace(b.name, force);
-        if (fresh) continue;
-        if (length(force - rest->second) > 0.05 * weight) {
+        auto [rest_turn, fresh_turn] = rest_torque_.try_emplace(b.name, torque);
+        if (fresh || fresh_turn) continue;
+        // The same twentieth of its weight, as a turn at half its size: a
+        // stream reaching a wheel asleep on its pin turns it long before it
+        // pushes as hard as a twentieth of the wheel's weight.
+        const double size = std::cbrt(std::max(b.volume_m3, 1.0e-12));
+        if (length(force - rest->second) > 0.05 * weight ||
+            length(torque - rest_turn->second) > 0.05 * weight * 0.5 * size) {
             world.wake(b.body_id);
             rest->second = force;
+            rest_turn->second = torque;
         }
     }
     // A body that is awake is not at rest: forget what it rested at.
     for (const water::BodyInWater &b : bodies)
-        if (b.awake) rest_force_.erase(b.name);
+        if (b.awake) {
+            rest_force_.erase(b.name);
+            rest_torque_.erase(b.name);
+        }
 }
 
 // ---- edits ------------------------------------------------------------------

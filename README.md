@@ -21,7 +21,8 @@ design a new one on a bench, drive it with the arrow keys, and install it in
 the world, where it breaks like everything else.
 
 > **New, 10 October 2026: the machine.** Open `/machine` on the lab server (`scripts/voxel-lab.py`) to watch a chain reaction
-> that the engine calculates live: a marble, dominoes, a lever that closes an electric switch, a coil that burns through an
+> that the engine calculates live: a stream turns a water wheel that winds a rope to free a marble, then dominoes, a lever
+> that closes an electric switch, a coil that burns through an
 > oak peg, and a weight that breaks a glass plate. Type what you want to add and a language model builds it from the same
 > parts; the engine decides what happens. See [the machine checkpoint](docs/machine-world-checkpoint.md).
 

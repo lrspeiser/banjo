@@ -59,15 +59,63 @@ class Declaration(unittest.TestCase):
     def test_default_machine_compiles_from_general_parts(self):
         c = mw.compile_spec(mw.default_spec())
         names = {p['name'] for p in c['parts']}
-        for n in ('marble', 'domino 1', 'domino 8', 'lever', 'lever pivot', 'weight', 'weight peg', 'glass plate'):
+        for n in ('water wheel', 'ramp gate', 'marble', 'domino 1', 'domino 8', 'lever', 'lever pivot', 'weight',
+                  'weight peg', 'glass plate'):
             self.assertIn(n, names)
-        self.assertEqual({j['kind'] for j in c['joints']}, {'hinge', 'fix'})
+        self.assertEqual({j['kind'] for j in c['joints']}, {'hinge', 'fix', 'slide', 'drum'})
         self.assertEqual(c['circuits'][0]['switch'], {'hinge': 'lever hinge', 'closed_at_or_above_deg': 8.0})
+        self.assertEqual(c['ground']['kind'], 'flume')
         self.assertLess(c['cells'], mw.MAX_CELLS)
         for p in c['parts']:
+            if p['shape'] == 'compound':
+                continue   # exact bodies, not built from cells
             for s in p['size_m']:
                 self.assertAlmostEqual(s / c['cell_m'], round(s / c['cell_m']), places=6, msg=p['name'])
             self.assertGreaterEqual(mw.lowest_point(p), -1e-9, p['name'])
+        wheel = next(p for p in c['parts'] if p['name'] == 'water wheel')
+        bed = mw.ground_height(c['ground'], wheel['at_m'][0], wheel['at_m'][2])
+        self.assertAlmostEqual(wheel['at_m'][1], bed + 0.065 + 0.4, places=9)
+        rope = next(j for j in c['joints'] if j['kind'] == 'drum')
+        gate = next(p for p in c['parts'] if p['name'] == 'ramp gate')
+        self.assertAlmostEqual(rope['load_point_m'][2], gate['at_m'][2] - 0.25, places=3,
+                               msg='the rope is tied to the gate end that moves toward the drum')
+
+    def test_the_flume_ground_is_checked_like_any_other_part(self):
+        flume = {'kind': 'flume', 'trench_z_m': 1.0, 'trench_width_m': 0.5, 'trench_depth_m': 0.35}
+        ground = mw.compile_ground(flume, [])
+        self.assertEqual(mw.ground_height(ground, 0.0, 0.0), 0.0)
+        self.assertAlmostEqual(mw.ground_height(ground, 0.0, 1.0), -0.35 - 0.005 * (0.0 - ground['x0_m']), places=12)
+        base = {'schema': mw.SCHEMA, 'ground': flume}
+        cases = [
+            ({'ground': dict(flume, trench_z_m=2.9)}, 'inside the ground'),
+            ({'ground': dict(flume, kind='lake')}, 'flume'),
+            ({'parts': [part('a', [.1, .1, .1], [0, -0.1, 1.0])]}, None),     # down in the trench: allowed
+            ({'parts': [part('a', [.1, .1, .6], [0, -0.1, 0.8])]}, 'into the ground'),   # across the bank
+            ({'parts': [part('a', [.1, .1, .1], [6, .05, 0])]}, 'off the edge of the ground'),
+            ({'kits': [{'kit': 'water_wheel', 'name': 'w', 'at_m': [0, 0, 1]}], 'ground': None}, 'flume'),
+            ({'kits': [{'kit': 'water_wheel', 'name': 'w', 'at_m': [0, 0, 1], 'paddle_width_m': 0.45}]}, 'at most'),
+        ]
+        for extra, words in cases:
+            with self.subTest(words=words, extra=extra):
+                spec = dict(base, **extra)
+                if words is None:
+                    mw.compile_spec(spec)
+                    continue
+                with self.assertRaises(mw.MachineRefused) as refused:
+                    mw.compile_spec(spec)
+                self.assertTrue(any(words in q for q in refused.exception.problems), refused.exception.problems)
+
+    def test_compound_parts_become_exact_bodies_in_the_scene(self):
+        c = mw.compile_spec({'schema': mw.SCHEMA, 'ground': {'kind': 'flume'},
+                             'kits': [{'kit': 'water_wheel', 'name': 'w', 'at_m': [0, 0, 1], 'paddles': 6}]})
+        scene = mw.scene_of(c)
+        self.assertEqual([b['name'] for b in scene['precise_rigid_bodies']], ['w'])
+        self.assertEqual(len(scene['precise_rigid_bodies'][0]['parts']), 2 + 6)
+        self.assertNotIn('w', [b['name'] for b in scene['bodies']])
+        self.assertEqual(scene['terrain']['generate']['kind'], 'flume')
+        q = mw.quaternion_of_turn([0, 0, 90])
+        self.assertAlmostEqual(q[0], math.cos(math.pi / 4), places=12)
+        self.assertAlmostEqual(q[3], math.sin(math.pi / 4), places=12)
 
     def test_rotation_matches_the_engine(self):
         for degrees in ([30, 0, 45], [20, 35, -50], [-60, 25, 10], [0, 90, 0], [0, 0, -20]):
@@ -80,7 +128,7 @@ class Declaration(unittest.TestCase):
     def test_refuses_what_cannot_be_built_honestly(self):
         base = {'schema': mw.SCHEMA, 'cell_m': 0.02}
         cases = [
-            ({'parts': [part('a', [.1, .1, .1], [0, .02, 0])]}, 'below the ground'),
+            ({'parts': [part('a', [.1, .1, .1], [0, .02, 0])]}, 'into the ground'),
             ({'parts': [part('a', [.1, .1, .1], [0, .05, 0]), part('b', [.1, .1, .1], [.05, .05, 0])]}, 'overlap'),
             ({'parts': [part('a', [.1, .1, .1], [0, .05, 0], material='unobtainium')]}, 'material'),
             ({'parts': [part('a', [.1, .1, .1], [0, .05, 0])],
@@ -129,13 +177,12 @@ class Engine(unittest.TestCase):
     def test_default_machine_runs_every_built_station_in_order_and_hands_heat_over_exactly(self):
         with tempfile.TemporaryDirectory() as logs:
             compiled = mw.compile_spec(mw.default_spec())
-            r = mw.rehearse(compiled, ENGINE, Path(logs), seconds=30, wall_limit_s=120)
+            r = mw.rehearse(compiled, ENGINE, Path(logs), seconds=40, wall_limit_s=200)
             self.assertIsNone(r['error'])
             built = [(s, row) for s, row in zip(compiled['stations'], r['stations']) if s.get('done_when')]
             self.assertTrue(all(row['done'] for _, row in built), r['stations'])
             times = [row['at_s'] for _, row in built]
             self.assertEqual(times, sorted(times), 'stations happened out of order')
-            self.assertFalse(r['stations'][-1]['done'], 'the unbuilt water wheel cannot be done')
             texts = ' | '.join(e['text'] for e in r['events'])
             self.assertIn('marble hits domino 1', texts)
             self.assertIn('glass plate broke into', texts)

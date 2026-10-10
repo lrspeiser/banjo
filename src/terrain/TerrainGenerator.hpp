@@ -167,6 +167,11 @@ struct SimpleParameters {
     double lake_level_m{1.0};
     double soil_m{0.6};
     double sand_m{0.2};
+    // A flume (flume()): a straight trench along x through level ground.
+    double trench_z_m{0.0}, trench_width_m{0.5}, trench_depth_m{0.35}, trench_slope{0.005};
+    // Still water in the trench up to this x, its surface at this height;
+    // a level above the ground's y = 0 is refused.
+    double reservoir_to_x_m{0.0}, reservoir_level_m{-1.0e9};
 };
 [[nodiscard]] Landscape basin(const SimpleParameters &parameters);
 [[nodiscard]] Landscape channel(const SimpleParameters &parameters);
@@ -177,6 +182,14 @@ struct SimpleParameters {
 // tool on both (docs/ground-work.md). Made on the spot, like the others.
 inline constexpr double kClearingRockProudM = 0.12;
 [[nodiscard]] Landscape clearing(const SimpleParameters &parameters);
+// A flume: level ground with its surface at y = 0 (soil over rock), and a
+// straight trench of bare rock along x at trench_z_m, trench_width_m wide,
+// trench_depth_m deep at the West edge and falling trench_slope along +x. Its
+// source "the flume" is on the West edge across the trench; its mouth "the
+// flume's end" on the East edge. Optionally still water stands in the trench
+// up to reservoir_to_x_m at reservoir_level_m, released by nothing but what the
+// world does to whatever holds it back. Made on the spot; nothing settled.
+[[nodiscard]] Landscape flume(const SimpleParameters &parameters);
 
 // Put a landscape's still ponds into water by their LEVEL: every column of a
 // pond that no river runs through gets exactly the pond's surface and no

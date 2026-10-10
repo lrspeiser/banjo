@@ -54,6 +54,22 @@ function makeMesh(b) {
   let mesh;
   if (b.shape === 'sphere') mesh = new THREE.Mesh(new THREE.SphereGeometry(b.dimensions_m[0] / 2, 28, 18), look());
   else if (b.shape === 'cone') mesh = new THREE.Mesh(new THREE.ConeGeometry(b.dimensions_m[0] / 2, b.dimensions_m[1], 24), look());
+  else if (b.shape === 'compound' && Array.isArray(b.rigid_parts_local)) {
+    // An exact rigid body made of boxes and cylinders, each about its centre
+    // of mass, as the engine sends it.
+    mesh = new THREE.Group();
+    for (const part of b.rigid_parts_local) {
+      const piece = new THREE.Mesh(part.shape === 'cylinder'
+        ? new THREE.CylinderGeometry(part.dimensions_m[0] / 2, part.dimensions_m[0] / 2, part.dimensions_m[1], 20)
+        : new THREE.BoxGeometry(...part.dimensions_m), look());
+      piece.position.set(...part.center_local_m);
+      const r = part.rotation_wxyz;
+      piece.quaternion.set(r[1], r[2], r[3], r[0]);
+      mesh.add(piece);
+    }
+    mesh.material = mesh.children[0].material;
+    mesh.geometry = {dispose() { for (const c of mesh.children) c.geometry.dispose(); }};
+  }
   else if (b.shape === 'hull' && b.cells_local_m && b.cells_local_m.length) {
     const cell = machine ? machine.cell_m : .02;
     mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(cell, cell, cell), look(), b.cells_local_m.length);
@@ -107,6 +123,50 @@ function syncWires() {
   }
 }
 
+// The ground the engine built: its own heights, one per column.
+let terrain = null, water = null;
+function decodeFloats(b64) {
+  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  return new Float32Array(bytes.buffer, 0, bytes.length / 4);
+}
+function syncGround(view) {
+  if (terrain) { scene.remove(terrain); terrain.geometry.dispose(); terrain = null; }
+  ground.visible = grid.visible = !view;
+  if (!view || !view.grid) return;
+  const g = view.grid, heights = decodeFloats(view.heights_b64);
+  const width = (g.nx - 1) * g.cell_m, depth = (g.nz - 1) * g.cell_m;
+  const geometry = new THREE.PlaneGeometry(width, depth, g.nx - 1, g.nz - 1);
+  geometry.rotateX(-Math.PI / 2);
+  const pos = geometry.attributes.position;
+  // After the turn, vertex (i, j) is column i along x and row j along z.
+  for (let j = 0; j < g.nz; j++) for (let i = 0; i < g.nx; i++) pos.setY(j * g.nx + i, heights[j * g.nx + i]);
+  geometry.computeVertexNormals();
+  terrain = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({color: 0x4a5b3c, roughness: 1, flatShading: true}));
+  terrain.position.set(g.x0_m + width / 2, 0, g.z0_m + depth / 2);
+  scene.add(terrain);
+  terrain.userData.grid = g;
+}
+// The water: each wet column's surface, in millimetres above base_m.
+function syncWater(w) {
+  if (water) { scene.remove(water); water.geometry.dispose(); water = null; }
+  if (!w || !terrain || !w.box || !w.box[2] || !w.surface_mm_b64) return;
+  const g = terrain.userData.grid, [i0, j0, ni, nj] = w.box;
+  const bytes = Uint8Array.from(atob(w.surface_mm_b64), c => c.charCodeAt(0));
+  const mm = new Uint16Array(bytes.buffer, 0, bytes.length / 2);
+  const wet = [];
+  for (let j = 0; j < nj; j++) for (let i = 0; i < ni; i++) {
+    const v = mm[j * ni + i];
+    if (v) wet.push([g.x0_m + (i0 + i) * g.cell_m, w.base_m + v / 1000, g.z0_m + (j0 + j) * g.cell_m]);
+  }
+  if (!wet.length) return;
+  const tile = new THREE.PlaneGeometry(g.cell_m, g.cell_m);
+  tile.rotateX(-Math.PI / 2);
+  water = new THREE.InstancedMesh(tile, new THREE.MeshStandardMaterial({color: 0x3f8fd8, transparent: true, opacity: .72, roughness: .15}), wet.length);
+  const m = new THREE.Matrix4();
+  wet.forEach((p, k) => water.setMatrixAt(k, m.makeTranslation(p[0], p[1], p[2])));
+  scene.add(water);
+}
+
 // Ropes and springs: a line between their two attachment points, each fixed
 // in its body's own frame and carried by that body's measured pose. Hidden
 // once the engine reports the joint gone.
@@ -129,7 +189,16 @@ function syncRopes() {
     ropes.push({line, name: j.name, a: j.a, b: j.b, localA: a, localB: b});
   }
 }
+const drumLines = new Map();
 function updateRopes() {
+  // A rope on a drum: from where the engine says it leaves the drum to where
+  // it meets its load.
+  for (const j of (readouts.joints || []).filter(j => j.kind === 'drum' && j.leaves && j.meets)) {
+    let line = drumLines.get(j.name);
+    if (!line) { line = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({color: 0xd8c9a3})); scene.add(line); drumLines.set(j.name, line); }
+    line.geometry.setFromPoints([new THREE.Vector3(...j.leaves), new THREE.Vector3(...j.meets)]);
+    line.visible = j.attached !== false;
+  }
   const gone = new Set((readouts.joints || []).filter(j => j.attached === false).map(j => j.name));
   const at = (name, v) => {
     const b = world.bodies.get(name); if (!b) return null;
@@ -256,6 +325,9 @@ async function build(next, start) {
     $('spec').value = JSON.stringify(spec, null, 1);
     const notes = $('notes'); notes.replaceChildren();
     for (const n of machine.notes || []) { const li = document.createElement('li'); li.textContent = n; notes.append(li); }
+    for (const [, line] of drumLines) { scene.remove(line); line.geometry.dispose(); }
+    drumLines.clear();
+    syncGround(opened.ground); syncWater(opened.water);
     syncMeshes([...world.bodies.values()]); syncWires(); syncRopes(); updateWires(); renderStations(); renderReadings(opened); renderClock(opened);
     frameCamera();
     if (start) await setPlaying(true);
@@ -294,6 +366,7 @@ async function poll(mine) {
       world = mergeFrame(world, frame);
       readouts = frame.readouts || readouts; playing = frame.playing; lastFrame = frame;
       syncMeshes(changed.map(b => world.bodies.get(b.name)));
+      if (frame.water) syncWater(frame.water);
       updateWires(); addEvents(frame.events); renderStations(); renderReadings(frame); renderClock(frame);
     } catch (e) {
       if (e.status === 410) { $('clock').textContent = 'This machine stopped running on the server; press Set up again'; session = null; return; }

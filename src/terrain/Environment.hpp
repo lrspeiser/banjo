@@ -485,8 +485,10 @@ private:
     std::uint64_t commits_{};
     std::set<int> pending_chunks_;
     TerrainField::Rect pending_wake_{};
-    // What the water pressed on each sleeping body with when it went to sleep.
+    // What the water pressed on each sleeping body with when it went to sleep,
+    // and the turn it put on it: a wheel on its pin is moved by the second.
     std::unordered_map<std::string, Vec3> rest_force_;
+    std::unordered_map<std::string, Vec3> rest_torque_;
     // Who was in the water at the last push, for the report.
     struct Afloat {
         std::string name;

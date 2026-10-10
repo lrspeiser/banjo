@@ -838,6 +838,72 @@ void exactCompoundsHaveNativeWaterForcesAndRetainTheirState() {
     }
 }
 
+// A flume (level ground at y = 0, a rock trench along x, a reservoir up to a
+// declared x) and an oak paddle wheel on a pin in it, released dry: it goes to
+// sleep before the water arrives, and the stream reaching it must wake it and
+// turn it, the way the flow goes, by drag on its paddles alone.
+void aStreamWakesAndTurnsAWheelAsleepInTheFlume() {
+    constexpr double kPi = 3.14159265358979323846;
+    const double tz = 1.0, depth = .35, slope = .005, x0 = -.5 * 99 * .1;
+    const Json flume = {{"kind","flume"},{"nx",100},{"nz",60},{"trench_z_m",tz},{"trench_width_m",.5},
+                        {"trench_depth_m",depth},{"trench_slope",slope},{"discharge_m3_s",.08},
+                        {"reservoir_to_x_m",-3.5},{"reservoir_level_m",-.15}};
+    const double wx = 1.0, bed = -depth - slope * (wx - x0), hub = bed + .065 + .4;
+    Json parts = Json::array();
+    const double q = std::sqrt(.5);
+    parts.push_back({{"shape","cylinder"},{"dimensions_m",{.06,.55,.06}},{"center_local_m",{0,0,.25}},
+                     {"rotation_wxyz",{q,q,0,0}}});
+    parts.push_back({{"shape","cylinder"},{"dimensions_m",{.22,.36,.22}},{"center_local_m",{0,0,0}},
+                     {"rotation_wxyz",{q,q,0,0}}});
+    for (int k = 0; k < 8; ++k) {
+        const double th = 2 * kPi * k / 8;
+        parts.push_back({{"shape","box"},{"dimensions_m",{.3,.03,.36}},
+                         {"center_local_m",{.25 * std::cos(th),.25 * std::sin(th),0}},
+                         {"rotation_wxyz",{std::cos(th / 2),0,0,std::sin(th / 2)}}});
+    }
+    const Json scene = {{"bodies",{box("wheel post","concrete",{.12,.16,.12},{wx,.08,tz + .57},true)}},
+                        {"precise_rigid_bodies",{{{"name","water wheel"},{"material","oak"},
+                                                  {"position_m",{wx,hub,tz}},{"parts",parts}}}},
+                        {"terrain",{{"generate",flume}}}};
+    auto world = open(scene);
+    const auto &ground = *world->environment();
+    // The ground is what was declared: level banks, a sloping rock bed, still
+    // water up to the reservoir's end and none after it.
+    near(ground.groundHeightAt(0.0, -1.0), 0.0, 1e-9, "flume bank is level at y = 0");
+    near(ground.groundHeightAt(wx, tz), bed, 1e-6, "flume bed falls along x");
+    const auto *water = ground.water();
+    const auto &g = water->grid();
+    const auto column = [&](double x, double z) {
+        return g.at(static_cast<int>(std::lround((x - g.x0) / g.dx)), static_cast<int>(std::lround((z - g.z0) / g.dx)));
+    };
+    near(water->depth(column(-3.95, tz)), -.15 - (-depth - slope * (-3.95 - x0)), 1e-9, "reservoir stands to its level");
+    near(water->depth(column(0.0, tz)), 0.0, 0.0, "trench dry beyond the reservoir");
+    const auto pin = world->hinge("wheel post", "water wheel", {wx, hub, tz}, {0, 0, 1}, -180.0, 180.0, .2);
+    require(pin != 0, "the wheel goes on its pin");
+    double last = 0.0, total = 0.0, before = 0.0;
+    for (int tenth = 1; tenth <= 120; ++tenth) {
+        run(*world, .1);
+        double at = 0.0;
+        for (const auto &j : world->joints()) if (j.id == pin) at = j.at;
+        total += std::remainder(at - last, 2 * kPi);
+        last = at;
+        if (tenth == 10) before = total;
+    }
+    require(std::abs(before) < .05, "the wheel stayed still while the trench was dry");
+    require(total > 6.0, "the stream turned the wheel at least a turn: " + std::to_string(total) + " rad");
+    near(water->residual(), 0, 1e-9 * std::max(1.0, water->volume()), "water volume ledger in the flume");
+    for (const auto &[key, value] : std::vector<std::pair<std::string, double>>{
+             {"trench_z_m", 2.9}, {"reservoir_level_m", .1}}) {
+        Json bad = scene;
+        bad["terrain"]["generate"][key] = value;
+        bool refused = false;
+        try { (void)open(bad); } catch (const std::exception &) { refused = true; }
+        require(refused, "a flume with " + key + " = " + std::to_string(value) + " is refused");
+    }
+    std::cout << "    flume: dry for the first second (" << before << " rad), then " << total
+              << " rad in 12 s; water residual " << water->residual() << " m^3\n";
+}
+
 LiveNativePlayer nativePlayerOf(const LiveWorld &world, const std::string &actor) {
     for (const auto &player : world.nativePlayers()) if (player.actor == actor) return player;
     throw std::runtime_error("native player missing: " + actor);
@@ -1524,6 +1590,7 @@ int main(int argc, char **argv) {
         {"native player walks across uneven cells the same both ways",nativePlayerWalksAcrossUnevenCellsTheSameBothWays},
         {"native player inputs are bounded and cannot teleport",nativePlayerInputsAreBoundedAndCannotTeleport},
         {"exact compounds have native water forces and retain their state",exactCompoundsHaveNativeWaterForcesAndRetainTheirState},
+        {"a stream wakes and turns a wheel asleep in the flume",aStreamWakesAndTurnsAWheelAsleepInTheFlume},
         {"a closed basin conserves water with a log in it", aClosedBasinConservesWaterWithALogInIt},
         {"a lake at rest stays at rest", aLakeAtRestStaysAtRest},
         {"a dam of loose blocks raises the river", aDamOfLooseBlocksRaisesTheRiver},

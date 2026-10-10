@@ -27,8 +27,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = 'banjo.machine.v1'
 MATERIALS = ('glass', 'oak', 'iron', 'concrete', 'ceramic', 'ice', 'aluminum', 'rubber')
-SHAPES = ('box', 'sphere', 'cone')
-JOINT_KINDS = ('hinge', 'fix', 'tie', 'spring')
+SHAPES = ('box', 'sphere', 'cone', 'compound')
+SUB_SHAPES = ('box', 'cylinder')
+JOINT_KINDS = ('hinge', 'fix', 'tie', 'spring', 'slide', 'drum')
 DT_S = 1.0 / 240.0
 STEPS_PER_CALL = 4
 MAX_PARTS = 120
@@ -147,6 +148,94 @@ def overlap_depth(a, b):
     return best
 
 
+# ---- the ground ----------------------------------------------------------------
+
+def compile_ground(g, problems):
+    """None (a level floor at y = 0), or a flume: level ground at y = 0 with a
+    straight trench of water along x (src/terrain TerrainGenerator flume)."""
+    if g is None:
+        return None
+    if not isinstance(g, dict) or g.get('kind') != 'flume':
+        problems.append('ground is null (a level floor) or {"kind": "flume", ...}')
+        return None
+    what = 'ground'
+    out = {'kind': 'flume',
+           'nx': int(_num(g, 'nx', what, problems, 100, 20, 400)), 'nz': int(_num(g, 'nz', what, problems, 60, 20, 400)),
+           'cell_m': _num(g, 'cell_m', what, problems, 0.1, 0.05, 0.25),
+           'trench_z_m': _num(g, 'trench_z_m', what, problems, 1.0, -10, 10),
+           'trench_width_m': _num(g, 'trench_width_m', what, problems, 0.5, 0.2, 3.0),
+           'trench_depth_m': _num(g, 'trench_depth_m', what, problems, 0.35, 0.1, 2.0),
+           'trench_slope': _num(g, 'trench_slope', what, problems, 0.005, 0.0, 0.05),
+           'discharge_m3_s': _num(g, 'discharge_m3_s', what, problems, 0.0, 0.0, 1.0),
+           'reservoir_to_x_m': _num(g, 'reservoir_to_x_m', what, problems, -1e9, -1e9, 100),
+           'reservoir_level_m': _num(g, 'reservoir_level_m', what, problems, -1e9, -1e9, 0.0)}
+    out['x0_m'] = -0.5 * (out['nx'] - 1) * out['cell_m']
+    out['z0_m'] = -0.5 * (out['nz'] - 1) * out['cell_m']
+    if abs(out['trench_z_m']) + 0.5 * out['trench_width_m'] + out['cell_m'] >= -out['z0_m']:
+        problems.append('ground: the trench must lie inside the ground with ground on both sides')
+    return out
+
+
+def ground_height(ground, x, z):
+    if ground is None:
+        return 0.0
+    if abs(z - ground['trench_z_m']) <= 0.5 * ground['trench_width_m']:
+        return -ground['trench_depth_m'] - ground['trench_slope'] * (x - ground['x0_m'])
+    return 0.0
+
+
+def ground_scene(ground):
+    keys = ('nx', 'nz', 'cell_m', 'trench_z_m', 'trench_width_m', 'trench_depth_m', 'trench_slope', 'discharge_m3_s')
+    generate = {'kind': 'flume', **{k: ground[k] for k in keys}}
+    if ground['reservoir_level_m'] > -1e8:
+        generate['reservoir_to_x_m'] = ground['reservoir_to_x_m']
+        generate['reservoir_level_m'] = ground['reservoir_level_m']
+    return {'generate': generate}
+
+
+def quaternion_of_turn(degrees):
+    """TileImpactScene rotationQuaternion: about x, then y, then z."""
+    hx, hy, hz = (math.radians(d) / 2 for d in degrees)
+    cx, sx, cy, sy, cz, sz = math.cos(hx), math.sin(hx), math.cos(hy), math.sin(hy), math.cos(hz), math.sin(hz)
+    return [cz * cy * cx - sz * sy * sx, cz * cy * sx + sz * sy * cx, cz * sy * cx - sz * cy * sx,
+            sz * cy * cx + cz * sy * sx]
+
+
+def solids_of(part):
+    """A part as the oriented boxes it is made of, in the world: itself, or
+    each piece of a compound (a cylinder as its bounding box)."""
+    if part['shape'] != 'compound':
+        return [part]
+    outer = rotation(part['turn_deg'])
+    out = []
+    for sub in part['parts']:
+        local = sub['at_m']
+        at = [part['at_m'][i] + sum(outer[i][j] * local[j] for j in range(3)) for i in range(3)]
+        size = list(sub['size_m'])
+        if sub['shape'] == 'cylinder':   # [diameter, length, diameter] about its own y
+            size = [size[0], size[1], size[0]]
+        r = rotation(sub['turn_deg'])
+        m = [[sum(outer[i][k] * r[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
+        # The same matrix as x-y-z turn angles (R = Rz Ry Rx).
+        ry = math.asin(max(-1.0, min(1.0, -m[2][0])))
+        rx = math.atan2(m[2][1], m[2][2])
+        rz = math.atan2(m[1][0], m[0][0])
+        out.append({'name': part['name'], 'shape': 'box', 'size_m': size, 'at_m': at,
+                    'turn_deg': [math.degrees(rx), math.degrees(ry), math.degrees(rz)]})
+    return out
+
+
+def footprint_points(solid):
+    axes, h = _axes(solid), _half(solid)
+    pts = []
+    for sx in (-1, 0, 1):
+        for sz in (-1, 0, 1):
+            for sy in (-1, 1):
+                pts.append([solid['at_m'][i] + sx * axes[0][i] * h[0] + sy * axes[1][i] * h[1] + sz * axes[2][i] * h[2]
+                            for i in range(3)])
+    return pts
+
+
 # ---- kits: shorthand for parts and joints -----------------------------------
 
 def _dir(word, problems, what):
@@ -209,6 +298,7 @@ def _kit_ramp(k, problems, name):
                                    for i in range(3)],
                           'turn_deg': turn, 'fixed': True})
     ball = k.get('ball')
+    joints = []
     if isinstance(ball, dict):
         dia = _num(ball, 'diameter_m', name + ' ball', problems, 0.08, 0.04, min(0.6, width))
         start = 0.08 + 0.5 * dia
@@ -216,7 +306,26 @@ def _kit_ramp(k, problems, name):
         parts.append({'name': ball.get('name') or name + ' ball', 'shape': 'sphere',
                       'material': ball.get('material', 'iron'), 'size_m': [dia, dia, dia], 'at_m': at,
                       'turn_deg': [0, 0, 0], 'fixed': False})
-    return parts, []
+        if k.get('gate'):
+            # A bar across the ramp just below the ball, free to slide sideways
+            # in a guide: whatever pulls it far enough lets the ball go.
+            if k.get('rails', True):
+                problems.append(name + ': a gated ramp has no rails (the gate slides across where they would be)')
+            bar = 0.04
+            gate_at = [top[i] + along[i] * (start + 0.5 * dia + 0.01 + 0.5 * bar) + normal[i] * (0.5 * bar + 0.006)
+                       for i in range(3)]
+            length = width + 0.3
+            gsize = [bar, bar, length] if along_x else [length, bar, bar]
+            parts.append({'name': name + ' gate', 'shape': 'box', 'material': 'oak', 'size_m': gsize, 'at_m': gate_at,
+                          'turn_deg': turn, 'fixed': False})
+            guide_at = [gate_at[i] + side[i] * (0.5 * length + 0.25) for i in range(3)]
+            guide_at[1] = gate_at[1] - 0.15
+            parts.append({'name': name + ' gate guide', 'shape': 'box', 'material': 'concrete',
+                          'size_m': [0.06, 0.06, 0.06], 'at_m': guide_at, 'turn_deg': [0, 0, 0], 'fixed': True})
+            joints.append({'name': name + ' gate slide', 'kind': 'slide', 'a': name + ' gate guide', 'b': name + ' gate',
+                           'at_m': gate_at, 'axis': side, 'lower_m': 0.0,
+                           'upper_m': 0.5 * length + dia + 0.08, 'friction_n': 1.0})
+    return parts, joints
 
 
 def _kit_domino_row(k, problems, name):
@@ -386,13 +495,58 @@ def _kit_block_tower(k, problems, name):
     return parts, []
 
 
+def _kit_water_wheel(k, problems, name):
+    """A paddle wheel in the flume: one rigid body (hub, axle and paddles) on
+    a hinge to a post on the bank. The stream's drag on each paddle, as the
+    engine computes it per surface, is all that turns it."""
+    ground = k.get('_ground')
+    if ground is None:
+        problems.append(name + ': a water wheel stands in the flume; declare ground {"kind": "flume", ...} first')
+        return [], []
+    at = _vec(k.get('at_m'), 3, name + ' at_m', problems)
+    x, z = at[0], ground['trench_z_m']
+    radius = _num(k, 'radius_m', name, problems, 0.4, 0.15, 1.5)
+    count = int(_num(k, 'paddles', name, problems, 8, 3, 16))
+    width = _num(k, 'paddle_width_m', name, problems, min(0.36, ground['trench_width_m'] - 0.14), 0.05, 2.0)
+    clearance = _num(k, 'clearance_m', name, problems, 0.065, 0.02, 0.5)
+    if width > ground['trench_width_m'] - 0.12:
+        problems.append(f'{name}: paddles at most {ground["trench_width_m"] - 0.12:.2f} m wide in this trench')
+    side = 1.0 if k.get('post_side', '+z') == '+z' else -1.0
+    bed = ground_height(ground, x, z)
+    hub_y = bed + clearance + radius
+    hub_d = max(0.12, 0.55 * radius)
+    reach = 0.5 * ground['trench_width_m'] + 0.25
+    sub = [{'shape': 'cylinder', 'size_m': [0.06, reach + 0.05, 0.06], 'at_m': [0, 0, side * 0.5 * (reach - 0.05)],
+            'turn_deg': [90, 0, 0]},
+           {'shape': 'cylinder', 'size_m': [hub_d, width, hub_d], 'at_m': [0, 0, 0], 'turn_deg': [90, 0, 0]}]
+    paddle_len = radius - 0.5 * hub_d + 0.02
+    mid = 0.5 * hub_d - 0.02 + 0.5 * paddle_len
+    for i in range(count):
+        th = 360.0 * i / count
+        sub.append({'shape': 'box', 'size_m': [paddle_len, 0.03, width],
+                    'at_m': [mid * math.cos(math.radians(th)), mid * math.sin(math.radians(th)), 0],
+                    'turn_deg': [0, 0, th]})
+    post_h = max(0.12, hub_y + 0.06)
+    parts = [{'name': name, 'shape': 'compound', 'material': k.get('material', 'oak'), 'size_m': [2 * radius] * 3,
+              'at_m': [x, hub_y, z], 'turn_deg': [0, 0, 0], 'fixed': False, 'parts': sub},
+             {'name': name + ' post', 'shape': 'box', 'material': 'concrete', 'size_m': [0.1, post_h, 0.1],
+              'at_m': [x, 0.5 * post_h, z + side * (reach + 0.06)], 'turn_deg': [0, 0, 0], 'fixed': True}]
+    joints = [{'name': name + ' hinge', 'kind': 'hinge', 'a': name + ' post', 'b': name, 'at_m': [x, hub_y, z],
+               'axis': [0, 0, 1], 'friction_n_m': _num(k, 'friction_n_m', name, problems, 0.2, 0, 50)}]
+    return parts, joints
+
+
 KITS = {'ramp': _kit_ramp, 'domino_row': _kit_domino_row, 'lever': _kit_lever,
         'hanging_weight': _kit_hanging_weight, 'plate_on_supports': _kit_plate,
-        'pendulum': _kit_pendulum, 'block_tower': _kit_block_tower}
+        'pendulum': _kit_pendulum, 'block_tower': _kit_block_tower, 'water_wheel': _kit_water_wheel}
 
 KIT_HELP = {
     'ramp': 'anchored plank from top_m down to bottom_m (centre of its upper surface at each end, metres), '
-            'width_m, thickness_m, material, rails (true), optional ball {material, diameter_m, name} resting at the top',
+            'width_m, thickness_m, material, rails (true), optional ball {material, diameter_m, name} resting at the '
+            'top, optional gate: true (needs rails false) -- a bar "<name> gate" across the ramp below the ball on a '
+            'slide "<name> gate slide" that moves it toward +z (a ramp along x) or +x (along z) by up to half its '
+            'length plus the ball; tie a rope or drum to its OTHER end (at -z or -x, half its length, width_m + '
+            '0.3, from its centre) and pull it that way, and the ball rolls',
     'domino_row': 'count boxes standing on the ground from start_m [x, 0, z], direction "+x|-x|+z|-z", spacing_m, '
                   'size_m [thickness, height, width], material',
     'lever': 'pivot block + plank + hinge; pivot_m [x, block height, z], length_m, width_m, thickness_m, limit_deg, '
@@ -409,6 +563,10 @@ KIT_HELP = {
                 'bottom), ball {material, diameter_m, name}',
     'block_tower': 'a stack of loose blocks standing on at_m [x, base height, z]: count, size_m [x, y, z], material, '
                    'gap_m. Named "<name> 1" (bottom) up to "<name> <count>"',
+    'water_wheel': 'needs ground kind flume. A paddle wheel standing in the trench at at_m [x, _, _] (z is the '
+                   'trench line): radius_m, paddles, paddle_width_m, clearance_m above the bed, post_side "+z|-z". One '
+                   'rigid body "<name>" on hinge "<name> hinge"; its axle reaches the bank, so a drum rope can wind on '
+                   'it at [x, hub height, trench z + (trench width/2 + 0.2) * side]',
 }
 
 
@@ -427,6 +585,7 @@ def compile_spec(spec):
         problems.append('cell_m is 0.02 or 0.04')
         cell = 0.02
     parts, joints, notes = [], [], []
+    ground = compile_ground(spec.get('ground'), problems)
     for i, kit in enumerate(spec.get('kits', []) or []):
         if not isinstance(kit, dict) or kit.get('kit') not in KITS:
             problems.append(f'kit {i + 1}: kit is one of {", ".join(KITS)}')
@@ -435,8 +594,8 @@ def compile_spec(spec):
         if not isinstance(name, str) or not name.strip():
             problems.append(f'kit {i + 1} ({kit["kit"]}) needs a name')
             continue
-        p, j = KITS[kit['kit']](dict(kit, _known={r['name']: r for r in parts if isinstance(r, dict) and 'name' in r}),
-                                problems, name.strip())
+        p, j = KITS[kit['kit']](dict(kit, _known={r['name']: r for r in parts if isinstance(r, dict) and 'name' in r},
+                                     _ground=ground), problems, name.strip())
         for row in p:
             row['kit'] = name.strip()
         parts += p
@@ -463,6 +622,35 @@ def compile_spec(spec):
         material = p.get('material', 'oak')
         if material not in MATERIALS:
             problems.append(f'{what}: material is one of {", ".join(MATERIALS)}')
+        if shape == 'compound':
+            # One rigid body made of boxes and cylinders, exact rather than
+            # built from cells (the engine's precise rigid bodies).
+            subs = []
+            for k, sub in enumerate(p.get('parts') or []):
+                swhat = f'{what} piece {k + 1}'
+                if not isinstance(sub, dict) or sub.get('shape', 'box') not in SUB_SHAPES:
+                    problems.append(f'{swhat}: shape is box or cylinder')
+                    continue
+                ssize = _vec(sub.get('size_m'), 3, swhat + ' size_m', problems)
+                if min(ssize) <= 0.0 or max(ssize) > 8.0:
+                    problems.append(f'{swhat}: sizes between 0 and 8 m')
+                subs.append({'shape': sub.get('shape', 'box'), 'size_m': ssize,
+                             'at_m': _vec(sub.get('at_m', [0, 0, 0]), 3, swhat + ' at_m', problems),
+                             'turn_deg': _vec(sub.get('turn_deg', [0, 0, 0]), 3, swhat + ' turn_deg', problems)})
+            if not 1 <= len(subs) <= 64:
+                problems.append(f'{what}: a compound has 1 to 64 pieces')
+            row = {'name': name, 'shape': 'compound', 'material': material, 'parts': subs,
+                   'at_m': _vec(p.get('at_m'), 3, what + ' at_m', problems),
+                   'turn_deg': _vec(p.get('turn_deg', [0, 0, 0]), 3, what + ' turn_deg', problems),
+                   'fixed': bool(p.get('fixed', False)),
+                   'velocity_m_s': _vec(p.get('velocity_m_s', [0, 0, 0]), 3, what + ' velocity_m_s', problems),
+                   'kit': p.get('kit')}
+            lo = [min(pt[i] for sd in solids_of(row) for pt in footprint_points(sd)) for i in range(3)]
+            hi = [max(pt[i] for sd in solids_of(row) for pt in footprint_points(sd)) for i in range(3)]
+            row['size_m'] = [round(hi[i] - lo[i], 6) for i in range(3)]
+            names[name] = row
+            checked.append(row)
+            continue
         size = _vec(p.get('size_m'), 3, what + ' size_m', problems)
         if shape == 'sphere':
             size = [size[0]] * 3
@@ -498,18 +686,34 @@ def compile_spec(spec):
         checked.append(row)
     if len(checked) > MAX_PARTS:
         problems.append(f'{len(checked)} parts; a machine has at most {MAX_PARTS}')
-    cells = sum(math.prod(p['size_m']) * (math.pi / 6 if p['shape'] == 'sphere' else 1) for p in checked) / cell ** 3
+    cells = sum(math.prod(p['size_m']) * (math.pi / 6 if p['shape'] == 'sphere' else 1)
+                for p in checked if p['shape'] != 'compound') / cell ** 3
     if cells > MAX_CELLS:
         problems.append(f'about {cells:,.0f} engine cells at {cell} m; the world budget is {MAX_CELLS:,}')
     for p in checked:
-        low = lowest_point(p)
-        if low < -1e-6:
-            problems.append(f'{p["name"]} goes {(-low) * 1000:.0f} mm below the ground; raise it')
+        for solid in solids_of(p):
+            pts = footprint_points(solid)
+            if solid['shape'] == 'sphere':
+                r = 0.5 * solid['size_m'][0]
+                pts = [[solid['at_m'][0] + dx, solid['at_m'][1] - r, solid['at_m'][2] + dz]
+                       for dx in (-r, 0, r) for dz in (-r, 0, r)]
+            low = min(pt[1] for pt in pts)
+            under = max(ground_height(ground, pt[0], pt[2]) for pt in pts)
+            if low < under - 1e-6:
+                problems.append(f'{p["name"]} goes {(under - low) * 1000:.0f} mm into the ground; raise it')
+                break
+            if ground is not None:
+                x1 = ground['x0_m'] + (ground['nx'] - 1) * ground['cell_m']
+                z1 = ground['z0_m'] + (ground['nz'] - 1) * ground['cell_m']
+                if any(not (ground['x0_m'] <= pt[0] <= x1 and ground['z0_m'] <= pt[2] <= z1) for pt in pts):
+                    problems.append(f'{p["name"]} is off the edge of the ground (x {ground["x0_m"]:.2f} to {x1:.2f}, '
+                                    f'z {ground["z0_m"]:.2f} to {z1:.2f})')
+                    break
     for i, a in enumerate(checked):
         for b in checked[i + 1:]:
             if a['fixed'] and b['fixed']:
                 continue
-            depth = overlap_depth(a, b)
+            depth = max(overlap_depth(sa, sb) for sa in solids_of(a) for sb in solids_of(b))
             if depth > OVERLAP_TOLERANCE_M:
                 problems.append(f'{a["name"]} and {b["name"]} overlap by about {depth * 1000:.0f} mm; move one apart')
     joint_rows, joint_names = [], set()
@@ -525,6 +729,24 @@ def compile_spec(spec):
         kind = j.get('kind')
         if kind not in JOINT_KINDS:
             problems.append(f'{what}: kind is one of {", ".join(JOINT_KINDS)}')
+            continue
+        if kind == 'drum':
+            # A rope that winds onto a turning body (the drum, on a pin of its
+            # own) from a load: rigid/DrumRope.hpp. It pulls and never pushes.
+            for end in ('drum', 'load'):
+                if j.get(end) not in names:
+                    problems.append(f'{what}: {end} must name a part ({j.get(end)!s} is not one)')
+            drum = names.get(j.get('drum'))
+            row = {'name': name, 'kind': 'drum', 'drum': j.get('drum'), 'load': j.get('load'),
+                   'centre_m': _vec(j.get('centre_m', drum['at_m'] if drum else [0, 0, 0]), 3, what + ' centre_m',
+                                    problems),
+                   'axis': _vec(j.get('axis', [0, 0, 1]), 3, what + ' axis', problems),
+                   'radius_m': _num(j, 'radius_m', what, problems, 0.03, 0.005, 2.0),
+                   'load_point_m': _vec(j.get('load_point_m'), 3, what + ' load_point_m', problems),
+                   'winds': 1 if j.get('winds', 1) >= 0 else -1,
+                   'spare_m': _num(j, 'spare_m', what, problems, 1.0, 0.0, 50.0)}
+            row['length_m'] = math.dist(row['centre_m'], row['load_point_m']) + row['spare_m']
+            joint_rows.append(row)
             continue
         for end in ('a', 'b'):
             if j.get(end) not in names:
@@ -552,6 +774,13 @@ def compile_spec(spec):
             row['breaks_at_n'] = _num(j, 'breaks_at_n', what, problems, 0.0, 0, 1e7)
             if j.get('member') is not None:
                 row['member'] = j.get('member')
+        elif kind == 'slide':
+            row['axis'] = _vec(j.get('axis', [0, 0, 1]), 3, what + ' axis', problems)
+            if math.hypot(*row['axis']) < 1e-6:
+                problems.append(f'{what}: axis cannot be zero')
+            row['lower_m'] = _num(j, 'lower_m', what, problems, -1.0, -20, 20)
+            row['upper_m'] = _num(j, 'upper_m', what, problems, 1.0, -20, 20)
+            row['friction_n'] = _num(j, 'friction_n', what, problems, 0.0, 0, 1e6)
         elif kind == 'spring':
             row['at_b_m'] = _vec(j.get('at_b_m'), 3, what + ' at_b_m', problems)
             row['rest_m'] = _num(j, 'rest_m', what, problems, 0.0, 0, 20)
@@ -608,19 +837,66 @@ def compile_spec(spec):
                         'power_w': _num(t, 'power_w', 'torch', problems, 2000, 1, 1e5),
                         'seconds': _num(t, 'seconds', 'torch', problems, 60, 0.1, 600)})
     stations = []
+    hinge_names = {j['name'] for j in joint_rows if j['kind'] == 'hinge'}
+    slide_names = {j['name'] for j in joint_rows if j['kind'] == 'slide'}
+    circuit_names = {c['name'] for c in circuits}
     for s in spec.get('stations', []) or []:
-        if isinstance(s, dict) and isinstance(s.get('title'), str):
-            stations.append({k: s.get(k) for k in ('title', 'shows', 'law', 'maturity', 'done_when', 'focus')})
+        if not (isinstance(s, dict) and isinstance(s.get('title'), str)):
+            continue
+        what = 'station ' + s['title']
+        rule = s.get('done_when')
+        # A station can only be checked off by something that exists; a
+        # misspelt name would leave it waiting forever with no reason given.
+        if isinstance(rule, dict) and len(rule) == 1:
+            kind, arg = next(iter(rule.items()))
+            if kind == 'hits':
+                ok = isinstance(arg, list) and len(arg) == 2 and all(a in names or a == 'the ground' for a in arg)
+                if not ok:
+                    problems.append(f'{what}: hits names two parts (or "the ground"); {arg!s} does not')
+            elif kind in ('parted', 'broke'):
+                if arg not in names:
+                    problems.append(f'{what}: {kind} names a part; {arg!s} is not one')
+            elif kind == 'hinge_beyond_deg':
+                if not isinstance(arg, dict) or arg.get('joint') not in hinge_names or                         not isinstance(arg.get('deg'), (int, float)):
+                    problems.append(f'{what}: hinge_beyond_deg needs a hinge joint name and deg')
+            elif kind == 'turned_deg':
+                if not isinstance(arg, dict) or arg.get('joint') not in hinge_names or \
+                        not isinstance(arg.get('deg'), (int, float)):
+                    problems.append(f'{what}: turned_deg needs a hinge joint name and deg (total turn, either way)')
+            elif kind == 'slid_m':
+                if not isinstance(arg, dict) or arg.get('joint') not in slide_names or \
+                        not isinstance(arg.get('m'), (int, float)):
+                    problems.append(f'{what}: slid_m needs a slide joint name and m')
+            elif kind == 'switch_closed':
+                if arg not in circuit_names:
+                    problems.append(f'{what}: switch_closed names a circuit; {arg!s} is not one')
+            elif kind == 'hotter_than_k':
+                if not isinstance(arg, dict) or arg.get('part') not in names or not isinstance(arg.get('k'), (int, float)):
+                    problems.append(f'{what}: hotter_than_k needs a part and k')
+            else:
+                problems.append(f'{what}: done_when is one of hits, hinge_beyond_deg, turned_deg, slid_m, switch_closed, '
+                                'hotter_than_k, parted, broke')
+        elif rule is not None:
+            problems.append(f'{what}: done_when is one rule, or null for a station not built yet')
+        focus = [f for f in (s.get('focus') or []) if isinstance(f, str) and f in names]
+        stations.append({k: s.get(k) for k in ('title', 'shows', 'law', 'maturity', 'done_when')} | {'focus': focus})
     if problems:
         raise MachineRefused(problems)
-    return {'schema': SCHEMA, 'title': str(spec.get('title', 'Machine'))[:80], 'cell_m': cell,
+    return {'schema': SCHEMA, 'title': str(spec.get('title', 'Machine'))[:80], 'cell_m': cell, 'ground': ground,
             'parts': checked, 'joints': joint_rows, 'batteries': batteries, 'circuits': circuits,
             'torches': torches, 'stations': stations, 'cells': round(cells), 'notes': notes}
 
 
 def scene_of(compiled):
-    bodies = []
+    bodies, precise = [], []
     for p in compiled['parts']:
+        if p['shape'] == 'compound':
+            precise.append({'name': p['name'], 'material': p['material'], 'position_m': p['at_m'],
+                            'orientation_wxyz': quaternion_of_turn(p['turn_deg']),
+                            'velocity_m_s': p['velocity_m_s'],
+                            'parts': [{'shape': s['shape'], 'dimensions_m': s['size_m'], 'center_local_m': s['at_m'],
+                                       'rotation_wxyz': quaternion_of_turn(s['turn_deg'])} for s in p['parts']]})
+            continue
         body = {'name': p['name'], 'shape': p['shape'], 'material': p['material'], 'dimensions_m': p['size_m'],
                 'center_m': p['at_m'], 'anchored': p['fixed']}
         if any(p['turn_deg']):
@@ -628,7 +904,12 @@ def scene_of(compiled):
         if any(p['velocity_m_s']):
             body['velocity_m_s'] = p['velocity_m_s']
         bodies.append(body)
-    return {'bodies': bodies}
+    scene = {'bodies': bodies}
+    if precise:
+        scene['precise_rigid_bodies'] = precise
+    if compiled.get('ground'):
+        scene['terrain'] = ground_scene(compiled['ground'])
+    return scene
 
 
 def default_spec():
@@ -716,6 +997,13 @@ def build_engine(exe, compiled, workdir):
                 extra = {'member': j['member']} if j.get('member') else {}
                 r = engine.op(op='fix', a=j['a'], b=j['b'], at=j['at_m'], axis=j['axis'],
                               holds_shear_n=j['holds_shear_n'], holds_tension_n=j['holds_tension_n'], **extra)
+            elif j['kind'] == 'slide':
+                r = engine.op(op='slide', a=j['a'], b=j['b'], at=j['at_m'], axis=j['axis'], lower_m=j['lower_m'],
+                              upper_m=j['upper_m'], friction_n=j['friction_n'])
+            elif j['kind'] == 'drum':
+                r = engine.op(op='drum', drum=j['drum'], load=j['load'], centre=j['centre_m'], axis=j['axis'],
+                              radius_m=j['radius_m'], load_point=j['load_point_m'], winds=j['winds'],
+                              length_m=j['length_m'])
             elif j['kind'] == 'tie':
                 extra = {'member': j['member']} if j.get('member') else {}
                 r = engine.op(op='tie', a=j['a'], b=j['b'], at_a=j['at_m'], at_b=j['at_b_m'], length_m=j['length_m'],
@@ -802,6 +1090,13 @@ class MachineSession:
         self._parted = set()
         self._switches = {}
         self._hot = set()
+        self._turned = {}
+        self.water = None
+        self.water_seq = 0
+        # The ground as the engine built it, sent to the page once.
+        terrain = self.engine.first.get('terrain') or {}
+        self.ground_view = ({'grid': terrain.get('grid'), 'heights_b64': terrain.get('heights_b64')}
+                            if terrain.get('heights_b64') else None)
         self._ingest(self.engine.first, full=True)
         self._probe()
         self.journal = (self.workdir / 'journal.jsonl').open('w', encoding='utf-8')
@@ -822,6 +1117,10 @@ class MachineSession:
             old = self.bodies.get(b['name'])
             row = {k: b[k] for k in ('name', 'shape', 'material', 'dimensions_m', 'position_m', 'orientation_wxyz',
                                      'velocity_m_s', 'anchored', 'color_rgba', 'revision', 'mass_kg') if k in b}
+            if 'rigid_parts_local' in b:
+                row['rigid_parts_local'] = b['rigid_parts_local']
+            elif old and 'rigid_parts_local' in old:
+                row['rigid_parts_local'] = old['rigid_parts_local']
             if 'cells_local_m' in b:
                 row['cells_local_m'] = b['cells_local_m']
             elif old and 'cells_local_m' in old and old.get('revision') == b.get('revision'):
@@ -835,6 +1134,12 @@ class MachineSession:
                 del self.bodies[name]
                 self.removed[name] = self.seq
         self.t = float(reply.get('t', self.t))
+        if isinstance(reply.get('water'), dict):
+            # The engine's own picture of the water: the box of wet columns,
+            # each surface in millimetres above base_m.
+            self.water = {k: reply['water'].get(k) for k in ('box', 'base_m', 'surface_mm_b64', 'in_m3_s',
+                                                             'out_m3_s', 'volume_m3', 'wet_cells', 'residual_m3')}
+            self.water_seq = self.seq
         for imp in reply.get('impacts', []) or []:
             # The first contact between two different things is news; pieces
             # of one broken thing knocking about each other is not.
@@ -884,9 +1189,23 @@ class MachineSession:
         """Hinge angles, circuits and heat: measured readings for the page."""
         out = {}
         joints = self.engine.op(op='joints').get('joints', [])
-        out['joints'] = [{'name': next((n for n, i in self.joint_ids.items() if i == j['id']), str(j['id'])),
-                          'kind': j['kind'], 'degrees': j.get('degrees'), 'attached': j.get('attached'),
-                          'a': j.get('a'), 'b': j.get('b')} for j in joints]
+        rows = []
+        for j in joints:
+            name = next((n for n, i in self.joint_ids.items() if i == j['id']), str(j['id']))
+            row = {'name': name, 'kind': j['kind'], 'degrees': j.get('degrees'), 'attached': j.get('attached'),
+                   'a': j.get('a'), 'b': j.get('b')}
+            for key in ('metres', 'tension_n', 'leaves', 'meets', 'wound_m'):
+                if key in j:
+                    row[key] = j[key]
+            if j['kind'] == 'hinge' and j.get('degrees') is not None:
+                # The reading wraps at +-180; the total turn is unwrapped from
+                # readings a tenth of a second apart.
+                last, total = self._turned.get(name, (j['degrees'], 0.0))
+                step = (j['degrees'] - last + 180.0) % 360.0 - 180.0
+                self._turned[name] = (j['degrees'], total + step)
+                row['turned_deg'] = round(total + step, 2)
+            rows.append(row)
+        out['joints'] = rows
         circuits = []
         if self.circuit_ids:
             for c in self.engine.op(op='circuits').get('circuits', []):
@@ -946,6 +1265,16 @@ class MachineSession:
                     hit = next((e['t'] for e in self.events if e['kind'] == 'impact' and
                                 ((same(e['by'], a) and same(e['struck'], b)) or (same(e['by'], b) and same(e['struck'], a)))),
                                None)
+                elif 'turned_deg' in rule:
+                    r = rule['turned_deg']
+                    j = next((j for j in out['joints'] if j['name'] == r.get('joint')), None)
+                    if j and abs(j.get('turned_deg') or 0.0) >= abs(r['deg']):
+                        hit = self.t
+                elif 'slid_m' in rule:
+                    r = rule['slid_m']
+                    j = next((j for j in out['joints'] if j['name'] == r.get('joint')), None)
+                    if j and abs(j.get('metres') or 0.0) >= abs(r['m']):
+                        hit = self.t
                 elif 'hinge_beyond_deg' in rule:
                     r = rule['hinge_beyond_deg']
                     j = next((j for j in out['joints'] if j['name'] == r.get('joint')), None)
@@ -1046,8 +1375,13 @@ class MachineSession:
             bodies = [{k: v for k, v in b.items() if k not in ('seq', 'cells_seq') and
                        (k != 'cells_local_m' or b['cells_seq'] > after)}
                       for b in self.bodies.values() if b['seq'] > after]
-            return {'ok': True, 'session': self.id, 'seq': self.seq, 't': round(self.t, 4), 'playing': self.playing,
-                    'speed': self.speed, 'full': after == 0, 'bodies': bodies,
+            extra = {}
+            if self.water is not None and self.water_seq > after:
+                extra['water'] = self.water
+            if after == 0 and self.ground_view:
+                extra['ground'] = self.ground_view
+            return {**extra, 'ok': True, 'session': self.id, 'seq': self.seq, 't': round(self.t, 4),
+                    'playing': self.playing, 'speed': self.speed, 'full': after == 0, 'bodies': bodies,
                     'removed': [n for n, s in self.removed.items() if s > after],
                     'events': [e for e in self.events if e['seq'] > after],
                     'readouts': self.readouts, 'error': self.error,

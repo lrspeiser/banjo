@@ -1284,6 +1284,46 @@ Landscape channel(const SimpleParameters &p) {
     return land;
 }
 
+Landscape flume(const SimpleParameters &p) {
+    Landscape land = simple(p, "flume");
+    const Grid &g = land.grid;
+    if (!(p.trench_width_m >= 2.0 * g.dx) || !(p.trench_depth_m > 0.0) || !(p.trench_slope >= 0.0) ||
+        p.trench_slope > 0.1)
+        throw std::invalid_argument("a flume's trench is at least two cells wide, below the ground, and falls "
+                                    "no more than one in ten");
+    if (p.reservoir_level_m > 0.0) throw std::invalid_argument("a flume's reservoir stays below the ground");
+    const double cover = std::max(0.0, p.soil_m) + std::max(0.0, p.sand_m);
+    int lo = g.nz, hi = -1;
+    for (int j = 0; j < g.nz; ++j) {
+        if (std::abs(g.zOf(j) - p.trench_z_m) > 0.5 * p.trench_width_m) continue;
+        lo = std::min(lo, j);
+        hi = std::max(hi, j);
+    }
+    if (hi < 0 || lo == 0 || hi == g.nz - 1)
+        throw std::invalid_argument("a flume's trench lies inside the ground, with ground on both sides");
+    for (int j = 0; j < g.nz; ++j)
+        for (int i = 0; i < g.nx; ++i) {
+            const std::size_t c = g.at(i, j);
+            if (j >= lo && j <= hi) {
+                // Bare rock, so the water cannot carry its bed away.
+                const double bed = -p.trench_depth_m - p.trench_slope * (g.xOf(i) - g.x0);
+                land.rock[c] = bed;
+                land.soil[c] = 0.0;
+                land.sand[c] = 0.0;
+                if (g.xOf(i) <= p.reservoir_to_x_m && p.reservoir_level_m > bed) {
+                    land.depth[c] = p.reservoir_level_m - bed;
+                    land.moisture[c] = 1.0F;
+                }
+            } else {
+                land.rock[c] = -cover;
+            }
+        }
+    land.inflows.push_back({"the flume", water::Edge::West, lo, hi, p.discharge_m3_s});
+    land.outflows.push_back({"the flume's end", water::Edge::East, lo, hi});
+    setView(land, 0.0, g.z0 + 1.0, 0.0, 0.0, 0.0);
+    return land;
+}
+
 Landscape flatGround(const SimpleParameters &p) {
     Landscape land = simple(p, "flat");
     setView(land, 0.0, land.grid.z0 + 1.0, 0.0, 0.0, 0.0);

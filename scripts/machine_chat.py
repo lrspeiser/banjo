@@ -52,12 +52,17 @@ def system_prompt():
 The engine calculates every motion, contact, hinge, electric current, temperature, burn and break. Never describe an
 outcome as certain: say what you built and what the engine will decide.
 
-World: metres, kilograms, seconds, newtons, volts, ohms, kelvin. y is up; the ground is the plane y = 0.
+World: metres, kilograms, seconds, newtons, volts, ohms, kelvin. y is up; the ground is level at y = 0, except a
+flume trench when "ground" declares one (water flows in it, down +x).
 Materials: {', '.join(mw.MATERIALS)}. Only oak burns. Glass, ice and ceramic can break; oak and iron can too under
 large loads. Bodies are built from cubic cells of cell_m (0.02 m): every size is a whole number of cells, at least one.
 
 Declaration (JSON object, schema "{mw.SCHEMA}"):
 {{"schema": "{mw.SCHEMA}", "title": str, "cell_m": 0.02,
+  "ground": null, or {{"kind": "flume", "nx": 100, "nz": 60, "cell_m": 0.1, "trench_z_m": n, "trench_width_m": n,
+             "trench_depth_m": n, "trench_slope": n, "discharge_m3_s": n (water in at the west end),
+             "reservoir_to_x_m": n, "reservoir_level_m": n (still water up to that x, surface below 0)}}
+             -- the ground then spans x and z within +-(n-1)*cell_m/2; every part must stand on it,
   "kits": [ {{"kit": <kit name>, "name": str, ...kit fields}} ],
   "parts": [ {{"name": str, "shape": "box"|"sphere"|"cone", "material": str, "size_m": [x, y, z],
               "at_m": [x, y, z] (centre), "turn_deg": [x, y, z] (about x, then y, then z), "fixed": bool,
@@ -69,7 +74,13 @@ Declaration (JSON object, schema "{mw.SCHEMA}"):
              {{"name": str, "kind": "tie", "a": part, "b": part, "at_m": [..], "at_b_m": [..], "length_m": n,
                "breaks_at_n": n}},
              {{"name": str, "kind": "spring", "a": part, "b": part, "at_m": [..], "at_b_m": [..], "rest_m": n,
-               "stiffness_n_m": n, "damping_n_s_m": n}} ],
+               "stiffness_n_m": n, "damping_n_s_m": n}},
+             {{"name": str, "kind": "slide", "a": fixed guide part, "b": part, "at_m": [..], "axis": [..],
+               "lower_m": n, "upper_m": n, "friction_n": n}} (b moves only along the axis, between the limits),
+             {{"name": str, "kind": "drum", "drum": a part that turns on its own hinge, "load": part,
+               "centre_m": [..] (a point on the drum's axle), "axis": [..], "radius_m": n, "load_point_m": [..]
+               (where the rope is tied on the load), "winds": 1 or -1, "spare_m": n}} (a rope that winds onto the
+               drum as it turns the "winds" way, pulling the load; it pulls and never pushes) ],
   "batteries": [ {{"name": str, "in": part, "capacity_j": n, "voltage_v": n, "max_power_w": n}} ],
   "circuits": [ {{"name": str, "battery": battery name,
                  "switch": {{"hinge": hinge joint name, "closed_at_or_above_deg": n}} or null (always closed),
@@ -77,8 +88,12 @@ Declaration (JSON object, schema "{mw.SCHEMA}"):
   "torches": [ {{"target": part, "power_w": n, "seconds": n}} ],
   "stations": [ {{"title": str, "shows": str, "law": str, "maturity": "calculated"|"experimental",
                  "done_when": one of {{"hits": [part, part]}}, {{"hinge_beyond_deg": {{"joint": name, "deg": n}}}},
-                 {{"switch_closed": circuit}}, {{"hotter_than_k": {{"part": name, "k": n}}}}, {{"parted": part}},
-                 {{"broke": part}}, "focus": [part]}} ] }}
+                 {{"turned_deg": {{"joint": hinge name, "deg": n}}}} (total turning, e.g. a wheel),
+                 {{"slid_m": {{"joint": slide name, "m": n}}}}, {{"switch_closed": circuit}},
+                 {{"hotter_than_k": {{"part": name, "k": n}}}}, {{"parted": part}}, {{"broke": part}},
+                 "focus": [part]}} ] }}
+A part may also be "shape": "compound": one exact rigid body of "parts": [{{"shape": "box"|"cylinder", "size_m":
+[x, y, z] (a cylinder is [diameter, length, diameter] along its own y), "at_m": local centre, "turn_deg": local}}].
 
 Kits expand into ordinary parts and joints; prefer them for layout:
 {kits}
@@ -86,7 +101,8 @@ A circuit's coil heats the part it is wound on (heat flows in as I^2 R). A switc
 that hinge's measured angle is at or beyond its reading; the engine measures the angle every step.
 
 Rules the server enforces (a declaration that breaks one is refused and sent back to you):
-- Nothing below the ground: a part's lowest point is at y >= 0. A part standing on the ground has at_m y = half its height.
+- Nothing goes into the ground: a part's lowest point is at or above the ground under it (y = 0, or the trench bed
+  inside a flume trench). A part standing on level ground has at_m y = half its height.
 - No two parts overlap unless both are fixed. Leave 2-20 mm gaps between parts that should touch when things move.
 - Every name is unique; joints, batteries, circuits and stations name parts that exist.
 - At most {mw.MAX_PARTS} parts; keep within {mw.WORLD_HALF_M:g} m of the origin.
@@ -152,14 +168,28 @@ def layout(spec):
         g = groups.setdefault(key, [lo, hi])
         g[0] = [min(a, b) for a, b in zip(g[0], lo)]
         g[1] = [max(a, b) for a, b in zip(g[1], hi)]
+    ground = compiled.get('ground')
+    if ground is not None:
+        # The trench is taken: water runs there.
+        half = 0.5 * ground['trench_width_m']
+        x1 = ground['x0_m'] + (ground['nx'] - 1) * ground['cell_m']
+        groups['the flume trench (water)'] = [[ground['x0_m'], -ground['trench_depth_m'] - 0.1, ground['trench_z_m'] - half],
+                                             [x1, 0.0, ground['trench_z_m'] + half]]
     if not groups:
         return {'occupied': None, 'free_lane': 'anywhere'}
     lo = [min(g[0][i] for g in groups.values()) for i in range(3)]
     hi = [max(g[1][i] for g in groups.values()) for i in range(3)]
     r = lambda v: [round(x, 2) for x in v]
+    if ground is not None:
+        edge = ground['z0_m'] + (ground['nz'] - 1) * ground['cell_m']
+        lane_from, lane_to = hi[2] + 0.4, min(hi[2] + 3.0, edge - 0.2)
+        if lane_to - lane_from < 0.6:
+            lane_from, lane_to = ground['z0_m'] + 0.2, lo[2] - 0.4
+    else:
+        lane_from, lane_to = hi[2] + 0.5, hi[2] + 3.0
     return {'occupied_from_m': r(lo), 'occupied_to_m': r(hi),
             'things': {k: {'from_m': r(v[0]), 'to_m': r(v[1])} for k, v in groups.items()},
-            'free_lane': f'z from {hi[2] + 0.5:.2f} to {hi[2] + 3.0:.2f} m (any x from {lo[0]:.2f} to {hi[0]:.2f}) '
+            'free_lane': f'z from {lane_from:.2f} to {lane_to:.2f} m (any x from {lo[0]:.2f} to {hi[0]:.2f}) '
                          'is empty; build new things there unless they must touch existing ones'}
 
 

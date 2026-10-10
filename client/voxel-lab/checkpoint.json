@@ -39,7 +39,7 @@
     {
       "label": "The machine (live chain reaction, chat building)",
       "status": "passed",
-      "value": "/machine runs one live LiveWorld world built from general parts: marble, dominoes, a lever whose measured angle closes a switch, a 48 V battery and a coil that burns through an oak peg, a falling weight and a breaking glass plate. All seven built stations are checked off from engine measurements in order; coil heat out equals heat received exactly. A typed request is turned into a checked declaration by the model and rehearsed once in the engine before it is built. 13 machine tests, circuit tests, and an ordinary-browser run pass. Burning and glass breakage are experimental and uncalibrated; the water wheel is not in the shared world."
+      "value": "/machine runs one live LiveWorld world built from general parts: a stream in a flume turns a water wheel that winds a rope to slide a gate and free a marble, then dominoes, a lever whose measured angle closes a switch, a 48 V battery and a coil that burns through an oak peg, a falling weight and a breaking glass plate. All nine stations are checked off from engine measurements in order; a sleeping body now wakes when the water torque on it changes (it did not, so a wheel asleep before the water came never turned); coil heat out equals heat received exactly. A typed request is turned into a checked declaration by the model and rehearsed once in the engine before it is built. 13 machine tests, circuit tests, and an ordinary-browser run pass. Burning and glass breakage are experimental and uncalibrated; the water wheel is not in the shared world."
     },
     {
       "label": "Resumed checkpoint verification",
