@@ -392,6 +392,12 @@ void whatAbsorbsLightIsHeatedByIt() {
     require(std::abs(board_j - o.joules.heated) < 1e-9 * board_j, "and that is what the board absorbed");
     const double residual_j = o.joules.residual();
     require(std::abs(residual_j) < 1e-9 * o.joules.sent, "the joule ledger closes");
+    // Taken away, the light heats nothing more.
+    require(world->removeLight(o.paths.empty() ? 1U : o.paths.front().light), "the light comes off");
+    for (int i = 0; i < 120; ++i) tick(*world);
+    const double later_j = nlohmann::json::parse(world->thermoReport(false)).at("ledger").at("heater_in_j").get<double>();
+    require(world->optics().joules.heated == o.joules.heated && later_j == heater_j,
+            "with the light gone the heat network is handed nothing more");
 
     // An exact rigid body (a precise compound) absorbs too, but the heat
     // network cannot hold one: what it absorbs is counted as warming nothing,

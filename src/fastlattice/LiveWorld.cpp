@@ -7684,7 +7684,7 @@ void LiveWorld::step(double dt_s) {
     // What the light the last trace found heats over this step, as heaters on
     // the network's clock, after its state is saved: a refused step takes the
     // heat back with everything else.
-    if (!impl_->lit.empty()) impl_->heatFromLight(dt_s);
+    if (impl_->light_report.declared) impl_->heatFromLight(dt_s);
     if (!impl_->circuits.empty()) impl_->prepareCircuits(dt_s);
     if (impl_->body_of.size() + impl_->native_players.size() + 8 <= 2000) {
         bool committed = false;
