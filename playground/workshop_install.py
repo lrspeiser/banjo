@@ -588,31 +588,26 @@ FITTED_GROUND_M = .03
 
 
 def _ground_reader(old):
-    """A function giving the terrain's height at (x, z), interpolated between
-    its samples (None off the terrain), or None in a room with no terrain."""
-    terrain = _terrain_state(old)
-    if terrain is None:
-        return None
-    grid = terrain["grid"]
-    nx, nz, h = grid["nx"], grid["nz"], grid["cell_m"]
-    heights = struct.unpack("<"+"f"*(nx*nz), base64.b64decode(terrain["heights_b64"], validate=True))
-    return lambda x, z: _interpolate(grid, heights, x, z)
+    """A function giving the height at (x, z) of the ground a body set down
+    there will touch (None off the terrain), or None in a room with no terrain.
 
-
-def _interpolate(grid, heights, x, z):
-    nx, nz, h = grid["nx"], grid["nz"], grid["cell_m"]
-    u, v = (x-grid["x0_m"])/h, (z-grid["z0_m"])/h
-    i, j = math.floor(u), math.floor(v)
-    if i < 0 or j < 0 or i+1 >= nx or j+1 >= nz:
+    The engine's own survey: the collider's triangles, or a column's top, as
+    the surface is made. A bilinear blend of the height samples is a different
+    surface wherever the ground curves -- 2 to 3 mm off at the feet of a pad
+    fitted to a slope, which turned it out of level."""
+    if not old.spec.get("terrain"):
         return None
-    fu, fv = u-i, v-j
-    at = lambda a, b: heights[b*nx+a]
-    return ((1-fu)*(1-fv)*at(i,j) + fu*(1-fv)*at(i+1,j) + (1-fu)*fv*at(i,j+1) + fu*fv*at(i+1,j+1))
+    def at(x, z):
+        got = (old.send(op="survey", at=[x, z]) or {}).get("survey") or {}
+        return float(got["ground_m"]) if got.get("on_the_ground") and got.get("ground_m") is not None else None
+    return at
 
 
 def _feet(body):
-    """The bottom middle of each part with nothing of the body below any of
-    its footprint: the feet it stands on, in world space as it is turned now."""
+    """Each part with nothing of the body below any of its footprint -- the
+    feet it stands on -- as points across its bottom face in world space as it
+    is turned now: the middle of the face first, then its four corners and the
+    middles of its four edges."""
     turn = precise_rigid._turn(body["orientation_wxyz"])
     def world(local):
         return [body["position_m"][a]+sum(turn[a][k]*local[k] for k in range(3)) for a in range(3)]
@@ -629,9 +624,7 @@ def _feet(body):
         if any(o is not c and abs(o[0]-c[0]) < oh[0]+half[0] and abs(o[2]-c[2]) < oh[2]+half[2]
                and o[1]-oh[1] < bottom-1e-6 for o, oh in boxes):
             continue
-        # The middle of its bottom: on a slope a foot's own corners differ by
-        # the slope across it, which is not a misfit.
-        feet.append(world([c[0], bottom, c[2]]))
+        feet.append([world([c[0]+a*half[0], bottom, c[2]+b*half[2]]) for a in (0, -1, 1) for b in (0, -1, 1)])
     return feet
 
 
@@ -639,17 +632,24 @@ def _seat_as_made(old, body):
     """Seat a body made for uneven ground upright, as it was made, when its
     feet already meet the ground under them. True when it was seated."""
     feet = _feet(body)
-    if not feet or max(f[1] for f in feet)-min(f[1] for f in feet) <= UNEVEN_FEET_M:
+    # Whether its feet are at different heights is read at their middles: on
+    # a slope a foot's own corners differ by the slope across it, which is not
+    # a misfit.
+    if not feet or max(f[0][1] for f in feet)-min(f[0][1] for f in feet) <= UNEVEN_FEET_M:
         return False
     ground_at = _ground_reader(old)
     if ground_at is None:
         return False
     gaps = []
-    for x, y, z in feet:
-        ground = ground_at(x, z)
-        if ground is None:
+    for foot in feet:
+        under = [ground_at(x, z) for x, _, z in foot]
+        if any(ground is None for ground in under):
             return False
-        gaps.append(y-ground)
+        # A flat foot set down on a slope bears on the highest ground under
+        # it, its uphill edge, as construction_fit fits it: measured from its
+        # middle, a foot on steeper ground was seated into the slope at its
+        # edge and the rest refused as not meeting the ground.
+        gaps.append(foot[0][1]-max(under))
     if max(gaps)-min(gaps) > FITTED_GROUND_M:
         return False
     body["position_m"][1] += .002-min(gaps)

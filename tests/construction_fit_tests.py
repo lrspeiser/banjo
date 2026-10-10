@@ -2,8 +2,15 @@
 
 The pad's four footings are cut to the ground under each (construction_fit),
 saved as a new version of the design, and installed upright as made rather
-than turned to the slope (workshop_install _seat_as_made). Both pads are
-built from oak the player collected, in a generated world.
+than turned to the slope (workshop_install _seat_as_made).
+
+The pads are the game's own catalog pad: concrete, 0.4 m square and 0.05 m
+thick on 0.1 m footings, 24 kg as drawn. Both pads were oak gathered from the
+world's piles until playable worlds became inorganic (caeb6424); a playable
+world has no oak and refuses it. Concrete has no pile and no trader -- it is
+made in the world -- and a new world's rack starts with 40 kg of it
+(workshop_library.DEFAULT_RACK), enough for one pad and not two. So the pad as
+drawn and the fitted pad are each made in a new world of their own.
 
     BANJO_LIVE_ENGINE=build/rel/Release/banjo_live_world_run.exe python tests/construction_fit_tests.py
 """
@@ -16,6 +23,9 @@ import urllib.error
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'tests'), str(ROOT / 'playground'), str(ROOT)]
 import ai_player_tests as fixture
+
+# The catalog pad (FOUNDATION_PARAMETERS' least size, in its own material).
+PAD = {'width_m': .4, 'depth_m': .4, 'thickness_m': .05, 'footing_section_m': .1, 'material': 'concrete'}
 
 
 def tilt_deg(body):
@@ -32,6 +42,7 @@ class FittedPad(unittest.TestCase):
     get = fixture.AutonomousGuests.get
     setup_world = fixture.AutonomousGuests.setup_world
     join = fixture.AutonomousGuests.join
+    advance = fixture.AutonomousGuests.advance
 
     def post(self, *args, **kwargs):
         try:
@@ -40,62 +51,79 @@ class FittedPad(unittest.TestCase):
             error.msg += ': ' + error.read().decode('utf-8')
             raise
 
-    def ground(self, app, world, x, z):
+    def survey(self, app, world, x, z):
         return self.post('/api/live/act', {'session': app.live.session.id, 'op': 'survey', 'at': [x, z]},
-                         world)['survey']['ground_m']
+                         world)['survey']
 
-    def slopes(self, app, world, count):
-        """Spots where the ground falls 8-14 cm across 0.6 m (about 9 degrees),
-        dry, at least 2.5 m apart and clear of everything standing."""
+    def ground(self, app, world, x, z):
+        return self.survey(app, world, x, z)['ground_m']
+
+    def slope(self, app, world, parameters):
+        """A spot where the ground under the pad's four footings falls 6 to
+        10 cm (about ten degrees across them), dry under the whole pad, and at
+        least 2.5 m clear of everything standing."""
+        import construction_fit
         bodies = [b['position_m'] for b in app.live.session.state['bodies']]
-        found = []
+        reach = max(parameters['width_m'], parameters['depth_m']) / 2 + .05
         for i in range(-14, 15, 2):
             for j in range(-14, 15, 2):
                 x, z = i * .5, j * .5
-                if any(math.hypot(b[0] - x, b[2] - z) < 2.5 for b in bodies + found):
+                if any(math.hypot(b[0] - x, b[2] - z) < 2.5 for b in bodies):
                     continue
-                corners = [self.post('/api/live/act', {'session': app.live.session.id, 'op': 'survey',
-                    'at': [x + dx, z + dz]}, world)['survey'] for dx in (-.45, .45) for dz in (-.45, .45)]
+                corners = [self.survey(app, world, x + dx, z + dz) for dx in (-reach, reach) for dz in (-reach, reach)]
                 if any(float((c.get('water') or {}).get('depth_m', 0)) > .005 for c in corners):
                     continue      # dry ground only
-                heights = [self.ground(app, world, x + dx, z + dz) for dx in (-.3, .3) for dz in (-.3, .3)]
-                if .08 < max(heights) - min(heights) < .14:
-                    found.append([x, 0, z])
-                    if len(found) == count:
-                        return [[f[0], f[2]] for f in found]
+                heights = [self.ground(app, world, fx, fz)
+                           for fx, fz in construction_fit.footing_middles(parameters, [x, z])]
+                if .06 < max(heights) - min(heights) < .10:
+                    return [x, z]
         self.skipTest('no moderate slope clear of things in this world')
 
-    def build(self, app, world, candidate, spot, ident):
-        ctx = self.post('/api/world/workshop/context', {}, world)
-        preview = self.post('/api/world/workshop/preview', {'session': ctx['session'], 'scene': ctx['scene'],
-            'candidate': candidate, 'mode': 'authoring', 'position_m': spot}, world)
+    def make(self, app, world, candidate, spot, ident):
+        """Make `candidate` at `spot` as a player does: preview it, gather what
+        the preview says the rack is short of from the world's own finite
+        sources (its piles, then its trader: goal_chains_tests.acquire_material),
+        make it, and let it stand for two seconds of the world's time."""
+        import goal_chains_tests as chains
+        player = self.players[world]['token']
+        for gathered in range(12):
+            ctx = self.post('/api/world/workshop/context', {}, world)
+            preview = self.post('/api/world/workshop/preview', {'session': ctx['session'], 'scene': ctx['scene'],
+                'candidate': candidate, 'mode': 'authoring', 'position_m': spot}, world)
+            missing = preview['needs']['missing']
+            if not missing:
+                break
+            for row in missing:
+                held = self.post('/api/workshop/inventory', {}, world)['materials']
+                have = next((m['personal_kg'] for m in held if m['material'] == row['material']), 0.)
+                # A few kilograms at a time keeps each gathering inside the
+                # helper's own bound of 32 actions (a trader's lot is 1 kg).
+                chains.acquire_material(self, world, player, row['material'], have + min(row['short_kg'], 6.),
+                                        f"{ident}-{row['material'].replace(' ', '-')}-{gathered}")
+        else:
+            self.fail(f'{ident} is still short after gathering: {missing}')
         built = self.post('/api/world/workshop/commit', {'session': preview['session'], 'scene': preview['scene'],
             'preview_id': preview['preview_id'], 'request_id': ident}, world)
-        for _ in range(4):
-            self.post('/api/live/act', {'session': built['session'], 'op': 'step', 'dt': 1 / 240, 'n': 120}, world)
+        self.advance(world, built['session'], 2.)
         return next(b for b in app.live.session.state['bodies'] if b['name'] == built['root_body'])
 
     def test_a_fitted_pad_stands_level_where_one_as_drawn_tilts(self):
         from mcp import workshop
-        world, owner, app = self.setup_world(legacy_process=True)
-        for pile in [p for p in app.brains.goods.stockpiles if (p.get('holds') or {}).get('oak', 0) > 0
-                     and not p.get('rack')][:2]:
-            x, z = pile['at_m']
-            self.post('/api/world/goods/collect', {'session': app.live.session.id, 'pile': pile['name'],
-                'request_id': 'fit-oak-' + pile['name'].replace(' ', '-'),
-                'person': {'eyes_m': [x, self.ground(app, world, x, z) + 1.62, z], 'facing': [0, 0, -1]}}, world)
-        pad = workshop.assemble('foundation-pad', parameters={'width_m': .8, 'depth_m': .8, 'thickness_m': .08,
-                                                               'footing_section_m': .1, 'material': 'oak'})
+        pad = workshop.assemble('foundation-pad', parameters=PAD)
         drawn = {'kind': pad.kind, 'parameters': dict(pad.parameters),
                  'component_overrides': dict(pad.lineage.get('component_overrides') or {})}
-        plain_spot, fitted_spot = self.slopes(app, world, 2)
         # As drawn it is turned to the slope: it stands tilted, or tips over
         # and is refused.
+        world, owner, app = self.setup_world(legacy_process=True)
+        plain_spot = self.slope(app, world, drawn['parameters'])
         try:
-            plain = tilt_deg(self.build(app, world, drawn, plain_spot, 'pad-as-drawn'))
+            plain = tilt_deg(self.make(app, world, drawn, plain_spot, 'pad-as-drawn'))
         except urllib.error.HTTPError as error:
             self.assertIn('would not stand here', error.msg)
             plain = None
+        # Fitted, in a world of its own: its rack has the concrete for one pad.
+        world, owner, app = self.setup_world(legacy_process=True)
+        fitted_spot = self.slope(app, world, drawn['parameters'])
         fit = self.post('/api/world/workshop/fit_to_ground', {'candidate': drawn, 'position_m': fitted_spot,
                                                                'save': True, 'label': 'Fitted pad'}, world)
         self.assertEqual(4, len(fit['footings_m']))
@@ -103,7 +131,7 @@ class FittedPad(unittest.TestCase):
         self.assertGreater(max(fit['footings_m']), .1)
         self.assertEqual('Fitted pad', fit['library_item']['name'])
         self.assertIn('cm', fit['said'])
-        fitted = self.build(app, world, fit['candidate'], fitted_spot, 'pad-fitted')
+        fitted = self.make(app, world, fit['candidate'], fitted_spot, 'pad-fitted')
         said = 'refused, it tipped over' if plain is None else f'{plain:.2f} deg'
         print(f"\n    as drawn: {said}; fitted {fit['footings_m']}: {tilt_deg(fitted):.2f} deg")
         if plain is not None:
@@ -119,31 +147,28 @@ class FittedPad(unittest.TestCase):
 
 class ExactFurniture(FittedPad):
     """The Camp chair and Camp shelf are made of exact parts, so their thin
-    parts are what they are drawn as; built on level ground, each stands."""
+    parts are what they are drawn as; built on level ground, each stands.
+    They are iron, as a playable world makes them (playable_recipes), from the
+    iron the world holds: its rack, its piles and its trader."""
     test_a_fitted_pad_stands_level_where_one_as_drawn_tilts = None   # run once, above
 
     def test_exact_furniture_stands_where_it_is_built(self):
         import goal_chains
         world, owner, app = self.setup_world(legacy_process=True)
-        for pile in [p for p in app.brains.goods.stockpiles if (p.get('holds') or {}).get('oak', 0) > 0
-                     and not p.get('rack')][:2]:
-            x, z = pile['at_m']
-            self.post('/api/world/goods/collect', {'session': app.live.session.id, 'pile': pile['name'],
-                'request_id': 'furniture-oak-' + pile['name'].replace(' ', '-'),
-                'person': {'eyes_m': [x, self.ground(app, world, x, z) + 1.62, z], 'facing': [0, 0, -1]}}, world)
         bodies = [b['position_m'] for b in app.live.session.state['bodies']]
         spots = []
         for i in range(-14, 15, 2):
             for j in range(-14, 15, 2):
                 x, z = i * .5, j * .5
-                if any(math.hypot(b[0] - x, b[2] - z) < 2.5 for b in bodies) or                         any(math.hypot(s[0] - x, s[1] - z) < 2.5 for s in spots):
+                if any(math.hypot(b[0] - x, b[2] - z) < 2.5 for b in bodies) or \
+                        any(math.hypot(s[0] - x, s[1] - z) < 2.5 for s in spots):
                     continue
                 heights = [self.ground(app, world, x + dx, z + dz) for dx in (-.5, .5) for dz in (-.5, .5)]
                 if max(heights) - min(heights) < .03:
                     spots.append([x, z])
         self.assertGreaterEqual(len(spots), 2, 'no level ground for two pieces')
         for (kind, ident), spot in zip((('chair', 'starter-camp-chair'), ('shelf-unit', 'starter-camp-shelf')), spots):
-            body = self.build(app, world, goal_chains.exact_furniture_recipe(kind, ident), spot, 'furniture-' + kind)
+            body = self.make(app, world, goal_chains.exact_furniture_recipe(kind, ident), spot, 'furniture-' + kind)
             self.assertTrue(body.get('rigid_parts_local'), f'{kind} is exact parts, not cells')
             self.assertLess(tilt_deg(body), 2.0, f'{kind} stands')
 

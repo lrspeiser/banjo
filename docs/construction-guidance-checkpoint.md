@@ -243,6 +243,21 @@ so the fitter refuses a fall of more than 45 cm under the pad. The proposal is
 for one spot with the pad turned as drawn; there is no Lab or World button for
 it yet.
 
+**Since the inorganic worlds (2026-10-10).** Those measurements were of a
+0.8 m oak pad; a playable world has no oak, and its rack starts with the 40 kg
+of concrete one catalog pad (0.4 m square, 24 kg) is made from. The test now
+makes that pad, the one as drawn and the fitted one each in a world of its
+own. Its footings stand 0.3 m apart instead of 0.7 m, so a centimetre of
+error under one foot tilts it more than twice as far, and two errors showed:
+the fitter read the ground under each footing's middle, where a flat foot on
+a slope bears on its uphill edge, and the seating read a bilinear blend of
+the height samples rather than the collider's own triangles. Fitted to the
+highest ground under each foot, seated by the engine's survey, the catalog
+pad stood at 0.03, 0.46 and 1.09 degrees on the three spots the test met
+(up to 1.76 before, which failed the test). What is left is the solver's own allowance: the feet
+settle up to 9 mm into the ground, unequally, inside Jolt's 2 cm
+penetration slop. The test's 1.5 degree bound is unchanged.
+
 ## Full construction goal: remaining work
 
 1. Contract: declarations/readiness exist; enforce advanced skills and consume

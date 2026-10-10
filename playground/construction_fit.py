@@ -3,11 +3,11 @@
 A pad set on a slope as drawn is turned to the slope: its top tilts as much as
 the ground does. Its four footings can each be a different length (the
 pad's footing_1_m .. footing_4_m), so the same pad can stand level there with
-each footing cut to the ground under it. This reads the ground at each
-footing's middle and proposes those lengths -- a new version of the design,
-which the player makes like any other (it costs what its extra footing
-costs) and which is installed upright as made (workshop_install
-_seat_as_made), not turned to the slope.
+each footing cut to the ground under it. This reads the ground each footing
+will bear on, the highest under its foot, and proposes those lengths: a new
+version of the design, which the player makes like any other (it costs what
+its extra footing costs) and which is installed upright as made
+(workshop_install _seat_as_made), not turned to the slope.
 
 The proposal is for one spot and the pad turned as drawn (yaw 0). Nothing is
 built or spent here; the stand trial at install still decides.
@@ -31,6 +31,13 @@ def footing_middles(parameters, centre_xz):
     return [[centre_xz[0] + sx * reach, centre_xz[1] + sz * deep] for sx, sz in CORNERS]
 
 
+def footing_footprint(parameters, middle):
+    """Where the ground is read under one footing's square foot: its middle,
+    its four corners and the middles of its four edges."""
+    half = parameters['footing_section_m'] / 2
+    return [[middle[0] + a * half, middle[1] + b * half] for a in (0, -1, 1) for b in (0, -1, 1)]
+
+
 def propose(app, candidate, centre_xz):
     """The candidate with footings fitted to the ground at centre_xz."""
     if not isinstance(candidate, dict) or candidate.get('kind') != 'foundation-pad':
@@ -39,14 +46,24 @@ def propose(app, candidate, centre_xz):
     design, _ = workshop_components.design_from_spec(candidate)
     parameters = dict(design.parameters)
     session = app.live.session
+    # A flat foot set down on sloping ground bears on the highest ground under
+    # it, not on the ground under its middle: on a slope that is its uphill
+    # edge. Read at its middles alone, each footing came out short by however
+    # much the ground rises across its own foot there, which differs from foot
+    # to foot wherever the slope is not one plane. On the 0.4 m catalog pad,
+    # whose footings stand 0.3 m apart, that left a "level" top 1.4 to 1.8
+    # degrees out.
     ground = []
-    for x, z in footing_middles(parameters, centre_xz):
-        got = (app.live.act({'session': session.id, 'op': 'survey', 'at': [x, z]}) or {}).get('survey') or {}
-        if not got.get('on_the_ground'):
-            raise ValueError('Part of that spot is off the ground')
-        if float((got.get('water') or {}).get('depth_m', 0)) > .005:
-            raise ValueError('Part of that spot is under water')
-        ground.append(float(got['ground_m']))
+    for middle in footing_middles(parameters, centre_xz):
+        under = []
+        for x, z in footing_footprint(parameters, middle):
+            got = (app.live.act({'session': session.id, 'op': 'survey', 'at': [x, z]}) or {}).get('survey') or {}
+            if not got.get('on_the_ground'):
+                raise ValueError('Part of that spot is off the ground')
+            if float((got.get('water') or {}).get('depth_m', 0)) > .005:
+                raise ValueError('Part of that spot is under water')
+            under.append(float(got['ground_m']))
+        ground.append(max(under))
     fall = max(ground) - min(ground)
     if fall > STEEPEST_FALL_M:
         raise ValueError(f'The ground falls {fall:.2f} m under that pad: too steep to stand it on footings. '

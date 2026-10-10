@@ -918,7 +918,11 @@ def _build_shelf_unit(library: ComponentLibrary, values: dict[str, Any]) -> list
     width, depth, height = values["width_m"], values["depth_m"], values["height_m"]
     shelves = max(2, int(round(values["shelves"])))
     thickness = values["top_thickness_m"]
-    side = max(0.012, values["side_thickness_m"])
+    # The sides are as thick as the design says, down to the 6 mm its parameter
+    # allows. A 12 mm floor here once made an iron shelf drawn with 6 mm sides
+    # (the game's Camp shelf) twice as heavy as drawn: 59.5 kg of iron to make
+    # where its own label said "6 mm sides", more than a new world holds.
+    side = values["side_thickness_m"]
     parts: list[WirePart] = []
     for i, sx in enumerate((-1, 1), 1):
         parts.extend(library.make(
