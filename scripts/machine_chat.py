@@ -120,7 +120,7 @@ Declaration (JSON object, schema "{mw.SCHEMA}"):
                  {{"dented": part}} (a permanent set the engine measured: iron needs a hit above about 5 m/s and
                  dents a tenth of a millimetre at 16 m/s), {{"rose_m": {{"part": name, "m": n}}}} (its centre
                  rose that far), {{"moved_m": {{"part": name, "m": n}}}} (it moved that far from where it began),
-                 {{"cut": part}} (an edge cut it through),
+                 {{"cut": part}} (an edge or a beam of light cut it through),
                  {{"lit_w": {{"photocell": name, "w": n}}}}, {{"shaded_w": {{"photocell": name, "w": n}}}},
                  "focus": [part]}} ] }}
 A part may also be "shape": "compound": one exact rigid body of "parts": [{{"shape": "box"|"cylinder", "size_m":

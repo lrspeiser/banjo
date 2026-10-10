@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 namespace banjo::optics {
@@ -38,6 +39,120 @@ Refraction refract(const Vec3 &along, const Vec3 &toward, double n_from, double 
     return out;
 }
 
+// ---- lenses -------------------------------------------------------------------
+
+double lensFaceZ(double radius_m, double vertex_z, double r) {
+    if (radius_m == 0.0) return vertex_z;
+    const double under = radius_m * radius_m - r * r;
+    // Past the sphere's own edge there is no face; the caller has refused
+    // such a lens, and a point there is treated as on the sphere's equator.
+    const double root = std::sqrt(std::max(0.0, under));
+    return vertex_z + radius_m - (radius_m > 0.0 ? root : -root);
+}
+
+double lensEdgeThicknessM(const Lens &lens) {
+    const double a = lens.aperture_m, half = 0.5 * lens.thickness_m;
+    return lensFaceZ(lens.back_radius_m, half, a) - lensFaceZ(lens.front_radius_m, -half, a);
+}
+
+std::string lensProblem(const Lens &lens) {
+    if (!(std::isfinite(lens.aperture_m) && lens.aperture_m > 0.0)) return "a lens needs an aperture above zero";
+    if (!(std::isfinite(lens.thickness_m) && lens.thickness_m > 0.0)) return "a lens needs a thickness above zero";
+    if (!std::isfinite(lens.front_radius_m) || !std::isfinite(lens.back_radius_m)) return "a lens's radii are numbers";
+    for (const double r : {lens.front_radius_m, lens.back_radius_m})
+        if (r != 0.0 && std::abs(r) <= lens.aperture_m)
+            return "each curved face of a lens is wider than its aperture: |radius| must be more than the aperture";
+    if (!(lensEdgeThicknessM(lens) > 0.0))
+        return "a lens this thick in the middle with these faces has no glass at its rim: make it thicker";
+    return {};
+}
+
+double lensFocalLengthM(const Lens &lens, double n) {
+    const double c1 = lens.front_radius_m == 0.0 ? 0.0 : 1.0 / lens.front_radius_m;
+    const double c2 = lens.back_radius_m == 0.0 ? 0.0 : 1.0 / lens.back_radius_m;
+    const double power = (n - 1.0) * (c1 - c2 + (n - 1.0) * lens.thickness_m * c1 * c2 / n);
+    return power == 0.0 ? std::numeric_limits<double>::infinity() : 1.0 / power;
+}
+
+double lensBackFocalDistanceM(const Lens &lens, double n) {
+    const double f = lensFocalLengthM(lens, n);
+    const double c1 = lens.front_radius_m == 0.0 ? 0.0 : 1.0 / lens.front_radius_m;
+    return f * (1.0 - (n - 1.0) * lens.thickness_m * c1 / n);
+}
+
+Meeting meetLens(const Lens &lens, const Vec3 &from, const Vec3 &along, double reach_m) {
+    Meeting best;
+    const double a = lens.aperture_m, half = 0.5 * lens.thickness_m;
+    const double scale = std::max(a, lens.thickness_m);
+    const double tol = 1.0e-9 * scale;
+    const double start = 1.0e-9 * scale;
+    double nearest = reach_m;
+    const auto rOf = [](const Vec3 &p) { return std::sqrt(p.x * p.x + p.y * p.y); };
+    const auto consider = [&](double s, int which, double radius, double vertex_z) {
+        if (!(s > start) || !(s < nearest)) return;
+        const Vec3 p = from + s * along;
+        const double r = rOf(p);
+        if (which < 2) {
+            // On this face's cap, near its vertex, and inside the rim and the
+            // other face.
+            if (r > a + tol) return;
+            if (std::abs(p.z - lensFaceZ(radius, vertex_z, r)) > 1.0e-6 * scale) return;
+            if (which == 0 && p.z > lensFaceZ(lens.back_radius_m, half, r) + tol) return;
+            if (which == 1 && p.z < lensFaceZ(lens.front_radius_m, -half, r) - tol) return;
+        } else {
+            // On the rim, between the two faces there.
+            if (p.z < lensFaceZ(lens.front_radius_m, -half, a) - tol ||
+                p.z > lensFaceZ(lens.back_radius_m, half, a) + tol)
+                return;
+        }
+        Vec3 normal;
+        if (which == 2) {
+            normal = normalized(Vec3{p.x, p.y, 0.0});
+        } else if (radius == 0.0) {
+            normal = Vec3{0.0, 0.0, which == 0 ? -1.0 : 1.0};
+        } else {
+            const Vec3 centre{0.0, 0.0, vertex_z + radius};
+            // Out of the solid: away from a convex face's centre, towards a
+            // concave one's -- (p - c)/R for the front, -(p - c)/R for the back.
+            normal = normalized((which == 0 ? 1.0 : -1.0) / radius * (p - centre));
+        }
+        nearest = s;
+        best.hit = true;
+        best.distance_m = s;
+        best.point_m = p;
+        best.normal = normal;
+    };
+    // A face: a sphere, or a plane when flat.
+    const auto face = [&](int which, double radius, double vertex_z) {
+        if (radius == 0.0) {
+            if (std::abs(along.z) > 1e-15) consider((vertex_z - from.z) / along.z, which, radius, vertex_z);
+            return;
+        }
+        const Vec3 centre{0.0, 0.0, vertex_z + radius};
+        const Vec3 o = from - centre;
+        const double b = dot(along, o), c = dot(o, o) - radius * radius;
+        const double disc = b * b - c;
+        if (disc < 0.0) return;
+        const double root = std::sqrt(disc);
+        consider(-b - root, which, radius, vertex_z);
+        consider(-b + root, which, radius, vertex_z);
+    };
+    face(0, lens.front_radius_m, -half);
+    face(1, lens.back_radius_m, half);
+    // The rim.
+    const double qa = along.x * along.x + along.y * along.y;
+    if (qa > 1e-30) {
+        const double qb = from.x * along.x + from.y * along.y, qc = from.x * from.x + from.y * from.y - a * a;
+        const double disc = qb * qb - qa * qc;
+        if (disc >= 0.0) {
+            const double root = std::sqrt(disc);
+            consider((-qb - root) / qa, 2, 0.0, 0.0);
+            consider((-qb + root) / qa, 2, 0.0, 0.0);
+        }
+    }
+    return best;
+}
+
 namespace {
 
 // A ray on its way: where it is, which way it goes, what it carries, what it is
@@ -52,6 +167,11 @@ struct Going {
     double started_w{};
     unsigned met{};
     int path{-1};
+    // Its bundle (Ray::section_m2, spread_sr) and how far it has come.
+    double section_m2{};
+    double spread_sr{};
+    double travelled_m{};
+    [[nodiscard]] double section() const { return section_m2 + spread_sr * travelled_m * travelled_m; }
 };
 
 class Tracer {
@@ -71,10 +191,13 @@ public:
                 const Meeting behind = scene_.toSurface(ray.from, -1.0 * ray.along, settings_.reach_m, -1);
                 if (behind.hit) {
                     absorbAt(behind.body, sent);
+                    record(behind.body, behind.point_m, ray.along, behind.normal, sent, ray.section_m2);
                     continue;
                 }
             }
             Going g{ray.from, ray.along, 0.0, ray.power_w, -1, ray.ignore, sent, 0, -1};
+            g.section_m2 = ray.section_m2;
+            g.spread_sr = ray.spread_sr;
             if (ray.drawn) {
                 result_.paths.push_back({ray.light, {ray.from}, {}});
                 g.path = static_cast<int>(result_.paths.size()) - 1;
@@ -99,6 +222,20 @@ private:
         } else {
             result_.ledger.ground_w += power_w;
         }
+    }
+
+    // Where a body took light at its surface: what a lit spot is made of.
+    void record(int body, const Vec3 &at, const Vec3 &along, const Vec3 &normal, double power_w,
+                double section_m2) {
+        if (body < 0 || !(power_w > 0.0)) return;
+        Absorption a;
+        a.body = body;
+        a.at = at;
+        a.along = along;
+        a.normal = normal;
+        a.power_w = power_w;
+        a.section_m2 = section_m2;
+        result_.absorptions.push_back(a);
     }
 
     void leg(Going &g, const Vec3 &to) {
@@ -167,6 +304,7 @@ private:
                     return;
                 }
                 leg(g, m.point_m);
+                g.travelled_m += g.skipped_m + m.distance_m;
                 // The normal facing back the way the light came.
                 const Vec3 toward = dot(g.along, m.normal) > 0.0 ? -1.0 * m.normal : m.normal;
                 if (m.body >= 0) scene_.arrives(m.body, m.point_m, g.along, toward, g.power_w);
@@ -201,6 +339,7 @@ private:
                     scattered += std::max(0.0, g.power_w[b] - a - specular[b]);
                 }
                 absorbAt(m.body, absorbed);
+                record(m.body, m.point_m, g.along, toward, absorbed, g.section());
                 result_.ledger.scattered_w += scattered;
                 if (!(total(specular) > 0.0)) return;
                 g.power_w = specular;
@@ -225,12 +364,27 @@ private:
             // ray truly started, to where it leaves.
             const double path_m = m.distance_m + g.skipped_m;
             double absorbed = 0.0;
+            const Power entering = g.power_w;
             for (std::size_t b = 0; b < kBands; ++b) {
                 const double kept = g.power_w[b] * std::exp(-s.absorption_per_m[b] * path_m);
                 absorbed += g.power_w[b] - kept;
                 g.power_w[b] = kept;
             }
             absorbAt(g.inside, absorbed);
+            if (g.inside >= 0 && absorbed > 0.0) {
+                Absorption a;
+                a.body = g.inside;
+                a.at = g.from - g.skipped_m * g.along;
+                a.along = g.along;
+                a.power_w = absorbed;
+                a.section_m2 = g.section();
+                a.through = true;
+                a.length_m = path_m;
+                a.entering_w = entering;
+                a.per_m = s.absorption_per_m;
+                result_.absorptions.push_back(a);
+            }
+            g.travelled_m += path_m;
             ++g.met;
             const Vec3 outward = dot(g.along, m.normal) < 0.0 ? -1.0 * m.normal : m.normal;
             const Vec3 toward = -1.0 * outward;

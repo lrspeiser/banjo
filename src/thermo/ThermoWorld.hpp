@@ -25,6 +25,7 @@
 #include "thermo/ThermalMechanics.hpp"
 #include "thermo/Thermochemistry.hpp"
 
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -139,6 +140,109 @@ struct HeaterDeclaration {
     std::string label{"heater"};
 };
 
+// ---- A lit spot (docs/light-spots.md) -------------------------------------
+//
+// Light lands where it lands. Concentrated on a small spot it heats that spot
+// far faster than it heats the body, because the matter there has to pass its
+// heat on through the body before the body is any warmer -- which is how a
+// beam cuts and a burning glass chars, while the same power spread over the
+// body only warms it. The network holds a body as one lump (a layer over a
+// core), so a spot is held beside it: the heat light has put into a cell of
+// the body (a cell is the host's: the network only knows its number and its
+// share of the body's matter) towards taking that cell's matter away.
+//
+// The spot's face is held at the temperature the matter is GONE at, and loses
+// from there what a disc held at a fixed temperature on a large body loses:
+//
+//     conducted into the body   4 k a (T_gone - T_body)           (a disc of radius a; Carslaw and Jaeger)
+//     from its face             h A (T_gone - T_air) + e s A (T_gone^4 - T_air^4)
+//
+// What light brings beyond that goes into the cells under it; what it brings
+// short of that only warms the body, as all light did before. A cell's matter
+// is gone when its spot has been given what taking it from where it is to gone
+// costs, by the model's own substances (removalEnergyJ). Where a material's
+// matter goes, and at what temperature, is the thermochemistry's, never a
+// number for light: oak chars at its law's char line (its moisture driven off
+// first, as the steam the drying reaction makes), ice melts. A material the
+// model has no way to take away -- one that neither chars nor melts here -- is
+// only warmed, however bright the light.
+struct SpotCell {
+    std::uint32_t cell{};          // the host's own name for a cell of the body
+    double share{};                // of the spot's power, the share that lands in it
+    double matter_share{};         // of the body's matter, the share the cell holds
+};
+
+struct SpotDeclaration {
+    std::string body;
+    double power_w{};              // absorbed in the spot
+    // On a surface, the area lit. Absorbed on the way through a clear body
+    // (`through`), the lit cells' volume instead: the light warms the matter
+    // along its way, not a face.
+    double area_m2{};
+    double volume_m3{};
+    bool through{};
+    // The cells it lands in. None: the body cannot lose matter here (it is
+    // anchored, or the host cannot say where), and the spot only warms it.
+    std::vector<SpotCell> cells;
+    double start_s{};
+    double seconds{};
+};
+
+// How heat alone takes a material's matter away, from the model's own numbers.
+struct Removal {
+    bool possible{};
+    std::string how;               // "chars" (to its law's char line) or "melts"
+    double gone_k{};
+    std::string why_not;           // when it is not possible
+};
+
+// One spot as the last step left it.
+struct SpotState {
+    std::string body;
+    double power_w{};
+    double area_m2{};
+    double volume_m3{};
+    bool through{};
+    std::string how;               // "" when nothing takes the matter away
+    double gone_k{};
+    double loss_w{};               // what the spot loses held at gone_k
+    double cut_w{};                // what goes into taking matter away
+    // The spot's own temperature: gone_k while it is taking matter away, and
+    // otherwise where it settles, light in against what it loses. A body
+    // matter cannot be taken from still gets one, so a reader sees how hot a
+    // mirror's spot is.
+    double temperature_k{};
+    bool beyond_model{};           // past the model's declared range
+};
+
+// Heat held in one cell towards taking it away.
+struct Spot {
+    std::uint32_t cell{};
+    double energy_j{};
+    double needed_j{};             // what taking it away costs now (as the last step left the body)
+    double matter_share{};
+    bool lit{};                    // lit over the last step
+};
+
+// A spot that has been given what it needs, or one taken away.
+struct SpotReady {
+    std::string body;
+    std::uint32_t cell{};
+    double matter_share{};
+    double energy_j{};
+    double needed_j{};
+};
+
+struct TakenAway {
+    std::string how;
+    double gone_k{};
+    double needed_j{};             // what light spent taking it from where it was to gone
+    double surplus_j{};            // what its spot held beyond that, given back to the body as heat
+    double kg{};
+    double energy_out_j{};         // what the matter carried away: its own energy and needed_j
+    double melted_kg{};            // of it, solid that melted (it runs off as water)
+};
+
 struct Lump {
     std::string body;
     std::string material;
@@ -198,6 +302,8 @@ struct Lump {
     // only where it went, not what it holds. In the state, so a refused step
     // takes back the water it would have made.
     double meltwater_kg{};
+    // Light's heat held in cells of it towards taking them away (Spot).
+    std::vector<Spot> spots;
     // Set aside with its body (ThermoWorld::park): out of the world, so no heat
     // path reaches it, nothing in it reacts and no heater warms it. Kept exactly
     // as it was put away, and still the network's -- on its ledger, not left it.
@@ -285,6 +391,15 @@ struct Ledger {
     double numerical_j{};
     // Steps spent with some parcel outside the model's declared range.
     unsigned long long out_of_range_steps{};
+    // Lit spots (SpotDeclaration), told apart for anyone reporting on them;
+    // none of these is a crossing of its own. Light into spots is in
+    // heater_in_j; what they hold now is in sensible_j; matter they took away
+    // is in matter_out (its energy: its own and taken_j). So
+    //     spot_in_j = taken_j + returned_j + what spots hold now.
+    double spot_in_j{};            // light that went into spots
+    double taken_j{};              // spent taking matter from where it was to gone
+    double returned_j{};           // spot heat given back to a body as heat
+    double taken_kg{};             // matter taken away
 
     [[nodiscard]] double storedJ() const { return reference_j + sensible_j; }
     [[nodiscard]] double netInJ() const {
@@ -338,6 +453,8 @@ struct BodyHeat {
     // Of what it was given, how much has boiled away.
     double carried_boiled_kg{};
     std::vector<std::pair<std::string, double>> contents_kg;
+    // Light's heat held in spots on it towards taking matter away (Spot).
+    double spot_j{};
     // Set aside (ThermoWorld::park): held as it was put away, out of the world.
     bool parked{};
 };
@@ -378,6 +495,10 @@ struct ThermoState {
     std::vector<Lump> lumps;
     std::vector<GasRegion> regions;
     std::vector<Heater> heaters;
+    // Light on spots, declared for the step about to be taken (spot()), and
+    // what each did over the last one.
+    std::vector<SpotDeclaration> spot_lights;
+    std::vector<SpotState> spot_states;
     std::vector<Contact> contacts;
     std::vector<Sight> sights;
     // Per lump: conductance to the surroundings by radiation's share of view
@@ -425,6 +546,41 @@ public:
     // for a coil wound on it that will warm it from some later step.
     void enroll(const std::string &body);
     void setVent(const std::string &region, bool open);
+
+    // ---- lit spots (SpotDeclaration; docs/light-spots.md) ----
+    // Light on a spot of a body over [start_s, start_s + seconds], like a
+    // heater: declared after the state is saved for a step, so a step taken
+    // back takes it back. The body is drawn into the network if it is not in.
+    void spot(const SpotDeclaration &declaration);
+    // How heat alone takes this material's matter away, by the model.
+    [[nodiscard]] Removal removal(std::string_view material) const;
+    // What taking `matter_share` of a body's matter from where it is now to
+    // gone costs: each substance heated to where it goes, held liquid driven
+    // off as the gas the model makes of it, a solid that melts melted. Zero
+    // when nothing takes it away.
+    [[nodiscard]] double removalEnergyJ(const std::string &body, double matter_share) const;
+    // What a spot of `area_m2` on a body's face would lose held at the
+    // temperature its matter is gone at, with the body as it is now. Empty when
+    // nothing takes the body's matter away, or the network does not hold it.
+    [[nodiscard]] std::optional<double> spotLossW(const std::string &body, double area_m2) const;
+    // Where a spot of `area_m2` on a body's face given `power_w` would settle
+    // if nothing were taken away: light in against what it loses. Empty when
+    // the network does not hold the body.
+    [[nodiscard]] std::optional<double> spotTemperatureK(const std::string &body, double power_w, double area_m2) const;
+    // Spots that hold at least what taking their cell away costs.
+    [[nodiscard]] std::vector<SpotReady> spotsReady() const;
+    // Every spot held, and what each lit spot did over the last step.
+    [[nodiscard]] std::vector<SpotReady> spotsHeld() const;
+    [[nodiscard]] const std::vector<SpotState> &spotStates() const;
+    // The host has taken a cell away: its share of the body's matter leaves
+    // the network carrying its own energy and what its spot spent on it (as
+    // matter out); what the spot held beyond that is given to the body as
+    // heat; melted solid is handed to the host as meltwater (takeMeltwater).
+    // The body's starting inventory shrinks by the same share, so what it has
+    // burned or melted is the same share of it as before: the cell is gone
+    // from its shape already, and must not be taken out of every face again.
+    // Between steps.
+    TakenAway takeAway(const std::string &body, std::uint32_t cell, double matter_share);
 
     // The forces for the step about to be taken, from the state as accepted.
     // Must be called inside the step's reversible trial: it records the

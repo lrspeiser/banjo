@@ -656,6 +656,20 @@ struct LiveLight {
     std::string why;                    // why it sends nothing, when it does not
 };
 
+// A lens in a clear part (LiveWorld::lens): where it is and which way it
+// faces now, its shape, and where its shape brings light to a focus by the
+// lensmaker's equation for the part's own refractive index -- worked out,
+// never declared. A focal length below zero spreads light, from a focus that
+// far before it.
+struct LiveLens {
+    std::string body;
+    Vec3 centre_local_m{}, axis_local{};
+    double front_radius_m{}, back_radius_m{}, thickness_m{}, aperture_m{};
+    double refractive_index{};
+    double focal_length_m{}, back_focal_distance_m{};
+    Vec3 at_m{}, axis{};
+};
+
 // A light sensor (docs/optics-checkpoint.md): a flat round face of `area_m2`
 // on a part that reads the power of the light reaching it -- every ray that
 // lands on its part within the face's radius of its middle, coming at it from
@@ -684,6 +698,9 @@ struct LivePhotocell {
 // gone): counted, warming nothing.
 struct LiveOpticsLedger {
     double sent{}, heated{}, unheated{}, ground{}, escaped{}, scattered{}, unfollowed{}, bounce_limit{};
+    // Of `heated`, what went into lit spots towards taking matter away
+    // (docs/light-spots.md): part of heated, not a line of its own.
+    double spots{};
     [[nodiscard]] double residual() const {
         return sent - (heated + unheated + ground + escaped + scattered + unfollowed + bounce_limit);
     }
@@ -695,8 +712,29 @@ struct LiveOptics {
         std::string body;
         double absorbed_w{}, absorbed_j{};
         bool heated{};                  // the heat network holds it
+        // Its brightest spot over the last step (docs/light-spots.md): the
+        // power absorbed there and over what area, the temperature the spot is
+        // at, and of that power what goes into taking its matter away; how the
+        // matter goes ("chars", "melts"), or "" when nothing can take it away.
+        double spot_w{}, spot_area_m2{}, spot_k{}, cut_w{};
+        std::string spot_how;
+        // Since light was declared: what it spent taking this body's matter
+        // away, and how much it took.
+        double taken_j{}, taken_m3{}, taken_kg{};
     };
     std::vector<Lit> bodies;            // everything light has reached
+    // A cell light has taken away (docs/light-spots.md): which body, when,
+    // where, how much matter, and what light spent taking it from where it
+    // was to gone -- against the cell's volume, the energy per volume.
+    struct Taken {
+        std::string body;
+        double t_s{};
+        Vec3 at_m{};
+        double volume_m3{}, kg{}, energy_j{};
+        std::string how;
+        double gone_k{};
+    };
+    std::vector<Taken> taken;
     struct Path {
         unsigned light{};
         std::vector<Vec3> points;
@@ -2183,6 +2221,18 @@ public:
     // are smooth already. The reason it cannot, in words, or "" when done.
     std::string polish(const std::string &body, bool polished);
     [[nodiscard]] bool polished(const std::string &body) const;
+    // A lens (LiveLens, docs/light-spots.md "Lenses") in a clear part, glass
+    // or ice: its middle at `centre_world_m` and its axis along `axis_world`
+    // as the part stands now -- kept in the part's own frame, so it goes where
+    // the part goes -- with its two faces' signed radii (positive when a face's
+    // centre of curvature lies ahead of it along the axis; zero is flat), its
+    // thickness on the axis and its aperture (the disc's radius). Light meets
+    // the lens's faces, traced exactly as the spheres they are; the part still
+    // collides as its own shape, which the lens must fit inside. One a part;
+    // another replaces it. The reason it cannot be made, or "" when done.
+    std::string lens(const std::string &body, const Vec3 &centre_world_m, const Vec3 &axis_world,
+                     double front_radius_m, double back_radius_m, double thickness_m, double aperture_m);
+    [[nodiscard]] std::vector<LiveLens> lenses() const;
     // A light sensor (LivePhotocell) on a part: its middle given where it is
     // now in the world, its face looking along `normal_world`, of `area_m2`
     // (above 0, at most 1). Returns its id, above zero, or 0.
@@ -2649,6 +2699,13 @@ private:
     // step starts, and draw into the heat network every body the light now
     // reaches -- before the network's state is saved for the step's trial.
     void traceLightIfDue();
+    // Where the last trace's light landed on each body, by cell, grouped into
+    // lit spots for the heat network (docs/light-spots.md).
+    void placeLitSpots();
+    // After an accepted step: every cell whose spot has been given what
+    // taking it away costs leaves its body, and the body is rebuilt from the
+    // cells it has left -- as pieces, where they no longer join.
+    void takeLitCells();
     // What one body can carry across a load running along `load_world` -- its
     // longest axis when null. See materialStates.
     [[nodiscard]] LiveMaterialState materialStateOf(std::size_t body, const Vec3 *load_world) const;
@@ -2686,7 +2743,8 @@ private:
     void burnAway(std::size_t body, const std::string &why);
     // A piece whose cells have burned away is rebuilt from the cells it has
     // left -- as more than one if they no longer join. Returns how many.
-    std::size_t reformFromCells(std::size_t body);
+    std::size_t reformFromCells(std::size_t body, const char *whole_word = "burned smaller",
+                                const char *apart_word = "burned apart");
     // The bond summary and admission limits of a heated body, from its field.
     void refreshHeatedBonds(std::size_t body, const thermo::MaterialField &field);
     // Every joint made of a member brought up to what its member is now, with

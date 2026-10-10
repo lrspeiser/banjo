@@ -2028,6 +2028,11 @@ struct LiveWorld::Impl {
     std::vector<LiveLight> lights;
     std::vector<LivePhotocell> photocells;
     std::set<std::string> polished_bodies;
+    // Lenses (LiveWorld::lens), each in its part's own frame.
+    std::vector<LiveLens> lens_mounts;
+    [[nodiscard]] static optics::Lens lensOf(const LiveLens &l) {
+        return {l.front_radius_m, l.back_radius_m, l.thickness_m, l.aperture_m};
+    }
     unsigned next_light{1}, next_photocell{1};
     LiveOptics light_report;
     bool light_due{true};
@@ -2041,6 +2046,24 @@ struct LiveWorld::Impl {
     std::set<std::string> lit_cannot_heat;
     // What the step being taken handed the heat network, watts.
     double light_heating_w{};
+    // Lit spots (docs/light-spots.md). From the last trace: where on each body
+    // its light landed, cell by cell, grouped into spots -- cells that touch,
+    // with the power on each cell, the share of the body's matter it holds,
+    // the area lit (on a surface) or the cells' volume (through a clear body).
+    // Whatever of a body's light could not be put in a cell only warms it.
+    struct LitSpot {
+        bool through{};
+        double power_w{}, area_m2{}, volume_m3{};
+        struct Cell {
+            std::uint32_t node{};
+            double power_w{}, matter_share{};
+        };
+        std::vector<Cell> cells;
+    };
+    std::map<std::string, std::vector<LitSpot>> lit_spots;
+    std::vector<optics::Absorption> last_absorptions;
+    // What the spots spent over the step being taken, for light's accounts.
+    double light_spot_w{};
 
     [[nodiscard]] LiveLamp *lampById(unsigned id) {
         for (LiveLamp &lamp : lamps)
@@ -2082,14 +2105,39 @@ struct LiveWorld::Impl {
         std::vector<optics::Surface> surfaces;
         optics::Surface ground;
         std::vector<std::vector<LivePhotocell *>> cells;
+        // Each lens where its part stands now: its middle and its own axes.
+        struct LensFrame {
+            int body{};
+            optics::Lens lens;
+            Vec3 c{}, u{}, v{}, w{};
+        };
+        std::vector<LensFrame> lenses;
+        std::vector<int> lens_at;
+        std::vector<MatterBodyId> lens_ids;
         explicit LightScene(Impl &impl) : I(impl) {
             const std::size_t n = I.described.size();
             surfaces.resize(n);
             cells.resize(n);
+            lens_at.assign(n, -1);
             for (std::size_t i = 0; i < n; ++i) {
                 if (!I.inWorld(i)) continue;
                 index[I.body_of[i]] = static_cast<int>(i);
                 surfaces[i] = I.surfaceOf(i);
+            }
+            for (const LiveLens &mount : I.lens_mounts) {
+                const auto found = I.index_of.find(mount.body);
+                if (found == I.index_of.end() || !I.inWorld(found->second) || !surfaces[found->second].transparent)
+                    continue;
+                const RigidSnapshot pose = I.world->snapshot(I.body_of[found->second]);
+                LensFrame f;
+                f.body = static_cast<int>(found->second);
+                f.lens = lensOf(mount);
+                f.c = pose.center_of_mass_world_m + pose.orientation_world.rotate(mount.centre_local_m);
+                f.w = normalized(pose.orientation_world.rotate(mount.axis_local));
+                across(f.w, f.u, f.v);
+                lens_at[found->second] = static_cast<int>(lenses.size());
+                lenses.push_back(f);
+                lens_ids.push_back(I.body_of[found->second]);
             }
             const optics::OpticalProperties g = optics::groundOpticalProperties();
             ground.absorbed = {g.absorptance, g.absorptance};
@@ -2110,14 +2158,48 @@ struct LiveWorld::Impl {
             }
             return m;
         }
+        // A ray met against a lens's own faces (optics::meetLens), in the
+        // world.
+        optics::Meeting atLens(const LensFrame &f, const Vec3 &from, const Vec3 &along, double reach_m) const {
+            const Vec3 o = from - f.c;
+            const optics::Meeting in = optics::meetLens(f.lens, Vec3{dot(o, f.u), dot(o, f.v), dot(o, f.w)},
+                                                        Vec3{dot(along, f.u), dot(along, f.v), dot(along, f.w)},
+                                                        reach_m);
+            optics::Meeting m;
+            if (!in.hit) return m;
+            m.hit = true;
+            m.body = f.body;
+            m.distance_m = in.distance_m;
+            m.point_m = from + in.distance_m * along;
+            m.normal = normalized(in.normal.x * f.u + in.normal.y * f.v + in.normal.z * f.w);
+            return m;
+        }
         optics::Meeting toSurface(const Vec3 &from, const Vec3 &along, double reach_m, int ignore) override {
-            if (ignore >= 0) {
-                const MatterBodyId id = I.body_of[static_cast<std::size_t>(ignore)];
-                return meeting(I.world->castRayToSurface(from, along, reach_m, std::span<const MatterBodyId>(&id, 1)));
+            optics::Meeting m;
+            if (lenses.empty()) {
+                if (ignore >= 0) {
+                    const MatterBodyId id = I.body_of[static_cast<std::size_t>(ignore)];
+                    return meeting(
+                        I.world->castRayToSurface(from, along, reach_m, std::span<const MatterBodyId>(&id, 1)));
+                }
+                return meeting(I.world->castRayToSurface(from, along, reach_m));
             }
-            return meeting(I.world->castRayToSurface(from, along, reach_m));
+            // A part with a lens in it is seen by light only as its lens.
+            std::vector<MatterBodyId> skip = lens_ids;
+            if (ignore >= 0) skip.push_back(I.body_of[static_cast<std::size_t>(ignore)]);
+            m = meeting(I.world->castRayToSurface(from, along, reach_m, std::span<const MatterBodyId>(skip)));
+            for (const LensFrame &f : lenses) {
+                if (f.body == ignore) continue;
+                const optics::Meeting l = atLens(f, from, along, m.hit ? m.distance_m : reach_m);
+                if (l.hit && (!m.hit || l.distance_m < m.distance_m)) m = l;
+            }
+            return m;
         }
         optics::Meeting outOf(int body, const Vec3 &from, const Vec3 &along, double reach_m) override {
+            if (body >= 0 && static_cast<std::size_t>(body) < lens_at.size() &&
+                lens_at[static_cast<std::size_t>(body)] >= 0)
+                return atLens(lenses[static_cast<std::size_t>(lens_at[static_cast<std::size_t>(body)])], from, along,
+                              reach_m);
             optics::Meeting m = meeting(I.world->castRayOutOf(I.body_of[static_cast<std::size_t>(body)], from, along,
                                                               reach_m));
             m.body = body;
@@ -2249,6 +2331,7 @@ struct LiveWorld::Impl {
                            beyond * s;
                 ray.along = d;
                 ray.power_w = split;
+                ray.section_m2 = step * step;
                 ray.light = light.id;
                 ray.from_sky = true;
                 rays.push_back(ray);
@@ -2285,6 +2368,8 @@ struct LiveWorld::Impl {
                 ray.along = normalized(c * axis + sn * (std::cos(phi) * u + std::sin(phi) * v));
                 const double each = power / light.rays;
                 ray.power_w = {each * light.visible_share, each * (1.0 - light.visible_share)};
+                // A point source's share of its cone: equal solid angles.
+                ray.spread_sr = 2.0 * 3.14159265358979323846 * (1.0 - cos_edge) / light.rays;
                 ray.ignore = ignore;
                 ray.light = light.id;
                 rays.push_back(ray);
@@ -2326,6 +2411,7 @@ struct LiveWorld::Impl {
         // nearer than 50 m, so that a ray only "escapes" past everything.
         settings.reach_m = high.x >= low.x ? std::max(50.0, 2.0 * length(high - low) + 10.0) : 50.0;
         optics::Result result = optics::trace(scene, described.size(), rays, settings);
+        last_absorptions = std::move(result.absorptions);
         // Where it went.
         light_report.watts = LiveOpticsLedger{};
         light_report.watts.sent = result.ledger.sent_w;
@@ -2389,11 +2475,33 @@ struct LiveWorld::Impl {
     // this step. A step taken back takes it back with everything else.
     void heatFromLight(double dt_s) {
         light_heating_w = 0.0;
+        light_spot_w = 0.0;
         if (!thermo || lit.empty()) return;
         for (const auto &[name, w] : lit) {
             const auto found = index_of.find(name);
             if (found == index_of.end() || !inWorld(found->second) || !thermo->holds(name)) continue;
-            thermo->heat({name, w, thermo->timeS(), dt_s, "light"});
+            // Where it landed, as spots (docs/light-spots.md); what could not
+            // be placed in a cell, as a heater on the whole body.
+            double placed = 0.0;
+            if (const auto spots = lit_spots.find(name); spots != lit_spots.end()) {
+                for (const LitSpot &spot : spots->second) {
+                    if (!(spot.power_w > 0.0)) continue;
+                    thermo::SpotDeclaration d;
+                    d.body = name;
+                    d.power_w = spot.power_w;
+                    d.area_m2 = spot.area_m2;
+                    d.volume_m3 = spot.volume_m3;
+                    d.through = spot.through;
+                    for (const LitSpot::Cell &cell : spot.cells)
+                        d.cells.push_back({cell.node, cell.power_w / spot.power_w, cell.matter_share});
+                    d.start_s = thermo->timeS();
+                    d.seconds = dt_s;
+                    thermo->spot(d);
+                    placed += spot.power_w;
+                }
+            }
+            const double rest = w - placed;
+            if (rest > 0.0) thermo->heat({name, rest, thermo->timeS(), dt_s, "light"});
             light_heating_w += w;
         }
     }
@@ -2416,7 +2524,28 @@ struct LiveWorld::Impl {
         for (LiveOptics::Lit &b : light_report.bodies) {
             b.absorbed_j += b.absorbed_w * dt_s;
             b.heated = thermo && thermo->holds(b.body);
+            b.spot_w = b.spot_area_m2 = b.spot_k = b.cut_w = 0.0;
+            b.spot_how.clear();
         }
+        // What each body's spots did over the step: the brightest one's
+        // power, area and temperature, and all of them's cut.
+        double cut = 0.0;
+        if (thermo)
+            for (const thermo::SpotState &state : thermo->spotStates()) {
+                cut += state.cut_w;
+                auto row = std::find_if(light_report.bodies.begin(), light_report.bodies.end(),
+                                        [&](const LiveOptics::Lit &b) { return b.body == state.body; });
+                if (row == light_report.bodies.end()) continue;
+                row->cut_w += state.cut_w;
+                if (state.power_w > row->spot_w) {
+                    row->spot_w = state.power_w;
+                    row->spot_area_m2 = state.through ? 0.0 : state.area_m2;
+                    row->spot_k = state.temperature_k;
+                    row->spot_how = state.how;
+                }
+            }
+        light_report.watts.spots = cut;
+        j.spots += cut * dt_s;
         for (LivePhotocell &cell : photocells) cell.received_j += cell.power_w * dt_s;
     }
 
@@ -4849,6 +4978,18 @@ thermo::Parcel parcelFrom(const nlohmann::json &j) {
     return parcel;
 }
 
+// Light's heat held in cells of a body (thermo::Spot, docs/light-spots.md).
+nlohmann::json savedSpots(const std::vector<thermo::Spot> &spots) {
+    nlohmann::json out = nlohmann::json::array();
+    for (const thermo::Spot &spot : spots)
+        out.push_back({{"cell", spot.cell},
+                       {"energy_j", savedNumber(spot.energy_j)},
+                       {"needed_j", savedNumber(spot.needed_j)},
+                       {"matter_share", savedNumber(spot.matter_share)},
+                       {"lit", spot.lit}});
+    return out;
+}
+
 // What the thermal network holds for one body, whole (thermo::Lump): its matter
 // and its heat zone by zone, what it held when it joined and the hottest each
 // zone has been -- what char and what pyrolysis took are decided by those. Its
@@ -4887,6 +5028,7 @@ nlohmann::json savedLump(const thermo::Lump &l, const thermo::ThermoState &state
             {"melt_kg_s", savedNumber(l.melt_kg_s)},
             {"boil_kg_s", savedNumber(l.boil_kg_s)},
             {"meltwater_kg", savedNumber(l.meltwater_kg)},
+            {"spots", savedSpots(l.spots)},
             {"parked", l.parked}};
 }
 
@@ -4949,6 +5091,12 @@ thermo::Lump lumpFrom(const nlohmann::json &j, const thermo::ThermoState &state,
     l.melt_kg_s = j.contains("melt_kg_s") ? numberFrom(j.at("melt_kg_s")) : 0.0;
     l.boil_kg_s = j.contains("boil_kg_s") ? numberFrom(j.at("boil_kg_s")) : 0.0;
     l.meltwater_kg = j.contains("meltwater_kg") ? numberFrom(j.at("meltwater_kg")) : 0.0;
+    // Saved before light had spots: none.
+    if (j.contains("spots"))
+        for (const nlohmann::json &spot : j.at("spots"))
+            l.spots.push_back({spot.at("cell").get<std::uint32_t>(), numberFrom(spot.at("energy_j")),
+                               numberFrom(spot.at("needed_j")), numberFrom(spot.at("matter_share")),
+                               spot.value("lit", false)});
     l.area_m2 = numberFrom(j.at("area_m2"));
     l.exposed_area_m2 = numberFrom(j.at("exposed_area_m2"));
     l.volume_m3 = numberFrom(j.at("volume_m3"));
@@ -5084,6 +5232,10 @@ nlohmann::json savedLedger(const thermo::Ledger &v) {
             {"work_to_atmosphere_j", savedNumber(v.work_to_atmosphere_j)},
             {"mechanical_in_j", savedNumber(v.mechanical_in_j)},
             {"numerical_j", savedNumber(v.numerical_j)},
+            {"spot_in_j", savedNumber(v.spot_in_j)},
+            {"taken_j", savedNumber(v.taken_j)},
+            {"returned_j", savedNumber(v.returned_j)},
+            {"taken_kg", savedNumber(v.taken_kg)},
             {"out_of_range_steps", v.out_of_range_steps}};
 }
 thermo::Ledger readLedger(const nlohmann::json &j) {
@@ -5108,6 +5260,12 @@ thermo::Ledger readLedger(const nlohmann::json &j) {
     v.mechanical_in_j = numberFrom(j.at("mechanical_in_j"));
     v.numerical_j = numberFrom(j.at("numerical_j"));
     v.out_of_range_steps = j.at("out_of_range_steps").get<unsigned long long>();
+    // Saved before light had spots: none yet.
+    const auto optional = [&](const char *key) { return j.contains(key) ? numberFrom(j.at(key)) : 0.0; };
+    v.spot_in_j = optional("spot_in_j");
+    v.taken_j = optional("taken_j");
+    v.returned_j = optional("returned_j");
+    v.taken_kg = optional("taken_kg");
     return v;
 }
 
@@ -6951,6 +7109,21 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         }
         for (const nlohmann::json &name : saved_light.at("polished"))
             impl.polished_bodies.insert(name.get<std::string>());
+        // Saved before lenses: none.
+        if (saved_light.contains("lenses"))
+            for (const nlohmann::json &o : saved_light.at("lenses")) {
+                LiveLens l;
+                l.body = o.at("body").get<std::string>();
+                l.centre_local_m = vecFrom(o.at("centre_local_m"));
+                l.axis_local = vecFrom(o.at("axis_local"));
+                l.front_radius_m = numberFrom(o.at("front_radius_m"));
+                l.back_radius_m = numberFrom(o.at("back_radius_m"));
+                l.thickness_m = numberFrom(o.at("thickness_m"));
+                l.aperture_m = numberFrom(o.at("aperture_m"));
+                if (!optics::lensProblem(Impl::lensOf(l)).empty() || !(length(l.axis_local) > 0.5))
+                    throw std::invalid_argument("a saved lens is not one this engine can make");
+                impl.lens_mounts.push_back(std::move(l));
+            }
         LiveOptics &report = impl.light_report;
         report.declared = true;
         report.trace_every_steps = saved_light.at("trace_every_steps").get<unsigned>();
@@ -6962,8 +7135,22 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
                          numberFrom(j.at("unheated")),   numberFrom(j.at("ground")),
                          numberFrom(j.at("escaped")),    numberFrom(j.at("scattered")),
                          numberFrom(j.at("unfollowed")), numberFrom(j.at("bounce_limit"))};
-        for (const nlohmann::json &b : saved_light.at("lit"))
+        // Saved before light had spots: none taken.
+        if (j.contains("spots")) report.joules.spots = numberFrom(j.at("spots"));
+        for (const nlohmann::json &b : saved_light.at("lit")) {
             report.bodies.push_back({b.at("body").get<std::string>(), 0.0, numberFrom(b.at("absorbed_j")), false});
+            if (b.contains("taken_j")) {
+                report.bodies.back().taken_j = numberFrom(b.at("taken_j"));
+                report.bodies.back().taken_m3 = numberFrom(b.at("taken_m3"));
+                report.bodies.back().taken_kg = numberFrom(b.at("taken_kg"));
+            }
+        }
+        if (saved_light.contains("taken"))
+            for (const nlohmann::json &t : saved_light.at("taken"))
+                report.taken.push_back({t.at("body").get<std::string>(), numberFrom(t.at("t_s")), vecFrom(t.at("at_m")),
+                                        numberFrom(t.at("volume_m3")), numberFrom(t.at("kg")),
+                                        numberFrom(t.at("energy_j")), t.at("how").get<std::string>(),
+                                        numberFrom(t.at("gone_k"))});
         impl.next_light = saved_light.at("next_light").get<unsigned>();
         impl.next_photocell = saved_light.at("next_photocell").get<unsigned>();
         impl.light_due = true;
@@ -7754,6 +7941,8 @@ void LiveWorld::step(double dt_s) {
         // What each edge took this step, the kerfs it bought, and whatever came
         // apart. After the trial, for the same reason prepareCuts is before it.
         settleCuts(dt_s);
+        // And every cell light has finished taking away (docs/light-spots.md).
+        if (impl_->light_report.declared) takeLitCells();
         // What each point in the ground took this step, and a point that has
         // come out takes what it broke loose out of the ground with it.
         if (!impl_->tools.empty()) impl_->tools.settle(toolHost(), dt_s);
@@ -7819,6 +8008,7 @@ void LiveWorld::step(double dt_s) {
     if (!impl_->controls.empty()) impl_->settleControls(dt_s);
     if (!impl_->programs.empty()) impl_->settlePrograms(dt_s);
     settleCuts(dt_s);
+    if (impl_->light_report.declared) takeLitCells();
     if (!impl_->tools.empty()) impl_->tools.settle(toolHost(), dt_s);
     partOverloadedLinks();
     if (impl_->steps_taken % 60 == 0 || impl_->survey_due) {
@@ -9443,6 +9633,88 @@ std::string LiveWorld::polish(const std::string &body, bool polished) {
 
 bool LiveWorld::polished(const std::string &body) const { return impl_->polishedBody(body); }
 
+std::string LiveWorld::lens(const std::string &body, const Vec3 &centre_world_m, const Vec3 &axis_world,
+                            double front_radius_m, double back_radius_m, double thickness_m, double aperture_m) {
+    Impl &I = *impl_;
+    const auto found = I.index_of.find(body);
+    if (found == I.index_of.end() || !I.inWorld(found->second)) return "there is nothing called " + body;
+    const std::size_t i = found->second;
+    const std::string &material = I.described[i].material;
+    optics::OpticalProperties p;
+    try {
+        p = optics::opticalProperties(presetFromName(material));
+    } catch (const std::exception &) {
+        return "the " + body + " is made of " + material + ", which this engine has no light for";
+    }
+    if (!p.transparent) return "a lens is made of something clear (glass or ice); the " + body + " is " + material;
+    const double axis_length = length(axis_world);
+    if (!(axis_length > 1e-9) || !std::isfinite(axis_length) || !std::isfinite(centre_world_m.x) ||
+        !std::isfinite(centre_world_m.y) || !std::isfinite(centre_world_m.z))
+        return "a lens needs a middle and an axis that points somewhere";
+    const optics::Lens shape{front_radius_m, back_radius_m, thickness_m, aperture_m};
+    if (const std::string why = optics::lensProblem(shape); !why.empty()) return why;
+    const RigidSnapshot pose = I.world->snapshot(I.body_of[i]);
+    const Quat to_body = conjugateOf(pose.orientation_world);
+    LiveLens mount;
+    mount.body = body;
+    mount.centre_local_m = to_body.rotate(centre_world_m - pose.center_of_mass_world_m);
+    mount.axis_local = normalized(to_body.rotate(axis_world));
+    mount.front_radius_m = front_radius_m;
+    mount.back_radius_m = back_radius_m;
+    mount.thickness_m = thickness_m;
+    mount.aperture_m = aperture_m;
+    // It has to be inside the part's matter: what it absorbs warms that, and
+    // the part collides as its own shape. Every corner of the box round the
+    // lens, in the part's frame, within the part's box (a cell's tenth spare).
+    {
+        Vec3 u, v;
+        Impl::across(mount.axis_local, u, v);
+        const double half = 0.5 * thickness_m;
+        const double z0 = std::min({-half, optics::lensFaceZ(front_radius_m, -half, aperture_m)});
+        const double z1 = std::max({half, optics::lensFaceZ(back_radius_m, half, aperture_m)});
+        // In the box the part was made as, turned as it was made.
+        const Vec3 box = 0.5 * referenceBoxOf(i);
+        const double spare = 0.1 * I.request.cell_size_m;
+        for (int k = 0; k < 8; ++k) {
+            const Vec3 q = inReference(i, mount.centre_local_m + ((k & 1) ? aperture_m : -aperture_m) * u +
+                                              ((k & 2) ? aperture_m : -aperture_m) * v +
+                                              ((k & 4) ? z1 : z0) * mount.axis_local);
+            if (std::abs(q.x) > box.x + spare || std::abs(q.y) > box.y + spare || std::abs(q.z) > box.z + spare)
+                return "the lens does not fit inside the " + body + ": make the part bigger, or the lens smaller";
+        }
+    }
+    I.lens_mounts.erase(std::remove_if(I.lens_mounts.begin(), I.lens_mounts.end(),
+                                       [&](const LiveLens &l) { return l.body == body; }),
+                        I.lens_mounts.end());
+    I.lens_mounts.push_back(mount);
+    I.light_due = true;
+    return {};
+}
+
+std::vector<LiveLens> LiveWorld::lenses() const {
+    const Impl &I = *impl_;
+    std::vector<LiveLens> out;
+    for (LiveLens l : I.lens_mounts) {
+        const auto found = I.index_of.find(l.body);
+        double n = 1.0;
+        try {
+            if (found != I.index_of.end())
+                n = optics::opticalProperties(presetFromName(I.described[found->second].material)).refractive_index;
+        } catch (const std::exception &) {
+        }
+        l.refractive_index = n;
+        l.focal_length_m = optics::lensFocalLengthM(Impl::lensOf(l), n);
+        l.back_focal_distance_m = optics::lensBackFocalDistanceM(Impl::lensOf(l), n);
+        if (found != I.index_of.end() && I.inWorld(found->second)) {
+            const RigidSnapshot pose = I.world->snapshot(I.body_of[found->second]);
+            l.at_m = pose.center_of_mass_world_m + pose.orientation_world.rotate(l.centre_local_m);
+            l.axis = pose.orientation_world.rotate(l.axis_local);
+        }
+        out.push_back(std::move(l));
+    }
+    return out;
+}
+
 unsigned LiveWorld::photocell(const std::string &name, const std::string &body, const Vec3 &at_world_m,
                               const Vec3 &normal_world, double area_m2) {
     Impl &I = *impl_;
@@ -9531,6 +9803,8 @@ void LiveWorld::traceLight() {
     I.light_report.watts.heated = heated;
     I.light_report.watts.unheated = absorbed - heated;
     for (LiveOptics::Lit &b : I.light_report.bodies) b.heated = I.thermo && I.thermo->holds(b.body);
+    // Where on each body it landed (docs/light-spots.md).
+    placeLitSpots();
 }
 
 LiveOptics LiveWorld::optics() const { return impl_->light_report; }
@@ -14042,7 +14316,7 @@ void LiveWorld::burnAway(std::size_t body, const std::string &why) {
     dropBodies({body});
 }
 
-std::size_t LiveWorld::reformFromCells(std::size_t which) {
+std::size_t LiveWorld::reformFromCells(std::size_t which, const char *whole_word, const char *apart_word) {
     Impl &I = *impl_;
     TileImpactSetup &setup = *I.setup;
     if (which >= I.described.size() || which >= I.nodes_of.size()) return 0;
@@ -14234,7 +14508,7 @@ std::size_t LiveWorld::reformFromCells(std::size_t which) {
     for (const std::string &name : made)
         if (const auto found = I.index_of.find(name); found != I.index_of.end())
             if (const auto field = fieldOf(found->second)) refreshHeatedBonds(found->second, *field);
-    I.delays.push_back({I.time_s, parent.name, whole ? "burned smaller" : "burned apart",
+    I.delays.push_back({I.time_s, parent.name, whole ? whole_word : apart_word,
                         static_cast<double>(components.size()), 0.0});
     return components.size();
 }
@@ -15100,6 +15374,407 @@ void findCrossings(KerfT &kerf, const std::vector<std::uint32_t> &nodes,
 }
 
 } // namespace
+
+// ---- lit spots (docs/light-spots.md) -----------------------------------------
+//
+// Where the last trace's light landed on each body, cell by cell: a surface
+// hit in the cell just under the point it struck (or, where a body's shape is
+// wider than its cells -- a hull over a hole light has made -- the first cell
+// further along the ray); light absorbed on its way through a clear body
+// shared along its leg in quarter cells by Beer and Lambert, each band at its
+// own rate. Cells that touch and are lit alike are one spot. A spot's area is
+// the spread of the points light landed on across the face it lit -- a uniform
+// disc of radius R has a mean square distance from its middle of R^2 / 2, so
+// the area is 2 pi times that -- and one ray's own bundle more, which is what
+// one ray stands for (Ray::section_m2, spread_sr).
+void LiveWorld::placeLitSpots() {
+    Impl &I = *impl_;
+    I.lit_spots.clear();
+    const std::vector<optics::Absorption> absorptions = std::move(I.last_absorptions);
+    I.last_absorptions.clear();
+    if (!I.thermo || absorptions.empty()) return;
+    const double cell = I.request.cell_size_m;
+    constexpr double kPi = 3.14159265358979323846;
+    struct Moments {
+        double w{}, footprint{};
+        Vec3 p{}, n{};
+        double pp[6]{};   // power-weighted xx, yy, zz, xy, xz, yz
+    };
+    // One ray's light on a face, kept to find a spot's core.
+    struct Hit {
+        Vec3 p{};
+        double w{};
+        std::uint32_t node{};
+        double d{};   // from the spot's middle, across its face
+    };
+    struct BodyCells {
+        bool ok{};
+        CellGrid grid;
+        RigidSnapshot pose{};
+        std::map<std::uint32_t, Moments> surface, through;
+        std::map<std::uint32_t, std::vector<Hit>> hits;
+    };
+    std::map<int, BodyCells> seen;
+    const auto bodyAt = [&](int b) -> BodyCells * {
+        if (const auto found = seen.find(b); found != seen.end()) return found->second.ok ? &found->second : nullptr;
+        BodyCells &c = seen[b];
+        const std::size_t i = static_cast<std::size_t>(b);
+        if (b < 0 || i >= I.described.size() || i >= I.nodes_of.size() || !I.inWorld(i) || I.nodes_of[i].empty() ||
+            I.precise_bodies.count(I.described[i].name) || !I.thermo->holds(I.described[i].name))
+            return nullptr;
+        c.grid = gridOf(I.nodes_of[i], I.cell_offset_m, cell);
+        c.pose = I.world->snapshot(I.body_of[i]);
+        c.ok = true;
+        return &c;
+    };
+    const auto add = [](Moments &m, double w, const Vec3 &p, const Vec3 &n, double footprint) {
+        m.w += w;
+        m.footprint += w * footprint;
+        m.p += w * p;
+        m.n += w * n;
+        m.pp[0] += w * p.x * p.x;
+        m.pp[1] += w * p.y * p.y;
+        m.pp[2] += w * p.z * p.z;
+        m.pp[3] += w * p.x * p.y;
+        m.pp[4] += w * p.x * p.z;
+        m.pp[5] += w * p.y * p.z;
+    };
+    for (const optics::Absorption &a : absorptions) {
+        BodyCells *c = bodyAt(a.body);
+        if (c == nullptr || !(a.power_w > 0.0)) continue;
+        const Quat to_body = conjugateOf(c->pose.orientation_world);
+        const auto local = [&](const Vec3 &world) { return to_body.rotate(world - c->pose.center_of_mass_world_m); };
+        const auto nodeAt = [&](const Vec3 &q) -> std::optional<std::uint32_t> {
+            long long x = 0, y = 0, z = 0;
+            c->grid.place(q, x, y, z);
+            const auto found = c->grid.at.find(CellGrid::key(x, y, z));
+            if (found == c->grid.at.end()) return std::nullopt;
+            return found->second;
+        };
+        if (!a.through) {
+            const Vec3 q = local(a.at);
+            std::optional<std::uint32_t> node = nodeAt(q - (0.25 * cell) * to_body.rotate(a.normal));
+            const Vec3 d = to_body.rotate(a.along);
+            const double reach = length(I.described[static_cast<std::size_t>(a.body)].dimensions_m) + cell;
+            for (double t = 0.25 * cell; !node && t <= reach; t += 0.25 * cell) node = nodeAt(q + t * d);
+            if (!node) continue;
+            // A ray's bundle lands on the face slantwise, spread over its
+            // section over the cosine of the angle it comes in at.
+            const double slant = std::max(0.1, std::abs(dot(a.along, a.normal)));
+            add(c->surface[*node], a.power_w, a.at, a.normal, a.section_m2 / slant);
+            c->hits[*node].push_back({a.at, a.power_w, *node, 0.0});
+            continue;
+        }
+        const int parts = std::max(1, static_cast<int>(std::ceil(a.length_m / (0.25 * cell))));
+        for (int k = 0; k < parts; ++k) {
+            const double s0 = a.length_m * k / parts;
+            const double s1 = k + 1 == parts ? a.length_m : a.length_m * (k + 1) / parts;
+            double w = 0.0;
+            for (std::size_t b = 0; b < optics::kBands; ++b)
+                w += a.entering_w[b] * (std::exp(-a.per_m[b] * s0) - std::exp(-a.per_m[b] * s1));
+            const Vec3 mid = a.at + (0.5 * (s0 + s1)) * a.along;
+            const std::optional<std::uint32_t> node = nodeAt(local(mid));
+            if (!node || !(w > 0.0)) continue;
+            add(c->through[*node], w, mid, a.along, a.section_m2);
+        }
+    }
+    for (auto &[b, c] : seen) {
+        if (!c.ok) continue;
+        const std::size_t i = static_cast<std::size_t>(b);
+        const LiveBodyPose &pose = I.described[i];
+        // Each cell's share of the body's matter: by what its field leaves of
+        // it where it has burned or melted, and alike where nothing has.
+        std::unordered_map<std::uint32_t, double> share;
+        {
+            const std::optional<thermo::MaterialField> field = fieldOf(i);
+            double sum = 0.0;
+            for (const std::uint32_t node : I.nodes_of[i]) {
+                const double left =
+                    field ? thermo::cellShare(*field, inReference(i, I.cell_offset_m[node]), cell).remaining() : 1.0;
+                share[node] = std::max(0.0, left);
+                sum += share[node];
+            }
+            for (auto &[node, s] : share) s = sum > 0.0 ? s / sum : 0.0;
+        }
+        // The area light landed on, from where it landed: the spread across
+        // the face it lit (a uniform disc of radius R has a mean square
+        // distance from its middle of R^2 / 2, so the area is 2 pi times it),
+        // and one ray's own bundle more.
+        const auto areaOf = [&](const Moments &m, bool through) {
+            const Vec3 mean = (1.0 / m.w) * m.p;
+            const double cxx = m.pp[0] / m.w - mean.x * mean.x, cyy = m.pp[1] / m.w - mean.y * mean.y,
+                         czz = m.pp[2] / m.w - mean.z * mean.z, cxy = m.pp[3] / m.w - mean.x * mean.y,
+                         cxz = m.pp[4] / m.w - mean.x * mean.z, cyz = m.pp[5] / m.w - mean.y * mean.z;
+            const Vec3 n = length(m.n) > 0.0 ? normalized(m.n) : Vec3{0.0, 1.0, 0.0};
+            const double along_n = n.x * n.x * cxx + n.y * n.y * cyy + n.z * n.z * czz +
+                                   2.0 * (n.x * n.y * cxy + n.x * n.z * cxz + n.y * n.z * cyz);
+            const double across = std::max(0.0, cxx + cyy + czz - (through ? 0.0 : along_n));
+            return 2.0 * kPi * across + m.footprint / m.w;
+        };
+        std::vector<Impl::LitSpot> spots;
+        for (int kind = 0; kind < 2; ++kind) {
+            const std::map<std::uint32_t, Moments> &lit = kind == 0 ? c.surface : c.through;
+            if (lit.empty()) continue;
+            std::vector<std::uint32_t> nodes;
+            std::vector<std::array<long long, 3>> at;
+            std::vector<double> irradiance;
+            for (const auto &[node, m] : lit) {
+                long long x = 0, y = 0, z = 0;
+                c.grid.place(I.cell_offset_m[node], x, y, z);
+                nodes.push_back(node);
+                at.push_back({x, y, z});
+                irradiance.push_back(m.w / std::max(areaOf(m, kind == 1), 1e-12));
+            }
+            // A spot grows from the brightest cell outwards: a cell joins a
+            // spot it touches (corner to corner) while it is lit at least a
+            // quarter as brightly -- power over the area it lands on -- as
+            // the spot's brightest cell; otherwise it starts a spot of its own.
+            // So a beam across several cells, or the sun on a board, is one
+            // spot, and the focus of a lens is not averaged away into the
+            // light round it. (Declared: where a spot ends is a choice.)
+            // Light absorbed on its way through a clear body has no face to
+            // be bright on: cells that touch are one spot.
+            std::vector<std::size_t> order(nodes.size());
+            for (std::size_t k = 0; k < order.size(); ++k) order[k] = k;
+            std::stable_sort(order.begin(), order.end(),
+                             [&](std::size_t u, std::size_t v) { return irradiance[u] > irradiance[v]; });
+            constexpr std::size_t kUnset = static_cast<std::size_t>(-1);
+            std::vector<std::size_t> spot_of(nodes.size(), kUnset);
+            std::vector<double> peak;
+            std::unordered_map<std::int64_t, std::size_t> index_at;
+            for (std::size_t k = 0; k < nodes.size(); ++k) index_at[CellGrid::key(at[k][0], at[k][1], at[k][2])] = k;
+            for (const std::size_t u : order) {
+                std::size_t best = kUnset;
+                for (int dx = -1; dx <= 1; ++dx)
+                    for (int dy = -1; dy <= 1; ++dy)
+                        for (int dz = -1; dz <= 1; ++dz) {
+                            const auto there = index_at.find(CellGrid::key(at[u][0] + dx, at[u][1] + dy, at[u][2] + dz));
+                            if (there == index_at.end() || spot_of[there->second] == kUnset) continue;
+                            const std::size_t s = spot_of[there->second];
+                            if (kind == 0 && irradiance[u] < 0.25 * peak[s]) continue;
+                            if (best == kUnset || peak[s] > peak[best]) best = s;
+                        }
+                if (best == kUnset) {
+                    best = peak.size();
+                    peak.push_back(irradiance[u]);
+                }
+                spot_of[u] = best;
+            }
+            std::map<std::size_t, std::vector<std::size_t>> groups;
+            for (std::size_t k = 0; k < nodes.size(); ++k) groups[spot_of[k]].push_back(k);
+            for (const auto &[group, members] : groups) {
+                Moments m;
+                Impl::LitSpot spot;
+                spot.through = kind == 1;
+                for (const std::size_t k : members) {
+                    const Moments &one = lit.at(nodes[k]);
+                    m.w += one.w;
+                    m.footprint += one.footprint;
+                    m.p += one.p;
+                    m.n += one.n;
+                    for (int e = 0; e < 6; ++e) m.pp[e] += one.pp[e];
+                    // Scenery is the world: light warms it and takes nothing
+                    // from it (the cutting model's rule for blades too).
+                    if (!pose.anchored) spot.cells.push_back({nodes[k], one.w, share.count(nodes[k]) ? share[nodes[k]] : 0.0});
+                }
+                if (!(m.w > 0.0)) continue;
+                spot.power_w = m.w;
+                spot.volume_m3 = static_cast<double>(members.size()) * cell * cell * cell;
+                spot.area_m2 = areaOf(m, spot.through);
+                // Its core. Light focused by a lens lands as a bright middle
+                // in a dim halo, and what decides whether matter is taken away
+                // is the middle: the disc round the spot's middle in which the
+                // light brings the most beyond what that disc would lose held
+                // where its matter is gone (ThermoWorld::spotLossW). Where no
+                // disc brings more than it loses, the core is the disc that
+                // would settle hottest, so the spot's temperature is its
+                // hottest part's. A disc's area is pi r^2 and one ray's bundle
+                // more. Where the core is all of the spot, the spot is as it
+                // was; where it is less, the core is the spot, and the halo
+                // only warms the body.
+                if (kind == 0) {
+                    std::vector<Hit> all;
+                    for (const std::size_t k : members)
+                        if (const auto h = c.hits.find(nodes[k]); h != c.hits.end())
+                            all.insert(all.end(), h->second.begin(), h->second.end());
+                    const Vec3 mid = (1.0 / m.w) * m.p;
+                    const Vec3 n = length(m.n) > 0.0 ? normalized(m.n) : Vec3{0.0, 1.0, 0.0};
+                    for (Hit &h : all) {
+                        const Vec3 off = h.p - mid;
+                        h.d = length(off - dot(off, n) * n);
+                    }
+                    std::sort(all.begin(), all.end(), [](const Hit &a, const Hit &b) { return a.d < b.d; });
+                    const double ray_area = m.footprint / m.w;
+                    // At most 128 discs are tried, evenly through the rays by
+                    // how far out they are, and always the whole spot.
+                    const std::size_t stride = std::max<std::size_t>(1, all.size() / 128);
+                    double sum = 0.0, excess = 0.0, hottest = 0.0;
+                    std::size_t cut_k = all.size(), hot_k = all.size();
+                    double cut_area = 0.0, cut_w = 0.0, hot_area = 0.0, hot_w = 0.0;
+                    for (std::size_t k = 0; k < all.size(); ++k) {
+                        sum += all[k].w;
+                        const bool last = k + 1 == all.size();
+                        if (!last && (all[k + 1].d == all[k].d || (k + 1) % stride != 0)) continue;
+                        const double area = kPi * all[k].d * all[k].d + ray_area;
+                        if (const std::optional<double> loss = I.thermo->spotLossW(pose.name, area);
+                            loss && sum - *loss > excess && !spot.cells.empty()) {
+                            excess = sum - *loss;
+                            cut_k = k;
+                            cut_area = area;
+                            cut_w = sum;
+                        }
+                        if (const std::optional<double> t = I.thermo->spotTemperatureK(pose.name, sum, area);
+                            t && *t > hottest) {
+                            hottest = *t;
+                            hot_k = k;
+                            hot_area = area;
+                            hot_w = sum;
+                        }
+                    }
+                    const bool cuts = cut_k < all.size();
+                    const std::size_t best_k = cuts ? cut_k : hot_k;
+                    const double best_area = cuts ? cut_area : hot_area, best_w = cuts ? cut_w : hot_w;
+                    if (best_k + 1 < all.size()) {
+                        Impl::LitSpot core;
+                        core.power_w = best_w;
+                        core.area_m2 = best_area;
+                        std::map<std::uint32_t, double> in_core;
+                        for (std::size_t k = 0; k <= best_k; ++k) in_core[all[k].node] += all[k].w;
+                        if (!spot.cells.empty())
+                            for (const auto &[node, w] : in_core)
+                                core.cells.push_back({node, w, share.count(node) ? share[node] : 0.0});
+                        core.volume_m3 = static_cast<double>(core.cells.size()) * cell * cell * cell;
+                        spots.push_back(std::move(core));
+                        continue;
+                    }
+                }
+                spots.push_back(std::move(spot));
+            }
+        }
+        if (!spots.empty()) I.lit_spots[pose.name] = std::move(spots);
+    }
+}
+
+void LiveWorld::takeLitCells() {
+    Impl &I = *impl_;
+    if (!I.thermo || !I.thermo->active()) return;
+    const std::vector<thermo::SpotReady> ready = I.thermo->spotsReady();
+    if (ready.empty()) return;
+    // A fracture holds indices into the body table while it runs; the cells
+    // wait (their spots go on holding what they were given).
+    if (I.pending || !I.queued.empty() || I.guessing || !I.held_for_fracture.empty()) return;
+    TileImpactSetup &setup = *I.setup;
+    const double cell = I.request.cell_size_m;
+    std::map<std::string, std::vector<thermo::SpotReady>> by_body;
+    for (const thermo::SpotReady &r : ready) by_body[r.body].push_back(r);
+    bool took = false;
+    for (const auto &[name, cells] : by_body) {
+        const auto found = I.index_of.find(name);
+        if (found == I.index_of.end()) continue;
+        const std::size_t i = found->second;
+        if (I.described[i].anchored || I.isParked(i) || i >= I.nodes_of.size() || !I.world->contains(I.body_of[i]))
+            continue;
+        const RigidSnapshot pose = I.world->snapshot(I.body_of[i]);
+        const std::optional<thermo::MaterialField> field = fieldOf(i);
+        auto row = std::find_if(I.light_report.bodies.begin(), I.light_report.bodies.end(),
+                                [&](const LiveOptics::Lit &b) { return b.body == name; });
+        if (row == I.light_report.bodies.end()) {
+            I.light_report.bodies.push_back({name, 0.0, 0.0, true});
+            row = I.light_report.bodies.end() - 1;
+        }
+        std::vector<std::uint32_t> &nodes = I.nodes_of[i];
+        double volume_taken = 0.0;
+        std::size_t gone = 0;
+        // Every bond that runs through a taken cell goes with it, in the
+        // scene's matter that every later lattice run reads: the cell's own,
+        // and a longer one from a cell beside it to a cell beyond -- the
+        // lattice joins a cell to more than its face neighbours, and the
+        // matter such a bond stands for was in the cell that is gone.
+        const auto severThrough = [&](std::uint32_t taken_node) {
+            if (setup.matter.asset == nullptr) return;
+            const LatticeAsset &asset = *setup.matter.asset;
+            const Vec3 centre = I.cell_offset_m[taken_node];
+            const double half = 0.5 * cell * (1.0 - 1.0e-6);
+            const auto crosses = [&](const Vec3 &a, const Vec3 &b) {
+                double t0 = 0.0, t1 = 1.0;
+                const double pa[3] = {a.x - centre.x, a.y - centre.y, a.z - centre.z};
+                const double d[3] = {b.x - a.x, b.y - a.y, b.z - a.z};
+                for (int k = 0; k < 3; ++k) {
+                    if (std::abs(d[k]) < 1e-15) {
+                        if (std::abs(pa[k]) > half) return false;
+                        continue;
+                    }
+                    double ta = (-half - pa[k]) / d[k], tb = (half - pa[k]) / d[k];
+                    if (ta > tb) std::swap(ta, tb);
+                    t0 = std::max(t0, ta);
+                    t1 = std::min(t1, tb);
+                    if (t0 > t1) return false;
+                }
+                return true;
+            };
+            const auto sever = [&](std::uint32_t o) {
+                if (o >= setup.matter.bonds.size() || !setup.matter.bonds[o].alive) return;
+                setup.matter.bonds[o].alive = false;
+                setup.matter.bonds[o].damage = 1.0;
+            };
+            std::vector<std::uint32_t> near{taken_node};
+            for (const std::uint32_t node : nodes)
+                if (length(I.cell_offset_m[node] - centre) <= 3.5 * cell) near.push_back(node);
+            for (const std::uint32_t node : near) {
+                if (node + 1U >= asset.adjacency_offsets.size()) continue;
+                for (std::uint32_t k = asset.adjacency_offsets[node]; k < asset.adjacency_offsets[node + 1U]; ++k) {
+                    const std::uint32_t o = asset.adjacent_bond_indices[k];
+                    if (o >= asset.bonds.size()) continue;
+                    const BondRest &rest = asset.bonds[o];
+                    if (rest.node_a == taken_node || rest.node_b == taken_node ||
+                        crosses(I.cell_offset_m[rest.node_a], I.cell_offset_m[rest.node_b]))
+                        sever(o);
+                }
+            }
+        };
+        for (const thermo::SpotReady &r : cells) {
+            const auto at = std::find(nodes.begin(), nodes.end(), r.cell);
+            if (at == nodes.end()) continue;
+            const double left =
+                field ? thermo::cellShare(*field, inReference(i, I.cell_offset_m[r.cell]), cell).remaining() : 1.0;
+            nodes.erase(at);
+            severThrough(r.cell);
+            const thermo::TakenAway t = I.thermo->takeAway(name, r.cell, r.matter_share);
+            LiveOptics::Taken taken;
+            taken.body = name;
+            taken.t_s = I.time_s;
+            taken.at_m = pose.center_of_mass_world_m + pose.orientation_world.rotate(I.cell_offset_m[r.cell]);
+            taken.volume_m3 = left * cell * cell * cell;
+            taken.kg = t.kg;
+            taken.energy_j = t.needed_j;
+            taken.how = t.how;
+            taken.gone_k = t.gone_k;
+            I.light_report.taken.push_back(taken);
+            row->taken_j += t.needed_j;
+            row->taken_m3 += taken.volume_m3;
+            row->taken_kg += t.kg;
+            volume_taken += taken.volume_m3;
+            ++gone;
+        }
+        if (gone == 0) continue;
+        took = true;
+        I.hull_area_of.erase(name);
+        I.water_cells_of.erase(name);
+        if (const auto record = I.matter_of.find(name);
+            record != I.matter_of.end() && record->second.remaining_volume_m3 > 0.0)
+            record->second.remaining_volume_m3 = std::max(0.0, record->second.remaining_volume_m3 - volume_taken);
+        if (nodes.empty()) {
+            burnAway(i, "light took the last of it away");
+            continue;
+        }
+        (void)reformFromCells(i, "cut smaller by light", "cut apart by light");
+    }
+    if (took) {
+        // Where the light lands has moved: trace it again at once.
+        I.light_due = true;
+        I.survey_due = true;
+    }
+}
 
 unsigned LiveWorld::blade(const std::string &body, const Vec3 &heel_world_m,
                           const Vec3 &tip_world_m, const Vec3 &facing_world,
@@ -18624,8 +19299,26 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
         const LiveOpticsLedger &j = I.light_report.joules;
         nlohmann::json lit = nlohmann::json::array();
         for (const LiveOptics::Lit &b : I.light_report.bodies)
-            lit.push_back({{"body", b.body}, {"absorbed_j", savedNumber(b.absorbed_j)}});
+            lit.push_back({{"body", b.body}, {"absorbed_j", savedNumber(b.absorbed_j)},
+                           {"taken_j", savedNumber(b.taken_j)}, {"taken_m3", savedNumber(b.taken_m3)},
+                           {"taken_kg", savedNumber(b.taken_kg)}});
+        nlohmann::json taken = nlohmann::json::array();
+        for (const LiveOptics::Taken &t : I.light_report.taken)
+            taken.push_back({{"body", t.body}, {"t_s", savedNumber(t.t_s)}, {"at_m", savedVec(t.at_m)},
+                             {"volume_m3", savedNumber(t.volume_m3)}, {"kg", savedNumber(t.kg)},
+                             {"energy_j", savedNumber(t.energy_j)}, {"how", t.how},
+                             {"gone_k", savedNumber(t.gone_k)}});
+        nlohmann::json lenses = nlohmann::json::array();
+        for (const LiveLens &l : I.lens_mounts)
+            lenses.push_back({{"body", l.body},
+                              {"centre_local_m", savedVec(l.centre_local_m)},
+                              {"axis_local", savedVec(l.axis_local)},
+                              {"front_radius_m", savedNumber(l.front_radius_m)},
+                              {"back_radius_m", savedNumber(l.back_radius_m)},
+                              {"thickness_m", savedNumber(l.thickness_m)},
+                              {"aperture_m", savedNumber(l.aperture_m)}});
         doc["light"] = {{"lights", std::move(lights)},
+                        {"lenses", std::move(lenses)},
                         {"photocells", std::move(cells)},
                         {"polished", I.polished_bodies},
                         {"trace_every_steps", I.light_report.trace_every_steps},
@@ -18636,8 +19329,10 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                                     {"unheated", savedNumber(j.unheated)}, {"ground", savedNumber(j.ground)},
                                     {"escaped", savedNumber(j.escaped)}, {"scattered", savedNumber(j.scattered)},
                                     {"unfollowed", savedNumber(j.unfollowed)},
-                                    {"bounce_limit", savedNumber(j.bounce_limit)}}},
+                                    {"bounce_limit", savedNumber(j.bounce_limit)},
+                                    {"spots", savedNumber(j.spots)}}},
                         {"lit", std::move(lit)},
+                        {"taken", std::move(taken)},
                         {"next_light", I.next_light},
                         {"next_photocell", I.next_photocell}};
     }

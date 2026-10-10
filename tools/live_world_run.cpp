@@ -616,6 +616,23 @@ nlohmann::json lampOf(const LiveLamp &lamp) {
 // unrounded; its sources and sensors; what it reaches; and what it costs. With
 // `paths`, a few rays of the last trace to draw: each a light's id, its corners
 // in millimetres, x, y, z running, and the watts on each leg.
+// Each lens: where it is, which way it faces, its shape, and where that shape
+// brings light to a focus (the lensmaker's equation, for its part's index).
+nlohmann::json lensesOf(const LiveWorld &world) {
+    nlohmann::json out = nlohmann::json::array();
+    for (const LiveLens &l : world.lenses())
+        out.push_back({{"body", l.body},
+                       {"at_m", vec(l.at_m)},
+                       {"axis", vec(l.axis)},
+                       {"front_radius_m", tidy(l.front_radius_m)},
+                       {"back_radius_m", tidy(l.back_radius_m)},
+                       {"thickness_m", tidy(l.thickness_m)},
+                       {"aperture_m", tidy(l.aperture_m)},
+                       {"focal_length_m", tidy(l.focal_length_m)},
+                       {"back_focal_distance_m", tidy(l.back_focal_distance_m)}});
+    return out;
+}
+
 nlohmann::json opticsOf(const LiveWorld &world, bool paths) {
     const LiveOptics o = world.optics();
     if (!o.declared) return nullptr;
@@ -628,6 +645,8 @@ nlohmann::json opticsOf(const LiveWorld &world, bool paths) {
                               {"scattered", tidy(l.scattered)},
                               {"unfollowed", tidy(l.unfollowed)},
                               {"bounce_limit", tidy(l.bounce_limit)},
+                              // Of heated: what went into lit spots, taking matter away.
+                              {"spots", tidy(l.spots)},
                               {"residual", l.residual()}};
     };
     nlohmann::json lights = nlohmann::json::array();
@@ -649,11 +668,40 @@ nlohmann::json opticsOf(const LiveWorld &world, bool paths) {
                          {"power_w", tidy(cell.power_w)},
                          {"received_j", tidy(cell.received_j)}});
     nlohmann::json lit = nlohmann::json::array();
-    for (const LiveOptics::Lit &b : o.bodies)
-        lit.push_back({{"body", b.body},
-                       {"absorbed_w", tidy(b.absorbed_w)},
-                       {"absorbed_j", tidy(b.absorbed_j)},
-                       {"heated", b.heated}});
+    for (const LiveOptics::Lit &b : o.bodies) {
+        nlohmann::json row = {{"body", b.body},
+                              {"absorbed_w", tidy(b.absorbed_w)},
+                              {"absorbed_j", tidy(b.absorbed_j)},
+                              {"heated", b.heated}};
+        // Its brightest spot (docs/light-spots.md), and what light has taken
+        // of it.
+        if (b.spot_w > 0.0)
+            row["spot"] = {{"w", tidy(b.spot_w)},
+                           {"area_mm2", tidy(b.spot_area_m2 * 1.0e6)},
+                           {"w_m2", b.spot_area_m2 > 0.0 ? tidy(b.spot_w / b.spot_area_m2) : 0.0},
+                           {"k", tidy(b.spot_k)},
+                           {"cut_w", tidy(b.cut_w)},
+                           {"how", b.spot_how}};
+        if (b.taken_kg > 0.0)
+            row["taken"] = {{"j", tidy(b.taken_j)}, {"cm3", tidy(b.taken_m3 * 1.0e6)}, {"g", tidy(b.taken_kg * 1000.0)}};
+        lit.push_back(std::move(row));
+    }
+    // The last few cells light has taken away (all of them are counted in
+    // taken_count, so a host that missed some knows it did).
+    nlohmann::json taken = nlohmann::json::array();
+    const std::size_t from = o.taken.size() > 16 ? o.taken.size() - 16 : 0;
+    for (std::size_t k = from; k < o.taken.size(); ++k) {
+        const LiveOptics::Taken &t = o.taken[k];
+        taken.push_back({{"body", t.body},
+                         {"t_s", tidy(t.t_s)},
+                         {"at_m", vec(t.at_m)},
+                         {"cm3", tidy(t.volume_m3 * 1.0e6)},
+                         {"g", tidy(t.kg * 1000.0)},
+                         {"j", tidy(t.energy_j)},
+                         {"j_per_cm3", t.volume_m3 > 0.0 ? tidy(t.energy_j / (t.volume_m3 * 1.0e6)) : 0.0},
+                         {"how", t.how},
+                         {"gone_k", tidy(t.gone_k)}});
+    }
     nlohmann::json out = {
         {"t_s", tidy(o.t_s)},
         {"watts", ledger(o.watts)},
@@ -661,6 +709,9 @@ nlohmann::json opticsOf(const LiveWorld &world, bool paths) {
         {"lights", std::move(lights)},
         {"photocells", std::move(cells)},
         {"lit", std::move(lit)},
+        {"taken", std::move(taken)},
+        {"taken_count", o.taken.size()},
+        {"lenses", lensesOf(world)},
         {"cost", {{"trace_every_steps", o.trace_every_steps},
                   {"bounce_limit", o.bounce_limit},
                   {"follow_share", tidy(o.follow_share)},
@@ -2875,6 +2926,21 @@ int main(int argc, char **argv) {
                     const std::string refused = world->polish(command.at("body").get<std::string>(),
                                                               command.value("polished", true));
                     if (!refused.empty()) throw std::invalid_argument(refused);
+                } else if (op == "lens") {
+                    // A lens in a clear part (docs/light-spots.md, "Lenses"):
+                    // its middle and axis given in the world, its two faces'
+                    // signed radii, its thickness and its aperture.
+                    const std::string refused = world->lens(
+                        command.at("body").get<std::string>(), readVec(command, "at_m"), readVec(command, "axis"),
+                        command.value("front_radius_m", 0.0), command.value("back_radius_m", 0.0),
+                        command.value("thickness_m", 0.0), command.value("aperture_m", 0.0));
+                    if (!refused.empty()) throw std::invalid_argument(refused);
+                    for (const LiveLens &made : world->lenses())
+                        if (made.body == command.at("body").get<std::string>())
+                            reply["lens"] = {{"body", made.body},
+                                             {"focal_length_m", tidy(made.focal_length_m)},
+                                             {"back_focal_distance_m", tidy(made.back_focal_distance_m)},
+                                             {"refractive_index", made.refractive_index}};
                 } else if (op == "photocell") {
                     // A light sensor on a part: its middle and the way its face
                     // looks, given in the world, and its area.

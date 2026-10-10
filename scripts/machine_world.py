@@ -2435,11 +2435,20 @@ put, and "light" traces its rays:
           "lamps": [{"name": str, "on": part or null, "at_m": [..], "battery": battery name, "watts": n,
                      "efficacy_lm_w": 120, "axis": [..], "half_angle_deg": 1-180, "rays": 1-1024}],
           "photocells": [{"name": str, "on": part, "at_m": [..] (on the part's face), "normal": [..] (the way the
-                          face looks), "area_m2": n}] (a light sensor: it reads the watts of light reaching its face)}
+                          face looks), "area_m2": n}] (a light sensor: it reads the watts of light reaching its face),
+          "lenses": [{"on": glass or ice part, "at_m": [..], "axis": [..], "front_radius_m": n, "back_radius_m": n,
+                      "thickness_m": n, "aperture_m": n}] (or use the "lens" kit, which makes the part too)}
 Glass and ice let light through and bend it (a glass ball focuses sunlight about 17 mm beyond its far side, to about
 150 times the open sun, but window glass absorbs most of what goes through: a 100 mm glass ball passes about 1.3 W of
-the 7.9 W on it); everything else absorbs a share of light and is warmed by it. Heat is spread through the whole of a
-part, so focused sunlight cannot set wood alight: to burn a rope with sunlight, let the light work a switch and a coil.
+the 7.9 W on it; infrared light, a laser's "infrared" band, is absorbed by glass and ice within a few centimetres);
+everything else absorbs a share of light and is warmed by it. Light concentrated on a small spot heats that spot
+first. Where it brings more than the spot loses (what it conducts into the part and gives off from its face, held at
+the temperature its matter goes at), it takes that matter away, a cell at a time: a laser, or a beam a lens focuses,
+chars through oak (about 0.44 J a cubic millimetre: 4.5 kW on a 20 mm oak rope parts it in about 2.5 s) and melts
+through ice (about 0.31 J a cubic millimetre), and a rope it burns through parts ({"cut": rope} is a station for it).
+Less than that only warms the part. Mirrors, glass, metal, concrete and rubber are never taken away, only warmed. A
+100 mm glass ball's focus in full sun warms oak to about 500 K but does not char it: to burn a rope with sunlight, let
+the light work a switch and a coil, or use mirrors and a big lens.
 A circuit's switch may follow a sensor: "switch": {"photocell": name, "closed_at_or_above_w": n} (or
 "closed_at_or_below_w": n, closed while the beam is broken). Stations: {"lit_w": {"photocell": name, "w": n}} (the
 sensor reads at least w), {"shaded_w": {"photocell": name, "w": n}} (it read more than w, then w or less).'''
@@ -2491,11 +2500,12 @@ def compile_light(spec, sun, names, battery_names, problems, extra=None):
         light = {}
     extra = extra or {}
     mirrors = list(light.get('mirrors') or []) + list(extra.get('mirrors') or [])
+    lenses_in = list(light.get('lenses') or []) + list(extra.get('lenses') or [])
     lamps_in = list(light.get('lamps') or []) + list(extra.get('lamps') or [])
     cells_in = list(light.get('photocells') or []) + list(extra.get('photocells') or [])
-    if sun is None and not light and not any(extra.get(k) for k in ('mirrors', 'lamps', 'photocells')):
+    if sun is None and not light and not any(extra.get(k) for k in ('mirrors', 'lamps', 'photocells', 'lenses')):
         return None
-    out = {'sun': sun, 'mirrors': [], 'lamps': [], 'photocells': [], 'sunlight': None,
+    out = {'sun': sun, 'mirrors': [], 'lamps': [], 'photocells': [], 'lenses': [], 'sunlight': None,
            'trace_every_steps': int(_num(light, 'trace_every_steps', 'light', problems, 4, 1, 240))}
     for m in mirrors:
         part = names.get(m) if isinstance(m, str) else None
@@ -2506,6 +2516,29 @@ def compile_light(spec, sun, names, battery_names, problems, extra=None):
                             'polish')
         elif m not in out['mirrors']:
             out['mirrors'].append(m)
+    for i, ln in enumerate(lenses_in):
+        what = f'light: lens {i + 1}'
+        if not isinstance(ln, dict):
+            problems.append(what + ' is an object')
+            continue
+        part = names.get(ln.get('on'))
+        if part is None:
+            problems.append(f'{what}: on must name the clear part it is in')
+            continue
+        if part['material'] not in CLEAR:
+            problems.append(f'{what}: a lens is glass or ice; {ln["on"]} is {part["material"]}')
+        axis = _vec(ln.get('axis'), 3, what + ' axis', problems)
+        if _unit(axis) is None:
+            problems.append(f'{what}: axis must point somewhere')
+        lens = {'on': ln['on'], 'at_m': _vec(ln.get('at_m'), 3, what + ' at_m', problems), 'axis': axis,
+                'front_radius_m': _num(ln, 'front_radius_m', what, problems, 0.1, -10.0, 10.0),
+                'back_radius_m': _num(ln, 'back_radius_m', what, problems, -0.1, -10.0, 10.0),
+                'thickness_m': _num(ln, 'thickness_m', what, problems, 0.01, 0.0005, 0.5),
+                'aperture_m': _num(ln, 'aperture_m', what, problems, 0.03, 0.002, 0.5)}
+        why = lens_problem(lens)
+        if why:
+            problems.append(f'{what}: {why}')
+        out['lenses'].append(lens)
     cell_names = set()
     for i, c in enumerate(cells_in):
         what = f'light: photocell {c.get("name", i + 1) if isinstance(c, dict) else i + 1}'
@@ -2611,6 +2644,9 @@ def build_light(engine, compiled, store_ids):
     ids = {}
     for m in light['mirrors']:
         engine.op(op='polish', body=m, polished=True)
+    for ln in light.get('lenses', []):
+        engine.op(op='lens', body=ln['on'], at_m=ln['at_m'], axis=ln['axis'], front_radius_m=ln['front_radius_m'],
+                  back_radius_m=ln['back_radius_m'], thickness_m=ln['thickness_m'], aperture_m=ln['aperture_m'])
     for c in light['photocells']:
         ids[c['name']] = engine.op(op='photocell', name=c['name'], body=c['on'], at_m=c['at_m'], normal=c['normal'],
                                    area_m2=c['area_m2'])['photocell']
@@ -2651,9 +2687,19 @@ def probe_light(session):
                       'at_m': c.get('at_m'), 'normal': c.get('normal'), 'area_m2': c.get('area_m2')})
     lit = sorted(o.get('lit', []), key=lambda b: -b.get('absorbed_w', 0.0))[:8]
     w = o.get('watts') or {}
+    def row(b):
+        out = {'name': b['body'], 'absorbed_w': _round(b.get('absorbed_w', 0.0), 3)}
+        # Its brightest spot (docs/light-spots.md): watts, area, how hot, and
+        # what of it is taking matter away; and what light has taken of it.
+        if b.get('spot'):
+            out['spot'] = b['spot']
+        if b.get('taken'):
+            out['taken'] = b['taken']
+        return out
     return {'sent_w': _round(w.get('sent', 0.0), 3), 'heated_w': _round(w.get('heated', 0.0), 3),
+            'spots_w': _round(w.get('spots', 0.0), 3),
             'residual_w': w.get('residual'), 'joules': o.get('joules'), 'photocells': cells,
-            'lit': [{'name': b['body'], 'absorbed_w': _round(b.get('absorbed_w', 0.0), 3)} for b in lit],
+            'lit': [row(b) for b in lit], 'taken': o.get('taken', []), 'lenses': o.get('lenses', []),
             'lights': o.get('lights', []), 'paths': o.get('paths', []), 'cost': o.get('cost')}
 
 
@@ -2671,6 +2717,26 @@ def ingest_light(session, reply):
         power = c.get('power_w', 0.0)
         if not h or h[-1][1] != power:
             h.append((round(session.t, 4), power))
+    # Cells light has taken away (docs/light-spots.md): each is news, and a
+    # part it has taken into pieces is cut through -- the "cut" station rule's
+    # news, whatever did the cutting.
+    count = o.get('taken_count', 0) or 0
+    seen = session.__dict__.get('_light_taken', 0)
+    if count > seen and hasattr(session, '_event'):
+        taken = o.get('taken') or []
+        for t in taken[max(0, len(taken) - (count - seen)):]:
+            fam = family(t.get('body'))
+            verb = {'chars': 'charred', 'melts': 'melted'}.get(t.get('how'), 'took')
+            session._event('light', f'the light {verb} {t.get("cm3", 0.0):.1f} cm3 of {fam} away '
+                           f'({t.get("j", 0.0):.0f} J, {t.get("j_per_cm3", 0.0):.2f} J/cm3)', body=fam,
+                           cm3=t.get('cm3'), j=t.get('j'))
+        session._light_taken = count
+        severed = session.__dict__.setdefault('_light_severed', set())
+        for fam in {family(t.get('body')) for t in taken}:
+            if fam in severed or sum(1 for name in session.bodies if family(name) == fam) < 2:
+                continue
+            severed.add(fam)
+            session._event('severed', f'the light burned {fam} through', body=fam)
 
 
 def light_station(rule, session):
@@ -2790,4 +2856,182 @@ KIT_HELP.update({
                   'battery), watts (10: about 4 W of light reach the eye), half_angle_deg (1). A thing in the beam '
                   'darkens the eye: a circuit switch {"photocell": "<name> eye", "closed_at_or_below_w": 1} closes '
                   'then',
+})
+
+
+# A laser: the engine's lamp made narrow (docs/light-spots.md). Its light comes
+# from one point into a cone; what makes it a laser is how narrow the cone is
+# and how much of what it draws comes out as light. The light it puts on a small
+# spot heats that spot faster than the body round it can carry the heat away,
+# and where it brings more than that, it takes the matter there away -- the
+# engine decides, from what the spot is made of.
+LASER_BANDS = {'visible': 1.0, 'infrared': 0.0}
+
+
+def _laser_aim(k, at, problems, name):
+    """The way a laser fires: aim [dx, dy, dz], or at aim_at (a part declared
+    before it) or aim_m (a point)."""
+    if k.get('aim') is not None:
+        aim = _unit(_vec(k.get('aim'), 3, name + ' aim', problems))
+        if aim is None:
+            problems.append(f'{name}: aim must point somewhere')
+        return aim, None
+    target = None
+    if k.get('aim_at') is not None:
+        aimed = (k.get('_known') or {}).get(k['aim_at'])
+        if aimed is None:
+            problems.append(f'{name}: aim_at must name a part declared before it')
+        else:
+            target = aimed['at_m']
+    elif k.get('aim_m') is not None:
+        target = _vec(k.get('aim_m'), 3, name + ' aim_m', problems)
+    else:
+        problems.append(f'{name}: a laser needs aim (a direction), aim_at (a part) or aim_m (a point)')
+    if target is None:
+        return None, None
+    aim = _unit([target[i] - at[i] for i in range(3)])
+    if aim is None:
+        problems.append(f'{name}: the target is where the laser is')
+    return aim, math.sqrt(sum((target[i] - at[i]) ** 2 for i in range(3)))
+
+
+def _kit_laser(k, problems, name):
+    """A laser: a small fixed housing, "<name> housing", and on it a lamp whose
+    light leaves at at_m along aim, in a beam beam_width_m wide a metre out
+    (or half_angle_deg), drawing watts from its battery and giving efficiency
+    of them as light, all of it visible light or all near infrared (band)."""
+    at = _vec(k.get('at_m'), 3, name + ' at_m', problems)
+    aim, _ = _laser_aim(k, at, problems, name)
+    if k.get('battery') is None:
+        problems.append(f'{name}: a laser needs the battery it runs from')
+    band = k.get('band', 'visible')
+    if band not in LASER_BANDS:
+        problems.append(f'{name}: band is "visible" or "infrared"')
+        band = 'visible'
+    watts = _num(k, 'watts', name, problems, 1000.0, 1.0, 5000.0)
+    efficiency = _num(k, 'efficiency', name, problems, 0.3, 0.01, 1.0)
+    if k.get('half_angle_deg') is not None:
+        half = _num(k, 'half_angle_deg', name, problems, 0.3, 0.05, 10.0)
+    else:
+        width = _num(k, 'beam_width_m', name, problems, 0.01, 0.002, 0.3)
+        half = max(0.05, min(10.0, math.degrees(math.atan(0.5 * width))))
+    rays = int(_num(k, 'rays', name, problems, 64, 8, 1024))
+    if aim is None:
+        return [], []
+    size = 0.06
+    housing = [at[i] - aim[i] * (0.5 * size + 0.005) for i in range(3)]
+    parts = [{'name': name + ' housing', 'shape': 'box', 'material': k.get('material', 'aluminum'),
+              'size_m': [size, size, size], 'at_m': [round(c, 6) for c in housing], 'turn_deg': [0, 0, 0],
+              'fixed': True}]
+    extra = k['_light'] if k.get('_light') is not None else {}
+    # Its light is watts x efficiency: a lamp whose lumens a watt drawn are
+    # efficiency x the 300 lumens a watt of its light is taken to carry.
+    extra.setdefault('lamps', []).append({'name': name, 'on': name + ' housing', 'at_m': at,
+                                          'battery': k.get('battery'), 'watts': watts,
+                                          'efficacy_lm_w': round(300.0 * efficiency, 9), 'axis': aim,
+                                          'half_angle_deg': round(half, 9), 'rays': rays,
+                                          'radiant_efficacy_lm_w': 300.0, 'visible_share': LASER_BANDS[band]})
+    return parts, []
+
+
+KITS.update({'laser': _kit_laser})
+KIT_HELP.update({
+    'laser': 'a laser: "<name> housing" (a fixed 6 cm box) and a beam leaving at at_m [x, y, z] along aim [dx, dy, dz] '
+             '(or at aim_at, a part declared before it, or aim_m [x, y, z]); battery (what it runs from), watts (1000: '
+             'what it draws, at most 5000), efficiency (0.3: the share of that which comes out as light), '
+             'beam_width_m (0.01: how wide the beam is a metre out; or half_angle_deg), band ("visible", or '
+             '"infrared", which glass and ice absorb within a few centimetres), rays (64). Where the beam lands on '
+             'a small spot it chars oak and melts ice through; mirrors (polished) bounce it',
+})
+
+
+# A lens (docs/light-spots.md, "Lenses"): a disc of glass or ice with two
+# spherical faces, held in a clear part shaped to hold it. Only its shape is
+# declared; where it brings light to a focus is what Snell's law at its two
+# faces makes of that shape, which the engine traces exactly.
+CLEAR = ('glass', 'ice')
+
+
+def _face_z(radius, vertex_z, r):
+    """How far along the axis a face stands at r from the axis (the engine's
+    optics::lensFaceZ)."""
+    if radius == 0.0:
+        return vertex_z
+    root = math.sqrt(max(0.0, radius * radius - r * r))
+    return vertex_z + radius - (root if radius > 0.0 else -root)
+
+
+def lens_edge_m(lens):
+    a, half = lens['aperture_m'], 0.5 * lens['thickness_m']
+    return _face_z(lens['back_radius_m'], half, a) - _face_z(lens['front_radius_m'], -half, a)
+
+
+def lens_problem(lens):
+    """Why a lens cannot be made, or '' (the engine's optics::lensProblem)."""
+    for r in (lens['front_radius_m'], lens['back_radius_m']):
+        if r != 0.0 and abs(r) <= lens['aperture_m']:
+            return 'each curved face of a lens is wider than its aperture: |radius| must be more than the aperture'
+    if lens_edge_m(lens) <= 0.0:
+        return 'a lens this thick in the middle with these faces has no glass at its rim: make it thicker'
+    return ''
+
+
+def _kit_lens(k, problems, name):
+    """A lens: a fixed clear part "<name>" (glass, or ice) holding a disc with
+    two spherical faces, its middle at at_m and its axis along axis -- the way
+    light goes through it. shape "convex" (it brings light to a focus) or
+    "concave" (it spreads it), each face of radius_m; or radius_front_m and
+    radius_back_m signed the lensmaker's way. diameter_m; thickness_m on the
+    axis, by default as thin as leaves 2 mm of glass at a convex lens's rim, or
+    2 mm in the middle of a concave one."""
+    at = _vec(k.get('at_m'), 3, name + ' at_m', problems)
+    axis = _unit(_vec(k.get('axis', [0, 0, 1]), 3, name + ' axis', problems))
+    if axis is None:
+        problems.append(f'{name}: axis must point somewhere')
+        return [], []
+    material = k.get('material', 'glass')
+    if material not in CLEAR:
+        problems.append(f'{name}: a lens is glass or ice')
+    diameter = _num(k, 'diameter_m', name, problems, 0.06, 0.004, 0.6)
+    a = 0.5 * diameter
+    if k.get('radius_front_m') is not None or k.get('radius_back_m') is not None:
+        r1 = _num(k, 'radius_front_m', name, problems, 0.0, -10.0, 10.0)
+        r2 = _num(k, 'radius_back_m', name, problems, 0.0, -10.0, 10.0)
+    else:
+        shape = k.get('shape', 'convex')
+        if shape not in ('convex', 'concave'):
+            problems.append(f'{name}: shape is "convex" or "concave"')
+        r = _num(k, 'radius_m', name, problems, 0.1, 0.003, 10.0)
+        r1, r2 = (r, -r) if shape != 'concave' else (-r, r)
+    sag = sum(abs(rr) - math.sqrt(max(0.0, rr * rr - a * a)) for rr in (r1, r2) if rr != 0.0 and abs(rr) > a)
+    convex = (r1 > 0 or r1 == 0) and (r2 < 0 or r2 == 0)
+    thick = _num(k, 'thickness_m', name, problems, round(sag + 0.002, 6) if convex else 0.002, 0.0005, 0.5)
+    lens = {'on': name, 'at_m': at, 'axis': axis, 'front_radius_m': r1, 'back_radius_m': r2, 'thickness_m': thick,
+            'aperture_m': a}
+    why = lens_problem(lens)
+    if why:
+        problems.append(f'{name}: {why}')
+        return [], []
+    # The part that holds it: a box a whole number of cells across, its own
+    # +y along the lens's axis (the engine turns it z first, then x).
+    cell = k.get('_cell') or 0.02
+    span = max(thick, lens_edge_m(lens))
+    across = cell * math.ceil(diameter / cell - 1e-9)
+    deep = cell * math.ceil(span / cell - 1e-9)
+    part = {'name': name, 'shape': 'box', 'material': material, 'size_m': [across, deep, across],
+            'at_m': at, 'turn_deg': _turn_to_normal(axis), 'fixed': True}
+    if k.get('_light') is not None:
+        k['_light'].setdefault('lenses', []).append(lens)
+    return [part], []
+
+
+KITS.update({'lens': _kit_lens})
+KIT_HELP.update({
+    'lens': 'a lens: a fixed glass part "<name>" (material "ice" for one of ice) holding a disc with two spherical '
+            'faces, its middle at at_m [x, y, z] and its axis along axis [dx, dy, dz] (the way light goes through it); '
+            'shape "convex" (brings light to a focus) or "concave" (spreads it), radius_m (0.1: each face\'s), '
+            'diameter_m (0.06), thickness_m (as thin as works). Its focal length is not declared: the engine traces '
+            'its faces and reports it. A thin glass lens of two faces of radius R focuses about R / 1.05 beyond '
+            'itself (glass n 1.526; ice n 1.31: R / 0.62); a parallel beam through a convex one meets in a spot a '
+            'few millimetres across, where it burns hardest',
 })
