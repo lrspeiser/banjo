@@ -234,7 +234,8 @@ What each piece is:
 
 
 PIECE_HELP = {
-    'plank': 'a bolted plank, its top surface at top_m, from x_from_m to x_to_m (0.3 m wide, centred on z = 0)',
+    'plank': 'a loose oak plank 2 cm thick and 0.3 m wide, cut to length_m and set down with its middle at x_m: it '
+             'is lowered onto the highest thing under it and rests there; gravity holds it, nothing bolts it',
     'knife': 'a knife pendulum held out level and let go: its pivot at (x_m, pivot_height_m, z_m), arm_m long, '
              'swinging toward swing_toward. At the bottom of its swing the blade is about arm_m + 0.03 m below the '
              'pivot, its sharp edge about 0.06 m ahead of the pivot, 0.2 m wide across the swing. It cuts oak and '

@@ -6,6 +6,7 @@ October 10, 2026. The machine page has a game: open `/play`. Each level is a sma
 
 - **The goal** is a green box drawn in the scene ("the ball is in the cup") and a time limit. The engine checks it on every step: the goal happens when the named part's centre is inside the box.
 - **The tray** lists the pieces you may add and what each costs. Press Add, and the piece appears with sliders for its knobs: where it goes, how high, how long, how much powder. Moving a slider rebuilds the machine in the engine, so the scene always shows what will run.
+- **Pieces are made, then placed.** A plank is cut to length with its slider, then set down: press Place by clicking and click where it should go, or move it with its slider. It is lowered onto the highest thing under it and from then on it is gravity and contact that hold it -- a plank too short for the gap falls in, one too long for the ledges rests on the tables' tops a step up. Nothing of yours may go into anything solid, the level's or another of your pieces: a mirror stood inside a wall is refused, and says by how much.
 - **Run it** builds the machine afresh and plays it at real time.
 - **Stars**, from what the engine measured: one for the goal in time, one for staying at or under the level's par cost, one for style (using enough different pieces, on levels that ask for it). If the chat placed the pieces, one star at most.
 - **Is it reliable?** runs your machine three times with every loose part nudged by up to 1.5 mm, as fast as the engine goes, and says in how many the goal happened. Real chains of events are fragile; a machine that works 3 of 3 is a good one.
@@ -14,7 +15,7 @@ October 10, 2026. The machine page has a game: open `/play`. Each level is a sma
 
 | Level | What it teaches | The pieces | A solution, as tested |
 |---|---|---|---|
-| 1. Mind the gap | rolling | a plank | a plank from x = -0.04 to 0.64 m, top at 0.3 m: the ball reaches the cup at 1.8 s |
+| 1. Mind the gap | rolling | a plank | a plank cut to 0.7 m and set down at x = 0.3 drops into the ledges each table has at the gap, level with the tables: the ball reaches the cup at 1.9 s |
 | 2. Cut it down | cutting | a knife pendulum | pivot at x = -0.08 m, 1.31 m up, a 0.6 m arm: the edge cuts the oak rope and the weight is in the bin at 0.7 s |
 | 3. Knock it off | a powder charge | a cannon | muzzle at x = 1.4 m, bore 0.48 m up, 1 g of powder: the block is knocked into the zone at 1.4 s |
 | 4. Up she goes | steam | a steam engine | over the marker with a 12 kW firebox: the piston reaches the zone at 3.4 s |

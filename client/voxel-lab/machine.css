@@ -63,3 +63,5 @@ details{margin-top:14px;font-size:13px}summary{cursor:pointer;color:#cfe2ec}
 #cost-line{font-variant-numeric:tabular-nums}
 #verdict{display:block;min-height:1.4rem;margin:.4rem 0;font-weight:600}
 #verdict .stars{font-size:1.35rem;letter-spacing:.15rem;color:#ffd34d}
+#view.placing canvas{cursor:crosshair}
+#placed button[aria-pressed="true"]{outline:2px solid #5fe08f}

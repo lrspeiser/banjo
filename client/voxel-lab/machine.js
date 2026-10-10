@@ -547,6 +547,13 @@ window.machineView = ({azimuth: a, elevation: e, distance: d, at} = {}) => {
   if (Array.isArray(at) && at.length === 3) { goal.set(...at); target.copy(goal); }
 };
 
+// And where a point in the world is on the page, for a script that clicks
+// where a person would (tests of placing a piece by clicking).
+window.machineScreenPoint = point => {
+  const p = new THREE.Vector3(...point).project(camera), rect = renderer.domElement.getBoundingClientRect();
+  return [rect.left + (p.x + 1) / 2 * rect.width, rect.top + (1 - p.y) / 2 * rect.height];
+};
+
 function resize() {
   const w = view.clientWidth, h = view.clientHeight;
   renderer.setSize(w, h, false); camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix();
@@ -659,6 +666,34 @@ fetch('/api/checkpoint').then(r => r.ok ? r.json() : null).then(c => {
 const params = new URLSearchParams(location.search);
 const LEVEL_MODE = location.pathname === '/play' || params.has('level');
 let levels = [], level = null, placements = [], placedCost = [], helped = false, scored = false, lastRun = null, rebuildTimer = null;
+let placing = null, pressedAt = null;
+const raycaster = new THREE.Raycaster();
+
+// A press that does not move is a click: with a piece waiting to be placed,
+// it goes where the click meets the scene (the ground or anything on it),
+// within its knobs' ranges. The server then sets it down on what is there.
+function placeAt(clientX, clientY) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  const ndc = new THREE.Vector2((clientX - rect.left) / rect.width * 2 - 1, -(clientY - rect.top) / rect.height * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObjects([ground, ...meshes.values()], true);
+  if (!hits.length || placing === null) return;
+  const at = hits[0].point, p = placements[placing], knobs = trayItem(p.piece).knobs;
+  const set = (key, v) => {
+    const r = knobs[key];
+    if (!r || r.choices) return;
+    const step = r.step || 0.01;
+    p[key] = Number(Math.min(r.max, Math.max(r.min, Math.round(v / step) * step)).toFixed(4));
+  };
+  set('x_m', at.x); set('z_m', at.z);
+  placing = null; view.classList.remove('placing');
+  renderPlaced(); scheduleRebuild(0);
+}
+renderer.domElement.addEventListener('pointerdown', e => { pressedAt = [e.clientX, e.clientY]; });
+renderer.domElement.addEventListener('pointerup', e => {
+  if (placing !== null && pressedAt && Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) < 6) placeAt(e.clientX, e.clientY);
+  pressedAt = null;
+});
 
 function bestStars(id) { try { return Number(localStorage.getItem('banjo-level-' + id) || 0); } catch { return 0; } }
 function keepStars(id, n) { try { if (n > bestStars(id)) localStorage.setItem('banjo-level-' + id, String(n)); } catch { /* private window */ } }
@@ -683,7 +718,8 @@ function renderTray() {
   for (const t of level.tray) {
     const used = placements.filter(p => p.piece === t.piece).length, count = t.count || 1;
     const li = document.createElement('li');
-    const price = t.cost_per ? `${t.cost} + ${t.cost_per.each} per ${t.cost_per.unit} ${t.cost_per.knob === 'length' ? 'm of length' : t.cost_per.knob}` : `${t.cost}`;
+    const per = t.cost_per ? (t.cost_per.say || `${t.cost_per.each} per ${t.cost_per.unit} of ${t.cost_per.knob}`) : '';
+    const price = t.cost_per ? (t.cost ? `${t.cost} + ${per}` : per) : `${t.cost}`;
     li.append(Object.assign(document.createElement('span'), {textContent: `${t.piece} — costs ${price} · ${count - used} of ${count} left`}));
     const add = Object.assign(document.createElement('button'), {type: 'button', textContent: 'Add', disabled: used >= count});
     add.addEventListener('click', () => {
@@ -702,7 +738,20 @@ function renderPlaced() {
     const head = Object.assign(document.createElement('div'), {className: 'piece-head'});
     head.append(Object.assign(document.createElement('strong'), {textContent: `your ${p.piece} ${i + 1}${placedCost[i] != null ? ' · costs ' + placedCost[i] : ''}`}));
     const remove = Object.assign(document.createElement('button'), {type: 'button', textContent: 'Remove'});
-    remove.addEventListener('click', () => { placements.splice(i, 1); renderTray(); renderPlaced(); scheduleRebuild(0); });
+    remove.addEventListener('click', () => { placements.splice(i, 1); placing = null; renderTray(); renderPlaced(); scheduleRebuild(0); });
+    if (t.knobs.x_m) {
+      // Set it down where you point in the scene.
+      const place = Object.assign(document.createElement('button'), {type: 'button',
+        textContent: placing === i ? 'Click in the scene…' : 'Place by clicking'});
+      place.setAttribute('aria-pressed', String(placing === i));
+      place.addEventListener('click', () => {
+        placing = placing === i ? null : i;
+        view.classList.toggle('placing', placing !== null);
+        $('verdict').textContent = placing !== null ? `Click in the scene where your ${p.piece} should go.` : '';
+        renderPlaced();
+      });
+      head.append(place);
+    }
     head.append(remove); li.append(head);
     for (const [key, rule] of Object.entries(t.knobs)) {
       const label = Object.assign(document.createElement('label'), {className: 'knob'});

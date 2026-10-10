@@ -6,7 +6,7 @@
    "id": "gap",
    "title": "Mind the gap",
    "teaches": "rolling",
-   "brief": "The ball rolls down the ramp and along the table. Get it into the green cup on the far table.",
+   "brief": "The ball rolls down the ramp and along the table. Cut a plank to length and set it down over the gap, so the ball rolls across into the green cup.",
    "time_s": 6,
    "budget": 40,
    "par": 21,
@@ -42,13 +42,45 @@
       "shape": "box",
       "material": "concrete",
       "size_m": [
-       0.7,
+       0.6,
        0.3,
        0.3
       ],
       "at_m": [
-       -0.35,
+       -0.4,
        0.15,
+       0
+      ],
+      "fixed": true
+     },
+     {
+      "name": "near ledge",
+      "shape": "box",
+      "material": "concrete",
+      "size_m": [
+       0.1,
+       0.28,
+       0.3
+      ],
+      "at_m": [
+       -0.05,
+       0.14,
+       0
+      ],
+      "fixed": true
+     },
+     {
+      "name": "far ledge",
+      "shape": "box",
+      "material": "concrete",
+      "size_m": [
+       0.1,
+       0.28,
+       0.3
+      ],
+      "at_m": [
+       0.65,
+       0.14,
        0
       ],
       "fixed": true
@@ -58,12 +90,12 @@
       "shape": "box",
       "material": "concrete",
       "size_m": [
-       1.0,
+       0.9,
        0.3,
        0.3
       ],
       "at_m": [
-       1.1,
+       1.15,
        0.15,
        0
       ],
@@ -148,44 +180,38 @@
      "count": 1,
      "cost": 0,
      "cost_per": {
-      "knob": "length",
+      "knob": "length_m",
       "each": 3,
-      "unit": 0.1
+      "unit": 0.1,
+      "say": "3 per 10 cm of plank"
      },
      "knobs": {
-      "x_from_m": {
-       "min": -0.3,
-       "max": 0.7,
-       "default": 0.1,
-       "step": 0.01,
-       "label": "Starts at x"
-      },
-      "x_to_m": {
-       "min": -0.3,
-       "max": 0.7,
+      "length_m": {
+       "min": 0.2,
+       "max": 1.2,
        "default": 0.4,
        "step": 0.01,
-       "label": "Ends at x"
+       "label": "Cut to length"
       },
-      "top_m": {
-       "min": 0.1,
-       "max": 0.5,
-       "default": 0.3,
+      "x_m": {
+       "min": -0.5,
+       "max": 1.1,
+       "default": 0.1,
        "step": 0.01,
-       "label": "Top height"
+       "label": "Set down at x"
       }
      }
     }
    ],
    "hints": [
-    "The gap is from x = 0 to x = 0.6. A plank whose top is level with the tables lets the ball roll across."
+    "The gap is from x = 0 to x = 0.6. Each table has a ledge 2 cm lower and 10 cm wide at the gap: a 2 cm plank that rests on both ledges is level with the tables.",
+    "A plank is set down on whatever is under it, and then it is gravity that holds it there."
    ],
    "solution": [
     {
      "piece": "plank",
-     "x_from_m": -0.04,
-     "x_to_m": 0.64,
-     "top_m": 0.3
+     "length_m": 0.7,
+     "x_m": 0.3
     }
    ]
   },
@@ -285,7 +311,8 @@
      "cost_per": {
       "knob": "arm_m",
       "each": 1,
-      "unit": 0.1
+      "unit": 0.1,
+      "say": "1 per 10 cm of arm"
      },
      "knobs": {
       "x_m": {
@@ -421,7 +448,8 @@
      "cost_per": {
       "knob": "powder_g",
       "each": 8,
-      "unit": 1.0
+      "unit": 1.0,
+      "say": "8 per gram of powder"
      },
      "knobs": {
       "x_m": {
@@ -489,24 +517,7 @@
    "machine": {
     "schema": "banjo.machine.v1",
     "title": "Up she goes",
-    "parts": [
-     {
-      "name": "marker",
-      "shape": "box",
-      "material": "concrete",
-      "size_m": [
-       0.3,
-       0.02,
-       0.3
-      ],
-      "at_m": [
-       0.6,
-       0.01,
-       0.0
-      ],
-      "fixed": true
-     }
-    ]
+    "parts": []
    },
    "goal": {
     "title": "The piston is in the zone",
@@ -540,7 +551,8 @@
      "cost_per": {
       "knob": "heat_kw",
       "each": 1,
-      "unit": 1.0
+      "unit": 1.0,
+      "say": "1 per kW of firebox"
      },
      "knobs": {
       "x_m": {
@@ -578,7 +590,7 @@
     }
    ],
    "hints": [
-    "The zone is over the marker on the floor. Every kilowatt boils about 0.44 g of water a second, and each gram of steam fills about 1.7 litres."
+    "The zone is 0.95 m up, over x = 0.6, z = 0: stand the engine under it. Every kilowatt boils about 0.44 g of water a second, and each gram of steam fills about 1.7 litres."
    ],
    "solution": [
     {
@@ -739,7 +751,8 @@
      "cost_per": {
       "knob": "top_height_m",
       "each": 1,
-      "unit": 0.1
+      "unit": 0.1,
+      "say": "1 per 10 cm of height at its top"
      },
      "knobs": {
       "x_m": {

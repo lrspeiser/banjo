@@ -61,10 +61,10 @@ class Tray(unittest.TestCase):
         two = [dict(gap['solution'][0]), dict(gap['solution'][0])]
         with self.assertRaises(mg.LevelRefused):
             mg.compose(gap, two)
-        wild = [dict(gap['solution'][0], top_m=9.0)]
+        wild = [dict(gap['solution'][0], length_m=9.0)]
         with self.assertRaises(mg.LevelRefused) as caught:
             mg.compose(gap, wild)
-        self.assertIn('top_m is 0.1 to 0.5', ' '.join(caught.exception.problems))
+        self.assertIn('length_m is 0.2 to 1.2', ' '.join(caught.exception.problems))
         sneaky = [dict(gap['solution'][0], material='glass')]
         with self.assertRaises(mg.LevelRefused):
             mg.compose(gap, sneaky)
@@ -72,6 +72,30 @@ class Tray(unittest.TestCase):
         costly = [dict(fire['solution'][0], powder_g=3.0, x_m=1.4)]
         _, _, cost = mg.compose(fire, costly)
         self.assertEqual(cost, 34.0)   # 10 + 8 per gram
+
+    def test_pieces_are_set_down_on_what_is_there_and_never_go_into_anything(self):
+        gap = mg.level_by_id('gap')
+
+        def plank(length, x):
+            spec, _, _ = mg.compose(gap, [{'piece': 'plank', 'length_m': length, 'x_m': x}])
+            return next(p for p in mw.compile_spec(dict(spec, stations=[]))['parts'] if p['name'] == 'your plank 1')
+
+        # Across the gap onto the ledges (2 cm below the tables): level with them.
+        self.assertAlmostEqual(plank(0.7, 0.3)['at_m'][1] + 0.01, 0.302, places=6)
+        # Too long for the ledges: on the tables' tops, a step up.
+        self.assertAlmostEqual(plank(0.9, 0.3)['at_m'][1] + 0.01, 0.322, places=6)
+        # Too short to reach either: down on the floor of the gap.
+        self.assertAlmostEqual(plank(0.55, 0.3)['at_m'][1] + 0.01, 0.022, places=6)
+        self.assertFalse(plank(0.7, 0.3)['fixed'], 'a plank is held by gravity, not bolted')
+        # A bolted piece stood inside something solid is refused, and says where.
+        laser = mg.level_by_id('laser')
+        with self.assertRaises(mg.LevelRefused) as caught:
+            mg.compose(laser, [{'piece': 'mirror', 'x_m': -0.35, 'z_m': 0.5, 'angle_deg': 0}])
+        self.assertIn('your mirror 1 goes 120 mm into wall', caught.exception.problems[0])
+        with self.assertRaises(mg.LevelRefused) as caught:
+            mg.compose(laser, [{'piece': 'mirror', 'x_m': 0.6, 'z_m': 0.0, 'angle_deg': 45},
+                               {'piece': 'mirror', 'x_m': 0.6, 'z_m': 0.0, 'angle_deg': -45}])
+        self.assertIn('into your mirror', caught.exception.problems[0])
 
     def test_a_goal_about_a_piece_needs_that_piece(self):
         with self.assertRaises(mg.LevelRefused) as caught:
@@ -102,19 +126,19 @@ class Tray(unittest.TestCase):
         r = mc.respond_level('Place it for me', level, [], mode='build', call=call)
         self.assertEqual(len(seen), 2, 'a piece not on the tray goes back to the model once')
         self.assertIn('piece is one of plank', json.dumps(seen[1][-1]))
-        self.assertEqual(r['placements'][0]['x_to_m'], 0.64)
+        self.assertEqual(r['placements'][0]['length_m'], 0.7)
         self.assertTrue(r['helped'])
         self.assertNotIn(json.dumps(level['solution']), json.dumps(seen[0]), 'the model is never shown the answer')
         # A knob past its range is brought to the end of the range, as the
         # slider would; a knob the piece does not have is left out.
         pulled = mc.respond_level('Place it', level, [], mode='build', call=lambda m: (
-            {'reply': 'A long plank.', 'placements': [{'piece': 'plank', 'x_from_m': -0.1, 'x_to_m': 9.0,
-                                                       'top_m': 0.3, 'colour': 'red'}]}, {}))
-        self.assertEqual((pulled['placements'][0]['x_to_m'], 'colour' in pulled['placements'][0]), (0.7, False))
+            {'reply': 'A long plank.', 'placements': [{'piece': 'plank', 'length_m': 9.0, 'x_m': 0.3,
+                                                       'colour': 'red'}]}, {}))
+        self.assertEqual((pulled['placements'][0]['length_m'], 'colour' in pulled['placements'][0]), (1.2, False))
         # Several options: the first that is built is used.
         opts = mc.respond_level('Place it', level, [], mode='build', call=lambda m: (
             {'reply': 'Two ways.', 'options': [[{'piece': 'cannon'}], level['solution']]}, {}))
-        self.assertEqual(opts['placements'][0]['x_from_m'], -0.04)
+        self.assertEqual(opts['placements'][0]['x_m'], 0.3)
         hint = mc.respond_level('Help', level, [], mode='hint', call=lambda m: ({'reply': 'Bridge the gap.'}, {}))
         self.assertEqual(hint['reply'], 'Bridge the gap.')
         self.assertNotIn('placements', hint)

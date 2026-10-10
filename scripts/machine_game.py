@@ -46,23 +46,44 @@ def level_by_id(level_id):
 # parts. The knobs a level allows, and their ranges, are in the level's tray;
 # every value is checked against them before anything is built.
 
-def _plank(name, k):
-    """A bolted plank: its top surface at `top_m`, from x_from to x_to."""
-    x0, x1 = sorted((k['x_from_m'], k['x_to_m']))
-    thick = 0.04
+def set_down_height(parts, x0, x1, z0, z1):
+    """The top of the highest thing under a footprint (x0..x1, z0..z1):
+    where a piece set down there comes to rest first. The ground is 0."""
+    top = 0.0
+    for p in parts:
+        if p['shape'] == 'sphere':
+            r = 0.5 * p['size_m'][0]
+            ext = [r, r, r]
+        else:
+            axes, half = mw._axes(p), mw._half(p)
+            ext = [sum(abs(axes[j][i]) * half[j] for j in range(3)) for i in range(3)]
+        c = p['at_m']
+        if c[0] + ext[0] <= x0 or c[0] - ext[0] >= x1 or c[2] + ext[2] <= z0 or c[2] - ext[2] >= z1:
+            continue
+        top = max(top, c[1] + ext[1])
+    return top
+
+
+def _plank(name, k, ctx):
+    """A loose plank, cut to length_m and set down with its middle at x_m:
+    lowered until it meets the first thing under it, and from then on it is
+    gravity and contact that hold it. Nothing about it is bolted."""
+    length, thick, width = k['length_m'], 0.02, k.get('width_m', 0.3)
+    x, z = k['x_m'], k.get('z_m', 0.0)
+    rest = set_down_height(ctx['parts'], x - length / 2, x + length / 2, z - width / 2, z + width / 2)
     return {'parts': [{'name': name, 'shape': 'box', 'material': k.get('material', 'oak'),
-                       'size_m': [round(x1 - x0, 4), thick, k.get('width_m', 0.3)],
-                       'at_m': [round((x0 + x1) / 2, 4), k['top_m'] - thick / 2, k.get('z_m', 0.0)], 'fixed': True}]}
+                       'size_m': [round(length, 4), thick, width],
+                       'at_m': [round(x, 4), round(rest + thick / 2 + 0.002, 4), z], 'fixed': False}]}
 
 
-def _knife(name, k):
+def _knife(name, k, ctx=None):
     return {'kits': [{'kit': 'knife_pendulum', 'name': name,
                       'pivot_m': [k['x_m'], k['pivot_height_m'], k.get('z_m', 0.0)], 'arm_m': k['arm_m'],
                       'swing_toward': k.get('swing_toward', '+x'), 'weight_kg': k.get('weight_kg', 0.0),
                       'edge_radius_m': k.get('edge_radius_m', 0.0002)}]}
 
 
-def _cannon(name, k):
+def _cannon(name, k, ctx=None):
     kit = {'kit': 'cannon', 'name': name, 'at_m': [k['x_m'], k['bore_height_m'], k.get('z_m', 0.0)],
            'toward': k.get('toward', '+x'), 'powder_g': k['powder_g'],
            'ball': {'diameter_m': k.get('ball_diameter_m', 0.08), 'material': k.get('ball_material', 'iron')}}
@@ -71,12 +92,12 @@ def _cannon(name, k):
     return {'kits': [kit]}
 
 
-def _steam(name, k):
+def _steam(name, k, ctx=None):
     return {'kits': [{'kit': 'steam_engine', 'name': name, 'at_m': [k['x_m'], 0.0, k.get('z_m', 0.0)],
                       'heat_w': k['heat_kw'] * 1000.0, 'boiler_side': k.get('boiler_side', '-x')}]}
 
 
-def _ramp(name, k):
+def _ramp(name, k, ctx=None):
     """A ramp with a ball at its top, running toward +x: its top at
     (x_m, top_height_m), down to its foot `run_m` further on at foot_height_m."""
     return {'kits': [{'kit': 'ramp', 'name': name, 'top_m': [k['x_m'], k['top_height_m'], k.get('z_m', 0.0)],
@@ -85,7 +106,7 @@ def _ramp(name, k):
                                                 'name': name + ' ball'}}]}
 
 
-def _mirror(name, k):
+def _mirror(name, k, ctx=None):
     """A polished aluminium mirror on its own stand, standing upright at
     (x_m, z_m) and turned angle_deg about the vertical: at 0 it faces along
     x. It reflects what light reaches it; where the light goes is the
@@ -143,8 +164,7 @@ def check_placements(level, placements):
         if 'cost_per' in t:
             # Priced by a knob: a plank by its length, a firebox by its power.
             per = t['cost_per']
-            amount = (abs(knobs.get('x_to_m', 0) - knobs.get('x_from_m', 0)) if per['knob'] == 'length'
-                      else knobs.get(per['knob'], 0))
+            amount = knobs.get(per['knob'], 0)
             price += per['each'] * amount / per['unit']
         cost += price
         out.append(dict(knobs, piece=p['piece'], cost=round(price, 1)))
@@ -166,7 +186,9 @@ def compose(level, placements):
     spec['title'] = level['title']
     for i, p in enumerate(checked):
         knobs = {k: v for k, v in p.items() if k not in ('piece', 'cost')}
-        made = PIECES[p['piece']](f'your {p["piece"]} {i + 1}', knobs)
+        # What is there already, for a piece that is set down on it.
+        ctx = {'parts': mw.compile_spec(dict(spec, stations=[]))['parts']}
+        made = PIECES[p['piece']](f'your {p["piece"]} {i + 1}', knobs, ctx)
         spec['kits'] += made.get('kits', [])
         spec['parts'] += made.get('parts', [])
         if made.get('mirrors'):
@@ -177,6 +199,25 @@ def compose(level, placements):
     wanted = rule.get('part') if isinstance(rule, dict) else rule
     compiled = mw.compile_spec(dict(spec, stations=[]))
     names = {p['name'] for p in compiled['parts']}
+    # Nothing of the player's goes into anything else -- not the level, not
+    # another piece. (The machine itself lets two bolted parts meet; a
+    # player's bolted mirror stood inside a wall, and a bolted plank inside
+    # the tables it should have rested on.)
+    def owner(part):
+        bits = part['name'].split(' ')
+        return ' '.join(bits[:3]) if bits[0] == 'your' and len(bits) >= 3 else None
+    clashes = []
+    for a in compiled['parts']:
+        if owner(a) is None:
+            continue
+        for b in compiled['parts']:
+            if b is a or owner(b) == owner(a) or (owner(b) is not None and b['name'] < a['name']):
+                continue
+            depth = mw.overlap_depth(a, b)
+            if depth > 0.001:
+                clashes.append(f'{a["name"]} goes {depth * 1000:.0f} mm into {b["name"]}; move it')
+    if clashes:
+        raise LevelRefused(clashes[:4])
     if isinstance(wanted, str) and wanted not in names:
         raise LevelRefused([level['goal'].get('needs', f'the goal is about {wanted}, which is not here yet')])
     spec['stations'] = [dict(level['goal']['station'], title=level['goal']['title'], focus=level['goal'].get('focus', []))]
