@@ -26,7 +26,7 @@
 <label>Sheet<select id="material"><option>glass</option><option>oak</option><option>iron</option><option>ice</option></select></label>
 <label>Ball<select id="ball"><option selected>iron</option><option>glass</option><option>oak</option><option>ice</option></select></label>
 <label>Ball mass · kg<input id="mass" type="number" value="0.1" min="0.001" max="1" step="0.001"></label>
-<label>Drop height · m<input id="height" type="number" value="10" min="0.001" max="10" step="0.001"></label>
+<label>Drop height · m<input id="height" type="number" value="10" min="0.001" max="10" step="0.001"></label><label>Spot · x mm<input id="spot-x" type="number" value="0" min="-15" max="15" step="1"></label><label>Spot · z mm<input id="spot-z" type="number" value="0" min="-15" max="15" step="1"></label>
 <label class="check"><input id="thermal-enabled" type="checkbox"> Retain heat on moving matter · CPU</label><label>Ball heater · W<input id="heater" type="number" value="10" min="0" max="100" step="1"></label><p>Heat stays on the same matter through flight, contact and breaking. Between cells it crosses only the bonded part of each face, so a crack stops it. No thermal expansion, weakening, contact heat or flowing melt.</p>
 <label>Physics step<select id="dt"><option value="240">1 / 240 s</option><option value="480">1 / 480 s</option><option value="960">1 / 960 s</option><option value="1920">1 / 1920 s</option></select></label>
 <details><summary>Solver settings</summary>

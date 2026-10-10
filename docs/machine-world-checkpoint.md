@@ -6,7 +6,7 @@ October 10, 2026. Open `/machine` on the lab server (local `http://127.0.0.1:188
 
 The page shows one world with a chain reaction in it. Press **Start** and watch it run:
 
-1. Water runs down a flume (a trench in level ground) and turns an oak paddle wheel.
+1. A spout pours water onto the paddles of an oak wheel standing in a dry trench. The falling water turns the wheel, then runs off down the trench.
 2. The wheel's axle winds in a rope, which slides a gate bar out from in front of an iron marble.
 3. The marble rolls down an oak ramp.
 4. It knocks over eight oak dominoes.
@@ -16,7 +16,7 @@ The page shows one world with a chain reaction in it. Press **Start** and watch 
 8. The weight falls about 1.1 m.
 9. It lands on a glass plate on two supports, and the plate breaks.
 
-In the engine's rehearsal of this machine the stations happen at 2.8, 3.4, 5.8, 6.7, 6.8, 6.8, 20.1, 20.5 and 20.5 s.
+In the engine's rehearsal of this machine the stations happen at 1.9, 2.4, 4.5, 5.4, 5.5, 5.5, 18.7, 19.2 and 19.2 s.
 
 Every step is calculated by the engine while you watch. Nothing is animated or replayed. The stations are checked off only when the engine measures what each one names: a contact between two parts, a hinge past an angle, a switch closed, a fixing parted, a body broken.
 
@@ -28,6 +28,20 @@ You can also **build with words**. Type a request ("add a pendulum that swings i
 - Before anything runs, the server refuses a declaration that cannot be built honestly: a part below the ground, two loose parts overlapping, unknown materials, joints or circuits naming parts that do not exist, more than 120 parts or more than 120,000 engine cells. Sizes are snapped to whole engine cells (20 mm) and each snap is listed as a note.
 - The engine is `banjo_live_world_run` (LiveWorld: Jolt rigid bodies, a bonded-cell lattice for breaking, a heat and combustion network, and DC circuits). The server steps it against the wall clock at a chosen speed (¼× to 4×), answers the breaking handshake, and streams only the bodies that changed. Broken pieces are drawn from their actual cells.
 - `scripts/machine_chat.py` asks the model (OpenAI Responses API, `OPENAI_MODEL`, default gpt-5-mini) for a complete declaration. It gets the parts, kits and rules, the current declaration and a summary of where things already stand. The model writes only the declaration; it never writes motion or outcomes.
+
+## Pouring water
+
+The river in LiveWorld is depth-averaged: it has no water in the air, so on its own nothing could be poured onto a wheel. A **spout** now pours at a declared rate (`spouts` in the scene; the water-wheel kit's `pour` makes one above its paddles), and its water falls as parcels until it reaches the river (`src/water/FallingWater.cpp`):
+
+- Each parcel is a 4 cm cube of water, 64 g. Between parcels the law is the weakly compressible SPH of the fluid-wheel experiment (a Wendland C2 kernel, sound speed reduced to 20 m/s), worked out in its own substeps of about a millisecond inside each engine step.
+- Against bodies the contact neither rubs nor bounces: a parcel's speed into a surface goes, its speed along it stays, and the body receives the equal and opposite impulse. Those impulses are pushed into the engine's step as a force and a torque about each body's centre, inside the step's reversible trial, so a step taken back pours nothing. The surfaces come from the engine's own shapes (a new sphere query on the rigid world), asked once per parcel per step.
+- Where a parcel's underside reaches the river's surface, or the dry ground, it joins that column: its volume as added water in the river's ledger, its horizontal momentum into the water.
+
+Every parcel is the same volume, so the pour's ledger closes by counting: poured = landed + ran off + still in the air. Measured: 3 × 10⁻¹⁸ m³. Parcels are not rigid bodies in the engine, so they cost none of its pair budget and are never mistaken for the ground when a hit is judged.
+
+`tests/valley_live_tests.cpp` "poured water turns a wheel the way it lands": 2 L/s poured 0.2 m to the right of the axle turns the wheel −20.2 rad in 6 s; poured to the left, +20.4 rad; poured past it, 0. The pour's ledger and the river's close together, and a spout with no ground to land on is refused. Three such runs, 15 s of world time, take 1.3 s of wall time.
+
+Not modelled: surface tension, spray, water soaking in, a density correction at solid walls, and water standing inside a body as a liquid (water a bucket holds is parcels resting in it).
 
 ## Water in the shared world
 
@@ -55,7 +69,7 @@ Measured in the default machine: the battery gave 25,238.6 J, of which 1,118.3 J
 | Electric switch and coil | Kirchhoff/Ohm DC network with a finite battery; Joule heat into the peg | Calculated |
 | Burning peg | Heat conduction, oak combustion with oxygen, strength falling with temperature | Experimental: not calibrated against measured oak burns |
 | Glass plate | Bonded-cell fracture | Experimental: whether it breaks is computed; the number of pieces is not calibrated |
-| Water wheel | Shallow-water flow; drag on each paddle with a declared drag coefficient (1.0) and skin friction (0.01) | Experimental: the coefficients are declared, not calibrated |
+| Pouring water | Falling water as SPH parcels; contact that neither rubs nor bounces; the stream in the trench is shallow-water flow | Experimental: coarse parcels, reduced sound speed; not compared with a measured wheel |
 | Rope and gate | A rope wound on a drum (pulls, never pushes); a bar on a sliding joint | Calculated |
 
 Breaking can take the engine longer than real time; the clock then shows how far world time is behind the wall clock.
@@ -73,7 +87,7 @@ An earlier request, made before the pendulum kit and its `aim_at` existed, produ
 
 ## Limits and next steps
 
-- Water cannot be poured from above: the model has no vertical water velocity, so an overshot wheel or a filling bucket is not possible (handoff section 6). The wheel here is undershot, turned by flow under it.
+- Poured water is coarse: 4 cm parcels with a reduced sound speed, no surface tension or spray. A pour of a few litres a second looks like a stream of drops, not a smooth jet.
 - A flume runs along x only, and the water grid samples barriers at column centres, so a dam thinner than a cell (10 cm) does not hold water back.
 - The coil's resistance does not follow the body's temperature, and it has no trip temperature yet.
 - The glass plate's piece count and the oak burn are uncalibrated (handoff sections 4 and 6).

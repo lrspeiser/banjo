@@ -48,6 +48,10 @@ With heat switched on, the lab used to refuse a step as soon as any interface ha
 
 Measured on the 10 m glass drop with the centre cell heated at 2 W: every face had separated by 1.4292 s; from then on, the other eight cells' temperatures did not change in the last bit; the centre cell ended at 261.89 K; the combined account of motion, stored energy, fracture and heat closed to 3.8 × 10⁻¹⁰ J; the mechanics were identical to the unheated run (9,216 substeps); and the scene reopened exactly. `tests/thermal_matter_adapter_test.py` checks the face law directly: half-bonded faces carry exactly half the conductance, separated faces isolate a heated cell exactly, and two broken sites of four leave half a face bonded.
 
+## Pick where it lands
+
+The ball used to fall on the sheet's centre every time. The coupled lab now takes a drop spot (`spot_m`, x and z from the sheet's centre, within the 15 mm the sheet reaches each way; the page has **Spot · x mm** and **Spot · z mm** beside the drop height). `tests/cpu_drop_spot_test.py` lets a 1 mm drop go over two corner cells, an off-centre point and the centre, and checks from the solver's own contact sites that each first touches the cell beneath it; a spot off the sheet is refused. A ball that bounces lands again wherever the calculation takes it, so second hits need no extra setting.
+
 ## What this does not fix
 
 - **The ball rebounds and glass flies.** The coupled lab's contact is elastic: it stores and returns energy and has no restitution law (see the conservative-reference checkpoint). So after breaking through, the ball bounces off the ground to about 5 m and the glass pieces are thrown 2–6 m up. That is what this model says. It is not what real glass and iron do.

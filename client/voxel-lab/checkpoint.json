@@ -3,6 +3,7 @@
   "date": "2026-10-10",
   "native_sha256": "3b1b3a3b6030b288c42725d17b29564ca79bd5c58f64582ddade11f018511168",
   "changes": [
+    "The machine now starts by pouring water: a spout pours onto the paddles of a wheel, the falling water (64 g SPH parcels) turns it and then runs down the trench. Poured = landed + still falling closes by counting.",
     "Heat now follows a sheet as it breaks. Between two cells it crosses only the bonded part of their shared face, so a crack stops it; before, any heated scene was refused at the first crack. A heated 10 m glass drop runs the full 2 s and its combined mechanical and heat energy account closes to 4e-10 J.",
     "The 10 m glass smash test now runs to the end on the CPU lab: every glass bond breaks. While glass bonds soften, a step must be shorter than about half a microsecond or Newton stalls; the solver now halves up to 16 times instead of 10, jumps straight to the step at which the cells' inertia outweighs the softening, and skips halvings a too-fast fragment would still fail. Physical laws and admission checks are unchanged. Oak and gentler glass impacts still exceed the per-step compute limit.",
     "New /machine page: a live chain reaction built from general parts (ramp, dominoes, lever, switch, battery, coil, burning peg, weight, glass plate). Press Start to watch the engine calculate it; type a request to have a language model build more from the same parts, checked and rehearsed in the engine first.",
@@ -41,7 +42,7 @@
     {
       "label": "The machine (live chain reaction, chat building)",
       "status": "passed",
-      "value": "/machine runs one live LiveWorld world built from general parts: a stream in a flume turns a water wheel that winds a rope to slide a gate and free a marble, then dominoes, a lever whose measured angle closes a switch, a 48 V battery and a coil that burns through an oak peg, a falling weight and a breaking glass plate. All nine stations are checked off from engine measurements in order; a sleeping body now wakes when the water torque on it changes (it did not, so a wheel asleep before the water came never turned); coil heat out equals heat received exactly. A typed request is turned into a checked declaration by the model and rehearsed once in the engine before it is built. 13 machine tests, circuit tests, and an ordinary-browser run pass. Burning and glass breakage are experimental and uncalibrated; the water wheel is not in the shared world."
+      "value": "/machine runs one live LiveWorld world built from general parts: a spout pours water onto a water wheel (the falling water as SPH parcels that push the paddles, then join the stream in the trench) that winds a rope to slide a gate and free a marble, then dominoes, a lever whose measured angle closes a switch, a 48 V battery and a coil that burns through an oak peg, a falling weight and a breaking glass plate. All nine stations are checked off from engine measurements in order; a sleeping body now wakes when the water torque on it changes (it did not, so a wheel asleep before the water came never turned); coil heat out equals heat received exactly. A typed request is turned into a checked declaration by the model and rehearsed once in the engine before it is built. 13 machine tests, circuit tests, and an ordinary-browser run pass. Burning and glass breakage are experimental and uncalibrated; the water wheel is not in the shared world."
     },
     {
       "label": "Resumed checkpoint verification",
@@ -261,6 +262,6 @@
   "gpu_material_source_sha256": "439309fd656c70e3f3728fda7a7260aad16ecfe72c0f2f32d9c388b67690f559",
   "gpu_coupled_source_sha256": "41042759a91de85e7cea44d0804c2e86bd3635e25fa01c71198cc45f51e03f87",
   "gpu_representation_scope": "Experimental isolated rigid sphere plus continuously solved material island; no detailed sphere fracture, heat or fluid coupling",
-  "cpu_coupled_source_sha256": "3a47e784ec45c2e7261512553fb6b1b7f667c61574e084ec2f55ba2410061e0e",
+  "cpu_coupled_source_sha256": "fd789ef90520e4a924f55995e9b31141a85070d943031074f498178669d6a919",
   "cpu_hosted_scope": "Explicit compiled CPU reference; optional inert conduction fields bound to stable matter through flight/contact. Mechanical properties remain constant; damage/plastic/phase transfers refuse. Strong fracture and all-family realtime remain open."
 }

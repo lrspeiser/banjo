@@ -16,7 +16,7 @@ def halves(h,depth,levels):
     return [(h/2**k,depth+k) for k in range(1,levels+1)]+[(h/2**levels,depth+levels)]
 
 def declaration(raw,*,device="cuda:0",pipeline="parallel",linear="cupy-reference",pipelines=("parallel","serial-reference"),linears=("cupy-reference","native-cusolver"),representations=("coupled-reference","partitioned-flight")):
-    defaults=dict(material='glass',ball_material='iron',ball_mass_kg=.01,height_m=.02,dt_s=1/960,experiment='sheet',device=device,pipeline=pipeline,newton_strategy='ranked',line_search='batch-tail',linear_backend=linear,contact_resolution='reference',representation_policy='coupled-reference',thermal=None)
+    defaults=dict(material='glass',ball_material='iron',ball_mass_kg=.01,height_m=.02,dt_s=1/960,experiment='sheet',device=device,pipeline=pipeline,newton_strategy='ranked',line_search='batch-tail',linear_backend=linear,contact_resolution='reference',representation_policy='coupled-reference',thermal=None,spot_m=[0.,0.])
     if not isinstance(raw,dict) or set(raw)-set(defaults):raise ValueError('Unknown coupled scene field')
     d=defaults|raw
     if d['device']!=device or d['experiment'] not in ('sheet','freefall'):raise ValueError('Only the explicit selected device and sheet/freefall experiments are admitted')
@@ -33,6 +33,12 @@ def declaration(raw,*,device="cuda:0",pipeline="parallel",linear="cupy-reference
     for name,lo,hi in (('ball_mass_kg',.001,1.),('height_m',.001,10.)):
         if type(d[name]) not in (float,int) or not math.isfinite(d[name]) or not lo<=d[name]<=hi:raise ValueError('Invalid '+name)
     if type(d['dt_s']) not in (float,int) or d['dt_s'] not in (1/240,1/480,1/960,1/1920):raise ValueError('Unadmitted coupled host timestep')
+    # Where above the sheet the ball is let go: x and z from its centre. The
+    # sheet's nine 10 mm cells reach 15 mm each way; further out it would miss.
+    spot=d['spot_m']
+    if not isinstance(spot,(list,tuple)) or len(spot)!=2 or any(type(v) not in (float,int) or not math.isfinite(v) for v in spot):raise ValueError('spot_m is two numbers, x and z in metres')
+    if any(abs(v)>.015 for v in spot):raise ValueError('The ball must land on the sheet: spot_m within 15 mm of its centre')
+    d['spot_m']=[float(v) for v in spot]
     return d
 
 class CoupledWorld:
@@ -68,7 +74,7 @@ class CoupledWorld:
                         else:row[23]=.5 # Explicit kt/kn experiment input, not grain or inferred bulk plasticity.
                         edges.append(row)
         p=profiles[self.d['ball_material']];radius=(3*self.d['ball_mass_kg']/(4*math.pi*p['density_kg_m3']))**(1/3)
-        body(2,p,[0,(.035 if self.d['experiment']=='sheet' else 0)+radius+self.d['height_m'],0],[radius]*3,mass=self.d['ball_mass_kg'])
+        body(2,p,[self.d['spot_m'][0],(.035 if self.d['experiment']=='sheet' else 0)+radius+self.d['height_m'],self.d['spot_m'][1]],[radius]*3,mass=self.d['ball_mass_kg'])
         self.eval=self.evaluator_type(bodies,edges,pipeline=self.d['pipeline'],newton_strategy=self.d['newton_strategy'],line_search=self.d['line_search'],linear_backend=self.d['linear_backend']);self.ticks=0;self.time=0.;self.step_s=0.;self.last_ms=0.;self.histories=np.zeros((len(edges),32))
         self.representations=self.flight_partition(self.eval,self.evaluator_type) if self.d['representation_policy']=='partitioned-flight' else None
         self.registry=ObjectRegistry(np.array(bodies),np.array(edges).reshape(-1,70),self.meta,profiles,world_id)
