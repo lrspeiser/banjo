@@ -77,10 +77,11 @@ Json ground(double soil, double sand) {
     return {{"generate", {{"kind", "flat"}, {"nx", 48}, {"nz", 48}, {"cell_m", 0.1},
                           {"soil_m", soil}, {"sand_m", sand}, {"discharge_m3_s", 0.0}}}};
 }
-// The same, as the game's 25 cm cubes: 5 m square.
-Json cubeGround(double soil, double sand) {
+// The same, as the game's 25 cm cubes: 5 m square. An odd count of columns
+// puts their edges half a cube along from an even count's.
+Json cubeGround(double soil, double sand, int columns = 20) {
     return {{"surface", "columns"},
-            {"generate", {{"kind", "flat"}, {"nx", 20}, {"nz", 20}, {"cell_m", 0.25},
+            {"generate", {{"kind", "flat"}, {"nx", columns}, {"nz", columns}, {"cell_m", 0.25},
                           {"soil_m", soil}, {"sand_m", sand}, {"discharge_m3_s", 0.0}}}};
 }
 
@@ -549,9 +550,10 @@ struct Swing {
 // and swing it at the ground 0.3 m out, from a shoulder behind it.
 Swing swingAt(double soil, double sand, const std::string &material, bool cubes = false,
               std::optional<Vec3> aim = std::nullopt,
-              std::optional<std::optional<Vec3>> control = std::nullopt) {
+              std::optional<std::optional<Vec3>> control = std::nullopt, int cube_columns = 20) {
     const double top = soil + sand;
-    Json scene{{"terrain", cubes ? cubeGround(soil, sand) : ground(soil, sand)}, {"bodies", pick(material, top)}};
+    Json scene{{"terrain", cubes ? cubeGround(soil, sand, cube_columns) : ground(soil, sand)},
+               {"bodies", pick(material, top)}};
     Swing out;
     out.live = open(scene);
     LiveWorld &live = *out.live;
@@ -811,6 +813,106 @@ void controlledIdleAndOtherColumnsDoNotExcavate() {
                 material.c_str(),idle?"idle":"wrong column",kDt,swing.live->hand().work_j);
         }
     }
+}
+
+struct ControlledPry {
+    std::vector<LiveGroundWork> work;
+    double column_lo_x{}, column_hi_x{};       // the selected column's edges
+    double tip_lo_x{1e9}, tip_hi_x{-1e9};     // where the tip went while in the ground
+    double released_kg{};                     // the native matter it released
+};
+
+// The controlled swing above, pried and drawn out, on the game's cubes laid
+// with `columns` of them: 20 and 21 put the column edges half a cube apart.
+ControlledPry controlledPry(int columns) {
+    const Vec3 selected{.3, .75, kTipZ};
+    Swing swing = swingAt(0.75, 0.0, "oak", true, std::nullopt,
+                          std::optional<std::optional<Vec3>>{std::in_place, selected}, columns);
+    LiveWorld &live = *swing.live;
+    const terrain::TerrainField &field = live.environment()->terrain();
+    const auto column = field.cellAt(selected.x, selected.z);
+    require(column.has_value(), "the selected column is not on the ground");
+    const double centre = field.grid().xOf(static_cast<int>(*column % static_cast<std::size_t>(field.grid().nx)));
+    ControlledPry out;
+    out.column_lo_x = centre - 0.5 * field.grid().dx;
+    out.column_hi_x = centre + 0.5 * field.grid().dx;
+    // A stroke to its end and the world settled after it, as finishStroke
+    // does, noting where the tip goes while it is in the ground.
+    const auto follow = [&](int most_steps, int settle_steps) {
+        const auto note = [&] {
+            const auto points = live.toolPoints();
+            if (points.empty() || !(points.front().depth_m > 0.0)) return;
+            out.tip_lo_x = std::min(out.tip_lo_x, points.front().tip_m.x);
+            out.tip_hi_x = std::max(out.tip_hi_x, points.front().tip_m.x);
+        };
+        for (int i = 0; i < most_steps; ++i) {
+            stepOnce(live);
+            note();
+            if (!live.hand().stroking) break;
+        }
+        if (!live.held().empty()) live.moveHeld(live.hand().grip_m);
+        for (int i = 0; i < settle_steps; ++i) {
+            stepOnce(live);
+            note();
+        }
+    };
+    std::string why;
+    if (!live.groundWork().empty() && live.groundWork().back().open) {
+        LiveStrike lever;
+        lever.lever = true;
+        lever.shoulder_m = {-0.9, 0.75 + 1.85 - 0.4, kTipZ};
+        lever.speed_m_s = 1.2;
+        lever.lever_deg = 40.0;
+        require(live.strike(lever, why), "the lever was refused: " + why);
+        follow(960, 30);
+    }
+    if (!live.groundWork().empty() && live.groundWork().back().open) {
+        const Vec3 grip = live.hand().grip_m;
+        LiveStroke up;
+        up.path_m = {grip, grip + Vec3{0.0, 0.4, 0.0}};
+        up.speed_m_s = 0.6; up.accel_m_s2 = 4.0; up.give_up_s = 3.0;
+        require(live.stroke(up, why), "the pull was refused: " + why);
+        follow(960, 30);
+    }
+    out.work = live.groundWork();
+    for (std::size_t c = 0; c < field.grid().cells(); ++c)
+        if (c != *column) near(field.height(c), .75, 0, "a controlled pry changed a column it was not given");
+    for (const auto &body : Json::parse(live.groundDebrisJson()).at("bodies"))
+        out.released_kg += body.at("mass_kg").get<double>();
+    return out;
+}
+
+// The bite a controlled cut opens in its selected column stays that column's
+// until the point is out of the ground. The pry that breaks the ground out
+// carries the tip sideways, and on 20 columns this one goes over the selected
+// column's edge. Judged by where the tip had got to, the meeting was ended at
+// the edge, part-way in, with too little pry to loosen much; and a tip that
+// swung back opened fresh meetings, the last of which was all a player was
+// told of while the matter of the others lay released beside it. On 21
+// columns the same tip never leaves its column, so the two are the same pry:
+// one meeting, to the bit, out of the selected column only, and what it says
+// it loosened is the matter it released.
+void aControlledPryIsTheSameWhereverTheColumnEdgesLie() {
+    const ControlledPry across = controlledPry(20), inside = controlledPry(21);
+    for (const ControlledPry *pry : {&across, &inside}) {
+        require(pry->work.size() == 1, "a controlled pry was split into " + std::to_string(pry->work.size()) +
+                " meetings");
+        const LiveGroundWork &w = pry->work.front();
+        std::printf("  column %.3f to %.3f m; tip in the ground from %.4f to %.4f m: %s; released %.6f kg\n",
+                    pry->column_lo_x, pry->column_hi_x, pry->tip_lo_x, pry->tip_hi_x, said(w).c_str(),
+                    pry->released_kg);
+        require(!w.open && w.kind == "broke out" && w.loosened_kg > 0.0, "the controlled pry broke nothing out");
+        near(pry->released_kg, w.loosened_kg, 1e-9, "the meeting's loosened mass against the matter it released");
+    }
+    const LiveGroundWork &a = across.work.front(), &b = inside.work.front();
+    require(a.depth_m == b.depth_m && a.sideways_m == b.sideways_m && a.impulse_n_s == b.impulse_n_s &&
+                a.work_j == b.work_j && a.loosened_kg == b.loosened_kg,
+            "the controlled pry that crossed its column's edge was not the pry that stayed inside it");
+    // And the two are the cases they are said to be.
+    require(across.tip_lo_x < across.column_lo_x || across.tip_hi_x >= across.column_hi_x,
+            "the pry on 20 columns never took its tip over the selected column's edge");
+    require(inside.tip_lo_x >= inside.column_lo_x && inside.tip_hi_x < inside.column_hi_x,
+            "the pry on 21 columns took its tip out of the selected column");
 }
 
 // ---- the grip ------------------------------------------------------------------
@@ -1240,6 +1342,7 @@ int main() {
     const std::vector<std::pair<const char *, std::function<void()>>> checks = {
         {"controlled player preparation/carrying cannot excavate",controlledIdleAndOtherColumnsDoNotExcavate},
         {"controlled player cuts remain in the selected column",[] {aSwingTakesAWholeCubeOutOfCubeGround(std::nullopt,true);}},
+        {"a controlled pry is the same wherever the column edges lie",aControlledPryIsTheSameWhereverTheColumnEdgesLie},
         {"held cube tools remove the clicked wall band and retain its roof",cubeStrikesRemoveTheClickedRockWallCell},
         {"held cube tools open a wet channel without creating water", cubeStrikesOpenAWetChannel},
         {"removing a cube roof opens a pit to water and survives restart",cubeStrikesOpenAnUnroofedPitToWater},

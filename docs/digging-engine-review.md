@@ -39,9 +39,16 @@ authored full swing opens the same player patch after preparation. Anonymous
 laboratory experiments remain physical experiments; an empty carrier ID cannot
 distinguish a dropped tool from an anonymous hand.
 
-Native admission checks the actual working point's terrain field and column.
-Outside the authorized patch it restores ordinary collision and closes a measured
-bite. Command scope is not a fracture law. Within it, existing dry reduced resistance
+Native admission checks the actual working point's terrain field and column
+before a bite opens. Outside the authorized patch it restores ordinary collision.
+A bite that opened in the patch stays that column's until the point comes out:
+the pry that loosens the ground moves the tip sideways, often over the column's
+edge, and ending the bite there (as this checkpoint first did) cut the pry short
+and split one stroke into several meetings, of which the player was told only
+the last. Fixed October 10; `ground_work_tests` checks that a controlled pry
+which crosses its column's edge is, to the bit, the pry that stays inside it.
+What it loosens still comes out of the selected column only, and clearing or
+moving the active target still closes the bite. Command scope is not a fracture law. Within it, existing dry reduced resistance
 and measured work still decide penetration and release. The point/grip/component
 configuration is shared by built-in and unfamiliar authored tools.
 

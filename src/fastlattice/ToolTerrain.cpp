@@ -429,11 +429,26 @@ void ToolTerrain::prepare(const ToolTerrainHost &host, double dt_s) {
             enabled = control->has_value() && host.environment != nullptr;
             if (enabled) {
                 const Vec3 &target = **control;
-                const auto &field = host.environment->fieldAt(tip.x, tip.z);
                 const auto &target_field = host.environment->fieldAt(target.x, target.z);
-                const auto actual = field.cellAt(tip.x, tip.z);
                 const auto selected = target_field.cellAt(target.x, target.z);
-                enabled = &field == &target_field && actual && selected && *actual == *selected;
+                if (p.joint != 0) {
+                    // A bite already in the ground is judged by the column it
+                    // went in at, not by where its tip has got to. The pry
+                    // carries the tip sideways -- that is what breaks the
+                    // ground out -- and a point that went in near a column's
+                    // edge is over it within millimetres. Judged by the tip,
+                    // the bite was ended there, before the pry had moved far
+                    // enough to loosen anything, and a tip that swung back
+                    // opened a second meeting. What it loosens still comes out
+                    // of its own column only (finish).
+                    const terrain::TerrainField *bite_field =
+                        p.field != nullptr ? p.field : &host.environment->terrain();
+                    enabled = bite_field == &target_field && selected && p.column == *selected;
+                } else {
+                    const auto &field = host.environment->fieldAt(tip.x, tip.z);
+                    const auto actual = field.cellAt(tip.x, tip.z);
+                    enabled = &field == &target_field && actual && selected && *actual == *selected;
+                }
             }
         }
         if (!enabled) {
