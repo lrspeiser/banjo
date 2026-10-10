@@ -84,6 +84,12 @@ class GatheringJourney(unittest.TestCase):
         time.sleep(.6);key('KeyE')
         wait('banjoRoom.world.held?.pick && banjoRoom.world.use.mode==="tool-ready"')
         wait('document.querySelector("[data-tool-guide]").hidden')   # wanted no more
+        # The held tool's skill progress and its Skills link ride on the tool's
+        # hand card. They were in the right rail until it became chat only
+        # (eaf9e306), where no player could see them: on screen and pressable.
+        skill='document.querySelector("#hand-slots [data-hand] .hand-skill")'
+        wait('(l=>!!l && l.checkVisibility() && l.querySelector("b").textContent.length>0'
+             ' && l.querySelector("a").href.includes("tab=skills"))('+skill+')')
         aim(.3,.025)
         wait('document.querySelector("#details-actions").textContent.includes("dig here")')
         self.assertNotIn('Study tool',p.evaluate('document.querySelector("#details-actions").textContent'))
@@ -134,7 +140,17 @@ class GatheringJourney(unittest.TestCase):
         self.assertNotIn('refused',answer)
         self.assertGreater(answer['result']['loosened_kg'],0,'Collecting leaves digging free to go on')
         self.assertAlmostEqual(0,carried_ground(),places=6)
+        # Successful saved digging earned the pick's skill; its hand card says
+        # so, and its link opens Skills on that technique.
+        wait(skill+'?.querySelector("output").textContent==="1 / 1"')
+        link=p.evaluate(skill+'.querySelector("a").href')
+        self.assertIn('technique=',link)
+        wait('(a=>{const r=a.getBoundingClientRect(),e=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);'
+             'return r.width>0 && !!e && a.contains(e)})('+skill+'.querySelector("a"))')
+        shot('skill-on-hand')
         self.assertEqual([],[e for e in p.events if e.get('method')=='Runtime.exceptionThrown'])
+        click('#hand-slots [data-hand] .hand-skill a')
+        wait('location.search.includes("tab=skills") && document.querySelector("#ws-tree")?.textContent.includes("Gathering by hand")')
         (out/'gathering-journey.json').write_text(json.dumps({'strokes':strokes,'piles':piles,
             'collected':{'before':before,'after':after},'resumed':answer},indent=2))
 

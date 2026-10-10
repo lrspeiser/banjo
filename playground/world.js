@@ -5092,7 +5092,14 @@ function showInventory() {
         document.body.classList.add("moving-a-thing");});
       row.addEventListener("dragend",()=>document.body.classList.remove("moving-a-thing"));
     }
-    row.append(actions);parent.append(row);
+    row.append(actions);
+    // The held tool's skill rides on its own hand card (showToolSkills), last:
+    // the card stands on its bottom edge and its actions open on hover, so
+    // anything above them jumps up under a pointer on its way to it.
+    const line=handSkillLine();
+    if(inHand && world.held?.pick && !line.hidden && (thing.name===world.held.name || thing.parts?.includes(world.held.name)))
+      row.append(line);
+    parent.append(row);
   };
   for(const side of ['right','left']) {
     let thing=inv?.hands?.[side];
@@ -11937,11 +11944,30 @@ function showAchievement() {
 // Read the same personal conditions as Skills. A stroke animates the working
 // state, never an invented percentage; only saved evidence fills the meter.
 let toolSkillsSaid = "";
+// THE HELD TOOL'S SKILL ON ITS HAND CARD. The card below lived in the right
+// rail, which became chat only (eaf9e306), so nothing in the World showed a
+// tool's skill progress any more and its "Skills ↗" link -- the player's way
+// from the tool to Skills -- could not be reached. The essentials ride on the
+// hand card of the tool in hand instead: no new box over the room. One
+// element, kept and moved, because the hand cards are rebuilt four times a
+// second and a link remade under a press would never be clicked.
+function handSkillLine() {
+  if (!handSkillLine.el) {
+    const line = document.createElement("p");
+    line.className = "hand-skill"; line.hidden = true;
+    line.innerHTML = '<b></b><span class="hand-skill-state" role="status"></span><output></output>'
+      + '<a class="skill-link">Skills ↗</a>';
+    line.querySelector("a").addEventListener("click", e => e.stopPropagation());
+    handSkillLine.el = line;
+  }
+  return handSkillLine.el;
+}
 function showToolSkills() {
   let box = $("tool-skill");
   const name = world.held?.name || picked.name || world.aim?.name;
   const profile = tools.profileOf(name);
   if (!profile) {
+    handSkillLine().hidden = true;
     if (box) box.hidden = true;
     toolSkillsSaid = "";
     if (lastNotebook) showNextStep(lastNotebook);
@@ -11993,6 +12019,12 @@ function showToolSkills() {
   const destination = new URL(screenUrl("skills"), location.origin);
   if (model.id) destination.searchParams.set("technique", model.id);
   link.href = destination.pathname + destination.search;
+  const line = handSkillLine();
+  line.querySelector("b").textContent = model.name || (learning ? "No skill tracked" : "Loading skill…");
+  line.querySelector(".hand-skill-state").textContent = model.status;
+  line.querySelector("output").textContent = total ? `${done} / ${total}` : "";
+  line.querySelector("a").href = link.href;
+  line.hidden = false;
   box.querySelector("h3").textContent = model.name || (learning ? "No skill tracked for this design" : "Loading skill…");
   box.querySelector(".skill-state").textContent = model.status;
   box.querySelector("output").textContent = total ? `${done} / ${total}` : "";

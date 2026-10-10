@@ -881,6 +881,12 @@ body.moving-a-thing #panel .workshop-entry { border-style: dashed; }
 #hand-slots [data-hand="right"] {right:calc(var(--panel-w) + 14px);}
 #hand-slots .mini-product {grid-template-columns:46px minmax(0,1fr);padding:7px;}
 #hand-slots .mini-product-actions {display:none;}
+/* The held tool's skill on its hand card (world.js handSkillLine). */
+#hand-slots .hand-skill {grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;margin:4px 0 0;font-size:11px;color:#c9d6e0;}
+#hand-slots .hand-skill[hidden] {display:none;}
+#hand-slots .hand-skill b {flex-basis:100%;font-weight:600;}
+#hand-slots .hand-skill output {font-variant-numeric:tabular-nums;}
+#hand-slots .hand-skill a {margin-left:auto;color:#8bcff6;}
 #hand-slots .mini-product:hover .mini-product-actions,#hand-slots .mini-product:focus-within .mini-product-actions {display:flex;}
 #material-preview {position:static;width:auto;max-width:none;max-height:none;margin:8px 0;background:#12202bf5;}
 #details #minimap {position:static;width:auto;max-width:none;margin:12px 0;box-shadow:none;}
