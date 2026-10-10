@@ -909,6 +909,12 @@ body.machine-open #details-last,body.machine-open #details-meter {display:none!i
 body.machine-open #panel {bottom:calc(var(--game-nav-space,76px) + env(safe-area-inset-bottom,0px));}
 body.machine-open #panel > :not(#machine-panel) {display:none!important;}
 body.machine-open #machine-panel {max-height:none;}
+/* The next step, asked for with F1 or needed while placing a construction,
+   has the rail to itself too, with only the fold button above it. */
+body.guide-open #panel {bottom:calc(var(--game-nav-space,76px) + env(safe-area-inset-bottom,0px));}
+body.guide-open #panel > :not(header):not(#next-step) {display:none!important;}
+body.guide-open #panel > header > :not(#panel-fold) {display:none;}
+body.guide-open #next-step {margin:8px 12px;}
 #machine-panel.compact-rover > :not(.mp-head):not(#mp-rover-simple):not(#mp-ack) {display:none!important;}
 .rover-card {display:grid;gap:8px;padding:12px;}
 .rover-card > canvas,.rover-card > img {width:72px;height:72px;object-fit:contain;}

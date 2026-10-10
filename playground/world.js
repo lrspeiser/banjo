@@ -2829,8 +2829,9 @@ function openMachinePanel(control) {
   // The machine panel lives in the right rail, which starts folded away
   // (dcd94bae). Opening Controls must show it; closing folds it again. It
   // takes the rail over from the conversation too: the two never share it.
-  if (document.body.classList.contains("panel-away") || document.body.classList.contains("chat-open")) {
-    document.body.classList.remove("chat-open");
+  if (document.body.classList.contains("panel-away") || document.body.classList.contains("chat-open")
+      || document.body.classList.contains("guide-open")) {
+    document.body.classList.remove("chat-open", "guide-open");
     machinePanel.unfolded = true;
     foldPanel(false);
   }
@@ -4964,6 +4965,7 @@ function stripElement() {
   let strip=$("inventory-strip");
   if(strip)return strip;
   strip=document.createElement("section");strip.id="inventory-strip";strip.setAttribute("aria-label","What you have");
+  strip.addEventListener("pointerdown",()=>{inventoryPressed=true;});
   document.body.append(strip);
   addEventListener("resize",placeInventoryStrip);
   new ResizeObserver(placeInventoryStrip).observe(worldNavigation);
@@ -4994,7 +4996,15 @@ function placeMovementStick() {
   }
   pad.style.bottom=`${Math.max(18,Math.ceil(innerHeight-top+12))}px`;
 }
+// The strip and the hand cards are rebuilt four times a second. A press and
+// a release that straddle a rebuild land on two different buttons and the
+// browser sends no click: "click to hold it" on the strip silently did
+// nothing. Hold the rebuild while a press is down on either; the button's own
+// handler leads to the next one.
+let inventoryPressed=false;
+for(const end of ["pointerup","pointercancel"])addEventListener(end,()=>{inventoryPressed=false;},true);
 function showInventoryStrip() {
+  if (inventoryPressed) return;
   const inv=world.inventory, cells=[];
   const held=watchedId ? inv?.hands?.[inv?.hand_in_the_world]?.name : world.held?.name;
   const cell=(picture,title,amount,onClick,hand) => {
@@ -5055,7 +5065,9 @@ function showInventory() {
   workshopTakesDrops();
   const products = $("mini-products"); products.replaceChildren();
   let hands=$("hand-slots");
+  if(inventoryPressed && hands)return;   // held under a press, as the strip is
   if(!hands){hands=document.createElement('section');hands.id='hand-slots';hands.setAttribute('aria-label','Your hands');
+    hands.addEventListener('pointerdown',()=>{inventoryPressed=true;});
     document.body.append(hands);}
   hands.replaceChildren();
   const add = (thing,where,inHand,parent=products) => {
@@ -5419,8 +5431,14 @@ function pinWhatWasClicked() {
     picked.name = was === world.aim.name ? null : world.aim.name;
     picked.at = picked.name ? (world.aim.point_m || null) : null;
   } else if (world.groundAim) {
+    // The same patch of ground clicked again lets it go, as a thing does.
+    const cell = ground.grid?.dx || 0.25;
+    const again = !was && picked.at &&
+      Math.hypot(picked.at[0] - world.groundAim[0], picked.at[2] - world.groundAim[2]) < cell / 2;
     picked.name = null;
-    picked.at = world.groundAim.slice();
+    picked.at = again ? null : world.groundAim.slice();
+    const said = picked.at && groundSaid(picked.at);
+    if (said) lastAction(said);
   } else {
     return;                     // a click on the sky pins nothing and clears nothing
   }
@@ -5888,6 +5906,23 @@ function bedsUnder(at) {
 }
 
 const deepSaid = (m) => (m < 1 ? `${Math.round(m * 100)} cm` : `${m.toFixed(1)} m`);
+
+// What a click on open ground says, on the action line over the room. The
+// owner asked that a click on land "show me what it is composed of, a mineral
+// and if so how much"; the card that said it is in the Details rail, which is
+// gone (eaf9e306), so the click said nothing at all. The beds, top down, each
+// with how thick it is, and whether there is ore here, either way.
+function groundSaid(at) {
+  const beds = bedsUnder(at).filter((b) => !b.hole);
+  if (!beds.length) return "";
+  const layers = beds.slice(0, 4).map((b) => `${deepSaid(b.thick_m)} ${b.name}`).join(" over ")
+    + (beds.length > 4 ? " over more" : "");
+  const ore = [...new Set(beds.filter((b) => ORE_NAMES.includes(b.name)).map((b) => b.name))];
+  const deposits = (world.goods?.deposits || []).filter((d) => d.left_kg > 0 &&
+    Math.hypot(at[0] - d.at_m[0], at[2] - d.at_m[1]) <= d.radius_m).map((d) => `${d.substance} to mine`);
+  const minerals = [...ore, ...deposits];
+  return `${titled(beds[0].name)} ground: ${layers} · ${minerals.length ? minerals.join(" / ") : "no ore"}`;
+}
 
 // A BROKEN SCALE, the way a core log is really drawn. Straight to scale, 60 cm
 // of soil beside 30 m of rock is a 7-pixel sliver -- and the 60 cm is the part
@@ -7266,6 +7301,7 @@ $("keys-list").replaceChildren(...controls().flatMap(([keysSaid, what]) => {
 // what they say (whereIAm), so "this" and "in front of me" mean something.
 function talk() {
   closeMachinePanel();
+  document.body.classList.remove("guide-open");
   document.body.classList.add("chat-open");foldPanel(false);
   setCursorFree(true);
   $("ask-text").focus();
@@ -7367,8 +7403,12 @@ function pressPrimary(target=null) {
   // Inspection is available in the side panel. A held gathering tool uses its
   // native stroke even when the design also declares a Study action.
   if (world.held?.pick) {
-    // A machine or anything fixed in place is selected, not swung at.
-    if (!target && world.aim?.name && selectsInsteadOfSwing(world.aim.name)) return false;
+    // A machine or anything fixed in place is selected, not swung at. A mouse
+    // press is aimed where the cursor is, which world.aim already names; since
+    // 535804ad every press carries its ray for the trace, and testing only
+    // for a missing ray let a click on a rover with a pick in hand strike it
+    // instead of opening its panel.
+    if ((!target || target.input === "mouse") && world.aim?.name && selectsInsteadOfSwing(world.aim.name)) return false;
     tools.press(target); return true;
   }
   const name = world.held?.name || world.aim?.name;
@@ -7861,15 +7901,19 @@ function offerStick(e) {
 // FOLDING THE PANEL AWAY. The room is what a small screen came for, so the
 // panel starts folded on one and is remembered either way.
 function foldPanel(away) {
-  // The rail comes out for two things only: the conversation (chat-open), and
+  // The rail comes out for three things only: the conversation (chat-open),
   // a machine's own controls opened on purpose (machine-open: E on it, or its
-  // Controls button). Never by itself, and never as an inspector. Letting only
+  // Controls button), and the next step when it is asked for (guide-open: F1,
+  // or placing a construction). Never by itself, and never as an inspector. Letting only
   // the chat through (eaf9e306) left E on a machine opening a panel nobody
   // could see, so a rover could not be switched on or recovered and a
   // smelter could not be loaded.
   away = away || !document.body.classList.contains("chat-open") &&
-    !document.body.classList.contains("machine-open");
+    !document.body.classList.contains("machine-open") &&
+    !document.body.classList.contains("guide-open");
   if(away)document.body.classList.remove("chat-open");
+  // The next step asked for with F1 has been seen once its rail is folded.
+  if(away && document.body.classList.contains("guide-open")) endGuide();
   // Folding the rail away closes a machine's controls with it, so nothing is
   // left open out of sight. closeMachinePanel folds again, with the class gone.
   if(away && document.body.classList.contains("machine-open")) closeMachinePanel();
@@ -9326,6 +9370,7 @@ async function enterConstruction(item=null) {
         await askWhere(world.placing);
       }
     }
+    guideAsked=!!world.placing?.project;
     guidanceReadAt=-Infinity;await showNextStep();
   }finally {constructionBusy=false;}
 }
@@ -12048,16 +12093,38 @@ function showToolSkills() {
 // The same authenticated next action is shown in every game screen and chat.
 let guidanceBusy=false, guidanceReadAt=-Infinity;
 let worldHelpRequested=false;
-addEventListener('keydown',event=>{if(event.key==='F1' && !event.repeat){event.preventDefault();worldHelpRequested=true;guidanceReadAt=-Infinity;showNextStep();}});
+// THE NEXT STEP IS SHOWN WHEN IT IS ASKED FOR (1572c275: hidden "until
+// explicit help or active placement"): F1, or beginning to place a
+// construction, whose Place, Cancel and Fasten controls are on this card. It
+// lives in the rail, and once the rail became the conversation only
+// (eaf9e306) neither F1 nor a placement showed anything. The rail comes out
+// for it as it does for a machine's controls, with nothing else in it.
+let guideAsked=false;
+function askForGuide() { guideAsked=true; guidanceReadAt=-Infinity; void showNextStep(); }
+function endGuide() {
+  document.body.classList.remove("guide-open");
+  worldHelpRequested=false; guideAsked=false;
+}
+addEventListener('keydown',event=>{if(event.key==='F1' && !event.repeat){event.preventDefault();worldHelpRequested=true;askForGuide();}});
 async function showNextStep() {
   const root=$("next-step");
   const chat=$("talk");
   if(root && chat && root.parentElement!==chat.parentElement)chat.before(root);
-  if(root && !worldHelpRequested && !world.placing?.project){root.hidden=true;return;}
+  if(root && !worldHelpRequested && !world.placing?.project){
+    root.hidden=true;
+    if(document.body.classList.contains("guide-open"))foldPanel(true);
+    return;
+  }
   if (!root || !worldId || !world.session || watchedId || guidanceBusy || performance.now()-guidanceReadAt<4500) return;
   guidanceBusy=true;guidanceReadAt=performance.now();
   try {
     const data=await api("/api/world/guidance",{});renderPlayerGuidance(root,data,api);
+    // Asked for, and not while the conversation or a machine has the rail.
+    if(guideAsked && !root.hidden && !document.body.classList.contains("chat-open")
+       && !document.body.classList.contains("machine-open")) {
+      guideAsked=false;
+      document.body.classList.add("guide-open");foldPanel(false);
+    }
     if(data.construction_project) {
       constructionContext=data.construction_project;
       constructionControls(root,constructionContext,{hold:()=>enterConstruction(constructionContext.project.item),

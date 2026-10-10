@@ -47,6 +47,14 @@ class ItemPictures(unittest.TestCase):
     setup_world = flow.GoodsJourney.setup_world
     take_pick = condition.BodyCondition.take_pick
 
+    def held_item(self, world, app):
+        """The inventory's id for the pick in hand. The playable pick is an
+        iron head on an aluminum haft (caeb6424), two parts, and its item is
+        named after the first of them ('field pick-g0'); the wood-era pick was
+        one body, 'field pick'. Ask, rather than assume either."""
+        shown = self.post('/api/world/inventory/shown', {'session': app.live.session.id}, world)
+        return shown['hands']['right']['id']
+
     def refused(self, body, world, player=None, path='/api/workshop/thumbnail'):
         with self.assertRaises(urllib.error.HTTPError) as refusal:
             self.post(path, body, world, player)
@@ -55,23 +63,24 @@ class ItemPictures(unittest.TestCase):
 
     def test_owner_keeps_a_picture_and_every_inventory_view_names_it(self):
         world, owner, app = self.setup_world(); self.take_pick(world, app); sid = app.live.session.id
+        item = self.held_item(world, app)
         self.assertNotIn('thumbnail_rev', self.post('/api/world/inventory/shown', {'session': sid}, world)['hands']['right'])
         first = png()
-        kept = self.post('/api/workshop/thumbnail', {'item_id': 'field pick', 'png_data_url': data_url(first)}, world)
+        kept = self.post('/api/workshop/thumbnail', {'item_id': item, 'png_data_url': data_url(first)}, world)
         kept.pop('persistence', None)
         rev = hashlib.sha256(first).hexdigest()[:12]
-        self.assertEqual({'ok': True, 'item_id': 'field pick', 'thumbnail_rev': rev}, kept)
+        self.assertEqual({'ok': True, 'item_id': item, 'thumbnail_rev': rev}, kept)
         # What the pages poll carries the revision, not the picture.
         held = self.post('/api/world/inventory/shown', {'session': sid}, world)['hands']['right']
         self.assertEqual(rev, held['thumbnail_rev']); self.assertNotIn('png_data_url', held)
-        carried = next(t for t in self.post('/api/workshop/inventory', {}, world)['carried'] if t['id'] == 'field pick')
+        carried = next(t for t in self.post('/api/workshop/inventory', {}, world)['carried'] if t['id'] == item)
         self.assertEqual(rev, carried['thumbnail_rev'])
-        got = self.post('/api/workshop/thumbnails', {'items': ['field pick', 'no such thing']}, world)['thumbnails']
-        self.assertEqual({'field pick': {'thumbnail_rev': rev, 'png_data_url': data_url(first)}}, got)
+        got = self.post('/api/workshop/thumbnails', {'items': [item, 'no such thing']}, world)['thumbnails']
+        self.assertEqual({item: {'thumbnail_rev': rev, 'png_data_url': data_url(first)}}, got)
         # A newer picture replaces the older one.
         second = png(rgba=(30, 90, 200, 255))
-        self.post('/api/workshop/thumbnail', {'item_id': 'field pick', 'png_data_url': data_url(second)}, world)
-        got = self.post('/api/workshop/thumbnails', {'items': ['field pick']}, world)['thumbnails']['field pick']
+        self.post('/api/workshop/thumbnail', {'item_id': item, 'png_data_url': data_url(second)}, world)
+        got = self.post('/api/workshop/thumbnails', {'items': [item]}, world)['thumbnails'][item]
         self.assertEqual(data_url(second), got['png_data_url'])
         rev = hashlib.sha256(second).hexdigest()[:12]; self.assertEqual(rev, got['thumbnail_rev'])
         # And it is kept with the world, through a restart.
@@ -81,15 +90,16 @@ class ItemPictures(unittest.TestCase):
         self.post('/api/world/open', {}, world); app = self.app.hub.get(world)
         held = self.post('/api/world/inventory/shown', {'session': app.live.session.id}, world)['hands']['right']
         self.assertEqual(rev, held['thumbnail_rev'])
-        self.assertEqual(data_url(second), self.post('/api/workshop/thumbnails', {'items': ['field pick']}, world)
-                         ['thumbnails']['field pick']['png_data_url'])
+        self.assertEqual(data_url(second), self.post('/api/workshop/thumbnails', {'items': [item]}, world)
+                         ['thumbnails'][item]['png_data_url'])
 
     def test_someone_elses_thing_and_anything_but_a_small_png_are_refused(self):
         world, owner, app = self.setup_world(); self.take_pick(world, app)
+        item = self.held_item(world, app)
         good = data_url(png())
         peer = self.join(world, 'Picture peer')
         self.assertIn('Only the person who has this thing',
-                      self.refused({'item_id': 'field pick', 'png_data_url': good}, world, peer['token']))
+                      self.refused({'item_id': item, 'png_data_url': good}, world, peer['token']))
         self.assertIn('no such thing', self.refused({'item_id': 'nothing here', 'png_data_url': good}, world))
         # Not a PNG data URL, not base64, not a PNG inside, too big.
         for bad, why in ((f"data:image/jpeg;base64,{base64.b64encode(png()).decode()}", 'data:image/png'),
@@ -98,20 +108,20 @@ class ItemPictures(unittest.TestCase):
                          (data_url(b'GIF89a' + b'\0' * 64), 'not a PNG'),
                          ('data:image/png;base64,' + 'A' * (65 * 1024), 'under 64 KB')):
             with self.subTest(why=why):
-                self.assertIn(why, self.refused({'item_id': 'field pick', 'png_data_url': bad}, world))
+                self.assertIn(why, self.refused({'item_id': item, 'png_data_url': bad}, world))
         # Past the route's own body bound: refused before it is read as JSON.
         with self.assertRaises(urllib.error.HTTPError) as refusal:
-            self.post('/api/workshop/thumbnail', {'item_id': 'field pick',
+            self.post('/api/workshop/thumbnail', {'item_id': item,
                                                   'png_data_url': 'data:image/png;base64,' + 'A' * (80 * 1024)}, world)
         self.assertEqual(400, refusal.exception.code)
-        for body in ({'item_id': 'field pick'}, {'item_id': 7, 'png_data_url': good},
-                     {'item_id': 'field pick', 'png_data_url': good, 'extra': 1}):
+        for body in ({'item_id': item}, {'item_id': 7, 'png_data_url': good},
+                     {'item_id': item, 'png_data_url': good, 'extra': 1}):
             with self.subTest(body=sorted(body)):
                 self.refused(body, world)
-        self.refused({'items': 'field pick'}, world, path='/api/workshop/thumbnails')
+        self.refused({'items': item}, world, path='/api/workshop/thumbnails')
         self.refused({'items': [str(i) for i in range(41)]}, world, path='/api/workshop/thumbnails')
         # Nothing refused was kept.
-        self.assertEqual({}, self.post('/api/workshop/thumbnails', {'items': ['field pick']}, world)['thumbnails'])
+        self.assertEqual({}, self.post('/api/workshop/thumbnails', {'items': [item]}, world)['thumbnails'])
         self.assertNotIn('thumbnail_rev', self.post('/api/world/inventory/shown',
                                                     {'session': app.live.session.id}, world)['hands']['right'])
 
@@ -120,6 +130,7 @@ class ItemPictures(unittest.TestCase):
             if flow.os.environ.get('BANJO_BROWSER_TESTS') == 'required': self.fail('Chrome is required')
             self.skipTest('Chrome not installed')
         world, owner, app = self.setup_world(); self.take_pick(world, app)
+        item = self.held_item(world, app)
         chrome = flow.qa_browser.Chrome(1280, 800); self.chrome = chrome; self.addCleanup(chrome.close)
         p = chrome.page; p.send('Page.enable'); p.send('Runtime.enable')
         p.send('Page.addScriptToEvaluateOnNewDocument',
@@ -136,7 +147,7 @@ class ItemPictures(unittest.TestCase):
             self.fail(expr + '; ' + str(p.evaluate('document.body.innerText.slice(-1500)')))
 
         def kept():
-            return self.post('/api/workshop/thumbnails', {'items': ['field pick']}, world)['thumbnails'].get('field pick')
+            return self.post('/api/workshop/thumbnails', {'items': [item]}, world)['thumbnails'].get(item)
 
         # Nobody has pictured the pick: the world page draws it from its mesh
         # and sends that, and the strip shows it.
@@ -162,8 +173,9 @@ class ItemPictures(unittest.TestCase):
             base64.b64decode(p.send('Page.captureScreenshot', {'format': 'png'})['data']))
         # And the Workshop's Inventory shows the same picture.
         p.send('Page.navigate', {'url': self.base + f'/world?world={world}&workshop=1&tab=inventory'})
-        wait('document.querySelector(\'#ws-inv-grid [data-product="field pick"] img.item-picture\')?.src===%s'
-             % json.dumps(picture['png_data_url']))
+        wait('document.querySelector(%s)?.src===%s'
+             % (json.dumps(f'#ws-inv-grid [data-product="{item}"] img.item-picture'),
+                json.dumps(picture['png_data_url'])))
         self.assertEqual([], [e for e in p.events if e.get('method') == 'Runtime.exceptionThrown'])
 
 

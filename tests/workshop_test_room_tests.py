@@ -234,8 +234,14 @@ class ALittleWorldAtTheBench(unittest.TestCase):
         deck = room.made["root_body"]
         went = math.dist(drove["bodies"][deck]["at_m"], stood["bodies"][deck]["at_m"]
                          if "bodies" in stood else stood[deck]["at_m"])
-        print(f"      driven for 4 s it went {went:.3f} m")
+        print(f"      driven for 4 s it went {went:.3f} m, turning {drove['bodies'][deck]['turn_deg']:.1f} degrees")
         self.assertGreater(went, 0.05, "told to drive, it drove")
+        # Forward, not round on the spot. Its wheels meet their mounts on
+        # opposite faces, +x and -x, and while a bearing turned about the face
+        # it met on, the two turned opposite ways: told the same thing, this
+        # robot spun on the spot and went 0.10 m in 4 s, the deck's offset
+        # from the axle and nothing more; now it goes about 3 m.
+        self.assertGreater(went, 1.0, "both wheels forward drives it, at most 1 m/s at 60 rpm")
 
         # And switched off it stops, rather than coasting for ever.
         for name in sorted(controls):
@@ -262,6 +268,35 @@ class ALittleWorldAtTheBench(unittest.TestCase):
         print(f"      by hand it went {went:.3f} m, and turned_on is {said['turned_on']}")
         self.assertFalse(said["turned_on"])
         self.assertGreater(went, 0.05)
+
+    def test_the_chat_built_robot_goes_to_a_stool_and_sits_on_it(self):
+        """Its own program, made at the bench: turn to face the stool, drive to
+        it, sit. Its wheels meet their mounts on opposite faces, and while each
+        bearing turned about the face it met on, the program's "forward" spun
+        it and its "turn" drove it straight: it wandered off 5 m from a stool
+        2.6 m away and never came round to it."""
+        state = self.robot.state
+        self.assertTrue(state.execute("check_validity", {})["ok"])
+        overrides = deepcopy(state.overrides)
+        overrides[workshop_machines.MACHINES_KEY] = workshop_machines.checked(
+            workshop_fitting_tests.ARobotBuiltThroughTheChatsTools.MACHINES)
+        for part in state.design.parts:
+            overrides[part.name] = dict(overrides.get(part.name) or {}, mechanics={"model": "rigid"})
+        candidate = {"kind": "custom", "design_id": "sitting-robot", "purpose": "go to a thing and sit on it",
+                     "parameters": dict(state.design.parameters), "component_overrides": overrides}
+        room = self.opened(items=[{"what": "stool", "at_m": [1.5, 1.5]}])
+        deck = room.make(candidate)["root_body"]
+        room.remember_poses()
+        room.turn_on()
+        for _ in range(20):
+            now = room.run(1.0)
+            if now["programs"][0]["doing"] == "sitting":
+                break
+        at, stool = now["bodies"][deck]["at_m"], now["bodies"]["stool"]["at_m"]
+        gap = math.dist((at[0], at[2]), (stool[0], stool[2]))
+        print(f"\n    at {now['t_s']:.1f} s it is {now['programs'][0]['doing']}, {gap:.2f} m from the stool")
+        self.assertEqual("sitting", now["programs"][0]["doing"], now["programs"][0]["why"])
+        self.assertLess(gap, 0.8, "it sits at the stool, within its close_m and its own size")
 
     def test_it_refuses_an_order_it_cannot_carry_out(self):
         room = self.opened()
