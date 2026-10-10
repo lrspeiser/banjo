@@ -39,6 +39,16 @@ for _name in dir(navigation.GameScreens):
 
 def test_selection_edit_save_review_reload_and_landscape(self):
     world,owner,app=self.setup_world();self.browser(world,owner)
+    # The pick's haft is aluminum (caeb6424) and the shared rack holds none
+    # (it held the oak this made the pick of): the player collects aluminum
+    # from a world pile first, as the paid tool journeys do.
+    sid=app.live.session.id
+    pile=next(p for p in app.brains.goods.stockpiles if p.get('holds',{}).get('aluminum',0)>=3.5)
+    x,z=pile['at_m']
+    floor=self.post('/api/live/act',{'session':sid,'op':'survey','at':[x,z]},world)['survey']['ground_m']
+    got=self.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],'request_id':'lab-chat-aluminum',
+        'person':{'eyes_m':[x,floor+1.62,z],'facing':[0,0,-1]}},world)
+    self.assertGreaterEqual(got['collected'].get('aluminum',0),3.5,got)
     self.navigate(world,'workshop=1&tab=lab&material=rubber')
     self.assert_empty();self.click('#ws-first-tool')
     self.wait('document.querySelector("#ws-name").textContent.includes("field-pick")')
@@ -63,7 +73,12 @@ def test_selection_edit_save_review_reload_and_landscape(self):
         app.clock._tick(1)
     self.wait('document.querySelector("#ws-remake-start") && !document.querySelector("#ws-remake-start").disabled')
     self.click('#ws-remake-start');self.wait('!!document.querySelector("#ws-remake-step")')
-    self.click('#ws-remake-step');self.wait('!!document.querySelector("#ws-remake-collect")')
+    # The metal pick takes more than a second of work: run a second at a time.
+    for _ in range(5):
+        self.click('#ws-remake-step')
+        self.wait('!!document.querySelector("#ws-remake-collect") || !!document.querySelector("#ws-remake-step:not(:disabled)")')
+        if self.page.evaluate('!!document.querySelector("#ws-remake-collect")'):break
+    self.wait('!!document.querySelector("#ws-remake-collect")')
     self.click('#ws-remake-collect');self.wait('!!document.querySelector("#ws-inv-grid [data-product]")')
     self.assertIn('field-pick',self.page.evaluate('document.querySelector("#ws-inv-grid").textContent').lower())
     self.click('#ws-inv-grid [data-product] button');self.wait('document.querySelector("#ws-draft-save")?.offsetParent!==null')

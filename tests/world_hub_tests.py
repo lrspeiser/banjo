@@ -164,9 +164,10 @@ class NamedWorlds(unittest.TestCase):
         ident = world["id"]
         # Two lightweight world items are an explicit inventory fixture. The
         # generated starter map otherwise consists of installed machinery.
+        # A playable world holds no oak (caeb6424): glass and iron.
         room_path = Path(self.temp.name) / "rooms" / "worlds" / ident / "rooms" / "new-game.json"
         room = json.loads(room_path.read_text())
-        for index, material in enumerate(("oak", "iron")):
+        for index, material in enumerate(("glass", "iron")):
             room["spec"]["bodies"].append({"name": f"player-test-{material}",
                 "shape": "box", "material": material, "size_mm": [100, 100, 100],
                 "center_mm": [-10000 + 20000 * index, 5000, 10000]})
@@ -288,9 +289,14 @@ class NamedWorlds(unittest.TestCase):
         before_plan=before['guidance']['plan']
         self.assertEqual('make-own-tool',before_plan['goal']['id'])
         self.assertEqual('Personal field pick',before_plan['name'])
-        self.assertEqual(0,before_plan['lines'][0]['lots']) # Shared rack already funds this geometry.
-        self.assertIsNone(before['guidance']['supply_goal']) # Buying stock is optional in the new opening.
-        self.assertEqual('get-tool-wood',before['guidance']['player']['goal']['id'])
+        # The playable pick is an iron head on an aluminum haft (caeb6424; it
+        # was all oak, which the shared rack funded). The rack's iron funds
+        # the head; it holds no aluminum, so the haft's lots are still to get.
+        lines=lambda plan:{line['substance']:line for line in plan['lines']}
+        self.assertEqual(0,lines(before_plan)['iron']['lots'])
+        need=lines(before_plan)['aluminum']['lots']
+        self.assertGreater(need,0)
+        self.assertEqual('get-tool-metal',before['guidance']['player']['goal']['id'])
         self.assertEqual('move',before['guidance']['player']['next_action']['verb'])
         self.assertIsNotNone(before_plan['estimated_total_j'])
         bob_before = self.post("/api/workshop/inventory", {}, ident, bob["token"])
@@ -302,36 +308,36 @@ class NamedWorlds(unittest.TestCase):
         native = self.post("/api/live/act", {"session": opened["session"], "op": "poses"}, ident)
         after_store = next(s for s in native["machines"]["stores"] if s["id"] == source["id"])
         self.assertAlmostEqual(source["charge_j"] - 200, after_store["charge_j"], places=4)
-        oak = next(o for o in funded["offers"] if o["id"] == "oak-stock")
-        bought = self.post("/api/workshop/market", {"action": "buy", "item_id": oak["id"],
-                           "quoted_price_j": oak["price_j"], "request_id": "alice-oak"}, ident)
-        self.assertEqual(200 - oak["price_j"], bought["balance_j"])
+        # One 0.5 kg lot of the haft's aluminum, bought with Alice's own energy.
+        aluminum = next(o for o in funded["offers"] if o["id"] == "aluminum-stock")
+        bought = self.post("/api/workshop/market", {"action": "buy", "item_id": aluminum["id"],
+                           "quoted_price_j": aluminum["price_j"], "request_id": "alice-aluminum"}, ident)
+        self.assertEqual(200 - aluminum["price_j"], bought["balance_j"])
         after_plan=bought['guidance']['plan']
-        self.assertAlmostEqual(.5,after_plan['lines'][0]['personal_kg'])
-        self.assertEqual(0,after_plan['estimated_total_j'])
-        self.assertIsNone(bought['guidance']['supply_goal'])
+        self.assertAlmostEqual(.5,lines(after_plan)['aluminum']['personal_kg'])
+        self.assertEqual(need-1,lines(after_plan)['aluminum']['lots'])
+        self.assertLess(after_plan['estimated_total_j'],before_plan['estimated_total_j'])
         bob_plan=self.post('/api/workshop/market',{},ident,bob['token'])['guidance']['plan']
-        self.assertEqual(0,bob_plan['lines'][0]['personal_kg'])
-        self.assertEqual(0,bob_plan['lines'][0]['lots'])
-        self.assertIsNone(self.post('/api/workshop/market',{},ident,bob['token'])['guidance']['supply_goal'])
-        self.assertGreater(next(o for o in bought["offers"] if o["id"] == "oak-stock")["price_j"],
-                           oak["price_j"])
+        self.assertEqual(0,lines(bob_plan)['aluminum']['personal_kg'])
+        self.assertEqual(need,lines(bob_plan)['aluminum']['lots'])
+        self.assertGreater(next(o for o in bought["offers"] if o["id"] == "aluminum-stock")["price_j"],
+                           aluminum["price_j"])
         alice_after = self.post("/api/workshop/inventory", {}, ident, alice["token"])
         bob_after = self.post("/api/workshop/inventory", {}, ident, bob["token"])
-        def oak_kg(inventory):
-            return next(r["mass_kg"] for r in inventory["materials"] if r["material"] == "oak")
-        self.assertAlmostEqual(oak_kg(alice_before) + 0.5, oak_kg(alice_after), places=4)
-        self.assertEqual(oak_kg(bob_before), oak_kg(bob_after))
-        def recipe_oak(player_token):
+        def aluminum_kg(inventory):
+            return next((r["mass_kg"] for r in inventory["materials"] if r["material"] == "aluminum"), 0.0)
+        self.assertAlmostEqual(aluminum_kg(alice_before) + 0.5, aluminum_kg(alice_after), places=4)
+        self.assertEqual(aluminum_kg(bob_before), aluminum_kg(bob_after))
+        def recipe_aluminum(player_token):
             recipes = self.post("/api/workshop/recipes", {}, ident, player_token)["templates"]
             return next(line["held_kg"] for recipe in recipes if recipe.get("source") == "built-in"
-                        for line in recipe.get("materials", []) if line["material"] == "oak")
-        self.assertAlmostEqual(recipe_oak(bob["token"]) + 0.5,
-                               recipe_oak(alice["token"]), places=2)
+                        for line in recipe.get("materials", []) if line["material"] == "aluminum")
+        self.assertAlmostEqual(recipe_aluminum(bob["token"]) + 0.5,
+                               recipe_aluminum(alice["token"]), places=2)
         self.assertEqual(0, self.post("/api/workshop/market", {}, ident, bob["token"])["balance_j"])
         with self.assertRaises(urllib.error.HTTPError):
-            self.post("/api/workshop/market", {"action": "buy", "item_id": oak["id"],
-                      "quoted_price_j": oak["price_j"], "request_id": "stale-oak"}, ident)
+            self.post("/api/workshop/market", {"action": "buy", "item_id": aluminum["id"],
+                      "quoted_price_j": aluminum["price_j"], "request_id": "stale-aluminum"}, ident)
         self.stop()
         self.start()
         self.post("/api/world/player/join", {"token": alice["token"]}, ident)
@@ -341,7 +347,7 @@ class NamedWorlds(unittest.TestCase):
         self.assertAlmostEqual(after_store["charge_j"], saved_source["charge_j"], places=4)
         self.assertEqual(bought["balance_j"],
                          self.post("/api/workshop/market", {}, ident, alice["token"])["balance_j"])
-        self.assertAlmostEqual(oak_kg(alice_after), oak_kg(
+        self.assertAlmostEqual(aluminum_kg(alice_after), aluminum_kg(
             self.post("/api/workshop/inventory", {}, ident, alice["token"])), places=4)
 
     def test_menu_creates_and_joins_a_game_in_the_browser(self):

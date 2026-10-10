@@ -130,18 +130,24 @@ class GameScreens(unittest.TestCase):
                 n=min(10,seconds);post('/api/world/fabrication/wait',{**context(),'seconds':n});seconds-=n
         # Explicit finite authored fixture supplies; manufacturing still pays
         # actual material/assembly goods and native energy, with no free item.
-        pile=app.brains.goods.put(0,0,{'oak':40.,'glass':5.,'copper':.5,'copper wire':.1},named='solar build fixture')['onto']
+        # The game's own solar array (playable_recipes), not the wood-era
+        # default the bare kind assembles to: a named world refuses oak.
+        import playable_recipes
+        candidate=playable_recipes.recipe('solar-array',parameters={'panels':1,'panel_w_m':.2,'panel_d_m':.2,
+            'frame_height_m':.2,'capacity_j':100.,'charge_j':0.})
+        from mcp import fabrication
+        post('/api/world/fabrication/configure',{**context(),'settings':funded.settings(stock_kg={},energy_j=0),
+            'request_id':'solar-configure'})
+        quoted=post('/api/world/fabrication/plan_make',{**context(),'candidate':candidate})['quote']
+        supplies={**{m:kg*1.25 for m,kg in fabrication.materials(quoted,'stock').items()},
+                  **{g:kg*1.25 for g,kg in quoted['assembly_goods_kg'].items()}}
+        pile=app.brains.goods.put(0,0,supplies,named='solar build fixture')['onto']
         floor=app.live.act({**context(),'op':'survey','at':[0,0]})['survey']['ground_m']
         for index in range(3):
             if not any(app.brains.goods.by_name(pile).get('holds',{}).values()):break
             post('/api/world/goods/collect',{'session':app.live.session.id,'pile':pile,'request_id':f'solar-collect-{index}',
                 'person':{'eyes_m':[0,floor+1.62,0],'facing':[0,0,-1]}})
-        post('/api/world/fabrication/configure',{**context(),'settings':funded.settings(stock_kg={},energy_j=0),
-            'request_id':'solar-configure'})
-        candidate={'kind':'solar-array','parameters':{'panels':1,'panel_w_m':.2,'panel_d_m':.2,
-            'frame_height_m':.2,'capacity_j':100.,'charge_j':0.}}
         plan=post('/api/world/fabrication/plan_make',{**context(),'candidate':candidate})
-        from mcp import fabrication
         for goods, needs in ((False,fabrication.materials(plan['quote'],'stock')),(True,plan['quote']['assembly_goods_kg'])):
             for material,mass in needs.items():
                 state=post('/api/world/fabrication/state',context())
@@ -190,7 +196,7 @@ class GameScreens(unittest.TestCase):
         self.assertEqual(wallet['balance_j'],restored['balance_j'])
         self.assertEqual(1,len(restored['automatic_sources']))
 
-    def test_authored_iron_head_and_wood_handle_pickup_dig_bag_and_reload(self):
+    def test_authored_iron_head_and_aluminum_handle_pickup_dig_bag_and_reload(self):
         import server
         sys.path.insert(0,str(ROOT/'tools'))
         import build_new_world
@@ -199,7 +205,9 @@ class GameScreens(unittest.TestCase):
             'terrain':{'generate':{'kind':'flat','nx':48,'nz':48,'cell_m':.1,
                 'soil_m':.4,'sand_m':0,'discharge_m3_s':0}},
             'bodies':[
-                {'name':'handle','shape':'box','material':'oak',
+                # Aluminum, as the playable pick's haft is: a named world
+                # refuses a saved world made of oak (caeb6424).
+                {'name':'handle','shape':'box','material':'aluminum',
                  'size_mm':[800,40,40],'center_mm':[0,420,1220]},
                 {'name':'head','shape':'box','material':'iron',
                  'size_mm':[40,40,280],'center_mm':[380,420,1060]}],
@@ -244,8 +252,12 @@ class GameScreens(unittest.TestCase):
         wait('["handle","head"].includes(banjoRoom.world.aim?.name)')
         key('KeyE','e')
         wait('banjoRoom.held()?.name==="handle" && banjoRoom.use().mode==="tool-ready"')
-        page.evaluate('banjoRoom.lookAt(.3,banjoRoom.groundAt(.3,.02),.02)')
-        wait('banjoRoom.use().target?.enabled && banjoRoom.use().target.ready && banjoRoom.use().target.target?.distance_m>=1.15')
+        # A metre off: still past arm's length, so the handle's reach is what
+        # gets the head there. The oak-handled tool (4.42 kg) was swung at
+        # 1.2 m; this one weighs 6.98 kg and its swing comes up short of the
+        # ground there ("The swing met no ground"), and does reach it at 1.0 m.
+        page.evaluate('banjoRoom.lookAt(.1,banjoRoom.groundAt(.1,.02),.02)')
+        wait('banjoRoom.use().target?.enabled && banjoRoom.use().target.ready && banjoRoom.use().target.target?.distance_m>=.95')
         key('KeyJ','j')
         wait('banjoRoom.use().mode==="tool-ready" && !!banjoRoom.use().last?.result')
         answer=page.evaluate('banjoRoom.use().last')
@@ -269,8 +281,9 @@ class GameScreens(unittest.TestCase):
         self.assertEqual((points[0]['material'],points[0]['grip_body']),('iron','handle'))
         self.assertTrue(points[0]['grip_connected'])
         import inventory_room
-        self.assertAlmostEqual(inventory_room._carried(app,owner['id'])['objects_kg'],4.42176,places=5)
-        wait('document.querySelector("#details-facts").textContent.includes("iron") && document.querySelector("#details-facts").textContent.includes("4.42 kg")')
+        # 3.456 kg of aluminum handle and 3.52576 kg of iron head (oak made it 4.42176).
+        self.assertAlmostEqual(inventory_room._carried(app,owner['id'])['objects_kg'],6.98176,places=5)
+        wait('document.querySelector("#details-facts").textContent.includes("iron") && document.querySelector("#details-facts").textContent.includes("6.98 kg")')
         self.assertNotIn('soil 0.0 kg',page.evaluate('document.querySelector("#world-load-meter small").textContent'))
         self.screenshot('mixed-tool-native-use.png')
         key('KeyQ','q')
@@ -285,7 +298,7 @@ class GameScreens(unittest.TestCase):
         accounts=app.live.session.state['player_carried']
         self.assertEqual(accounts[owner['id']].get('soil_kg',0),0,'dug soil was moved to its pile')
         self.assertEqual(accounts.get(peer['id'],{}).get('soil_kg',0),0)
-        self.assertAlmostEqual(accounts[owner['id']]['objects_kg'],4.42176,places=5)
+        self.assertAlmostEqual(accounts[owner['id']]['objects_kg'],6.98176,places=5)
         for name,kg in piled(app).items(): self.assertAlmostEqual(piles[name],kg,delta=5e-6)
         self.assertFalse([e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
         # Exercise the saved server/native world, not only a page refresh.
@@ -296,7 +309,7 @@ class GameScreens(unittest.TestCase):
         accounts=app.live.session.state['player_carried']
         self.assertEqual(accounts[owner['id']].get('soil_kg',0),0)
         self.assertEqual(accounts.get(peer['id'],{}).get('soil_kg',0),0)
-        self.assertAlmostEqual(accounts[owner['id']]['objects_kg'],4.42176,places=5)
+        self.assertAlmostEqual(accounts[owner['id']]['objects_kg'],6.98176,places=5)
         for name,kg in piled(app).items(): self.assertAlmostEqual(piles[name],kg,delta=5e-6)
         parked_point=app.live.session.send(op='tool_points')['tool_points'][0]
         self.assertEqual(parked_point['grip_body'],'handle')
@@ -345,15 +358,21 @@ class GameScreens(unittest.TestCase):
         self.assertIn("smelting-copper",guests.server.journal_of(app,owner["id"]).knows())
         self.assertFalse([e for e in self.page.events if e.get("method") == "Runtime.exceptionThrown"])
         self.navigate(world,"workshop=1&tab=skills")
-        self.wait('!!document.querySelector("[data-technique=rough-shaping-wood]")')
-        self.click('[data-technique="rough-shaping-wood"]')
-        self.wait('document.querySelector("#ws-tree-about").textContent.includes("Missing example")')
-        self.assertIn('Not available in this world yet',self.page.evaluate('document.querySelector("#ws-tree-about").innerText'))
-        self.assertIn('You cannot unlock it by collecting supplies',self.page.evaluate('document.querySelector("#ws-tree-about").innerText'))
+        # A technique of the game's graph that this world cannot teach: burning
+        # lime needs a lime kiln it does not have. Rough wood shaping, which
+        # this used, left the game with oak (caeb6424); its "Missing example"
+        # route is kept by knowledge_tests under the historical graph.
+        self.wait('!!document.querySelector("[data-technique=burning-lime]")')
+        self.click('[data-technique="burning-lime"]')
+        self.wait('document.querySelector("#ws-tree-about").textContent.includes("Missing equipment")')
+        about = lambda: self.page.evaluate('document.querySelector("#ws-tree-about").innerText')
+        self.assertIn('Not available in this world yet',about())
+        self.assertIn('Missing equipment: Lime kiln',about())
         self.assertFalse(self.page.evaluate('document.querySelector("#ws-skills-diagnostics").open'))
         self.assertNotIn("you were given",self.page.evaluate('document.querySelector("#ws-tree-about").textContent'))
-        self.assertIn("Making not available yet",self.page.evaluate('document.querySelector("#ws-tree-about").textContent'))
-        self.assertNotIn("shape-wood-v1",self.page.evaluate('document.querySelector("#ws-tree-about").textContent'))
+        self.assertIn("Equipment missing",self.page.evaluate('document.querySelector("#ws-tree-about").textContent'))
+        # Said in words, never as the catalogue's own ids.
+        self.assertNotRegex(about(),r"\b[a-z]+(-[a-z0-9]+)+-v\d+\b")
         self.click('[data-technique="smelting-copper"]')
         self.assertIn('Learned ✓ · No further action needed',self.page.evaluate('document.querySelector("#ws-tree-about").innerText'))
         self.assertTrue(self.page.evaluate('!!document.querySelector("a.ws-link[href*=focus]")'))
@@ -486,27 +505,28 @@ class GameScreens(unittest.TestCase):
         table = self.post("/api/workshop/candidates", {"kind":"table", "generation":0}, world)["candidates"][0]
         saved = self.post("/api/workshop/feedback", {"kind":"table", "design_id":table["design_id"],
             "parameters":table["parameters"], "component_overrides":table.get("component_overrides", {}),
-            "save_design":True, "label":"Oak filter design"}, world)["design"]["design_id"]
+            "save_design":True, "label":"Iron filter design"}, world)["design"]["design_id"]
         stock = self.post("/api/workshop/inventory", {}, world)
         self.browser(world, owner); self.navigate(world, "workshop=1&tab=inventory")
         self.wait('document.querySelectorAll("#ws-inv-stock .ws-tile").length > 0')
         self.assertTrue(self.page.evaluate('[...document.querySelectorAll("#ws-inv-stock .ws-tile")].every(c => !c.disabled && getComputedStyle(c).userSelect === "none" && c.querySelector(".ws-tile-count").parentElement === c && getComputedStyle(c.querySelector(".ws-tile-count")).position === "static")'))
-        self.assertEqual(f'{next(r["mass_kg"] for r in stock["materials"] if r["material"] == "oak"):g} kg', self.page.evaluate('document.querySelector("#ws-inv-stock [data-resource=oak] .ws-tile-count").textContent'))
-        self.assertIn('Yours',self.page.evaluate('document.querySelector("#ws-inv-stock [data-resource=oak]").textContent'))
-        self.assertIn('Shared',self.page.evaluate('document.querySelector("#ws-inv-stock [data-resource=oak]").textContent'))
+        # Iron, which the shared rack holds: a playable world has no oak (caeb6424).
+        self.assertEqual(f'{next(r["mass_kg"] for r in stock["materials"] if r["material"] == "iron"):g} kg', self.page.evaluate('document.querySelector("#ws-inv-stock [data-resource=iron] .ws-tile-count").textContent'))
+        self.assertIn('Yours',self.page.evaluate('document.querySelector("#ws-inv-stock [data-resource=iron]").textContent'))
+        self.assertIn('Shared',self.page.evaluate('document.querySelector("#ws-inv-stock [data-resource=iron]").textContent'))
         self.screenshot("material-quantities.png")
-        self.click('#ws-inv-stock [data-resource="oak"]')
+        self.click('#ws-inv-stock [data-resource="iron"]')
         self.wait('new URLSearchParams(location.search).get("tab") === "recipes" && document.querySelectorAll("#ws-recipe-filter button").length === 1 && !!document.querySelector("#ws-rec-saved [data-recipe]")')
-        self.assertEqual("oak", self.page.evaluate('new URLSearchParams(location.search).get("material")'))
+        self.assertEqual("iron", self.page.evaluate('new URLSearchParams(location.search).get("material")'))
         self.assertTrue(self.page.evaluate('[...document.querySelectorAll("#ws-pane-recipes [data-recipe]")].every(c=>!c.hidden)'))
         self.assertTrue(self.page.evaluate(f'!!document.querySelector("[data-recipe=\\"{saved}\\"]:not([hidden])")'))
         total = self.page.evaluate('document.querySelectorAll("#ws-pane-recipes [data-recipe]").length')
         shown = self.page.evaluate('document.querySelectorAll("#ws-pane-recipes [data-recipe]:not([hidden])").length')
         self.assertGreater(shown, 0); self.assertEqual(shown, total)
         self.assertIsNone(self.page.evaluate('document.querySelector("#workshop-stage").visibleGeometry()'))
-        self.screenshot("oak-recipes.png")
+        self.screenshot("iron-recipes.png")
         self.page.send("Page.reload")
-        self.wait('document.querySelector("#ws-recipe-filter-status")?.textContent.includes("Oak")')
+        self.wait('document.querySelector("#ws-recipe-filter-status")?.textContent.includes("Iron")')
         self.navigate(world, "workshop=1&tab=recipes&material=glass")
         self.assertEqual("glass", self.page.evaluate('new URLSearchParams(location.search).get("material")'))
         self.assertEqual(total, self.page.evaluate('document.querySelectorAll("#ws-pane-recipes [data-recipe]:not([hidden])").length'))
@@ -587,22 +607,23 @@ class GameScreens(unittest.TestCase):
         before = self.post('/api/workshop/inventory', {}, world)
         wallet = self.post('/api/workshop/market', {'action':'bank','joules':500,
             'request_id':'hub-shopping-fixture'}, world)
-        offer = next(o for o in wallet['offers'] if o['id']=='oak-stock')
-        oak = lambda inv: next(r for r in inv['materials'] if r['material']=='oak')
+        # Aluminum: no oak stock is offered in a playable world (caeb6424).
+        offer = next(o for o in wallet['offers'] if o['id']=='aluminum-stock')
+        aluminum = lambda inv: next(r for r in inv['materials'] if r['material']=='aluminum')
         self.navigate(world, 'workshop=1&tab=inventory')
-        self.wait('document.querySelector("[data-market-item=oak-stock] button")?.disabled === false')
+        self.wait('document.querySelector("[data-market-item=aluminum-stock] button")?.disabled === false')
         self.assertTrue(self.page.evaluate('!document.querySelector("#ws-pane-market").hidden && !document.querySelector("#ws-pane-inventory").hidden'))
-        self.click('[data-market-item="oak-stock"] button')
+        self.click('[data-market-item="aluminum-stock"] button')
         self.wait('document.querySelector("#ws-market-status").textContent.includes("added to your materials")')
         self.wait('document.querySelector("#ws-market-balance").textContent === '+json.dumps(f"{500-offer['price_j']:,} J"))
         self.wait('document.querySelector("#ws-inv-energy .ws-recipe-value b").textContent === '+json.dumps(f"{500-offer['price_j']:,} J"))
-        expected = oak(before)['personal_kg'] + offer['mass_kg']
-        self.wait('document.querySelector("[data-resource=oak] .ws-stock-owner b").textContent === '+json.dumps(f'{expected*1000:g} g'))
-        self.assertEqual(expected,oak(self.post('/api/workshop/inventory',{},world))['personal_kg'])
+        expected = aluminum(before)['personal_kg'] + offer['mass_kg']
+        self.wait('document.querySelector("[data-resource=aluminum] .ws-stock-owner b").textContent === '+json.dumps(f'{expected*1000:g} g'))
+        self.assertEqual(expected,aluminum(self.post('/api/workshop/inventory',{},world))['personal_kg'])
         self.assertEqual('inventory', self.page.evaluate('new URLSearchParams(location.search).get("tab")'))
-        self.assertEqual(oak(before)['shared_kg'], oak(self.post('/api/workshop/inventory',{},world))['shared_kg'])
+        self.assertEqual(aluminum(before)['shared_kg'], aluminum(self.post('/api/workshop/inventory',{},world))['shared_kg'])
         self.assertEqual(0, self.post('/api/workshop/market',{},world,peer['token'])['balance_j'])
-        self.assertEqual(0, oak(self.post('/api/workshop/inventory',{},world,peer['token']))['personal_kg'])
+        self.assertEqual(0, aluminum(self.post('/api/workshop/inventory',{},world,peer['token']))['personal_kg'])
         self.assertFalse(self.page.evaluate('!!document.querySelector("#workshop-stage").visibleGeometry()'))
         self.assertEqual([], [e for e in self.page.events if e.get('method')=='Runtime.exceptionThrown'])
 
@@ -752,6 +773,21 @@ class GameScreens(unittest.TestCase):
         # process. Fresh worlds are paid (b3051290): their Make opens the Lab's
         # reviewed workbench flow, covered by fabrication_remake_tests.
         world, owner, app = self.setup_world(legacy_process=True); self.browser(world, owner)
+        # The Camp stool is iron now (3.9311 kg) and the shared rack holds
+        # 6.2 kg. Make stays offered after each copy only while a further one
+        # could be made, so the player first collects iron from the world's
+        # piles, as a player gathers stock, until there is enough for three.
+        sid = app.live.session.id
+        have = lambda: sum(r["mass_kg"] for r in self.post("/api/workshop/inventory", {}, world)["materials"]
+                           if r["material"] == "iron")
+        for index, pile in enumerate(p for p in app.brains.goods.stockpiles if p.get("holds", {}).get("iron", 0) > 0):
+            if have() >= 3 * 3.9311 + .1:
+                break
+            x, z = pile["at_m"]
+            floor = self.post("/api/live/act", {"session":sid, "op":"survey", "at":[x, z]}, world)["survey"]["ground_m"]
+            self.post("/api/world/goods/collect", {"session":sid, "pile":pile["name"], "request_id":f"stool-iron-{index}",
+                "person":{"eyes_m":[x, floor + 1.62, z], "facing":[0, 0, -1]}}, world)
+        self.assertGreaterEqual(have(), 3 * 3.9311 + .1)
         before = self.post("/api/workshop/inventory", {}, world)
         # Generated starter installations are already present (23e48727).
         installed = {r["root_body"] for r in app.room.workshop_installs}
@@ -771,8 +807,9 @@ class GameScreens(unittest.TestCase):
         self.assertEqual(2, len(bodies), "Make replaced the previous copy")
         after = self.post("/api/workshop/inventory", {}, world)
         self.assertEqual(before["carried"], after["carried"])
-        oak = lambda rows: next(r["mass_kg"] for r in rows if r["material"] == "oak")
-        self.assertAlmostEqual(2 * 2.5088, oak(before["materials"]) - oak(after["materials"]), places=4)
+        # The Camp stool is iron now, 3.9311 kg (it was 2.5088 kg of oak).
+        iron = lambda rows: next(r["mass_kg"] for r in rows if r["material"] == "iron")
+        self.assertAlmostEqual(2 * 3.9311, iron(before["materials"]) - iron(after["materials"]), places=4)
         made = [r for r in app.room.workshop_installs if r["root_body"] not in installed]
         self.assertEqual(bodies, {r["root_body"] for r in made})
         self.assertEqual(2, len(made))
@@ -805,7 +842,7 @@ class GameScreens(unittest.TestCase):
         self.wait(f'document.querySelector({json.dumps(card + " .ws-recipe-acts button")})?.disabled === false')
         # Another actor can spend shared stock after this page displayed it.
         with guests.server.workshop_library._connect(app) as db:
-            db.execute("UPDATE workshop_material_rack SET mass_kg=0 WHERE material='oak'")
+            db.execute("UPDATE workshop_material_rack SET mass_kg=0 WHERE material='iron'")
         self.click(card + ' .ws-recipe-acts button')
         self.wait(f'document.querySelector({json.dumps(card + " .ws-recipe-result")})?.dataset.bad === "yes" && document.querySelector({json.dumps(card + " .ws-recipe-acts button")})?.disabled === true')
         self.assertIn("Nothing has been spent", self.page.evaluate(f'document.querySelector({json.dumps(card + " .ws-recipe-result")}).textContent'))
@@ -839,7 +876,8 @@ class GameScreens(unittest.TestCase):
         self.wait('document.querySelector(".ws-product-card .ws-tile-name")?.textContent === "Camp stool" && document.querySelector(".ws-product-card canvas")?.dataset.preview === "ready"')
         self.assertFalse(self.page.evaluate('document.querySelector(".ws-product-debug").open'))
         self.assertIn('Hold / place in World',self.page.evaluate('document.querySelector(".ws-product-card").textContent'))
-        self.assertEqual('2.51 kg',self.page.evaluate('document.querySelector(".ws-product-card .ws-tile-count").textContent'))
+        # The Camp stool is iron now (caeb6424): 3.9311 kg; it was 2.509 kg of oak.
+        self.assertEqual('3.93 kg',self.page.evaluate('document.querySelector(".ws-product-card .ws-tile-count").textContent'))
         self.wait('!!document.querySelector("#ws-inv-energy").dataset.updated')
         self.screenshot('named-product.png')
         self.wait('!!document.querySelector(".ws-tile:not([disabled])")')
@@ -847,14 +885,15 @@ class GameScreens(unittest.TestCase):
         self.wait('document.querySelector("#workshop-stage").visibleGeometry()?.meshes > 0')
         self.assertEqual(str(carried["id"]), self.page.evaluate('new URLSearchParams(location.search).get("carry")'))
         self.assertEqual("5", self.page.evaluate('document.querySelector("#ws-part-count").textContent'))
-        self.assertEqual("2.509 kg", self.page.evaluate('document.querySelector("#ws-mass").textContent'))
+        self.assertEqual("3.931 kg", self.page.evaluate('document.querySelector("#ws-mass").textContent'))
         self.click('#ws-lab-components [data-component]')
         component=self.page.evaluate('document.querySelector("#ws-component-info").dataset.component')
-        self.page.evaluate('(()=>{const e=document.querySelector("#ws-part-material");e.value="iron";e.dispatchEvent(new Event("change",{bubbles:true}))})()')
+        # A real change of material: the stool is iron already.
+        self.page.evaluate('(()=>{const e=document.querySelector("#ws-part-material");e.value="aluminum";e.dispatchEvent(new Event("change",{bubbles:true}))})()')
         self.wait('document.querySelector("#ws-lab-draft").textContent.includes("Draft saved in this browser")')
         self.page.send('Page.reload')
         self.wait('document.querySelector("#ws-lab-draft")?.textContent.includes("Draft restored")')
-        self.assertIn('iron',self.page.evaluate(f'document.querySelector("[data-component={component}]").textContent'))
+        self.assertIn('aluminum',self.page.evaluate(f'document.querySelector("[data-component={component}]").textContent'))
         self.click("#ws-clear-lab"); self.assert_empty()
         after = self.post("/api/world/inventory/shown", {"session":built["session"]}, world)["record"]
         self.assertEqual(before, after)
