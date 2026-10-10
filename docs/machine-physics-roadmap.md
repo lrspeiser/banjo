@@ -14,6 +14,7 @@ October 10, 2026. A list of the physics a Rube Goldberg machine on `/machine` sh
 | DC circuits: battery, switch worked by a hinge, a coil that heats a body | Electric switch |
 | Heat, wood burning, strength falling with temperature | Burning rope |
 | Water in a channel, buoyancy and drag; water poured from a spout | Pouring water onto the wheel |
+| Light: a sun, mirrors (polished aluminium or iron), glass and ice that bend and focus it, lamps, light sensors and switches that follow them; light warms what absorbs it ([optics-checkpoint.md](optics-checkpoint.md)) | A glass ball focuses sunlight on a sensor whose switch starts a coil; a ball breaking a light gate's beam |
 
 ## In the engine, not yet in the machine
 
@@ -26,15 +27,14 @@ October 10, 2026. A list of the physics a Rube Goldberg machine on `/machine` sh
 | Gears, pulleys | Gear pairs (teeth ratio, stripping torque); reeved ropes with a ratio | A gear train, a block and tackle |
 | Motors | A motor on a hinge, from a battery, with stall torque and no-load speed | A motor-driven winch or conveyor |
 | The sun and solar panels | The sun's direction and irradiance (air mass), shadows on panels, power into a battery | A panel in sunlight charges the battery that drives a motor |
-| Lamps | A lamp on a battery gives so many lumens | A lamp that comes on when a switch closes (nothing receives its light yet) |
+| Lamps | A lamp on a battery gives so many lumens; its light is now traced (a lamp's beam in a machine is the `light_gate` kit) | A lamp that comes on when a switch closes |
 | Fuses | A fuse branch that melts at its I²t | A fuse that blows and opens a circuit |
 
 ## New physics
 
 | Physics | What it needs | Planned use |
 |---|---|---|
-| Light: reflection and refraction | Rays from the sun or a lamp, reflected by mirrors (polished metal) and bent by glass by Snell's law, absorbed by what they land on and heating it | A mirror bounces sunlight; a glass lens focuses it onto a rope until it burns |
-| Light sensors | A photocell that measures the light reaching it and works a switch | A beam broken by a falling ball turns something on |
+| Light: what is still missing | Light scattered off rough surfaces and the sky's light; a spot heated more than the rest of its body (so focused sunlight could set wood alight); light pushing on what it reaches | A burning glass that lights the rope itself |
 | Sensors for heat and touch | A thermostat (closes above a temperature) and a pressure plate (closes under a load), each a circuit switch, measured by the engine | A pan of water that boils trips a switch; a ball landing on a plate rings a bell |
 | Magnetism | Force between magnets and iron; an electromagnet driven by the circuit's current | An electromagnet that lets go of an iron ball when its circuit opens |
 | Air drag and wind | A drag force on each surface from the air's relative velocity | A sail cart; a feather that falls slowly |
@@ -45,7 +45,7 @@ October 10, 2026. A list of the physics a Rube Goldberg machine on `/machine` sh
 ## Order of work
 
 1. Use what the engine has: steam piston, cannon, dents, gears and pulleys, motors, sun and solar panels, lamps, fuses. Each becomes a kit or part the chat can use, with a station in the engine's rehearsal and a test.
-2. Light: ray optics with mirrors and lenses, sunlight that heats what it lands on, and photocells.
+2. Light: ray optics with mirrors and lenses, sunlight that heats what it lands on, and photocells. Built on `agent/optics` ([optics-checkpoint.md](optics-checkpoint.md)).
 3. Sensors for heat and touch, then magnetism.
 4. Air drag, thermal expansion, freezing and condensation, sound.
 

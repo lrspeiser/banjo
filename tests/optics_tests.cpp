@@ -462,8 +462,8 @@ void aHeatLampBurnsAnOakCord() {
         }
     std::cout << "    heat lamp: " << o.watts.sent << " W of light, the cord absorbing " << cord_w
               << " W; it parted at " << parted_at << " s, its surface " << hottest << " K"
-              << (burned ? ", burning" : "") << "; " << o.traces << " traces, " << o.trace_ms / o.traces
-              << " ms each\n";
+              << (burned ? ", burning" : "") << "; " << o.traces << " traces of " << o.rays << " rays and "
+              << o.casts << " casts, " << o.trace_ms / o.traces << " ms each\n";
     require(parted, "the heat lamp's light burns through the cord");
     require(burned, "and the cord is burning");
     checkLedger(o, "heat lamp");
