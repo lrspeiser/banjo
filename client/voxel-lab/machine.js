@@ -993,7 +993,11 @@ function knobControl(p, key, rule, what, changed) {
     input = document.createElement('select');
     for (const c of rule.choices) input.append(Object.assign(document.createElement('option'), {value: c, textContent: c}));
     input.value = p[key];
-    input.addEventListener('change', () => { p[key] = input.value; shown.textContent = input.value; changed(); });
+    // A choice keeps its own type: a number of pulleys stays a number.
+    input.addEventListener('change', () => {
+      p[key] = rule.choices.find(c => String(c) === input.value) ?? input.value;
+      shown.textContent = input.value; changed();
+    });
   } else {
     input = Object.assign(document.createElement('input'), {type: 'range', min: rule.min, max: rule.max, step: rule.step || 0.01, value: p[key]});
     input.addEventListener('input', () => { p[key] = Number(input.value); shown.textContent = input.value + (rule.turning ? '°' : ''); changed(); });

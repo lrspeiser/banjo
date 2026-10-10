@@ -14,7 +14,7 @@ October 10, 2026. The machine page has a game: open `/play`. Each level is a sma
 - **Stars**, from what the engine measured: one for the goal in time, one for staying at or under the level's par cost, one for style (using enough different pieces, on levels that ask for it). If the chat placed the pieces, one star at most.
 - **Is it reliable?** runs your machine three times with every loose part nudged by up to 1.5 mm, as fast as the engine goes, and says in how many the goal happened. Real chains of events are fragile; a machine that works 3 of 3 is a good one.
 
-## The seven levels
+## The eight levels
 
 | Level | What it teaches | The pieces | A solution, as tested |
 |---|---|---|---|
@@ -25,8 +25,9 @@ October 10, 2026. The machine page has a game: open `/play`. Each level is a sma
 | 5. Chain reaction | a chain | a ramp with a ball | the ball tips the lever, which closes the switch; the coil lights the cannon's powder; the ball knocks the block into the zone at 1.5 s |
 | 6. Bounce the beam | light: reflection, and light heating what it lands on | two mirrors | a 5 kW laser's beam bounced around a wall by two mirrors at 45 and -45 degrees burns through the cord; the weight is in the bin at 20.3 s |
 | 7. Catch the sun | sunlight: a panel facing the sun catches the most | a solar panel | a sun 15 degrees up behind the shed; the panel at x = 1.0, z = 0.4, turned -45 degrees and tipped 75 to face the sun squarely, takes 250 W of sunlight and stores 50 W, and the solar winch lifts the weight to the mark at 2.4 s |
+| 8. Lift with less | mechanical advantage: a block and tackle | a counterweight on a block and tackle | a 4.7 kg counterweight through 3 pulleys, hung 1.75 m up, lifts the 13.6 kg crate to the shelf mark at 3.65 s for a cost of 11.4 |
 
-How forgiving they are, measured: in level 2 the knife works with its pivot anywhere from 16 cm behind the rope's line to level with it, across about 25 cm of height. In level 3, 1 g of powder works from several places; 0.5 g falls short and 2 g throws the block past the zone. In level 7 the winch needs about 185 W of sunlight on the panel: lying flat in the sun it gets 65 W and the weight never moves; tipped only 30 degrees, or tipped without being turned toward the sun, is not enough; tipped 45 degrees toward the sun it lifts the weight by 3.2 s; in the shed's shadow it gets nothing, however it faces. The ghost of a panel says how squarely it faces the sun and how much sunlight that gives, if nothing shades it.
+How forgiving they are, measured: in level 2 the knife works with its pivot anywhere from 16 cm behind the rope's line to level with it, across about 25 cm of height. In level 3, 1 g of powder works from several places; 0.5 g falls short and 2 g throws the block past the zone. In level 7 the winch needs about 185 W of sunlight on the panel: lying flat in the sun it gets 65 W and the weight never moves; tipped only 30 degrees, or tipped without being turned toward the sun, is not enough; tipped 45 degrees toward the sun it lifts the weight by 3.2 s; in the shed's shadow it gets nothing, however it faces. The ghost of a panel says how squarely it faces the sun and how much sunlight that gives, if nothing shades it. In level 8, measured: 21.6 kg on one pulley lifts the crate at 0.67 s but costs 45; 13.6 kg on one pulley, the crate's own weight, does not move it at all; 7.4 kg on two lifts it at 1.9 s for 16.8; 4.7 kg on three, hung 1.75 m up, lifts it at 3.65 s for 11.4, but hung at 1.4 m it reaches the ground first and the crate stops 6 cm short; 4 kg on four would have to fall from higher than the gantry allows.
 
 ## Asking for help
 

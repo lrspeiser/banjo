@@ -48,7 +48,7 @@ LEVELS = mg.load_levels()
 
 class Tray(unittest.TestCase):
     def test_every_level_is_well_formed_and_its_solution_fits_its_tray(self):
-        self.assertEqual([l['id'] for l in LEVELS], ['gap', 'cut', 'fire', 'steam', 'chain', 'laser', 'sun'])
+        self.assertEqual([l['id'] for l in LEVELS], ['gap', 'cut', 'fire', 'steam', 'chain', 'laser', 'sun', 'tackle'])
         for level in LEVELS:
             spec, checked, cost = mg.compose(level, level['solution'])
             mw.compile_spec(spec)
@@ -103,14 +103,18 @@ class Tray(unittest.TestCase):
         for level in LEVELS:
             for t in level['tray']:
                 turning = sorted(k for k, r in t['knobs'].items() if r.get('turning'))
-                # A mirror turns about the vertical by its own angle_deg.
+                # A mirror turns about the vertical by its own angle_deg; a
+                # counterweight on a rope is not something to turn.
                 self.assertEqual(turning, ['angle_deg', 'pitch_deg', 'roll_deg'] if t['piece'] == 'mirror'
+                                 else [] if t.get('turning') is False
                                  else ['pitch_deg', 'roll_deg', 'yaw_deg'], level['id'])
                 self.assertIn('z_m', t['knobs'])
             # Unturned, a level's own solution is built exactly as before.
             spec, _, cost = mg.compose(level, level['solution'])
             self.assertFalse(any('turned' in k for k in spec['kits']), level['id'])
-            turned = [dict(p, pitch_deg=10, roll_deg=-20) for p in level['solution']]
+            knobs = {t['piece']: t['knobs'] for t in level['tray']}
+            turned = [dict(p, **{k: v for k, v in (('pitch_deg', 10), ('roll_deg', -20)) if k in knobs[p['piece']]})
+                      for p in level['solution']]
             self.assertEqual(mg.check_placements(level, turned)[1], cost, 'turning costs nothing')
 
     def test_turn_of_and_heading_are_the_engines_turn(self):
@@ -307,8 +311,13 @@ class Engine(unittest.TestCase):
         sun = mg.level_by_id('sun')
         flat = [{k: v for k, v in sun['solution'][0].items() if k not in ('yaw_deg', 'pitch_deg')}]
         shaded = [dict(sun['solution'][0], x_m=-0.8, z_m=0.6)]
+        # The counterweight hung too low: it reaches the ground before the
+        # crate, rising a third as far, reaches the shelf.
+        tackle = mg.level_by_id('tackle')
+        low = [dict(tackle['solution'][0], drop_from_m=1.4)]
         with tempfile.TemporaryDirectory() as logs:
-            for lv, placed in ((level, high), (fire, weak), (laser, laser['solution'][:1]), (sun, flat), (sun, shaded)):
+            for lv, placed in ((level, high), (fire, weak), (laser, laser['solution'][:1]), (sun, flat), (sun, shaded),
+                               (tackle, low)):
                 t = mg.trial(lv, placed, ENGINE, Path(logs), runs=1)
                 self.assertEqual(t['worked'], 0, lv['id'])
 

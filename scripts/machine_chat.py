@@ -255,6 +255,10 @@ PIECE_HELP = {
              'battery. Flat it faces up; yaw_deg turns it about the vertical (a positive turn takes +x toward -z), '
              'then pitch_deg tips its +x edge up, so its face looks toward -x turned by yaw. It stores a fifth of the '
              'sunlight on its face: most when it faces the sun squarely, none in shadow',
+    'tackle': 'a block and tackle: a counterweight of counterweight_kg hung at (x_m, drop_from_m) on a rope that '
+              'runs over the beam and down through `ratio` pulleys to the load. The load is pulled ratio times the '
+              'counterweight\'s weight and rises 1/ratio as far as the counterweight falls; it does not move at all '
+              'unless the counterweight is heavier than the load divided by ratio',
 }
 TURNING_HELP = ('Every piece can also be moved across with z_m and turned any way: yaw_deg about the vertical (a '
                 'positive turn takes +x toward -z), then pitch_deg tips its +x end up, then roll_deg turns it about '

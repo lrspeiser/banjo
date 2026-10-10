@@ -50,7 +50,8 @@ def load_levels():
             # mirror's angle_deg) keeps that one as its turn.
             own_turn = any(r.get('turning') for r in t['knobs'].values())
             for key, rule in FREE_KNOBS.items():
-                if rule.get('turning') and (not level.get('turning', True) or (key == 'yaw_deg' and own_turn)):
+                if rule.get('turning') and (not level.get('turning', True) or t.get('turning') is False
+                                            or (key == 'yaw_deg' and own_turn)):
                     continue
                 t['knobs'].setdefault(key, dict(rule))
     return levels
@@ -190,8 +191,32 @@ def _solar(name, k, ctx):
                               'area_m2': 0.25, 'efficiency': 0.2}]}
 
 
+# Counterweights, by mass: a block of whole cells, aluminium for the light
+# ones and iron for the heavy (kg -> material, side in metres).
+COUNTERWEIGHTS = {2.7: ('aluminum', 0.10), 4.0: ('iron', 0.08), 4.7: ('aluminum', 0.12), 7.4: ('aluminum', 0.14),
+                  7.9: ('iron', 0.10), 13.6: ('iron', 0.12), 21.6: ('iron', 0.14)}
+
+
+def _tackle(name, k, ctx):
+    """A block and tackle: a counterweight of counterweight_kg hung at
+    (x_m, drop_from_m, z_m) on a rope that runs up over the beam, across, and
+    down through `ratio` falls of pulleys to the tray's load. The load rises
+    1/ratio as far as the counterweight falls, pulled ratio times as hard:
+    it rises only if the counterweight is more than its weight / ratio."""
+    material, side = COUNTERWEIGHTS[k['counterweight_kg']]
+    x, y, z = k['x_m'], k['drop_from_m'], k.get('z_m', 0.0)
+    load = next(p for p in ctx['parts'] if p['name'] == ctx['tray']['load'])
+    top = load['at_m'][1] + 0.5 * load['size_m'][1]
+    beam = ctx['tray'].get('over_m', 1.95)
+    weight = {'name': name, 'shape': 'box', 'material': material, 'size_m': [side] * 3, 'at_m': [x, y, z]}
+    rope = {'name': name + ' rope', 'kind': 'pulley', 'a': name, 'b': load['name'],
+            'at_m': [x, round(y + 0.5 * side, 4), z], 'at_b_m': [load['at_m'][0], round(top, 4), load['at_m'][2]],
+            'over_a_m': [x, beam, z], 'over_b_m': [load['at_m'][0], beam, load['at_m'][2]], 'ratio': k['ratio']}
+    return {'parts': [weight], 'joints': [rope]}
+
+
 PIECES = {'plank': _plank, 'knife': _knife, 'cannon': _cannon, 'steam': _steam, 'ramp': _ramp, 'mirror': _mirror,
-          'solar': _solar}
+          'solar': _solar, 'tackle': _tackle}
 
 
 class LevelRefused(ValueError):
@@ -268,6 +293,8 @@ def _assemble(level, placements, lenient=False):
         made = PIECES[p['piece']](f'your {p["piece"]} {i + 1}', knobs, ctx)
         spec['kits'] += made.get('kits', [])
         spec['parts'] += made.get('parts', [])
+        if made.get('joints'):
+            spec['joints'] = list(spec.get('joints') or []) + made['joints']
         if made.get('solar_panels'):
             spec['solar_panels'] = list(spec.get('solar_panels') or []) + made['solar_panels']
         if made.get('mirrors'):
