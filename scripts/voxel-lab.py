@@ -11,6 +11,7 @@ import access_gate
 from urllib.parse import urlsplit
 ASSETS={'/':'client/voxel-lab/index.html','/world.js':'client/voxel-lab/world.js','/playback.mjs':'client/voxel-lab/playback.mjs','/style.css':'client/voxel-lab/style.css','/three.module.js':'playground/vendor/three.module.js','/three.core.js':'playground/vendor/three.core.js','/gpu':'client/voxel-lab/gpu.html','/gpu.js':'client/voxel-lab/gpu.js','/gpu.css':'client/voxel-lab/gpu.css','/materials':'client/voxel-lab/materials.html','/materials.js':'client/voxel-lab/materials.js','/materials.css':'client/voxel-lab/materials.css'}
 ASSETS['/native']='client/voxel-lab/index.html'
+ASSETS['/scene-actions.css']='client/voxel-lab/scene-actions.css'
 ASSETS.update({'/coupled':'client/voxel-lab/coupled.html','/coupled.js':'client/voxel-lab/coupled.js'})
 ASSETS['/scene-session.mjs']='client/voxel-lab/scene-session.mjs'
 ASSETS.update({'/coupled-view.mjs':'client/voxel-lab/coupled-view.mjs','/coupled.css':'client/voxel-lab/coupled.css'})

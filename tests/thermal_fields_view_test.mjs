@@ -18,3 +18,6 @@ console.log('3D field native observables, unsupported-law labels and executable 
 
 const sceneControls=html.match(/<div[^>]*id="view"[^>]*>([\s\S]*?)<output id="clock">/)[1];
 for(const id of ['run', 'step', 'stop', 'reset', 'ice-test', 'fuel-test', 'save', 'open'])assert(sceneControls.includes(`id="${id}"`),`${id} must stay next to the 3D view`);
+let leave,beacon;const cleanup=vm.createContext({session:'owned-native-field',Blob,JSON,window:{addEventListener:(event,fn)=>{assert.equal(event,'pagehide');leave=fn;}},navigator:{sendBeacon:(url,body)=>{beacon={url,body};}}});
+vm.runInContext(js.match(/window.addEventListener\('pagehide',[^\n]+/)[0],cleanup);leave();assert.equal(beacon.url,'/api/thermal-fields');assert.deepEqual(JSON.parse(await beacon.body.text()),{op:'close',session:'owned-native-field'});
+beacon=null;cleanup.session=null;leave();assert.equal(beacon,null,'navigation must not close an unrelated session');

@@ -2389,6 +2389,9 @@ if(BANJO_BUILD_TESTS)
                 add_test(NAME banjo_coupled_view_tests COMMAND ${BANJO_NODE_EXECUTABLE}
                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/coupled_view_test.mjs)
                 set_tests_properties(banjo_coupled_view_tests PROPERTIES TIMEOUT 10 LABELS "voxel;client")
+                add_test(NAME banjo_scene_action_placement_tests COMMAND ${BANJO_NODE_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/scene_action_placement_test.mjs)
+                set_tests_properties(banjo_scene_action_placement_tests PROPERTIES TIMEOUT 10 LABELS "voxel;client")
             endif()
         endif()
         add_test(NAME banjo_regression_runner_tests

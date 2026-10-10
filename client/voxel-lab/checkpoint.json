@@ -3,7 +3,7 @@
   "date": "2026-10-09",
   "native_sha256": "736fa231999ddf1b578742de3dd97ce3fe6763c6406575d989b2ade526a39dca",
   "changes": [
-    "Optional CPU heat remains on the same moving matter through flight/contact, with shared clocks, exact save/reopen and atomic rollback. Temperature inspection uses real field observations. Water continues the same sealed accepted state with cumulative budgets. Run, replay, reset, inspection and save controls are beside the 3D scene on desktop and phones.",
+    "Optional CPU heat remains on the same moving matter through flight/contact, with shared clocks, exact save/reopen and atomic rollback. Temperature inspection uses real field observations. Water continues the same sealed accepted state with cumulative budgets. Run, replay, reset, inspection and save controls are beside the 3D scene on desktop and phones. Representation, CUDA contact and material-loading workbenches use the same adjacent action dock; thermal navigation closes only its owned session.",
     "Separate native 3D references: hinged bar with exact-equilibrium sleep/wake and support removal, conservative depth-averaged water, conduction/ice latent heat and closed fuel/oxygen/products. CPU contact forces now mark actual surface sample locations on both participants. These do not complete strong sheet impacts or cross-system coupling.",
     "Shared CPU/CUDA box closest-point geometry now preserves tiny exterior gaps in local coordinates instead of producing an invalid normal at a rounded boundary. The measured native regression passes, and four-material CPU/CUDA, parallel/reference and 10 m rigid controls retain their gates. The page lists usable checks and clearly marks full smash tests and remaining representation families unfinished.",
     "Representation workbench at /representations compiles adaptive occupied cubes and tests conservative CPU rigid/detail mappings and gravity-only flight. No internal/contact solver is connected there. Coupled lab now shows Before/Contact/After milestones and frames the ground in Full drop; the default test is plainly labeled a rigid rebound control.",
@@ -35,7 +35,7 @@
     {
       "label": "Persistent fields, continued water and adjacent controls",
       "status": "passed",
-      "value": "20 scoped Windows CTests; 354/354 registered sources. Actual HTTP/native four-material retained heat and exact reopen; matched 10m heated/unheated rebound, combined energy residual below 8.2e-10 J; atomic late/phase refusals; bitwise split-flow continuation; executable browser-controller regressions and actual desktop/phone portrait/landscape 3D controls. No thermal weakening, damaged-field transport, phase-flow or strong-fracture qualification."
+      "value": "21 scoped Windows CTests; 354/354 registered sources. Actual HTTP/native four-material retained heat and exact reopen; matched 10m heated/unheated rebound, combined energy residual below 8.2e-10 J; atomic late/phase refusals; bitwise split-flow continuation; executable browser-controller regressions and actual desktop/phone portrait/landscape 3D controls. No thermal weakening, damaged-field transport, phase-flow or strong-fracture qualification."
     },
     {
       "label": "Parallel references and native spatial contact inspection",
@@ -221,7 +221,7 @@
     "persistent_cpu_thermal_matter": true,
     "flow_checkpoint_continuation": true
   },
-  "physics_revision": "94686b51560b5ccd3da9b8909be615afbc568648",
+  "physics_revision": "5619cb0991e5170a377287eeb26378966a9dddfe",
   "gpu_source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd",
   "gpu_worker_sha256": "cef064443c3a655dc4b10d6697a7e0eab67e4047d7f9bfc0f36f961a5ed453d6",
   "physx_source_sha256": "d1d30abfd67380a66fcf4664759e1917e50137bd7f6ef92bb160d0f1b5b5157f",

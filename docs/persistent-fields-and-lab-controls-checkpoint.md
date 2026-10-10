@@ -1,6 +1,6 @@
 # Persistent fields, continuing water and controls beside 3D
 
-October 9, 2026. Implemented bounded CPU references from main `8cb64e4e980cd133379b4adaafed3026eb370ffa`. This checkpoint does not complete the eight-family platform or strong-impact gate.
+October 9, 2026. Physics implementation published on main `5619cb0991e5170a377287eeb26378966a9dddfe`. Implemented bounded CPU references from main `8cb64e4e980cd133379b4adaafed3026eb370ffa`. This checkpoint does not complete the eight-family platform or strong-impact gate.
 
 ## What the user can test
 
@@ -8,6 +8,8 @@ October 9, 2026. Implemented bounded CPU references from main `8cb64e4e980cd1333
 - `/flow`: calculate spreading water, then **Continue flow** beside the basin. It advances the same water from its accepted checkpoint, rather than starting the initial field again. The physical clock and wall/numerical accounts remain cumulative. Painting/reset/input mutations are locked during requests. A refused result retains the last accepted view and checkpoint.
 - `/mechanisms`: **Calculate & play**, before/play/after, gravity swing, wake and support removal are attached to the 3D panel. The Calculate button still submits the actual settings form.
 - `/thermal-fields`: heat, step, stop, setup, ice/reaction tests and save/reopen are beside the cell view. They remain disabled until a native session exists.
+
+The representation, CUDA contact and material-loading workbenches also use the same adjacent action dock. Their numerical laws and existing handlers are unchanged. Thermal-page navigation now closes only its owned session so browsing experiments does not exhaust the eight-session bound.
 
 The [demonstration contract](physics-lab-demonstration-contract.md) now requires this placement for every new physical experiment. Desktop and phone portrait/landscape are acceptance surfaces. Settings may be separate; the action that runs the scene must not be hidden after a long settings form.
 
@@ -23,7 +25,7 @@ Water now has a sealed exact-f64 checkpoint, persistent provenance/control-volum
 
 ## Verification
 
-Windows 11, MSVC Release, native DLLs in `build/voxel-contact-audit/Release`; Python/NumPy CPU reference. Source registration: **354/354**. Both new C++ implementation/test files are registered and compiled. Twenty scoped CTests pass (fourteen field/native/view/API tests plus six existing registry/CPU world/modes/gateway/parity/session tests); this is not a full repository regression run. The final HTTP test exercises actual authenticated workers for all four retained solid materials, exact field save/reopen, and same-water continuation. See [thermal transfer evidence](thermal-fields-checkpoint.md) and [flow continuation evidence](flowing-matter-checkpoint.md) for native and adapter assumptions.
+Windows 11, MSVC Release, native DLLs in `build/voxel-contact-audit/Release`; Python/NumPy CPU reference. Source registration: **354/354**. Both new C++ implementation/test files are registered and compiled. Twenty-one scoped CTests pass (fourteen field/native/view/API tests plus six existing registry/CPU world/modes/gateway/parity/session tests and one action-placement suite); this is not a full repository regression run. The final HTTP test exercises actual authenticated workers for all four retained solid materials, exact field save/reopen, and same-water continuation. See [thermal transfer evidence](thermal-fields-checkpoint.md) and [flow continuation evidence](flowing-matter-checkpoint.md) for native and adapter assumptions.
 
 Matched experiment: 0.1 kg ball, 10 m initial gap, gravity 9.81 m/s², host step 1/240 s, contact phase bound 0.0625 rad, partitioned rigid flight, CPU local Jacobian, initial temperature 260 K, 2 W heater, two accepted seconds. Heated/unheated native bodies and edges are exactly equal for every accepted batch; each completes contact and rebound. The heater oracle is `T = 260 + 2*t/(0.1*cp)`.
 
