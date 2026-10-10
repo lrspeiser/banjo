@@ -3193,60 +3193,86 @@ class ClickingSomethingKeepsIt(PageJourney):
         moved = math.hypot(after[0] - before[0], after[1] - before[1])
         self.assertGreater(moved, 0.3, f"A no longer strafes: it moved {moved:.2f} m")
 
+    def click_the_middle(self):
+        """A click on what the crosshair is on, with the mouse, as a person
+        clicks: moved there, down and up."""
+        x, y = self.js("(() => { const r = document.getElementById('stage').getBoundingClientRect();"
+                       " return [r.left + r.width / 2, r.top + r.height / 2]; })()")
+        self.page.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
+        time.sleep(0.15)
+        for kind in ("mousePressed", "mouseReleased"):
+            self.page.send("Input.dispatchMouseEvent", {"type": kind, "x": x, "y": y, "button": "left",
+                                                        "clickCount": 1})
+            time.sleep(0.05)
+
+    def action_line(self):
+        return "document.getElementById('world-action-toast')"
+
     def test_clicking_a_machine_keeps_it_in_the_panel_and_draws_a_box_round_it(self):
         self.open_rover_room()
-        self.js("(banjoRoom.pick('rover'), true)")
-        self.assertTrue(self.wait_for("!document.getElementById('picked').hidden", 15),
-                        "clicking the rover showed nothing")
-        # The panel starts folded away; Details shows what was clicked.
-        self.open_details()
-        said = self.js("document.getElementById('picked').innerText")
-        self.assertIn("Rover", said)
-        # The battery is a picture with a percentage, not a sentence.
-        self.assertTrue(self.js("!!document.querySelector('#picked .battery')"),
-                        "no battery symbol")
-        self.assertRegex(said, r"\d+%", "the battery does not say how full it is")
-        # And the words about the same battery are gone: it is said once.
-        self.assertNotIn("a battery,", said, "the battery is written out as well as drawn")
+        self.assertTrue(self.wait_for("banjoRoom.world.bodies.has('rover')", 60), "the rover never arrived")
+        x, y, z = self.at_rest("rover")
+        self.js(f"(banjoRoom.standAt({x + 0.3}, {y + 1.4}, {z - 1.9}), banjoRoom.lookAt({x}, {y + 0.05}, {z}), true)")
+        self.assertTrue(self.wait_for("banjoRoom.world.aim && banjoRoom.world.aim.name === 'rover'", 15),
+                        f"the crosshair is not on the rover: {self.situation()}")
+        # A click says THAT ONE. Since eaf9e306 the side view is the
+        # conversation and never an inspector, so what was clicked is a box
+        # round it in the room and the action line saying what it is.
+        self.click_the_middle()
+        self.assertTrue(self.wait_for("banjoRoom.picked().name === 'rover'", 15),
+                        f"clicking the rover did not select it: {self.situation()}")
+        self.assertTrue(self.wait_for(f"(t => !!t && !t.hidden && t.textContent.startsWith('Rover selected'))"
+                                      f"({self.action_line()})", 10),
+                        f"the click did not say what it selected: {self.situation()}")
+        self.assertTrue(self.js("document.body.classList.contains('panel-away')"),
+                        "selecting the rover opened the side view")
         # A box round it in the room, following it.
         self.assertTrue(self.wait_for("banjoRoom.picked().outlined", 10),
                         "nothing was drawn round what was clicked")
+        # Its battery is in its own controls, once, as a meter with a
+        # reading: E on it, and the card says it (1572c275's rover card).
+        self.press_e()
+        self.assertTrue(self.wait_for("!!document.querySelector('#machine-panel .rover-card progress')"
+                                      "?.checkVisibility()", 15),
+                        f"the rover's controls show no energy meter: {self.situation()}")
+        said = self.js("document.querySelector('#machine-panel .rover-card').innerText")
+        self.assertRegex(said, r"Energy · ([\d.,]+ [kM]?J / [\d.,]+ [kM]?J|\d+%)", "the battery does not say how full it is")
+        self.assertEqual(1, said.count("Energy"), "the battery is said more than once")
+        self.click("mp-close")
+        self.assertTrue(self.wait_for("document.body.classList.contains('panel-away')", 10))
         # It stays about the rover even though the view has moved on.
         self.js("(banjoRoom.lookAt(20, 0, 20), true)")
         time.sleep(1.0)
         self.assertEqual(self.js("banjoRoom.picked().name"), "rover",
                          "looking away let go of what was clicked")
-        self.assertTrue(self.js("document.getElementById('details').hidden"),
-                        "the hovering view is still up beside the pinned one")
+        self.assertTrue(self.js("banjoRoom.picked().outlined"), "the box went when the view moved on")
 
     def test_clicking_land_says_what_it_is_made_of(self):
         self.open_rover_room()
-        self.js("(banjoRoom.pickGround(-4.8, 0, 4.1), true)")
-        self.assertTrue(self.wait_for("!document.getElementById('picked').hidden", 15),
-                        "clicking the ground showed nothing")
-        # The panel starts folded away, and the beds are under their own
-        # disclosure in it (f978d1af): Details, then Ground layers.
-        self.open_details()
-        self.click_selector("#picked details > summary")
-        self.assertTrue(self.wait_for("document.querySelector('#picked details').open", 5), "Ground layers did not open")
-        # And it stays open while the card is built again: walking changes how far away it says it is.
-        self.js("(banjoRoom.standAt(banjoRoom.camera.position.x + 0.5, banjoRoom.camera.position.y, banjoRoom.camera.position.z), true)")
-        time.sleep(1.0)
-        self.assertTrue(self.js("document.querySelector('#picked details').open"), "Ground layers closed when the card was built again")
-        beds = json.loads(self.js(
-            "JSON.stringify([...document.querySelectorAll('#picked .pk-bed')]"
-            ".map(b => b.innerText))"))
-        self.assertTrue(beds, "the ground has no beds in the panel")
-        # Every bed says what it is and how thick, and each is drawn tall
-        # enough to read -- a 60 cm bed under 30 m of rock used to be 7 px.
-        for said in beds:
-            self.assertRegex(said, r"\d+ (cm|m)\b", f"a bed with no thickness: {said!r}")
-        tall = json.loads(self.js(
-            "JSON.stringify([...document.querySelectorAll('#picked .pk-bed')]"
-            ".map(b => b.getBoundingClientRect().height))"))
-        self.assertGreater(min(tall), 12, f"a bed too thin to read: {tall}")
-        self.assertIn("ore", self.js("document.getElementById('picked').innerText"),
-                      "the panel says nothing about ore either way")
+        # A plain click on open ground, empty-handed. Its layers used to be a
+        # card in the Details rail (f978d1af); that rail is gone (eaf9e306),
+        # and the click says them on the action line instead, top down.
+        y = self.js("banjoRoom.groundAt(-4.8, 4.1)")
+        self.js(f"(banjoRoom.standAt(-4.8, {y} + 1.62, 6.1), banjoRoom.lookAt(-4.8, {y}, 4.1), true)")
+        self.assertTrue(self.wait_for("!!banjoRoom.world.groundAim && !banjoRoom.world.aim", 15),
+                        f"the crosshair is not on open ground: {self.situation()}")
+        self.click_the_middle()
+        self.assertTrue(self.wait_for("!!banjoRoom.picked().at", 15), "clicking the ground selected nothing")
+        self.assertTrue(self.wait_for(f"(t => !!t && !t.hidden && t.textContent.includes(' ground: '))"
+                                      f"({self.action_line()})", 10),
+                        f"clicking the ground said nothing about it: {self.situation()}")
+        said = self.js(f"{self.action_line()}.textContent")
+        layers, _, minerals = said.rstrip(".").partition(" ground: ")[2].rpartition(" · ")
+        beds = [b for b in layers.split(" over ") if b != "more"]
+        self.assertTrue(beds, f"the ground has no beds: {said!r}")
+        # Every bed says how thick it is and what it is.
+        for bed in beds:
+            self.assertRegex(bed, r"^\d+(\.\d)? (cm|m) \w", f"a bed with no thickness: {bed!r} in {said!r}")
+        # And whether there is ore here, either way (the owner asked).
+        self.assertIn("ore", minerals + said, f"the ground says nothing about ore either way: {said!r}")
+        self.assertIsNone(self.js("banjoRoom.reveal()"), "the click drew something into the earth")
+        self.assertTrue(self.js("document.body.classList.contains('panel-away')"),
+                        "clicking the ground opened the side view")
 
     def test_escape_frees_cursor_and_preserves_the_selected_item(self):
         self.open_rover_room()

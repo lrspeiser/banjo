@@ -5419,8 +5419,14 @@ function pinWhatWasClicked() {
     picked.name = was === world.aim.name ? null : world.aim.name;
     picked.at = picked.name ? (world.aim.point_m || null) : null;
   } else if (world.groundAim) {
+    // The same patch of ground clicked again lets it go, as a thing does.
+    const cell = ground.grid?.dx || 0.25;
+    const again = !was && picked.at &&
+      Math.hypot(picked.at[0] - world.groundAim[0], picked.at[2] - world.groundAim[2]) < cell / 2;
     picked.name = null;
-    picked.at = world.groundAim.slice();
+    picked.at = again ? null : world.groundAim.slice();
+    const said = picked.at && groundSaid(picked.at);
+    if (said) lastAction(said);
   } else {
     return;                     // a click on the sky pins nothing and clears nothing
   }
@@ -5888,6 +5894,23 @@ function bedsUnder(at) {
 }
 
 const deepSaid = (m) => (m < 1 ? `${Math.round(m * 100)} cm` : `${m.toFixed(1)} m`);
+
+// What a click on open ground says, on the action line over the room. The
+// owner asked that a click on land "show me what it is composed of, a mineral
+// and if so how much"; the card that said it is in the Details rail, which is
+// gone (eaf9e306), so the click said nothing at all. The beds, top down, each
+// with how thick it is, and whether there is ore here, either way.
+function groundSaid(at) {
+  const beds = bedsUnder(at).filter((b) => !b.hole);
+  if (!beds.length) return "";
+  const layers = beds.slice(0, 4).map((b) => `${deepSaid(b.thick_m)} ${b.name}`).join(" over ")
+    + (beds.length > 4 ? " over more" : "");
+  const ore = [...new Set(beds.filter((b) => ORE_NAMES.includes(b.name)).map((b) => b.name))];
+  const deposits = (world.goods?.deposits || []).filter((d) => d.left_kg > 0 &&
+    Math.hypot(at[0] - d.at_m[0], at[2] - d.at_m[1]) <= d.radius_m).map((d) => `${d.substance} to mine`);
+  const minerals = [...ore, ...deposits];
+  return `${titled(beds[0].name)} ground: ${layers} · ${minerals.length ? minerals.join(" / ") : "no ore"}`;
+}
 
 // A BROKEN SCALE, the way a core log is really drawn. Straight to scale, 60 cm
 // of soil beside 30 m of rock is a 7-pixel sliver -- and the 60 cm is the part

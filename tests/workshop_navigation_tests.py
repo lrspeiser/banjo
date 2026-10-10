@@ -68,9 +68,17 @@ class GameScreens(unittest.TestCase):
         self.wait('!document.body.classList.contains("panel-away") && '
                   'Math.abs(document.querySelector("#panel").getBoundingClientRect().right - innerWidth) < 1')
 
-    def open_rail(self):
-        # Details in the bottom navigation opens the folded right rail.
-        self.click('#panel-details'); self.wait_rail_shown()
+    def alt_click_middle(self):
+        """Alt+click on what the crosshair is on: the World's inspect gesture,
+        which selects -- or, on what is already selected, lets go -- without
+        using or taking anything. The pinned card's close button went with
+        the Details rail (eaf9e306); a second click is how a selection ends."""
+        point = self.page.evaluate('(()=>{const r=document.querySelector("#stage").getBoundingClientRect();'
+                                   'return {x:r.x+r.width/2,y:r.y+r.height/2}})()')
+        self.page.send("Input.dispatchMouseEvent", {"type":"mouseMoved", **point, "modifiers":1})
+        for event in ("mousePressed", "mouseReleased"):
+            self.page.send("Input.dispatchMouseEvent", {"type":event, **point, "button":"left",
+                                                        "clickCount":1, "modifiers":1})
 
     def assert_empty(self):
         self.wait('document.querySelector("#workshop-stage").dataset.showing === "empty"')
@@ -401,10 +409,13 @@ class GameScreens(unittest.TestCase):
         self.assertTrue(self.page.evaluate('banjoRoom.world.bodies.get(revealTarget).mesh.material === originalSkin && !banjoRoom.scene.getObjectByName("selection-structure-reveal")'))
         self.page.evaluate('[...document.querySelectorAll("#picked button")].find(b=>b.textContent==="Show native cells").click()')
         self.wait('!!banjoRoom.reveal()')
-        # The pinned card lives in the right rail, which starts folded
-        # (dcd94bae); Details opens it, then its close button dismisses.
-        self.open_rail()
-        self.click('#pk-close'); self.wait('banjoRoom.reveal() === null && document.querySelector("#picked").hidden')
+        # A second click on the selected thing lets it go, and its reveal with
+        # it. The player's eye settles after standAt (players are bodies), so
+        # look at it again from where it came to rest.
+        self.wait('(()=>{const r=banjoRoom,p=r.world.bodies.get(revealTarget).mesh.position;'
+                  'r.lookAt(p.x,p.y,p.z);return r.world.aim?.name === revealTarget})()')
+        self.alt_click_middle()
+        self.wait('banjoRoom.reveal() === null && document.querySelector("#picked").hidden')
         # Switching selection disposes the old overlay rather than stacking it.
         self.page.evaluate('banjoRoom.pick(revealTarget); banjoRoom.pick("solar farm")')
         self.page.evaluate('(()=>{const r=banjoRoom,p=r.world.bodies.get("solar farm").mesh.position;r.standAt(p.x+2,p.y+2,p.z+3);r.lookAt(p.x,p.y,p.z)})()')
@@ -443,6 +454,9 @@ class GameScreens(unittest.TestCase):
         # down into the earth: those wireframes on every click were noise (the
         # owner, 2026-10-04).
         self.wait('document.querySelector("#picked")?.textContent.includes("Ground layers")')
+        # What it is made of is said where a player sees it, on the action
+        # line: the card above is in the retired Details rail (eaf9e306).
+        self.wait('(t=>!!t && !t.hidden && t.textContent.includes(" ground: "))(document.querySelector("#world-action-toast"))')
         self.assertIsNone(self.page.evaluate('banjoRoom.reveal()'))
         self.assertFalse(self.page.evaluate('!!banjoRoom.scene.getObjectByName("selection-structure-reveal")'))
         self.assertGreater(self.page.evaluate('document.querySelectorAll("#picked .pk-bed").length'), 0)
@@ -455,8 +469,12 @@ class GameScreens(unittest.TestCase):
         self.page.send("Input.dispatchKeyEvent", {"type":"keyUp", "code":"Escape", "key":"Escape"})
         self.wait('document.querySelector("#cursor-mode").getAttribute("aria-pressed") !== ' + json.dumps(cursor))
         self.assertFalse(self.page.evaluate('document.querySelector("#picked").hidden'))
-        self.open_rail()
-        self.click('#pk-close')
+        # The same ground clicked again lets it go, as a selected thing does.
+        # The player's body settled since the first click, so look at the
+        # pinned ground again before clicking it.
+        self.wait('(()=>{const r=banjoRoom,a=r.picked().at;r.lookAt(a[0],a[1],a[2]);const g=r.world.groundAim;'
+                  'return !!g && !r.world.aim && Math.hypot(g[0]-a[0],g[2]-a[2])<.05})()')
+        self.alt_click_middle()
         self.wait('banjoRoom.reveal() === null && document.querySelector("#picked").hidden')
         after = self.post("/api/live/act", {"session":session, "op":"poses"}, world)
         for key in ("t", "machines", "ground"):
