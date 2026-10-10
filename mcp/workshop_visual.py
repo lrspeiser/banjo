@@ -12,6 +12,13 @@ is allowed to stand in for physics.
 """
 from __future__ import annotations
 
+try:  # correctly rounded: the same bits on every platform (playground/portable_math.py)
+    import portable_math as pm
+except ModuleNotFoundError:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.append(str(_Path(__file__).resolve().parents[1] / "playground"))
+    import portable_math as pm
 import hashlib
 import json
 from math import ceil, floor, isfinite, radians, sqrt
@@ -155,7 +162,7 @@ def _segment_distance_sq(point: tuple[float, float, float], a, b) -> float:
     den = sum(v*v for v in ab)
     t = 0.0 if den <= 1e-18 else max(0.0, min(1.0, sum(ap[i]*ab[i] for i in range(3)) / den))
     closest = tuple(float(a[i]) + t * ab[i] for i in range(3))
-    return sum((float(point[i]) - closest[i]) ** 2 for i in range(3))
+    return sum(pm.power(float(point[i]) - closest[i], 2) for i in range(3))
 
 
 def _curve_samples(descriptor: dict[str, Any], count: int = 32):
@@ -170,7 +177,7 @@ def _inside(part: WirePart, skin: dict[str, Any], x: float, y: float, z: float,
         "round" if part.shape == "cylinder" else "block")
     if profile == "round":
         rx, rz = max(w / 2, 1e-9), max(d / 2, 1e-9)
-        return abs(y) <= h / 2 and (x / rx) ** 2 + (z / rz) ** 2 <= 1.0
+        return abs(y) <= h / 2 and pm.power(x / rx, 2) + pm.power(z / rz, 2) <= 1.0
     if profile == "curve":
         if curve is None:
             descriptor = _skin_part(part, skin)

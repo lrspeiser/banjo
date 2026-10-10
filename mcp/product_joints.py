@@ -26,6 +26,13 @@ bearing's hold along its own axis.
 """
 from __future__ import annotations
 
+try:  # correctly rounded: the same bits on every platform (playground/portable_math.py)
+    import portable_math as pm
+except ModuleNotFoundError:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.append(str(_Path(__file__).resolve().parents[1] / "playground"))
+    import portable_math as pm
 from math import hypot, pi
 from typing import Any
 
@@ -104,14 +111,14 @@ def capacity(joint: dict[str, Any], a: WirePart, b: WirePart) -> dict[str, Any]:
     diameter, engaged = float(how["diameter_m"]), float(how["engaged_m"])
     shaft = a if how["shaft"] == a.name else b
     shaft_shear = (engine_materials.mechanics(shaft.material)["shear_strength_pa"]
-                   * keeps["shear"] * pi * diameter ** 2 / 4.0)
+                   * keeps["shear"] * pi * pm.power(diameter, 2) / 4.0)
     bearing_on_bore = crushing * diameter * engaged
     out.update({
         "diameter_m": diameter, "engaged_m": engaged,
         "radial_n": min(bearing_on_bore, shaft_shear),
         "radial_governed_by": ("the shaft shearing across" if shaft_shear < bearing_on_bore
                                else "the bore crushing under the shaft"),
-        "prying_n_m": crushing * diameter * engaged ** 2 / 6.0,
+        "prying_n_m": crushing * diameter * pm.power(engaged, 2) / 6.0,
         "assumes": "bearing pressure uniform over the projected area d x L under a radial load and linear "
                    "along the bore under prying; the shaft in single shear",
     })

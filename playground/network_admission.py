@@ -18,6 +18,7 @@ native report still says `physical_response_validated: false`.
 """
 from __future__ import annotations
 
+import portable_math as pm
 import math
 from pathlib import Path
 import sys
@@ -164,7 +165,7 @@ def nearest_admissible_resolution(dimensions_m: Any, requested=None, *,
     if requested is None:
         return min(candidates, key=lambda item: (item[2], item[1]))[0]
     def distance(item):
-        return sum((a - b) ** 2 for a, b in zip(item[0], requested))
+        return sum(pm.power(a - b, 2) for a, b in zip(item[0], requested))
     return min(candidates, key=lambda item: (distance(item), item[2], item[1]))[0]
 
 
@@ -257,7 +258,7 @@ def object_frequency(dimensions_m, resolution, material, *, shape: str = "box"):
     nx, ny, nz = (int(v) for v in resolution)
     hx, hy, hz = (float(d) / n for d, n in zip(dimensions_m, resolution))
     volume = hx * hy * hz
-    area = volume ** (2.0 / 3.0) / 6.0
+    area = pm.power(volume, 2.0 / 3.0) / 6.0
     mass = float(material["density_kg_m3"]) * volume
     modulus = material["young_modulus_pa"]
 

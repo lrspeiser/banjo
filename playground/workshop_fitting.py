@@ -27,6 +27,7 @@ built in the world today.
 """
 from __future__ import annotations
 
+import portable_math as pm
 from copy import deepcopy
 import math
 from typing import Any
@@ -609,7 +610,7 @@ def _rebuild_struts(base: Any, design: Any, overrides: dict[str, Any], cell_m: f
             other_then, other_now = original.get(mate), now.get(mate)
             if other_then is None or other_now is None:
                 break
-            end = min((lo, hi), key=lambda e: sum((e[i] - other_then.center_m[i]) ** 2 for i in range(3)))
+            end = min((lo, hi), key=lambda e: sum(pm.power(e[i] - other_then.center_m[i], 2) for i in range(3)))
             # Where it holds the other part, as a fraction of that part rather
             # than in metres: an end on the deck's top face has to stay on the
             # top face when the deck is drawn thicker, not end up buried in it.

@@ -35,6 +35,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 ROOMS = ROOT / "playground" / "rooms"
 sys.path[:0] = [str(ROOT), str(ROOT / "playground")]
+import portable_math as pm                       # noqa: E402
 
 from mcp import workshop as w, workshop_machines, workshop_products  # noqa: E402
 
@@ -104,7 +105,7 @@ def flat_ground(tops, g, holes, near: dict, least_m: float, most_m: float, wide_
     for (i, j), top in tops.items():
         x = g["x0_m"] + i * cell
         z = g["z0_m"] + j * cell
-        away = ((x - near["x"]) ** 2 + (z - near["z"]) ** 2) ** 0.5
+        away = pm.power(pm.power(x - near["x"], 2) + pm.power(z - near["z"], 2), 0.5)
         if not least_m <= away <= most_m:
             continue
         under = [tops.get((i + di, j + dj)) for di in range(-half, half + 1)

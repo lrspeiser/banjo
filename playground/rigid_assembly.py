@@ -307,7 +307,7 @@ def room_entries(design, artifact: dict[str, Any]):
 
         def distance(name):
             lo, hi = workshop_construction._bounds(parts[name])
-            return sum(max(lo[k] - at[k], 0.0, at[k] - hi[k]) ** 2 for k in range(3))
+            return sum(pm.power(max(lo[k] - at[k], 0.0, at[k] - hi[k]), 2) for k in range(3))
 
         owner[point["id"]] = artifact["component_to_body"][min(parts, key=distance)]
     source = {b["name"]: b for b in compile_design(design, root=artifact["root"])["bodies"]}

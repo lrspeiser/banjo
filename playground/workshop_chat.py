@@ -14,6 +14,7 @@ world authoring.
 """
 from __future__ import annotations
 
+import portable_math as pm
 from copy import deepcopy
 import json
 import logging
@@ -1118,7 +1119,7 @@ class _State:
                 base = parts[on]
                 corners = base.corners_m()
                 top = max(c[1] for c in corners)
-                side = max(0.05, min(2.0, area ** 0.5))
+                side = max(0.05, min(2.0, pm.power(area, 0.5)))
                 plate = w.ComponentLibrary().make("solar-panel", name=name, material="glass",
                                                   at_m=(float(base.center_m[0]), float(top), float(base.center_m[2])),
                                                   parameters={"width_m": side, "depth_m": side}).parts[0]

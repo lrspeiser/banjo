@@ -5,6 +5,7 @@ No prescribed fragments or material-specific expected shatter counts.
 """
 from __future__ import annotations
 
+import portable_math as pm
 import atexit
 import hashlib
 import json
@@ -246,7 +247,7 @@ def check_run(report, recording, case):
         problems.append("native cell count differs from the fixture")
     if m["tile_mass_kg"] <= 0 or m["ball_mass_kg"] <= 0:
         problems.append("nonpositive mass")
-    if not math.isclose(m["initial_kinetic_j"], .5 * m["ball_mass_kg"] * case["speed_m_s"]**2,
+    if not math.isclose(m["initial_kinetic_j"], .5 * m["ball_mass_kg"] * pm.power(case["speed_m_s"], 2),
                         rel_tol=1e-8, abs_tol=1e-9):
         problems.append("initial striker energy differs from the requested speed")
     if not 0 <= m["broken_bonds"] <= m["bonds"] or not 1 <= m["components"] <= expected:

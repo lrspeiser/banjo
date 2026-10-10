@@ -530,7 +530,7 @@ def _slope(stations: list[float], height: dict[float, float]) -> float:
         return 0.0
     mean_s = sum(stations) / n
     mean_h = sum(height[s] for s in stations) / n
-    spread = sum((s - mean_s) ** 2 for s in stations)
+    spread = sum(pm.power(s - mean_s, 2) for s in stations)
     return 0.0 if spread <= 0.0 else sum((s - mean_s) * (height[s] - mean_h) for s in stations) / spread
 
 

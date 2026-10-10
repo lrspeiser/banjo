@@ -12,6 +12,7 @@ no control could reach it.
 """
 from __future__ import annotations
 
+import portable_math as pm
 from math import dist, isfinite, sqrt
 from pathlib import Path
 import time
@@ -75,9 +76,9 @@ def _striker(cells: set, h: float, mass_kg: float, fraction: float) -> tuple[spa
     is the air between its legs. Of the product's cells in the block's height
     band, it takes the nearest to the -X side and lines up on that one.
     """
-    per_cell = engine_materials.density(STRIKER_MATERIAL) * h**3
+    per_cell = engine_materials.density(STRIKER_MATERIAL) * pm.power(h, 3)
     count = max(1, round(mass_kg / per_cell))
-    side = max(1, round(count ** (1 / 3)))
+    side = max(1, round(pm.power(count, 1 / 3)))
     nx = ny = side
     nz = max(1, round(count / (nx * ny)))
     lo_y, hi_y = min(g[1] for g in cells), max(g[1] for g in cells)
@@ -145,7 +146,7 @@ def scene(design, test: str, config: dict[str, Any]) -> dict[str, Any]:
         block["velocity_m_s"] = [striker_speed, 0.0, 0.0]
         bodies.append(block)
         striker = {"requested_kg": striker_kg, "actual_kg": actual_kg, "speed_m_s": striker_speed,
-                   "height_fraction": fraction, "energy_j": .5 * actual_kg * striker_speed**2,
+                   "height_fraction": fraction, "energy_j": .5 * actual_kg * pm.power(striker_speed, 2),
                    "size_m": [(box[1][a] - box[0][a] + 1) * h for a in range(3)]}
     # The declared time is the time simulated, as it always was: a short run is
     # how free fall is checked in mid-air. What a drop needs in order to land and

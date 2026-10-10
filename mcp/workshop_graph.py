@@ -8,6 +8,13 @@ axle, and containment surfaces define a liquid volume and thermal path.
 """
 from __future__ import annotations
 
+try:  # correctly rounded: the same bits on every platform (playground/portable_math.py)
+    import portable_math as pm
+except ModuleNotFoundError:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.append(str(_Path(__file__).resolve().parents[1] / "playground"))
+    import portable_math as pm
 from math import sqrt
 from typing import Any
 
@@ -131,7 +138,7 @@ def _box_gap(a: WirePart, b: WirePart) -> float:
 
 
 def _distance(a, b) -> float:
-    return sqrt(sum((float(a[i]) - float(b[i])) ** 2 for i in range(3)))
+    return sqrt(sum(pm.power(float(a[i]) - float(b[i]), 2) for i in range(3)))
 
 
 def _parallel(a, b) -> bool:

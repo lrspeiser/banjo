@@ -12,6 +12,7 @@ canonical Matter artifact or its hashes.
 """
 from __future__ import annotations
 
+import portable_math as pm
 import base64
 import struct
 import time
@@ -119,10 +120,10 @@ def _box_body(name: str, box: Box, cell: float, material: str, join: str,
 
 
 def _compact_load_shape(load_kg: float, cell: float) -> tuple[int, int, int, float]:
-    per_cell = engine_materials.density(_LOAD_MATERIAL) * cell ** 3
+    per_cell = engine_materials.density(_LOAD_MATERIAL) * pm.power(cell, 3)
     target = max(1, round(load_kg / per_cell))
     best: tuple[float, tuple[int, int, int]] | None = None
-    limit = max(2, round(target ** (1 / 3)) * 4 + 4)
+    limit = max(2, round(pm.power(target, 1 / 3)) * 4 + 4)
     for a in range(1, limit + 1):
         for b in range(a, limit + 1):
             c = max(b, round(target / (a * b)))
@@ -435,7 +436,7 @@ def run_static_load(app: Any, design: WorkshopDesign, *, load_kg: float,
     moved = turned = None
     if a is not None and b is not None:
         pa, pb = a.get("position_m") or [0, 0, 0], b.get("position_m") or [0, 0, 0]
-        moved = sum((float(pb[i]) - float(pa[i])) ** 2 for i in range(3)) ** 0.5
+        moved = pm.power(sum(pm.power(float(pb[i]) - float(pa[i]), 2) for i in range(3)), 0.5)
         turned = core._quat_angle_deg(a.get("orientation_wxyz") or [1, 0, 0, 0],
                                       b.get("orientation_wxyz") or [1, 0, 0, 0])
 

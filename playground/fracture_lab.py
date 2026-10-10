@@ -1875,7 +1875,7 @@ def body_cells(body: dict[str, Any], cell_m: float) -> int:
         radius = 0.5 * sx
         # The sphere generator samples occupancy in a cell-sized grid; the ball
         # volume over the cell volume is that count to within the surface layer.
-        return max(1, round(4.0 / 3.0 * math.pi * radius ** 3 / cell_m ** 3))
+        return max(1, round(4.0 / 3.0 * math.pi * pm.power(radius, 3) / pm.power(cell_m, 3)))
     return max(1, round(sx / cell_m)) * max(1, round(sy / cell_m)) * max(1, round(sz / cell_m))
 
 
@@ -2868,13 +2868,13 @@ def validate(spec: Any) -> dict[str, Any]:
         if result["cells"] > lane["max_cells"]:
             # Cells go as the cube of one over the cell size, so the size that
             # would fit is arithmetic rather than something to guess at.
-            ratio = (result["cells"] / lane["max_cells"]) ** (1.0 / 3.0)
+            ratio = pm.power(result["cells"] / lane["max_cells"], 1.0 / 3.0)
             suggestion = math.ceil(result["cell_m"] * 1000 * ratio / 5.0) * 5.0
             raise ValueError(
                 f"{result['cells']} cells exceeds this lane's cap of {lane['max_cells']}. "
                 f"Cell size is what decides it and cost goes as its cube: at {suggestion:g} mm "
                 f"instead of {result['cell_m'] * 1000:g} this scene is about "
-                f"{round(result['cells'] / ratio ** 3)} cells. Use a larger cell, or smaller objects.")
+                f"{round(result['cells'] / pm.power(ratio, 3))} cells. Use a larger cell, or smaller objects.")
         return result
     plate = result["plate_m"]
     if not isinstance(plate, list) or len(plate) != 3:
@@ -2890,7 +2890,7 @@ def validate(spec: Any) -> dict[str, Any]:
     result["ball_m"] = _number(result["ball_m"], LIMITS["ball_m"]["min"], LIMITS["ball_m"]["max"], "ball diameter")
     if result.get("speed_m_s") is not None:
         result["speed_m_s"] = _number(result["speed_m_s"], LIMITS["speed_m_s"]["min"], LIMITS["speed_m_s"]["max"], "impact speed")
-        result["drop_m"] = result["speed_m_s"] ** 2 / (2 * GRAVITY_M_S2)
+        result["drop_m"] = pm.power(result["speed_m_s"], 2) / (2 * GRAVITY_M_S2)
     else:
         result["drop_m"] = _number(result["drop_m"], LIMITS["drop_m"]["min"], LIMITS["drop_m"]["max"], "drop height")
         result["speed_m_s"] = math.sqrt(2 * GRAVITY_M_S2 * result["drop_m"])

@@ -795,7 +795,7 @@ def compile_spec(spec):
     if len(checked) > MAX_PARTS:
         problems.append(f'{len(checked)} parts; a machine has at most {MAX_PARTS}')
     cells = sum(math.prod(p['size_m']) * (math.pi / 6 if p['shape'] == 'sphere' else 1)
-                for p in checked if p['shape'] != 'compound') / cell ** 3
+                for p in checked if p['shape'] != 'compound') / pm.power(cell, 3)
     if cells > MAX_CELLS:
         problems.append(f'about {cells:,.0f} engine cells at {cell} m; the world budget is {MAX_CELLS:,}')
     for p in checked:

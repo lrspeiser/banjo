@@ -28,6 +28,13 @@ It is a SCREEN, and says so:
 """
 from __future__ import annotations
 
+try:  # correctly rounded: the same bits on every platform (playground/portable_math.py)
+    import portable_math as pm
+except ModuleNotFoundError:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.append(str(_Path(__file__).resolve().parents[1] / "playground"))
+    import portable_math as pm
 from math import isfinite, pi, sqrt
 from typing import Any
 
@@ -69,8 +76,8 @@ def _inertia(part: WirePart, mass: float) -> list[list[float]]:
     w, h, d = (float(v) for v in part.size_m)
     if part.shape == "cylinder":
         radius = min(w, d) / 2.0
-        local = (mass * (3 * radius ** 2 + h ** 2) / 12.0, mass * radius ** 2 / 2.0,
-                 mass * (3 * radius ** 2 + h ** 2) / 12.0)
+        local = (mass * (3 * pm.power(radius, 2) + pm.power(h, 2)) / 12.0, mass * pm.power(radius, 2) / 2.0,
+                 mass * (3 * pm.power(radius, 2) + pm.power(h, 2)) / 12.0)
     else:
         local = (mass * (h * h + d * d) / 12.0, mass * (w * w + d * d) / 12.0, mass * (w * w + h * h) / 12.0)
     turn = construction.rotation_matrix(part.rotation_deg)
@@ -163,7 +170,7 @@ class _Model:
             radial = e_both * length
             grip = g_both * pi * length
             k_lin = (grip if joint["kind"] == "fixed" else radial, radial, radial)
-            k_rot = (grip * (d / 2.0) ** 2, radial * length ** 2 / 12.0, radial * length ** 2 / 12.0)
+            k_rot = (grip * pm.power(d / 2.0, 2), radial * pm.power(length, 2) / 12.0, radial * pm.power(length, 2) / 12.0)
         if joint["kind"] == "bearing":                 # free to turn about its own axis
             k_rot = (max(k_rot) * _FREE, k_rot[1], k_rot[2])
         self.frames[joint["id"]] = {"at": at, "n": n, "u": u, "v": v, "sign": sign,
@@ -552,7 +559,7 @@ def _feet(design: WorkshopDesign) -> tuple[list[dict[str, Any]], float]:
 def _in_line(points: list[tuple[float, float]]) -> tuple[float, float] | None:
     """The direction of the line the points lie along, or None if they span an area."""
     far = max(((a, b) for a in points for b in points),
-              key=lambda pair: (pair[0][0] - pair[1][0]) ** 2 + (pair[0][1] - pair[1][1]) ** 2)
+              key=lambda pair: pm.power(pair[0][0] - pair[1][0], 2) + pm.power(pair[0][1] - pair[1][1], 2))
     along = (far[1][0] - far[0][0], far[1][1] - far[0][1])
     length = sqrt(along[0] * along[0] + along[1] * along[1])
     if length < 1e-9:

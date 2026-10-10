@@ -6,6 +6,13 @@ use weaker-material strength over sampled area. Filled rectangular mounts
 also compile maximum corner normal stress from measured force and moment;
 adhesive quality, fatigue, torsion and this abrupt bending law are uncalibrated.
 """
+try:  # correctly rounded: the same bits on every platform (playground/portable_math.py)
+    import portable_math as pm
+except ModuleNotFoundError:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.append(str(_Path(__file__).resolve().parents[1] / "playground"))
+    import portable_math as pm
 from collections import defaultdict
 import hashlib
 import json
@@ -83,7 +90,7 @@ def layout(design, overrides=None, *, cell_m=.04, matter=None):
             u = [float(i==uv[0]) for i in range(3)]
             section = {'section_u':u,'section_u_m':counts[0]*cell_m,'section_v_m':counts[1]*cell_m,
                        'section_law':'rectangular-max-normal-stress-v1'}
-        area = len(mount)*cell_m**2
+        area = len(mount)*pm.power(cell_m, 2)
         a, b = (parts[n] for n in pair)
         strengths = [engine_materials.mechanics(p.material) for p in (a, b)]
         keeps = joint_efficiency.efficiency(declared[pair], a, b) if pair in declared else {
@@ -122,7 +129,7 @@ def layout(design, overrides=None, *, cell_m=.04, matter=None):
         if len(materials) != 1:
             raise ValueError("A native constituent must retain exactly one material")
         material = materials.pop()
-        kg = len(cells)*cell_m**3*engine_materials.density(material)
+        kg = len(cells)*pm.power(cell_m, 3)*engine_materials.density(material)
         mass[material] += kg
         groups.append({"component": name, "material": material, "mass_kg": kg,
             "matter": {"cell_size_m": cell_m, "cells": cells, "total_cells": len(cells)}})

@@ -1,5 +1,6 @@
 """Room transactions for the generic finite-stock fabrication operating model."""
 from __future__ import annotations
+import portable_math as pm
 from copy import deepcopy
 from types import SimpleNamespace
 import threading
@@ -203,7 +204,7 @@ def compile_quote(candidate, stock_kg, cell_m, state, *, app=None):
             'native_constituents_verified': True,
             'interface_limits': artifact['limitations']}, state)
     material = next(iter(materials))
-    mass = len(cells)*cell_m**3*engine_materials.density(material)
+    mass = len(cells)*pm.power(cell_m, 3)*engine_materials.density(material)
     if abs(mass-measured["measured"]["mass_kg"]) > 1e-8:
         raise ValueError("Compiled material mass does not close")
     physics_hash = matter["physics_hash"]

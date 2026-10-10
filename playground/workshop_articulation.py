@@ -5,6 +5,7 @@ ideal hinge law; load rating, friction and manufacturing remain separate gates.
 """
 from __future__ import annotations
 
+import portable_math as pm
 from collections import defaultdict
 from copy import deepcopy
 import hashlib
@@ -136,7 +137,7 @@ def compile_design(design, overrides=None, *, cell_m=.04, root="assembly"):
             raise ValueError("Native group decomposition changed occupied matter")
         for k, (box, part) in enumerate(boxes):
             bodies.append(sparse._box_body(name if k == 0 else f"{name}-{k}", box, cell_m, material, name, part))
-        mass = len(cells)*cell_m**3*engine_materials.density(material)
+        mass = len(cells)*pm.power(cell_m, 3)*engine_materials.density(material)
         material_mass[material] += mass
         compiled.append({"root_body":name,"components":group,"mass_kg":mass,
                          "matter":{"cell_size_m":cell_m,"cells":rows[i],"total_cells":len(cells),

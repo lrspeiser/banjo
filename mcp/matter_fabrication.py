@@ -4,6 +4,13 @@ This preserves source volume and identity across an explicitly paid formation.
 It does not simulate machining, stone fracture, grain or transported heat.
 Native collection and its ground withdrawal must be saved with receive_matter.
 """
+try:  # correctly rounded: the same bits on every platform (playground/portable_math.py)
+    import portable_math as pm
+except ModuleNotFoundError:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.append(str(_Path(__file__).resolve().parents[1] / "playground"))
+    import portable_math as pm
 from copy import deepcopy
 import math
 
@@ -169,7 +176,7 @@ def plan(state,owner,quote):
             target=[];cursor=0
             for cell in quote['formation_cells']:
                 if engine_materials.canonical(cell['material'])!='concrete':continue
-                volume=quote['cell_m']**3;wanted=volume*fraction;pieces=[]
+                volume=pm.power(quote['cell_m'], 3);wanted=volume*fraction;pieces=[]
                 while wanted>1e-14 and cursor<len(pool):
                     part=pool[cursor];take=min(wanted,part['left'])
                     if take>1e-14:pieces.append({'lot_id':part['lot_id'],'source_id':part['source_id'],'volume_m3':take,'mass_kg':take*2400.})
@@ -240,7 +247,7 @@ def validate(state):
             mapped={};allocated={(p['lot_id'],p['source_id']):p['volume_m3'] for p in entry['allocations']}
             fraction=mass/f.materials(job,'stock')['concrete']
             for cell in entry['formed_cells']:
-                if not math.isclose(cell['volume_m3'],job['cell_m']**3,rel_tol=1e-12) or not math.isclose(cell['mass_kg'],cell['volume_m3']*2400.,rel_tol=1e-12):
+                if not math.isclose(cell['volume_m3'],pm.power(job['cell_m'], 3),rel_tol=1e-12) or not math.isclose(cell['mass_kg'],cell['volume_m3']*2400.,rel_tol=1e-12):
                     raise ValueError('Formed cell mass or volume changed')
                 if not math.isclose(sum(p['volume_m3'] for p in cell['raw_sources']),cell['volume_m3']*fraction,rel_tol=1e-9,abs_tol=1e-12):
                     raise ValueError('Formed cell source volume does not close')

@@ -3549,7 +3549,7 @@ def put_down_pace(mass_kg):
     its own hand, overshot the spot by a metre and swung back, and took 3.7 s;
     a 6 kg oak block is not held back at all."""
     m=max(0.1,float(mass_kg or 1.0))
-    spare=math.sqrt(max(0.0,HAND_N**2-(m*9.81)**2))
+    spare=math.sqrt(max(0.0,pm.power(HAND_N, 2)-pm.power(m*9.81, 2)))
     accel=min(PUT_DOWN_ACCEL_M_S2,max(1.0,0.5*spare/m))
     return min(PUT_DOWN_SPEED_M_S,max(0.5,math.sqrt(accel))),accel
 
@@ -3770,7 +3770,7 @@ def _run_action(app,body,own_hold=False):
                 # table the chat built as one block did not move at all under
                 # the hand's 800 N, and the action said "pushed" all the same.
                 now=[float(v) for v in _live_body(app,part).get("position_m")]
-                moved=math.sqrt(sum((now[k]-at[k])**2 for k in range(3)))
+                moved=math.sqrt(sum(pm.power(now[k]-at[k], 2) for k in range(3)))
                 if moved<0.02:
                     problem=(f"{part} did not move: the hand's 800 N could not push it"
                              if ended in ("gave up","ran out of time")

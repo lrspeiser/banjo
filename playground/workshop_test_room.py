@@ -336,7 +336,7 @@ def _spanning(boxes) -> tuple[list[float], list[float]]:
 
 
 def _iron_cube_m(mass_kg: float) -> float:
-    return (float(mass_kg) / IRON_KG_M3) ** (1.0 / 3.0)
+    return pm.power(float(mass_kg) / IRON_KG_M3, 1.0 / 3.0)
 
 
 def _of_whole_cells(mass_kg: float, cell_m: float = CELL_M) -> tuple[list[float], float]:
@@ -354,13 +354,13 @@ def _of_whole_cells(mass_kg: float, cell_m: float = CELL_M) -> tuple[list[float]
 
     Returns the sides in metres and the mass it really is.
     """
-    one = IRON_KG_M3 * cell_m ** 3
+    one = IRON_KG_M3 * pm.power(cell_m, 3)
     wanted = max(1, round(float(mass_kg) / one))
     # Square first, then near in mass. The other way round gives an exact mass
     # in a shape nobody meant: 40 kg came out as a 40 x 40 x 3160 mm rod,
     # because 988 cells in a line is exactly 988 cells.
     allowed = max(1, round(0.02 * wanted))
-    reach = max(2, int(round(wanted ** (1.0 / 3.0))) + 3)
+    reach = max(2, int(round(pm.power(wanted, 1.0 / 3.0))) + 3)
     best, how = None, None
     for a in range(1, reach + 1):
         for b in range(a, reach + 1):

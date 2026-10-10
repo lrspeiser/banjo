@@ -584,7 +584,7 @@ def tool_place(args: dict[str, Any]) -> dict[str, Any]:
         body = world.body(held)
         here = list(body.position_m) if body else None
         if here is not None and last is not None:
-            moved = math.sqrt(sum((a - b) ** 2 for a, b in zip(here, last)))
+            moved = math.sqrt(sum(pm.power(a - b, 2) for a, b in zip(here, last)))
             still = still + 1 if moved < 1e-4 else 0
             if still >= 24:
                 break
@@ -1224,7 +1224,7 @@ def _overlap_depth(one: dict[str, Any], two: dict[str, Any]) -> float:
         ball, box = (one, two) if one["shape"] == "sphere" else (two, one)
         centre, sides, half = _box_of(box)
         local = [_dot3([p - c for p, c in zip(ball["center_m"], centre)], s) for s in sides]
-        outside = math.sqrt(sum(max(0.0, abs(l) - h) ** 2 for l, h in zip(local, half)))
+        outside = math.sqrt(sum(pm.power(max(0.0, abs(l) - h), 2) for l, h in zip(local, half)))
         radius = ball["dimensions_m"][0] / 2.0
         if outside > 0.0:
             return radius - outside
@@ -6260,7 +6260,7 @@ def _watershed_for(report: dict[str, Any]) -> dict[str, Any] | None:
         return [round(p[0] + d[0] * s, 3), round(p[1] + d[1] * s, 3)]
 
     def normal_depth(q_m3_s: float, width_m: float, slope: float) -> float:
-        return round((0.03 * (q_m3_s / width_m) / math.sqrt(slope)) ** 0.6, 3)
+        return round(pm.power(0.03 * (q_m3_s / width_m) / math.sqrt(slope), 0.6), 3)
 
     river, mouth = rivers[0], mouths[0]
     q = float(river["discharge_m3_s"])

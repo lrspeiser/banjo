@@ -36,7 +36,8 @@ import math
 from decimal import Context, Decimal, ROUND_HALF_EVEN
 from fractions import Fraction
 
-__all__ = ["sin", "cos", "tan", "asin", "acos", "atan", "atan2", "exp", "expm1", "log", "log1p", "pow", "cbrt"]
+__all__ = ["sin", "cos", "tan", "asin", "acos", "atan", "atan2", "exp", "expm1", "log", "log1p", "pow", "cbrt",
+           "power"]
 
 _DIGITS = 50                                    # carried, then rounded once to a double
 _BIG = Context(prec=_DIGITS, rounding=ROUND_HALF_EVEN, Emin=-99999, Emax=99999)
@@ -367,3 +368,19 @@ def cbrt(x: float) -> float:
                                          c.multiply(Decimal(3), c.multiply(root, root))))
     value = _to_double(root)
     return -value if x < 0 else value
+
+
+def power(x: float, y: float) -> float:
+    """`x ** y`, Python's operator, the same bits everywhere.
+
+    An int to a non-negative int power stays Python's exact int. Anything else
+    is a float power, and Python's `**` hands that to the platform's `pow`,
+    which misrounds `x ** 2` for about one argument in a thousand, differently
+    on Windows and on Linux. Here a square is `x * x`, and every other power
+    the correctly rounded `pow` above."""
+    if isinstance(x, int) and isinstance(y, int) and y >= 0:
+        return x ** y
+    if y == 2:
+        return x * x
+    return pow(float(x), float(y))
+

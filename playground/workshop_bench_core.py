@@ -7,6 +7,7 @@ The outside world never advances.
 """
 from __future__ import annotations
 
+import portable_math as pm
 from math import isfinite
 from pathlib import Path
 from typing import Any
@@ -475,7 +476,7 @@ def _hoist_spec(load_kg: float) -> dict[str, Any]:
     hand it to live_session.Session, which does not re-validate; this one goes
     through open(), so it must not pre-validate.
     """
-    side = (load_kg / engine_materials.density("iron")) ** (1 / 3)
+    side = pm.power(load_kg / engine_materials.density("iron"), 1 / 3)
     return ({
         "algorithm": "lattice", "cell_m": 0.05, "plasticity": "on",
         "bodies": [

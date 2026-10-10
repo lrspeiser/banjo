@@ -24,6 +24,7 @@ while it tries things out, and in the person's room once it is handed back.
 """
 from __future__ import annotations
 
+import portable_math as pm
 import json
 from contextvars import ContextVar
 import math
@@ -1402,7 +1403,7 @@ def where_the_person_is(raw: Any) -> dict[str, Any] | None:
         "reach_m": REACH_M}
     look = point(raw.get("look_direction"))
     if look is not None:
-        magnitude = sum(v*v for v in look) ** 0.5
+        magnitude = pm.power(sum(v*v for v in look), 0.5)
         if magnitude > 1e-6:
             said["look_direction"] = [v / magnitude for v in look]
     eyes = point(raw.get("eyes_m"))
@@ -1532,8 +1533,8 @@ def clear_spots(person: dict[str, Any], bodies: list[dict[str, Any]],
         # a joined piece's faces on it (the guide's pick): off it, a part is
         # lost from the piece.
         cx, cz = round(cx / grid_m) * grid_m, round(cz / grid_m) * grid_m
-        if any(max(abs(cx - bx) - hx, 0.0) ** 2 + max(abs(cz - bz) - hz, 0.0) ** 2
-               < NEW_THING_CLEAR_M ** 2 for bx, bz, hx, hz in footprints):
+        if any(pm.power(max(abs(cx - bx) - hx, 0.0), 2) + pm.power(max(abs(cz - bz) - hz, 0.0), 2)
+               < pm.power(NEW_THING_CLEAR_M, 2) for bx, bz, hx, hz in footprints):
             continue
         if any(math.hypot(cx - px, cz - pz) < NEW_THING_APART_M for px, pz in chosen):
             continue

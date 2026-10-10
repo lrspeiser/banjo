@@ -27,6 +27,7 @@ simply not mentioned.
 """
 from __future__ import annotations
 
+import portable_math as pm
 from typing import Any
 
 # A body has moved when it has left its own starting position by a quarter of a
@@ -50,7 +51,7 @@ AXES = "xyz"
 
 
 def _distance(a: list[float], b: list[float]) -> float:
-    return sum((a[i] - b[i]) ** 2 for i in range(3)) ** 0.5
+    return pm.power(sum(pm.power(a[i] - b[i], 2) for i in range(3)), 0.5)
 
 
 def _tracks(playback: dict[str, Any]) -> dict[str, list[tuple[float, list[float]]]]:

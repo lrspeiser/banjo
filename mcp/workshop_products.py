@@ -15,6 +15,13 @@ The product graph still decides physics from component semantics:
 """
 from __future__ import annotations
 
+try:  # correctly rounded: the same bits on every platform (playground/portable_math.py)
+    import portable_math as pm
+except ModuleNotFoundError:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.append(str(_Path(__file__).resolve().parents[1] / "playground"))
+    import portable_math as pm
 import math
 from typing import Any
 
@@ -595,8 +602,8 @@ def _electric_furnace_overrides(values: dict[str, Any], parts: list[w.WirePart])
                     "charge_j": values["charge_j"], "voltage_v": 48.0}],
         "motors": [], "controls": [],
         "panels": [{"name": "solar panel", "on": "solar panel", "store": "furnace battery",
-                    "area_m2": round(min(0.25, (float(values["chamber_w_m"]) + 2 * float(values["lining_m"])
-                                                + 2 * float(values["shell_m"])) * 0.5) ** 2, 4),
+                    "area_m2": round(pm.power(min(0.25, (float(values["chamber_w_m"]) + 2 * float(values["lining_m"])
+                                                + 2 * float(values["shell_m"])) * 0.5), 2), 4),
                     "efficiency": 0.2}],
         "chambers": [{"name": "chamber", "in": "lining-floor", "volume_m3": round(volume, 6),
                       "wall_conductance_w_k": round(conductance, 4)}],

@@ -11,6 +11,7 @@ compare evidence only against criteria the design actually declares.
 """
 from __future__ import annotations
 
+import portable_math as pm
 from math import isfinite
 from portable_math import acos
 from pathlib import Path
@@ -125,7 +126,7 @@ def prototype_scene(design: WorkshopDesign, *, load_kg: float,
 
     target = _target_part(design, on)
     highest = max(c[1] for c in target.corners_m()) + shift_y
-    side = (load_kg / engine_materials.density(_LOAD_MATERIAL)) ** (1.0 / 3.0)
+    side = pm.power(load_kg / engine_materials.density(_LOAD_MATERIAL), 1.0 / 3.0)
     load_name = "workshop/test-load"
     bodies.append({
         "name": load_name,
@@ -216,9 +217,9 @@ def run_static_load(app: Any, design: WorkshopDesign, *, load_kg: float,
     turned = None
     if a is not None and b is not None:
         pa, pb = a.get("position_m") or [0, 0, 0], b.get("position_m") or [0, 0, 0]
-        moved = ((float(pb[0]) - float(pa[0])) ** 2
-                 + (float(pb[1]) - float(pa[1])) ** 2
-                 + (float(pb[2]) - float(pa[2])) ** 2) ** 0.5
+        moved = pm.power(pm.power(float(pb[0]) - float(pa[0]), 2)
+                 + pm.power(float(pb[1]) - float(pa[1]), 2)
+                 + pm.power(float(pb[2]) - float(pa[2]), 2), 0.5)
         qa = a.get("orientation_wxyz") or [1, 0, 0, 0]
         qb = b.get("orientation_wxyz") or [1, 0, 0, 0]
         turned = _quat_angle_deg(qa, qb)

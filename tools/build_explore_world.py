@@ -374,7 +374,7 @@ def whole_matter(design, over):
     drawn = sample((0.0, 0.0, 0.0))
     if drawn[1] is not None and not drawn[2]:
         return drawn[0], drawn[1], (0.0, 0.0, 0.0), ""
-    volume = sum(p.volume_m3() for p in design.parts) / CELL_M ** 3
+    volume = sum(p.volume_m3() for p in design.parts) / pm.power(CELL_M, 3)
     phases = [k * CELL_M / 8 for k in range(8)]
     best = None
     for d in itertools.product(phases, phases, phases):

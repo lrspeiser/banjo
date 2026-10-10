@@ -5,6 +5,13 @@ declared demonstration process, not a second rigid-body or terrain solver.
 See docs/gameplay.md for its boundary, units and unsupported couplings.
 """
 from __future__ import annotations
+try:  # correctly rounded: the same bits on every platform (playground/portable_math.py)
+    import portable_math as pm
+except ModuleNotFoundError:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.append(str(_Path(__file__).resolve().parents[1] / "playground"))
+    import portable_math as pm
 import base64
 from collections import deque
 from copy import deepcopy
@@ -93,8 +100,8 @@ def new(terrain, time_s=0.0, seed=7, water=None):
             groups.append(group)
     if not groups:
         raise ValueError("No safe connected starter terrace; choose another valley seed")
-    group = min(groups, key=lambda cells: min((xyz(k)[0]-eye[0])**2 + (xyz(k)[2]-eye[2])**2 for k in cells))
-    camp = min(group, key=lambda k: (xyz(k)[0]-eye[0])**2 + (xyz(k)[2]-eye[2])**2)
+    group = min(groups, key=lambda cells: min(pm.power(xyz(k)[0]-eye[0], 2) + pm.power(xyz(k)[2]-eye[2], 2) for k in cells))
+    camp = min(group, key=lambda k: pm.power(xyz(k)[0]-eye[0], 2) + pm.power(xyz(k)[2]-eye[2], 2))
     nearby = [k for k in group if 1.5 <= math.dist(xyz(k), xyz(camp)) <= 7.0]
     rng = random.Random(seed)
     rng.shuffle(nearby)

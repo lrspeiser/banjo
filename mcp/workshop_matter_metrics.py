@@ -6,6 +6,13 @@ bond graph. Unsupported gaps/joints must be validated in a detailed trial.
 """
 from __future__ import annotations
 
+try:  # correctly rounded: the same bits on every platform (playground/portable_math.py)
+    import portable_math as pm
+except ModuleNotFoundError:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.append(str(_Path(__file__).resolve().parents[1] / "playground"))
+    import portable_math as pm
 from math import degrees, hypot, isfinite
 try:  # correctly rounded: the same bits on every platform (playground/portable_math.py)
     from portable_math import atan2
@@ -78,7 +85,7 @@ def measure(matter: dict[str, Any], *, expected_components=()) -> dict[str, Any]
     for grid, row in cells.items():
         material = engine_materials.canonical(row["material"])
         try:
-            mass = engine_materials.density(material) * h**3
+            mass = engine_materials.density(material) * pm.power(h, 3)
         except KeyError as exc:
             raise ValueError(str(exc)) from exc
         masses[grid] = mass
@@ -87,7 +94,7 @@ def measure(matter: dict[str, Any], *, expected_components=()) -> dict[str, Any]
         item = by_material.setdefault(material, {"material": material, "mass_kg": 0.0,
                                                   "volume_m3": 0.0, "parts": set()})
         item["mass_kg"] += mass
-        item["volume_m3"] += h**3
+        item["volume_m3"] += pm.power(h, 3)
         item["parts"].update(row.get("components") or [name])
     total = sum(masses.values())
     com = [sum((g[a]+.5)*h*m for g, m in masses.items()) / total for a in range(3)]
