@@ -22,13 +22,18 @@
 // tests/portable_math_tests.cpp checks them against values computed to 60
 // digits. docs/floating-point-model.md says where they are used.
 //
-// Accuracy is not traded for speed here: each costs some tens to a few hundred
-// floating-point operations. Squares and square roots asked of pow() take the
-// one-operation path.
+// Each first takes a fast path -- a table (numeric/PortableMathTables.hpp)
+// shortens the series, the leading terms carried in double-double -- that says
+// how far out it can be; when that leaves the rounding undecided, about one call
+// in millions, the long series below decide it. Squares and square roots asked
+// of pow() take the one-operation path.
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <limits>
+
+#include "numeric/PortableMathTables.hpp"
 
 namespace banjo::pm {
 
@@ -205,13 +210,139 @@ inline constexpr double kHalfPi3Tail = 8.47842766036889956997e-32;
 
 [[nodiscard]] inline double round(Twin a) { return a.hi + a.lo; }
 
+// Whether a result known to within e (absolute) rounds to one double: the
+// double nearest the true value then, whatever is in the last bits.
+[[nodiscard]] inline bool decided(Twin r, double e, double &out) {
+    const double a = r.hi + (r.lo - e), b = r.hi + (r.lo + e);
+    if (a != b) return false;
+    out = a;
+    return true;
+}
+
 } // namespace dd
+
+// The fast paths: a table cuts the argument down to a short polynomial, the
+// leading terms carried in double-double, the rest in double. Each says how
+// far it can be out; when that leaves the rounding undecided (about one call
+// in millions) the series in dd:: above answer instead. Both use the correctly
+// rounded operations alone, so which path runs, and what it gives, is the same
+// on every platform.
+namespace fast {
+
+using dd::Twin;
+
+// How far a fast path's result can be out, relative: above the largest of the
+// bounds worked out for each (about 2^-67, where a small result meets a
+// correction term computed in double), with room to spare.
+inline constexpr double kRelativeBound = 0x1p-64;
+
+// e^x = 2^k * result, x a double-double with |x.hi| <= 709.8. Relative error
+// below 2^-73.
+[[nodiscard]] inline Twin exp(Twin x, int &k) {
+    const double kd = std::round(x.hi * 92.332482616893656768);  // x 64/ln2
+    const Twin step{dd::kLn2.hi / 64.0, dd::kLn2.lo / 64.0};
+    const Twin r = dd::sub(x, dd::add(dd::twoProduct(kd, step.hi), dd::twoProduct(kd, step.lo)));
+    // e^r - 1 = r + r^2/2 + r^2 t, |r| <= ln2/128.
+    const double rh = r.hi;
+    Twin r2 = dd::twoProduct(rh, rh);
+    r2.lo += 2.0 * rh * r.lo;
+    const double t =
+        rh * (1.0 / 6 + rh * (1.0 / 24 + rh * (1.0 / 120 + rh * (1.0 / 720 + rh * (1.0 / 5040 + rh / 40320)))));
+    Twin less_one = dd::add(r, Twin{0.5 * r2.hi, 0.5 * r2.lo});
+    less_one = dd::add(less_one, r2.hi * t);
+    const long long ki = static_cast<long long>(kd);
+    const int j = static_cast<int>(ki & 63);
+    k = static_cast<int>((ki - j) / 64);
+    const Twin table{tables::kExp2Sixtyfourths[j].hi, tables::kExp2Sixtyfourths[j].lo};
+    return dd::add(table, dd::mul(table, less_one));
+}
+
+// ln x for a positive normal double: absolute error below 2^-75, relative
+// below 2^-67.
+[[nodiscard]] inline Twin log(double x) {
+    int e = 0;
+    double m = std::frexp(x, &e);
+    m *= 2.0;
+    --e;  // x = m 2^e, m in [1, 2)
+    const int i = static_cast<int>(std::round((m - 1.0) * 128.0));
+    const double c = 1.0 + i / 128.0;
+    const double u = m - c;  // exact: m and c are within 1/256 of each other
+    const double q = u / c;
+    const Twin r = dd::quickTwoSum(q, std::fma(-q, c, u) / c);  // (m - c)/c = m/c - 1
+    // ln(1 + r) = r - r^2/2 + r^2 t, |r| <= 1/256.
+    const double rh = r.hi;
+    Twin r2 = dd::twoProduct(rh, rh);
+    r2.lo += 2.0 * rh * r.lo;
+    const double t = rh * (1.0 / 3 + rh * (-1.0 / 4 + rh * (1.0 / 5 + rh * (-1.0 / 6 + rh * (1.0 / 7 - rh / 8)))));
+    Twin small = dd::add(r, Twin{-0.5 * r2.hi, -0.5 * r2.lo});
+    small = dd::add(small, r2.hi * t);
+    const Twin ln_c{tables::kLogOnePlus[i].hi, tables::kLogOnePlus[i].lo};
+    return dd::add(dd::mul(dd::kLn2, static_cast<double>(e)), dd::add(ln_c, small));
+}
+
+// sin and cos of r, |r| <= pi/4 (+ a little): absolute error below 2^-75,
+// relative below 2^-67.
+inline void sinCos(Twin r, Twin &s, Twin &c) {
+    const bool negative = r.hi < 0.0;
+    if (negative) r = dd::negate(r);
+    const int j = static_cast<int>(std::round(r.hi * 64.0));
+    const Twin t = dd::add(Twin{r.hi - j / 64.0, 0.0}, r.lo);  // exact difference: within 1/128
+    const double th = t.hi, tt = th * th;
+    Twin t2 = dd::twoProduct(th, th);
+    t2.lo += 2.0 * th * t.lo;
+    // sin t = t + t^3 ps, cos t - 1 = -t^2/2 + t^4 pc, |t| <= 1/128.
+    const double ps = -1.0 / 6 + tt * (1.0 / 120 + tt * (-1.0 / 5040 + tt * (1.0 / 362880)));
+    const double pc = 1.0 / 24 + tt * (-1.0 / 720 + tt * (1.0 / 40320 - tt / 3628800));
+    const Twin sin_t = dd::add(t, th * tt * ps);
+    const Twin cos_less_one = dd::add(Twin{-0.5 * t2.hi, -0.5 * t2.lo}, tt * tt * pc);
+    const Twin S{tables::kSinSixtyfourths[j].hi, tables::kSinSixtyfourths[j].lo};
+    const Twin C{tables::kCosSixtyfourths[j].hi, tables::kCosSixtyfourths[j].lo};
+    s = dd::add(S, dd::add(dd::mul(S, cos_less_one), dd::mul(C, sin_t)));
+    c = dd::add(C, dd::sub(dd::mul(C, cos_less_one), dd::mul(S, sin_t)));
+    if (negative) s = dd::negate(s);
+}
+
+// atan t for 0 <= t <= 1 (a double-double): absolute error below 2^-74,
+// relative below 2^-67.
+[[nodiscard]] inline Twin atanUnit(Twin t) {
+    const int j = static_cast<int>(std::round(t.hi * 64.0));
+    const double c = j / 64.0;
+    // atan t = atan c + atan u, u = (t - c) / (1 + t c), |u| <= 1/128.
+    const Twin num = dd::add(Twin{t.hi - c, 0.0}, t.lo);  // exact difference
+    const Twin den = dd::add(dd::add(dd::twoProduct(t.hi, c), t.lo * c), 1.0);
+    const Twin u = dd::div(num, den);
+    const double uh = u.hi, uu = uh * uh;
+    const double p = uh * uu * (-1.0 / 3 + uu * (1.0 / 5 + uu * (-1.0 / 7 + uu * (1.0 / 9 - uu / 11))));
+    const Twin atan_c{tables::kAtanSixtyfourths[j].hi, tables::kAtanSixtyfourths[j].lo};
+    return dd::add(atan_c, dd::add(u, p));
+}
+
+// atan2 of finite double-doubles, not both zero.
+[[nodiscard]] inline Twin atan2(Twin y, Twin x) {
+    const bool y_negative = y.hi < 0.0 || (y.hi == 0.0 && std::signbit(y.hi));
+    const Twin ay = y.hi < 0.0 ? dd::negate(y) : y, ax = x.hi < 0.0 ? dd::negate(x) : x;
+    Twin a;
+    if (ay.hi == 0.0) a = {0.0, 0.0};
+    else if (ax.hi == 0.0) a = dd::kHalfPi;
+    else if (ay.hi > ax.hi) a = dd::sub(dd::kHalfPi, atanUnit(dd::div(ax, ay)));
+    else a = atanUnit(dd::div(ay, ax));
+    if (x.hi < 0.0 || (x.hi == 0.0 && std::signbit(x.hi) && ay.hi == 0.0)) a = dd::sub(dd::kPi, a);
+    return y_negative ? dd::negate(a) : a;
+}
+
+} // namespace fast
 
 [[nodiscard]] inline double exp(double x) {
     if (std::isnan(x)) return x;
     if (x > 709.782712893384) return std::numeric_limits<double>::infinity();
     if (x < -745.1332191019412) return 0.0;
     int k = 0;
+    if (x > -708.0) {  // a normal result: the fast path, scaled exactly
+        const dd::Twin e = fast::exp(dd::Twin{x, 0.0}, k);
+        const dd::Twin scaled = dd::ldexp(e, k);
+        double out;
+        if (dd::decided(scaled, std::abs(scaled.hi) * fast::kRelativeBound, out)) return out;
+    }
     const dd::Twin e = dd::exp(dd::Twin{x, 0.0}, k);
     return std::ldexp(dd::round(e), k);
 }
@@ -221,15 +352,19 @@ inline constexpr double kHalfPi3Tail = 8.47842766036889956997e-32;
     if (std::isnan(x) || x == 0.0) return x;
     if (x > 709.782712893384) return std::numeric_limits<double>::infinity();
     if (x < -40.0) return -1.0;
-    if (std::abs(x) < 1e-5) {
-        // x + x^2/2 + ... + x^7/7!, in double-double.
+    if (std::abs(x) < 0x1p-10) {
+        // x + x^2/2 + ... + x^9/9!, in double-double.
         dd::Twin p{1.0, 0.0};
-        for (int n = 7; n >= 2; --n) p = dd::add(dd::div(dd::mul(p, x), static_cast<double>(n)), 1.0);
+        for (int n = 9; n >= 2; --n) p = dd::add(dd::div(dd::mul(p, x), static_cast<double>(n)), 1.0);
         return dd::round(dd::mul(p, x));
     }
     int k = 0;
-    const dd::Twin e = dd::exp(dd::Twin{x, 0.0}, k);
-    return dd::round(dd::add(dd::ldexp(e, k), -1.0));
+    const dd::Twin unscaled = fast::exp(dd::Twin{x, 0.0}, k);  // sets k: not in one expression
+    const dd::Twin e = dd::ldexp(unscaled, k);
+    double out;
+    if (dd::decided(dd::add(e, -1.0), std::abs(e.hi) * fast::kRelativeBound, out)) return out;
+    const dd::Twin slow = dd::exp(dd::Twin{x, 0.0}, k);
+    return dd::round(dd::add(dd::ldexp(slow, k), -1.0));
 }
 
 [[nodiscard]] inline double log(double x) {
@@ -237,6 +372,11 @@ inline constexpr double kHalfPi3Tail = 8.47842766036889956997e-32;
     if (x == 0.0) return -std::numeric_limits<double>::infinity();
     if (std::isinf(x)) return x;
     if (x == 1.0) return 0.0;
+    if (x >= 0x1p-1022) {
+        const dd::Twin l = fast::log(x);
+        double out;
+        if (dd::decided(l, std::abs(l.hi) * fast::kRelativeBound, out)) return out;
+    }
     return dd::round(dd::log(dd::Twin{x, 0.0}));
 }
 
@@ -245,7 +385,14 @@ inline constexpr double kHalfPi3Tail = 8.47842766036889956997e-32;
     if (x == -1.0) return -std::numeric_limits<double>::infinity();
     if (std::isinf(x) || x == 0.0) return x;
     if (std::abs(x) < 1e-300) return x;
-    return dd::round(dd::log(dd::twoSum(1.0, x)));
+    const dd::Twin one_plus = dd::twoSum(1.0, x);
+    if (std::abs(x) >= 0x1p-9 && one_plus.hi >= 0x1p-1022) {
+        // ln(h + l) = ln h + l/h, the next term below 2^-106.
+        const dd::Twin l = dd::add(fast::log(one_plus.hi), one_plus.lo / one_plus.hi);
+        double out;
+        if (dd::decided(l, std::abs(l.hi) * fast::kRelativeBound, out)) return out;
+    }
+    return dd::round(dd::log(one_plus));
 }
 
 [[nodiscard]] inline double pow(double x, double y) {
@@ -272,9 +419,28 @@ inline constexpr double kHalfPi3Tail = 8.47842766036889956997e-32;
     }
     if (x < 0.0 && !y_integer) return std::numeric_limits<double>::quiet_NaN();
     const double ax = std::abs(x);
-    double result;
-    if (y == 0.5) result = std::sqrt(ax);
-    else {
+    double result = 0.0;
+    bool done = false;
+    if (y == 0.5) {
+        result = std::sqrt(ax);
+        done = true;
+    } else if (ax >= 0x1p-1022) {
+        const dd::Twin l = fast::log(ax);
+        const dd::Twin t = dd::mul(l, y);
+        if (t.hi > 709.782712893384) {
+            result = std::numeric_limits<double>::infinity();
+            done = true;
+        } else if (t.hi > -708.0) {
+            int k = 0;
+            const dd::Twin unscaled = fast::exp(t, k);  // sets k: not in one expression
+            const dd::Twin e = dd::ldexp(unscaled, k);
+            // ln x is out by at most 2^-67 of max(|ln x|, 1), so y ln x by |y|
+            // times that, and e^(y ln x) by as much again, relative.
+            const double bound = std::abs(e.hi) * (std::abs(y) * std::max(std::abs(l.hi), 1.0) * 0x1p-64 + 0x1p-64);
+            done = dd::decided(e, bound, result);
+        }
+    }
+    if (!done) {
         const dd::Twin t = dd::mul(dd::log(dd::Twin{ax, 0.0}), y);
         if (t.hi > 709.782712893384) result = std::numeric_limits<double>::infinity();
         else if (t.hi < -745.1332191019412) result = 0.0;
@@ -287,39 +453,57 @@ inline constexpr double kHalfPi3Tail = 8.47842766036889956997e-32;
     return x < 0.0 && y_odd ? -result : result;
 }
 
+namespace detail {
+// sin, cos or tan of x by the fast path, falling back to the series.
+enum class Trig { Sin, Cos, Tan };
+[[nodiscard]] inline double trig(double x, Trig which) {
+    int q = 0;
+    const dd::Twin r = dd::reduceHalfPi(x, q);
+    dd::Twin s, c;
+    fast::sinCos(r, s, c);
+    dd::Twin v;
+    switch (which) {
+    case Trig::Sin: v = (q & 1) == 0 ? s : c; break;
+    case Trig::Cos: v = (q & 1) == 0 ? c : dd::negate(s); break;
+    default: v = (q & 1) == 0 ? dd::div(s, c) : dd::negate(dd::div(c, s)); break;
+    }
+    if (which != Trig::Tan && (q & 2) != 0) v = dd::negate(v);
+    double out;
+    if (dd::decided(v, std::abs(v.hi) * fast::kRelativeBound, out)) return out;
+    const dd::Twin ss = dd::sinSeries(r), cs = dd::cosSeries(r);
+    switch (which) {
+    case Trig::Sin: v = (q & 1) == 0 ? ss : cs; break;
+    case Trig::Cos: v = (q & 1) == 0 ? cs : dd::negate(ss); break;
+    default: v = (q & 1) == 0 ? dd::div(ss, cs) : dd::negate(dd::div(cs, ss)); break;
+    }
+    if (which != Trig::Tan && (q & 2) != 0) v = dd::negate(v);
+    return dd::round(v);
+}
+
+[[nodiscard]] inline double atan2(dd::Twin y, dd::Twin x) {
+    const dd::Twin a = fast::atan2(y, x);
+    double out;
+    if (dd::decided(a, std::abs(a.hi) * fast::kRelativeBound, out)) return out;
+    return dd::round(dd::atan2(y, x));
+}
+} // namespace detail
+
 [[nodiscard]] inline double sin(double x) {
     if (!std::isfinite(x)) return std::numeric_limits<double>::quiet_NaN();
     if (std::abs(x) < 1.4901161193847656e-08) return x;  // |x| < 2^-26: sin x rounds to x
-    int q = 0;
-    const dd::Twin r = dd::reduceHalfPi(x, q);
-    switch (q) {
-    case 0: return dd::round(dd::sinSeries(r));
-    case 1: return dd::round(dd::cosSeries(r));
-    case 2: return -dd::round(dd::sinSeries(r));
-    default: return -dd::round(dd::cosSeries(r));
-    }
+    return detail::trig(x, detail::Trig::Sin);
 }
 
 [[nodiscard]] inline double cos(double x) {
     if (!std::isfinite(x)) return std::numeric_limits<double>::quiet_NaN();
     if (std::abs(x) < 1.0536712127723509e-08) return 1.0;  // |x| < 2^-26.5: cos x rounds to 1
-    int q = 0;
-    const dd::Twin r = dd::reduceHalfPi(x, q);
-    switch (q) {
-    case 0: return dd::round(dd::cosSeries(r));
-    case 1: return -dd::round(dd::sinSeries(r));
-    case 2: return -dd::round(dd::cosSeries(r));
-    default: return dd::round(dd::sinSeries(r));
-    }
+    return detail::trig(x, detail::Trig::Cos);
 }
 
 [[nodiscard]] inline double tan(double x) {
     if (!std::isfinite(x)) return std::numeric_limits<double>::quiet_NaN();
     if (std::abs(x) < 7.4505805969238281e-09) return x;  // |x| < 2^-27: tan x rounds to x
-    int q = 0;
-    const dd::Twin r = dd::reduceHalfPi(x, q);
-    const dd::Twin s = dd::sinSeries(r), c = dd::cosSeries(r);
-    return (q & 1) == 0 ? dd::round(dd::div(s, c)) : -dd::round(dd::div(c, s));
+    return detail::trig(x, detail::Trig::Tan);
 }
 
 [[nodiscard]] inline double atan2(double y, double x) {
@@ -333,15 +517,14 @@ inline constexpr double kHalfPi3Tail = 8.47842766036889956997e-32;
         return std::copysign(a, y);
     }
     if (y == 0.0 && x == 0.0) return std::copysign(std::signbit(x) ? dd::round(dd::kPi) : 0.0, y);
-    return dd::round(dd::atan2(dd::Twin{y, 0.0}, dd::Twin{x, 0.0}));
+    return detail::atan2(dd::Twin{y, 0.0}, dd::Twin{x, 0.0});
 }
 
 [[nodiscard]] inline double atan(double x) {
     if (std::isnan(x)) return x;
     if (std::isinf(x)) return std::copysign(dd::round(dd::kHalfPi), x);
     if (std::abs(x) < 7.4505805969238281e-09) return x;  // |x| < 2^-27: atan x rounds to x
-    const dd::Twin a = dd::atanPositive(dd::Twin{std::abs(x), 0.0});
-    return x < 0.0 ? -dd::round(a) : dd::round(a);
+    return detail::atan2(dd::Twin{x, 0.0}, dd::Twin{1.0, 0.0});
 }
 
 // sqrt((1 - x)(1 + x)) as a double-double, for |x| <= 1.
@@ -352,13 +535,13 @@ inline constexpr double kHalfPi3Tail = 8.47842766036889956997e-32;
 [[nodiscard]] inline double asin(double x) {
     if (std::isnan(x) || std::abs(x) > 1.0) return std::numeric_limits<double>::quiet_NaN();
     if (std::abs(x) < 1.4901161193847656e-08) return x;
-    return dd::round(dd::atan2(dd::Twin{x, 0.0}, complementRoot(x)));
+    return detail::atan2(dd::Twin{x, 0.0}, complementRoot(x));
 }
 
 [[nodiscard]] inline double acos(double x) {
     if (std::isnan(x) || std::abs(x) > 1.0) return std::numeric_limits<double>::quiet_NaN();
     if (x == 1.0) return 0.0;
-    return dd::round(dd::atan2(complementRoot(x), dd::Twin{x, 0.0}));
+    return detail::atan2(complementRoot(x), dd::Twin{x, 0.0});
 }
 
 // sqrt(x^2 + y^2 [+ z^2]) without overflow or underflow on the way.
@@ -394,9 +577,10 @@ inline constexpr double kHalfPi3Tail = 8.47842766036889956997e-32;
     return std::ldexp(dd::round(dd::sqrt(sum)), -scale);
 }
 
-// The double nearest the real cube root: start from e^(ln|x| / 3), computed
-// above, and walk to whichever neighbour's cube is nearest |x|, measured
-// exactly by error-free products.
+// The double nearest the real cube root. Halley's iteration from a linear
+// guess, one Newton correction carried in double-double, and -- in the rare
+// case that leaves the rounding open -- a walk to whichever neighbour's cube is
+// nearest |x|, measured exactly by error-free products.
 [[nodiscard]] inline double cbrt(double x) {
     if (!std::isfinite(x) || x == 0.0) return x;
     const double ax = std::abs(x);
@@ -404,21 +588,31 @@ inline constexpr double kHalfPi3Tail = 8.47842766036889956997e-32;
     const double m = std::frexp(ax, &e);  // ax = m 2^e, m in [0.5, 1)
     const int third = (e >= 0 ? e : e - 2) / 3, rest = e - 3 * third;
     const double mm = std::ldexp(m, rest);  // ax = mm 2^(3 third), mm in [0.5, 4)
-    const auto miss = [mm](double y) {
-        const double square = y * y, square_low = std::fma(y, y, -square);
-        const double cube = square * y, cube_low = std::fma(square, y, -cube);
-        const double carry = square_low * y, carry_low = std::fma(square_low, y, -carry);
-        return std::abs((cube - mm) + (cube_low + (carry + carry_low)));
-    };
-    double y = exp(log(mm) / 3.0);
-    for (int i = 0; i < 8; ++i) {
-        const double up = std::nextafter(y, 4.0), down = std::nextafter(y, 0.0);
-        const double here = miss(y), above = miss(up), below = miss(down);
-        if (above < here && above <= below) y = up;
-        else if (below < here) y = down;
-        else break;
+    double y = 0.62 + 0.25 * mm;
+    for (int i = 0; i < 4; ++i) {
+        const double cube = y * y * y;
+        y *= (cube + 2.0 * mm) / (2.0 * cube + mm);
     }
-    const double root = std::ldexp(y, third);
+    const dd::Twin cube = dd::mul(dd::twoProduct(y, y), y);
+    const double correction = dd::round(dd::sub(dd::Twin{mm, 0.0}, cube)) / (3.0 * y * y);
+    double root;
+    if (!dd::decided(dd::quickTwoSum(y, correction), y * 0x1p-90, root)) {
+        const auto miss = [mm](double v) {
+            const double square = v * v, square_low = std::fma(v, v, -square);
+            const double cubed = square * v, cube_low = std::fma(square, v, -cubed);
+            const double carry = square_low * v, carry_low = std::fma(square_low, v, -carry);
+            return std::abs((cubed - mm) + (cube_low + (carry + carry_low)));
+        };
+        root = y;
+        for (int i = 0; i < 8; ++i) {
+            const double up = std::nextafter(root, 4.0), down = std::nextafter(root, 0.0);
+            const double here = miss(root), above = miss(up), below = miss(down);
+            if (above < here && above <= below) root = up;
+            else if (below < here) root = down;
+            else break;
+        }
+    }
+    root = std::ldexp(root, third);
     return x < 0.0 ? -root : root;
 }
 
