@@ -443,11 +443,14 @@ function addEvents(events) {
 
 function renderClock(frame) {
   const behind = frame.pace.behind_s;
-  let text = `World ${describeTime(frame.t)} · ${frame.speed}× · ` + (frame.error ? 'stopped: ' + frame.error :
-    frame.playing ? 'calculating live' : frame.t > 0 ? 'paused' : 'ready: press Start');
+  // A level runs at real time, so its clock leaves the speed out.
+  let text = `World ${describeTime(frame.t)} · ` + (LEVEL_MODE ? '' : `${frame.speed}× · `) + (frame.error ? 'stopped: ' + frame.error :
+    frame.playing ? 'calculating live' : frame.t > 0 ? (LEVEL_MODE && scored ? 'run over' : 'paused')
+    : LEVEL_MODE ? 'ready: press Run it' : 'ready: press Start');
   if (frame.playing && behind > .25) text += ` · ${behind.toFixed(1)} s behind real time while the engine works`;
   $('clock').textContent = text;
-  $('start').textContent = frame.playing ? 'Pause' : frame.t > 0 ? 'Continue' : 'Start';
+  $('start').textContent = frame.playing ? 'Pause' : !LEVEL_MODE ? (frame.t > 0 ? 'Continue' : 'Start')
+    : frame.t > 0 ? (scored ? 'Run again' : 'Continue') : 'Run it';
 }
 
 // Station labels float over the parts each station watches.
@@ -544,7 +547,7 @@ async function poll(mine) {
       watchGoal(frame);
     } catch (e) {
       if (e.status === 410) {
-        $('clock').textContent = LEVEL_MODE ? 'The server closed this level while it sat idle; press Start or Run it to build it again'
+        $('clock').textContent = LEVEL_MODE ? 'The server closed this level while it sat idle; press Run it to build it again'
           : 'This machine stopped running on the server; press Set up again';
         session = null; return;
       }
@@ -605,9 +608,14 @@ renderer.domElement.addEventListener('pointercancel', e => { pointers.delete(e.p
 renderer.domElement.addEventListener('pointermove', e => {
   const last = pointers.get(e.pointerId); if (!last || draggingGhost) return;
   if (pointers.size === 2) {
+    // Two fingers: apart and together zoom, moved together turn the view
+    // (one finger moves a piece being placed, on a touch screen).
+    const [p0, q0] = [...pointers.values()];
     pointers.set(e.pointerId, [e.clientX, e.clientY]);
     const [a, b] = [...pointers.values()], gap = Math.hypot(a[0] - b[0], a[1] - b[1]);
     if (pinch) distance = Math.min(40, Math.max(.4, distance * pinch / gap));
+    azimuth -= ((a[0] + b[0]) - (p0[0] + q0[0])) / 2 * .006;
+    elevation = Math.min(1.45, Math.max(.05, elevation + ((a[1] + b[1]) - (p0[1] + q0[1])) / 2 * .006));
     pinch = gap; return;
   }
   azimuth -= (e.clientX - last[0]) * .006;
@@ -626,14 +634,18 @@ function render() {
   camera.position.set(target.x + distance * Math.cos(elevation) * Math.sin(azimuth), target.y + distance * Math.sin(elevation),
                       target.z + distance * Math.cos(elevation) * Math.cos(azimuth));
   camera.lookAt(target);
-  if (LEVEL_MODE) for (const [name, mesh] of meshes) mesh.visible = !hiddenPiece(name);
+  if (LEVEL_MODE) { for (const [name, mesh] of meshes) mesh.visible = !hiddenPiece(name); updateGuides(); }
   renderer.render(scene, camera);
   renderLabels();
 }
 
 // ---- controls -----------------------------------------------------------------
-$('start').addEventListener('click', () => setPlaying(!playing).catch(e => { $('clock').textContent = e.message; }));
-$('reset').addEventListener('click', () => build(spec).catch(() => {}));
+$('start').addEventListener('click', () => {
+  if (LEVEL_MODE && level) { runLevel(); return; }
+  setPlaying(!playing).catch(e => { $('clock').textContent = e.message; });
+});
+// A level is set up again as a level (its pieces, not running), not as a sandbox machine.
+$('reset').addEventListener('click', () => (LEVEL_MODE && level ? rebuildLevel(false) : build(spec)).catch(() => {}));
 $('speed').addEventListener('change', () => { if (session) api({op: 'play', session, running: playing, speed: Number($('speed').value)}).catch(() => {}); });
 $('follow').addEventListener('click', () => { follow = !follow; $('follow').setAttribute('aria-pressed', String(follow)); if (!follow) goal.copy(target); });
 // Press a station to look at it. The list is drawn again with every frame, so
@@ -788,13 +800,13 @@ function clearGhostMeshes() {
   for (const c of [...ghostGroup.children]) { ghostGroup.remove(c); c.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
 }
 
-function drawGhost(parts, fits) {
-  clearGhostMeshes();
-  const look = fits ? ghostLook.fits : ghostLook.refused, edge = fits ? ghostEdge.fits : ghostEdge.refused;
+// A piece's parts as the ghost op sends them, built into `into`: each in the
+// look lookOf(material) gives it, with its edges drawn when there is an edge.
+function buildParts(into, parts, lookOf, edge) {
   const turn = (o, deg) => o.rotation.set(...deg.map(d => d * Math.PI / 180), 'XYZ');   // R = Rx Ry Rz, as the engine turns
-  const solid = (geometry, at, deg) => {
-    const mesh = new THREE.Mesh(geometry, look);
-    mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 30), edge));
+  const solid = (geometry, at, deg, kind) => {
+    const mesh = new THREE.Mesh(geometry, lookOf(kind));
+    if (edge) mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 30), edge));
     mesh.position.set(...at); turn(mesh, deg);
     return mesh;
   };
@@ -804,13 +816,56 @@ function drawGhost(parts, fits) {
       body.position.set(...part.at_m); turn(body, part.turn_deg);
       for (const sub of part.parts) body.add(solid(sub.shape === 'cylinder'
         ? new THREE.CylinderGeometry(sub.size_m[0] / 2, sub.size_m[0] / 2, sub.size_m[1], 20)
-        : new THREE.BoxGeometry(...sub.size_m), sub.at_m, sub.turn_deg));
-      ghostGroup.add(body);
-    } else if (part.shape === 'sphere') ghostGroup.add(solid(new THREE.SphereGeometry(part.size_m[0] / 2, 24, 16), part.at_m, part.turn_deg));
-    else if (part.shape === 'cone') ghostGroup.add(solid(new THREE.ConeGeometry(part.size_m[0] / 2, part.size_m[1], 24), part.at_m, part.turn_deg));
-    else ghostGroup.add(solid(new THREE.BoxGeometry(...part.size_m), part.at_m, part.turn_deg));
+        : new THREE.BoxGeometry(...sub.size_m), sub.at_m, sub.turn_deg, sub.material || part.material));
+      into.add(body);
+    } else if (part.shape === 'sphere') into.add(solid(new THREE.SphereGeometry(part.size_m[0] / 2, 24, 16), part.at_m, part.turn_deg, part.material));
+    else if (part.shape === 'cone') into.add(solid(new THREE.ConeGeometry(part.size_m[0] / 2, part.size_m[1], 24), part.at_m, part.turn_deg, part.material));
+    else into.add(solid(new THREE.BoxGeometry(...part.size_m), part.at_m, part.turn_deg, part.material));
   }
+}
+
+function drawGhost(parts, fits) {
+  clearGhostMeshes();
+  const look = fits ? ghostLook.fits : ghostLook.refused;
+  buildParts(ghostGroup, parts, () => look, fits ? ghostEdge.fits : ghostEdge.refused);
   followGhost();
+}
+
+// A picture of each piece in the tray, as it comes: the ghost op's parts for
+// it, drawn in their materials by a small renderer of its own, once a level.
+const pictures = new Map();
+let pictureRenderer = null;
+function trayPicture(t) {
+  const key = level.id + ':' + t.piece;
+  if (!pictures.has(key)) pictures.set(key, (async () => {
+    const p = {piece: t.piece};
+    for (const [knob, rule] of Object.entries(t.knobs)) p[knob] = knobDefault(rule);
+    const r = await api({op: 'level_ghost', level: level.id, placements: [p], index: 0});
+    const shot = new THREE.Scene(), piece = new THREE.Group();
+    buildParts(piece, r.parts, kind => material(materialColor(kind), kind), null);
+    shot.add(piece, new THREE.HemisphereLight(0xdfefff, 0x334455, 1.6));
+    const sun = new THREE.DirectionalLight(0xffffff, 1.8);
+    sun.position.set(2, 3, 4); shot.add(sun);
+    // Looked at from the front, a little above and to one side, filling the frame.
+    const box = new THREE.Box3().setFromObject(piece), mid = box.getCenter(new THREE.Vector3());
+    const reach = box.getSize(new THREE.Vector3()).length() / 2;
+    const eye = new THREE.PerspectiveCamera(30, 1, .001, 100);
+    eye.position.copy(mid).add(new THREE.Vector3(.55, .45, 1).normalize().multiplyScalar(reach / Math.sin(15 * Math.PI / 180) * 1.05));
+    eye.lookAt(mid);
+    if (!pictureRenderer) {
+      pictureRenderer = new THREE.WebGLRenderer({antialias: true, alpha: true, preserveDrawingBuffer: true});
+      pictureRenderer.setSize(160, 160, false);
+    }
+    pictureRenderer.render(shot, eye);
+    piece.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+    // A blob, not a data: URL, which the page's security policy refuses for images.
+    const png = await new Promise(done => pictureRenderer.domElement.toBlob(done, 'image/png'));
+    return png ? URL.createObjectURL(png) : null;
+  })().catch(() => { pictures.delete(key); return null; }));
+  return pictures.get(key);
+}
+function pictureInto(img, t) {
+  trayPicture(t).then(url => { if (url) { img.src = url; img.hidden = false; } });
 }
 
 // One question to the server at a time; a change made meanwhile asks again
@@ -1085,29 +1140,114 @@ $('path-toggle').addEventListener('click', () => {
   if (previewOn) schedulePreview(0); else { clearTimeout(previewTimer); previewAsk++; clearPreview(); }
 });
 
-// Over the scene: a ghost that follows goes where the pointer is; a press on
-// a pinned ghost drags it; a click (a press that does not move) pins a
-// following ghost, or moves a pinned one there. Any other drag turns the view.
+// Moving a piece, as 3D builders do it. A press near it -- anywhere within a
+// generous margin of it on the screen, not only on its few pixels -- takes
+// hold of it; on a touch screen one finger anywhere does (two fingers turn
+// and zoom the view). It then slides on a level plane at the height it
+// stands, by however far the pointer moves over that plane: it never jumps
+// onto whatever is behind the pointer. A tap or click that does not move
+// puts it there, unless it was on the piece itself. Any other drag turns the
+// view.
+const ghostBox = new THREE.Box3(), boxCorner = new THREE.Vector3(), slidePlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+function ghostScreenBox() {
+  if (!ghost || !ghostGroup.children.length) return null;
+  ghostBox.setFromObject(ghostGroup);
+  if (ghostBox.isEmpty()) return null;
+  const rect = renderer.domElement.getBoundingClientRect();
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let i = 0; i < 8; i++) {
+    boxCorner.set(i & 1 ? ghostBox.max.x : ghostBox.min.x, i & 2 ? ghostBox.max.y : ghostBox.min.y,
+                  i & 4 ? ghostBox.max.z : ghostBox.min.z).project(camera);
+    const sx = rect.left + (boxCorner.x + 1) / 2 * rect.width, sy = rect.top + (1 - boxCorner.y) / 2 * rect.height;
+    x0 = Math.min(x0, sx); x1 = Math.max(x1, sx); y0 = Math.min(y0, sy); y1 = Math.max(y1, sy);
+  }
+  return {x0, x1, y0, y1, bottom: ghostBox.min.y};
+}
+function nearGhost(clientX, clientY, margin) {
+  const b = ghostScreenBox();
+  return Boolean(b) && clientX >= b.x0 - margin && clientX <= b.x1 + margin && clientY >= b.y0 - margin && clientY <= b.y1 + margin;
+}
+function slidePoint(clientX, clientY, y) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  raycaster.setFromCamera(new THREE.Vector2((clientX - rect.left) / rect.width * 2 - 1, -(clientY - rect.top) / rect.height * 2 + 1), camera);
+  slidePlane.constant = -y;
+  return raycaster.ray.intersectPlane(slidePlane, new THREE.Vector3());
+}
+const GRAB_MARGIN_PX = 40;
+// For tests: where the piece being placed is on the screen, and the view.
+window.machineGhostScreen = () => ghostScreenBox();
+window.machineCamera = () => ({azimuth, elevation, distance, guides: guides.visible});
 renderer.domElement.addEventListener('pointerdown', e => {
   pressedAt = [e.clientX, e.clientY];
-  if (ghost && !ghost.follow && ghostHit(e.clientX, e.clientY)) {
-    const at = sceneHit(e.clientX, e.clientY);
-    draggingGhost = at ? {x: at.x - (ghost.p.x_m ?? 0), z: at.z - (ghost.p.z_m ?? 0)} : {x: 0, z: 0};
+  draggingGhost = null;
+  // A second finger: the view, not the piece.
+  if (!ghost || ghost.follow || pointers.size > 1) return;
+  if (e.pointerType === 'touch' || nearGhost(e.clientX, e.clientY, GRAB_MARGIN_PX)) {
+    const box = ghostScreenBox(), y = box ? box.bottom : 0, from = slidePoint(e.clientX, e.clientY, y);
+    if (from) draggingGhost = {y, from, x: ghost.p.x_m ?? 0, z: ghost.p.z_m ?? 0};
+    view.classList.add('grabbing');
   }
 });
 renderer.domElement.addEventListener('pointermove', e => {
-  if (!ghost) return;
-  if (draggingGhost) moveGhostTo(e.clientX, e.clientY, draggingGhost);
-  else if (ghost.follow && !e.buttons) moveGhostTo(e.clientX, e.clientY);
+  if (!ghost) { view.classList.remove('grab'); return; }
+  if (draggingGhost && pointers.size <= 1) {
+    const at = slidePoint(e.clientX, e.clientY, draggingGhost.y);
+    if (!at) return;
+    const moved = [setKnob(ghost.p, 'x_m', draggingGhost.x + at.x - draggingGhost.from.x),
+                   setKnob(ghost.p, 'z_m', draggingGhost.z + at.z - draggingGhost.from.z)].some(Boolean);
+    if (moved) { followGhost(); showGhostKnobs(); askGhost(); }
+  } else if (ghost.follow && !e.buttons) moveGhostTo(e.clientX, e.clientY);
+  else if (!e.buttons) view.classList.toggle('grab', !ghost.follow && nearGhost(e.clientX, e.clientY, GRAB_MARGIN_PX));
 });
 renderer.domElement.addEventListener('pointerup', e => {
   const click = pressedAt && Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) < 6;
-  if (ghost && click && !draggingGhost) {
+  if (ghost && click && (ghost.follow || !nearGhost(e.clientX, e.clientY, 0))) {
     moveGhostTo(e.clientX, e.clientY);
     if (ghost.follow) { ghost.follow = false; renderPlaced(); renderGhostBar(); showGhostState(); }
   }
   draggingGhost = null; pressedAt = null;
+  view.classList.remove('grabbing');
 });
+
+// Guides through the piece being placed, as 3D editors draw them: a line
+// along x (red) and along z (blue) through it to the horizon at the height
+// it stands, the same on the ground beneath when it stands above it, and a
+// vertical line (green) down to a mark on the ground under it.
+const guides = new THREE.Group();
+guides.visible = false;
+scene.add(guides);
+// Bars, not lines: a WebGL line is one pixel whatever the distance, too thin
+// to see; a bar is kept two or three pixels thick by the camera's distance.
+const barShape = new THREE.BoxGeometry(1, 1, 1);
+function guideBar(colour, opacity) {
+  const bar = new THREE.Mesh(barShape, new THREE.MeshBasicMaterial({color: colour, transparent: true, opacity, depthWrite: false}));
+  bar.frustumCulled = false;
+  guides.add(bar);
+  return bar;
+}
+const guideX = guideBar(0xff5c5c, .85), guideZ = guideBar(0x4d9dff, .85), guideY = guideBar(0x6fe08a, .9);
+const guideGroundX = guideBar(0xff5c5c, .4), guideGroundZ = guideBar(0x4d9dff, .4);
+const guideFoot = new THREE.Mesh(new THREE.RingGeometry(.035, .05, 28),
+  new THREE.MeshBasicMaterial({color: 0x6fe08f, transparent: true, opacity: .9, side: THREE.DoubleSide}));
+guideFoot.rotation.x = -Math.PI / 2;
+guides.add(guideFoot);
+function updateGuides() {
+  guides.visible = Boolean(ghost && ghostGroup.children.length);
+  if (!guides.visible) return;
+  ghostBox.setFromObject(ghostGroup);
+  if (ghostBox.isEmpty()) { guides.visible = false; return; }
+  const cx = (ghostBox.min.x + ghostBox.max.x) / 2, cz = (ghostBox.min.z + ghostBox.max.z) / 2;
+  const base = Math.max(.004, ghostBox.min.y), top = ghostBox.max.y + .4, far = 50;
+  const t = Math.max(.004, .0025 * camera.position.distanceTo(new THREE.Vector3(cx, base, cz)));
+  guideX.position.set(cx, base, cz); guideX.scale.set(far, t, t);
+  guideZ.position.set(cx, base, cz); guideZ.scale.set(t, t, far);
+  guideY.position.set(cx, top / 2, cz); guideY.scale.set(t, top, t);
+  const raised = base > .03;
+  guideGroundX.visible = guideGroundZ.visible = raised;
+  guideGroundX.position.set(cx, .004, cz); guideGroundX.scale.set(far, .002, t);
+  guideGroundZ.position.set(cx, .004, cz); guideGroundZ.scale.set(t, .002, far);
+  guideFoot.position.set(cx, .005, cz);
+}
 // Turning by hand: Shift and the wheel turns it, Alt and the wheel tips it.
 renderer.domElement.addEventListener('wheel', e => {
   if (!ghost || !(e.shiftKey || e.altKey)) return;
@@ -1193,38 +1333,39 @@ function renderLevels() {
 function knobDefault(rule) { return rule.default ?? (rule.choices ? rule.choices[0] : rule.min); }
 function trayItem(piece) { return level.tray.find(t => t.piece === piece); }
 
-// The tray in the scene as well: a piece is added, placed and set down
-// without leaving the 3D view (on a phone the list is below it).
+// Pieces are added from the scene: a button each, with its picture, over the
+// 3D view, so a piece is added, placed and set down without leaving it.
 function renderSceneTray() {
   const bar = $('scene-tray');
   bar.hidden = !LEVEL_MODE || !level || Boolean(ghost);
   if (bar.hidden) return;
   bar.replaceChildren(...level.tray.map(t => {
     const left = (t.count || 1) - placements.filter(p => p.piece === t.piece).length;
-    return button(`+ ${t.piece}`, () => {
+    const b = button(`+ ${t.piece}`, () => {
       const p = {piece: t.piece};
       for (const [key, rule] of Object.entries(t.knobs)) p[key] = knobDefault(rule);
       startGhost(p, placements.length);
     }, {ariaLabel: `Add a ${t.piece}`, disabled: left <= 0, title: left > 0 ? `${left} left` : 'none left'});
+    const img = Object.assign(document.createElement('img'), {alt: '', hidden: true});
+    b.prepend(img); pictureInto(img, t);
+    return b;
   }));
 }
 
+// The panel's tray: a picture of each piece the level gives and how many are
+// left to place (they are added with the buttons over the scene).
 function renderTray() {
   renderSceneTray();
   const ul = $('tray'); ul.replaceChildren();
   for (const t of level.tray) {
     const used = placements.filter(p => p.piece === t.piece).length + (ghost && !ghost.was && ghost.p.piece === t.piece ? 1 : 0);
     const count = t.count || 1, li = document.createElement('li');
-    const per = t.cost_per ? (t.cost_per.say || `${t.cost_per.each} per ${t.cost_per.unit} of ${t.cost_per.knob}`) : '';
-    const price = t.cost_per ? (t.cost ? `${t.cost} + ${per}` : per) : `${t.cost}`;
-    li.append(Object.assign(document.createElement('span'), {textContent: `${t.piece} — ${count - used} of ${count} left`}));
-    const add = Object.assign(document.createElement('button'), {type: 'button', textContent: 'Add', disabled: used >= count});
-    add.addEventListener('click', () => {
-      const p = {piece: t.piece};
-      for (const [key, rule] of Object.entries(t.knobs)) p[key] = knobDefault(rule);
-      startGhost(p, placements.length);
-    });
-    li.append(add); ul.append(li);
+    li.className = used >= count ? 'used-up' : '';
+    const img = Object.assign(document.createElement('img'), {alt: '', hidden: true});
+    li.append(img, Object.assign(document.createElement('span'), {className: 'tray-name', textContent: t.piece}),
+              Object.assign(document.createElement('span'), {className: 'tray-left', textContent: `${count - used} of ${count} left`}));
+    pictureInto(img, t);
+    ul.append(li);
   }
 }
 
@@ -1332,7 +1473,8 @@ function renderPlaced() {
   const made = Object.values(placedEnergy).reduce((a, b) => a + (b.j || 0), 0);
   $('cost-line').textContent = placements.length
     ? `Your pieces take ${energyText(made)} to make. Par for the whole win, pieces and run: ${energyText(level.par_energy_j)}.`
-    : 'Add a piece from the tray.';
+    : '';
+  $('placed-head').hidden = !placements.length && !ghost;
 }
 
 function scheduleRebuild(ms = 350) { clearTimeout(rebuildTimer); rebuildTimer = setTimeout(() => rebuildLevel(false).catch(() => {}), ms); }
@@ -1568,13 +1710,24 @@ $('feedback-form').addEventListener('submit', async e => {
 });
 
 async function startGame() {
-  document.body.classList.add('playing-level'); $('path-toggle').hidden = false;
+  document.body.classList.add('playing-level');
+  // A level plays at real time, the camera following what moves, its path
+  // shown: the sandbox's switches for those are not on the game page.
+  for (const id of ['follow', 'path-toggle']) $(id).hidden = true;
+  document.querySelector('#scene-actions .speed').hidden = true;
   let seen = false;
   try { seen = Boolean(localStorage.getItem('banjo-play-guide-seen')); } catch { /* private window */ }
   showGuide(!seen);
   $('game').hidden = false; $('solve').hidden = false; $('undo').hidden = true;
   document.querySelector('.lede').hidden = true;
   for (const d of document.querySelectorAll('aside details:not(#feedback)')) d.hidden = true;
+  // The levels have their own screen, and the engine's readings are the
+  // sandbox's: a player sees the scene, the goal and the result.
+  $('levels').hidden = true;
+  for (const label of ['Stations', 'Measured now', 'What happened']) {
+    const part = document.querySelector(`aside section[aria-label="${label}"]`);
+    if (part) part.hidden = true;
+  }
   $('send').textContent = 'Ask for a hint';
   $('message').placeholder = 'Ask about this level, e.g. “Why does my ball fall short?”';
   document.querySelector('.chat h2').textContent = 'Ask for help';
@@ -1593,22 +1746,25 @@ function sceneIntoView() {
 }
 
 // A ghost is not in the machine yet: set it down (or cancel it) before a run.
+// Said in the panel and on the ghost's own bar, which is in sight on a phone.
 function ghostInTheWay() {
   if (!ghost) return false;
-  $('verdict').textContent = `Set your ${ghost.p.piece} down first (or cancel it): a ghost is not part of the machine yet.`;
+  const said = `Set your ${ghost.p.piece} down first (or cancel it): a ghost is not part of the machine yet.`;
+  $('verdict').textContent = said;
+  const bar = document.querySelector('#ghost-bar .state');
+  if (bar) { bar.className = 'state refused'; bar.textContent = said; }
   return true;
 }
-$('run').addEventListener('click', () => { if (!ghostInTheWay()) { sceneIntoView(); rebuildLevel(true).catch(() => {}); } });
-$('trial').addEventListener('click', async () => {
+// A level's one button, over the scene: Run it builds the level afresh with
+// the pieces and plays it; while it plays it pauses, then continues; after
+// the run, Run again.
+function runLevel() {
+  const failed = e => { $('clock').textContent = e.message; };
+  if (playing) { setPlaying(false).catch(failed); return; }
   if (ghostInTheWay()) return;
-  $('trial').disabled = true;
-  $('verdict').textContent = 'Running it three times, each loose part nudged by a millimetre or two…';
-  try {
-    const r = await api({op: 'trial', level: level.id, placements});
-    $('verdict').textContent = `Works ${r.worked} of ${r.runs}: ` + r.results.map(x => x.goal_at_s != null ? `goal at ${describeTime(x.goal_at_s)}` : 'missed').join(', ') + '.';
-  } catch (e) { $('verdict').textContent = e.data && e.data.problems ? e.data.problems.join('; ') : e.message; }
-  finally { $('trial').disabled = false; }
-});
+  if (session && world.t > 0 && !scored) { setPlaying(true).catch(failed); return; }
+  sceneIntoView(); rebuildLevel(true).catch(() => {});
+}
 $('solve').addEventListener('click', () => askLevel('build'));
 
 // Leaving the page: the server is told at once, so its world makes room for

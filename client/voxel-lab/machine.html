@@ -23,8 +23,8 @@
 <h2>How to play</h2>
 <ol>
 <li>Each level has a goal: something has to end up in the <b>green box</b> in time.</li>
-<li>Press <b>Add</b> on a piece in your tray. A blue <b>ghost</b> of it follows your pointer; click (or tap) to put it there.</li>
-<li>Change it with its sliders, drag it, and turn it with the buttons (or Q/E, R/F, Z/C). A red ghost cannot go there, and says why.</li>
+<li>Press a piece's button at the top of the scene (<b>+ plank</b>). A blue <b>ghost</b> of it appears in the scene, ready to move.</li>
+<li>Drag it to move it (on a phone, one finger moves it and two fingers turn the view), or tap where it should go. Change and turn it with the controls under the scene (or Q/E, R/F, Z/C). Coloured lines through it show where it lines up. A red ghost cannot go there, and says why.</li>
 <li>Press <b>Set it down</b>, then <b>Run it</b>. Nothing is animated: the physics engine calculates every bounce, burn and cut live.</li>
 <li>Win on as little <b>energy</b> as you can: the energy to make your pieces (smaller, lighter, cheaper materials) and what the run burns or draws. Beat a level's par for three stars, and play it again to do better.</li>
 <li>Stuck? <b>Ask for a hint</b>, or <b>Place it for me</b> (worth one star at most).</li>
@@ -35,9 +35,8 @@
 <p id="brief"></p>
 <p id="goal-line" class="legend"></p>
 <h2>Your tray</h2><ul id="tray"></ul>
-<h2>Your pieces</h2><ol id="placed"></ol>
+<h2 id="placed-head">Your pieces</h2><ol id="placed"></ol>
 <p id="cost-line"></p>
-<div class="chat-actions"><button id="run" type="button">Run it</button><button id="trial" type="button">Is it reliable? (3 runs)</button></div>
 <output id="verdict" aria-live="polite"></output>
 <details id="feedback" class="feedback"><summary>Tell us what happened</summary>
 <form id="feedback-form"><label for="feedback-text">Something odd, broken, confusing or fun? We read every one.</label>

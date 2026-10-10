@@ -28,7 +28,7 @@ import qa_browser  # noqa: E402
 
 ENGINE = Path(os.environ['BANJO_LIVE_ENGINE']) if os.environ.get('BANJO_LIVE_ENGINE') else None
 SETTLED = "(() => { const g = window.machineGhostState(); return Boolean(g && g.answered && !g.busy); })()"
-READY = "/ready: press Start/.test(document.getElementById('clock').textContent)"
+READY = "/ready: press Run it/.test(document.getElementById('clock').textContent)"
 
 
 class Puzzles(unittest.TestCase):
@@ -116,7 +116,7 @@ class Puzzles(unittest.TestCase):
         self.open('gap')
         self.js("window.machineView({azimuth: -0.35, elevation: 0.75, distance: 3.2, at: [0.3, 0.2, 0]})")
         time.sleep(1.5)                       # the camera eases to its new view
-        self.press('Add')
+        self.press('Add a plank')
         g = self.ghost()
         self.assertTrue(not g['follow'] and g['parts'] > 0, 'it is placed at once, ready to change')
         self.press('Follow the pointer')
@@ -237,7 +237,7 @@ class Puzzles(unittest.TestCase):
 
     def test_a_ghost_inside_a_wall_is_red_says_why_and_cannot_be_set_down(self):
         self.open('laser')
-        self.press('Add')
+        self.press('Add a mirror')
         self.ghost()
         self.slide('x of your mirror 1', -0.35)
         self.slide('z of your mirror 1', 0.5)
@@ -249,10 +249,13 @@ class Puzzles(unittest.TestCase):
 
     def test_on_a_phone_the_scene_comes_into_view_and_its_bar_turns_and_sets_the_ghost_down(self):
         self.open('gap', 390, 844, phone=True)
-        self.js("document.getElementById('tray').scrollIntoView()")
-        self.assertLess(self.js("document.getElementById('view').getBoundingClientRect().bottom"), 200,
-                        'the tray is below the scene, so the scene has scrolled away')
-        self.press('Add')
+        # The panel's tray shows each piece, with a picture, and how many are left.
+        self.wait("Boolean(document.querySelector('#tray img:not([hidden])'))", 30)
+        self.assertEqual(self.js("document.querySelector('#tray li').textContent"), 'plank1 of 1 left')
+        self.js("scrollTo(0, document.documentElement.scrollHeight)")
+        self.assertLess(self.js("document.getElementById('view').getBoundingClientRect().top"), -41,
+                        'at the foot of the page, the scene has scrolled up out of sight')
+        self.press('Add a plank')
         self.ghost()
         self.assertGreater(self.js("document.getElementById('view').getBoundingClientRect().top"), -41,
                            'adding a piece brings the scene, and its ghost, into view')
@@ -272,6 +275,57 @@ class Puzzles(unittest.TestCase):
         self.assertEqual(self.ghost()['p']['yaw_deg'], 15)
         self.press('✓ Set down')
         self.wait('!window.machineGhostState()', 5)
+
+    def test_a_small_piece_is_grabbed_from_beside_it_and_on_a_phone_two_fingers_turn_the_view(self):
+        # Level 6's mirror is a thin thing, a few pixels across. A press just
+        # beside it (not on it) takes hold of it, and a drag slides it from
+        # where it was, with no jump and no turn of the view.
+        self.open('laser')
+        self.press('Add a mirror')
+        g0 = self.ghost()
+        time.sleep(0.4)
+        box = self.js('window.machineGhostScreen()')
+        self.assertTrue(self.js('window.machineCamera().guides'), 'the guide lines show while placing')
+        x, y = box['x1'] + 25, (box['y0'] + box['y1']) / 2
+        for k in (3, 2, 1, 0):                # the pointer comes to it, as a mouse does
+            self.mouse('mouseMoved', x + 15 * k, y)
+            time.sleep(0.05)
+        # The cursor says it can be taken.
+        self.wait("document.getElementById('view').classList.contains('grab')", 5)
+        turned = self.js('window.machineCamera().azimuth')
+        self.mouse('mousePressed', x, y)
+        for k in range(1, 13):
+            self.page.send('Input.dispatchMouseEvent', {'type': 'mouseMoved', 'x': x + 10 * k, 'y': y, 'button': 'left', 'buttons': 1})
+            time.sleep(0.03)
+        self.mouse('mouseReleased', x + 120, y)
+        g1 = self.ghost()
+        self.assertGreater(g1['p']['x_m'] - g0['p']['x_m'], 0.1, 'it moved the way it was dragged')
+        self.assertEqual(self.js('window.machineCamera().azimuth'), turned, 'the view did not turn')
+        # A phone: one finger anywhere moves it; two fingers turn the view.
+        self.open('laser', 390, 844, phone=True)
+        self.press('Add a mirror')
+        p0 = self.ghost()['p']
+        view = self.js("document.getElementById('view').getBoundingClientRect().toJSON()")
+        sx, sy = view['x'] + 60, view['y'] + view['height'] - 160
+        touch = lambda kind, points: self.page.send('Input.dispatchTouchEvent', {'type': kind, 'touchPoints': points})
+        touch('touchStart', [{'x': sx, 'y': sy}])
+        for k in range(1, 9):                 # a finger's pace, a move a frame or so
+            time.sleep(0.03)
+            touch('touchMove', [{'x': sx + 10 * k, 'y': sy}])
+        time.sleep(0.1)
+        touch('touchEnd', [])
+        p1 = self.ghost()['p']
+        self.assertGreater(p1['x_m'] - p0['x_m'], 0.1, 'one finger, far from it, still moves it')
+        turned = self.js('window.machineCamera().azimuth')
+        touch('touchStart', [{'x': sx, 'y': sy, 'id': 1}, {'x': sx + 120, 'y': sy, 'id': 2}])
+        for k in range(1, 9):
+            time.sleep(0.03)
+            touch('touchMove', [{'x': sx + 12 * k, 'y': sy, 'id': 1}, {'x': sx + 120 + 12 * k, 'y': sy, 'id': 2}])
+        time.sleep(0.1)
+        touch('touchEnd', [])
+        time.sleep(0.5)
+        self.assertEqual(self.ghost()['p']['x_m'], p1['x_m'], 'two fingers leave it be')
+        self.assertNotEqual(self.js('window.machineCamera().azimuth'), turned, 'two fingers turn the view')
 
 
 if __name__ == '__main__':

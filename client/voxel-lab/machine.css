@@ -17,6 +17,7 @@ main{display:grid;grid-template-columns:minmax(0,1fr) 380px;height:calc(100dvh -
 .scene-actions button:disabled{opacity:.45;cursor:default}
 #start{background:#2f6b4f;border-color:#6fc39a;min-width:96px}
 .speed{display:flex;align-items:center;gap:6px;font-size:13px;color:#c7d8e2}
+.scene-actions [hidden]{display:none}
 #follow[aria-pressed=true]{background:#356178;border-color:#9ed6ef}
 #scene-note{position:absolute;left:12px;bottom:76px;margin:0;font-size:12px;color:#b8cbd7;pointer-events:none}
 aside{overflow:auto;padding:16px 18px;background:#18252e;border-left:1px solid #314451}
@@ -56,6 +57,13 @@ details{margin-top:14px;font-size:13px}summary{cursor:pointer;color:#cfe2ec}
 #levels button[aria-current="true"]{outline:2px solid #5fe08f}
 #tray,#placed{list-style:none;padding:0;margin:.2rem 0 .6rem}
 #tray li,#placed li{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;padding:.35rem 0;border-bottom:1px solid rgba(255,255,255,.08)}
+#tray{display:flex;flex-wrap:wrap;gap:8px}
+#tray li{flex-direction:column;align-items:center;gap:2px;width:96px;padding:6px 4px;border:1px solid #314451;border-radius:8px;background:#162733;text-align:center}
+#tray li.used-up{opacity:.5}
+#tray img{width:72px;height:72px}
+.tray-name{font-weight:600;font-size:14px}
+.tray-left{font-size:12px;color:#9fb6c4}
+#placed:empty,#cost-line:empty{display:none}
 #placed li{display:grid;grid-template-columns:1fr;gap:.25rem}
 #placed .knob{display:grid;grid-template-columns:6.5rem minmax(0,1fr) 3.2rem;align-items:center;gap:.4rem;font-size:.85rem;min-width:0}
 #placed .knob input[type=range],#placed .knob select{width:100%;min-width:0;margin:0}
@@ -108,6 +116,8 @@ details{margin-top:14px;font-size:13px}summary{cursor:pointer;color:#cfe2ec}
 .scene-tray{position:absolute;top:52px;left:10px;right:10px;z-index:2;display:flex;flex-wrap:wrap;gap:6px;pointer-events:none}
 .scene-tray[hidden]{display:none}
 .scene-tray button{pointer-events:auto;min-height:38px;padding:5px 12px;background:#1f6b45;color:#e7f2f8;border:1px solid #5fe08f;border-radius:8px;cursor:pointer;font:600 14px system-ui;box-shadow:0 3px 10px #0007}
+.scene-tray button{display:inline-flex;align-items:center;gap:6px}
+.scene-tray img{width:28px;height:28px;margin:-4px 0 -4px -6px}
 .scene-tray button:disabled{background:#294c60;border-color:#63899d;opacity:.55;cursor:not-allowed}
 /* The ghost's controls: docked just below the scene (the top of the side
    panel, which on a phone comes right after the scene), kept in sight. */
@@ -163,3 +173,8 @@ body.on-levels main{display:none}
 .level-done .energy{font-size:18px;font-weight:700;margin:6px 0 2px}
 .level-done .breakdown{font-size:13px;color:#b9cbd6}
 .level-done .hint{font-size:13px;color:#ffd38a}
+/* Taking hold of a piece being placed. */
+#view.grab canvas{cursor:grab}
+#view.grabbing canvas{cursor:grabbing}
+/* The engine's readings, folded at the foot of the game's panel. */
+#levels[hidden]{display:none}
