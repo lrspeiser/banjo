@@ -66,11 +66,20 @@ class DrivingTheRover(unittest.TestCase):
             said = workshop_drive.handle(self.app, {"action": "step", "keys": {"left": True}, "dt_s": 0.125})
         self.assertEqual("turning left", said["doing"])
         self.assertGreater(said["turn_deg"], heading_before + 5.0, "it turned")
+        # Round past half a right angle on its wheels is still standing: it is
+        # tipping that is falling over, not turning (it said "it fell over").
+        for _ in range(48):
+            if said["turn_deg"] > 60.0:
+                break
+            said = workshop_drive.handle(self.app, {"action": "step", "keys": {"left": True}, "dt_s": 0.125})
+        self.assertGreater(said["turn_deg"], 60.0, "it turned round")
+        self.assertFalse(said["fell_over"], "turned, not tipped")
         said = workshop_drive.handle(self.app, {"action": "step", "keys": {}, "dt_s": 0.125})
         self.assertEqual("waiting", said["asked"], "no keys: it holds")
         ended = workshop_drive.handle(self.app, {"action": "stop"})
         print(f"\n    {ended['says']}; {len(ended['recording']['frames'])} frames")
         self.assertEqual("stopped", ended["status"])
+        self.assertNotIn("fell over", ended["says"])
         self.assertEqual("drive", ended["recording"]["test"])
         self.assertGreater(ended["moved_m"], 1.0)
         self.assertGreater(len(ended["recording"]["frames"]), 60)
