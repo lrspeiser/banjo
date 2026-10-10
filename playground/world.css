@@ -892,6 +892,13 @@ body.moving-a-thing #panel .workshop-entry { border-style: dashed; }
 #next-step[hidden] {display:none!important;}
 body.machine-open #picked,body.machine-open #details,body.machine-open #tabs,
 body.machine-open #details-last,body.machine-open #details-meter {display:none!important;}
+/* A machine's controls, opened on purpose (E on it, or its Controls button),
+   have the rail to themselves: not the conversation, and not an inspector.
+   The machine panel's own header names it and closes it; what an action came
+   to shows in #world-action-toast, which sits over the rail. */
+body.machine-open #panel {bottom:calc(var(--game-nav-space,76px) + env(safe-area-inset-bottom,0px));}
+body.machine-open #panel > :not(#machine-panel) {display:none!important;}
+body.machine-open #machine-panel {max-height:none;}
 #machine-panel.compact-rover > :not(.mp-head):not(#mp-rover-simple):not(#mp-ack) {display:none!important;}
 .rover-card {display:grid;gap:8px;padding:12px;}
 .rover-card > canvas,.rover-card > img {width:72px;height:72px;object-fit:contain;}

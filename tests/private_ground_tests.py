@@ -458,33 +458,38 @@ class PrivateGround(unittest.TestCase):
             for kind in ('mousePressed','mouseReleased'):
                 p.send('Input.dispatchMouseEvent',{'type':kind,'button':'left','clickCount':1,**spot})
         def select_machine():
+            # The machine's own controls, opened as a person does: look at it
+            # and press E. The Details rail that showed the picked card is gone
+            # (eaf9e306); the recipe and the input are the machine's controls.
             wait('window.banjoRoom?.ready()')
-            p.evaluate('banjoRoom.standAt('+','.join(map(str,person['eyes_m']))+');banjoRoom.pick('+json.dumps(program['body'])+');')
-            wait('document.querySelector("[data-process-recipe] button")')
-            # The picked card lives in the right rail, which starts folded
-            # away (dcd94bae); Details in the bottom bar opens it (68bad3ca).
-            if p.evaluate('document.body.classList.contains("panel-away")'):click('#panel-details')
-            wait('!document.body.classList.contains("panel-away")')
-            wait('(()=>{const b=document.querySelector("[data-process-recipe] button");b.scrollIntoView({block:"center"});'
+            body=json.dumps(program['body'])
+            p.evaluate('(()=>{const r=banjoRoom,b=r.world.bodies.get('+body+').mesh.position;r.standAt('+','.join(map(str,person['eyes_m']))+');r.lookAt(b.x,b.y,b.z);})()')
+            wait('banjoRoom.world.aim?.name==='+body)
+            p.send('Input.dispatchKeyEvent',{'type':'keyDown','code':'KeyE','key':'e'})
+            p.send('Input.dispatchKeyEvent',{'type':'keyUp','code':'KeyE','key':'e'})
+            wait('document.body.classList.contains("machine-open") && !document.body.classList.contains("panel-away")')
+            wait('(()=>{const b=document.querySelector("#machine-panel [data-process-recipe] button");if(!b)return false;b.scrollIntoView({block:"center"});'
                  'const r=b.getBoundingClientRect(),e=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return !!e && b.contains(e)})()')
+        # What an action came to shows on the action line over the room.
+        said=lambda words:'(t=>!!t && !t.hidden && t.textContent.includes('+json.dumps(words)+'))(document.querySelector("#world-action-toast"))'
         p.send('Page.navigate',{'url':self.base+f'/world?world={world}&hold=1'})
-        select_machine();click('[data-process-recipe] button')
-        wait('document.querySelector("[data-process-recipe] select")')
-        p.evaluate('(()=>{const s=document.querySelector("[data-process-recipe] select");s.value="melt glass";s.dispatchEvent(new Event("change"));})()')
-        click('[data-select-process-recipe]')
-        wait('document.querySelector("#details-last-text")?.textContent.includes("Recipe →")')
+        select_machine();click('#machine-panel [data-process-recipe] button')
+        wait('document.querySelector("#machine-panel [data-process-recipe] select")')
+        p.evaluate('(()=>{const s=document.querySelector("#machine-panel [data-process-recipe] select");s.value="melt glass";s.dispatchEvent(new Event("change"));})()')
+        click('#machine-panel [data-select-process-recipe]')
+        wait(said('Recipe →'))
         self.assertEqual('melt glass',app.brains.of(program['name']).routine.recipe)
-        click('[data-input-delivery] button')
-        wait('document.querySelector("[data-deliver-raw-lot]")')
+        click('#machine-panel [data-input-delivery] button')
+        wait('document.querySelector("#machine-panel [data-deliver-raw-lot]")')
         before=deepcopy(intake['holds'])
         with mock.patch.object(app.store,'save',side_effect=OSError('disk full')):
-            click('[data-deliver-raw-lot]')
-            wait('document.querySelector("[data-retry-raw-input]")')
+            click('#machine-panel [data-deliver-raw-lot]')
+            wait('document.querySelector("#machine-panel [data-retry-raw-input]")')
         self.assertEqual(before,intake['holds'])
-        p.send('Page.reload',{});select_machine();click('[data-input-delivery] button')
-        wait('document.querySelector("[data-retry-raw-input]")')
-        click('[data-retry-raw-input]')
-        wait('!document.querySelector("[data-retry-raw-input]") && document.querySelector("#details-last-text")?.textContent.includes("→ Input")')
+        p.send('Page.reload',{});select_machine();click('#machine-panel [data-input-delivery] button')
+        wait('document.querySelector("#machine-panel [data-retry-raw-input]")')
+        click('#machine-panel [data-retry-raw-input]')
+        wait('!document.querySelector("#machine-panel [data-retry-raw-input]") && '+said('→ Input'))
         self.assertEqual(5,app.brains.goods.by_name(intake['name'])['holds']['sand'])
         self.assertEqual([],[e for e in p.events if e.get('method')=='Runtime.exceptionThrown'])
         (ROOT/'build/resource-flow/stored-sand-input.png').write_bytes(
@@ -500,10 +505,10 @@ class PrivateGround(unittest.TestCase):
             app.clock._tick(.2)
             if output.get('holds',{}).get('glass',0)>=4.25-1e-6:break
         self.assertAlmostEqual(4.25,output.get('holds',{}).get('glass',0),places=5)
-        p.send('Page.reload',{});select_machine();click('[data-input-delivery] button')
-        wait('document.querySelector("[data-input-guidance=sand]")')
-        self.assertIn('Inventory · Store → Load here',p.evaluate('document.querySelector("[data-input-guidance=sand]").textContent'))
-        self.assertFalse(p.evaluate('Boolean(document.querySelector("[data-deliver-raw-lot]"))'))
+        p.send('Page.reload',{});select_machine();click('#machine-panel [data-input-delivery] button')
+        wait('document.querySelector("#machine-panel [data-input-guidance=sand]")')
+        self.assertIn('Inventory · Store → Load here',p.evaluate('document.querySelector("#machine-panel [data-input-guidance=sand]").textContent'))
+        self.assertFalse(p.evaluate('Boolean(document.querySelector("#machine-panel [data-deliver-raw-lot]"))'))
         (ROOT/'build/resource-flow/empty-sand-input.png').write_bytes(
             base64.b64decode(p.send('Page.captureScreenshot',{'format':'png'})['data']))
 

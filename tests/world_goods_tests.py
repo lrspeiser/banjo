@@ -235,24 +235,31 @@ class GoodsJourney(unittest.TestCase):
                    'return e && b.contains(e) ? {x,y} : null})()')
             wait(under)
             spot=page.evaluate(under)
-            # Held for 0.2 s like a person's click, longer than the picked
-            # card's 150 ms rebuild: the rebuild must not swallow the click.
+            # Held for 0.2 s like a person's click, longer than the panel's
+            # redraw on each reply: a redraw must not swallow the click.
             page.send('Input.dispatchMouseEvent',{'type':'mousePressed','button':'left','clickCount':1,**spot})
             time.sleep(.2)
             page.send('Input.dispatchMouseEvent',{'type':'mouseReleased','button':'left','clickCount':1,**spot})
-        def details():
-            # The picked card lives in the right rail, which starts folded
-            # away (dcd94bae); Details in the bottom bar opens it (68bad3ca).
-            if page.evaluate('document.body.classList.contains("panel-away")'):click('#panel-details')
-            wait('!document.body.classList.contains("panel-away")')
+        def key(code,letter):
+            page.send('Input.dispatchKeyEvent',{'type':'keyDown','code':code,'key':letter})
+            page.send('Input.dispatchKeyEvent',{'type':'keyUp','code':code,'key':letter})
+        rover_part='banjoRoom.world.machines?.programs?.find(p=>p.body==="rover")?.parts.includes(banjoRoom.world.aim?.name)'
         page.send('Page.navigate',{'url':self.base+f'/world?world={world}&hold=1'})
         wait('window.banjoRoom?.ready()')
-        # Position the test observer beside the actual chassis; acquire through
-        # the visible button and move it through ordinary hand targets/keys.
+        # Position the test observer beside the actual chassis and open the
+        # rover's own controls as a person does: look at it and press E. The
+        # Details rail that used to show the picked card is gone (eaf9e306):
+        # selecting the rover alone must leave the rail folded.
         page.evaluate('(()=>{const p=banjoRoom.world.bodies.get("rover").mesh.position;banjoRoom.standAt(p.x+.8,p.y+1.1,p.z+.5);banjoRoom.lookAt(p.x,p.y,p.z);banjoRoom.pick("rover");})()')
-        wait('!!document.querySelector("#picked [data-rover-command=recover]")')
-        details()
-        click('#picked [data-rover-command=recover]')
+        self.assertTrue(page.evaluate('document.body.classList.contains("panel-away")'),
+                        'Selecting a machine must not unfold the rail')
+        wait(rover_part)
+        key('KeyE','e')
+        wait('document.body.classList.contains("machine-open") && !document.body.classList.contains("panel-away")')
+        self.assertEqual(['machine-panel'],page.evaluate(
+            '[...document.querySelector("#panel").children].filter(e=>getComputedStyle(e).display!=="none").map(e=>e.id)'),
+            "A machine's controls have the rail to themselves: no chat, no inspector")
+        click('#machine-panel [data-rover-command=recover]')
         wait('banjoRoom.world.held?.recovery')
         self.assertTrue(page.evaluate('banjoRoom.controls().cursorFree'),
                         'Clicking recovery safely leaves the player in Cursor mode')
@@ -262,12 +269,17 @@ class GoodsJourney(unittest.TestCase):
         wait(f'banjoRoom.world.held.hand.grip_m[1]>{initial[1]+.3}')
         wait('banjoRoom.world.held.hand.work_j>0')
         self.assertGreater(sum(v*v for v in page.evaluate('banjoRoom.world.held.hand.force_n')),0.)
-        page.send('Input.dispatchKeyEvent',{'type':'keyDown','code':'KeyQ','key':'q'})
-        page.send('Input.dispatchKeyEvent',{'type':'keyUp','code':'KeyQ','key':'q'})
-        wait('document.querySelector("#details-last-text").textContent.includes("Release the rover before packing")')
-        self.assertTrue(page.evaluate('document.querySelector("#details-last").checkVisibility()'),
-                        'The selected component card must not hide the refusal')
+        key('KeyQ','q')
+        # The refusal reaches the player where every action's result now does,
+        # the action line over the room, with the rover's controls still open.
+        wait('(t=>t && !t.hidden && t.checkVisibility() && t.textContent.includes("Release the rover before packing"))'
+             '(document.querySelector("#world-action-toast"))')
         self.assertTrue(page.evaluate('!!banjoRoom.world.held?.recovery'))
+        wait('document.querySelector("#machine-panel [data-rover-command=recover]")?.textContent==="Release rover"')
+        self.assertFalse(page.evaluate('!!document.querySelector("#machine-panel .pk-component-grid")'))
+        import base64
+        out=ROOT/'build/resource-flow';out.mkdir(parents=True,exist_ok=True)
+        (out/'rover-recovery.png').write_bytes(base64.b64decode(page.send('Page.captureScreenshot',{'format':'png'})['data']))
         page.evaluate('banjoRoom.hold()')
         wait('!banjoRoom.world.busy')
         held=page.evaluate('banjoRoom.world.held.hand')
@@ -276,14 +288,12 @@ class GoodsJourney(unittest.TestCase):
         wait('window.banjoRoom?.ready() && banjoRoom.world.held?.recovery')
         self.assertFalse(page.evaluate('banjoRoom.world.held.guide || false'))
         self.assertAlmostEqual(held['work_j'],page.evaluate('banjoRoom.world.held.hand.work_j'),places=3)
-        page.evaluate('(()=>{const p=banjoRoom.world.bodies.get("rover").mesh.position;banjoRoom.lookAt(p.x,p.y,p.z);banjoRoom.pick("rover");})()')
-        wait('document.querySelector("#picked [data-rover-command=recover]")?.textContent==="Release rover"')
-        details()
-        self.assertFalse(page.evaluate('!!document.querySelector("#picked .pk-component-grid")'))
-        import base64
-        out=ROOT/'build/resource-flow';out.mkdir(parents=True,exist_ok=True)
-        (out/'rover-recovery.png').write_bytes(base64.b64decode(page.send('Page.captureScreenshot',{'format':'png'})['data']))
-        click('#picked [data-rover-command=recover]')
+        # Reloaded, the rail starts folded and the hold is restored. Holding a
+        # rover, E has one choice, "Release rover" (heldChoices), as the
+        # recovery hint says: release it with the key.
+        self.assertTrue(page.evaluate('document.body.classList.contains("panel-away")'))
+        self.assertFalse(page.evaluate('banjoRoom.controls().cursorFree'))
+        key('KeyE','e')
         wait('!banjoRoom.world.held')
         self.assertFalse(page.evaluate('banjoRoom.world.machines.programs.find(p=>p.body==="rover").power'))
         self.assertEqual([],[e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
@@ -436,8 +446,17 @@ class GoodsJourney(unittest.TestCase):
                 time.sleep(.1)
             self.fail(expression+'; '+str(page.evaluate('document.querySelector("#picked")?.textContent')))
         wait('window.banjoRoom?.ready()')
-        page.evaluate('banjoRoom.pick("rover")')
-        wait('document.querySelector("#picked .rover-card")')
+        def controls():
+            # The rover's own controls, opened as a person does: look at it and
+            # press E. The Details rail is gone (eaf9e306), so selecting it
+            # shows nothing in the rail by itself.
+            page.evaluate('(()=>{const r=banjoRoom,p=r.world.bodies.get("rover").mesh.position;r.standAt(p.x+.8,p.y+1.1,p.z+.5);r.lookAt(p.x,p.y,p.z);r.pick("rover");})()')
+            wait('banjoRoom.world.machines?.programs?.find(p=>p.body==="rover")?.parts.includes(banjoRoom.world.aim?.name)')
+            page.send('Input.dispatchKeyEvent',{'type':'keyDown','code':'KeyE','key':'e'})
+            page.send('Input.dispatchKeyEvent',{'type':'keyUp','code':'KeyE','key':'e'})
+            wait('document.body.classList.contains("machine-open") && !document.body.classList.contains("panel-away")')
+            wait('document.querySelector("#machine-panel .rover-card")?.checkVisibility()')
+        controls()
         probes=page.evaluate('banjoRoom.world.machines.programs.find(p=>p.body==="rover").sensors')
         self.assertEqual(10,len(probes));self.assertEqual(5,sum(p['kind']=='ground' for p in probes))
         self.assertEqual(2,sum(p['kind']=='ground' and p['stops']<0 for p in probes))
@@ -453,10 +472,14 @@ class GoodsJourney(unittest.TestCase):
         wait('banjoRoom.world.machines.programs.find(p=>p.body==="rover").sensors.some(p=>p.kind==="ground"&&p.sees)')
         self.assertGreater(max(abs(p['reading_m']) for p in page.evaluate('banjoRoom.world.machines.programs.find(p=>p.body==="rover").sensors') if p['kind']=='ground'),0.)
         page.evaluate('banjoRoom.hold()')
-        page.evaluate('document.querySelector("#panel-details").click()')
-        wait('!document.body.classList.contains("panel-away")')
-        page.evaluate('document.querySelector("#picked .rover-card button:not([data-rover-command])").click()')
-        wait('document.querySelector("#chat-recipient").value==="robot:rover"')
+        # Back at the rover after digging beside it: its controls again, and
+        # Talk to rover from them opens the conversation with it.
+        if page.evaluate('document.body.classList.contains("machine-open")'):
+            page.evaluate('document.querySelector("#mp-close").click()')
+        wait('!document.body.classList.contains("machine-open")')
+        controls()
+        page.evaluate('document.querySelector("#machine-panel .rover-card button:not([data-rover-command])").click()')
+        wait('document.querySelector("#chat-recipient").value==="robot:rover" && document.body.classList.contains("chat-open")')
         page.evaluate('document.querySelector("#ask-text").value="status";document.querySelector("#ask").requestSubmit()')
         wait('document.querySelector("#chat").textContent.includes("My battery is at") && !document.querySelector("#ask-send").disabled')
         import base64
@@ -951,18 +974,20 @@ class GoodsJourney(unittest.TestCase):
         wait('window.banjoRoom?.ready()')
         eyes=request['person']['eyes_m']
         program=next(p for p in app.live.session.state['machines']['programs'] if p['name']==source['machine'])
-        page.evaluate('banjoRoom.standAt('+','.join(map(str,eyes))+');banjoRoom.pick('+json.dumps(program['body'])+');')
-        wait('document.querySelector("[data-input-delivery] button:not(:disabled)")')
-        # The picked card lives in the right rail, which starts folded away
-        # (dcd94bae); Details in the bottom bar opens it (68bad3ca).
-        click('#panel-details')
-        wait('!document.body.classList.contains("panel-away")')
-        wait('(()=>{const b=document.querySelector("[data-input-delivery] button");b.scrollIntoView({block:"center"});'
-             'const r=b.getBoundingClientRect(),e=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return !!e && b.contains(e)})()')
-        click('[data-input-delivery] button')
-        wait('document.querySelector("[data-deliver-substance=\\"copper ore\\"]:not(:disabled)")')
-        click('[data-deliver-substance="copper ore"]')
-        wait('document.querySelector("#details-last-text")?.textContent.includes("→ Input")')
+        # Open the machine's own controls as a person does: look at it and
+        # press E. The Details rail that used to show the picked card is gone
+        # (eaf9e306); loading an input is one of the machine's controls.
+        body=json.dumps(program['body'])
+        page.evaluate('(()=>{const r=banjoRoom,p=r.world.bodies.get('+body+').mesh.position;r.standAt('+','.join(map(str,eyes))+');r.lookAt(p.x,p.y,p.z);})()')
+        wait('banjoRoom.world.aim?.name==='+body)
+        page.send('Input.dispatchKeyEvent',{'type':'keyDown','code':'KeyE','key':'e'})
+        page.send('Input.dispatchKeyEvent',{'type':'keyUp','code':'KeyE','key':'e'})
+        wait('document.body.classList.contains("machine-open") && !document.body.classList.contains("panel-away")')
+        click('#machine-panel [data-input-delivery] button')
+        wait('document.querySelector("#machine-panel [data-deliver-substance=\\"copper ore\\"]:not(:disabled)")')
+        click('#machine-panel [data-deliver-substance="copper ore"]')
+        # What it came to shows on the action line over the room.
+        wait('(t=>t && !t.hidden && t.textContent.includes("→ Input"))(document.querySelector("#world-action-toast"))')
         self.assertEqual({'copper ore':5.},app.brains.goods.by_name(intake['name'])['holds'])
         self.assertEqual(initial['copper ore']-5,self.personal(app,owner)['copper ore'])
         self.assertEqual([],[e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])

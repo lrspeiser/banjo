@@ -2827,8 +2827,10 @@ function openMachinePanel(control) {
   $("machine-panel").hidden = false;
   document.body.classList.add("machine-open");
   // The machine panel lives in the right rail, which starts folded away
-  // (dcd94bae). Opening Controls must show it; closing folds it again.
-  if (document.body.classList.contains("panel-away")) {
+  // (dcd94bae). Opening Controls must show it; closing folds it again. It
+  // takes the rail over from the conversation too: the two never share it.
+  if (document.body.classList.contains("panel-away") || document.body.classList.contains("chat-open")) {
+    document.body.classList.remove("chat-open");
     machinePanel.unfolded = true;
     foldPanel(false);
   }
@@ -2899,6 +2901,8 @@ function setPressed(id, on, disabled = false) {
 // The panel, from the controller as the last step -- or the last command's
 // answer -- left it. With every step: only what changed is written.
 function showMachinePanel() {
+  // Held while a press is down inside the panel (see its pointerdown below).
+  if (machinePanel.pressed) return;
   $('machine-panel').classList.toggle('compact-rover',machinePanel.of==='program' && shownControl()?.kind==='roam');
   if (machinePanel.id == null) return;
   const c = shownControl();
@@ -2914,6 +2918,7 @@ function showMachinePanel() {
     return;
   }
   panelRows(false);
+  $("mp-feed")?.replaceChildren();          // a bare controller is fed nothing
   $("mp-brain").hidden = true;
   $("mp-decided").hidden = true;
   $("mp-routine").hidden = true;
@@ -3104,6 +3109,17 @@ function showProgramPanel(p) {
   let recovery=$("mp-recovery");
   if(!recovery) {recovery=document.createElement("div");recovery.id="mp-recovery";$("mp-measured").before(recovery);}
   recovery.replaceChildren(...(p.kind==="roam" ? [recoverySection(p)] : []));
+  // What the machine is fed and which recipe it works are its own controls,
+  // the same ones the picked card draws: Load from Inventory, Choose recipe.
+  // The picked card no longer opens (eaf9e306), so without them here a
+  // smelter could not be loaded from the World at all.
+  let feed=$("mp-feed");
+  if(!feed) {feed=document.createElement("div");feed.id="mp-feed";$("mp-holds").before(feed);}
+  const routine=world.brains.get(p.name)?.routine;
+  // Not while the recipe list is in use: remaking it would shut its dropdown.
+  if(!(feed.contains(document.activeElement) && document.activeElement.tagName==="SELECT"))
+    feed.replaceChildren(...(routine?.making?.intake ? [inputDeliveryPanel(routine.making.intake)] : []),
+      ...(routine?.kind==="process" && !watchedId ? [processRecipePanel(p)] : []));
   setText("mp-enabled", p.power ? "On" : "Off");
   const wheels = p.kind === "still" ? {
     "standing by": "ready, with nothing to do",
@@ -3345,6 +3361,15 @@ $("mp-chat-form").addEventListener("submit", async (e) => {
 });
 
 $("mp-close").addEventListener("click", closeMachinePanel);
+// The panel is redrawn with every reply, because its readings are live, and
+// the rover card, the recovery button and the input and recipe sections are
+// made afresh each time. A press and a release that straddle a redraw land on
+// two different buttons, and the browser then sends no click at all -- the
+// picked card had the same trouble with "Release rover". Hold the redraw while
+// a press is down inside the panel; the button's own handler redraws it.
+$("machine-panel").addEventListener("pointerdown", () => { machinePanel.pressed = true; });
+for (const end of ["pointerup", "pointercancel"])
+  addEventListener(end, () => { machinePanel.pressed = false; }, true);
 $("mp-on").addEventListener("click", async () => {
   machinePanel.poweringOn = true;
   showMachinePanel();
@@ -3885,6 +3910,9 @@ const resourceVisuals = goodsVisuals({scene,camera,groundAt,
   }});
 
 const deliveryMenus=new Map(),deliveryBusy=new Set(),processMenus=new Map(),processChoices=new Map();
+// The picked card and a machine's own panel draw the same input and recipe
+// sections, so whatever changes them redraws both.
+function showMachineControls() { showPicked(); showMachinePanel(); }
 function processRecipePanel(program) {
   const pane=document.createElement('section');pane.dataset.processRecipe=program.id;
   const heldMenu=processMenus.get(program.id);
@@ -3894,13 +3922,16 @@ function processRecipePanel(program) {
     const result=await api('/api/world/process',{session,program:program.id,action:'view'});
     if(session!==world.session)return;
     processMenus.set(program.id,{...result,session});
-    showPicked();
+    showMachineControls();
   };
   const button=document.createElement('button');button.type='button';
   button.textContent=menu?'Refresh recipes':'Choose recipe';
   button.onclick=()=>refresh().catch(e=>lastAction(e.message));pane.append(button);
-  const operate=document.createElement('button');operate.type='button';operate.textContent='Power / Watch batch';
-  operate.onclick=()=>openMachinePanel(program);pane.append(operate);
+  // Its own panel is where power and the batch are; offered only from elsewhere.
+  if(machinePanel.of!=="program" || machinePanel.id!==program.id || $("machine-panel").hidden) {
+    const operate=document.createElement('button');operate.type='button';operate.textContent='Power / Watch batch';
+    operate.onclick=()=>openMachinePanel(program);pane.append(operate);
+  }
   if(!menu)return pane;
   const select=document.createElement('select');select.setAttribute('aria-label','Processing recipe');
   const draft=processChoices.get(program.id);
@@ -3951,10 +3982,10 @@ function inputDeliveryPanel(name) {
   };
   async function refresh() {
     deliveryMenus.set(name,await api('/api/world/goods/deliver',{session:world.session,action:'view',pile:name}));
-    showPicked();
+    showMachineControls();
   }
   async function change(body) {
-    deliveryBusy.add(name);showPicked();
+    deliveryBusy.add(name);showMachineControls();
     const raw=body.lot_id!=null;
     if(raw)sessionStorage.setItem(rawInputPendingKey(),JSON.stringify(body));
     try {
@@ -3969,7 +4000,7 @@ function inputDeliveryPanel(name) {
     }
     finally {
       deliveryBusy.delete(name);
-      try {await refresh();}catch(error){lastAction(error.message || String(error));showPicked();}
+      try {await refresh();}catch(error){lastAction(error.message || String(error));showMachineControls();}
       void readMiniInventory();
     }
   }
@@ -7813,8 +7844,18 @@ function offerStick(e) {
 // FOLDING THE PANEL AWAY. The room is what a small screen came for, so the
 // panel starts folded on one and is remembered either way.
 function foldPanel(away) {
-  away = away || !document.body.classList.contains("chat-open");
+  // The rail comes out for two things only: the conversation (chat-open), and
+  // a machine's own controls opened on purpose (machine-open: E on it, or its
+  // Controls button). Never by itself, and never as an inspector. Letting only
+  // the chat through (eaf9e306) left E on a machine opening a panel nobody
+  // could see, so a rover could not be switched on or recovered and a
+  // smelter could not be loaded.
+  away = away || !document.body.classList.contains("chat-open") &&
+    !document.body.classList.contains("machine-open");
   if(away)document.body.classList.remove("chat-open");
+  // Folding the rail away closes a machine's controls with it, so nothing is
+  // left open out of sight. closeMachinePanel folds again, with the class gone.
+  if(away && document.body.classList.contains("machine-open")) closeMachinePanel();
   document.body.classList.toggle("panel-away", away);
   const fold = $("panel-fold"), show = $("panel-show");
   if (fold) fold.setAttribute("aria-expanded", String(!away));
