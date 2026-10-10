@@ -82,24 +82,53 @@ def main(args):
                                                          balance),
           flush=True)
 
-    # 4. The whole drop through the world's controller (minutes; --full only).
+    # 4. The whole drop through the world's controller (minutes; --full only),
+    # with the centre cell heated: heat crosses each face only through its
+    # bonded part, so once the sheet has broken apart no other cell warms.
     if args.full:
+        os.environ.setdefault('BANJO_THERMAL_FIELDS_LIBRARY', str(args.library.resolve().with_name(
+            args.library.name.replace('banjo_coupled_cpu', 'banjo_thermal_fields'))))
         w = CpuCoupledWorld(dict(material='glass', ball_material='iron', ball_mass_kg=.1, height_m=10, dt_s=1 / 240,
-                                 experiment='sheet', pipeline='local-jacobian', representation_policy='partitioned-flight'))
+                                 experiment='sheet', pipeline='local-jacobian', representation_policy='partitioned-flight',
+                                 thermal=dict(initial_temperature_k=260., heater_w=2., heater_body_id=7)))
         started = time.perf_counter()
+        apart = None
         while w.time < 2 - 1e-9:
             w.advance(1)
+            if apart is None and np.all(w.histories[:, 6] == 1):
+                apart = (w.time, [list(t) for t in w.fields.observations()])
         broken = int(np.sum(w.histories[:, 6] == 1))
         expected = float(np.sum(w.eval.edges[:, 20] * w.eval.edges[:, 21]))
         assert broken == len(w.histories), broken
         assert math.isclose(w.fracture, expected, rel_tol=1e-9), (w.fracture, expected)
         assert w.max_residual < 1e-8
+        # Heat: every face separated carries nothing; the other cells kept the
+        # temperature they had when the last face broke; the combined account
+        # (mechanics, storage, fracture and heat) closes.
+        assert apart is not None and all(link[2] == 0 for link in w.fields.links)
+        now = w.fields.observations()
+        centre = next(i for i, r in enumerate(w.fields.mapping) if r['body_id'] == 7)
+        for i, r in enumerate(w.fields.mapping):
+            if i != centre and r['body_id'] in range(3, 12):
+                assert now[i][0] == apart[1][i][0], (r['body_id'], now[i][0], apart[1][i][0])
+        s = w.snapshot()
+        f, d = s['thermal_fields'], s['diagnostics']
+        heat = math.fsum(cell['thermal_energy_j'] for cell in f['fields'])
+        account = (d['mechanical_j'] + d['material_stored_j'] + d['contact_stored_j'] + d['fracture_work_j']
+                   + d['plastic_work_j'] + d['numerical_return_excess_j'])
+        combined = account + heat - w.initial_energy - w.fields.initial_energy - f['audit']['external_heat_j']
+        assert abs(combined) < 1e-8, combined
+        saved = w.export_checkpoint()
+        reopened = CpuCoupledWorld.from_checkpoint(saved)
+        assert reopened.export_checkpoint() == saved and reopened.fields.links == w.fields.links
         report.update(full_drop=dict(physical_s=w.time, wall_s=time.perf_counter() - started, broken=broken,
                                      fracture_j=w.fracture, max_energy_residual_j=w.max_residual,
-                                     substeps=w.microsteps))
+                                     substeps=w.microsteps, separated_at_s=apart[0],
+                                     centre_temperature_k=now[centre][0], combined_energy_residual_j=combined))
         print('2 s drop: %d of %d interfaces broken, fracture %.4g J, max energy residual %.2e J, %d substeps, '
-              '%.0f s wall' % (broken, len(w.histories), w.fracture, w.max_residual, w.microsteps,
-                               time.perf_counter() - started), flush=True)
+              '%.0f s wall; all faces apart at %.4f s, centre cell %.3f K, combined energy residual %.2e J'
+              % (broken, len(w.histories), w.fracture, w.max_residual, w.microsteps, time.perf_counter() - started,
+                 apart[0], now[centre][0], combined), flush=True)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(report, indent=2) + '\n')

@@ -1,6 +1,7 @@
 """Actual coupled matter IDs/owner transitions retain native fields and clock."""
 import copy,json,math,sys,time
 from pathlib import Path
+import numpy as np
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from cpu_coupled_world import CpuCoupledWorld
 from thermal_matter_adapter import ThermalMatterAdapter
@@ -49,4 +50,30 @@ except ValueError:pass
 assert bad.export_checkpoint()==before
 try:ThermalMatterAdapter(world.registry.document(),dict(heater_body_id=1,reaction=True));raise AssertionError('oxidative mass added to mechanics')
 except ValueError:pass
-print(json.dumps(dict(scope='genuine field state retained across actual coupled rigid-flight owner switch; no weakening/fracture transport',materials=evidence),indent=2))
+# Heat crosses a face only through its bonded part. Fully separated faces
+# isolate the heated centre cell exactly; half-bonded faces carry half the
+# authored conductance; the field's energy account closes either way.
+world=CpuCoupledWorld(dict(material='glass',ball_material='iron',ball_mass_kg=.1,height_m=1.,dt_s=1/240,representation_policy='partitioned-flight'))
+field=ThermalMatterAdapter(world.registry.document(),dict(initial_temperature_k=260.,heater_w=2.,heater_body_id=7))
+authored=[link[2] for link in field.links];faces={(int(e[0]),int(e[1])) for e in world.eval.edges}
+assert len(faces)==12 and all(g>0 for g in authored)
+field.bond({face:.5 for face in faces});assert [link[2] for link in field.links]==[g*.5 for g in authored]
+field.bond({face:0. for face in faces});assert all(link[2]==0 for link in field.links)
+before=field.observations();field.advance(1.);after=field.observations()
+centre=next(i for i,r in enumerate(field.mapping) if r['body_id']==7);mass=field.cells[centre][0]
+for i,(t0,t1) in enumerate(zip(before,after)):
+ if i==centre:assert abs(t1[0]-t0[0]-2/(mass*field.mapping[i]['thermal_law']['cs']))<1e-9,'isolated heater cell takes all the heat'
+ else:assert t1[0]==t0[0],'no heat crosses a separated face'
+assert abs(field.snapshot()['audit']['energy_residual_j'])<1e-9
+field.bond({face:1. for face in faces});assert [link[2] for link in field.links]==authored
+permuted=world.registry.document();permuted['continuation']['instances'].reverse()
+field=ThermalMatterAdapter(world.registry.document(),dict(heater_body_id=7));field.bond({(3,4):.25});field.rebind(permuted)
+k=next(i for i,(a,b,_) in enumerate(field.links) if {field.mapping[a]['body_id'],field.mapping[b]['body_id']}=={3,4})
+assert field.links[k][2]==.25*field.bonded_links[k][2] and field.bonded_links[k][2]>0,'rebinding keeps each face its bonded fraction'
+for bad in ({(3,4):1.5},{(3,4):-.1},{(3,11):1.},{(0,3):1.}):
+ try:field.bond(bad);raise AssertionError('invalid bonded fraction admitted')
+ except ValueError:pass
+assert CpuCoupledWorld.bonded_fractions(world.eval.edges,np.zeros((len(world.eval.edges),32)))=={face:1. for face in faces}
+damaged=np.zeros((len(world.eval.edges),32));damaged[[i for i,e in enumerate(world.eval.edges) if (int(e[0]),int(e[1]))==(3,4)][:2],5]=1.
+assert CpuCoupledWorld.bonded_fractions(world.eval.edges,damaged)[(3,4)]==.5,'two of four broken sites leave half the face bonded'
+print(json.dumps(dict(scope='genuine field state retained across actual coupled rigid-flight owner switch; conduction through each face in proportion to its bonded fraction',materials=evidence),indent=2))

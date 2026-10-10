@@ -42,6 +42,12 @@ Before this change, the 10 m glass drop stopped at the impact (1.425 s), and the
 
 `tests/cpu_glass_fracture_step_test.py` replays the saved refused step (`tests/data/coupled-glass-high-drop-step.json`). It checks that Newton stalls there with interfaces past their strength, that the softening bound picks a step between half the bound and the bound (0.13 µs; the bound is 0.19 µs), and that the step then converges and closes energy and momentum. It runs in half a second. With `--full` (registered as a `long` test) it runs the whole 2 s drop and checks that all interfaces break, the fracture ledger and the energy balance.
 
+## Heat follows the sheet as it breaks
+
+With heat switched on, the lab used to refuse a step as soon as any interface had begun to crack or yield, so no heated sheet could break. Heat now crosses each face between two cells only through the part of it that is still bonded: the conductance of a face is its intact conductance times the area-weighted mean of (1 − damage) over its four cohesive sites. A fully separated face carries none, because contact conductance across a gap is not modelled. Iron's plastic connectors yield without opening a gap, so their faces stay fully conducting. Moving heat between cells conserves the field's energy whatever the conductance, so the energy account is unchanged. A reopened scene takes each face's bonded fraction from its saved damage.
+
+Measured on the 10 m glass drop with the centre cell heated at 2 W: every face had separated by 1.4292 s; from then on, the other eight cells' temperatures did not change in the last bit; the centre cell ended at 261.89 K; the combined account of motion, stored energy, fracture and heat closed to 3.8 × 10⁻¹⁰ J; the mechanics were identical to the unheated run (9,216 substeps); and the scene reopened exactly. `tests/thermal_matter_adapter_test.py` checks the face law directly: half-bonded faces carry exactly half the conductance, separated faces isolate a heated cell exactly, and two broken sites of four leave half a face bonded.
+
 ## What this does not fix
 
 - **The ball rebounds and glass flies.** The coupled lab's contact is elastic: it stores and returns energy and has no restitution law (see the conservative-reference checkpoint). So after breaking through, the ball bounces off the ground to about 5 m and the glass pieces are thrown 2–6 m up. That is what this model says. It is not what real glass and iron do.

@@ -2337,8 +2337,10 @@ if(BANJO_BUILD_TESTS)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpu_glass_fracture_step_test.py --library $<TARGET_FILE:banjo_coupled_cpu>
                 --output ${CMAKE_CURRENT_BINARY_DIR}/cpu-glass-fracture-step-evidence.json)
             set_tests_properties(banjo_cpu_glass_fracture_step_tests PROPERTIES TIMEOUT 120 LABELS "cpu;experimental;material")
-            add_test(NAME banjo_cpu_glass_high_drop_full_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpu_glass_fracture_step_test.py --library $<TARGET_FILE:banjo_coupled_cpu> --full
+            add_test(NAME banjo_cpu_glass_high_drop_full_tests COMMAND ${CMAKE_COMMAND} -E env
+                BANJO_THERMAL_FIELDS_LIBRARY=$<TARGET_FILE:banjo_thermal_fields>
+                ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpu_glass_fracture_step_test.py
+                --library $<TARGET_FILE:banjo_coupled_cpu> --full
                 --output ${CMAKE_CURRENT_BINARY_DIR}/cpu-glass-high-drop-evidence.json)
             set_tests_properties(banjo_cpu_glass_high_drop_full_tests PROPERTIES TIMEOUT 900 LABELS "cpu;experimental;material;long")
             if(BANJO_NEWTON_PYTHON)

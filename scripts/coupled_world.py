@@ -184,8 +184,9 @@ class CoupledWorld:
                             if not math.isclose(sum(s[key] for s in sites),float(ledger[index]),rel_tol=1e-12,abs_tol=1e-20):raise TrialFailure('Contact receipt does not reconstruct native contact energy')
                     field_state=None
                     if self.fields:
-                        if any((s[5]>0 if k!=1 else s[14]>0) for k,s in zip(self.to_host(self.eval.edges[:,2]),history)):
-                            raise TrialFailure('Thermal transfer through damage/plastic topology is not qualified; complete interval restored')
+                        # Heat crosses each face through what is still bonded
+                        # at the end of this step.
+                        self.fields.bond(self.bonded_fractions(self.to_host(self.eval.edges),history))
                         self.fields.advance(h)
                         field_state=self.fields.snapshot(ending)
                         if any(f['liquid_fraction']>0 for f in field_state['fields']):
@@ -233,6 +234,19 @@ class CoupledWorld:
                 last_solver_failure=last_solver_failure,last_trial_accounts=accounts[-4:],contact_timestep_policy=self.d['contact_resolution'],
                 last_contact_schedule=schedule,failed_interval_physical_s=sum(a['dt_s'] for a in accounts))
             raise RuntimeError(str(error)) from error
+
+    @staticmethod
+    def bonded_fractions(edges,history):
+        # The bonded fraction of each face between two cells: the area-weighted
+        # mean of (1 - damage) over its cohesive sites. A plastic connector
+        # (iron) yields without opening a gap, so its face stays bonded.
+        area={};bonded={}
+        for edge,state in zip(edges,history):
+            pair=(int(edge[0]),int(edge[1]))
+            share=float(edge[21]) if int(edge[2]) in (0,2) else 1.
+            intact=1-float(state[5]) if int(edge[2]) in (0,2) else 1.
+            area[pair]=area.get(pair,0.)+share;bonded[pair]=bonded.get(pair,0.)+share*intact
+        return {pair:min(1.,max(0.,bonded[pair]/area[pair])) for pair in area if area[pair]>0}
 
     def softening_levels(self,details,h,depth):
         # Between its strength opening d0 and its breaking opening df a cohesive
@@ -301,7 +315,7 @@ class CoupledWorld:
                     scope='Swept collision-free rigid sphere with fixed surroundings only; coupled material worlds request one host tick')}
                 if self.representations else {}),
             qualification=dict(backend=self.backend_name,gpu=self.gpu,device=self.device,dtype='float64',source_sha256=self.hash,complete_physics_validated=False,realtime_qualified=False,
-                scope='Experimental finite rigid-cell isotropic inertia; declared mixed-mode cohesive/6-mode plastic interfaces and frictionless normal compliance. Optional CPU conduction retains fields on unchanged matter; no thermal weakening, expansion, contact heat, reactive moving matter, fracture transport or phase-flow coupling. No calibrated bulk/grain/J2 or CCD qualification.'))
+                scope='Experimental finite rigid-cell isotropic inertia; declared mixed-mode cohesive/6-mode plastic interfaces and frictionless normal compliance. Optional CPU conduction retains fields on unchanged matter and crosses each interface through its bonded fraction, none across a separated face; no thermal weakening, expansion, contact heat, reactive moving matter or phase-flow coupling. No calibrated bulk/grain/J2 or CCD qualification.'))
 
     def snapshot(self):
         out=copy.deepcopy(self.accepted)
@@ -374,6 +388,7 @@ class CoupledWorld:
         if candidate.fields:
             from thermal_matter_adapter import ThermalMatterAdapter
             candidate.fields=ThermalMatterAdapter.restore(saved['thermal_fields'],candidate.registry.document())
+            candidate.fields.bond(candidate.bonded_fractions(np.asarray(e),np.asarray(e)[:,35:67]))
             if any(f['liquid_fraction']>0 for f in candidate.fields.snapshot()['fields']):raise ValueError('Solid-to-flow phase transfer is not qualified in reopened matter')
             if candidate.fields.config!=candidate.d['thermal']:raise ValueError('Restored thermal law declaration differs')
         baseline=candidate.eval.evaluate(candidate.eval.bodies[:,14:20],1e-12,gravity=0)

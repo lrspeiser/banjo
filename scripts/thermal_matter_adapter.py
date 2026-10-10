@@ -1,7 +1,8 @@
 """Thermal fields on exact coupled-registry matter; mechanical owners may change.
 
-No mechanical mass changes or thermal weakening. Immutable authored heat paths
-must not be reused across fractured interfaces without a separate topology law.
+No mechanical mass changes or thermal weakening. Heat crosses each authored
+face through the part of it that is still bonded (bond()); a separated face
+carries none, since contact conductance is not modelled.
 """
 import copy,ctypes,hashlib,json,math,time
 from pathlib import Path
@@ -69,6 +70,9 @@ class ThermalMatterAdapter:
     distance=math.dist(ca['reference_position_m'],cb['reference_position_m']);area=(2*min(ha[0],hb[0]))**2
     ka,kb=self.mapping[a]['thermal_law']['conductivity'],self.mapping[b]['thermal_law']['conductivity'];g=(2*ka*kb/(ka+kb))*area/distance if ka and kb else 0.
     self.links.append([a,b,g])
+  # The authored (fully bonded) conductance of each face; links carry it
+  # times the face's bonded fraction.
+  self.bonded_links=[list(link) for link in self.links]
   self.initial_energy=math.fsum(c[1] for c in self.cells);self.initial_mass=math.fsum(c[0] for c in self.cells);self._initial_cells=copy.deepcopy(self.cells);self._initial_time=self.time
   self.observations()
  @staticmethod
@@ -81,6 +85,22 @@ class ThermalMatterAdapter:
   return [[out[2*i],out[2*i+1]] for i in range(len(self.cells))]
  def clone(self):
   result=object.__new__(type(self));result.__dict__={k:v if k in ('lib','library') else copy.deepcopy(v) for k,v in self.__dict__.items()};return result
+ def bond(self,fractions):
+  """Set each face's bonded fraction (1 intact, 0 separated), by body pair.
+
+  Heat conducts through the bonded part of a face only: a crack opens a gap
+  that this model does not carry heat across. Faces not named keep their
+  fraction. Moving heat between cells conserves the field's energy whatever
+  the conductance, so the energy account is unchanged.
+  """
+  by_body={r['body_id']:i for i,r in enumerate(self.mapping)};index={}
+  for k,(a,b,_) in enumerate(self.bonded_links):index[tuple(sorted((a,b)))]=k
+  for (body_a,body_b),fraction in fractions.items():
+   fraction=number(fraction,0,1)
+   if body_a not in by_body or body_b not in by_body:raise ValueError('Bonded fraction names matter outside the thermal field')
+   k=index.get(tuple(sorted((by_body[body_a],by_body[body_b]))))
+   if k is None:raise ValueError('Bonded fraction names a face with no authored heat path')
+   self.links[k][2]=self.bonded_links[k][2]*fraction
  def advance(self,duration_s):
   duration=number(duration_s,1e-15,1.);saved=self.clone();start=time.perf_counter();remaining=duration
   try:
@@ -97,13 +117,14 @@ class ThermalMatterAdapter:
   if len(set(oldids))!=len(oldids) or len(set(newids))!=len(newids):raise ValueError('Persistent ID token collision')
   src=self.array([v for c in self.cells for v in c]);out=(ctypes.c_double*len(src))();audit=(ctypes.c_double*7)();n=len(mapping);u=lambda values:(ctypes.c_uint64*len(values))(*values)
   if self.lib.banjo_thermal_matter_rebind(src,u(oldids),u([token(r['owner']) for r in self.mapping]),u(newids),u([token(r['owner']) for r in mapping]),n,out,audit):raise ValueError('Native matter transfer rejected; prior fields unchanged')
-  old={r['matter_id']:r for r in self.mapping};oldlinks=[(self.mapping[a]['matter_id'],self.mapping[b]['matter_id'],g) for a,b,g in self.links];newindices={r['matter_id']:i for i,r in enumerate(mapping)}
+  old={r['matter_id']:r for r in self.mapping};newindices={r['matter_id']:i for i,r in enumerate(mapping)}
+  remap=lambda links:[[newindices[self.mapping[a]['matter_id']],newindices[self.mapping[b]['matter_id']],g] for a,b,g in links]
   for r in mapping:r['thermal_law']=old[r['matter_id']]['thermal_law']
   receipt=dict(time_s=self.time,changed_owner_count=int(audit[6]),thermal_energy_residual_j=audit[1]-audit[0],chemical_energy_residual_j=audit[3]-audit[2],species_mass_residual_kg=audit[5]-audit[4],matter_ids=[r['matter_id'] for r in mapping])
-  cells=[list(out[16*i:16*(i+1)]) for i in range(n)];links=[[newindices[a],newindices[b],g] for a,b,g in oldlinks]
+  cells=[list(out[16*i:16*(i+1)]) for i in range(n)];links=remap(self.links);bonded_links=remap(self.bonded_links)
   # Mutation only after every native/metadata allocation has succeeded.
   document=copy.deepcopy(registry);transfers=(self.transfers+[receipt])[-64:]
-  self.cells,self.links,self.mapping,self.registry,self.transfers=cells,links,mapping,document,transfers
+  self.cells,self.links,self.bonded_links,self.mapping,self.registry,self.transfers=cells,links,bonded_links,mapping,document,transfers
  def snapshot(self,bodies=None):
   observations=self.observations();values=[]
   for i,(r,c) in enumerate(zip(self.mapping,self.cells)):
@@ -112,7 +133,7 @@ class ThermalMatterAdapter:
     row=bodies[r['body_id']];value['position_m']=[float(x) for x in row[7:10]]
     if not all(math.isfinite(x) for x in value['position_m']):raise ValueError('Nonfinite current mechanical geometry')
    values.append(value)
-  return dict(schema=SCHEMA,implementation=copy.deepcopy(self.identity),time_s=self.time,fields=values,audit=dict(external_heat_j=self.external,energy_residual_j=math.fsum(c[1] for c in self.cells)-self.initial_energy-self.external,mass_residual_kg=math.fsum(sum(c[6:10]) for c in self.cells)-self.initial_mass,calculation_wall_s=self.elapsed),last_transfer=copy.deepcopy(self.transfers[-1]) if self.transfers else None,scope='Persistent finite material fields; fixed authored conduction graph; no reactions, fracture transport, contact heat, expansion or weakening')
+  return dict(schema=SCHEMA,implementation=copy.deepcopy(self.identity),time_s=self.time,fields=values,audit=dict(external_heat_j=self.external,energy_residual_j=math.fsum(c[1] for c in self.cells)-self.initial_energy-self.external,mass_residual_kg=math.fsum(sum(c[6:10]) for c in self.cells)-self.initial_mass,calculation_wall_s=self.elapsed),last_transfer=copy.deepcopy(self.transfers[-1]) if self.transfers else None,scope='Persistent finite material fields; conduction through each authored face in proportion to its bonded fraction; no reactions, contact heat across separated faces, expansion or weakening')
  def export_checkpoint(self):
   return copy.deepcopy(dict(schema=SCHEMA,implementation=self.identity,config=self.config,registry=self.registry,cells=self.cells,time_s=self.time,external_heat_j=self.external,initial_time_s=self._initial_time,initial_energy_j=self.initial_energy,initial_mass_kg=self.initial_mass,transfers=self.transfers,receipts=self.receipts))
  @classmethod
