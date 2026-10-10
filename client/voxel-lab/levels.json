@@ -848,7 +848,7 @@
    "title": "Bounce the beam",
    "teaches": "light: reflection, and light heating what it lands on",
    "brief": "The laser can burn through the cord holding the weight, but the wall is in the way. Bounce its beam off mirrors onto the cord.",
-   "time_s": 25,
+   "time_s": 12,
    "budget": 20,
    "par": 12,
    "style_pieces": 1,
