@@ -4964,6 +4964,7 @@ function stripElement() {
   let strip=$("inventory-strip");
   if(strip)return strip;
   strip=document.createElement("section");strip.id="inventory-strip";strip.setAttribute("aria-label","What you have");
+  strip.addEventListener("pointerdown",()=>{inventoryPressed=true;});
   document.body.append(strip);
   addEventListener("resize",placeInventoryStrip);
   new ResizeObserver(placeInventoryStrip).observe(worldNavigation);
@@ -4994,7 +4995,15 @@ function placeMovementStick() {
   }
   pad.style.bottom=`${Math.max(18,Math.ceil(innerHeight-top+12))}px`;
 }
+// The strip and the hand cards are rebuilt four times a second. A press and
+// a release that straddle a rebuild land on two different buttons and the
+// browser sends no click: "click to hold it" on the strip silently did
+// nothing. Hold the rebuild while a press is down on either; the button's own
+// handler leads to the next one.
+let inventoryPressed=false;
+for(const end of ["pointerup","pointercancel"])addEventListener(end,()=>{inventoryPressed=false;},true);
 function showInventoryStrip() {
+  if (inventoryPressed) return;
   const inv=world.inventory, cells=[];
   const held=watchedId ? inv?.hands?.[inv?.hand_in_the_world]?.name : world.held?.name;
   const cell=(picture,title,amount,onClick,hand) => {
@@ -5055,7 +5064,9 @@ function showInventory() {
   workshopTakesDrops();
   const products = $("mini-products"); products.replaceChildren();
   let hands=$("hand-slots");
+  if(inventoryPressed && hands)return;   // held under a press, as the strip is
   if(!hands){hands=document.createElement('section');hands.id='hand-slots';hands.setAttribute('aria-label','Your hands');
+    hands.addEventListener('pointerdown',()=>{inventoryPressed=true;});
     document.body.append(hands);}
   hands.replaceChildren();
   const add = (thing,where,inHand,parent=products) => {

@@ -3476,17 +3476,29 @@ class CompactInventoryAndStableToolShape(PageJourney):
         self.assertTrue(self.wait_for("window.banjoRoom?.ready()",60),self.situation())
         self.assertFalse(self.js("!!document.querySelector('#tabs, #panel [role=tablist], #tab-settings')"))
         self.assertTrue(self.wait_for("document.querySelector('#mini-energy').textContent.includes(' J')"))
-        geometry = """(() => {
-          const b=banjoRoom.world.bodies.get('field pick');
-          return {cells:b.cells, mass:b.mass, design:!!b.mesh.userData.drawnToDesign,
-            vertices:[...b.mesh.geometry.attributes.position.array]};
-        })()"""
+        # The playable pick is an iron head on an aluminum haft (caeb6424):
+        # two bodies, each one part, each drawn as that part. The oak pick was
+        # one body, which had to be drawn to its design not to be a slab.
+        geometry = """(() => [...banjoRoom.world.bodies]
+          .filter(([n]) => n === 'field pick' || n.startsWith('field pick-'))
+          .map(([n, b]) => ({name:n, mass:b.mass,
+            vertices:[...b.mesh.geometry.attributes.position.array]})))()"""
         before = self.js(geometry)
-        self.assertTrue(before["cells"],"the first frame drew a slab instead of the pick")
-        self.assertTrue(before["design"],"the handle/head did not draw before pickup")
+        self.assertEqual(2,len(before),f"the pick is not its haft and its head: {[p['name'] for p in before]}")
+        self.assertTrue(all(p["vertices"] for p in before),"a part of the pick was not drawn")
         self.js("""(() => {const p=banjoRoom.world.bodies.get('field pick').mesh.position;
             banjoRoom.standAt(p.x,p.y+1.62,p.z+1.1);banjoRoom.lookAt(p.x,p.y,p.z);return true;})()""")
-        self.assertTrue(self.wait_for("banjoRoom.world.aim?.name==='field pick'",15),self.situation())
+        # The player is a body now (2026-10-04) and its eye settles after
+        # standAt, which can leave the ray under the 50 mm haft: look at the
+        # pick again until the crosshair is on it -- either part takes the
+        # whole tool (eaf9e306). fe774d52 met the same in the AI dig journey.
+        on_pick = "['field pick','field pick-g0'].includes(banjoRoom.world.aim?.name)"
+        for _ in range(12):
+            self.js("""(() => {const p=banjoRoom.world.bodies.get('field pick').mesh.position;
+                banjoRoom.lookAt(p.x,p.y,p.z);return true;})()""")
+            if self.wait_for(on_pick, 1.5):
+                break
+        self.assertTrue(self.wait_for(on_pick,5),self.situation())
         self.assertTrue(self.when_idle())
         self.press_e()
         self.assertTrue(self.wait_for("banjoRoom.held()?.name==='field pick'",20),self.situation())
@@ -3500,13 +3512,15 @@ class CompactInventoryAndStableToolShape(PageJourney):
         picture = self.js(f"document.querySelector('{hand} img').src")
         self.hover(hand)
         self.click_selector(f"{hand} button")
-        self.assertTrue(self.wait_for("!banjoRoom.held() && document.querySelector('#mini-products .mini-product small')?.textContent.startsWith('Bag')"),self.situation())
-        self.assertEqual(picture,self.js("document.querySelector('#mini-products .mini-product img').src"))
+        # The bag is the inventory strip over the room, right of the menu:
+        # the side rail's compact Inventory went with the rail (eaf9e306).
+        bagged = "#inventory-strip .strip-item[aria-label*='· Bag ']"
+        self.assertTrue(self.wait_for(f"!banjoRoom.held() && !!document.querySelector({json.dumps(bagged)})"),self.situation())
+        self.assertEqual(picture,self.js(f"document.querySelector({json.dumps(bagged + ' img')}).src"))
         self.page.send("Page.reload")
-        self.assertTrue(self.wait_for("window.banjoRoom?.ready() && !!document.querySelector('#mini-products .mini-product img')",30))
-        self.assertEqual(picture,self.js("document.querySelector('#mini-products .mini-product img').src"))
-        self.open_details()
-        self.click_selector("#mini-products .mini-product button")
+        self.assertTrue(self.wait_for(f"window.banjoRoom?.ready() && !!document.querySelector({json.dumps(bagged + ' img')})",30))
+        self.assertEqual(picture,self.js(f"document.querySelector({json.dumps(bagged + ' img')}).src"))
+        self.click_selector(bagged)
         self.assertTrue(self.wait_for("banjoRoom.held()?.name==='field pick'",20),self.situation())
         self.assertEqual(before,self.js(geometry),"equipping after reload changed the tool")
         self.open_world_menu("keys")
@@ -3522,7 +3536,8 @@ class CompactInventoryAndStableToolShape(PageJourney):
         self.assertTrue(self.wait_for("document.querySelector('#game-menu').open && document.querySelector('[data-world-menu=bench]').open"))
         self.assertTrue(self.wait_for("document.querySelector('#workbench-runs li') && !document.querySelector('#workbench-runs').textContent.includes('Looking for')"))
         self.click("game-menu-close")
-        self.click_selector("#mini-inventory header a")
+        # All of the inventory: the bottom bar's Inventory screen.
+        self.click_selector('#world-quickbar .game-tabs [data-screen="inventory"]')
         self.assertTrue(self.wait_for("!!document.querySelector('#ws-inv-grid [data-product]')",30))
         self.assertIn("field pick",self.js("document.querySelector('#ws-inv-grid').textContent.toLowerCase()"))
         self.assertFalse([event for event in self.page.events if event.get("method")=="Runtime.exceptionThrown"])
