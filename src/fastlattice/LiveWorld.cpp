@@ -18,11 +18,14 @@
 #include "fracture/SustainedLoad.hpp"
 #include "thermo/ThermalMechanics.hpp"
 #include "thermo/ThermoJson.hpp"
+#include "optics/OpticalProperties.hpp"
+#include "optics/RayOptics.hpp"
 
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -1373,6 +1376,16 @@ struct LiveWorld::Impl {
                 }
                 c.setSwitch(worked.branch, closed);
             }
+            // A switch worked by light is where its sensor's last reading puts
+            // it, taken at the start of this step (traceLightIfDue). A sensor
+            // that is gone leaves its switch open.
+            for (const auto &worked : c.lightSwitches()) {
+                bool closed = false;
+                for (const LivePhotocell &cell : photocells)
+                    if (cell.name == worked.sensor)
+                        closed = worked.sense > 0 ? cell.power_w >= worked.closed_w : cell.power_w <= worked.closed_w;
+                c.setSwitch(worked.branch, closed);
+            }
             const auto *store = energyStoreById(c.store());
             std::vector<machines::CircuitMotorInput> inputs;
             for (unsigned id : c.motors()) {
@@ -2002,6 +2015,409 @@ struct LiveWorld::Impl {
         for (const LiveLamp &lamp : lamps)
             if (lamp.cable == 0 && lamp.store != 0 && lamp.on) direct.insert(lamp.store);
         for (const unsigned store_id : direct) drive(nullptr, store_id);
+    }
+
+    // ---- light (LiveLight, LivePhotocell; docs/optics-checkpoint.md) --------
+    //
+    // Rays from the sun and from lamps, followed through the world's own shapes
+    // (optics/RayOptics): reflected by polished metal, split, bent and absorbed
+    // by glass and ice, absorbed and scattered by everything else. What a body
+    // absorbs heats it, through the heat network, as a heater on the network's
+    // clock for each step until the next trace; a light sensor reads what
+    // reaches its face. A world with no light declared never comes here.
+    std::vector<LiveLight> lights;
+    std::vector<LivePhotocell> photocells;
+    std::set<std::string> polished_bodies;
+    unsigned next_light{1}, next_photocell{1};
+    LiveOptics light_report;
+    bool light_due{true};
+    unsigned long long light_traced_at{};
+    // From the last trace: each body light reached, by name -- a break between
+    // traces renumbers the body table -- and what it absorbed, watts; and the
+    // ones the heat network cannot hold. And how many bodies there were then:
+    // a body made or taken away since is traced again at once.
+    std::vector<std::pair<std::string, double>> lit;
+    std::size_t light_bodies_at_trace{};
+    std::set<std::string> lit_cannot_heat;
+    // What the step being taken handed the heat network, watts.
+    double light_heating_w{};
+
+    [[nodiscard]] LiveLamp *lampById(unsigned id) {
+        for (LiveLamp &lamp : lamps)
+            if (lamp.id == id) return &lamp;
+        return nullptr;
+    }
+    [[nodiscard]] bool polishedBody(const std::string &name) const {
+        if (polished_bodies.count(name)) return true;
+        // A piece of a polished thing keeps its finish where it has it.
+        const auto cut = name.find(" piece ");
+        return cut != std::string::npos && polished_bodies.count(name.substr(0, cut));
+    }
+    [[nodiscard]] optics::Surface surfaceOf(std::size_t i) const {
+        optics::OpticalProperties p;
+        try {
+            p = optics::opticalProperties(presetFromName(described[i].material));
+        } catch (const std::exception &) {
+            p = optics::OpticalProperties{};   // a material the catalogue does not know: black
+        }
+        optics::Surface s;
+        if (p.transparent) {
+            s.transparent = true;
+            s.refractive_index = p.refractive_index;
+            s.absorption_per_m = p.absorption_per_m;
+            s.absorbed = {0.0, 0.0};
+        } else if (p.polishable && polishedBody(described[i].name)) {
+            s.specular = p.polished_reflectance;
+            s.absorbed = {1.0 - p.polished_reflectance[0], 1.0 - p.polished_reflectance[1]};
+        } else {
+            s.absorbed = {p.absorptance, p.absorptance};
+        }
+        return s;
+    }
+
+    // The world as light sees it, for one trace.
+    struct LightScene final : optics::Scene {
+        Impl &I;
+        std::unordered_map<MatterBodyId, int> index;
+        std::vector<optics::Surface> surfaces;
+        optics::Surface ground;
+        std::vector<std::vector<LivePhotocell *>> cells;
+        explicit LightScene(Impl &impl) : I(impl) {
+            const std::size_t n = I.described.size();
+            surfaces.resize(n);
+            cells.resize(n);
+            for (std::size_t i = 0; i < n; ++i) {
+                if (!I.inWorld(i)) continue;
+                index[I.body_of[i]] = static_cast<int>(i);
+                surfaces[i] = I.surfaceOf(i);
+            }
+            const optics::OpticalProperties g = optics::groundOpticalProperties();
+            ground.absorbed = {g.absorptance, g.absorptance};
+            for (LivePhotocell &cell : I.photocells) {
+                const auto found = I.index_of.find(cell.body);
+                if (found != I.index_of.end() && I.inWorld(found->second)) cells[found->second].push_back(&cell);
+            }
+        }
+        optics::Meeting meeting(const SurfaceHit &h) const {
+            optics::Meeting m;
+            m.hit = h.hit;
+            m.distance_m = h.distance_m;
+            m.point_m = h.point_world_m;
+            m.normal = h.normal_world;
+            if (h.named) {
+                const auto found = index.find(h.body_id);
+                if (found != index.end()) m.body = found->second;
+            }
+            return m;
+        }
+        optics::Meeting toSurface(const Vec3 &from, const Vec3 &along, double reach_m, int ignore) override {
+            if (ignore >= 0) {
+                const MatterBodyId id = I.body_of[static_cast<std::size_t>(ignore)];
+                return meeting(I.world->castRayToSurface(from, along, reach_m, std::span<const MatterBodyId>(&id, 1)));
+            }
+            return meeting(I.world->castRayToSurface(from, along, reach_m));
+        }
+        optics::Meeting outOf(int body, const Vec3 &from, const Vec3 &along, double reach_m) override {
+            optics::Meeting m = meeting(I.world->castRayOutOf(I.body_of[static_cast<std::size_t>(body)], from, along,
+                                                              reach_m));
+            m.body = body;
+            return m;
+        }
+        [[nodiscard]] optics::Surface surface(int body) const override {
+            return body >= 0 ? surfaces[static_cast<std::size_t>(body)] : ground;
+        }
+        void arrives(int body, const Vec3 &at, const Vec3 &along, const Vec3 &normal,
+                     const optics::Power &power_w) override {
+            (void)normal;
+            for (LivePhotocell *cell : cells[static_cast<std::size_t>(body)]) {
+                const double radius = std::sqrt(cell->area_m2 / 3.14159265358979323846);
+                if (dot(along, cell->normal) < 0.0 && length(at - cell->at_m) <= radius)
+                    cell->power_w += optics::total(power_w);
+            }
+        }
+    };
+
+    // Every in-world body's box, as a sphere round its middle: conservative,
+    // and all that is needed to say where the scene ends.
+    void sceneBounds(Vec3 &low, Vec3 &high) const {
+        low = Vec3{1e300, 1e300, 1e300};
+        high = -1.0 * low;
+        for (std::size_t i = 0; i < described.size(); ++i) {
+            if (!inWorld(i)) continue;
+            const Vec3 c = world->snapshot(body_of[i]).center_of_mass_world_m;
+            const double r = 0.5 * length(described[i].dimensions_m) + 0.01;
+            low = Vec3{std::min(low.x, c.x - r), std::min(low.y, c.y - r), std::min(low.z, c.z - r)};
+            high = Vec3{std::max(high.x, c.x + r), std::max(high.y, c.y + r), std::max(high.z, c.z + r)};
+        }
+    }
+
+    // Two unit vectors square to `axis` and to each other.
+    static void across(const Vec3 &axis, Vec3 &u, Vec3 &v) {
+        const Vec3 pick = std::abs(axis.y) < 0.9 ? Vec3{0.0, 1.0, 0.0} : Vec3{1.0, 0.0, 0.0};
+        u = normalized(cross(pick, axis));
+        v = cross(axis, u);
+    }
+
+    // The squares of the sun's grid -- `step` apart across its beam, `s` the
+    // way to the sun -- whose rays pass through at least one of the boxes, each
+    // once. False, with the set left part full, when there would be more than
+    // kMostSunRays of them.
+    static bool sunGrid(const std::vector<LiveLight::Box> &boxes, const Vec3 &s, double step,
+                        std::set<std::pair<long long, long long>> &cells) {
+        const Vec3 d = -1.0 * s;
+        Vec3 u, v;
+        across(s, u, v);
+        for (const LiveLight::Box &b : boxes) {
+            const Vec3 lo = b.center_m - 0.5 * b.size_m, hi = b.center_m + 0.5 * b.size_m;
+            double u0 = 1e300, u1 = -1e300, v0 = 1e300, v1 = -1e300;
+            for (int k = 0; k < 8; ++k) {
+                const Vec3 corner{(k & 1) ? hi.x : lo.x, (k & 2) ? hi.y : lo.y, (k & 4) ? hi.z : lo.z};
+                u0 = std::min(u0, dot(corner, u)); u1 = std::max(u1, dot(corner, u));
+                v0 = std::min(v0, dot(corner, v)); v1 = std::max(v1, dot(corner, v));
+            }
+            for (long long i = static_cast<long long>(std::floor(u0 / step));
+                 i <= static_cast<long long>(std::floor(u1 / step)); ++i)
+                for (long long j = static_cast<long long>(std::floor(v0 / step));
+                     j <= static_cast<long long>(std::floor(v1 / step)); ++j) {
+                    // The ray's line, slab by slab through the box.
+                    const Vec3 p = (static_cast<double>(i) + 0.5) * step * u + (static_cast<double>(j) + 0.5) * step * v;
+                    double t0 = -1e300, t1 = 1e300;
+                    bool through = true;
+                    const double pa[3] = {p.x, p.y, p.z}, da[3] = {d.x, d.y, d.z};
+                    const double la[3] = {lo.x, lo.y, lo.z}, ha[3] = {hi.x, hi.y, hi.z};
+                    for (int a = 0; a < 3 && through; ++a) {
+                        if (std::abs(da[a]) < 1e-15) {
+                            through = pa[a] >= la[a] && pa[a] <= ha[a];
+                            continue;
+                        }
+                        double ta = (la[a] - pa[a]) / da[a], tb = (ha[a] - pa[a]) / da[a];
+                        if (ta > tb) std::swap(ta, tb);
+                        t0 = std::max(t0, ta);
+                        t1 = std::min(t1, tb);
+                        through = t0 <= t1;
+                    }
+                    if (through) cells.insert({i, j});
+                    if (cells.size() > kMostSunRays) return false;
+                }
+        }
+        return true;
+    }
+
+    // The rays of one light, as things stand: appended to `rays`.
+    void raysOf(LiveLight &light, std::vector<optics::Ray> &rays, unsigned drawn_each) {
+        light.power_w = 0.0;
+        light.traced = 0;
+        light.why.clear();
+        const std::size_t first = rays.size();
+        if (light.kind == "sun") {
+            if (!sun.declared) { light.why = "there is no sun"; return; }
+            if (!(sun.toward.y > 0.0) || !(sun.irradiance_w_m2 > 0.0)) { light.why = "the sun is down"; return; }
+            const Vec3 s = normalized(sun.toward), d = -1.0 * s;
+            Vec3 u, v;
+            across(s, u, v);
+            std::vector<LiveLight::Box> boxes = light.apertures;
+            Vec3 low, high;
+            sceneBounds(low, high);
+            if (boxes.empty()) {
+                if (!(high.x >= low.x)) { light.why = "there is nothing in the world to shine on"; return; }
+                boxes.push_back({0.5 * (low + high), high - low});
+            }
+            // Where the rays start: beyond everything, toward the sun.
+            double beyond = -1e300;
+            const auto reach = [&](const Vec3 &lo, const Vec3 &hi) {
+                for (int k = 0; k < 8; ++k) {
+                    const Vec3 corner{(k & 1) ? hi.x : lo.x, (k & 2) ? hi.y : lo.y, (k & 4) ? hi.z : lo.z};
+                    beyond = std::max(beyond, dot(corner, s));
+                }
+            };
+            if (high.x >= low.x) reach(low, high);
+            for (const LiveLight::Box &b : boxes) reach(b.center_m - 0.5 * b.size_m, b.center_m + 0.5 * b.size_m);
+            beyond += 1.0;
+            // The grid's squares whose rays cross a box: each once.
+            const double step = light.spacing_m;
+            std::set<std::pair<long long, long long>> cells;
+            if (!sunGrid(boxes, s, step, cells)) {
+                light.why = "more than " + std::to_string(kMostSunRays) + " rays at this spacing: give it boxes, or "
+                            "a wider spacing";
+                return;
+            }
+            const double each = sun.irradiance_w_m2 * step * step;
+            const optics::Power split{each * optics::kSunVisibleShare, each * (1.0 - optics::kSunVisibleShare)};
+            for (const auto &[i, j] : cells) {
+                optics::Ray ray;
+                ray.from = (static_cast<double>(i) + 0.5) * step * u + (static_cast<double>(j) + 0.5) * step * v +
+                           beyond * s;
+                ray.along = d;
+                ray.power_w = split;
+                ray.light = light.id;
+                ray.from_sky = true;
+                rays.push_back(ray);
+            }
+        } else {
+            LiveLamp *lamp = lampById(light.lamp);
+            if (lamp == nullptr) { light.why = "its lamp is not there"; return; }
+            if (!lamp->lit) { light.why = lamp->on ? (lamp->why.empty() ? "its lamp is dark" : lamp->why)
+                                                   : "its lamp is switched off"; return; }
+            Vec3 at = lamp->at_local_m, axis = light.axis_local;
+            int ignore = -1;
+            if (!lamp->body.empty()) {
+                const auto found = index_of.find(lamp->body);
+                if (found == index_of.end() || !inWorld(found->second)) { light.why = "its lamp's part is gone"; return; }
+                const RigidSnapshot pose = world->snapshot(body_of[found->second]);
+                at = pose.center_of_mass_world_m + pose.orientation_world.rotate(lamp->at_local_m);
+                axis = pose.orientation_world.rotate(light.axis_local);
+                ignore = static_cast<int>(found->second);
+            }
+            axis = normalized(axis);
+            Vec3 u, v;
+            across(axis, u, v);
+            const double power = lamp->lumens / light.radiant_efficacy_lm_w;
+            const double cos_edge = std::cos(light.half_angle_deg * 3.14159265358979323846 / 180.0);
+            const double golden = 3.14159265358979323846 * (3.0 - std::sqrt(5.0));
+            // Evenly over the cone's solid angle: equal steps in the cosine are
+            // equal areas on the sphere (Archimedes), turned by the golden angle.
+            for (unsigned k = 0; k < light.rays; ++k) {
+                const double c = 1.0 - (1.0 - cos_edge) * (static_cast<double>(k) + 0.5) / light.rays;
+                const double sn = std::sqrt(std::max(0.0, 1.0 - c * c));
+                const double phi = golden * static_cast<double>(k);
+                optics::Ray ray;
+                ray.from = at;
+                ray.along = normalized(c * axis + sn * (std::cos(phi) * u + std::sin(phi) * v));
+                const double each = power / light.rays;
+                ray.power_w = {each * light.visible_share, each * (1.0 - light.visible_share)};
+                ray.ignore = ignore;
+                ray.light = light.id;
+                rays.push_back(ray);
+            }
+        }
+        light.traced = static_cast<unsigned>(rays.size() - first);
+        for (std::size_t k = first; k < rays.size(); ++k) light.power_w += optics::total(rays[k].power_w);
+        // Every path is kept for now; a few are chosen to draw once they are
+        // traced (traceLightNow), so that the ones a lens or a mirror turned
+        // are among them.
+        if (drawn_each > 0)
+            for (std::size_t k = first; k < rays.size(); ++k) rays[k].drawn = true;
+    }
+    static constexpr std::size_t kMostSunRays = 8192;
+
+    // One trace, from the world as it stands. Reads nothing but poses and
+    // writes nothing but light's own reports.
+    void traceLightNow() {
+        const auto started = std::chrono::steady_clock::now();
+        for (LivePhotocell &cell : photocells) {
+            cell.power_w = 0.0;
+            const auto found = index_of.find(cell.body);
+            if (found == index_of.end() || !inWorld(found->second)) continue;
+            const RigidSnapshot pose = world->snapshot(body_of[found->second]);
+            cell.at_m = pose.center_of_mass_world_m + pose.orientation_world.rotate(cell.at_local_m);
+            cell.normal = pose.orientation_world.rotate(cell.normal_local);
+        }
+        std::vector<optics::Ray> rays;
+        const unsigned drawn_each =
+            lights.empty() ? 0U : static_cast<unsigned>((light_report.drawn + lights.size() - 1) / lights.size());
+        for (LiveLight &light : lights) raysOf(light, rays, drawn_each);
+        LightScene scene(*this);
+        optics::Settings settings;
+        settings.bounce_limit = light_report.bounce_limit;
+        settings.follow_share = light_report.follow_share;
+        Vec3 low, high;
+        sceneBounds(low, high);
+        // Far enough to cross the scene twice from anywhere in it, and no
+        // nearer than 50 m, so that a ray only "escapes" past everything.
+        settings.reach_m = high.x >= low.x ? std::max(50.0, 2.0 * length(high - low) + 10.0) : 50.0;
+        optics::Result result = optics::trace(scene, described.size(), rays, settings);
+        // Where it went.
+        light_report.watts = LiveOpticsLedger{};
+        light_report.watts.sent = result.ledger.sent_w;
+        light_report.watts.ground = result.ledger.ground_w;
+        light_report.watts.escaped = result.ledger.escaped_w;
+        light_report.watts.scattered = result.ledger.scattered_w;
+        light_report.watts.unfollowed = result.ledger.unfollowed_w;
+        light_report.watts.bounce_limit = result.ledger.bounce_limit_w;
+        lit.clear();
+        for (std::size_t i = 0; i < result.absorbed_w.size(); ++i)
+            if (result.absorbed_w[i] > 0.0) lit.emplace_back(described[i].name, result.absorbed_w[i]);
+        light_bodies_at_trace = described.size();
+        // Heated or not is settled once the bodies have been drawn into the
+        // heat network (LiveWorld::traceLightIfDue); for now all of it is
+        // absorbed and none of it yet heats.
+        light_report.watts.unheated = result.ledger.absorbed_w;
+        for (LiveOptics::Lit &b : light_report.bodies) b.absorbed_w = 0.0;
+        for (const auto &[name, w] : lit) {
+            auto row = std::find_if(light_report.bodies.begin(), light_report.bodies.end(),
+                                    [&](const LiveOptics::Lit &b) { return b.body == name; });
+            if (row == light_report.bodies.end()) {
+                light_report.bodies.push_back({name, 0.0, 0.0, false});
+                row = light_report.bodies.end() - 1;
+            }
+            row->absorbed_w = w;
+        }
+        // A few paths to draw, light by light: the rays that something turned
+        // (a mirror, a lens: three corners or more) first, spread evenly
+        // through them, then the plain ones the same way, up to each light's
+        // share of `drawn`.
+        light_report.paths.clear();
+        for (const LiveLight &light : lights) {
+            std::vector<optics::Path *> turned, plain;
+            for (optics::Path &p : result.paths)
+                if (p.light == light.id && p.points.size() >= 2) (p.points.size() > 2 ? turned : plain).push_back(&p);
+            std::size_t room = drawn_each;
+            for (std::vector<optics::Path *> *group : {&turned, &plain}) {
+                const std::size_t take = std::min(room, group->size());
+                for (std::size_t k = 0; k < take; ++k) {
+                    optics::Path &p = *(*group)[k * group->size() / take];
+                    light_report.paths.push_back({p.light, std::move(p.points), std::move(p.power_w)});
+                }
+                room -= take;
+            }
+        }
+        light_report.rays = result.rays;
+        light_report.casts = result.casts;
+        light_report.legs = result.legs;
+        light_report.grazed = result.grazed;
+        ++light_report.traces;
+        light_report.t_s = time_s;
+        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+        light_report.last_trace_ms = ms;
+        light_report.trace_ms += ms;
+        light_due = false;
+        light_traced_at = steps_taken;
+    }
+
+    // Inside the step, after the heat network's state is saved: what each
+    // body the last trace lit absorbs over this step, as a heater for exactly
+    // this step. A step taken back takes it back with everything else.
+    void heatFromLight(double dt_s) {
+        light_heating_w = 0.0;
+        if (!thermo || lit.empty()) return;
+        for (const auto &[name, w] : lit) {
+            const auto found = index_of.find(name);
+            if (found == index_of.end() || !inWorld(found->second) || !thermo->holds(name)) continue;
+            thermo->heat({name, w, thermo->timeS(), dt_s, "light"});
+            light_heating_w += w;
+        }
+    }
+
+    // After a kept step: light's accounts for it.
+    void settleLight(double dt_s) {
+        if (!light_report.declared) return;
+        LiveOpticsLedger &j = light_report.joules;
+        const LiveOpticsLedger &w = light_report.watts;
+        double absorbed = 0.0;
+        for (const auto &[name, power] : lit) absorbed += power;
+        j.sent += w.sent * dt_s;
+        j.heated += light_heating_w * dt_s;
+        j.unheated += (absorbed - light_heating_w) * dt_s;
+        j.ground += w.ground * dt_s;
+        j.escaped += w.escaped * dt_s;
+        j.scattered += w.scattered * dt_s;
+        j.unfollowed += w.unfollowed * dt_s;
+        j.bounce_limit += w.bounce_limit * dt_s;
+        for (LiveOptics::Lit &b : light_report.bodies) {
+            b.absorbed_j += b.absorbed_w * dt_s;
+            b.heated = thermo && thermo->holds(b.body);
+        }
+        for (LivePhotocell &cell : photocells) cell.received_j += cell.power_w * dt_s;
     }
 
     // ---- powered breakers (LiveBreaker) ---------------------------------------
@@ -6438,6 +6854,11 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         lamp.efficacy_lm_w = numberFrom(o.at("efficacy_lm_w"));
         lamp.on = o.at("on").get<bool>();
         lamp.drawn_j = numberFrom(o.at("drawn_j"));
+        // What it was giving (older saves do not say: dark until its first step).
+        lamp.lit = o.value("lit", false);
+        lamp.drawn_w = o.contains("drawn_w") ? numberFrom(o.at("drawn_w")) : 0.0;
+        lamp.lumens = o.contains("lumens") ? numberFrom(o.at("lumens")) : 0.0;
+        lamp.why = o.value("why", std::string{});
         if (!(lamp.watts > 0.0) || !(lamp.efficacy_lm_w > 0.0))
             throw std::invalid_argument("a saved lamp is not one this engine can light");
         if (carrying) {
@@ -6487,6 +6908,66 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         impl.breakers.push_back(std::move(breaker));
     }
     impl.next_breaker = doc.value("next_breaker", 1U);
+    // Light, as it was (docs/optics-checkpoint.md). Into a changed room it is
+    // not carried: the room declares it again.
+    if (doc.contains("light") && carrying) {
+        lost.push_back("its light: light is not carried into a changed room, so it is as the room declares it");
+    } else if (doc.contains("light")) {
+        const nlohmann::json &saved_light = doc.at("light");
+        for (const nlohmann::json &o : saved_light.at("lights")) {
+            LiveLight light;
+            light.id = o.at("id").get<unsigned>();
+            light.name = o.at("name").get<std::string>();
+            light.kind = o.at("kind").get<std::string>();
+            for (const nlohmann::json &b : o.at("apertures"))
+                light.apertures.push_back({vecFrom(b.at("center_m")), vecFrom(b.at("size_m"))});
+            light.spacing_m = numberFrom(o.at("spacing_m"));
+            light.lamp = o.at("lamp").get<unsigned>();
+            light.axis_local = vecFrom(o.at("axis_local"));
+            light.half_angle_deg = numberFrom(o.at("half_angle_deg"));
+            light.rays = o.at("rays").get<unsigned>();
+            light.radiant_efficacy_lm_w = numberFrom(o.at("radiant_efficacy_lm_w"));
+            light.visible_share = numberFrom(o.at("visible_share"));
+            const bool sun_ok = light.kind == "sun" && light.spacing_m >= 1.0e-3 && light.spacing_m <= 1.0;
+            const bool lamp_ok = light.kind == "lamp" && impl.lampById(light.lamp) != nullptr && light.rays >= 1 &&
+                                 light.rays <= 4096 && light.half_angle_deg > 0.0 && light.half_angle_deg <= 180.0 &&
+                                 light.radiant_efficacy_lm_w > 0.0 && light.radiant_efficacy_lm_w <= 683.0 &&
+                                 light.visible_share >= 0.0 && light.visible_share <= 1.0;
+            if (!sun_ok && !lamp_ok) throw std::invalid_argument("a saved light is not one this engine can shine");
+            impl.lights.push_back(std::move(light));
+        }
+        for (const nlohmann::json &o : saved_light.at("photocells")) {
+            LivePhotocell cell;
+            cell.id = o.at("id").get<unsigned>();
+            cell.name = o.at("name").get<std::string>();
+            cell.body = o.at("body").get<std::string>();
+            cell.at_local_m = vecFrom(o.at("at_local_m"));
+            cell.normal_local = vecFrom(o.at("normal_local"));
+            cell.area_m2 = numberFrom(o.at("area_m2"));
+            cell.received_j = numberFrom(o.at("received_j"));
+            if (!(cell.area_m2 > 0.0 && cell.area_m2 <= 1.0))
+                throw std::invalid_argument("a saved light sensor is not one this engine can read");
+            impl.photocells.push_back(std::move(cell));
+        }
+        for (const nlohmann::json &name : saved_light.at("polished"))
+            impl.polished_bodies.insert(name.get<std::string>());
+        LiveOptics &report = impl.light_report;
+        report.declared = true;
+        report.trace_every_steps = saved_light.at("trace_every_steps").get<unsigned>();
+        report.bounce_limit = saved_light.at("bounce_limit").get<unsigned>();
+        report.follow_share = numberFrom(saved_light.at("follow_share"));
+        report.drawn = saved_light.at("drawn").get<unsigned>();
+        const nlohmann::json &j = saved_light.at("joules");
+        report.joules = {numberFrom(j.at("sent")),       numberFrom(j.at("heated")),
+                         numberFrom(j.at("unheated")),   numberFrom(j.at("ground")),
+                         numberFrom(j.at("escaped")),    numberFrom(j.at("scattered")),
+                         numberFrom(j.at("unfollowed")), numberFrom(j.at("bounce_limit"))};
+        for (const nlohmann::json &b : saved_light.at("lit"))
+            report.bodies.push_back({b.at("body").get<std::string>(), 0.0, numberFrom(b.at("absorbed_j")), false});
+        impl.next_light = saved_light.at("next_light").get<unsigned>();
+        impl.next_photocell = saved_light.at("next_photocell").get<unsigned>();
+        impl.light_due = true;
+    }
     // Anything still attached with nothing standing in for it as it was saved
     // is hung now, as after any rearrangement of the bodies.
     live->rehangJoints();
@@ -7144,6 +7625,10 @@ void LiveWorld::step(double dt_s) {
     // exactly that force times that displacement. And if the step is refused,
     // the network is put back to where it was: the fuel the step would have
     // burned, the gas it would have made, the heat it would have moved.
+    // Light, when it is due (docs/optics-checkpoint.md): traced from the world
+    // as the step starts, and every body it reaches drawn into the heat network
+    // now, before the network's state is saved for the trial below.
+    if (!impl_->lights.empty()) traceLightIfDue();
     thermo::ThermoWorld *const network =
         impl_->thermo && impl_->thermo->active() ? impl_->thermo.get() : nullptr;
     std::optional<thermo::ThermoState> network_before;
@@ -7201,6 +7686,10 @@ void LiveWorld::step(double dt_s) {
     if (!impl_->programs.empty()) impl_->preparePrograms();
     if (!impl_->controls.empty()) impl_->prepareControls(dt_s);
     if (!impl_->motors.empty()) impl_->prepareMotors(dt_s);
+    // What the light the last trace found heats over this step, as heaters on
+    // the network's clock, after its state is saved: a refused step takes the
+    // heat back with everything else.
+    if (impl_->light_report.declared) impl_->heatFromLight(dt_s);
     if (!impl_->circuits.empty()) impl_->prepareCircuits(dt_s);
     if (impl_->body_of.size() + impl_->native_players.size() + 8 <= 2000) {
         bool committed = false;
@@ -7258,6 +7747,7 @@ void LiveWorld::step(double dt_s) {
         if (!impl_->circuits.empty()) impl_->settleCircuits(dt_s);
         if (!impl_->panels.empty()) impl_->settlePanels(dt_s);
         if (!impl_->lamps.empty()) impl_->settleLights(dt_s);
+        if (impl_->light_report.declared) impl_->settleLight(dt_s);
         if (!impl_->breakers.empty()) impl_->settleBreakers(dt_s);
         if (!impl_->controls.empty()) impl_->settleControls(dt_s);
         if (!impl_->programs.empty()) impl_->settlePrograms(dt_s);
@@ -7324,6 +7814,7 @@ void LiveWorld::step(double dt_s) {
     if (!impl_->circuits.empty()) impl_->settleCircuits(dt_s);
     if (!impl_->panels.empty()) impl_->settlePanels(dt_s);
     if (!impl_->lamps.empty()) impl_->settleLights(dt_s);
+    if (impl_->light_report.declared) impl_->settleLight(dt_s);
     if (!impl_->breakers.empty()) impl_->settleBreakers(dt_s);
     if (!impl_->controls.empty()) impl_->settleControls(dt_s);
     if (!impl_->programs.empty()) impl_->settlePrograms(dt_s);
@@ -8230,6 +8721,14 @@ unsigned LiveWorld::circuit(const std::string &declaration) {
             throw std::invalid_argument("circuit: switch " + worked.branch + " follows joint " +
                                         std::to_string(worked.joint) + ", which is not a hinge in this world");
     }
+    // And the light sensors that work its switches (docs/optics-checkpoint.md).
+    for (const auto &worked : c.lightSwitches()) {
+        const bool there = std::any_of(impl_->photocells.begin(), impl_->photocells.end(),
+                                       [&](const LivePhotocell &cell) { return cell.name == worked.sensor; });
+        if (!there)
+            throw std::invalid_argument("circuit: switch " + worked.branch + " follows light at " + worked.sensor +
+                                        ", which is not a light sensor in this world");
+    }
     const auto warmed = c.heatedBodies();
     impl_->attachCircuit(std::move(c));
     if (!warmed.empty()) {
@@ -8243,6 +8742,10 @@ void LiveWorld::circuitSwitch(unsigned id, const std::string &branch, bool close
     for (const auto &worked : impl_->circuits[id - 1].hingeSwitches())
         if (worked.branch == branch)
             throw std::invalid_argument("switch " + branch + " is worked by its hinge, not by hand");
+    for (const auto &worked : impl_->circuits[id - 1].lightSwitches())
+        if (worked.branch == branch)
+            throw std::invalid_argument("switch " + branch + " is worked by the light on " + worked.sensor +
+                                        ", not by hand");
     impl_->circuits[id - 1].setSwitch(branch, closed);
 }
 std::string LiveWorld::circuits() const {
@@ -8817,6 +9320,220 @@ bool LiveWorld::switchLamp(unsigned id, bool on) {
 }
 
 std::vector<LiveLamp> LiveWorld::lamps() const { return impl_->lamps; }
+
+// ---- light (docs/optics-checkpoint.md) ---------------------------------------
+
+namespace {
+bool finiteVec(const Vec3 &v) { return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z); }
+}
+
+unsigned LiveWorld::sunlight(const std::string &name, const std::vector<LiveLight::Box> &apertures,
+                             double spacing_m) {
+    Impl &I = *impl_;
+    if (!(spacing_m >= 1.0e-3 && spacing_m <= 1.0) || apertures.size() > 64) return 0;
+    // The most rays its boxes can ask for, however the sun stands: a box seen
+    // from direction s shades |s.x| A_yz + |s.y| A_xz + |s.z| A_xy, which is at
+    // most the length of (A_yz, A_xz, A_xy).
+    double most_m2 = 0.0;
+    for (const LiveLight::Box &box : apertures) {
+        if (!finiteVec(box.center_m) || !finiteVec(box.size_m) || !(box.size_m.x > 0.0) || !(box.size_m.y > 0.0) ||
+            !(box.size_m.z > 0.0))
+            return 0;
+        const double yz = box.size_m.y * box.size_m.z, xz = box.size_m.x * box.size_m.z,
+                     xy = box.size_m.x * box.size_m.y;
+        most_m2 += std::sqrt(yz * yz + xz * xz + xy * xy);
+    }
+    // With the sun up, what they ask for now, exactly; it may ask for more as
+    // it goes round, and a trace that would be refused says so. With no sun
+    // yet, the most they could ever ask for.
+    if (I.sun.declared && I.sun.toward.y > 0.0 && !apertures.empty()) {
+        std::set<std::pair<long long, long long>> cells;
+        if (!Impl::sunGrid(apertures, normalized(I.sun.toward), spacing_m, cells)) return 0;
+    } else if (most_m2 / (spacing_m * spacing_m) > static_cast<double>(Impl::kMostSunRays)) {
+        return 0;
+    }
+    // One sun, one grid: a second sunlight would trace the same light twice
+    // where their boxes met. Give the one it has more boxes instead.
+    for (const LiveLight &other : I.lights)
+        if (other.kind == "sun") return 0;
+    LiveLight light;
+    light.id = I.next_light++;
+    light.name = name.empty() ? "sunlight " + std::to_string(light.id) : name;
+    light.kind = "sun";
+    light.apertures = apertures;
+    light.spacing_m = spacing_m;
+    I.lights.push_back(std::move(light));
+    I.light_report.declared = true;
+    I.light_due = true;
+    return I.lights.back().id;
+}
+
+unsigned LiveWorld::lampLight(const std::string &name, unsigned lamp, const Vec3 &axis_world, double half_angle_deg,
+                              unsigned rays, double radiant_efficacy_lm_w, double visible_share) {
+    Impl &I = *impl_;
+    const LiveLamp *fitting = I.lampById(lamp);
+    if (fitting == nullptr || !finiteVec(axis_world) || length(axis_world) < 1e-9) return 0;
+    if (!(half_angle_deg > 0.0 && half_angle_deg <= 180.0) || rays < 1 || rays > 4096 ||
+        !(radiant_efficacy_lm_w > 0.0 && radiant_efficacy_lm_w <= 683.0) ||
+        !(visible_share >= 0.0 && visible_share <= 1.0))
+        return 0;
+    LiveLight light;
+    light.id = I.next_light++;
+    light.name = name.empty() ? fitting->name + "'s light" : name;
+    light.kind = "lamp";
+    light.lamp = lamp;
+    light.half_angle_deg = half_angle_deg;
+    light.rays = rays;
+    light.radiant_efficacy_lm_w = radiant_efficacy_lm_w;
+    light.visible_share = visible_share;
+    light.axis_local = normalized(axis_world);
+    // On a part, the cone turns with it.
+    if (!fitting->body.empty()) {
+        const auto found = I.index_of.find(fitting->body);
+        if (found == I.index_of.end() || !I.inWorld(found->second)) return 0;
+        light.axis_local = conjugateOf(I.world->snapshot(I.body_of[found->second]).orientation_world)
+                               .rotate(normalized(axis_world));
+    }
+    I.lights.push_back(std::move(light));
+    I.light_report.declared = true;
+    I.light_due = true;
+    return I.lights.back().id;
+}
+
+bool LiveWorld::removeLight(unsigned id) {
+    Impl &I = *impl_;
+    const auto gone = std::find_if(I.lights.begin(), I.lights.end(), [&](const LiveLight &l) { return l.id == id; });
+    if (gone == I.lights.end()) return false;
+    I.lights.erase(gone);
+    I.light_due = true;
+    if (I.lights.empty()) {
+        // No light at all: nothing lit, nothing read.
+        I.lit.clear();
+        I.light_report.watts = LiveOpticsLedger{};
+        I.light_report.paths.clear();
+        for (LiveOptics::Lit &b : I.light_report.bodies) b.absorbed_w = 0.0;
+        for (LivePhotocell &cell : I.photocells) cell.power_w = 0.0;
+    }
+    return true;
+}
+
+std::vector<LiveLight> LiveWorld::lights() const { return impl_->lights; }
+
+std::string LiveWorld::polish(const std::string &body, bool polished) {
+    Impl &I = *impl_;
+    const auto found = I.index_of.find(body);
+    if (found == I.index_of.end()) return "there is nothing called " + body;
+    const std::string &material = I.described[found->second].material;
+    optics::OpticalProperties p;
+    try {
+        p = optics::opticalProperties(presetFromName(material));
+    } catch (const std::exception &) {
+        return "the " + body + " is made of " + material + ", which this engine has no light for";
+    }
+    if (p.transparent)
+        return "the " + body + " is " + material + ", which is smooth already: it reflects and bends light by "
+               "Fresnel's and Snell's laws";
+    if (!p.polishable)
+        return "only a metal takes a mirror polish here (aluminium or iron); the " + body + " is " + material;
+    if (polished) I.polished_bodies.insert(body);
+    else I.polished_bodies.erase(body);
+    I.light_due = true;
+    return {};
+}
+
+bool LiveWorld::polished(const std::string &body) const { return impl_->polishedBody(body); }
+
+unsigned LiveWorld::photocell(const std::string &name, const std::string &body, const Vec3 &at_world_m,
+                              const Vec3 &normal_world, double area_m2) {
+    Impl &I = *impl_;
+    if (!(area_m2 > 0.0 && area_m2 <= 1.0) || !finiteVec(at_world_m) || !finiteVec(normal_world) ||
+        length(normal_world) < 1e-9)
+        return 0;
+    const auto found = I.index_of.find(body);
+    if (found == I.index_of.end() || !I.inWorld(found->second)) return 0;
+    LivePhotocell cell;
+    cell.id = I.next_photocell++;
+    cell.name = name.empty() ? "light sensor " + std::to_string(cell.id) : name;
+    // A circuit's switch follows one by its name, so a name is one sensor.
+    for (const LivePhotocell &other : I.photocells)
+        if (other.name == cell.name) return 0;
+    cell.body = body;
+    const RigidSnapshot at = I.world->snapshot(I.body_of[found->second]);
+    const Quat back = conjugateOf(at.orientation_world);
+    cell.at_local_m = back.rotate(at_world_m - at.center_of_mass_world_m);
+    cell.normal_local = back.rotate(normalized(normal_world));
+    cell.area_m2 = area_m2;
+    cell.at_m = at_world_m;
+    cell.normal = normalized(normal_world);
+    I.photocells.push_back(std::move(cell));
+    I.light_report.declared = true;
+    I.light_due = true;
+    return I.photocells.back().id;
+}
+
+std::vector<LivePhotocell> LiveWorld::photocells() const { return impl_->photocells; }
+
+bool LiveWorld::setLightTracing(unsigned trace_every_steps, unsigned bounce_limit, double follow_share,
+                                unsigned drawn) {
+    Impl &I = *impl_;
+    if (trace_every_steps < 1 || trace_every_steps > 240 || bounce_limit < 1 || bounce_limit > 64 ||
+        !(follow_share >= 0.0 && follow_share <= 1.0) || drawn > 512)
+        return false;
+    I.light_report.trace_every_steps = trace_every_steps;
+    I.light_report.bounce_limit = bounce_limit;
+    I.light_report.follow_share = follow_share;
+    I.light_report.drawn = drawn;
+    I.light_due = true;
+    return true;
+}
+
+void LiveWorld::traceLightIfDue() {
+    Impl &I = *impl_;
+    if (I.lights.empty()) return;
+    // A lamp switched on or off, or brighter or dimmer by more than a hundredth,
+    // since its light was last traced is traced again now, not at the stride.
+    for (const LiveLight &light : I.lights) {
+        if (light.kind != "lamp" || I.light_due) continue;
+        const LiveLamp *lamp = I.lampById(light.lamp);
+        const double now = lamp != nullptr && lamp->lit ? lamp->lumens / light.radiant_efficacy_lm_w : 0.0;
+        if (std::abs(now - light.power_w) > 0.01 * std::max(now, light.power_w)) I.light_due = true;
+    }
+    if (I.described.size() != I.light_bodies_at_trace) I.light_due = true;   // something broke, or went
+    if (!I.light_due && I.steps_taken - I.light_traced_at < I.light_report.trace_every_steps) return;
+    traceLight();
+}
+
+void LiveWorld::traceLight() {
+    Impl &I = *impl_;
+    I.traceLightNow();
+    // Every body the light reaches now is drawn into the heat network, so that
+    // what it absorbs can warm it -- one refresh of the network's shapes for
+    // all of them. A body the network cannot hold (an exact body, or a
+    // material it has no matter for) still absorbs what it absorbs; it is
+    // counted, warming nothing.
+    double absorbed = 0.0, heated = 0.0;
+    bool refreshed = false;
+    for (const auto &[name, w] : I.lit) {
+        absorbed += w;
+        if (I.precise_bodies.count(name) || I.lit_cannot_heat.count(name)) continue;
+        if (!I.thermo || !I.thermo->holds(name)) {
+            try {
+                thermo::ThermoWorld &network = refreshed ? *I.thermo : ensureThermo();
+                refreshed = true;
+                network.enroll(name);
+            } catch (const std::exception &) {
+                I.lit_cannot_heat.insert(name);
+                continue;
+            }
+        }
+        heated += w;
+    }
+    I.light_report.watts.heated = heated;
+    I.light_report.watts.unheated = absorbed - heated;
+    for (LiveOptics::Lit &b : I.light_report.bodies) b.heated = I.thermo && I.thermo->holds(b.body);
+}
+
+LiveOptics LiveWorld::optics() const { return impl_->light_report; }
 
 unsigned LiveWorld::breaker(const std::string &name, const std::string &body, unsigned store,
                             const Vec3 &point_world_m, const Vec3 &along_world, double watts, double reach_m) {
@@ -17393,6 +18110,7 @@ std::vector<std::string> LiveWorld::notKept() {
 
 std::vector<std::string> LiveWorld::notCarried() {
     return {"heaters and gas regions: as the room declares them, from the start",
+            "light, its sensors and mirror finishes: as the room declares them, from the start",
             "anything under way: a world is carried only between breaks, strokes of the hand, cuts and a point's "
             "time in the ground, so the last one saved before any of those is what comes back",
             "the solver's memory of its contacts: a thing that was moving carries on from where it was, but "
@@ -17845,7 +18563,14 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                              {"watts", savedNumber(lamp.watts)},
                              {"efficacy_lm_w", savedNumber(lamp.efficacy_lm_w)},
                              {"on", lamp.on},
-                             {"drawn_j", savedNumber(lamp.drawn_j)}});
+                             {"drawn_j", savedNumber(lamp.drawn_j)},
+                             // As the last kept step left it, so that what it
+                             // gives -- and the light traced from it -- is the
+                             // same on the first step after opening again.
+                             {"lit", lamp.lit},
+                             {"drawn_w", savedNumber(lamp.drawn_w)},
+                             {"lumens", savedNumber(lamp.lumens)},
+                             {"why", lamp.why}});
         doc["lamps"] = std::move(lamps);
         doc["next_lamp"] = I.next_lamp;
     }
@@ -17865,6 +18590,56 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                                 {"broke_total_m3", savedNumber(breaker.broke_total_m3)}});
         doc["breakers"] = std::move(breakers);
         doc["next_breaker"] = I.next_breaker;
+    }
+    // Light (docs/optics-checkpoint.md): its sources, sensors and mirror
+    // finishes, how it is traced, and its accounts. Only a world with light
+    // says anything of it.
+    if (I.light_report.declared) {
+        nlohmann::json lights = nlohmann::json::array();
+        for (const LiveLight &light : I.lights) {
+            nlohmann::json boxes = nlohmann::json::array();
+            for (const LiveLight::Box &b : light.apertures)
+                boxes.push_back({{"center_m", savedVec(b.center_m)}, {"size_m", savedVec(b.size_m)}});
+            lights.push_back({{"id", light.id},
+                              {"name", light.name},
+                              {"kind", light.kind},
+                              {"apertures", std::move(boxes)},
+                              {"spacing_m", savedNumber(light.spacing_m)},
+                              {"lamp", light.lamp},
+                              {"axis_local", savedVec(light.axis_local)},
+                              {"half_angle_deg", savedNumber(light.half_angle_deg)},
+                              {"rays", light.rays},
+                              {"radiant_efficacy_lm_w", savedNumber(light.radiant_efficacy_lm_w)},
+                              {"visible_share", savedNumber(light.visible_share)}});
+        }
+        nlohmann::json cells = nlohmann::json::array();
+        for (const LivePhotocell &cell : I.photocells)
+            cells.push_back({{"id", cell.id},
+                             {"name", cell.name},
+                             {"body", cell.body},
+                             {"at_local_m", savedVec(cell.at_local_m)},
+                             {"normal_local", savedVec(cell.normal_local)},
+                             {"area_m2", savedNumber(cell.area_m2)},
+                             {"received_j", savedNumber(cell.received_j)}});
+        const LiveOpticsLedger &j = I.light_report.joules;
+        nlohmann::json lit = nlohmann::json::array();
+        for (const LiveOptics::Lit &b : I.light_report.bodies)
+            lit.push_back({{"body", b.body}, {"absorbed_j", savedNumber(b.absorbed_j)}});
+        doc["light"] = {{"lights", std::move(lights)},
+                        {"photocells", std::move(cells)},
+                        {"polished", I.polished_bodies},
+                        {"trace_every_steps", I.light_report.trace_every_steps},
+                        {"bounce_limit", I.light_report.bounce_limit},
+                        {"follow_share", savedNumber(I.light_report.follow_share)},
+                        {"drawn", I.light_report.drawn},
+                        {"joules", {{"sent", savedNumber(j.sent)}, {"heated", savedNumber(j.heated)},
+                                    {"unheated", savedNumber(j.unheated)}, {"ground", savedNumber(j.ground)},
+                                    {"escaped", savedNumber(j.escaped)}, {"scattered", savedNumber(j.scattered)},
+                                    {"unfollowed", savedNumber(j.unfollowed)},
+                                    {"bounce_limit", savedNumber(j.bounce_limit)}}},
+                        {"lit", std::move(lit)},
+                        {"next_light", I.next_light},
+                        {"next_photocell", I.next_photocell}};
     }
     doc["next_energy_store"] = I.next_energy_store;
     doc["next_motor"] = I.next_motor;

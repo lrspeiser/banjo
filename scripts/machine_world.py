@@ -82,7 +82,15 @@ def _num(d, key, what, problems, default=None, low=None, high=None):
 
 
 def rotation(turn_deg):
-    """The engine's turn: about x, then y, then z (TileImpactScene rotateDegrees)."""
+    """The engine's turn of a body by turn_deg (TileImpactScene
+    rotationQuaternion, which the engine reports back as the body's
+    orientation): about the body's own x, then its own y, then its own z --
+    which is about the world's z first, then y, then x: R = Rx Ry Rz.
+
+    (TileImpactScene rotateDegrees turns the other way round, x first; with the
+    angles negated it undoes a body's turn, and that is all it is for. This
+    was built from it until October 10, 2026, which is the same for a turn
+    about one axis and not for a turn about two.)"""
     rx, ry, rz = (math.radians(a) for a in turn_deg)
     cx, sx, cy, sy, cz, sz = math.cos(rx), math.sin(rx), math.cos(ry), math.sin(ry), math.cos(rz), math.sin(rz)
     mx = [[1, 0, 0], [0, cx, -sx], [0, sx, cx]]
@@ -90,7 +98,7 @@ def rotation(turn_deg):
     mz = [[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]]
     def mul(a, b):
         return [[sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
-    return mul(mz, mul(my, mx))
+    return mul(mx, mul(my, mz))
 
 
 def _axes(part):
@@ -220,10 +228,10 @@ def solids_of(part):
             size = [size[0], size[1], size[0]]
         r = rotation(sub['turn_deg'])
         m = [[sum(outer[i][k] * r[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
-        # The same matrix as x-y-z turn angles (R = Rz Ry Rx).
-        ry = math.asin(max(-1.0, min(1.0, -m[2][0])))
-        rx = math.atan2(m[2][1], m[2][2])
-        rz = math.atan2(m[1][0], m[0][0])
+        # The same matrix as turn angles (R = Rx Ry Rz, as rotation()).
+        ry = math.asin(max(-1.0, min(1.0, m[0][2])))
+        rx = math.atan2(-m[1][2], m[2][2])
+        rz = math.atan2(-m[0][1], m[0][0])
         out.append({'name': part['name'], 'shape': 'box', 'size_m': size, 'at_m': at,
                     'turn_deg': [math.degrees(rx), math.degrees(ry), math.degrees(rz)]})
     return out
@@ -964,6 +972,7 @@ def compile_spec(spec):
     thermo = {'gas_regions': [], 'contents': [], 'heaters': []}
     blades = []
     ground = compile_ground(spec.get('ground'), problems)
+    light_extra = {}   # lamps, sensors and mirrors that kits make (the light section)
     for i, kit in enumerate(spec.get('kits', []) or []):
         if not isinstance(kit, dict) or kit.get('kit') not in KITS:
             problems.append(f'kit {i + 1}: kit is one of {", ".join(KITS)}')
@@ -974,7 +983,8 @@ def compile_spec(spec):
             continue
         p, j = KITS[kit['kit']](dict(kit, _known={r['name']: r for r in parts if isinstance(r, dict) and 'name' in r},
                                      _ground=ground, _spouts=spouts, _thermo=thermo, _cell=cell,
-                                     _blades=blades), problems, name.strip())
+                                     _blades=blades, _sun=spec.get('sun'), _light=light_extra),
+                                problems, name.strip())
         for row in p:
             row['kit'] = name.strip()
         parts += p
@@ -1250,6 +1260,15 @@ def compile_spec(spec):
                           'max_power_w': _num(b, 'max_power_w', what, problems, 0, 0, 1e6)})
         if b.get('charge_j') is not None:
             batteries[-1]['charge_j'] = _num(b, 'charge_j', what, problems, None, 0, batteries[-1]['capacity_j'])
+    # The sun: where it stands and how strongly it shines (the engine thins
+    # nothing for a fixed sun). Before the light, which shines from it.
+    sun = None
+    if spec.get('sun') is not None:
+        sun_spec = spec['sun'] if isinstance(spec['sun'], dict) else {}
+        sun = {'elevation_deg': _num(sun_spec, 'elevation_deg', 'sun', problems, 50, 0.5, 90),
+               'azimuth_deg': _num(sun_spec, 'azimuth_deg', 'sun', problems, 180, -360, 360),
+               'irradiance_w_m2': _num(sun_spec, 'irradiance_w_m2', 'sun', problems, 1000, 0, 1400)}
+    light = compile_light(spec, sun, names, battery_names, problems, light_extra)
     circuits = []
     for c in spec.get('circuits', []) or []:
         name = c.get('name') if isinstance(c, dict) else None
@@ -1284,6 +1303,9 @@ def compile_spec(spec):
         if coil is None and motor is None:
             problems.append(f'{what}: a circuit needs a load: a coil, a motor, or both')
         switch = c.get('switch')
+        if isinstance(switch, dict) and 'photocell' in switch:   # follows light (the light section)
+            row['switch'] = light_switch(switch, what, light, problems)
+            switch = None
         if switch is not None:
             if not isinstance(switch, dict) or switch.get('hinge') not in {j['name'] for j in joint_rows if j['kind'] == 'hinge'}:
                 problems.append(f'{what}: switch.hinge must name a hinge joint')
@@ -1296,12 +1318,6 @@ def compile_spec(spec):
     # The sun: where it stands and how strongly it shines (the engine thins
     # it through the air by its elevation). Solar panels on parts charge a
     # battery with what falls on them, shadows included.
-    sun = None
-    if spec.get('sun') is not None:
-        sun_spec = spec['sun'] if isinstance(spec['sun'], dict) else {}
-        sun = {'elevation_deg': _num(sun_spec, 'elevation_deg', 'sun', problems, 50, 0.5, 90),
-               'azimuth_deg': _num(sun_spec, 'azimuth_deg', 'sun', problems, 180, -360, 360),
-               'irradiance_w_m2': _num(sun_spec, 'irradiance_w_m2', 'sun', problems, 1000, 0, 1400)}
     solar_panels = []
     for i, sp in enumerate(spec.get('solar_panels', []) or []):
         what = 'solar panel ' + str(sp.get('name', i + 1) if isinstance(sp, dict) else i + 1)
@@ -1417,9 +1433,11 @@ def compile_spec(spec):
                     problems.append(f'{what}: dented names a part; {arg!s} is not one')
                 elif not spec.get('plasticity'):
                     problems.append(f'{what}: a dent needs "plasticity": true (metal and wood then yield and stay bent)')
+            elif kind in LIGHT_RULES:
+                check_light_rule(kind, arg, light, what, problems)
             else:
                 problems.append(f'{what}: done_when is one of hits, hinge_beyond_deg, turned_deg, slid_m, switch_closed, '
-                                'hotter_than_k, parted, broke, dented, rose_m, moved_m, cut, in_zone')
+                                'hotter_than_k, parted, broke, dented, rose_m, moved_m, cut, in_zone, lit_w, shaded_w')
         elif rule is not None:
             problems.append(f'{what}: done_when is one rule, or null for a station not built yet')
         focus = [f for f in (s.get('focus') or []) if isinstance(f, str) and f in names]
@@ -1430,7 +1448,8 @@ def compile_spec(spec):
             'parts': checked, 'joints': joint_rows, 'batteries': batteries, 'circuits': circuits,
             'torches': torches, 'spouts': checked_spouts, 'stations': stations, 'cells': round(cells), 'notes': notes,
             'plasticity': bool(spec.get('plasticity', False)), 'sun': sun, 'solar_panels': solar_panels,
-            'thermo': {key: rows for key, rows in thermo.items() if rows}, 'blades': checked_blades}
+            'thermo': {key: rows for key, rows in thermo.items() if rows}, 'blades': checked_blades,
+            'light': light}
 
 
 def scene_of(compiled):
@@ -1589,6 +1608,7 @@ def build_engine(exe, compiled, workdir):
         for sp in compiled.get('solar_panels', []):
             engine.op(op='solar_panel', name=sp['name'], body=sp['part'], store=store_ids[sp['battery']], at_m=sp['at_m'],
                       normal=sp['normal'], area_m2=sp['area_m2'], efficiency=sp['efficiency'])
+        build_light(engine, compiled, store_ids)
         circuit_ids = {}
         for c in compiled['circuits']:
             branches = []
@@ -1596,11 +1616,13 @@ def build_engine(exe, compiled, workdir):
             if 'switch' in c:
                 coil_in = 'switched'
                 sw = dict(c['switch'])
-                follows = {'joint': joint_ids[sw.pop('hinge')]}
-                follows.update(sw)
+                if 'photocell' in sw:
+                    follows = ('follows_light', light_branch(sw))
+                else:
+                    follows = ('follows_hinge', {'joint': joint_ids[sw.pop('hinge')], **sw})
                 branches.append({'id': 'switch', 'kind': 'switch', 'component': c['name'] + ' switch', 'a': 'plus',
                                  'b': 'switched', 'thermal': 'battery', 'resistance_ohm': 0.001, 'closed': False,
-                                 'follows_hinge': follows})
+                                 follows[0]: follows[1]})
             if 'coil' in c:
                 branches.append({'id': 'coil', 'kind': 'resistor', 'component': c['name'] + ' coil', 'a': coil_in,
                                  'b': 'minus', 'resistance_ohm': c['coil']['resistance_ohm'],
@@ -1746,6 +1768,7 @@ class MachineSession:
                 self.removed[name] = self.seq
         self.t = float(reply.get('t', self.t))
         self._track_moves()
+        ingest_light(self, reply)
         if isinstance(reply.get('water'), dict):
             # The engine's own picture of the water: the box of wet columns,
             # each surface in millimetres above base_m.
@@ -1985,6 +2008,9 @@ class MachineSession:
                 'solar_panels': [{'name': x.get('name'), 'sunlight_w': _round(x.get('sunlight_w', 0.0), 2),
                                   'power_w': _round(x.get('power_w', 0.0), 2), 'shaded': x.get('shaded'),
                                   'shaded_by': x.get('shaded_by')} for x in m.get('panels', [])]}
+        light = probe_light(self)
+        if light is not None:
+            out['light'] = light
         if self.parcels is not None:
             p = self.parcels
             out['pour'] = {'poured_l': _round(1000 * p.get('poured_m3', 0.0), 2),
@@ -2036,6 +2062,8 @@ class MachineSession:
                     r = rule['hotter_than_k']
                     if any(h['name'] == r.get('part') and h['temperature_k'] >= r.get('k', 1e9) for h in out['heat']):
                         hit = self.t
+                elif any(k in rule for k in LIGHT_RULES):
+                    hit = light_station(rule, self)
                 elif 'parted' in rule:
                     hit = next((e['t'] for e in self.events if e['kind'] == 'parted' and
                                 rule['parted'] in (e.get('a'), e.get('b'))), None)
@@ -2263,3 +2291,386 @@ class MachineHost:
             for s in self.sessions.values():
                 s.close()
             self.sessions.clear()
+
+
+# ---- light: the sun, lamps, mirrors and light sensors ------------------------------
+#
+# docs/optics-checkpoint.md. The engine follows rays of light from the sun and
+# from lamps through the world's own shapes: polished metal reflects them, glass
+# and ice bend and focus them, and what absorbs them is heated by them. A light
+# sensor on a part reads the light reaching its face, and a circuit's switch can
+# follow it. Everything here only declares: where the sun stands, which parts
+# are mirrors, where lamps and sensors are. What the light does is the engine's.
+#
+# Kept in one section, with its own kits registered at the end, so that it sits
+# beside other kits without touching them.
+
+LIGHT_RULES = ('lit_w', 'shaded_w')
+MOST_SUN_RAYS = 8192        # the engine's own limit on the sunlight's rays
+METALS = ('aluminum', 'iron')
+
+LIGHT_HELP = '''The machine's "sun" (azimuth_deg round from +z toward +x; a clear day is 1000 W/m2) stands still where it is
+put, and "light" traces its rays:
+"light": {"sunlight": {"through": [part name, or {"center_m": [..], "size_m": [..]}], "spacing_m": 0.002-0.05}
+           (sunlight is traced as rays spacing_m apart only through these boxes, at most 8192 rays: put boxes round
+           the lenses, mirrors, sensors and targets that matter, and a fine spacing (2-4 mm) where light is focused),
+          "mirrors": [part name] (aluminum or iron parts polished to a mirror: they reflect 0.92 / 0.56 of the light),
+          "lamps": [{"name": str, "on": part or null, "at_m": [..], "battery": battery name, "watts": n,
+                     "efficacy_lm_w": 120, "axis": [..], "half_angle_deg": 1-180, "rays": 1-1024}],
+          "photocells": [{"name": str, "on": part, "at_m": [..] (on the part's face), "normal": [..] (the way the
+                          face looks), "area_m2": n}] (a light sensor: it reads the watts of light reaching its face)}
+Glass and ice let light through and bend it (a glass ball focuses sunlight about 17 mm beyond its far side, to about
+150 times the open sun, but window glass absorbs most of what goes through: a 100 mm glass ball passes about 1.3 W of
+the 7.9 W on it); everything else absorbs a share of light and is warmed by it. Heat is spread through the whole of a
+part, so focused sunlight cannot set wood alight: to burn a rope with sunlight, let the light work a switch and a coil.
+A circuit's switch may follow a sensor: "switch": {"photocell": name, "closed_at_or_above_w": n} (or
+"closed_at_or_below_w": n, closed while the beam is broken). Stations: {"lit_w": {"photocell": name, "w": n}} (the
+sensor reads at least w), {"shaded_w": {"photocell": name, "w": n}} (it read more than w, then w or less).'''
+
+
+def _sun_toward(sun):
+    el, az = math.radians(sun['elevation_deg']), math.radians(sun['azimuth_deg'])
+    return [math.cos(el) * math.sin(az), math.sin(el), math.cos(el) * math.cos(az)]
+
+
+def _unit(v):
+    n = math.sqrt(sum(c * c for c in v))
+    return [c / n for c in v] if n > 1e-12 else None
+
+
+def _part_box(part, margin=0.005):
+    """The world box round a part as it is placed, a few millimetres wider."""
+    pts = [pt for sd in solids_of(part) for pt in footprint_points(sd)]
+    if part['shape'] == 'sphere':
+        r = 0.5 * part['size_m'][0]
+        pts = [[part['at_m'][i] + (r if (k >> i) & 1 else -r) for i in range(3)] for k in range(8)]
+    lo = [min(p[i] for p in pts) - margin for i in range(3)]
+    hi = [max(p[i] for p in pts) + margin for i in range(3)]
+    return {'center_m': [round(0.5 * (lo[i] + hi[i]), 6) for i in range(3)],
+            'size_m': [round(hi[i] - lo[i], 6) for i in range(3)]}
+
+
+def _sun_rays(boxes, sun, spacing):
+    """About how many rays the sunlight asks for as the sun stands: each box's
+    shadow across the beam, over the grid's square, with a row round its edge."""
+    s = _sun_toward(sun)
+    total = 0.0
+    for b in boxes:
+        x, y, z = b['size_m']
+        area = abs(s[0]) * y * z + abs(s[1]) * x * z + abs(s[2]) * x * y
+        edge = 2.0 * (x + y + z)
+        total += area / spacing ** 2 + edge / spacing
+    return int(total)
+
+
+def compile_light(spec, sun, names, battery_names, problems, extra=None):
+    """The machine's light: its sunlight's boxes, its mirrors, lamps and light
+    sensors, each checked against the parts and batteries that exist, and the
+    machine's sun (compiled with the machine) it shines from. None for a
+    machine with no light."""
+    light = spec.get('light') or {}
+    if not isinstance(light, dict):
+        problems.append('light is an object: sunlight, mirrors, lamps, photocells')
+        light = {}
+    extra = extra or {}
+    mirrors = list(light.get('mirrors') or []) + list(extra.get('mirrors') or [])
+    lamps_in = list(light.get('lamps') or []) + list(extra.get('lamps') or [])
+    cells_in = list(light.get('photocells') or []) + list(extra.get('photocells') or [])
+    if sun is None and not light and not any(extra.get(k) for k in ('mirrors', 'lamps', 'photocells')):
+        return None
+    out = {'sun': sun, 'mirrors': [], 'lamps': [], 'photocells': [], 'sunlight': None,
+           'trace_every_steps': int(_num(light, 'trace_every_steps', 'light', problems, 4, 1, 240))}
+    for m in mirrors:
+        part = names.get(m) if isinstance(m, str) else None
+        if part is None:
+            problems.append(f'light: mirror {m!s} is not a part')
+        elif part['material'] not in METALS:
+            problems.append(f'light: mirror {m} is {part["material"]}; only a metal (aluminum or iron) takes a mirror '
+                            'polish')
+        elif m not in out['mirrors']:
+            out['mirrors'].append(m)
+    cell_names = set()
+    for i, c in enumerate(cells_in):
+        what = f'light: photocell {c.get("name", i + 1) if isinstance(c, dict) else i + 1}'
+        if not isinstance(c, dict) or not isinstance(c.get('name'), str) or not c['name'].strip():
+            problems.append(what + ' needs a name')
+            continue
+        if c['name'] in cell_names:
+            problems.append(f'{what}: two photocells share the name')
+        cell_names.add(c['name'])
+        if c.get('on') not in names:
+            problems.append(f'{what}: on must name the part it is on')
+        normal = _vec(c.get('normal'), 3, what + ' normal', problems)
+        if _unit(normal) is None:
+            problems.append(f'{what}: normal must point somewhere')
+        out['photocells'].append({'name': c['name'], 'on': c.get('on'),
+                                  'at_m': _vec(c.get('at_m'), 3, what + ' at_m', problems), 'normal': normal,
+                                  'area_m2': _num(c, 'area_m2', what, problems, 0.0025, 1e-6, 1.0)})
+    lamp_names = set()
+    for i, lp in enumerate(lamps_in):
+        what = f'light: lamp {lp.get("name", i + 1) if isinstance(lp, dict) else i + 1}'
+        if not isinstance(lp, dict) or not isinstance(lp.get('name'), str) or not lp['name'].strip():
+            problems.append(what + ' needs a name')
+            continue
+        if lp['name'] in lamp_names:
+            problems.append(f'{what}: two lamps share the name')
+        lamp_names.add(lp['name'])
+        if lp.get('on') is not None and lp.get('on') not in names:
+            problems.append(f'{what}: on names the part it is on, or null for one standing in the air')
+        if lp.get('battery') not in battery_names:
+            problems.append(f'{what}: battery must name a battery')
+        axis = _vec(lp.get('axis'), 3, what + ' axis', problems)
+        if _unit(axis) is None:
+            problems.append(f'{what}: axis must point somewhere')
+        out['lamps'].append({'name': lp['name'], 'on': lp.get('on'), 'battery': lp.get('battery'),
+                             'at_m': _vec(lp.get('at_m'), 3, what + ' at_m', problems), 'axis': axis,
+                             'watts': _num(lp, 'watts', what, problems, 20.0, 0.1, 5000.0),
+                             'efficacy_lm_w': _num(lp, 'efficacy_lm_w', what, problems, 120.0, 1.0, 300.0),
+                             'half_angle_deg': _num(lp, 'half_angle_deg', what, problems, 30.0, 0.05, 180.0),
+                             'rays': int(_num(lp, 'rays', what, problems, 128, 1, 1024)),
+                             'radiant_efficacy_lm_w': _num(lp, 'radiant_efficacy_lm_w', what, problems, 300.0, 1.0,
+                                                           683.0),
+                             'visible_share': _num(lp, 'visible_share', what, problems, 1.0, 0.0, 1.0)})
+    sl = light.get('sunlight')
+    if sl is not None:
+        if sun is None:
+            problems.append('light: sunlight needs a sun ("sun": {"elevation_deg", "azimuth_deg", '
+                            '"irradiance_w_m2"})')
+        elif not isinstance(sl, dict):
+            problems.append('light: sunlight is {"through": [...], "spacing_m": n}')
+        else:
+            spacing = _num(sl, 'spacing_m', 'light: sunlight', problems, 0.005, 0.002, 0.05)
+            boxes = []
+            for t in sl.get('through') or []:
+                if isinstance(t, str):
+                    if t in names:
+                        boxes.append(_part_box(names[t]))
+                    else:
+                        problems.append(f'light: sunlight through {t} -- there is no such part')
+                elif isinstance(t, dict):
+                    size = _vec(t.get('size_m'), 3, 'light: sunlight box size_m', problems)
+                    if min(size) <= 0.0:
+                        problems.append('light: a sunlight box has a positive size')
+                    boxes.append({'center_m': _vec(t.get('center_m'), 3, 'light: sunlight box center_m', problems),
+                                  'size_m': size})
+            if not boxes:
+                problems.append('light: sunlight goes through at least one part or box (what the light should '
+                                'reach: the lenses, mirrors, sensors and targets)')
+            elif len(boxes) > 64:
+                problems.append('light: sunlight goes through at most 64 parts or boxes')
+            elif _sun_rays(boxes, sun, spacing) > MOST_SUN_RAYS:
+                problems.append(f'light: sunlight through those boxes at {spacing * 1000:g} mm is about '
+                                f'{_sun_rays(boxes, sun, spacing):,} rays; the engine traces at most {MOST_SUN_RAYS:,}: '
+                                'give it smaller boxes or a wider spacing')
+            out['sunlight'] = {'through': boxes, 'spacing_m': spacing}
+    return out
+
+
+def light_switch(switch, what, light, problems):
+    """A circuit's switch that follows a light sensor."""
+    cells = {c['name'] for c in (light or {}).get('photocells', [])}
+    if switch.get('photocell') not in cells:
+        problems.append(f'{what}: switch.photocell must name a photocell')
+    above, below = 'closed_at_or_above_w' in switch, 'closed_at_or_below_w' in switch
+    if above == below:
+        problems.append(f'{what}: the switch closes at_or_above or at_or_below one light reading in watts')
+    key = 'closed_at_or_above_w' if above else 'closed_at_or_below_w'
+    return {'photocell': switch.get('photocell'), key: _num(switch, key, what + ' switch', problems, 0.5, 0.0, 1e6)}
+
+
+def check_light_rule(kind, arg, light, what, problems):
+    cells = {c['name'] for c in (light or {}).get('photocells', [])}
+    if not isinstance(arg, dict) or arg.get('photocell') not in cells or not isinstance(arg.get('w'), (int, float)):
+        problems.append(f'{what}: {kind} needs a photocell name and w (watts)')
+
+
+def build_light(engine, compiled, store_ids):
+    """Put the machine's light in the engine, after its sun and before its
+    circuits (a switch that follows a sensor needs the sensor there): mirror
+    finishes, sensors, lamps with their light, and the sunlight."""
+    light = compiled.get('light')
+    if not light:
+        return {}
+    ids = {}
+    for m in light['mirrors']:
+        engine.op(op='polish', body=m, polished=True)
+    for c in light['photocells']:
+        ids[c['name']] = engine.op(op='photocell', name=c['name'], body=c['on'], at_m=c['at_m'], normal=c['normal'],
+                                   area_m2=c['area_m2'])['photocell']
+    for lp in light['lamps']:
+        made = engine.op(op='lamp', name=lp['name'], body=lp['on'] or '', store=store_ids[lp['battery']],
+                         at_m=lp['at_m'], watts=lp['watts'], efficacy_lm_w=lp['efficacy_lm_w'], on=True)['lamp']
+        engine.op(op='lamp_light', name=lp['name'] + ' light', lamp=made, axis=lp['axis'],
+                  half_angle_deg=lp['half_angle_deg'], rays=lp['rays'],
+                  radiant_efficacy_lm_w=lp['radiant_efficacy_lm_w'], visible_share=lp['visible_share'])
+    if light['sunlight']:
+        engine.op(op='sunlight', name='sunlight', apertures=light['sunlight']['through'],
+                  spacing_m=light['sunlight']['spacing_m'])
+    engine.op(op='light_tracing', trace_every_steps=light['trace_every_steps'])
+    # Traced once now, so the machine opens with its light where it falls.
+    engine.op(op='light_trace')
+    return ids
+
+
+def light_branch(switch):
+    """A circuit branch's follows_light, from a compiled light switch."""
+    key = 'closed_at_or_above_w' if 'closed_at_or_above_w' in switch else 'closed_at_or_below_w'
+    return {'sensor': switch['photocell'], key: switch[key]}
+
+
+def probe_light(session):
+    """What the light is doing, measured, for the page: where its power went,
+    what each sensor reads, what it warms, a few rays' paths to draw, and what
+    tracing costs. None for a machine with no light."""
+    if not session.compiled.get('light'):
+        return None
+    o = session.engine.op(op='optics').get('optics') or {}
+    ingest_light(session, {'optics': o})
+    history = session.__dict__.get('_light_history', {})
+    cells = []
+    for c in o.get('photocells', []):
+        peak = max((p for _, p in history.get(c['name'], [])), default=0.0)
+        cells.append({'name': c['name'], 'power_w': _round(c.get('power_w', 0.0)), 'peak_w': _round(peak),
+                      'at_m': c.get('at_m'), 'normal': c.get('normal'), 'area_m2': c.get('area_m2')})
+    lit = sorted(o.get('lit', []), key=lambda b: -b.get('absorbed_w', 0.0))[:8]
+    w = o.get('watts') or {}
+    return {'sent_w': _round(w.get('sent', 0.0), 3), 'heated_w': _round(w.get('heated', 0.0), 3),
+            'residual_w': w.get('residual'), 'joules': o.get('joules'), 'photocells': cells,
+            'lit': [{'name': b['body'], 'absorbed_w': _round(b.get('absorbed_w', 0.0), 3)} for b in lit],
+            'lights': o.get('lights', []), 'paths': o.get('paths', []), 'cost': o.get('cost')}
+
+
+def ingest_light(session, reply):
+    """What each light sensor read, every time it changed. Every reply of a
+    machine with light carries the sensors' last readings (one a trace), so a
+    beam broken for a few hundredths of a second, between two of the page's
+    readings, is still seen, and seen when it happened."""
+    o = reply.get('optics')
+    if not isinstance(o, dict):
+        return
+    history = session.__dict__.setdefault('_light_history', {})
+    for c in o.get('photocells', []) or []:
+        h = history.setdefault(c['name'], [])
+        power = c.get('power_w', 0.0)
+        if not h or h[-1][1] != power:
+            h.append((round(session.t, 4), power))
+
+
+def light_station(rule, session):
+    """When a light station's rule was first measured as met, or None:
+    lit_w when its sensor first read at least w; shaded_w when it first read w
+    or less after reading more."""
+    kind = 'lit_w' if 'lit_w' in rule else 'shaded_w'
+    r = rule[kind]
+    history = session.__dict__.get('_light_history', {}).get(r.get('photocell'), [])
+    lit = False
+    for t, power in history:
+        if kind == 'lit_w' and power >= r['w']:
+            return t
+        if kind == 'shaded_w':
+            if power > r['w']:
+                lit = True
+            elif lit:
+                return t
+    return None
+
+
+# -- light kits ------------------------------------------------------------------
+
+def _turn_to_normal(n):
+    """turn_deg [x, 0, z] that turns a part's own +y to the unit vector n: the
+    engine turns about z first, so +y goes to (-sin z, cos z, 0), and then
+    about x, to (-sin z, cos z cos x, cos z sin x)."""
+    az = math.degrees(math.asin(max(-1.0, min(1.0, -n[0]))))
+    ax = math.degrees(math.atan2(n[2], n[1]))
+    return [round(ax, 6), 0.0, round(az, 6)]
+
+
+def _kit_mirror(k, problems, name):
+    """A flat metal plate, fixed and polished, turned so that the sun's light
+    from its middle goes to a target: aim_at (a part declared earlier) or
+    aim_m (a point). It reflects; where the light lands is the engine's."""
+    sun = k.get('_sun')
+    if not isinstance(sun, dict):
+        problems.append(f'{name}: a mirror kit aims sunlight, so the machine needs a "sun"')
+        return [], []
+    at = _vec(k.get('at_m'), 3, name + ' at_m', problems)
+    w, h = (_vec(k.get('size_m', [0.3, 0.3]), 2, name + ' size_m', problems))
+    target = None
+    if k.get('aim_at') is not None:
+        aimed = (k.get('_known') or {}).get(k['aim_at'])
+        if aimed is None:
+            problems.append(f'{name}: aim_at must name a part declared before it')
+        else:
+            target = aimed['at_m']
+    elif k.get('aim_m') is not None:
+        target = _vec(k.get('aim_m'), 3, name + ' aim_m', problems)
+    else:
+        problems.append(f'{name}: a mirror needs aim_at (a part) or aim_m (a point)')
+    material = k.get('material', 'aluminum')
+    if material not in METALS:
+        problems.append(f'{name}: a mirror is aluminum or iron')
+    if target is None:
+        return [], []
+    # The machine's sun, with the same defaults its compile gives it.
+    to_sun = _sun_toward({'elevation_deg': float(sun.get('elevation_deg', 50.0)),
+                          'azimuth_deg': float(sun.get('azimuth_deg', 180.0))})
+    to_target = _unit([target[i] - at[i] for i in range(3)])
+    n = _unit([to_sun[i] + (to_target or [0, 0, 0])[i] for i in range(3)]) if to_target else None
+    if n is None:
+        problems.append(f'{name}: the target is where the sun is, or at the mirror itself')
+        return [], []
+    plate = {'name': name, 'shape': 'box', 'material': material, 'size_m': [w, 0.02, h], 'at_m': at,
+             'turn_deg': _turn_to_normal(n), 'fixed': True}
+    if k.get('_light') is not None:
+        k['_light'].setdefault('mirrors', []).append(name)
+    return [plate], []
+
+
+def _kit_light_gate(k, problems, name):
+    """A beam of light across a gap: a lamp on one post shining at a light
+    sensor ("<name> eye") on another, at height_m. A thing that passes through
+    the beam darkens the sensor; a circuit's switch can follow it."""
+    a = _vec(k.get('from_m'), 3, name + ' from_m', problems)
+    b = _vec(k.get('to_m'), 3, name + ' to_m', problems)
+    height = _num(k, 'height_m', name, problems, 0.3, 0.05, 3.0)
+    if k.get('battery') is None:
+        problems.append(f'{name}: a light gate needs the battery its lamp runs from')
+    along = _unit([b[0] - a[0], 0.0, b[2] - a[2]])
+    if along is None:
+        problems.append(f'{name}: from_m and to_m must be apart')
+        return [], []
+    gap = math.hypot(b[0] - a[0], b[2] - a[2])
+    half_angle = _num(k, 'half_angle_deg', name, problems, 1.0, 0.1, 10.0)
+    post = 0.08
+    post_h = height + 0.1
+    lamp_at = [a[0] + along[0] * (0.5 * post + 0.005), height, a[2] + along[2] * (0.5 * post + 0.005)]
+    eye_at = [b[0] - along[0] * 0.5 * post, height, b[2] - along[2] * 0.5 * post]
+    # The sensor is as wide as the beam where it lands, and a little more.
+    radius = min(0.035, math.tan(math.radians(half_angle)) * gap + 0.01)
+    parts = [{'name': name + ' lamp post', 'shape': 'box', 'material': k.get('post_material', 'concrete'),
+              'size_m': [post, post_h, post], 'at_m': [a[0], 0.5 * post_h, a[2]], 'turn_deg': [0, 0, 0], 'fixed': True},
+             {'name': name + ' sensor post', 'shape': 'box', 'material': k.get('post_material', 'concrete'),
+              'size_m': [post, post_h, post], 'at_m': [b[0], 0.5 * post_h, b[2]], 'turn_deg': [0, 0, 0], 'fixed': True}]
+    extra = k['_light'] if k.get('_light') is not None else {}
+    extra.setdefault('lamps', []).append({'name': name + ' lamp', 'on': name + ' lamp post', 'at_m': lamp_at,
+                                          'battery': k.get('battery'), 'watts': k.get('watts', 10.0),
+                                          'efficacy_lm_w': 120.0, 'axis': along, 'half_angle_deg': half_angle,
+                                          'rays': 64})
+    extra.setdefault('photocells', []).append({'name': name + ' eye', 'on': name + ' sensor post', 'at_m': eye_at,
+                                               'normal': [-along[0], 0.0, -along[2]],
+                                               'area_m2': round(math.pi * radius * radius, 8)})
+    return parts, []
+
+
+KITS.update({'mirror': _kit_mirror, 'light_gate': _kit_light_gate})
+KIT_HELP.update({
+    'mirror': 'needs a "sun". A flat polished plate (material aluminum or iron), fixed at at_m [x, y, z] (its middle), '
+              'size_m [across, along], turned so that the sun\'s light from its middle reflects toward aim_at (a part '
+              'declared earlier) or aim_m [x, y, z]. Several mirrors aimed at one part add their light on it',
+    'light_gate': 'a beam of light across a gap at height_m: a lamp on "<name> lamp post" at from_m [x, 0, z] shining '
+                  'at a light sensor "<name> eye" on "<name> sensor post" at to_m [x, 0, z]; battery (the lamp\'s '
+                  'battery), watts (10: about 4 W of light reach the eye), half_angle_deg (1). A thing in the beam '
+                  'darkens the eye: a circuit switch {"photocell": "<name> eye", "closed_at_or_below_w": 1} closes '
+                  'then',
+})

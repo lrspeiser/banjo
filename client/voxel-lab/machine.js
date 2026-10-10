@@ -1,5 +1,5 @@
 import * as THREE from '/three.module.js';
-import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime} from '/machine-view.mjs';
+import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments} from '/machine-view.mjs';
 
 // The machine page. It asks the server to build a declaration, then shows
 // what the engine measures, frame by frame. It never moves a body itself.
@@ -134,6 +134,49 @@ function syncWires() {
     wires.push({line, from: battery && battery.in, via: hinge && hinge.at_m,
                 to: c.coil ? c.coil.heats : null, toPoint: driven && driven.at_m, name: c.name});
   }
+}
+
+// Light (docs/optics-checkpoint.md): the rays the engine last traced, as lines
+// as bright as the power it measured on them, and each light sensor as a small
+// disc that glows with what it reads. The key light comes from where the
+// machine's sun is.
+let beams = null;
+const sensors = new Map();
+function syncLight() {
+  const light = readouts.light;
+  const {positions, colors, legs} = beamSegments(light && light.paths);
+  if (!beams) {
+    // Opaque, so the glass is drawn over them and they show through it.
+    beams = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({vertexColors: true}));
+    beams.frustumCulled = false;
+    scene.add(beams);
+  }
+  beams.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  beams.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  beams.geometry.setDrawRange(0, legs * 2);
+  beams.visible = legs > 0;
+  const seen = new Set();
+  for (const c of (light && light.photocells) || []) {
+    if (!c.at_m) continue;
+    seen.add(c.name);
+    let disc = sensors.get(c.name);
+    if (!disc) {
+      const r = Math.max(.006, Math.sqrt((c.area_m2 || 1e-4) / Math.PI));
+      disc = new THREE.Mesh(new THREE.CircleGeometry(r, 20), new THREE.MeshBasicMaterial({color: 0x334455, side: THREE.DoubleSide}));
+      scene.add(disc); sensors.set(c.name, disc);
+    }
+    const n = new THREE.Vector3(...(c.normal || [0, 1, 0])).normalize();
+    disc.position.set(...c.at_m).addScaledVector(n, .002);
+    disc.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+    disc.material.color.setHex(c.power_w > 0 ? 0xffe066 : 0x334455);
+  }
+  for (const [name, disc] of sensors) if (!seen.has(name)) { scene.remove(disc); disc.geometry.dispose(); sensors.delete(name); }
+}
+function placeSun() {
+  const s = machine && (machine.sun || (machine.light && machine.light.sun));
+  if (!s) { sun.position.set(4, 8, 5); return; }
+  const el = s.elevation_deg * Math.PI / 180, az = s.azimuth_deg * Math.PI / 180;
+  sun.position.set(10 * Math.cos(el) * Math.sin(az), 10 * Math.sin(el), 10 * Math.cos(el) * Math.cos(az));
 }
 
 // The ground the engine built: its own heights, one per column.
@@ -353,6 +396,11 @@ function renderReadings(frame) {
     pair(dl, s.name, s.shaded ? `in shadow (${s.shaded_by || 'something'})` : `${(s.sunlight_w || 0).toFixed(0)} W of sunlight, ${(s.power_w || 0).toFixed(1)} W into the battery`);
   for (const m of readouts.machines?.motors || [])
     pair(dl, `Motor ${m.id}`, `${(m.speed_rad_s || 0).toFixed(1)} rad/s · ${(m.torque_n_m || 0).toFixed(2)} N·m · ${(m.power_w || 0).toFixed(0)} W`);
+  if (readouts.light) {
+    const l = readouts.light;
+    pair(dl, 'Light', `${(l.sent_w || 0).toFixed(1)} W traced, ${(l.heated_w || 0).toFixed(1)} W of it warming parts`);
+    for (const c of l.photocells || []) pair(dl, `${c.name} (light sensor)`, `${(c.power_w || 0).toFixed(3)} W`);
+  }
   if (readouts.pour)
     pair(dl, 'Poured water', `${readouts.pour.poured_l.toFixed(1)} L poured, ${readouts.pour.landed_l.toFixed(1)} L in the stream, ${readouts.pour.in_air_l.toFixed(1)} L falling`);
   for (const j of (readouts.joints || []).filter(j => j.kind === 'hinge').slice(0, 3))
@@ -423,7 +471,7 @@ async function build(next, start, request) {
     drumLines.clear();
     if (parcels) { scene.remove(parcels); parcels.geometry.dispose(); parcels = null; }
     syncGround(opened.ground); syncWater(opened.water); syncParcels(opened.parcels);
-    syncMeshes([...world.bodies.values()]); syncWires(); syncRopes(); syncZones(); updateWires(); renderStations(); renderReadings(opened); renderClock(opened);
+    syncMeshes([...world.bodies.values()]); syncWires(); syncRopes(); syncZones(); updateWires(); placeSun(); syncLight(); renderStations(); renderReadings(opened); renderClock(opened);
     frameCamera();
     if (start) await setPlaying(true);
     poll(mine);
@@ -464,7 +512,7 @@ async function poll(mine) {
       syncMeshes(changed.map(b => world.bodies.get(b.name)));
       if (frame.water) syncWater(frame.water);
       if (frame.parcels) syncParcels(frame.parcels);
-      updateWires(); addEvents(frame.events); renderStations(); renderReadings(frame); renderClock(frame);
+      updateWires(); syncLight(); addEvents(frame.events); renderStations(); renderReadings(frame); renderClock(frame);
       watchGoal(frame);
     } catch (e) {
       if (e.status === 410) { $('clock').textContent = 'This machine stopped running on the server; press Set up again'; session = null; return; }

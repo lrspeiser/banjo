@@ -24,6 +24,7 @@ Nothing on the page is animated. Every position, cut, pressure and dent is the e
 | Steam | a `steam_engine` kit: a boiler, a cylinder, a piston; heat from a firebox or a coil | 10 kW lifts the piston 10 cm in 0.82 s (about 13 cm/s) |
 | A powder charge (a stand-in for gunpowder) | a `cannon` kit; a primer at a time, or a coil on its charge | 2 g fires a 2.1 kg iron ball at 20.7 m/s, a 0.72 kg aluminium one at 31.6, a 0.19 kg oak one at 78; a 0.1 ohm coil on 24 V fires it 0.4 s after its switch closes |
 | Water in a channel, buoyancy and drag; water poured from a spout | `ground` flume, `spouts`, the water wheel's `pour` | Pouring water onto the wheel |
+| Light: a sun traced through glass and off mirrors (polished aluminium or iron), glass and ice that bend and focus it, lamps whose light is traced, light sensors and switches that follow them; light warms what absorbs it | `light` (sunlight boxes, `mirrors`, `lamps`, `photocells`), the `mirror` and `light_gate` kits, a circuit switch with `photocell`, `lit_w` and `shaded_w` stations | A 100 mm glass ball puts 0.72 W on a 4 mm sensor, twenty times the open sun, which closes a coil that burns a rope; a falling ball breaks a light gate's beam ([optics-checkpoint.md](optics-checkpoint.md); tests/machine_world_tests.py, class Light) |
 
 What the measurements show, and what they do not:
 
@@ -39,15 +40,14 @@ What the measurements show, and what they do not:
 | Physics | What the engine does | Planned use |
 |---|---|---|
 | Rocket thrust | A region with a nozzle pushes its vessel (thrust 2·Cd·A·Δp) | A rocket cart along a rail |
-| Lamps | A lamp on a battery gives so many lumens | A lamp that comes on when a switch closes (nothing receives its light yet) |
+| Lamps | A lamp on a battery gives so many lumens; its light is traced (a machine's lamp is in `light`, or the `light_gate` kit) | A lamp that comes on when a switch closes |
 | Fuses | A fuse branch that melts at its I²t | A fuse that blows and opens a circuit |
 
 ## New physics
 
 | Physics | What it needs | Planned use |
 |---|---|---|
-| Light: reflection and refraction | Rays from the sun or a lamp, reflected by mirrors (polished metal) and bent by glass by Snell's law, absorbed by what they land on and heating it | A mirror bounces sunlight; a glass lens focuses it onto a rope until it burns |
-| Light sensors | A photocell that measures the light reaching it and works a switch | A beam broken by a falling ball turns something on |
+| Light: what is still missing | Light scattered off rough surfaces and the sky's light; a spot heated more than the rest of its body (so focused sunlight could set wood alight); light pushing on what it reaches | A burning glass that lights the rope itself |
 | Sensors for heat and touch | A thermostat (closes above a temperature) and a pressure plate (closes under a load), each a circuit switch, measured by the engine | A pan of water that boils trips a switch; a ball landing on a plate rings a bell |
 | Magnetism | Force between magnets and iron; an electromagnet driven by the circuit's current | An electromagnet that lets go of an iron ball when its circuit opens |
 | Air drag and wind | A drag force on each surface from the air's relative velocity | A sail cart; a feather that falls slowly |
@@ -57,8 +57,8 @@ What the measurements show, and what they do not:
 
 ## Order of work
 
-1. Done: gears, pulleys, motors, the sun and solar panels, dents, cutting, steam, the cannon. Next of what the engine has: rockets, lamps, fuses.
-2. Light: ray optics with mirrors and lenses, sunlight that heats what it lands on, and photocells.
+1. Done: gears, pulleys, motors, the sun and solar panels, dents, cutting, steam, the cannon. Next of what the engine has: rockets, fuses.
+2. Done on `agent/optics`: light, ray optics with mirrors and lenses, sunlight that heats what it lands on, and photocells ([optics-checkpoint.md](optics-checkpoint.md)).
 3. Sensors for heat and touch, then magnetism.
 4. Air drag, thermal expansion, freezing and condensation, sound.
 
