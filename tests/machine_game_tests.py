@@ -48,7 +48,7 @@ LEVELS = mg.load_levels()
 
 class Tray(unittest.TestCase):
     def test_every_level_is_well_formed_and_its_solution_fits_its_tray(self):
-        self.assertEqual([l['id'] for l in LEVELS], ['gap', 'cut', 'fire', 'steam', 'chain', 'laser'])
+        self.assertEqual([l['id'] for l in LEVELS], ['gap', 'cut', 'fire', 'steam', 'chain', 'laser', 'sun'])
         for level in LEVELS:
             spec, checked, cost = mg.compose(level, level['solution'])
             mw.compile_spec(spec)
@@ -176,6 +176,13 @@ class Tray(unittest.TestCase):
         g = mg.ghost(tight, [dict(tight['solution'][0], powder_g=3.0)], 0)
         self.assertEqual(g['problems'], ['the pieces would cost 34; the budget is 20'])
         self.assertTrue(g['parts'])
+        # A panel's ghost says how squarely it faces the sun, for aiming it:
+        # 0.25 m2 under 1000 W/m2, less by the slant the sun meets it at.
+        sun = mg.level_by_id('sun')
+        faced = mg.ghost(sun, sun['solution'], 0)['sun'][0]
+        self.assertEqual((faced['off_sun_deg'], faced['sunlight_w']), (0.0, 250.0))
+        flat = mg.ghost(sun, [{k: v for k, v in sun['solution'][0].items() if k not in ('yaw_deg', 'pitch_deg')}], 0)
+        self.assertEqual((flat['sun'][0]['off_sun_deg'], flat['sun'][0]['sunlight_w']), (75.0, 64.7))
 
     def test_a_goal_about_a_piece_needs_that_piece(self):
         with self.assertRaises(mg.LevelRefused) as caught:
@@ -295,8 +302,13 @@ class Engine(unittest.TestCase):
         weak = [dict(fire['solution'][0], powder_g=0.5)]
         # One mirror where two are needed: the beam goes into the wall.
         laser = mg.level_by_id('laser')
+        # A panel lying flat in the sun, and one facing the sun in the shed's
+        # shadow: too little sunlight for the winch to lift the weight.
+        sun = mg.level_by_id('sun')
+        flat = [{k: v for k, v in sun['solution'][0].items() if k not in ('yaw_deg', 'pitch_deg')}]
+        shaded = [dict(sun['solution'][0], x_m=-0.8, z_m=0.6)]
         with tempfile.TemporaryDirectory() as logs:
-            for lv, placed in ((level, high), (fire, weak), (laser, laser['solution'][:1])):
+            for lv, placed in ((level, high), (fire, weak), (laser, laser['solution'][:1]), (sun, flat), (sun, shaded)):
                 t = mg.trial(lv, placed, ENGINE, Path(logs), runs=1)
                 self.assertEqual(t['worked'], 0, lv['id'])
 

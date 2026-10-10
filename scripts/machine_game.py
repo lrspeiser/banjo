@@ -172,7 +172,26 @@ def _mirror(name, k, ctx=None):
             'mirrors': [name]}
 
 
-PIECES = {'plank': _plank, 'knife': _knife, 'cannon': _cannon, 'steam': _steam, 'ramp': _ramp, 'mirror': _mirror}
+def _solar(name, k, ctx):
+    """A solar panel: a glass plate half a metre square, bolted on a post at
+    (x_m, height_m, z_m) and wired to the level's battery (the tray's
+    "battery"). Flat, it faces up; turned and tipped, it faces wherever it
+    is turned. What it gives is the sunlight falling on its face -- less the
+    more slant the sun meets it at, none in shadow -- a fifth of it stored."""
+    x, h, z = k['x_m'], k['height_m'], k.get('z_m', 0.0)
+    m = mw.heading(*(_turn(k) or [0.0, 0.0, 0.0]))
+    plate = {'name': name, 'shape': 'box', 'material': 'glass', 'size_m': [0.5, 0.02, 0.5], 'at_m': [x, h, z],
+             'turn_deg': mw.turn_of(m), 'fixed': True}
+    post = {'name': name + ' post', 'shape': 'box', 'material': 'concrete', 'size_m': [0.06, round(h - 0.02, 4), 0.06],
+            'at_m': [x, round((h - 0.02) / 2, 4), z], 'fixed': True}
+    return {'parts': [plate, post],
+            'solar_panels': [{'name': name, 'part': name, 'battery': ctx['tray'].get('battery', 'battery'),
+                              'normal': [round(v, 9) for v in mw._mat_apply(m, [0.0, 1.0, 0.0])],
+                              'area_m2': 0.25, 'efficiency': 0.2}]}
+
+
+PIECES = {'plank': _plank, 'knife': _knife, 'cannon': _cannon, 'steam': _steam, 'ramp': _ramp, 'mirror': _mirror,
+          'solar': _solar}
 
 
 class LevelRefused(ValueError):
@@ -240,13 +259,17 @@ def _assemble(level, placements, lenient=False):
     spec.setdefault('kits', [])
     spec.setdefault('parts', [])
     spec['title'] = level['title']
+    tray = {t['piece']: t for t in level['tray']}
     for i, p in enumerate(checked):
         knobs = {k: v for k, v in p.items() if k not in ('piece', 'cost')}
-        # What is there already, for a piece that is set down on it.
-        ctx = {'parts': mw.compile_spec(dict(spec, stations=[]), lenient=lenient)['parts']}
+        # What is there already, for a piece that is set down on it, and
+        # what the tray says about it (the battery a panel is wired to).
+        ctx = {'parts': mw.compile_spec(dict(spec, stations=[]), lenient=lenient)['parts'], 'tray': tray[p['piece']]}
         made = PIECES[p['piece']](f'your {p["piece"]} {i + 1}', knobs, ctx)
         spec['kits'] += made.get('kits', [])
         spec['parts'] += made.get('parts', [])
+        if made.get('solar_panels'):
+            spec['solar_panels'] = list(spec.get('solar_panels') or []) + made['solar_panels']
         if made.get('mirrors'):
             spec.setdefault('light', {}).setdefault('mirrors', [])
             spec['light']['mirrors'] = spec['light']['mirrors'] + made['mirrors']
@@ -293,8 +316,18 @@ def ghost(level, placements, index):
     problems = [p for p in compiled['problems'] + clashes_of(compiled) if about_it(p)]
     if cost > level['budget'] + 1e-9:
         problems.append(f'the pieces would cost {cost:.0f}; the budget is {level["budget"]}')
+    # A panel: how squarely it faces the sun, and the sunlight that gives
+    # on its face if nothing shades it -- for aiming it. (Shade, and what it
+    # really gets, are the engine's, once it is set down and run.)
+    sun = []
+    for sp in compiled.get('solar_panels') or []:
+        if compiled.get('sun') and owner({'name': sp['part']}) == name:
+            n, to = mw._unit(sp['normal']), mw._sun_toward(compiled['sun'])
+            c = max(-1.0, min(1.0, sum(n[i] * to[i] for i in range(3))))
+            sun.append({'panel': sp['name'], 'off_sun_deg': round(math.degrees(math.acos(c)), 1),
+                        'sunlight_w': round(max(0.0, c) * compiled['sun']['irradiance_w_m2'] * sp['area_m2'], 1)})
     keys = ('name', 'shape', 'material', 'size_m', 'at_m', 'turn_deg', 'fixed')
-    return {'name': name, 'cost': checked[index]['cost'], 'problems': problems[:4], 'fits': not problems,
+    return {'name': name, 'cost': checked[index]['cost'], 'problems': problems[:4], 'fits': not problems, 'sun': sun,
             'parts': [dict({k: p[k] for k in keys if k in p},
                            **({'parts': p['parts']} if p['shape'] == 'compound' else {})) for p in mine]}
 

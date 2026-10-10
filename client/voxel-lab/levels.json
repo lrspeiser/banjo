@@ -1077,6 +1077,287 @@
      "angle_deg": -45
     }
    ]
+  },
+  {
+   "id": "sun",
+   "title": "Catch the sun",
+   "teaches": "sunlight: a panel facing the sun catches the most",
+   "brief": "The winch runs on sunlight, but the sun is low behind the shed and its shadow is long. Set a solar panel down in the sun, then turn it and tip it to face the sun, so the winch winds the weight up to the green mark.",
+   "time_s": 8,
+   "budget": 20,
+   "par": 10,
+   "style_pieces": 1,
+   "machine": {
+    "schema": "banjo.machine.v1",
+    "cell_m": 0.02,
+    "sun": {
+     "elevation_deg": 15,
+     "azimuth_deg": 225,
+     "irradiance_w_m2": 1000
+    },
+    "parts": [
+     {
+      "name": "winch post",
+      "shape": "box",
+      "material": "concrete",
+      "size_m": [
+       0.1,
+       1.3,
+       0.1
+      ],
+      "at_m": [
+       0.0,
+       0.65,
+       -0.2
+      ],
+      "fixed": true
+     },
+     {
+      "name": "winch drum",
+      "shape": "compound",
+      "material": "aluminum",
+      "at_m": [
+       0.0,
+       1.2,
+       0.0
+      ],
+      "parts": [
+       {
+        "shape": "cylinder",
+        "size_m": [
+         0.08,
+         0.2,
+         0.08
+        ],
+        "at_m": [
+         0,
+         0,
+         0
+        ],
+        "turn_deg": [
+         90,
+         0,
+         0
+        ]
+       },
+       {
+        "shape": "cylinder",
+        "size_m": [
+         0.4,
+         0.03,
+         0.4
+        ],
+        "at_m": [
+         0,
+         0,
+         0.115
+        ],
+        "turn_deg": [
+         90,
+         0,
+         0
+        ]
+       }
+      ]
+     },
+     {
+      "name": "weight",
+      "shape": "box",
+      "material": "iron",
+      "size_m": [
+       0.1,
+       0.1,
+       0.1
+      ],
+      "at_m": [
+       0.04,
+       0.05,
+       0.0
+      ]
+     },
+     {
+      "name": "shed",
+      "shape": "box",
+      "material": "concrete",
+      "size_m": [
+       0.4,
+       1.4,
+       0.4
+      ],
+      "at_m": [
+       -1.5,
+       0.7,
+       -0.1
+      ],
+      "fixed": true
+     },
+     {
+      "name": "battery box",
+      "shape": "box",
+      "material": "iron",
+      "size_m": [
+       0.1,
+       0.1,
+       0.1
+      ],
+      "at_m": [
+       -0.3,
+       0.05,
+       -0.2
+      ],
+      "fixed": true
+     }
+    ],
+    "joints": [
+     {
+      "name": "winch pin",
+      "kind": "hinge",
+      "a": "winch post",
+      "b": "winch drum",
+      "at_m": [
+       0,
+       1.2,
+       0
+      ],
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "friction_n_m": 0.0
+     },
+     {
+      "name": "winch rope",
+      "kind": "drum",
+      "drum": "winch drum",
+      "load": "weight",
+      "centre_m": [
+       0,
+       1.2,
+       0
+      ],
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "radius_m": 0.04,
+      "load_point_m": [
+       0.04,
+       0.1,
+       0.0
+      ],
+      "winds": 1,
+      "spare_m": 0.0
+     }
+    ],
+    "batteries": [
+     {
+      "name": "solar battery",
+      "in": "battery box",
+      "capacity_j": 20000,
+      "voltage_v": 12,
+      "charge_j": 0
+     }
+    ],
+    "circuits": [
+     {
+      "name": "winch motor",
+      "battery": "solar battery",
+      "motor": {
+       "hinge": "winch pin",
+       "stall_torque_n_m": 8,
+       "no_load_rad_s": 12
+      }
+     }
+    ]
+   },
+   "goal": {
+    "title": "The weight is up at the green mark",
+    "focus": [
+     "weight",
+     "winch drum"
+    ],
+    "station": {
+     "done_when": {
+      "in_zone": {
+       "part": "weight",
+       "at_m": [
+        0.04,
+        0.62,
+        0.0
+       ],
+       "size_m": [
+        0.3,
+        0.2,
+        0.3
+       ]
+      }
+     }
+    }
+   },
+   "tray": [
+    {
+     "piece": "solar",
+     "count": 1,
+     "cost": 10,
+     "battery": "solar battery",
+     "knobs": {
+      "x_m": {
+       "min": -1.5,
+       "max": 1.5,
+       "default": -0.8,
+       "step": 0.01,
+       "label": "x"
+      },
+      "z_m": {
+       "min": -1.0,
+       "max": 1.0,
+       "default": 0.6,
+       "step": 0.01,
+       "label": "z"
+      },
+      "height_m": {
+       "min": 0.3,
+       "max": 1.2,
+       "default": 0.6,
+       "step": 0.01,
+       "label": "height"
+      },
+      "yaw_deg": {
+       "min": -180,
+       "max": 180,
+       "default": 0,
+       "step": 1,
+       "label": "turn",
+       "turning": true
+      },
+      "pitch_deg": {
+       "min": -180,
+       "max": 180,
+       "default": 0,
+       "step": 1,
+       "label": "tip",
+       "turning": true
+      }
+     }
+    }
+   ],
+   "hints": [
+    "The sun stands 15 degrees above the ground, behind the shed: toward -x and -z, half way between them.",
+    "A panel stores a fifth of the sunlight on its face. Facing the sun squarely it gets 250 W of sunlight; lying flat, about a quarter of that, because the sun meets it so slantwise.",
+    "The winch lifts the weight only with more than about 185 W of sunlight on the panel; with less its motor just warms. Turn the panel about -45 degrees, then tip it up."
+   ],
+   "solution": [
+    {
+     "piece": "solar",
+     "x_m": 1.0,
+     "z_m": 0.4,
+     "height_m": 0.6,
+     "yaw_deg": -45,
+     "pitch_deg": 75
+    }
+   ]
   }
  ]
 }

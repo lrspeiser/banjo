@@ -14,8 +14,22 @@ scene.add(new THREE.HemisphereLight(0xdfefff, 0x2a3a2a, 1.1));
 const sun = new THREE.DirectionalLight(0xffffff, 1.6);
 sun.position.set(4, 8, 5);
 scene.add(sun);
+// Shadows from the key light: where the machine has a sun, the shade its
+// parts cast is where the engine's sunlight does not reach (drawn, not
+// measured: the panel readings are the engine's).
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, {left: -5, right: 5, top: 5, bottom: -5, near: .5, far: 40});
+sun.shadow.bias = -.0005; sun.shadow.normalBias = .02;
+// The machine's sun itself, low or high in the sky where it stands.
+const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(.9, 24, 16), new THREE.MeshBasicMaterial({color: 0xffe9a0, fog: false}));
+sunDisc.visible = false;
+scene.add(sunDisc);
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshStandardMaterial({color: 0x2b3a32, roughness: 1}));
 ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
 scene.add(ground);
 const grid = new THREE.GridHelper(40, 80, 0x46604f, 0x34483c);
 grid.position.y = 0.0005;
@@ -87,6 +101,7 @@ function makeMesh(b) {
     b.cells_local_m.forEach((c, i) => mesh.setMatrixAt(i, m.makeTranslation(c[0], c[1], c[2])));
   } else mesh = new THREE.Mesh(new THREE.BoxGeometry(...b.dimensions_m), look());
   mesh.userData = {revision: b.revision, cells: b.cells_local_m ? b.cells_local_m.length : 0, base: hex};
+  mesh.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   scene.add(mesh);
   return mesh;
 }
@@ -174,9 +189,12 @@ function syncLight() {
 }
 function placeSun() {
   const s = machine && (machine.sun || (machine.light && machine.light.sun));
-  if (!s) { sun.position.set(4, 8, 5); return; }
+  if (!s) { sun.position.set(4, 8, 5); sunDisc.visible = false; return; }
   const el = s.elevation_deg * Math.PI / 180, az = s.azimuth_deg * Math.PI / 180;
-  sun.position.set(10 * Math.cos(el) * Math.sin(az), 10 * Math.sin(el), 10 * Math.cos(el) * Math.cos(az));
+  const toward = [Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az)];
+  sun.position.set(...toward.map(v => 12 * v));
+  sunDisc.position.set(...toward.map(v => 30 * v));
+  sunDisc.visible = true;
 }
 
 // The ground the engine built: its own heights, one per column.
@@ -785,7 +803,7 @@ async function askGhost() {
   try {
     const r = await api({op: 'level_ghost', level: level.id, placements: ghostPlacements(), index: g.index});
     if (ghost !== g) return;
-    Object.assign(g, {fits: r.fits, problems: r.problems, cost: r.cost, drawnAt: sent, answered: true});
+    Object.assign(g, {fits: r.fits, problems: r.problems, cost: r.cost, sun: r.sun || [], drawnAt: sent, answered: true});
     drawGhost(r.parts, r.fits);
   } catch (e) {
     if (ghost === g) Object.assign(g, {fits: false, problems: e.data && e.data.problems ? e.data.problems : [e.message], answered: true});
@@ -833,6 +851,9 @@ function showGhostState() {
   state.textContent = ghost.follow ? 'Move the pointer over the scene; click to put it there. '
     : '';
   state.textContent += ghost.fits ? 'It fits here.' : ghost.problems.join('; ');
+  // A panel: how squarely it faces the sun (the engine decides shade).
+  for (const s of ghost.sun || []) state.textContent += ` It faces ${s.off_sun_deg}° off the sun: about ` +
+    `${Math.round(s.sunlight_w)} W of sunlight on it, if nothing shades it.`;
   if (down) down.disabled = !ghost.fits || ghost.busy;
   const head = $('ghost-cost');
   if (head && ghost.cost != null) head.textContent = ` · costs ${ghost.cost}`;

@@ -229,7 +229,7 @@ The player may add only these pieces (the tray):
 {tray}
 What each piece is:
 {pieces}
-
+{TURNING_HELP if any('yaw_deg' in t['knobs'] or 'pitch_deg' in t['knobs'] for t in level['tray']) else ''}
 {answer}"""
 
 
@@ -251,7 +251,14 @@ PIECE_HELP = {
               'vertical: at 0 its face looks along x; turned 45 a beam along +x leaves along +z, turned -45 a beam '
               'along +z leaves along -x. Light reflects off its face, 1 cm in front of its middle, and it keeps 92% '
               'of the light',
+    'solar': 'a solar panel 0.5 m square on a post, its middle at (x_m, height_m, z_m), wired to the level\'s '
+             'battery. Flat it faces up; yaw_deg turns it about the vertical (a positive turn takes +x toward -z), '
+             'then pitch_deg tips its +x edge up, so its face looks toward -x turned by yaw. It stores a fifth of the '
+             'sunlight on its face: most when it faces the sun squarely, none in shadow',
 }
+TURNING_HELP = ('Every piece can also be moved across with z_m and turned any way: yaw_deg about the vertical (a '
+                'positive turn takes +x toward -z), then pitch_deg tips its +x end up, then roll_deg turns it about '
+                'its length. Turning costs nothing; leave them at 0 unless turning helps.')
 
 
 def _placements_answer(answer):
