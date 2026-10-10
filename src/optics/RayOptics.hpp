@@ -149,9 +149,8 @@ struct Ledger {
     double scattered_w{};
     double unfollowed_w{};      // split off too faint to follow
     double bounce_limit_w{};
-    double lost_w{};            // a ray inside a body that found no way out of it
     [[nodiscard]] double residualW() const {
-        return sent_w - (absorbed_w + ground_w + escaped_w + scattered_w + unfollowed_w + bounce_limit_w + lost_w);
+        return sent_w - (absorbed_w + ground_w + escaped_w + scattered_w + unfollowed_w + bounce_limit_w);
     }
 };
 
@@ -167,6 +166,9 @@ struct Result {
     std::vector<double> absorbed_w;   // by body index, both bands
     std::vector<Path> paths;
     std::size_t rays{}, legs{}, casts{};
+    // Rays that came into a body across a sharp edge and found themselves
+    // already out of it: they went on through the air.
+    std::size_t grazed{};
 };
 
 // Follow every ray. `bodies` is how many bodies the host's indices run to.

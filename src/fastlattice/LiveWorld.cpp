@@ -2032,9 +2032,12 @@ struct LiveWorld::Impl {
     LiveOptics light_report;
     bool light_due{true};
     unsigned long long light_traced_at{};
-    // From the last trace: each body light reached, by index, and what it
-    // absorbed, watts; and, of those, the ones the heat network holds.
-    std::vector<std::pair<std::size_t, double>> lit;
+    // From the last trace: each body light reached, by name -- a break between
+    // traces renumbers the body table -- and what it absorbed, watts; and the
+    // ones the heat network cannot hold. And how many bodies there were then:
+    // a body made or taken away since is traced again at once.
+    std::vector<std::pair<std::string, double>> lit;
+    std::size_t light_bodies_at_trace{};
     std::set<std::string> lit_cannot_heat;
     // What the step being taken handed the heat network, watts.
     double light_heating_w{};
@@ -2331,17 +2334,16 @@ struct LiveWorld::Impl {
         light_report.watts.scattered = result.ledger.scattered_w;
         light_report.watts.unfollowed = result.ledger.unfollowed_w;
         light_report.watts.bounce_limit = result.ledger.bounce_limit_w;
-        light_report.watts.lost = result.ledger.lost_w;
         lit.clear();
         for (std::size_t i = 0; i < result.absorbed_w.size(); ++i)
-            if (result.absorbed_w[i] > 0.0) lit.emplace_back(i, result.absorbed_w[i]);
+            if (result.absorbed_w[i] > 0.0) lit.emplace_back(described[i].name, result.absorbed_w[i]);
+        light_bodies_at_trace = described.size();
         // Heated or not is settled once the bodies have been drawn into the
         // heat network (LiveWorld::traceLightIfDue); for now all of it is
         // absorbed and none of it yet heats.
         light_report.watts.unheated = result.ledger.absorbed_w;
         for (LiveOptics::Lit &b : light_report.bodies) b.absorbed_w = 0.0;
-        for (const auto &[i, w] : lit) {
-            const std::string &name = described[i].name;
+        for (const auto &[name, w] : lit) {
             auto row = std::find_if(light_report.bodies.begin(), light_report.bodies.end(),
                                     [&](const LiveOptics::Lit &b) { return b.body == name; });
             if (row == light_report.bodies.end()) {
@@ -2358,6 +2360,7 @@ struct LiveWorld::Impl {
         light_report.rays = result.rays;
         light_report.casts = result.casts;
         light_report.legs = result.legs;
+        light_report.grazed = result.grazed;
         ++light_report.traces;
         light_report.t_s = time_s;
         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
@@ -2373,9 +2376,9 @@ struct LiveWorld::Impl {
     void heatFromLight(double dt_s) {
         light_heating_w = 0.0;
         if (!thermo || lit.empty()) return;
-        for (const auto &[i, w] : lit) {
-            const std::string &name = described[i].name;
-            if (!inWorld(i) || !thermo->holds(name)) continue;
+        for (const auto &[name, w] : lit) {
+            const auto found = index_of.find(name);
+            if (found == index_of.end() || !inWorld(found->second) || !thermo->holds(name)) continue;
             thermo->heat({name, w, thermo->timeS(), dt_s, "light"});
             light_heating_w += w;
         }
@@ -2387,7 +2390,7 @@ struct LiveWorld::Impl {
         LiveOpticsLedger &j = light_report.joules;
         const LiveOpticsLedger &w = light_report.watts;
         double absorbed = 0.0;
-        for (const auto &[i, power] : lit) absorbed += power;
+        for (const auto &[name, power] : lit) absorbed += power;
         j.sent += w.sent * dt_s;
         j.heated += light_heating_w * dt_s;
         j.unheated += (absorbed - light_heating_w) * dt_s;
@@ -2396,7 +2399,6 @@ struct LiveWorld::Impl {
         j.scattered += w.scattered * dt_s;
         j.unfollowed += w.unfollowed * dt_s;
         j.bounce_limit += w.bounce_limit * dt_s;
-        j.lost += w.lost * dt_s;
         for (LiveOptics::Lit &b : light_report.bodies) {
             b.absorbed_j += b.absorbed_w * dt_s;
             b.heated = thermo && thermo->holds(b.body);
@@ -6940,8 +6942,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         report.joules = {numberFrom(j.at("sent")),       numberFrom(j.at("heated")),
                          numberFrom(j.at("unheated")),   numberFrom(j.at("ground")),
                          numberFrom(j.at("escaped")),    numberFrom(j.at("scattered")),
-                         numberFrom(j.at("unfollowed")), numberFrom(j.at("bounce_limit")),
-                         numberFrom(j.at("lost"))};
+                         numberFrom(j.at("unfollowed")), numberFrom(j.at("bounce_limit"))};
         for (const nlohmann::json &b : saved_light.at("lit"))
             report.bodies.push_back({b.at("body").get<std::string>(), 0.0, numberFrom(b.at("absorbed_j")), false});
         impl.next_light = saved_light.at("next_light").get<unsigned>();
@@ -9478,6 +9479,7 @@ void LiveWorld::traceLightIfDue() {
         const double now = lamp != nullptr && lamp->lit ? lamp->lumens / light.radiant_efficacy_lm_w : 0.0;
         if (std::abs(now - light.power_w) > 0.01 * std::max(now, light.power_w)) I.light_due = true;
     }
+    if (I.described.size() != I.light_bodies_at_trace) I.light_due = true;   // something broke, or went
     if (!I.light_due && I.steps_taken - I.light_traced_at < I.light_report.trace_every_steps) return;
     traceLight();
 }
@@ -9492,9 +9494,8 @@ void LiveWorld::traceLight() {
     // counted, warming nothing.
     double absorbed = 0.0, heated = 0.0;
     bool refreshed = false;
-    for (const auto &[i, w] : I.lit) {
+    for (const auto &[name, w] : I.lit) {
         absorbed += w;
-        const std::string &name = I.described[i].name;
         if (I.precise_bodies.count(name) || I.lit_cannot_heat.count(name)) continue;
         if (!I.thermo || !I.thermo->holds(name)) {
             try {
@@ -18553,7 +18554,7 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                                     {"unheated", savedNumber(j.unheated)}, {"ground", savedNumber(j.ground)},
                                     {"escaped", savedNumber(j.escaped)}, {"scattered", savedNumber(j.scattered)},
                                     {"unfollowed", savedNumber(j.unfollowed)},
-                                    {"bounce_limit", savedNumber(j.bounce_limit)}, {"lost", savedNumber(j.lost)}}},
+                                    {"bounce_limit", savedNumber(j.bounce_limit)}}},
                         {"lit", std::move(lit)},
                         {"next_light", I.next_light},
                         {"next_photocell", I.next_photocell}};

@@ -213,8 +213,12 @@ private:
             const Surface s = scene_.surface(g.inside);
             const Meeting m = scene_.outOf(g.inside, g.from, g.along, settings_.reach_m);
             if (!m.hit) {
-                result_.ledger.lost_w += total(g.power_w);
-                return;
+                // It came in across a sharp edge and is already outside the
+                // body's other face (a broken piece's corners are sharp to a
+                // micrometre): it goes on through the air from where it is.
+                ++result_.grazed;
+                g.inside = -1;
+                continue;
             }
             leg(g, m.point_m);   // drawn with the power it set out with
             // The path through it is from the surface it came in by, where the

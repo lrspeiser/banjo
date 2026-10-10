@@ -442,6 +442,34 @@ class Light(unittest.TestCase):
         self.assertGreaterEqual(r['stations'][2]['at_s'], r['stations'][1]['at_s'])
 
     @need_engine
+    def test_light_goes_on_through_the_pieces_of_a_broken_pane(self):
+        spec = {'schema': mw.SCHEMA, 'cell_m': 0.02,
+                'sun': {'elevation_deg': 70, 'azimuth_deg': 90, 'irradiance_w_m2': 1000},
+                'kits': [{'kit': 'plate_on_supports', 'name': 'pane', 'at_m': [0, 0.3, 0], 'size_m': [0.48, 0.02, 0.28],
+                          'material': 'glass', 'span': 'z'}],
+                'parts': [{'name': 'ball', 'shape': 'sphere', 'material': 'iron', 'size_m': [0.1, 0.1, 0.1],
+                           'at_m': [0, 1.2, 0], 'velocity_m_s': [0, -3, 0]}],
+                'light': {'sunlight': {'through': [{'center_m': [0, 0.31, 0], 'size_m': [0.5, 0.06, 0.3]}],
+                                       'spacing_m': 0.01}},
+                'stations': [{'title': 'The pane breaks', 'done_when': {'broke': 'pane'}}]}
+        with tempfile.TemporaryDirectory() as logs:
+            session = mw.MachineSession(mw.compile_spec(spec), ENGINE, Path(logs), paced=False)
+            try:
+                session.play(True)
+                with session.lock:
+                    while session.t < 1.5 and not session.error:
+                        session.lock.wait(0.1)
+                    light = session.readouts['light']
+                    broke = session.readouts['stations'][0]['done']
+            finally:
+                session.close()
+        self.assertTrue(broke, 'the ball broke the pane')
+        pieces = [b for b in light['lit'] if b['name'].startswith('pane piece')]
+        self.assertTrue(pieces, light['lit'])
+        self.assertLess(abs(light['residual_w']), 1e-9 * light['sent_w'])
+        self.assertLess(abs(light['joules']['residual']), 1e-9 * light['joules']['sent'])
+
+    @need_engine
     def test_a_live_machine_sends_its_rays_to_draw(self):
         with tempfile.TemporaryDirectory() as logs:
             host = mw.MachineHost(ENGINE, logs)

@@ -628,7 +628,6 @@ nlohmann::json opticsOf(const LiveWorld &world, bool paths) {
                               {"scattered", tidy(l.scattered)},
                               {"unfollowed", tidy(l.unfollowed)},
                               {"bounce_limit", tidy(l.bounce_limit)},
-                              {"lost", tidy(l.lost)},
                               {"residual", l.residual()}};
     };
     nlohmann::json lights = nlohmann::json::array();
@@ -668,6 +667,7 @@ nlohmann::json opticsOf(const LiveWorld &world, bool paths) {
                   {"traces", o.traces},
                   {"rays", o.rays},
                   {"casts", o.casts},
+                  {"grazed_edges", o.grazed},
                   {"last_trace_ms", tidy(o.last_trace_ms)},
                   {"mean_trace_ms", o.traces ? tidy(o.trace_ms / static_cast<double>(o.traces)) : 0.0}}}};
     if (paths) {

@@ -120,11 +120,9 @@ void checkLedger(const LiveOptics &o, const std::string &what) {
     std::cout << "    ledger, " << what << ": sent " << o.watts.sent << " W = heated " << o.watts.heated
               << " + warms nothing " << o.watts.unheated << " + ground " << o.watts.ground << " + escaped "
               << o.watts.escaped << " + scattered " << o.watts.scattered << " + unfollowed " << o.watts.unfollowed
-              << " + bounce limit " << o.watts.bounce_limit << " + lost " << o.watts.lost << "; residual "
-              << ledgerResidual(o) << " W\n";
+              << " + bounce limit " << o.watts.bounce_limit << "; residual " << ledgerResidual(o) << " W\n";
     require(std::abs(ledgerResidual(o)) <= tolerance, what + ": the ledger does not close: " +
                                                           std::to_string(ledgerResidual(o)) + " W");
-    require(o.watts.lost == 0.0, what + ": a ray inside a body found no way out");
 }
 
 // ---- 1. the laws -------------------------------------------------------------

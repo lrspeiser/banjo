@@ -677,15 +677,15 @@ struct LivePhotocell {
 // every kept step since light was first declared, in joules.
 //
 //     sent = heated + warms nothing + ground + escaped + scattered + unfollowed
-//            + bounce limit + lost + residual
+//            + bounce limit + residual
 //
 // `heated` is what bodies absorbed and the heat network took as heat;
 // `unheated` what bodies absorbed that it cannot hold (an exact body, or one
 // gone): counted, warming nothing.
 struct LiveOpticsLedger {
-    double sent{}, heated{}, unheated{}, ground{}, escaped{}, scattered{}, unfollowed{}, bounce_limit{}, lost{};
+    double sent{}, heated{}, unheated{}, ground{}, escaped{}, scattered{}, unfollowed{}, bounce_limit{};
     [[nodiscard]] double residual() const {
-        return sent - (heated + unheated + ground + escaped + scattered + unfollowed + bounce_limit + lost);
+        return sent - (heated + unheated + ground + escaped + scattered + unfollowed + bounce_limit);
     }
 };
 struct LiveOptics {
@@ -704,11 +704,14 @@ struct LiveOptics {
     };
     std::vector<Path> paths;            // a few rays of the last trace, to draw
     // What it costs: steps between traces, rays and Jolt ray casts in the last
-    // one, its wall time, and all traces' together.
+    // one, its wall time, and all traces' together. And how many of its rays
+    // came into a body across a sharp edge, found themselves already out of
+    // it, and went on through the air (a broken piece's corners are sharp to a
+    // micrometre).
     unsigned trace_every_steps{4}, bounce_limit{16};
     double follow_share{0.02};
     unsigned drawn{48};
-    std::size_t rays{}, casts{}, legs{};
+    std::size_t rays{}, casts{}, legs{}, grazed{};
     unsigned long long traces{};
     double last_trace_ms{}, trace_ms{};
     double t_s{};                       // the world's time of the last trace
