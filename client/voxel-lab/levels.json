@@ -1052,7 +1052,8 @@
        "max": 90,
        "default": 0,
        "step": 1,
-       "label": "Turned (degrees)"
+       "label": "turn",
+       "turning": true
       }
      }
     }

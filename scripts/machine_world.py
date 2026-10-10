@@ -96,9 +96,107 @@ def rotation(turn_deg):
     mx = [[1, 0, 0], [0, cx, -sx], [0, sx, cx]]
     my = [[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]]
     mz = [[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]]
-    def mul(a, b):
-        return [[sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
-    return mul(mx, mul(my, mz))
+    return _mat_mul(mx, _mat_mul(my, mz))
+
+
+def _mat_mul(a, b):
+    return [[sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
+
+
+def _mat_apply(m, v):
+    return [sum(m[i][j] * v[j] for j in range(3)) for i in range(3)]
+
+
+def turn_of(m):
+    """The turn_deg of a rotation matrix (R = Rx Ry Rz, as rotation()).
+    Turned straight up or down by y, a turn about x and one about z are the
+    same turn; it is then all put in x."""
+    s = max(-1.0, min(1.0, m[0][2]))
+    ry = math.asin(s)
+    if math.hypot(m[0][0], m[0][1]) < 1e-9:
+        rx, rz = math.atan2(math.copysign(1.0, s) * m[1][0], m[1][1]), 0.0
+    else:
+        rx, rz = math.atan2(-m[1][2], m[2][2]), math.atan2(-m[0][1], m[0][0])
+    return [round(math.degrees(a), 6) + 0.0 for a in (rx, ry, rz)]
+
+
+def heading(yaw_deg, pitch_deg, roll_deg):
+    """A thing turned as a whole, the way a person turns it in their hands:
+    about the vertical by yaw (a positive turn takes +x toward -z), then its
+    +x end up by pitch, then about its own length (x) by roll. R = Ry Rz Rx."""
+    return _mat_mul(rotation([0.0, yaw_deg, 0.0]), _mat_mul(rotation([0.0, 0.0, pitch_deg]),
+                                                           rotation([roll_deg, 0.0, 0.0])))
+
+
+# What a kit's rows hold that a turn moves: points turn about the pivot,
+# directions turn with it, a part's own turn comes after it. A gas region
+# that gives no axis grows up and vents down (ThermoWorld's defaults), so a
+# turned one is given them, turned.
+TURN_POINTS = ('at_m', 'at_b_m', 'over_a_m', 'over_b_m', 'centre_m', 'load_point_m', 'heel_m', 'tip_m')
+TURN_DIRECTIONS = ('axis', 'vent_axis', 'facing', 'direction', 'normal', 'velocity_m_s')
+GAS_DEFAULTS = {'axis': [0.0, 1.0, 0.0], 'vent_axis': [0.0, -1.0, 0.0]}
+
+
+def _is_vec3(v):
+    return isinstance(v, (list, tuple)) and len(v) == 3 and all(
+        isinstance(x, (int, float)) and not isinstance(x, bool) for x in v)
+
+
+def turn_rows(m, about, parts, rows=()):
+    """Turn a kit -- its parts and the joints, gas, edges and lamps it made --
+    as one rigid thing by the matrix m about the point `about`."""
+    def point(v):
+        r = _mat_apply(m, [v[i] - about[i] for i in range(3)])
+        return [round(about[i] + r[i], 6) for i in range(3)]
+
+    def direction(v):
+        return [round(x, 9) for x in _mat_apply(m, v)]
+    for row in list(parts) + list(rows):
+        if not isinstance(row, dict):
+            continue
+        if 'piston' in row:
+            for key, default in GAS_DEFAULTS.items():
+                row.setdefault(key, list(default))
+        for key in TURN_POINTS + (('facing',) if 'facing_from' in row else ()) + ('facing_from',):
+            if _is_vec3(row.get(key)):
+                row[key] = point(row[key])
+        for key in TURN_DIRECTIONS:
+            if key == 'facing' and 'facing_from' in row:
+                continue
+            if _is_vec3(row.get(key)):
+                row[key] = direction(row[key])
+    for row in parts:
+        if isinstance(row, dict):
+            own = row.get('turn_deg') if _is_vec3(row.get('turn_deg')) else [0.0, 0.0, 0.0]
+            row['turn_deg'] = turn_of(_mat_mul(m, rotation(own)))
+
+
+def shift_rows(d, rows):
+    """Move rows (as turn_rows takes them) by d, without turning them."""
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for key in TURN_POINTS + ('facing_from',) + (('facing',) if 'facing_from' in row else ()):
+            if _is_vec3(row.get(key)):
+                row[key] = [round(row[key][i] + d[i], 6) for i in range(3)]
+
+
+def _ground_deficit(parts, ground):
+    """How far the lowest of these parts goes below the ground under it (0
+    when none does): what a turned thing is lifted by to stand on it."""
+    worst = 0.0
+    for p in parts:
+        if not isinstance(p, dict) or not _is_vec3(p.get('at_m')) or not _is_vec3(p.get('size_m')):
+            continue
+        if p.get('shape') == 'sphere':
+            r = 0.5 * p['size_m'][0]
+            pts = [[p['at_m'][0], p['at_m'][1] - r, p['at_m'][2]]]
+        elif p.get('shape', 'box') == 'box':
+            pts = footprint_points(dict(p, turn_deg=p.get('turn_deg', [0, 0, 0])))
+        else:
+            continue
+        worst = max([worst] + [ground_height(ground, pt[0], pt[2]) - pt[1] for pt in pts])
+    return worst
 
 
 def _axes(part):
@@ -226,14 +324,8 @@ def solids_of(part):
         size = list(sub['size_m'])
         if sub['shape'] == 'cylinder':   # [diameter, length, diameter] about its own y
             size = [size[0], size[1], size[0]]
-        r = rotation(sub['turn_deg'])
-        m = [[sum(outer[i][k] * r[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
-        # The same matrix as turn angles (R = Rx Ry Rz, as rotation()).
-        ry = math.asin(max(-1.0, min(1.0, m[0][2])))
-        rx = math.atan2(-m[1][2], m[2][2])
-        rz = math.atan2(-m[0][1], m[0][0])
         out.append({'name': part['name'], 'shape': 'box', 'size_m': size, 'at_m': at,
-                    'turn_deg': [math.degrees(rx), math.degrees(ry), math.degrees(rz)]})
+                    'turn_deg': turn_of(_mat_mul(outer, rotation(sub['turn_deg'])))})
     return out
 
 
@@ -954,9 +1046,12 @@ KIT_HELP = {
 
 # ---- the declaration ---------------------------------------------------------
 
-def compile_spec(spec):
+def compile_spec(spec, lenient=False):
     """Expand kits and check everything the engine will be asked to build.
-    Returns the compiled machine; raises MachineRefused with every problem."""
+    Returns the compiled machine; raises MachineRefused with every problem.
+    lenient: return what could be compiled, with the problems in it, rather
+    than raise -- for showing a piece before it is set down, never for
+    building one."""
     problems = []
     if not isinstance(spec, dict):
         raise MachineRefused(['a machine is a JSON object'])
@@ -981,10 +1076,32 @@ def compile_spec(spec):
         if not isinstance(name, str) or not name.strip():
             problems.append(f'kit {i + 1} ({kit["kit"]}) needs a name')
             continue
+        before = ({key: len(rows) for key, rows in thermo.items()}, len(blades), len(spouts),
+                  {key: len(rows) for key, rows in light_extra.items() if isinstance(rows, list)})
         p, j = KITS[kit['kit']](dict(kit, _known={r['name']: r for r in parts if isinstance(r, dict) and 'name' in r},
                                      _ground=ground, _spouts=spouts, _thermo=thermo, _cell=cell,
                                      _blades=blades, _sun=spec.get('sun'), _light=light_extra),
                                 problems, name.strip())
+        turned = kit.get('turned')
+        if turned is not None:
+            # Any kit turned as a whole, about a point: everything it made
+            # turns with it, and with clear_ground it is then lifted to stand
+            # on the ground rather than go into it.
+            what = f'kit {name.strip()} turned'
+            if not isinstance(turned, dict):
+                problems.append(what + ' is {"yaw_deg", "pitch_deg", "roll_deg", "about_m"}')
+            else:
+                m = heading(*(_num(turned, key, what, problems, 0.0, -360.0, 360.0)
+                              for key in ('yaw_deg', 'pitch_deg', 'roll_deg')))
+                about = _vec(turned.get('about_m'), 3, what + ' about_m', problems)
+                made = (list(j) + [r for key, rows in thermo.items() for r in rows[before[0].get(key, 0):]]
+                        + blades[before[1]:] + spouts[before[2]:]
+                        + [r for key, rows in light_extra.items() if isinstance(rows, list)
+                           for r in rows[before[3].get(key, 0):]])
+                turn_rows(m, about, p, made)
+                lift = _ground_deficit(p, ground) if turned.get('clear_ground') else 0.0
+                if lift > 0.0:
+                    shift_rows([0.0, lift + 0.001, 0.0], list(p) + made)
         for row in p:
             row['kit'] = name.strip()
         parts += p
@@ -1442,9 +1559,9 @@ def compile_spec(spec):
             problems.append(f'{what}: done_when is one rule, or null for a station not built yet')
         focus = [f for f in (s.get('focus') or []) if isinstance(f, str) and f in names]
         stations.append({k: s.get(k) for k in ('title', 'shows', 'law', 'maturity', 'done_when')} | {'focus': focus})
-    if problems:
+    if problems and not lenient:
         raise MachineRefused(problems)
-    return {'schema': SCHEMA, 'title': str(spec.get('title', 'Machine'))[:80], 'cell_m': cell, 'ground': ground,
+    return ({'problems': problems} if lenient else {}) | {'schema': SCHEMA, 'title': str(spec.get('title', 'Machine'))[:80], 'cell_m': cell, 'ground': ground,
             'parts': checked, 'joints': joint_rows, 'batteries': batteries, 'circuits': circuits,
             'torches': torches, 'spouts': checked_spouts, 'stations': stations, 'cells': round(cells), 'notes': notes,
             'plasticity': bool(spec.get('plasticity', False)), 'sun': sun, 'solar_panels': solar_panels,

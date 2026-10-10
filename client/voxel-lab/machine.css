@@ -57,7 +57,9 @@ details{margin-top:14px;font-size:13px}summary{cursor:pointer;color:#cfe2ec}
 #tray,#placed{list-style:none;padding:0;margin:.2rem 0 .6rem}
 #tray li,#placed li{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;padding:.35rem 0;border-bottom:1px solid rgba(255,255,255,.08)}
 #placed li{display:grid;grid-template-columns:1fr;gap:.25rem}
-#placed .knob{display:grid;grid-template-columns:7.5rem 1fr 3.6rem;align-items:center;gap:.4rem;font-size:.85rem}
+#placed .knob{display:grid;grid-template-columns:6.5rem minmax(0,1fr) 3.2rem;align-items:center;gap:.4rem;font-size:.85rem;min-width:0}
+#placed .knob input[type=range],#placed .knob select{width:100%;min-width:0;margin:0}
+#placed li>*{min-width:0}
 #placed .knob output{text-align:right;font-variant-numeric:tabular-nums}
 #placed .piece-head{display:flex;justify-content:space-between;align-items:center}
 #cost-line{font-variant-numeric:tabular-nums}
@@ -65,3 +67,18 @@ details{margin-top:14px;font-size:13px}summary{cursor:pointer;color:#cfe2ec}
 #verdict .stars{font-size:1.35rem;letter-spacing:.15rem;color:#ffd34d}
 #view.placing canvas{cursor:crosshair}
 #placed button[aria-pressed="true"]{outline:2px solid #5fe08f}
+/* The ghost: a piece before it is set down. */
+#placed li.ghost-piece{border:1px dashed #6cc6ff;border-radius:6px;padding:.45rem;background:rgba(108,198,255,.07)}
+#placed .piece-head{flex-wrap:wrap;gap:.3rem}
+.ghost-actions{display:flex;flex-wrap:wrap;gap:.3rem}
+.ghost-actions button,.turn-row>button,.turning>button{padding:.3rem .45rem;background:#294c60;color:#e7f2f8;border:1px solid #63899d;border-radius:6px;cursor:pointer;font:13px system-ui}
+.ghost-actions button:disabled{opacity:.45;cursor:not-allowed}
+#ghost-down:not(:disabled){background:#1f6b45;border-color:#5fe08f}
+.ghost-state{margin:0;font-size:.85rem}
+.ghost-state.fits{color:#9fdcff}
+.ghost-state.refused{color:#ff9d9d}
+.turning{border:1px solid rgba(255,255,255,.14);border-radius:6px;padding:.3rem .45rem;margin:0;display:grid;gap:.3rem;min-width:0}
+.turning legend{font-size:.85rem;padding:0 .25rem}
+.turn-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:.3rem}
+.turn-row .knob{grid-template-columns:2.4rem minmax(0,1fr) 2.8rem!important}
+.knob-summary{margin:0;font-size:.82rem;color:#b9cbd6}
