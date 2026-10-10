@@ -359,7 +359,7 @@ def lens_machine(lens=True):
             {'title': 'The weight falls', 'done_when': {'hits': ['weight', 'the ground']}, 'focus': ['weight']}]}
 
 
-def laser_machine(mirror=True, watts=5000.0, band='visible'):
+def laser_machine(mirror=True, watts=5000.0, band='visible', beam_width=0.0105, lens=False):
     """Level 6's laser with one mirror: a laser fires along +x at 0.575 m, 4.5 kW
     of light in a beam about 1 cm wide a metre out; a polished aluminium plate
     turned 45 degrees about the vertical sends it along +z onto an oak rope
@@ -375,9 +375,12 @@ def laser_machine(mirror=True, watts=5000.0, band='visible'):
     return {
         'schema': mw.SCHEMA, 'title': 'A laser off a mirror', 'cell_m': 0.02, 'parts': parts,
         'kits': [{'kit': 'laser', 'name': 'laser', 'at_m': [-0.81, 0.575, 0.0], 'aim': [1, 0, 0], 'battery': 'battery',
-                  'watts': watts, 'efficiency': 0.9, 'beam_width_m': 0.0105, 'band': band},
+                  'watts': watts, 'efficiency': 0.9, 'beam_width_m': beam_width, 'band': band},
                  {'kit': 'hanging_weight', 'name': 'weight', 'post_m': [0.5, 0, 1.235], 'drop_m': 0.4, 'side': '-z',
-                  'hang': 'rope', 'rope_m': 0.1, 'weight_material': 'iron', 'weight_size_m': 0.12}],
+                  'hang': 'rope', 'rope_m': 0.1, 'weight_material': 'iron', 'weight_size_m': 0.12}]
+        # A convex glass lens 60 mm across, faces of radius 100 mm, its back
+        # focus about 93 mm on: 0.1 m before the rope.
+        + ([{'kit': 'lens', 'name': 'lens', 'at_m': [0.5, 0.575, 0.89], 'axis': [0, 0, 1]}] if lens else []),
         'batteries': [{'name': 'battery', 'in': 'battery box', 'capacity_j': 1e6, 'voltage_v': 48,
                        'max_power_w': 10000}],
         'light': {'mirrors': ['mirror']} if mirror else {},
@@ -434,6 +437,38 @@ class Light(unittest.TestCase):
                             wall_limit_s=120)
         self.assertIsNone(r['error'])
         self.assertFalse(any(row['done'] for row in r['stations']), r['stations'])
+
+    @need_engine
+    def test_a_convex_lens_focuses_a_laser_to_a_smaller_spot_and_the_rope_burns_sooner(self):
+        """A beam 2 cm wide a metre out is about 5 cm across at the rope, and
+        puts less than half of itself on it, over three cells; a convex lens in
+        its way brings it to a spot a few millimetres across on the rope."""
+        def run(lens):
+            spec = mw.compile_spec(laser_machine(beam_width=0.021, lens=lens))
+            with tempfile.TemporaryDirectory() as logs:
+                session = mw.MachineSession(spec, ENGINE, Path(logs), paced=False)
+                try:
+                    session.play(True)
+                    with session.lock:
+                        while session.t < 0.2 and not session.error:
+                            session.lock.wait(0.05)
+                    light = mw.probe_light(session)
+                finally:
+                    session.close()
+                rope = next(b for b in light['lit'] if b['name'] == 'weight rope')
+                r = mw.rehearse(spec, ENGINE, Path(logs), seconds=15, wall_limit_s=200)
+            self.assertIsNone(r['error'])
+            return rope['spot'], r['stations'][0]['at_s'], light['lenses']
+        plain, plain_s, _ = run(False)
+        focused, focused_s, lenses = run(True)
+        self.assertEqual(len(lenses), 1)
+        # Its focal length is the engine's, from the lens's shape.
+        self.assertAlmostEqual(lenses[0]['focal_length_m'], 0.0967, delta=0.002)
+        self.assertLess(focused['area_mm2'], 0.25 * plain['area_mm2'])
+        self.assertGreater(focused['w'], 1.5 * plain['w'])
+        self.assertIsNotNone(plain_s)
+        self.assertIsNotNone(focused_s)
+        self.assertLess(focused_s, 0.7 * plain_s)
 
     def test_light_is_declared_and_what_cannot_be_built_is_refused(self):
         c = mw.compile_spec(lens_machine())

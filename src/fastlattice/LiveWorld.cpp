@@ -2028,6 +2028,11 @@ struct LiveWorld::Impl {
     std::vector<LiveLight> lights;
     std::vector<LivePhotocell> photocells;
     std::set<std::string> polished_bodies;
+    // Lenses (LiveWorld::lens), each in its part's own frame.
+    std::vector<LiveLens> lens_mounts;
+    [[nodiscard]] static optics::Lens lensOf(const LiveLens &l) {
+        return {l.front_radius_m, l.back_radius_m, l.thickness_m, l.aperture_m};
+    }
     unsigned next_light{1}, next_photocell{1};
     LiveOptics light_report;
     bool light_due{true};
@@ -2100,14 +2105,39 @@ struct LiveWorld::Impl {
         std::vector<optics::Surface> surfaces;
         optics::Surface ground;
         std::vector<std::vector<LivePhotocell *>> cells;
+        // Each lens where its part stands now: its middle and its own axes.
+        struct LensFrame {
+            int body{};
+            optics::Lens lens;
+            Vec3 c{}, u{}, v{}, w{};
+        };
+        std::vector<LensFrame> lenses;
+        std::vector<int> lens_at;
+        std::vector<MatterBodyId> lens_ids;
         explicit LightScene(Impl &impl) : I(impl) {
             const std::size_t n = I.described.size();
             surfaces.resize(n);
             cells.resize(n);
+            lens_at.assign(n, -1);
             for (std::size_t i = 0; i < n; ++i) {
                 if (!I.inWorld(i)) continue;
                 index[I.body_of[i]] = static_cast<int>(i);
                 surfaces[i] = I.surfaceOf(i);
+            }
+            for (const LiveLens &mount : I.lens_mounts) {
+                const auto found = I.index_of.find(mount.body);
+                if (found == I.index_of.end() || !I.inWorld(found->second) || !surfaces[found->second].transparent)
+                    continue;
+                const RigidSnapshot pose = I.world->snapshot(I.body_of[found->second]);
+                LensFrame f;
+                f.body = static_cast<int>(found->second);
+                f.lens = lensOf(mount);
+                f.c = pose.center_of_mass_world_m + pose.orientation_world.rotate(mount.centre_local_m);
+                f.w = normalized(pose.orientation_world.rotate(mount.axis_local));
+                across(f.w, f.u, f.v);
+                lens_at[found->second] = static_cast<int>(lenses.size());
+                lenses.push_back(f);
+                lens_ids.push_back(I.body_of[found->second]);
             }
             const optics::OpticalProperties g = optics::groundOpticalProperties();
             ground.absorbed = {g.absorptance, g.absorptance};
@@ -2128,14 +2158,48 @@ struct LiveWorld::Impl {
             }
             return m;
         }
+        // A ray met against a lens's own faces (optics::meetLens), in the
+        // world.
+        optics::Meeting atLens(const LensFrame &f, const Vec3 &from, const Vec3 &along, double reach_m) const {
+            const Vec3 o = from - f.c;
+            const optics::Meeting in = optics::meetLens(f.lens, Vec3{dot(o, f.u), dot(o, f.v), dot(o, f.w)},
+                                                        Vec3{dot(along, f.u), dot(along, f.v), dot(along, f.w)},
+                                                        reach_m);
+            optics::Meeting m;
+            if (!in.hit) return m;
+            m.hit = true;
+            m.body = f.body;
+            m.distance_m = in.distance_m;
+            m.point_m = from + in.distance_m * along;
+            m.normal = normalized(in.normal.x * f.u + in.normal.y * f.v + in.normal.z * f.w);
+            return m;
+        }
         optics::Meeting toSurface(const Vec3 &from, const Vec3 &along, double reach_m, int ignore) override {
-            if (ignore >= 0) {
-                const MatterBodyId id = I.body_of[static_cast<std::size_t>(ignore)];
-                return meeting(I.world->castRayToSurface(from, along, reach_m, std::span<const MatterBodyId>(&id, 1)));
+            optics::Meeting m;
+            if (lenses.empty()) {
+                if (ignore >= 0) {
+                    const MatterBodyId id = I.body_of[static_cast<std::size_t>(ignore)];
+                    return meeting(
+                        I.world->castRayToSurface(from, along, reach_m, std::span<const MatterBodyId>(&id, 1)));
+                }
+                return meeting(I.world->castRayToSurface(from, along, reach_m));
             }
-            return meeting(I.world->castRayToSurface(from, along, reach_m));
+            // A part with a lens in it is seen by light only as its lens.
+            std::vector<MatterBodyId> skip = lens_ids;
+            if (ignore >= 0) skip.push_back(I.body_of[static_cast<std::size_t>(ignore)]);
+            m = meeting(I.world->castRayToSurface(from, along, reach_m, std::span<const MatterBodyId>(skip)));
+            for (const LensFrame &f : lenses) {
+                if (f.body == ignore) continue;
+                const optics::Meeting l = atLens(f, from, along, m.hit ? m.distance_m : reach_m);
+                if (l.hit && (!m.hit || l.distance_m < m.distance_m)) m = l;
+            }
+            return m;
         }
         optics::Meeting outOf(int body, const Vec3 &from, const Vec3 &along, double reach_m) override {
+            if (body >= 0 && static_cast<std::size_t>(body) < lens_at.size() &&
+                lens_at[static_cast<std::size_t>(body)] >= 0)
+                return atLens(lenses[static_cast<std::size_t>(lens_at[static_cast<std::size_t>(body)])], from, along,
+                              reach_m);
             optics::Meeting m = meeting(I.world->castRayOutOf(I.body_of[static_cast<std::size_t>(body)], from, along,
                                                               reach_m));
             m.body = body;
@@ -7045,6 +7109,21 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         }
         for (const nlohmann::json &name : saved_light.at("polished"))
             impl.polished_bodies.insert(name.get<std::string>());
+        // Saved before lenses: none.
+        if (saved_light.contains("lenses"))
+            for (const nlohmann::json &o : saved_light.at("lenses")) {
+                LiveLens l;
+                l.body = o.at("body").get<std::string>();
+                l.centre_local_m = vecFrom(o.at("centre_local_m"));
+                l.axis_local = vecFrom(o.at("axis_local"));
+                l.front_radius_m = numberFrom(o.at("front_radius_m"));
+                l.back_radius_m = numberFrom(o.at("back_radius_m"));
+                l.thickness_m = numberFrom(o.at("thickness_m"));
+                l.aperture_m = numberFrom(o.at("aperture_m"));
+                if (!optics::lensProblem(Impl::lensOf(l)).empty() || !(length(l.axis_local) > 0.5))
+                    throw std::invalid_argument("a saved lens is not one this engine can make");
+                impl.lens_mounts.push_back(std::move(l));
+            }
         LiveOptics &report = impl.light_report;
         report.declared = true;
         report.trace_every_steps = saved_light.at("trace_every_steps").get<unsigned>();
@@ -9553,6 +9632,88 @@ std::string LiveWorld::polish(const std::string &body, bool polished) {
 }
 
 bool LiveWorld::polished(const std::string &body) const { return impl_->polishedBody(body); }
+
+std::string LiveWorld::lens(const std::string &body, const Vec3 &centre_world_m, const Vec3 &axis_world,
+                            double front_radius_m, double back_radius_m, double thickness_m, double aperture_m) {
+    Impl &I = *impl_;
+    const auto found = I.index_of.find(body);
+    if (found == I.index_of.end() || !I.inWorld(found->second)) return "there is nothing called " + body;
+    const std::size_t i = found->second;
+    const std::string &material = I.described[i].material;
+    optics::OpticalProperties p;
+    try {
+        p = optics::opticalProperties(presetFromName(material));
+    } catch (const std::exception &) {
+        return "the " + body + " is made of " + material + ", which this engine has no light for";
+    }
+    if (!p.transparent) return "a lens is made of something clear (glass or ice); the " + body + " is " + material;
+    const double axis_length = length(axis_world);
+    if (!(axis_length > 1e-9) || !std::isfinite(axis_length) || !std::isfinite(centre_world_m.x) ||
+        !std::isfinite(centre_world_m.y) || !std::isfinite(centre_world_m.z))
+        return "a lens needs a middle and an axis that points somewhere";
+    const optics::Lens shape{front_radius_m, back_radius_m, thickness_m, aperture_m};
+    if (const std::string why = optics::lensProblem(shape); !why.empty()) return why;
+    const RigidSnapshot pose = I.world->snapshot(I.body_of[i]);
+    const Quat to_body = conjugateOf(pose.orientation_world);
+    LiveLens mount;
+    mount.body = body;
+    mount.centre_local_m = to_body.rotate(centre_world_m - pose.center_of_mass_world_m);
+    mount.axis_local = normalized(to_body.rotate(axis_world));
+    mount.front_radius_m = front_radius_m;
+    mount.back_radius_m = back_radius_m;
+    mount.thickness_m = thickness_m;
+    mount.aperture_m = aperture_m;
+    // It has to be inside the part's matter: what it absorbs warms that, and
+    // the part collides as its own shape. Every corner of the box round the
+    // lens, in the part's frame, within the part's box (a cell's tenth spare).
+    {
+        Vec3 u, v;
+        Impl::across(mount.axis_local, u, v);
+        const double half = 0.5 * thickness_m;
+        const double z0 = std::min({-half, optics::lensFaceZ(front_radius_m, -half, aperture_m)});
+        const double z1 = std::max({half, optics::lensFaceZ(back_radius_m, half, aperture_m)});
+        // In the box the part was made as, turned as it was made.
+        const Vec3 box = 0.5 * referenceBoxOf(i);
+        const double spare = 0.1 * I.request.cell_size_m;
+        for (int k = 0; k < 8; ++k) {
+            const Vec3 q = inReference(i, mount.centre_local_m + ((k & 1) ? aperture_m : -aperture_m) * u +
+                                              ((k & 2) ? aperture_m : -aperture_m) * v +
+                                              ((k & 4) ? z1 : z0) * mount.axis_local);
+            if (std::abs(q.x) > box.x + spare || std::abs(q.y) > box.y + spare || std::abs(q.z) > box.z + spare)
+                return "the lens does not fit inside the " + body + ": make the part bigger, or the lens smaller";
+        }
+    }
+    I.lens_mounts.erase(std::remove_if(I.lens_mounts.begin(), I.lens_mounts.end(),
+                                       [&](const LiveLens &l) { return l.body == body; }),
+                        I.lens_mounts.end());
+    I.lens_mounts.push_back(mount);
+    I.light_due = true;
+    return {};
+}
+
+std::vector<LiveLens> LiveWorld::lenses() const {
+    const Impl &I = *impl_;
+    std::vector<LiveLens> out;
+    for (LiveLens l : I.lens_mounts) {
+        const auto found = I.index_of.find(l.body);
+        double n = 1.0;
+        try {
+            if (found != I.index_of.end())
+                n = optics::opticalProperties(presetFromName(I.described[found->second].material)).refractive_index;
+        } catch (const std::exception &) {
+        }
+        l.refractive_index = n;
+        l.focal_length_m = optics::lensFocalLengthM(Impl::lensOf(l), n);
+        l.back_focal_distance_m = optics::lensBackFocalDistanceM(Impl::lensOf(l), n);
+        if (found != I.index_of.end() && I.inWorld(found->second)) {
+            const RigidSnapshot pose = I.world->snapshot(I.body_of[found->second]);
+            l.at_m = pose.center_of_mass_world_m + pose.orientation_world.rotate(l.centre_local_m);
+            l.axis = pose.orientation_world.rotate(l.axis_local);
+        }
+        out.push_back(std::move(l));
+    }
+    return out;
+}
 
 unsigned LiveWorld::photocell(const std::string &name, const std::string &body, const Vec3 &at_world_m,
                               const Vec3 &normal_world, double area_m2) {
@@ -19147,7 +19308,17 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                              {"volume_m3", savedNumber(t.volume_m3)}, {"kg", savedNumber(t.kg)},
                              {"energy_j", savedNumber(t.energy_j)}, {"how", t.how},
                              {"gone_k", savedNumber(t.gone_k)}});
+        nlohmann::json lenses = nlohmann::json::array();
+        for (const LiveLens &l : I.lens_mounts)
+            lenses.push_back({{"body", l.body},
+                              {"centre_local_m", savedVec(l.centre_local_m)},
+                              {"axis_local", savedVec(l.axis_local)},
+                              {"front_radius_m", savedNumber(l.front_radius_m)},
+                              {"back_radius_m", savedNumber(l.back_radius_m)},
+                              {"thickness_m", savedNumber(l.thickness_m)},
+                              {"aperture_m", savedNumber(l.aperture_m)}});
         doc["light"] = {{"lights", std::move(lights)},
+                        {"lenses", std::move(lenses)},
                         {"photocells", std::move(cells)},
                         {"polished", I.polished_bodies},
                         {"trace_every_steps", I.light_report.trace_every_steps},

@@ -2026,6 +2026,14 @@ std::vector<std::string> ThermoWorld::limitations() {
         "Constant heat capacities over the model's declared range (150-3000 K); no dissociation",
         "Every body is one lump, or one surface layer over one core when it conducts too poorly "
         "to be one temperature; there is no temperature field inside a body",
+        "Light concentrated on a spot (SpotDeclaration) is held beside the body: the spot is taken "
+        "to settle at once, held at the temperature its matter is gone at while it takes matter "
+        "away, losing 4 k a dT into the body (a disc on a large body) and what its face gives off. "
+        "How long a spot takes to warm to that is not modelled, nor heat spreading sideways from "
+        "a spot into the cells round it; a spot no longer lit gives its heat to its body at once. "
+        "Only matter the model can take away by heat alone is taken: oak chars at its law's char "
+        "line, ice melts; glass, metals, concrete and rubber have no melting point here and are "
+        "only warmed",
         "Heat paths come from bounding boxes as bodies are turned now: contact conduction where "
         "boxes meet face to face, radiation between separated bodies by a point-source view "
         "factor (Cauchy mean projected area), capped when they are close",

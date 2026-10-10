@@ -656,6 +656,20 @@ struct LiveLight {
     std::string why;                    // why it sends nothing, when it does not
 };
 
+// A lens in a clear part (LiveWorld::lens): where it is and which way it
+// faces now, its shape, and where its shape brings light to a focus by the
+// lensmaker's equation for the part's own refractive index -- worked out,
+// never declared. A focal length below zero spreads light, from a focus that
+// far before it.
+struct LiveLens {
+    std::string body;
+    Vec3 centre_local_m{}, axis_local{};
+    double front_radius_m{}, back_radius_m{}, thickness_m{}, aperture_m{};
+    double refractive_index{};
+    double focal_length_m{}, back_focal_distance_m{};
+    Vec3 at_m{}, axis{};
+};
+
 // A light sensor (docs/optics-checkpoint.md): a flat round face of `area_m2`
 // on a part that reads the power of the light reaching it -- every ray that
 // lands on its part within the face's radius of its middle, coming at it from
@@ -2207,6 +2221,18 @@ public:
     // are smooth already. The reason it cannot, in words, or "" when done.
     std::string polish(const std::string &body, bool polished);
     [[nodiscard]] bool polished(const std::string &body) const;
+    // A lens (LiveLens, docs/light-spots.md "Lenses") in a clear part, glass
+    // or ice: its middle at `centre_world_m` and its axis along `axis_world`
+    // as the part stands now -- kept in the part's own frame, so it goes where
+    // the part goes -- with its two faces' signed radii (positive when a face's
+    // centre of curvature lies ahead of it along the axis; zero is flat), its
+    // thickness on the axis and its aperture (the disc's radius). Light meets
+    // the lens's faces, traced exactly as the spheres they are; the part still
+    // collides as its own shape, which the lens must fit inside. One a part;
+    // another replaces it. The reason it cannot be made, or "" when done.
+    std::string lens(const std::string &body, const Vec3 &centre_world_m, const Vec3 &axis_world,
+                     double front_radius_m, double back_radius_m, double thickness_m, double aperture_m);
+    [[nodiscard]] std::vector<LiveLens> lenses() const;
     // A light sensor (LivePhotocell) on a part: its middle given where it is
     // now in the world, its face looking along `normal_world`, of `area_m2`
     // (above 0, at most 1). Returns its id, above zero, or 0.

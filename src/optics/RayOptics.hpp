@@ -34,6 +34,7 @@
 
 #include <array>
 #include <cstddef>
+#include <string>
 #include <vector>
 
 namespace banjo::optics {
@@ -89,6 +90,47 @@ struct Meeting {
     Vec3 point_m{};
     Vec3 normal{};           // the surface's outward normal there, unit
 };
+
+// ---- lenses (docs/light-spots.md, "Lenses") ----------------------------------
+//
+// A lens is a disc of a clear material with two spherical faces, given in its
+// own frame: its axis is z, its middle the origin, the front face's vertex at
+// z = -t/2 and the back face's at z = +t/2, its rim a cylinder of radius
+// `aperture_m`. Each face's radius is signed the lensmaker's way: positive
+// when the face's centre of curvature lies on the +z side of it, so a lens
+// that bulges both ways (biconvex) has a positive front radius and a negative
+// back one, and one hollow both ways (biconcave) the other way round. Zero is
+// a flat face. The faces are traced exactly as spheres -- nothing about the
+// lens is declared but its shape, so where it brings light to a focus is what
+// Snell's law at its two faces makes of that shape.
+struct Lens {
+    double front_radius_m{};
+    double back_radius_m{};
+    double thickness_m{};        // on its axis, vertex to vertex
+    double aperture_m{};         // the disc's radius
+};
+
+// "" when a lens can be made: a positive aperture and thickness, each curved
+// face wider than the aperture, and some glass left at the rim.
+[[nodiscard]] std::string lensProblem(const Lens &lens);
+// How far a face stands from its vertex along the axis at a distance r from
+// the axis (the sag, signed: +z positive).
+[[nodiscard]] double lensFaceZ(double radius_m, double vertex_z, double r);
+// Its thickness at the rim.
+[[nodiscard]] double lensEdgeThicknessM(const Lens &lens);
+// The lensmaker's equation for a thick lens in air of index n:
+//     1/f = (n - 1) [1/R1 - 1/R2 + (n - 1) t / (n R1 R2)],
+// and its back focal distance, from the back vertex to the focus,
+//     BFD = f (1 - (n - 1) t / (n R1)).
+// A flat face is an infinite radius. Negative for a lens that spreads light:
+// then the focus is virtual, that far before the back vertex.
+[[nodiscard]] double lensFocalLengthM(const Lens &lens, double n);
+[[nodiscard]] double lensBackFocalDistanceM(const Lens &lens, double n);
+// Where a ray meets the lens's surface, in the lens's own frame: the first
+// place along it, past `from`, where it crosses a face or the rim within
+// `reach_m` -- going in from outside, or out from inside. The normal is the
+// surface's outward one.
+[[nodiscard]] Meeting meetLens(const Lens &lens, const Vec3 &from, const Vec3 &along, double reach_m);
 
 // The host's answers.
 class Scene {

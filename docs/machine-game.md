@@ -42,7 +42,7 @@ Levels are in `client/voxel-lab/levels.json`. Each has:
 
 The pieces (`plank`, `knife`, `cannon`, `steam`, `ramp`) are in `scripts/machine_game.py`. `tests/machine_game_tests.py` checks that every level's solution reaches its goal in three nudged runs out of three, that no level is solved with no pieces, and that a misplaced piece fails for a physical reason.
 
-Level 6 is slow for a real laser: the engine spreads a body's heat through the whole of it, so the beam has to warm the entire cord before it burns. A model of the lit spot heating faster than the rest of the body is being built; then the cord goes in seconds, as it would.
+Level 6 burns the cord in seconds, as a real laser would: light heats the spot it lands on and chars the oak there away ([light-spots.md](light-spots.md)). Its own solution puts the weight in the bin at about 5 s, 3 runs in 3 (it took 20.3 s when a body's heat was spread through all of it).
 
 ## The site
 

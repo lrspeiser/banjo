@@ -422,6 +422,54 @@ void iceMeltsByDepth() {
     }
 }
 
+// ---- 4b. a lens ------------------------------------------------------------------
+
+// A wider beam (0.6 degrees) puts less than half of itself on the cord, over
+// three cells. A convex lens in its way, its back focus on the cord's face,
+// brings all of it onto one small spot: the spot is smaller and the cord parts
+// sooner, by as much as the power on the cell it cuts is more.
+void aLensFocusesTheBeamOnTheCord() {
+    struct Run {
+        double spot_w{}, area_mm2{}, parted_s{}, cut_w{};
+    };
+    std::vector<Run> runs;
+    for (const bool lensed : {false, true}) {
+        std::vector<SceneBody> bodies = rig();
+        // A 60 x 60 x 20 mm block of glass holding a lens 60 mm across, faces
+        // of radius 100 mm, 12 mm thick: f = 96.7 mm, 93.4 mm from its back
+        // vertex to its focus for parallel light; the laser is 2.4 m back, so
+        // its light comes to a focus a few millimetres further on.
+        if (lensed) bodies.push_back(box("lens", MaterialPreset::Glass, {0.06, 0.06, 0.02}, {0.5, 0.575, 0.89}));
+        auto world = hang(std::move(bodies));
+        if (lensed) {
+            const std::string refused = world->lens("lens", {0.5, 0.575, 0.89}, {0.0, 0.0, 1.0}, 0.1, -0.1, 0.012, 0.03);
+            require(refused.empty(), "the lens: " + refused);
+        }
+        laser(*world, {-1.0, 0.575, 0.0}, {1.0, 0.0, 0.0}, 5000.0, 1.0, 256, 0.6);
+        for (int i = 0; i < 8; ++i) tick(*world);
+        Run run;
+        const LiveOptics::Lit *cord = litRow(world->optics(), "cord");
+        const double absorbed = cord ? cord->absorbed_w : 0.0;
+        for (const thermo::SpotState &s : world->thermo()->spotStates())
+            if (s.body == "cord" && s.power_w > run.spot_w) {
+                run.spot_w = s.power_w;
+                run.area_mm2 = s.area_m2 * 1e6;
+                run.cut_w = s.cut_w;
+            }
+        const Parting p = runUntilParted(*world, 30.0);
+        run.parted_s = p.parted_s + 8 * kDt;
+        runs.push_back(run);
+        std::cout << "    " << (lensed ? "through the lens" : "no lens") << ": the cord absorbs " << absorbed
+                  << " W; its brightest spot " << run.spot_w << " W over "
+                  << run.area_mm2 << " mm2, " << run.cut_w << " W of it taking oak away; the weight falls at "
+                  << run.parted_s << " s\n";
+    }
+    require(runs[1].area_mm2 < 0.25 * runs[0].area_mm2, "the lens makes the spot smaller");
+    require(runs[1].spot_w > 1.5 * runs[0].spot_w, "and puts more of the beam on it");
+    require(runs[0].parted_s > 0.0 && runs[1].parted_s > 0.0 && runs[1].parted_s < 0.7 * runs[0].parted_s,
+            "and the cord parts sooner");
+}
+
 // ---- 5. a burning glass -----------------------------------------------------------
 
 // A 100 mm glass ball in an overhead sun of 1000 W/m2, an oak board at its
@@ -485,6 +533,7 @@ int main() {
     run("the mirror is not cut", theMirrorIsNotCut);
     run("glass is warmed and never cut", glassIsWarmedAndNeverCut);
     run("ice melts by depth", iceMeltsByDepth);
+    run("a lens focuses the beam on the cord", aLensFocusesTheBeamOnTheCord);
     run("a burning glass", aBurningGlass);
     if (failures) {
         std::cout << failures << " failure(s)\n";

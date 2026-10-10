@@ -616,6 +616,23 @@ nlohmann::json lampOf(const LiveLamp &lamp) {
 // unrounded; its sources and sensors; what it reaches; and what it costs. With
 // `paths`, a few rays of the last trace to draw: each a light's id, its corners
 // in millimetres, x, y, z running, and the watts on each leg.
+// Each lens: where it is, which way it faces, its shape, and where that shape
+// brings light to a focus (the lensmaker's equation, for its part's index).
+nlohmann::json lensesOf(const LiveWorld &world) {
+    nlohmann::json out = nlohmann::json::array();
+    for (const LiveLens &l : world.lenses())
+        out.push_back({{"body", l.body},
+                       {"at_m", vec(l.at_m)},
+                       {"axis", vec(l.axis)},
+                       {"front_radius_m", tidy(l.front_radius_m)},
+                       {"back_radius_m", tidy(l.back_radius_m)},
+                       {"thickness_m", tidy(l.thickness_m)},
+                       {"aperture_m", tidy(l.aperture_m)},
+                       {"focal_length_m", tidy(l.focal_length_m)},
+                       {"back_focal_distance_m", tidy(l.back_focal_distance_m)}});
+    return out;
+}
+
 nlohmann::json opticsOf(const LiveWorld &world, bool paths) {
     const LiveOptics o = world.optics();
     if (!o.declared) return nullptr;
@@ -694,6 +711,7 @@ nlohmann::json opticsOf(const LiveWorld &world, bool paths) {
         {"lit", std::move(lit)},
         {"taken", std::move(taken)},
         {"taken_count", o.taken.size()},
+        {"lenses", lensesOf(world)},
         {"cost", {{"trace_every_steps", o.trace_every_steps},
                   {"bounce_limit", o.bounce_limit},
                   {"follow_share", tidy(o.follow_share)},
@@ -2908,6 +2926,21 @@ int main(int argc, char **argv) {
                     const std::string refused = world->polish(command.at("body").get<std::string>(),
                                                               command.value("polished", true));
                     if (!refused.empty()) throw std::invalid_argument(refused);
+                } else if (op == "lens") {
+                    // A lens in a clear part (docs/light-spots.md, "Lenses"):
+                    // its middle and axis given in the world, its two faces'
+                    // signed radii, its thickness and its aperture.
+                    const std::string refused = world->lens(
+                        command.at("body").get<std::string>(), readVec(command, "at_m"), readVec(command, "axis"),
+                        command.value("front_radius_m", 0.0), command.value("back_radius_m", 0.0),
+                        command.value("thickness_m", 0.0), command.value("aperture_m", 0.0));
+                    if (!refused.empty()) throw std::invalid_argument(refused);
+                    for (const LiveLens &made : world->lenses())
+                        if (made.body == command.at("body").get<std::string>())
+                            reply["lens"] = {{"body", made.body},
+                                             {"focal_length_m", tidy(made.focal_length_m)},
+                                             {"back_focal_distance_m", tidy(made.back_focal_distance_m)},
+                                             {"refractive_index", made.refractive_index}};
                 } else if (op == "photocell") {
                     // A light sensor on a part: its middle and the way its face
                     // looks, given in the world, and its area.
