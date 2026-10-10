@@ -68,6 +68,12 @@ class GatheringJourney(unittest.TestCase):
         wait('document.querySelector("#details-last-text").textContent.includes("Tool needed")')
         self.assertEqual(0,p.evaluate('banjoRoom.world.carriedGround.sand_kg+banjoRoom.world.carriedGround.soil_kg'))
         before=p.evaluate('banjoRoom.camera.position.toArray()')
+        # Find tool is offered over the room once digging is refused for want
+        # of a tool. It sat in the Details rail, which eaf9e306 removed, and
+        # could not be pressed: it must be on screen and under the pointer.
+        wait('(b=>{if(!b||!b.checkVisibility())return false;const r=b.getBoundingClientRect(),'
+             'e=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return !!e && b.contains(e)})'
+             '(document.querySelector("[data-find-tool]"))')
         click('[data-find-tool]')
         wait('document.querySelector("#picked").textContent.includes("Field Pick")')
         self.assertEqual(before,p.evaluate('banjoRoom.camera.position.toArray()'),'Find turns the view without teleporting')
@@ -77,6 +83,7 @@ class GatheringJourney(unittest.TestCase):
             banjoRoom.lookAt(a.x,a.y,a.z);document.activeElement.blur();banjoRoom.resume();})()''')
         time.sleep(.6);key('KeyE')
         wait('banjoRoom.world.held?.pick && banjoRoom.world.use.mode==="tool-ready"')
+        wait('document.querySelector("[data-tool-guide]").hidden')   # wanted no more
         aim(.3,.025)
         wait('document.querySelector("#details-actions").textContent.includes("dig here")')
         self.assertNotIn('Study tool',p.evaluate('document.querySelector("#details-actions").textContent'))

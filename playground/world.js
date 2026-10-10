@@ -5130,7 +5130,10 @@ function showInventory() {
     meter.querySelector("b").textContent = worldId ? "Loosen → Click → Inventory" : full ? "Full · digging stopped" : "Ground materials";
     meter.querySelector("small").textContent = worldId ? "Click nearby loose material to collect it" : full ? "Sand / soil → point at clear ground → H to heap" :
       [...world.stock].filter(([,v])=>v.kg>0).map(([what,v])=>`${what} ${massLabel(v.kg)}`).join(" · ") || "Empty";
-    meter.querySelector("[data-tool-guide]").hidden = !!world.held?.pick;
+    // Find tool is wanted once digging was refused for want of a tool, and
+    // only until one is in the hand. A tool in hand clears the want.
+    if (world.held?.pick) world.toolWanted = false;
+    toolGuide.hidden = !world.toolWanted || !worldId || !!watchedId;
     meter.querySelector("[data-movement]").textContent = movementMode === "fly" ? "Flying · God mode · Space ↑ · Shift + Space ↓" :
       wet ? `${wet.under>.5 ? "Swim" : "Wade"} · ${Math.round(wet.under*100)} cm immersed`+(movementMode === "native" ? "" : ` · Space ${wet.under>.5 ? "↑ / Shift ↓" : "jump"}`) :
       "Walk · Space jump · Shift run";
@@ -5146,7 +5149,12 @@ setInterval(showInventory, 250);
 const loadMeter = document.createElement("aside"); loadMeter.id = "world-load-meter"; loadMeter.hidden = true;
 loadMeter.innerHTML = `<a href="${worldId ? `/world?world=${worldId}&workshop=1&tab=inventory` : "/world?scene=world&workshop=1&tab=inventory"}">Inventory</a><b>Ground materials</b><output></output><progress max="1" value="0"></progress><small></small><small data-movement></small>`;
 loadMeter.insertAdjacentHTML("beforeend", '<small data-water-flow hidden></small><button type="button" id="cursor-mode" aria-pressed="false">Explore · Esc for cursor</button>');
-const toolGuide = document.createElement("nav"); toolGuide.dataset.toolGuide = "";
+// FIND TOOL sat on the load meter in Details, and with Details gone
+// (eaf9e306) nobody could press it: a new player told "Tool needed" had no
+// way to be shown where the field pick lies. It is an action over the room
+// now, like Collect, and only while it is wanted: after digging was refused
+// for want of a tool (world.toolWanted), until a tool is in the hand.
+const toolGuide = document.createElement("nav"); toolGuide.dataset.toolGuide = ""; toolGuide.hidden = true;
 toolGuide.innerHTML = `<button type="button" data-find-tool>Find tool</button><a href="${worldId ? `/world?world=${worldId}&workshop=1&tab=recipes` : "/world?scene=world&workshop=1&tab=recipes"}">Make tool · Build</a>`;
 toolGuide.querySelector("button").addEventListener("click", (e) => {
   e.stopPropagation(); e.currentTarget.blur();
@@ -5157,7 +5165,7 @@ toolGuide.querySelector("button").addEventListener("click", (e) => {
   picked.name = profile.tool; picked.at = null; picked.resource = null; showPicked();
   lastAction(`${titled(profile.object)} · ${camera.position.distanceTo(at).toFixed(1)} m away · walk close and press E to take up.`);
 });
-loadMeter.append(toolGuide);
+document.body.append(toolGuide);
 $("details").append(loadMeter);
 
 // The bag's first nine slots along the bottom of the view: each with its number,
@@ -12482,6 +12490,7 @@ $("dig-it").addEventListener("click", async () => {
   if (!world.session) return;
   if (worldId) {
     if (!world.held?.pick) {
+      world.toolWanted = true;   // offers Find tool over the room (toolGuide)
       lastAction("Tool needed · take up the field pick with E, or make one in Recipes. Equip a bagged tool in Inventory.", "refused");
       return;
     }

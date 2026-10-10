@@ -355,6 +355,10 @@ kbd {
 .meter-bar i { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--warm); transition: width .65s ease; }
 #collect-output { position: fixed; bottom: 86px; left: 50%; transform: translateX(-50%); z-index: 20; background: #203c31; border: 1px solid #85c79e; color: #f2ece0; padding: 12px 18px; border-radius: 8px; max-width: 70vw; }
 #collect-output[hidden] { display: none; }
+/* Find tool, over the room where Collect is, only while it is wanted. */
+body > nav[data-tool-guide] { position: fixed; bottom: 86px; left: 50%; transform: translateX(-50%); z-index: 20; display: flex; align-items: center; gap: 12px; background: #203c31; border: 1px solid #85c79e; color: #f2ece0; padding: 8px 12px; border-radius: 8px; max-width: 70vw; }
+body > nav[data-tool-guide] a { color: #c3dfef; }
+body > nav[data-tool-guide][hidden] { display: none; }
 @media (prefers-reduced-motion: reduce) { .meter-bar i { transition: none; } }
 #details-meter-value { min-width: 4ch; text-align: right; color: var(--ink); }
 /* What the last thing you did came to. */
