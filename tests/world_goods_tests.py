@@ -520,7 +520,7 @@ class GoodsJourney(unittest.TestCase):
             while time.monotonic()<deadline:
                 if page.evaluate('Boolean('+expression+')'):return
                 time.sleep(.12)
-            self.fail('Browser did not reach '+expression+'; '+str(page.evaluate('document.body.innerText.slice(-1200)')))
+            self.fail('Browser did not reach '+expression+'; '+str(page.evaluate('(document.querySelector("#ws-remake")?.innerText || document.body.innerText).slice(-1200)')))
         def click(selector):
             target=json.dumps(selector)
             under=f'(()=>{{const e=document.querySelector({target});if(!e||e.disabled)return false;e.scrollIntoView({{block:"center"}});const r=e.getBoundingClientRect(),h=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return r.width>0&&r.height>0&&!!h&&(h===e||e.contains(h))}})()'
@@ -543,15 +543,34 @@ class GoodsJourney(unittest.TestCase):
             self.assertEqual(text,page.evaluate('document.querySelector("#ws-component-chat-text").value'))
             page.evaluate('document.querySelector("#ws-component-chat").requestSubmit()')
             wait('!document.querySelector("#ws-component-chat-text").disabled && document.querySelector("#ws-component-chat-text").value===""')
+        def components():
+            return page.evaluate('[...document.querySelectorAll("#ws-lab-components [data-component]")].map(e=>e.textContent)')
+        # The personal pick of a playable world is iron with an aluminum haft
+        # (caeb6424; it was oak throughout before), so a typed head edit is
+        # taken there and back: aluminum, then iron again. The haft is left.
+        chat('make the head aluminum')
+        parts=components()
+        self.assertTrue(any('haft' in p and 'aluminum' in p for p in parts),parts)
+        self.assertTrue(any('arm' in p and 'aluminum' in p for p in parts),parts)
         chat('make the head iron')
-        parts=page.evaluate('[...document.querySelectorAll("#ws-lab-components [data-component]")].map(e=>e.textContent)')
-        self.assertTrue(any('haft' in p and 'oak' in p for p in parts),parts)
+        parts=components()
+        self.assertTrue(any('haft' in p and 'aluminum' in p for p in parts),parts)
         self.assertTrue(any('arm' in p and 'iron' in p for p in parts),parts)
         click('#ws-draft-save')
         wait('document.querySelector("#ws-lab-draft").textContent.includes("Saved to Recipes")')
-        # Review the monolithic oak source and prove actual installation/debit.
-        chat('make the whole object oak')
-        before=workshop_library.rack(app)
+        # Make the pick as drawn and prove actual installation and debit. A
+        # playable world holds no oak, so the monolithic oak source this made
+        # before cannot be made: the iron head comes from the shared rack
+        # (6.2 kg), and the aluminum haft from aluminum the player collected
+        # from a world pile, since the shared rack holds none.
+        sid=app.live.session.id
+        aluminum=next(p for p in app.brains.goods.stockpiles if p.get('holds',{}).get('aluminum',0.)>=3.)
+        ax,az=aluminum['at_m']
+        floor=self.post('/api/live/act',{'session':sid,'op':'survey','at':[ax,az]},world)['survey']['ground_m']
+        got=self.post('/api/world/goods/collect',{'session':sid,'pile':aluminum['name'],'request_id':'collect-haft-aluminum',
+            'person':{'eyes_m':[ax,floor+1.62,az],'facing':[0,0,-1]}},world)
+        self.assertGreaterEqual(got['collected']['aluminum'],2.7)
+        before=workshop_library.rack(app);before_personal=self.personal(app,owner)
         # New worlds start with generated installations (starter machines and
         # their foundation pads, 23e48727); Make must add exactly one more and
         # leave those exactly as they were.
@@ -564,24 +583,36 @@ class GoodsJourney(unittest.TestCase):
             if page.evaluate(f'document.querySelector({json.dumps(selector)}).closest("#ws-remake-supplies") && !document.querySelector("#ws-remake-supplies").open'):
                 click('#ws-remake-supplies summary')
             click(selector)
-        # Ordinary generated workbench, with explicit shared-stock selection
-        # and an actual native battery debit; no seeded process supply.
+        # Ordinary generated workbench, with explicit stock selection per
+        # material -- shared iron, the player's own aluminum -- and an actual
+        # native battery debit; no seeded process supply.
         wait('document.querySelector("#ws-remake-supplies summary")')
         click('#ws-remake-supplies summary')
-        paid_click('#ws-remake-stock-shared')
+        paid_click('#ws-remake-stock-shared-iron')
+        paid_click('#ws-remake-stock-personal-aluminum')
         paid_click('#ws-remake-connect')
-        paid_click('#ws-remake-charge-wait')
-        paid_click('#ws-remake-energy')
+        # The metal pick needs 565 J of work, more than one second of the
+        # charger's 500 W: charge and transfer until the quote is met, as a
+        # person presses the two buttons again (the oak pick needed one go).
+        for _ in range(4):
+            paid_click('#ws-remake-charge-wait')
+            paid_click('#ws-remake-energy')
+            wait('!document.querySelector("#ws-remake-start")?.disabled || !!document.querySelector("#ws-remake-charge-wait:not(:disabled)")')
+            if page.evaluate('!!document.querySelector("#ws-remake-start") && !document.querySelector("#ws-remake-start").disabled'):break
         paid_click('#ws-remake-start')
-        paid_click('#ws-remake-step')
+        # And at least 1.1 s of work: run a second at a time until it is done.
+        for _ in range(5):
+            paid_click('#ws-remake-step')
+            wait('!!document.querySelector("#ws-remake-place") || !!document.querySelector("#ws-remake-step:not(:disabled)")')
+            if page.evaluate('!!document.querySelector("#ws-remake-place")'):break
         paid_click('#ws-remake-place')
         wait('document.querySelector("#ws-remake a")?.textContent==="Collect in World"')
         made=[r for r in app.room.workshop_installs if r['root_body'] not in installed]
         self.assertEqual(1,len(made),made)
         self.assertEqual(installs,[r for r in app.room.workshop_installs if r['root_body'] in installed])
-        before_oak=next(r['mass_kg'] for r in before['materials'] if r['material']=='oak')
-        after_oak=next(r['mass_kg'] for r in workshop_library.rack(app)['materials'] if r['material']=='oak')
-        self.assertGreater(before_oak,after_oak)
+        shared_iron=lambda rack:next(r['shared_kg'] for r in rack['materials'] if r['material']=='iron')
+        self.assertGreater(shared_iron(before),shared_iron(workshop_library.rack(app)))
+        self.assertGreater(before_personal['aluminum'],self.personal(app,owner).get('aluminum',0.))
         self.assertEqual(0,app.room.fabrication_record['config']['energy_j'])
         self.assertEqual('installed',next(iter(app.room.fabrication_record['jobs'].values()))['status'])
         self.assertEqual([],[e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
@@ -596,7 +627,7 @@ class GoodsJourney(unittest.TestCase):
             while time.monotonic()<deadline:
                 if page.evaluate('Boolean('+expression+')'):return
                 time.sleep(.1)
-            self.fail('Browser did not reach '+expression)
+            self.fail('Browser did not reach '+expression+'; '+str(page.evaluate('({aim:banjoRoom.world.aim?.name,picked:banjoRoom.picked().name,mode:banjoRoom.controls().cursorFree,camera:banjoRoom.camera.position.toArray()})')))
         page.send('Page.navigate',{'url':self.base+f'/world?world={world}&hold=1'})
         wait('window.banjoRoom?.ready()')
         sid=app.live.session.id
@@ -647,7 +678,14 @@ class GoodsJourney(unittest.TestCase):
         self.assertEqual(len(parts),page.evaluate('document.querySelectorAll("#picked .pk-component-grid figure").length'))
         wait('[...document.querySelectorAll("#picked .pk-component-grid img")].every(i=>i.complete && i.naturalWidth>0)')
         self.assertEqual(len(parts),page.evaluate('document.querySelectorAll("#picked .pk-component-grid img").length'))
-        self.assertEqual(page.evaluate('banjoRoom.world.bodies.get("field pick").cells.length'),sum(p['cells'] for p in parts))
+        # The metal pick is two native bodies, the aluminum haft and the iron
+        # head joined by their fixing, and neither sends its cells with its
+        # pose: the page asks the engine for them (op "structure") when the
+        # pick is inspected. The components must account for every native
+        # cell of both bodies, and of nothing else.
+        native_cells=sum(app.live.act({'session':sid,'op':'structure','name':name})['structure']['cell_count']
+                         for name in {p['body'] for p in parts})
+        self.assertEqual(native_cells,sum(p['cells'] for p in parts))
         self.assertIsNone(page.evaluate('banjoRoom.reveal()'))
         self.assertEqual(drawing,page.evaluate(geometry))
         page.evaluate('[...document.querySelectorAll("#picked button")].find(b=>b.textContent==="Show native cells").click()')
