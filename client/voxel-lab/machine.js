@@ -312,9 +312,12 @@ const zones = [];
 function syncZones() {
   for (const z of zones) { scene.remove(z); z.geometry.dispose(); }
   zones.length = 0;
-  for (const s of machine?.stations || []) {
-    const z = s.done_when && s.done_when.in_zone;
-    if (!z) continue;
+  const shown = (machine?.stations || []).map(s => s.done_when && s.done_when.in_zone).filter(Boolean);
+  // A level's goal zone is drawn even before the piece it is about is placed
+  // (the goal is then left out of the run): it is where to build.
+  const goalZone = LEVEL_MODE && level && level.goal.station.done_when.in_zone;
+  if (goalZone && !shown.some(z => z.at_m.every((v, i) => v === goalZone.at_m[i]))) shown.push(goalZone);
+  for (const z of shown) {
     const box = new THREE.Mesh(new THREE.BoxGeometry(...z.size_m),
       new THREE.MeshStandardMaterial({color: 0x3fbf6f, transparent: true, opacity: .22, depthWrite: false}));
     box.position.set(...z.at_m);
@@ -554,14 +557,19 @@ async function poll(mine) {
 // ---- camera -------------------------------------------------------------------
 function frameCamera() {
   const pts = [...world.bodies.values()].map(b => b.position_m);
+  // A level's goal zone is in the picture too, and the ground under it:
+  // where the player is to build, even before anything stands there.
+  const zone = LEVEL_MODE && level && level.goal.station.done_when.in_zone;
+  if (zone) pts.push(zone.at_m, [zone.at_m[0], 0, zone.at_m[2]]);
   if (!pts.length) return;
   const lo = [0, 1, 2].map(i => Math.min(...pts.map(p => p[i]))), hi = [0, 1, 2].map(i => Math.max(...pts.map(p => p[i])));
-  goal.set((lo[0] + hi[0]) / 2, Math.max(.3, (lo[1] + hi[1]) / 3), (lo[2] + hi[2]) / 2);
+  // A level is looked at from half its height (its goal zone is often high), a little further back.
+  goal.set((lo[0] + hi[0]) / 2, Math.max(.3, (lo[1] + hi[1]) / (zone ? 2 : 3)), (lo[2] + hi[2]) / 2);
   target.copy(goal);
   const span = Math.max(hi[0] - lo[0], hi[2] - lo[2], hi[1] - lo[1]);
   // Far enough that the whole width fits the narrower of the two view angles.
   const half = Math.min(camera.fov * Math.PI / 360, Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect));
-  distance = Math.min(40, Math.max(1.6, .6 * span / Math.tan(half)));
+  distance = Math.min(40, Math.max(zone ? 2.2 : 1.6, (zone ? .8 : .6) * span / Math.tan(half)));
   azimuth = -.25; elevation = .38;
 }
 
@@ -1057,7 +1065,24 @@ function renderLevels() {
 function knobDefault(rule) { return rule.default ?? (rule.choices ? rule.choices[0] : rule.min); }
 function trayItem(piece) { return level.tray.find(t => t.piece === piece); }
 
+// The tray in the scene as well: a piece is added, placed and set down
+// without leaving the 3D view (on a phone the list is below it).
+function renderSceneTray() {
+  const bar = $('scene-tray');
+  bar.hidden = !LEVEL_MODE || !level || Boolean(ghost);
+  if (bar.hidden) return;
+  bar.replaceChildren(...level.tray.map(t => {
+    const left = (t.count || 1) - placements.filter(p => p.piece === t.piece).length;
+    return button(`+ ${t.piece}`, () => {
+      const p = {piece: t.piece};
+      for (const [key, rule] of Object.entries(t.knobs)) p[key] = knobDefault(rule);
+      startGhost(p, placements.length);
+    }, {ariaLabel: `Add a ${t.piece}`, disabled: left <= 0, title: left > 0 ? `${left} left` : 'none left'});
+  }));
+}
+
 function renderTray() {
+  renderSceneTray();
   const ul = $('tray'); ul.replaceChildren();
   for (const t of level.tray) {
     const used = placements.filter(p => p.piece === t.piece).length + (ghost && !ghost.was && ghost.p.piece === t.piece ? 1 : 0);
@@ -1187,14 +1212,18 @@ async function rebuildLevel(start) {
   clearTimeout(rebuildTimer);
   scored = false; $('verdict').replaceChildren(); closeDone();
   try {
-    const opened = await build(null, start, {op: 'level_open', level: level.id, placements, helped});
+    const opened = await build(null, false, {op: 'level_open', level: level.id, placements, helped});
     placedCost = (opened.placements || []).map(p => p.cost);
     renderPlaced();
+    // Its goal is about a piece not placed yet: shown, not run.
+    if (opened.needs) $('verdict').textContent = opened.needs;
+    else if (start) await setPlaying(true);
   } catch (e) {
     const problems = e.data && e.data.problems ? e.data.problems.join('; ') : e.message;
     $('verdict').textContent = problems;
     // Still show the level as it stands, without the pieces that do not fit.
-    if (!placements.length || e.status === 422) await build(level.machine).catch(() => {});
+    if (placements.length && e.status === 422)
+      await build(null, false, {op: 'level_open', level: level.id, placements: [], helped}).catch(() => {});
   }
 }
 
@@ -1225,6 +1254,19 @@ async function score(row) {
 // the next level (by itself in a few seconds, unless the player stays);
 // without it, a way to try again.
 let advanceTimer = null;
+// Back to the level's beginning, not running: with the same pieces (to move
+// or change them) or with none.
+function startOver(keep) {
+  endGhost();
+  if (!keep) { placements = []; placedCost = []; helped = false; }
+  renderTray(); renderPlaced();
+  rebuildLevel(false).then(() => {
+    if (!$('verdict').textContent) $('verdict').textContent = keep
+      ? 'Back to the start, with your pieces: pick one up to move or change it, then Run it.'
+      : 'Back to the start: add a piece from your tray.';
+  }).catch(() => {});
+}
+
 function closeDone() {
   clearInterval(advanceTimer); advanceTimer = null;
   $('level-done').hidden = true; $('level-done').replaceChildren();
@@ -1257,11 +1299,13 @@ function showDone(r) {
                             {className: 'primary'}), button('Stay here', closeDone));
     }
   } else {
+    // Running the same pieces again does the same thing: start the level
+    // over, with no pieces or with the same ones to change.
     add('h2', {textContent: 'Not this time'});
-    add('p', {textContent: `The goal did not happen within ${level.time_s} s. Move or change your pieces and run it again.`});
+    add('p', {textContent: `The goal did not happen within ${level.time_s} s.`});
     const actions = add('div', {className: 'actions'});
-    actions.append(button('Try again', () => { closeDone(); $('run').click(); }, {className: 'primary'}),
-                   button('Close', closeDone));
+    actions.append(button('Start over', () => { closeDone(); startOver(false); }, {className: 'primary'}),
+                   button('Keep my pieces', () => { closeDone(); startOver(true); }));
   }
   box.hidden = false;
 }

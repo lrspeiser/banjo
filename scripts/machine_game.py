@@ -372,10 +372,12 @@ def ghost(level, placements, index):
                            **({'parts': p['parts']} if p['shape'] == 'compound' else {})) for p in mine]}
 
 
-def compose(level, placements):
+def compose(level, placements, leave_out_goal=False):
     """The level's machine with the player's pieces in it, and the goal as a
     station. Raises LevelRefused (the tray) or mw.MachineRefused (the
-    machine: overlaps, nothing in the ground, ...)."""
+    machine: overlaps, nothing in the ground, ...). A goal about a piece
+    not placed yet is refused -- or with leave_out_goal, left out, and what
+    it needs said in spec['_needs'], so the level can still be shown."""
     spec, checked, cost, compiled = _assemble(level, placements)
     goal = level['goal']['station']['done_when']
     rule = next(iter(goal.values()))
@@ -384,9 +386,15 @@ def compose(level, placements):
     clashes = clashes_of(compiled)
     if clashes:
         raise LevelRefused(clashes[:4])
+    spec['stations'] = []
     if isinstance(wanted, str) and wanted not in names:
-        raise LevelRefused([level['goal'].get('needs', f'the goal is about {wanted}, which is not here yet')])
-    spec['stations'] = [dict(level['goal']['station'], title=level['goal']['title'], focus=level['goal'].get('focus', []))]
+        needs = level['goal'].get('needs', f'the goal is about {wanted}, which is not here yet')
+        if not leave_out_goal:
+            raise LevelRefused([needs])
+        spec['_needs'] = needs
+    else:
+        spec['stations'] = [dict(level['goal']['station'], title=level['goal']['title'],
+                                 focus=level['goal'].get('focus', []))]
     # The steps on the way, after the goal: shown on the page as the chain's
     # stations, and what the engine's search steers by. One about a part
     # that is not placed yet is left out.

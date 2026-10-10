@@ -533,8 +533,12 @@ class Handler(BaseHTTPRequestHandler):
    elif op=='level_open':
     # The level's machine with the player's pieces in it, built in the engine.
     level=machine_game.level_by_id(data.get('level'))
-    spec,checked,cost=machine_game.compose(level,data.get('placements') or [])
+    # Before the piece its goal is about is placed, the level is still shown,
+    # without its goal, and the page is told what it needs.
+    spec,checked,cost=machine_game.compose(level,data.get('placements') or [],leave_out_goal=True)
+    needs=spec.pop('_needs',None)
     r=host.open(spec);r['level']=machine_game.public(level);r['placements']=checked;r['cost']=cost
+    if needs:r['needs']=needs
     host.get(r['session']).game={'level':level['id'],'checked':checked,'cost':cost,'helped':bool(data.get('helped'))}
    elif op=='feedback':
     # A player's word about the game: one line to the log, where the host

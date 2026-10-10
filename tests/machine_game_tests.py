@@ -188,6 +188,20 @@ class Tray(unittest.TestCase):
         flat = mg.ghost(sun, [{k: v for k, v in sun['solution'][0].items() if k not in ('yaw_deg', 'pitch_deg')}], 0)
         self.assertEqual((flat['sun'][0]['off_sun_deg'], flat['sun'][0]['sunlight_w']), (75.0, 64.7))
 
+    def test_every_level_opens_before_any_piece_is_placed(self):
+        # Shown, not run: a goal about a piece not placed yet is left out and
+        # what it needs is said; there is always something for the engine to
+        # build (it refuses an empty world).
+        for level in LEVELS:
+            spec, _, _ = mg.compose(level, [], leave_out_goal=True)
+            self.assertTrue(mw.compile_spec(spec)['parts'], level['id'])
+        steam = mg.level_by_id('steam')
+        spec, _, _ = mg.compose(steam, [], leave_out_goal=True)
+        self.assertEqual((spec['_needs'], spec['stations']), ('Place a steam engine: the goal is its piston', []))
+        spec, _, _ = mg.compose(steam, steam['solution'], leave_out_goal=True)
+        self.assertNotIn('_needs', spec)
+        self.assertEqual(spec['stations'][0]['title'], steam['goal']['title'])
+
     def test_a_goal_about_a_piece_needs_that_piece(self):
         with self.assertRaises(mg.LevelRefused) as caught:
             mg.compose(mg.level_by_id('steam'), [])

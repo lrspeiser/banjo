@@ -517,7 +517,24 @@
    "machine": {
     "schema": "banjo.machine.v1",
     "title": "Up she goes",
-    "parts": []
+    "parts": [
+     {
+      "name": "height post",
+      "shape": "box",
+      "material": "concrete",
+      "size_m": [
+       0.04,
+       1.06,
+       0.04
+      ],
+      "at_m": [
+       0.6,
+       0.53,
+       -0.4
+      ],
+      "fixed": true
+     }
+    ]
    },
    "goal": {
     "title": "The piston is in the zone",

@@ -176,6 +176,31 @@ class Puzzles(unittest.TestCase):
         self.assertEqual((notes[-1]['text'], notes[-1]['level']), ('The plank looked like it floated', 'gap'))
         self.assertNotIn('127.0.0.1', json.dumps(notes[-1]), 'nothing that names the player is kept')
 
+    def test_a_level_opens_before_its_goal_piece_and_a_missed_goal_starts_over(self):
+        # Level 4's goal is its engine's piston: before there is one, the
+        # level is shown, ready, with what it needs -- not "could not build".
+        self.open('steam')
+        self.assertEqual(self.js("document.getElementById('verdict').textContent"),
+                         'Place a steam engine: the goal is its piston')
+        self.assertFalse(self.js("document.getElementById('scene-tray').hidden"), 'pieces are added from the scene')
+        # Level 1 with the plank as it comes (too short, off the line): the
+        # goal is missed, and Start over clears the pieces, not runs them again.
+        self.open('gap')
+        self.press('Add a plank')
+        self.ghost()
+        self.press('Following the pointer')
+        self.ghost()
+        self.press('Set it down')
+        self.wait('!window.machineGhostState()', 5)
+        self.wait("/costs/.test(document.getElementById('placed').textContent)", 60)
+        self.press('Run it')
+        self.wait("!document.getElementById('level-done').hidden", 30)
+        self.assertIn('Not this time', self.js("document.getElementById('level-done').textContent"))
+        self.press('Start over')
+        self.wait(READY, 60)
+        self.assertEqual(self.js("document.querySelectorAll('#placed li').length"), 0)
+        self.assertFalse(self.js("document.getElementById('scene-tray').hidden"))
+
     def test_a_ghost_inside_a_wall_is_red_says_why_and_cannot_be_set_down(self):
         self.open('laser')
         self.press('Add')
