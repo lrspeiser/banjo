@@ -111,6 +111,11 @@ KNIFE = {'schema': mw.SCHEMA, 'title': 'Knife pendulum',
                       {'title': 'Weight falls', 'done_when': {'hits': ['weight', 'the ground']}, 'focus': ['weight']}]}
 
 
+# The same, with the rope's post on the other side of it: a knife turned 30
+# degrees about the vertical swings in past where the post of KNIFE stands.
+KNIFE_TURNED = dict(KNIFE, kits=[dict(KNIFE['kits'][0], side='+z'), KNIFE['kits'][1]])
+
+
 def run(spec, seconds, sample=None, wall_s=240.0):
     """Run a machine unpaced in the real engine; `sample(session)` is called
     under the session's lock about every 0.05 s of world time."""
@@ -217,6 +222,46 @@ class Declarations(unittest.TestCase):
         self.assertEqual((fixing['a'], fixing['b']), ('knife arm', 'knife weight'))
         # Its arm hangs beside the rope's own arm, not through it.
         self.assertLess(by['knife arm']['at_m'][2], by['weight arm']['at_m'][2] - 0.1)
+
+    def test_a_knife_turned_about_the_vertical_is_the_same_knife_turned(self):
+        # turn_deg 30: every part, pin and the edge is where the unturned
+        # knife has it, turned 30 degrees about the vertical through its pin,
+        # and every part is turned [0, 30, z] -- the heading about y on top of
+        # the pull back about z, which is the order the engine turns a body in.
+        for pull in (90, 60):
+            def knife(turn):
+                return mw.compile_spec(dict(KNIFE_TURNED, kits=[
+                    KNIFE_TURNED['kits'][0],
+                    dict(KNIFE_TURNED['kits'][1], pull_back_deg=pull, turn_deg=turn, arm_side='+')]))
+            square, turned = knife(0), knife(30)
+            c, s = math.cos(math.radians(30)), math.sin(math.radians(30))
+
+            def about_up(v):
+                return [v[0] * c + v[2] * s, v[1], -v[0] * s + v[2] * c]
+
+            def hinge(compiled):
+                return next(j for j in compiled['joints'] if j['name'] == 'knife hinge')['at_m']
+
+            was, now = {p['name']: p for p in square['parts']}, {p['name']: p for p in turned['parts']}
+            h0, h1 = hinge(square), hinge(turned)
+            for name in ('knife beam', 'knife post A', 'knife post B', 'knife arm', 'knife blade'):
+                want = about_up([was[name]['at_m'][i] - h0[i] for i in range(3)])
+                got = [now[name]['at_m'][i] - h1[i] for i in range(3)]
+                for i in range(3):
+                    self.assertAlmostEqual(got[i], want[i], places=9, msg=(pull, name))
+                self.assertEqual(now[name]['turn_deg'], [0.0, 30.0, float(was[name]['turn_deg'][2])], (pull, name))
+                self.assertEqual(now[name]['size_m'], was[name]['size_m'])
+            e0, e1 = square['blades'][0], turned['blades'][0]
+            for key in ('heel_m', 'tip_m'):
+                want = about_up([e0[key][i] - h0[i] for i in range(3)])
+                for i in range(3):
+                    self.assertAlmostEqual(e1[key][i] - h1[i], want[i], places=9)
+            for i, v in enumerate(about_up(e0['facing'])):
+                self.assertAlmostEqual(e1['facing'][i], v, places=9)
+            # And it swings 30 degrees round: the hinge's axis is turned too.
+            axis = next(j for j in turned['joints'] if j['name'] == 'knife hinge')['axis']
+            for i, v in enumerate(about_up([0.0, 0.0, 1.0])):
+                self.assertAlmostEqual(axis[i], v, places=9)
 
 
 class Engine(unittest.TestCase):
@@ -337,6 +382,38 @@ class Engine(unittest.TestCase):
               + ', '.join(f'{a:.0f}' for a in seen) + ' mm2')
         # The same blade meets the same rope the same way wherever it stands.
         self.assertLess(max(seen) - min(seen), 0.01 * max(seen))
+
+    @need_engine
+    def test_a_knife_turned_30_degrees_about_the_vertical_takes_its_edge_and_cuts_wherever_it_stands(self):
+        # Turned 30 degrees about the vertical, held out level its blade is a
+        # plate turned about y; pulled back 60 it is turned about y and z both.
+        # Before the engine built a tilted box in its own frame, it refused
+        # this knife its edge in 5 of these 8 runs -- "the edge does not lie
+        # on its matter", every time it was pulled back 60 -- and where it took
+        # it the cut came to 398-424 mm2 by place. Now every one takes its
+        # edge, cuts the rope edge first and
+        # through, and the weight falls; and a knife meets the rope the same
+        # way wherever it stands.
+        places = [[0.5, 0, 0], [0.513, 0, 0.0037], [0.527, 0, 0.004], [0.5371, 0, -0.0113]]
+        said = []
+        for pull in (90, 60):
+            areas = []
+            for post in places:
+                spec = dict(KNIFE_TURNED, kits=[dict(KNIFE_TURNED['kits'][0], post_m=post),
+                                                dict(KNIFE_TURNED['kits'][1], pull_back_deg=pull, turn_deg=30)])
+                r = run(spec, 1.5)
+                self.assertIsNone(r['error'], (pull, post))
+                done = {s['title']: s for s in r['stations']}
+                self.assertTrue(done['Knife cuts the rope']['done'], (pull, post, r['events']))
+                self.assertTrue(done['Weight falls']['done'], (pull, post, r['events']))
+                cuts = [c for c in r['readouts']['cuts'] if c['target'].startswith('weight rope')]
+                self.assertTrue(cuts, (pull, post, r['events']))
+                self.assertEqual(cuts[0]['kind'], 'edge', (pull, post, r['events']))
+                self.assertTrue(any('cut weight rope through' in t for t in r['events']), (pull, post, r['events']))
+                areas.append(sum(c['area_mm2'] for c in cuts))
+            self.assertLess(max(areas) - min(areas), 0.01 * max(areas), (pull, areas))
+            said.append(f'pulled back {pull}: ' + ', '.join(f'{a:.0f}' for a in areas) + ' mm2')
+        print('\n  turned 30 degrees about the vertical, the rope cut edge first everywhere; ' + '; '.join(said))
 
     @need_engine
     def test_the_flat_of_the_knife_does_not_cut(self):

@@ -760,12 +760,29 @@ def _kit_knife_pendulum(k, problems, name):
     held out level, unless asked -- and is let go. The arm, the blade, its
     edge and any weight are laid out held out level and then turned about the
     hinge to that angle, so at any angle the edge is on the blade's leading
-    face. The engine builds a tilted box's cells in its own frame, to its faces
-    as a square one's are, so an edge laid along a tilted plate's face is on its
-    matter wherever the knife stands."""
+    face. turn_deg turns the whole knife, frame and all, about the vertical
+    through its pin, so it swings that many degrees round from swing_toward.
+    The engine builds a tilted box's cells in its own frame, to its faces as a
+    square one's are, so an edge laid along a tilted plate's face is on its
+    matter wherever the knife stands and however it is turned."""
     arm = _num(k, 'arm_m', name, problems, 0.6, 0.2, 3.0)
     pull = _num(k, 'pull_back_deg', name, problems, 90, 10, 90)
     d = _dir(k.get('swing_toward', '+x'), problems, name)
+    # Turned about the vertical: laid out swinging toward +x, then turned to
+    # its heading -- swing_toward's own and turn_deg more -- about the pin.
+    heading = 0.0
+    if _num(k, 'turn_deg', name, problems, 0.0, -180.0, 180.0):
+        base = {(1, 0, 0): 0.0, (0, 0, 1): -90.0, (-1, 0, 0): 180.0, (0, 0, -1): 90.0}.get(tuple(d), 0.0)
+        heading = (base + _num(k, 'turn_deg', name, problems, 0.0, -180.0, 180.0) + 180.0) % 360.0 - 180.0
+        d = (1, 0, 0)
+    ch, sh = math.cos(math.radians(heading)), math.sin(math.radians(heading))
+
+    def about_up(v):
+        """v turned about the vertical by the knife's heading."""
+        return [v[0] * ch + v[2] * sh, v[1], -v[0] * sh + v[2] * ch]
+
+    # Which way it swings in the world.
+    swing = about_up([float(d[0]), 0.0, float(d[2])])
     side = (0.0, 0.0, 1.0) if d[0] else (1.0, 0.0, 0.0)
     cell = k['_cell']
     depth, width, plate = 0.12, 0.2, cell
@@ -786,10 +803,11 @@ def _kit_knife_pendulum(k, problems, name):
                                 'concrete crack instead). To cut a weight loose, hang it from a rope (a hanging_weight '
                                 'kit with "hang": "rope") and aim at "<that kit\'s name> rope"')
             axes, h = _axes(target), _half(target)
-            reach = sum(abs(axes[j][0 if d[0] else 2]) * h[j] for j in range(3))
+            # How far the part reaches toward the knife, along its swing.
+            reach = sum(abs(sum(axes[j][i] * swing[i] for i in range(3))) * h[j] for j in range(3))
             centre = target['at_m']
-            bottom = [centre[0] - d[0] * (reach + 0.5 * depth + 0.01), centre[1],
-                      centre[2] - d[2] * (reach + 0.5 * depth + 0.01)]
+            bottom = [centre[0] - swing[0] * (reach + 0.5 * depth + 0.01), centre[1],
+                      centre[2] - swing[2] * (reach + 0.5 * depth + 0.01)]
             pivot = [bottom[0], bottom[1] + arm + 0.006 + 0.5 * plate, bottom[2]]
     else:
         pivot = _vec(k.get('pivot_m'), 3, name + ' pivot_m', problems)
@@ -800,12 +818,22 @@ def _kit_knife_pendulum(k, problems, name):
     # the parts already declared (the one asked for, if arm_side says).
     known = [p for p in (k.get('_known') or {}).values() if p.get('shape') != 'compound']
 
+    def laid_out(p):
+        """A part's axes and centre as the knife is laid out, before its
+        heading turns it: turned back by the heading about the pin."""
+        axes_p, c = _axes(p), p['at_m']
+        if not heading:
+            return axes_p, c
+        back = [[a[0] * ch - a[2] * sh, a[1], a[0] * sh + a[2] * ch] for a in axes_p]
+        r = [c[i] - pivot[i] for i in range(3)]
+        return back, [pivot[0] + r[0] * ch - r[2] * sh, c[1], pivot[2] + r[0] * sh + r[2] * ch]
+
     def blocked(sign):
         off = [pivot[i] + sign * side[i] * 0.5 * width for i in range(3)]
         for p in known:
-            axes_p, h = _axes(p), _half(p)
+            axes_p, c = laid_out(p)
+            h = _half(p)
             ext = [sum(abs(axes_p[j][i]) * h[j] for j in range(3)) for i in range(3)]
-            c = p['at_m']
             lateral = 0 if side[0] else 2
             along = 2 if side[0] else 0
             if abs(c[lateral] - off[lateral]) > ext[lateral] + 0.03:
@@ -910,6 +938,24 @@ def _kit_knife_pendulum(k, problems, name):
                 j['axis'] = turned(j['axis'])
         edge['heel_m'], edge['tip_m'] = about_pin(edge['heel_m']), about_pin(edge['tip_m'])
         edge['facing'] = turned(edge['facing'])
+    if heading:
+        # Everything turned about the vertical through the pin: the frame, the
+        # arm, the blade, the weight, every pin and the edge. Laid out toward
+        # +x, a part was turned only about z (by the pull back), so its turn is
+        # now the heading about y on top of that: [0, heading, z] is exactly Ry
+        # Rz, which is the order the engine turns a body in (rotation()).
+        def about_up_pin(p):
+            r = about_up([p[i] - pivot[i] for i in range(3)])
+            return [pivot[i] + r[i] for i in range(3)]
+
+        for p in parts:
+            p['at_m'] = about_up_pin(p['at_m'])
+            p['turn_deg'] = [0.0, heading, float(p['turn_deg'][2])]
+        for j in joints:
+            j['at_m'] = about_up_pin(j['at_m'])
+            j['axis'] = about_up(j['axis'])
+        edge['heel_m'], edge['tip_m'] = about_up_pin(edge['heel_m']), about_up_pin(edge['tip_m'])
+        edge['facing'] = about_up(edge['facing'])
     k['_blades'].append(edge)
     return parts, joints
 
@@ -964,7 +1010,8 @@ KIT_HELP = {
                       'go: EITHER aim_at (a part declared earlier; the edge reaches its near face '
                       'at the bottom of the swing, at its middle height) OR pivot_m [x, y, z]; arm_m (0.6; longer swings '
                       'harder), pull_back_deg (90, held out level, down to 10: how far back from hanging straight down '
-                      'it starts), weight_kg (an iron weight on the arm; heavier carries more through the cut), '
+                      'it starts), turn_deg (0; the whole knife turned that many degrees about the vertical through '
+                      'its pin, so it swings that far round from swing_toward), weight_kg (an iron weight on the arm; heavier carries more through the cut), '
                       'edge_radius_m (how sharp: 0.00002 a razor, 0.0002 a working edge, 0.001 blunt; the work per area '
                       'cut is the material\'s fracture energy plus its hardness times twice this), swing_toward '
                       '"+x|-x|+z|-z", blade_material. The engine cuts what '
