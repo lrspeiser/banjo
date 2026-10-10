@@ -629,7 +629,6 @@ function render() {
   if (LEVEL_MODE) for (const [name, mesh] of meshes) mesh.visible = !hiddenPiece(name);
   renderer.render(scene, camera);
   renderLabels();
-  if (LEVEL_MODE) placeGhostCard();
 }
 
 // ---- controls -----------------------------------------------------------------
@@ -839,7 +838,7 @@ async function askGhost() {
 // the view meets the scene.
 function startGhost(p, index) {
   endGhost();
-  ghost = {p, index, was: index < placements.length ? placements[index] : null, follow: true, fits: true, problems: [],
+  ghost = {p, index, was: index < placements.length ? placements[index] : null, follow: false, fits: true, problems: [],
            drawnAt: null, busy: false, again: false, cost: null, answered: false, inputs: {}};
   view.classList.add('placing');
   renderTray(); renderPlaced(); renderGhostBar();
@@ -869,10 +868,10 @@ function setGhostDown() {
   endGhost(); renderTray(); renderPlaced(); scheduleRebuild(0);
 }
 
-// The ghost's own controls, beside it in the scene (placeGhostCard keeps
-// them there as it moves): on a phone the list of pieces is a scroll away.
-// One knob at a time -- its chip picks which -- with - and + either side of
-// its slider, and Set down. While it follows the pointer, only a hint.
+// The ghost's own controls, just below the scene and out of its way (the top
+// of the side panel, kept in sight as the panel scrolls): on a phone the list
+// of pieces is a scroll away. One knob at a time -- its chip picks which --
+// with - and + either side of its slider, and Set down.
 function knobName(rule, key) { return (rule.label || key).replace(/\s*\(.*\)\s*$/, ''); }
 
 function nudgeKnob(key, by) {
@@ -885,11 +884,8 @@ function renderGhostBar() {
   ghost && (ghost.cardInput = null);
   if (!ghost) { card.replaceChildren(); return; }
   const throwAway = button('✕', cancelGhost, {ariaLabel: 'Throw the ghost away', title: 'Throw the ghost away'});
-  if (ghost.follow) {
-    card.replaceChildren(Object.assign(document.createElement('p'), {className: 'hint',
-      textContent: matchMedia('(pointer: coarse)').matches ? 'Tap where it should go' : 'Click where it should go'}), throwAway);
-    return;
-  }
+  const head = Object.assign(document.createElement('p'), {className: 'head',
+    textContent: `Your ${ghost.p.piece}: drag it, or ${matchMedia('(pointer: coarse)').matches ? 'tap' : 'click'} where it goes`});
   const knobs = trayItem(ghost.p.piece).knobs, keys = Object.keys(knobs);
   if (!keys.includes(ghost.card)) ghost.card = keys.find(k => k !== 'x_m' && k !== 'z_m') || keys[0];
   const chips = Object.assign(document.createElement('div'), {className: 'chips'});
@@ -925,40 +921,8 @@ function renderGhostBar() {
   const state = Object.assign(document.createElement('p'), {className: 'state'});
   const actions = Object.assign(document.createElement('div'), {className: 'actions'});
   actions.append(button('✓ Set down', setGhostDown, {className: 'down', disabled: !ghost.fits || ghost.busy}), throwAway);
-  card.replaceChildren(chips, row, state, actions);
+  card.replaceChildren(head, chips, row, state, actions);
   showGhostKnobs(); showGhostState();
-}
-
-// Keep the card beside the ghost on the screen: under it, or over it when
-// there is no room under it, never off the scene or over its own buttons.
-const cardBox = new THREE.Box3(), cardCorner = new THREE.Vector3();
-function placeGhostCard() {
-  const card = $('ghost-bar');
-  if (!ghost || card.hidden) return;
-  const w = view.clientWidth, h = view.clientHeight;
-  if (ghost.follow) {
-    // Its hint keeps out of the way of where the player is about to tap.
-    const at = `translate(${Math.round((w - card.offsetWidth) / 2)}px, 52px)`;
-    if (card.style.transform !== at) card.style.transform = at;
-    return;
-  }
-  if (!ghostGroup.children.length) return;
-  cardBox.setFromObject(ghostGroup);
-  if (cardBox.isEmpty()) return;
-  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-  for (let i = 0; i < 8; i++) {
-    cardCorner.set(i & 1 ? cardBox.max.x : cardBox.min.x, i & 2 ? cardBox.max.y : cardBox.min.y,
-                   i & 4 ? cardBox.max.z : cardBox.min.z).project(camera);
-    const sx = (cardCorner.x + 1) / 2 * w, sy = (1 - cardCorner.y) / 2 * h;
-    x0 = Math.min(x0, sx); x1 = Math.max(x1, sx); y0 = Math.min(y0, sy); y1 = Math.max(y1, sy);
-  }
-  const cw = card.offsetWidth, ch = card.offsetHeight, floor = h - ($('scene-actions').offsetHeight || 0) - 18;
-  let top = y1 + 12;
-  if (top + ch > floor) top = y0 - ch - 12;
-  top = Math.max(8, Math.min(floor - ch, top));
-  const left = Math.max(8, Math.min(w - cw - 8, (x0 + x1) / 2 - cw / 2));
-  const at = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
-  if (card.style.transform !== at) card.style.transform = at;
 }
 
 function showGhostState() {
@@ -967,9 +931,9 @@ function showGhostState() {
   const said = document.querySelector('#ghost-bar .state');
   if (said && ghost) {
     said.className = 'state ' + (ghost.fits ? 'fits' : 'refused');
-    said.textContent = ghost.fits ? (ghost.sun && ghost.sun.length
+    said.textContent = (ghost.follow ? 'It follows the pointer: click where it should go. ' : '') + (ghost.fits ? (ghost.sun && ghost.sun.length
       ? `Faces ${ghost.sun[0].off_sun_deg}° off the sun: about ${Math.round(ghost.sun[0].sunlight_w)} W` : 'It fits here.')
-      : ghost.problems.join('; ');
+      : ghost.problems.join('; '));
   }
   const state = $('ghost-state'), down = $('ghost-down');
   if (!ghost || !state) return;

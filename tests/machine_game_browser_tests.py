@@ -1,10 +1,11 @@
 """The puzzle page (/play) in Chrome, used the way a person uses it.
 
-A piece added from the tray is a see-through ghost: it follows the pointer, a
-click pins it, it is changed and turned while it is a ghost, then set down
-and run. A ghost stood inside a wall is red and says why. On a phone held
-upright the scene comes into view when a piece is added, and the bar over
-the scene turns the ghost and sets it down.
+A piece added from the tray is a see-through ghost, placed at once where the
+view's middle meets the scene; it can be moved by a click, a tap or the
+pointer, changed and turned while it is a ghost, then set down and run. A
+ghost stood inside a wall is red and says why. On a phone held upright the
+scene comes into view when a piece is added, and the ghost's controls sit
+just below the scene, out of its way.
 
     BANJO_LIVE_ENGINE=path/to/banjo_live_world_run python tests/machine_game_browser_tests.py
 
@@ -111,13 +112,14 @@ class Puzzles(unittest.TestCase):
                                                       **({'text': key} if kind == 'keyDown' else {})})
 
     # ---- the tests ---------------------------------------------------------------------
-    def test_a_ghost_follows_the_pointer_is_pinned_changed_turned_set_down_and_run(self):
+    def test_a_ghost_is_placed_at_once_follows_on_request_changed_turned_set_down_and_run(self):
         self.open('gap')
         self.js("window.machineView({azimuth: -0.35, elevation: 0.75, distance: 3.2, at: [0.3, 0.2, 0]})")
         time.sleep(1.5)                       # the camera eases to its new view
         self.press('Add')
         g = self.ghost()
-        self.assertTrue(g['follow'] and g['parts'] > 0, g)
+        self.assertTrue(not g['follow'] and g['parts'] > 0, 'it is placed at once, ready to change')
+        self.press('Follow the pointer')
         # Not in the machine yet: the engine's world has no plank.
         self.assertNotIn('your plank 1', self.js("[...document.querySelectorAll('#stations li')].map(l => l.textContent).join()"))
         for x in (-0.2, 0.3):
@@ -188,8 +190,6 @@ class Puzzles(unittest.TestCase):
         self.open('gap')
         self.press('Add a plank')
         self.ghost()
-        self.press('Following the pointer')
-        self.ghost()
         self.press('Set it down')
         self.wait('!window.machineGhostState()', 5)
         self.wait("/costs/.test(document.getElementById('placed').textContent)", 60)
@@ -205,7 +205,6 @@ class Puzzles(unittest.TestCase):
         self.open('laser')
         self.press('Add')
         self.ghost()
-        self.press('Following the pointer')       # stop following; place it by its knobs
         self.slide('x of your mirror 1', -0.35)
         self.slide('z of your mirror 1', 0.5)
         g = self.ghost()
@@ -227,11 +226,13 @@ class Puzzles(unittest.TestCase):
         self.page.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [{'x': x, 'y': y}]})
         self.page.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []})
         g = self.ghost()
-        self.assertFalse(g['follow'], 'a tap pins it')
-        # Its controls are beside it: a chip picks the knob, + turns it on.
+        self.assertAlmostEqual(g['p']['x_m'], 0.3, delta=0.03, msg='a tap puts it there')
+        # Its controls are just below the scene, out of its way, and in sight:
+        # a chip picks the knob, + turns it on.
         card = self.js("document.getElementById('ghost-bar').getBoundingClientRect().toJSON()")
-        gx, gy = self.screen_point([0.3, 0.0, 0.0])
-        self.assertLess(min(abs(card['top'] - gy), abs(card['bottom'] - gy)), 160, (card, gy))
+        scene = self.js("document.getElementById('view').getBoundingClientRect().toJSON()")
+        self.assertGreaterEqual(card['top'], scene['bottom'] - 1, (card, scene))
+        self.assertLessEqual(card['bottom'], 844, 'the controls are on the screen with the scene')
         self.press('Change its turn')
         self.press('More turn')
         self.assertEqual(self.ghost()['p']['yaw_deg'], 15)
