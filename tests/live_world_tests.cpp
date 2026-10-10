@@ -1847,6 +1847,46 @@ void aTiltedBoxIsBuiltToItsFacesWhereverItStands() {
               << "number of cells and a half in from its faces; " << edges << " edges laid on them, all taken\n";
 }
 
+// A plate one cell thick, turned, keeps its one layer wherever it stands.
+//
+// The lens kit's glass holder is 100 x 20 x 100 mm turned a quarter turn about
+// z, so it stands one cell thick along x. Voxelised onto the world's grid with
+// its middle on a cell boundary (x = 0.34 at 20 mm cells), no cell centre lay
+// within its 10 mm of the middle, it had no cells at all, and the engine
+// refused the whole world ("joined group \"\" has nothing left after what it
+// cuts away"). Built in its own frame it is 5 x 1 x 5 cells at any angle and
+// any place.
+void aOneCellThickTurnedPlateKeepsItsLayer() {
+    std::size_t opened = 0;
+    for (const Vec3 &turn : {Vec3{0.0, 0.0, -90.0}, Vec3{90.0, 0.0, 0.0}, Vec3{0.0, 30.0, -90.0},
+                             Vec3{25.0, 0.0, -60.0}})
+        for (const Vec3 &at : {Vec3{0.34, 0.575, 0.0}, Vec3{0.30, 0.575, 0.0}, Vec3{0.33, 0.57, 0.01},
+                               Vec3{0.3, 0.58, 0.02}}) {
+            TileImpactRequest r;
+            r.cell_size_m = 0.02;
+            r.backend = benchBackend();
+            SceneBody holder;
+            holder.name = "lens";
+            holder.shape = BodyShape::Box;
+            holder.material = MaterialPreset::Glass;
+            holder.dimensions_m = {0.1, 0.02, 0.1};
+            holder.center_m = at;
+            holder.rotation_deg = turn;
+            holder.anchored = true;
+            r.bodies = {holder};
+            const auto live = LiveWorld::open(r);
+            const nlohmann::json report = nlohmann::json::parse(live->structureJson("lens"));
+            require(report.at("cell_count").get<std::size_t>() == 25U,
+                    "a plate one cell thick, turned, does not have its 5 x 1 x 5 cells: " +
+                        std::to_string(report.at("cell_count").get<std::size_t>()));
+            for (const nlohmann::json &c : report.at("cells_local_m"))
+                require(std::abs(c.at(1).get<double>()) < 1e-9, "a cell of the one-cell plate is off its layer");
+            ++opened;
+        }
+    std::cout << "  " << opened << " one-cell plates, turned four ways and centred on cell boundaries and off "
+              << "them: 25 cells each, all in the one layer\n";
+}
+
 } // namespace
 
 // Set aside and brought back (LiveWorld::park and unpark): the inventory's bag.
@@ -2724,6 +2764,8 @@ int main(int argc, char **argv) {
         std::cout << "[PASS] a turned box that comes through a run whole keeps its turn\n";
         aTiltedBoxIsBuiltToItsFacesWhereverItStands();
         std::cout << "[PASS] a tilted box is built to its faces wherever it stands, and takes an edge on any\n";
+        aOneCellThickTurnedPlateKeepsItsLayer();
+        std::cout << "[PASS] a plate one cell thick, turned, keeps its one layer wherever it stands\n";
         whatAThingIsMadeOfDecidesHowItBounces();
         std::cout << "[PASS] what a thing is made of decides how it bounces\n";
         aRayFindsWhatItActuallyHits();

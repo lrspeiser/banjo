@@ -450,6 +450,29 @@ class Light(unittest.TestCase):
         self.assertFalse(any(row['done'] for row in r['stations']), r['stations'])
 
     @need_engine
+    def test_a_lens_held_one_cell_thick_on_a_cell_boundary_keeps_its_glass(self):
+        """A lens kit's holder along x is a glass plate one cell thick turned a
+        quarter turn about z. With its middle on a cell boundary -- x 0.34, or
+        0.3 for a concave one -- the world's grid put no cell centre inside it,
+        and the engine refused the whole world. Built in its own frame it keeps
+        its one layer of 5 x 5 cells wherever it stands."""
+        for shape, x in (('convex', 0.34), ('concave', 0.3), ('convex', 0.33)):
+            spec = laser_machine(mirror=False)
+            spec['kits'].append({'kit': 'lens', 'name': 'lens', 'at_m': [x, 0.575, 0.0], 'axis': [1, 0, 0],
+                                 'shape': shape, 'radius_m': 0.2, 'diameter_m': 0.1})
+            compiled = mw.compile_spec(spec)
+            holder = next(p for p in compiled['parts'] if p['name'] == 'lens')
+            self.assertEqual(holder['size_m'], [0.1, 0.02, 0.1])
+            with tempfile.TemporaryDirectory() as logs:
+                engine = mw.build_engine(ENGINE, compiled, Path(logs))[0]
+                try:
+                    cells = engine.op(op='structure', name='lens')['structure']
+                finally:
+                    engine.close()
+            self.assertEqual(cells['cell_count'], 25, (shape, x))
+            self.assertTrue(all(abs(c[1]) < 1e-6 for c in cells['cells_local_m']), (shape, x))
+
+    @need_engine
     def test_a_convex_lens_focuses_a_laser_to_a_smaller_spot_and_the_rope_burns_sooner(self):
         """A beam 2 cm wide a metre out is about 5 cm across at the rope, and
         puts less than half of itself on it, over three cells; a convex lens in

@@ -659,9 +659,20 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
                         if (!gone.contains({c.x, c.y, c.z})) kept.push_back(c);
                     cells.swap(kept);
                 }
-                if (cells.empty())
+                if (cells.empty()) {
+                    // A shape on its own that holds no cell centre is thinner
+                    // than a cell where it stands, which is not a join's fault
+                    // and was once reported as one. (A tilted box of whole
+                    // cells never gets here: it is built in its own frame.)
+                    if (body.join.empty())
+                        throw std::invalid_argument(
+                            "body \"" + body.name + "\" holds no cell where it stands: it is thinner than a "
+                            "cell there; " + (body.shape == BodyShape::Box
+                                                  ? "make it a whole number of cells along each side"
+                                                  : "make it bigger"));
                     throw std::invalid_argument("joined group \"" + body.join +
                                                 "\" has nothing left after what it cuts away");
+                }
                 asset = generateVoxelLattice({std::move(cells), r.cell_size_m, r.neighbor_horizon_cells},
                                              compiled);
                 s.interface_bonds += weakenDeclaredJoints(asset, part_of_cell, r.interfaces, reached);

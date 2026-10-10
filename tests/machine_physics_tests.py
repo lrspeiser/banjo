@@ -116,6 +116,18 @@ KNIFE = {'schema': mw.SCHEMA, 'title': 'Knife pendulum',
 KNIFE_TURNED = dict(KNIFE, kits=[dict(KNIFE['kits'][0], side='+z'), KNIFE['kits'][1]])
 
 
+def knife_turned_rigidly(yaw_deg, pull_back_deg=90, post=(0.5, 0, 0)):
+    """KNIFE_TURNED with its post at `post`, the knife pulled back by
+    pull_back_deg and then turned as a whole -- the game's own turn of a kit,
+    `turned` -- yaw_deg about the vertical through the rope it is aimed at, so
+    it still meets the rope at the bottom of its swing."""
+    weight = dict(KNIFE_TURNED['kits'][0], post_m=list(post))
+    knife = dict(KNIFE_TURNED['kits'][1], pull_back_deg=pull_back_deg)
+    rope = next(p for p in mw.compile_spec(dict(KNIFE_TURNED, kits=[weight, knife]))['parts']
+                if p['name'] == 'weight rope')['at_m']
+    return dict(KNIFE_TURNED, kits=[weight, dict(knife, turned={'yaw_deg': yaw_deg, 'about_m': rope})])
+
+
 def run(spec, seconds, sample=None, wall_s=240.0):
     """Run a machine unpaced in the real engine; `sample(session)` is called
     under the session's lock about every 0.05 s of world time."""
@@ -414,6 +426,28 @@ class Engine(unittest.TestCase):
             self.assertLess(max(areas) - min(areas), 0.01 * max(areas), (pull, areas))
             said.append(f'pulled back {pull}: ' + ', '.join(f'{a:.0f}' for a in areas) + ' mm2')
         print('\n  turned 30 degrees about the vertical, the rope cut edge first everywhere; ' + '; '.join(said))
+
+    @need_engine
+    def test_a_knife_kit_turned_rigidly_about_the_rope_takes_its_edge_and_cuts(self):
+        # The game's own turn of a kit (`turned`), 30 degrees about the
+        # vertical through the rope, held out level: the blade a plate turned
+        # about y, its edge taken and the rope cut edge first and through in
+        # every place. (Pulled back 60 and turned exactly 30 degrees this way,
+        # the blade's box meets the rope's corner through the rigid contact a
+        # step before the edge's path reaches the rope's cells, and the meeting
+        # is reported as a glancing contact with no cut; turned 20 or 40 it cuts
+        # edge first. That race between the rigid contact and the edge is the
+        # cutting model's, not the cells': see docs/machine-physics-roadmap.md.)
+        areas = []
+        for post in ([0.5, 0, 0], [0.513, 0, 0.0037]):
+            r = run(knife_turned_rigidly(30, 90, post), 1.5)
+            self.assertIsNone(r['error'], post)
+            cuts = [c for c in r['readouts']['cuts'] if c['target'].startswith('weight rope')]
+            self.assertTrue(cuts, (post, r['events']))
+            self.assertEqual(cuts[0]['kind'], 'edge', (post, r['events']))
+            self.assertTrue(any('cut weight rope through' in t for t in r['events']), (post, r['events']))
+            areas.append(sum(c['area_mm2'] for c in cuts))
+        self.assertLess(max(areas) - min(areas), 0.01 * max(areas), areas)
 
     @need_engine
     def test_the_flat_of_the_knife_does_not_cut(self):
