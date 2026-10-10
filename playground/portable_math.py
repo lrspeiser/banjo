@@ -32,6 +32,7 @@ hundred times a second.
 """
 from __future__ import annotations
 
+import functools
 import math
 from decimal import Context, Decimal, ROUND_HALF_EVEN
 from fractions import Fraction
@@ -369,6 +370,31 @@ def cbrt(x: float) -> float:
     value = _to_double(root)
     return -value if x < 0 else value
 
+
+
+# -- remembered -----------------------------------------------------------------
+# The game asks the same few arguments over and over -- one body's rotation for
+# every one of its cells -- and a call costs tens of microseconds, so each
+# function keeps its last few thousand answers. A zero is never looked up:
+# 0.0 and -0.0 are one key to a cache and two arguments to sin.
+
+def _remembered(function):
+    cached = functools.lru_cache(maxsize=4096)(function)
+
+    @functools.wraps(function)
+    def remembered(*args):
+        if any(a == 0 for a in args):
+            return function(*args)
+        try:
+            return cached(*args)
+        except TypeError:                        # an unhashable argument: computed, not kept
+            return function(*args)
+    return remembered
+
+
+for _name in ("sin", "cos", "tan", "asin", "acos", "atan", "atan2", "exp", "expm1", "log", "log1p", "pow", "cbrt"):
+    globals()[_name] = _remembered(globals()[_name])
+del _name
 
 def power(x: float, y: float) -> float:
     """`x ** y`, Python's operator, the same bits everywhere.
