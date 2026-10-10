@@ -144,6 +144,12 @@ class Puzzles(unittest.TestCase):
         self.press('Square it up')
         g = self.ghost()
         self.assertEqual((g['p']['yaw_deg'], g['p']['pitch_deg']), (0, 0))
+        # Where the ball will go with the ghost as it is: the engine's own
+        # rehearsal, drawn before anything is set down or run.
+        self.wait("(() => { const p = window.machinePreviewState(); return Boolean(p && p.goal_at_s != null); })()", 30)
+        shown = self.js('window.machinePreviewState()')
+        self.assertEqual(shown['goal_at_s'], 1.9)
+        self.assertIn('after it hits your plank 1', shown['legend'])
         self.press('Run it')
         self.assertIn('Set your plank down first', self.js("document.getElementById('verdict').textContent"))
         self.press('Set it down')

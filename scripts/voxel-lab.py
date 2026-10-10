@@ -289,6 +289,8 @@ class Server(ThreadingHTTPServer):
   self.chat_allowance=Allowance(int(os.environ.get('BANJO_CHAT_PER_HOUR','12')),int(os.environ.get('BANJO_CHAT_PER_DAY','400')),'chat') if public else None
   self.trial_allowance=Allowance(int(os.environ.get('BANJO_TRIALS_PER_HOUR','30')),int(os.environ.get('BANJO_TRIALS_PER_DAY','2000')),'reliability check') if public else None
   self.feedback_allowance=Allowance(10,500,'feedback') if public else None
+  self.preview_allowance=Allowance(int(os.environ.get('BANJO_PREVIEWS_PER_HOUR','300')),int(os.environ.get('BANJO_PREVIEWS_PER_DAY','6000')),'path preview') if public else None
+  self.preview_busy=threading.BoundedSemaphore(2)
   if site not in ('all','game'):raise ValueError('site is all or game')
   self.site=site
   self.app=SimpleNamespace(password=password,public_host=public_host,sessions=set(),login_destination='/play' if site=='game' else '/machine')
@@ -555,6 +557,15 @@ class Handler(BaseHTTPRequestHandler):
     with self.server.lock:
      with open(self.server.logs/'feedback.jsonl','a',encoding='utf-8') as f:f.write(line+'\n')
     r={'ok':True}
+   elif op=='level_preview':
+    # Where things will go: the level rehearsed once by the engine, unpaced,
+    # with its loose bodies' paths and hits. That is engine time, so it is
+    # rationed and two at a time; a busy server says so (503) and the page
+    # asks again a moment later.
+    if self.server.preview_allowance:self.server.preview_allowance.take(self.visitor())
+    if not self.server.preview_busy.acquire(blocking=False):raise SiteBusy('The engine is working out other previews; trying again in a moment')
+    try:r={'ok':True,**machine_game.preview(machine_game.level_by_id(data.get('level')),data.get('placements') or [],host.exe,host.logs)}
+    finally:self.server.preview_busy.release()
    elif op=='level_ghost':
     # A piece before it is set down: what it would be and where, and why it
     # could not go there. Compiled only, never run, so it is not rationed.

@@ -1816,6 +1816,8 @@ class MachineSession:
         # started or stopped it), which is what decides whose world goes when
         # the site is full.
         self.last_used = self.last_action = time.monotonic()
+        # For a preview (rehearse(track=...)): tracked bodies' paths and hits.
+        self.trail, self.trail_turn, self.trail_hits = None, {}, []
         self.wall_compute_s = 0.0
         self.fracture_s = 0.0
         self.behind_s = 0.0
@@ -1889,6 +1891,17 @@ class MachineSession:
                 self.removed[name] = self.seq
         self.t = float(reply.get('t', self.t))
         self._track_moves()
+        if self.trail is not None:
+            # A preview's paths: where each tracked body was, every reply
+            # (1/60 s of world time) it moved more than 2 mm, and its turn.
+            for name, points in self.trail.items():
+                b = self.bodies.get(name)
+                if not b or 'position_m' not in b:
+                    continue
+                p = b['position_m']
+                if not points or math.dist(points[-1][1:4], p) > 0.002:
+                    points.append([round(self.t, 3)] + [round(v, 4) for v in p])
+                self.trail_turn[name] = b.get('orientation_wxyz')
         ingest_light(self, reply)
         if isinstance(reply.get('water'), dict):
             # The engine's own picture of the water: the box of wet columns,
@@ -1923,6 +1936,12 @@ class MachineSession:
             # millimetres, and the pour's ledger.
             self.parcels = reply['parcels']
         for imp in reply.get('impacts', []) or []:
+            if self.trail is not None:
+                # Every hit a tracked body takes part in, for a preview.
+                for mine, other in ((imp.get('by'), imp.get('struck')), (imp.get('struck'), imp.get('by'))):
+                    if mine in self.trail and other and family(other) != family(mine):
+                        self.trail_hits.append({'t': round(self.t, 3), 'body': mine, 'other': family(other),
+                                                'speed_m_s': _round(imp.get('closing_speed_m_s', 0.0))})
             # The first contact between two different things is news; pieces
             # of one broken thing knocking about each other is not.
             pair = tuple(sorted((family(imp.get('struck')), family(imp.get('by')))))
@@ -2327,29 +2346,44 @@ class MachineSession:
             pass
 
 
-def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0):
+def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, after_s=0.0):
     """Run a machine once, unpaced, and report what the engine measured: which
     stations happened, when, and the events. Nothing is kept and nothing is
-    changed; a person still watches the real run afterwards."""
+    changed; a person still watches the real run afterwards. track: names of
+    bodies whose paths and hits to report too (a preview), running on after_s
+    once every station is done, to show where things come to rest."""
     session = MachineSession(compiled, exe, logs, paced=False)
+    if track:
+        # Each path starts where the body stands before anything moves.
+        session.trail = {name: [[0.0] + [round(v, 4) for v in session.bodies[name]['position_m']]]
+                         if name in session.bodies else [] for name in track}
     started = time.perf_counter()
     try:
         session.play(True)
         with session.lock:
+            all_done_at = None
             while True:
                 rows = (session.readouts or {}).get('stations', [])
                 watched = [r for r, st in zip(rows, compiled['stations']) if st.get('done_when')]
+                if watched and all(r['done'] for r in watched) and all_done_at is None:
+                    all_done_at = session.t
                 if (session.error or not session.playing or session.t >= seconds or
-                        (watched and all(r['done'] for r in watched)) or time.perf_counter() - started > wall_limit_s):
+                        (all_done_at is not None and session.t >= all_done_at + after_s) or
+                        time.perf_counter() - started > wall_limit_s):
                     break
                 session.lock.wait(0.1)
             done = getattr(session, '_done_at', {})
-            return {'world_time_s': round(session.t, 3), 'wall_s': round(time.perf_counter() - started, 2),
-                    'error': session.error, 'stations': list(rows),
-                    'zone_nearest_m': {compiled['stations'][i]['title']: round(d, 4)
-                                       for i, d in sorted(getattr(session, 'zone_nearest', {}).items())},
-                    'closest_approach': [c for i, c in sorted(getattr(session, 'closest', {}).items()) if i not in done],
-                    'events': [{'t': e['t'], 'text': e['text']} for e in session.events[:80]]}
+            out = {'world_time_s': round(session.t, 3), 'wall_s': round(time.perf_counter() - started, 2),
+                   'error': session.error, 'stations': list(rows),
+                   'zone_nearest_m': {compiled['stations'][i]['title']: round(d, 4)
+                                      for i, d in sorted(getattr(session, 'zone_nearest', {}).items())},
+                   'closest_approach': [c for i, c in sorted(getattr(session, 'closest', {}).items()) if i not in done],
+                   'events': [{'t': e['t'], 'text': e['text']} for e in session.events[:80]]}
+            if track:
+                out['paths'] = {name: {'points': points, 'turn_wxyz': session.trail_turn.get(name)}
+                                for name, points in session.trail.items()}
+                out['hits'] = list(session.trail_hits)
+            return out
     finally:
         session.close()
 

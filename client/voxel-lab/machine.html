@@ -8,8 +8,10 @@
 <button id="start">Start</button><button id="reset">Set up again</button>
 <label class="speed">Speed<select id="speed" aria-label="Speed of world time"><option value="0.25">¼×</option><option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
 <button id="follow" aria-pressed="true">Follow</button>
+<button id="path-toggle" aria-pressed="true" hidden title="Show where things will go">Path</button>
 </div>
 <div id="scene-tray" class="scene-tray" hidden aria-label="Your tray: add a piece"></div>
+<section id="preview-legend" class="preview-legend" hidden aria-live="polite" aria-label="Where things will go"></section>
 <section id="level-done" class="level-done" hidden aria-live="polite" aria-label="How the run went"></section>
 <p id="scene-note">Drag to turn · Wheel or pinch to zoom · Every motion is calculated live</p>
 </section>

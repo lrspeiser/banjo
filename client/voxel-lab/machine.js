@@ -825,6 +825,7 @@ async function askGhost() {
     if (ghost !== g) return;
     Object.assign(g, {fits: r.fits, problems: r.problems, cost: r.cost, sun: r.sun || [], drawnAt: sent, answered: true});
     drawGhost(r.parts, r.fits);
+    schedulePreview();
   } catch (e) {
     if (ghost === g) Object.assign(g, {fits: false, problems: e.data && e.data.problems ? e.data.problems : [e.message], answered: true});
   } finally {
@@ -860,7 +861,7 @@ function endGhost() {
   renderGhostBar();
 }
 
-function cancelGhost() { if (!ghost) return; endGhost(); renderTray(); renderPlaced(); }
+function cancelGhost() { if (!ghost) return; endGhost(); renderTray(); renderPlaced(); schedulePreview(200); }
 
 function setGhostDown() {
   if (!ghost || !ghost.fits || ghost.busy || !ghost.answered) return;
@@ -965,6 +966,125 @@ function showGhostKnobs() {
 
 window.machineGhostState = () => ghost ? {p: {...ghost.p}, index: ghost.index, fits: ghost.fits, problems: ghost.problems,
   follow: ghost.follow, busy: ghost.busy, answered: ghost.answered, parts: ghostGroup.children.length} : null;
+
+// ---- the preview: where things will go ----------------------------------------------
+// Before a run (and while it plays), the engine's own rehearsal of the level
+// as it stands -- with a ghost as if it were set down -- drawn see-through:
+// each loose thing's path, blue while it moves freely, green inside the goal
+// zone, and after it hits something, that thing's colour, with a dot where it
+// hit. A see-through copy of the goal's thing stands where it ends up.
+const previewGroup = new THREE.Group();
+scene.add(previewGroup);
+const HIT_COLOURS = [0xffb347, 0xff6bd6, 0xc38bff, 0xffe066, 0x7cf0e0, 0xff8080];
+const FREE_COLOUR = 0x9fdcff, GOAL_COLOUR = 0x5fe08f;
+const PREVIEW_DOT = new THREE.SphereGeometry(.02, 12, 8);
+const previewEndLook = new THREE.MeshStandardMaterial({color: 0xcdeeff, transparent: true, opacity: .3, depthWrite: false});
+let previewAsk = 0, previewTimer = null, previewOn = true, previewShown = null;
+
+function clearPreview() {
+  for (const c of [...previewGroup.children]) {
+    previewGroup.remove(c);
+    c.traverse(o => { if (o.geometry && !o.userData.shared) o.geometry.dispose(); });
+  }
+  previewShown = null;
+  showPreviewLegend(null);
+}
+
+function schedulePreview(ms = 700) {
+  clearTimeout(previewTimer);
+  if (!LEVEL_MODE || !level || !previewOn) return;
+  previewTimer = setTimeout(() => askPreview().catch(() => {}), ms);
+}
+
+async function askPreview() {
+  if (!LEVEL_MODE || !level || !previewOn || playing) return;
+  // A ghost that does not fit, or is still being worked out: nothing to rehearse.
+  if (ghost && (!ghost.answered || !ghost.fits)) { clearPreview(); return; }
+  const mine = ++previewAsk, list = ghost ? ghostPlacements() : placements;
+  try {
+    const r = await api({op: 'level_preview', level: level.id, placements: list});
+    if (mine === previewAsk && !playing) drawPreview(r);
+  } catch (e) {
+    if (mine !== previewAsk) return;
+    clearPreview();                     // a piece the goal needs is not placed yet, or it cannot be built
+    if (e.status === 503 && previewOn) previewTimer = setTimeout(() => askPreview().catch(() => {}), 2500);
+  }
+}
+
+function drawPreview(r) {
+  clearPreview();
+  previewShown = r;
+  const zone = level.goal.station.done_when.in_zone;
+  const inZone = p => Boolean(zone) && [0, 1, 2].every(i => Math.abs(p[i] - zone.at_m[i]) <= zone.size_m[i] / 2);
+  const colourOf = new Map(), dotShape = PREVIEW_DOT;
+  for (const path of r.paths) {
+    const hits = r.hits.filter(h => h.body === path.name).sort((a, b) => a.t - b.t);
+    const positions = [], colours = [];
+    let current = new THREE.Color(FREE_COLOUR), k = 0;
+    for (const [t, x, y, z] of path.points) {
+      for (; k < hits.length && hits[k].t <= t; k++) {
+        const other = hits[k].other;
+        if (!colourOf.has(other)) colourOf.set(other, HIT_COLOURS[colourOf.size % HIT_COLOURS.length]);
+        current = new THREE.Color(colourOf.get(other));
+        const dot = new THREE.Mesh(dotShape, new THREE.MeshBasicMaterial({color: current, transparent: true, opacity: .9}));
+        dot.userData.shared = true;
+        dot.position.set(x, y, z);
+        previewGroup.add(dot);
+      }
+      const c = inZone([x, y, z]) ? new THREE.Color(GOAL_COLOUR) : current;
+      positions.push(x, y, z); colours.push(c.r, c.g, c.b);
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colours, 3));
+    previewGroup.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({vertexColors: true, transparent: true,
+      opacity: path.goal ? .95 : .6})));
+    const dots = new THREE.Points(geometry, new THREE.PointsMaterial({vertexColors: true, size: path.goal ? .045 : .025,
+      transparent: true, opacity: .75}));
+    dots.userData.shared = true;                 // the line's geometry: disposed once, with it
+    previewGroup.add(dots);
+    const mesh = path.goal && meshes.get(path.name);
+    if (mesh && path.points.length) {
+      // Where the goal's thing comes to rest (or is at the end), see-through.
+      const end = mesh.clone(true), last = path.points[path.points.length - 1];
+      end.traverse(o => { if (o.isMesh) { o.material = previewEndLook; o.castShadow = false; o.userData.shared = true; } });
+      end.userData.shared = true;
+      end.position.set(last[1], last[2], last[3]);
+      const q = path.turn_wxyz;
+      if (q) end.quaternion.set(q[1], q[2], q[3], q[0]);
+      previewGroup.add(end);
+    }
+  }
+  showPreviewLegend(r, colourOf);
+}
+
+function showPreviewLegend(r, colourOf) {
+  const box = $('preview-legend');
+  box.replaceChildren();
+  box.hidden = !r;
+  if (!r) return;
+  box.append(Object.assign(document.createElement('p'), {className: 'head',
+    textContent: r.goal_at_s != null ? `Predicted: the goal at ${describeTime(r.goal_at_s)}` : 'Predicted: the goal does not happen'}));
+  const chip = (colour, text) => {
+    const s = Object.assign(document.createElement('span'), {className: 'chip', textContent: text});
+    s.style.setProperty('--c', '#' + new THREE.Color(colour).getHexString());
+    return s;
+  };
+  const row = Object.assign(document.createElement('p'), {className: 'chips'});
+  row.append(chip(FREE_COLOUR, 'moving'), chip(GOAL_COLOUR, 'in the goal'));
+  for (const [name, colour] of colourOf) row.append(chip(colour, `after it hits ${name}`));
+  box.append(row);
+}
+
+window.machinePreviewState = () => previewShown && {paths: previewShown.paths.map(p => ({name: p.name, goal: p.goal,
+  points: p.points.length})), hits: previewShown.hits.length, goal_at_s: previewShown.goal_at_s,
+  legend: $('preview-legend').textContent};
+
+$('path-toggle').addEventListener('click', () => {
+  previewOn = !previewOn;
+  $('path-toggle').setAttribute('aria-pressed', String(previewOn));
+  if (previewOn) schedulePreview(0); else { clearTimeout(previewTimer); previewAsk++; clearPreview(); }
+});
 
 // Over the scene: a ghost that follows goes where the pointer is; a press on
 // a pinned ghost drags it; a click (a press that does not move) pins a
@@ -1182,6 +1302,7 @@ async function rebuildLevel(start) {
     // Its goal is about a piece not placed yet: shown, not run.
     if (opened.needs) $('verdict').textContent = opened.needs;
     else if (start) await setPlaying(true);
+    if (!start) schedulePreview(200);
   } catch (e) {
     const problems = e.data && e.data.problems ? e.data.problems.join('; ') : e.message;
     $('verdict').textContent = problems;
@@ -1283,7 +1404,7 @@ renderer.domElement.addEventListener('pointerdown', () => {
 
 async function chooseLevel(id) {
   level = levels.find(l => l.id === id) || levels[0];
-  endGhost(); closeDone();
+  endGhost(); closeDone(); previewAsk++; clearPreview();
   placements = []; placedCost = []; helped = false; lastRun = null;
   history_.replaceState(null, '', '/play?level=' + level.id);
   $('title').textContent = `${levels.indexOf(level) + 1}. ${level.title}`;
@@ -1344,7 +1465,7 @@ $('feedback-form').addEventListener('submit', async e => {
 });
 
 async function startGame() {
-  document.body.classList.add('playing-level');
+  document.body.classList.add('playing-level'); $('path-toggle').hidden = false;
   let seen = false;
   try { seen = Boolean(localStorage.getItem('banjo-play-guide-seen')); } catch { /* private window */ }
   showGuide(!seen);

@@ -461,6 +461,44 @@ def trial(level, placements, exe, logs, runs=3):
     return {'runs': runs, 'worked': worked, 'results': results, 'cost': cost}
 
 
+def preview(level, placements, exe, logs, wall_limit_s=30.0):
+    """Where things will go when the level runs, as the engine works it out:
+    the machine rehearsed once, unpaced, with every loose body's path, every
+    hit one of them takes part in, and when the goal happens -- running on
+    half a second after it, to show where things come to rest. The page draws
+    it as a see-through path before anything is run. Paths of bodies that
+    hardly move (under 2 cm) are left out."""
+    spec, checked, cost = compose(level, placements)
+    compiled = mw.compile_spec(spec)
+    goal = level['goal']['station']['done_when']
+    rule = next(iter(goal.values()))
+    wanted = rule.get('part') if isinstance(rule, dict) else rule
+    loose = [p['name'] for p in compiled['parts'] if not p['fixed']]
+    track = ([wanted] if wanted in loose else []) + [n for n in loose if n != wanted][:7]
+    r = mw.rehearse(compiled, exe, logs, seconds=level['time_s'] + 0.3, wall_limit_s=wall_limit_s,
+                    track=track, after_s=0.5)
+    row = (r['stations'] or [{}])[0]
+    goal_at = row.get('at_s') if row.get('done') and row.get('at_s') is not None and row['at_s'] <= level['time_s'] else None
+    paths = []
+    for name in track:
+        path = r.get('paths', {}).get(name) or {}
+        points = path.get('points') or []
+        if len(points) < 2 or math.dist(points[0][1:4], points[-1][1:4]) < 0.02 and \
+                max(math.dist(points[0][1:4], p[1:4]) for p in points) < 0.02:
+            continue
+        paths.append({'name': name, 'goal': name == wanted, 'points': points, 'turn_wxyz': path.get('turn_wxyz')})
+    # One hit per pair a quarter second apart: a contact reports itself every
+    # step it lasts, a bounce a few times.
+    hits, last = [], {}
+    for h in r.get('hits', []):
+        key = (h['body'], h['other'])
+        if any(p['name'] == h['body'] for p in paths) and h['t'] - last.get(key, -1.0) >= 0.25:
+            hits.append(h)
+        last[key] = h['t']
+    return {'paths': paths, 'hits': hits, 'goal_at_s': goal_at, 'world_time_s': r['world_time_s'],
+            'wall_s': r['wall_s'], 'error': r['error'], 'zone': rule if 'at_m' in (rule if isinstance(rule, dict) else {}) else None}
+
+
 def miss_m(level, rehearsal):
     """How far from the goal a rehearsal ended up: 0 when the goal happened
     in time, otherwise how near the goal zone the part came (or 1 m when the

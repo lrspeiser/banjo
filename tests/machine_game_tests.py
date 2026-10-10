@@ -311,6 +311,25 @@ class Engine(unittest.TestCase):
         self.assertEqual(t['worked'], 1, t['results'])
 
     @need_engine
+    def test_the_preview_is_the_engines_rehearsal_of_where_things_go(self):
+        # Level 1 as it stands, then with the plank over the gap: the ball's
+        # path, what it hits on the way, and when the goal happens -- the
+        # same time the run itself gives.
+        gap = mg.level_by_id('gap')
+        with tempfile.TemporaryDirectory() as logs:
+            bare = mg.preview(gap, [], ENGINE, Path(logs))
+            done = mg.preview(gap, gap['solution'], ENGINE, Path(logs))
+        self.assertIsNone(bare['goal_at_s'])
+        self.assertIn('the ground', [h['other'] for h in bare['hits']], 'without the plank it falls in the gap')
+        self.assertEqual(done['goal_at_s'], 1.9)
+        ball = next(p for p in done['paths'] if p['goal'])
+        self.assertEqual(ball['name'], 'ball')
+        self.assertIn('your plank 1', [h['other'] for h in done['hits']])
+        zone = gap['goal']['station']['done_when']['in_zone']
+        end = ball['points'][-1][1:4]
+        self.assertTrue(all(abs(end[i] - zone['at_m'][i]) <= zone['size_m'][i] / 2 for i in range(3)), end)
+
+    @need_engine
     def test_a_misplaced_piece_fails_for_a_physical_reason(self):
         # The knife set too high swings over the rope and into the weight's arm.
         level = mg.level_by_id('cut')
