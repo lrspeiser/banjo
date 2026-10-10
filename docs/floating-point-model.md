@@ -1,21 +1,340 @@
 # One floating-point model
 
 Everything compiled into the engine, Jolt included, is compiled to one
-floating-point profile, `banjo-cpu-precise-v1`: IEEE arithmetic in the order the
+floating-point profile, `banjo-cpu-precise-v2`: IEEE arithmetic in the order the
 source writes it, with no fused multiply-add the source did not ask for and no
-reassociation. `cmake/FloatingPointModel.cmake` applies it and
-`scripts/check-fp-model.py` audits what CMake generated, before anything
-compiles.
+reassociation, and the same results on Windows and on Linux.
+`cmake/FloatingPointModel.cmake` applies it and `scripts/check-fp-model.py`
+audits what CMake generated, before anything compiles.
 
-What it promises is narrow: within one build, every object's copy of a
-function computes the same values, so which copy the linker keeps can no longer
-change a result. It does not make Windows and Linux agree: our code calls each
-platform's own `sin`, `exp` and `pow`.
+It promises two things. Within one build, every object's copy of a function
+computes the same values, so which copy the linker keeps cannot change a result
+(v1, below). And one declared world gives one result on every platform the
+profile builds on: Jolt is built cross-platform deterministic, and the
+transcendental functions -- `sin`, `exp`, `pow` and the rest -- are Banjo's
+own, correctly rounded, in the engine's C++ and in the game's Python, rather
+than each platform's C library's (v2, the next section). The rest of this note
+is v1's record: why, what was measured and on what, what shipped, and what is
+not covered. Those measurements were made on 2026-09-15 with Visual Studio 2022
+17.14 (MSVC 19.44.35228), Release, on a 24-thread Windows 11 desktop (Intel64
+Family 6 Model 198), unless a section says otherwise.
 
-This note says why, what was measured and on what, what ships, and what is not
-covered. The measurements were made on 2026-09-15 with Visual Studio 2022 17.14
-(MSVC 19.44.35228), Release, on a 24-thread Windows 11 desktop (Intel64 Family 6
-Model 198), unless a section says otherwise.
+## v2: one result on Windows and Linux (2026-10-10)
+
+### Why
+
+Render and CI run Linux; local play runs Windows. Under v1 the same declared
+experiment could end differently on each. Four voxel suites
+(`voxel_world`, `voxel_rigid_flight`, `voxel_endpoint_friction`,
+`voxel_midpoint_contact_comparison`) passed on Windows and failed on Linux. Each
+pins an outcome of a chaotic fracture run -- a glass ball refused by the energy
+gate between 1.4 and 1.5 s, say -- and those outcomes were Windows'.
+
+A run was recorded line for line on both platforms, every request and reply,
+and the first difference found, twice:
+
+1. **At the first line.** The iron ball's diameter is `cbrt(mass /
+   (density * 0.5))`. glibc's `cbrt` gave 0.06334102511897383, the Microsoft
+   CRT's 0.06334102511897385; the true root, 0.06334102511897384, lies between.
+   Each library is one unit in the last place off, in opposite directions.
+   glibc's `cbrt` is off for 47% of arguments in [1e-6, 1e4] (2 million
+   sampled); its `exp` for about one in 1,300.
+2. **With `cbrt` and `exp` correctly rounded on both, at step 2,741, the first
+   impact.** The state before the step was bit-identical; the contact geometry
+   the step found was bit-identical, points, normals and gaps; the contact
+   impulses Jolt's solver applied differed in the sixth figure. Jolt promises
+   the same arithmetic from different compilers only when built
+   `CROSS_PLATFORM_DETERMINISTIC` (no FMA intrinsics, its cross-platform code
+   paths). Built so, the whole 2 s run was bit-identical on both.
+
+The game's Python has the same hazard one layer up: `math.sin`, `math.acos`,
+`math.expm1` and `x ** y` call the platform's C library too. On 300,000
+arguments each, Python on Windows (3.13) and on Linux (3.12) disagreed for 3%
+of `sin` and `cos`, 8% of `acos`, 37% of `expm1` and one in a thousand of
+`x ** 2`. What that Python computes becomes the world -- where `world_seed`
+stands each machine, which way a rover's brain steers, the turn a chat-built
+part is given -- and a world generated from one seed was not the same world:
+terrain 7's solar farm stood one unit in the last place apart.
+(`math.hypot`, `math.dist` and `math.sqrt` agreed on every argument: CPython
+computes them itself.)
+
+v1's note rejected Jolt's option because "our own code calls each platform's own
+`sin`, `exp` and `pow`". v2 takes both halves.
+
+### What v2 is
+
+- **Jolt cross-platform deterministic.** `CMakeLists.txt` sets
+  `CROSS_PLATFORM_DETERMINISTIC` before Jolt is fetched. Jolt then defines
+  `JPH_CROSS_PLATFORM_DETERMINISTIC` for itself and every file that includes
+  it, and leaves `JPH_USE_FMADD` off. The audit refuses a build whose Jolt
+  lacks it.
+- **The engine's own transcendental functions**, `src/numeric/PortableMath.hpp`
+  (`banjo::pm::`): `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`,
+  `expm1`, `log`, `log1p`, `pow`, `cbrt` and `hypot`. Each is computed from the
+  correctly rounded operations alone (`+ - * /`, `sqrt`, `fma`, `ldexp`,
+  `frexp`, `nearbyint`); no C library function decides any bit. A fast path
+  cuts the argument down with a table (`src/numeric/PortableMathTables.hpp`,
+  generated by `scripts/generate-portable-math-tables.py`), carries the leading
+  terms in double-double and bounds its own error; when the bound leaves the
+  rounding open, a long double-double series decides it. A denormal result is
+  rounded once, onto the denormals' own grid. The result is the correctly
+  rounded double except for a true value within about 2^-100 of halfway
+  between two doubles, and the same bits everywhere whatever. Every call in
+  the engine's sources -- 331 in 65 files under `src/` and `tools/` -- goes
+  through it. The viewer's drawing (`src/viewer/`), a prompt's text
+  (`creator/CodexAssistant.cpp`) and CUDA device code
+  (`physics/FiniteFrameKernel.hpp` keeps the device's intrinsics) are not
+  engine physics on the CPU. The tests' own analytical oracles are left as they
+  were.
+- **The same functions for the game's Python**, `playground/portable_math.py`:
+  the same thirteen (hypot stays CPython's), computed in `decimal` -- software
+  arithmetic, the same on every machine -- carried to 50 digits and rounded
+  once. Correctly rounded too, so the same bits as `banjo::pm`; where `math`
+  raises a `ValueError` or an `OverflowError`, so do they. And `power(x, y)`,
+  Python's `**` with the same bits everywhere: an int to a non-negative int
+  power stays Python's exact int, a square is `x * x`, any other float power
+  the correctly rounded `pow`. The game's Python calls them -- `playground/`,
+  `mcp/`, the world builders `tools/build_*.py` and `scripts/machine_world.py`:
+  166 `math.` calls, six `from math import` lines and 79 float powers. They
+  cost 17 to 56 microseconds a call against tens of nanoseconds; the game calls
+  them a few dozen times a second of world time (a rover hauling for two
+  minutes of world time: 4,050 calls, 0.11 s, half a percent of the run).
+- **Random draws that feed a result** come from the engine's bits directly
+  (`(rng() >> 11) * 0x1p-52 - 1.0`): from the same `mt19937_64`, MSVC's and
+  libstdc++'s `std::uniform_real_distribution` draw different numbers. The
+  fast lattice's linearity and propagator probes were the engine's only such
+  use.
+- **A schedule the world decides.** A grown region's colliders were attached
+  until 3 ms of wall-clock time was spent each step, so a faster machine gave
+  more of a region colliders a step and the same world grew differently: on one
+  desktop Windows took 23 steps and Linux 16, and `streamed_regions_tests`'
+  walker ended a millimetre apart. Now one chunk a step, then one seam a step
+  (`terrain/StreamedRegions.cpp`).
+- **The audit enforces the C++ half.** `scripts/check-fp-model.py` refuses a
+  call to the C library's transcendental functions (`std::sin` ...
+  `std::hypot`, and the `sinf` family) anywhere in `src/` or `tools/` outside
+  those exceptions, and a Jolt built without `JPH_CROSS_PLATFORM_DETERMINISTIC`.
+- **The name.** `banjo-cpu-precise-v2`, in `banjo_version_string()`,
+  `BANJO_FP_PROFILE`, `banjo-fp-profile.json` and the audit's manifest. Every
+  cache of computed results keys on the profile (see
+  [Where the profile's name is](#where-the-profiles-name-is)), so the
+  propagators, the scenario CSV, the generated valley and the material outcomes
+  computed under v1 are not read back; they are computed again once.
+
+### The checks
+
+- `banjo_portable_math_tests` (new): 270 arguments across the fourteen
+  functions against values computed to 240 bits with mpmath, each required to
+  be the correctly rounded double -- five of them denormal results, rounded
+  once -- and the special values (signed zeros, infinities, NaNs, the ends of
+  each range). One table, so passing it on Windows and on Linux is passing with
+  the same bits.
+- `banjo_portable_math_py_tests` (new): the game's Python against that same
+  table, read from the C++ test, and Python's own errors and special values.
+- `banjo_fp_profile_tests` now requires Jolt built
+  `JPH_CROSS_PLATFORM_DETERMINISTIC` and its multiply-add unfused (v1 required
+  it fused).
+- Measured while building them: 96,114 arguments, the same results from GCC
+  13.3 (Ubuntu 24.04 under WSL) and MSVC 19.44, bit for bit, signed zeros
+  included; every one correctly rounded against mpmath; and the Python module
+  gives the same bits on all of them, and on 12,000 more whose results are
+  denormal. The fast paths against the long series, 3 million arguments for
+  each of eleven functions: no disagreement.
+- `banjo_fp_link_order_tests`' scene of Jolt's alone now prints the same 104
+  values on both platforms, bit for bit. Its digest still differs
+  (`16d35148975ed490` on Linux, `30bbeac4f27e2410` on Windows) because it is a
+  digest of the printed text and the two C libraries print `%a` differently
+  (`0x1p+0` and `0x1.0000000000000p+0`).
+
+### The voxel suites, requalified
+
+With the same arithmetic on both platforms, each of the four suites was run on
+Windows (MSVC, Release) and on Linux (GCC, Release) with every line between the
+test and the engine recorded: 40 sessions, every request and every reply, with
+only the wall-clock fields taken out. All 40 are identical on the two
+platforms, and all four suites pass on both.
+
+What now happens, on both:
+
+| run | v1 on Windows | v2, both platforms |
+|---|---|---|
+| glass sheet, iron ball, material restitution, 1/1920 s | refused by the energy gate (twist work made energy) | completes 2 s; sheet in 16 pieces, 44 broken faces; two trials refused and refined; accounts closed |
+| glass ball onto the glass sheet (defaults) | refused by the energy gate at 1.4-1.5 s | completes 1.5 s; sheet in 14 pieces (41 faces), ball in 19 (42) |
+| ice ball onto an ice sheet, material restitution | (not run) | refused by the energy gate at 1.4672 s (1/960) and 1.4722 s (1/1920), smallest step, state kept |
+| disconnected-cell flight, ice 10 m drop | passed | passes |
+| midpoint contact, its final-twist diagnosis | passed | passes |
+
+So `voxel_endpoint_friction_tests` checks the glass/iron restitution impact as
+a completed run, with every account of the other completed runs, and keeps its
+retained refusal on the ice ball, with the same witness checks (the contact
+sources sum to the measured work, normal + friction + twist does too, and the
+strongest twist's impulse-velocity identity) and a new diagnosis: the normal
+contact made the energy and friction took some away, where under v1 twist made
+it. `voxel_world_tests` runs the glass ball as its twelfth completed experiment,
+every per-output account checked and both bodies broken, and keeps its retained
+refusal -- energy gate, smallest step, accepted state retained -- on the ice
+ball.
+
+### What still differs between the platforms
+
+The two platforms' CI gates were compared test by test, every printed line,
+setting aside lines that report time. One engine result differed, and its cause
+was the wall clock, not arithmetic: `streamed_regions_tests`' saved world, ten
+bytes apart, because a grown region's colliders came as fast as the machine
+allowed (fixed, above; both now save the same world). What still prints
+differently is one of these:
+
+- **The C libraries' own printing**: `%a` (`0x1p+0` against
+  `0x1.0000000000000p+0`), which is all of `banjo_fp_link_order_tests`' and
+  `banjo_fp_profile_tests`' difference; and each platform's MXCSR at start-up.
+- **Paths, temporary directories, hashes of the source and of the binary**
+  (a Windows checkout has CRLF line endings).
+- **A test's own inputs or oracle, from its platform's library**:
+  `modal_eigen_tests` draws its matrices with `std::normal_distribution`;
+  `modal_fracture_tests` sets its velocities with `std::sin` and `std::cos`;
+  `double_rigid_source_tests` measures orientation error with its own
+  `std::hypot`; `cpu_high_drop_test` compares against an oracle in Python's
+  `math`; `thermal_fields_test` and `contact_branch_test` against numpy's
+  `eigh`. The engine's states in each are the same; the measuring is not.
+- **Wall-clock time and threads.** The live world works out a foreseen
+  fracture on a worker while the world keeps stepping, and a later step carries
+  the answer, so how many steps pass first depends on the machine
+  (`live_world_tests`' "longest stall", a pane's piece count); a test that
+  ticks the playground's clock against `time.monotonic()`
+  (`material_preview_tests`' layer strokes, `workshop_tools_tests`,
+  `construction_fit_tests`' rover) differs between two runs on one machine
+  too. That is design, not arithmetic: what it promises is that the room never
+  stops, not that two machines agree.
+- **Browsers**: tests that need Chrome are skipped on the Linux machine, which
+  has none.
+
+### The rest of the regression, on both platforms
+
+The CI gate (`ctest -LE "long|performance"`) was run on main (`ad9dc66a`) and
+on this branch, on Windows (MSVC 19.44, Release, `-j 4`) and under WSL (Ubuntu
+24.04, GCC 13.3, Release, CI's configuration, one test at a time). The desktop
+was shared with other work throughout, so a suite that failed on a timing
+check, a time limit or a dropped connection was run again alone.
+
+| | main | this branch |
+|---|---|---|
+| Windows | 316 run, 4 failed | 318 run, 8 failed in the gate, 4 alone |
+| Linux | 299 run, 10 failed | 301 run, 7 failed in the gate, 4 alone |
+
+Why each one failed:
+
+- **On both builds** (not this change): `game_guidance` on both platforms
+  (`KeyError: '@construction'`, main's own test against main's renamed opening
+  tool); on Windows `build_lab_chat` and `voice_browser` (the browser's
+  connection dropped, `WinError 10053`); on Linux `playable_recipes` and
+  `metal_shovel_game` (they need Chrome, which this Linux machine lacks).
+- **On main only, fixed here:** the four voxel suites, and `ground_work`
+  (Linux only: a range-for over `.at()` of a temporary JSON document, which
+  dangles before C++23; it read freed memory and found no bodies).
+- **Under load only; they pass alone, on both builds:** `live_world` (a timing
+  check; it failed on main under load too), `every_room` (its realtime check),
+  `ai_player`, `proactive_guidance` (an answer in 0.46 s against 0.25 s),
+  `break_room` (its 180 s limit), and on main `machine_world`.
+- **`voxel_endpoint_friction`'s time limit:** it now runs to its end a 2 s
+  impact that used to stop at its refusal near 1.43 s, and a new refusal run
+  besides: 500 to 600 s on this desktop under load, where the limit was 600 s.
+  The limit is now 1200 s; nothing it checks changed.
+- **`rover_route`, on the branch on both platforms** -- see below.
+
+### Results that moved
+
+The printed output of 111 tests on Windows and 102 on Linux moved between main
+and this branch. Every check in them holds. Jolt's arithmetic changed (no FMA,
+its cross-platform code paths), so did the last bits of every transcendental
+function the engine and the game call, and a rigid contact or a fracture
+amplifies a last bit the way the valley's oak log did under v1
+([below](#results-that-moved-the-valleys-oak-log)). The largest, on Windows:
+
+| test, line | main | v2 |
+|---|---|---|
+| blade, the 800 N cut | 4.19149 J | 4.67624 J |
+| blade, drawn along its edge with 200 N | 24 bonds, 2 pieces | 19 bonds, 0 pieces |
+| bowl, the oak bowl's spin | 1.86773 | 0.000112 |
+| bow, the 4 kN/m arrow | 1.69471 m/s | 1.68995 m/s |
+| rolling resistance, live world 10 mm | -0.47 % of the law | -0.56 % |
+| rolling resistance, rigid world | -0.06 % of the law | -0.03 % |
+| refracture, parity run | 397 bonds, 2 re-entries | 324 bonds, 3 re-entries |
+| room carry, things restored | 104 | 101 |
+
+**The rover's route.** `rover_route_tests` fails on this branch on both
+platforms. On terrain 4, in the first scenario, the rover hauls one load, goes
+back to its rounds, drives onto the rim of the 0.8 m trench the test dug across
+its route and stops there at 12.9 degrees (its climb bound is 12). It says it
+is stuck and asks to be carried; told to go on, it cannot. Main passes.
+
+Its start was nudged and the test's scenarios run again on Linux, 31 starts on
+each build (unmoved, ±1 to ±9 nm, ±10 to ±40 nm, ±1 µm and ±1 mm):
+
+- main fails 13 of the 31, stuck the same way; the branch fails 15 (13 stuck,
+  2 tipped over at 45 degrees in the river). Fisher's exact test gives p = 0.8:
+  no difference;
+- built with everything of v2 but Jolt's cross-platform determinism, the
+  eleven starts first tried end exactly as main's do; built with it but with
+  the C library's functions in place of `banjo::pm`, exactly as the branch's.
+  On Linux the portable functions change nothing here (glibc already gives the
+  correctly rounded answer for these arguments); Jolt's arithmetic is the whole
+  of the nudge.
+
+So this test is a coin flip on either build, and main's unmoved start happens
+to fall on the side that passes. What fails is the rover: it drives onto a
+trench rim it cannot climb back from, and now and then into the river until it
+tips. That is not fixed here.
+
+### What it costs
+
+A portable function costs several times the C library's. Per call, 200,000
+arguments, on this desktop (GCC 13.3 under WSL; MSVC 19.44 in brackets):
+
+| | C library | `banjo::pm` |
+|---|---:|---:|
+| exp | 2.0 ns (2.3) | 21 ns (36) |
+| log | 2.1 (2.7) | 22 (27) |
+| pow | 7.8 (5.7) | 66 (76) |
+| sin, cos | 12 to 13 (8 to 9) | 53 to 55 (61 to 63) |
+| tan | 12.5 (9.7) | 68 (77) |
+| atan, atan2 | 9 to 12.5 (6 to 11) | 60 to 62 (91 to 94) |
+| acos | 10.7 (8.9) | 80 (100) |
+| cbrt | 5.6 (15.3) | 20 (23) |
+| hypot | 9.1 (2.1) | 8.2 (12) |
+
+What that costs a world depends on how often it asks. Measured, one suite at a
+time, main and this branch interleaved, the faster of two runs each, on Linux:
+
+| suite | main | v2 |
+|---|---:|---:|
+| `river_network` | 26.7 s | 40.9 s |
+| `water` | 1.1 s | 1.6 s |
+| `terrain` | 2.0 s | 4.2 s |
+| `room_carry` | 5.4 s | 9.0 s |
+| `valley_live` | 55.3 s | 66.1 s |
+| `thermo_live` | 23.9 s | 25.9 s |
+| `generated_rover` | 91.7 s | 95.2 s |
+| `machine_world` | 8.4 s | 8.8 s |
+
+The river's is the shallow water's friction: `h * cbrt(h)` for every wet cell
+every substep, 37% of that suite's time in `banjo::pm::cbrt` (stacks sampled
+under gdb). The rooms, against the owner's realtime rule (`every_room_tests`,
+the first second of each room, on Linux): every room still runs at 4.3 times
+realtime or better. The slowest are the world (5.7x on main, 4.3x under v2),
+the solar room (6.5x, 4.7x) and the rover's room (6.3x, 4.9x); most lose 10 to
+25%. The deadline (`scripts/run-performance-gate.py`, Windows, seven runs of
+each build interleaved, the machine 14 to 24% busy): a 1.5 m drop's cold first
+run took 325 to 377 ms against its 485 ms warning on both builds, a margin of
+109 / 138 ms (least / median) on main and 129 / 139 ms under v2; warm, 143 /
+148 and 142 / 147 ms.
+
+The game's Python functions cost 17 to 56 microseconds a call, against tens of
+nanoseconds for `math`, and keep their last 4,096 answers. A rover hauling for
+two minutes of world time made 4,050 calls, 0.11 s, half a percent of the run.
+One place called them millions of times: `fracture_lab.body_cell_set` turned
+every cell of a tilted body with the rotation's sines and cosines taken afresh
+per cell; it now takes them once a body, and `chat_history_tests` takes 2.5
+minutes where main takes 4.
 
 ## The hazard
 
@@ -191,7 +510,7 @@ compiled both ways.
 
 ## What ships
 
-### The profile, `banjo-cpu-precise-v1`
+### The profile's compiler options (v1, kept by v2)
 
 | C++ compiler | the profile | refused |
 |---|---|---|
@@ -201,8 +520,9 @@ compiled both ways.
 
 `/fp:except-` (Jolt's) is allowed: it changes no result. MSVC 19.44 does not
 contract under `/fp:precise`, even with `/arch:AVX2`; the probes below check it.
-Jolt keeps `JPH_USE_FMADD`: its explicit FMA intrinsics are the same
-instructions in every object. The options are added to the top directory, for
+Under v1 Jolt kept `JPH_USE_FMADD`: its explicit FMA intrinsics are the same
+instructions in every object. v2 builds Jolt `CROSS_PLATFORM_DETERMINISTIC`,
+which leaves them off (see [v2](#v2-one-result-on-windows-and-linux-2026-10-10)). The options are added to the top directory, for
 C++ only, before any target exists, so they reach Jolt's targets too and come
 after Jolt's own flags on each command line, where the last one wins. The audit
 checks that it did.
@@ -212,7 +532,7 @@ A change to what the profile means gets a new name (`-v2`), not an edit.
 ### Where the profile's name is
 
 - `banjo_version_string()`: "banjo *date*, floating-point profile
-  banjo-cpu-precise-v1" (and `banjo.version()` in Python).
+  banjo-cpu-precise-v2" (and `banjo.version()` in Python).
 - `BANJO_FP_PROFILE`, a definition every target that links `banjo_core` sees, and
   `banjo::fp::profile()` and `profileHash()` (`src/numeric/FpProfile.hpp`).
 - `<build>/banjo-fp-profile.json`: the profile, its options, the compiler and
@@ -226,7 +546,7 @@ A change to what the profile means gets a new name (`-v2`), not an edit.
   - the fast lattice's propagator cache (`fastlattice/Propagator.cpp`): the
     profile's hash is in the cache's key and file name;
   - the analytical scenario CSV (`prediction/ScenarioCache.cpp`): its first line
-    is `# banjo.fp-profile banjo-cpu-precise-v1`, and a file without it or with
+    is `# banjo.fp-profile banjo-cpu-precise-v2`, and a file without it or with
     another is not loaded;
   - the generated valley (`terrain/TerrainGenerator.cpp`): the profile's hash is
     in the file name's key;
@@ -318,7 +638,9 @@ fold them. Each copy must show:
 - `−0 + +0 = +0` and `−1 × +0 = −0`;
 - half of `DBL_MIN` a denormal, not zero.
 
-Jolt's explicit FMA must be fused, since `JPH_USE_FMADD` asks for it. The real
+Jolt's multiply-add must be unfused and Jolt built
+`JPH_CROSS_PLATFORM_DETERMINISTIC` (v2; under v1 its explicit FMA had to be
+fused, since `JPH_USE_FMADD` asked for it). The real
 validation paths must hold: an anchored post's inertia is infinite
 (`JoltWorld::inertiaAbout`), and an axis with a NaN in it, a pin on one
 (`LiveWorld::hinge`) and a NaN command to a motor (`LiveWorld::driveMotor`) are
@@ -333,7 +655,9 @@ instantiates exactly the inlines that changed hands on main
 (`GetInverseInertiaForRotation`, `AxisConstraintPart`, `AngleConstraintPart`,
 and the closest-point routines under GJK and EPA, in both instantiations). The
 two must print the same state, in hexadecimal floats, and the same digest. Here
-both give `437cac74dc137a35`. As a negative control the same two programs were
+both gave `437cac74dc137a35` under v1; under v2 both give `30bbeac4f27e2410`
+(MSVC) and `16d35148975ed490` (GCC), the same 104 values printed in each C
+library's own `%a`. As a negative control the same two programs were
 built on main, where the model is mixed: `9e7719fa34eb13be` alone and
 `0cbbd844d23d831c` with our copies first. The test fails there, as it should.
 
@@ -459,6 +783,14 @@ run to its end anywhere. It has its own task.
 - A new dependency with floating-point flags of its own is refused like
   anything else. It takes the profile, or it stays out of the link.
 - A new cache of computed results keys on `banjo::fp::profileHash()`.
+- A transcendental function in engine code is `banjo::pm::sin` (and the rest,
+  `numeric/PortableMath.hpp`), never `std::sin`: the audit refuses the C
+  library's. In the game's Python it is `portable_math.sin`
+  (`playground/portable_math.py`), never `math.sin`; `math.hypot`, `dist`,
+  `sqrt`, `fsum` and `prod` are fine, and `x * x` rather than `x ** 2`.
+- A random draw that feeds a result is taken from the engine's bits
+  (`(rng() >> 11) * 0x1p-52 - 1.0`), not a `std::*_distribution`: those are
+  the standard library's own and differ between MSVC and libstdc++.
 - A new C++ compiler needs its own validated profile before it can build this.
 
 ## Not covered
@@ -469,8 +801,23 @@ run to its end anywhere. It has its own task.
   thrown through a `std::` function whose kept copy came from Jolt, compiled
   without exceptions, would not run that frame's destructors. This was not
   looked into.
-- Results across platforms and compilers: see the start of this note.
-- CUDA is not in this profile. The CUDA lattice backend (`BANJO_BUILD_CUDA`, off
+- Results across platforms and compilers other than the two measured (MSVC
+  19.44 on Windows, GCC 13.3 on Linux): Clang, Apple's toolchain and ARM are
+  not built or compared. And what does not go through the functions above:
+  - the Python outside the game -- the lab and research scripts in `scripts/`
+    (`voxel-lab.py`, `coupled_modes.py` with numpy's LAPACK, and the rest) and
+    the tests' own oracles -- still calls `math` and numpy;
+  - numpy's `eigh` and other LAPACK routines differ by platform and build
+    (`contact_branch_tests`' negative-mode count, `thermal_fields_test`'s
+    oracle);
+  - the standard library's random distributions in tests and benchmarks
+    (`modal_eigen_tests`' `std::normal_distribution`, the propagator's matrix
+    timing) differ between MSVC and libstdc++;
+  - whatever depends on threads or on the wall clock differs from run to run on
+    one platform, and so between platforms too (see [What still differs
+    between the platforms](#what-still-differs-between-the-platforms)).
+- CUDA is not in this profile, and its device code keeps the device's own
+  `atan2`, `tan` and the rest. The CUDA lattice backend (`BANJO_BUILD_CUDA`, off
   by default) is compiled with `-fmad=false` unless `BANJO_CUDA_FMAD` is set; a
   profile for it would be its own, validated on its own. The audit counts CUDA
   files as outside the C++ profile.

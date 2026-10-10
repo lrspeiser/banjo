@@ -1,5 +1,7 @@
 # Coupled endpoint friction with material bounce — October 8, 2026
 
+**Follow-up, October 10:** under `banjo-cpu-precise-v2` ([one result on Windows and Linux](floating-point-model.md#v2-one-result-on-windows-and-linux-2026-10-10)), the refined glass/iron drop with material restitution reproduced below is no longer refused. It completes 2 s on Windows and on Linux, the same to the last bit: sheet in 16 pieces, 44 broken faces, two trials refused and refined, every account closed. `banjo_voxel_endpoint_friction_tests` checks it as a completed run. Its retained refusal is now an ice ball onto an ice sheet at 1/1920 s, refused at the smallest step at 1.4722 s, with the same witness checks; there the normal contact made the energy and friction took some away, where under v1 twist made it.
+
 ## Implemented experimental correction
 
 The native CPU world accepts an explicit `contact_law: material-block-friction`.

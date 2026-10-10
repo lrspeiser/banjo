@@ -1,5 +1,7 @@
 # Contact-model comparison in the voxel world
 
+**Follow-up, October 10:** under `banjo-cpu-precise-v2` ([one result on Windows and Linux](floating-point-model.md#v2-one-result-on-windows-and-linux-2026-10-10)), the default material-restitution glass-ball run completes 1.5 s on Windows and on Linux; the retained refusal is now an ice ball onto an ice sheet. What follows is the October 8 record, made under v1 on Windows.
+
 October 8, 2026. Implemented **experimental alternative**, not an accuracy fix,
 calibrated contact model, realtime solver or player-world migration. Default
 material-restitution contact and its retained glass-ball refusal remain intact.

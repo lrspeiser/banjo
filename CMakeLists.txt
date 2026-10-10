@@ -2421,7 +2421,10 @@ if(BANJO_BUILD_TESTS)
             set_tests_properties(banjo_voxel_rigid_flight_tests PROPERTIES TIMEOUT 180 LABELS "native;voxel;experimental")
             add_test(NAME banjo_voxel_endpoint_friction_tests COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_endpoint_friction_test.py $<TARGET_FILE:banjo_voxel_world_run>)
-            set_tests_properties(banjo_voxel_endpoint_friction_tests PROPERTIES TIMEOUT 600 LABELS "native;voxel;experimental")
+            # 1200 s, not 600: under banjo-cpu-precise-v2 the glass/iron restitution run
+            # completes its 2 s instead of stopping at its refusal near 1.43 s, and the
+            # retained refusal is a new ice-ball run; 500 to 600 s here under load.
+            set_tests_properties(banjo_voxel_endpoint_friction_tests PROPERTIES TIMEOUT 1200 LABELS "native;voxel;experimental")
             add_test(NAME banjo_voxel_motion_profile_tests COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_motion_profile_test.py $<TARGET_FILE:banjo_voxel_world_run>)
             set_tests_properties(banjo_voxel_motion_profile_tests PROPERTIES TIMEOUT 60 LABELS "native;voxel")

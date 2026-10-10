@@ -1,5 +1,7 @@
 # Voxel impact world checkpoint — October 8, 2026
 
+**Follow-up, October 10:** under the floating-point profile `banjo-cpu-precise-v2` ([one result on Windows and Linux](floating-point-model.md#v2-one-result-on-windows-and-linux-2026-10-10)), the glass ball onto the default glass sheet is no longer refused. It completes 1.5 s on Windows and on Linux, the same to the last bit: sheet in 14 pieces (41 broken faces), ball in 19 (42), every per-output account checked. The refusal recorded below was Windows' outcome under v1; Linux's went on. The retained refusal the regression now checks is an ice ball onto an ice sheet, refused by the energy gate at the smallest step at 1.4672 s, with the accepted state kept. The lab page (`client/voxel-lab`) still leaves the glass ball unavailable; offering it is a change to that page and was not made here.
+
 ## Scope and provenance
 
 Experimental implementation, not a calibrated continuum or complete game rewrite. Replaces the website served on local port **18893** with one native 3D sheet/ball/support world. Historical sources and regression laboratories remain in Git; their website routes redirect to the new scene. Saved player worlds on other servers are not migrated.
